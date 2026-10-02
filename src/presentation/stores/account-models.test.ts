@@ -272,8 +272,6 @@ describe('consent flow (P-40)', () => {
 
     // The default line of an included route has nothing to consent; neither does a known-included row.
     store.cancel();
-    store.beginConsent({ model: '*', name: null, billing: 'included' });
-    expect(store.state().draft).toBeNull();
     store.beginConsent({ model: 'atlas-max', name: 'Atlas Max', billing: 'included' });
     expect(store.state().draft).toBeNull();
     // A model the loaded list does not carry cannot be consented from this surface.
@@ -312,5 +310,42 @@ describe('consent flow (P-40)', () => {
     expect(store.state().lastOutcome?.labelKey).toBe('error.invalid_cap');
     // The draft survives a refusal: the operator can fix the cap and try again.
     expect(store.state().draft?.model).toBe('atlas-mini');
+  });
+});
+
+describe('consent only for non-included models (P-40, P-42)', () => {
+  const storeFor = (api: FakeApi) =>
+    createAccountModelsStore({ api, changes: fakeSignal().signal, actor: { kind: 'user', id: 'u', label: 'U' } });
+  const subscriptionView: AccountModelsView = {
+    models: [
+      { id: 'sub-opus', displayName: 'Opus', tier: 'strong', thinking: { kind: 'none' }, billing: 'included', source: 'live', stale: false, autoClassified: false, consented: false },
+      { id: 'sub-fable', displayName: 'Fable', thinking: { kind: 'none' }, billing: 'unknown', source: 'live', stale: false, autoClassified: false, consented: false },
+    ],
+    defaultConsented: false,
+    defaultBilling: 'included',
+  };
+
+  it('P-40: an included row shows no mark and never opens a draft, whatever billing the caller claims', async () => {
+    const store = storeFor(fakeApi(subscriptionView));
+    await store.load('acc-1');
+    const opus = store.state().rows?.find((row) => row.id === 'sub-opus');
+    expect(opus?.mark).toBe('none');
+    store.beginConsent({ model: 'sub-opus', name: 'Opus', billing: 'metered' });
+    expect(store.state().draft).toBeNull();
+  });
+
+  it('P-40: only an unknown row opens the draft, and the draft carries the view billing', async () => {
+    const store = storeFor(fakeApi(subscriptionView));
+    await store.load('acc-1');
+    store.beginConsent({ model: 'sub-fable', name: 'Fable', billing: 'metered' });
+    expect(store.state().draft?.billing).toBe('unknown');
+  });
+
+  it('P-40: the default line follows the view defaultBilling — included opens no consent, no mark', async () => {
+    const store = storeFor(fakeApi(subscriptionView));
+    await store.load('acc-1');
+    expect(store.state().defaultModel?.mark).toBe('none');
+    store.beginConsent({ model: '*', name: null, billing: 'unknown' });
+    expect(store.state().draft).toBeNull();
   });
 });

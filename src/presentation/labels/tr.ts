@@ -295,7 +295,7 @@ export const TR: LabelBundle = {
   'settings.models.revoke': 'İzni kaldır',
   'settings.models.select': 'Seç…',
   'settings.models.consent.title': 'Harcama onayı',
-  'settings.models.consent.body': 'Planın bu modeli kapsamayabilir; kullanımı faturalandırılabilir.',
+  'settings.models.consent.body': 'Bu model planın kapsamında doğrulanamadı; kullanımı faturalandırılabilir.',
   'settings.models.consent.scope': 'Üst sınır dönemi',
   'settings.models.consent.amount': 'Tutar (USD)',
   'settings.models.consent.amountPlaceholder': '0,00',

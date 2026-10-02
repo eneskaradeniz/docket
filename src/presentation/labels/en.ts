@@ -297,7 +297,7 @@ export const EN: LabelBundle = {
   'settings.models.revoke': 'Revoke',
   'settings.models.select': 'Select…',
   'settings.models.consent.title': 'Spend consent',
-  'settings.models.consent.body': 'Your plan may not cover this model; using it may be billed.',
+  'settings.models.consent.body': 'This model could not be verified as covered by the plan; using it may be billed.',
   'settings.models.consent.scope': 'Cap period',
   'settings.models.consent.amount': 'Amount (USD)',
   'settings.models.consent.amountPlaceholder': '0.00',

@@ -256,13 +256,13 @@ export const createAccountModelsStore = (deps: AccountModelsStoreDeps): AccountM
     load: (accountId) => query(accountId, false),
     refresh: () => (state.accountId === null ? Promise.resolve() : query(state.accountId, true)),
     beginConsent: (model) => {
-      if (state.accountId === null || model.billing === 'included') return;
-      if (model.model === '*') {
-        if (state.defaultModel === null || state.defaultModel.billing === 'included') return;
-      } else if (!state.rows?.some((row) => row.id === model.model && row.billing !== 'included')) {
-        return;
-      }
-      set({ ...state, draft: freshDraft(state.accountId, model.model, model.name, model.billing) });
+      if (state.accountId === null) return;
+      // The billing comes from the loaded view, never from the caller: a stale or wrong claim
+      // cannot open a consent for an included model.
+      const billing =
+        model.model === '*' ? state.defaultModel?.billing : state.rows?.find((row) => row.id === model.model)?.billing;
+      if (billing === undefined || billing === 'included') return;
+      set({ ...state, draft: freshDraft(state.accountId, model.model, model.name, billing) });
     },
     editCap: (input) => {
       if (state.draft === null) return;
