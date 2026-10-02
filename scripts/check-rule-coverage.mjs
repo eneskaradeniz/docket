@@ -40,6 +40,7 @@ const SECTIONS = [
 // and an id still pending after its issue closes is a review blocker. This list must be empty
 // when the phase closes.
 const PENDING = new Map([
+  ['providers:P-25a', '#589'],
   ['providers:P-37', '#581'],
   ['providers:P-38', '#581'],
 ]);
