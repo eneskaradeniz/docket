@@ -380,6 +380,10 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
 Rules:
 - **I-31** `createNodeDeps` opens `<dataDir>/docket.db`, uses `<dataDir>` as the global definitions root and `<dataDir>/worktrees` as the worktree root, and wires every `AppDeps` member to the adapters above (clock, `createUlidGen`, SQLite repositories and event log, project repo, YAML store over the repo registry and project paths, keychain vault, worktrees, command runner with `commandEnv`, secret scanner, evidence checker) plus the injected transports and notifier. A too-new database → the `openDatabase` error. `close()` closes the database.
 
+### Account test adapters (#716)
+
+- **I-35** The account-test adapters: `createMemoryAccountTestRepo()` keeps records in memory for the process lifetime and, on `save`, passes `detail` through the secret redaction the gates use (`redactSecrets`) and then cuts it to 300 code points, so a stored detail never carries a token-shaped value. `createScratchDirs()` creates each dir with `mkdtemp` under the OS temp dir, named `docket-account-test-*`, outside every repo and every `identityDir`; `dispose` removes exactly that directory recursively and never fails the caller (a removal error is logged by name only). The SQLite `recordSpend` stores an `account_test` entry with empty strings in the project/repo and work-order columns (no schema change); the repo/project/work-order filters therefore never match it, while an `accountId` filter does.
+
 ## 9. Phase 2b acceptance — headless end to end on real storage
 
 `src/infrastructure/scenarios/standard-flow-node.test.ts` repeats the Phase 2a scenario
