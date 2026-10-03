@@ -1000,6 +1000,84 @@ Rules:
 
 ---
 
+### Account test — "Test et" (#716)
+
+An account whose login cannot be probed (`loggedIn: null`, "Doğrulanamadı") gets a **Test et**
+action: one small real request on the account's route, with a classified result (R-58). It is not a
+work-order run: no `RunRecord`, no queue item, no worktree, no events persisted. It is a real request,
+so P-40 holds exactly as for a run and its spend counts against the account's caps.
+
+```ts
+// ports/account-test-repo.ts — machine-local state for the app's lifetime (in memory, I-35)
+export interface AccountTestRecord {
+  readonly accountId: AccountId;
+  readonly model: string | null;            // the model tested; null = the route's default model
+  readonly state: 'running' | 'ok' | 'failed';
+  readonly class?: AccountTestClass;        // failed only
+  readonly detail?: string;                 // failed only; redacted by the adapter (I-35)
+  readonly startedAt: EpochMs;
+  readonly endedAt?: EpochMs;
+}
+export interface AccountTestRepo {
+  get(accountId: AccountId): Promise<AccountTestRecord | undefined>;
+  save(record: AccountTestRecord): Promise<void>;   // upsert by accountId
+  clear(accountId: AccountId): Promise<void>;
+}
+
+// ports/scratch-dirs.ts — an empty directory outside every repo, for runs that need a cwd but no checkout
+export interface ScratchDir { readonly path: string; dispose(): Promise<void> }
+export interface ScratchDirs { create(purpose: 'account-test'): Promise<ScratchDir> }
+
+// AppDeps gains
+readonly accountTests: AccountTestRepo; readonly scratch: ScratchDirs;
+
+// account-repo.ts — recordSpend takes either entry
+export type RunSpendEntry = { readonly accountId: AccountId; readonly project: ProjectSlug; readonly repo: RepoSlug; readonly workOrderId: WorkOrderId; readonly at: EpochMs; readonly usd: number };
+export type AccountTestSpendEntry = { readonly kind: 'account_test'; readonly accountId: AccountId; readonly at: EpochMs; readonly usd: number };
+recordSpend(entry: RunSpendEntry | AccountTestSpendEntry): Promise<void>;
+
+// event-log.ts — AuditAction gains
+| 'account.tested'
+
+// services/spend-consent.ts — moved out of run-executor.ts unchanged, shared by executeRun and testAccount
+export function spendConsentSatisfied(
+  deps: Pick<AppDeps, 'accounts' | 'modelCatalog' | 'capabilities'>,
+  accountId: AccountId,
+  model: string | undefined,
+): Promise<boolean>;
+
+// use-cases/account-test.ts
+export const ACCOUNT_TEST_TIMEOUT_MS: number;   // 90_000, from the transport start to the deadline
+export const ACCOUNT_TEST_ROLE: RoleDef;        // id 'account-test', name 'Account test', instructions = ACCOUNT_TEST_PROMPT, writeScope { kind: 'none' }, capabilities [], active true
+export type AccountTestError = 'not_found' | 'busy' | 'unsupported' | 'needs_spend_consent' | 'spend_cap_reached';
+export function testAccount(
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'transports' | 'modelCatalog' | 'capabilities' | 'accountTests' | 'scratch'>,
+  input: { readonly id: AccountId; readonly model?: string },
+): Promise<Result<AccountTestView, AccountTestError>>;
+
+// commands.ts
+| { type: 'account.test'; id: string; model?: string }   // answers when the test has ended: { ok: true } or { ok: false, code: AccountTestError }
+
+// queries.ts — SettingsAccountView gains
+readonly test: AccountTestView | null;          // null = never tested since the app started or since the last reset (A-73)
+export interface AccountTestView {
+  readonly state: 'running' | 'ok' | 'failed';
+  readonly class: AccountTestClass | null;      // failed only
+  readonly model: string | null;                // null = the route's default model
+  readonly at: EpochMs;                         // endedAt, or startedAt while running
+  readonly detail: string | null;               // failed only; redacted, at most 300 code points
+}
+```
+
+Rules:
+- **A-68** `testAccount` checks, in this order, before anything is written: unknown account → `not_found`; a stored record in state `running` → `busy`; no transport for the account (`TransportResolver.forAccount` → `undefined`) → `unsupported`; `spendConsentSatisfied(account, model)` false → `needs_spend_consent` (P-40; the same helper as `executeRun`, whose behaviour and tests stay unchanged by the move); `combinedSpendStatus` over the account's own caps (the A-20 windows for `account_day`, `account_week`, `account_month`) blocked → `spend_cap_reached`. A refusal leaves every store unchanged and writes no audit entry.
+- **A-69** Then: save a `running` record (`model` = `input.model ?? null`, `startedAt` = now); create a scratch dir; start the transport with `{ runId: ids.next<'run'>(), cwd: scratch.path, role: ACCOUNT_TEST_ROLE, route: { accountId, model: input.model }, prompt: ACCOUNT_TEST_PROMPT, capabilities: [] }` and no `effort`. Every `permission_ask` is answered `deny`. Events are collected in memory only (never `RunRepo`, never the work-order stream). At `ACCOUNT_TEST_TIMEOUT_MS` after the start the use case calls `stop()` and sets `timedOut`. The scratch dir is disposed on every path, including a start failure and a thrown error; a thrown error saves the record as `failed` with class `unknown` before it propagates.
+- **A-70** The outcome is `classifyAccountTest` (R-58) over the start failure or the collected events. The record is saved as `ok` or `failed` (with `class`, `detail`) and `endedAt`; audit `account.tested` with subject the account and `detail: { model: model ?? '*', result: 'ok' | <class> }` — never the detail text. The returned view is the saved record's view.
+- **A-71** Each `usage` event that carries a cost is recorded with `recordSpend({ kind: 'account_test', accountId, at, usd })`. `spend` with an `accountId` filter counts these entries; a filter by `project`, `repo` or `workOrderId` never matches them — a test spends from the account's caps, never from a repo or project budget.
+- **A-72** `settings.accounts` fills each row's `test` from `AccountTestRepo.get` (`null` without a record); `class` and `detail` are `null` unless the state is `failed`.
+- **A-73** A change that makes an old result meaningless clears it: `account.save` that changes `routeKind`, `endpoint`, `identityDir`, `tierModels` or the secret, and `account.remove`, call `AccountTestRepo.clear` for the account. The view carries `model`, so a surface whose selected model differs from it shows the account as untested; no stored state is needed for that.
+- **A-74** `account.test` maps to `testAccount`: `{ ok: true }` on a finished test (whatever its outcome — the outcome is read from `settings.accounts`), `{ ok: false, code }` on a refusal. An absent or empty `model` means the route's default model.
+
 ## 5. Phase 2a acceptance — headless end to end
 
 `src/api/scenarios/standard-flow.test.ts` (test-only folder in the API layer, which may import the
