@@ -17,6 +17,9 @@ export interface LiveModel {
   readonly resolvedId?: string;
   /** The row the provider uses when no model is pinned. */
   readonly isDefault?: true;
+  /** The context window in tokens the route itself reported. A value that is not a positive
+   *  integer is treated as absent. */
+  readonly contextWindow?: number;
 }
 
 /** One merged catalog entry: registry capabilities where known, unknown-but-selectable otherwise. */
@@ -47,14 +50,25 @@ export interface FamilyPattern {
   readonly tier: Tier;
 }
 
+const isPositiveInteger = (value: number | undefined): value is number =>
+  value !== undefined && Number.isInteger(value) && value > 0;
+
+// P-29a: a window the route itself reported wins over the registry's; a value that is not a
+// positive integer is absent on either side, and the record answers only when the row is silent.
+const mergedContextWindow = (live: number | undefined, record: ModelRecord | undefined): number | null => {
+  if (isPositiveInteger(live)) return live;
+  const fromRecord = record?.contextWindow;
+  return isPositiveInteger(fromRecord) ? fromRecord : null;
+};
+
 const bundledEntry = (record: ModelRecord): CatalogModel => ({
   id: record.id,
   source: 'bundled',
   tier: record.tier,
   thinking: record.thinking,
   billing: record.billing ?? 'unknown',
-  // No registry row carries a window today (A-63); the value arrives per adapter, later.
-  contextWindow: null,
+  // A-63: no registry row carries a window today; the record's own value answers when one lands.
+  contextWindow: mergedContextWindow(undefined, record),
 });
 
 /** The id a registry record is compared by: one trailing bracketed variant (`[1m]`) and one
@@ -90,7 +104,7 @@ const liveEntry = (model: LiveModel, record: ModelRecord | undefined, context: L
       tier: record.tier,
       thinking: record.thinking,
       billing: model.billing ?? record.billing ?? 'unknown',
-      contextWindow: null,
+      contextWindow: mergedContextWindow(model.contextWindow, record),
       ...marker,
     };
   }
@@ -102,7 +116,15 @@ const liveEntry = (model: LiveModel, record: ModelRecord | undefined, context: L
   const billing: Billing = model.billing ?? family?.billing ?? context.defaultBilling ?? 'unknown';
   const pattern = context.familyPatterns.find((candidate) => reported.includes(candidate.contains));
   return pattern === undefined
-    ? { id: model.id, displayName: model.displayName, source: 'live', thinking, billing, contextWindow: null, ...marker }
+    ? {
+        id: model.id,
+        displayName: model.displayName,
+        source: 'live',
+        thinking,
+        billing,
+        contextWindow: mergedContextWindow(model.contextWindow, undefined),
+        ...marker,
+      }
     : {
         id: model.id,
         displayName: model.displayName,
@@ -111,7 +133,7 @@ const liveEntry = (model: LiveModel, record: ModelRecord | undefined, context: L
         thinking,
         autoClassified: true,
         billing,
-        contextWindow: null,
+        contextWindow: mergedContextWindow(model.contextWindow, undefined),
         ...marker,
       };
 };

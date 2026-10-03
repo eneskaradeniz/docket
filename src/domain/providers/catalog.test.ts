@@ -552,6 +552,65 @@ describe('mergeCatalog familyBilling (P-42)', () => {
   });
 });
 
+describe('mergeCatalog context window (P-29a)', () => {
+  const OPUS_WINDOWED: ModelRecord = { ...OPUS_4_9, contextWindow: 200_000 };
+
+  it('P-29a: a positive integer the live row reported becomes the merged window on every live branch', () => {
+    const merged = mergeCatalog(
+      [
+        { id: 'claude-opus-4-9', contextWindow: 180_000 },
+        { id: 'claude-opus-4-6', efforts: ['low', 'high'], contextWindow: 170_000 },
+        { id: 'grok-4-fast', contextWindow: 160_000 },
+      ],
+      [OPUS_WINDOWED],
+      FAMILY_PATTERNS,
+    );
+    // The matched-record, family-pattern and plain live-only branches all carry the row's own value.
+    expect(merged.find((model) => model.id === 'claude-opus-4-9')?.contextWindow).toBe(180_000);
+    expect(merged.find((model) => model.id === 'claude-opus-4-6')?.contextWindow).toBe(170_000);
+    expect(merged.find((model) => model.id === 'grok-4-fast')?.contextWindow).toBe(160_000);
+  });
+
+  it('P-29a: a live value that is not a positive integer is absent — the record answers, or null without one', () => {
+    const merged = mergeCatalog(
+      [
+        { id: 'claude-opus-4-9', contextWindow: 0 },
+        { id: 'claude-opus-4-6', contextWindow: -4096 },
+        { id: 'grok-4-fast', contextWindow: 131_072.5 },
+      ],
+      [OPUS_WINDOWED],
+      FAMILY_PATTERNS,
+    );
+    expect(merged.find((model) => model.id === 'claude-opus-4-9')?.contextWindow).toBe(200_000);
+    expect(merged.find((model) => model.id === 'claude-opus-4-6')?.contextWindow).toBeNull();
+    expect(merged.find((model) => model.id === 'grok-4-fast')?.contextWindow).toBeNull();
+  });
+
+  it('P-29a: the matched record window answers when the live row reports none', () => {
+    const merged = mergeCatalog([{ id: 'claude-opus-4-9' }], [OPUS_WINDOWED], FAMILY_PATTERNS);
+    expect(merged[0]?.contextWindow).toBe(200_000);
+  });
+
+  it('P-29a: a live-reported window wins over the registry record', () => {
+    const merged = mergeCatalog([{ id: 'claude-opus-4-9', contextWindow: 180_000 }], [OPUS_WINDOWED], FAMILY_PATTERNS);
+    expect(merged[0]?.contextWindow).toBe(180_000);
+  });
+
+  it('P-29a: neither side reports a positive integer — the window stays null, a non-positive record value included', () => {
+    const NON_POSITIVE: ModelRecord = { ...OPUS_4_9, contextWindow: 0 };
+    const matched = mergeCatalog([{ id: 'claude-opus-4-9' }], [NON_POSITIVE], FAMILY_PATTERNS);
+    expect(matched[0]?.contextWindow).toBeNull();
+    const liveOnly = mergeCatalog([{ id: 'grok-4-fast' }], [], FAMILY_PATTERNS);
+    expect(liveOnly[0]?.contextWindow).toBeNull();
+  });
+
+  it('P-29a: a bundled-only entry uses the registry record window, or null without one', () => {
+    const merged = mergeCatalog([{ id: 'claude-sonnet-5-1' }], [OPUS_WINDOWED, SONNET_5_1], FAMILY_PATTERNS);
+    expect(merged.find((model) => model.id === 'claude-opus-4-9')?.contextWindow).toBe(200_000);
+    expect(merged.find((model) => model.id === 'claude-sonnet-5-1')?.contextWindow).toBeNull();
+  });
+});
+
 describe('effortForChoice (R-50)', () => {
   const LISTED: Thinking = { kind: 'levels', levels: ['low', 'medium', 'high'] };
 

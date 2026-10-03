@@ -1082,7 +1082,8 @@ Flow: `standard`.
    `review/ready`.
 3. **Leg 3 — back to A at review.** `orderForReview` (R-52) puts A first for the review stage (B
    wrote the stage). Assert the review run's prompt inlines **nothing** (A reads `CLAUDE.md`
-   natively) and carries the same Docket layers byte-for-byte as leg 2's prompt prefix. Script A:
+   natively) and shares the flow and work-order spine of the Docket layers with leg 2's prompt
+   (the review stage's own text differs). Script A:
    completed. `submitAgentVerdict` approve → `close/awaiting_human`; audit trail ends with the
    expected actions in order, including one `run.handoff`.
 
