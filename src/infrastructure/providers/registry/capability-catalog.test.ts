@@ -2,6 +2,8 @@
 // that name no route kind, and the fixed surface saveAccount validates endpoints against.
 import { describe, expect, it } from 'vitest';
 
+import { BUILTIN_PROVIDER_DEFS } from '../defs/index';
+import { CAPABILITY_REGISTRY } from './capability-registry';
 import { createCapabilityCatalog } from './capability-catalog';
 import { findRouteKind } from './capability-registry';
 
@@ -32,6 +34,31 @@ describe('createCapabilityCatalog', () => {
       const id = catalog.routeKindOf({ provider: 'claude-code', authMode });
       expect(id).toBeDefined();
       expect(findRouteKind(id ?? '')).toBeDefined();
+    }
+  });
+
+  it('P-28: every built-in provider with a subscription route kind resolves exactly that kind as its default, and every resolved default names a registry kind of the same provider', () => {
+    // The default mapping must stay in lockstep with the built-in definitions: a new provider
+    // whose registry kind carries authMode 'subscription' cannot be added without its default
+    // route, or account adoption and operator runs resolve no route for it and fail.
+    const catalog = createCapabilityCatalog();
+
+    for (const def of BUILTIN_PROVIDER_DEFS) {
+      const own = CAPABILITY_REGISTRY.routeKinds.find(
+        (kind) => kind.providerId === def.id && kind.authMode === 'subscription',
+      );
+      if (own === undefined) continue;
+      expect(catalog.routeKindOf({ provider: def.id, authMode: 'subscription' }), def.id).toBe(own.id);
+    }
+
+    // And every entry the mapping carries (read back over the built-ins) names a registry route
+    // kind belonging to that same provider — never a kind of another provider.
+    for (const authMode of ['subscription', 'api_key'] as const) {
+      for (const def of BUILTIN_PROVIDER_DEFS) {
+        const id = catalog.routeKindOf({ provider: def.id, authMode });
+        if (id === undefined) continue;
+        expect(findRouteKind(id), `${def.id} ${authMode}`).toMatchObject({ providerId: def.id });
+      }
     }
   });
 

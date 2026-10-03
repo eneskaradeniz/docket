@@ -25,7 +25,9 @@ const DEFAULT_ROUTE_KINDS: Readonly<Record<string, Readonly<Partial<Record<AuthM
   qwen: { subscription: 'qwen-login' },
   qoder: { subscription: 'qoder-login' },
   kiro: { subscription: 'kiro-login' },
+  amp: { subscription: 'amp-login' },
   kimi: { subscription: 'kimi-login' },
+  codebuddy: { subscription: 'codebuddy-login' },
 };
 
 export const createCapabilityCatalog = (): CapabilityCatalog => ({
