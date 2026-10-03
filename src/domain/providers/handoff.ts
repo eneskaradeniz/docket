@@ -202,3 +202,22 @@ export function renderHandoffPrompt(pack: HandoffPack): string {
 
   return lines.join('\n');
 }
+
+// FNV-1a's 32-bit offset basis and prime; Math.imul keeps the multiply a 32-bit one (Math.random
+// is the banned Math member — this is the deterministic integer arithmetic the algorithm needs).
+const FNV_OFFSET_BASIS = 0x811c9dc5;
+const FNV_PRIME = 0x01000193;
+
+/** Pure 32-bit FNV-1a over the text, rendered as 8 lower-case hex chars. Deterministic (R-57):
+ *  the same text always yields the same digest, different text a different one. `executeRun`
+ *  writes it as the run record's `definitionsRev` — the digest of the Docket layers the agent
+ *  was given (`stageBrief`, then `role.instructions`); `buildHandoff` compares it to the digest
+ *  of the current layers for `definitionsChanged` (A-62). */
+export function definitionsDigest(text: string): string {
+  let hash = FNV_OFFSET_BASIS;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, FNV_PRIME);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}

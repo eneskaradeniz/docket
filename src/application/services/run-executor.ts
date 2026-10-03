@@ -1,6 +1,6 @@
 // services/run-executor.ts — drives one run from start to finish (docs/v2/application.md A-15 … A-18,
-// the checkpoint cadence A-57 … A-59, plus the executor-side resume fallback P-22 of
-// docs/v2/providers.md).
+// the checkpoint cadence A-57 … A-59, the rolling note and handoff runs A-60/A-64, plus the
+// executor-side resume fallback P-22 of docs/v2/providers.md).
 import type {
   AccountId,
   AccountRoute,
@@ -15,25 +15,30 @@ import type {
   QueueItem,
   Result,
   RoleDef,
+  RollingNote,
   RunId,
   RunOutcome,
   Tier,
   WorkOrderId,
 } from '../../domain/index';
 import {
+  applyRoleOverrides,
   billingFromPools,
   CHECKPOINT_MIN_INTERVAL_MS,
   decideOnLimit,
+  definitionsDigest,
   effortForChoice,
+  extendRollingNote,
   foldRun,
   resolveTier,
+  stageBrief,
 } from '../../domain/index';
 
 import type { AccountRecord, AppDeps, AuditAction, RunHandle, RunRecord, RunRepo, TransportError } from '../ports';
 
 import { catalogOrEmpty, matchIdFor } from './match-id';
 import type { BoardHooks } from './permission-board';
-import { commitCheckpoint } from '../use-cases/index';
+import { buildHandoff, commitCheckpoint } from '../use-cases/index';
 
 export interface ExecuteRunInput {
   readonly item: QueueItem;
@@ -47,7 +52,7 @@ export type ExecuteOutcome =
   | { readonly kind: 'finished'; readonly outcome: RunOutcome }
   | { readonly kind: 'transport_error'; readonly error: TransportError }
   | { readonly kind: 'limit'; readonly decision: LimitDecision }
-  | { readonly kind: 'refused'; readonly error: 'needs_spend_consent' };
+  | { readonly kind: 'refused'; readonly error: 'needs_spend_consent' | 'handoff_failed' };
 
 export interface PermissionGate {
   onAsk(runId: RunId, ask: Extract<AgentEvent, { readonly type: 'permission_ask' }>): Promise<'allow' | 'deny'>;
@@ -282,6 +287,26 @@ const spendConsentSatisfied = async (
   return consented && (account?.caps.length ?? 0) > 0;
 };
 
+/** A-15: the run record's `definitionsRev` — the digest of the Docket layers the agent was given,
+ *  the same brief `composeRunPrompt` led the prompt with (`stageBrief` over the current
+ *  definitions, role overrides applied). A definitions load or resolution failure leaves the rev
+ *  unset: `buildHandoff` reads a missing rev as "unchanged", never as a false change (A-62). */
+const definitionsRevOf = async (
+  deps: Pick<AppDeps, 'definitions' | 'workOrders'>,
+  item: QueueItem,
+  role: RoleDef,
+): Promise<string | undefined> => {
+  const record = await deps.workOrders.get(item.workOrderId);
+  const loaded = await deps.definitions.load(item.repo);
+  if (record === undefined || !loaded.ok) return undefined;
+  const flow = loaded.value.flows.find((candidate) => candidate.id === record.flow);
+  const stage = flow?.stages.find((candidate) => candidate.id === item.stage);
+  const baseRole = loaded.value.roles.find((candidate) => candidate.id === role.id);
+  if (flow === undefined || stage === undefined || baseRole === undefined) return undefined;
+  const overridden = applyRoleOverrides(baseRole, loaded.value.repo?.roleOverrides ?? []);
+  return definitionsDigest(stageBrief(flow, stage, overridden, { id: record.id, title: record.title }));
+};
+
 /** An unpinned route with a tier runs the best model of that tier: the account's own tier table,
  *  else the route kind's, else the highest auto-selectable catalog entry. No such model leaves the
  *  route unpinned, so the CLI's own default runs. */
@@ -304,7 +329,18 @@ const routeForTier = async (
 export async function executeRun(
   deps: Pick<
     AppDeps,
-    'clock' | 'ids' | 'log' | 'workOrders' | 'runs' | 'accounts' | 'transports' | 'modelCatalog' | 'capabilities' | 'checkpoints'
+    | 'clock'
+    | 'ids'
+    | 'log'
+    | 'workOrders'
+    | 'runs'
+    | 'accounts'
+    | 'transports'
+    | 'modelCatalog'
+    | 'capabilities'
+    | 'checkpoints'
+    | 'definitions'
+    | 'instructionFiles'
   >,
   permissions: PermissionGate,
   input: ExecuteRunInput,
@@ -317,13 +353,28 @@ export async function executeRun(
   if (!(await spendConsentSatisfied(deps, route.accountId, route.model))) {
     return { kind: 'refused', error: 'needs_spend_consent' };
   }
+
+  // A-64: a handoff continuation builds the pack before the transport starts — before the run
+  // record even exists, so a pack failure refuses the run with the pack's audit entry as the only
+  // write. The pack's prompt replaces the composed one; native resume and the pack are never
+  // mixed, so the attempt's resume reference is dropped whatever the stage history says.
+  let prompt = input.prompt;
+  const handoffOf = item.handoffOf;
+  if (handoffOf !== undefined) {
+    const pack = await buildHandoff(deps, { runId: handoffOf, cwd: input.cwd, candidates: [route] });
+    if (!pack.ok) return { kind: 'refused', error: 'handoff_failed' };
+    prompt = pack.value.prompt;
+  }
+
   const plan = planAttempt(
     (await deps.runs.listForWorkOrder(item.workOrderId)).filter((run) => run.stage === item.stage),
   );
+  const resume = handoffOf === undefined ? plan.resume : undefined;
 
   const effort = await resolveEffort(deps, item, route);
   const runId = deps.ids.next<'run'>();
   const startedAt = deps.clock.now();
+  const definitionsRev = await definitionsRevOf(deps, item, input.role);
   await deps.runs.create({
     id: runId,
     workOrderId: item.workOrderId,
@@ -333,6 +384,7 @@ export async function executeRun(
     route,
     startedAt,
     autoResumesUsed: plan.autoResumesUsed,
+    ...(definitionsRev !== undefined ? { definitionsRev } : {}),
   });
   await deps.workOrders.appendEvent(item.workOrderId, {
     type: 'run_started',
@@ -341,13 +393,16 @@ export async function executeRun(
     stage: item.stage,
     attempt: plan.attempt,
   });
+  const startedDetail = {
+    ...(handoffOf !== undefined ? { handoff: true, handoffOf } : {}),
+    ...(resolved ?? {}),
+    ...(effort !== undefined ? { effort } : {}),
+  };
   await audit(deps, {
     at: startedAt,
     action: 'run.started',
     runId,
-    ...(effort !== undefined || resolved !== undefined
-      ? { detail: { ...(resolved ?? {}), ...(effort !== undefined ? { effort } : {}) } }
-      : {}),
+    ...(Object.keys(startedDetail).length > 0 ? { detail: startedDetail } : {}),
   });
   // From here the run is answerable through the board, until its record closes.
   board?.register(runId);
@@ -405,12 +460,13 @@ export async function executeRun(
   // The port has no resume-specific error code, so a start that fails while a session reference
   // was requested is the only contract-level sign the transport could not resume. One restart
   // without resume is the remedy this executor owns; a restart that fails the same way is a
-  // transport error and fails the run — there is no third attempt.
-  const started = await startAttempt(plan.resume, input.prompt);
+  // transport error and fails the run — there is no third attempt. A handoff run asked for no
+  // resume, so it owns no restart either: its prompt is the pack, not a summary over a session.
+  const started = await startAttempt(resume, prompt);
   let handle: RunHandle;
   if (started.ok) {
     handle = started.value;
-  } else if (plan.resume === undefined || plan.resumedRunId === undefined) {
+  } else if (resume === undefined || plan.resumedRunId === undefined) {
     return failAsTransport(started.error);
   } else {
     const restart = await startAttempt(
@@ -421,8 +477,13 @@ export async function executeRun(
     handle = restart.value;
   }
 
+  // A-60: the rolling note rides the persisted stream — extended and saved with every event batch,
+  // so it exists the moment the account blocks.
+  let note: RollingNote | undefined;
   for await (const event of handle.events) {
     await deps.runs.appendEvents(runId, [event]);
+    note = extendRollingNote(note, [event]);
+    await deps.runs.saveHandoffNote(runId, note);
     notify?.(runId);
     switch (event.type) {
       case 'session_started':
