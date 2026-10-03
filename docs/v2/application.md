@@ -1000,6 +1000,45 @@ Rules:
 
 ---
 
+### Quota wiring, billing view, machine-login candidates (P-48 … P-53)
+
+```ts
+// services/quota-service.ts — owns P-49's schedule; the composition root starts it
+export const QUOTA_POLL_INTERVAL_MS: number;   // 300_000
+export interface QuotaService {
+  start(): void;                                // first pass for every account, then the interval
+  stop(): void;
+  refresh(accountId?: AccountId): Promise<void>; // one account or all; resolves when the polls end
+}
+export function createQuotaService(
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'capabilities'>,
+  probes: QuotaProbeResolver,
+  timers: { setInterval(fn: () => void, ms: number): unknown; clearInterval(handle: unknown): void },
+  onChanged: () => void,                        // the api emits `accounts.changed`
+): QuotaService;
+
+// api.ts — UiEvent gains
+| { readonly type: 'accounts.changed' }
+// commands.ts
+| { type: 'quota.refresh'; id?: string }        // answers { ok: true } after the polls end
+// queries.ts
+| { type: 'accounts.candidateQuota'; sourcePath: string } → CandidateQuotaView
+export type CandidateQuotaView =
+  | { readonly ok: true; readonly pools: readonly SettingsPoolView[]; readonly meters: readonly SettingsMeterView[] }
+  | { readonly ok: false; readonly code: QuotaProbeError | 'needs_account' | 'not_found' };
+// SettingsAccountView gains
+readonly billing: 'included' | 'metered' | 'unknown';   // P-51 billing view
+// ports/account-discovery.ts — AccountCandidate.kind gains 'machine_login'; the candidate gains
+readonly provider: string;                               // the def id (A-67 resolved it from the route kind)
+```
+
+Rules:
+- **A-80** `createQuotaService`: `start` polls every account once (in `AccountRepo.list` order, one at a time), then every `QUOTA_POLL_INTERVAL_MS`; an account whose route kind's `quotaProbe` is `none` is skipped. A poll for an account already in flight is not started twice (the second call awaits the first). After `account.adopt` and after an `account.save` that changes the route (the A-73 field set), the api calls `refresh(id)` without awaiting it. Each finished poll — ok or error — calls `onChanged` once. A probe error never throws out of the service.
+- **A-81** `quota.refresh` maps to `refresh(id)` (unknown id → `not_found`); without `id` it refreshes every account. It audits nothing (a read, not a change).
+- **A-82** `accounts.candidateQuota` finds the candidate by `sourcePath` (`not_found`); a `compatible_endpoint` candidate → `needs_account`; otherwise it polls the candidate's provider with `{ accountId: null, identityDir }` (`identityDir` = `sourcePath` for a Claude-style directory, `null` for `machine_login`) and returns pools and meters with synthetic ids, without saving anything. A result is cached per `sourcePath` for 60 s.
+- **A-83** `settings.accounts` fills `billing` with the P-51 billing view; the presentation's pay-per-use and cap predicates (`isPayPerUse`, `mayHaveCap`) read `billing !== 'included'`, never `authMode`. `spend-consent.ts`'s `defaultBillingOf` returns `unknown` (not `metered`) for a non-subscription route kind without `defaultBilling`; `executeRun`'s and `testAccount`'s refusals are unchanged for `metered` and `unknown` alike.
+- **A-84** `account.adopt` accepts a `machine_login` candidate (P-53): the record is `{ provider, label, authMode: 'subscription', routeKind, limitPolicy: 'wait_resume', caps: [] }` with no `identityDir`, `endpoint` or `secretRef`; `importToken` is ignored for it. `accounts.candidates` lists machine-login candidates after the directory candidates, provider order as `providers.discovered`.
+
 ### Create a project from the built-in library (#370)
 
 A first run from an empty data dir reaches a working board without hand-written files. Operator
