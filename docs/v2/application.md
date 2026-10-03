@@ -103,7 +103,7 @@ export interface RunRecord {
   readonly attempt: number;
   readonly role: RoleSlug;
   readonly route: AccountRoute;
-  readonly definitionsRev?: string;       // revision marker of the definitions the stage prompt was computed from; drives A-62's changed-note
+  readonly definitionsRev?: string;       // definitionsDigest of the Docket layers the agent was given (stageBrief, then role.instructions); executeRun writes it at record creation; drives A-62's changed-note
   readonly startedAt: EpochMs;
   readonly endedAt?: EpochMs;
   readonly outcome?: RunOutcome;
@@ -400,7 +400,8 @@ export type CheckpointError = 'git_failed';
 export interface CheckpointCommitter {
   /** `git add -A` + commit in the worktree. A clean tree → { changed: false }, no commit. Commits
    *  are local-only (push stays with the forge flow); author/committer is the Docket checkpoint
-   *  identity, never a user. */
+   *  identity `Docket <checkpoints@docket.local>` — passed as `git -c user.name -c user.email`, so
+   *  it outranks repo and global config alike — never a user. */
   commit(input: { readonly cwd: string; readonly runId: RunId; readonly seq: number }): Promise<Result<CheckpointRef, CheckpointError>>;
   /** The diff since `since`. The patch is redacted through the secret patterns (the scanner's
    *  `redactSecrets`) at this boundary — application and domain never see unredacted patch text. */
@@ -582,7 +583,7 @@ export type HandoffError = 'not_found' | 'no_repo' | 'git_failed' | 'definitions
 export function buildHandoff(
   deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'definitions' | 'workOrders' | 'runs' | 'accounts'
                    | 'capabilities' | 'instructionFiles' | 'checkpoints' | 'modelCatalog'>,
-  input: { readonly runId: RunId; readonly candidates: readonly AccountRoute[] },
+  input: { readonly runId: RunId; readonly cwd: string; readonly candidates: readonly AccountRoute[] },
 ): Promise<Result<HandoffPlan, HandoffError>>;
 ```
 
@@ -590,20 +591,22 @@ export function buildHandoff(
 building `prompt: role.instructions` itself and calls this instead. The use case loads the work
 order record itself: `flow` comes from the record's `record.flow` — the value the dispatcher and
 the gates resolve against — and the title from the same record; the input shape does not change.
-`buildHandoff` loads the failed
-run and its events, the work order and definitions, the rolling note, the stage base (falling back
-to the worktree base ref), the diff, and the candidates' context windows (`null` where none is
-known); assembles the pack **for the target provider** (its native files), sizes it (fixed
-ceilings first; a known window only tightens them — A-63), renders it, and appends audit
+`buildHandoff` takes the failed run's worktree as `cwd`: the executor supplies it, the same way
+`composeRunPrompt` and `commitCheckpoint` receive theirs — a handoff never recreates a worktree,
+and `no_repo` is the checkpoint adapter's verdict that `cwd` is not a git working tree. It loads
+the failed run and its events, the work order and definitions, the rolling note, the stage base
+(falling back to the worktree base ref), the diff, and the candidates' context windows (`null`
+where none is known); assembles the pack **for the target provider** (its native files), sizes it
+(fixed ceilings first; a known window only tightens them — A-63), renders it, and appends audit
 `run.handoff` with `detail: { fromRun: runId, candidates: candidates.length }`.
 
 Rules:
-- **A-53** `composeRunPrompt` builds every run's prompt: Docket layers first (`stageBrief`, then `role.instructions`), then the instruction block as project context. The Docket layers are byte-identical for every provider given the same definitions; only the instruction block varies. A missing work order record is `not_found`.
+- **A-53** `composeRunPrompt` builds every run's prompt: Docket layers first (`stageBrief`, then `role.instructions`), then the instruction block as project context. The Docket layers are byte-identical for every provider given the same definitions; only the instruction block varies. `not_found` is the record-or-resolution error: the work order record is missing, or a record exists whose `record.flow`, or whose requested `stage`/`role`, the loaded definitions can no longer resolve (the gates' precedent — a run that can no longer be prompted). Definitions that fail to load are `definitions_invalid`, never `not_found`.
 - **A-54** Native instruction files come from the registry through `CapabilityCatalog.nativeInstructionFiles` for the route account's provider; a file the provider reads natively is never inlined. An unknown provider (no registry record) has no native set: every present candidate is inlined, so the "same rules on both providers" guarantee survives where the registry has never heard of the provider — inlining all beats a smaller prompt. The registry row is the provider's best-known set, not a fixed law of the CLI — some CLIs make the set configurable (a fallback-filename list can add `CLAUDE.md`, a context-file setting can rename it) — so a file the CLI reads natively but the row misses is inlined as well: the content reaching the agent twice is the safe failure, missing it is not.
 - **A-55** Inlining stays within `DEFAULT_INSTRUCTION_BUDGET_CHARS`: candidates in registry order, whole while the budget allows, then truncated to the remainder with a marker naming the file and the kept chars; `plan.truncated` lists the dropped. Deterministic for the same inputs. Budgets are chars, not tokens — no provider's tokenizer is consulted; the constants (`DEFAULT_INSTRUCTION_BUDGET_CHARS`, `ROLLING_NOTE_MAX_CHARS`, `PACK_CHARS_PER_TOKEN`) are revisited only when a tokenizer actually matters in practice.
 - **A-56** The instructions path never writes to the repo (the O-6 canonical-file proposal stays a normal diff in a work order). Instruction-file content is repo-author content below the Docket layers and never becomes a Docket instruction. The trust boundary is marked, not implied: everything the pack and the prompt quote — instruction files read from the repo, and any issue, page or upload content that later rides the same path — travels as **data** under a heading that says so, never as Docket's system instruction; content read from the repo or the web is untrusted input to Docket, and the pack says so where the agent reads it.
 - **A-61** `deriveTaskState` is deterministic from stored events plus the checkpoint diff's file list; raw transcripts and session refs never enter the pack.
-- **A-62** `buildHandoff` assembles P-38 items 1–6 in the `HandoffPack` field order, plus the `definitionsChanged` marker. The stage prompt is recomputed from the current definitions — it is never stored on the run; the run record carries `definitionsRev`, the revision marker of the definitions its stage prompt was computed from, and when the continuation sees a different revision the pack sets `definitionsChanged` and the prompt carries the note "definition changed since the first leg" (R-57) — the change is surfaced to the continuation, never silently absorbed; whether old and new definitions are equivalent stays outside the pack's guarantees. The patch is redacted at the port boundary before it enters the pack; the previous provider's `sessionRef` never enters it.
+- **A-62** `buildHandoff` assembles P-38 items 1–6 in the `HandoffPack` field order, plus the `definitionsChanged` marker. The stage prompt is recomputed from the current definitions — it is never stored on the run. The run record carries `definitionsRev`: `executeRun` writes it at record creation as `definitionsDigest` of the Docket layers the agent was given (`stageBrief` then `role.instructions`). `buildHandoff` sets `definitionsChanged` when the recorded rev differs from the digest of the current layers; a run with no recorded rev counts as unchanged. With `definitionsChanged` set the prompt carries the note "definition changed since the first leg" (R-57) — the change is surfaced to the continuation, never silently absorbed; whether old and new definitions are equivalent stays outside the pack's guarantees. The patch is redacted at the port boundary before it enters the pack; the previous provider's `sessionRef` never enters it.
 - **A-63** The pack's budget starts from the fixed ceilings (`DEFAULT_INSTRUCTION_BUDGET_CHARS` for the instruction block, `ROLLING_NOTE_MAX_CHARS` for the summary); a known window only tightens it — `min` over the candidate routes' known windows × `PACK_CHARS_PER_TOKEN` (`ModelCatalog` entries; `contextWindow` rides the P-29 merge on `CatalogModel`, `null` = no window known). A `null` window contributes no bound: the ceilings alone size the pack, with `DEFAULT_CONTEXT_WINDOW_TOKENS` as the stand-in for the unknown window — it sits above the ceilings, so the no-data path is the rule rather than the exception (ten of nineteen surveyed providers report no window through any channel and no registry row carries a value; the handoff works without the data, and filling windows per adapter is follow-up issues). Truncation priority is fixed (R-56): stage prompt and Docket layers never truncate.
 
 ---
@@ -620,7 +623,7 @@ export type ExecuteOutcome =
   | { readonly kind: 'refused'; readonly error: 'needs_spend_consent' };
 export interface PermissionGate { onAsk(runId: RunId, ask: Extract<AgentEvent, { readonly type: 'permission_ask' }>): Promise<'allow' | 'deny'> }
 export function executeRun(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'runs' | 'accounts' | 'transports' | 'modelCatalog' | 'capabilities'>,
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'runs' | 'accounts' | 'transports' | 'modelCatalog' | 'capabilities' | 'checkpoints'>,
   permissions: PermissionGate,
   input: ExecuteRunInput,
 ): Promise<ExecuteOutcome>;
@@ -651,7 +654,7 @@ for every other auth mode. Billing comes from the `ModelCatalog` port. The refus
 any write, so a refused run leaves every store unchanged.
 
 Rules:
-- **A-15** `executeRun`: creates the `RunRecord` (`autoResumesUsed` from a previous run of the same stage+attempt if resuming, else 0), appends `run_started` to the work order and audit `run.started`, then starts the transport for `route.accountId`. A missing transport or a start error → `transport_error`, the run record gets `endedAt` and outcome `failed`, and `run_finished: failed` is appended.
+- **A-15** `executeRun`: creates the `RunRecord` (`autoResumesUsed` from a previous run of the same stage+attempt if resuming, else 0; `definitionsRev` = `definitionsDigest` of the Docket layers the agent was given — `stageBrief`, then `role.instructions`), appends `run_started` to the work order and audit `run.started`, then starts the transport for `route.accountId`. A missing transport or a start error → `transport_error`, the run record gets `endedAt` and outcome `failed`, and `run_finished: failed` is appended.
 - **A-16** While streaming, every event is persisted with `RunRepo.appendEvents` in arrival order (batched is fine, order is not negotiable). `session_started` sets `sessionRef`. `permission_ask` is passed to `PermissionGate.onAsk` and the answer to `answerPermission`. `quota_signal` → `AccountRepo.saveMeter` (a new `MeterId` from `IdGen` unless a meter with the same pool label and duration exists). `usage` with a cost → `recordSpend`.
 - **A-17** On `limit_hit`: build a `LimitHit` for the run's account, ask the domain `decideOnLimit` with the account's policy and `autoResumesUsed`, end the run with outcome `limit`, append `run_finished: limit`, and return `{ kind: 'limit', decision }`. Scheduling the resume is the caller's job.
 - **A-17a** `applyLimitDecision`: `schedule_resume` → put a queue item for the run's work order and stage with the same route, `notBefore = decision.at`, and increment the run's `autoResumesUsed` on the record; `switch_pool` → a queue item routed to the same account (pool choice is re-evaluated at dispatch); `fallback` → a queue item with `route = decision.route`; `ask` → no queue item (the work order stays `limit_waiting` and shows in the cockpit).
@@ -663,7 +666,7 @@ Rules:
 
 `ExecuteOutcome`'s `refused` error union gains `'handoff_failed'` (A-64). Rules:
 
-- **A-57** The executor commits a checkpoint at each `tool_result` boundary when `CHECKPOINT_MIN_INTERVAL_MS` has elapsed since the last commit, and always at `limit_hit`, `finished` and stream end. A clean tree is a no-op (`changed: false`), never an error. Commits are local-only and authored by the Docket checkpoint identity, never a user; they never travel to the forge. The cadence is event-boundary + terminal only — no background timer exists; the executor's stream is the only clock application may read. (`AgentEvent.tool_result` carries only `{ id, ok }`, so "each tool-result boundary that changed files" is implemented as commit-at-each-boundary with git as the arbiter.)
+- **A-57** The executor commits a checkpoint at each `tool_result` boundary when `CHECKPOINT_MIN_INTERVAL_MS` (`30_000`, [domain.md](domain.md) §11) has elapsed since the last commit, and always at `limit_hit`, `finished` and stream end. The threshold is a clock comparison made inside the event flow at each boundary, not a scheduler: the cadence is event-boundary + terminal only — no background timer exists; the executor's stream is the only clock application may read. A clean tree is a no-op (`changed: false`), never an error. Commits are local-only and authored by the Docket checkpoint identity `Docket <checkpoints@docket.local>`, never a user; they never travel to the forge. (`AgentEvent.tool_result` carries only `{ id, ok }`, so "each tool-result boundary that changed files" is implemented as commit-at-each-boundary with git as the arbiter.)
 - **A-58** Checkpoint commits touch only the work order's worktree (I-20's guarantee unchanged); the user's checkout, its branch and its index are never modified.
 - **A-59** The first commit of a stage attempt records its sha via `RunRepo.saveStageBase`. The pack's code state is `diffSince(stageBase)`; with no checkpoint (a clean stage) it is `diffSince(worktree base ref)`.
 - **A-60** The rolling note is extended with every persisted event batch (`extendRollingNote`) and saved through `RunRepo.saveHandoffNote` on the same cadence — so it exists the moment the account blocks. It is the tail of the text/thinking stream, capped at `ROLLING_NOTE_MAX_CHARS` with `capped: true`; no other content is derived into it (the model-written summary stays optional and unanswered, open decision O-8).

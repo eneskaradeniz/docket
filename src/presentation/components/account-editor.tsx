@@ -63,8 +63,11 @@ export interface AccountEditorProps {
   readonly account: SettingsAccountView;
   readonly locale: Locale;
   readonly store: AccountEditorStore;
-  /** The models list and the spend-consent flow of the Modeller tab (U-32). */
-  readonly models: AccountModelsStore;
+  /** The models list and the spend-consent flow of the Modeller tab (U-32); a host without a
+   *  stored account (the wizard's draft window) passes none and offers no Modeller tab. */
+  readonly models?: AccountModelsStore;
+  /** The tabs this host offers, in order; every tab when absent. */
+  readonly tabs?: readonly EditorTab[];
   /** A moment in the active locale (meter resets, the last read). */
   readonly formatTime: (epochMs: number | null) => string | null;
   /** Re-reads the account's meters ("Yenile"). */
@@ -561,7 +564,7 @@ function Limits({ account, locale, store }: Pick<AccountEditorProps, 'account' |
   );
 }
 
-function Models({ account, locale, models, onRefresh }: Pick<AccountEditorProps, 'account' | 'locale' | 'models' | 'onRefresh'>) {
+function Models({ account, locale, models, onRefresh }: Pick<AccountEditorProps, 'account' | 'locale' | 'onRefresh'> & { readonly models: AccountModelsStore }) {
   const state = useSyncExternalStore(models.subscribe, models.state);
   // The catalog loads when the tab opens and again for another account.
   useEffect(() => {
@@ -619,7 +622,7 @@ export function AccountEditor(props: AccountEditorProps) {
         ) : null}
       </div>
       <div role="tablist" className="flex gap-1 border-b border-hairline">
-        {EDITOR_TABS.map((tab) => (
+        {(props.tabs ?? EDITOR_TABS).map((tab) => (
           <button
             key={tab}
             type="button"
@@ -649,7 +652,7 @@ export function AccountEditor(props: AccountEditorProps) {
           <Usage account={account} locale={locale} formatTime={props.formatTime} resetLine={props.resetLine} onRefresh={props.onRefresh} />
         ) : null}
         {state.tab === 'limits' ? <Limits account={account} locale={locale} store={store} /> : null}
-        {state.tab === 'models' ? (
+        {state.tab === 'models' && props.models !== undefined ? (
           <Models account={account} locale={locale} models={props.models} onRefresh={props.onRefresh} />
         ) : null}
       </div>

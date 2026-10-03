@@ -1,417 +1,490 @@
-// wizard.test.ts — U-7: the first-run wizard store walks source → account → binding → done,
-// gates `next` on each step's validation (source reachable / chosen provider discovered and
-// logged in / at least one bound role), preserves entered state across `back`, and dismisses on
-// finishing — reappearing on open only while no project exists (the `project.tree` read). The api and the source probe are
-// injected fakes; the source probe sits below today's api surface and lands with the screens
-// wiring (the work-order detail store's injected-definitions stance).
+// wizard.test.ts — U-35: the setup wizard's step machine. The api is a scripted fake that records
+// every command, so the finish fan-out is asserted payload by payload.
 import { describe, expect, it } from 'vitest';
 
 import type { Api } from '../../api/api';
 import type { Command, CommandResult } from '../../api/commands';
-import type { Query } from '../../api/queries';
+import type { Query, SettingsAccountView } from '../../api/queries';
 import type { Actor } from '../../domain/index';
-import { createWizardStore } from './wizard';
+import { createWizardStore, type WizardStore } from './wizard';
 
 const userActor: Actor = { kind: 'user', id: 'user-1' };
 
-/** The projection the store reads off the `providers.discovered` reply (api/queries fixtures). */
-const discovered = (
-  defId: string,
-  binPath: string | null,
-  loggedIn: boolean | null,
-): { defId: string; binPath: string | null; loggedIn: boolean | null } => ({ defId, binPath, loggedIn });
+const candidate = (path: string, patch: Record<string, unknown> = {}): Record<string, unknown> => ({
+  sourcePath: `/h/${path}`,
+  displayPath: `~/${path}`,
+  kind: 'subscription',
+  routeKind: 'anthropic',
+  provider: 'claude',
+  hasOauthLogin: true,
+  envOverrides: [],
+  warnings: [],
+  alreadyAdded: false,
+  ...patch,
+});
 
-const alphaReady = discovered('alpha', '/usr/local/bin/alpha', true);
+const claudeA = candidate('.claude');
+const claudeB = candidate('.claude-b');
+const endpoint = candidate('.claude-zai', {
+  kind: 'compatible_endpoint',
+  endpointHost: 'api.z.ai',
+  envOverrides: ['token', 'endpoint'],
+});
+const unreadable = candidate('.claude-bad', { warnings: ['unreadable'] });
 
-interface RecordedCommand {
-  readonly actor: Actor;
-  readonly command: Command;
-}
+const roles = [
+  { id: 'analyst', name: 'Analist', stages: [] },
+  { id: 'developer', name: 'Geliştirici', stages: [] },
+  { id: 'planner', name: 'Planlayıcı', stages: [] },
+];
 
-type WizardCommandType = 'account.save' | 'binding.save';
+const accountView = (id: string, label: string, authMode: string): SettingsAccountView => ({
+  id,
+  provider: 'claude',
+  label,
+  authMode,
+  plan: null,
+  limitPolicy: 'wait_resume',
+  reserve: { short: null, long: null },
+  caps: [],
+  consentedModels: [],
+  routeKind: null,
+  identityDir: null,
+  endpointHost: null,
+  hasSecret: false,
+  pools: [],
+  meters: [],
+});
 
-interface FakeWizardApi extends Pick<Api, 'query' | 'command'> {
+interface Fake extends Pick<Api, 'query' | 'command'> {
+  readonly commands: Command[];
   readonly queries: Query[];
-  readonly commands: RecordedCommand[];
-  setDiscoveryReply(reply: unknown): void;
-  setProjectTree(reply: unknown): void;
-  setCommandResult(type: WizardCommandType, result: CommandResult): void;
+  setTree(reply: unknown): void;
+  setCandidates(facts: readonly Record<string, unknown>[]): void;
+  setAccounts(accounts: readonly SettingsAccountView[]): void;
+  failOn(type: Command['type'], result: CommandResult): void;
 }
 
-/** Query calls and issued commands are recorded; the discovery reply and per-command results are
- *  swappable mid-test. */
-const fakeWizardApi = (discoveryReply: unknown = []): FakeWizardApi => {
+const fakeApi = (): Fake => {
+  const commands: Command[] = [];
   const queries: Query[] = [];
-  const commands: RecordedCommand[] = [];
-  const results: Record<WizardCommandType, CommandResult> = {
-    'account.save': { ok: true, id: 'acc-1' },
-    'binding.save': { ok: true },
-  };
-  let reply: unknown = discoveryReply;
   let tree: unknown = [];
+  let facts: readonly Record<string, unknown>[] = [claudeA];
+  let accounts: SettingsAccountView[] = [];
+  const failures = new Map<string, CommandResult>();
+  let adopted = 0;
   return {
-    queries,
     commands,
-    setDiscoveryReply: (next) => {
-      reply = next;
+    queries,
+    setTree: (reply) => {
+      tree = reply;
     },
-    setProjectTree: (next) => {
-      tree = next;
+    setCandidates: (next) => {
+      facts = next;
     },
-    setCommandResult: (type, result) => {
-      results[type] = result;
+    setAccounts: (next) => {
+      accounts = [...next];
     },
+    failOn: (type, result) => failures.set(type, result),
     query: (query) => {
       queries.push(query);
-      return Promise.resolve(query.type === 'project.tree' ? tree : reply);
+      switch (query.type) {
+        case 'project.tree':
+          return Promise.resolve(tree);
+        case 'accounts.candidates':
+          return Promise.resolve(facts);
+        case 'providers.discovered':
+          return Promise.resolve([
+            { defId: 'claude', name: 'Claude Code', installUrl: null, binPath: '/usr/bin/claude', version: null, loggedIn: true, optionalFlags: [] },
+          ]);
+        case 'settings.accounts':
+          return Promise.resolve({ accounts, bindings: [] });
+        case 'roles.list':
+          return Promise.resolve(roles);
+        default:
+          return Promise.resolve([]);
+      }
     },
-    command: (actor, command) => {
-      commands.push({ actor, command });
-      return Promise.resolve(results[command.type as WizardCommandType]);
+    command: (_actor, command) => {
+      commands.push(command);
+      const failure = failures.get(command.type);
+      if (failure !== undefined) return Promise.resolve(failure);
+      if (command.type === 'project.attach') return Promise.resolve({ ok: true, id: 'atolye' });
+      if (command.type === 'account.adopt') {
+        adopted += 1;
+        const id = `acc-${adopted}`;
+        const isEndpoint = command.sourcePath.includes('zai');
+        accounts.push(accountView(id, command.label, isEndpoint ? 'api_key' : 'subscription'));
+        return Promise.resolve({ ok: true, id });
+      }
+      return Promise.resolve({ ok: true });
     },
   };
 };
-
-interface FakeProbes {
-  readonly probed: readonly string[];
-  readonly sourceReachable: (source: string) => Promise<boolean>;
-  setSourceOk(ok: boolean): void;
-}
-
-/** The below-api source observation is scripted and counted so tests can assert it was consulted. */
-const fakeProbes = (sourceOk: boolean): FakeProbes => {
-  const probed: string[] = [];
-  let reachable = sourceOk;
-  return {
-    probed,
-    setSourceOk: (ok) => {
-      reachable = ok;
-    },
-    sourceReachable: (source: string) => {
-      probed.push(source);
-      return Promise.resolve(reachable);
-    },
-  };
-};
-
-/** How many times the store asked the api whether any project exists. */
-const treeReads = (api: FakeWizardApi): number => api.queries.filter((query) => query.type === 'project.tree').length;
-
-const oneProject = [{ project: 'atolye', name: 'atolye', mainRepo: 'atolye', repos: [] }];
 
 interface Setup {
-  readonly api: FakeWizardApi;
-  readonly probes: FakeProbes;
-  readonly store: ReturnType<typeof createWizardStore>;
+  readonly api: Fake;
+  readonly store: WizardStore;
 }
 
-const setup = (discoveryReply: unknown = [alphaReady]): Setup => {
-  const api = fakeWizardApi(discoveryReply);
-  const probes = fakeProbes(true);
-  const store = createWizardStore({
-    api,
-    actor: userActor,
-    sourceReachable: probes.sourceReachable,
-  });
-  return { api, probes, store };
+const setup = (facts: readonly Record<string, unknown>[] = [claudeA]): Setup => {
+  const api = fakeApi();
+  api.setCandidates(facts);
+  const store = createWizardStore({ api, actor: userActor });
+  return { api, store };
 };
 
-/** Walks to the account step with a reachable source; discovery is kicked by the transition. */
-const toAccount = async (bundle: Setup): Promise<void> => {
+const keyOf = (path: string): string => `/h/${path}`;
+
+/** Opens the wizard and walks Hoş geldin → Hesaplar with the given paths selected. */
+const toAccounts = async (bundle: Setup, selected: readonly string[]): Promise<void> => {
   await bundle.store.open();
-  bundle.store.enterSource('/repos/atolye');
   await bundle.store.next();
+  for (const path of selected) bundle.store.select(keyOf(path));
 };
 
-/** Walks to the binding step with a saved account (acc-1) and a chosen, ready provider. */
-const toBinding = async (bundle: Setup): Promise<void> => {
-  await toAccount(bundle);
-  bundle.store.chooseProvider('alpha');
-  bundle.store.enterAccount({ label: 'Ana hesap', authMode: 'subscription', plan: 'pro' });
-  await bundle.store.next();
-};
+const railOf = (store: WizardStore): readonly string[] =>
+  store.state().rail.map((entry) => `${entry.step}:${entry.standing}`);
 
-describe('wizard store', () => {
-  it('U-7: open with no project runs the wizard; the machine walks source → account → binding → done as each step validates', async () => {
-    const bundle = setup();
-    expect(bundle.store.state()).toMatchObject({ visible: false, step: 'source' });
+describe('wizard store (U-35)', () => {
+  it('U-35: open with a project keeps the wizard hidden; no project shows it on Hoş geldin; an unreadable project read never suppresses it', async () => {
+    const hidden = setup();
+    hidden.api.setTree([{ project: 'atolye' }]);
+    await hidden.store.open();
+    expect(hidden.store.state().visible).toBe(false);
 
-    await bundle.store.open();
-    expect(treeReads(bundle.api)).toBe(1);
-    expect(bundle.store.state()).toMatchObject({ visible: true, step: 'source' });
+    const shown = setup();
+    await shown.store.open();
+    expect(shown.store.state().visible).toBe(true);
+    expect(shown.store.state().step).toBe('welcome');
 
-    bundle.store.enterSource('/repos/atolye');
-    await bundle.store.checkSource();
-    expect(bundle.store.nextEnabled()).toBe(true);
+    const failed = setup();
+    failed.api.setTree({ ok: false, code: 'internal' });
+    await failed.store.open();
+    expect(failed.store.state().visible).toBe(true);
+  });
 
-    await bundle.store.next();
-    // Entering the account step kicks a discovery pass, so the step can validate the choice.
-    expect(bundle.store.state()).toMatchObject({ step: 'account' });
-    expect(bundle.api.queries).toEqual([{ type: 'project.tree' }, { type: 'providers.discovered' }]);
-    expect(bundle.store.state().discovered).toEqual([alphaReady]);
-    expect(bundle.store.nextEnabled()).toBe(false); // nothing chosen yet
+  it('U-35: the steps run Hoş geldin → Hesaplar → Yetenekler → Asistan sırası → Bütçe; Yetenekler is skipped while no capability source is composed and Asistan sırası under two accounts', async () => {
+    const one = setup([claudeA, claudeB]);
+    await toAccounts(one, ['.claude']);
+    expect(railOf(one.store)).toEqual([
+      'welcome:done',
+      'accounts:cur',
+      'capabilities:skipped',
+      'order:skipped',
+      'budget:todo',
+    ]);
+    await one.store.next();
+    expect(one.store.state().step).toBe('budget');
 
-    bundle.store.chooseProvider('alpha');
-    bundle.store.enterAccount({ label: 'Ana hesap', authMode: 'subscription', plan: 'pro' });
-    expect(bundle.store.nextEnabled()).toBe(true);
-    await bundle.store.next();
-    expect(bundle.store.state()).toMatchObject({ step: 'binding', accountId: 'acc-1' });
+    const two = setup([claudeA, claudeB]);
+    await toAccounts(two, ['.claude', '.claude-b']);
+    expect(two.store.state().rail.find((entry) => entry.step === 'order')?.standing).toBe('todo');
+    await two.store.next();
+    expect(two.store.state().step).toBe('order');
+    await two.store.next();
+    expect(two.store.state().step).toBe('budget');
+  });
 
-    const bound = await bundle.store.bind('coder');
-    expect(bound).toEqual({
-      command: 'binding.save',
-      result: { ok: true },
-      labelKey: 'success.binding.save',
+  it('U-35: Yetenekler shows when a source holds capabilities, and the summary counts the selected ones', async () => {
+    const api = fakeApi();
+    const store = createWizardStore({
+      api,
+      actor: userActor,
+      capabilities: [
+        { id: 'mcp:fs', name: 'fs', kind: 'MCP' },
+        { id: 'skill:lint', name: 'lint', kind: 'Skill' },
+      ],
     });
-    expect(bundle.store.nextEnabled()).toBe(true);
+    await store.open();
+    await store.next();
+    store.select(keyOf('.claude'));
+    await store.next();
+    expect(store.state().step).toBe('capabilities');
+    store.toggleCapability('skill:lint');
+    expect(store.state().capabilities.filter((entry) => entry.selected)).toHaveLength(1);
+    await store.next();
+    expect(store.state().step).toBe('budget');
+    await store.next();
+    expect(store.state().summary?.capabilities).toBe(1);
+  });
+
+  it('U-35: Hesaplar is gated on one ready selected account; a token candidate stays "Anahtar gerekli" until the key-move switch is on; unreadable rows cannot be selected', async () => {
+    const bundle = setup([endpoint, unreadable, claudeA]);
+    await bundle.store.open();
+    await bundle.store.next();
+    expect(bundle.store.state().step).toBe('accounts');
+    expect(bundle.store.state().nextEnabled).toBe(false);
+
+    bundle.store.select(keyOf('.claude-bad'));
+    expect(bundle.store.state().rows.find((row) => row.id === keyOf('.claude-bad'))?.selected).toBe(false);
+    expect(bundle.store.state().nextEnabled).toBe(false);
+
+    bundle.store.select(keyOf('.claude-zai'));
+    const row = bundle.store.state().rows.find((entry) => entry.id === keyOf('.claude-zai'));
+    expect(row?.statusKey).toBe('candidates.status.key_needed');
+    expect(row?.keyMoveCard).toBe(true);
+    expect(row?.importToken).toBe(false);
+    expect(bundle.store.state().nextEnabled).toBe(false);
+
+    bundle.store.setImportToken(keyOf('.claude-zai'), true);
+    expect(bundle.store.state().nextEnabled).toBe(true);
+
+    bundle.store.setImportToken(keyOf('.claude-zai'), false);
+    bundle.store.select(keyOf('.claude'));
+    expect(bundle.store.state().nextEnabled).toBe(true);
+    // A next past a gate that is closed does nothing.
+    bundle.store.select(keyOf('.claude'));
+    await bundle.store.next();
+    expect(bundle.store.state().step).toBe('accounts');
+  });
+
+  it('U-35: an account added earlier is listed already selected, so a wizard re-run is never stuck behind an empty list', async () => {
+    const bundle = setup([]);
+    bundle.api.setAccounts([accountView('acc-9', 'Eski hesap', 'subscription')]);
+    await bundle.store.open();
+    await bundle.store.next();
+    expect(bundle.store.state().rows.map((row) => [row.id, row.selected])).toEqual([['acc-9', true]]);
+    expect(bundle.store.state().nextEnabled).toBe(true);
+  });
+
+  it('U-35: "Bu adımı atla" is offered on the steps with a default and never on a gate', async () => {
+    const bundle = setup([claudeA, claudeB]);
+    await bundle.store.open();
+    expect(bundle.store.state().canSkip).toBe(true);
+    await bundle.store.skip();
+    expect(bundle.store.state().step).toBe('accounts');
+    expect(bundle.store.state().canSkip).toBe(false);
+    await bundle.store.skip();
+    expect(bundle.store.state().step).toBe('accounts');
+    bundle.store.select(keyOf('.claude'));
+    bundle.store.select(keyOf('.claude-b'));
+    await bundle.store.next();
+    expect(bundle.store.state().step).toBe('order');
+    expect(bundle.store.state().canSkip).toBe(true);
+    await bundle.store.skip();
+    expect(bundle.store.state().step).toBe('budget');
+    expect(bundle.store.state().canSkip).toBe(false);
+  });
+
+  it('U-35: Asistan sırası orders the chain with up/down and the order drives the finish chain', async () => {
+    const bundle = setup([claudeA, claudeB]);
+    await toAccounts(bundle, ['.claude', '.claude-b']);
+    await bundle.store.next();
+    expect(bundle.store.state().order.map((entry) => entry.id)).toEqual([keyOf('.claude'), keyOf('.claude-b')]);
+    bundle.store.moveDown(keyOf('.claude'));
+    expect(bundle.store.state().order.map((entry) => entry.id)).toEqual([keyOf('.claude-b'), keyOf('.claude')]);
+    bundle.store.moveUp(keyOf('.claude'));
+    expect(bundle.store.state().order.map((entry) => entry.id)).toEqual([keyOf('.claude'), keyOf('.claude-b')]);
+    bundle.store.moveUp(keyOf('.claude'));
+    expect(bundle.store.state().order[0]?.id).toBe(keyOf('.claude'));
+    bundle.store.moveUp(keyOf('.claude-b'));
+    await bundle.store.next();
+    await bundle.store.next();
+    const bindings = bundle.api.commands.filter((command) => command.type === 'binding.save');
+    expect(bindings.length).toBe(3);
+    for (const binding of bindings) {
+      expect(binding.type === 'binding.save' && binding.accounts.map((entry) => entry.accountId)).toEqual(['acc-2', 'acc-1']);
+    }
+  });
+
+  it('U-35: back keeps every entry — selection, key-move switch, order, an editor draft and a consent', async () => {
+    const bundle = setup([claudeA, endpoint]);
+    await toAccounts(bundle, ['.claude', '.claude-zai']);
+    bundle.store.setImportToken(keyOf('.claude-zai'), true);
+    await bundle.store.next();
+    bundle.store.moveDown(keyOf('.claude'));
+    await bundle.store.next();
+    expect(bundle.store.state().step).toBe('budget');
+    expect(bundle.store.allowSpend(keyOf('.claude-zai'), { amount: '40', scope: 'account_month' })).toBe(true);
+    bundle.store.back();
+    bundle.store.back();
+    bundle.store.back();
+    expect(bundle.store.state().step).toBe('welcome');
+    expect(bundle.store.state().rows.filter((row) => row.selected).map((row) => row.id)).toEqual([
+      keyOf('.claude'),
+      keyOf('.claude-zai'),
+    ]);
+    expect(bundle.store.state().rows.find((row) => row.id === keyOf('.claude-zai'))?.importToken).toBe(true);
+    expect(bundle.store.state().order.map((entry) => entry.id)).toEqual([keyOf('.claude-zai'), keyOf('.claude')]);
+    await bundle.store.next();
+    await bundle.store.next();
+    await bundle.store.next();
+    const spend = bundle.store.state().budget.payPerUse[0];
+    expect(spend?.consented).toBe(true);
+    expect(spend?.cap?.amountUsd).toBe(40);
+  });
+
+  it('U-35: Bütçe lists the selected accounts as Abonelikler and Kullandıkça öde, with the U-29 difference count per row', async () => {
+    const bundle = setup([claudeA, endpoint]);
+    await toAccounts(bundle, ['.claude', '.claude-zai']);
+    bundle.store.setImportToken(keyOf('.claude-zai'), true);
+    await bundle.store.next();
+    await bundle.store.next();
+    const { subscriptions, payPerUse } = bundle.store.state().budget;
+    expect(subscriptions.map((row) => row.id)).toEqual([keyOf('.claude')]);
+    expect(payPerUse.map((row) => row.id)).toEqual([keyOf('.claude-zai')]);
+    expect(subscriptions[0]?.diffCount).toBe(0);
+    expect(payPerUse[0]?.needsConsent).toBe(true);
+    expect(payPerUse[0]?.cap).toBeNull();
+
+    await bundle.store.openEditor(keyOf('.claude'));
+    await bundle.store.editorRun({ type: 'account.save', provider: 'claude', label: 'claude', authMode: 'subscription', limitPolicy: 'ask' });
+    bundle.store.saveEditor();
+    expect(bundle.store.state().budget.subscriptions[0]?.diffCount).toBe(1);
+  });
+
+  it('U-35: a pay-per-use account needs its spend consent with a cap before "Kurulumu bitir" is enabled', async () => {
+    const bundle = setup([endpoint]);
+    await toAccounts(bundle, ['.claude-zai']);
+    bundle.store.setImportToken(keyOf('.claude-zai'), true);
+    await bundle.store.next();
+    expect(bundle.store.state().step).toBe('budget');
+    expect(bundle.store.state().nextEnabled).toBe(false);
+    expect(bundle.store.allowSpend(keyOf('.claude-zai'), { amount: 'abc', scope: 'account_month' })).toBe(false);
+    expect(bundle.store.allowSpend(keyOf('.claude-zai'), { amount: '0', scope: 'account_month' })).toBe(false);
+    expect(bundle.store.state().nextEnabled).toBe(false);
+    expect(bundle.store.allowSpend(keyOf('.claude-zai'), { amount: '50', scope: 'account_month' })).toBe(true);
+    expect(bundle.store.state().nextEnabled).toBe(true);
+    bundle.store.revokeSpend(keyOf('.claude-zai'));
+    expect(bundle.store.state().nextEnabled).toBe(false);
+  });
+
+  it('U-35: the editor window edits a draft — Vazgeç discards it, Kaydet keeps it, and nothing is written before the finish', async () => {
+    const bundle = setup([claudeA]);
+    await toAccounts(bundle, ['.claude']);
+    await bundle.store.next();
+    await bundle.store.openEditor(keyOf('.claude'));
+    expect(bundle.store.state().editor?.account.label).toBe('claude');
+    await bundle.store.editorRun({ type: 'account.save', provider: 'claude', label: 'Kişisel', authMode: 'subscription' });
+    expect(bundle.store.state().editor?.account.label).toBe('Kişisel');
+    bundle.store.cancelEditor();
+    expect(bundle.store.state().editor).toBeNull();
+    expect(bundle.store.state().rows[0]?.label).toBe('claude');
+
+    await bundle.store.openEditor(keyOf('.claude'));
+    await bundle.store.editorRun({
+      type: 'account.save',
+      provider: 'claude',
+      label: 'Kişisel',
+      authMode: 'subscription',
+      reserve: { short: 0.2, long: 0.2 },
+    });
+    bundle.store.saveEditor();
+    expect(bundle.store.state().editor).toBeNull();
+    expect(bundle.api.commands).toEqual([]);
+    expect(bundle.store.state().budget.subscriptions[0]?.label).toBe('Kişisel');
+    expect(bundle.store.state().budget.subscriptions[0]?.reserveShort).toBe(0.2);
+  });
+
+  it('U-35: finishing adopts every selected account with its draft, writes caps and consents, then binds every role with the chain and the recommended work style', async () => {
+    const bundle = setup([claudeA, endpoint]);
+    await toAccounts(bundle, ['.claude', '.claude-zai']);
+    bundle.store.setImportToken(keyOf('.claude-zai'), true);
+    await bundle.store.next();
+    await bundle.store.next();
+    await bundle.store.openEditor(keyOf('.claude'));
+    await bundle.store.editorRun({ type: 'account.save', provider: 'claude', label: 'Kişisel', authMode: 'subscription', reserve: { short: 0.2, long: 0.2 } });
+    bundle.store.saveEditor();
+    expect(bundle.store.allowSpend(keyOf('.claude-zai'), { amount: '40', scope: 'account_month' })).toBe(true);
 
     await bundle.store.next();
-    expect(bundle.store.state()).toMatchObject({ step: 'done', visible: false });
 
     expect(bundle.api.commands).toEqual([
-      {
-        actor: userActor,
-        command: { type: 'account.save', provider: 'alpha', label: 'Ana hesap', authMode: 'subscription', plan: 'pro' },
-      },
-      { actor: userActor, command: { type: 'binding.save', role: 'coder', accounts: [{ accountId: 'acc-1' }] } },
+      { type: 'account.adopt', sourcePath: keyOf('.claude'), label: 'Kişisel' },
+      { type: 'account.adopt', sourcePath: keyOf('.claude-zai'), label: 'claude-zai', importToken: true },
+      { type: 'account.save', id: 'acc-1', provider: 'claude', label: 'Kişisel', authMode: 'subscription', reserve: { short: 0.2, long: 0.2 } },
+      { type: 'account.cap.save', id: 'acc-2', scope: 'account_month', amountUsd: 40, warnPercent: 80 },
+      { type: 'account.consent.grant', id: 'acc-2', model: '*' },
+      { type: 'binding.save', role: 'analyst', accounts: [{ accountId: 'acc-1' }, { accountId: 'acc-2' }], tier: 'fast', thinking: { level: 'fast' } },
+      { type: 'binding.save', role: 'developer', accounts: [{ accountId: 'acc-1' }, { accountId: 'acc-2' }], tier: 'balanced', thinking: { level: 'balanced' } },
+      { type: 'binding.save', role: 'planner', accounts: [{ accountId: 'acc-1' }, { accountId: 'acc-2' }], tier: 'strong', thinking: { level: 'deep' } },
     ]);
+    expect(bundle.store.state().step).toBe('done');
+    expect(railOf(bundle.store)).toEqual([
+      'welcome:done',
+      'accounts:done',
+      'capabilities:skipped',
+      'order:done',
+      'budget:done',
+    ]);
+    expect(bundle.store.state().summary).toEqual({ accounts: 2, capabilities: 0, firstLabel: 'Kişisel' });
   });
 
-  it('U-7: next on the source step is gated by the reachability probe', async () => {
+  it('U-35: a failed finish stays on Bütçe with the U-8 label and a retry does not adopt twice', async () => {
+    const bundle = setup([claudeA, claudeB]);
+    await toAccounts(bundle, ['.claude', '.claude-b']);
+    await bundle.store.next();
+    await bundle.store.next();
+    bundle.api.failOn('binding.save', { ok: false, code: 'unknown_role' });
+    await bundle.store.next();
+    expect(bundle.store.state().step).toBe('budget');
+    expect(bundle.store.state().lastOutcome?.result.ok).toBe(false);
+    bundle.api.failOn('binding.save', { ok: true });
+    await bundle.store.next();
+    expect(bundle.store.state().step).toBe('done');
+    expect(bundle.api.commands.filter((command) => command.type === 'account.adopt')).toHaveLength(2);
+  });
+
+  it('U-35: an account row carries its provider name beside the label derived from the folder', async () => {
+    const bundle = setup([claudeB]);
+    await bundle.store.open();
+    await bundle.store.next();
+    const row = bundle.store.state().rows[0];
+    expect(row?.providerName).toBe('Claude Code');
+    expect(row?.label).toBe('claude-b');
+  });
+
+  it('U-35: "Proje bağla" opens an inline form; Bağla issues project.attach and a single-repo project opens its board, a multi-repo one its roadmap', async () => {
+    const single = setup();
+    await toAccounts(single, ['.claude']);
+    await single.store.next();
+    await single.store.next();
+    expect(single.store.state().step).toBe('done');
+    single.store.attachProject();
+    expect(single.store.state().attach.open).toBe(true);
+    single.store.setAttachPath('   ');
+    await single.store.submitAttach();
+    expect(single.api.commands.some((command) => command.type === 'project.attach')).toBe(false);
+    single.store.setAttachPath('/work/atolye');
+    single.api.setTree([{ project: 'atolye', mainRepo: 'atolye-api', repos: [{ repo: 'atolye-api' }] }]);
+    await single.store.submitAttach();
+    expect(single.api.commands.at(-1)).toEqual({ type: 'project.attach', path: '/work/atolye' });
+    expect(single.store.state().visible).toBe(false);
+    expect(single.store.state().opened).toEqual({ kind: 'board', repo: 'atolye-api' });
+
+    const multi = setup();
+    await toAccounts(multi, ['.claude']);
+    await multi.store.next();
+    await multi.store.next();
+    multi.store.attachProject();
+    multi.store.setAttachPath('/work/atolye');
+    multi.api.setTree([{ project: 'atolye', mainRepo: 'a', repos: [{ repo: 'a' }, { repo: 'b' }] }]);
+    await multi.store.submitAttach();
+    expect(multi.store.state().opened).toEqual({ kind: 'roadmap', project: 'atolye' });
+  });
+
+  it('U-35: a failed project.attach shows its U-8 label under the field and keeps the wizard open', async () => {
+    const bundle = setup();
+    await toAccounts(bundle, ['.claude']);
+    await bundle.store.next();
+    await bundle.store.next();
+    bundle.store.attachProject();
+    bundle.store.setAttachPath('/nope');
+    bundle.api.failOn('project.attach', { ok: false, code: 'not_found' });
+    await bundle.store.submitAttach();
+    expect(bundle.store.state().attach.failureKey).toBe('error.not_found');
+    expect(bundle.store.state().visible).toBe(true);
+    expect(bundle.store.state().opened).toBeNull();
+    bundle.store.cancelAttach();
+    expect(bundle.store.state().attach.open).toBe(false);
+  });
+
+  it('U-35: the wizard does not reappear while a project exists', async () => {
     const bundle = setup();
     await bundle.store.open();
-
-    // An unreachable source keeps the machine on the source step.
-    bundle.probes.setSourceOk(false);
-    bundle.store.enterSource('/repos/kayip');
-    await bundle.store.checkSource();
-    expect(bundle.store.nextEnabled()).toBe(false);
-    await bundle.store.next();
-    expect(bundle.store.state().step).toBe('source');
-
-    // Reachable — the gate opens.
-    bundle.probes.setSourceOk(true);
-    await bundle.store.checkSource();
-    expect(bundle.store.nextEnabled()).toBe(true);
-
-    // Editing the text after the probe leaves the verdict stale; next re-probes and, now reachable,
-    // still advances (the click is the authority, the cached verdict only a hint).
-    bundle.store.enterSource('/repos/baska');
-    expect(bundle.store.nextEnabled()).toBe(false);
-    await bundle.store.next();
-    expect(bundle.store.state().step).toBe('account');
-    // Every gate decision probed the text it judged: the failed next, the check, and the passing
-    // next each consulted the source.
-    expect(bundle.probes.probed).toEqual(['/repos/kayip', '/repos/kayip', '/repos/kayip', '/repos/baska']);
-
-    // A blank source never probes and never advances.
-    const fresh = setup();
-    await fresh.store.open();
-    fresh.store.enterSource('   ');
-    await fresh.store.next();
-    expect(fresh.store.state().step).toBe('source');
-    expect(fresh.probes.probed).toEqual([]);
-  });
-
-  it('U-7: next on the account step requires the chosen provider discovered and logged in', async () => {
-    const bundle = setup([]);
-    await toAccount(bundle);
-
-    // No provider chosen — nothing is issued.
-    await bundle.store.next();
-    expect(bundle.store.state().step).toBe('account');
-    expect(bundle.api.commands.length).toBe(0);
-
-    // Chosen but not installed on this machine.
-    bundle.store.chooseProvider('beta');
-    bundle.api.setDiscoveryReply([discovered('beta', null, null), alphaReady]);
-    await bundle.store.next();
-    expect(bundle.store.state().step).toBe('account');
-    expect(bundle.api.commands.length).toBe(0);
-
-    // Installed but not logged in.
-    bundle.api.setDiscoveryReply([discovered('beta', '/usr/local/bin/beta', false)]);
-    await bundle.store.next();
-    expect(bundle.store.state().step).toBe('account');
-
-    // Logged-in state unknown (null) proves nothing either.
-    bundle.api.setDiscoveryReply([discovered('beta', '/usr/local/bin/beta', null)]);
-    await bundle.store.next();
-    expect(bundle.store.state().step).toBe('account');
-
-    // Chosen provider missing from the pass entirely.
-    bundle.api.setDiscoveryReply([alphaReady]);
-    await bundle.store.next();
-    expect(bundle.store.state().step).toBe('account');
-    expect(bundle.api.commands.length).toBe(0);
-
-    // A failed discovery pass fails the gate closed: nothing is proven discovered.
-    bundle.api.setDiscoveryReply({ ok: false, code: 'not_found' });
-    await bundle.store.next();
-    expect(bundle.store.state().step).toBe('account');
-    expect(bundle.api.commands.length).toBe(0);
-
-    // Discovered and logged in — the account is saved and the machine advances.
-    bundle.store.chooseProvider('alpha');
-    bundle.api.setDiscoveryReply([alphaReady]);
-    await bundle.store.next();
-    expect(bundle.store.state()).toMatchObject({ step: 'binding', accountId: 'acc-1' });
-    expect(bundle.api.commands.length).toBe(1);
-  });
-
-  it('U-7: a failed account.save keeps the wizard on the account step and maps the code through U-8', async () => {
-    const bundle = setup();
-    bundle.api.setCommandResult('account.save', { ok: false, code: 'invalid_id' });
-    await toAccount(bundle);
-
-    bundle.store.chooseProvider('alpha');
-    bundle.store.enterAccount({ label: 'Ana hesap', authMode: 'bilinmeyen' });
-    await bundle.store.next();
-
-    expect(bundle.store.state().step).toBe('account');
-    expect(bundle.store.state().accountId).toBeNull();
-    expect(bundle.store.state().lastOutcome).toEqual({
-      command: 'account.save',
-      result: { ok: false, code: 'invalid_id' },
-      labelKey: 'error.invalid_id',
-    });
-  });
-
-  it('U-7: next on the binding step requires at least one bound role', async () => {
-    const bundle = setup();
-    await toBinding(bundle);
-
-    // No binding saved yet — the machine stays on the binding step.
-    expect(bundle.store.nextEnabled()).toBe(false);
-    await bundle.store.next();
-    expect(bundle.store.state()).toMatchObject({ step: 'binding', visible: true });
-
-    await bundle.store.bind('coder');
-    expect(bundle.store.nextEnabled()).toBe(true);
-    await bundle.store.next();
-    expect(bundle.store.state()).toMatchObject({ step: 'done', visible: false });
-  });
-
-  it('U-7: a failed binding.save surfaces the code through U-8 and the role stays unbound', async () => {
-    const bundle = setup();
-    bundle.api.setCommandResult('binding.save', { ok: false, code: 'invalid_id' });
-    await toBinding(bundle);
-
-    const outcome = await bundle.store.bind('');
-
-    expect(outcome).toEqual({
-      command: 'binding.save',
-      result: { ok: false, code: 'invalid_id' },
-      labelKey: 'error.invalid_id',
-    });
-    expect(bundle.store.state().boundRoles).toEqual([]);
-    expect(bundle.store.nextEnabled()).toBe(false);
-    // The empty role reached the api verbatim: the boundary owns slug parsing, the store does not.
-    // (commands[0] is the account.save of the walk to the binding step.)
-    expect(bundle.api.commands[1]).toEqual({
-      actor: userActor,
-      command: { type: 'binding.save', role: '', accounts: [{ accountId: 'acc-1' }] },
-    });
-  });
-
-  it('U-7: bind without a saved account refuses locally and issues no command', async () => {
-    const bundle = setup();
-    // A success without an id leaves the wizard with no account to bind.
-    bundle.api.setCommandResult('account.save', { ok: true });
-    await toAccount(bundle);
-
-    bundle.store.chooseProvider('alpha');
-    await bundle.store.next();
-    expect(bundle.store.state()).toMatchObject({ step: 'binding', accountId: null });
-
-    const outcome = await bundle.store.bind('coder');
-    expect(outcome).toEqual({
-      command: 'binding.save',
-      result: { ok: false, code: 'not_found' },
-      labelKey: 'error.not_found',
-    });
-    expect(bundle.api.commands.length).toBe(1); // only the account.save
-    expect(bundle.store.state().boundRoles).toEqual([]);
-  });
-
-  it('U-7: back preserves entered state across the whole chain', async () => {
-    const bundle = setup();
-    await toBinding(bundle);
-    await bundle.store.bind('coder');
-
-    // Binding → account: the choice, the draft and the saved account all survive.
-    bundle.store.back();
-    expect(bundle.store.state()).toMatchObject({
-      step: 'account',
-      provider: 'alpha',
-      accountId: 'acc-1',
-    });
-    expect(bundle.store.state().draft).toEqual({ label: 'Ana hesap', authMode: 'subscription', plan: 'pro' });
-
-    // Account → source: the entered source survives; behind the first step back is a no-op.
-    bundle.store.back();
-    expect(bundle.store.state()).toMatchObject({ step: 'source', source: '/repos/atolye' });
-    bundle.store.back();
-    expect(bundle.store.state().step).toBe('source');
-
-    // Walking forward again re-validates every gate and re-saves the same account (now with its
-    // id), instead of stacking a duplicate account per crossing.
-    await bundle.store.next();
-    expect(bundle.store.state().step).toBe('account');
-    await bundle.store.next();
-    expect(bundle.store.state()).toMatchObject({ step: 'binding', accountId: 'acc-1' });
-    expect(bundle.store.state().boundRoles).toEqual(['coder']);
-    expect(bundle.api.commands[2]).toEqual({
-      actor: userActor,
-      command: { type: 'account.save', id: 'acc-1', provider: 'alpha', label: 'Ana hesap', authMode: 'subscription', plan: 'pro' },
-    });
-  });
-
-  it('U-7: finishing dismisses the wizard; it does not reappear while a project exists (re-check on open)', async () => {
-    const bundle = setup();
-    await toBinding(bundle);
-    await bundle.store.bind('coder');
-    await bundle.store.next();
-    expect(bundle.store.state()).toMatchObject({ step: 'done', visible: false });
-
-    // The re-check on open consults the observation again — a project means no re-run.
-    bundle.api.setProjectTree(oneProject);
+    bundle.api.setTree([{ project: 'atolye' }]);
     await bundle.store.open();
-    expect(treeReads(bundle.api)).toBe(2);
-    expect(bundle.store.state()).toMatchObject({ step: 'done', visible: false });
-
-    // A dismissed wizard has no intents: next and back change nothing.
-    await bundle.store.next();
-    bundle.store.back();
-    expect(bundle.store.state()).toMatchObject({ step: 'done', visible: false });
-    expect(bundle.api.commands.length).toBe(2);
-  });
-
-  it('U-7: a failed project read never suppresses the first-run setup', async () => {
-    const bundle = setup();
-    bundle.api.setProjectTree({ ok: false, code: 'internal' });
-    await bundle.store.open();
-    expect(bundle.store.state()).toMatchObject({ visible: true, step: 'source' });
-  });
-
-  it('U-7: open with an existing project keeps the wizard hidden from the first launch', async () => {
-    const bundle = setup();
-    bundle.api.setProjectTree(oneProject);
-    await bundle.store.open();
-    expect(bundle.store.state()).toMatchObject({ visible: false, checking: false });
-  });
-
-  it('U-7: re-open without a project runs the wizard again from the source step', async () => {
-    const bundle = setup();
-    await toBinding(bundle);
-    await bundle.store.bind('coder');
-    await bundle.store.next();
     expect(bundle.store.state().visible).toBe(false);
-
-    await bundle.store.open();
-    expect(bundle.store.state()).toMatchObject({ visible: true, step: 'source' });
-    // The machine restarts; entered values remain valid inputs and saved bindings remain saved.
-    expect(bundle.store.state().source).toBe('/repos/atolye');
-    expect(bundle.store.state().boundRoles).toEqual(['coder']);
   });
 });

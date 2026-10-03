@@ -1,263 +1,557 @@
-// screens/wizard.tsx — the first-run wizard (U-7's window): the store's four-step machine rendered
-// as an overlay the shell mounts; the store decides visibility through `open`, the screen only
-// mirrors it. `next` is gated by the store's `nextEnabled` (the store re-validates at click time —
-// it stays the authority), and a step that cannot advance says why in place instead of leaving a
-// dead grey control. Entered state lives in the store, so `back` preserves it without screen work.
-// Secret values have no surface here — account names only — and every user-visible string arrives
-// through a label key (U-1). The layout is the design's setup window: a numbered rail on the left
-// (done steps fill green, the current one signs amber) and a single pane whose footer carries the
-// navigation — the rail mirrors the machine, it does not drive it.
-import { useState, useSyncExternalStore } from 'react';
+// screens/wizard.tsx — the setup wizard in the rev 28.1 frame (U-35): a rail of the five steps on
+// the left (✓ done, – skipped, the current one signed amber) and one pane with fixed footer slots —
+// Geri · Bu adımı atla on the left, the reason line and the primary on the right, a hidden control
+// keeps its slot. The machine lives in stores/wizard.ts; this file mirrors it. The ✎ buttons open
+// the account editor (U-30) in a centred 560×480 window with Vazgeç / Kaydet (Esc = Vazgeç) over
+// the store's draft. No secret value has a surface here, and every string arrives through a
+// label key (U-1).
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+
+import type { SettingsAccountView } from '../../api/queries';
+import { AccountEditor } from '../components/account-editor';
+import { ActionButton } from '../components/action-button';
+import { InfoBubble } from '../components/info-bubble';
+import { LocaleSwitcher } from '../components/locale-switcher';
+import { formatMeterValue } from '../components/meter-value';
+import { OutcomeNotice } from '../components/outcome-notice';
+import { ProviderMark } from '../components/provider-mark';
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
-import { ActionButton } from '../components/action-button';
-import { DiscoveryBadges } from '../components/discovery-badges';
-import { OutcomeNotice } from '../components/outcome-notice';
-import { StateBadge } from '../components/state-badge';
-import type { WizardState, WizardStore, WizardStep } from '../stores/wizard';
+import { createAccountEditorStore, type EditorTab } from '../stores/account-editor';
+import { CAP_SCOPES, type CapScope } from '../stores/account-models';
+import type { LocaleStore } from '../stores/locale';
+import type { ProviderMarksStore } from '../stores/provider-marks';
+import { RECOMMENDED } from '../stores/recommended';
+import { THEME_PREFERENCES, type ThemePreference, type ThemeStore } from '../stores/theme';
+import type { BudgetRow, WizardOpenTarget, WizardState, WizardStep, WizardStore } from '../stores/wizard';
+import { WIZARD_STEPS } from '../stores/wizard';
 
 export interface WizardScreenProps {
   readonly store: WizardStore;
   readonly locale: Locale;
+  readonly localeStore: LocaleStore;
+  readonly themeStore: ThemeStore;
+  readonly marks: ProviderMarksStore;
+  /** Opens the view of a project the wizard has just attached. */
+  readonly onOpenTarget: (target: WizardOpenTarget) => void;
 }
 
-/** The record's closed auth-mode set, as the account step's select options; the api rejects an
- *  unknown value at the edge, so the screen offers exactly these. */
-const AUTH_MODES: readonly { readonly value: string; readonly key: LabelKey }[] = [
-  { value: 'subscription', key: 'auth.mode.subscription' },
-  { value: 'api_key', key: 'auth.mode.api_key' },
-  { value: 'cloud', key: 'auth.mode.cloud' },
-  { value: 'byok', key: 'auth.mode.byok' },
-];
-
 const STEP_KEY: Readonly<Record<WizardStep, LabelKey>> = {
-  source: 'wizard.step.source',
-  account: 'wizard.step.account',
-  binding: 'wizard.step.binding',
+  welcome: 'wizard.step.welcome',
+  accounts: 'wizard.step.accounts',
+  capabilities: 'wizard.step.capabilities',
+  order: 'wizard.step.order',
+  budget: 'wizard.step.budget',
   done: 'wizard.step.done',
 };
 
-const STEPS: readonly WizardStep[] = ['source', 'account', 'binding', 'done'];
-
-/** Why the current step cannot advance — the reason line that keeps a gated control legible. */
-const HINT_KEY: Readonly<Record<WizardStep, LabelKey>> = {
-  source: 'wizard.hint.source',
-  account: 'wizard.hint.account',
-  binding: 'wizard.hint.binding',
-  done: 'wizard.step.done',
+const LEAD_KEY: Readonly<Record<WizardStep, LabelKey | null>> = {
+  welcome: 'wizard.welcome.lead',
+  accounts: 'wizard.accounts.lead',
+  capabilities: 'wizard.capabilities.lead',
+  order: 'wizard.order.lead',
+  budget: null,
+  done: 'wizard.done.lead',
 };
 
-const INPUT_CLASS =
-  'rounded-control border border-bord bg-raised px-2 py-[5px] text-[13px] text-ink outline-none placeholder:text-inkdim focus:border-signal';
-const MONO_INPUT_CLASS = `${INPUT_CLASS} font-mono`;
-const LABEL_CLASS = 'font-mono text-[11px] uppercase tracking-[0.06em] text-inkdim';
+/** The window offers no Modeller tab: a draft has no stored account to list models of — the
+ *  spend consent is asked on Bütçe. */
+const WINDOW_TABS: readonly EditorTab[] = ['general', 'usage', 'limits'];
 
-/** The rail entry's standing: the current step reads ink on the raised ground with its number
- *  signed amber, a finished step fills its number green, the rest stay quiet. */
-const railClass = (standing: 'todo' | 'cur' | 'done'): string =>
-  `flex items-center gap-2.5 rounded-control px-2.5 py-[7px] ${standing === 'cur' ? 'bg-raised' : ''}`;
+const THEME_KEY: Readonly<Record<ThemePreference, LabelKey>> = {
+  system: 'settings.theme.system',
+  dark: 'settings.theme.dark',
+  light: 'settings.theme.light',
+};
 
-const railNumberClass = (standing: 'todo' | 'cur' | 'done'): string => {
+const SCOPE_KEY: Readonly<Record<CapScope, LabelKey>> = {
+  account_day: 'cap.scope.account_day',
+  account_week: 'cap.scope.account_week',
+  account_month: 'cap.scope.account_month',
+};
+
+const CHIP = 'rounded-control border px-[7px] py-px font-mono text-[11px]';
+const chipClass = (active: boolean): string =>
+  active ? `${CHIP} border-signal text-signal` : `${CHIP} border-hairline text-inkdim transition-colors hover:text-ink`;
+
+const fill = (template: string, values: Readonly<Record<string, string>>): string =>
+  template.replace(/\{(\w+)\}/g, (whole, name: string) => values[name] ?? whole);
+
+const LABEL_CLASS = 'text-[12.5px] font-semibold text-inkdim';
+
+/** "Provider · account": the provider name carries the weight, the account label follows dim. */
+function AccountName({ providerName, label }: { readonly providerName: string | null; readonly label: string }) {
+  return (
+    <span className="block truncate text-[13.5px] font-semibold text-ink">
+      {providerName !== null ? <>{providerName} <span className="font-normal text-inkdim">· {label}</span></> : label}
+    </span>
+  );
+}
+
+const LAMP_TONE: Readonly<Record<string, string>> = {
+  'candidates.status.ready': 'bg-proceed',
+  'candidates.status.key_needed': 'bg-signal',
+  'candidates.status.needs_login': 'bg-signal',
+  'candidates.status.unreadable': 'bg-error',
+};
+
+/** Status as an 8px lamp and one sans word; mono stays for machine data. */
+function StatusLamp({ statusKey, locale }: { readonly statusKey: LabelKey; readonly locale: Locale }) {
+  return (
+    <span className="inline-flex flex-none items-center gap-1.5 text-[12px] text-inkdim">
+      <span aria-hidden="true" className={`h-2 w-2 flex-none rounded-full ${LAMP_TONE[statusKey] ?? 'bg-bord'}`} />
+      {t(locale, statusKey)}
+    </span>
+  );
+}
+
+/** The 18px selection circle every list of the wizard ends with. */
+function SelectionMark({ on }: { readonly on: boolean }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`grid h-[18px] w-[18px] flex-none place-items-center rounded-full border text-[11px] ${
+        on ? 'border-signal text-signal' : 'border-bord text-transparent'
+      }`}
+    >
+      ✓
+    </span>
+  );
+}
+
+function EditButton({ locale, labelKey, onClick }: { readonly locale: Locale; readonly labelKey: LabelKey; readonly onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label={t(locale, labelKey)}
+      title={t(locale, labelKey)}
+      onClick={onClick}
+      className="grid h-7 w-7 flex-none place-items-center rounded-control border border-transparent text-inkdim hover:border-bord hover:text-ink"
+    >
+      <span aria-hidden="true">✎</span>
+    </button>
+  );
+}
+
+function Welcome({ locale, localeStore, themeStore }: { readonly locale: Locale; readonly localeStore: LocaleStore; readonly themeStore: ThemeStore }) {
+  const preference = useSyncExternalStore(themeStore.subscribe, themeStore.preference);
+  return (
+    <div className="grid gap-5">
+      <div className="grid gap-1.5">
+        <span className={LABEL_CLASS}>{t(locale, 'settings.language.label')}</span>
+        <LocaleSwitcher store={localeStore} locale={locale} />
+      </div>
+      <div className="grid gap-1.5">
+        <span className={LABEL_CLASS}>{t(locale, 'settings.theme.label')}</span>
+        <div role="group" aria-label={t(locale, 'settings.theme.label')} className="flex w-fit items-center gap-1">
+          {THEME_PREFERENCES.map((option) => (
+            <button key={option} type="button" aria-pressed={option === preference} onClick={() => themeStore.set(option)} className={chipClass(option === preference)}>
+              {t(locale, THEME_KEY[option])}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Accounts({ state, store, locale, marks, onEdit }: { readonly state: WizardState; readonly store: WizardStore; readonly locale: Locale; readonly marks: ProviderMarksStore; readonly onEdit: (key: string) => void }) {
+  return (
+    <div className="grid gap-3">
+      {state.rows.length === 0 && state.providers.length === 0 ? (
+        <p className="text-[13px] text-inkdim">{state.loading ? t(locale, 'wizard.checking') : t(locale, 'candidates.empty')}</p>
+      ) : null}
+      {state.rows.length > 0 ? (
+        <ul className="grid gap-2">
+          {state.rows.map((row) => (
+            <li key={row.id} className="grid gap-2" data-wizard-account={row.id}>
+              <div
+                className={`flex items-center gap-2.5 rounded-card border px-3 py-2 ${row.selected ? 'border-bord bg-raised' : 'border-hairline bg-surface'} ${
+                  row.selectable ? '' : 'opacity-60'
+                }`}
+              >
+                <button
+                  type="button"
+                  disabled={!row.selectable}
+                  aria-pressed={row.selected}
+                  onClick={() => store.select(row.id)}
+                  className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+                >
+                  <ProviderMark provider={row.markKey ?? ''} mark={row.markKey === null ? null : marks.markFor(row.markKey)} />
+                  <span className="min-w-0 flex-1">
+                    <AccountName providerName={row.providerName} label={row.label} />
+                    {row.endpointHost !== null ? <span className="block truncate font-mono text-[11px] text-inkdim">{row.endpointHost}</span> : null}
+                    {row.disabledReasonKey !== null ? <span className="block text-[11.5px] text-inkdim">{t(locale, row.disabledReasonKey)}</span> : null}
+                  </span>
+                </button>
+                {row.warnKeys.map((key) => (
+                  <span key={key} className="inline-flex items-center gap-1 text-[12px] text-signal">
+                    {t(locale, key)}
+                    <InfoBubble locale={locale} subject={t(locale, key)} body={t(locale, 'candidates.info.env_overrides_login')} />
+                  </span>
+                ))}
+                <StatusLamp statusKey={row.statusKey} locale={locale} />
+                {row.selected ? <EditButton locale={locale} labelKey="wizard.accounts.edit" onClick={() => onEdit(row.id)} /> : null}
+                <button
+                  type="button"
+                  disabled={!row.selectable}
+                  tabIndex={-1}
+                  aria-hidden="true"
+                  onClick={() => store.select(row.id)}
+                  className="flex-none"
+                >
+                  <SelectionMark on={row.selected} />
+                </button>
+              </div>
+              {row.keyMoveCard ? (
+                <div className="grid gap-2 rounded-card border border-hairline bg-band p-3">
+                  <div className="flex items-center gap-3">
+                    <span className="min-w-0 flex-1 text-[13px] text-ink">{t(locale, 'candidates.keymove.title')}</span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={row.importToken}
+                      aria-label={t(locale, 'candidates.keymove.switch')}
+                      onClick={() => store.setImportToken(row.id, !row.importToken)}
+                      className={`relative h-5 w-9 flex-none rounded-full border transition-colors ${row.importToken ? 'border-signal bg-signal' : 'border-hairline bg-raised'}`}
+                    >
+                      <span className={`absolute top-0.5 h-3.5 w-3.5 rounded-full bg-ink transition-[left] ${row.importToken ? 'left-[18px]' : 'left-0.5'}`} />
+                    </button>
+                  </div>
+                  <p className="text-[12px] text-inkdim">{t(locale, 'candidates.keymove.body')}</p>
+                </div>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {state.providers.some((provider) => provider.hintKey !== null) ? (
+        <ul className="grid gap-1.5">
+          {state.providers
+            .filter((provider) => provider.hintKey !== null)
+            .map((provider) => (
+              <li key={provider.id} className="grid gap-1 rounded-card border border-hairline px-3 py-1.5">
+                <div className="flex items-center gap-2.5">
+                  <ProviderMark provider={provider.id} mark={marks.markFor(provider.id)} />
+                  <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{provider.name}</span>
+                  <StatusLamp statusKey={provider.statusKey} locale={locale} />
+                </div>
+                <p className="text-[12px] text-inkdim">{t(locale, provider.hintKey ?? 'candidates.hint.login').replace('{name}', provider.name)}</p>
+              </li>
+            ))}
+        </ul>
+      ) : null}
+
+      {state.providers.some((provider) => provider.installUrl !== null) ? (
+        <details className="rounded-card border border-hairline" data-installable="">
+          <summary className="px-3 py-2 text-[13px] text-inkdim hover:text-ink">
+            {fill(t(locale, 'wizard.installable'), { n: String(state.providers.filter((provider) => provider.installUrl !== null).length) })}
+          </summary>
+          <ul className="grid gap-1.5 px-3 pb-3">
+            {state.providers
+              .filter((provider) => provider.installUrl !== null)
+              .map((provider) => (
+                <li key={provider.id} className="grid gap-1.5">
+                  <div className="flex items-center gap-2.5">
+                    <ProviderMark provider={provider.id} mark={marks.markFor(provider.id)} />
+                    <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{provider.name}</span>
+                    <StatusLamp statusKey={provider.statusKey} locale={locale} />
+                  </div>
+                  <div className="flex items-center gap-2 rounded-control bg-band px-2 py-1">
+                    <code className="min-w-0 flex-1 select-all truncate font-mono text-[11.5px] text-ink">{provider.installUrl}</code>
+                    <ActionButton onClick={() => void navigator.clipboard?.writeText(provider.installUrl ?? '')}>{t(locale, 'candidates.install.copy')}</ActionButton>
+                  </div>
+                </li>
+              ))}
+          </ul>
+        </details>
+      ) : null}
+
+      <div>
+        <ActionButton disabled={state.loading} onClick={() => void store.rescan()}>
+          {t(locale, 'candidates.rescan')}
+        </ActionButton>
+      </div>
+    </div>
+  );
+}
+
+function Capabilities({ state, store, locale }: { readonly state: WizardState; readonly store: WizardStore; readonly locale: Locale }) {
+  return (
+    <ul className="grid gap-2">
+      {state.capabilities.map((capability) => (
+        <li key={capability.id}>
+          <button
+            type="button"
+            aria-pressed={capability.selected}
+            onClick={() => store.toggleCapability(capability.id)}
+            className={`flex w-full items-center gap-2.5 rounded-card border px-3 py-2 text-left ${capability.selected ? 'border-bord bg-raised' : 'border-hairline bg-surface'}`}
+          >
+            {/* Technical terms (MCP, Skill, Hook, Context) are never translated. */}
+            <span className="flex-none font-mono text-[11px] text-inkdim">{capability.kind}</span>
+            <span className="min-w-0 flex-1 truncate text-[13.5px] text-ink">{capability.name}</span>
+            <SelectionMark on={capability.selected} />
+          </button>
+        </li>
+      ))}
+      <span className="sr-only">{t(locale, 'wizard.step.capabilities')}</span>
+    </ul>
+  );
+}
+
+function Order({ state, store, locale, marks }: { readonly state: WizardState; readonly store: WizardStore; readonly locale: Locale; readonly marks: ProviderMarksStore }) {
+  return (
+    <ol className="grid gap-2">
+      {state.order.map((entry, index) => (
+        <li
+          key={entry.id}
+          className="flex items-center gap-2.5 rounded-card border border-hairline bg-surface px-3 py-2"
+          onKeyDown={(event) => {
+            if (!event.altKey) return;
+            if (event.key === 'ArrowUp') {
+              event.preventDefault();
+              store.moveUp(entry.id);
+            } else if (event.key === 'ArrowDown') {
+              event.preventDefault();
+              store.moveDown(entry.id);
+            }
+          }}
+        >
+          <span className="w-5 flex-none text-center font-mono text-[12px] text-inkdim">{index + 1}</span>
+          <ProviderMark provider={entry.markKey ?? ''} mark={entry.markKey === null ? null : marks.markFor(entry.markKey)} />
+          <span className="min-w-0 flex-1"><AccountName providerName={entry.providerName} label={entry.label} /></span>
+          <button
+            type="button"
+            aria-label={t(locale, 'wizard.order.up')}
+            title={t(locale, 'wizard.order.up')}
+            disabled={index === 0}
+            onClick={() => store.moveUp(entry.id)}
+            className="grid h-7 w-7 place-items-center rounded-control border border-bord text-ink hover:bg-raised disabled:opacity-40"
+          >
+            <span aria-hidden="true">↑</span>
+          </button>
+          <button
+            type="button"
+            aria-label={t(locale, 'wizard.order.down')}
+            title={t(locale, 'wizard.order.down')}
+            disabled={index === state.order.length - 1}
+            onClick={() => store.moveDown(entry.id)}
+            className="grid h-7 w-7 place-items-center rounded-control border border-bord text-ink hover:bg-raised disabled:opacity-40"
+          >
+            <span aria-hidden="true">↓</span>
+          </button>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/** A mini bar: the share still left, from the left edge. */
+function MiniBar({ fillShare }: { readonly fillShare: number | null }) {
+  return (
+    <span className="relative block h-1.5 w-16 overflow-hidden rounded-full bg-raised" role="presentation">
+      {fillShare === null ? null : <span className="absolute inset-y-0 left-0 bg-proceed" style={{ width: `${Math.round(fillShare * 100)}%` }} />}
+    </span>
+  );
+}
+
+function ConsentCard({ row, store, locale }: { readonly row: BudgetRow; readonly store: WizardStore; readonly locale: Locale }) {
+  const [amount, setAmount] = useState(String(RECOMMENDED.cap.amountUsd));
+  const [scope, setScope] = useState<CapScope>(RECOMMENDED.cap.scope);
+  if (row.consented) {
+    return (
+      <div className="flex items-center gap-3 rounded-card border border-hairline bg-band px-3 py-2" data-consent="granted">
+        <span className="inline-flex items-center gap-1.5 text-[12px] text-ink">
+          <span aria-hidden="true" className="h-2 w-2 rounded-full bg-proceed" />
+          {t(locale, 'wizard.consent.granted')}
+        </span>
+        <span className="min-w-0 flex-1" />
+        <ActionButton variant="ghost" onClick={() => store.revokeSpend(row.id)}>
+          {t(locale, 'wizard.consent.revoke')}
+        </ActionButton>
+      </div>
+    );
+  }
+  return (
+    <div className="grid gap-2 rounded-card border border-hairline bg-band p-3" data-consent="needed">
+      <p className="text-[13px] font-semibold text-ink">{t(locale, 'wizard.consent.title')}</p>
+      <p className="text-[12px] text-inkdim">{t(locale, 'wizard.consent.body')}</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-2 text-[12.5px] text-inkdim">
+          {t(locale, 'wizard.consent.cap')}
+          <input
+            inputMode="decimal"
+            value={amount}
+            onChange={(event) => setAmount(event.target.value)}
+            className="w-20 rounded-control border border-bord bg-transparent px-2 py-1 font-mono text-[13px] text-ink focus:border-signal focus:outline-none"
+          />
+        </label>
+        <div role="radiogroup" className="flex items-center gap-1">
+          {CAP_SCOPES.map((entry) => (
+            <button key={entry} type="button" role="radio" aria-checked={scope === entry} onClick={() => setScope(entry)} className={chipClass(scope === entry)}>
+              {t(locale, SCOPE_KEY[entry])}
+            </button>
+          ))}
+        </div>
+        <span className="flex-1" />
+        <ActionButton variant="primary" onClick={() => void store.allowSpend(row.id, { amount, scope })}>
+          {t(locale, 'wizard.consent.allow')}
+        </ActionButton>
+      </div>
+    </div>
+  );
+}
+
+function Budget({ state, store, locale, marks, onEdit }: { readonly state: WizardState; readonly store: WizardStore; readonly locale: Locale; readonly marks: ProviderMarksStore; readonly onEdit: (key: string) => void }) {
+  const { subscriptions, payPerUse } = state.budget;
+  const reserveText = (row: BudgetRow): string => {
+    const share = Math.max(row.reserveShort, row.reserveLong);
+    return share > 0 ? fill(t(locale, 'wizard.budget.reserve'), { pct: String(Math.round(share * 100)) }) : t(locale, 'wizard.budget.reserveNone');
+  };
+  return (
+    <div className="grid gap-5">
+      {subscriptions.length > 0 ? (
+        <section className="grid gap-2" data-budget-group="subscriptions">
+          <h3 className="text-[14px] font-semibold text-ink">
+            {t(locale, 'wizard.budget.subscriptions')} <span className="font-normal text-inkdim">· {t(locale, 'wizard.budget.subscriptionsHint')}</span>
+          </h3>
+          <ul className="grid gap-2">
+            {subscriptions.map((row) => (
+              <li key={row.id} className="flex items-center gap-2.5 rounded-card border border-hairline bg-surface px-3 py-2" data-budget-row={row.id}>
+                <ProviderMark provider={row.markKey ?? ''} mark={row.markKey === null ? null : marks.markFor(row.markKey)} />
+                <span className="min-w-0 flex-1">
+                  <AccountName providerName={row.providerName} label={row.label} />
+                  <span className="block truncate text-[12px] text-inkdim">
+                    {t(locale, row.policyKey)} · {reserveText(row)}
+                    {row.diffCount > 0 ? ` · ${fill(t(locale, 'editor.head.diffs'), { n: String(row.diffCount) })}` : ''}
+                  </span>
+                </span>
+                <span className="flex flex-none items-center gap-1" title={row.bars.length === 0 ? t(locale, 'wizard.budget.unread') : undefined}>
+                  {row.bars.length === 0 ? <MiniBar fillShare={null} /> : row.bars.map((bar, index) => <MiniBar key={index} fillShare={bar} />)}
+                </span>
+                <EditButton locale={locale} labelKey="wizard.budget.edit" onClick={() => onEdit(row.id)} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      {payPerUse.length > 0 ? (
+        <section className="grid gap-2" data-budget-group="pay-per-use">
+          <h3 className="text-[14px] font-semibold text-ink">
+            {t(locale, 'wizard.budget.payPerUse')} <span className="font-normal text-inkdim">· {t(locale, 'wizard.budget.payPerUseHint')}</span>
+          </h3>
+          <ul className="grid gap-2">
+            {payPerUse.map((row) => (
+              <li key={row.id} className="grid gap-2" data-budget-row={row.id}>
+                <div className="flex items-center gap-2.5 rounded-card border border-hairline bg-surface px-3 py-2">
+                  <ProviderMark provider={row.markKey ?? ''} mark={row.markKey === null ? null : marks.markFor(row.markKey)} />
+                  <span className="min-w-0 flex-1">
+                    <AccountName providerName={row.providerName} label={row.label} />
+                    <span className="block truncate text-[12px] text-inkdim">
+                      {fill(t(locale, 'wizard.budget.spend'), {
+                        spent: row.spentUsd === null ? '—' : formatMeterValue(locale, 'usd', row.spentUsd),
+                        cap:
+                          row.cap === null
+                            ? t(locale, 'wizard.budget.noCap')
+                            : `${formatMeterValue(locale, 'usd', row.cap.amountUsd)} · ${t(locale, SCOPE_KEY[row.cap.scope as CapScope] ?? 'cap.scope.account_month')}`,
+                      })}
+                      {row.diffCount > 0 ? ` · ${fill(t(locale, 'editor.head.diffs'), { n: String(row.diffCount) })}` : ''}
+                    </span>
+                  </span>
+                  <EditButton locale={locale} labelKey="wizard.budget.edit" onClick={() => onEdit(row.id)} />
+                </div>
+                <ConsentCard row={row} store={store} locale={locale} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+function EditorWindow({ store, account, locale }: { readonly store: WizardStore; readonly account: SettingsAccountView; readonly locale: Locale }) {
+  // One editor store per window: the tab starts on Genel each time it opens.
+  const editor = useMemo(() => createAccountEditorStore({ run: (command) => store.editorRun(command), now: () => Date.now() }), [store]);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return;
+      event.stopPropagation();
+      store.cancelEditor();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [store]);
+  return (
+    <div className="absolute inset-0 z-10 grid place-items-center bg-black/50 p-4">
+      <div role="dialog" aria-label={t(locale, 'wizard.editor.title')} className="flex h-[480px] max-h-full w-[560px] max-w-full flex-col overflow-hidden rounded-panel border border-bord bg-bg" data-wizard-editor="">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          <AccountEditor account={account} locale={locale} store={editor} tabs={WINDOW_TABS} formatTime={() => null} onRefresh={() => undefined} />
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-hairline px-5 py-3">
+          <ActionButton variant="neutral" size="md" onClick={() => store.cancelEditor()}>
+            {t(locale, 'wizard.editor.cancel')}
+          </ActionButton>
+          <ActionButton variant="primary" size="md" onClick={() => store.saveEditor()}>
+            {t(locale, 'wizard.editor.save')}
+          </ActionButton>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const railNumberClass = (standing: 'todo' | 'cur' | 'done' | 'skipped'): string => {
   const base = 'grid h-5 w-5 flex-none place-items-center rounded-full border font-mono text-[11px]';
   if (standing === 'cur') return `${base} border-signal text-signal`;
   if (standing === 'done') return `${base} border-proceed bg-proceed text-bg`;
   return `${base} border-bord text-inkdim`;
 };
 
-function SourceStep({ state, store, locale }: { readonly state: WizardState; readonly store: WizardStore; readonly locale: Locale }) {
-  return (
-    <div className="grid gap-3">
-      <label className="grid gap-1">
-        <span className={LABEL_CLASS}>{t(locale, 'wizard.source.label')}</span>
-        <input
-          value={state.source}
-          onChange={(event) => store.enterSource(event.target.value)}
-          placeholder={t(locale, 'wizard.source.placeholder')}
-          className={MONO_INPUT_CLASS}
-        />
-      </label>
-      <div className="flex flex-wrap items-center gap-2.5">
-        <ActionButton variant="neutral" disabled={state.probing || state.source.trim() === ''} onClick={() => void store.checkSource()}>
-          {t(locale, 'wizard.source.check')}
-        </ActionButton>
-        {state.probing ? (
-          <span className="flex items-center gap-2.5 font-mono text-[11px] text-inkdim">
-            <span aria-hidden="true" className="h-2 w-2 flex-none rounded-full bg-info motion-safe:animate-pulse" />
-            {t(locale, 'wizard.source.probing')}
-          </span>
-        ) : state.sourceChecked !== null ? (
-          <StateBadge tone={state.sourceOk ? 'proceed' : 'error'}>
-            {t(locale, state.sourceOk ? 'wizard.source.ok' : 'wizard.source.failed')}
-          </StateBadge>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function AccountStep({ state, store, locale }: { readonly state: WizardState; readonly store: WizardStore; readonly locale: Locale }) {
-  const plan = state.draft.plan ?? '';
-  const enterDraft = (patch: Partial<{ label: string; authMode: string; plan: string }>): void => {
-    const label = patch.label ?? state.draft.label;
-    const authMode = patch.authMode ?? state.draft.authMode;
-    const nextPlan = patch.plan ?? plan;
-    store.enterAccount({ label, authMode, ...(nextPlan !== '' ? { plan: nextPlan } : {}) });
-  };
-  return (
-    <div className="grid gap-4">
-      <div className="grid gap-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className={LABEL_CLASS}>{t(locale, 'wizard.account.title')}</span>
-          <ActionButton variant="neutral" disabled={state.discovering} onClick={() => void store.refreshDiscovery()}>
-            {t(locale, 'wizard.account.refresh')}
-          </ActionButton>
-        </div>
-        {state.discovering ? (
-          <p className="flex items-center gap-2.5 font-mono text-[11px] text-inkdim">
-            <span aria-hidden="true" className="h-2 w-2 flex-none rounded-full bg-info motion-safe:animate-pulse" />
-            {t(locale, 'wizard.source.probing')}
-          </p>
-        ) : null}
-        {state.discovered.length === 0 ? (
-          state.discovering ? null : (
-            <p className="text-[13px] text-inkdim">{t(locale, 'wizard.account.empty')}</p>
-          )
-        ) : (
-          <ul className="grid gap-2">
-            {state.discovered.map((row) => {
-              const selected = state.provider === row.defId;
-              return (
-                <li key={row.defId}>
-                  <button
-                    type="button"
-                    onClick={() => store.chooseProvider(row.defId)}
-                    className={`flex w-full flex-wrap items-center justify-between gap-2 rounded-card border bg-surface px-3 py-2 text-left transition-colors hover:bg-raised ${
-                      selected ? 'border-signal' : 'border-hairline hover:border-bord'
-                    }`}
-                  >
-                    <span className="flex min-w-0 flex-wrap items-center gap-2">
-                      <code className="font-mono text-[13px] text-ink">{row.defId}</code>
-                      <DiscoveryBadges binPath={row.binPath} loggedIn={row.loggedIn} locale={locale} />
-                    </span>
-                    {selected ? <StateBadge tone="signal">{t(locale, 'wizard.account.selected')}</StateBadge> : null}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
-      <div className="grid gap-3 sm:grid-cols-3">
-        <label className="grid gap-1">
-          <span className={LABEL_CLASS}>{t(locale, 'wizard.account.label')}</span>
-          <input
-            value={state.draft.label}
-            onChange={(event) => enterDraft({ label: event.target.value })}
-            placeholder={t(locale, 'wizard.account.labelPlaceholder')}
-            className={INPUT_CLASS}
-          />
-        </label>
-        <label className="grid gap-1">
-          <span className={LABEL_CLASS}>{t(locale, 'wizard.account.authMode')}</span>
-          <select
-            value={state.draft.authMode}
-            onChange={(event) => enterDraft({ authMode: event.target.value })}
-            className="rounded-control border border-bord bg-raised px-2 py-[5px] text-[13px] text-ink outline-none focus:border-signal"
-          >
-            <option value="" disabled>
-              {t(locale, 'wizard.account.authMode')}
-            </option>
-            {AUTH_MODES.map((mode) => (
-              <option key={mode.value} value={mode.value}>
-                {t(locale, mode.key)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="grid gap-1">
-          <span className={LABEL_CLASS}>{t(locale, 'wizard.account.plan')}</span>
-          <input
-            value={plan}
-            onChange={(event) => enterDraft({ plan: event.target.value })}
-            placeholder={t(locale, 'wizard.account.planPlaceholder')}
-            className={INPUT_CLASS}
-          />
-        </label>
-      </div>
-    </div>
-  );
-}
-
-function BindingStep({ state, store, locale }: { readonly state: WizardState; readonly store: WizardStore; readonly locale: Locale }) {
-  // The role slug is screen-local input state: the store takes it as bind()'s argument and the api
-  // owns the slug's validity, so the screen keeps no gate on it beyond presence.
-  const [role, setRole] = useState('');
-  return (
-    <div className="grid gap-3">
-      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-        <label className="grid gap-1">
-          <span className={LABEL_CLASS}>{t(locale, 'wizard.binding.role')}</span>
-          <input
-            value={role}
-            onChange={(event) => setRole(event.target.value)}
-            placeholder={t(locale, 'wizard.binding.rolePlaceholder')}
-            className={MONO_INPUT_CLASS}
-          />
-        </label>
-        <ActionButton variant="primary" size="md" disabled={role.trim() === ''} onClick={() => void store.bind(role.trim())}>
-          {t(locale, 'wizard.binding.bind')}
-        </ActionButton>
-      </div>
-      <div className="grid gap-1.5">
-        <span className={LABEL_CLASS}>{t(locale, 'wizard.binding.bound')}</span>
-        {state.boundRoles.length === 0 ? (
-          <p className="text-[13px] text-inkdim">{t(locale, 'wizard.binding.empty')}</p>
-        ) : (
-          <span className="flex flex-wrap gap-1.5">
-            {state.boundRoles.map((bound) => (
-              <StateBadge key={bound} tone="proceed">
-                {bound}
-              </StateBadge>
-            ))}
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-export function WizardScreen({ store, locale }: WizardScreenProps) {
+export function WizardScreen({ store, locale, localeStore, themeStore, marks, onOpenTarget }: WizardScreenProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
-  // While `open` is still proving repo existence, and when it answered "one exists", the
-  // wizard has nothing to show — the overlay stays away entirely.
+  const opened = state.opened;
+  // A project the wizard attached opens in its default view once the wizard has left.
+  useEffect(() => {
+    if (opened !== null) onOpenTarget(opened);
+  }, [opened, onOpenTarget]);
+  // While `open` is still proving that no project exists, and when one does, the wizard has
+  // nothing to show.
   if (state.checking || !state.visible) return null;
 
-  const enabled = store.nextEnabled();
-  const stepIndex = STEPS.indexOf(state.step);
+  const onEdit = (key: string): void => void store.openEditor(key);
+  const isDone = state.step === 'done';
+  const attaching = isDone && state.attach.open;
+  const primaryKey: LabelKey = attaching ? (state.attach.busy ? 'wizard.attach.busy' : 'wizard.attach.submit') : isDone ? 'wizard.attach' : state.step === 'budget' ? (state.finishing ? 'wizard.finishing' : 'wizard.finish') : 'wizard.next';
+  const leadKey = LEAD_KEY[state.step];
+  const failure = state.lastOutcome !== null && !state.lastOutcome.result.ok ? state.lastOutcome : null;
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4">
       <div
-        className="grid w-full max-w-[720px] overflow-hidden rounded-panel border border-bord bg-bg md:grid-cols-[200px_minmax(0,1fr)]"
+        className="relative grid h-[600px] max-h-full w-full max-w-[820px] overflow-hidden rounded-panel border border-bord bg-bg md:grid-cols-[210px_minmax(0,1fr)]"
         role="dialog"
         aria-label={t(locale, 'wizard.title')}
+        data-wizard=""
       >
         <div className="flex flex-row flex-wrap gap-1 border-b border-hairline bg-surface px-3 py-3 md:flex-col md:gap-0.5 md:border-b-0 md:border-r md:px-2.5 md:py-4">
-          <p className="hidden px-2.5 pb-3 font-mono text-[12px] font-medium uppercase tracking-[0.08em] text-inkdim md:block">
-            {t(locale, 'wizard.title')}
-          </p>
-          {STEPS.map((step, index) => {
-            const standing = index < stepIndex ? 'done' : index === stepIndex ? 'cur' : 'todo';
+          <p className="hidden px-2.5 pb-3 text-[14px] font-semibold text-ink md:block">{t(locale, 'wizard.title')}</p>
+          {WIZARD_STEPS.map((step, index) => {
+            const entry = state.rail.find((item) => item.step === step);
+            const standing = entry?.standing ?? 'todo';
             return (
-              <div key={step} className={railClass(standing)} aria-current={standing === 'cur' ? 'step' : undefined}>
+              <div
+                key={step}
+                data-rail-step={step}
+                data-standing={standing}
+                className={`flex items-center gap-2.5 rounded-control px-2.5 py-[7px] ${standing === 'cur' ? 'bg-raised' : ''}`}
+                aria-current={standing === 'cur' ? 'step' : undefined}
+              >
                 <span aria-hidden="true" className={railNumberClass(standing)}>
-                  {index + 1}
+                  {standing === 'done' ? '✓' : standing === 'skipped' ? t(locale, 'wizard.rail.skipped') : index + 1}
                 </span>
-                <span
-                  className={`text-[13.5px] max-md:hidden ${
-                    standing === 'cur' ? 'font-semibold text-ink' : standing === 'done' ? 'text-ink' : 'text-inkdim'
-                  }`}
-                >
+                <span className={`text-[13.5px] max-md:hidden ${standing === 'cur' ? 'font-semibold text-ink' : standing === 'done' ? 'text-ink' : 'text-inkdim'}`}>
                   {t(locale, STEP_KEY[step])}
                 </span>
               </div>
@@ -265,46 +559,91 @@ export function WizardScreen({ store, locale }: WizardScreenProps) {
           })}
         </div>
 
-        <div className="flex min-h-[420px] flex-col gap-4 p-5 md:p-6">
-          {/* The done step is its own headline — the centered card carries the word, so the pane
-             header would only repeat it. */}
-          {state.step !== 'done' ? (
-            <h2 className="text-[20px] font-semibold tracking-[-0.01em] text-ink">{t(locale, STEP_KEY[state.step])}</h2>
-          ) : null}
-
-          {state.lastOutcome !== null ? (
-            <OutcomeNotice
-              ok={state.lastOutcome.result.ok}
-              text={t(locale, state.lastOutcome.labelKey)}
-              code={state.lastOutcome.result.ok ? undefined : state.lastOutcome.result.code}
-            />
-          ) : null}
-
-          {state.step === 'done' ? (
-            <div className="grid flex-1 place-content-center gap-2 text-center">
-              <p className="text-[22px] font-bold text-ink">{t(locale, 'wizard.step.done')}</p>
-            </div>
-          ) : (
+        <div className="flex min-h-0 flex-col p-5 md:p-6">
+          <div className="min-h-0 flex-1 overflow-y-auto pr-1">
             <div className="grid content-start gap-4">
-              {state.step === 'source' ? <SourceStep state={state} store={store} locale={locale} /> : null}
-              {state.step === 'account' ? <AccountStep state={state} store={store} locale={locale} /> : null}
-              {state.step === 'binding' ? <BindingStep state={state} store={store} locale={locale} /> : null}
+              <div className="grid gap-1">
+                <h2 className="text-[20px] font-bold tracking-[-0.01em] text-ink">{t(locale, STEP_KEY[state.step])}</h2>
+                {leadKey !== null ? <p className="text-[13.5px] text-inkdim">{t(locale, leadKey)}</p> : null}
+              </div>
+              {failure !== null ? <OutcomeNotice ok={false} text={t(locale, failure.labelKey)} code={failure.result.ok ? undefined : failure.result.code} /> : null}
+              {state.step === 'welcome' ? <Welcome locale={locale} localeStore={localeStore} themeStore={themeStore} /> : null}
+              {state.step === 'accounts' ? <Accounts state={state} store={store} locale={locale} marks={marks} onEdit={onEdit} /> : null}
+              {state.step === 'capabilities' ? <Capabilities state={state} store={store} locale={locale} /> : null}
+              {state.step === 'order' ? <Order state={state} store={store} locale={locale} marks={marks} /> : null}
+              {state.step === 'budget' ? <Budget state={state} store={store} locale={locale} marks={marks} onEdit={onEdit} /> : null}
             </div>
-          )}
-
-          <footer className="mt-auto flex flex-wrap items-center gap-2 border-t border-hairline pt-3">
-            <ActionButton variant="ghost" disabled={state.step === 'source'} onClick={() => store.back()}>
-              {t(locale, 'wizard.back')}
-            </ActionButton>
-            {!enabled && state.step !== 'done' ? (
-              <span className="text-[13px] text-inkdim">{t(locale, HINT_KEY[state.step])}</span>
+            {isDone && state.summary !== null ? (
+              attaching ? (
+                <div className="mt-4 grid gap-1.5" data-wizard-attach="">
+                  <label className="grid gap-1.5">
+                    <span className={LABEL_CLASS}>{t(locale, 'wizard.attach.path')}</span>
+                    <input
+                      autoFocus
+                      value={state.attach.path}
+                      onChange={(event) => store.setAttachPath(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') void store.submitAttach();
+                      }}
+                      placeholder={t(locale, 'wizard.attach.placeholder')}
+                      className="rounded-control border border-bord bg-transparent px-2.5 py-1.5 font-mono text-[13px] text-ink focus:border-signal focus:outline-none"
+                    />
+                  </label>
+                  {state.attach.failureKey !== null ? (
+                    <p role="alert" className="text-[12.5px] text-error">
+                      {t(locale, state.attach.failureKey)}
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="grid place-items-center gap-3 py-10 text-center" data-wizard-done="">
+                  <span aria-hidden="true" className="grid h-14 w-14 place-items-center rounded-full bg-proceed text-[26px] text-bg">
+                    ✓
+                  </span>
+                  <p className="text-[13.5px] text-ink" data-wizard-summary="">
+                    {fill(t(locale, 'wizard.done.summary'), {
+                      accounts: String(state.summary.accounts),
+                      capabilities: String(state.summary.capabilities),
+                      first: state.summary.firstLabel,
+                    })}
+                  </p>
+                </div>
+              )
             ) : null}
-            <span className="flex-1"></span>
-            <ActionButton variant="primary" size="md" disabled={!enabled} onClick={() => void store.next()}>
-              {t(locale, 'wizard.next')}
-            </ActionButton>
+          </div>
+
+          <footer className="mt-4 flex items-center gap-2 border-t border-hairline pt-3" data-wizard-footer="">
+            <div className="flex flex-none items-center gap-2">
+              <span className={state.step === 'welcome' || (isDone && !attaching) ? 'invisible' : ''}>
+                <ActionButton variant="neutral" size="md" onClick={() => (attaching ? store.cancelAttach() : store.back())}>
+                  {t(locale, 'wizard.back')}
+                </ActionButton>
+              </span>
+              <span className={state.canSkip ? '' : 'invisible'}>
+                <ActionButton variant="ghost" size="md" onClick={() => void store.skip()}>
+                  {t(locale, 'wizard.skip')}
+                </ActionButton>
+              </span>
+            </div>
+            <span className="min-w-0 flex-1 text-right text-[12.5px] text-inkdim">
+              {state.reasonKey !== null ? (
+                <>
+                  <span aria-hidden="true" className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-signal align-middle" />
+                  {t(locale, state.reasonKey)}
+                </>
+              ) : null}
+            </span>
+            <span className="min-w-[152px] flex-none [&>button]:w-full">
+              <ActionButton variant="primary" size="md" disabled={attaching ? state.attach.busy || state.attach.path.trim() === '' : !isDone && !state.nextEnabled}
+                onClick={() => (attaching ? void store.submitAttach() : isDone ? store.attachProject() : void store.next())}
+              >
+                {t(locale, primaryKey)}
+              </ActionButton>
+            </span>
           </footer>
         </div>
+
+        {state.editor !== null ? <EditorWindow key={state.editor.key} store={store} account={state.editor.account} locale={locale} /> : null}
       </div>
     </div>
   );
