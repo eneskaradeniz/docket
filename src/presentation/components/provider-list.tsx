@@ -6,10 +6,11 @@
 import { useSyncExternalStore } from 'react';
 import { t, type Locale } from '../labels/t';
 import type { ProviderMarksStore } from '../stores/provider-marks';
-import type { ProviderViewRow, ProvidersStore } from '../stores/providers';
+import { providerStatusTone, type ProviderViewRow, type ProvidersStore } from '../stores/providers';
 import { ActionButton } from './action-button';
 import { countedLabel } from './counted-label';
 import { ProviderMark } from './provider-mark';
+import { StatusLamp } from './status-lamp';
 
 export interface ProviderListProps {
   readonly store: ProvidersStore;
@@ -23,10 +24,16 @@ function Row({ row, marks, locale }: { readonly row: ProviderViewRow; readonly m
       <div className="flex items-center gap-2.5">
         <ProviderMark provider={row.markKey} mark={marks.markFor(row.markKey)} />
         <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{row.name}</span>
-        {row.version !== null ? <span className="flex-none font-mono text-[11.5px] text-inkdim">{row.version}</span> : null}
-        <span className="flex-none text-[12px] text-inkdim">
-          {row.scanning ? t(locale, 'providers.scanning') : t(locale, row.statusKey)}
-        </span>
+        {row.version !== null ? (
+          <span title={row.versionFull ?? undefined} className="max-w-[160px] flex-none truncate font-mono text-[11.5px] text-inkdim">
+            {row.version}
+          </span>
+        ) : null}
+        {row.scanning ? (
+          <span className="flex-none text-[12.5px] text-inkdim">{t(locale, 'providers.scanning')}</span>
+        ) : (
+          <StatusLamp tone={providerStatusTone(row.statusKey)}>{t(locale, row.statusKey)}</StatusLamp>
+        )}
       </div>
       {row.binPath !== null ? (
         <span title={row.binPath} className="block truncate pl-[26px] font-mono text-[11px] text-inkdim">

@@ -459,7 +459,6 @@ export const LABEL_KEYS = [
   'editor.value.reserve',
   'editor.value.cap',
   'editor.value.warn',
-  'editor.row.diffs',
   'editor.row.open',
   'editor.status.ready',
   'editor.status.reserve',
@@ -635,6 +634,12 @@ export const LABEL_KEYS = [
   'roles.stages.note',
   'roles.stages.line',
   'roles.review.sameProvider',
+  'reset.line',
+  'reset.unit.d',
+  'reset.unit.h',
+  'reset.unit.m',
+  'editor.danger.title',
+  'editor.danger.remove',
 ] as const;
 
 export type LabelKey = (typeof LABEL_KEYS)[number];

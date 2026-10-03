@@ -428,7 +428,6 @@ export const EN: LabelBundle = {
   'editor.value.reserve': '{short}% · {long}%',
   'editor.value.cap': '${amount} · {scope}',
   'editor.value.warn': '{value}%',
-  'editor.row.diffs': '{n} differ',
   'editor.row.open': 'Open account',
   'editor.status.ready': 'Ready',
   'editor.status.reserve': 'Reserve reached',
@@ -585,4 +584,10 @@ export const EN: LabelBundle = {
   'roles.stages.note': 'Comes from the flow definition; not changed here.',
   'roles.stages.line': '{flow} › {stage}',
   'roles.review.sameProvider': 'The review will run on the provider that wrote the code. Add an account of another provider to send it there.',
+  'reset.line': 'Resets at {time} · {left} left',
+  'reset.unit.d': '{n}d',
+  'reset.unit.h': '{n}h',
+  'reset.unit.m': '{n}m',
+  'editor.danger.title': 'Danger zone',
+  'editor.danger.remove': "Takes this account off Docket's list.",
 };

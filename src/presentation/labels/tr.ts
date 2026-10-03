@@ -426,7 +426,6 @@ export const TR: LabelBundle = {
   'editor.value.reserve': '%{short} · %{long}',
   'editor.value.cap': '${amount} · {scope}',
   'editor.value.warn': '%{value}',
-  'editor.row.diffs': '{n} fark',
   'editor.row.open': 'Hesabı aç',
   'editor.status.ready': 'Hazır',
   'editor.status.reserve': 'Rezerve ulaştı',
@@ -583,4 +582,10 @@ export const TR: LabelBundle = {
   'roles.stages.note': 'Akış tanımından gelir; burada değiştirilmez.',
   'roles.stages.line': '{flow} › {stage}',
   'roles.review.sameProvider': 'İnceleme, kodu yazan sağlayıcıda çalışacak. Başka sağlayıcıdan bir hesap eklersen oraya gider.',
+  'reset.line': "{time}'{suffix} sıfırlanır · {left} kaldı",
+  'reset.unit.d': '{n} gün',
+  'reset.unit.h': '{n} sa',
+  'reset.unit.m': '{n} dk',
+  'editor.danger.title': 'Tehlikeli bölge',
+  'editor.danger.remove': "Hesabı Docket'ın listesinden çıkarır.",
 };

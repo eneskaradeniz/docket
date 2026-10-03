@@ -11,8 +11,12 @@ import { ActionButton } from './action-button';
 export interface SettingRowProps {
   readonly locale: Locale;
   readonly title: string;
-  readonly purpose: string;
+  /** One sentence under the title; absent when it would only repeat the title (no empty slot). */
+  readonly purpose?: string;
+  /** The one control at the right edge; null when the row's options are a block (`below`). */
   readonly control: ReactNode;
+  /** A full-width block under the title and purpose, for options too wide for the control slot. */
+  readonly below?: ReactNode;
   /** The recommended value's text when the setting differs from it; absent = on the recommendation. */
   readonly differsFrom?: string;
   readonly onReset?: () => void;
@@ -24,24 +28,25 @@ export interface SettingRowProps {
   readonly disclosure?: { readonly label: string; readonly startsOpen: boolean; readonly children: ReactNode };
 }
 
-export function SettingRow({ locale, title, purpose, control, differsFrom, onReset, saved = false, failure, note, disclosure }: SettingRowProps) {
+export function SettingRow({ locale, title, purpose, control, below, differsFrom, onReset, saved = false, failure, note, disclosure }: SettingRowProps) {
   const [open, setOpen] = useState(disclosure?.startsOpen ?? false);
   return (
     <div className="grid gap-1.5 border-b border-hairline py-3 last:border-b-0" data-setting-row={title}>
-      <div className="flex items-start justify-between gap-4">
+      <div className={`flex justify-between gap-4 ${purpose === undefined || purpose === '' ? 'items-center' : 'items-start'}`}>
         <div className="min-w-0">
           <p className="text-[13.5px] font-semibold text-ink">{title}</p>
-          <p className="text-[12.5px] text-inkdim">{purpose}</p>
+          {purpose !== undefined && purpose !== '' ? <p className="text-[12.5px] text-inkdim">{purpose}</p> : null}
         </div>
         <div className="flex flex-none items-center gap-2">
           {saved ? (
-            <span role="status" className="font-mono text-[11px] text-proceed">
+            <span role="status" className="text-[12px] text-proceed">
               {t(locale, 'editor.saved')}
             </span>
           ) : null}
           {control}
         </div>
       </div>
+      {below !== undefined ? <div>{below}</div> : null}
       {differsFrom !== undefined ? (
         <p className="flex flex-wrap items-center gap-2 text-[12px] text-signal-soft">
           <span>{t(locale, 'editor.differs').replace('{value}', differsFrom)}</span>

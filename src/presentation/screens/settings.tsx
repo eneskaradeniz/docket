@@ -24,13 +24,26 @@ import { LocaleSwitcher } from '../components/locale-switcher';
 import { motionVars, MOTION } from '../components/motion';
 import { OutcomeNotice } from '../components/outcome-notice';
 import { ProviderMark, type ProviderMarkProps } from '../components/provider-mark';
-import { SectionCard } from '../components/section-card';
+import { SegmentedControl } from '../components/segmented-control';
+import { SettingRow } from '../components/setting-row';
 import { SourceBadge } from '../components/source-badge';
-import { StateBadge } from '../components/state-badge';
-import type { CandidatesStore } from '../stores/candidates';
+import { StatusLamp } from '../components/status-lamp';
+import { candidateDot, type CandidatesStore } from '../stores/candidates';
 import type { ProvidersStore } from '../stores/providers';
 import type { LocaleStore } from '../stores/locale';
-import { accountStatus, createAccountEditorStore, policyLabelKey, roleChipTarget, rolesOfAccount, type AccountStatus, type EditorTab } from '../stores/account-editor';
+import {
+  accountHeadMeta,
+  accountStatus,
+  accountStatusTone,
+  createAccountEditorStore,
+  diffCountText,
+  policyLabelKey,
+  roleChipTarget,
+  rolesOfAccount,
+  type AccountStatus,
+  type EditorTab,
+} from '../stores/account-editor';
+import { providerDisplayName } from '../stores/providers';
 import { settingDiffs } from '../stores/recommended';
 import type { AccountModelsStore } from '../stores/account-models';
 import type { RolesStore } from '../stores/roles';
@@ -51,7 +64,7 @@ import type {
 } from '../stores/settings';
 import { failureKey } from '../stores/results';
 import type { ProviderMarksStore } from '../stores/provider-marks';
-import { updateButton, type UpdateStore, type UpdateStatus } from '../stores/update';
+import { updateButton, updateStatusTone, type UpdateStore, type UpdateStatus } from '../stores/update';
 
 export interface SettingsPanelProps {
   /** The reducer's open standing — the panel rides over whatever route is current. */
@@ -127,27 +140,38 @@ const THEME_KEY: Readonly<Record<ThemePreference, LabelKey>> = {
   light: 'settings.theme.light',
 };
 
-/** Tema — Sistem · Koyu · Açık in the same chip grammar as the language control (U-36). */
+/** Tema — Sistem · Koyu · Açık as a segment control (U-36), beside Dil. */
 function ThemeSwitcher({ store, locale }: { readonly store: ThemeStore; readonly locale: Locale }) {
   const preference = useSyncExternalStore(store.subscribe, store.preference);
   return (
-    <div role="group" aria-label={t(locale, 'settings.theme.label')} className="flex w-fit items-center gap-1">
-      {THEME_PREFERENCES.map((option) => (
-        <button
-          key={option}
-          type="button"
-          aria-pressed={option === preference}
-          onClick={() => store.set(option)}
-          className={
-            option === preference
-              ? 'rounded-control border border-signal px-[7px] py-px font-mono text-[11px] text-signal'
-              : 'rounded-control border border-hairline px-[7px] py-px font-mono text-[11px] text-inkdim transition-colors hover:text-ink'
-          }
-        >
-          {t(locale, THEME_KEY[option])}
-        </button>
-      ))}
-    </div>
+    <SegmentedControl<ThemePreference>
+      label={t(locale, 'settings.theme.label')}
+      value={preference}
+      options={THEME_PREFERENCES.map((option) => ({ id: option, text: t(locale, THEME_KEY[option]) }))}
+      onPick={(option) => store.set(option)}
+    />
+  );
+}
+
+/** A section's opening: its plain 20/700 title (U-28) with an optional action at the right edge;
+ *  the rows follow directly under it — no boxed header, no card around the list. */
+function SectionBlock({
+  title,
+  action,
+  children,
+}: {
+  readonly title: string;
+  readonly action?: React.ReactNode;
+  readonly children: React.ReactNode;
+}) {
+  return (
+    <section className="grid gap-3" data-settings-section>
+      <div className="flex min-h-8 items-center justify-between gap-3">
+        <h2 className="text-[20px] font-bold tracking-[-0.01em] text-ink">{title}</h2>
+        {action ?? null}
+      </div>
+      {children}
+    </section>
   );
 }
 
@@ -177,7 +201,7 @@ export function MeterRow({ meter, locale, resetsAt }: { readonly meter: MeterDis
   return (
     <li className="flex flex-wrap items-baseline gap-2">
       <span className="text-[13px] text-ink">{meter.label}</span>
-      <span className="font-mono text-[11.5px] text-inkdim">
+      <span className="text-[12.5px] text-inkdim">
         {meter.remaining !== null
           ? `${t(locale, 'settings.meter.remaining')} ${formatMeterValue(locale, meter.unit, meter.remaining)}`
           : (unitLabel ?? '')}
@@ -210,7 +234,7 @@ function AccountListRow({
       <button
         type="button"
         onClick={onOpen}
-        className="flex w-full items-center gap-3 rounded-card border border-hairline bg-surface px-4 py-3 text-left hover:bg-raised"
+        className="flex h-[52px] w-full items-center gap-3 rounded-card border border-hairline bg-surface px-4 text-left hover:border-bord hover:bg-raised"
       >
         <ProviderMark provider={account.provider} mark={mark} />
         <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-ink">
@@ -218,10 +242,8 @@ function AccountListRow({
           {account.plan !== null ? <span className="font-normal text-inkdim"> · {account.plan}</span> : null}
         </span>
         <span className="text-[12px] text-inkdim">{t(locale, policyLabelKey(account.detail.limitPolicy))}</span>
-        {diffs > 0 ? <StateBadge tone="signal">{t(locale, 'editor.row.diffs').replace('{n}', String(diffs))}</StateBadge> : null}
-        <StateBadge tone={status === 'reserve' ? 'signal' : status === 'ready' ? 'proceed' : 'dim'}>
-          {t(locale, STATUS_KEY[status])}
-        </StateBadge>
+        {diffs > 0 ? <span className="flex-none text-[12px] text-signal-soft">{diffCountText(locale, diffs)}</span> : null}
+        <StatusLamp tone={accountStatusTone(status)}>{t(locale, STATUS_KEY[status])}</StatusLamp>
         <span aria-hidden="true" className="text-inkdim">
           ›
         </span>
@@ -276,8 +298,9 @@ function usePaintedFlip(active: boolean): boolean {
 // same classes the search palette animates with, so the two overlays speak one motion language.
 const MOTION_STYLE = motionVars();
 
-export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, onOpenTarget, onSection, onBack, onEscape, onClose, candidateDot, candidates, providers, models, themeStore, store, marks, roles, update, locale, localeStore, onEnterSubPage, onOpenAccount }: SettingsPanelProps) {
+export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, onOpenTarget, onSection, onBack, onEscape, onClose, candidateDot: candidateDotMirror, candidates, providers, models, themeStore, store, marks, roles, update, locale, localeStore, onEnterSubPage, onOpenAccount }: SettingsPanelProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
+  const candidateState = useSyncExternalStore(candidates.subscribe, candidates.state);
   // The marks land once, after the first paint; the subscription turns them into a re-render.
   useSyncExternalStore(marks.subscribe, marks.state);
   // The update standing is the shell's to load (the title bar reads it from startup); the panel
@@ -373,6 +396,12 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
   const openAccount = subPage === null ? undefined : accounts.find((account) => account.id === subPage);
   const removeWarning = state.removeWarning;
   const showRemoveWarning = removeWarning !== null && removeWarning.accountId !== warningDismissedFor;
+  // An account's provider reads by the display name discovery reports (A-67), by id only when unknown.
+  const providerName = (id: string): string | null =>
+    providerDisplayName(
+      candidateState.providers.map((row) => ({ defId: row.id, name: row.name })),
+      id,
+    );
 
   if (!mounted) return null;
 
@@ -489,7 +518,7 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
                       }`}
                     >
                       {t(locale, SECTION_KEY[entry])}
-                      {entry === 'accounts' && candidateDot ? (
+                      {entry === 'accounts' && candidateDot(candidateState, candidateDotMirror) ? (
                         <span
                           role="img"
                           aria-label={t(locale, 'settings.accounts.dot')}
@@ -519,23 +548,6 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
               />
             ) : null}
 
-            {showRemoveWarning && removeWarning !== null ? (
-              <div role="alert" className="grid gap-2 rounded-card border border-signal/40 bg-signal/10 px-3 py-2.5">
-                <p className="text-[13px] text-ink">
-                  {t(locale, 'settings.remove.warning')}{' '}
-                  <span className="font-mono text-[12.5px] text-signal">{removeWarning.roles.join(', ')}</span>
-                </p>
-                <div className="flex items-center gap-2">
-                  <ActionButton variant="primary" onClick={() => confirmRemove(removeWarning.accountId)}>
-                    {t(locale, 'settings.remove.confirm')}
-                  </ActionButton>
-                  <ActionButton variant="neutral" onClick={() => setWarningDismissedFor(removeWarning.accountId)}>
-                    {t(locale, 'settings.remove.cancel')}
-                  </ActionButton>
-                </div>
-              </div>
-            ) : null}
-
             {subPage !== null && listSection === null && section === 'accounts' ? (
               openAccount === undefined ? null : (
                 <div className="grid gap-3">
@@ -546,32 +558,47 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
                   >
                     {t(locale, 'editor.back')}
                   </button>
-                  <SectionCard
-                    title={openAccount.label}
-                    action={
-                      <span className="flex items-center gap-2">
-                        {onOpenAccount !== undefined ? (
-                          <ActionButton variant="neutral" onClick={() => onOpenAccount(openAccount.id)}>
-                            {t(locale, 'editor.openView')}
-                          </ActionButton>
-                        ) : null}
-                        <ActionButton variant="neutral" onClick={() => remove(openAccount.id)}>
-                          {t(locale, 'settings.account.remove')}
-                        </ActionButton>
-                      </span>
-                    }
-                  >
-                    <AccountEditor
-                      account={openAccount.detail}
-                      locale={locale}
-                      store={editor}
-                      models={models}
-                      formatTime={store.resetsAtLabel}
-                      onRefresh={() => void store.load()}
-                      roleChips={rolesOfAccount(rolesState.rows, openAccount.id)}
-                      onOpenRole={(roleId) => onOpenTarget(roleChipTarget(roleId))}
-                    />
-                  </SectionCard>
+                  <header className="flex items-center gap-3" data-account-head={openAccount.id}>
+                    <ProviderMark provider={openAccount.provider} mark={marks.markFor(openAccount.provider)} size={20} />
+                    <div className="min-w-0 flex-1">
+                      <h2 className="truncate text-[20px] font-bold tracking-[-0.01em] text-ink">{openAccount.label}</h2>
+                      <p className="truncate text-[12.5px] text-inkdim">{accountHeadMeta(locale, openAccount.detail, providerName(openAccount.provider))}</p>
+                    </div>
+                    <StatusLamp tone={accountStatusTone(accountStatus(openAccount.detail))}>
+                      {t(locale, STATUS_KEY[accountStatus(openAccount.detail)])}
+                    </StatusLamp>
+                    {onOpenAccount !== undefined ? (
+                      <button
+                        type="button"
+                        onClick={() => onOpenAccount(openAccount.id)}
+                        className="flex-none rounded-control text-[13px] text-ink underline decoration-bord underline-offset-4 hover:decoration-ink"
+                      >
+                        {t(locale, 'editor.openView')}
+                      </button>
+                    ) : null}
+                  </header>
+                  <AccountEditor
+                    account={openAccount.detail}
+                    locale={locale}
+                    store={editor}
+                    models={models}
+                    formatTime={store.resetsAtLabel}
+                    resetLine={store.resetLine}
+                    onRefresh={() => void store.load()}
+                    roleChips={rolesOfAccount(rolesState.rows, openAccount.id)}
+                    onOpenRole={(roleId) => onOpenTarget(roleChipTarget(roleId))}
+                    providerName={providerName(openAccount.provider)}
+                    onRemove={() => remove(openAccount.id)}
+                    {...(showRemoveWarning && removeWarning !== null && removeWarning.accountId === openAccount.id
+                      ? {
+                          removeWarning: {
+                            roles: removeWarning.roles,
+                            onConfirm: () => confirmRemove(removeWarning.accountId),
+                            onDismiss: () => setWarningDismissedFor(removeWarning.accountId),
+                          },
+                        }
+                      : {})}
+                  />
                 </div>
               )
             ) : null}
@@ -591,28 +618,22 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
             ) : null}
 
             {listSection === 'appearance' ? (
-              <SectionCard title={t(locale, 'settings.section.appearance')}>
-                <div className="grid gap-4">
-                  <div className="grid gap-1.5">
-                    <p className="text-[13px] font-medium text-ink">{t(locale, 'settings.language.label')}</p>
-                    <LocaleSwitcher store={localeStore} locale={locale} />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <p className="text-[13px] font-medium text-ink">{t(locale, 'settings.theme.label')}</p>
-                    <ThemeSwitcher store={themeStore} locale={locale} />
-                  </div>
+              <SectionBlock title={t(locale, 'settings.section.appearance')}>
+                <div>
+                  <SettingRow locale={locale} title={t(locale, 'settings.language.label')} control={<LocaleSwitcher store={localeStore} locale={locale} />} />
+                  <SettingRow locale={locale} title={t(locale, 'settings.theme.label')} control={<ThemeSwitcher store={themeStore} locale={locale} />} />
                 </div>
-              </SectionCard>
+              </SectionBlock>
             ) : null}
 
             {listSection === 'capabilities' ? (
-              <SectionCard title={t(locale, 'settings.section.capabilities')}>
+              <SectionBlock title={t(locale, 'settings.section.capabilities')}>
                 <p className="text-[13px] text-inkdim">{t(locale, 'settings.capabilities.placeholder')}</p>
-              </SectionCard>
+              </SectionBlock>
             ) : null}
 
             {listSection === 'accounts' ? (
-              <SectionCard title={countedLabel(t(locale, 'settings.section.accounts'), accounts.length)}>
+              <SectionBlock title={countedLabel(t(locale, 'settings.section.accounts'), accounts.length)}>
                 {accounts.length === 0 ? (
                   <p className="text-[13px] text-inkdim">{t(locale, 'settings.accounts.empty')}</p>
                 ) : (
@@ -628,68 +649,65 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
                     ))}
                   </ul>
                 )}
-              </SectionCard>
+              </SectionBlock>
             ) : null}
 
-            {/* Eklenmemiş (U-34): the discovered accounts, a block of its own beside the account list. */}
+            {/* Eklenmemiş (U-34): the discovered accounts, a titled block of its own under the account list. */}
             {listSection === 'accounts' ? (
-              <SectionCard title={t(locale, 'candidates.title')}>
+              <section className="grid gap-3" data-settings-section>
+                <h3 className="text-[14px] font-semibold text-ink">{t(locale, 'candidates.title')}</h3>
                 <CandidateList store={candidates} marks={marks} locale={locale} />
-              </SectionCard>
-            ) : null}
-
-            {listSection === 'roles' ? (
-              <SectionCard title={t(locale, 'settings.section.roles')}>
-                <div className="grid gap-3">
-                  {rolesState.unsetCount > 0 ? (
-                    <p className="flex flex-wrap items-center gap-2 text-[12.5px] text-inkdim" data-roles-unset>
-                      <span>{t(locale, 'roles.unset.line').replace('{n}', String(rolesState.unsetCount))}</span>
-                      <span aria-hidden="true">·</span>
-                      <ActionButton variant="ghost" onClick={() => void roles.applyRecommended()}>
-                        {t(locale, 'roles.unset.apply')}
-                      </ActionButton>
-                    </p>
-                  ) : null}
-                  <ChainSection store={roles} locale={locale} markFor={marks.markFor} />
-                  {rolesState.rows === null || rolesState.rows.length === 0 ? (
-                    <p className="text-[13px] text-inkdim">{t(locale, 'roles.empty')}</p>
-                  ) : (
-                    <div>
-                      {rolesState.rows.map((row) => (
-                        <RoleRowView key={row.id} row={row} store={roles} locale={locale} markFor={marks.markFor} fineTuneOpen={fineTune === row.id} />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </SectionCard>
-            ) : null}
-
-            {listSection === 'providers' ? (
-              <section className="grid gap-3">
-                <h2 className="text-[20px] font-bold tracking-[-0.01em] text-ink">{t(locale, 'settings.section.providers')}</h2>
-                <ProviderList store={providers} marks={marks} locale={locale} />
               </section>
             ) : null}
 
+            {listSection === 'roles' ? (
+              <SectionBlock title={t(locale, 'settings.section.roles')}>
+                {rolesState.unsetCount > 0 ? (
+                  <div className="flex flex-wrap items-center justify-between gap-3" data-roles-unset>
+                    <span className="text-[12.5px] text-inkdim">{t(locale, 'roles.unset.line').replace('{n}', String(rolesState.unsetCount))}</span>
+                    <ActionButton variant="neutral" onClick={() => void roles.applyRecommended()}>
+                      {t(locale, 'roles.unset.apply')}
+                    </ActionButton>
+                  </div>
+                ) : null}
+                <ChainSection store={roles} locale={locale} markFor={marks.markFor} />
+                {rolesState.rows === null || rolesState.rows.length === 0 ? (
+                  <p className="text-[13px] text-inkdim">{t(locale, 'roles.empty')}</p>
+                ) : (
+                  <div>
+                    {rolesState.rows.map((row) => (
+                      <RoleRowView key={row.id} row={row} store={roles} locale={locale} markFor={marks.markFor} fineTuneOpen={fineTune === row.id} />
+                    ))}
+                  </div>
+                )}
+              </SectionBlock>
+            ) : null}
+
+            {listSection === 'providers' ? (
+              <SectionBlock title={t(locale, 'settings.section.providers')}>
+                <ProviderList store={providers} marks={marks} locale={locale} />
+              </SectionBlock>
+            ) : null}
+
             {listSection === 'phone' ? (
-              <SectionCard title={t(locale, 'settings.section.phone')}>
+              <SectionBlock title={t(locale, 'settings.section.phone')}>
                 {/* The honest status, no fake data: the phone link feature does not exist yet, so
                     the section says so and offers nothing that pretends otherwise (U-24). */}
                 <div className="grid gap-2.5">
-                  <p className="text-[13.5px] font-semibold text-ink">{t(locale, 'settings.phone.none')}</p>
+                  <p className="text-[14px] font-semibold text-ink">{t(locale, 'settings.phone.none')}</p>
                   <p className="max-w-[52ch] text-[13px] text-inkdim">{t(locale, 'settings.phone.explain')}</p>
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-3">
                     <ActionButton variant="neutral" disabled>
                       {t(locale, 'settings.phone.pair')}
                     </ActionButton>
-                    <StateBadge tone="dim">{t(locale, 'settings.phone.soon')}</StateBadge>
+                    <StatusLamp tone="dim">{t(locale, 'settings.phone.soon')}</StatusLamp>
                   </div>
                 </div>
-              </SectionCard>
+              </SectionBlock>
             ) : null}
 
             {listSection === 'update' ? (
-              <SectionCard
+              <SectionBlock
                 title={t(locale, 'settings.section.update')}
                 action={
                   <ActionButton variant="neutral" disabled={updateState.checking} onClick={() => void update.check()}>
@@ -698,28 +716,24 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
                 }
               >
                 <div className="grid gap-3" data-settings-update>
-                  <p className="font-mono text-[12.5px] text-inkdim">
+                  <p className="text-[13px] text-inkdim">
                     {t(locale, 'settings.update.version')}{' '}
-                    <span className="text-ink">{updateState.status?.current ?? '—'}</span>
+                    <span className="font-mono text-[12.5px] text-ink">{updateState.status?.current ?? '—'}</span>
                   </p>
-                  <p className="flex flex-wrap items-baseline gap-2 text-[13px] text-ink">
-                    {updateState.status === null ? null : (
-                      <>
-                        <span>{t(locale, UPDATE_STATUS_KEY[updateState.status.kind])}</span>
-                        {updateState.status.kind === 'downloading' ? (
-                          <span className="font-mono text-[12px] text-inkdim">%{updateState.status.percent}</span>
-                        ) : null}
-                        {updateState.status.kind === 'available' || updateState.status.kind === 'ready' ? (
-                          <span className="font-mono text-[12px] text-inkdim">{updateState.status.next}</span>
-                        ) : null}
-                        {updateState.status.kind === 'error' ? (
-                          <span className="text-[12.5px] text-error">
-                            {t(locale, UPDATE_ERROR_KEY[updateState.status.reason])}
-                          </span>
-                        ) : null}
-                      </>
-                    )}
-                  </p>
+                  {updateState.status === null ? null : (
+                    <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-ink">
+                      <StatusLamp tone={updateStatusTone(updateState.status.kind)}>{t(locale, UPDATE_STATUS_KEY[updateState.status.kind])}</StatusLamp>
+                      {updateState.status.kind === 'downloading' ? (
+                        <span className="text-[12.5px] text-inkdim">%{updateState.status.percent}</span>
+                      ) : null}
+                      {updateState.status.kind === 'available' || updateState.status.kind === 'ready' ? (
+                        <span className="font-mono text-[12px] text-inkdim">{updateState.status.next}</span>
+                      ) : null}
+                      {updateState.status.kind === 'error' ? (
+                        <span className="text-[12.5px] text-error">{t(locale, UPDATE_ERROR_KEY[updateState.status.reason])}</span>
+                      ) : null}
+                    </p>
+                  )}
                   {(() => {
                     // The same apply action the bar carries, in the section's own button grammar.
                     if (updateState.status === null) return null;
@@ -742,7 +756,7 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
                     />
                   ) : null}
                 </div>
-              </SectionCard>
+              </SectionBlock>
             ) : null}
           </div>
         </div>

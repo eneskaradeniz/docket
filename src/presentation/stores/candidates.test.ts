@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Command, CommandResult } from '../../api/commands';
 import type { Query } from '../../api/queries';
-import { createCandidatesStore, candidateRows, providerRows, type CandidateFact } from './candidates';
+import { createCandidatesStore, candidateRows, candidateDot, candidateStatusTone, listedCandidateCount, providerRows, type CandidateFact } from './candidates';
 
 const base: CandidateFact = {
   sourcePath: '/home/u/.alpha',
@@ -228,5 +228,47 @@ describe('createCandidatesStore', () => {
     await store.rescan();
     expect(f.queries).toContainEqual({ type: 'accounts.candidates', refresh: true });
     expect(f.queries).toContainEqual({ type: 'providers.discovered' });
+  });
+});
+
+describe('Eklenmemiş list (U-28, U-34)', () => {
+  it('U-28: the list count and the dot count are one function of the facts', () => {
+    const facts = [base, { ...keyed, alreadyAdded: true }, { ...base, sourcePath: '/x', warnings: ['unreadable' as const] }];
+    expect(listedCandidateCount(facts)).toBe(candidateRows(facts, null, false).length);
+    expect(listedCandidateCount(facts)).toBe(2);
+    expect(listedCandidateCount([{ ...base, alreadyAdded: true }])).toBe(0);
+  });
+
+  it('U-28: Ekle is visible only while a candidate is selected', async () => {
+    const f = fake([base, keyed]);
+    const store = createCandidatesStore({ api: f.api, actor: { kind: 'user', id: 'u' } as never });
+    await store.load();
+    expect(store.state().addVisible).toBe(false);
+    store.select(base.sourcePath);
+    expect(store.state().addVisible).toBe(true);
+    store.select(base.sourcePath);
+    expect(store.state().addVisible).toBe(false);
+  });
+
+  it('U-34: status words carry a lamp tone — Hazır proceed, a needed key or login signal, the rest dim', () => {
+    expect(candidateStatusTone('candidates.status.ready')).toBe('proceed');
+    expect(candidateStatusTone('candidates.status.key_needed')).toBe('signal');
+    expect(candidateStatusTone('candidates.status.needs_login')).toBe('signal');
+    expect(candidateStatusTone('candidates.status.unreadable')).toBe('dim');
+    expect(candidateStatusTone('candidates.status.not_installed')).toBe('dim');
+    expect(candidateStatusTone('candidates.status.unknown')).toBe('dim');
+  });
+
+  it('U-28: an empty Eklenmemiş list lights no dot — once the list has loaded it is the dot\'s only source', async () => {
+    const f = fake([{ ...base, alreadyAdded: true }]);
+    const store = createCandidatesStore({ api: f.api, actor: { kind: 'user', id: 'u' } as never });
+    expect(candidateDot(store.state(), true)).toBe(true);
+    await store.load();
+    expect(store.state().rows).toHaveLength(0);
+    expect(candidateDot(store.state(), true)).toBe(false);
+    const g = fake([base]);
+    const other = createCandidatesStore({ api: g.api, actor: { kind: 'user', id: 'u' } as never });
+    await other.load();
+    expect(candidateDot(other.state(), false)).toBe(true);
   });
 });

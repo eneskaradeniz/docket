@@ -5,12 +5,13 @@
 // state; this file renders it and forwards clicks. No secret value is ever shown.
 import { useSyncExternalStore } from 'react';
 import { t, type Locale } from '../labels/t';
-import type { CandidatesStore } from '../stores/candidates';
+import { candidateStatusTone, type CandidatesStore } from '../stores/candidates';
 import type { ProviderMarksStore } from '../stores/provider-marks';
 import { ActionButton } from './action-button';
 import { InfoBubble } from './info-bubble';
 import { OutcomeNotice } from './outcome-notice';
 import { ProviderMark } from './provider-mark';
+import { StatusLamp } from './status-lamp';
 
 export interface CandidateListProps {
   readonly store: CandidatesStore;
@@ -21,11 +22,10 @@ export interface CandidateListProps {
 export function CandidateList({ store, marks, locale }: CandidateListProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
   const outcome = state.lastOutcome;
-  const selectedRow = state.rows.find((row) => row.selected);
 
   return (
     <div className="grid gap-3">
-      {state.rows.length === 0 && state.providers.length === 0 ? (
+      {state.loaded && state.rows.length === 0 && state.providers.length === 0 ? (
         <p className="text-[13px] text-inkdim">{t(locale, 'candidates.empty')}</p>
       ) : null}
 
@@ -35,7 +35,7 @@ export function CandidateList({ store, marks, locale }: CandidateListProps) {
             <li key={row.id} className="grid gap-2">
               <div
                 className={`flex items-center gap-2.5 rounded-card border px-3 py-2 ${
-                  row.selected ? 'border-signal bg-signal-soft' : 'border-hairline bg-surface'
+                  row.selected ? 'border-bord bg-raised' : 'border-hairline bg-surface hover:border-bord'
                 } ${row.selectable ? '' : 'opacity-60'}`}
               >
                 <button
@@ -47,17 +47,17 @@ export function CandidateList({ store, marks, locale }: CandidateListProps) {
                 >
                   <ProviderMark provider={row.markKey ?? ''} mark={row.markKey === null ? null : marks.markFor(row.markKey)} />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate font-mono text-[12.5px] text-ink">{row.label}</span>
+                    <span className="block truncate font-mono text-[12.5px] text-ink" title={row.id}>{row.label}</span>
                     {row.endpointHost !== null ? (
                       <span className="block truncate font-mono text-[11px] text-inkdim">{row.endpointHost}</span>
                     ) : null}
                     {row.disabledReasonKey !== null ? (
-                      <span className="block text-[11.5px] text-inkdim">{t(locale, row.disabledReasonKey)}</span>
+                      <span className="block text-[12px] text-inkdim">{t(locale, row.disabledReasonKey)}</span>
                     ) : null}
                   </span>
                 </button>
                 {row.warnKeys.map((key) => (
-                  <span key={key} className="inline-flex items-center gap-1 font-mono text-[11px] text-signal">
+                  <span key={key} className="inline-flex items-center gap-1 text-[12px] text-signal-soft">
                     {t(locale, key)}
                     <InfoBubble
                       locale={locale}
@@ -66,12 +66,14 @@ export function CandidateList({ store, marks, locale }: CandidateListProps) {
                     />
                   </span>
                 ))}
+                <StatusLamp tone={candidateStatusTone(row.statusKey)}>{t(locale, row.statusKey)}</StatusLamp>
                 <span
-                  className={`flex-none font-mono text-[11px] ${
-                    row.statusKey === 'candidates.status.key_needed' ? 'text-signal' : 'text-inkdim'
+                  aria-hidden="true"
+                  className={`grid h-[18px] w-[18px] flex-none place-items-center rounded-full border text-[11px] ${
+                    row.selected ? 'border-signal bg-signal text-signal-ink' : 'border-bord text-transparent'
                   }`}
                 >
-                  {t(locale, row.statusKey)}
+                  ✓
                 </span>
               </div>
 
@@ -106,7 +108,7 @@ export function CandidateList({ store, marks, locale }: CandidateListProps) {
 
       {state.providers.length > 0 ? (
         <div className="grid gap-1.5">
-          <span className="font-mono text-[11px] uppercase tracking-wide text-inkdim">
+          <span className="text-[12.5px] font-semibold text-inkdim">
             {t(locale, 'candidates.providers.title')}
           </span>
           <ul className="grid gap-1.5">
@@ -115,7 +117,7 @@ export function CandidateList({ store, marks, locale }: CandidateListProps) {
                 <div className="flex items-center gap-2.5">
                   <ProviderMark provider={provider.id} mark={marks.markFor(provider.id)} />
                   <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink">{provider.name}</span>
-                  <span className="flex-none font-mono text-[11px] text-inkdim">{t(locale, provider.statusKey)}</span>
+                  <StatusLamp tone={candidateStatusTone(provider.statusKey)}>{t(locale, provider.statusKey)}</StatusLamp>
                 </div>
                 {provider.hintKey !== null ? (
                   <p className="text-[12px] text-inkdim">{t(locale, provider.hintKey).replace('{name}', provider.name)}</p>
@@ -135,9 +137,11 @@ export function CandidateList({ store, marks, locale }: CandidateListProps) {
       ) : null}
 
       <div className="flex items-center gap-2">
-        <ActionButton variant="primary" disabled={selectedRow === undefined || state.adopting} onClick={() => void store.adopt()}>
-          {t(locale, 'candidates.add')}
-        </ActionButton>
+        {state.addVisible ? (
+          <ActionButton variant="primary" disabled={state.adopting} onClick={() => void store.adopt()}>
+            {t(locale, 'candidates.add')}
+          </ActionButton>
+        ) : null}
         <ActionButton disabled={state.loading} onClick={() => void store.rescan()}>
           {t(locale, 'candidates.rescan')}
         </ActionButton>
