@@ -319,6 +319,12 @@ export function ShellScreen({
     lastMoveRef.current = 'back';
     dispatchNav({ type: 'push', route: next, scroll: mainRef.current?.scrollTop ?? 0 });
   }, []);
+  // A project the wizard attached opens in its default view: roadmap for several repos, board for one.
+  const openWizardTarget = useCallback(
+    (target: { readonly kind: 'roadmap'; readonly project: string } | { readonly kind: 'board'; readonly repo: string }): void =>
+      navigate(target.kind === 'roadmap' ? { name: 'roadmap', project: target.project } : { name: 'board', repo: target.repo }),
+    [navigate],
+  );
   // ⌘[ and ⌘] ride the history (U-25) — ignored while an input, a textarea or something editable
   // holds focus, and while the palette, the settings panel or the wizard owns the screen: the
   // route underneath an overlay stays put. No other shortcut or menu claims these two keys.
@@ -520,7 +526,7 @@ export function ShellScreen({
         }}
       />
 
-      <WizardScreen store={wizard} locale={locale} localeStore={localeStore} themeStore={themeStore} marks={marks} />
+      <WizardScreen store={wizard} locale={locale} localeStore={localeStore} themeStore={themeStore} marks={marks} onOpenTarget={openWizardTarget} />
     </div>
   );
 }

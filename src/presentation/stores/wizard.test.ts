@@ -94,7 +94,9 @@ const fakeApi = (): Fake => {
         case 'accounts.candidates':
           return Promise.resolve(facts);
         case 'providers.discovered':
-          return Promise.resolve([]);
+          return Promise.resolve([
+            { defId: 'claude', name: 'Claude Code', installUrl: null, binPath: '/usr/bin/claude', version: null, loggedIn: true, optionalFlags: [] },
+          ]);
         case 'settings.accounts':
           return Promise.resolve({ accounts, bindings: [] });
         case 'roles.list':
@@ -107,6 +109,7 @@ const fakeApi = (): Fake => {
       commands.push(command);
       const failure = failures.get(command.type);
       if (failure !== undefined) return Promise.resolve(failure);
+      if (command.type === 'project.attach') return Promise.resolve({ ok: true, id: 'atolye' });
       if (command.type === 'account.adopt') {
         adopted += 1;
         const id = `acc-${adopted}`;
@@ -122,15 +125,13 @@ const fakeApi = (): Fake => {
 interface Setup {
   readonly api: Fake;
   readonly store: WizardStore;
-  readonly attached: number[];
 }
 
 const setup = (facts: readonly Record<string, unknown>[] = [claudeA]): Setup => {
   const api = fakeApi();
   api.setCandidates(facts);
-  const attached: number[] = [];
-  const store = createWizardStore({ api, actor: userActor, onAttachProject: () => attached.push(1) });
-  return { api, store, attached };
+  const store = createWizardStore({ api, actor: userActor });
+  return { api, store };
 };
 
 const keyOf = (path: string): string => `/h/${path}`;
@@ -328,7 +329,7 @@ describe('wizard store (U-35)', () => {
     expect(payPerUse[0]?.cap).toBeNull();
 
     await bundle.store.openEditor(keyOf('.claude'));
-    await bundle.store.editorRun({ type: 'account.save', provider: 'claude', label: '.claude', authMode: 'subscription', limitPolicy: 'ask' });
+    await bundle.store.editorRun({ type: 'account.save', provider: 'claude', label: 'claude', authMode: 'subscription', limitPolicy: 'ask' });
     bundle.store.saveEditor();
     expect(bundle.store.state().budget.subscriptions[0]?.diffCount).toBe(1);
   });
@@ -354,12 +355,12 @@ describe('wizard store (U-35)', () => {
     await toAccounts(bundle, ['.claude']);
     await bundle.store.next();
     await bundle.store.openEditor(keyOf('.claude'));
-    expect(bundle.store.state().editor?.account.label).toBe('.claude');
+    expect(bundle.store.state().editor?.account.label).toBe('claude');
     await bundle.store.editorRun({ type: 'account.save', provider: 'claude', label: 'Kişisel', authMode: 'subscription' });
     expect(bundle.store.state().editor?.account.label).toBe('Kişisel');
     bundle.store.cancelEditor();
     expect(bundle.store.state().editor).toBeNull();
-    expect(bundle.store.state().rows[0]?.label).toBe('~/.claude');
+    expect(bundle.store.state().rows[0]?.label).toBe('claude');
 
     await bundle.store.openEditor(keyOf('.claude'));
     await bundle.store.editorRun({
@@ -391,7 +392,7 @@ describe('wizard store (U-35)', () => {
 
     expect(bundle.api.commands).toEqual([
       { type: 'account.adopt', sourcePath: keyOf('.claude'), label: 'Kişisel' },
-      { type: 'account.adopt', sourcePath: keyOf('.claude-zai'), label: '.claude-zai', importToken: true },
+      { type: 'account.adopt', sourcePath: keyOf('.claude-zai'), label: 'claude-zai', importToken: true },
       { type: 'account.save', id: 'acc-1', provider: 'claude', label: 'Kişisel', authMode: 'subscription', reserve: { short: 0.2, long: 0.2 } },
       { type: 'account.cap.save', id: 'acc-2', scope: 'account_month', amountUsd: 40, warnPercent: 80 },
       { type: 'account.consent.grant', id: 'acc-2', model: '*' },
@@ -425,15 +426,63 @@ describe('wizard store (U-35)', () => {
     expect(bundle.api.commands.filter((command) => command.type === 'account.adopt')).toHaveLength(2);
   });
 
-  it('U-35: "Proje bağla" leaves the wizard for the project-attach flow; the wizard does not reappear while a project exists', async () => {
+  it('U-35: an account row carries its provider name beside the label derived from the folder', async () => {
+    const bundle = setup([claudeB]);
+    await bundle.store.open();
+    await bundle.store.next();
+    const row = bundle.store.state().rows[0];
+    expect(row?.providerName).toBe('Claude Code');
+    expect(row?.label).toBe('claude-b');
+  });
+
+  it('U-35: "Proje bağla" opens an inline form; Bağla issues project.attach and a single-repo project opens its board, a multi-repo one its roadmap', async () => {
+    const single = setup();
+    await toAccounts(single, ['.claude']);
+    await single.store.next();
+    await single.store.next();
+    expect(single.store.state().step).toBe('done');
+    single.store.attachProject();
+    expect(single.store.state().attach.open).toBe(true);
+    single.store.setAttachPath('   ');
+    await single.store.submitAttach();
+    expect(single.api.commands.some((command) => command.type === 'project.attach')).toBe(false);
+    single.store.setAttachPath('/work/atolye');
+    single.api.setTree([{ project: 'atolye', mainRepo: 'atolye-api', repos: [{ repo: 'atolye-api' }] }]);
+    await single.store.submitAttach();
+    expect(single.api.commands.at(-1)).toEqual({ type: 'project.attach', path: '/work/atolye' });
+    expect(single.store.state().visible).toBe(false);
+    expect(single.store.state().opened).toEqual({ kind: 'board', repo: 'atolye-api' });
+
+    const multi = setup();
+    await toAccounts(multi, ['.claude']);
+    await multi.store.next();
+    await multi.store.next();
+    multi.store.attachProject();
+    multi.store.setAttachPath('/work/atolye');
+    multi.api.setTree([{ project: 'atolye', mainRepo: 'a', repos: [{ repo: 'a' }, { repo: 'b' }] }]);
+    await multi.store.submitAttach();
+    expect(multi.store.state().opened).toEqual({ kind: 'roadmap', project: 'atolye' });
+  });
+
+  it('U-35: a failed project.attach shows its U-8 label under the field and keeps the wizard open', async () => {
     const bundle = setup();
     await toAccounts(bundle, ['.claude']);
     await bundle.store.next();
     await bundle.store.next();
-    expect(bundle.store.state().step).toBe('done');
     bundle.store.attachProject();
-    expect(bundle.attached).toEqual([1]);
-    expect(bundle.store.state().visible).toBe(false);
+    bundle.store.setAttachPath('/nope');
+    bundle.api.failOn('project.attach', { ok: false, code: 'not_found' });
+    await bundle.store.submitAttach();
+    expect(bundle.store.state().attach.failureKey).toBe('error.not_found');
+    expect(bundle.store.state().visible).toBe(true);
+    expect(bundle.store.state().opened).toBeNull();
+    bundle.store.cancelAttach();
+    expect(bundle.store.state().attach.open).toBe(false);
+  });
+
+  it('U-35: the wizard does not reappear while a project exists', async () => {
+    const bundle = setup();
+    await bundle.store.open();
     bundle.api.setTree([{ project: 'atolye' }]);
     await bundle.store.open();
     expect(bundle.store.state().visible).toBe(false);

@@ -9,7 +9,7 @@
 // shows only while no project exists. Failures map through U-8.
 import type { Api } from '../../api/api';
 import type { Command, CommandResult } from '../../api/commands';
-import type { Query, RoleListItem, SettingsAccountView, SettingsAccountsView } from '../../api/queries';
+import type { ProjectTreeItem, Query, RoleListItem, SettingsAccountView, SettingsAccountsView } from '../../api/queries';
 import type { Actor } from '../../domain/index';
 import type { LabelKey } from '../labels/keys';
 import {
@@ -60,24 +60,26 @@ export interface WizardStoreDeps {
   readonly actor: Actor;
   /** What the composed capability source found; absent or empty skips Yetenekler. */
   readonly capabilities?: readonly WizardCapability[];
-  /** "Proje bağla": hands over to the project-attach flow once the wizard has left. */
-  readonly onAttachProject?: () => void;
 }
 
 /** One line of Hesaplar: a candidate not yet added, or an account added earlier. */
 export interface WizardAccountRow extends CandidateRow {
+  /** The provider's display name (A-67); null while discovery does not know it. */
+  readonly providerName: string | null;
   readonly existing: boolean;
   readonly importToken: boolean;
 }
 
 export interface OrderEntry {
   readonly id: string;
+  readonly providerName: string | null;
   readonly label: string;
   readonly markKey: string | null;
 }
 
 export interface BudgetRow {
   readonly id: string;
+  readonly providerName: string | null;
   readonly label: string;
   readonly markKey: string | null;
   /** The U-29 count of settings that differ from the recommendation. */
@@ -105,6 +107,20 @@ export interface WizardSummary {
   readonly firstLabel: string;
 }
 
+/** Where the project's default view is: a multi-repo project opens its roadmap, a single-repo one
+ *  its board (as the cockpit's project cards do). */
+export type WizardOpenTarget =
+  | { readonly kind: 'roadmap'; readonly project: string }
+  | { readonly kind: 'board'; readonly repo: string };
+
+export interface WizardAttach {
+  readonly open: boolean;
+  readonly path: string;
+  readonly busy: boolean;
+  /** The U-8 label of a failed attach, shown under the field. */
+  readonly failureKey: LabelKey | null;
+}
+
 export interface WizardState {
   /** False until `open` proves no project exists, and again once the wizard has been left. */
   readonly visible: boolean;
@@ -128,6 +144,10 @@ export interface WizardState {
   readonly lastOutcome: WizardOutcome | null;
   /** The one line of the "Kurulum tamam" moment; null before it. */
   readonly summary: WizardSummary | null;
+  /** The inline attach form of "Proje bağla". */
+  readonly attach: WizardAttach;
+  /** Set once a project is attached: the view to open; the wizard has left by then. */
+  readonly opened: WizardOpenTarget | null;
 }
 
 export interface SpendInput {
@@ -160,8 +180,13 @@ export interface WizardStore {
   /** The U-32 card's İzin ver: false while the amount does not parse. */
   allowSpend(key: string, input: SpendInput): boolean;
   revokeSpend(key: string): void;
-  /** "Proje bağla": leaves the wizard and hands over to the attach flow. */
+  /** "Proje bağla": opens the inline attach form. */
   attachProject(): void;
+  setAttachPath(path: string): void;
+  /** Leaves the form for the summary. */
+  cancelAttach(): void;
+  /** "Bağla": `project.attach`; on success the wizard leaves and `opened` names the view. */
+  submitAttach(): Promise<void>;
   subscribe(listener: () => void): () => void;
 }
 
@@ -185,7 +210,9 @@ interface Entry {
   readonly settings: DraftSettings;
 }
 
-const labelOf = (displayPath: string): string => displayPath.split('/').filter((part) => part !== '').pop() ?? displayPath;
+/** The account's default label: the config folder's name without its leading dot. */
+const labelOf = (displayPath: string): string =>
+  (displayPath.split('/').filter((part) => part !== '').pop() ?? displayPath).replace(/^\.+/, '');
 
 const isFact = (value: unknown): value is CandidateFact =>
   typeof value === 'object' &&
@@ -303,7 +330,7 @@ export const settingsCommands = (real: SettingsAccountView, draft: DraftSettings
 };
 
 export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
-  const { api, actor, onAttachProject } = deps;
+  const { api, actor } = deps;
 
   let visible = false;
   let checking = false;
@@ -323,10 +350,15 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
   let editorWork: { readonly key: string; readonly settings: DraftSettings } | null = null;
   let lastOutcome: WizardOutcome | null = null;
   let loaded = false;
+  let attach: WizardAttach = { open: false, path: '', busy: false, failureKey: null };
+  let opened: WizardOpenTarget | null = null;
   let openAttempts = 0;
 
   const capabilities = deps.capabilities ?? [];
   const listeners = new Set<() => void>();
+
+  const nameOf = (provider: string): string | null =>
+    provider === '' ? null : (providerFacts.find((fact) => fact.defId === provider)?.name ?? null);
 
   // --- entries ---------------------------------------------------------------------------------
 
@@ -348,7 +380,8 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
         return {
           id: entry.key,
           markKey: entry.base.provider === '' ? null : entry.base.provider,
-          label: entry.base.label,
+          label: entry.settings.label,
+          providerName: nameOf(entry.base.provider),
           endpointHost: entry.base.endpointHost,
           statusKey: 'candidates.status.ready',
           selectable: true,
@@ -362,7 +395,7 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
       }
       const [row] = candidateRows([entry.fact], selection.includes(entry.key) ? entry.key : null, importTokens.has(entry.key));
       if (row === undefined) throw new Error('a listed candidate has no row');
-      return { ...row, existing: false, importToken: importTokens.has(entry.key) };
+      return { ...row, label: entry.settings.label, providerName: nameOf(entry.base.provider), existing: false, importToken: importTokens.has(entry.key) };
     });
 
   const selectedEntries = (): readonly Entry[] => selection.map(entryOf).filter((entry): entry is Entry => entry !== undefined);
@@ -370,7 +403,7 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
   const viewOfEntry = (entry: Entry): SettingsAccountView => viewOf(entry.base, entry.settings);
 
   const orderEntries = (): readonly OrderEntry[] =>
-    selectedEntries().map((entry) => ({ id: entry.key, label: entry.settings.label, markKey: entry.base.provider === '' ? null : entry.base.provider }));
+    selectedEntries().map((entry) => ({ id: entry.key, providerName: nameOf(entry.base.provider), label: entry.settings.label, markKey: entry.base.provider === '' ? null : entry.base.provider }));
 
   // --- the machine -------------------------------------------------------------------------------
 
@@ -424,6 +457,7 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
     const cap = view.caps[0] ?? null;
     return {
       id: entry.key,
+      providerName: nameOf(view.provider),
       label: view.label,
       markKey: view.provider === '' ? null : view.provider,
       diffCount: settingDiffs(view).length,
@@ -469,6 +503,8 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
         step === 'done' && first !== undefined
           ? { accounts: selected.length, capabilities: capabilities.filter((c) => capabilityPicks.has(c.id)).length, firstLabel: first.settings.label }
           : null,
+      attach,
+      opened,
     };
   };
 
@@ -739,9 +775,41 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
       publish();
     },
     attachProject: () => {
+      attach = { ...attach, open: true, failureKey: null };
+      publish();
+    },
+    setAttachPath: (path) => {
+      attach = { ...attach, path, failureKey: null };
+      publish();
+    },
+    cancelAttach: () => {
+      attach = { ...attach, open: false, failureKey: null };
+      publish();
+    },
+    submitAttach: async () => {
+      const path = attach.path.trim();
+      if (!attach.open || attach.busy || path === '') return;
+      attach = { ...attach, busy: true, failureKey: null };
+      publish();
+      const command: Command = { type: 'project.attach', path };
+      const result = await api.command(actor, command);
+      if (!result.ok) {
+        attach = { ...attach, busy: false, failureKey: commandResultKey(command.type, result) };
+        publish();
+        return;
+      }
+      const tree: unknown = await api.query({ type: 'project.tree' });
+      const projects = !isQueryFailure(tree) && Array.isArray(tree) ? (tree as readonly ProjectTreeItem[]) : [];
+      const project = projects.find((item) => item.project === result.id) ?? projects[projects.length - 1];
+      opened =
+        project === undefined
+          ? null
+          : project.repos.length > 1
+            ? { kind: 'roadmap', project: project.project }
+            : { kind: 'board', repo: project.mainRepo };
+      attach = { ...attach, busy: false };
       visible = false;
       publish();
-      onAttachProject?.();
     },
     subscribe: (listener) => {
       listeners.add(listener);

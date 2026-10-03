@@ -23,7 +23,7 @@ import type { LocaleStore } from '../stores/locale';
 import type { ProviderMarksStore } from '../stores/provider-marks';
 import { RECOMMENDED } from '../stores/recommended';
 import { THEME_PREFERENCES, type ThemePreference, type ThemeStore } from '../stores/theme';
-import type { BudgetRow, WizardState, WizardStep, WizardStore } from '../stores/wizard';
+import type { BudgetRow, WizardOpenTarget, WizardState, WizardStep, WizardStore } from '../stores/wizard';
 import { WIZARD_STEPS } from '../stores/wizard';
 
 export interface WizardScreenProps {
@@ -32,6 +32,8 @@ export interface WizardScreenProps {
   readonly localeStore: LocaleStore;
   readonly themeStore: ThemeStore;
   readonly marks: ProviderMarksStore;
+  /** Opens the view of a project the wizard has just attached. */
+  readonly onOpenTarget: (target: WizardOpenTarget) => void;
 }
 
 const STEP_KEY: Readonly<Record<WizardStep, LabelKey>> = {
@@ -75,7 +77,33 @@ const chipClass = (active: boolean): string =>
 const fill = (template: string, values: Readonly<Record<string, string>>): string =>
   template.replace(/\{(\w+)\}/g, (whole, name: string) => values[name] ?? whole);
 
-const LABEL_CLASS = 'font-mono text-[11px] uppercase tracking-[0.06em] text-inkdim';
+const LABEL_CLASS = 'text-[12.5px] font-semibold text-inkdim';
+
+/** "Provider · account": the provider name carries the weight, the account label follows dim. */
+function AccountName({ providerName, label }: { readonly providerName: string | null; readonly label: string }) {
+  return (
+    <span className="block truncate text-[13.5px] font-semibold text-ink">
+      {providerName !== null ? <>{providerName} <span className="font-normal text-inkdim">· {label}</span></> : label}
+    </span>
+  );
+}
+
+const LAMP_TONE: Readonly<Record<string, string>> = {
+  'candidates.status.ready': 'bg-proceed',
+  'candidates.status.key_needed': 'bg-signal',
+  'candidates.status.needs_login': 'bg-signal',
+  'candidates.status.unreadable': 'bg-error',
+};
+
+/** Status as an 8px lamp and one sans word; mono stays for machine data. */
+function StatusLamp({ statusKey, locale }: { readonly statusKey: LabelKey; readonly locale: Locale }) {
+  return (
+    <span className="inline-flex flex-none items-center gap-1.5 text-[12px] text-inkdim">
+      <span aria-hidden="true" className={`h-2 w-2 flex-none rounded-full ${LAMP_TONE[statusKey] ?? 'bg-bord'}`} />
+      {t(locale, statusKey)}
+    </span>
+  );
+}
 
 /** The 18px selection circle every list of the wizard ends with. */
 function SelectionMark({ on }: { readonly on: boolean }) {
@@ -151,20 +179,18 @@ function Accounts({ state, store, locale, marks, onEdit }: { readonly state: Wiz
                 >
                   <ProviderMark provider={row.markKey ?? ''} mark={row.markKey === null ? null : marks.markFor(row.markKey)} />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13.5px] font-semibold text-ink">{row.label}</span>
+                    <AccountName providerName={row.providerName} label={row.label} />
                     {row.endpointHost !== null ? <span className="block truncate font-mono text-[11px] text-inkdim">{row.endpointHost}</span> : null}
                     {row.disabledReasonKey !== null ? <span className="block text-[11.5px] text-inkdim">{t(locale, row.disabledReasonKey)}</span> : null}
                   </span>
                 </button>
                 {row.warnKeys.map((key) => (
-                  <span key={key} className="inline-flex items-center gap-1 font-mono text-[11px] text-signal">
+                  <span key={key} className="inline-flex items-center gap-1 text-[12px] text-signal">
                     {t(locale, key)}
                     <InfoBubble locale={locale} subject={t(locale, key)} body={t(locale, 'candidates.info.env_overrides_login')} />
                   </span>
                 ))}
-                <span className={`flex-none font-mono text-[11px] ${row.statusKey === 'candidates.status.key_needed' ? 'text-signal' : 'text-inkdim'}`}>
-                  {t(locale, row.statusKey)}
-                </span>
+                <StatusLamp statusKey={row.statusKey} locale={locale} />
                 {row.selected ? <EditButton locale={locale} labelKey="wizard.accounts.edit" onClick={() => onEdit(row.id)} /> : null}
                 <button
                   type="button"
@@ -200,28 +226,46 @@ function Accounts({ state, store, locale, marks, onEdit }: { readonly state: Wiz
         </ul>
       ) : null}
 
-      {state.providers.length > 0 ? (
-        <div className="grid gap-1.5">
-          <span className={LABEL_CLASS}>{t(locale, 'candidates.providers.title')}</span>
-          <ul className="grid gap-1.5">
-            {state.providers.map((provider) => (
-              <li key={provider.id} className="grid gap-1.5 rounded-card border border-hairline px-3 py-1.5">
+      {state.providers.some((provider) => provider.hintKey !== null) ? (
+        <ul className="grid gap-1.5">
+          {state.providers
+            .filter((provider) => provider.hintKey !== null)
+            .map((provider) => (
+              <li key={provider.id} className="grid gap-1 rounded-card border border-hairline px-3 py-1.5">
                 <div className="flex items-center gap-2.5">
                   <ProviderMark provider={provider.id} mark={marks.markFor(provider.id)} />
-                  <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink">{provider.name}</span>
-                  <span className="flex-none font-mono text-[11px] text-inkdim">{t(locale, provider.statusKey)}</span>
+                  <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{provider.name}</span>
+                  <StatusLamp statusKey={provider.statusKey} locale={locale} />
                 </div>
-                {provider.hintKey !== null ? <p className="text-[12px] text-inkdim">{t(locale, provider.hintKey).replace('{name}', provider.name)}</p> : null}
-                {provider.installUrl !== null ? (
+                <p className="text-[12px] text-inkdim">{t(locale, provider.hintKey ?? 'candidates.hint.login').replace('{name}', provider.name)}</p>
+              </li>
+            ))}
+        </ul>
+      ) : null}
+
+      {state.providers.some((provider) => provider.installUrl !== null) ? (
+        <details className="rounded-card border border-hairline" data-installable="">
+          <summary className="px-3 py-2 text-[13px] text-inkdim hover:text-ink">
+            {fill(t(locale, 'wizard.installable'), { n: String(state.providers.filter((provider) => provider.installUrl !== null).length) })}
+          </summary>
+          <ul className="grid gap-1.5 px-3 pb-3">
+            {state.providers
+              .filter((provider) => provider.installUrl !== null)
+              .map((provider) => (
+                <li key={provider.id} className="grid gap-1.5">
+                  <div className="flex items-center gap-2.5">
+                    <ProviderMark provider={provider.id} mark={marks.markFor(provider.id)} />
+                    <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{provider.name}</span>
+                    <StatusLamp statusKey={provider.statusKey} locale={locale} />
+                  </div>
                   <div className="flex items-center gap-2 rounded-control bg-band px-2 py-1">
                     <code className="min-w-0 flex-1 select-all truncate font-mono text-[11.5px] text-ink">{provider.installUrl}</code>
                     <ActionButton onClick={() => void navigator.clipboard?.writeText(provider.installUrl ?? '')}>{t(locale, 'candidates.install.copy')}</ActionButton>
                   </div>
-                ) : null}
-              </li>
-            ))}
+                </li>
+              ))}
           </ul>
-        </div>
+        </details>
       ) : null}
 
       <div>
@@ -276,7 +320,7 @@ function Order({ state, store, locale, marks }: { readonly state: WizardState; r
         >
           <span className="w-5 flex-none text-center font-mono text-[12px] text-inkdim">{index + 1}</span>
           <ProviderMark provider={entry.markKey ?? ''} mark={entry.markKey === null ? null : marks.markFor(entry.markKey)} />
-          <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-ink">{entry.label}</span>
+          <span className="min-w-0 flex-1"><AccountName providerName={entry.providerName} label={entry.label} /></span>
           <button
             type="button"
             aria-label={t(locale, 'wizard.order.up')}
@@ -318,7 +362,10 @@ function ConsentCard({ row, store, locale }: { readonly row: BudgetRow; readonly
   if (row.consented) {
     return (
       <div className="flex items-center gap-3 rounded-card border border-hairline bg-band px-3 py-2" data-consent="granted">
-        <span className="font-mono text-[11px] text-proceed">{t(locale, 'wizard.consent.granted')}</span>
+        <span className="inline-flex items-center gap-1.5 text-[12px] text-ink">
+          <span aria-hidden="true" className="h-2 w-2 rounded-full bg-proceed" />
+          {t(locale, 'wizard.consent.granted')}
+        </span>
         <span className="min-w-0 flex-1" />
         <ActionButton variant="ghost" onClick={() => store.revokeSpend(row.id)}>
           {t(locale, 'wizard.consent.revoke')}
@@ -374,7 +421,7 @@ function Budget({ state, store, locale, marks, onEdit }: { readonly state: Wizar
               <li key={row.id} className="flex items-center gap-2.5 rounded-card border border-hairline bg-surface px-3 py-2" data-budget-row={row.id}>
                 <ProviderMark provider={row.markKey ?? ''} mark={row.markKey === null ? null : marks.markFor(row.markKey)} />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13.5px] font-semibold text-ink">{row.label}</span>
+                  <AccountName providerName={row.providerName} label={row.label} />
                   <span className="block truncate text-[12px] text-inkdim">
                     {t(locale, row.policyKey)} · {reserveText(row)}
                     {row.diffCount > 0 ? ` · ${fill(t(locale, 'editor.head.diffs'), { n: String(row.diffCount) })}` : ''}
@@ -400,8 +447,8 @@ function Budget({ state, store, locale, marks, onEdit }: { readonly state: Wizar
                 <div className="flex items-center gap-2.5 rounded-card border border-hairline bg-surface px-3 py-2">
                   <ProviderMark provider={row.markKey ?? ''} mark={row.markKey === null ? null : marks.markFor(row.markKey)} />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13.5px] font-semibold text-ink">{row.label}</span>
-                    <span className="block truncate font-mono text-[11.5px] text-inkdim">
+                    <AccountName providerName={row.providerName} label={row.label} />
+                    <span className="block truncate text-[12px] text-inkdim">
                       {fill(t(locale, 'wizard.budget.spend'), {
                         spent: row.spentUsd === null ? '—' : formatMeterValue(locale, 'usd', row.spentUsd),
                         cap:
@@ -462,15 +509,21 @@ const railNumberClass = (standing: 'todo' | 'cur' | 'done' | 'skipped'): string 
   return `${base} border-bord text-inkdim`;
 };
 
-export function WizardScreen({ store, locale, localeStore, themeStore, marks }: WizardScreenProps) {
+export function WizardScreen({ store, locale, localeStore, themeStore, marks, onOpenTarget }: WizardScreenProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
+  const opened = state.opened;
+  // A project the wizard attached opens in its default view once the wizard has left.
+  useEffect(() => {
+    if (opened !== null) onOpenTarget(opened);
+  }, [opened, onOpenTarget]);
   // While `open` is still proving that no project exists, and when one does, the wizard has
   // nothing to show.
   if (state.checking || !state.visible) return null;
 
   const onEdit = (key: string): void => void store.openEditor(key);
   const isDone = state.step === 'done';
-  const primaryKey: LabelKey = isDone ? 'wizard.attach' : state.step === 'budget' ? (state.finishing ? 'wizard.finishing' : 'wizard.finish') : 'wizard.next';
+  const attaching = isDone && state.attach.open;
+  const primaryKey: LabelKey = attaching ? (state.attach.busy ? 'wizard.attach.busy' : 'wizard.attach.submit') : isDone ? 'wizard.attach' : state.step === 'budget' ? (state.finishing ? 'wizard.finishing' : 'wizard.finish') : 'wizard.next';
   const leadKey = LEAD_KEY[state.step];
   const failure = state.lastOutcome !== null && !state.lastOutcome.result.ok ? state.lastOutcome : null;
 
@@ -519,22 +572,50 @@ export function WizardScreen({ store, locale, localeStore, themeStore, marks }: 
               {state.step === 'capabilities' ? <Capabilities state={state} store={store} locale={locale} /> : null}
               {state.step === 'order' ? <Order state={state} store={store} locale={locale} marks={marks} /> : null}
               {state.step === 'budget' ? <Budget state={state} store={store} locale={locale} marks={marks} onEdit={onEdit} /> : null}
-              {isDone && state.summary !== null ? (
-                <p className="font-mono text-[13px] text-ink" data-wizard-summary="">
-                  {fill(t(locale, 'wizard.done.summary'), {
-                    accounts: String(state.summary.accounts),
-                    capabilities: String(state.summary.capabilities),
-                    first: state.summary.firstLabel,
-                  })}
-                </p>
-              ) : null}
             </div>
+            {isDone && state.summary !== null ? (
+              attaching ? (
+                <div className="mt-4 grid gap-1.5" data-wizard-attach="">
+                  <label className="grid gap-1.5">
+                    <span className={LABEL_CLASS}>{t(locale, 'wizard.attach.path')}</span>
+                    <input
+                      autoFocus
+                      value={state.attach.path}
+                      onChange={(event) => store.setAttachPath(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') void store.submitAttach();
+                      }}
+                      placeholder={t(locale, 'wizard.attach.placeholder')}
+                      className="rounded-control border border-bord bg-transparent px-2.5 py-1.5 font-mono text-[13px] text-ink focus:border-signal focus:outline-none"
+                    />
+                  </label>
+                  {state.attach.failureKey !== null ? (
+                    <p role="alert" className="text-[12.5px] text-error">
+                      {t(locale, state.attach.failureKey)}
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="grid place-items-center gap-3 py-10 text-center" data-wizard-done="">
+                  <span aria-hidden="true" className="grid h-14 w-14 place-items-center rounded-full bg-proceed text-[26px] text-bg">
+                    ✓
+                  </span>
+                  <p className="text-[13.5px] text-ink" data-wizard-summary="">
+                    {fill(t(locale, 'wizard.done.summary'), {
+                      accounts: String(state.summary.accounts),
+                      capabilities: String(state.summary.capabilities),
+                      first: state.summary.firstLabel,
+                    })}
+                  </p>
+                </div>
+              )
+            ) : null}
           </div>
 
           <footer className="mt-4 flex items-center gap-2 border-t border-hairline pt-3" data-wizard-footer="">
             <div className="flex flex-none items-center gap-2">
-              <span className={state.step === 'welcome' || isDone ? 'invisible' : ''}>
-                <ActionButton variant="neutral" size="md" onClick={() => store.back()}>
+              <span className={state.step === 'welcome' || (isDone && !attaching) ? 'invisible' : ''}>
+                <ActionButton variant="neutral" size="md" onClick={() => (attaching ? store.cancelAttach() : store.back())}>
                   {t(locale, 'wizard.back')}
                 </ActionButton>
               </span>
@@ -553,7 +634,9 @@ export function WizardScreen({ store, locale, localeStore, themeStore, marks }: 
               ) : null}
             </span>
             <span className="min-w-[152px] flex-none [&>button]:w-full">
-              <ActionButton variant="primary" size="md" disabled={!isDone && !state.nextEnabled} onClick={() => (isDone ? store.attachProject() : void store.next())}>
+              <ActionButton variant="primary" size="md" disabled={attaching ? state.attach.busy || state.attach.path.trim() === '' : !isDone && !state.nextEnabled}
+                onClick={() => (attaching ? void store.submitAttach() : isDone ? store.attachProject() : void store.next())}
+              >
                 {t(locale, primaryKey)}
               </ActionButton>
             </span>
