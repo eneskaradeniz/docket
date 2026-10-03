@@ -576,7 +576,7 @@ const runCommand = async (
       if (id === undefined) return invalidId();
       // An absent or empty model means the route's default model (A-74).
       const model = command.model === undefined || command.model === '' ? undefined : command.model;
-      const tested = await testAccount(deps, model === undefined ? { id } : { id, model });
+      const tested = await testAccount(deps, model === undefined ? { id, actor } : { id, model, actor });
       // A finished test answers ok whatever its outcome; the outcome rides settings.accounts.
       return tested.ok ? { ok: true } : { ok: false, code: tested.error };
     }
