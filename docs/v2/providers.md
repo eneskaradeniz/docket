@@ -300,19 +300,18 @@ export interface ProviderMarks { marks(): Record<string, ProviderMark | null> }
 
 - **P-25** Every built-in definition carries `mark`: the provider's own mark as one SVG path —
   `d` data copied unmodified from the file it came from, rendered with `currentColor`,
-  24×24 viewBox — or `null` when no file exists; a mark is never redrawn. Twelve built-ins carry a
+  24×24 viewBox — or `null` when no file exists; a mark is never redrawn. All six built-ins (P-47) carry a
   mark: four from the provider's official file (`claude-code`, `copilot`, `cursor`, `opencode`) and
-  eight operator-placed files from an MIT-licensed icon set (`codex`, `agy`, `kilo`, `grok-build`,
-  `vibe`, `mimo`, `qwen`, `kiro`; the marks remain their owners' trademarks, used unmodified only to
+  two operator-placed files from an MIT-licensed icon set (`codex`, `agy`; the marks remain their owners' trademarks, used unmodified only to
   identify the provider; they are not the owners' official brand kits — if official files arrive,
   only the def's path changes). The source record (URL, license, date, sha256) is kept outside the
   repo with the operator's design files. The marks identify the provider only.
   `isProviderDef` rejects a mark that is neither `null` nor a `{ viewBox, path, fillRule }` of
   non-empty strings with a known fill rule, and `builtinProviderMarks` keys every built-in def
   id to its own mark, so adding a provider touches no code beyond its def.
-- **P-25a** A built-in definition whose provider has no mark file carries `mark: null`; the marks test lists those ids explicitly, so a missing mark is a recorded fact, never an omission.
+- **P-25a** A built-in definition whose provider has no mark file carries `mark: null`; the marks test lists those ids explicitly, so a missing mark is a recorded fact, never an omission. With the launch set of P-47 the list is empty; the test keeps the explicit (empty) list, so a provider added later without a mark has to be named there.
 - **P-26** A mark carries the fill rule its file declares: `nonzero` for the four official
-  marks, `evenodd` for the eight placed files (each sets `fill-rule="evenodd"`; the codex path also
+  marks, `evenodd` for the two placed files (each sets `fill-rule="evenodd"`; the codex path also
   `clip-rule="evenodd"`, carried by the same `fillRule`). The rule travels through the marks
   query untouched (A-42) — a renderer never guesses it, since the same `d` renders differently
   under the two rules.
@@ -352,4 +351,32 @@ Design: [provider-capabilities.md](provider-capabilities.md) §9.
 - **P-43** `EffortArg` covers how candidates take an effort: `flag` (argv), `request-field` (turn or thread request), `session-option` (an ACP config option, named by its `category` or its `configId`), and `model-suffix` (the level joins the model id with the definition's `separator`, e.g. `<model>/<level>`; the effort then never travels separately). A definition may carry `levelNames`, a map from `EffortLevel` to the provider's own value names (e.g. `none` ↔ `off`); when a definition has `levelNames`, only the mapped levels are sent or offered (catalogs read advertised levels through the reverse map); without it, provider values that equal an `EffortLevel` are used as is and others are never offered. Unmapped effort → nothing is sent (never a guessed name).
 - **P-44** A definition declares how the CLI is kept from reading the user's configuration of other tools (instruction files, skills, hooks, MCP servers of another agent): an environment variable, a flag or a run-scoped home directory, plus the CLI's own telemetry-off flag where one exists. A definition that cannot declare such isolation is capped at `experimental` and its runs show that the CLI may read the user's other tool configuration. A CLI whose login lives in its own home directory never gets that home redirected to the run directory (the login would be lost) and never gets it set to the user's real home either: its `config.mechanism` is `'none'` and the variable is left unset, until an operator run proves that a run-scoped home keeps the login.
 - **P-45** Discovery runs only probes that are safe without a login: a definition marks commands that may open a browser, start a login flow or need an account (`needsLogin`); discovery runs them only when the login probe returned `loggedIn === true`, never when it is `false` or `null`. A model-list command marked `needsLogin` is skipped while logged out and the catalog falls back to bundled data; the catalog takes `loggedIn` from the account's latest discovery result, and a definition with any `needsLogin` command is not added to the built-ins until that value reaches the catalog.
+
+## Launch set and removing a provider (P-47)
+
+Decision of 2026-10-03 (operator): Docket ships with the providers that passed a real operator run and
+keeps the add-a-provider path (P-35, [provider-capabilities.md](provider-capabilities.md) §9) as cheap as
+before. The removed definitions stay reachable at the git tag `providers-extended` (commit `082ac24`).
+
+- **P-47** The built-in definitions are exactly `claude-code`, `codex`, `agy`, `copilot`, `cursor`,
+  `opencode`, and the capability registry carries provider rows and route kinds for these six only
+  (route kinds of a kept provider stay, e.g. `zai-glm` and `anthropic-api` on `claude-code`; model records
+  stay when a kept route lists them, whatever their family). Removing a provider follows one recipe:
+  1. **Goes:** every entry keyed by the removed provider id (definition, mark, registry row, route kinds
+     whose `providerId` is the removed id, default-route mapping, launch-env pass-through list, ACP session
+     launch table, CLI model-command table), every file or folder used by that provider alone (its
+     stream-json dialect and fixtures, a catalog answer format named after it), and every test or test case
+     whose only subject is that provider.
+  2. **Stays:** every mechanism that is not named after a provider — transports (`sdk`, `app-server`,
+     `stream-json` with its dialect registry, `acp`), every `EffortArg` kind (P-43), `levelNames`,
+     `needsLogin` and the login probes' shapes (P-45), isolation mechanisms (P-44), ACP launch options,
+     catalog adapters — even when no remaining definition uses it. A mechanism that loses its last
+     provider keeps a test that exercises it with a neutral fixture id (`p-x`, `acp-x`, …, never a real
+     provider name), so the next definition can use it with no code change.
+  3. **Renamed, not deleted:** a test of a generic mechanism that used a removed provider id only as
+     fixture data keeps its case with a neutral fixture id and its rule name.
+  4. **Stored data:** an account whose provider id has no definition is listed as unsupported and never
+     breaks loading, quota polling or the settings views (as for the earlier Gemini CLI removal,
+     provider-capabilities.md §9); no migration deletes or rewrites it.
+  5. **Generated docs:** the README provider matrix is regenerated from the registry (P-36).
 

@@ -149,29 +149,43 @@ copies it.
 - Antigravity reports two quota pools (a Gemini family and a Claude family). The registry maps each model to
   a pool through the existing `Pool.appliesTo` matchers (`quota.md`), so choosing a model selects the pool
   whose headroom is checked.
-- Two providers meter usage in credits (one documents 1 credit = $0.01, token based; its quota snapshot carries entitlement counts and percentages, spend arrives as nano units on the usage channel). `CostKind` gains `credits` (O-7 resolved).
+- A provider may meter usage in credits (one documents 1 credit = $0.01, token based; its quota snapshot carries entitlement counts and percentages, spend arrives as nano units on the usage channel). `CostKind` gains `credits` (O-7 resolved).
 
-## 9. Adding a provider (P-35)
+## 9. Adding a provider (P-35, P-47)
 A new provider is a definition plus the argument builder, nothing else, when it fits an existing transport.
 A conformance suite runs the same fixture scenarios against every definition (launch via stdin or file,
 event mapping, resume, stop). New providers enter as `experimental` or `isolated` and are promoted only
-through the gates. Candidate classes, by how they fit today's transports:
+through the gates.
 
-| Class | Providers | Effort |
-| --- | --- | --- |
-| Already supported | Claude Code, Codex, Antigravity, OpenCode, Cursor, Copilot | model layer only |
-| ACP, existing transport | kilo, hermes, vibe, devin, reasonix, atomcode, grok-build, qoder, trae-cli | S each (S–M for grok-build, atomcode, qoder) |
-| ACP with a special case | kimi (login before any model list), qwen (models from the user's own settings), kiro (desktop-bundled binary, models by CLI command), mimo (effort as a model-id suffix) | M each |
-| Stream JSON, new dialect (one per family) | amp, codebuddy (Claude-style stream) | M per family |
-| Plain text, experimental only | aider | S |
-| New transport | pi | L, later |
+**Launch set (P-47, operator decision of 2026-10-03).** Docket ships with the six providers that passed a
+real operator run: Claude Code, Codex, Antigravity, Copilot, Cursor, OpenCode. Thirteen further
+definitions (eleven over ACP: hermes, kilo, atomcode, reasonix, grok-build, vibe, mimo, qwen, qoder,
+kiro, kimi; two over stream JSON with their own dialects: amp, codebuddy) were built and
+unit-tested but never run against a real account, and two more (devin, trae-cli) were planned. They were
+removed so the product only promises what was verified; their code, fixtures and evidence comments stay
+at the git tag `providers-extended` (commit `082ac24`) as a starting point for contributors. Every
+mechanism they introduced that is not named after a provider stays in the code (P-47 step 2).
 
-Discovery of 2026-10-02 (evidence notes outside the repo, one per provider) moved mimo, qwen, grok-build and atomcode to ACP and qoder from stream JSON to ACP. Dropped: amr (no such agent CLI could be identified), deepseek (no official terminal agent; reasonix covers the provider), deepseek-harness (a desktop application with no headless channel). amp and trae-cli could not be installed in discovery and need an operator run first. Almost none of the candidates exposes machine-readable quota: they enter with G5 waived ("no machine-readable quota; a limit error maps to `limit_hit`").
+**Checklist for adding a provider.** One PR per provider; each step names the file family it touches.
+1. **Evidence first.** Read the CLI's own documentation or `--help` output for: the headless channel
+   (ACP, stream JSON, app-server, SDK), how a model and an effort are passed, how a session resumes,
+   where the login lives, which instruction files it reads natively, and how it can be kept from reading
+   other tools' configuration. Nothing is guessed; an unverified field stays absent.
+2. **Definition** in `defs/` — transport, launch, `effortArg` (P-43), `config.mechanism` (P-44),
+   `needsLogin` on any probe that may need an account (P-45), `mark` or `null` (P-25, P-25a).
+3. **Registry row and route kinds** in `registry/` — support gates (§2), billing per route kind; a route
+   whose billing is not documented is `unknown` (P-40), never assumed included.
+4. **Transport fit.** An existing transport takes a table entry only (ACP launch table, stream-json
+   dialect registry, CLI model-command table). A new stream-json dialect is a folder with recorded
+   fixtures; a new transport is its own issue.
+5. **Tests** — the definition test, the conformance suite over a scripted fake agent, the catalog and
+   login-probe cases; fixture ids are neutral unless the case is about that provider.
+6. **README matrix** regenerated (P-36).
+7. **Operator run.** The provider enters as `experimental` or `isolated`; `full` needs a recorded real
+   run (`npm run operator-run -- <id>`, with `--cap-usd` on any `metered` or `unknown` route — P-40).
 
-Gemini CLI is removed because Antigravity replaces it. v2 has not shipped, so there is no deprecation period. A stored account whose provider id has no definition is listed as unsupported and never breaks loading or quota polling.
-
-S ≈ one issue (definition, argument builder, scripted-agent test); M ≈ two; L = a transport. This list is a
-backlog, not a promise. Priority is the operator's own providers: Claude Code, Codex, then the GLM route.
+Earlier removals: Gemini CLI, replaced by Antigravity. A stored account whose provider id has no
+definition is listed as unsupported and never breaks loading or quota polling (P-47 step 4).
 
 ## 10. README matrix (P-36)
 `scripts/gen-provider-matrix.mjs` writes the provider × model table (thinking, context, cost kind, support
@@ -230,11 +244,11 @@ the strong tier. Autonomy and approvals travel as policy, not as session state. 
 three-leg scenario in the style of P-24: the first provider hits a limit mid-stage, the second continues
 from the pack, the stage checks pass.
 
-Privacy: one provider (amp) keeps its threads on the vendor's server with a workspace-default
-visibility, so a pack written into a continuation session leaves the machine. Docket never widens the
-audience: the visibility choice stays with the operator, and the pack carries only items 1–6 (already
-secret-redacted). How server-side sessions are handled is decided in that provider's own issue (#590);
-noted here so the pack design does not assume every session is local.
+Privacy: a provider may keep its threads on the vendor's server, possibly with a shared default
+visibility, so a pack written into a continuation session would leave the machine. Docket never widens
+the audience: the visibility choice stays with the operator, and the pack carries only items 1–6 (already
+secret-redacted). A provider with server-side sessions settles how they are handled in its own adding
+issue (§9, step 1); noted here so the pack design does not assume every session is local.
 
 ## 13. Dynamic quota meters (P-39)
 Parsers turn whatever a provider reports into meters: the provider's own label (verbatim), window length, remaining fraction, reset time and unit. No window name or count is fixed in code; a new bucket shows up without a release.
@@ -258,7 +272,7 @@ Docket never starts a run that may spend real money without the user's explicit 
 ## Open decisions
 - O-1 Where endpoint and model mapping live: account fields (proposed) or a separate preset record.
 - O-2 Resolved: sessions stay under the user's config directory; a per-run copy cannot keep the macOS login.
-- O-3 Pilot providers for the add-a-provider path (proposed: kilo, hermes, amp).
+- O-3 Resolved (2026-10-03, P-47): no pilot in the launch set; the add-a-provider path is the §9 checklist, exercised by the next contributed provider.
 - O-4 Whether Docket may fetch an updated model registry from the internet.
 - O-5 Minimum supported CLI versions, as data, for the capability scan.
 - O-6 Which instruction file is canonical when a repo serves several providers (proposed: keep each file
