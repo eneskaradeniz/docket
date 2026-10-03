@@ -18,3 +18,19 @@
   never reads or writes your files. The summary is printed and written to
   `~/source/docket-tasarim/operator-runs/<date>-<provider>.json`. Pure-part tests:
   `node --test e2e/operator-run.test.mjs`. Never run it from a test or CI.
+- `npm run operator-handoff [-- --cap-usd <n>]` — ONE real three-leg limit handoff through
+  Docket's own services (the closing gate of #581): leg 1 runs `claude-code` on a two-step fixture
+  task in a throwaway repo until its first committed file change, where the harness stops the CLI
+  and records the run as a limit stop — that limit signal is the only simulated part of the whole
+  run; leg 2 continues on `codex` from the handoff pack the real launch path builds (`buildHandoff`
+  with the real cwd, no resume); leg 3 is a short review-style run back on `claude-code`, placed
+  there by `orderForReview`. The fixture repo carries a `CLAUDE.md` with a unique canary sentence
+  (reported only as present/absent) and an `AGENTS.md`, so leg 2's prompt must inline the canary as
+  quoted data while legs 1 and 3 never do. It prints the full plan (providers, accounts by name,
+  billing class, prompts, spend cap) and waits for a typed `yes` (anything else starts nothing and
+  exits 0); a route not billed `included` also needs `--cap-usd`; a provider the probe saw logged
+  out refuses before consent. Permission asks are answered on stdin with `allow`/`deny`. The
+  result record is written to `~/source/docket-tasarim/operator-runs/<date>-handoff.json` (per leg
+  outcome, first-output latency, pack stats, canary per leg, whether leg 2 finished the second step
+  from the pack alone, audit actions in order). Pure-part tests:
+  `node --test e2e/operator-handoff.test.mjs`. Never run it from a test or CI.
