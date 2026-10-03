@@ -220,11 +220,20 @@ describe('createQuotaService', () => {
 
   it('A-80: an account whose route kind has quotaProbe none is skipped, polls nothing and reports nothing', async () => {
     const { probe, polled } = immediateProbe(async () => ok([]));
-    const h = await setup([account(A, { routeKind: 'acme-silent' }), account(B), account(C, { routeKind: 'acme-pushed' })], probe);
+    const h = await setup([account(A, { routeKind: 'acme-silent' }), account(B)], probe);
 
     await h.service.refresh();
 
-    // Only B rides a polled kind; a kind whose quota runs push has nothing to poll either.
+    expect(polled).toEqual([B]);
+    expect(h.changed.count).toBe(1);
+  });
+
+  it('A-80a: an account whose route kind only receives quota pushed by runs (rate_limit_events) is skipped', async () => {
+    const { probe, polled } = immediateProbe(async () => ok([]));
+    const h = await setup([account(C, { routeKind: 'acme-pushed' }), account(B)], probe);
+
+    await h.service.refresh();
+
     expect(polled).toEqual([B]);
     expect(h.changed.count).toBe(1);
   });
