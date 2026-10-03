@@ -486,6 +486,7 @@ export const LABEL_KEYS = [
   'candidates.status.needs_login',
   'candidates.status.not_installed',
   'candidates.status.unknown',
+  'candidates.status.scanning',
   'candidates.reason.unreadable',
   'candidates.warn.env_overrides_login',
   'candidates.info.env_overrides_login',

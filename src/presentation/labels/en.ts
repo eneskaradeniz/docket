@@ -455,6 +455,7 @@ export const EN: LabelBundle = {
   'candidates.status.needs_login': "Login needed",
   'candidates.status.not_installed': "Not installed",
   'candidates.status.unknown': "Status unknown",
+  'candidates.status.scanning': 'Scanning…',
   'candidates.reason.unreadable': "The config folder could not be read; check its permissions and scan again.",
   'candidates.warn.env_overrides_login': "An environment variable overrides the login",
   'candidates.info.env_overrides_login': "Environment variables are used instead of the login in this folder. The account is added, but the environment values win when it runs.",

@@ -5,7 +5,7 @@
 // state; this file renders it and forwards clicks. No secret value is ever shown.
 import { useSyncExternalStore } from 'react';
 import { t, type Locale } from '../labels/t';
-import { candidateStatusTone, type CandidatesStore } from '../stores/candidates';
+import { candidateStatusTone, listBody, type CandidatesStore } from '../stores/candidates';
 import type { ProviderMarksStore } from '../stores/provider-marks';
 import { ActionButton } from './action-button';
 import { InfoBubble } from './info-bubble';
@@ -22,12 +22,14 @@ export interface CandidateListProps {
 export function CandidateList({ store, marks, locale }: CandidateListProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
   const outcome = state.lastOutcome;
+  const body = listBody(state);
 
   return (
     <div className="grid gap-3">
-      {state.loaded && state.rows.length === 0 && state.providers.length === 0 ? (
-        <p className="text-[13px] text-inkdim">{t(locale, 'candidates.empty')}</p>
+      {body === 'scanning' ? (
+        <StatusLamp tone={candidateStatusTone('candidates.status.scanning')}>{t(locale, 'candidates.status.scanning')}</StatusLamp>
       ) : null}
+      {body === 'empty' ? <p className="text-[13px] text-inkdim">{t(locale, 'candidates.empty')}</p> : null}
 
       {state.rows.length > 0 ? (
         <ul className="grid gap-2">

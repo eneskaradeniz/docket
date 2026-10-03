@@ -8,6 +8,7 @@ const LAMP_CLASS: Readonly<Record<LampTone, string>> = {
   signal: 'bg-signal',
   dim: 'bg-inkdim',
   error: 'bg-error',
+  info: 'bg-info',
 };
 
 export interface StatusLampProps {

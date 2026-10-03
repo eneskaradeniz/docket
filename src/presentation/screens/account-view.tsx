@@ -3,7 +3,7 @@
 // time — the active-work rows that navigate to their work orders, and the limit-behaviour band:
 // read-only, its ⓘ explains, its "Ayarlar'da düzenle" carries the edit to the Settings window
 // (K-5's rule: bilgi → ⓘ, düzenleme → Ayarlar penceresi). The screen renders the store's view and
-// forwards clicks; time formatting is the only thing computed here, and every user-visible string
+// forwards clicks; the reset wording is the shared reset line, and every user-visible string
 // arrives through a label key (U-1).
 import { useEffect, useSyncExternalStore } from 'react';
 import { t, type Locale } from '../labels/t';
@@ -31,24 +31,6 @@ export interface AccountViewScreenProps {
   readonly onOpenSettings: () => void;
   readonly onBack: () => void;
 }
-
-const LOCALE_TAG: Readonly<Record<Locale, string>> = { tr: 'tr-TR', en: 'en-US' };
-
-/** A reset stamp as the machine's zone reads it; only the time — the windows reset within a day
- *  or at a week's turn, and the kalan line carries the rest. */
-const formatReset = (locale: Locale, timeZone: string, at: number): string =>
-  new Intl.DateTimeFormat(LOCALE_TAG[locale], { hour: '2-digit', minute: '2-digit', timeZone }).format(at);
-
-/** A duration in the locale's compact wording: hours and minutes under a day, days beyond. */
-const formatRemaining = (locale: Locale, ms: number): string => {
-  const minutes = Math.floor(ms / 60_000);
-  if (minutes < 60) return new Intl.NumberFormat(LOCALE_TAG[locale]).format(minutes);
-  if (minutes < 60 * 24) {
-    const hours = Math.floor(minutes / 60);
-    return `${new Intl.NumberFormat(LOCALE_TAG[locale]).format(hours)}:${String(minutes % 60).padStart(2, '0')}`;
-  }
-  return new Intl.NumberFormat(LOCALE_TAG[locale]).format(Math.floor(minutes / (60 * 24)));
-};
 
 /** The window block's info dot (the limit band uses the shared info bubble, U-27). */
 const InfoGlyph = ({ title, label }: { readonly title: string; readonly label: string }) => (
@@ -133,12 +115,7 @@ export function AccountViewScreen({
                   <span className={`min-w-8 text-right font-mono text-[11px] ${bar.warn ? 'text-signal' : 'text-inkdim'}`}>%{bar.percent}</span>
                 </div>
                 <p className="mt-1.5 text-[11.5px] text-inkdim">
-                  {bar.resetsAt === null
-                    ? ''
-                    : `${t(locale, 'account.window.resets')}: ${formatReset(locale, timeZone, bar.resetsAt)} · ${t(
-                        locale,
-                        'account.window.remaining',
-                      )} ${formatRemaining(locale, store.remainingMs(bar.resetsAt))}`}
+                  {bar.resetsAt === null ? '' : store.resetLine(locale, timeZone, bar.resetsAt)}
                 </p>
               </div>
             ))}

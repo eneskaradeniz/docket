@@ -73,7 +73,7 @@ const WARN_KEY: Readonly<Record<'env_overrides_login', CandidateWarnKey>> = {
 };
 
 /** The lamp hue of a status word: the book's proceed / signal / dim (error is never a status here). */
-export type LampTone = 'proceed' | 'signal' | 'dim' | 'error';
+export type LampTone = 'proceed' | 'signal' | 'dim' | 'error' | 'info';
 
 const CANDIDATE_TONE: Readonly<Record<CandidateStatusKey, LampTone>> = {
   'candidates.status.ready': 'proceed',
@@ -82,6 +82,7 @@ const CANDIDATE_TONE: Readonly<Record<CandidateStatusKey, LampTone>> = {
   'candidates.status.unreadable': 'dim',
   'candidates.status.not_installed': 'dim',
   'candidates.status.unknown': 'dim',
+  'candidates.status.scanning': 'info',
 };
 
 export const candidateStatusTone = (key: CandidateStatusKey): LampTone => CANDIDATE_TONE[key];
@@ -95,6 +96,11 @@ export const listedCandidateCount = (facts: readonly Pick<CandidateFact, 'alread
  *  that the startup mirror's reading stands. */
 export const candidateDot = (state: Pick<CandidatesState, 'loaded' | 'rows'>, mirrored: boolean): boolean =>
   state.loaded ? state.rows.length > 0 : mirrored;
+
+/** What the list body shows: the scanning line while a read is in flight, the empty text only once a
+ *  read has answered with nothing, else the rows. Pure. */
+export const listBody = (state: Pick<CandidatesState, 'loading' | 'loaded' | 'rows' | 'providers'>): 'scanning' | 'empty' | 'list' =>
+  state.loading ? 'scanning' : state.loaded && state.rows.length === 0 && state.providers.length === 0 ? 'empty' : 'list';
 
 /** The rows of the list: `alreadyAdded` candidates are not listed. Pure. */
 export const candidateRows = (
