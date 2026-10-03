@@ -400,6 +400,78 @@ being reset.
   moment keeps its inline "Proje bağla" form (U-35) and adds a "Yeni proje oluştur" link under it
   that opens this page; the sidebar's "Projeler" header gets a "+" icon button (title "Yeni proje")
   opening it. No folder picker exists yet: paths are typed (mono fields).
+- **U-41** (shared components; added 2026-10-04, #750) The setup wizard and Settings are built from
+  one set of components — never a wizard copy and a Settings copy. The approved design is the
+  prototype `docket-tasarim/kurulum-v3/index.html`; where a rule and the prototype differ, ask.
+  Components: **Window** (880×580, 200px left column + content column of head · scrolling body ·
+  optional footer band; the footer never leaves the window — the body scrolls); **SettingRow**
+  (U-29's row: title, one sentence, one control on the right); **Listbox** (a button showing the
+  current value and a chevron; click or ↓/↑ opens a list of options with a ✓ on the selected one and
+  an "Önerilen" tag on the recommended one; Enter picks, Esc/Tab closes, outside click closes);
+  **AccountGroups** (one card per assistant: mark, name, account count; one row per account: label,
+  billing tag — "Abonelik", "Abonelik · anahtarla", "Kullandıkça öde", "Ücret bilinmiyor" from the
+  P-51 billing view — `displayPath · host` in mono, status, ✎, and the selection circle where the
+  host selects); **MeterList** (U-44); **DragOrderList** (rows with a grip, position number, mark,
+  label and sub-line; pointer drag moves a row and the others slide to their slots; Alt+↑/↓ moves the
+  focused row; each move is announced "n. sıraya taşındı"); **AccountEditor** (U-43). A footer button
+  that does not apply to a step is not rendered (no reserved space).
+- **U-42** (setup wizard v3; supersedes U-35 where they differ; added 2026-10-04, #750) Steps: Hoş
+  geldin → Hesaplar → Yetenekler (skipped "–" until #715) → Asistan sırası (skipped with fewer than
+  two ready selected accounts) → Bütçe. **Hoş geldin**: two SettingRows — Dil (Listbox Türkçe ·
+  English) and Tema (Listbox Sistem · Koyu · Açık with a small swatch, Sistem recommended) — applied at
+  once; no Geri on this step. **Hesaplar**: a toolbar on top ("Bulunanlar · n hesap · m asistan" left,
+  "Yeniden tara" right with a thin progress line while scanning) and AccountGroups over
+  `accounts.candidates` (directory and machine-login candidates, P-53); every installed provider has a
+  group; a needs-login account says "Terminalde <asistan> ile giriş yap, sonra Yeniden tara"; a
+  Doğrulanamadı account says "Giriş durumu okunamıyor. Kurulumdan sonra Ayarlar'da test
+  edebilirsin." (no Test et in the wizard, U-39); ready accounts start selected; the gate is U-35's.
+  **Asistan sırası**: DragOrderList of the selected accounts, ready subscriptions first, then the
+  others; a non-included account's sub-line reads "<billing tag> · otomatik geçişte atlanır"; the
+  first row's sub-line reads "İlk tercih"; a note says every role uses this order and that a
+  role-specific order lives in Settings. **Bütçe**: two groups by the P-51 billing view — "Abonelikler ·
+  Planına dahil kullanım; para harcamaz" and "Kullandıkça öde ya da ücreti bilinmeyen · Para
+  harcayabilir; tavan ve iznin olmadan çalışmaz"; a subscription row has "Limit dolunca" (Listbox:
+  Sıfırlanınca sürdür (recommended) · Sıradakine geç · Aynı hesapta başka modele geç — only when the
+  account has a model-scoped pool · Durdur ve bana sor), ✎, and a MeterList from
+  `accounts.candidateQuota` (before adoption) — while it loads or when it answers an error, one line
+  "Limitler hesap eklenince okunur." (or the U-44 no-meter line); a pay-per-use row has the cap amount,
+  the period Listbox (Aylık recommended) and ✎, with "Tavanın %80'ine gelince haber veririm; tavana
+  ulaşınca yeni işleri durdururum, çalışanı kesmem." **Kurulumu bitir** adopts and saves as U-35 says,
+  then closes the wizard and opens **Anasayfa** directly (no completion moment, no attach form) with
+  one toast "Kurulum tamamlandı · n hesap hazır"; with no project yet, Anasayfa shows a dashed start
+  card "İlk projeni ekle" with "Yeni proje" (U-40's page) and "Var olan projeyi bağla". "Bu adımı
+  atla" appears only on Bütçe (finishes with the recommended values).
+- **U-43** (Settings in the wizard's language; amends U-28, U-30, U-33, U-34; added 2026-10-04,
+  #750) Settings is the same Window with a menu instead of steps — Çalışma: Hesaplar · Roller ·
+  Yetenekler · Sağlayıcılar; Uygulama: Görünüm · Telefon · Güncelleme — and a × in the head.
+  **Hesaplar**: the same AccountGroups over `settings.accounts` (no selection circle), "Yeniden tara",
+  Test et per U-39, ✎, and below a "Eklenmemiş · n hesap" group of candidates with an "Ekle" button
+  (`account.adopt`); the menu row keeps its amber dot while it is non-empty. **Roller**: "Asistan
+  sırası" as the same DragOrderList (replaces U-33's ↑/↓ buttons), then one SettingRow per role with a
+  Listbox Hızlı · Dengeli · Özenli (recommended per U-33). **Görünüm**: the same two SettingRows as Hoş
+  geldin (replaces U-28's segment controls). **Sağlayıcılar**: U-38's rows inside the same card style.
+  **Yetenekler**: one dashed empty state "Yetenek keşfi hazırlanıyor" until #715. **AccountEditor**
+  (replaces U-30's sizes): a centred dialog 820×600 (max 100% of the window) with a head (mark,
+  "Asistan · hesap", `displayPath · host` mono, billing tag, status, ×), vertical tabs on the left —
+  Genel (Ad field; Model Listbox, "Asistanın varsayılanı" recommended; the account facts as a
+  definition list), Kullanım (MeterList, "Son okuma … · Yenile" issuing `quota.refresh`), Limitler
+  ("Limit dolunca" as radio cards with one sentence each — the same options as the wizard Listbox;
+  "Kendi kullanımın için ayır" Listbox Yok · %10 · %20 · %30; the spend cap only on an account whose
+  billing view is not `included` or that has consents), Modeller (U-32's three groups — Plana dahil,
+  Kullanım başına ücretli with an "İzin ver" switch, Doğrulanamadı — each model in exactly the group
+  its resolved billing says; a model made `included` by an allowance pool says why, e.g. "haftalık
+  limiti olduğu için planda") — and a footer (in the wizard "Değişiklikler kurulum bitince
+  kaydedilir." · Vazgeç · Kaydet; in Settings saving per U-29). Esc or a click outside closes it.
+- **U-44** (meter list; amends U-31; added 2026-10-04, #750) A MeterList shows one row per meter:
+  the meter's label (the provider's own window name: "5 saatlik", "Haftalık", …) with a scope tag —
+  "tüm modeller" for a pool that applies to all while another pool of the same account is
+  model-scoped, "yalnız <model>" (info tone) for a model-scoped pool —, the bar (remaining from the
+  left; amber under 40 %; the U-31 reserve zone when set), "%r kalan", and "<reset> sonra
+  sıfırlanır" (or the unit fraction first, e.g. "120 / 300 ·"). When the account has a model-scoped
+  pool, one note follows: "<model> limiti dolarsa bu hesapta yalnız <model> durur; diğer modeller
+  çalışmaya devam eder." No meter: "Bu asistan kullanım bilgisi vermiyor; limit dolunca hatadan
+  anlarız." (needs login: "Giriş yapılınca limitler görünür."). The list re-renders on
+  `accounts.changed`.
 - **U-34** (discovered accounts) The candidates (`accounts.candidates`) and the discovered
   providers appear in the wizard's Hesaplar step and under Settings → Hesaplar → "Eklenmemiş":
   a row per candidate with mark, label, status and selection. `unreadable` disables the row with
