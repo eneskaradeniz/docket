@@ -370,6 +370,9 @@ const startApp = async (): Promise<void> => {
     notifier: electronNotifier(),
     commandEnv: baseEnv,
     loginStates,
+    // The same discovery the settings query runs: an installed provider without a directory
+    // scanner must still be listed as a machine-login candidate (P-53).
+    providerDiscovery: discovery,
   });
   if (!opened.ok) {
     dialog.showErrorBox('Docket', `Storage could not be opened: ${JSON.stringify(opened.error)}`);
