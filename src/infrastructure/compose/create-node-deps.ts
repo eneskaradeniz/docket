@@ -9,7 +9,6 @@ import type {
   CheckpointCommitter,
   Clock,
   CredentialImporter,
-  InstructionFiles,
   Notifier,
   RepoRegistry,
   TransportResolver,
@@ -36,6 +35,7 @@ import { createEvidenceChecker, createGitProbe, createWorktrees } from '../vcs/i
 import { createCapabilityCatalog } from '../providers/registry/index';
 import { createModelCatalog } from '../providers/catalog/index';
 import { createNodeAccountScan, createNodeCredentialImporter, type LoginStates } from '../providers/discovery/index';
+import { createNodeInstructionFiles } from './instruction-files';
 
 export interface NodeDepsConfig {
   readonly dataDir: string; // ~/.docket in the app, a temp folder in tests
@@ -61,15 +61,9 @@ export interface NodeDeps {
   close(): void;
 }
 
-// The two handoff ports belong to AppDeps but have no real adapter yet. These stopgaps keep the
-// composition root exhaustive and fail loudly on any premature call; wiring a real adapter means
+// The checkpoints port belongs to AppDeps but has no real adapter yet. The stopgap keeps the
+// composition root exhaustive and fails loudly on any premature call; wiring a real adapter means
 // deleting its entry here and the matching row in the compose placeholder test.
-const unwiredInstructionFiles: InstructionFiles = {
-  async read() {
-    throw new Error('instructionFiles adapter is not wired (#670)');
-  },
-};
-
 const unwiredCheckpoints: CheckpointCommitter = {
   async commit() {
     throw new Error('checkpoints adapter is not wired (#671)');
@@ -124,7 +118,7 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     evidence: createEvidenceChecker(),
     git: createGitProbe(),
     notifier: config.notifier,
-    instructionFiles: unwiredInstructionFiles,
+    instructionFiles: createNodeInstructionFiles(),
     checkpoints: unwiredCheckpoints,
   };
 
