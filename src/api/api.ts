@@ -57,6 +57,7 @@ import type {
   UpdateChecker,
 } from '../application';
 import {
+  accountTestViewOf,
   adoptAccountCandidate,
   approveAndDeploy,
   applyUpdate,
@@ -78,6 +79,7 @@ import {
   registerRepo,
   removeAccount,
   removeAccountCap,
+  testAccount,
   revokeSpendConsent,
   saveAccount,
   saveAccountCap,
@@ -103,6 +105,7 @@ import type {
   RepoNode,
   RoadmapPageView,
   RoleListItem,
+  AccountTestView,
   SettingsAccountsView,
   SettingsBindingScope,
   SettingsBindingView,
@@ -510,6 +513,7 @@ const runCommand = async (
           accounts: deps.accounts,
           secrets: deps.secrets,
           capabilities: deps.capabilities,
+          accountTests: deps.accountTests,
         },
         { record, actor },
       );
@@ -529,6 +533,7 @@ const runCommand = async (
           accounts: deps.accounts,
           secrets: deps.secrets,
           capabilities: deps.capabilities,
+          accountTests: deps.accountTests,
           discovery: adopting.discovery,
           importer: adopting.importer,
         },
@@ -555,6 +560,7 @@ const runCommand = async (
           accounts: deps.accounts,
           secrets: deps.secrets,
           bindings: deps.bindings,
+          accountTests: deps.accountTests,
         },
         { id, actor },
       );
@@ -563,6 +569,16 @@ const runCommand = async (
       return typeof removed.error === 'string'
         ? { ok: false, code: removed.error }
         : { ok: false, code: removed.error.code, roles: removed.error.roles };
+    }
+
+    case 'account.test': {
+      const id = ulidValue<'account'>(command.id);
+      if (id === undefined) return invalidId();
+      // An absent or empty model means the route's default model (A-74).
+      const model = command.model === undefined || command.model === '' ? undefined : command.model;
+      const tested = await testAccount(deps, model === undefined ? { id } : { id, model });
+      // A finished test answers ok whatever its outcome; the outcome rides settings.accounts.
+      return tested.ok ? { ok: true } : { ok: false, code: tested.error };
     }
 
     case 'account.cap.save': {
@@ -877,6 +893,12 @@ const settingsAccountsView = async (deps: AppDeps): Promise<SettingsAccountsView
   const records = await deps.accounts.list();
   const pools = await deps.accounts.pools();
   const meters = await deps.accounts.meters();
+  // A-72: each row's `test` reads the stored record; null without one.
+  const tests = new Map<string, AccountTestView>();
+  for (const record of records) {
+    const stored = await deps.accountTests.get(record.id);
+    if (stored !== undefined) tests.set(record.id, accountTestViewOf(stored));
+  }
 
   const accounts = records.map((record) => {
     const ownPools = pools.filter((pool) => pool.accountId === record.id);
@@ -897,6 +919,7 @@ const settingsAccountsView = async (deps: AppDeps): Promise<SettingsAccountsView
       identityDir: record.identityDir ?? null,
       endpointHost: hostOf(record.endpoint),
       hasSecret: record.secretRef !== undefined,
+      test: tests.get(record.id) ?? null,
       pools: ownPools.map(poolView),
       meters: meters.filter((meter) => ownPoolIds.has(meter.poolId)).map((meter) => meterView(meter, record.reserve)),
     };

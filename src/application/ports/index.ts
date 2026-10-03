@@ -1,6 +1,7 @@
 // Ports barrel — see docs/v2/application.md § 1.
 export * from './account-discovery';
 export * from './account-repo';
+export * from './account-test-repo';
 export * from './agent-transport';
 export * from './binding-repo';
 export * from './capability-catalog';
@@ -26,6 +27,7 @@ export * from './queue-repo';
 export * from './repo-registry';
 export * from './repo-tools';
 export * from './run-repo';
+export * from './scratch-dirs';
 export * from './secret-vault';
 export * from './update-checker';
 export * from './work-order-repo';

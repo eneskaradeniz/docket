@@ -11,13 +11,13 @@ import type {
   RepoSlug,
 } from '../../../domain/index';
 
-import type { AccountRecord, AccountRepo } from '../account-repo';
+import type { AccountRecord, AccountRepo, AccountTestSpendEntry, RunSpendEntry } from '../account-repo';
 
 interface SpendEntry {
   readonly accountId: AccountId;
-  readonly project: ProjectSlug;
-  readonly repo: RepoSlug;
-  readonly workOrderId: WorkOrderId;
+  readonly project: ProjectSlug | undefined;
+  readonly repo: RepoSlug | undefined;
+  readonly workOrderId: WorkOrderId | undefined;
   readonly at: EpochMs;
   readonly usd: number;
 }
@@ -75,8 +75,13 @@ export const createFakeAccountRepo = (): FakeAccountRepo => {
       return all.filter((meter) => owned.has(meter.poolId));
     },
 
-    recordSpend: async (entry: SpendEntry): Promise<void> => {
-      spendings.push({ ...entry });
+    // An account-test entry carries no project, repo or work order, so those filters never match it.
+    recordSpend: async (entry: RunSpendEntry | AccountTestSpendEntry): Promise<void> => {
+      spendings.push(
+        'kind' in entry
+          ? { accountId: entry.accountId, project: undefined, repo: undefined, workOrderId: undefined, at: entry.at, usd: entry.usd }
+          : { ...entry },
+      );
     },
 
     // `from`/`to` are inclusive on purpose: a window [t, t] still sees the entry at t.

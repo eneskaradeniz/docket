@@ -198,6 +198,18 @@ describe('createSqliteAccountRepo', () => {
       expect(await repo.spend({ from: 100, to: 200 })).toBe(0);
     });
 
+    it('I-35: an account_test spend entry counts for the account filter and never matches a repo, project or work-order filter', async () => {
+      const repo = makeRepo();
+      await repo.recordSpend({ kind: 'account_test', accountId: accountId(A1), at: 10, usd: 0.5 });
+      await repo.recordSpend({ accountId: accountId(A1), project: PROJECT, repo: REPO, workOrderId: workOrderId(W1), at: 10, usd: 2 });
+
+      expect(await repo.spend({ accountId: accountId(A1), from: 0, to: 100 })).toBe(2.5);
+      expect(await repo.spend({ accountId: accountId(A2), from: 0, to: 100 })).toBe(0);
+      expect(await repo.spend({ repo: REPO, from: 0, to: 100 })).toBe(2);
+      expect(await repo.spend({ project: PROJECT, from: 0, to: 100 })).toBe(2);
+      expect(await repo.spend({ workOrderId: workOrderId(W1), from: 0, to: 100 })).toBe(2);
+    });
+
     it('I-6: a record read back deep-equals the record written — absent optionals stay absent, arrays keep their order, numbers stay numbers', async () => {
       const repo = makeRepo();
       const full: AccountRecord = {

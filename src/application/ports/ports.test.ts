@@ -17,6 +17,7 @@ import type {
   TransportError,
   TransportResolver,
 } from './agent-transport';
+import type { AccountTestRepo } from './account-test-repo';
 import type { BindingRepo, BindingScope } from './binding-repo';
 import type { CapabilityCatalog } from './capability-catalog';
 import type { CheckpointCommitter, CheckpointDiff, CheckpointError, CheckpointRef } from './checkpoints';
@@ -34,6 +35,7 @@ import type { RepoRegistry } from './repo-registry';
 import type { ProposalRecord, ProposalRepo } from './proposal-repo';
 import type { QueueRepo } from './queue-repo';
 import type { RunPatch, RunRecord, RunRepo } from './run-repo';
+import type { ScratchDirs } from './scratch-dirs';
 import type { SecretVault } from './secret-vault';
 import type {
   CommandResult,
@@ -70,6 +72,8 @@ describe('AppDeps', () => {
     expectTypeOf<AppDeps['notifier']>().toEqualTypeOf<Notifier>();
     expectTypeOf<AppDeps['instructionFiles']>().toEqualTypeOf<InstructionFiles>();
     expectTypeOf<AppDeps['checkpoints']>().toEqualTypeOf<CheckpointCommitter>();
+    expectTypeOf<AppDeps['accountTests']>().toEqualTypeOf<AccountTestRepo>();
+    expectTypeOf<AppDeps['scratch']>().toEqualTypeOf<ScratchDirs>();
   });
 
   it('exposes exactly the contract keys', () => {
@@ -98,6 +102,8 @@ describe('AppDeps', () => {
       | 'notifier'
       | 'instructionFiles'
       | 'checkpoints'
+      | 'accountTests'
+      | 'scratch'
     >();
   });
 

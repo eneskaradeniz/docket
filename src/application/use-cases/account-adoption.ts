@@ -17,7 +17,7 @@ export type AdoptError =
   | 'identity_dir_not_allowed'
   | 'invalid_reserve';
 
-export type AdoptDeps = Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets' | 'capabilities'> & {
+export type AdoptDeps = Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets' | 'capabilities' | 'accountTests'> & {
   readonly discovery: AccountDiscovery;
   readonly importer: CredentialImporter;
 };

@@ -32,6 +32,8 @@ const PORT_KEYS: readonly (keyof AppDeps)[] = [
   'notifier',
   'instructionFiles',
   'checkpoints',
+  'accountTests',
+  'scratch',
 ];
 
 describe('createFakeDeps', () => {
