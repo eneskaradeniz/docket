@@ -167,10 +167,14 @@ describe('listCopilotRouteModels (P-29)', () => {
     const sent = clientRequests(harness.logPath);
     expect(sent.map((entry) => entry.msg['method'])).toEqual(['initialize', 'session/new']);
     // Nothing the client sent names a prompt or a turn, and nothing carries prompt-like input —
-    // a listing must start no model call and spend no credits.
+    // a listing must start no model call and spend no credits. The session params carry the
+    // checkout path as their cwd, so that exact value is stripped before the match: a checkout
+    // whose directory name contains 'text' (e.g. a worktree named context-*) must not fail it.
+    const cwd = process.cwd();
     for (const entry of sent) {
       expect(String(entry.msg['method'])).not.toMatch(/prompt|turn|input/i);
-      expect(JSON.stringify(entry.msg['params'] ?? {})).not.toMatch(/text|prompt|input/i);
+      const withoutCwd = JSON.stringify(entry.msg['params'] ?? {}).split(cwd).join('');
+      expect(withoutCwd).not.toMatch(/text|prompt|input/i);
     }
   });
 
