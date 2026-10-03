@@ -112,7 +112,7 @@ const exited = async (child: ChildProcess | undefined, withinMs: number): Promis
 };
 
 describe('listAcpSessionModels (P-29)', () => {
-  it('P-29: the available-models shape maps rows with bracketed ids verbatim and no thought levels', async () => {
+  it('P-29: the available-models shape maps rows with bracketed ids verbatim, their embedded window read, and no thought levels', async () => {
     const harness = makeSpawn('models-cursor');
 
     const listed = await listAcpSessionModels(accountOf('cursor'), { baseEnv: {}, spawn: harness.spawn });
@@ -122,11 +122,15 @@ describe('listAcpSessionModels (P-29)', () => {
     // The launch is the provider's documented ACP mode, resolved from the account's provider.
     expect(harness.calls).toEqual([{ command: 'cursor-agent', args: ['acp'] }]);
     // The bracketed variant suffix stays part of the id — it is the value the session expects —
-    // and the same model arriving through both shapes lists exactly once.
+    // and the same model arriving through both shapes lists exactly once. The window the id's own
+    // `context=` parameter states rides the row (A-63): `k` and `m` magnitudes both map, a value
+    // that is not one leaves the row without a window.
     expect(listed.value).toEqual([
       { id: 'default[]', displayName: 'Auto' },
-      { id: 'grok-4.7[context=256k,reasoning_effort=high,fast=true]', displayName: 'grok-4.7' },
-      { id: 'claude-opus-5-5[context=300k,effort=medium,fast=false]', displayName: 'claude-opus-5-5' },
+      { id: 'grok-4.7[context=256k,reasoning_effort=high,fast=true]', displayName: 'grok-4.7', contextWindow: 256000 },
+      { id: 'claude-opus-5-5[context=300k,effort=medium,fast=false]', displayName: 'claude-opus-5-5', contextWindow: 300000 },
+      { id: 'claude-opus-4-8[context=1m,effort=high,fast=false]', displayName: 'claude-opus-4-8', contextWindow: 1000000 },
+      { id: 'grok-4.6[context=vast,reasoning_effort=high,fast=false]', displayName: 'grok-4.6' },
     ]);
   });
 
@@ -187,10 +191,12 @@ describe('listAcpSessionModels (P-29)', () => {
     expect(harness.calls).toEqual([{ command: 'grok', args: ['agent', '--no-leader', 'stdio'] }]);
     expect(envs[0]).toMatchObject({ GROK_TELEMETRY_ENABLED: '0' });
     expect(envs[0]).not.toHaveProperty('XAI_API_KEY');
-    // 'ludicrous' names no level, so it is not offered; a model without levels carries none.
+    // 'ludicrous' names no level, so it is not offered; a model without levels carries none. The
+    // initialize answer's own `totalContextTokens` rides each row that reports a positive integer
+    // (A-63); a string value is not a window, so that row carries none.
     expect(listed.value).toEqual([
-      { id: 'grok-4.6', displayName: 'Grok 4.6', efforts: ['xhigh', 'high', 'medium', 'low'], isDefault: true },
-      { id: 'grok-4.5', displayName: 'Grok 4.5', efforts: ['high', 'medium', 'low'] },
+      { id: 'grok-4.6', displayName: 'Grok 4.6', efforts: ['xhigh', 'high', 'medium', 'low'], isDefault: true, contextWindow: 256000 },
+      { id: 'grok-4.5', displayName: 'Grok 4.5', efforts: ['high', 'medium', 'low'], contextWindow: 256000 },
       { id: 'grok-code-fast', displayName: 'Grok Code Fast' },
     ]);
     const methods = clientRequests(harness.logPath).map((entry) => entry.msg['method']);
@@ -316,10 +322,13 @@ describe('listAcpSessionModels (P-29)', () => {
     if (!listed.ok) throw new Error('unreachable');
     expect(harness.calls).toEqual([{ command: 'qwen', args: ['--acp'] }]);
     // The answer carries both shapes at once — models.availableModels and the model select — and
-    // the same model through both lists exactly once, under its available-models name.
+    // the same model through both lists exactly once, under its available-models name. The row's
+    // own `_meta.contextLimit` rides it as the window (A-63) when it is a positive integer; a
+    // negative value is not a window, so that row carries none.
     expect(listed.value).toEqual([
-      { id: 'qwen3.5-plus', displayName: 'Qwen3.5 Plus' },
-      { id: 'qwen3-coder-plus', displayName: 'Qwen3 Coder Plus' },
+      { id: 'qwen3.5-plus', displayName: 'Qwen3.5 Plus', contextWindow: 131072 },
+      { id: 'qwen3-coder-plus', displayName: 'Qwen3 Coder Plus', contextWindow: 262144 },
+      { id: 'qwen3.5-flash', displayName: 'Qwen3.5 Flash' },
     ]);
     expect(listed.value.every((model) => model.efforts === undefined)).toBe(true);
     const methods = clientRequests(harness.logPath).map((entry) => entry.msg['method']);

@@ -43,6 +43,9 @@ const freshSessionId = scenario === 'load-fail' || scenario === 'load-unsupporte
 // exactly as its live counterpart does; the available-models shape does not advertise it.
 const advertiseSessionClose = scenario === 'models-opencode' || scenario === 'models-kilo' || scenario === 'models-reasonix' || scenario === 'models-hermes-close' || scenario === 'models-atomcode' || scenario === 'models-atomcode-configured' || scenario === 'models-vibe' || scenario === 'models-mimo' || scenario === 'models-qoder' || scenario === 'models-qoder-loggedout' || scenario === 'models-kimi' || scenario === 'models-kimi-loggedout';
 
+// The cursor shape: parameterized ids whose bracketed group carries the vendor's own parameters,
+// the window among them (`context=256k`; the help text's own example uses the `1m` magnitude).
+// The two trailing rows exercise the magnitudes the reader maps and a value that names none.
 const cursorModelsSession = () => ({
   sessionId: freshSessionId,
   modes: {},
@@ -52,6 +55,8 @@ const cursorModelsSession = () => ({
       { modelId: 'default[]', name: 'Auto' },
       { modelId: 'grok-4.7[context=256k,reasoning_effort=high,fast=true]', name: 'grok-4.7' },
       { modelId: 'claude-opus-5-5[context=300k,effort=medium,fast=false]', name: 'claude-opus-5-5' },
+      { modelId: 'claude-opus-4-8[context=1m,effort=high,fast=false]', name: 'claude-opus-4-8' },
+      { modelId: 'grok-4.6[context=vast,reasoning_effort=high,fast=false]', name: 'grok-4.6' },
     ],
   },
   configOptions: [
@@ -65,6 +70,8 @@ const cursorModelsSession = () => ({
         { value: 'default[]', name: 'Auto' },
         { value: 'grok-4.7[context=256k,reasoning_effort=high,fast=true]', name: 'grok-4.7' },
         { value: 'claude-opus-5-5[context=300k,effort=medium,fast=false]', name: 'claude-opus-5-5' },
+        { value: 'claude-opus-4-8[context=1m,effort=high,fast=false]', name: 'claude-opus-4-8' },
+        { value: 'grok-4.6[context=vast,reasoning_effort=high,fast=false]', name: 'grok-4.6' },
       ],
     },
   ],
@@ -190,9 +197,12 @@ const mimoConfigOptions = () => [
 // level), and the mode list whose `yolo` far end a launch never picks. The live initialize
 // advertises session list/resume but not close, so this one does not either.
 const QWEN_SCENARIOS = ['models-qwen', 'models-qwen-loggedout', 'models-qwen-empty'];
+// The rows carry the extension field the installed CLI's own session answer gives each model
+// (`_meta.contextLimit`); the third row's negative value is not a window, so it must be ignored.
 const QWEN_MODELS = [
-  { modelId: 'qwen3.5-plus', name: 'Qwen3.5 Plus' },
-  { modelId: 'qwen3-coder-plus', name: 'Qwen3 Coder Plus' },
+  { modelId: 'qwen3.5-plus', name: 'Qwen3.5 Plus', _meta: { contextLimit: 131072 } },
+  { modelId: 'qwen3-coder-plus', name: 'Qwen3 Coder Plus', _meta: { contextLimit: 262144 } },
+  { modelId: 'qwen3.5-flash', name: 'Qwen3.5 Flash', _meta: { contextLimit: -1 } },
 ];
 let qwenModel = 'qwen3.5-plus';
 const qwenConfigOptions = () => [
@@ -344,15 +354,16 @@ process.on('SIGTERM', () => {
 });
 
 // The grok-style initialize answer: the model list rides `_meta.modelState` (given even when
-// logged out), each model with its own reasoning efforts, and the only auth method is a browser
-// login. Its session/new is refused with -32000 until a login exists, so a catalog flow that
-// opened a session would fail on it.
+// logged out), each model with its own reasoning efforts and its own `totalContextTokens`, and
+// the only auth method is a browser login. Its session/new is refused with -32000 until a login
+// exists, so a catalog flow that opened a session would fail on it. The last row's string value
+// is not a window, so it must be ignored.
 const grokModelState = () => ({
   currentModelId: 'grok-4.6',
   availableModels: [
     { modelId: 'grok-4.6', name: 'Grok 4.6', _meta: { totalContextTokens: 256000, supportsReasoningEffort: true, reasoningEfforts: [{ value: 'xhigh' }, { value: 'high' }, { value: 'medium' }, { value: 'low' }] } },
     { modelId: 'grok-4.5', name: 'Grok 4.5', _meta: { totalContextTokens: 256000, supportsReasoningEffort: true, reasoningEfforts: [{ value: 'high' }, { value: 'medium' }, { value: 'low' }, { value: 'ludicrous' }] } },
-    { modelId: 'grok-code-fast', name: 'Grok Code Fast', _meta: { supportsReasoningEffort: false } },
+    { modelId: 'grok-code-fast', name: 'Grok Code Fast', _meta: { totalContextTokens: '500000', supportsReasoningEffort: false } },
   ],
 });
 

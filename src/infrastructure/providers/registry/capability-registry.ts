@@ -563,7 +563,13 @@ export const CAPABILITY_REGISTRY = {
       // and need spend consent and a cap (P-40). A preset in the `subscription_equivalent` mode or
       // a custom endpoint is not told apart from the session answer and stays a hand pick the
       // user confirms. The model select exists only after a key is configured; no quota channel
-      // exists, and the CLI's own cost quote is not mapped, so no cost kind is claimed.
+      // exists, and the CLI's own cost quote is not mapped, so no cost kind is claimed. The
+      // session answer carries no window, so the bundled rows are the channel one rides (A-63):
+      // the CLI's own `doctor --json` reports `context_window` 1.000.000 for both configured
+      // models (loginless, live), and the ids follow the session's documented provider/model
+      // shape the listing keeps whole. The tiers are provisional readings — flash fast, pro
+      // strong — until an operator run settles them, and the flash row states no level because
+      // its documented select offers only `auto`, which names none.
       id: 'reasonix-login',
       providerId: 'reasonix',
       authMode: 'subscription',
@@ -573,7 +579,10 @@ export const CAPABILITY_REGISTRY = {
       modelSource: 'acp-session',
       liveIsAuthoritative: true,
       defaultBilling: 'metered',
-      models: [],
+      models: [
+        { id: 'deepseek-flash/deepseek-flash', family: 'deepseek', tier: 'fast', thinking: { kind: 'none' }, contextWindow: 1_000_000 },
+        { id: 'deepseek-pro/deepseek-v4-pro', family: 'deepseek', tier: 'strong', thinking: { kind: 'levels', levels: ['high', 'max'] }, contextWindow: 1_000_000 },
+      ],
     },
     {
       // The model select lists each model plain and once per level; the listing folds the

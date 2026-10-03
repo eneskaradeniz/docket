@@ -51,7 +51,7 @@ from the capability registry; regenerate with `npm run gen:provider-matrix`.
 | AtomCode (`atomcode`) | `atomcode-login` | — | — | — | none | experimental |
 | Mistral Vibe (`vibe`) | `vibe-login` | — | — | — | none | experimental |
 | devin | — | — | — | — | — | planned |
-| Reasonix (`reasonix`) | `reasonix-login` | — | — | — | none | experimental |
+| Reasonix (`reasonix`) | `reasonix-login` | `deepseek-flash/deepseek-flash` (fast), `deepseek-pro/deepseek-v4-pro` (strong) | `high`, `max` | 1M | none | experimental |
 | MiMo Code (`mimo`) | `mimo-login` | — | — | — | none | experimental |
 | Qwen Code (`qwen`) | `qwen-login` | — | — | — | none | experimental |
 | Qoder (`qoder`) | `qoder-login` | `auto` (balanced), `ultimate` (strong), `performance` (balanced), `efficient` (fast) | `low`, `medium`, `high`, `xhigh`, `max` | — | none | experimental |

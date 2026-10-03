@@ -68,6 +68,11 @@ const effortOf = (displayName: string, levelNames: LevelNames | undefined): Effo
   return word !== undefined && word !== '' ? effortOfProviderLevel(levelNames, word) : undefined;
 };
 
+/** A window a command's own answer states: only a positive integer is one — a negative, fractional,
+ * zero or string value is absent, the same rule the merge applies to whatever rides a row. */
+const windowOfTokens = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined;
+
 /**
  * The recorded output shape: one row per line, model id TAB display name, no header. Extra
  * columns are ignored; a row without a display name stays a row; a duplicate id is listed once.
@@ -104,10 +109,10 @@ export function parseCliModelsOutput(text: string, levelNames?: LevelNames): Res
  * object with a `models` list and a `default_model` id. Each row's `model_id` is the model id and
  * `model_name` the display name; the row named by `default_model` (an alias row for a router) is
  * the default. `rate_multiplier` is a credit multiplier, not a price, so no billing is read from
- * it; `context_window_tokens` is validated as the recorded shape's companion field but carried
- * nowhere — a live row has no context-window field to hold it. An unparseable answer, a missing
- * or empty list, or a row without a model id is a shape problem the diagnostic names without
- * quoting the output.
+ * it; `context_window_tokens` is the row's own window and rides it (A-63) when it is a positive
+ * integer — any other value is absent, the same rule the merge applies. An unparseable answer, a
+ * missing or empty list, or a row without a model id is a shape problem the diagnostic names
+ * without quoting the output.
  */
 export function parseKiroModelsOutput(text: string): Result<readonly LiveModel[], CatalogError> {
   let parsed: unknown;
@@ -133,7 +138,12 @@ export function parseKiroModelsOutput(text: string): Result<readonly LiveModel[]
     }
     if (rows.some((seen) => seen.id === id)) continue;
     const name = entry === null ? undefined : typeof entry['model_name'] === 'string' ? entry['model_name'] : undefined;
-    rows.push({ id, ...(name === undefined || name === '' ? {} : { displayName: name }) });
+    const window = windowOfTokens(entry === null ? undefined : entry['context_window_tokens']);
+    rows.push({
+      id,
+      ...(name === undefined || name === '' ? {} : { displayName: name }),
+      ...(window === undefined ? {} : { contextWindow: window }),
+    });
   }
   if (rows.length === 0) return err({ code: 'malformed', message: 'the models output carries no model rows' });
   const defaultModel = typeof record['default_model'] === 'string' ? record['default_model'] : undefined;

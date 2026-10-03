@@ -6,7 +6,10 @@
 // select option of reserved category `model`; a bracketed variant suffix in an id is part of the
 // id — it is the value the session expects and is never split. Thought levels come from the
 // option of reserved category `thought_level` (or `thinking`, the name one provider uses for the
-// same selector) when the provider reports one.
+// same selector) when the provider reports one. A model's window rides whatever channel reports
+// it (A-63): the session row's own `_meta.contextLimit`, the initialize row's
+// `_meta.totalContextTokens`, or — for the one provider whose ids carry it — the `context=`
+// parameter inside the bracketed suffix.
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -49,10 +52,13 @@ const ACP_SESSION_LAUNCHES: Readonly<
        * nowhere else: discovery reads no login state for it, so only this catalog path maps the
        * refusal to the not-logged-in answer. */
       readonly notLoggedIn?: NotLoggedInRule;
+      /** The provider reports each model's window inside the id itself — a bracketed `context=`
+       * parameter — so the listing reads it out of the ids it keeps whole. */
+      readonly contextFromModelId?: true;
     }
   >
 > = {
-  cursor: { command: 'cursor-agent', args: ['acp'] },
+  cursor: { command: 'cursor-agent', args: ['acp'], contextFromModelId: true },
   // The documented switch keeps the listing from reading the user's own global instruction and
   // skill files, the same isolation the provider's run launch pins.
   opencode: { command: 'opencode', args: ['acp'], env: { OPENCODE_DISABLE_CLAUDE_CODE: '1' } },
@@ -146,6 +152,11 @@ interface ConfigOptionEntry {
   readonly name?: string;
 }
 
+/** A window a session's own answer states: only a positive integer is one — a negative,
+ * fractional, zero or string value is absent, the same rule the merge applies. */
+const windowOfTokens = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined;
+
 /** One select entry of a config option: a plain value, or the values a group wraps (the protocol
  * forbids mixing values and groups in one array, so both shapes are read). */
 const configOptionEntries = (options: readonly unknown[]): readonly ConfigOptionEntry[] => {
@@ -194,6 +205,16 @@ const foldSuffixedModels = (
   });
 };
 
+/** The window a parameterized model id embeds — the one observed provider's own grammar: a
+ * bracketed parameter group whose `context` entry is `<digits>k` or `<digits>m`, the two
+ * magnitudes its ids use. The id is never rewritten; the session expects it back verbatim. A
+ * value that names no magnitude leaves the row without a window. */
+const contextWindowOfId = (id: string): number | undefined => {
+  const match = /(?:^|[[,])context=(\d+)([km])(?=[[,\]])/.exec(id);
+  if (match === null) return undefined;
+  return Number(match[1]) * (match[2] === 'k' ? 1_000 : 1_000_000);
+};
+
 interface ParsedSession {
   readonly models: readonly LiveModel[];
   readonly efforts?: readonly EffortLevel[];
@@ -207,13 +228,15 @@ const parseSessionAnswer = (
   levelNames: LevelNames | undefined,
   modelOptionOptional: boolean,
   effortArg: EffortArg | undefined,
+  contextFromModelId: boolean,
 ): ParsedSession | undefined => {
   if (!isRecord(result)) return undefined;
   const rows: LiveModel[] = [];
   const seen = new Set<string>();
 
   // The provider's own extension: a models object with the ids the session accepts, parameterized
-  // ids bracketed exactly as the provider expects them back.
+  // ids bracketed exactly as the provider expects them back. A row may state its own window in
+  // `_meta` (A-63); the id's embedded parameter answers only when the row itself is silent.
   const models = isRecord(result['models']) ? result['models']['availableModels'] : undefined;
   if (Array.isArray(models)) {
     for (const raw of models) {
@@ -222,7 +245,14 @@ const parseSessionAnswer = (
       if (typeof id !== 'string' || id === '' || seen.has(id)) continue;
       seen.add(id);
       const name = raw['name'];
-      rows.push({ id, ...(typeof name === 'string' && name !== '' ? { displayName: name } : {}) });
+      const meta = isRecord(raw['_meta']) ? raw['_meta'] : undefined;
+      const window = (meta === undefined ? undefined : windowOfTokens(meta['contextLimit'])) ??
+        (contextFromModelId ? contextWindowOfId(id) : undefined);
+      rows.push({
+        id,
+        ...(typeof name === 'string' && name !== '' ? { displayName: name } : {}),
+        ...(window === undefined ? {} : { contextWindow: window }),
+      });
     }
   }
 
@@ -252,7 +282,14 @@ const parseSessionAnswer = (
       for (const entry of configOptionEntries(options)) {
         if (entry.value === '' || seen.has(entry.value)) continue;
         seen.add(entry.value);
-        rows.push({ id: entry.value, ...(entry.name === undefined ? {} : { displayName: entry.name }) });
+        // The select repeats the ids the models object already listed, so the same embedded
+        // window applies where the provider reports it in the id.
+        const window = contextFromModelId ? contextWindowOfId(entry.value) : undefined;
+        rows.push({
+          id: entry.value,
+          ...(entry.name === undefined ? {} : { displayName: entry.name }),
+          ...(window === undefined ? {} : { contextWindow: window }),
+        });
       }
     }
   }
@@ -263,8 +300,9 @@ const parseSessionAnswer = (
 };
 
 /** A provider that lists its models in the initialize answer itself (`_meta.modelState`), before
- * any session and so without a login: each row carries the levels of its own model, and the row
- * named by `currentModelId` is the default. Undefined when the answer has no such list. */
+ * any session and so without a login: each row carries the levels of its own model and the window
+ * its own `_meta.totalContextTokens` states (A-63), and the row named by `currentModelId` is the
+ * default. Undefined when the answer has no such list. */
 const parseInitializeModels = (initialized: unknown, levelNames: LevelNames | undefined): readonly LiveModel[] | undefined => {
   if (!isRecord(initialized)) return undefined;
   const meta = initialized['_meta'];
@@ -281,6 +319,7 @@ const parseInitializeModels = (initialized: unknown, levelNames: LevelNames | un
     seen.add(id);
     const name = raw['name'];
     const rowMeta = isRecord(raw['_meta']) ? raw['_meta'] : undefined;
+    const window = rowMeta === undefined ? undefined : windowOfTokens(rowMeta['totalContextTokens']);
     const advertised = rowMeta !== undefined && Array.isArray(rowMeta['reasoningEfforts']) ? rowMeta['reasoningEfforts'] : [];
     const efforts: EffortLevel[] = [];
     for (const entry of advertised) {
@@ -292,6 +331,7 @@ const parseInitializeModels = (initialized: unknown, levelNames: LevelNames | un
       id,
       ...(typeof name === 'string' && name !== '' ? { displayName: name } : {}),
       ...(efforts.length === 0 ? {} : { efforts }),
+      ...(window === undefined ? {} : { contextWindow: window }),
       ...(id === current ? { isDefault: true as const } : {}),
     });
   }
@@ -348,7 +388,13 @@ export async function listAcpSessionModels(
       }
       return err(toCatalogError(created.error));
     }
-    const parsed = parseSessionAnswer(created.value, config.levelNames, launch.modelOptionOptional === true, effortArgOf(account.provider));
+    const parsed = parseSessionAnswer(
+      created.value,
+      config.levelNames,
+      launch.modelOptionOptional === true,
+      effortArgOf(account.provider),
+      launch.contextFromModelId === true,
+    );
     if (parsed === undefined) {
       return err({ code: 'malformed', message: 'the session answer carries no model list' });
     }
