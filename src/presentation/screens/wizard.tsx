@@ -226,10 +226,10 @@ function Accounts({ state, store, locale, marks, onEdit }: { readonly state: Wiz
         </ul>
       ) : null}
 
-      {state.providers.some((provider) => provider.hintKey !== null) ? (
+      {state.providers.some((provider) => provider.hintKey !== null || provider.testLaterKey !== null) ? (
         <ul className="grid gap-1.5">
           {state.providers
-            .filter((provider) => provider.hintKey !== null)
+            .filter((provider) => provider.hintKey !== null || provider.testLaterKey !== null)
             .map((provider) => (
               <li key={provider.id} className="grid gap-1 rounded-card border border-hairline px-3 py-1.5">
                 <div className="flex items-center gap-2.5">
@@ -237,7 +237,10 @@ function Accounts({ state, store, locale, marks, onEdit }: { readonly state: Wiz
                   <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{provider.name}</span>
                   <StatusLamp statusKey={provider.statusKey} locale={locale} />
                 </div>
-                <p className="text-[12px] text-inkdim">{t(locale, provider.hintKey ?? 'candidates.hint.login').replace('{name}', provider.name)}</p>
+                {provider.hintKey !== null ? (
+                  <p className="text-[12px] text-inkdim">{t(locale, provider.hintKey).replace('{name}', provider.name)}</p>
+                ) : null}
+                {provider.testLaterKey !== null ? <p className="text-[12px] text-inkdim">{t(locale, provider.testLaterKey)}</p> : null}
               </li>
             ))}
         </ul>

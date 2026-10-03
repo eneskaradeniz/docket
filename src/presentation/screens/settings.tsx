@@ -63,6 +63,8 @@ import type {
   SettingsStore,
 } from '../stores/settings';
 import { failureKey } from '../stores/results';
+import { providerUnverified, type TestRefusal } from '../stores/account-test';
+import { AccountTest } from '../components/account-test';
 import type { ProviderMarksStore } from '../stores/provider-marks';
 import { updateButton, updateStatusTone, type UpdateStore, type UpdateStatus } from '../stores/update';
 
@@ -221,16 +223,27 @@ function AccountListRow({
   mark,
   locale,
   onOpen,
+  unverified,
+  testing,
+  refusal,
+  onTest,
+  onOpenModels,
 }: {
   readonly account: AccountDisplay;
   readonly mark: ProviderMarkProps['mark'];
   readonly locale: Locale;
   readonly onOpen: () => void;
+  /** The provider reads Doğrulanamadı (U-38): the row carries the inline "Test et" (U-39). */
+  readonly unverified: boolean;
+  readonly testing: boolean;
+  readonly refusal: TestRefusal | undefined;
+  readonly onTest: () => void;
+  readonly onOpenModels: () => void;
 }) {
   const diffs = settingDiffs(account.detail).length;
   const status = accountStatus(account.detail);
   return (
-    <li data-account-row={account.id}>
+    <li data-account-row={account.id} className="grid gap-1">
       <button
         type="button"
         onClick={onOpen}
@@ -248,6 +261,19 @@ function AccountListRow({
           ›
         </span>
       </button>
+      {unverified || account.detail.test !== null || refusal !== undefined ? (
+        <div className="px-4">
+          <AccountTest
+            locale={locale}
+            test={account.detail.test}
+            showButton={unverified}
+            testing={testing || account.detail.test?.state === 'running'}
+            refusal={refusal}
+            onTest={onTest}
+            onOpenModels={onOpenModels}
+          />
+        </div>
+      ) : null}
     </li>
   );
 }
@@ -256,6 +282,7 @@ const STATUS_KEY: Readonly<Record<AccountStatus, LabelKey>> = {
   ready: 'editor.status.ready',
   reserve: 'editor.status.reserve',
   noData: 'editor.status.noData',
+  modelError: 'editor.status.modelError',
 };
 
 const CloseIcon = () => (
@@ -588,6 +615,11 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
                     roleChips={rolesOfAccount(rolesState.rows, openAccount.id)}
                     onOpenRole={(roleId) => onOpenTarget(roleChipTarget(roleId))}
                     providerName={providerName(openAccount.provider)}
+                    accountTest={{
+                      testing: state.testing.includes(openAccount.id),
+                      refusal: state.testRefusals[openAccount.id],
+                      onTest: () => void store.testAccount(openAccount.id),
+                    }}
                     onRemove={() => remove(openAccount.id)}
                     {...(showRemoveWarning && removeWarning !== null && removeWarning.accountId === openAccount.id
                       ? {
@@ -645,6 +677,11 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
                         mark={marks.markFor(account.provider)}
                         locale={locale}
                         onOpen={() => onEnterSubPage(account.id)}
+                        unverified={providerUnverified(candidateState.providers, account.provider)}
+                        testing={state.testing.includes(account.id)}
+                        refusal={state.testRefusals[account.id]}
+                        onTest={() => void store.testAccount(account.id)}
+                        onOpenModels={() => onOpenTarget({ section: 'accounts', subPage: account.id, tab: 'models' })}
                       />
                     ))}
                   </ul>

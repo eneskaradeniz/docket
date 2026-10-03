@@ -7,6 +7,8 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 
 import type { SettingsAccountView } from '../../api/queries';
+import type { TestRefusal } from '../stores/account-test';
+import { AccountTest } from './account-test';
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
 import {
@@ -80,6 +82,12 @@ export interface AccountEditorProps {
   readonly providerName?: string | null;
   /** U-20's reset wording for the Kullanım bars; absent = the host's plain moment (`formatTime`). */
   readonly resetLine?: (resetsAt: number | null) => string | null;
+  /** "Test et" on Genel (U-39); absent = the host has no stored account to test. */
+  readonly accountTest?: {
+    readonly testing: boolean;
+    readonly refusal: TestRefusal | undefined;
+    readonly onTest: () => void;
+  };
   /** "Hesabı kaldır" at the bottom of Genel (a danger zone); absent = the host offers no removal. */
   readonly onRemove?: () => void;
   /** The standing warning of a refused removal (the account is still bound to roles). */
@@ -172,6 +180,7 @@ function DangerZone({ account, locale, onRemove, removeWarning }: Pick<AccountEd
 
 function General({
   account,
+  accountTest,
   locale,
   store,
   roleChips,
@@ -179,10 +188,23 @@ function General({
   providerName,
   onRemove,
   removeWarning,
-}: Pick<AccountEditorProps, 'account' | 'locale' | 'store' | 'roleChips' | 'onOpenRole' | 'providerName' | 'onRemove' | 'removeWarning'>) {
+}: Pick<AccountEditorProps, 'account' | 'accountTest' | 'locale' | 'store' | 'roleChips' | 'onOpenRole' | 'providerName' | 'onRemove' | 'removeWarning'>) {
   return (
     <div>
       <LabelRow account={account} locale={locale} store={store} />
+      {accountTest !== undefined ? (
+        <div className="border-b border-hairline py-3">
+          <AccountTest
+            locale={locale}
+            test={account.test}
+            showButton
+            testing={accountTest.testing || account.test?.state === 'running'}
+            refusal={accountTest.refusal}
+            onTest={accountTest.onTest}
+            onOpenModels={() => store.setTab('models')}
+          />
+        </div>
+      ) : null}
       {roleChips !== undefined && roleChips.length > 0 ? (
         <div className="flex items-start justify-between gap-4 border-b border-hairline py-3" data-role-chips="">
           <div className="min-w-0">
@@ -639,6 +661,7 @@ export function AccountEditor(props: AccountEditorProps) {
         {state.tab === 'general' ? (
           <General
             account={account}
+            accountTest={props.accountTest}
             locale={locale}
             store={store}
             roleChips={props.roleChips}

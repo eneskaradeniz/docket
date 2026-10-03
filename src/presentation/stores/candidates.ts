@@ -64,6 +64,9 @@ export interface ProviderRow {
   readonly statusKey: CandidateStatusKey;
   /** The "log in in a terminal, then scan again" sentence (with `{name}`); only while a login is needed. */
   readonly hintKey: LabelKey | null;
+  /** "Test it in Settings after setup" (U-39): only while the login probe proved nothing. The
+   *  wizard shows it; a provider that is not an account yet has no "Test et". */
+  readonly testLaterKey: LabelKey | null;
   /** Where to install it, shown as copyable text; only while the provider is not found. */
   readonly installUrl: string | null;
 }
@@ -159,6 +162,7 @@ export const providerRows = (facts: readonly ProviderFact[]): readonly ProviderR
     id: fact.defId,
     name: fact.name,
     hintKey: fact.binPath !== null && fact.loggedIn === false ? 'candidates.hint.login' : null,
+    testLaterKey: providerStatus(fact) === 'unknown' ? 'candidates.hint.testLater' : null,
     installUrl: fact.binPath === null ? fact.installUrl : null,
     statusKey: CANDIDATE_STATUS_KEY[providerStatus(fact)],
   }));

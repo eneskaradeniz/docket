@@ -92,8 +92,7 @@ const SUCCESS_KEYS: Readonly<Record<Command['type'], LabelKey>> = {
   // A cap write is an account edit: it reads back as the account being saved.
   'account.cap.save': 'success.account.save',
   'account.cap.remove': 'success.account.save',
-  // No surface issues the test yet; its own copy arrives with the UI that does.
-  'account.test': 'success.account.save',
+  'account.test': 'success.account.test',
   'account.consent.grant': 'success.account.consent.grant',
   'account.consent.revoke': 'success.account.consent.revoke',
   'binding.save': 'success.binding.save',
