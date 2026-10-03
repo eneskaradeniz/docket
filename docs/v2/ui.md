@@ -101,11 +101,6 @@ Deploy approval passes the gate's `environment`; a protected environment without
   as a centered window-style overlay over the current route (the wizard's frame, a 200px section
   menu beside the selected section's content) — ✕, Esc or a backdrop click closes it, and the
   route underneath stays unchanged.
-- **U-7** (wizard; superseded by U-35 — its tests retire in U-35's issue) First-run state machine: definitions source → account → binding → done.
-  `next` is enabled only when the step's validation passes (source reachable / at least one
-  discovered+logged-in provider for the chosen account / at least one bound role); `back`
-  preserves entered state; finishing leaves the wizard and does not reappear while a project
-  exists.
 - **U-10** (shell) The shell's attention badge count equals the cockpit's attention items,
   ranked by kind (permission asks first); it updates on the same events; when the count is
   zero the badge is absent, never zero.

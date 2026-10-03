@@ -13,7 +13,7 @@
 // what a tree row opens. The settings panel rides the same way: the nav's Telefon and Ayarlar
 // rows and the screens' shortcuts open it over the current route, which stays underneath
 // unchanged. The first-run wizard rides above everything: the shell mounts it, the wizard
-// store's `open` decides whether it shows at all (U-7). The badge mirrors the shell store: the
+// store's `open` decides whether it shows at all (U-35). The badge mirrors the shell store: the
 // cockpit's attention count, present only while attention exists — zero renders nothing, never
 // a zero (U-10). Every user-visible string arrives through a label key (U-1).
 import { useCallback, useEffect, useReducer, useRef, useSyncExternalStore } from 'react';
@@ -520,7 +520,7 @@ export function ShellScreen({
         }}
       />
 
-      <WizardScreen store={wizard} locale={locale} />
+      <WizardScreen store={wizard} locale={locale} localeStore={localeStore} themeStore={themeStore} marks={marks} />
     </div>
   );
 }
