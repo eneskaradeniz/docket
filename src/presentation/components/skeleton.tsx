@@ -103,6 +103,18 @@ export function useSkeleton(loading: boolean, now: () => number): Readonly<{ ske
 
 const REVEAL_EASE = MOTION.open.easing;
 
+/** The reveal wrapper's inline style (U-26). Inactive — no skeleton preceded, a fast load — there
+ *  is nothing to hide: the children mount as they are, with no opacity or translate at all.
+ *  Active, they wait one rise below and fully faded until `up`, then settle in place. */
+export function revealStyle(active: boolean, up: boolean): CSSProperties {
+  if (!active) return {};
+  const ms = `${MOTION.results.fadeMs}ms ${REVEAL_EASE}`;
+  return {
+    transition: `opacity ${ms}, translate ${ms}`,
+    ...(up ? { opacity: 1, translate: '0px 0px' } : { opacity: 0, translate: `0px ${MOTION.results.risePx}px` }),
+  };
+}
+
 /** The content that replaces a shown skeleton enters with the row motion's own numbers — the
  *  rise and fade the search palette's rows use — played once on mount; reduced motion skips it.
  *  Inactive (no skeleton preceded, a fast load) the children mount as they are. */
@@ -121,11 +133,7 @@ export function SkeletonReveal({
     const frame = requestAnimationFrame(() => setUp(true));
     return () => cancelAnimationFrame(frame);
   }, [active]);
-  const ms = `${MOTION.results.fadeMs}ms ${REVEAL_EASE}`;
-  const style: CSSProperties = {
-    transition: `opacity ${ms}, translate ${ms}`,
-    ...(up ? { opacity: 1, translate: '0px 0px' } : { opacity: 0, translate: `0px ${MOTION.results.risePx}px` }),
-  };
+  const style = revealStyle(active, up);
   return (
     <div className={`motion-reduce:translate-y-0 motion-reduce:transition-none ${className}`} style={style}>
       {children}

@@ -703,6 +703,41 @@ async function skeletonCheck(target, screen, combo) {
   return skeletonVerdict(before, after);
 }
 
+/** The accounts frame's opened cards must be seen, not merely mounted (U-26): a card's computed
+ *  opacity, multiplied up its ancestors to the frame body, must be 1 — a content wrapper left at
+ *  opacity 0 keeps the cards in the DOM, clickable and unseen, which no geometry rule notices. */
+async function accountsOpacityCheck(target) {
+  const { page } = target;
+  await page.waitForSelector('nav', { timeout: 30_000 });
+  const body = page.locator('[data-accounts-body]').first();
+  const collapsed = await body.evaluate((el) => el.getBoundingClientRect().height <= 1).catch(() => false);
+  if (collapsed) {
+    await page.getByRole('button', { name: 'Hesapları gizle / göster' }).first().click({ timeout: 4000 });
+    await page.waitForFunction(
+      () => {
+        const el = document.querySelector('[data-accounts-body]');
+        return el !== null && el.getBoundingClientRect().height > 1 && el.getAnimations().length === 0;
+      },
+      null,
+      { timeout: 4000 },
+    );
+  }
+  // Let a reveal's rise and fade settle; both are well under this.
+  await page.waitForTimeout(600);
+  const seen = await page.evaluate(() => {
+    const frameBody = document.querySelector('[data-accounts-body]');
+    const card = frameBody?.querySelector('[data-provider-mark]');
+    if (!frameBody || !card) return null;
+    let opacity = 1;
+    for (let el = card; el !== null && el !== frameBody.parentElement; el = el.parentElement) {
+      opacity *= Number(getComputedStyle(el).opacity);
+    }
+    return opacity;
+  });
+  if (seen === null) return { ok: true, detail: 'no account cards to see' };
+  return { ok: seen === 1, detail: seen === 1 ? 'account cards are fully visible' : `account card opacity ${seen}, not 1` };
+}
+
 // --- run ---------------------------------------------------------------------------------------------
 const args = parseArgs(process.argv.slice(2));
 if (args.target === 'prototype' && !args.path) {
@@ -789,6 +824,17 @@ for (const { size: entry, theme } of plan) {
       if (!r.ok) failures += 1;
       lines += 1;
       console.log(`settings: ${label} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
+    }
+    if (!args.slow && screen === 'kokpit' && args.target === 'app' && target.selectors.accountsFrame) {
+      let r;
+      try {
+        r = await accountsOpacityCheck(target);
+      } catch (error) {
+        r = { ok: false, detail: `accounts frame unreachable: ${String(error).split('\n')[0]}` };
+      }
+      if (!r.ok) failures += 1;
+      lines += 1;
+      console.log(`accounts-opacity: ${label} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
     }
     if (!args.slow && screen === 'kokpit' && target.selectors.titleBar) {
       let r;
