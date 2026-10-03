@@ -25,7 +25,7 @@ export function CandidateList({ store, marks, locale }: CandidateListProps) {
 
   return (
     <div className="grid gap-3">
-      {state.rows.length === 0 && state.providers.length === 0 ? (
+      {state.loaded && state.rows.length === 0 && state.providers.length === 0 ? (
         <p className="text-[13px] text-inkdim">{t(locale, 'candidates.empty')}</p>
       ) : null}
 

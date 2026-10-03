@@ -91,6 +91,11 @@ export const candidateStatusTone = (key: CandidateStatusKey): LampTone => CANDID
 export const listedCandidateCount = (facts: readonly Pick<CandidateFact, 'alreadyAdded'>[]): number =>
   facts.filter((fact) => !fact.alreadyAdded).length;
 
+/** The Hesaplar dot: once the list has loaded, exactly its rows decide (none rendered, no dot); before
+ *  that the startup mirror's reading stands. */
+export const candidateDot = (state: Pick<CandidatesState, 'loaded' | 'rows'>, mirrored: boolean): boolean =>
+  state.loaded ? state.rows.length > 0 : mirrored;
+
 /** The rows of the list: `alreadyAdded` candidates are not listed. Pure. */
 export const candidateRows = (
   facts: readonly CandidateFact[],

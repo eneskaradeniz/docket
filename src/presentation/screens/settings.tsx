@@ -28,7 +28,7 @@ import { SegmentedControl } from '../components/segmented-control';
 import { SettingRow } from '../components/setting-row';
 import { SourceBadge } from '../components/source-badge';
 import { StatusLamp } from '../components/status-lamp';
-import type { CandidatesStore } from '../stores/candidates';
+import { candidateDot, type CandidatesStore } from '../stores/candidates';
 import type { ProvidersStore } from '../stores/providers';
 import type { LocaleStore } from '../stores/locale';
 import {
@@ -298,7 +298,7 @@ function usePaintedFlip(active: boolean): boolean {
 // same classes the search palette animates with, so the two overlays speak one motion language.
 const MOTION_STYLE = motionVars();
 
-export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, onOpenTarget, onSection, onBack, onEscape, onClose, candidateDot, candidates, providers, models, themeStore, store, marks, roles, update, locale, localeStore, onEnterSubPage, onOpenAccount }: SettingsPanelProps) {
+export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, onOpenTarget, onSection, onBack, onEscape, onClose, candidateDot: candidateDotMirror, candidates, providers, models, themeStore, store, marks, roles, update, locale, localeStore, onEnterSubPage, onOpenAccount }: SettingsPanelProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
   const candidateState = useSyncExternalStore(candidates.subscribe, candidates.state);
   // The marks land once, after the first paint; the subscription turns them into a re-render.
@@ -518,7 +518,7 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
                       }`}
                     >
                       {t(locale, SECTION_KEY[entry])}
-                      {entry === 'accounts' && (candidateState.loaded ? candidateState.rows.length > 0 : candidateDot) ? (
+                      {entry === 'accounts' && candidateDot(candidateState, candidateDotMirror) ? (
                         <span
                           role="img"
                           aria-label={t(locale, 'settings.accounts.dot')}

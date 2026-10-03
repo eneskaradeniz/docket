@@ -13,7 +13,10 @@ export interface SettingRowProps {
   readonly title: string;
   /** One sentence under the title; absent when it would only repeat the title (no empty slot). */
   readonly purpose?: string;
+  /** The one control at the right edge; null when the row's options are a block (`below`). */
   readonly control: ReactNode;
+  /** A full-width block under the title and purpose, for options too wide for the control slot. */
+  readonly below?: ReactNode;
   /** The recommended value's text when the setting differs from it; absent = on the recommendation. */
   readonly differsFrom?: string;
   readonly onReset?: () => void;
@@ -25,7 +28,7 @@ export interface SettingRowProps {
   readonly disclosure?: { readonly label: string; readonly startsOpen: boolean; readonly children: ReactNode };
 }
 
-export function SettingRow({ locale, title, purpose, control, differsFrom, onReset, saved = false, failure, note, disclosure }: SettingRowProps) {
+export function SettingRow({ locale, title, purpose, control, below, differsFrom, onReset, saved = false, failure, note, disclosure }: SettingRowProps) {
   const [open, setOpen] = useState(disclosure?.startsOpen ?? false);
   return (
     <div className="grid gap-1.5 border-b border-hairline py-3 last:border-b-0" data-setting-row={title}>
@@ -43,6 +46,7 @@ export function SettingRow({ locale, title, purpose, control, differsFrom, onRes
           {control}
         </div>
       </div>
+      {below !== undefined ? <div>{below}</div> : null}
       {differsFrom !== undefined ? (
         <p className="flex flex-wrap items-center gap-2 text-[12px] text-signal-soft">
           <span>{t(locale, 'editor.differs').replace('{value}', differsFrom)}</span>

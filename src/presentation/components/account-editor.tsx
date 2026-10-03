@@ -304,8 +304,9 @@ function PolicyRow({ account, locale, store }: Pick<AccountEditorProps, 'account
       failure={status.failure}
       differsFrom={diff === undefined ? undefined : diffValueLabel(locale, 'limitPolicy', diff.recommended)}
       onReset={() => void store.reset(account, 'limitPolicy')}
-      control={
-        <div role="radiogroup" aria-label={t(locale, 'editor.limits.policy.title')} className="grid w-72 gap-1.5">
+      control={null}
+      below={
+        <div role="radiogroup" aria-label={t(locale, 'editor.limits.policy.title')} className="grid gap-1.5">
           {policyOptions(account).map((option) => {
             const disabled = option.disabledReasonKey !== undefined;
             return (
@@ -317,14 +318,14 @@ function PolicyRow({ account, locale, store }: Pick<AccountEditorProps, 'account
                 aria-disabled={disabled}
                 disabled={disabled}
                 onClick={() => void store.savePolicy(account, option.policy)}
-                className={`${OPTION_CLASS(account.limitPolicy === option.policy, disabled)} grid gap-0.5 text-left`}
+                className={`${OPTION_CLASS(account.limitPolicy === option.policy, disabled)} w-full !flex-col !items-start gap-0.5 text-left`}
                 data-policy={option.policy}
               >
                 <span className="flex items-center gap-2">
                   <span>{t(locale, option.labelKey)}</span>
                   {option.recommended ? <RecommendedMark locale={locale} /> : null}
                 </span>
-                <span className="text-[11.5px] text-inkdim">
+                <span className="text-[12px] text-inkdim">
                   {option.disabledReasonKey !== undefined ? t(locale, option.disabledReasonKey) : t(locale, option.purposeKey)}
                 </span>
               </button>
@@ -407,9 +408,10 @@ function ReserveRow({ account, locale, store }: Pick<AccountEditorProps, 'accoun
         setSplitOpen(false);
         void store.reset(account, 'reserve');
       }}
-      control={
-        <div className="grid justify-items-end gap-2">
-          <div role="radiogroup" aria-label={t(locale, 'editor.limits.reserve.title')} className="flex flex-wrap justify-end gap-1.5">
+      control={null}
+      below={
+        <div className="grid justify-items-start gap-2">
+          <div role="radiogroup" aria-label={t(locale, 'editor.limits.reserve.title')} className="flex flex-wrap gap-1.5">
             {options.map((option) => (
               <button
                 key={option.id}

@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Command, CommandResult } from '../../api/commands';
 import type { Query } from '../../api/queries';
-import { createCandidatesStore, candidateRows, candidateStatusTone, listedCandidateCount, providerRows, type CandidateFact } from './candidates';
+import { createCandidatesStore, candidateRows, candidateDot, candidateStatusTone, listedCandidateCount, providerRows, type CandidateFact } from './candidates';
 
 const base: CandidateFact = {
   sourcePath: '/home/u/.alpha',
@@ -257,5 +257,18 @@ describe('Eklenmemiş list (U-28, U-34)', () => {
     expect(candidateStatusTone('candidates.status.unreadable')).toBe('dim');
     expect(candidateStatusTone('candidates.status.not_installed')).toBe('dim');
     expect(candidateStatusTone('candidates.status.unknown')).toBe('dim');
+  });
+
+  it('U-28: an empty Eklenmemiş list lights no dot — once the list has loaded it is the dot\'s only source', async () => {
+    const f = fake([{ ...base, alreadyAdded: true }]);
+    const store = createCandidatesStore({ api: f.api, actor: { kind: 'user', id: 'u' } as never });
+    expect(candidateDot(store.state(), true)).toBe(true);
+    await store.load();
+    expect(store.state().rows).toHaveLength(0);
+    expect(candidateDot(store.state(), true)).toBe(false);
+    const g = fake([base]);
+    const other = createCandidatesStore({ api: g.api, actor: { kind: 'user', id: 'u' } as never });
+    await other.load();
+    expect(candidateDot(other.state(), false)).toBe(true);
   });
 });
