@@ -14,6 +14,9 @@ import {
   createAccountEditorStore,
   diffValueLabel,
   disclosureStartsOpen,
+  accountHeadMeta,
+  accountStatusTone,
+  diffCountText,
   generalFacts,
   labelSaveCommand,
   meterBar,
@@ -264,5 +267,31 @@ describe('U-37: role chips on Genel', () => {
   it("U-37: a role chip opens Settings → Roller with that role's İnce ayar open", () => {
     const state = settingsPanelReducer(CLOSED_SETTINGS_PANEL, { type: 'open', origin: 'pointer', ...roleChipTarget('planner') });
     expect(state).toMatchObject({ open: true, section: 'roles', subPage: null, fineTune: 'planner' });
+  });
+});
+
+describe('Genel and the diff wording (U-29, U-30)', () => {
+  it('U-30: Genel shows the provider display name; the id only when no name is known', () => {
+    expect(generalFacts(ACCOUNT, 'Claude Code')[0]).toEqual({ key: 'provider', value: 'Claude Code' });
+    expect(generalFacts(ACCOUNT, null)[0]).toEqual({ key: 'provider', value: 'claude' });
+    expect(generalFacts(ACCOUNT)[0]).toEqual({ key: 'provider', value: 'claude' });
+  });
+
+  it('U-29: the count reads "n ayar önerilenden farklı" everywhere, never an abbreviation', () => {
+    expect(diffCountText('tr', 1)).toBe('1 ayar önerilenden farklı');
+    expect(diffCountText('tr', 3)).toBe('3 ayar önerilenden farklı');
+    expect(diffCountText('en', 2)).toBe('2 settings differ from the recommendation');
+  });
+
+  it('U-30: the sub-page head reads "sağlayıcı adı · bağlantı · plan" — the id without a name, no plan no third part', () => {
+    expect(accountHeadMeta('tr', ACCOUNT, 'Claude Code')).toBe('Claude Code · Abonelik · pro');
+    expect(accountHeadMeta('tr', { ...ACCOUNT, plan: null, authMode: 'api_key' }, null)).toBe('claude · API anahtarı');
+    expect(accountHeadMeta('en', ACCOUNT, 'Claude Code')).toBe('Claude Code · Subscription · pro');
+  });
+
+  it('U-28: an account status is a lamp and a word — ready proceed, reserve reached signal, no data dim', () => {
+    expect(accountStatusTone('ready')).toBe('proceed');
+    expect(accountStatusTone('reserve')).toBe('signal');
+    expect(accountStatusTone('noData')).toBe('dim');
   });
 });

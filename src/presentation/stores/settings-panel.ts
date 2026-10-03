@@ -4,6 +4,7 @@
 // panel blurs its opener on close, a keyboard-opened one returns focus) — and the section menu
 // with its sub-page (U-28), so Esc order and the Hesaplar dot are unit-tested here.
 import type { EditorTab } from './account-editor';
+import { listedCandidateCount } from './candidates';
 import { isQueryFailure } from './results';
 import type { PaletteOrigin } from './search-palette';
 
@@ -122,9 +123,9 @@ export interface CandidateFacts {
   readonly warnings: readonly string[];
 }
 
-/** Hesaplar carries an amber dot while discovery holds a candidate not yet added that can be read. */
-export const hasUnaddedCandidate = (candidates: readonly CandidateFacts[]): boolean =>
-  candidates.some((entry) => !entry.alreadyAdded && !entry.warnings.includes('unreadable'));
+/** Hesaplar carries an amber dot while the Eklenmemiş list has a row: the dot reads the list's own
+ *  count (an unreadable candidate is listed, disabled, and so counts). */
+export const hasUnaddedCandidate = (candidates: readonly CandidateFacts[]): boolean => listedCandidateCount(candidates) > 0;
 
 export interface CandidateDotSource {
   query(query: { readonly type: 'accounts.candidates' }): Promise<unknown>;

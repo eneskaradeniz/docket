@@ -8,7 +8,7 @@
 // is invented (no version, no status, no command).
 import type { Api } from '../../api/api';
 import type { LabelKey } from '../labels/keys';
-import { isProviderFact, providerStatus, type ProviderFact, type ProviderStatus } from './candidates';
+import { isProviderFact, providerStatus, type LampTone, type ProviderFact, type ProviderStatus } from './candidates';
 import { isQueryFailure } from './results';
 
 export type ProviderStatusKey = Extract<LabelKey, `providers.status.${string}`>;
@@ -18,7 +18,10 @@ export interface ProviderViewRow {
   /** The provider whose mark the row shows. */
   readonly markKey: string;
   readonly name: string;
+  /** What the version cell shows: the parsed number, or the raw line when none can be parsed. */
   readonly version: string | null;
+  /** The CLI's full version line, for the cell's `title`. */
+  readonly versionFull: string | null;
   readonly statusKey: ProviderStatusKey;
   /** The binary's full path (the row shows it dim, the full text also goes in `title`). */
   readonly binPath: string | null;
@@ -32,6 +35,25 @@ export interface ProvidersViewRows {
   readonly installed: readonly ProviderViewRow[];
   readonly notInstalled: readonly ProviderViewRow[];
 }
+
+/** The number in a CLI's version line ("Hermes Agent v0.21.4 (2026.9.21)" → "0.21.4"): the first
+ *  dotted number, with a pre-release tail when it carries one; null when the line holds none. */
+export const parseVersion = (raw: string): string | null =>
+  /\d+(?:\.\d+)+(?:-[0-9A-Za-z.]+)?/.exec(raw)?.[0] ?? null;
+
+const STATUS_TONE: Readonly<Record<ProviderStatusKey, LampTone>> = {
+  'providers.status.ready': 'proceed',
+  'providers.status.needs_login': 'signal',
+  'providers.status.unverified': 'dim',
+  'providers.status.not_installed': 'dim',
+};
+
+/** The lamp hue of a provider's status word. */
+export const providerStatusTone = (key: ProviderStatusKey): LampTone => STATUS_TONE[key];
+
+/** The display name (A-67) a provider id goes by, or null when discovery does not know the id. */
+export const providerDisplayName = (facts: readonly Pick<ProviderFact, 'defId' | 'name'>[], id: string): string | null =>
+  facts.find((fact) => fact.defId === id)?.name ?? null;
 
 const STATUS_KEY: Readonly<Record<Exclude<ProviderStatus, 'not_installed'>, ProviderStatusKey>> = {
   ready: 'providers.status.ready',
@@ -49,7 +71,8 @@ export const providerViewRows = (facts: readonly ProviderFact[], pending: Readon
       id: fact.defId,
       markKey: fact.defId,
       name: fact.name,
-      version: fact.version,
+      version: fact.version === null ? null : (parseVersion(fact.version) ?? fact.version),
+      versionFull: fact.version,
       binPath: fact.binPath,
       scanning: pending.has(fact.defId),
     };

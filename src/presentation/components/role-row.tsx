@@ -22,6 +22,7 @@ import { SAVED_FLAG_MS } from '../stores/account-editor';
 import type { WorkStyle } from '../stores/recommended';
 import { ActionButton } from './action-button';
 import { ProviderMark, type ProviderMarkProps } from './provider-mark';
+import { SegmentedControl } from './segmented-control';
 import { SettingRow } from './setting-row';
 
 const STYLE_KEY: Readonly<Record<WorkStyle | 'custom', LabelKey>> = {
@@ -59,43 +60,6 @@ function useSavedFlag(store: RolesStore, row: string): boolean {
 }
 
 export type MarkFor = (provider: string) => ProviderMarkProps['mark'];
-
-function Segmented<T extends string>({
-  options,
-  value,
-  label,
-  onPick,
-  standing,
-}: {
-  readonly options: readonly { readonly id: T; readonly text: string; readonly hint?: string }[];
-  readonly value: T | null;
-  readonly label: string;
-  readonly onPick: (id: T) => void;
-  /** A fourth, non-clickable standing: selected-looking, aria-disabled. */
-  readonly standing?: string;
-}) {
-  return (
-    <div role="group" aria-label={label} className="inline-flex overflow-hidden rounded-control border border-bord">
-      {options.map((option) => (
-        <button
-          key={option.id}
-          type="button"
-          aria-pressed={value === option.id}
-          onClick={() => onPick(option.id)}
-          className={`px-2.5 py-1 text-[12.5px] ${value === option.id ? 'bg-raised font-semibold text-ink' : 'text-inkdim hover:text-ink'}`}
-        >
-          {option.text}
-          {option.hint !== undefined ? <span className="ml-1 text-[10.5px] text-inkdim">{option.hint}</span> : null}
-        </button>
-      ))}
-      {standing !== undefined ? (
-        <span aria-disabled="true" className="bg-raised px-2.5 py-1 text-[12.5px] font-semibold text-ink">
-          {standing}
-        </span>
-      ) : null}
-    </div>
-  );
-}
 
 function MoveButtons({
   locale,
@@ -145,7 +109,7 @@ export function ChainSection({ store, locale, markFor }: ChainSectionProps) {
           <p className="text-[12.5px] text-inkdim">{t(locale, 'roles.chain.purpose')}</p>
         </div>
         {saved ? (
-          <span role="status" className="font-mono text-[11px] text-proceed">
+          <span role="status" className="text-[12px] text-proceed">
             {t(locale, 'editor.saved')}
           </span>
         ) : null}
@@ -166,7 +130,7 @@ export function ChainSection({ store, locale, markFor }: ChainSectionProps) {
               className="flex items-center gap-3 rounded-card border border-hairline bg-surface px-3 py-2 focus:border-signal focus:outline-none"
               data-chain-account={account.id}
             >
-              <span className="w-4 flex-none font-mono text-[11px] text-inkdim">{index + 1}</span>
+              <span className="w-4 flex-none text-[12px] text-inkdim">{index + 1}</span>
               <ProviderMark provider={account.provider} mark={markFor(account.provider)} />
               <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{account.label}</span>
               <MoveButtons locale={locale} name={account.label} index={index} count={chain.length} onMove={(delta) => void store.moveGlobal(index, delta)} />
@@ -217,7 +181,7 @@ function FineTune({ row, store, locale, markFor }: { readonly row: RoleRow; read
     <div className="grid gap-3" data-role-finetune={row.id}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-[12.5px] font-semibold text-ink">{t(locale, 'roles.chainMode.title')}</span>
-        <Segmented
+        <SegmentedControl
           label={t(locale, 'roles.chainMode.title')}
           value={row.chainMode}
           options={[
@@ -228,7 +192,7 @@ function FineTune({ row, store, locale, markFor }: { readonly row: RoleRow; read
         />
       </div>
       {row.chainMode === 'all' ? (
-        <p className="font-mono text-[11.5px] text-inkdim">{row.chain.map((entry) => label(entry.accountId)).join(' → ')}</p>
+        <p className="text-[12.5px] text-inkdim">{row.chain.map((entry) => label(entry.accountId)).join(' → ')}</p>
       ) : (
         <div className="grid gap-1.5">
           {row.chain.map((entry, index) => {
@@ -317,8 +281,8 @@ function FineTune({ row, store, locale, markFor }: { readonly row: RoleRow; read
           <span className="text-[11.5px] text-inkdim">{t(locale, 'roles.stages.note')}</span>
           <ul className="grid gap-1">
             {row.stages.map((stage) => (
-              <li key={`${stage.flowName}:${stage.stageName}`} className="flex flex-wrap items-center justify-between gap-2 font-mono text-[11.5px] text-inkdim">
-                <span>{t(locale, 'roles.stages.line').replace('{flow}', stage.flowName).replace('{stage}', stage.stageName)}</span>
+              <li key={`${stage.flowName}:${stage.stageName}`} className="flex flex-wrap items-center justify-between gap-2 text-[12px] text-inkdim">
+                <span className="font-mono text-[11.5px]">{t(locale, 'roles.stages.line').replace('{flow}', stage.flowName).replace('{stage}', stage.stageName)}</span>
                 <span>{stageSetting(locale, stage)}</span>
               </li>
             ))}
@@ -356,14 +320,13 @@ export function RoleRowView({ row, store, locale, markFor, fineTuneOpen = false 
     <SettingRow
       locale={locale}
       title={row.name}
-      purpose=""
       saved={saved}
       {...(row.differs ? { differsFrom: t(locale, STYLE_KEY[row.recommended]), onReset: () => void store.resetStyle(row.id) } : {})}
       {...(failure !== undefined ? { failure: t(locale, failure) } : {})}
       {...(row.sameProviderReview ? { note: t(locale, 'roles.review.sameProvider') } : {})}
       control={
         <span className="flex items-center gap-2">
-          <Segmented
+          <SegmentedControl
             label={`${row.name} · ${t(locale, 'roles.style.title')}`}
             value={row.style === 'custom' || row.style === 'unset' ? null : row.style}
             {...(row.style === 'custom' ? { standing: t(locale, STYLE_KEY.custom) } : {})}

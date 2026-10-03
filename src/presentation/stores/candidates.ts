@@ -72,6 +72,25 @@ const WARN_KEY: Readonly<Record<'env_overrides_login', CandidateWarnKey>> = {
   env_overrides_login: 'candidates.warn.env_overrides_login',
 };
 
+/** The lamp hue of a status word: the book's proceed / signal / dim (error is never a status here). */
+export type LampTone = 'proceed' | 'signal' | 'dim' | 'error';
+
+const CANDIDATE_TONE: Readonly<Record<CandidateStatusKey, LampTone>> = {
+  'candidates.status.ready': 'proceed',
+  'candidates.status.key_needed': 'signal',
+  'candidates.status.needs_login': 'signal',
+  'candidates.status.unreadable': 'dim',
+  'candidates.status.not_installed': 'dim',
+  'candidates.status.unknown': 'dim',
+};
+
+export const candidateStatusTone = (key: CandidateStatusKey): LampTone => CANDIDATE_TONE[key];
+
+/** How many candidates the Eklenmemiş list shows: every one not yet added. The Hesaplar dot reads
+ *  this same count, so the dot and the list cannot disagree. Pure. */
+export const listedCandidateCount = (facts: readonly Pick<CandidateFact, 'alreadyAdded'>[]): number =>
+  facts.filter((fact) => !fact.alreadyAdded).length;
+
 /** The rows of the list: `alreadyAdded` candidates are not listed. Pure. */
 export const candidateRows = (
   facts: readonly CandidateFact[],
@@ -141,6 +160,10 @@ export interface CandidatesState {
   readonly selected: string | null;
   /** The key-move switch; false on every fresh selection. */
   readonly importToken: boolean;
+  /** "Ekle" shows only while a candidate is selected. */
+  readonly addVisible: boolean;
+  /** True once a read has finished: from then on the list's own count is the dot's truth. */
+  readonly loaded: boolean;
   readonly adopting: boolean;
   readonly lastOutcome: SettingsIntentOutcome | null;
 }
@@ -192,18 +215,22 @@ export const createCandidatesStore = (deps: CandidatesStoreDeps): CandidatesStor
   let selected: string | null = null;
   let importToken = false;
   let loading = false;
+  let loaded = false;
   let adopting = false;
   let lastOutcome: SettingsIntentOutcome | null = null;
-  let state: CandidatesState = { loading, rows: [], providers: [], selected, importToken, adopting, lastOutcome };
+  let state: CandidatesState = { loading, rows: [], providers: [], selected, importToken, addVisible: false, loaded: false, adopting, lastOutcome };
   const listeners = new Set<() => void>();
 
   const publish = (): void => {
+    const rows = candidateRows(facts, selected, importToken);
     state = {
       loading,
-      rows: candidateRows(facts, selected, importToken),
+      rows,
       providers: providerRows(providerFacts),
       selected,
       importToken,
+      addVisible: rows.some((row) => row.selected),
+      loaded,
       adopting,
       lastOutcome,
     };
@@ -226,6 +253,7 @@ export const createCandidatesStore = (deps: CandidatesStoreDeps): CandidatesStor
       importToken = false;
     }
     loading = false;
+    loaded = true;
     publish();
   };
 

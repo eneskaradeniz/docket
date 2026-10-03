@@ -12,7 +12,7 @@ import type { Command, CommandResult } from '../../api/commands';
 import type { Query } from '../../api/queries';
 import type { Actor } from '../../domain/index';
 
-import { createUpdateStore, updateButton, type UpdateChange, type UpdateChangeSignal, type UpdateStatus } from './update';
+import { createUpdateStore, updateButton, updateStatusTone, type UpdateChange, type UpdateChangeSignal, type UpdateStatus } from './update';
 
 const ACTOR: Actor = { kind: 'user', id: 'u-1' };
 
@@ -217,5 +217,15 @@ describe('createUpdateStore', () => {
     held.resolve?.(AVAILABLE);
     await first;
     expect(store.state().status).toStrictEqual(READY);
+  });
+});
+
+describe('Güncelleme status lamp (U-28)', () => {
+  it('U-28: the status line carries a lamp — up to date proceed, waiting or ready signal, downloading dim, failed error', () => {
+    expect(updateStatusTone('none')).toBe('proceed');
+    expect(updateStatusTone('available')).toBe('signal');
+    expect(updateStatusTone('ready')).toBe('signal');
+    expect(updateStatusTone('downloading')).toBe('dim');
+    expect(updateStatusTone('error')).toBe('error');
   });
 });

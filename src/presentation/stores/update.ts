@@ -11,6 +11,7 @@ import type { Api } from '../../api/api';
 import type { Command, CommandResult } from '../../api/commands';
 import type { Query } from '../../api/queries';
 import type { Actor } from '../../domain/index';
+import type { LampTone } from './candidates';
 import type { LabelKey } from '../labels/keys';
 import { commandResultKey, isQueryFailure } from './results';
 
@@ -43,6 +44,11 @@ export interface UpdateButtonPlan {
   readonly percent: number | null;
   readonly disabled: boolean;
 }
+
+/** The lamp hue of a status line (U-28): up to date proceed, an update waiting or ready signal, a
+ *  download in flight dim, a failed check error. */
+export const updateStatusTone = (kind: UpdateStatus['kind']): LampTone =>
+  kind === 'none' ? 'proceed' : kind === 'available' || kind === 'ready' ? 'signal' : kind === 'error' ? 'error' : 'dim';
 
 /** Pure (U-24): the button plan for a status. The input is never mutated. */
 export const updateButton = (status: UpdateStatus): UpdateButtonPlan => {

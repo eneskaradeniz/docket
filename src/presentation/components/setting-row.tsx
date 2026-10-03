@@ -11,7 +11,8 @@ import { ActionButton } from './action-button';
 export interface SettingRowProps {
   readonly locale: Locale;
   readonly title: string;
-  readonly purpose: string;
+  /** One sentence under the title; absent when it would only repeat the title (no empty slot). */
+  readonly purpose?: string;
   readonly control: ReactNode;
   /** The recommended value's text when the setting differs from it; absent = on the recommendation. */
   readonly differsFrom?: string;
@@ -28,14 +29,14 @@ export function SettingRow({ locale, title, purpose, control, differsFrom, onRes
   const [open, setOpen] = useState(disclosure?.startsOpen ?? false);
   return (
     <div className="grid gap-1.5 border-b border-hairline py-3 last:border-b-0" data-setting-row={title}>
-      <div className="flex items-start justify-between gap-4">
+      <div className={`flex justify-between gap-4 ${purpose === undefined || purpose === '' ? 'items-center' : 'items-start'}`}>
         <div className="min-w-0">
           <p className="text-[13.5px] font-semibold text-ink">{title}</p>
-          <p className="text-[12.5px] text-inkdim">{purpose}</p>
+          {purpose !== undefined && purpose !== '' ? <p className="text-[12.5px] text-inkdim">{purpose}</p> : null}
         </div>
         <div className="flex flex-none items-center gap-2">
           {saved ? (
-            <span role="status" className="font-mono text-[11px] text-proceed">
+            <span role="status" className="text-[12px] text-proceed">
               {t(locale, 'editor.saved')}
             </span>
           ) : null}

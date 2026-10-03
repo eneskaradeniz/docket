@@ -15,6 +15,8 @@ import {
   RESERVE_PRESETS,
   SAVED_FLAG_MS,
   capFormStartsOpen,
+  connectionText,
+  diffCountText,
   diffValueLabel,
   generalFacts,
   mayHaveCap,
@@ -51,13 +53,6 @@ const FACT_KEY: Readonly<Record<FactKey, LabelKey>> = {
   secret: 'editor.fact.secret',
 };
 
-const CONNECTION_KEY: Readonly<Record<string, LabelKey>> = {
-  subscription: 'auth.mode.subscription',
-  api_key: 'auth.mode.api_key',
-  cloud: 'auth.mode.cloud',
-  byok: 'auth.mode.byok',
-};
-
 const SCOPE_KEY: Readonly<Record<string, LabelKey>> = {
   account_day: 'cap.scope.account_day',
   account_week: 'cap.scope.account_week',
@@ -78,6 +73,18 @@ export interface AccountEditorProps {
   readonly roleChips?: readonly { readonly id: string; readonly name: string }[];
   /** A chip's intent: Settings → Roller with that role's İnce ayar open. */
   readonly onOpenRole?: (roleId: string) => void;
+  /** The provider's display name (A-67) Genel shows in place of the id; absent or null = the id. */
+  readonly providerName?: string | null;
+  /** U-20's reset wording for the Kullanım bars; absent = the host's plain moment (`formatTime`). */
+  readonly resetLine?: (resetsAt: number | null) => string | null;
+  /** "Hesabı kaldır" at the bottom of Genel (a danger zone); absent = the host offers no removal. */
+  readonly onRemove?: () => void;
+  /** The standing warning of a refused removal (the account is still bound to roles). */
+  readonly removeWarning?: {
+    readonly roles: readonly string[];
+    readonly onConfirm: () => void;
+    readonly onDismiss: () => void;
+  };
 }
 
 // "Kaydedildi" beside a row for 1.5 s, and the row's failure copy.
@@ -123,7 +130,53 @@ function LabelRow({ account, locale, store }: Pick<AccountEditorProps, 'account'
   );
 }
 
-function General({ account, locale, store, roleChips, onOpenRole }: Pick<AccountEditorProps, 'account' | 'locale' | 'store' | 'roleChips' | 'onOpenRole'>) {
+/** Facts that are machine data (a path, a host) keep mono; names and states are sans. */
+const MONO_FACTS: ReadonlySet<FactKey> = new Set<FactKey>(['identityDir', 'endpointHost']);
+
+function DangerZone({ account, locale, onRemove, removeWarning }: Pick<AccountEditorProps, 'account' | 'locale' | 'onRemove' | 'removeWarning'>) {
+  if (onRemove === undefined) return null;
+  return (
+    <section className="mt-3 grid gap-2 rounded-card border border-error/40 px-4 py-3" data-danger-zone={account.id}>
+      <h3 className="text-[14px] font-semibold text-ink">{t(locale, 'editor.danger.title')}</h3>
+      <div className="flex items-center justify-between gap-4">
+        <p className="text-[12.5px] text-inkdim">{t(locale, 'editor.danger.remove')}</p>
+        <button
+          type="button"
+          onClick={onRemove}
+          className="flex-none rounded-control border border-error/60 px-2.5 py-1 text-[12.5px] text-error hover:bg-raised"
+        >
+          {t(locale, 'settings.account.remove')}
+        </button>
+      </div>
+      {removeWarning !== undefined ? (
+        <div role="alert" className="grid gap-2 rounded-card border border-signal/40 bg-signal/10 px-3 py-2.5">
+          <p className="text-[13px] text-ink">
+            {t(locale, 'settings.remove.warning')} <span className="font-mono text-[12.5px] text-signal-soft">{removeWarning.roles.join(', ')}</span>
+          </p>
+          <div className="flex items-center gap-2">
+            <ActionButton variant="primary" onClick={removeWarning.onConfirm}>
+              {t(locale, 'settings.remove.confirm')}
+            </ActionButton>
+            <ActionButton variant="neutral" onClick={removeWarning.onDismiss}>
+              {t(locale, 'settings.remove.cancel')}
+            </ActionButton>
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function General({
+  account,
+  locale,
+  store,
+  roleChips,
+  onOpenRole,
+  providerName,
+  onRemove,
+  removeWarning,
+}: Pick<AccountEditorProps, 'account' | 'locale' | 'store' | 'roleChips' | 'onOpenRole' | 'providerName' | 'onRemove' | 'removeWarning'>) {
   return (
     <div>
       <LabelRow account={account} locale={locale} store={store} />
@@ -148,27 +201,27 @@ function General({ account, locale, store, roleChips, onOpenRole }: Pick<Account
         </div>
       ) : null}
       <dl className="grid gap-2 py-3">
-        {generalFacts(account).map((fact) => {
-          const connectionKey = fact.key === 'connection' && typeof fact.value === 'string' ? CONNECTION_KEY[fact.value] : undefined;
+        {generalFacts(account, providerName ?? null).map((fact) => {
           const text =
             typeof fact.value === 'boolean'
               ? t(locale, fact.value ? 'editor.fact.secret.yes' : 'editor.fact.secret.no')
-              : connectionKey !== undefined
-                ? t(locale, connectionKey)
+              : fact.key === 'connection'
+                ? connectionText(locale, fact.value)
                 : fact.value;
           return (
             <div key={fact.key} className="flex items-baseline gap-3" data-fact={fact.key}>
               <dt className="w-32 flex-none text-[12.5px] text-inkdim">{t(locale, FACT_KEY[fact.key])}</dt>
-              <dd className="min-w-0 break-all font-mono text-[12.5px] text-ink">{text}</dd>
+              <dd className={`min-w-0 break-all text-[12.5px] text-ink ${MONO_FACTS.has(fact.key) ? 'font-mono' : ''}`}>{text}</dd>
             </div>
           );
         })}
       </dl>
+      <DangerZone account={account} locale={locale} onRemove={onRemove} removeWarning={removeWarning} />
     </div>
   );
 }
 
-function Usage({ account, locale, formatTime, onRefresh }: Pick<AccountEditorProps, 'account' | 'locale' | 'formatTime' | 'onRefresh'>) {
+function Usage({ account, locale, formatTime, resetLine, onRefresh }: Pick<AccountEditorProps, 'account' | 'locale' | 'formatTime' | 'resetLine' | 'onRefresh'>) {
   const view = usageView(account);
   const lastRead = account.meters.length === 0 ? null : formatTime(Math.max(...account.meters.map((meter) => meter.observedAt)));
   return (
@@ -185,6 +238,7 @@ function Usage({ account, locale, formatTime, onRefresh }: Pick<AccountEditorPro
                 name={meter.label ?? account.pools.find((pool) => pool.id === meter.poolId)?.label ?? meter.poolId}
                 locale={locale}
                 resetsAt={formatTime(meter.resetsAt)}
+                {...(resetLine !== undefined ? { resetLine: resetLine(meter.resetsAt) } : {})}
               />
             ))}
           </ul>
@@ -195,7 +249,7 @@ function Usage({ account, locale, formatTime, onRefresh }: Pick<AccountEditorPro
             {t(locale, 'editor.usage.spend')}{' '}
             <span className="font-mono">{view.spentUsd === null ? t(locale, 'editor.usage.spendNone') : formatMeterValue(locale, 'usd', view.spentUsd)}</span>
           </p>
-          <p className="font-mono text-[11.5px] text-inkdim">
+          <p className="text-[12.5px] text-inkdim">
             {view.cap === null
               ? t(locale, 'editor.usage.noCap')
               : `${t(locale, 'editor.usage.cap')} ${formatMeterValue(locale, 'usd', view.cap.amountUsd)} · ${
@@ -204,7 +258,7 @@ function Usage({ account, locale, formatTime, onRefresh }: Pick<AccountEditorPro
           </p>
         </div>
       )}
-      <p className="flex items-center gap-2 text-[12px] text-inkdim">
+      <p className="flex items-center gap-2 text-[12.5px] text-inkdim">
         <span>
           {t(locale, 'editor.usage.lastRead')}
           {lastRead !== null ? ` ${lastRead}` : ''}
@@ -312,7 +366,7 @@ function ReserveRow({ account, locale, store }: Pick<AccountEditorProps, 'accoun
             if (event.key === 'Enter') commit(short, long);
           }}
           aria-label={t(locale, which === 'short' ? 'editor.limits.reserve.shortField' : 'editor.limits.reserve.longField')}
-          className={`${INPUT_CLASS} w-24 font-mono`}
+          className={`${INPUT_CLASS} w-24`}
           data-reserve-field={which}
         />
         <span className="text-[11.5px]">
@@ -473,7 +527,7 @@ function CapRow({ account, locale, store }: Pick<AccountEditorProps, 'account' |
                 onBlur={() => commit('warnPercent')}
                 onKeyDown={onEnter('warnPercent')}
                 aria-label={t(locale, 'editor.limits.cap.warn')}
-                className={`${INPUT_CLASS} w-20 font-mono`}
+                className={`${INPUT_CLASS} w-20`}
                 data-cap-field="warn"
               />
             </label>
@@ -547,7 +601,7 @@ export function AccountEditor(props: AccountEditorProps) {
           <p className="text-inkdim">{t(locale, 'editor.head.clean')}</p>
         ) : (
           <>
-            <p className="text-signal-soft">{t(locale, 'editor.head.diffs').replace('{n}', String(diffs.length))}</p>
+            <p className="text-signal-soft">{diffCountText(locale, diffs.length)}</p>
             <span aria-hidden="true" className="text-inkdim">
               ·
             </span>
@@ -577,9 +631,20 @@ export function AccountEditor(props: AccountEditorProps) {
         ))}
       </div>
       <div role="tabpanel">
-        {state.tab === 'general' ? <General account={account} locale={locale} store={store} roleChips={props.roleChips} onOpenRole={props.onOpenRole} /> : null}
+        {state.tab === 'general' ? (
+          <General
+            account={account}
+            locale={locale}
+            store={store}
+            roleChips={props.roleChips}
+            onOpenRole={props.onOpenRole}
+            providerName={props.providerName}
+            onRemove={props.onRemove}
+            removeWarning={props.removeWarning}
+          />
+        ) : null}
         {state.tab === 'usage' ? (
-          <Usage account={account} locale={locale} formatTime={props.formatTime} onRefresh={props.onRefresh} />
+          <Usage account={account} locale={locale} formatTime={props.formatTime} resetLine={props.resetLine} onRefresh={props.onRefresh} />
         ) : null}
         {state.tab === 'limits' ? <Limits account={account} locale={locale} store={store} /> : null}
         {state.tab === 'models' ? (

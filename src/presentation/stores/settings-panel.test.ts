@@ -2,6 +2,7 @@
 // the close's focus rule reads, the section menu and sub-page mechanics (U-28). The reducer carries
 // no route — settings is an overlay over whatever route the operator is on, so "open leaves the
 // route unchanged" holds by construction here and the journeys (J-6) prove it against the real shell.
+import { listedCandidateCount } from './candidates';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -98,12 +99,20 @@ describe('settings sections (U-28)', () => {
     expect(settingsPanelReducer(closed, { type: 'open', origin: 'keyboard' }).subPage).toBeNull();
   });
 
-  it('U-28: the Hesaplar dot is amber for a candidate not yet added that is readable — added or unreadable ones do not count', () => {
+  it('U-28: the Hesaplar dot and the Eklenmemiş list read one count — a dot shows exactly when the list has a row', () => {
+    const facts = [
+      [],
+      [candidate(true)],
+      [candidate(false, ['unreadable'])],
+      [candidate(true), candidate(false)],
+      [candidate(false, ['env_overrides_login'])],
+    ];
+    for (const entry of facts) {
+      expect(hasUnaddedCandidate(entry)).toBe(listedCandidateCount(entry) > 0);
+    }
     expect(hasUnaddedCandidate([])).toBe(false);
     expect(hasUnaddedCandidate([candidate(true)])).toBe(false);
-    expect(hasUnaddedCandidate([candidate(false, ['unreadable'])])).toBe(false);
-    expect(hasUnaddedCandidate([candidate(true), candidate(false)])).toBe(true);
-    expect(hasUnaddedCandidate([candidate(false, ['env_overrides_login'])])).toBe(true);
+    expect(hasUnaddedCandidate([candidate(false, ['unreadable'])])).toBe(true);
   });
 
   it('U-28: the dot store reads accounts.candidates and a failed query shows no dot', async () => {

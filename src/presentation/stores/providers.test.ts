@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Query } from '../../api/queries';
 import type { ProviderFact } from './candidates';
-import { createProvidersStore, providerViewRows } from './providers';
+import { createProvidersStore, parseVersion, providerDisplayName, providerStatusTone, providerViewRows } from './providers';
 
 const ready: ProviderFact = { defId: 'p-a', name: 'Alpha', installUrl: 'https://a.test/i', binPath: '/usr/bin/alpha', version: '1.2.3', loggedIn: true, optionalFlags: [] };
 const out: ProviderFact = { ...ready, defId: 'p-b', name: 'Beta', version: null, loggedIn: false };
@@ -81,5 +81,32 @@ describe('U-38', () => {
     expect(store.state().installed).toHaveLength(1);
     expect(store.state().installed[0]?.scanning).toBe(false);
     expect(store.state().failed).toBe(true);
+  });
+});
+
+describe('Sağlayıcılar presentation (U-38)', () => {
+  it('U-38: the version cell shows the parsed number; the raw line stays for the title; no number reads raw', () => {
+    expect(parseVersion('Hermes Agent v0.21.4 (2026.9.21)')).toBe('0.21.4');
+    expect(parseVersion('kiro-cli 2.27.0')).toBe('2.27.0');
+    expect(parseVersion('1.2.3')).toBe('1.2.3');
+    expect(parseVersion('2.1.0-beta.2 build')).toBe('2.1.0-beta.2');
+    expect(parseVersion('nightly')).toBeNull();
+    const view = providerViewRows([{ ...ready, version: 'kiro-cli 2.27.0' }, { ...ready, defId: 'p-x', version: 'nightly' }], new Set());
+    expect(view.installed[0]).toMatchObject({ version: '2.27.0', versionFull: 'kiro-cli 2.27.0' });
+    expect(view.installed[1]).toMatchObject({ version: 'nightly', versionFull: 'nightly' });
+  });
+
+  it('U-38: status words carry a lamp tone — Hazır proceed, Giriş gerekli signal, Doğrulanamadı and Kurulu değil dim', () => {
+    expect(providerStatusTone('providers.status.ready')).toBe('proceed');
+    expect(providerStatusTone('providers.status.needs_login')).toBe('signal');
+    expect(providerStatusTone('providers.status.unverified')).toBe('dim');
+    expect(providerStatusTone('providers.status.not_installed')).toBe('dim');
+  });
+
+  it('U-38: an account reads its provider display name from the discovered facts (A-67), null when unknown', () => {
+    const facts = [ready, missing];
+    expect(providerDisplayName(facts, 'p-a')).toBe('Alpha');
+    expect(providerDisplayName(facts, 'p-d')).toBe('Delta');
+    expect(providerDisplayName(facts, 'nope')).toBeNull();
   });
 });

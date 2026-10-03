@@ -22,6 +22,7 @@ import type {
 import type { Actor } from '../../domain/index';
 import type { LabelKey } from '../labels/keys';
 import type { Locale } from '../labels/t';
+import { resetLine } from './reset-line';
 import { commandResultKey, isQueryFailure } from './results';
 
 /** The coarse change events the api emits (docs/v2/ui.md, U-12). Notifications carry no
@@ -145,6 +146,8 @@ export interface SettingsStore {
   /** The reset time of a meter in the active locale, or null when the meter has none.
    *  Computed on demand so a locale switch re-renders without a re-query. */
   resetsAtLabel(resetsAt: number | null): string | null;
+  /** U-20's "…'de sıfırlanır · … kaldı" for a reset instant, read now; null without one. */
+  resetLine(resetsAt: number | null): string | null;
   saveAccount(input: AccountSaveInput): Promise<SettingsIntentOutcome>;
   saveBinding(input: BindingSaveInput): Promise<SettingsIntentOutcome>;
   /** Issue any command as the user and re-query (the account editor's writes, U-29). */
@@ -292,6 +295,7 @@ export const createSettingsStore = (deps: SettingsStoreDeps): SettingsStore => {
     load,
     discover,
     state: () => state,
+    resetLine: (resetsAt) => (resetsAt === null ? null : resetLine(locale(), zone, resetsAt, Date.now())),
     resetsAtLabel: (resetsAt) => {
       if (resetsAt === null) return null;
       const tag = locale();

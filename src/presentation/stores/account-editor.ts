@@ -8,6 +8,7 @@ import type { Command, CommandResult } from '../../api/commands';
 import type { SettingsAccountView, SettingsMeterView } from '../../api/queries';
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
+import type { LampTone } from './candidates';
 import { CAP_SCOPES, parseAmountUsd, type CapScope } from './account-models';
 import { RECOMMENDED, mayHaveCap, settingDiffs, type SettingDiff, type SettingKey } from './recommended';
 import type { SettingsOpenTarget } from './settings-panel';
@@ -29,10 +30,33 @@ export interface AccountFact {
   readonly value: string | boolean;
 }
 
-/** The read-only facts of Genel, in display order; an absent optional fact is omitted. */
-export const generalFacts = (account: SettingsAccountView): readonly AccountFact[] => {
+const CONNECTION_KEY: Readonly<Record<string, LabelKey>> = {
+  subscription: 'auth.mode.subscription',
+  api_key: 'auth.mode.api_key',
+  cloud: 'auth.mode.cloud',
+  byok: 'auth.mode.byok',
+};
+
+/** The words of a connection (auth mode); an unknown mode reads as itself. */
+export const connectionText = (locale: Locale, authMode: string): string => {
+  const key = CONNECTION_KEY[authMode];
+  return key === undefined ? authMode : t(locale, key);
+};
+
+/** The sub-page head's second line: "sağlayıcı adı · bağlantı · plan"; no plan, no third part. */
+export const accountHeadMeta = (locale: Locale, account: SettingsAccountView, providerName: string | null): string =>
+  [providerName ?? account.provider, connectionText(locale, account.authMode), account.plan]
+    .filter((part): part is string => part !== null && part !== '')
+    .join(' · ');
+
+/** "n ayar önerilenden farklı" — the one wording of the U-29 count, in the list row and the head. */
+export const diffCountText = (locale: Locale, n: number): string => t(locale, 'editor.head.diffs').replace('{n}', String(n));
+
+/** The read-only facts of Genel, in display order; an absent optional fact is omitted. The
+ *  provider reads by its display name (A-67), by its id only when no name is known. */
+export const generalFacts = (account: SettingsAccountView, providerName: string | null = null): readonly AccountFact[] => {
   const facts: AccountFact[] = [
-    { key: 'provider', value: account.provider },
+    { key: 'provider', value: providerName ?? account.provider },
     { key: 'connection', value: account.authMode },
   ];
   if (account.plan !== null) facts.push({ key: 'plan', value: account.plan });
@@ -162,6 +186,10 @@ export const accountStatus = (account: SettingsAccountView): AccountStatus => {
   if (bars.some((bar) => bar.reached)) return 'reserve';
   return bars.some((bar) => bar.fill !== null) ? 'ready' : 'noData';
 };
+
+/** The lamp hue of an account's status word (U-28): ready proceed, a reached reserve signal, no data dim. */
+export const accountStatusTone = (status: AccountStatus): LampTone =>
+  status === 'ready' ? 'proceed' : status === 'reserve' ? 'signal' : 'dim';
 
 const fill = (template: string, values: Readonly<Record<string, string>>): string =>
   template.replace(/\{(\w+)\}/g, (whole, name: string) => values[name] ?? whole);

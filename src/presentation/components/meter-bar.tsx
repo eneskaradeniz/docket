@@ -6,6 +6,7 @@ import type { SettingsMeterView } from '../../api/queries';
 import { t, type Locale } from '../labels/t';
 import { meterBar } from '../stores/account-editor';
 import { formatMeterValue } from './meter-value';
+import { StatusLamp } from './status-lamp';
 
 export interface MeterBarProps {
   readonly meter: SettingsMeterView;
@@ -14,23 +15,26 @@ export interface MeterBarProps {
   readonly locale: Locale;
   /** The reset time already formatted in the active locale, or null. */
   readonly resetsAt: string | null;
+  /** U-20's "…'de sıfırlanır · … kaldı"; when given it stands under the bar in place of `resetsAt`. */
+  readonly resetLine?: string | null;
 }
 
 const percent = (fraction: number): string => `${Math.round(fraction * 1000) / 10}%`;
 
-export function MeterBar({ meter, name, locale, resetsAt }: MeterBarProps) {
+export function MeterBar({ meter, name, locale, resetsAt, resetLine }: MeterBarProps) {
   const bar = meterBar(meter);
+  const lined = resetLine !== undefined;
   return (
     <li className="grid gap-1.5" data-meter-bar={meter.id}>
       <div className="flex flex-wrap items-baseline gap-2">
-        <span className="text-[13px] text-ink">{name}</span>
-        <span className="font-mono text-[11.5px] text-inkdim">
+        <span className="text-[13px] font-semibold text-ink">{name}</span>
+        <span className="text-[12.5px] text-inkdim">
           {meter.remaining !== null ? `${t(locale, 'settings.meter.remaining')} ${formatMeterValue(locale, meter.unit, meter.remaining)}` : ''}
-          {resetsAt !== null ? ` · ${t(locale, 'settings.meter.resetsAt')} ${resetsAt}` : ''}
+          {!lined && resetsAt !== null ? ` · ${t(locale, 'settings.meter.resetsAt')} ${resetsAt}` : ''}
         </span>
         {bar.reached ? (
-          <span className="ml-auto rounded-full border border-signal/45 px-[7px] py-px font-mono text-[10.5px] text-signal">
-            {t(locale, 'editor.meter.reached')}
+          <span className="ml-auto">
+            <StatusLamp tone="signal">{t(locale, 'editor.meter.reached')}</StatusLamp>
           </span>
         ) : null}
       </div>
@@ -49,8 +53,9 @@ export function MeterBar({ meter, name, locale, resetsAt }: MeterBarProps) {
           />
         ) : null}
       </div>
+      {lined && resetLine !== null ? <p className="text-[12.5px] text-inkdim">{resetLine}</p> : null}
       {bar.zone !== null ? (
-        <p className="text-[11.5px] text-inkdim">{t(locale, 'editor.meter.reserveNote').replace('{share}', String(Math.round(bar.zone * 100)))}</p>
+        <p className="text-[12px] text-inkdim">{t(locale, 'editor.meter.reserveNote').replace('{share}', String(Math.round(bar.zone * 100)))}</p>
       ) : null}
     </li>
   );
