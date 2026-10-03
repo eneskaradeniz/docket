@@ -122,23 +122,6 @@ const VIEW: SettingsAccountsView = {
   ],
 };
 
-const ALPHA_ROW = {
-  defId: 'alpha',
-  binPath: '/usr/local/bin/alpha',
-  version: '1.2.3',
-  loggedIn: true,
-  optionalFlags: ['--fast'],
-};
-
-/** A provider whose probe failed or was cut off: null fields, never a failed query. */
-const BROKEN_ROW = {
-  defId: 'beta',
-  binPath: null,
-  version: null,
-  loggedIn: null,
-  optionalFlags: [],
-};
-
 interface FakeSettingsApi extends Pick<Api, 'query' | 'command'> {
   readonly queries: Query[];
   readonly commands: Command[];
@@ -253,7 +236,6 @@ describe('settings store', () => {
       loading: false,
       view: null,
       problem: null,
-      discovery: { running: false, rows: [], failed: false },
       lastOutcome: null,
       removeWarning: null,
     });
@@ -339,59 +321,6 @@ describe('settings store', () => {
         accounts: [{ accountId: 'acc-2', model: null }],
       },
     ]);
-  });
-
-  it('U-6: discovery lists every reported provider — a failed provider arrives as its null-fields row, never a query failure', async () => {
-    const h = createHarness('tr');
-    h.api.hold('providers.discovered');
-    const pass = h.store.discover();
-    expect(h.store.state().discovery.running).toBe(true);
-
-    h.api.release('providers.discovered', [ALPHA_ROW, BROKEN_ROW]);
-    await pass;
-
-    const discovery = h.store.state().discovery;
-    expect(discovery.running).toBe(false);
-    expect(discovery.failed).toBe(false);
-    expect(discovery.rows).toEqual([ALPHA_ROW, BROKEN_ROW]);
-    expect(h.store.state().problem).toBeNull();
-  });
-
-  it('U-6: a hanging discovery pass delays only the refresh — prior rows stay listed while it runs', async () => {
-    const h = createHarness('tr');
-    h.api.hold('providers.discovered');
-    const first = h.store.discover();
-    h.api.release('providers.discovered', [ALPHA_ROW]);
-    await first;
-    expect(h.store.state().discovery.rows).toEqual([ALPHA_ROW]);
-
-    // The next pass hangs: the earlier rows must stay on screen, never blank out.
-    h.api.hold('providers.discovered');
-    const second = h.store.discover();
-    expect(h.store.state().discovery.running).toBe(true);
-    expect(h.store.state().discovery.rows).toEqual([ALPHA_ROW]);
-
-    h.api.release('providers.discovered', [ALPHA_ROW, BROKEN_ROW]);
-    await second;
-    const discovery = h.store.state().discovery;
-    expect(discovery.running).toBe(false);
-    expect(discovery.rows).toEqual([ALPHA_ROW, BROKEN_ROW]);
-  });
-
-  it('U-6: a failed discovery pass keeps the prior rows and surfaces the failure', async () => {
-    const h = createHarness('tr');
-    h.api.hold('providers.discovered');
-    const first = h.store.discover();
-    h.api.release('providers.discovered', [ALPHA_ROW]);
-    await first;
-
-    h.api.setReply('providers.discovered', { ok: false, code: 'not_found' });
-    await h.store.discover();
-
-    const discovery = h.store.state().discovery;
-    expect(discovery.running).toBe(false);
-    expect(discovery.failed).toBe(true);
-    expect(discovery.rows).toEqual([ALPHA_ROW]);
   });
 
   it('U-6: removing an account a binding still references warns with the referencing roles before any command is issued', async () => {
@@ -482,17 +411,11 @@ describe('settings store', () => {
     expect(h.store.state().lastOutcome?.labelKey).toBe('error.invalid_id');
   });
 
-  it('U-6: change events re-query the accounts view but never re-kick a discovery pass', async () => {
+  it('U-6: change events re-query the accounts view but never query discovery', async () => {
     const h = createHarness('tr');
     await h.store.load();
-    h.api.hold('providers.discovered');
-    const pass = h.store.discover();
-    h.api.release('providers.discovered', [ALPHA_ROW]);
-    await pass;
     const accountsQueries = (): number => h.api.queries.filter((q) => q.type === 'settings.accounts').length;
-    const discoveryQueries = (): number => h.api.queries.filter((q) => q.type === 'providers.discovered').length;
     expect(accountsQueries()).toBe(1);
-    expect(discoveryQueries()).toBe(1);
 
     h.emitter.emit({ type: 'workOrders.changed' });
     h.emitter.emit({ type: 'run.updated', runId: 'run-1' });
@@ -501,6 +424,6 @@ describe('settings store', () => {
     // Meters move with runs and accounts with commands, so both events refresh the view — but a
     // discovery pass spawns probes, so change events never pay for one.
     expect(accountsQueries()).toBe(3);
-    expect(discoveryQueries()).toBe(1);
+    expect(h.api.queries.some((q) => q.type === 'providers.discovered')).toBe(false);
   });
 });

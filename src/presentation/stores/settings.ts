@@ -1,11 +1,5 @@
 // stores/settings.ts — the settings store (U-6): it mirrors the `settings.accounts` query as
-// rendering data (accounts with their pools/meters, per-role bindings) and lists discovery rows
-// from `providers.discovered`. The api resolves a discovery query only when its whole pass ends
-// (per-provider failures arrive as null-fields rows), so "a slow provider delays only its row"
-// is honoured by keeping the prior pass's rows listed while a new pass runs — the refresh never
-// blanks the list, and a hung provider's row lands as null fields when its pass ends. Discovery
-// runs only on the explicit `discover` intent: every query of it spawns a probe pass, so change
-// events re-query the accounts view but never re-kick discovery. Removing an account that a
+// rendering data (accounts with their pools/meters, per-role bindings). Removing an account that a
 // binding still references warns with the referencing roles BEFORE `account.remove` is issued;
 // only an explicit confirmation issues the command (the api stays the last boundary and may
 // still refuse `binding_exists` if the bindings moved since the view loaded). Every intent maps
@@ -80,24 +74,6 @@ export interface SettingsView {
   readonly bindings: readonly SettingsBindingView[];
 }
 
-/** One discovered provider as the wire reports it: null bin/version/logged-in mark a probe
- *  that failed or was cut off — a row, never a failed query. */
-export interface DiscoveryRow {
-  readonly defId: string;
-  readonly binPath: string | null;
-  readonly version: string | null;
-  readonly loggedIn: boolean | null;
-  readonly optionalFlags: readonly string[];
-}
-
-export interface DiscoveryState {
-  /** True while a discovery pass is in flight; the prior rows stay listed meanwhile. */
-  readonly running: boolean;
-  readonly rows: readonly DiscoveryRow[];
-  /** True when the latest finished discovery query failed (e.g. no discovery port). */
-  readonly failed: boolean;
-}
-
 /** Why the remove intent stopped before issuing: the account is still bound, by these roles. */
 export interface RemoveWarning {
   readonly accountId: string;
@@ -119,7 +95,6 @@ export interface SettingsState {
   readonly view: SettingsView | null;
   /** The failure code of the latest failed accounts query; null while healthy. */
   readonly problem: string | null;
-  readonly discovery: DiscoveryState;
   /** The latest intent's U-8 mapping; null before the first intent. */
   readonly lastOutcome: SettingsIntentOutcome | null;
   readonly removeWarning: RemoveWarning | null;
@@ -140,8 +115,6 @@ export interface BindingSaveInput {
 
 export interface SettingsStore {
   load(): Promise<void>;
-  /** Kick a discovery pass; rows land when the pass ends (see the module header). */
-  discover(): Promise<void>;
   state(): SettingsState;
   /** The reset time of a meter in the active locale, or null when the meter has none.
    *  Computed on demand so a locale switch re-renders without a re-query. */
@@ -206,15 +179,12 @@ export const createSettingsStore = (deps: SettingsStoreDeps): SettingsStore => {
     loading: false,
     view: null,
     problem: null,
-    discovery: { running: false, rows: [], failed: false },
     lastOutcome: null,
     removeWarning: null,
   };
   const listeners = new Set<() => void>();
-  // Separate guards per query kind: only the newest attempt of each may apply its reply, so a
-  // change-event re-query cannot drop an in-flight discovery pass's answer (and vice versa).
+  // Only the newest accounts query may apply its reply.
   let accountsAttempts = 0;
-  let discoveryAttempts = 0;
 
   const set = (next: SettingsState): void => {
     state = next;
@@ -242,26 +212,8 @@ export const createSettingsStore = (deps: SettingsStoreDeps): SettingsStore => {
     });
   };
 
-  const discover = async (): Promise<void> => {
-    const attempt = discoveryAttempts + 1;
-    discoveryAttempts = attempt;
-    set({ ...state, discovery: { ...state.discovery, running: true, failed: false } });
-    const reply: unknown = await api.query({ type: 'providers.discovered' } satisfies Query);
-    if (attempt !== discoveryAttempts) return;
-    if (isQueryFailure(reply)) {
-      // A failed pass keeps the prior rows listed; only the failure surfaces.
-      set({ ...state, discovery: { ...state.discovery, running: false, failed: true } });
-      return;
-    }
-    set({
-      ...state,
-      discovery: { running: false, failed: false, rows: reply as readonly DiscoveryRow[] },
-    });
-  };
-
   // Both event kinds can move what settings shows (meters move with runs, accounts with
-  // commands), so every notification re-queries the accounts view. Discovery is intentionally
-  // absent: a pass spawns probes, and change events must not pay for one. The update channel is
+  // commands), so every notification re-queries the accounts view. The update channel is
   // absent for the same economy — the update surface tracks it in its own wave.
   changes((change) => {
     if (change.type === 'update.changed') return;
@@ -293,7 +245,6 @@ export const createSettingsStore = (deps: SettingsStoreDeps): SettingsStore => {
 
   return {
     load,
-    discover,
     state: () => state,
     resetLine: (resetsAt) => (resetsAt === null ? null : resetLine(locale(), zone, resetsAt, Date.now())),
     resetsAtLabel: (resetsAt) => {

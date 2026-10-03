@@ -759,6 +759,26 @@ export function foldRun(events: readonly AgentEvent[]): RunSummary;
 /** The effort a run sends for a role's choice on one model; undefined → send nothing. */
 export function effortForChoice(choice: ThinkingChoice | undefined, thinking: Thinking | 'unknown'): EffortLevel | undefined;
 
+// providers/catalog.ts — the live row the catalog merge reads
+/** A model as a live route reported it. The merge takes the row's own answers first; for the
+ *  context window (P-29a): the live row's `contextWindow` when it is a positive integer,
+ *  otherwise the matched registry record's `contextWindow` when it is a positive integer,
+ *  otherwise `null`. Bundled-only entries use the registry record's value or `null`. */
+export interface LiveModel {
+  readonly id: string;
+  readonly displayName?: string;
+  readonly efforts?: readonly EffortLevel[];
+  /** The billing state the route itself reported; it wins over the registry's when present. */
+  readonly billing?: Billing;
+  /** The canonical id an alias row stands for, as the provider reports it. */
+  readonly resolvedId?: string;
+  /** The row the provider uses when no model is pinned. */
+  readonly isDefault?: true;
+  /** The context window in tokens the route itself reported. A value that is not a positive
+   *  integer is treated as absent. */
+  readonly contextWindow?: number;
+}
+
 // providers/instructions.ts — the effective-instructions core (P-37); pure and provider-agnostic
 /** The Docket layers: flow + stage + role. Deterministic; identical for every provider given the
  *  same definitions (P-37: behaviour does not depend on the provider). */
