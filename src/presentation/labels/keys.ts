@@ -30,11 +30,6 @@ export const LABEL_KEYS = [
   'error.invalid_model',
   'error.invalid_cap',
   'error.cap_required',
-  // Account-test refusals (application use-cases/account-test.ts, U-39).
-  'error.needs_spend_consent',
-  'error.spend_cap_reached',
-  'error.busy',
-  'error.unsupported',
   // Deploy-gate errors (application deploy-gate.ts; confirmation_mismatch also reports the
   // detail store's E-8 refusal, U-4).
   'error.not_a_deploy_gate',
@@ -638,6 +633,10 @@ export const LABEL_KEYS = [
   'accountTest.class.unknown',
   'accountTest.detail',
   'accountTest.openModels',
+  'accountTest.refusal.needs_spend_consent',
+  'accountTest.refusal.spend_cap_reached',
+  'accountTest.refusal.busy',
+  'accountTest.refusal.unsupported',
   'candidates.hint.testLater',
 ] as const;
 

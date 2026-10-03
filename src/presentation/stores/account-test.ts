@@ -61,9 +61,19 @@ export interface TestRefusal {
   readonly modelsLink: boolean;
 }
 
+const REFUSAL_KEY: Readonly<Record<string, LabelKey>> = {
+  needs_spend_consent: 'accountTest.refusal.needs_spend_consent',
+  spend_cap_reached: 'accountTest.refusal.spend_cap_reached',
+  busy: 'accountTest.refusal.busy',
+  unsupported: 'accountTest.refusal.unsupported',
+};
+
+/** Test-specific keys: these codes are the account test's own, so a later command that refuses
+ *  with the same word must not inherit the test's sentence. Everything else (not_found) reads
+ *  through the generic failure labels. */
 export const testRefusal = (code: string): TestRefusal => ({
   code,
-  labelKey: failureKey(code),
+  labelKey: REFUSAL_KEY[code] ?? failureKey(code),
   modelsLink: code === 'needs_spend_consent',
 });
 

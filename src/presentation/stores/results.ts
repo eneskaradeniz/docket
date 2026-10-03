@@ -57,11 +57,6 @@ export const KNOWN_FAILURE_CODES: readonly string[] = [
   'repo_not_in_project',
   // saveBinding: a role's account chain cannot be empty (A-14).
   'empty_chain',
-  // account.test refusals (A-68, U-39).
-  'needs_spend_consent',
-  'spend_cap_reached',
-  'busy',
-  'unsupported',
 ];
 
 const FAILURE_KEYS: Readonly<Record<string, LabelKey>> = Object.fromEntries(

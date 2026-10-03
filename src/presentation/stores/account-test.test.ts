@@ -124,6 +124,10 @@ describe('U-39: refusals', () => {
       unsupported: 'Bu hesap test edilemiyor',
       not_found: TR['error.not_found'],
     };
+    for (const code of ['needs_spend_consent', 'spend_cap_reached', 'busy', 'unsupported']) {
+      expect(testRefusal(code).labelKey, code).toBe(`accountTest.refusal.${code}`);
+    }
+    expect(testRefusal('not_found').labelKey).toBe('error.not_found');
     for (const [code, text] of Object.entries(expected)) {
       const refusal = testRefusal(code);
       expect(TR[refusal.labelKey], code).toBe(text);
