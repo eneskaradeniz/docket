@@ -47,6 +47,7 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
   {
     id: 'codex',
     displayName: 'Codex',
+    accountHome: { path: '~/.codex', env: 'CODEX_HOME' },
     bins: ['codex'],
     versionArgs: ['--version'],
     helpArgs: ['--help'],
@@ -115,6 +116,7 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
   {
     id: 'copilot',
     displayName: 'Copilot CLI',
+    accountHome: { path: '~/.copilot', env: 'COPILOT_HOME' },
     bins: ['copilot'],
     versionArgs: ['--version'],
     helpArgs: ['--help'],
