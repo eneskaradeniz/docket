@@ -297,6 +297,12 @@ test('the printed summary is one line per leg plus the audit actions in order', 
   assert.ok(lines[3].includes(' → '));
 });
 
+test('the leg 3 line ends its outcome at the semicolon, with no undefined suffix', () => {
+  const lines = recordLines(buildRecord(recordInput));
+  assert.match(lines[2], /outcome succeeded;/);
+  assert.equal(lines[2].includes('undefined'), false);
+});
+
 test('the generated canary sentence names its seed and reads as an instruction, not a secret', () => {
   const sentence = canarySentence('9f2a7b4c');
   assert.ok(sentence.startsWith('DOCKET-HANDOFF-CANARY-9f2a7b4c:'));
