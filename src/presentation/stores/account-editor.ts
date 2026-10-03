@@ -178,10 +178,13 @@ export const meterBar = (
   return { fill, zone, reached: zone !== null && fill !== null && fill <= zone };
 };
 
-export type AccountStatus = 'ready' | 'reserve' | 'noData';
+export type AccountStatus = 'ready' | 'reserve' | 'noData' | 'modelError';
 
-/** The status a Hesaplar row shows: a reached reserve outranks ready; no readable meter = no data. */
+/** The status a Hesaplar row shows: a failed account test of class `model` outranks everything
+ *  until the next test or reset (U-39); then a reached reserve outranks ready; no readable meter
+ *  = no data. */
 export const accountStatus = (account: SettingsAccountView): AccountStatus => {
+  if (account.test?.state === 'failed' && account.test.class === 'model') return 'modelError';
   const bars = account.meters.map(meterBar);
   if (bars.some((bar) => bar.reached)) return 'reserve';
   return bars.some((bar) => bar.fill !== null) ? 'ready' : 'noData';
@@ -189,7 +192,7 @@ export const accountStatus = (account: SettingsAccountView): AccountStatus => {
 
 /** The lamp hue of an account's status word (U-28): ready proceed, a reached reserve signal, no data dim. */
 export const accountStatusTone = (status: AccountStatus): LampTone =>
-  status === 'ready' ? 'proceed' : status === 'reserve' ? 'signal' : 'dim';
+  status === 'ready' ? 'proceed' : status === 'reserve' ? 'signal' : status === 'modelError' ? 'error' : 'dim';
 
 const fill = (template: string, values: Readonly<Record<string, string>>): string =>
   template.replace(/\{(\w+)\}/g, (whole, name: string) => values[name] ?? whole);

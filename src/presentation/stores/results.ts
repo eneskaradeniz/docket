@@ -57,6 +57,11 @@ export const KNOWN_FAILURE_CODES: readonly string[] = [
   'repo_not_in_project',
   // saveBinding: a role's account chain cannot be empty (A-14).
   'empty_chain',
+  // account.test refusals (A-68, U-39).
+  'needs_spend_consent',
+  'spend_cap_reached',
+  'busy',
+  'unsupported',
 ];
 
 const FAILURE_KEYS: Readonly<Record<string, LabelKey>> = Object.fromEntries(
@@ -86,8 +91,7 @@ const SUCCESS_KEYS: Readonly<Record<Command['type'], LabelKey>> = {
   // A cap write is an account edit: it reads back as the account being saved.
   'account.cap.save': 'success.account.save',
   'account.cap.remove': 'success.account.save',
-  // No surface issues the test yet; its own copy arrives with the UI that does.
-  'account.test': 'success.account.save',
+  'account.test': 'success.account.test',
   'account.consent.grant': 'success.account.consent.grant',
   'account.consent.revoke': 'success.account.consent.revoke',
   'binding.save': 'success.binding.save',

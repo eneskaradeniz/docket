@@ -18,6 +18,7 @@ import type { LabelKey } from '../labels/keys';
 import type { Locale } from '../labels/t';
 import { resetLine } from './reset-line';
 import { commandResultKey, isQueryFailure } from './results';
+import { testRefusal, type TestRefusal } from './account-test';
 
 /** The coarse change events the api emits (docs/v2/ui.md, U-12). Notifications carry no
  *  payloads — the store re-queries. Tests inject a fake; the api's `subscribe` satisfies the
@@ -98,6 +99,11 @@ export interface SettingsState {
   /** The latest intent's U-8 mapping; null before the first intent. */
   readonly lastOutcome: SettingsIntentOutcome | null;
   readonly removeWarning: RemoveWarning | null;
+  /** The accounts whose `account.test` is open right now (U-39): their button reads "Test
+   *  ediliyor…" and is disabled. */
+  readonly testing: readonly string[];
+  /** The latest refusal of an account's test, by account id; cleared when its next test starts. */
+  readonly testRefusals: Readonly<Record<string, TestRefusal>>;
 }
 
 export interface AccountSaveInput {
@@ -125,6 +131,10 @@ export interface SettingsStore {
   saveBinding(input: BindingSaveInput): Promise<SettingsIntentOutcome>;
   /** Issue any command as the user and re-query (the account editor's writes, U-29). */
   runCommand(command: Command): Promise<SettingsIntentOutcome>;
+  /** "Test et" (U-39): sends `account.test` for the saved account — never a `model`, so the
+   *  route's default — and re-queries on the answer. A second press while one is open sends
+   *  nothing. A refusal lands in `testRefusals`; a finished test is read from the account's `test`. */
+  testAccount(accountId: string): Promise<void>;
   /** Remove an account; with bindings still referencing it, issues nothing and surfaces the
    *  `binding_exists` warning with the referencing roles. */
   removeAccount(accountId: string): Promise<SettingsIntentOutcome>;
@@ -181,6 +191,8 @@ export const createSettingsStore = (deps: SettingsStoreDeps): SettingsStore => {
     problem: null,
     lastOutcome: null,
     removeWarning: null,
+    testing: [],
+    testRefusals: {},
   };
   const listeners = new Set<() => void>();
   // Only the newest accounts query may apply its reply.
@@ -276,6 +288,18 @@ export const createSettingsStore = (deps: SettingsStoreDeps): SettingsStore => {
           entry.model === undefined ? { accountId: entry.accountId } : { accountId: entry.accountId, model: entry.model },
         ),
       }),
+    testAccount: async (accountId) => {
+      if (state.testing.includes(accountId)) return;
+      const { [accountId]: _cleared, ...refusals } = state.testRefusals;
+      set({ ...state, testing: [...state.testing, accountId], testRefusals: refusals });
+      const result = await api.command(actor, { type: 'account.test', id: accountId });
+      set({
+        ...state,
+        testing: state.testing.filter((id) => id !== accountId),
+        testRefusals: result.ok ? state.testRefusals : { ...state.testRefusals, [accountId]: testRefusal(result.code) },
+      });
+      await load();
+    },
     removeAccount: async (accountId) => {
       if (state.view === null) return notLoadedOutcome('account.remove');
       const roles = referencingRoles(state.view.bindings, accountId);

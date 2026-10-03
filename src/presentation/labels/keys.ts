@@ -30,6 +30,11 @@ export const LABEL_KEYS = [
   'error.invalid_model',
   'error.invalid_cap',
   'error.cap_required',
+  // Account-test refusals (application use-cases/account-test.ts, U-39).
+  'error.needs_spend_consent',
+  'error.spend_cap_reached',
+  'error.busy',
+  'error.unsupported',
   // Deploy-gate errors (application deploy-gate.ts; confirmation_mismatch also reports the
   // detail store's E-8 refusal, U-4).
   'error.not_a_deploy_gate',
@@ -618,6 +623,22 @@ export const LABEL_KEYS = [
   'reset.unit.m',
   'editor.danger.title',
   'editor.danger.remove',
+  'success.account.test',
+  'editor.status.modelError',
+  'accountTest.button',
+  'accountTest.running',
+  'accountTest.untested',
+  'accountTest.ok',
+  'accountTest.defaultModel',
+  'accountTest.class.auth',
+  'accountTest.class.limit',
+  'accountTest.class.model',
+  'accountTest.class.network',
+  'accountTest.class.install',
+  'accountTest.class.unknown',
+  'accountTest.detail',
+  'accountTest.openModels',
+  'candidates.hint.testLater',
 ] as const;
 
 export type LabelKey = (typeof LABEL_KEYS)[number];
