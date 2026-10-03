@@ -19,7 +19,6 @@ import { createLivePaneStore } from './stores/live-pane';
 import { createLocaleStore, type LocaleStore } from './stores/locale';
 import { createProjectTreeStore } from './stores/project-tree';
 import { createRoadmapStore } from './stores/roadmap';
-import { isQueryFailure } from './stores/results';
 import { createCandidatesStore } from './stores/candidates';
 import { createProvidersStore } from './stores/providers';
 import { createSettingsStore } from './stores/settings';
@@ -51,16 +50,6 @@ export const bridge = (): DocketBridge => {
 
 /** Every screen command travels as the machine's single local user. */
 const USER: Actor = { kind: 'user', id: 'user-1', label: 'Operator' };
-
-/** The wizard's source probe rides the board read, the one read that loads definitions: a
- *  non-failure reply proves the entered repo's definitions were found and parsed, which is
- *  the whole question; every failure (a malformed slug, unreadable definitions) answers false —
- *  fail-closed. No api query probes a source path directly yet; the injection point swaps when one
- *  lands, without touching the wizard store. */
-const sourceReachable = (api: DocketBridge) => async (source: string): Promise<boolean> => {
-  const reply: unknown = await api.query({ type: 'repo.board', repo: source });
-  return !isQueryFailure(reply);
-};
 
 /** The root component: it subscribes to the locale store, so a selection in the settings' language
  *  control re-renders the shell with the swapped bundle — the flip stays in memory, never a
@@ -100,11 +89,7 @@ if (mount !== null) {
   const accountModels = createAccountModelsStore({ api, changes, actor: USER });
   // The Roller section: roles.list with the stored bindings (U-33).
   const roles = createRolesStore({ api, changes, actor: USER, now: () => Date.now() });
-  const wizard = createWizardStore({
-    api,
-    actor: USER,
-    sourceReachable: sourceReachable(api),
-  });
+  const wizard = createWizardStore({ api, actor: USER });
   const shell = createShellStore({ api, changes });
   // The app's own newer version — the title bar's button and the panel's Güncelleme section.
   const update = createUpdateStore({ api, changes, actor: USER });
@@ -120,7 +105,7 @@ if (mount !== null) {
   void tree.load();
   void accountsFrame.load();
   void marks.load();
-  // The first-run machine's entry point: it shows the wizard only when no project exists (U-7).
+  // The first-run machine's entry point: it shows the wizard only when no project exists (U-35).
   void wizard.open();
 
   createRoot(mount).render(
