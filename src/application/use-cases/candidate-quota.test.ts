@@ -14,6 +14,7 @@ const candidate = (overrides: Partial<AccountCandidate>): AccountCandidate => ({
   displayPath: '~/.claude-a',
   kind: 'subscription',
   routeKind: 'acme-subscription',
+  provider: 'acme',
   hasOauthLogin: true,
   envOverrides: [],
   warnings: [],
@@ -77,6 +78,15 @@ describe('createCandidateQuotaPreview', () => {
 
     expect(await h.preview.preview('/home/u/.claude-a')).toEqual(err('needs_account'));
     expect(h.contexts).toEqual([]);
+  });
+
+  it('A-82: a machine-login candidate is polled with identityDir null, not its opaque key', async () => {
+    const h = setup([candidate({ kind: 'machine_login', sourcePath: 'machine-login:acme' })]);
+
+    const result = await h.preview.preview('machine-login:acme');
+
+    expect(result.ok).toBe(true);
+    expect(h.contexts).toEqual([{ defId: 'acme', context: { accountId: null, identityDir: null } }]);
   });
 
   it('A-82: an unknown sourcePath answers not_found and polls nothing', async () => {

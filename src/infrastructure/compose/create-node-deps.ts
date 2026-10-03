@@ -9,6 +9,7 @@ import type {
   Clock,
   CredentialImporter,
   Notifier,
+  ProviderDiscovery,
   QuotaProbeResolver,
   QuotaTimers,
   RepoRegistry,
@@ -52,6 +53,9 @@ export interface NodeDepsConfig {
   /** The latest login answers of the discovery passes the root runs; the model catalog reads them
    * at every listing, so a needsLogin command never runs on a guess. Absent = nothing is known. */
   readonly loginStates?: Pick<LoginStates, 'get'>;
+  /** The provider discovery whose facts the account scan turns into machine-login candidates (P-53);
+   * absent = the scan lists directory candidates only. */
+  readonly providerDiscovery?: ProviderDiscovery;
 }
 
 export interface NodeDeps {
@@ -119,7 +123,10 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     repoFolders: createRepoFolders(),
   };
 
-  const accountDiscovery = createNodeAccountScan(accounts);
+  const accountDiscovery = createNodeAccountScan(
+    accounts,
+    config.providerDiscovery === undefined ? undefined : { providers: config.providerDiscovery, env: config.commandEnv },
+  );
   const credentialImporter = createNodeCredentialImporter();
   const quota = {
     probes: createQuotaProbeResolver({
