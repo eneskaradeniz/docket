@@ -1,5 +1,6 @@
 // services/run-executor.ts — drives one run from start to finish (docs/v2/application.md A-15 … A-18,
-// plus the executor-side resume fallback P-22 of docs/v2/providers.md).
+// the checkpoint cadence A-57 … A-59, plus the executor-side resume fallback P-22 of
+// docs/v2/providers.md).
 import type {
   AccountId,
   AccountRoute,
@@ -19,12 +20,20 @@ import type {
   Tier,
   WorkOrderId,
 } from '../../domain/index';
-import { billingFromPools, decideOnLimit, effortForChoice, foldRun, resolveTier } from '../../domain/index';
+import {
+  billingFromPools,
+  CHECKPOINT_MIN_INTERVAL_MS,
+  decideOnLimit,
+  effortForChoice,
+  foldRun,
+  resolveTier,
+} from '../../domain/index';
 
 import type { AccountRecord, AppDeps, AuditAction, RunHandle, RunRecord, RunRepo, TransportError } from '../ports';
 
 import { catalogOrEmpty, matchIdFor } from './match-id';
 import type { BoardHooks } from './permission-board';
+import { commitCheckpoint } from '../use-cases/index';
 
 export interface ExecuteRunInput {
   readonly item: QueueItem;
@@ -293,7 +302,10 @@ const routeForTier = async (
 };
 
 export async function executeRun(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'runs' | 'accounts' | 'transports' | 'modelCatalog' | 'capabilities'>,
+  deps: Pick<
+    AppDeps,
+    'clock' | 'ids' | 'log' | 'workOrders' | 'runs' | 'accounts' | 'transports' | 'modelCatalog' | 'capabilities' | 'checkpoints'
+  >,
   permissions: PermissionGate,
   input: ExecuteRunInput,
   board?: BoardHooks,
@@ -339,6 +351,30 @@ export async function executeRun(
   });
   // From here the run is answerable through the board, until its record closes.
   board?.register(runId);
+
+  // A-57: checkpoint cadence state — event-boundary + terminal only, no timer exists; the stream
+  // is the only clock application may read, so the interval is measured against the executor's
+  // own clock at each boundary. A clean tree (git's verdict) and a git failure alike never fail
+  // the run: the pack falls back to the worktree base ref when no checkpoint exists (A-59).
+  let lastCommitAt: EpochMs | undefined;
+  let commitSeq = 0;
+  let stageBaseSaved = false;
+  const checkpoint = async (): Promise<void> => {
+    commitSeq += 1;
+    lastCommitAt = deps.clock.now();
+    const committed = await commitCheckpoint(
+      { checkpoints: deps.checkpoints },
+      { cwd: input.cwd, runId, seq: commitSeq },
+    );
+    // A-59: the first changed commit of the run is the sha the pack's diff starts from; a clean
+    // tree carries no sha, so it records nothing and the fallback base stays in force.
+    if (committed.ok && committed.value.changed && !stageBaseSaved) {
+      stageBaseSaved = true;
+      await deps.runs.saveStageBase(runId, committed.value.sha);
+    }
+  };
+  const cadenceDue = (): boolean =>
+    lastCommitAt === undefined || deps.clock.now() - lastCommitAt >= CHECKPOINT_MIN_INTERVAL_MS;
 
   // A transport that never comes up still ends the run: leaving it open would wedge the work
   // order in `running` forever.
@@ -406,6 +442,11 @@ export async function executeRun(
       case 'quota_signal':
         await saveQuotaMeter({ ids: deps.ids, accounts: deps.accounts }, item.route.accountId, event);
         break;
+      case 'tool_result':
+        // A-57: a boundary commit only when the interval since the last commit has elapsed; git
+        // arbitrates whether anything changed (a clean tree is a no-op, never an error).
+        if (cadenceDue()) await checkpoint();
+        break;
       case 'usage':
         if (event.costUsd !== undefined) {
           // Spend is attributed to the project the work order was opened under — the record, not
@@ -424,6 +465,8 @@ export async function executeRun(
         }
         break;
       case 'limit_hit': {
+        // Terminal commit first (A-57): the pack the limit triggers is built from what landed.
+        await checkpoint();
         // The executor has no role binding at hand, so no alternative pool or fallback account
         // can be offered here; re-routing is the caller's decision to make.
         const decision = decideOnLimit(
@@ -443,6 +486,8 @@ export async function executeRun(
       case 'finished': {
         const outcome = foldRun([event]).outcome;
         if (outcome !== undefined) {
+          // Terminal commit (A-57): the run's work is complete, the interval never gates it.
+          await checkpoint();
           const endedAt = await endRun(deps, { runId, workOrderId: item.workOrderId, outcome }, board, workOrdersChanged);
           await audit(deps, { at: endedAt, action: 'run.finished', runId, detail: { outcome } });
           return { kind: 'finished', outcome };
@@ -455,7 +500,9 @@ export async function executeRun(
   }
 
   // The port promises a stream that ends after `finished`; one that dries up any other way cannot
-  // be waited on, so the run is closed as failed instead of staying active forever.
+  // be waited on, so the run is closed as failed instead of staying active forever. Stream end is
+  // a terminal boundary too (A-57): whatever the run wrote stays committed for the next attempt.
+  await checkpoint();
   await endRun(deps, { runId, workOrderId: item.workOrderId, outcome: 'failed' }, undefined, workOrdersChanged);
   return { kind: 'finished', outcome: 'failed' };
 }
