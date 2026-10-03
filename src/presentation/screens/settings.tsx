@@ -17,7 +17,7 @@ import { CandidateList } from '../components/candidate-list';
 import { ACTIVE_CLASS } from '../components/active-state';
 import { AccountEditor } from '../components/account-editor';
 import { ChainSection, RoleRowView } from '../components/role-row';
-import { DiscoveryBadges } from '../components/discovery-badges';
+import { ProviderList } from '../components/provider-list';
 import { countedLabel } from '../components/counted-label';
 import { formatMeterValue, meterUnitLabel } from '../components/meter-value';
 import { LocaleSwitcher } from '../components/locale-switcher';
@@ -28,6 +28,7 @@ import { SectionCard } from '../components/section-card';
 import { SourceBadge } from '../components/source-badge';
 import { StateBadge } from '../components/state-badge';
 import type { CandidatesStore } from '../stores/candidates';
+import type { ProvidersStore } from '../stores/providers';
 import type { LocaleStore } from '../stores/locale';
 import { accountStatus, createAccountEditorStore, policyLabelKey, roleChipTarget, rolesOfAccount, type AccountStatus, type EditorTab } from '../stores/account-editor';
 import { settingDiffs } from '../stores/recommended';
@@ -45,7 +46,6 @@ import {
 import { THEME_PREFERENCES, type ThemePreference, type ThemeStore } from '../stores/theme';
 import type {
   AccountDisplay,
-  DiscoveryRow,
   MeterDisplay,
   SettingsStore,
 } from '../stores/settings';
@@ -81,6 +81,8 @@ export interface SettingsPanelProps {
   readonly candidateDot: boolean;
   /** The discovered accounts under Hesaplar → "Eklenmemiş" (U-34). */
   readonly candidates: CandidatesStore;
+  /** The Sağlayıcılar section's discovered providers (U-38). */
+  readonly providers: ProvidersStore;
   /** Tema (U-36) binds straight to the theme store. */
   readonly themeStore: ThemeStore;
   readonly store: SettingsStore;
@@ -274,7 +276,7 @@ function usePaintedFlip(active: boolean): boolean {
 // same classes the search palette animates with, so the two overlays speak one motion language.
 const MOTION_STYLE = motionVars();
 
-export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, onOpenTarget, onSection, onBack, onEscape, onClose, candidateDot, candidates, models, themeStore, store, marks, roles, update, locale, localeStore, onEnterSubPage, onOpenAccount }: SettingsPanelProps) {
+export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, onOpenTarget, onSection, onBack, onEscape, onClose, candidateDot, candidates, providers, models, themeStore, store, marks, roles, update, locale, localeStore, onEnterSubPage, onOpenAccount }: SettingsPanelProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
   // The marks land once, after the first paint; the subscription turns them into a re-render.
   useSyncExternalStore(marks.subscribe, marks.state);
@@ -288,6 +290,10 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
   useEffect(() => {
     if (open && section === 'accounts') void candidates.load();
   }, [open, section, candidates]);
+  // Sağlayıcılar scans whenever the section opens.
+  useEffect(() => {
+    if (open && section === 'providers') void providers.load();
+  }, [open, section, providers]);
 
   const view = state.view;
   const rolesState = useSyncExternalStore(roles.subscribe, roles.state);
@@ -659,47 +665,10 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
             ) : null}
 
             {listSection === 'providers' ? (
-              <SectionCard
-                title={t(locale, 'settings.section.discovery')}
-                action={
-                  <ActionButton variant="neutral" disabled={state.discovery.running} onClick={() => void store.discover()}>
-                    {t(locale, 'settings.discovery.refresh')}
-                  </ActionButton>
-                }
-              >
-                <div className="grid gap-2">
-                  {state.discovery.running ? (
-                    <p className="flex items-center gap-2 font-mono text-[11px] text-inkdim">
-                      <span className="h-2 w-2 flex-none rounded-full bg-info motion-safe:animate-pulse" />
-                      {t(locale, 'settings.discovery.running')}
-                    </p>
-                  ) : null}
-                  {state.discovery.failed ? (
-                    <p className="text-[13px] text-error">{t(locale, 'settings.discovery.failed')}</p>
-                  ) : null}
-                  {state.discovery.rows.length === 0 ? (
-                    state.discovery.running || state.discovery.failed ? null : (
-                      <p className="text-[13px] text-inkdim">{t(locale, 'settings.discovery.empty')}</p>
-                    )
-                  ) : (
-                    <ul className="grid gap-2">
-                      {state.discovery.rows.map((row: DiscoveryRow) => (
-                        <li key={row.defId} className="flex flex-wrap items-center justify-between gap-2 rounded-card border border-hairline bg-surface px-3 py-2">
-                          <div className="flex min-w-0 flex-wrap items-center gap-2">
-                            <code className="font-mono text-[13px] text-ink">{row.defId}</code>
-                            <DiscoveryBadges binPath={row.binPath} loggedIn={row.loggedIn} locale={locale} />
-                            {row.optionalFlags.length > 0 ? (
-                              <span className="font-mono text-[11px] text-inkdim">
-                                {t(locale, 'settings.discovery.flags')}: {row.optionalFlags.join(', ')}
-                              </span>
-                            ) : null}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </SectionCard>
+              <section className="grid gap-3">
+                <h2 className="text-[20px] font-bold tracking-[-0.01em] text-ink">{t(locale, 'settings.section.providers')}</h2>
+                <ProviderList store={providers} marks={marks} locale={locale} />
+              </section>
             ) : null}
 
             {listSection === 'phone' ? (

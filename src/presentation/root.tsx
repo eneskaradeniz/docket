@@ -21,6 +21,7 @@ import { createProjectTreeStore } from './stores/project-tree';
 import { createRoadmapStore } from './stores/roadmap';
 import { isQueryFailure } from './stores/results';
 import { createCandidatesStore } from './stores/candidates';
+import { createProvidersStore } from './stores/providers';
 import { createSettingsStore } from './stores/settings';
 import { createCandidateDotStore } from './stores/settings-panel';
 import { createShellStore } from './stores/shell';
@@ -84,6 +85,7 @@ if (mount !== null) {
   const candidates = createCandidateDotStore(api);
   // The list under Hesaplar → Eklenmemiş; an adoption re-reads the dot.
   const candidateList = createCandidatesStore({ api, actor: USER, onAdopted: () => void candidates.load() });
+  const providerList = createProvidersStore({ api });
   // The meters' reset times render in the machine's zone; tests pass 'UTC' instead.
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
@@ -129,6 +131,7 @@ if (mount !== null) {
           themeStore={theme}
           candidates={candidates}
           candidateList={candidateList}
+          providerList={providerList}
           shell={shell}
           tree={tree}
           accounts={accountsFrame}
