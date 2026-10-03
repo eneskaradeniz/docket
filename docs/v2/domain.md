@@ -832,6 +832,11 @@ export function sizeHandoffPack(pack: HandoffPack, budget: PackBudget): HandoffP
  *  `definitionsChanged` set, the note "definition changed since the first leg" follows the
  *  preamble; quoted repo material stays under its data heading (never Docket instructions). */
 export function renderHandoffPrompt(pack: HandoffPack): string;
+/** Pure 32-bit FNV-1a over the text, rendered as 8 lower-case hex chars. `executeRun` writes it
+ *  as the run record's `definitionsRev` — the digest of the Docket layers the agent was given
+ *  (`stageBrief`, then `role.instructions`); `buildHandoff` compares it to the current layers
+ *  for `definitionsChanged` (A-62). */
+export function definitionsDigest(text: string): string;
 ```
 
 Rules:
@@ -842,7 +847,7 @@ Rules:
 - **R-54** `planInstructions`: native files never inline; a file both native and absent is not an error; truncation markers name the file and the kept char count; the plan is a pure function of (`native`, `present`, budget).
 - **R-55** `deriveTaskState` reads only `tool_call`/`tool_result`/`permission_ask` events; `extendRollingNote` reads only `text`/`thinking` deltas; neither sees the raw transcript. P-38 item 3's plan/done/remaining lists are not derivable from today's events: the deterministic core ships first, a plan-like structure arrives later as registry data (plan-tool names per provider), and the model-written summary stays open decision O-8.
 - **R-56** `sizeHandoffPack` never drops `stagePrompt`, `acceptance` or the Docket layers, and never empties the pack: a budget below the untouchable core is a caller bug, not a smaller pack.
-- **R-57** `renderHandoffPrompt` places "first run the stage's checks, then continue" as the first line (P-38: the new agent first runs the stage's checks) and never embeds a session ref, an account id, or environment values. With `definitionsChanged` set, the note "definition changed since the first leg" sits directly after the preamble — the change is surfaced to the continuation, never silently absorbed.
+- **R-57** `renderHandoffPrompt` places "first run the stage's checks, then continue" as the first line (P-38: the new agent first runs the stage's checks) and never embeds a session ref, an account id, or environment values. With `definitionsChanged` set, the note "definition changed since the first leg" sits directly after the preamble — the change is surfaced to the continuation, never silently absorbed. `definitionsDigest` is deterministic: the same text always yields the same 8 lower-case hex chars, and different text yields a different digest (A-62's rev marker stands on this).
 
 ---
 
