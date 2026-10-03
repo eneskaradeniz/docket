@@ -379,4 +379,5 @@ before. The removed definitions stay reachable at the git tag `providers-extende
      breaks loading, quota polling or the settings views (as for the earlier Gemini CLI removal,
      provider-capabilities.md §9); no migration deletes or rewrites it.
   5. **Generated docs:** the README provider matrix is regenerated from the registry (P-36).
+- **P-47a** (amends P-47 step 2, 2026-10-03, review of #738) A production table never carries a fixture row: no entry keyed by a neutral id (`acp-x`, `cli-x`, …) and no text copied from a removed provider sits in a table the product reads. A table-driven mechanism that loses its last real provider is exercised by giving the adapter a test table through an **optional** factory option (e.g. `launches` for the ACP session catalog, `commands` for the CLI model-command catalog) whose default is the built-in table; adding such an option is the one signature change step 2 allows.
 
