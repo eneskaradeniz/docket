@@ -6,14 +6,13 @@ import { err, ok } from '../../domain/index';
 import type {
   AccountDiscovery,
   AppDeps,
-  CheckpointCommitter,
   Clock,
   CredentialImporter,
   Notifier,
   RepoRegistry,
   TransportResolver,
 } from '../../application/index';
-import { createCommandRunner, createSecretScanner } from '../gates/index';
+import { createCommandRunner, createSecretScanner, redactSecrets } from '../gates/index';
 import { createKeychainVault, type CipherFns } from '../storage/keychain/index';
 import { createYamlDefinitionStore } from '../storage/definitions-yaml/index';
 import {
@@ -31,7 +30,7 @@ import {
   type OpenDbError,
 } from '../storage/sqlite/index';
 import { createSystemClock, createUlidGen, type ProjectPaths, type RandomBytes } from '../system/index';
-import { createEvidenceChecker, createGitProbe, createWorktrees } from '../vcs/index';
+import { createCheckpoints, createEvidenceChecker, createGitProbe, createWorktrees } from '../vcs/index';
 import { createCapabilityCatalog } from '../providers/registry/index';
 import { createModelCatalog } from '../providers/catalog/index';
 import { createNodeAccountScan, createNodeCredentialImporter, type LoginStates } from '../providers/discovery/index';
@@ -60,21 +59,6 @@ export interface NodeDeps {
   readonly credentialImporter: CredentialImporter; // reads a token only when an adoption asks for the import
   close(): void;
 }
-
-// The checkpoints port belongs to AppDeps but has no real adapter yet. The stopgap keeps the
-// composition root exhaustive and fails loudly on any premature call; wiring a real adapter means
-// deleting its entry here and the matching row in the compose placeholder test.
-const unwiredCheckpoints: CheckpointCommitter = {
-  async commit() {
-    throw new Error('checkpoints adapter is not wired (#671)');
-  },
-  async diffSince() {
-    throw new Error('checkpoints adapter is not wired (#671)');
-  },
-  async base() {
-    throw new Error('checkpoints adapter is not wired (#671)');
-  },
-};
 
 export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbError> {
   const opened = openDatabase(join(config.dataDir, 'docket.db'));
@@ -119,7 +103,8 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     git: createGitProbe(),
     notifier: config.notifier,
     instructionFiles: createNodeInstructionFiles(),
-    checkpoints: unwiredCheckpoints,
+    // The committer redacts every patch with the scanner's real patterns at the port boundary.
+    checkpoints: createCheckpoints({ redact: redactSecrets }),
   };
 
   const accountDiscovery = createNodeAccountScan(accounts);

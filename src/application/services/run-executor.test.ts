@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  CHECKPOINT_MIN_INTERVAL_MS,
   isUlid,
   parseSlug,
   parseUlid,
@@ -32,6 +33,7 @@ import type { AccountRecord, AgentTransport, AuditEntry, RunRecord, RunRequest, 
 import {
   createFakeAccountRepo,
   createFakeCapabilityCatalog,
+  createFakeCheckpointCommitter,
   createFakeClock,
   createFakeDeps,
   createFakeEventLog,
@@ -42,6 +44,7 @@ import {
   createFakeTransportResolver,
   createFakeWorkOrderRepo,
   type FakeAccountRepo,
+  type FakeCheckpointCommitter,
   type FakeClock,
   type FakeEventLog,
   type FakeIdGen,
@@ -219,6 +222,7 @@ interface Harness {
   readonly accounts: FakeAccountRepo;
   readonly transports: FakeTransportResolver;
   readonly transport: FakeTransport;
+  readonly checkpoints: FakeCheckpointCommitter;
 }
 
 const harness = async (options: {
@@ -238,6 +242,7 @@ const harness = async (options: {
   const workOrders = createFakeWorkOrderRepo();
   const runs = createFakeRunRepo();
   const accounts = createFakeAccountRepo();
+  const checkpoints = createFakeCheckpointCommitter();
   const transports = createFakeTransportResolver();
   const transport = createFakeTransport(options.script ?? [finished('completed')]);
   if (options.withTransport !== false) transports.register(ACCOUNT, transport);
@@ -249,6 +254,7 @@ const harness = async (options: {
     workOrders,
     runs,
     accounts,
+    checkpoints,
     transports,
     ...(options.models !== undefined ? { modelCatalog: createFakeModelCatalog({ [ACCOUNT]: options.models }) } : {}),
     ...(options.routeKinds !== undefined ? { capabilities: createFakeCapabilityCatalog(options.routeKinds) } : {}),
@@ -260,7 +266,7 @@ const harness = async (options: {
   for (const meter of options.meters ?? []) await accounts.saveMeter(meter);
   for (const run of options.priorRuns ?? []) await runs.create(run);
 
-  return { deps, clock, ids, log, workOrders, runs, accounts, transports, transport };
+  return { deps, clock, ids, log, workOrders, runs, accounts, checkpoints, transports, transport };
 };
 
 type recordedAsk = { readonly runId: RunId; readonly ask: Extract<AgentEvent, { readonly type: 'permission_ask' }> };
@@ -874,6 +880,130 @@ describe('executeRun', () => {
       { type: 'run_started', at: T0, runId: record.id, stage: STAGE, attempt: 1 },
       { type: 'run_finished', at: T0, runId: record.id, outcome: 'failed' },
     ]);
+  });
+
+  // --- checkpoints (A-57 … A-59) -----------------------------------------------------------------
+
+  /** The fake transport rests at a permission_ask until it is answered, so the ask is the one
+   *  point in a scripted stream where the clock can move between two events. */
+  const gateAdvancingClock = (h: Harness, ms: number): PermissionGate => ({
+    onAsk: async () => {
+      h.clock.advance(ms);
+      return 'allow';
+    },
+  });
+
+  const secondToolResult = (ok: boolean): AgentEvent => ({ type: 'tool_result', at: at(3), id: 'tool-2', ok });
+
+  const commitSeqs = (h: Harness): readonly number[] => h.checkpoints.commitCalls().map((call) => call.seq);
+
+  it('A-57: the first tool_result commits, one inside the interval does not, and the terminal commit is never gated', async () => {
+    const h = await harness({
+      script: [toolCall(), toolResult(true), secondToolResult(true), finished('completed')],
+    });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    // The clock never moves: the first boundary commits (no previous commit), the second is
+    // inside CHECKPOINT_MIN_INTERVAL_MS, and finished commits regardless of the interval.
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect(commitSeqs(h)).toEqual([1, 2]);
+    const record = await theRun(h.runs);
+    expect(h.checkpoints.commitCalls().map((call) => call.runId)).toEqual([record.id, record.id]);
+  });
+
+  it('A-57: a tool_result after CHECKPOINT_MIN_INTERVAL_MS commits again (elapsed counted from the last commit)', async () => {
+    const h = await harness({
+      script: [toolResult(true), ask(), secondToolResult(true), finished('completed')],
+    });
+    // Exactly the interval, not one millisecond more: the boundary is >=, not >.
+    const permissions = gateAdvancingClock(h, CHECKPOINT_MIN_INTERVAL_MS);
+
+    const outcome = await executeRun(h.deps, permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect(commitSeqs(h)).toEqual([1, 2, 3]);
+  });
+
+  it('A-57: a tool_result just short of the interval stays gated', async () => {
+    const h = await harness({
+      script: [toolResult(true), ask(), secondToolResult(true), finished('completed')],
+    });
+    const permissions = gateAdvancingClock(h, CHECKPOINT_MIN_INTERVAL_MS - 1);
+
+    const outcome = await executeRun(h.deps, permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect(commitSeqs(h)).toEqual([1, 2]); // first boundary + terminal only
+  });
+
+  it('A-57: limit_hit and stream end are terminal commits too', async () => {
+    const limited = await harness({
+      script: [toolResult(true), limitHit({ class: 'window_exhausted', resetsAt: at(60_000) })],
+    });
+    const limitedOutcome = await executeRun(limited.deps, permissionGate().permissions, INPUT);
+    expect(limitedOutcome.kind).toBe('limit');
+    expect(commitSeqs(limited)).toEqual([1, 2]); // boundary + limit_hit, no clock move needed
+
+    const dried = await harness({ script: [text('working')] });
+    const driedOutcome = await executeRun(dried.deps, permissionGate().permissions, INPUT);
+    expect(driedOutcome).toEqual({ kind: 'finished', outcome: 'failed' });
+    expect(commitSeqs(dried)).toEqual([1]); // stream end is the only boundary the run reached
+  });
+
+  it('A-57: a clean tree is a no-op that never fails the run, and a failed commit does not either', async () => {
+    const clean = await harness({ script: [toolResult(true), finished('completed')] });
+    clean.checkpoints.markClean(INPUT.cwd);
+
+    const cleanOutcome = await executeRun(clean.deps, permissionGate().permissions, INPUT);
+
+    expect(cleanOutcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect(commitSeqs(clean)).toEqual([1, 2]); // the attempts happen; git arbitrates "nothing changed"
+    const record = await theRun(clean.runs);
+    expect(await clean.runs.stageBase(record.id)).toBeUndefined(); // no sha exists to record
+
+    const failing = await harness({ script: [toolResult(true), finished('completed')] });
+    failing.checkpoints.failNext(); // the boundary commit fails, the terminal one succeeds
+
+    const failingOutcome = await executeRun(failing.deps, permissionGate().permissions, INPUT);
+
+    expect(failingOutcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect((await theRun(failing.runs)).outcome).toBe('succeeded');
+  });
+
+  it('A-58: every checkpoint commit names only the work order worktree, never another path', async () => {
+    const h = await harness({ script: [toolResult(true), finished('completed')] });
+
+    await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    const calls = h.checkpoints.commitCalls();
+    expect(calls.length).toBeGreaterThan(0);
+    // The executor holds no other writer: whatever it commits goes to the worktree it was given
+    // (I-20's worktree), so the user checkout's tree, branch and index stay untouched.
+    expect(new Set(calls.map((call) => call.cwd))).toEqual(new Set([INPUT.cwd]));
+  });
+
+  it('A-59: the first changed commit of the run is saved as the stage base and later ones do not overwrite it', async () => {
+    const h = await harness({
+      script: [toolResult(true), ask(), secondToolResult(true), finished('completed')],
+    });
+    const permissions = gateAdvancingClock(h, CHECKPOINT_MIN_INTERVAL_MS);
+
+    await executeRun(h.deps, permissions, INPUT);
+
+    const record = await theRun(h.runs);
+    // Commits answer checkpoint-1, checkpoint-2, checkpoint-3; the pack diffs since the first.
+    expect(await h.runs.stageBase(record.id)).toBe('checkpoint-1');
+  });
+
+  it('A-59: a failed first commit still records the next changed one as the stage base', async () => {
+    const h = await harness({ script: [toolResult(true), finished('completed')] });
+    h.checkpoints.failNext(); // the boundary commit fails, so the terminal commit is the first sha
+
+    await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    const record = await theRun(h.runs);
+    expect(await h.runs.stageBase(record.id)).toBe('checkpoint-1');
   });
 
   it('P-22: a resume the transport accepts runs the resumed session unchanged (no fallback)', async () => {
