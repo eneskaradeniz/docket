@@ -674,11 +674,12 @@ export const CAPABILITY_REGISTRY = {
       // list, so the four documented modes are the whole catalog as static registry rows and the
       // launch passes the chosen mode through its own --mode flag. No live list exists that
       // could be authoritative. The plan is a monthly credit/USD allowance and no plan source
-      // says which mode it covers (the ultra mode runs the strongest models), so every row reads
-      // unknown (P-40) and stays a hand pick with spend consent. A row takes no thinking level:
-      // the mode already is the effort, and the CLI has no effort flag. The quota rides the
-      // provider's own usage command, whose output format is unverified; its adapter is a
-      // separate issue, so no probe exists yet.
+      // says which mode it covers (the ultra mode runs the strongest models), so every row and
+      // the unpinned default read unknown (P-40) and stay hand picks with spend consent — the
+      // kind states defaultBilling unknown so an unpinned run never rides the plan. A row takes
+      // no thinking level: the mode already is the effort, and the CLI has no effort flag. The
+      // quota rides the provider's own usage command, whose output format is unverified; its
+      // adapter is a separate issue, so no probe exists yet.
       id: 'amp-login',
       providerId: 'amp',
       authMode: 'subscription',
@@ -686,6 +687,7 @@ export const CAPABILITY_REGISTRY = {
       costKind: 'none',
       quotaProbe: 'none',
       modelSource: 'static',
+      defaultBilling: 'unknown',
       models: [
         { id: 'low', family: 'tier', tier: 'fast', thinking: { kind: 'none' } },
         { id: 'medium', family: 'tier', tier: 'balanced', thinking: { kind: 'none' } },

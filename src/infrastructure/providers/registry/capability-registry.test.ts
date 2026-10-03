@@ -658,3 +658,64 @@ describe('isolation evidence (P-44)', () => {
     }
   });
 });
+
+describe('route-kind billing coverage (P-40)', () => {
+  // An unpinned run reads the kind's `defaultBilling`; a kind that states none falls through to
+  // the executor's implicit answer — `included` on a subscription, `metered` on an api key. The
+  // included fall-through is true only for a flat plan, so the subscription kinds entitled to it
+  // are named here with their reason, and every other kind must fix its own default or bill
+  // every row it lists.
+  const FLAT_SUBSCRIPTIONS: readonly { readonly id: string; readonly reason: string }[] = [
+    {
+      id: 'anthropic-subscription',
+      reason: 'the bundled rows and families already carry the per-model answer; the CLI default is one of the plan\'s own models',
+    },
+    {
+      id: 'codex-subscription',
+      reason: 'the provider documents its agent as included across its plans, so the CLI default is plan-covered (the kind also states defaultBilling included)',
+    },
+    {
+      id: 'copilot-subscription',
+      reason: 'every listed row bills against the single membership in its own credit unit, and the unpinned default is the plan\'s automatic choice on that membership',
+    },
+    {
+      id: 'agy-subscription',
+      reason: 'the plan covers the provider\'s own models on every plan and the CLI default is one of them; third-party rows stay unknown on their own answer',
+    },
+    {
+      id: 'cursor-subscription',
+      reason: 'the session list is the plan\'s own surface and its default is the plan\'s automatic choice; per-model answers stay unknown on the rows themselves',
+    },
+    {
+      id: 'opencode-subscription',
+      reason: 'an unpinned run uses whatever the login\'s own plan serves by default — the plan\'s own default model — while rows answer unknown per model',
+    },
+  ];
+
+  it('P-40: every route kind states a billing default or bills every listed row, and only the flat subscriptions ride the implicit included', () => {
+    // Widened to the record type: the literal registry union drops the optional keys a kind
+    // simply does not carry, and the checks below are exactly about their presence.
+    const kinds: readonly RouteKindRecord[] = CAPABILITY_REGISTRY.routeKinds;
+    const violations: string[] = [];
+    for (const kind of kinds) {
+      const unbilled = kind.models.filter((model) => model.billing === undefined).length;
+      const flat = FLAT_SUBSCRIPTIONS.some((entry) => entry.id === kind.id);
+      if (kind.defaultBilling === undefined && unbilled > 0 && !flat) {
+        violations.push(`${kind.id} states no defaultBilling and leaves ${unbilled} of ${kind.models.length} listed rows unbilled`);
+      }
+      // A subscription kind with no default claims the implicit included for its unpinned runs;
+      // only a flat plan may claim it. An api-key kind never falls through to included — its
+      // implicit answer is metered — so the claim cannot even arise there.
+      if (kind.defaultBilling === undefined && kind.authMode === 'subscription' && !flat) {
+        violations.push(`${kind.id} is a subscription without a defaultBilling, so its unpinned runs read the implicit included without the flat-plan entitlement`);
+      }
+    }
+    // A stale allow-list entry would keep vouching for a kind that no longer holds the reason.
+    for (const entry of FLAT_SUBSCRIPTIONS) {
+      const kind = findRouteKind(entry.id);
+      if (kind === undefined) violations.push(`flat-subscription entry ${entry.id} names no registry kind`);
+      else if (kind.authMode !== 'subscription') violations.push(`flat-subscription entry ${entry.id} is not a subscription kind`);
+    }
+    expect(violations).toEqual([]);
+  });
+});
