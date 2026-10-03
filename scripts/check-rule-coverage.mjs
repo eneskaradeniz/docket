@@ -43,7 +43,6 @@ const SECTIONS = [
 const PENDING = new Map([
   ['providers:P-38', '#672'],
   ['ui:U-39', '#741'],
-  ['ui:U-40', '#742'],
 ]);
 
 function walk(dir, acc = []) {

@@ -594,6 +594,14 @@ export function WizardScreen({ store, locale, localeStore, themeStore, marks, on
                       {t(locale, state.attach.failureKey)}
                     </p>
                   ) : null}
+                  <button
+                    type="button"
+                    onClick={() => store.createProject()}
+                    data-wizard-new-project=""
+                    className="justify-self-start rounded-control text-[12.5px] text-signal hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-signal"
+                  >
+                    {t(locale, 'wizard.newProject')}
+                  </button>
                 </div>
               ) : (
                 <div className="grid place-items-center gap-3 py-10 text-center" data-wizard-done="">
@@ -607,6 +615,14 @@ export function WizardScreen({ store, locale, localeStore, themeStore, marks, on
                       first: state.summary.firstLabel,
                     })}
                   </p>
+                  <button
+                    type="button"
+                    onClick={() => store.createProject()}
+                    data-wizard-new-project=""
+                    className="justify-self-center rounded-control text-[12.5px] text-signal hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-signal"
+                  >
+                    {t(locale, 'wizard.newProject')}
+                  </button>
                 </div>
               )
             ) : null}

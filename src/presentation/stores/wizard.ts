@@ -113,7 +113,9 @@ export interface WizardSummary {
  *  its board (as the cockpit's project cards do). */
 export type WizardOpenTarget =
   | { readonly kind: 'roadmap'; readonly project: string }
-  | { readonly kind: 'board'; readonly repo: string };
+  | { readonly kind: 'board'; readonly repo: string }
+  /** "Yeni proje oluştur": the wizard leaves for the Yeni proje page (U-40). */
+  | { readonly kind: 'newProject' };
 
 export interface WizardAttach {
   readonly open: boolean;
@@ -187,6 +189,8 @@ export interface WizardStore {
   setAttachPath(path: string): void;
   /** Leaves the form for the summary. */
   cancelAttach(): void;
+  /** "Yeni proje oluştur": the wizard leaves and `opened` names the Yeni proje page. */
+  createProject(): void;
   /** "Bağla": `project.attach`; on success the wizard leaves and `opened` names the view. */
   submitAttach(): Promise<void>;
   subscribe(listener: () => void): () => void;
@@ -787,6 +791,13 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
     },
     cancelAttach: () => {
       attach = { ...attach, open: false, failureKey: null };
+      publish();
+    },
+    createProject: () => {
+      if (!visible || step !== 'done') return;
+      opened = { kind: 'newProject' };
+      attach = { ...attach, open: false, failureKey: null };
+      visible = false;
       publish();
     },
     submitAttach: async () => {

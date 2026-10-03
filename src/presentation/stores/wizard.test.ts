@@ -497,6 +497,22 @@ describe('wizard store (U-35)', () => {
     expect(store.state().visible).toBe(false);
   });
 
+  it('U-40: "Yeni proje oluştur" on the Kurulum tamam moment leaves the wizard for the Yeni proje page and sends nothing', async () => {
+    const bundle = setup();
+    await toAccounts(bundle, ['.claude']);
+    await bundle.store.next();
+    bundle.store.createProject();
+    // Only the finished setup offers it.
+    expect(bundle.store.state().opened).toBeNull();
+    await bundle.store.next();
+    expect(bundle.store.state().step).toBe('done');
+    const before = bundle.api.commands.length;
+    bundle.store.createProject();
+    expect(bundle.store.state().opened).toEqual({ kind: 'newProject' });
+    expect(bundle.store.state().visible).toBe(false);
+    expect(bundle.api.commands.length).toBe(before);
+  });
+
   it('U-35: a failed project.attach shows its U-8 label under the field and keeps the wizard open', async () => {
     const bundle = setup();
     await toAccounts(bundle, ['.claude']);
