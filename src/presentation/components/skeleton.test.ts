@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { MOTION } from './motion';
-import { SKELETON_STYLE_CSS, SHIMMER_PERIOD_MS } from './skeleton';
+import { SKELETON_STYLE_CSS, SHIMMER_PERIOD_MS, revealStyle } from './skeleton';
 
 describe('skeleton primitive', () => {
   it('U-26: the crest sweeps left→right every 1.4s, ease-in-out, forever', () => {
@@ -32,5 +32,27 @@ describe('skeleton primitive', () => {
   it('U-26: the anti-flicker numbers the hook leans on are the motion book\'s own', () => {
     expect(MOTION.skeleton.delayMs).toBe(150);
     expect(MOTION.skeleton.minShowMs).toBe(300);
+  });
+});
+
+describe('SkeletonReveal style', () => {
+  it('U-26: inactive (a fast load, no skeleton preceded) mounts the children as they are — no hiding style', () => {
+    for (const up of [false, true]) {
+      const style = revealStyle(false, up);
+      expect(style.opacity).toBeUndefined();
+      expect(style.translate).toBeUndefined();
+    }
+  });
+
+  it('U-26: active and not yet up hides the content one rise below, to play the entrance', () => {
+    const style = revealStyle(true, false);
+    expect(style.opacity).toBe(0);
+    expect(style.translate).toBe(`0px ${MOTION.results.risePx}px`);
+  });
+
+  it('U-26: active and up shows the content in place', () => {
+    const style = revealStyle(true, true);
+    expect(style.opacity).toBe(1);
+    expect(style.translate).toBe('0px 0px');
   });
 });
