@@ -1,6 +1,7 @@
 // The provider definition contract: a CLI is described by pure data, never by engine code.
 // Contract: docs/v2/providers.md → "Provider definition (data)".
-import type { ProviderCapabilities } from '../../../domain/index';
+import type { ProviderMark } from '../../../application/index';
+import type { EffortLevel, ProviderCapabilities } from '../../../domain/index';
 
 /**
  * What one run hands to a definition so it can produce argv/env/stdin. The prompt travels
@@ -11,20 +12,159 @@ export interface LaunchInput {
   /** Run-scoped directory holding this run's MCP/skills/hooks files; the user's own config is never written. */
   readonly configDir: string;
   readonly resume?: { readonly sessionRef: string };
+  /** Already clamped to the model; absent adds nothing to the launch. */
+  readonly effort?: EffortLevel;
+  /** The run's model id as the route names it, when one is pinned. */
+  readonly model?: string;
+}
+
+/**
+ * Where a provider takes the effort, as data taken from the CLI's own help or protocol schema.
+ * `flag`: argv carries the flag and the level; `request-field`: the transport sends the level in
+ * the named field of its query options or turn request; `session-option`: the ACP session config
+ * option, named by its reserved `category` or by its `configId`, is set after the session exists;
+ * `model-suffix`: the level joins the model id after `separator` and never travels separately.
+ * A definition without one ignores the effort.
+ */
+export type EffortArg =
+  | { readonly kind: 'flag'; readonly flag: string }
+  | { readonly kind: 'request-field'; readonly name: string }
+  | { readonly kind: 'session-option'; readonly category: string; readonly configId?: undefined }
+  | { readonly kind: 'session-option'; readonly configId: string; readonly category?: undefined }
+  | { readonly kind: 'model-suffix'; readonly separator: string };
+
+/** A provider's own names for effort levels; a level without an entry has no provider name. */
+export type LevelNames = Partial<Record<EffortLevel, string>>;
+
+export const EFFORT_LEVELS: readonly EffortLevel[] = [
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+  'ultra',
+];
+
+/**
+ * The provider's value for a level. Without a map the level's own name is the provider's; with a
+ * map, a level it does not name has no provider value — a guessed name would be refused by the
+ * CLI or, worse, accepted as another level.
+ */
+export function providerLevelOf(levelNames: LevelNames | undefined, effort: EffortLevel | undefined): string | undefined {
+  if (effort === undefined) return undefined;
+  if (levelNames === undefined) return effort;
+  return levelNames[effort];
+}
+
+/**
+ * The reverse of `providerLevelOf`: the level a value a provider advertises stands for, or
+ * `undefined` for a value that names none (it is never offered). Both directions share one rule,
+ * so every offered level is also sendable.
+ */
+export function effortOfProviderLevel(levelNames: LevelNames | undefined, value: string): EffortLevel | undefined {
+  if (levelNames === undefined) return EFFORT_LEVELS.find((level) => level === value);
+  return EFFORT_LEVELS.find((level) => levelNames[level] === value);
+}
+
+/** The argv pair a `flag` effort parameter adds; nothing for any other kind, an absent effort or a level the provider does not name. */
+export function effortFlagArgs(
+  arg: EffortArg | undefined,
+  effort: EffortLevel | undefined,
+  levelNames?: LevelNames,
+): string[] {
+  if (arg?.kind !== 'flag') return [];
+  const value = providerLevelOf(levelNames, effort);
+  return value === undefined ? [] : [arg.flag, value];
+}
+
+/**
+ * The model id a run launches with: for `model-suffix` the model plus separator plus the
+ * provider's level name; any other kind, an absent effort or an unnamed level leaves the model
+ * as it is.
+ */
+export function effortModelId(
+  arg: EffortArg | undefined,
+  model: string | undefined,
+  effort: EffortLevel | undefined,
+  levelNames?: LevelNames,
+): string | undefined {
+  if (model === undefined || arg?.kind !== 'model-suffix') return model;
+  const value = providerLevelOf(levelNames, effort);
+  return value === undefined ? model : `${model}${arg.separator}${value}`;
 }
 
 export type ProviderTransport = 'sdk' | 'app-server' | 'acp' | 'stream-json';
 
 export type ProviderResumeMode = 'specify' | 'capture' | 'protocol' | 'none';
 
+/**
+ * How the login answer is read. Without `acpSession`, `args` is a command whose exit 0 means
+ * logged in. With `presenceFile` or `presenceDir`, nothing is spawned. With `acpSession`, `args` launch the CLI's ACP mode and the probe opens one session (never a
+ * prompt): a session that opens means logged in, an error matching `notLoggedIn` means logged
+ * out, and anything else — including an unparseable answer — is unknown.
+ */
 export interface ProviderAuthProbe {
-  readonly args: string[]; // exit 0 = logged in
+  /** Without `parse`, exit 0 = logged in. */
+  readonly args: string[];
+  /** `credential-count`: the command prints "<N> credentials"; N > 0 = logged in, 0 = not, an
+   * output that names no count = unknown.
+   * `logged-in-json`: the command prints JSON whose `loggedIn` (or `logged_in`) boolean is the
+   * answer on either exit code; an output without that boolean = unknown. Only the boolean is
+   * read, never another field of the object, so no account value can reach a log.
+   * `account-null-json`: the command prints JSON whose `account` is null when logged out and an
+   * object when logged in (both with exit 0); an unparseable answer, a missing key or a value
+   * that is neither null nor an object = unknown. Only that one key's null-ness is read, never a
+   * field of the account, so no account value can reach a log. */
+  readonly parse?: 'credential-count' | 'logged-out-text' | 'provider-key-present' | 'logged-in-json' | 'account-null-json';
+  /** `logged-out-text`: exit 0 with this text in the output = logged out; any other answer =
+   * unknown, never logged in (a user may run with an own key and never log in).
+   * `provider-key-present`: the command prints JSON whose `providers[]` carry a boolean
+   * `key_present`; any `true` = logged in, every entry `false` = not, anything else = unknown. Only
+   * those booleans are read: the output is never stored and no key value is ever looked at. */
+  readonly loggedOutText?: string;
+  /** Extra environment the probe command itself needs, merged over the discovery environment
+   * (never logged): a variable that keeps a CLI from opening a browser during a status read. */
+  readonly env?: Readonly<Record<string, string>>;
+  readonly acpSession?: {
+    readonly notLoggedIn: { readonly rpcCode: number; readonly textContains: string };
+  };
+  /** For a CLI with no status command: logged in exactly when `<homeEnv's value, else
+   * <user home>/<homeDir>>/<file>` exists. Only the file's presence is read, never its content,
+   * and presence does not prove the credential is still valid. `args` is unused (empty). */
+  readonly presenceFile?: {
+    readonly homeEnv: string;
+    readonly homeDir: string;
+    readonly file: string;
+  };
+  /** For a CLI with no status command and no single documented credential file: logged in
+   * exactly when at least one file exists under `<homeEnv's value, else <user home>/<homeDir>>/<dir>`.
+   * Only the entries' presence is read, never a name's or a file's content, and presence does not
+   * prove the credential is still valid. `args` is unused (empty). */
+  readonly presenceDir?: {
+    readonly homeEnv: string;
+    readonly homeDir: string;
+    readonly dir: string;
+  };
 }
 
-export interface ProviderConfig {
-  /** How the run-scoped config dir is passed to this CLI. */
-  readonly mechanism: 'env-var' | 'flag';
-  readonly name: string;
+/** How the run-scoped config dir is passed to this CLI. `none` is for a CLI whose login lives in
+ * its own home: the launch sets no variable and no flag, so the machine's login stays reachable. */
+export type ProviderConfig =
+  | { readonly mechanism: 'env-var' | 'flag'; readonly name: string }
+  | { readonly mechanism: 'none' };
+
+/**
+ * How a CLI is kept from reading the user's configuration of other tools (another agent's
+ * instruction files, skills, hooks and MCP servers). `env` and `args` are the CLI's own documented
+ * switches; `runScopedHome` names a home-directory variable the launch points at the run's config
+ * directory, never at the user's real home.
+ */
+export interface ProviderIsolation {
+  readonly env?: Readonly<Record<string, string>>;
+  readonly args?: readonly string[];
+  readonly runScopedHome?: string;
 }
 
 export interface ProviderLaunch {
@@ -33,24 +173,64 @@ export interface ProviderLaunch {
   readonly stdin: 'prompt' | 'none';
 }
 
+// A cold CLI start (login refresh, model load) can legitimately take a minute, so the wait for
+// the first event is generous; a run that has started talking but stays silent through a long
+// tool-free stretch is far more likely hung, yet reasoning pauses can last minutes.
+export const DEFAULT_FIRST_OUTPUT_TIMEOUT_MS = 120_000;
+export const DEFAULT_INACTIVITY_TIMEOUT_MS = 600_000;
+
 export interface ProviderDef {
   readonly id: string;
   readonly displayName: string;
   /** Candidate executable names; discovery takes the first one found. */
   readonly bins: readonly string[];
+  /** A CLI installed as a thin wrapper whose agent entry delegates to a second binary at a fixed
+   * path under the user's home: the installer may ship the wrapper without that file, and only
+   * the CLI's own setup creates it, so when it is absent the resolved binary cannot start an
+   * agent (its own error names the path) and discovery reports the provider as unusable on this
+   * machine — `binPath: null`, so the install hint carries the remedy instead of a launch that
+   * cannot work. Presence only: the file is never opened, and Docket never runs the CLI's own
+   * setup or repair commands. A resolved binary that already is the named file (an override
+   * pointing straight at it) is self-sufficient and skips the check. */
+  readonly agentDelegate?: {
+    /** The variable naming the directory the relative path resolves under (the user's home). */
+    readonly homeEnv: string;
+    /** The delegate's path under that directory. */
+    readonly relativePath: string;
+  };
   readonly versionArgs: readonly string[];
   readonly authProbe?: ProviderAuthProbe;
   /** Scanned (stdout + stderr) for optional flags. */
   readonly helpArgs?: readonly string[];
+  /** The help command may open a browser, start a login flow or need an account: discovery runs
+   * it only after the login probe answered `true`. */
+  readonly helpNeedsLogin?: true;
   /** Flag → capability name; enabled only if the help output lists the flag. */
   readonly optionalFlags?: Readonly<Record<string, string>>;
   readonly transport: ProviderTransport;
   /** stream-json only: which line parser decodes this CLI's output. */
   readonly streamDialect?: string;
   readonly config: ProviderConfig;
+  /** The provider's own effort parameter; absent means the effort is ignored for this provider. */
+  readonly effortArg?: EffortArg;
+  /** The provider's own names for effort levels; absent means its names are the level names. */
+  readonly levelNames?: LevelNames;
+  /** Applied by the launch module; a provider without it is capped at `experimental`. */
+  readonly isolation?: ProviderIsolation;
+  /** The CLI's own telemetry-off flags, added to argv on every run. */
+  readonly telemetryOff?: readonly string[];
   readonly buildLaunch: (input: LaunchInput) => ProviderLaunch;
   readonly resume: ProviderResumeMode;
   /** Declared; refined by probes at discovery. */
   readonly capabilities: ProviderCapabilities;
   readonly installHint: { readonly url: string };
+  /** The provider's own mark: one SVG path in its viewBox, rendered with `currentColor` under
+   *  the fill rule its file declares. The mark identifies the provider only and is copied
+   *  unmodified from the file it was taken from; `null` when no such file exists — a mark is
+   *  never redrawn. */
+  readonly mark: ProviderMark | null;
+  /** Milliseconds allowed before a run's first event; 0 disables. Default: DEFAULT_FIRST_OUTPUT_TIMEOUT_MS. */
+  readonly firstOutputTimeoutMs?: number;
+  /** Milliseconds of silence allowed after output started; 0 disables. Default: DEFAULT_INACTIVITY_TIMEOUT_MS. */
+  readonly inactivityTimeoutMs?: number;
 }

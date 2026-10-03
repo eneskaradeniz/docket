@@ -1,5 +1,5 @@
 // In-memory WorkOrderRepo — work orders keyed by id, events kept per work order.
-import type { WorkOrderEvent, WorkOrderId, WorkspaceSlug } from '../../../domain/index';
+import type { ProjectSlug, WorkOrderEvent, WorkOrderId, RepoSlug } from '../../../domain/index';
 
 import type { WorkOrderRecord, WorkOrderRepo } from '../work-order-repo';
 
@@ -19,10 +19,24 @@ export const createFakeWorkOrderRepo = (): FakeWorkOrderRepo => {
 
     get: async (id: WorkOrderId): Promise<WorkOrderRecord | undefined> => byId.get(id),
 
+    // A-29: the rank is the port's own rule — the id tiebreak is explicit, so the number never
+    // rides the map's insertion order.
+    number: async (id: WorkOrderId): Promise<number | undefined> => {
+      if (!byId.has(id)) return undefined;
+      const ranked = [...byId.values()].sort(
+        (a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+      );
+      return ranked.findIndex((record) => record.id === id) + 1;
+    },
+
     // Stable sort keeps insertion order on createdAt ties.
-    list: async (filter: { readonly workspace?: WorkspaceSlug }): Promise<readonly WorkOrderRecord[]> =>
+    list: async (filter: { readonly project?: ProjectSlug; readonly repo?: RepoSlug }): Promise<readonly WorkOrderRecord[]> =>
       [...byId.values()]
-        .filter((record) => filter.workspace === undefined || record.workspace === filter.workspace)
+        .filter(
+          (record) =>
+            (filter.project === undefined || record.project === filter.project) &&
+            (filter.repo === undefined || record.repo === filter.repo),
+        )
         .sort((a, b) => a.createdAt - b.createdAt),
 
     appendEvent: async (id: WorkOrderId, event: WorkOrderEvent): Promise<void> => {

@@ -14,6 +14,10 @@ const PORT_KEYS: readonly (keyof AppDeps)[] = [
   'workOrders',
   'runs',
   'accounts',
+  'capabilities',
+  'modelCatalog',
+  'projects',
+  'repos',
   'bindings',
   'queue',
   'definitions',
@@ -24,7 +28,10 @@ const PORT_KEYS: readonly (keyof AppDeps)[] = [
   'secretScanner',
   'worktrees',
   'evidence',
+  'git',
   'notifier',
+  'instructionFiles',
+  'checkpoints',
 ];
 
 describe('createFakeDeps', () => {
@@ -65,6 +72,11 @@ describe('fakes barrel', () => {
       'createFakeWorkOrderRepo',
       'createFakeRunRepo',
       'createFakeAccountRepo',
+      'createFakeCapabilityCatalog',
+      'createFakeModelCatalog',
+      'createFakeProjectRepo',
+      'createFakeRepoRegistry',
+      'createFakeGitProbe',
       'createFakeBindingRepo',
       'createFakeQueueRepo',
       'createFakeDefinitionStore',
@@ -77,6 +89,8 @@ describe('fakes barrel', () => {
       'createFakeWorktrees',
       'createFakeEvidenceChecker',
       'createFakeNotifier',
+      'createFakeInstructionFiles',
+      'createFakeCheckpointCommitter',
       'createFakeDeps',
     ];
     for (const name of creators) {

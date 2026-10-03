@@ -1,9 +1,10 @@
 // Machine-local role → account chain, per level.
-import type { RoleBinding, RoleSlug, WorkOrderId, WorkspaceSlug } from '../../domain/index';
+import type { ProjectSlug, RoleBinding, RoleSlug, WorkOrderId, RepoSlug } from '../../domain/index';
 
 export type BindingScope =
   | { readonly level: 'global' }
-  | { readonly level: 'workspace'; readonly workspace: WorkspaceSlug }
+  | { readonly level: 'project'; readonly project: ProjectSlug }
+  | { readonly level: 'repo'; readonly repo: RepoSlug }
   | { readonly level: 'workOrder'; readonly workOrderId: WorkOrderId };
 
 export interface BindingRepo {

@@ -1,25 +1,44 @@
 // services/run-executor.ts — drives one run from start to finish (docs/v2/application.md A-15 … A-18,
-// plus the executor-side resume fallback P-22 of docs/v2/providers.md).
+// the checkpoint cadence A-57 … A-59, the rolling note and handoff runs A-60/A-64, plus the
+// executor-side resume fallback P-22 of docs/v2/providers.md).
 import type {
   AccountId,
+  AccountRoute,
   Actor,
   AgentEvent,
+  Billing,
   CapabilityDef,
+  EffortLevel,
   EpochMs,
   LimitDecision,
   Meter,
   QueueItem,
   Result,
   RoleDef,
+  RollingNote,
   RunId,
   RunOutcome,
+  Tier,
   WorkOrderId,
 } from '../../domain/index';
-import { decideOnLimit, foldRun } from '../../domain/index';
+import {
+  applyRoleOverrides,
+  billingFromPools,
+  CHECKPOINT_MIN_INTERVAL_MS,
+  decideOnLimit,
+  definitionsDigest,
+  effortForChoice,
+  extendRollingNote,
+  foldRun,
+  resolveTier,
+  stageBrief,
+} from '../../domain/index';
 
-import type { AppDeps, AuditAction, RunHandle, RunRecord, RunRepo, TransportError } from '../ports';
+import type { AccountRecord, AppDeps, AuditAction, RunHandle, RunRecord, RunRepo, TransportError } from '../ports';
 
+import { catalogOrEmpty, matchIdFor } from './match-id';
 import type { BoardHooks } from './permission-board';
+import { buildHandoff, commitCheckpoint } from '../use-cases/index';
 
 export interface ExecuteRunInput {
   readonly item: QueueItem;
@@ -32,7 +51,8 @@ export interface ExecuteRunInput {
 export type ExecuteOutcome =
   | { readonly kind: 'finished'; readonly outcome: RunOutcome }
   | { readonly kind: 'transport_error'; readonly error: TransportError }
-  | { readonly kind: 'limit'; readonly decision: LimitDecision };
+  | { readonly kind: 'limit'; readonly decision: LimitDecision }
+  | { readonly kind: 'refused'; readonly error: 'needs_spend_consent' | 'handoff_failed' };
 
 export interface PermissionGate {
   onAsk(runId: RunId, ask: Extract<AgentEvent, { readonly type: 'permission_ask' }>): Promise<'allow' | 'deny'>;
@@ -205,8 +225,123 @@ const buildFallbackPrompt = async (
   return lines.join('\n');
 };
 
+/** The account-level consent marker: the user allowed the route's own default model (P-40). */
+export const DEFAULT_MODEL_CONSENT = '*';
+
+/** An unpinned route runs the CLI's default model, whose billing the catalog cannot name. The
+ *  route kind fixes it when it knows (`defaultBilling`); only a subscription rides a plan, every
+ *  other auth mode is billed per use by nature. */
+export const defaultBillingOf = (
+  capabilities: Pick<AppDeps, 'capabilities'>['capabilities'],
+  account: AccountRecord | undefined,
+): Billing => {
+  const routeId =
+    account === undefined
+      ? undefined
+      : capabilities.routeKindOf({ provider: account.provider, authMode: account.authMode, routeKind: account.routeKind });
+  const fixed = routeId === undefined ? undefined : capabilities.routeKind(routeId)?.defaultBilling;
+  if (fixed !== undefined) return fixed;
+  return account?.authMode === 'subscription' ? 'included' : 'metered';
+};
+
+/** The effort the role's thinking choice means on the route's model. A pinned model is looked up by
+ *  id; an unpinned route runs on the provider's default row. No entry means the capability is
+ *  unknown, so nothing is sent rather than a guess. */
+const resolveEffort = async (
+  deps: Pick<AppDeps, 'modelCatalog'>,
+  item: QueueItem,
+  route: AccountRoute,
+): Promise<EffortLevel | undefined> => {
+  const catalog = await deps.modelCatalog.list(route.accountId);
+  const { model } = route;
+  const entry =
+    model !== undefined
+      ? catalog.find((candidate) => candidate.id === model)
+      : catalog.find((candidate) => candidate.isDefault === true);
+  return effortForChoice(item.thinking, entry?.thinking ?? 'unknown');
+};
+
+/** P-40: a run whose model may spend real money starts only with the user's recorded consent and
+ *  a spend cap on the account. The refusal happens before any write, so every store reads back
+ *  exactly as it was. A pinned model the catalog does not list counts as `unknown`, which is never
+ *  assumed to be free — though the account's own quota reading can settle it: an allowance bucket
+ *  scoped to the model proves the plan covers it (`billingFromPools`). An unpinned route is gated
+ *  by its default billing, consented through the account-level marker. */
+const spendConsentSatisfied = async (
+  deps: Pick<AppDeps, 'accounts' | 'modelCatalog' | 'capabilities'>,
+  accountId: AccountId,
+  model: string | undefined,
+): Promise<boolean> => {
+  const account = await deps.accounts.get(accountId);
+  const catalog = model !== undefined ? await catalogOrEmpty(() => deps.modelCatalog.list(accountId)) : [];
+  const billing: Billing =
+    model !== undefined
+      ? billingFromPools(
+          catalog.find((candidate) => candidate.id === model)?.billing ?? 'unknown',
+          matchIdFor(catalog, model),
+          await deps.accounts.pools(accountId),
+        )
+      : defaultBillingOf(deps.capabilities, account);
+  if (billing === 'included') return true;
+  const consented = account?.consentedModels?.includes(model ?? DEFAULT_MODEL_CONSENT) ?? false;
+  return consented && (account?.caps.length ?? 0) > 0;
+};
+
+/** A-15: the run record's `definitionsRev` — the digest of the Docket layers the agent was given,
+ *  the same brief `composeRunPrompt` led the prompt with (`stageBrief` over the current
+ *  definitions, role overrides applied). A definitions load or resolution failure leaves the rev
+ *  unset: `buildHandoff` reads a missing rev as "unchanged", never as a false change (A-62). */
+const definitionsRevOf = async (
+  deps: Pick<AppDeps, 'definitions' | 'workOrders'>,
+  item: QueueItem,
+  role: RoleDef,
+): Promise<string | undefined> => {
+  const record = await deps.workOrders.get(item.workOrderId);
+  const loaded = await deps.definitions.load(item.repo);
+  if (record === undefined || !loaded.ok) return undefined;
+  const flow = loaded.value.flows.find((candidate) => candidate.id === record.flow);
+  const stage = flow?.stages.find((candidate) => candidate.id === item.stage);
+  const baseRole = loaded.value.roles.find((candidate) => candidate.id === role.id);
+  if (flow === undefined || stage === undefined || baseRole === undefined) return undefined;
+  const overridden = applyRoleOverrides(baseRole, loaded.value.repo?.roleOverrides ?? []);
+  return definitionsDigest(stageBrief(flow, stage, overridden, { id: record.id, title: record.title }));
+};
+
+/** An unpinned route with a tier runs the best model of that tier: the account's own tier table,
+ *  else the route kind's, else the highest auto-selectable catalog entry. No such model leaves the
+ *  route unpinned, so the CLI's own default runs. */
+const routeForTier = async (
+  deps: Pick<AppDeps, 'accounts' | 'modelCatalog' | 'capabilities'>,
+  item: QueueItem,
+): Promise<{ readonly route: AccountRoute; readonly resolved: { readonly model: string; readonly tier: Tier } | undefined }> => {
+  if (item.route.model !== undefined || item.tier === undefined) return { route: item.route, resolved: undefined };
+  const account = await deps.accounts.get(item.route.accountId);
+  const routeId =
+    account === undefined
+      ? undefined
+      : deps.capabilities.routeKindOf({ provider: account.provider, authMode: account.authMode, routeKind: account.routeKind });
+  const tierModels = account?.tierModels ?? (routeId === undefined ? undefined : deps.capabilities.routeKind(routeId)?.tierModels);
+  const model = resolveTier(item.tier, await deps.modelCatalog.list(item.route.accountId), tierModels);
+  if (model === undefined) return { route: item.route, resolved: undefined };
+  return { route: { ...item.route, model }, resolved: { model, tier: item.tier } };
+};
+
 export async function executeRun(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'runs' | 'accounts' | 'transports'>,
+  deps: Pick<
+    AppDeps,
+    | 'clock'
+    | 'ids'
+    | 'log'
+    | 'workOrders'
+    | 'runs'
+    | 'accounts'
+    | 'transports'
+    | 'modelCatalog'
+    | 'capabilities'
+    | 'checkpoints'
+    | 'definitions'
+    | 'instructionFiles'
+  >,
   permissions: PermissionGate,
   input: ExecuteRunInput,
   board?: BoardHooks,
@@ -214,21 +349,42 @@ export async function executeRun(
   workOrdersChanged?: WorkOrdersChangedNotify,
 ): Promise<ExecuteOutcome> {
   const { item } = input;
+  const { route, resolved } = await routeForTier(deps, item);
+  if (!(await spendConsentSatisfied(deps, route.accountId, route.model))) {
+    return { kind: 'refused', error: 'needs_spend_consent' };
+  }
+
+  // A-64: a handoff continuation builds the pack before the transport starts — before the run
+  // record even exists, so a pack failure refuses the run with the pack's audit entry as the only
+  // write. The pack's prompt replaces the composed one; native resume and the pack are never
+  // mixed, so the attempt's resume reference is dropped whatever the stage history says.
+  let prompt = input.prompt;
+  const handoffOf = item.handoffOf;
+  if (handoffOf !== undefined) {
+    const pack = await buildHandoff(deps, { runId: handoffOf, cwd: input.cwd, candidates: [route] });
+    if (!pack.ok) return { kind: 'refused', error: 'handoff_failed' };
+    prompt = pack.value.prompt;
+  }
+
   const plan = planAttempt(
     (await deps.runs.listForWorkOrder(item.workOrderId)).filter((run) => run.stage === item.stage),
   );
+  const resume = handoffOf === undefined ? plan.resume : undefined;
 
+  const effort = await resolveEffort(deps, item, route);
   const runId = deps.ids.next<'run'>();
   const startedAt = deps.clock.now();
+  const definitionsRev = await definitionsRevOf(deps, item, input.role);
   await deps.runs.create({
     id: runId,
     workOrderId: item.workOrderId,
     stage: item.stage,
     attempt: plan.attempt,
     role: input.role.id,
-    route: item.route,
+    route,
     startedAt,
     autoResumesUsed: plan.autoResumesUsed,
+    ...(definitionsRev !== undefined ? { definitionsRev } : {}),
   });
   await deps.workOrders.appendEvent(item.workOrderId, {
     type: 'run_started',
@@ -237,9 +393,43 @@ export async function executeRun(
     stage: item.stage,
     attempt: plan.attempt,
   });
-  await audit(deps, { at: startedAt, action: 'run.started', runId });
+  const startedDetail = {
+    ...(handoffOf !== undefined ? { handoff: true, handoffOf } : {}),
+    ...(resolved ?? {}),
+    ...(effort !== undefined ? { effort } : {}),
+  };
+  await audit(deps, {
+    at: startedAt,
+    action: 'run.started',
+    runId,
+    ...(Object.keys(startedDetail).length > 0 ? { detail: startedDetail } : {}),
+  });
   // From here the run is answerable through the board, until its record closes.
   board?.register(runId);
+
+  // A-57: checkpoint cadence state — event-boundary + terminal only, no timer exists; the stream
+  // is the only clock application may read, so the interval is measured against the executor's
+  // own clock at each boundary. A clean tree (git's verdict) and a git failure alike never fail
+  // the run: the pack falls back to the worktree base ref when no checkpoint exists (A-59).
+  let lastCommitAt: EpochMs | undefined;
+  let commitSeq = 0;
+  let stageBaseSaved = false;
+  const checkpoint = async (): Promise<void> => {
+    commitSeq += 1;
+    lastCommitAt = deps.clock.now();
+    const committed = await commitCheckpoint(
+      { checkpoints: deps.checkpoints },
+      { cwd: input.cwd, runId, seq: commitSeq },
+    );
+    // A-59: the first changed commit of the run is the sha the pack's diff starts from; a clean
+    // tree carries no sha, so it records nothing and the fallback base stays in force.
+    if (committed.ok && committed.value.changed && !stageBaseSaved) {
+      stageBaseSaved = true;
+      await deps.runs.saveStageBase(runId, committed.value.sha);
+    }
+  };
+  const cadenceDue = (): boolean =>
+    lastCommitAt === undefined || deps.clock.now() - lastCommitAt >= CHECKPOINT_MIN_INTERVAL_MS;
 
   // A transport that never comes up still ends the run: leaving it open would wedge the work
   // order in `running` forever.
@@ -260,21 +450,23 @@ export async function executeRun(
       runId,
       cwd: input.cwd,
       role: input.role,
-      route: item.route,
+      route,
       prompt,
       capabilities: input.capabilities,
+      ...(effort !== undefined ? { effort } : {}),
       ...(resume !== undefined ? { resume } : {}),
     });
 
   // The port has no resume-specific error code, so a start that fails while a session reference
   // was requested is the only contract-level sign the transport could not resume. One restart
   // without resume is the remedy this executor owns; a restart that fails the same way is a
-  // transport error and fails the run — there is no third attempt.
-  const started = await startAttempt(plan.resume, input.prompt);
+  // transport error and fails the run — there is no third attempt. A handoff run asked for no
+  // resume, so it owns no restart either: its prompt is the pack, not a summary over a session.
+  const started = await startAttempt(resume, prompt);
   let handle: RunHandle;
   if (started.ok) {
     handle = started.value;
-  } else if (plan.resume === undefined || plan.resumedRunId === undefined) {
+  } else if (resume === undefined || plan.resumedRunId === undefined) {
     return failAsTransport(started.error);
   } else {
     const restart = await startAttempt(
@@ -285,8 +477,13 @@ export async function executeRun(
     handle = restart.value;
   }
 
+  // A-60: the rolling note rides the persisted stream — extended and saved with every event batch,
+  // so it exists the moment the account blocks.
+  let note: RollingNote | undefined;
   for await (const event of handle.events) {
     await deps.runs.appendEvents(runId, [event]);
+    note = extendRollingNote(note, [event]);
+    await deps.runs.saveHandoffNote(runId, note);
     notify?.(runId);
     switch (event.type) {
       case 'session_started':
@@ -306,18 +503,31 @@ export async function executeRun(
       case 'quota_signal':
         await saveQuotaMeter({ ids: deps.ids, accounts: deps.accounts }, item.route.accountId, event);
         break;
+      case 'tool_result':
+        // A-57: a boundary commit only when the interval since the last commit has elapsed; git
+        // arbitrates whether anything changed (a clean tree is a no-op, never an error).
+        if (cadenceDue()) await checkpoint();
+        break;
       case 'usage':
         if (event.costUsd !== undefined) {
-          await deps.accounts.recordSpend({
-            accountId: item.route.accountId,
-            workspace: item.workspace,
-            workOrderId: item.workOrderId,
-            at: event.at,
-            usd: event.costUsd,
-          });
+          // Spend is attributed to the project the work order was opened under — the record, not
+          // the queue item, carries it (a fallback item may outlive re-registration).
+          const workOrder = await deps.workOrders.get(item.workOrderId);
+          if (workOrder !== undefined) {
+            await deps.accounts.recordSpend({
+              accountId: item.route.accountId,
+              project: workOrder.project,
+              repo: item.repo,
+              workOrderId: item.workOrderId,
+              at: event.at,
+              usd: event.costUsd,
+            });
+          }
         }
         break;
       case 'limit_hit': {
+        // Terminal commit first (A-57): the pack the limit triggers is built from what landed.
+        await checkpoint();
         // The executor has no role binding at hand, so no alternative pool or fallback account
         // can be offered here; re-routing is the caller's decision to make.
         const decision = decideOnLimit(
@@ -337,6 +547,8 @@ export async function executeRun(
       case 'finished': {
         const outcome = foldRun([event]).outcome;
         if (outcome !== undefined) {
+          // Terminal commit (A-57): the run's work is complete, the interval never gates it.
+          await checkpoint();
           const endedAt = await endRun(deps, { runId, workOrderId: item.workOrderId, outcome }, board, workOrdersChanged);
           await audit(deps, { at: endedAt, action: 'run.finished', runId, detail: { outcome } });
           return { kind: 'finished', outcome };
@@ -349,7 +561,9 @@ export async function executeRun(
   }
 
   // The port promises a stream that ends after `finished`; one that dries up any other way cannot
-  // be waited on, so the run is closed as failed instead of staying active forever.
+  // be waited on, so the run is closed as failed instead of staying active forever. Stream end is
+  // a terminal boundary too (A-57): whatever the run wrote stays committed for the next attempt.
+  await checkpoint();
   await endRun(deps, { runId, workOrderId: item.workOrderId, outcome: 'failed' }, undefined, workOrdersChanged);
   return { kind: 'finished', outcome: 'failed' };
 }

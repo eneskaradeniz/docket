@@ -4,6 +4,8 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    // electron/ holds pure shell helpers (window options); their tests import no runtime, so the
+    // same node environment covers them.
+    include: ['src/**/*.test.ts', 'electron/**/*.test.ts'],
   },
 });

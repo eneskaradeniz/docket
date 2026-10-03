@@ -15,14 +15,38 @@
   --ink: #f2f2f2;
   --dim: #8f8f8f;
   --signal: #f5b544;
+  --signal-soft: #f5b544;
   --signal-ink: #000;
   --proceed: #4cc38a;
   --info: #6ca0ce;
   --error: #e5484d;
   --write: #a371f7;
   --exec: #4ac3ce;
-  --sans: "Manrope", system-ui, -apple-system, sans-serif;
+  --sans: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* The light face: rev-8 values, selected by the same data-theme attribute the app already sets.
+   --exec has no light value in the book, so it keeps its root value. */
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #fafaf8;
+  --surface: #fff;
+  --raised: #f2f2f0;
+  --band: #f5f5f2;
+  --hair: #e3e3e0;
+  --bord: #c9c9c4;
+  --ink: #191917;
+  --dim: #6e6e69;
+  --signal: #f5b544;
+  /* AA for the small amber text on band/raised/surface (5.05 / 4.92 / 5.52:1); the rev-8 value
+     #9a6700 measured 4.46 / 4.34 on the first two. */
+  --signal-soft: #8f5f00;
+  --signal-ink: #1c1300;
+  --proceed: #1a7f37;
+  --info: #0969da;
+  --error: #cf222e;
+  --write: #8250df;
 }
 
 /* The Tailwind bridge: every book variable becomes a theme token, so utilities (bg-surface,
@@ -30,6 +54,10 @@
    this layer alone. The alias keeps the historical utility names usable while the book's own
    short names (--dim) stay the source of truth. */
 @theme {
+  /* The corner-radius scale (U-23): the only radii a presentation file may name. */
+  --radius-control: 6px;
+  --radius-card: 8px;
+  --radius-panel: 12px;
   --color-bg: var(--bg);
   --color-surface: var(--surface);
   --color-raised: var(--raised);
@@ -39,6 +67,7 @@
   --color-ink: var(--ink);
   --color-inkdim: var(--dim);
   --color-signal: var(--signal);
+  --color-signal-soft: var(--signal-soft);
   --color-signal-ink: var(--signal-ink);
   --color-proceed: var(--proceed);
   --color-info: var(--info);
@@ -50,11 +79,14 @@
 }
 
 /* The frozen v1 sheet loaded after this file re-declares a few of the same theme tokens with its
-   own literals. Unlayered custom properties outrank anything a @layer declares, so these three
-   re-statements pin the contested names (raised's shade, both font stacks) to the book regardless
-   of how the two @theme blocks merge. */
+   own literals. Unlayered custom properties outrank anything a @layer declares, so these
+   re-statements pin the contested names (raised's shade, the page/signal/exec colors, both font
+   stacks) to the book regardless of how the two @theme blocks merge. */
 :root {
+  --color-bg: var(--bg);
   --color-raised: var(--raised);
+  --color-signal: var(--signal);
+  --color-exec: var(--exec);
   --font-sans: var(--sans);
   --font-mono: var(--mono);
 }

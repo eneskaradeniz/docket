@@ -1,16 +1,20 @@
-// Read/write port for definition files (global store merged with per-workspace overrides).
+// Read/write port for definition files (global store merged with per-project and per-repo
+// overrides — the repo's .docket wins over the project's, the project's over the global).
 import type {
   Definitions,
   DefinitionIssue,
+  ProjectDef,
+  ProjectSlug,
   Result,
   Roadmap,
   RoadmapIssue,
-  WorkspaceSlug,
+  RepoSlug,
 } from '../../domain/index';
 
 export type DefinitionScope =
   | { readonly kind: 'global' }
-  | { readonly kind: 'workspace'; readonly workspace: WorkspaceSlug };
+  | { readonly kind: 'project'; readonly project: ProjectSlug }
+  | { readonly kind: 'repo'; readonly repo: RepoSlug };
 
 export interface DefinitionFile {
   readonly content: string;
@@ -18,9 +22,12 @@ export interface DefinitionFile {
 }
 
 export interface DefinitionStore {
-  /** Global definitions merged with the workspace's (workspace ids override global ids of the same kind). */
-  load(workspace: WorkspaceSlug): Promise<Result<Definitions, readonly DefinitionIssue[]>>;
-  loadRoadmap(workspace: WorkspaceSlug): Promise<Result<Roadmap, readonly RoadmapIssue[]> | undefined>; // undefined = no roadmap
+  /** Global definitions merged with the repo's project defaults and the repo's own (repo ids win — S3). */
+  load(repo: RepoSlug): Promise<Result<Definitions, readonly DefinitionIssue[]>>;
+  /** Reads and validates `project.yaml` at an arbitrary checkout path (the attach flow). */
+  readProjectAt(path: string): Promise<Result<ProjectDef, readonly DefinitionIssue[]>>;
+  /** The project's roadmap, read from the main repo's `.docket/roadmap.yaml`; undefined = no roadmap. */
+  loadRoadmap(project: ProjectSlug): Promise<Result<Roadmap, readonly RoadmapIssue[]> | undefined>;
   readFile(scope: DefinitionScope, target: string): Promise<DefinitionFile | undefined>;
   /** Writes only if the current hash equals `expectedHash` ('' = file must not exist). */
   writeFile(
@@ -29,7 +36,7 @@ export interface DefinitionStore {
     content: string,
     expectedHash: string,
   ): Promise<Result<{ readonly hash: string }, 'stale'>>;
-  workspacePath(workspace: WorkspaceSlug): Promise<string | undefined>; // repo checkout root on this machine
+  repoPath(repo: RepoSlug): Promise<string | undefined>; // repo checkout root on this machine
   /** Parses the candidate content and validates the definitions as they WOULD be with it; writes nothing. */
   validateCandidate(scope: DefinitionScope, target: string, content: string): Promise<Result<void, readonly DefinitionIssue[]>>;
 }

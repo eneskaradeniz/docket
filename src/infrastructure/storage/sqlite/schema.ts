@@ -29,4 +29,29 @@ CREATE TABLE proposals (id TEXT PRIMARY KEY, status TEXT NOT NULL, data TEXT NOT
 CREATE TABLE secrets (ref TEXT PRIMARY KEY, blob BLOB NOT NULL);
 CREATE TABLE workspaces (slug TEXT PRIMARY KEY, path TEXT NOT NULL);`,
   },
+  {
+    version: 2,
+    sql: `ALTER TABLE workspaces RENAME TO repos;
+ALTER TABLE work_orders RENAME COLUMN workspace TO repo;
+ALTER TABLE work_orders ADD COLUMN project TEXT NOT NULL DEFAULT '';
+ALTER TABLE spend RENAME COLUMN workspace TO repo;
+ALTER TABLE spend ADD COLUMN project TEXT NOT NULL DEFAULT '';
+CREATE TABLE projects (slug TEXT PRIMARY KEY, name TEXT NOT NULL, main_repo TEXT NOT NULL, data TEXT NOT NULL);
+CREATE TABLE project_repos (project TEXT NOT NULL REFERENCES projects (slug), repo TEXT NOT NULL, PRIMARY KEY (project, repo));
+INSERT INTO projects (slug, name, main_repo, data)
+  SELECT slug, slug, slug, json_object('id', slug, 'name', slug, 'mainRepo', slug, 'repos', json_array(slug)) FROM repos;
+INSERT INTO project_repos (project, repo) SELECT slug, slug FROM repos;
+UPDATE work_orders SET project = repo;
+UPDATE work_orders SET data = json_set(json_remove(data, '$.workspace'), '$.project', repo, '$.repo', repo);
+UPDATE spend SET project = repo;
+UPDATE bindings SET level = 'repo' WHERE level = 'workspace';
+CREATE INDEX work_orders_by_project ON work_orders (project, created_at, id);
+CREATE INDEX project_repos_by_repo ON project_repos (repo);`,
+  },
+  {
+    // The run-scoped handoff state (P-38): the rolling note as JSON and the stage-base sha, one
+    // nullable column each so saving one never clobbers the other. definitionsRev rides runs.data.
+    version: 3,
+    sql: `CREATE TABLE run_handoff (run_id TEXT PRIMARY KEY REFERENCES runs (id), note TEXT, stage_base TEXT);`,
+  },
 ];

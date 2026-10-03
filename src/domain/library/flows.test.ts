@@ -10,7 +10,7 @@ const flowById = (id: string): FlowDef => {
   return found;
 };
 
-const fixtureWorkspace = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+const fixtureRepo = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
   id: 'builtin-fixture',
   name: 'Built-in fixture',
   repos: [],
@@ -51,6 +51,8 @@ describe('BUILTIN_FLOWS', () => {
         id: 'review',
         name: 'Gözden geçirme',
         role: 'reviewer',
+        tier: 'strong',
+        reviewOf: 'implement',
         exit: [
           { kind: 'agent_verdict', id: 'review-verdict', role: 'reviewer' },
           { kind: 'human', id: 'review-approval', label: 'Gözden geçirme onayı' },
@@ -99,6 +101,8 @@ describe('BUILTIN_FLOWS', () => {
       id: 'security',
       name: 'Güvenlik incelemesi',
       role: 'security-auditor',
+      tier: 'strong',
+      reviewOf: 'implement',
       exit: [
         { kind: 'agent_verdict', id: 'security-verdict', role: 'security-auditor' },
         { kind: 'human', id: 'security-approval', label: 'Güvenlik onayı' },
@@ -140,12 +144,12 @@ describe('BUILTIN_COMMAND_SET_NAMES', () => {
 });
 
 describe('the built-in library', () => {
-  it('R-45: validateDefinitions accepts the whole built-in library with a workspace that defines tests', () => {
+  it('R-45: validateDefinitions accepts the whole built-in library with a repo that defines tests', () => {
     const result = validateDefinitions({
       roles: BUILTIN_ROLES,
       flows: BUILTIN_FLOWS,
       capabilities: [],
-      workspace: fixtureWorkspace(),
+      repo: fixtureRepo(),
     });
     if (!result.ok) {
       throw new Error(`expected ok, got issues: ${JSON.stringify(result.error, null, 2)}`);
@@ -154,12 +158,23 @@ describe('the built-in library', () => {
     expect(result.value.flows).toHaveLength(BUILTIN_FLOWS.length);
   });
 
-  it('fails validation when the workspace lacks the tests command set the flows reference', () => {
+  it('R-45: review and security stages are strong-tier reviews of implement; no other stage sets a tier or thinking', () => {
+    for (const flow of BUILTIN_FLOWS) {
+      for (const stage of flow.stages) {
+        const reviewing = stage.role === 'reviewer' || stage.role === 'security-auditor';
+        expect(stage.tier).toBe(reviewing ? 'strong' : undefined);
+        expect(stage.reviewOf).toBe(reviewing ? 'implement' : undefined);
+        expect(stage.thinking).toBeUndefined();
+      }
+    }
+  });
+
+  it('fails validation when the repo lacks the tests command set the flows reference', () => {
     const result = validateDefinitions({
       roles: BUILTIN_ROLES,
       flows: BUILTIN_FLOWS,
       capabilities: [],
-      workspace: fixtureWorkspace({ commandSets: {} }),
+      repo: fixtureRepo({ commandSets: {} }),
     });
     if (result.ok) throw new Error('expected err without the tests command set');
     expect(result.error.map((issue) => issue.code)).toEqual(['unknown_command_set', 'unknown_command_set', 'unknown_command_set']);

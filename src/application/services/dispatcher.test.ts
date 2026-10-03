@@ -22,7 +22,7 @@ import type {
   StageSlug,
   Ulid,
   WorkOrderId,
-  WorkspaceSlug,
+  RepoSlug,
 } from '../../domain/index';
 import { deriveWorkOrderState, isUlid, parseSlug, parseUlid } from '../../domain/index';
 
@@ -35,6 +35,7 @@ import {
   type FakeDefinitionStore,
 } from '../ports/fakes';
 
+import { createFakeModelCatalog } from '../ports/fakes/fake-model-catalog';
 import { applyLimitDecision, dispatcherTick, enqueueStage } from './dispatcher';
 
 // --- fixtures ---------------------------------------------------------------------------------------
@@ -51,8 +52,8 @@ const ulidOf = <B extends string>(input: string): Ulid<B> => {
   return parsed.value;
 };
 
-const WS: WorkspaceSlug = slugOf('ws');
-const OTHER: WorkspaceSlug = slugOf('other');
+const REPO: RepoSlug = slugOf('ws');
+const OTHER: RepoSlug = slugOf('other');
 const IMPLEMENT: StageSlug = slugOf('implement');
 const IMPLEMENTER = slugOf<'role'>('implementer');
 
@@ -94,8 +95,32 @@ const DEFINITIONS_BODY = {
       capabilities: [],
       active: true,
     },
+    {
+      id: 'reviewer',
+      name: 'Reviewer',
+      instructions: 'review the change',
+      writeScope: { kind: 'none' },
+      capabilities: [],
+      active: true,
+    },
   ],
   flows: [
+    {
+      id: 'reviewed',
+      name: 'Reviewed',
+      stages: [
+        { id: 'implement', name: 'Implement', role: 'implementer', exit: [] },
+        {
+          id: 'review',
+          name: 'Review',
+          role: 'reviewer',
+          tier: 'strong',
+          thinking: { level: 'deep' },
+          reviewOf: 'implement',
+          exit: [],
+        },
+      ],
+    },
     {
       id: 'standard',
       name: 'Standard',
@@ -110,11 +135,11 @@ const DEFINITIONS_BODY = {
     },
   ],
   capabilities: [],
-  workspace: {
+  repo: {
     id: 'ws',
-    name: 'Workspace',
+    name: 'Repo',
     repos: [],
-    flows: ['standard', 'manual'],
+    flows: ['standard', 'manual', 'reviewed'],
     defaultFlow: 'standard',
     commandSets: {},
     roleOverrides: [],
@@ -142,10 +167,11 @@ const route = (accountId: AccountId, model?: string): AccountRoute =>
 
 const account = (
   id: AccountId,
-  caps: readonly { readonly scope: 'account_day' | 'account_month'; readonly cap: SpendCap }[] = [],
+  caps: readonly { readonly scope: 'account_day' | 'account_week' | 'account_month'; readonly cap: SpendCap }[] = [],
+  provider = 'provider-x',
 ): AccountRecord => ({
   id,
-  provider: 'provider-x',
+  provider,
   label: `account ${id}`,
   authMode: 'subscription',
   limitPolicy: 'ask',
@@ -158,6 +184,12 @@ const pool = (id: PoolId, accountId: AccountId): Pool => ({
   label: 'allowance',
   kind: 'allowance',
   appliesTo: 'all',
+});
+
+const opusPool = (id: PoolId, accountId: AccountId): Pool => ({
+  ...pool(id, accountId),
+  label: 'seven_day_opus',
+  appliesTo: [{ prefix: 'claude-opus' }],
 });
 
 const meter = (id: MeterId, poolId: PoolId, at: EpochMs): Meter => ({
@@ -174,7 +206,7 @@ const meter = (id: MeterId, poolId: PoolId, at: EpochMs): Meter => ({
 
 const LIMITS = (over: Partial<DispatchLimits> = {}): DispatchLimits => ({
   global: 4,
-  perWorkspace: 3,
+  perRepo: 3,
   perAccount: {},
   ...over,
 });
@@ -183,13 +215,14 @@ const LIMITS = (over: Partial<DispatchLimits> = {}): DispatchLimits => ({
 const createWorkOrder = async (
   h: Harness,
   id: WorkOrderId,
-  workspace: WorkspaceSlug = WS,
+  repo: RepoSlug = REPO,
   flow = 'standard',
 ): Promise<void> => {
   const flowId = slugOf<'flow'>(flow);
   await h.deps.workOrders.create({
     id,
-    workspace,
+    project: slugOf<'project'>('proj'),
+    repo,
     flow: flowId,
     title: `fixture ${id}`,
     createdAt: h.clock.now(),
@@ -225,7 +258,7 @@ const queueItem = (
 ): QueueItem => ({
   id,
   workOrderId,
-  workspace: WS,
+  repo: REPO,
   stage: IMPLEMENT,
   route: itemRoute,
   priority: over.priority ?? 0,
@@ -255,6 +288,98 @@ const expectEnqueueErr = (
 
 // --- enqueueStage (A-19) ----------------------------------------------------------------------------
 
+const REVIEWER = slugOf<'role'>('reviewer');
+const REVIEW: StageSlug = slugOf('review');
+
+/** A work order of the `reviewed` flow whose implement stage succeeded on `writer`, so review is next. */
+const reviewReady = async (h: Harness, writer: AccountId | undefined): Promise<void> => {
+  await createWorkOrder(h, WO1, REPO, 'reviewed');
+  if (writer === undefined) {
+    // No succeeded run recorded; the flow still reaches review through the events alone.
+  } else {
+    await createRun(h, RUN1, WO1, route(writer));
+    await h.deps.runs.update(RUN1, { endedAt: 1_100, outcome: 'succeeded' });
+  }
+  await h.deps.workOrders.appendEvent(WO1, { type: 'run_started', at: 1_000, runId: RUN1, stage: IMPLEMENT, attempt: 1 });
+  await h.deps.workOrders.appendEvent(WO1, { type: 'run_finished', at: 1_100, runId: RUN1, outcome: 'succeeded' });
+};
+
+describe('enqueueStage routing and review', () => {
+  it('A-19: a stage tier and thinking override the binding; the binding fills what the stage leaves out', async () => {
+    const h = makeHarness();
+    await reviewReady(h, A1);
+    await h.deps.accounts.save(account(A1, [], 'p-one'));
+    await h.deps.bindings.save({ level: 'global' }, { role: REVIEWER, accounts: [route(A1)], tier: 'fast', thinking: { level: 'fast' } });
+
+    expect((await enqueueStage(h.deps, { id: WO1 })).ok).toBe(true);
+    const item = (await queueAfter(h))[0];
+    expect(item?.stage).toBe(REVIEW);
+    expect(item?.tier).toBe('strong');
+    expect(item?.thinking).toEqual({ level: 'deep' });
+  });
+
+  it('A-19: a binding tier reaches a stage that sets none', async () => {
+    const h = makeHarness();
+    await createWorkOrder(h, WO1);
+    await h.deps.accounts.save(account(A1));
+    await h.deps.bindings.save({ level: 'global' }, { role: IMPLEMENTER, accounts: [route(A1)], tier: 'balanced' });
+
+    await enqueueStage(h.deps, { id: WO1 });
+    expect((await queueAfter(h))[0]?.tier).toBe('balanced');
+  });
+
+  it('A-19: a review stage moves an account of another provider to the front', async () => {
+    const h = makeHarness();
+    await reviewReady(h, A1);
+    await h.deps.accounts.save(account(A1, [], 'p-one'));
+    await h.deps.accounts.save(account(A2, [], 'p-two'));
+    await h.deps.bindings.save({ level: 'global' }, { role: REVIEWER, accounts: [route(A1), route(A2, 'm-2')] });
+
+    expect((await enqueueStage(h.deps, { id: WO1 })).ok).toBe(true);
+    const item = (await queueAfter(h))[0];
+    expect(item?.route).toEqual({ accountId: A2, model: 'm-2' });
+    expect(item).not.toHaveProperty('sameProviderReview');
+  });
+
+  it('A-19: with no other provider in the chain the first account stays and sameProviderReview is set', async () => {
+    const h = makeHarness();
+    await reviewReady(h, A1);
+    await h.deps.accounts.save(account(A1, [], 'p-one'));
+    await h.deps.accounts.save(account(A2, [], 'p-one'));
+    await h.deps.bindings.save({ level: 'global' }, { role: REVIEWER, accounts: [route(A1), route(A2)] });
+
+    expect((await enqueueStage(h.deps, { id: WO1 })).ok).toBe(true);
+    const item = (await queueAfter(h))[0];
+    expect(item?.route).toEqual({ accountId: A1 });
+    expect(item?.sameProviderReview).toBe(true);
+  });
+
+  it('A-19: without a succeeded run of the reviewed stage the chain is unchanged', async () => {
+    const h = makeHarness();
+    await reviewReady(h, undefined);
+    await h.deps.accounts.save(account(A1, [], 'p-one'));
+    await h.deps.accounts.save(account(A2, [], 'p-two'));
+    await h.deps.bindings.save({ level: 'global' }, { role: REVIEWER, accounts: [route(A1), route(A2)] });
+
+    expect((await enqueueStage(h.deps, { id: WO1 })).ok).toBe(true);
+    const item = (await queueAfter(h))[0];
+    expect(item?.route).toEqual({ accountId: A1 });
+    expect(item).not.toHaveProperty('sameProviderReview');
+  });
+
+  it('A-19: a failed run of the reviewed stage does not count as the writer', async () => {
+    const h = makeHarness();
+    await reviewReady(h, A1);
+    await h.deps.runs.update(RUN1, { outcome: 'failed' });
+    await h.deps.accounts.save(account(A1, [], 'p-one'));
+    await h.deps.accounts.save(account(A2, [], 'p-two'));
+    await h.deps.bindings.save({ level: 'global' }, { role: REVIEWER, accounts: [route(A1), route(A2)] });
+
+    await enqueueStage(h.deps, { id: WO1 });
+    expect((await queueAfter(h))[0]?.route).toEqual({ accountId: A1 });
+  });
+});
+
 describe('enqueueStage', () => {
   it('A-19: enqueues the current stage when the next action is start_run, routed to the first account of the chain', async () => {
     const h = makeHarness();
@@ -276,12 +401,30 @@ describe('enqueueStage', () => {
     expect(items[0]).toStrictEqual({
       id: result.value,
       workOrderId: WO1,
-      workspace: WS,
+      repo: REPO,
       stage: IMPLEMENT,
       route: { accountId: A2, model: 'model-x' },
       priority: 0,
       enqueuedAt: 1_000,
     });
+  });
+
+  it('A-19: the queue item carries the resolved binding thinking, and none when the binding has none', async () => {
+    const h = makeHarness();
+    await createWorkOrder(h, WO1);
+    await h.deps.accounts.save(account(A1));
+    await h.deps.bindings.save({ level: 'global' }, {
+      role: IMPLEMENTER,
+      accounts: [route(A1)],
+      thinking: { effort: 'high' },
+    });
+    await enqueueStage(h.deps, { id: WO1 });
+    expect((await queueAfter(h))[0]?.thinking).toEqual({ effort: 'high' });
+
+    await h.deps.bindings.save({ level: 'global' }, { role: IMPLEMENTER, accounts: [route(A1)] });
+    await enqueueStage(h.deps, { id: WO1 });
+    expect(await queueAfter(h)).toHaveLength(1);
+    expect((await queueAfter(h))[0]).not.toHaveProperty('thinking');
   });
 
   it('A-19: the given priority lands on the queue item, and the work order history is untouched', async () => {
@@ -318,7 +461,7 @@ describe('enqueueStage', () => {
 
   it('A-19: a work order whose next action is not start_run is rejected with not_ready', async () => {
     const h = makeHarness();
-    await createWorkOrder(h, WO1, WS, 'manual'); // first stage has no role → awaiting_human
+    await createWorkOrder(h, WO1, REPO, 'manual'); // first stage has no role → awaiting_human
 
     const result = await enqueueStage(h.deps, { id: WO1 });
 
@@ -373,13 +516,14 @@ describe('enqueueStage', () => {
     const h = makeHarness();
     h.definitions.seed({ kind: 'global' }, 'definitions.json', JSON.stringify({
       ...DEFINITIONS_BODY,
-      flows: [DEFINITIONS_BODY.flows[0]], // only 'standard' remains
-      workspace: { ...DEFINITIONS_BODY.workspace, flows: ['standard'] },
+      flows: DEFINITIONS_BODY.flows.filter((flow) => flow.id === 'standard'), // only 'standard' remains
+      repo: { ...DEFINITIONS_BODY.repo, flows: ['standard'] },
     }));
     const flowId = slugOf<'flow'>('manual');
     await h.deps.workOrders.create({
       id: WO1,
-      workspace: WS,
+      project: slugOf<'project'>('proj'),
+      repo: REPO,
       flow: flowId,
       title: 'fixture',
       createdAt: h.clock.now(),
@@ -453,7 +597,7 @@ describe('applyLimitDecision', () => {
     expect(items[0]).toStrictEqual({
       id: queued,
       workOrderId: WO1,
-      workspace: WS,
+      repo: REPO,
       stage: IMPLEMENT,
       route: { accountId: A1, model: 'model-x' },
       priority: 0,
@@ -483,7 +627,7 @@ describe('applyLimitDecision', () => {
     expect(items[0]).toStrictEqual({
       id: result.value.queued,
       workOrderId: WO1,
-      workspace: WS,
+      repo: REPO,
       stage: IMPLEMENT,
       route: { accountId: A1 },
       priority: 0,
@@ -510,6 +654,38 @@ describe('applyLimitDecision', () => {
     expect(await h.deps.runs.get(RUN1)).toMatchObject({ autoResumesUsed: 0 });
   });
 
+  it('A-65: a fallback to a different account sets handoffOf — the pack is the one continuation mechanism', async () => {
+    const h = makeHarness();
+    await createWorkOrder(h, WO1);
+    await createRun(h, RUN1, WO1, route(A1));
+
+    const result = await applyLimitDecision(h.deps, {
+      runId: RUN1,
+      decision: { kind: 'fallback', route: route(A2, 'model-y') },
+    });
+
+    expect(result.ok).toBe(true);
+    const items = await queueAfter(h);
+    // The target ACCOUNT differs — the rule keys on the account, not the provider: whether one
+    // CLI login sees another's sessions is not knowable, even on the same provider.
+    expect(items[0]?.handoffOf).toBe(RUN1);
+  });
+
+  it('A-65: a fallback to the same account sets no handoffOf — the stage may still resume natively', async () => {
+    const h = makeHarness();
+    await createWorkOrder(h, WO1);
+    await createRun(h, RUN1, WO1, route(A1));
+
+    const result = await applyLimitDecision(h.deps, {
+      runId: RUN1,
+      decision: { kind: 'fallback', route: route(A1, 'model-y') },
+    });
+
+    expect(result.ok).toBe(true);
+    const items = await queueAfter(h);
+    expect(items[0]?.handoffOf).toBeUndefined();
+  });
+
   it('A-17a: ask queues nothing; the work order stays limit_waiting for the cockpit', async () => {
     const h = makeHarness();
     await createWorkOrder(h, WO1);
@@ -528,7 +704,7 @@ describe('applyLimitDecision', () => {
 
     expect(result).toStrictEqual({ ok: true, value: {} });
     expect(await queueAfter(h)).toHaveLength(0);
-    const loaded = await h.deps.definitions.load(WS);
+    const loaded = await h.deps.definitions.load(REPO);
     if (!loaded.ok) throw new Error('definitions must load');
     const flow = loaded.value.flows.find((candidate) => candidate.id === slugOf<'flow'>('standard'));
     if (flow === undefined) throw new Error('flow must exist');
@@ -584,7 +760,7 @@ describe('dispatcherTick', () => {
     expect(await queueAfter(h)).toStrictEqual([]);
   });
 
-  it('A-20: three queued work orders in one workspace with perWorkspace 2 — two start, one waits workspace_limit', async () => {
+  it('A-20: three queued work orders in one repo with perRepo 2 — two start, one waits repo_limit', async () => {
     const h = makeHarness();
     await createWorkOrder(h, WO1);
     await createWorkOrder(h, WO2);
@@ -594,12 +770,12 @@ describe('dispatcherTick', () => {
     await h.deps.queue.put(queueItem(Q3, WO3, route(A1), { enqueuedAt: 1_200 }));
     const recorder = startRecorder();
 
-    const result = await dispatcherTick(h.deps, { limits: LIMITS({ perWorkspace: 2 }) }, recorder.callback);
+    const result = await dispatcherTick(h.deps, { limits: LIMITS({ perRepo: 2 }) }, recorder.callback);
 
     expect(result.decisions).toStrictEqual([
       { item: Q1, kind: 'start' },
       { item: Q2, kind: 'start' },
-      { item: Q3, kind: 'wait', reason: 'workspace_limit' },
+      { item: Q3, kind: 'wait', reason: 'repo_limit' },
     ] satisfies readonly DispatchDecision[]);
     expect(result.started).toStrictEqual([Q1, Q2]);
     expect(recorder.items.map((item) => item.id)).toStrictEqual([Q1, Q2]);
@@ -613,8 +789,9 @@ describe('dispatcherTick', () => {
     await createWorkOrder(h, WO2);
     await h.deps.accounts.save(account(A1, [{ scope: 'account_day', cap: { amountUsd: 10, warnPercent: 80 } }]));
     await h.deps.accounts.recordSpend({
+      project: slugOf<'project'>('proj'),
       accountId: A1,
-      workspace: WS,
+      repo: REPO,
       workOrderId: WO1,
       at: h.clock.now(),
       usd: 10,
@@ -637,8 +814,9 @@ describe('dispatcherTick', () => {
     await createWorkOrder(h, WO1);
     await h.deps.accounts.save(account(A1, [{ scope: 'account_day', cap: { amountUsd: 10, warnPercent: 80 } }]));
     await h.deps.accounts.recordSpend({
+      project: slugOf<'project'>('proj'),
       accountId: A1,
-      workspace: WS,
+      repo: REPO,
       workOrderId: WO1,
       at: h.clock.now(),
       usd: 8, // exactly the 80 % warn threshold
@@ -658,8 +836,9 @@ describe('dispatcherTick', () => {
     await createWorkOrder(atBoundary, WO1);
     await atBoundary.deps.accounts.save(capped);
     await atBoundary.deps.accounts.recordSpend({
+      project: slugOf<'project'>('proj'),
       accountId: A1,
-      workspace: WS,
+      repo: REPO,
       workOrderId: WO1,
       at: UTC_DAY_START,
       usd: 10,
@@ -672,8 +851,9 @@ describe('dispatcherTick', () => {
     await createWorkOrder(beforeBoundary, WO1);
     await beforeBoundary.deps.accounts.save(capped);
     await beforeBoundary.deps.accounts.recordSpend({
+      project: slugOf<'project'>('proj'),
       accountId: A1,
-      workspace: WS,
+      repo: REPO,
       workOrderId: WO1,
       at: PREV_DAY_NOON, // inside the month, outside the UTC day
       usd: 10,
@@ -683,6 +863,32 @@ describe('dispatcherTick', () => {
     expect(previous.decisions).toStrictEqual([{ item: Q1, kind: 'start' }]);
   });
 
+  it('A-20: the week cap window is the UTC ISO week of now, from Monday 00:00 UTC; the previous Sunday 23:59 does not count', async () => {
+    const capped = account(A1, [{ scope: 'account_week', cap: { amountUsd: 10, warnPercent: 80 } }]);
+    // MID_MONTH is Saturday 2026-09-26; its ISO week starts Monday 2026-09-21T00:00:00.000Z.
+    const MONDAY_START: EpochMs = 1_789_948_800_000;
+    const SUNDAY_LATE: EpochMs = MONDAY_START - 60_000; // 2026-09-20T23:59:00.000Z
+
+    const runWith = async (spentAt: EpochMs) => {
+      const h = makeHarness(MID_MONTH);
+      await createWorkOrder(h, WO1);
+      await h.deps.accounts.save(capped);
+      await h.deps.accounts.recordSpend({
+        project: slugOf<'project'>('proj'),
+        accountId: A1,
+        repo: REPO,
+        workOrderId: WO1,
+        at: spentAt,
+        usd: 10,
+      });
+      await h.deps.queue.put(queueItem(Q1, WO1, route(A1)));
+      return dispatcherTick(h.deps, { limits: LIMITS() }, startRecorder().callback);
+    };
+
+    expect((await runWith(MONDAY_START)).decisions).toStrictEqual([{ item: Q1, kind: 'wait', reason: 'budget' }]);
+    expect((await runWith(SUNDAY_LATE)).decisions).toStrictEqual([{ item: Q1, kind: 'start' }]);
+  });
+
   it('A-20: the month cap window is the UTC calendar month of now, inclusive of its first millisecond', async () => {
     const capped = account(A1, [{ scope: 'account_month', cap: { amountUsd: 10, warnPercent: 80 } }]);
 
@@ -690,8 +896,9 @@ describe('dispatcherTick', () => {
     await createWorkOrder(atBoundary, WO1);
     await atBoundary.deps.accounts.save(capped);
     await atBoundary.deps.accounts.recordSpend({
+      project: slugOf<'project'>('proj'),
       accountId: A1,
-      workspace: WS,
+      repo: REPO,
       workOrderId: WO1,
       at: UTC_MONTH_START,
       usd: 10,
@@ -704,8 +911,9 @@ describe('dispatcherTick', () => {
     await createWorkOrder(beforeBoundary, WO1);
     await beforeBoundary.deps.accounts.save(capped);
     await beforeBoundary.deps.accounts.recordSpend({
+      project: slugOf<'project'>('proj'),
       accountId: A1,
-      workspace: WS,
+      repo: REPO,
       workOrderId: WO1,
       at: PREV_MONTH_END, // the last millisecond of August
       usd: 10,
@@ -728,6 +936,88 @@ describe('dispatcherTick', () => {
     expect(result.decisions).toStrictEqual([{ item: Q1, kind: 'wait', reason: 'quota', until: 9_000 }]);
     expect(result.started).toStrictEqual([]);
     expect((await queueAfter(h)).map((item) => item.id)).toStrictEqual([Q1]);
+  });
+
+  it('A-20: an alias model is blocked by the exhausted pool of the id it resolves to', async () => {
+    const h = makeHarness();
+    await createWorkOrder(h, WO1);
+    await h.deps.accounts.save(account(A1));
+    await h.deps.accounts.savePools(A1, [opusPool(POOL1, A1)]);
+    await h.deps.accounts.saveMeter(meter(METER1, POOL1, 1_000));
+    await h.deps.queue.put(queueItem(Q1, WO1, route(A1, 'opus')));
+    const deps: AppDeps = {
+      ...h.deps,
+      modelCatalog: createFakeModelCatalog({ [A1]: [{ id: 'opus', source: 'live', thinking: 'unknown', billing: 'included', resolvedId: 'claude-opus-5-5', contextWindow: null }] }),
+    };
+
+    const result = await dispatcherTick(deps, { limits: LIMITS() }, startRecorder().callback);
+
+    expect(result.decisions).toStrictEqual([{ item: Q1, kind: 'wait', reason: 'quota', until: 9_000 }]);
+  });
+
+  it('A-20: without catalog knowledge an alias model keeps matching as itself and is not blocked', async () => {
+    const h = makeHarness();
+    await createWorkOrder(h, WO1);
+    await h.deps.accounts.save(account(A1));
+    await h.deps.accounts.savePools(A1, [opusPool(POOL1, A1)]);
+    await h.deps.accounts.saveMeter(meter(METER1, POOL1, 1_000));
+    await h.deps.queue.put(queueItem(Q1, WO1, route(A1, 'opus')));
+
+    const result = await dispatcherTick(h.deps, { limits: LIMITS() }, startRecorder().callback);
+
+    expect(result.decisions).toStrictEqual([{ item: Q1, kind: 'start' }]);
+  });
+
+  it('A-20: a catalog failure never blocks dispatch; the model stands in as the match id', async () => {
+    const h = makeHarness();
+    await createWorkOrder(h, WO1);
+    await h.deps.accounts.save(account(A1));
+    await h.deps.accounts.savePools(A1, [opusPool(POOL1, A1)]);
+    await h.deps.accounts.saveMeter(meter(METER1, POOL1, 1_000));
+    await h.deps.queue.put(queueItem(Q1, WO1, route(A1, 'opus')));
+    const deps: AppDeps = {
+      ...h.deps,
+      modelCatalog: { list: async () => Promise.reject(new Error('catalog down')) },
+    };
+
+    const result = await dispatcherTick(deps, { limits: LIMITS() }, startRecorder().callback);
+
+    expect(result.decisions).toStrictEqual([{ item: Q1, kind: 'start' }]);
+  });
+
+  it('A-20: an exhausted pool the model matches by its own id still blocks when the catalog fails', async () => {
+    const h = makeHarness();
+    await createWorkOrder(h, WO1);
+    await h.deps.accounts.save(account(A1));
+    await h.deps.accounts.savePools(A1, [opusPool(POOL1, A1)]);
+    await h.deps.accounts.saveMeter(meter(METER1, POOL1, 1_000));
+    await h.deps.queue.put(queueItem(Q1, WO1, route(A1, 'claude-opus-5-5')));
+    const deps: AppDeps = { ...h.deps, modelCatalog: { list: async () => Promise.reject(new Error('down')) } };
+
+    const result = await dispatcherTick(deps, { limits: LIMITS() }, startRecorder().callback);
+
+    expect(result.decisions).toStrictEqual([{ item: Q1, kind: 'wait', reason: 'quota', until: 9_000 }]);
+  });
+
+  it('A-20: an item whose account reserve blocks the window is not started and waits for quota', async () => {
+    const h = makeHarness();
+    await createWorkOrder(h, WO1);
+    await h.deps.accounts.save({ ...account(A1), reserve: { long: 0.3 } });
+    await h.deps.accounts.savePools(A1, [pool(POOL1, A1)]);
+    await h.deps.accounts.saveMeter({ ...meter(METER1, POOL1, 1_000), remaining: 0.25 }); // 25% left, 30% kept back
+    await h.deps.queue.put(queueItem(Q1, WO1, route(A1)));
+
+    const started = startRecorder();
+    const result = await dispatcherTick(h.deps, { limits: LIMITS() }, started.callback);
+
+    expect(result.decisions).toStrictEqual([{ item: Q1, kind: 'wait', reason: 'quota', until: 9_000 }]);
+    expect(result.started).toStrictEqual([]);
+    expect((await queueAfter(h)).map((item) => item.id)).toStrictEqual([Q1]);
+
+    // the same meter without a reserve starts
+    await h.deps.accounts.save(account(A1));
+    const free = await dispatcherTick(h.deps, { limits: LIMITS() }, startRecorder().callback);
+    expect(free.decisions).toStrictEqual([{ item: Q1, kind: 'start' }]);
   });
 
   it('A-20: unknown headroom does not block — the transport learns the truth on start', async () => {
@@ -767,22 +1057,22 @@ describe('dispatcherTick', () => {
     expect(result.started).toStrictEqual([]);
   });
 
-  it('A-20: running runs of another workspace do not consume this workspace limit', async () => {
+  it('A-20: running runs of another repo do not consume this repo limit', async () => {
     const h = makeHarness();
-    await createWorkOrder(h, WO1, WS);
+    await createWorkOrder(h, WO1, REPO);
     await createWorkOrder(h, WO4, OTHER);
     await createRun(h, RUN1, WO4, route(A2));
     await h.deps.queue.put(queueItem(Q1, WO1, route(A1)));
 
-    const result = await dispatcherTick(h.deps, { limits: LIMITS({ perWorkspace: 1 }) }, startRecorder().callback);
+    const result = await dispatcherTick(h.deps, { limits: LIMITS({ perRepo: 1 }) }, startRecorder().callback);
 
     expect(result.decisions).toStrictEqual([{ item: Q1, kind: 'start' }]);
     expect(result.started).toStrictEqual([Q1]);
   });
 
-  it('A-20: the global limit counts the runs of every workspace', async () => {
+  it('A-20: the global limit counts the runs of every repo', async () => {
     const h = makeHarness();
-    await createWorkOrder(h, WO1, WS);
+    await createWorkOrder(h, WO1, REPO);
     await createWorkOrder(h, WO4, OTHER);
     await createRun(h, RUN1, WO4, route(A2));
     await h.deps.queue.put(queueItem(Q1, WO1, route(A1)));
@@ -819,17 +1109,17 @@ describe('dispatcherTick', () => {
     await h.deps.queue.put(queueItem(Q1, WO1, route(A1), { priority: 0, enqueuedAt: 1_000 }));
     await h.deps.queue.put(queueItem(Q2, WO2, route(A2), { priority: 5, enqueuedAt: 2_000 }));
 
-    const result = await dispatcherTick(h.deps, { limits: LIMITS({ perWorkspace: 1 }) }, startRecorder().callback);
+    const result = await dispatcherTick(h.deps, { limits: LIMITS({ perRepo: 1 }) }, startRecorder().callback);
 
-    // higher priority is considered first and takes the only workspace slot
+    // higher priority is considered first and takes the only repo slot
     expect(result.decisions).toStrictEqual([
       { item: Q2, kind: 'start' },
-      { item: Q1, kind: 'wait', reason: 'workspace_limit' },
+      { item: Q1, kind: 'wait', reason: 'repo_limit' },
     ]);
     expect(result.started).toStrictEqual([Q2]);
   });
 
-  it('A-20: an active run whose work order no longer exists cannot be attributed to a workspace and counts nowhere', async () => {
+  it('A-20: an active run whose work order no longer exists cannot be attributed to a repo and counts nowhere', async () => {
     const h = makeHarness();
     await createRun(h, RUN1, WO4, route(A1)); // no work order record behind it
     await createWorkOrder(h, WO1);
@@ -838,6 +1128,94 @@ describe('dispatcherTick', () => {
     const result = await dispatcherTick(h.deps, { limits: LIMITS({ global: 1, perAccount: { [A1]: 1 } }) }, startRecorder().callback);
 
     expect(result.decisions).toStrictEqual([{ item: Q1, kind: 'start' }]);
+  });
+
+  it('R-48: a project ceiling at hard_stop holds every queued item of that project, even a repo with no spend, while another project still starts, and a running run stays', async () => {
+    const h = makeHarness();
+    const PROJ = slugOf<'project'>('proj');
+    const OTHER_PROJ = slugOf<'project'>('other-proj');
+    const FOREIGN: RepoSlug = slugOf('foreign');
+    await h.deps.projects.save({
+      id: PROJ,
+      name: 'Proj',
+      mainRepo: REPO,
+      repos: [REPO, OTHER],
+      budget: { amountUsd: 10, warnPercent: 80 },
+    });
+    await h.deps.projects.save({
+      id: OTHER_PROJ,
+      name: 'Other',
+      mainRepo: FOREIGN,
+      repos: [FOREIGN],
+      budget: { amountUsd: 10, warnPercent: 80 },
+    });
+    await createWorkOrder(h, WO1, REPO);
+    await createWorkOrder(h, WO2, OTHER);
+    await createWorkOrder(h, WO3, FOREIGN);
+    await createWorkOrder(h, WO4, OTHER);
+    // 6 + 4 spread over the two repos of PROJ; REPO itself spent nothing.
+    for (const [at, usd] of [[OTHER, 6], [OTHER, 4]] as const) {
+      await h.deps.accounts.recordSpend({
+        accountId: A1,
+        project: PROJ,
+        repo: at,
+        workOrderId: WO2,
+        at: h.clock.now(),
+        usd,
+      });
+    }
+    await createRun(h, RUN1, WO4, route(A1));
+    await h.deps.queue.put(queueItem(Q1, WO1, route(A1)));
+    await h.deps.queue.put({ ...queueItem(Q2, WO2, route(A1)), repo: OTHER });
+    await h.deps.queue.put({ ...queueItem(Q3, WO3, route(A1)), repo: FOREIGN });
+
+    const result = await dispatcherTick(h.deps, { limits: LIMITS() }, startRecorder().callback);
+
+    expect(result.decisions).toStrictEqual([
+      { item: Q1, kind: 'wait', reason: 'budget' },
+      { item: Q2, kind: 'wait', reason: 'budget' },
+      { item: Q3, kind: 'start' },
+    ]);
+    expect((await h.deps.runs.listActive()).map((run) => run.id)).toStrictEqual([RUN1]);
+  });
+
+  it('R-48: a repo limit at hard_stop holds only that repo — its sibling under the same project starts', async () => {
+    const h = makeHarness();
+    const PROJ = slugOf<'project'>('proj');
+    h.definitions.seed(
+      { kind: 'global' },
+      'definitions.json',
+      JSON.stringify({
+        ...DEFINITIONS_BODY,
+        repo: { ...DEFINITIONS_BODY.repo, budget: { amountUsd: 5, warnPercent: 80 } },
+      }),
+    );
+    await h.deps.projects.save({
+      id: PROJ,
+      name: 'Proj',
+      mainRepo: REPO,
+      repos: [REPO, OTHER],
+      budget: { amountUsd: 100, warnPercent: 80 },
+    });
+    await createWorkOrder(h, WO1, REPO);
+    await createWorkOrder(h, WO2, OTHER);
+    await h.deps.accounts.recordSpend({
+      accountId: A1,
+      project: PROJ,
+      repo: REPO,
+      workOrderId: WO1,
+      at: h.clock.now(),
+      usd: 5,
+    });
+    await h.deps.queue.put(queueItem(Q1, WO1, route(A1)));
+    await h.deps.queue.put({ ...queueItem(Q2, WO2, route(A1)), repo: OTHER });
+
+    const result = await dispatcherTick(h.deps, { limits: LIMITS() }, startRecorder().callback);
+
+    expect(result.decisions).toStrictEqual([
+      { item: Q1, kind: 'wait', reason: 'budget' },
+      { item: Q2, kind: 'start' },
+    ]);
   });
 
   it('A-20: an empty queue ticks with no decisions and no starts', async () => {

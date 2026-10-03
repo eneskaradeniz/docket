@@ -11,11 +11,22 @@ const usage = (over: {
   readonly inputTokens: number;
   readonly outputTokens: number;
   readonly cachedInputTokens?: number;
+  readonly reasoningTokens?: number;
   readonly costUsd?: number;
-  readonly costKind?: 'reported' | 'computed' | 'equivalent';
+  readonly costKind?: 'reported' | 'computed' | 'equivalent' | 'credits';
 }): AgentEvent => ({ type: 'usage', ...over });
 
 describe('foldRun', () => {
+  it('R-44: sums reasoning tokens, absent counts as 0', () => {
+    const summary = foldRun([
+      usage({ at: at(1), inputTokens: 1, outputTokens: 10, reasoningTokens: 4 }),
+      usage({ at: at(2), inputTokens: 1, outputTokens: 10 }),
+      usage({ at: at(3), inputTokens: 1, outputTokens: 10, reasoningTokens: 3 }),
+    ]);
+    expect(summary.reasoningTokens).toBe(7);
+    expect(foldRun([]).reasoningTokens).toBe(0);
+  });
+
   it('R-44: sums token counts across all usage events', () => {
     const events: readonly AgentEvent[] = [
       { type: 'session_started', at: at(0), sessionRef: 'sess-1' },
@@ -73,6 +84,7 @@ describe('foldRun', () => {
       inputTokens: 0,
       outputTokens: 0,
       cachedInputTokens: 0,
+      reasoningTokens: 0,
       costUsd: undefined,
       costKind: undefined,
       toolCalls: 0,
@@ -116,6 +128,16 @@ describe('foldRun', () => {
       usage({ at: at(1), inputTokens: 1, outputTokens: 1, costUsd: 0.2, costKind: 'computed' }),
     ];
     expect(foldRun(events).costKind).toBe('reported');
+  });
+
+  it('a credits-kind cost folds through with its credit amount', () => {
+    const events = [
+      usage({ at: at(0), inputTokens: 1, outputTokens: 1, costUsd: 2.5, costKind: 'credits' }),
+      usage({ at: at(1), inputTokens: 1, outputTokens: 1, costUsd: 1.5, costKind: 'credits' }),
+    ];
+    const summary = foldRun(events);
+    expect(summary.costUsd).toBeCloseTo(4);
+    expect(summary.costKind).toBe('credits');
   });
 
   it('a first costed event without a kind does not inherit a kind from later events', () => {

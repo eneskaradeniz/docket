@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { QueueItem } from '../../../domain/index';
-import { parseUlid, type AccountId, type StageSlug, type WorkOrderId, type WorkspaceSlug } from '../../../domain/index';
+import { parseUlid, type AccountId, type StageSlug, type WorkOrderId, type RepoSlug } from '../../../domain/index';
 
 import { createFakeQueueRepo } from './fake-queue-repo';
 
@@ -26,13 +26,13 @@ const accountIdOf = (s: string): AccountId => {
   return parsed.value;
 };
 
-const WS = 'acme' as WorkspaceSlug;
+const REPO = 'acme' as RepoSlug;
 const STAGE = 'implement' as StageSlug;
 
 const item = (id: string, priority = 0): QueueItem => ({
   id: queueIdOf(id),
   workOrderId: woIdOf(id),
-  workspace: WS,
+  repo: REPO,
   stage: STAGE,
   route: { accountId: accountIdOf(U1) },
   priority,

@@ -1,17 +1,32 @@
 // Audit-trail port — every state-changing use case appends one entry here.
-import type { AccountId, Actor, EpochMs, ProposalId, RoleSlug, RunId, Ulid, WorkOrderId } from '../../domain/index';
+import type {
+  AccountId,
+  Actor,
+  EpochMs,
+  ProjectSlug,
+  ProposalId,
+  RepoSlug,
+  RoleSlug,
+  RunId,
+  Ulid,
+  WorkOrderId,
+} from '../../domain/index';
 
 export type AuditAction =
   | 'work_order.opened' | 'work_order.blocked' | 'work_order.unblocked' | 'work_order.closed'
-  | 'run.started' | 'run.finished' | 'gate.decided' | 'permission.answered'
-  | 'proposal.created' | 'proposal.decided' | 'account.saved' | 'account.removed' | 'binding.saved';
+  | 'run.started' | 'run.finished' | 'run.handoff' | 'gate.decided' | 'permission.answered'
+  | 'proposal.created' | 'proposal.decided' | 'account.saved' | 'account.adopted' | 'account.removed' | 'binding.saved'
+  | 'account.consent.granted' | 'account.consent.revoked'
+  | 'project.attached' | 'repo.registered' | 'repo.unregistered';
 
 export type AuditSubject =
   | { readonly kind: 'work_order'; readonly id: WorkOrderId }
   | { readonly kind: 'run'; readonly id: RunId }
   | { readonly kind: 'proposal'; readonly id: ProposalId }
   | { readonly kind: 'account'; readonly id: AccountId }
-  | { readonly kind: 'binding'; readonly role: RoleSlug };
+  | { readonly kind: 'binding'; readonly role: RoleSlug }
+  | { readonly kind: 'project'; readonly id: ProjectSlug }
+  | { readonly kind: 'repo'; readonly id: RepoSlug };
 
 export interface AuditEntry {
   readonly id: Ulid<'audit'>;

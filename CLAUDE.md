@@ -31,8 +31,7 @@ ask; do not pick one yourself.
 5. **Before every commit:** `npm run typecheck && npm test && npm run check:boundaries` — all green.
 6. **v1 is reference only**, reached through the exact path an issue names:
    `git show v1-final:<path>`. Never restore v1 documents; never follow a v1 rule or ADR.
-7. **No third-party code.** Do not copy source code from other projects, and do not name them in
-   code or comments. Integrations are written from the CLI's or protocol's own documentation.
+7. **Reference projects.** Take only ideas and behaviour from other projects; write the code independently, under this repo's layer rules. Never copy source code. If a part cannot be solved without staying near-verbatim, stop and ask the operator. Never name another project in code, comments, documents, or the `NOTICE` file. Integrations are written from the CLI's or protocol's own documentation. The agent/provider-name restriction in Code rules applies to code and comments under `src/`; the README and product documents may name providers.
 8. **No new npm dependencies** unless the issue names them.
 9. Ambiguity → stop and ask on the issue. Never decide architecture.
 
@@ -43,6 +42,7 @@ ask; do not pick one yourself.
   inputs. Only import other modules through their `index.ts`, following the module dependency map in
   `docs/v2/domain.md`.
 - No `any`, no default exports, no non-null assertions (`!`) in v2 code. Prefer `readonly` types.
+- Corner radius only from the three tokens `rounded-control` (6px), `rounded-card` (8px), `rounded-panel` (12px), plus `rounded-full` for lamps and round badges — no other `rounded-*`, no hand-typed radius (U-23; a test enforces it).
 - Names: files `kebab-case.ts`; types `PascalCase`; functions and values `camelCase`; constants
   `UPPER_SNAKE_CASE`.
 - Comments explain *why*, never history. No issue numbers or dates in code comments.
@@ -69,6 +69,3 @@ ask; do not pick one yourself.
 ## CI
 - `npm run typecheck`, `npm test`, `npm run build`, `npm run check:boundaries` run on every PR and on
   pushes to `main`. `check:boundaries` runs the v1 checks and the v2 layer checks.
-
-## Do not read
-- `~/source/docket-arsiv/` — archived v1 memories. Stale by definition.

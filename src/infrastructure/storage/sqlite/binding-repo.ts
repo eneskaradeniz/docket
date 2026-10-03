@@ -1,19 +1,21 @@
 // SQLite-backed binding repository; one row per (level, scope_key, role).
 import type { BindingRepo, BindingScope } from '../../../application/index';
-import type { RoleBinding, WorkOrderId, WorkspaceSlug } from '../../../domain/index';
+import type { ProjectSlug, RoleBinding, WorkOrderId, RepoSlug } from '../../../domain/index';
 import type { DocketDb } from './database';
 
 /** Primary-key columns of the bindings table; `scope_key` is '' for the global level. */
 function bindingRow(scope: BindingScope): { readonly level: string; readonly scopeKey: string } {
   if (scope.level === 'global') return { level: 'global', scopeKey: '' };
-  if (scope.level === 'workspace') return { level: 'workspace', scopeKey: scope.workspace };
+  if (scope.level === 'project') return { level: 'project', scopeKey: scope.project };
+  if (scope.level === 'repo') return { level: 'repo', scopeKey: scope.repo };
   return { level: 'workOrder', scopeKey: scope.workOrderId };
 }
 
 /** Inverse of `bindingRow` for rows read back from the table; values were written by `bindingRow`. */
 function scopeOf(level: string, scopeKey: string): BindingScope {
   if (level === 'global') return { level: 'global' };
-  if (level === 'workspace') return { level: 'workspace', workspace: scopeKey as WorkspaceSlug };
+  if (level === 'project') return { level: 'project', project: scopeKey as ProjectSlug };
+  if (level === 'repo') return { level: 'repo', repo: scopeKey as RepoSlug };
   return { level: 'workOrder', workOrderId: scopeKey as WorkOrderId };
 }
 

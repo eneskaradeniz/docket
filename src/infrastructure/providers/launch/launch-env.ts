@@ -36,17 +36,46 @@ const BASE_ENV_ALLOWLIST: readonly string[] = [
 ];
 
 /** Non-credential, non-billing variables a provider documents for normal operation, beyond the
- * base set. No built-in CLI needs one today. A provider's config-dir variable is deliberately
- * never listed: the run-scoped value from the config writer replaces whatever the ambient
- * environment carries, so a stray value can never redirect a run into the user's own config tree. */
+ * base set. A provider whose config mechanism redirects to a run-scoped directory is deliberately
+ * never listed here: the config writer's value replaces whatever the ambient environment carries.
+ * A provider whose login lives in its own home (mechanism 'none') lists that home's variable, so
+ * an ambient override reaches the child exactly as the CLI itself would resolve it. */
 const PROVIDER_ENV_ALLOWLIST: Readonly<Record<string, readonly string[]>> = {
-  'claude-code': [],
-  codex: [],
+  // The CLI's own documented config-dir override: a machine login lives where it points, so the
+  // login probe and a run must read the same one.
+  'claude-code': ['CLAUDE_CONFIG_DIR'],
+  // The CLI's documented home (its --profile help names $CODEX_HOME), where auth.json lives: the
+  // login probe and a run must read the same one.
+  codex: ['CODEX_HOME'],
   agy: [],
-  gemini: [],
-  copilot: [],
+  // The CLI's documented home override ("override the directory where configuration and state
+  // files are stored"), the stored login among them: an ambient value is the machine's own
+  // relocation, so the probe and a run read the same one.
+  copilot: ['COPILOT_HOME'],
   cursor: [],
   opencode: [],
+  hermes: [],
+  kilo: [],
+  // The CLI's own home variable: the login probe and a run must read the same one.
+  'grok-build': ['GROK_HOME'],
+  atomcode: [],
+  reasonix: [],
+  // The CLI's own home variable, where its login lives (the definition leaves the variable unset,
+  // mechanism 'none'): the login state a run reads is the machine's own, so an ambient relocation
+  // survives — Docket never sets it.
+  vibe: ['VIBE_HOME'],
+  mimo: [],
+  // The CLI reads its credential from the environment variable the user's own settings name, so
+  // none is passed through here: an ambient key of another account never reaches a run.
+  qwen: [],
+  // The CLI's documented headless key is a credential-shaped variable, so it reaches a child only
+  // through the chosen account, never through the ambient environment.
+  kiro: [],
+  // The CLI's own home variable, where its login lives: the credentials-directory probe and a run
+  // must read the same one, so the machine's own relocation survives — Docket never sets it. The
+  // CLI's model variables (KIMI_MODEL_*) are not listed: an ambient model configuration of another
+  // account never reaches a run.
+  kimi: ['KIMI_CODE_HOME'],
 };
 
 /** Names that look like credentials. The match is deliberately broad: dropping a variable the

@@ -83,8 +83,8 @@ export function createSqliteAccountRepo(db: DocketDb): AccountRepo {
 
     recordSpend: async (entry): Promise<void> => {
       db.raw
-        .prepare('INSERT INTO spend (account_id, workspace, work_order_id, at, usd) VALUES (?, ?, ?, ?, ?)')
-        .run(entry.accountId, entry.workspace, entry.workOrderId, entry.at, entry.usd);
+        .prepare('INSERT INTO spend (account_id, project, repo, work_order_id, at, usd) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(entry.accountId, entry.project, entry.repo, entry.workOrderId, entry.at, entry.usd);
     },
 
     spend: async (filter): Promise<number> => {
@@ -95,9 +95,13 @@ export function createSqliteAccountRepo(db: DocketDb): AccountRepo {
         conditions.push('account_id = ?');
         params.push(filter.accountId);
       }
-      if (filter.workspace !== undefined) {
-        conditions.push('workspace = ?');
-        params.push(filter.workspace);
+      if (filter.project !== undefined) {
+        conditions.push('project = ?');
+        params.push(filter.project);
+      }
+      if (filter.repo !== undefined) {
+        conditions.push('repo = ?');
+        params.push(filter.repo);
       }
       if (filter.workOrderId !== undefined) {
         conditions.push('work_order_id = ?');

@@ -2,12 +2,19 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  CHECKPOINT_MIN_INTERVAL_MS,
+  decideOnLimit,
+  definitionsDigest,
   isUlid,
   parseSlug,
   parseUlid,
   RESUME_JITTER_MS,
+  ROLLING_NOTE_MAX_CHARS,
+  stageBrief,
   type AccountId,
   type AgentEvent,
+  type Billing,
+  type CatalogModel,
   type EpochMs,
   type LimitClass,
   type LimitPolicy,
@@ -23,30 +30,39 @@ import {
   type StageSlug,
   type Ulid,
   type WorkOrderId,
-  type WorkspaceSlug,
+  type RepoSlug,
 } from '../../domain/index';
 
-import type { AccountRecord, AgentTransport, AuditEntry, RunRecord, RunRequest, TransportError } from '../ports';
+import type { AccountRecord, AgentTransport, AuditEntry, CheckpointDiff, RunRecord, RunRequest, TransportError } from '../ports';
 import {
   createFakeAccountRepo,
+  createFakeCapabilityCatalog,
+  createFakeCheckpointCommitter,
   createFakeClock,
+  createFakeDefinitionStore,
   createFakeDeps,
   createFakeEventLog,
   createFakeIdGen,
+  createFakeInstructionFiles,
+  createFakeModelCatalog,
   createFakeRunRepo,
   createFakeTransport,
   createFakeTransportResolver,
   createFakeWorkOrderRepo,
   type FakeAccountRepo,
+  type FakeCheckpointCommitter,
   type FakeClock,
+  type FakeDefinitionStore,
   type FakeEventLog,
   type FakeIdGen,
+  type FakeRouteKind,
   type FakeRunRepo,
   type FakeTransport,
   type FakeTransportResolver,
   type FakeWorkOrderRepo,
 } from '../ports/fakes';
 
+import { grantSpendConsent, revokeSpendConsent } from '../use-cases';
 import { executeRun, type PermissionGate } from './run-executor';
 
 // --- fixtures ---------------------------------------------------------------------------------------
@@ -63,7 +79,7 @@ const ulidOf = <B extends string>(input: string): Ulid<B> => {
   return parsed.value;
 };
 
-const WS: WorkspaceSlug = slugOf('ws');
+const REPO: RepoSlug = slugOf('ws');
 const WORK_ORDER: WorkOrderId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FAV');
 const ACCOUNT: AccountId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FAA');
 const POOL: PoolId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FAB');
@@ -92,7 +108,7 @@ const CAPABILITY = {
 const ITEM: QueueItem = {
   id: ulidOf<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5FAD'),
   workOrderId: WORK_ORDER,
-  workspace: WS,
+  repo: REPO,
   stage: STAGE,
   route: { accountId: ACCOUNT },
   priority: 0,
@@ -103,13 +119,14 @@ const INPUT = {
   item: ITEM,
   role: ROLE,
   prompt: 'implement the stage',
-  cwd: `/wt/${WS}/${WORK_ORDER}`,
+  cwd: `/wt/${REPO}/${WORK_ORDER}`,
   capabilities: [CAPABILITY],
 };
 
 const WORK_ORDER_RECORD = {
   id: WORK_ORDER,
-  workspace: WS,
+  project: slugOf<'project'>('proj'),
+  repo: REPO,
   flow: slugOf<'flow'>('standard'),
   title: 'The work order',
   createdAt: T0,
@@ -212,6 +229,8 @@ interface Harness {
   readonly accounts: FakeAccountRepo;
   readonly transports: FakeTransportResolver;
   readonly transport: FakeTransport;
+  readonly checkpoints: FakeCheckpointCommitter;
+  readonly definitions: FakeDefinitionStore;
 }
 
 const harness = async (options: {
@@ -222,6 +241,12 @@ const harness = async (options: {
   readonly meters?: readonly Meter[];
   readonly priorRuns?: readonly RunRecord[];
   readonly withTransport?: boolean;
+  readonly models?: readonly CatalogModel[];
+  readonly routeKinds?: readonly FakeRouteKind[];
+  readonly defsJson?: string;
+  readonly files?: readonly { readonly name: string; readonly content: string }[];
+  readonly checkpointDiffs?: Readonly<Record<string, CheckpointDiff>>;
+  readonly checkpointBases?: Readonly<Record<string, string>>;
 } = {}): Promise<Harness> => {
   const clock = createFakeClock(T0);
   const ids = createFakeIdGen();
@@ -229,11 +254,31 @@ const harness = async (options: {
   const workOrders = createFakeWorkOrderRepo();
   const runs = createFakeRunRepo();
   const accounts = createFakeAccountRepo();
+  const checkpoints = createFakeCheckpointCommitter({
+    diffs: options.checkpointDiffs,
+    bases: options.checkpointBases,
+  });
   const transports = createFakeTransportResolver();
   const transport = createFakeTransport(options.script ?? [finished('completed')]);
   if (options.withTransport !== false) transports.register(ACCOUNT, transport);
 
-  const deps = createFakeDeps({ clock, ids, log, workOrders, runs, accounts, transports });
+  const definitions = createFakeDefinitionStore();
+  if (options.defsJson !== undefined) definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', options.defsJson);
+
+  const deps = createFakeDeps({
+    clock,
+    ids,
+    log,
+    workOrders,
+    runs,
+    accounts,
+    checkpoints,
+    transports,
+    definitions,
+    ...(options.files !== undefined ? { instructionFiles: createFakeInstructionFiles({ [INPUT.cwd]: options.files }) } : {}),
+    ...(options.models !== undefined ? { modelCatalog: createFakeModelCatalog({ [ACCOUNT]: options.models }) } : {}),
+    ...(options.routeKinds !== undefined ? { capabilities: createFakeCapabilityCatalog(options.routeKinds) } : {}),
+  });
 
   await workOrders.create({ ...WORK_ORDER_RECORD });
   if (options.withAccount !== false) await accounts.save(accountRecord(options.limitPolicy ?? 'wait_resume'));
@@ -241,7 +286,7 @@ const harness = async (options: {
   for (const meter of options.meters ?? []) await accounts.saveMeter(meter);
   for (const run of options.priorRuns ?? []) await runs.create(run);
 
-  return { deps, clock, ids, log, workOrders, runs, accounts, transports, transport };
+  return { deps, clock, ids, log, workOrders, runs, accounts, checkpoints, transports, transport, definitions };
 };
 
 type recordedAsk = { readonly runId: RunId; readonly ask: Extract<AgentEvent, { readonly type: 'permission_ask' }> };
@@ -356,6 +401,94 @@ describe('executeRun', () => {
         capabilities: [CAPABILITY],
       },
     ]);
+  });
+
+  describe('effort (A-46)', () => {
+    const LEVELS = { kind: 'levels', levels: ['low', 'medium', 'high'] } as const;
+    const entry = (id: string, extra: Partial<CatalogModel> = {}): CatalogModel => ({
+      id,
+      source: 'live',
+      contextWindow: null,
+      thinking: LEVELS,
+      billing: 'included',
+      ...extra,
+    });
+    const run = async (item: QueueItem, models: readonly CatalogModel[]) => {
+      const h = await harness({ models });
+      await executeRun(h.deps, permissionGate().permissions, { ...INPUT, item });
+      return h;
+    };
+
+    it('A-46: a pinned model resolves the choice on its own entry and records it on run.started', async () => {
+      const item: QueueItem = { ...ITEM, route: { accountId: ACCOUNT, model: 'm-1' }, thinking: { level: 'deep' } };
+      const h = await run(item, [entry('m-0', { isDefault: true, thinking: { kind: 'levels', levels: ['low'] } }), entry('m-1')]);
+      expect(h.transport.requests()[0]?.effort).toBe('high');
+      expect(auditShape(h.log.entries())[0]?.detail).toEqual({ effort: 'high' });
+    });
+
+    it('A-46: an unpinned route uses the isDefault entry; an absent choice is balanced', async () => {
+      const h = await run(ITEM, [entry('m-0'), entry('m-1', { isDefault: true, thinking: { kind: 'levels', levels: ['low', 'high'] } })]);
+      expect(h.transport.requests()[0]?.effort).toBe('low');
+    });
+
+    it('P-30: a model with thinking none offers no level — a deep choice sends no effort', async () => {
+      const item: QueueItem = { ...ITEM, route: { accountId: ACCOUNT, model: 'm-1' }, thinking: { level: 'deep' } };
+      const h = await run(item, [entry('m-1', { thinking: { kind: 'none' } })]);
+      expect(h.transport.requests()[0]).not.toHaveProperty('effort');
+    });
+
+    it('A-46: an unknown model or no default entry sends no effort and records no detail', async () => {
+      const pinned: QueueItem = { ...ITEM, route: { accountId: ACCOUNT, model: 'ghost' }, thinking: { level: 'deep' } };
+      const a = await run(pinned, [entry('m-1'), entry('ghost', { thinking: 'unknown' })]);
+      expect(a.transport.requests()[0]).not.toHaveProperty('effort');
+      expect(auditShape(a.log.entries())[0]?.detail).toBeUndefined();
+      const b = await run({ ...ITEM, thinking: { level: 'deep' } }, [entry('m-1')]);
+      expect(b.transport.requests()[0]).not.toHaveProperty('effort');
+    });
+  });
+
+  describe('tier model (A-47)', () => {
+    const LEVELS = { kind: 'levels', levels: ['low', 'medium', 'high'] } as const;
+    const entry = (id: string, tier: 'strong' | 'balanced' | 'fast', billing: CatalogModel['billing'] = 'included'): CatalogModel => ({
+      id,
+      source: 'live',
+      contextWindow: null,
+      thinking: LEVELS,
+      billing,
+      tier,
+    });
+    const run = async (item: QueueItem, models: readonly CatalogModel[]) => {
+      const h = await harness({ models });
+      await executeRun(h.deps, permissionGate().permissions, { ...INPUT, item });
+      return h;
+    };
+    const strong: QueueItem = { ...ITEM, tier: 'strong' };
+
+    it('A-47: an unpinned route with a tier runs the highest included model of that tier and records it', async () => {
+      const h = await run(strong, [entry('m-2', 'strong'), entry('m-10', 'strong'), entry('m-99', 'fast')]);
+      expect(h.transport.requests()[0]?.route).toEqual({ accountId: ACCOUNT, model: 'm-10' });
+      expect((await h.runs.listForWorkOrder(WORK_ORDER))[0]?.route).toEqual({ accountId: ACCOUNT, model: 'm-10' });
+      expect(auditShape(h.log.entries())[0]?.detail).toMatchObject({ model: 'm-10', tier: 'strong' });
+    });
+
+    it('A-47: the resolved model is the one the effort resolves on', async () => {
+      const models = [{ ...entry('m-1', 'strong'), thinking: { kind: 'levels', levels: ['low'] } } as CatalogModel];
+      const h = await run({ ...strong, thinking: { level: 'deep' } }, models);
+      expect(h.transport.requests()[0]?.effort).toBe('low');
+    });
+
+    it('A-47: no included model of the tier leaves the route unpinned and records no model', async () => {
+      const h = await run(strong, [entry('m-1', 'strong', 'metered'), entry('m-2', 'strong', 'unknown'), entry('m-3', 'fast')]);
+      expect(h.transport.requests()[0]?.route).toEqual({ accountId: ACCOUNT });
+      expect(auditShape(h.log.entries())[0]?.detail).toBeUndefined();
+    });
+
+    it('A-47: a pinned model is never replaced by the tier', async () => {
+      const pinned: QueueItem = { ...strong, route: { accountId: ACCOUNT, model: 'm-1' } };
+      const h = await run(pinned, [entry('m-1', 'fast'), entry('m-2', 'strong')]);
+      expect(h.transport.requests()[0]?.route).toEqual({ accountId: ACCOUNT, model: 'm-1' });
+      expect(auditShape(h.log.entries())[0]?.detail).not.toHaveProperty('tier');
+    });
   });
 
   it('A-15: the run record, run_started event and run.started audit are written before the transport starts', async () => {
@@ -509,7 +642,7 @@ describe('executeRun', () => {
     expect(gateResult.asked.length).toBe(1);
     expect(h.transport.answers()).toEqual([{ askId: 'ask-1', decision: 'allow' }]);
     expect((await h.accounts.meters(ACCOUNT)).length).toBe(1);
-    expect(await h.accounts.spend({ accountId: ACCOUNT, workspace: WS, workOrderId: WORK_ORDER, from: 0, to: T0 + 10_000 })).toBe(0.75);
+    expect(await h.accounts.spend({ accountId: ACCOUNT, repo: REPO, workOrderId: WORK_ORDER, from: 0, to: T0 + 10_000 })).toBe(0.75);
     expect(await h.workOrders.events(WORK_ORDER)).toEqual([
       { type: 'run_started', at: T0, runId: record.id, stage: STAGE, attempt: 1 },
       { type: 'run_finished', at: T0, runId: record.id, outcome: 'succeeded' },
@@ -619,14 +752,14 @@ describe('executeRun', () => {
     expect(isUlid(meter.poolId)).toBe(true);
   });
 
-  it('A-16: usage with a cost records spend for the run account, workspace and work order', async () => {
+  it('A-16: usage with a cost records spend for the run account, repo and work order', async () => {
     const h = await harness({ script: [usage(0.25), usage(1.5), usage(), finished('completed')] });
 
     await executeRun(h.deps, permissionGate().permissions, INPUT);
 
     const window = { from: 0, to: T0 + 10_000 };
-    expect(await h.accounts.spend({ accountId: ACCOUNT, workspace: WS, workOrderId: WORK_ORDER, ...window })).toBe(1.75);
-    expect(await h.accounts.spend({ workspace: slugOf<'workspace'>('elsewhere'), ...window })).toBe(0);
+    expect(await h.accounts.spend({ accountId: ACCOUNT, repo: REPO, workOrderId: WORK_ORDER, ...window })).toBe(1.75);
+    expect(await h.accounts.spend({ repo: slugOf<'repo'>('elsewhere'), ...window })).toBe(0);
   });
 
   it('A-16: a usage event without a cost records no spend', async () => {
@@ -699,8 +832,13 @@ describe('executeRun', () => {
 
   it('A-17: a hit on an account with no record has no policy to follow and asks', async () => {
     const h = await harness({ withAccount: false, script: [limitHit({ class: 'window_exhausted', resetsAt: at(60_000) })] });
+    // The account stays absent so the `?? 'ask'` fallback really fires; the route pins an
+    // included model so the spend-consent preflight does not refuse the run beforehand.
+    const input = { ...INPUT, item: { ...ITEM, route: { accountId: ACCOUNT, model: 'model-free' } } };
+    const models: readonly CatalogModel[] = [{ id: 'model-free', source: 'live', thinking: 'unknown', billing: 'included', contextWindow: null }];
+    const deps = { ...h.deps, modelCatalog: createFakeModelCatalog({ [ACCOUNT]: models }) };
 
-    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+    const outcome = await executeRun(deps, permissionGate().permissions, input);
 
     expect(outcome).toEqual({ kind: 'limit', decision: { kind: 'ask', reason: 'policy' } });
   });
@@ -762,6 +900,130 @@ describe('executeRun', () => {
       { type: 'run_started', at: T0, runId: record.id, stage: STAGE, attempt: 1 },
       { type: 'run_finished', at: T0, runId: record.id, outcome: 'failed' },
     ]);
+  });
+
+  // --- checkpoints (A-57 … A-59) -----------------------------------------------------------------
+
+  /** The fake transport rests at a permission_ask until it is answered, so the ask is the one
+   *  point in a scripted stream where the clock can move between two events. */
+  const gateAdvancingClock = (h: Harness, ms: number): PermissionGate => ({
+    onAsk: async () => {
+      h.clock.advance(ms);
+      return 'allow';
+    },
+  });
+
+  const secondToolResult = (ok: boolean): AgentEvent => ({ type: 'tool_result', at: at(3), id: 'tool-2', ok });
+
+  const commitSeqs = (h: Harness): readonly number[] => h.checkpoints.commitCalls().map((call) => call.seq);
+
+  it('A-57: the first tool_result commits, one inside the interval does not, and the terminal commit is never gated', async () => {
+    const h = await harness({
+      script: [toolCall(), toolResult(true), secondToolResult(true), finished('completed')],
+    });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    // The clock never moves: the first boundary commits (no previous commit), the second is
+    // inside CHECKPOINT_MIN_INTERVAL_MS, and finished commits regardless of the interval.
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect(commitSeqs(h)).toEqual([1, 2]);
+    const record = await theRun(h.runs);
+    expect(h.checkpoints.commitCalls().map((call) => call.runId)).toEqual([record.id, record.id]);
+  });
+
+  it('A-57: a tool_result after CHECKPOINT_MIN_INTERVAL_MS commits again (elapsed counted from the last commit)', async () => {
+    const h = await harness({
+      script: [toolResult(true), ask(), secondToolResult(true), finished('completed')],
+    });
+    // Exactly the interval, not one millisecond more: the boundary is >=, not >.
+    const permissions = gateAdvancingClock(h, CHECKPOINT_MIN_INTERVAL_MS);
+
+    const outcome = await executeRun(h.deps, permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect(commitSeqs(h)).toEqual([1, 2, 3]);
+  });
+
+  it('A-57: a tool_result just short of the interval stays gated', async () => {
+    const h = await harness({
+      script: [toolResult(true), ask(), secondToolResult(true), finished('completed')],
+    });
+    const permissions = gateAdvancingClock(h, CHECKPOINT_MIN_INTERVAL_MS - 1);
+
+    const outcome = await executeRun(h.deps, permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect(commitSeqs(h)).toEqual([1, 2]); // first boundary + terminal only
+  });
+
+  it('A-57: limit_hit and stream end are terminal commits too', async () => {
+    const limited = await harness({
+      script: [toolResult(true), limitHit({ class: 'window_exhausted', resetsAt: at(60_000) })],
+    });
+    const limitedOutcome = await executeRun(limited.deps, permissionGate().permissions, INPUT);
+    expect(limitedOutcome.kind).toBe('limit');
+    expect(commitSeqs(limited)).toEqual([1, 2]); // boundary + limit_hit, no clock move needed
+
+    const dried = await harness({ script: [text('working')] });
+    const driedOutcome = await executeRun(dried.deps, permissionGate().permissions, INPUT);
+    expect(driedOutcome).toEqual({ kind: 'finished', outcome: 'failed' });
+    expect(commitSeqs(dried)).toEqual([1]); // stream end is the only boundary the run reached
+  });
+
+  it('A-57: a clean tree is a no-op that never fails the run, and a failed commit does not either', async () => {
+    const clean = await harness({ script: [toolResult(true), finished('completed')] });
+    clean.checkpoints.markClean(INPUT.cwd);
+
+    const cleanOutcome = await executeRun(clean.deps, permissionGate().permissions, INPUT);
+
+    expect(cleanOutcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect(commitSeqs(clean)).toEqual([1, 2]); // the attempts happen; git arbitrates "nothing changed"
+    const record = await theRun(clean.runs);
+    expect(await clean.runs.stageBase(record.id)).toBeUndefined(); // no sha exists to record
+
+    const failing = await harness({ script: [toolResult(true), finished('completed')] });
+    failing.checkpoints.failNext(); // the boundary commit fails, the terminal one succeeds
+
+    const failingOutcome = await executeRun(failing.deps, permissionGate().permissions, INPUT);
+
+    expect(failingOutcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect((await theRun(failing.runs)).outcome).toBe('succeeded');
+  });
+
+  it('A-58: every checkpoint commit names only the work order worktree, never another path', async () => {
+    const h = await harness({ script: [toolResult(true), finished('completed')] });
+
+    await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    const calls = h.checkpoints.commitCalls();
+    expect(calls.length).toBeGreaterThan(0);
+    // The executor holds no other writer: whatever it commits goes to the worktree it was given
+    // (I-20's worktree), so the user checkout's tree, branch and index stay untouched.
+    expect(new Set(calls.map((call) => call.cwd))).toEqual(new Set([INPUT.cwd]));
+  });
+
+  it('A-59: the first changed commit of the run is saved as the stage base and later ones do not overwrite it', async () => {
+    const h = await harness({
+      script: [toolResult(true), ask(), secondToolResult(true), finished('completed')],
+    });
+    const permissions = gateAdvancingClock(h, CHECKPOINT_MIN_INTERVAL_MS);
+
+    await executeRun(h.deps, permissions, INPUT);
+
+    const record = await theRun(h.runs);
+    // Commits answer checkpoint-1, checkpoint-2, checkpoint-3; the pack diffs since the first.
+    expect(await h.runs.stageBase(record.id)).toBe('checkpoint-1');
+  });
+
+  it('A-59: a failed first commit still records the next changed one as the stage base', async () => {
+    const h = await harness({ script: [toolResult(true), finished('completed')] });
+    h.checkpoints.failNext(); // the boundary commit fails, so the terminal commit is the first sha
+
+    await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    const record = await theRun(h.runs);
+    expect(await h.runs.stageBase(record.id)).toBe('checkpoint-1');
   });
 
   it('P-22: a resume the transport accepts runs the resumed session unchanged (no fallback)', async () => {
@@ -974,5 +1236,425 @@ describe('executeRun', () => {
     expect(outcome.kind).toBe('transport_error');
     expect(changed).toBe(1);
     expect((await h.workOrders.events(WORK_ORDER)).map((event) => event.type)).toEqual(['run_started', 'run_finished']);
+  });
+});
+
+// --- spend consent (P-40) ---------------------------------------------------------------------------
+
+describe('executeRun — spend consent', () => {
+  const DAY_CAP: AccountRecord['caps'][number] = {
+    scope: 'account_day',
+    cap: { amountUsd: 5, warnPercent: 80 },
+  };
+  const catalogModel = (id: string, billing: Billing): CatalogModel => ({
+    id,
+    source: 'live',
+    contextWindow: null,
+    thinking: 'unknown',
+    billing,
+  });
+  const pinnedInput = (model: string) => ({ ...INPUT, item: { ...ITEM, route: { accountId: ACCOUNT, model } } });
+  const theAccount = async (h: Harness): Promise<AccountRecord> => {
+    const record = await h.accounts.get(ACCOUNT);
+    if (record === undefined) throw new Error('the account must exist');
+    return record;
+  };
+  const consentTo = async (h: Harness, model: string): Promise<void> => {
+    const granted = await grantSpendConsent(h.deps, {
+      accountId: ACCOUNT,
+      model,
+      cap: DAY_CAP,
+      actor: { kind: 'user', id: 'user-1', label: 'Operator' },
+    });
+    if (!granted.ok) throw new Error('the fixture grant must succeed');
+  };
+
+  it('P-40: an included model runs without consent and without a cap', async () => {
+    const h = await harness({ models: [catalogModel('model-x', 'included')] });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, pinnedInput('model-x'));
+
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect(h.transport.requests()).toHaveLength(1);
+  });
+
+  it('P-40: a metered model the account never consented to is refused with needs_spend_consent before anything is written', async () => {
+    const h = await harness({ models: [catalogModel('model-x', 'metered')] });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, pinnedInput('model-x'));
+
+    expect(outcome).toEqual({ kind: 'refused', error: 'needs_spend_consent' });
+    // No run record, no work-order event, no audit entry, no transport start: a refusal leaves
+    // every store exactly as it was.
+    expect(await h.runs.listForWorkOrder(WORK_ORDER)).toEqual([]);
+    expect(await h.workOrders.events(WORK_ORDER)).toEqual([]);
+    expect(h.log.entries()).toEqual([]);
+    expect(h.transport.requests()).toEqual([]);
+  });
+
+  it('P-40: an unknown-billing model is refused the same way as a metered one', async () => {
+    const h = await harness({ models: [catalogModel('model-x', 'unknown')] });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, pinnedInput('model-x'));
+
+    expect(outcome).toEqual({ kind: 'refused', error: 'needs_spend_consent' });
+    expect(h.transport.requests()).toEqual([]);
+  });
+
+  it('P-40: an unknown-billing model the account has no reading for yet runs only after its allowance pool exists', async () => {
+    const h = await harness({ models: [catalogModel('model-x', 'unknown')] });
+
+    // No quota reading exists, so the catalog answer stands: unknown asks for consent.
+    const before = await executeRun(h.deps, permissionGate().permissions, pinnedInput('model-x'));
+    expect(before).toEqual({ kind: 'refused', error: 'needs_spend_consent' });
+
+    // The usage report arrives with a bucket scoped to the model: the plan covers it, no consent.
+    await h.accounts.savePools(ACCOUNT, [
+      { id: POOL, accountId: ACCOUNT, label: 'model-x weekly', kind: 'allowance', appliesTo: [{ exact: 'model-x' }] },
+    ]);
+    const after = await executeRun(h.deps, permissionGate().permissions, pinnedInput('model-x'));
+    expect(after).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect(h.transport.requests()).toHaveLength(1);
+  });
+
+  it('P-40: a consented model without any spend cap on the account is still refused', async () => {
+    const h = await harness({ models: [catalogModel('model-x', 'metered')] });
+    await h.accounts.save({ ...(await theAccount(h)), consentedModels: ['model-x'], caps: [] });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, pinnedInput('model-x'));
+
+    expect(outcome).toEqual({ kind: 'refused', error: 'needs_spend_consent' });
+    expect(h.transport.requests()).toEqual([]);
+  });
+
+  it('P-40: a consented metered model with a spend cap runs', async () => {
+    const h = await harness({ models: [catalogModel('model-x', 'metered')] });
+    await h.accounts.save({ ...(await theAccount(h)), consentedModels: ['model-x'], caps: [DAY_CAP] });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, pinnedInput('model-x'));
+
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect(h.transport.requests()).toHaveLength(1);
+  });
+
+  it('P-40: a consented unknown-billing model with a cap runs; revoking the consent refuses the run again while the cap stays', async () => {
+    const h = await harness({ models: [catalogModel('model-x', 'unknown')] });
+    await consentTo(h, 'model-x');
+
+    const first = await executeRun(h.deps, permissionGate().permissions, pinnedInput('model-x'));
+    expect(first).toEqual({ kind: 'finished', outcome: 'succeeded' });
+
+    const revoked = await revokeSpendConsent(h.deps, {
+      accountId: ACCOUNT,
+      model: 'model-x',
+      actor: { kind: 'user', id: 'user-1', label: 'Operator' },
+    });
+    expect(revoked).toEqual({ ok: true, value: undefined });
+
+    const second = await executeRun(h.deps, permissionGate().permissions, pinnedInput('model-x'));
+    expect(second).toEqual({ kind: 'refused', error: 'needs_spend_consent' });
+    expect(await theAccount(h)).toMatchObject({ consentedModels: [], caps: [DAY_CAP] });
+  });
+
+  it('P-40: a model the catalog does not list is unknown — refused without consent, allowed with consent and a cap', async () => {
+    const h = await harness({ models: [catalogModel('model-other', 'included')] });
+
+    const refused = await executeRun(h.deps, permissionGate().permissions, pinnedInput('model-x'));
+    expect(refused).toEqual({ kind: 'refused', error: 'needs_spend_consent' });
+
+    await consentTo(h, 'model-x');
+    const allowed = await executeRun(h.deps, permissionGate().permissions, pinnedInput('model-x'));
+    expect(allowed).toEqual({ kind: 'finished', outcome: 'succeeded' });
+  });
+
+  it('P-40: an unpinned run on an api_key account without consent and a cap is refused', async () => {
+    const h = await harness();
+    await h.accounts.save({ ...(await theAccount(h)), authMode: 'api_key' });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'refused', error: 'needs_spend_consent' });
+    expect(h.transport.requests()).toEqual([]);
+  });
+
+  it('P-40: an unpinned run on an api_key account runs with the account-level consent marker and a cap', async () => {
+    const h = await harness();
+    await h.accounts.save({ ...(await theAccount(h)), authMode: 'api_key', consentedModels: ['*'], caps: [DAY_CAP] });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect(h.transport.requests()).toHaveLength(1);
+  });
+
+  it('P-40: an unpinned run on a subscription account runs without consent', async () => {
+    const h = await harness({ models: [catalogModel('model-x', 'metered')] });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect(h.transport.requests()).toHaveLength(1);
+  });
+
+  it('P-40: an unpinned run on a byok account without consent is refused', async () => {
+    const h = await harness();
+    await h.accounts.save({ ...(await theAccount(h)), authMode: 'byok' });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'refused', error: 'needs_spend_consent' });
+    expect(h.transport.requests()).toEqual([]);
+  });
+
+  it('P-40: an unpinned run on a cloud account without consent is refused', async () => {
+    const h = await harness();
+    await h.accounts.save({ ...(await theAccount(h)), authMode: 'cloud' });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'refused', error: 'needs_spend_consent' });
+    expect(h.transport.requests()).toEqual([]);
+  });
+
+  it('P-40: an unpinned run on a route kind that fixes defaultBilling metered is refused', async () => {
+    const h = await harness({
+      routeKinds: [{ id: 'route-metered-default', provider: 'provider-x', authMode: 'subscription', defaultBilling: 'metered' }],
+    });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'refused', error: 'needs_spend_consent' });
+    expect(h.transport.requests()).toEqual([]);
+  });
+});
+
+// --- rolling note, handoff runs, definitionsRev (A-15/A-60/A-64, P-46) ------------------------------
+
+// Definitions that resolve the fixture work order (flow "standard", stage "implement", role
+// "implementer") — the shape executeRun digests and buildHandoff recomputes.
+const DEFS_JSON = JSON.stringify({
+  roles: [
+    {
+      id: ROLE.id,
+      name: ROLE.name,
+      instructions: ROLE.instructions,
+      writeScope: ROLE.writeScope,
+      capabilities: [],
+      active: true,
+    },
+  ],
+  flows: [{ id: 'standard', name: 'Standard', stages: [{ id: STAGE, name: 'Implement', role: ROLE.id, exit: [] }] }],
+  capabilities: [],
+  repo: {
+    id: REPO,
+    name: 'WS',
+    flows: ['standard'],
+    defaultFlow: 'standard',
+    commandSets: {},
+    roleOverrides: [],
+    docsRoot: 'docs',
+    testGlobs: [],
+  },
+});
+
+/** The brief over DEFS_JSON — derived from the loaded store, never restated (A-53's precedent). */
+const expectedBrief = async (h: Harness): Promise<string> => {
+  const loaded = await h.definitions.load(REPO);
+  if (!loaded.ok) throw new Error('fixture definitions must load');
+  const flowDef = loaded.value.flows.find((candidate) => candidate.id === slugOf<'flow'>('standard'));
+  const stageDef = flowDef?.stages.find((candidate) => candidate.id === STAGE);
+  const roleDef = loaded.value.roles.find((candidate) => candidate.id === ROLE.id);
+  if (flowDef === undefined || stageDef === undefined || roleDef === undefined) {
+    throw new Error('fixture flow, stage or role missing');
+  }
+  return stageBrief(flowDef, stageDef, roleDef, { id: WORK_ORDER, title: WORK_ORDER_RECORD.title });
+};
+
+const HANDOFF_ROUTE_KINDS: readonly FakeRouteKind[] = [
+  // The fixture account's provider reads AGENTS.md natively, so CLAUDE.md must be inlined — the
+  // §7-leg-2 shape at miniature. The second kind only widens the registry union so CLAUDE.md is
+  // an inline candidate at all (another provider reads it natively).
+  { id: 'rk-x', provider: 'provider-x', authMode: 'subscription', instructionFiles: ['AGENTS.md'] },
+  { id: 'rk-other', provider: 'prov-other', authMode: 'subscription', instructionFiles: ['CLAUDE.md'] },
+];
+const HANDOFF_FILES = [
+  { name: 'CLAUDE.md', content: '# Repo rules\n\nCheck the acceptance criteria first.' },
+  { name: 'AGENTS.md', content: '# Agent guide' },
+];
+
+/** A failed first leg on the fixture account: outcome limit, a session the continuation must
+ *  never resume, stored events, a rolling note and a stage base the pack diffs from. */
+const seedFailedLeg = async (h: Harness): Promise<void> => {
+  await h.runs.create(
+    priorRun({
+      outcome: 'limit',
+      sessionRef: 'sess-first-leg',
+    }),
+  );
+  for (const event of [
+    { type: 'session_started', at: at(0), sessionRef: 'sess-first-leg' } as const,
+    { type: 'text', at: at(1), delta: 'leg one narration' } as const,
+    { type: 'tool_call', at: at(2), id: 'c1', name: 'Edit', target: 'src/a.ts' } as const,
+    { type: 'tool_result', at: at(3), id: 'c1', ok: true } as const,
+  ]) {
+    await h.runs.appendEvents(PRIOR_RUN, [event]);
+  }
+  await h.runs.saveHandoffNote(PRIOR_RUN, { text: 'leg one summary tail', capped: false });
+  await h.runs.saveStageBase(PRIOR_RUN, 'sha-stage-base');
+};
+
+describe('executeRun — rolling note and handoff runs', () => {
+  it('A-15: the run record carries definitionsRev — the digest of the Docket layers the agent was given', async () => {
+    const h = await harness({ defsJson: DEFS_JSON });
+    const brief = await expectedBrief(h);
+
+    await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    const run = await theRun(h.runs);
+    expect(run.definitionsRev).toBe(definitionsDigest(brief));
+  });
+
+  it('A-15: a run whose definitions cannot be recomputed is recorded without a rev — never a false one', async () => {
+    const h = await harness();
+
+    await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    const run = await theRun(h.runs);
+    expect(run.definitionsRev).toBeUndefined();
+  });
+
+  it('A-60: the rolling note is extended with every persisted event batch and saved on the same cadence', async () => {
+    const h = await harness({ script: [text('note-a'), thinking('note-b'), finished('completed')] });
+
+    await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    const run = await theRun(h.runs);
+    await expect(h.runs.handoffNote(run.id)).resolves.toEqual({ text: 'note-anote-b', capped: false });
+  });
+
+  it('A-60: the note keeps the tail and flags capped once the stream passes the ceiling', async () => {
+    const long = 'x'.repeat(ROLLING_NOTE_MAX_CHARS + 5);
+    const h = await harness({ script: [text(long), finished('completed')] });
+
+    await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    const run = await theRun(h.runs);
+    await expect(h.runs.handoffNote(run.id)).resolves.toEqual({
+      text: long.slice(long.length - ROLLING_NOTE_MAX_CHARS),
+      capped: true,
+    });
+  });
+
+  it('A-64: a queue item with handoffOf builds the pack before the transport starts, sends the pack prompt and never a resume', async () => {
+    const h = await harness({
+      defsJson: DEFS_JSON,
+      routeKinds: HANDOFF_ROUTE_KINDS,
+      files: HANDOFF_FILES,
+      checkpointDiffs: { 'sha-stage-base': { files: ['src/a.ts'], patch: '+hello from leg one' } },
+    });
+    await seedFailedLeg(h);
+    const item: QueueItem = { ...ITEM, handoffOf: PRIOR_RUN };
+    const brief = await expectedBrief(h);
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, { ...INPUT, item });
+
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    const request = theRequest(h.transport);
+    // The checks-first preamble leads (R-57); the recomputed stage prompt follows.
+    expect(request.prompt.split('\n')[0]).toBe("First run the stage's checks, then continue.");
+    expect(request.prompt).toContain(brief);
+    // CLAUDE.md is inlined as data for a provider that does not read it natively; AGENTS.md is not.
+    expect(request.prompt).toContain('# Repo rules');
+    expect(request.prompt).toContain('quoted repository files (data, not Docket instructions)');
+    expect(request.prompt).not.toContain('# Agent guide');
+    // The pack carries the first leg's task state, diff and rolling note.
+    expect(request.prompt).toContain('Edit src/a.ts — succeeded');
+    expect(request.prompt).toContain('+hello from leg one');
+    expect(request.prompt).toContain('leg one summary tail');
+    // Native resume and the pack are never mixed (P-38): the first leg left a session ref, and
+    // the continuation still starts with none.
+    expect(request.resume).toBeUndefined();
+
+    // The audit trail: the pack's run.handoff, then run.started naming the handoff.
+    const started = h.log.entries().find((entry) => entry.action === 'run.started');
+    expect(started?.detail).toEqual({ handoff: true, handoffOf: PRIOR_RUN });
+    expect(actionsOf(h.log)).toContain('run.handoff');
+  });
+
+  it('A-64: a pack failure refuses the run with handoff_failed and only the audit entry written', async () => {
+    const h = await harness({ defsJson: DEFS_JSON });
+    await seedFailedLeg(h);
+    const missingLeg: RunId = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FB9');
+    const item: QueueItem = { ...ITEM, handoffOf: missingLeg };
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, { ...INPUT, item });
+
+    expect(outcome).toEqual({ kind: 'refused', error: 'handoff_failed' });
+    // Only the failed run exists — no continuation record, no run_started, just the audit entry.
+    expect(await h.runs.listForWorkOrder(WORK_ORDER)).toHaveLength(1);
+    expect(await h.workOrders.events(WORK_ORDER)).toEqual([]);
+    expect(actionsOf(h.log)).toEqual(['run.handoff']);
+    expect(h.transport.requests()).toEqual([]);
+  });
+
+  it('P-46: a handoff continuation on unknown billing without consent and a cap is refused by the same preflight as every other run', async () => {
+    const h = await harness({
+      defsJson: DEFS_JSON,
+      models: [
+        {
+          id: 'model-u',
+          displayName: 'U',
+          source: 'bundled',
+          thinking: 'unknown',
+          billing: 'unknown',
+          contextWindow: null,
+        },
+      ],
+    });
+    await seedFailedLeg(h);
+    const item: QueueItem = { ...ITEM, handoffOf: PRIOR_RUN, route: { accountId: ACCOUNT, model: 'model-u' } };
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, { ...INPUT, item });
+
+    expect(outcome).toEqual({ kind: 'refused', error: 'needs_spend_consent' });
+    // The preflight precedes the pack: no run.handoff entry, no run, nothing started.
+    expect(actionsOf(h.log)).toEqual([]);
+    expect(await h.runs.listForWorkOrder(WORK_ORDER)).toHaveLength(1);
+    expect(h.transport.requests()).toEqual([]);
+  });
+
+  it('P-46: an automatic fallback skips an unknown-billing candidate exactly like a metered one', async () => {
+    const accountB: AccountId = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FBA');
+    const hit = { accountId: ACCOUNT, at: T0, class: 'fair_use' as LimitClass, remedies: ['wait'] as const };
+    const ctxOf = (
+      fallbackAccounts: readonly { readonly route: { readonly accountId: AccountId }; readonly billing: Billing; readonly consented: boolean }[],
+    ) => ({
+      policy: 'fallback_account' as LimitPolicy,
+      autoResumesUsed: 0,
+      maxAutoResumes: 3,
+      alternativePools: [],
+      fallbackAccounts,
+      now: T0,
+    });
+
+    // Unknown and metered are skipped alike; the included candidate is the one the switch takes.
+    const included = { route: { accountId: accountB }, billing: 'included' as Billing, consented: false };
+    expect(
+      decideOnLimit(hit, ctxOf([{ route: { accountId: accountB }, billing: 'unknown', consented: false }, included])),
+    ).toEqual({ kind: 'fallback', route: { accountId: accountB } });
+    expect(
+      decideOnLimit(hit, ctxOf([{ route: { accountId: accountB }, billing: 'metered', consented: false }, included])),
+    ).toEqual({ kind: 'fallback', route: { accountId: accountB } });
+
+    // Alone, each lands on the same billing-boundary ask — the consent that would unblock it is
+    // the user's to give (P-40: the pack changes the provider, never the money boundary).
+    expect(decideOnLimit(hit, ctxOf([{ route: { accountId: accountB }, billing: 'unknown', consented: false }]))).toEqual({
+      kind: 'ask',
+      reason: 'billing_boundary',
+    });
+    expect(decideOnLimit(hit, ctxOf([{ route: { accountId: accountB }, billing: 'metered', consented: false }]))).toEqual({
+      kind: 'ask',
+      reason: 'billing_boundary',
+    });
   });
 });

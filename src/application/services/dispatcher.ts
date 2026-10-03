@@ -4,6 +4,7 @@
 // the snapshot through ports and writes the outcomes back.
 import type {
   AccountId,
+  CatalogModel,
   AccountRoute,
   DispatchDecision,
   DispatchLimits,
@@ -13,16 +14,20 @@ import type {
   LimitDecision,
   QueueItem,
   QueueItemId,
+  QuotaReserve,
   Result,
   RunId,
   RunningRun,
   ScopedSpend,
   SpendStatus,
   WorkOrderId,
+  StageSlug,
+  ChainEntry,
 } from '../../domain/index';
-import { combinedSpendStatus, decideDispatch, deriveWorkOrderState, err, headroom, nextAction, ok } from '../../domain/index';
+import { combinedSpendStatus, decideDispatch, deriveWorkOrderState, err, headroom, nextAction, ok, orderForReview, stageRouting } from '../../domain/index';
 
-import type { AccountRecord, AppDeps } from '../ports/index';
+import { catalogOrEmpty, matchIdFor } from './match-id';
+import type { AccountRecord, AppDeps, RunRecord } from '../ports/index';
 import { resolveRoute, type RouteError } from '../use-cases/index';
 
 export interface DispatcherConfig {
@@ -64,6 +69,12 @@ const daysFromCivilMonth = (year: number, month: number): number => {
 
 const startOfUtcDay = (at: EpochMs): EpochMs => Math.floor(at / MS_PER_DAY) * MS_PER_DAY;
 
+/** Monday 00:00 UTC of the ISO week; the epoch day 0 is a Thursday, hence the +3 shift. */
+const startOfUtcIsoWeek = (at: EpochMs): EpochMs => {
+  const days = Math.floor(at / MS_PER_DAY);
+  return (Math.floor((days + 3) / 7) * 7 - 3) * MS_PER_DAY;
+};
+
 const startOfUtcMonth = (at: EpochMs): EpochMs => {
   const { year, month } = civilFromDays(Math.floor(at / MS_PER_DAY));
   return daysFromCivilMonth(year, month) * MS_PER_DAY;
@@ -76,22 +87,26 @@ const startOfNextUtcMonth = (at: EpochMs): EpochMs => {
 
 /** Both bounds inclusive: the spend port's window is `[from, to]`, so a boundary entry counts. */
 const spendWindow = (
-  scope: 'account_day' | 'account_month',
+  scope: 'account_day' | 'account_week' | 'account_month',
   now: EpochMs,
-): { readonly from: EpochMs; readonly to: EpochMs } =>
-  scope === 'account_day'
-    ? { from: startOfUtcDay(now), to: startOfUtcDay(now) + MS_PER_DAY - 1 }
-    : { from: startOfUtcMonth(now), to: startOfNextUtcMonth(now) - 1 };
+): { readonly from: EpochMs; readonly to: EpochMs } => {
+  if (scope === 'account_day') return { from: startOfUtcDay(now), to: startOfUtcDay(now) + MS_PER_DAY - 1 };
+  if (scope === 'account_week') {
+    const from = startOfUtcIsoWeek(now);
+    return { from, to: from + 7 * MS_PER_DAY - 1 };
+  }
+  return { from: startOfUtcMonth(now), to: startOfNextUtcMonth(now) - 1 };
+};
 
 export async function dispatcherTick(
-  deps: Pick<AppDeps, 'clock' | 'queue' | 'runs' | 'accounts' | 'workOrders'>,
+  deps: Pick<AppDeps, 'clock' | 'queue' | 'runs' | 'accounts' | 'workOrders' | 'definitions' | 'projects' | 'modelCatalog'>,
   config: DispatcherConfig,
   start: (item: QueueItem) => void,
 ): Promise<TickResult> {
   const now = deps.clock.now();
   const queue = await deps.queue.list();
 
-  // The join with the work orders names each run's workspace; a run whose work order is gone
+  // The join with the work orders names each run's repo; a run whose work order is gone
   // cannot be attributed and therefore takes part in no limit.
   const running: RunningRun[] = [];
   for (const run of await deps.runs.listActive()) {
@@ -99,7 +114,7 @@ export async function dispatcherTick(
     if (workOrder === undefined) continue;
     running.push({
       workOrderId: run.workOrderId,
-      workspace: workOrder.workspace,
+      repo: workOrder.repo,
       accountId: run.route.accountId,
     });
   }
@@ -110,11 +125,29 @@ export async function dispatcherTick(
     const record = await deps.accounts.get(accountId);
     return record === undefined ? [] : record.caps;
   };
+  const reserveOf = async (accountId: AccountId): Promise<QuotaReserve | undefined> =>
+    (await deps.accounts.get(accountId))?.reserve;
+
+  const catalogs = new Map<AccountId, readonly CatalogModel[]>();
+  const catalogOf = async (accountId: AccountId): Promise<readonly CatalogModel[]> => {
+    const known = catalogs.get(accountId);
+    if (known !== undefined) return known;
+    const listed = await catalogOrEmpty(() => deps.modelCatalog.list(accountId));
+    catalogs.set(accountId, listed);
+    return listed;
+  };
 
   const headroomByItem: Record<string, Headroom> = {};
   const spendByItem: Record<string, SpendStatus> = {};
   for (const item of queue) {
-    headroomByItem[item.id] = headroom(pools, meters, item.route.accountId, item.route.model ?? '', now);
+    headroomByItem[item.id] = headroom(
+      pools,
+      meters,
+      item.route.accountId,
+      matchIdFor(await catalogOf(item.route.accountId), item.route.model),
+      now,
+      await reserveOf(item.route.accountId),
+    );
 
     const scoped: ScopedSpend[] = [];
     for (const cap of await capsOf(item.route.accountId)) {
@@ -125,6 +158,22 @@ export async function dispatcherTick(
         to: window.to,
       });
       scoped.push({ scope: cap.scope, observedUsd, cap: cap.cap });
+    }
+
+    // Repo limit first, then project ceiling: the order decides which scope a tie reports (R-32).
+    // Both read spend across every account, and the ceiling across every repo of the project, so
+    // a repo with no spend of its own is still held once the ceiling is used up.
+    const month = spendWindow('account_month', now);
+    const loaded = await deps.definitions.load(item.repo);
+    const repoBudget = loaded.ok ? loaded.value.repo?.budget : undefined;
+    if (repoBudget !== undefined) {
+      const observedUsd = await deps.accounts.spend({ repo: item.repo, from: month.from, to: month.to });
+      scoped.push({ scope: 'repo_month', observedUsd, cap: repoBudget });
+    }
+    const project = await deps.projects.projectOfRepo(item.repo);
+    if (project?.budget !== undefined) {
+      const observedUsd = await deps.accounts.spend({ project: project.id, from: month.from, to: month.to });
+      scoped.push({ scope: 'project_month', observedUsd, cap: project.budget });
     }
     spendByItem[item.id] = combinedSpendStatus(scoped).status;
   }
@@ -178,12 +227,18 @@ export async function applyLimitDecision(
   await deps.queue.put({
     id: queued,
     workOrderId: run.workOrderId,
-    workspace: workOrder.workspace,
+    repo: workOrder.repo,
     stage: run.stage,
     route,
     priority: 0,
     enqueuedAt: deps.clock.now(),
     ...(input.decision.kind === 'schedule_resume' ? { notBefore: input.decision.at } : {}),
+    // A-65: the pack rule keys on the ACCOUNT, not the provider — a second account of the same
+    // provider is a different identity directory, so native resume cannot be assumed to see the
+    // earlier history and the handoff pack is the one continuation mechanism.
+    ...(input.decision.kind === 'fallback' && input.decision.route.accountId !== run.route.accountId
+      ? { handoffOf: run.id }
+      : {}),
   });
 
   // A scheduled resume is the one decision that spends one of the run's auto-resumes.
@@ -194,13 +249,13 @@ export async function applyLimitDecision(
 }
 
 export async function enqueueStage(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'queue' | 'workOrders' | 'definitions' | 'bindings' | 'accounts'>,
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'queue' | 'workOrders' | 'definitions' | 'bindings' | 'accounts' | 'projects' | 'runs'>,
   input: { readonly id: WorkOrderId; readonly priority?: number },
 ): Promise<Result<QueueItemId, 'not_found' | 'not_ready' | RouteError | 'definitions_invalid'>> {
   const record = await deps.workOrders.get(input.id);
   if (record === undefined) return err('not_found');
 
-  const loaded = await deps.definitions.load(record.workspace);
+  const loaded = await deps.definitions.load(record.repo);
   if (!loaded.ok) return err('definitions_invalid');
   const flow = loaded.value.flows.find((candidate) => candidate.id === record.flow);
   // Without the flow the state machine has nothing to say, so `start_run` is unreachable.
@@ -210,8 +265,30 @@ export async function enqueueStage(
   const next = nextAction(flow, state);
   if (next.kind !== 'start_run') return err('not_ready');
 
-  const routed = await resolveRoute(deps, { workspace: record.workspace, workOrderId: input.id, role: next.role });
+  const routed = await resolveRoute(deps, { repo: record.repo, workOrderId: input.id, role: next.role });
   if (!routed.ok) return routed;
+
+  const stageDef = flow.stages.find((candidate) => candidate.id === next.stage);
+  const routing = stageDef === undefined ? {} : stageRouting(stageDef, routed.value.binding);
+
+  // A review stage prefers an account on another provider than the one that wrote the work.
+  let chain: readonly AccountRoute[] = routed.value.chain;
+  let sameProviderReview = false;
+  if (stageDef?.reviewOf !== undefined) {
+    const reviewed = await lastSucceededRun(deps, input.id, stageDef.reviewOf);
+    const reviewedProvider =
+      reviewed === undefined ? undefined : (await deps.accounts.get(reviewed.route.accountId))?.provider;
+    const entries: ChainEntry[] = [];
+    for (const route of chain) {
+      const provider = (await deps.accounts.get(route.accountId))?.provider;
+      if (provider !== undefined) entries.push({ route, provider });
+    }
+    const ordered = orderForReview(entries, reviewedProvider);
+    chain = ordered.chain.map((entry) => entry.route);
+    sameProviderReview = ordered.sameProvider;
+  }
+  const first = chain[0];
+  if (first === undefined) return err('no_account');
 
   const queued = deps.ids.next<'queue-item'>();
   // One item per work order: whatever waited before gives way to the current stage and route.
@@ -221,11 +298,24 @@ export async function enqueueStage(
   await deps.queue.put({
     id: queued,
     workOrderId: input.id,
-    workspace: record.workspace,
+    repo: record.repo,
     stage: next.stage,
-    route: { ...routed.value.chain[0] },
+    route: { ...first },
     priority: input.priority ?? 0,
     enqueuedAt: deps.clock.now(),
+    ...(routing.thinking !== undefined ? { thinking: routing.thinking } : {}),
+    ...(routing.tier !== undefined ? { tier: routing.tier } : {}),
+    ...(sameProviderReview ? { sameProviderReview: true as const } : {}),
   });
   return ok(queued);
+}
+
+/** The newest run of `stage` in this work order that succeeded; the runs come oldest first. */
+async function lastSucceededRun(
+  deps: Pick<AppDeps, 'runs'>,
+  workOrderId: WorkOrderId,
+  stage: StageSlug,
+): Promise<RunRecord | undefined> {
+  const runs = await deps.runs.listForWorkOrder(workOrderId);
+  return runs.filter((run) => run.stage === stage && run.outcome === 'succeeded').at(-1);
 }

@@ -4,6 +4,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { WorkOrderRecord, WorkOrderRepo } from '../../../application/index';
@@ -15,11 +16,12 @@ import type {
   TaskSlug,
   WorkOrderEvent,
   WorkOrderId,
-  WorkspaceSlug,
+  RepoSlug,
 } from '../../../domain/index';
 import { parseSlug, parseUlid } from '../../../domain/index';
 
 import { openDatabase, type DocketDb } from './database';
+import { MIGRATIONS } from './schema';
 import { createSqliteWorkOrderRepo } from './work-order-repo';
 
 const U1 = '01ARZ3NDEKTSV4RRFFQ69G5FAV';
@@ -45,12 +47,13 @@ const FLOW: FlowSlug = slugOf<'flow'>('standard');
 const STAGE: StageSlug = slugOf<'stage'>('review');
 const GATE = slugOf<'gate'>('review-approval');
 const TASK: TaskSlug = slugOf<'task'>('setup-auth');
-const ACME: WorkspaceSlug = slugOf<'workspace'>('acme');
-const OTHER: WorkspaceSlug = slugOf<'workspace'>('other');
+const ACME: RepoSlug = slugOf<'repo'>('acme');
+const OTHER: RepoSlug = slugOf<'repo'>('other');
 
-const record = (id: string, createdAt: number, workspace: WorkspaceSlug = ACME): WorkOrderRecord => ({
+const record = (id: string, createdAt: number, repo: RepoSlug = ACME): WorkOrderRecord => ({
   id: woId(id),
-  workspace,
+  project: slugOf<'project'>('proj'),
+  repo,
   flow: FLOW,
   title: `title ${id}`,
   createdAt,
@@ -101,7 +104,7 @@ const suites: readonly (readonly [string, () => Suite])[] = [
 ];
 
 describe.each(suites)('createSqliteWorkOrderRepo (%s)', (_kind, make) => {
-  it('I-5: list orders by createdAt ascending and filters by workspace', async () => {
+  it('I-5: list orders by createdAt ascending and filters by repo', async () => {
     const { repo } = make();
     await repo.create(record(U3, 30));
     await repo.create(record(U1, 10));
@@ -109,8 +112,8 @@ describe.each(suites)('createSqliteWorkOrderRepo (%s)', (_kind, make) => {
     await repo.create(record(U4, 40, OTHER));
 
     expect((await repo.list({})).map((r) => r.id)).toEqual([woId(U1), woId(U2), woId(U3), woId(U4)]);
-    expect((await repo.list({ workspace: ACME })).map((r) => r.id)).toEqual([woId(U1), woId(U2), woId(U3)]);
-    expect((await repo.list({ workspace: OTHER })).map((r) => r.id)).toEqual([woId(U4)]);
+    expect((await repo.list({ repo: ACME })).map((r) => r.id)).toEqual([woId(U1), woId(U2), woId(U3)]);
+    expect((await repo.list({ repo: OTHER })).map((r) => r.id)).toEqual([woId(U4)]);
   });
 
   it('I-5: createdAt ties keep insertion order (ids ascend with insertion)', async () => {
@@ -120,6 +123,29 @@ describe.each(suites)('createSqliteWorkOrderRepo (%s)', (_kind, make) => {
     await repo.create(record(U3, 5));
 
     expect((await repo.list({})).map((r) => r.id)).toEqual([woId(U1), woId(U2), woId(U3)]);
+  });
+
+  it('A-29: number is the 1-based rank by createdAt asc over every work order, id deciding ties', async () => {
+    const { repo } = make();
+    await repo.create(record(U3, 30));
+    // U2 is inserted before U1 but carries the larger id: the tie is settled by id, never by
+    // insertion order.
+    await repo.create(record(U2, 10));
+    await repo.create(record(U4, 40, OTHER));
+    await repo.create(record(U1, 10));
+
+    expect(await repo.number(woId(U1))).toBe(1);
+    expect(await repo.number(woId(U2))).toBe(2);
+    expect(await repo.number(woId(U3))).toBe(3);
+    // The rank spans every work order on the machine, not just one repo's.
+    expect(await repo.number(woId(U4))).toBe(4);
+  });
+
+  it('A-29: an unknown id numbers undefined', async () => {
+    const { repo } = make();
+    await repo.create(record(U1, 10));
+
+    expect(await repo.number(woId(U2))).toBeUndefined();
   });
 
   it('I-5: get and events report undefined and [] for an unknown id', async () => {
@@ -226,7 +252,34 @@ describe('createSqliteWorkOrderRepo (sqlite rules)', () => {
     const reopened = createSqliteWorkOrderRepo(second.value);
     expect(await reopened.get(woId(U1))).toStrictEqual(record(U1, 10));
     expect((await reopened.list({})).map((r) => r.id)).toEqual([woId(U1), woId(U2)]);
-    expect((await reopened.list({ workspace: OTHER })).map((r) => r.id)).toEqual([woId(U2)]);
+    expect((await reopened.list({ repo: OTHER })).map((r) => r.id)).toEqual([woId(U2)]);
     expect(await reopened.events(woId(U1))).toStrictEqual([createdEvent(10), blockedEvent(11, 'waiting')]);
+  });
+
+  it('A-29: a database left by the first schema version numbers its work orders by the same rule', async () => {
+    // A version-1 store, written by hand exactly as the first migration left it: the old
+    // workspace column and JSON key, rows inserted out of createdAt order.
+    const path = join(tmp, 'v1.db');
+    const writer = new DatabaseSync(path);
+    const first = MIGRATIONS[0];
+    if (first === undefined) throw new Error('expected a first migration');
+    writer.exec(first.sql);
+    writer.exec('PRAGMA user_version = 1');
+    const insertLegacy = writer.prepare('INSERT INTO work_orders (id, workspace, created_at, data) VALUES (?, ?, ?, ?)');
+    const legacyData = (id: string, createdAt: number): string =>
+      JSON.stringify({ id, workspace: 'acme', flow: 'standard', title: `legacy ${id}`, createdAt, createdBy: ACTOR });
+    insertLegacy.run(U3, 'acme', 30, legacyData(U3, 30));
+    insertLegacy.run(U1, 'acme', 10, legacyData(U1, 10));
+    insertLegacy.run(U2, 'acme', 10, legacyData(U2, 10));
+    writer.close();
+
+    // openDatabase converts it; the numbers follow (created_at, id) like any other store.
+    const opened = openDatabase(path);
+    if (!opened.ok) throw new Error('openDatabase must convert the v1 store');
+    openDbs.push(opened.value);
+    const repo = createSqliteWorkOrderRepo(opened.value);
+    expect(await repo.number(woId(U1))).toBe(1);
+    expect(await repo.number(woId(U2))).toBe(2);
+    expect(await repo.number(woId(U3))).toBe(3);
   });
 });

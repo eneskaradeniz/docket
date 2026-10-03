@@ -1,6 +1,8 @@
 // Direct git subprocess execution: no shell, minimal environment, timeouts enforced.
 import { spawn } from 'node:child_process';
 
+import type { GitProbe } from '../../application/index';
+
 export interface GitResult {
   readonly exitCode: number;
   readonly stdout: string;
@@ -75,4 +77,16 @@ export function runGit(
       finish(timedOut ? 124 : (code ?? -1));
     });
   });
+}
+
+/** The GitProbe port over the same direct-git discipline: a checkout answers
+ *  `rev-parse --is-inside-work-tree` with exit 0 and `true`; everything else — a bare
+ *  repository, a missing folder, a non-repo — is not a work tree. */
+export function createGitProbe(): GitProbe {
+  return {
+    isWorkTree: async (path: string): Promise<boolean> => {
+      const result = await runGit(path, ['rev-parse', '--is-inside-work-tree']);
+      return result.exitCode === 0 && result.stdout.trim() === 'true';
+    },
+  };
 }

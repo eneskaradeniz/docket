@@ -1,19 +1,20 @@
-// The setting precedence chain: work order → workspace → global → built-in.
+// The setting precedence chain: work order → repo → project → global → built-in.
 // Contract: docs/v2/domain.md section 3.
-import type { RoleDef, RoleOverride } from '../definitions/index';
+import type { RoleDef, RoleOverride, StageDef } from '../definitions/index';
 import type { AccountRoute } from '../quota/index';
-import type { RoleSlug } from '../shared/index';
+import type { RoleSlug, ThinkingChoice, Tier } from '../shared/index';
 
-export type Level = 'workOrder' | 'workspace' | 'global' | 'builtin';
+export type Level = 'workOrder' | 'repo' | 'project' | 'global' | 'builtin';
 
-export const LEVEL_ORDER: readonly Level[] = ['workOrder', 'workspace', 'global', 'builtin'];
+export const LEVEL_ORDER: readonly Level[] = ['workOrder', 'repo', 'project', 'global', 'builtin'];
 
 /** Lower rank = more specific. */
 const LEVEL_RANK: Readonly<Record<Level, number>> = {
   workOrder: 0,
-  workspace: 1,
-  global: 2,
-  builtin: 3,
+  repo: 1,
+  project: 2,
+  global: 3,
+  builtin: 4,
 };
 
 export interface Layer<T> {
@@ -61,8 +62,44 @@ export function applyRoleOverrides(base: RoleDef, overrides: readonly RoleOverri
 export interface RoleBinding {
   readonly role: RoleSlug;
   readonly accounts: readonly AccountRoute[];
+  readonly thinking?: ThinkingChoice; // absent → { level: 'balanced' }
+  readonly tier?: Tier; // for unpinned routes of the chain; absent → the CLI's own default model
 }
 
 export function resolveBinding(layers: readonly Layer<RoleBinding>[]): Resolved<RoleBinding> | undefined {
   return resolve(layers);
+}
+
+/** What a stage run asks for: the stage's own setting wins over the binding's. */
+export interface StageRouting {
+  readonly tier?: Tier;
+  readonly thinking?: ThinkingChoice;
+}
+
+export function stageRouting(stage: StageDef, binding: RoleBinding): StageRouting {
+  const tier = stage.tier ?? binding.tier;
+  const thinking = stage.thinking ?? binding.thinking;
+  return {
+    ...(tier !== undefined ? { tier } : {}),
+    ...(thinking !== undefined ? { thinking } : {}),
+  };
+}
+
+/** One chain entry with the provider definition id of its account (data, never a vendor name in code). */
+export interface ChainEntry {
+  readonly route: AccountRoute;
+  readonly provider: string;
+}
+
+/** Accounts on another provider than the one that wrote the reviewed work move to the front, so a
+ *  review is a second opinion; `sameProvider` tells the caller no such account exists. */
+export function orderForReview(
+  chain: readonly ChainEntry[],
+  reviewedProvider: string | undefined,
+): { readonly chain: readonly ChainEntry[]; readonly sameProvider: boolean } {
+  if (reviewedProvider === undefined) return { chain: [...chain], sameProvider: false };
+  const others = chain.filter((entry) => entry.provider !== reviewedProvider);
+  const same = chain.filter((entry) => entry.provider === reviewedProvider);
+  const ordered = [...others, ...same];
+  return { chain: ordered, sameProvider: ordered[0]?.provider === reviewedProvider };
 }

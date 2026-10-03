@@ -20,6 +20,13 @@ describe('results mapping', () => {
     expect(GENERIC_FAILURE_KEY).toBe('error.unknown');
   });
 
+  it('U-8: the attach refusals not_a_repo, no_project_yaml and repo_not_in_project have their own keys', () => {
+    for (const code of ['not_a_repo', 'no_project_yaml', 'repo_not_in_project']) {
+      expect(KNOWN_FAILURE_CODES, code).toContain(code);
+      expect(failureKey(code), code).toBe(`error.${code}`);
+    }
+  });
+
   it('U-8: a successful result maps to the command\'s confirmation key, a failure to the code\'s key', () => {
     const commands = [
       'workOrder.open',

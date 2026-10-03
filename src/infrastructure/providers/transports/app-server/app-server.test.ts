@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { RunHandle, RunRequest, TransportError } from '../../../../application/index';
-import type { Result, RoleDef, RunId } from '../../../../domain/index';
+import type { EffortLevel, Result, RoleDef, RunId } from '../../../../domain/index';
 import { parseSlug, parseUlid, type AccountId, type AgentEvent } from '../../../../domain/index';
 import type { ProviderDef } from '../../defs/index';
 import { createAppServerTransport } from './app-server';
@@ -67,7 +67,11 @@ interface Started {
 
 const start = async (
   scenario: string,
-  options: { readonly resume?: { readonly sessionRef: string } } = {},
+  options: {
+    readonly resume?: { readonly sessionRef: string };
+    readonly effort?: EffortLevel;
+    readonly withEffortArg?: boolean;
+  } = {},
 ): Promise<Started> => {
   const cwd = runDir();
   const logPath = join(cwd, 'rpc.log');
@@ -78,6 +82,7 @@ const start = async (
     bins: [process.execPath],
     versionArgs: ['--version'],
     transport: 'app-server',
+    ...(options.withEffortArg === true ? { effortArg: { kind: 'request-field' as const, name: 'effort' } } : {}),
     config: { mechanism: 'env-var', name: 'FAKE_APP_SERVER_HOME' },
     buildLaunch: () => ({ args: [FIXTURE, scenario, logPath], env: {}, stdin: 'none' }),
     resume: 'protocol',
@@ -93,6 +98,7 @@ const start = async (
       costReport: 'none',
     },
     installHint: { url: 'https://example.invalid/fake-app-server' },
+    mark: null,
   };
   const request: RunRequest = {
     runId: RUN_ID,
@@ -102,6 +108,7 @@ const start = async (
     prompt: 'do the work',
     capabilities: [],
     ...(options.resume === undefined ? {} : { resume: options.resume }),
+    ...(options.effort === undefined ? {} : { effort: options.effort }),
   };
   const started: Result<RunHandle, TransportError> = await createAppServerTransport(def).start(request);
   if (!started.ok) throw new Error(`expected a started run, got ${started.error.code}`);
@@ -127,7 +134,7 @@ const collect = async (events: AsyncIterable<AgentEvent>): Promise<readonly Agen
 
 const runScenario = async (
   scenario: string,
-  options: { readonly resume?: { readonly sessionRef: string } } = {},
+  options: Parameters<typeof start>[1] = {},
 ): Promise<{ readonly events: readonly AgentEvent[]; readonly logPath: string; readonly cwd: string }> => {
   const { handle, logPath, cwd } = await start(scenario, options);
   return { events: await collect(handle.events), logPath, cwd };
@@ -143,6 +150,34 @@ const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 const finishedOf = (events: readonly AgentEvent[]) => events.filter((event) => event.type === 'finished');
 
 describe('createAppServerTransport', () => {
+  describe('effort (P-41)', () => {
+    const turnStartParams = (logPath: string): Record<string, unknown> => {
+      const turn = clientRequests(logPath).find((msg) => msg['method'] === 'turn/start');
+      return (turn?.['params'] ?? {}) as Record<string, unknown>;
+    };
+
+    it('P-41: the turn request carries the effort in the declared field', async () => {
+      const { logPath } = await runScenario('happy', { effort: 'high', withEffortArg: true });
+      expect(turnStartParams(logPath)['effort']).toBe('high');
+    });
+
+    it('P-41: an absent effort adds nothing to the turn request', async () => {
+      const { logPath } = await runScenario('happy', { withEffortArg: true });
+      expect(turnStartParams(logPath)).not.toHaveProperty('effort');
+    });
+
+    it('P-41: a definition without an effort parameter ignores the effort', async () => {
+      const { logPath } = await runScenario('happy', { effort: 'high' });
+      expect(turnStartParams(logPath)).not.toHaveProperty('effort');
+    });
+
+    it('P-41: the reasoning token count of the usage notification maps to reasoningTokens, inside outputTokens', async () => {
+      const { events } = await runScenario('happy');
+      const usage = events.find((event) => event.type === 'usage');
+      expect(usage).toMatchObject({ outputTokens: 300, reasoningTokens: 50 });
+    });
+  });
+
   describe('lifecycle and tolerance (P-12)', () => {
     it('P-12: the run opens with initialize → thread/start → turn/start and maps the turn stream to AgentEvents', async () => {
       const { events, logPath, cwd } = await runScenario('happy');
@@ -156,6 +191,7 @@ describe('createAppServerTransport', () => {
         inputTokens: 600,
         outputTokens: 300,
         cachedInputTokens: 100,
+        reasoningTokens: 50,
       });
       expect(finishedOf(events)).toStrictEqual([{ type: 'finished', at: expect.any(Number), reason: 'completed' }]);
 
@@ -384,6 +420,7 @@ describe('createAppServerTransport', () => {
           costReport: 'none',
         },
         installHint: { url: 'https://example.invalid/fake-app-server' },
+        mark: null,
       });
       const noBin = await createAppServerTransport(missingDef([])).start({
         runId: RUN_ID,

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { ProposalRecord, ProposalRepo } from '../../../application/index';
 import { createFakeProposalRepo } from '../../../application/ports/fakes/index';
-import { parseUlid, type Actor, type ProposalId, type WorkspaceSlug } from '../../../domain/index';
+import { parseUlid, type Actor, type ProposalId, type RepoSlug } from '../../../domain/index';
 
 import { openDatabase, type DocketDb } from './database';
 import { createSqliteProposalRepo } from './proposal-repo';
@@ -21,12 +21,12 @@ const proposalId = (s: string): ProposalId => {
   return parsed.value;
 };
 
-const WS = 'acme' as WorkspaceSlug;
+const REPO = 'acme' as RepoSlug;
 
 const AUTHOR: Actor = { kind: 'user', id: 'u1' };
 const DECIDER: Actor = { kind: 'user', id: 'u2', label: 'Enes' };
 const GLOBAL_SCOPE: ProposalRecord['scope'] = { kind: 'global' };
-const WORKSPACE_SCOPE: ProposalRecord['scope'] = { kind: 'workspace', workspace: WS };
+const REPO_SCOPE: ProposalRecord['scope'] = { kind: 'repo', repo: REPO };
 
 const record = (id: string, status: ProposalRecord['status'], scope: ProposalRecord['scope'] = GLOBAL_SCOPE): ProposalRecord => ({
   id: proposalId(id),
@@ -75,11 +75,11 @@ describe('createSqliteProposalRepo', () => {
     it('I-5: save upserts by id; get round-trips the record and is undefined for an unknown id', async () => {
       const repo = makeRepo();
       await repo.save(record(P1, 'pending'));
-      await repo.save(record(P2, 'pending', WORKSPACE_SCOPE));
+      await repo.save(record(P2, 'pending', REPO_SCOPE));
       await repo.save(record(P1, 'approved'));
 
       expect(await repo.get(proposalId(P1))).toStrictEqual(record(P1, 'approved'));
-      expect(await repo.get(proposalId(P2))).toStrictEqual(record(P2, 'pending', WORKSPACE_SCOPE));
+      expect(await repo.get(proposalId(P2))).toStrictEqual(record(P2, 'pending', REPO_SCOPE));
       expect(await repo.get(proposalId(P3))).toBeUndefined();
     });
 
@@ -97,7 +97,7 @@ describe('createSqliteProposalRepo', () => {
 
     it('I-6: a proposal read back deep-equals the record written — absent decision fields stay absent, actors and numbers survive', async () => {
       const repo = makeRepo();
-      const pending = record(P1, 'pending', WORKSPACE_SCOPE);
+      const pending = record(P1, 'pending', REPO_SCOPE);
       await repo.save(pending);
       const readPending = await repo.get(proposalId(P1));
       expect(readPending).toStrictEqual(pending);
@@ -106,7 +106,7 @@ describe('createSqliteProposalRepo', () => {
       expect('decidedAt' in readPending).toBe(false);
 
       const decided: ProposalRecord = {
-        ...record(P2, 'approved', WORKSPACE_SCOPE),
+        ...record(P2, 'approved', REPO_SCOPE),
         decidedBy: DECIDER,
         decidedAt: 1_711_235_000_000,
       };
@@ -142,7 +142,7 @@ describe('createSqliteProposalRepo', () => {
       const path = join(tmp, 'docket.db');
       const first = openDb(path);
       const repo = createSqliteProposalRepo(first);
-      const pending = record(P1, 'pending', WORKSPACE_SCOPE);
+      const pending = record(P1, 'pending', REPO_SCOPE);
       const decided: ProposalRecord = { ...record(P2, 'approved'), decidedBy: DECIDER, decidedAt: 1_711_235_000_000 };
       await repo.save(pending);
       await repo.save(decided);

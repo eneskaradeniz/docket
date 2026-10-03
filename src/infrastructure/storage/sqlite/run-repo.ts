@@ -1,6 +1,6 @@
 // SQLite-backed run repository; index columns keep `listActive` cheap via a partial index.
 import type { RunPatch, RunRecord, RunRepo } from '../../../application/index';
-import type { AgentEvent, RunId, WorkOrderId } from '../../../domain/index';
+import type { AgentEvent, RollingNote, RunId, WorkOrderId } from '../../../domain/index';
 
 import type { DocketDb } from './database';
 
@@ -12,6 +12,11 @@ const decodeRecord = (text: unknown): RunRecord => {
 const decodeEvent = (text: unknown): AgentEvent => {
   if (typeof text !== 'string') throw new Error('run_events.data must hold text');
   return JSON.parse(text) as AgentEvent;
+};
+
+const decodeNote = (text: unknown): RollingNote => {
+  if (typeof text !== 'string') throw new Error('run_handoff.note must hold text');
+  return JSON.parse(text) as RollingNote;
 };
 
 export function createSqliteRunRepo(db: DocketDb): RunRepo {
@@ -34,6 +39,15 @@ export function createSqliteRunRepo(db: DocketDb): RunRepo {
   );
   const insertEvent = db.raw.prepare('INSERT INTO run_events (run_id, seq, data) VALUES (?, ?, ?)');
   const eventsFor = db.raw.prepare('SELECT data FROM run_events WHERE run_id = ? ORDER BY seq ASC');
+  // Each save writes only its own column, so a note save never clobbers the stage base, nor the
+  // reverse; the REFERENCES runs (id) key makes an unknown run fail before any write lands.
+  const upsertNote = db.raw.prepare(
+    'INSERT INTO run_handoff (run_id, note, stage_base) VALUES (?, ?, NULL) ON CONFLICT (run_id) DO UPDATE SET note = excluded.note',
+  );
+  const upsertStageBase = db.raw.prepare(
+    'INSERT INTO run_handoff (run_id, note, stage_base) VALUES (?, NULL, ?) ON CONFLICT (run_id) DO UPDATE SET stage_base = excluded.stage_base',
+  );
+  const handoffRow = db.raw.prepare('SELECT note, stage_base FROM run_handoff WHERE run_id = ?');
 
   return {
     create: async (record: RunRecord): Promise<void> => {
@@ -74,5 +88,27 @@ export function createSqliteRunRepo(db: DocketDb): RunRepo {
 
     events: async (id: RunId): Promise<readonly AgentEvent[]> =>
       eventsFor.all(id).map((row) => decodeEvent(row['data'])),
+
+    saveHandoffNote: async (id: RunId, note: RollingNote): Promise<void> => {
+      if (byId.get(id) === undefined) throw new Error(`run ${id} does not exist`);
+      upsertNote.run(id, JSON.stringify(note));
+    },
+
+    handoffNote: async (id: RunId): Promise<RollingNote | undefined> => {
+      const row = handoffRow.get(id);
+      const note = row === undefined ? undefined : row['note'];
+      return note === null || note === undefined ? undefined : decodeNote(note);
+    },
+
+    saveStageBase: async (id: RunId, sha: string): Promise<void> => {
+      if (byId.get(id) === undefined) throw new Error(`run ${id} does not exist`);
+      upsertStageBase.run(id, sha);
+    },
+
+    stageBase: async (id: RunId): Promise<string | undefined> => {
+      const row = handoffRow.get(id);
+      const base = row === undefined ? undefined : row['stage_base'];
+      return base === null || base === undefined ? undefined : (base as string);
+    },
   };
 }

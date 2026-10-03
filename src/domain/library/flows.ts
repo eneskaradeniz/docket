@@ -10,7 +10,7 @@ const asStage = (id: string): StageSlug => id as StageSlug;
 const asRole = (id: string): RoleSlug => id as RoleSlug;
 const asGate = (id: string): GateSlug => id as GateSlug;
 
-/** Command sets the built-in flows reference; a workspace must define them to use those flows. */
+/** Command sets the built-in flows reference; a repo must define them to use those flows. */
 export const BUILTIN_COMMAND_SET_NAMES: readonly string[] = ['tests'];
 
 export const BUILTIN_FLOWS: readonly FlowDef[] = [
@@ -38,6 +38,8 @@ export const BUILTIN_FLOWS: readonly FlowDef[] = [
         id: asStage('review'),
         name: 'Gözden geçirme',
         role: asRole('reviewer'),
+        tier: 'strong',
+        reviewOf: asStage('implement'),
         exit: [
           { kind: 'agent_verdict', id: asGate('review-verdict'), role: asRole('reviewer') },
           { kind: 'human', id: asGate('review-approval'), label: 'Gözden geçirme onayı' },
@@ -98,6 +100,8 @@ export const BUILTIN_FLOWS: readonly FlowDef[] = [
         id: asStage('security'),
         name: 'Güvenlik incelemesi',
         role: asRole('security-auditor'),
+        tier: 'strong',
+        reviewOf: asStage('implement'),
         exit: [
           { kind: 'agent_verdict', id: asGate('security-verdict'), role: asRole('security-auditor') },
           { kind: 'human', id: asGate('security-approval'), label: 'Güvenlik onayı' },
@@ -108,6 +112,8 @@ export const BUILTIN_FLOWS: readonly FlowDef[] = [
         id: asStage('review'),
         name: 'Gözden geçirme',
         role: asRole('reviewer'),
+        tier: 'strong',
+        reviewOf: asStage('implement'),
         exit: [
           { kind: 'agent_verdict', id: asGate('review-verdict'), role: asRole('reviewer') },
           { kind: 'human', id: asGate('review-approval'), label: 'Gözden geçirme onayı' },

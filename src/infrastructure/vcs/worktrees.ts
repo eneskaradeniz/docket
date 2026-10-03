@@ -1,15 +1,15 @@
-// Git worktree management for runs: one worktree per (workspace, work order) under the data dir.
+// Git worktree management for runs: one worktree per (repo, work order) under the data dir.
 import { mkdir, realpath } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import type { Worktrees } from '../../application/index';
 import { err, ok, type Result, type WorkOrderId } from '../../domain/index';
-import type { WorkspacePaths } from '../system/index';
+import type { RepoPaths } from '../system/index';
 import { runGit } from './git';
 
 export interface WorktreesConfig {
   readonly root: string; // root = <dataDir>/worktrees
-  readonly workspaces: WorkspacePaths;
+  readonly repos: RepoPaths;
 }
 
 // + work-order id -> the commit the worktree started from
@@ -32,7 +32,7 @@ export function worktreeBranch(id: WorkOrderId): string {
 }
 
 export function createWorktrees(config: WorktreesConfig): Worktrees {
-  // One shared creation per (workspace, id): concurrent ensure calls must not race
+  // One shared creation per (repo, id): concurrent ensure calls must not race
   // `git worktree add` against each other.
   const creating = new Map<string, Promise<EnsureResult>>();
 
@@ -77,8 +77,8 @@ export function createWorktrees(config: WorktreesConfig): Worktrees {
   }
 
   return {
-    async ensure(workspace, id): Promise<EnsureResult> {
-      const checkout = await config.workspaces.path(workspace);
+    async ensure(repo, id): Promise<EnsureResult> {
+      const checkout = await config.repos.path(repo);
       if (checkout === undefined) return err('no_repo');
 
       // Fails on a non-repo path and on an unborn HEAD alike: neither can anchor a worktree.
@@ -86,10 +86,10 @@ export function createWorktrees(config: WorktreesConfig): Worktrees {
       if (head.exitCode !== 0) return err('no_repo');
       const base = head.stdout.trim();
 
-      const path = join(config.root, workspace, id);
+      const path = join(config.root, repo, id);
       if (await isListed(checkout, path)) return ok({ path });
 
-      const key = `${workspace}/${id}`;
+      const key = `${repo}/${id}`;
       const inFlight = creating.get(key);
       if (inFlight !== undefined) return inFlight;
       const creation = (async (): Promise<EnsureResult> => {

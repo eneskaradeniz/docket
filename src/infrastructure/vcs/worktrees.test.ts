@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { parseSlug, parseUlid, type WorkOrderId } from '../../domain/index';
-import type { WorkspacePaths } from '../system/index';
+import type { RepoPaths } from '../system/index';
 import { runGit } from './git';
 import { BASE_REF_PREFIX, createWorktrees, worktreeBranch } from './worktrees';
 
@@ -20,12 +20,12 @@ const woId = (s: string): WorkOrderId => {
 };
 
 const ACME = (() => {
-  const parsed = parseSlug<'workspace'>('acme');
+  const parsed = parseSlug<'repo'>('acme');
   if (!parsed.ok) throw new Error('fixture slug must parse');
   return parsed.value;
 })();
 const OTHER = (() => {
-  const parsed = parseSlug<'workspace'>('other');
+  const parsed = parseSlug<'repo'>('other');
   if (!parsed.ok) throw new Error('fixture slug must parse');
   return parsed.value;
 })();
@@ -93,25 +93,25 @@ async function realIfExists(path: string): Promise<string> {
   }
 }
 
-const pathsOf = (paths: Record<string, string>): WorkspacePaths => ({
+const pathsOf = (paths: Record<string, string>): RepoPaths => ({
   path: async (slug) => paths[slug],
 });
 
-const worktreeOf = (id: string, workspace = 'acme'): string => join(rootDir, workspace, id);
+const worktreeOf = (id: string, repo = 'acme'): string => join(rootDir, repo, id);
 
 describe('createWorktrees', () => {
   describe('ensure', () => {
-    it('I-20: an unknown workspace errs with no_repo', async () => {
-      const worktrees = createWorktrees({ root: rootDir, workspaces: pathsOf({}) });
+    it('I-20: an unknown repo errs with no_repo', async () => {
+      const worktrees = createWorktrees({ root: rootDir, repos: pathsOf({}) });
 
       const result = await worktrees.ensure(ACME, woId(U1));
 
       expect(result).toEqual({ ok: false, error: 'no_repo' });
     });
 
-    it('I-20: a workspace path that is not a git work tree errs with no_repo', async () => {
+    it('I-20: a repo path that is not a git work tree errs with no_repo', async () => {
       // repoDir exists but was never git-init'ed.
-      const worktrees = createWorktrees({ root: rootDir, workspaces: pathsOf({ acme: repoDir }) });
+      const worktrees = createWorktrees({ root: rootDir, repos: pathsOf({ acme: repoDir }) });
 
       const result = await worktrees.ensure(ACME, woId(U1));
 
@@ -120,17 +120,17 @@ describe('createWorktrees', () => {
 
     it('I-20: a repository without commits errs with no_repo', async () => {
       await initRepo(repoDir);
-      const worktrees = createWorktrees({ root: rootDir, workspaces: pathsOf({ acme: repoDir }) });
+      const worktrees = createWorktrees({ root: rootDir, repos: pathsOf({ acme: repoDir }) });
 
       const result = await worktrees.ensure(ACME, woId(U1));
 
       expect(result).toEqual({ ok: false, error: 'no_repo' });
     });
 
-    it('I-20: creates the worktree at <root>/<workspace>/<id>, on its own branch at the checkout HEAD', async () => {
+    it('I-20: creates the worktree at <root>/<repo>/<id>, on its own branch at the checkout HEAD', async () => {
       await initRepo(repoDir);
       const base = await commitFile(repoDir, 'a.ts', 'l1\n');
-      const worktrees = createWorktrees({ root: rootDir, workspaces: pathsOf({ acme: repoDir }) });
+      const worktrees = createWorktrees({ root: rootDir, repos: pathsOf({ acme: repoDir }) });
       const id = woId(U1);
 
       const result = await worktrees.ensure(ACME, id);
@@ -143,7 +143,7 @@ describe('createWorktrees', () => {
     it('I-20: records the starting commit under the base ref for the work order', async () => {
       await initRepo(repoDir);
       const base = await commitFile(repoDir, 'a.ts', 'l1\n');
-      const worktrees = createWorktrees({ root: rootDir, workspaces: pathsOf({ acme: repoDir }) });
+      const worktrees = createWorktrees({ root: rootDir, repos: pathsOf({ acme: repoDir }) });
       await worktrees.ensure(ACME, woId(U1));
 
       const ref = await git(repoDir, ['rev-parse', `${BASE_REF_PREFIX}${U1}`]);
@@ -156,7 +156,7 @@ describe('createWorktrees', () => {
       const first = await commitFile(repoDir, 'a.ts', 'l1\n');
       await git(repoDir, ['update-ref', `${BASE_REF_PREFIX}${U1}`, first]);
       const second = await commitFile(repoDir, 'b.ts', 'l2\n');
-      const worktrees = createWorktrees({ root: rootDir, workspaces: pathsOf({ acme: repoDir }) });
+      const worktrees = createWorktrees({ root: rootDir, repos: pathsOf({ acme: repoDir }) });
 
       const result = await worktrees.ensure(ACME, woId(U1));
 
@@ -171,7 +171,7 @@ describe('createWorktrees', () => {
       const id = woId(U1);
       // `git worktree add -b` refuses an existing branch, so this can only pass without -b.
       await git(repoDir, ['branch', worktreeBranch(id)]);
-      const worktrees = createWorktrees({ root: rootDir, workspaces: pathsOf({ acme: repoDir }) });
+      const worktrees = createWorktrees({ root: rootDir, repos: pathsOf({ acme: repoDir }) });
 
       const result = await worktrees.ensure(ACME, id);
 
@@ -183,7 +183,7 @@ describe('createWorktrees', () => {
     it('I-20: a second ensure returns the same path and changes nothing', async () => {
       await initRepo(repoDir);
       await commitFile(repoDir, 'a.ts', 'l1\n');
-      const worktrees = createWorktrees({ root: rootDir, workspaces: pathsOf({ acme: repoDir }) });
+      const worktrees = createWorktrees({ root: rootDir, repos: pathsOf({ acme: repoDir }) });
       const first = await worktrees.ensure(ACME, woId(U1));
       const before = {
         worktrees: await listedWorktrees(repoDir),
@@ -200,7 +200,7 @@ describe('createWorktrees', () => {
     it('I-20: two concurrent ensure calls share one creation', async () => {
       await initRepo(repoDir);
       await commitFile(repoDir, 'a.ts', 'l1\n');
-      const worktrees = createWorktrees({ root: rootDir, workspaces: pathsOf({ acme: repoDir }) });
+      const worktrees = createWorktrees({ root: rootDir, repos: pathsOf({ acme: repoDir }) });
       const id = woId(U1);
 
       const [a, b] = await Promise.all([worktrees.ensure(ACME, id), worktrees.ensure(ACME, id)]);
@@ -215,7 +215,7 @@ describe('createWorktrees', () => {
     it('I-20: distinct work orders get distinct paths, branches and base refs', async () => {
       await initRepo(repoDir);
       await commitFile(repoDir, 'a.ts', 'l1\n');
-      const worktrees = createWorktrees({ root: rootDir, workspaces: pathsOf({ acme: repoDir }) });
+      const worktrees = createWorktrees({ root: rootDir, repos: pathsOf({ acme: repoDir }) });
 
       const r1 = await worktrees.ensure(ACME, woId(U1));
       const r2 = await worktrees.ensure(ACME, woId(U2));
@@ -230,14 +230,14 @@ describe('createWorktrees', () => {
       expect(refs).toEqual([`${BASE_REF_PREFIX}${U1}`, `${BASE_REF_PREFIX}${U2}`].sort());
     });
 
-    it('I-20: the same work order in two workspaces creates two worktrees in two repos', async () => {
+    it('I-20: the same work order in two repos creates two worktrees in two repos', async () => {
       await initRepo(repoDir);
       await initRepo(otherRepoDir);
       await commitFile(repoDir, 'a.ts', 'l1\n');
       await commitFile(otherRepoDir, 'a.ts', 'l1\n');
       const worktrees = createWorktrees({
         root: rootDir,
-        workspaces: pathsOf({ acme: repoDir, other: otherRepoDir }),
+        repos: pathsOf({ acme: repoDir, other: otherRepoDir }),
       });
       const id = woId(U1);
 
@@ -254,11 +254,11 @@ describe('createWorktrees', () => {
       );
     });
 
-    it('I-20: the workspace checkout working tree and branch stay untouched', async () => {
+    it('I-20: the repo checkout working tree and branch stay untouched', async () => {
       await initRepo(repoDir);
       const head = await commitFile(repoDir, 'a.ts', 'l1\n');
       await writeFile(join(repoDir, 'uncommitted.txt'), 'scratch\n', 'utf8');
-      const worktrees = createWorktrees({ root: rootDir, workspaces: pathsOf({ acme: repoDir }) });
+      const worktrees = createWorktrees({ root: rootDir, repos: pathsOf({ acme: repoDir }) });
 
       await worktrees.ensure(ACME, woId(U1));
       await worktrees.ensure(ACME, woId(U2));

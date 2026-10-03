@@ -22,14 +22,13 @@ provider's chat app, IDE plugins) and Docket's own accounting is never authorita
 
 | Provider · plan | Pools / windows | Best channel | Reset time |
 | --- | --- | --- | --- |
-| Claude Code · Pro/Max | account; 5h + 7d; 7d per model family (Opus/Sonnet) | stream event + SDK `get_usage` | exact |
+| Claude Code · Pro/Max | account; 5h + 7d; 7d per model family (Opus/Sonnet); model-scoped rows (for example Fable) arrive in the usage report's model-scoped list and are matched by display name; on Max the Fable row is its own weekly meter that the documentation describes as a share of the weekly limit, and the operator observed that it also lowers the 5-hour and weekly meters (the 5-hour part is not documented); on Pro, Fable is outside the plan limits and billed through usage credits at API rates, only with extra usage enabled | stream event + SDK `get_usage` | exact |
 | Claude Code · API key | per-minute throughput + monthly spend cap | own spend tracking | month start |
-| Codex · ChatGPT plans | primary ≈5h, secondary ≈weekly; read `windowDurationMins` | app-server `account/rateLimits/*` | exact |
+| Codex · ChatGPT plans | primary ≈5h, secondary ≈weekly; read `windowDurationMins`; the window set depends on the plan: a free plan reports one 30-day window and no secondary window (observed live) | app-server `account/rateLimits/*` | exact |
 | Antigravity `agy` · Google AI Pro/Ultra | **per model group** ("Gemini models", "Claude and GPT models"), each 5h + weekly | `/usage` JSON in print mode (verified, see below) | exact via query; relative in errors |
-| Gemini CLI · Code Assist Std/Ent | requests per day | none headless | unverified |
-| Copilot CLI | monthly AI credits; hidden session/weekly guardrails | SDK `account.getQuota` | monthly exact; weekly only retry-after |
+| Copilot CLI | monthly AI credits; hidden session/weekly guardrails | SDK `account.getQuota`; the quota snapshot carries entitlement counts and percentages but no credit field, spend arrives as nano AI units on the usage channel (1 credit = $0.01), and the snapshot does not change within a turn | monthly exact; weekly only retry-after |
 | opencode Go | per-model $ over 5h / week / month | the CLI waits itself; surface its retry time | exact |
-| z.ai GLM Coding | 5h (from first use) + weekly, credits | unofficial quota endpoint; 429 error codes | message text (assume UTC+8, confirm) |
+| z.ai GLM Coding | 5h (from first use) + weekly, credits; the endpoint observed by the operator reports a 5-hour token window and a monthly tool window, no weekly one (the probe issue confirms) | unofficial quota endpoint; 429 error codes | message text (assume UTC+8, confirm) |
 | Cursor, Qwen, Kiro, Mistral | monthly / opaque | none | unknown → ask |
 
 Pitfalls: Claude's `utilization` is 0–1 in pushed `unifiedWindows` but 0–100 in `get_usage`; resets
@@ -46,6 +45,36 @@ is a list-price estimate (show as `equivalent` on subscriptions and custom endpo
 | `ask` | Put it in "Senden bekleyenler" |
 
 Throughput (per-minute) limits are not quota: they show as "retrying", never as remaining quota.
+
+## Reserve (per account)
+
+A plan's windows (five-hour, weekly, a model's own weekly) are shared with the user's own, direct use
+of the CLI. An account may keep a **reserve**: a share of each window Docket leaves alone. With a
+reserve, a window whose remaining share is at or below it counts as exhausted for new runs (R-49): the
+run does not start and the account's limit policy decides what happens next (wait for the reset, switch
+pool, fall back, or ask). A running run is never stopped by a reserve. Reserves are shares, never money:
+subscription windows have no currency, and a spend cap (below) is a separate setting that applies only
+to metered use. `short` covers windows shorter than a day, `long` a day or longer. Default: no reserve.
+
+## Bucket applicability (P-39)
+
+Which models draw from a reported bucket is data per provider, matched against the run's model by
+`Pool.appliesTo`. A bucket the table does not list is informational (`appliesTo: 'unknown'`): shown,
+never blocking, and exhaustion still surfaces through `limit_hit`. The run's model is matched by the
+canonical id the catalog resolved for it (an alias row such as `opus` matches as the id it stands for).
+
+| Provider | Bucket (as reported) | Applies to |
+| --- | --- | --- |
+| Claude Code | account 5-hour and weekly windows | all models of the account |
+| Claude Code | `seven_day_opus`, `seven_day_sonnet` | ids starting `claude-opus`, `claude-sonnet` |
+| Claude Code | model-scoped row `Fable` | ids starting `claude-fable` |
+| Claude Code | extra-usage credits | balance pool, informational for headroom |
+| Codex | primary and secondary windows | all models of the account |
+| Antigravity | group `Gemini Models` | ids starting `gemini-` |
+| Antigravity | group `Claude and GPT models` | ids starting `claude-`, `gpt-oss-` |
+| Copilot CLI | every quota snapshot entry | unknown (informational; the snapshot names entitlements, not models) |
+| z.ai GLM | `GLM Coding` windows | ids starting `glm-` |
+| Cursor, OpenCode | none machine-readable | — |
 
 ## Budgets (API accounts)
 

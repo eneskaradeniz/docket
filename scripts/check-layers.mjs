@@ -34,17 +34,17 @@ const PACKAGE_ALLOW = {
 // Module dependency map inside src/domain (docs/v2/domain.md).
 const DOMAIN_MODULES = {
   shared: [],
-  definitions: ['shared'],
+  definitions: ['shared', 'budget'],
   quota: ['shared'],
   budget: ['shared'],
   proposal: ['shared'],
   resolver: ['shared', 'definitions', 'quota'],
   gates: ['shared', 'definitions'],
-  providers: ['shared', 'quota'],
+  providers: ['shared', 'quota', 'definitions'],
   library: ['shared', 'definitions'],
   flow: ['shared', 'definitions', 'gates'],
   dispatch: ['shared', 'quota', 'budget'],
-  roadmap: ['shared', 'flow'],
+  roadmap: ['shared', 'flow', 'definitions'],
   // Cross-module scenario tests only (no production code): may import every module.
   scenarios: ['shared', 'definitions', 'quota', 'budget', 'proposal', 'resolver', 'gates', 'providers', 'library', 'flow', 'dispatch', 'roadmap'],
 };

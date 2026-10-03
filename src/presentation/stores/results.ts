@@ -38,12 +38,25 @@ export const KNOWN_FAILURE_CODES: readonly string[] = [
   'self_approval',
   'invalid_after',
   'binding_exists',
+  // The spend-consent commands' refusals (application use-cases/spend-consent.ts).
+  'invalid_model',
+  'invalid_cap',
+  // A-45: a reserve share outside 0..0.95.
+  'invalid_reserve',
+  // A-52: the last cap cannot go while a spend consent stands.
+  'cap_required',
   'not_a_deploy_gate',
   'no_approval',
   'confirmation_mismatch',
   'promote_prerequisite_missing',
   'unknown_environment',
   'no_repo',
+  // project.attach refusals (AttachError).
+  'not_a_repo',
+  'no_project_yaml',
+  'repo_not_in_project',
+  // saveBinding: a role's account chain cannot be empty (A-14).
+  'empty_chain',
 ];
 
 const FAILURE_KEYS: Readonly<Record<string, LabelKey>> = Object.fromEntries(
@@ -57,13 +70,25 @@ const SUCCESS_KEYS: Readonly<Record<Command['type'], LabelKey>> = {
   'workOrder.unblock': 'success.workOrder.unblock',
   'workOrder.close': 'success.workOrder.close',
   'workOrder.enqueue': 'success.workOrder.enqueue',
+  'task.open': 'success.task.open',
+  'project.attach': 'success.project.attach',
+  'repo.register': 'success.repo.register',
+  'repo.unregister': 'success.repo.unregister',
   'gate.decide': 'success.gate.decide',
   'proposal.decide': 'success.proposal.decide',
   'permission.answer': 'success.permission.answer',
   'deploy.approve': 'success.deploy.approve',
   'account.save': 'success.account.save',
+  'account.adopt': 'success.account.adopt',
   'account.remove': 'success.account.remove',
+  // A cap write is an account edit: it reads back as the account being saved.
+  'account.cap.save': 'success.account.save',
+  'account.cap.remove': 'success.account.save',
+  'account.consent.grant': 'success.account.consent.grant',
+  'account.consent.revoke': 'success.account.consent.revoke',
   'binding.save': 'success.binding.save',
+  'app.update.check': 'success.app.update.check',
+  'app.update.apply': 'success.app.update.apply',
 };
 
 export const failureKey = (code: string): LabelKey => FAILURE_KEYS[code] ?? GENERIC_FAILURE_KEY;

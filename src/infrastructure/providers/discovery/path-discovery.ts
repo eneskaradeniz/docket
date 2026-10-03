@@ -4,9 +4,12 @@
 import type { ChildProcess } from 'node:child_process';
 import { accessSync, constants } from 'node:fs';
 import { readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import type { DiscoveredProvider, ProviderDiscovery } from '../../../application/index';
+import type { LoginStates } from './login-states';
 import type { ProviderDef } from '../defs/index';
+import { buildChildEnv } from '../launch/index';
+import { probeAcpLogin } from '../transports/acp/index';
 
 const DEFAULT_PROBE_TIMEOUT_MS = 10_000;
 
@@ -20,6 +23,8 @@ export type ProbeSpawn = (
 export interface PathDiscoveryOptions {
   /** How long a single probe may run before it is killed and its field is left null. */
   readonly probeTimeoutMs?: number;
+  /** Receives every result as it is reported, so a later reader sees the latest login answer. */
+  readonly loginStates?: Pick<LoginStates, 'record'>;
 }
 
 interface ProbeOutcome {
@@ -174,16 +179,169 @@ const probeOptionalFlags = async (
   return Object.keys(def.optionalFlags).filter((flag) => combined.includes(flag));
 };
 
+// Colour codes and leading log lines (the CLI prints INFO lines before its answer) are noise.
+const ANSI_RE = /\u001b\[[0-9;]*[A-Za-z]/g;
+const CREDENTIAL_COUNT_RE = /(\d+)\s+credentials?\b/i;
+
+/** The login answer of a command that prints how many credentials are configured; `null` when
+ * the output names no count. */
+export const loggedInFromCredentialCount = (output: string): boolean | null => {
+  const clean = output.replace(ANSI_RE, '');
+  const match = CREDENTIAL_COUNT_RE.exec(clean);
+  if (match === null) return null;
+  return Number(match[1]) > 0;
+};
+
+/** The login answer of a command that prints JSON with `providers[].key_present` booleans: any
+ * `true` is a login (some key is configured, not proven valid), every provider `false` is none, and
+ * a missing list, an empty one or a non-boolean entry that no `true` outweighs is unknown. Nothing
+ * but those booleans is read, so no key value can reach a log. */
+export const loggedInFromProviderKeys = (output: string): boolean | null => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(output);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
+  const providers: unknown = (parsed as Record<string, unknown>)['providers'];
+  if (!Array.isArray(providers) || providers.length === 0) return null;
+  const flags = providers.map((entry: unknown) =>
+    typeof entry === 'object' && entry !== null ? (entry as Record<string, unknown>)['key_present'] : undefined,
+  );
+  if (flags.some((flag) => flag === true)) return true;
+  return flags.every((flag) => flag === false) ? false : null;
+};
+
+/** The login answer of a command that prints JSON with a `loggedIn` boolean: the CLI reports the
+ * same field on its logged-in exit 0 and its logged-out exit 1, so the boolean is read on either
+ * exit code; nothing else in the object is looked at, so no account value can reach a log. A CLI
+ * that spells the field `logged_in` reads the same way — the boolean is the answer, the spelling
+ * is not a contract. */
+export const loggedInFromAuthStatus = (output: string): boolean | null => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(output);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
+  const record = parsed as Record<string, unknown>;
+  const flag = record['loggedIn'] ?? record['logged_in'];
+  return typeof flag === 'boolean' ? flag : null;
+};
+
+/** The login answer of a command that prints JSON with an `account` value: null is the logged-out
+ * answer and a populated object a login (both with exit 0); an unparseable answer, a missing key
+ * or a value that is neither null nor an object is unknown. Only that one key's null-ness is
+ * read, never a field of the account, so no account value can reach a log. */
+export const loggedInFromWhoami = (output: string): boolean | null => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(output);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
+  const account = (parsed as Record<string, unknown>)['account'];
+  if (account === null) return false;
+  return typeof account === 'object' && !Array.isArray(account) ? true : null;
+};
+
+/** Presence only: the file is never opened, so no credential content is read, logged or stored. */
+const loggedInFromPresenceFile = (
+  rule: NonNullable<NonNullable<ProviderDef['authProbe']>['presenceFile']>,
+  env: Readonly<Record<string, string>>,
+  homedir: string,
+): boolean => {
+  const override = env[rule.homeEnv];
+  const home = override !== undefined && override !== '' ? override : join(homedir, rule.homeDir);
+  try {
+    return statSync(join(home, rule.file)).isFile();
+  } catch {
+    return false;
+  }
+};
+
+/** Presence only, over a directory of credential files whose names are not documented: a
+ * listing is read for whether any file exists, never for a name or a content — so no credential
+ * value can reach a log, and presence still does not prove the credential is valid. */
+const loggedInFromPresenceDir = (
+  rule: NonNullable<NonNullable<ProviderDef['authProbe']>['presenceDir']>,
+  env: Readonly<Record<string, string>>,
+  homedir: string,
+): boolean => {
+  const override = env[rule.homeEnv];
+  const home = override !== undefined && override !== '' ? override : join(homedir, rule.homeDir);
+  try {
+    return readdirSync(join(home, rule.dir), { withFileTypes: true }).some((entry) => entry.isFile());
+  } catch {
+    return false;
+  }
+};
+
+/** Whether a resolved wrapper is missing the second binary its agent entry delegates to (its own
+ * error names that path): presence only, the file is never opened. A resolved binary that already
+ * is the named file is self-sufficient, whatever directory it was found in. */
+const agentDelegateMissing = (
+  def: ProviderDef,
+  binPath: string,
+  env: Readonly<Record<string, string>>,
+  homedir: string,
+): boolean => {
+  const rule = def.agentDelegate;
+  if (rule === undefined) return false;
+  if (basename(binPath) === basename(rule.relativePath)) return false;
+  const home = env[rule.homeEnv] ?? homedir;
+  try {
+    return !statSync(join(home, rule.relativePath)).isFile();
+  } catch {
+    return true;
+  }
+};
+
 const probeAuth = async (
   spawn: ProbeSpawn,
   def: ProviderDef,
   binPath: string,
   timeoutMs: number,
   env: Readonly<Record<string, string>>,
+  homedir: string,
 ): Promise<boolean | null> => {
   if (def.authProbe === undefined) return null;
-  const outcome = await runProbe(spawn, binPath, [...def.authProbe.args], timeoutMs, env);
+  if (def.authProbe.presenceFile !== undefined) return loggedInFromPresenceFile(def.authProbe.presenceFile, env, homedir);
+  if (def.authProbe.presenceDir !== undefined) return loggedInFromPresenceDir(def.authProbe.presenceDir, env, homedir);
+  if (def.authProbe.acpSession !== undefined) {
+    // The ACP session is the login signal: the child gets the same allowlisted environment a run
+    // builds, so an ambient credential of another account never counts as this machine's login.
+    return probeAcpLogin({
+      command: binPath,
+      args: def.authProbe.args,
+      env: buildChildEnv(def.id, env, def.authProbe.env ?? {}),
+      rule: def.authProbe.acpSession.notLoggedIn,
+      timeoutMs,
+      spawn: (command, args, options) => spawn(command, args, { timeout: timeoutMs, env: options.env ?? env }),
+    });
+  }
+  const outcome = await runProbe(spawn, binPath, [...def.authProbe.args], timeoutMs, { ...env, ...def.authProbe.env });
   if (outcome.timedOut || outcome.exitCode === null) return null;
+  if (def.authProbe.parse === 'logged-out-text') {
+    const text = def.authProbe.loggedOutText;
+    return outcome.exitCode === 0 && text !== undefined && `${outcome.stdout}\n${outcome.stderr}`.includes(text) ? false : null;
+  }
+  if (def.authProbe.parse === 'credential-count') {
+    return outcome.exitCode === 0 ? loggedInFromCredentialCount(outcome.stdout) : null;
+  }
+  if (def.authProbe.parse === 'provider-key-present') {
+    return outcome.exitCode === 0 ? loggedInFromProviderKeys(outcome.stdout) : null;
+  }
+  if (def.authProbe.parse === 'logged-in-json') {
+    // The boolean is the answer on both exit codes; no exit gate, unlike the count parsers above.
+    return loggedInFromAuthStatus(outcome.stdout);
+  }
+  if (def.authProbe.parse === 'account-null-json') {
+    return outcome.exitCode === 0 ? loggedInFromWhoami(outcome.stdout) : null;
+  }
   return outcome.exitCode === 0; // exit 0 = logged in; any completed non-zero exit is a real answer
 };
 
@@ -203,14 +361,25 @@ export function createPathDiscovery(
     def: ProviderDef,
   ): Promise<DiscoveredProvider> => {
     const binPath = resolveBinPath(def, env, dirs);
-    if (binPath === null) {
-      return { defId: def.id, binPath: null, version: null, loggedIn: null, optionalFlags: [] };
+    // A wrapper whose agent delegate is missing cannot launch anything Docket would run, so it
+    // reports exactly like a binary that was never found: the install hint is the remedy.
+    if (binPath === null || agentDelegateMissing(def, binPath, env, homedir)) {
+      return { defId: def.id, name: def.displayName, installUrl: def.installHint.url, binPath: null, version: null, loggedIn: null, optionalFlags: [] };
     }
     // Probes run in sequence on exactly the path that will be spawned; each carries its own timeout.
     const version = await probeVersion(spawnFn, def, binPath, timeoutMs, probeEnv);
-    const optionalFlags = await probeOptionalFlags(spawnFn, def, binPath, timeoutMs, probeEnv);
-    const loggedIn = await probeAuth(spawnFn, def, binPath, timeoutMs, probeEnv);
-    return { defId: def.id, binPath, version, loggedIn, optionalFlags };
+    // A command that may open a browser or start a login flow runs only once the login probe
+    // answered `true`; `false` and `null` (unknown) both keep it from starting.
+    let loggedIn: boolean | null;
+    let optionalFlags: readonly string[];
+    if (def.helpNeedsLogin === true) {
+      loggedIn = await probeAuth(spawnFn, def, binPath, timeoutMs, probeEnv, homedir);
+      optionalFlags = loggedIn === true ? await probeOptionalFlags(spawnFn, def, binPath, timeoutMs, probeEnv) : [];
+    } else {
+      optionalFlags = await probeOptionalFlags(spawnFn, def, binPath, timeoutMs, probeEnv);
+      loggedIn = await probeAuth(spawnFn, def, binPath, timeoutMs, probeEnv, homedir);
+    }
+    return { defId: def.id, name: def.displayName, installUrl: def.installHint.url, binPath, version, loggedIn, optionalFlags };
   };
 
   return {
@@ -221,7 +390,9 @@ export function createPathDiscovery(
       // so a slow or hanging binary delays only its own result.
       await Promise.all(
         defs.map(async (def) => {
-          onResult(await discoverDef(spawn, dirs, probeEnv, def));
+          const result = await discoverDef(spawn, dirs, probeEnv, def);
+          options?.loginStates?.record(result);
+          onResult(result);
         }),
       );
     },

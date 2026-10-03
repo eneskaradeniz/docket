@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { QueueRepo } from '../../../application/index';
 import { createFakeQueueRepo } from '../../../application/ports/fakes/index';
-import { parseUlid, type QueueItem, type QueueItemId, type StageSlug, type WorkOrderId, type WorkspaceSlug } from '../../../domain/index';
+import { parseUlid, type QueueItem, type QueueItemId, type StageSlug, type WorkOrderId, type RepoSlug } from '../../../domain/index';
 
 import { openDatabase, type DocketDb } from './database';
 import { createSqliteQueueRepo } from './queue-repo';
@@ -36,13 +36,13 @@ const accountId = (s: string) => {
   return parsed.value;
 };
 
-const WS = 'acme' as WorkspaceSlug;
+const REPO = 'acme' as RepoSlug;
 const STAGE = 'implement' as StageSlug;
 
 const item = (id: string, owner: string, priority = 0): QueueItem => ({
   id: queueId(id),
   workOrderId: workOrderId(owner),
-  workspace: WS,
+  repo: REPO,
   stage: STAGE,
   route: { accountId: accountId(A1) },
   priority,
@@ -114,8 +114,22 @@ describe('createSqliteQueueRepo', () => {
       const readPlain = byId.get(queueId(Q1));
       if (readPlain === undefined) throw new Error('item must read back');
       expect('notBefore' in readPlain).toBe(false);
+      expect('handoffOf' in readPlain).toBe(false);
       expect(readPlain.priority).toBe(-5);
       expect(readPlain.enqueuedAt).toBe(1_711_234_567_890);
+    });
+
+    it('I-6: handoffOf rides the queued item through put and list', async () => {
+      const repo = makeRepo();
+      const continuation: QueueItem = {
+        ...item(Q1, W1),
+        handoffOf: '01ARZ3NDEKTSV4RRFFQ69G5FB3' as QueueItem['handoffOf'],
+      };
+      await repo.put(continuation);
+
+      const listed = await repo.list();
+      expect(listed).toStrictEqual([continuation]);
+      expect(listed[0]?.handoffOf).toBe('01ARZ3NDEKTSV4RRFFQ69G5FB3');
     });
   });
 
@@ -135,13 +149,17 @@ describe('createSqliteQueueRepo', () => {
       const first = openDb(path);
       const repo = createSqliteQueueRepo(first);
       await repo.put(item(Q1, W1, 3));
-      await repo.put(item(Q2, W2));
+      const continuation: QueueItem = {
+        ...item(Q2, W2),
+        handoffOf: '01ARZ3NDEKTSV4RRFFQ69G5FB3' as QueueItem['handoffOf'],
+      };
+      await repo.put(continuation);
       await repo.remove(queueId(Q1));
       closeDb(first);
 
       const second = openDb(path);
       const reopened = createSqliteQueueRepo(second);
-      expect(await reopened.list()).toStrictEqual([item(Q2, W2)]);
+      expect(await reopened.list()).toStrictEqual([continuation]);
     });
   });
 });

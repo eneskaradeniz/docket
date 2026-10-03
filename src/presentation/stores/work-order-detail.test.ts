@@ -27,6 +27,7 @@ import { parseSlug } from '../../domain/index';
 import type { LivePaneStore } from './live-pane';
 import {
   createWorkOrderDetailStore,
+  flowChips,
   type DetailChange,
   type DetailChangeSignal,
   type WorkOrderDetailRun,
@@ -107,9 +108,10 @@ const AT_SHIP = stateAt(STAGE_SHIP, [GATE_SHIP_APPROVAL, GATE_DEPLOY_PROD, GATE_
 const DONE: WorkOrderState = { status: 'done', stage: null, attempt: 1, pendingGates: [] };
 
 const detailReply = (state: WorkOrderState): WorkOrderDetailView => ({
-  record: { id: WO_ID, workspace: 'atolye', flow: 'release-flow', title: 'Ship the thing' },
+  record: { id: WO_ID, repo: 'atolye', flow: 'release-flow', title: 'Ship the thing' },
   state,
   next: NONE,
+  number: 1,
   runs: [
     {
       id: RUN_ID,
@@ -244,14 +246,14 @@ describe('work-order detail store', () => {
     expect(api.queries[0]).toEqual({ type: 'workOrder.detail', id: WO_ID });
     // Before the ship stage is reached its gates — deploy gates included — are upcoming.
     expect(store.state().stages).toEqual([
-      { stage: 'plan', name: 'Plan', current: false, gates: [{ id: 'plan-approval', kind: 'human', status: 'passed' }] },
+      { stage: 'plan', name: 'Plan', current: false, gates: [{ id: 'plan-approval', kind: 'human', label: 'Plan approval', status: 'passed' }] },
       { stage: 'build', name: 'Build', current: true, gates: [{ id: 'secret-scan', kind: 'secret_scan', status: 'pending' }] },
       {
         stage: 'ship',
         name: 'Ship',
         current: false,
         gates: [
-          { id: 'ship-approval', kind: 'human', status: 'upcoming' },
+          { id: 'ship-approval', kind: 'human', label: 'Ship approval', status: 'upcoming' },
           { id: 'deploy-prod', kind: 'deploy', status: 'upcoming', deploy: { environment: 'prod', protectedEnvironment: true, promoteFromChain: ['staging', 'dev'] } },
           { id: 'deploy-staging', kind: 'deploy', status: 'upcoming', deploy: { environment: 'staging', protectedEnvironment: false, promoteFromChain: ['dev'] } },
         ],
@@ -261,14 +263,14 @@ describe('work-order detail store', () => {
     api.setReply(detailReply(AT_SHIP));
     await store.load(WO_ID);
     expect(store.state().stages).toEqual([
-      { stage: 'plan', name: 'Plan', current: false, gates: [{ id: 'plan-approval', kind: 'human', status: 'passed' }] },
+      { stage: 'plan', name: 'Plan', current: false, gates: [{ id: 'plan-approval', kind: 'human', label: 'Plan approval', status: 'passed' }] },
       { stage: 'build', name: 'Build', current: false, gates: [{ id: 'secret-scan', kind: 'secret_scan', status: 'passed' }] },
       {
         stage: 'ship',
         name: 'Ship',
         current: true,
         gates: [
-          { id: 'ship-approval', kind: 'human', status: 'pending' },
+          { id: 'ship-approval', kind: 'human', label: 'Ship approval', status: 'pending' },
           { id: 'deploy-prod', kind: 'deploy', status: 'pending', deploy: { environment: 'prod', protectedEnvironment: true, promoteFromChain: ['staging', 'dev'] } },
           { id: 'deploy-staging', kind: 'deploy', status: 'pending', deploy: { environment: 'staging', protectedEnvironment: false, promoteFromChain: ['dev'] } },
         ],
@@ -358,7 +360,7 @@ describe('work-order detail store', () => {
       { type: 'gate.decide', workOrderId: WO_ID, gate: 'ship-approval', decision: 'approved', note: 'looks good' },
     ]);
     expect(api.queries.filter((query) => query.type === 'workOrder.detail')).toHaveLength(2);
-    expect(approved).toEqual({ command: 'gate.decide', result: { ok: true }, labelKey: 'success.gate.decide' });
+    expect(approved).toEqual({ command: 'gate.decide', result: { ok: true }, labelKey: 'success.gate.approved' });
 
     api.setCommandResult({ ok: false, code: 'not_pending' });
     const rejected = await store.decideGate({ gate: 'ship-approval', decision: 'rejected' });
@@ -368,6 +370,10 @@ describe('work-order detail store', () => {
       labelKey: 'error.not_pending',
     });
     expect(store.state().lastOutcome).toEqual(rejected);
+
+    api.setCommandResult({ ok: true });
+    const refused = await store.decideGate({ gate: 'ship-approval', decision: 'rejected' });
+    expect(refused).toEqual({ command: 'gate.decide', result: { ok: true }, labelKey: 'success.gate.rejected' });
   });
 
   it('U-4: a stage enqueue is an intent mapped through U-8 that refreshes the detail query', async () => {
@@ -543,5 +549,49 @@ describe('work-order detail store', () => {
     );
     await idle.load(WO_ID);
     expect(idlePane.attached).toEqual([]);
+  });
+});
+
+// --- U-19: the in-place detail's flow strip ----------------------------------------------------------
+
+describe('flow strip (U-19)', () => {
+  it('U-19: chips follow stage order — done carry the check, the current is marked, the current stage\'s pending gates sit as dashed gate chips after it', async () => {
+    const api = fakeApi(detailReply(AT_SHIP));
+    const store = createStore(api);
+    await store.load(WO_ID);
+
+    expect(flowChips(store.state().stages)).toEqual([
+      { kind: 'stage', name: 'Plan', standing: 'done' },
+      { kind: 'stage', name: 'Build', standing: 'done' },
+      { kind: 'stage', name: 'Ship', standing: 'current' },
+      { kind: 'gate', name: 'Ship approval', standing: 'pending' },
+      { kind: 'gate', name: 'prod', standing: 'pending' },
+      { kind: 'gate', name: 'staging', standing: 'pending' },
+    ]);
+  });
+
+  it('U-19: a done work order renders every stage done and no gate chip', async () => {
+    const api = fakeApi(detailReply(DONE));
+    const store = createStore(api);
+    await store.load(WO_ID);
+
+    expect(flowChips(store.state().stages)).toEqual([
+      { kind: 'stage', name: 'Plan', standing: 'done' },
+      { kind: 'stage', name: 'Build', standing: 'done' },
+      { kind: 'stage', name: 'Ship', standing: 'done' },
+    ]);
+  });
+
+  it('U-19: a work order waiting to start still marks its entered stage current', async () => {
+    const atPlan: WorkOrderState = { status: 'ready', stage: STAGE_PLAN, attempt: 1, pendingGates: [] };
+    const api = fakeApi(detailReply(atPlan));
+    const store = createStore(api);
+    await store.load(WO_ID);
+
+    expect(flowChips(store.state().stages)).toEqual([
+      { kind: 'stage', name: 'Plan', standing: 'current' },
+      { kind: 'stage', name: 'Build', standing: 'upcoming' },
+      { kind: 'stage', name: 'Ship', standing: 'upcoming' },
+    ]);
   });
 });

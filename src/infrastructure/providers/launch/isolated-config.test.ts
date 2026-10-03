@@ -1,9 +1,10 @@
 // P-7 — launch isolation: everything a run writes stays inside the run's own directory, and the
-// user's own CLI config trees (~/.claude, ~/.codex, ~/.gemini) stay byte-identical across a launch.
+// user's own CLI config trees (~/.claude, ~/.codex) stay byte-identical across a launch.
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { buildChildEnv } from './launch-env';
 import { BUILTIN_PROVIDER_DEFS } from '../defs';
 import type { ProviderDef } from '../defs';
 import { writeRunConfig } from './isolated-config';
@@ -27,8 +28,6 @@ async function createSentinelHome(root: string): Promise<string> {
     ['.claude', 'projects', 'session-a.jsonl'],
     ['.codex', 'config.toml'],
     ['.codex', 'auth.json'],
-    ['.gemini', 'settings.json'],
-    ['.gemini', 'oauth_creds.json'],
     ['.gitconfig'],
   ];
   for (const segments of files) {
@@ -72,7 +71,7 @@ function defById(id: string): ProviderDef {
 
 /** A def for a CLI that takes its config dir as a flag — no built-in rides this mechanism yet. */
 function flagDef(): ProviderDef {
-  const base = defById('gemini');
+  const base = defById('copilot');
   return {
     ...base,
     id: 'flag-probe',
@@ -88,7 +87,7 @@ const RUN_CAPABILITIES: readonly RunCapability[] = [
     name: 'Filesystem',
     command: 'npx',
     args: ['-y', 'fs-server'],
-    env: { ROOT: '/workspace/main' },
+    env: { ROOT: '/repo/main' },
   },
   { kind: 'mcp', id: 'github', name: 'GitHub', command: 'gh-mcp', args: [], env: {} },
   { kind: 'skill', id: 'review', name: 'Review skill', path: '/library/skills/review' },
@@ -143,11 +142,26 @@ describe('run-scoped config writer (P-7)', () => {
     expect([...after.entries()].sort()).toEqual([...before.entries()].sort());
   });
 
+  it('P-44: a none config sets no home variable and no flag, and hermes never gets HERMES_HOME', async () => {
+    const { runDir } = await createRoot();
+    const hermes = defById('hermes');
+    expect(hermes.config).toEqual({ mechanism: 'none' });
+
+    const fragment = await writeRunConfig(runDir, hermes, RUN_CAPABILITIES);
+    expect(fragment.env).toEqual({});
+    expect(fragment.args).toEqual([]);
+    expect(JSON.stringify(fragment)).not.toContain('HERMES_HOME');
+
+    const launch = hermes.buildLaunch({ configDir: fragment.configDir } as Parameters<ProviderDef['buildLaunch']>[0]);
+    expect(Object.keys(launch.env)).toEqual([]);
+    expect(launch.args).not.toContain(fragment.configDir);
+  });
+
   it('P-7: the config dir reaches the CLI through the provider config mechanism', async () => {
     const { runDir } = await createRoot();
 
-    const viaEnv = await writeRunConfig(runDir, defById('claude-code'), RUN_CAPABILITIES);
-    expect(viaEnv.env).toEqual({ CLAUDE_CONFIG_DIR: join(runDir, 'config') });
+    const viaEnv = await writeRunConfig(runDir, defById('opencode'), RUN_CAPABILITIES);
+    expect(viaEnv.env).toEqual({ OPENCODE_CONFIG_DIR: join(runDir, 'config') });
     expect(viaEnv.args).toEqual([]);
 
     const viaFlag = await writeRunConfig(runDir, flagDef(), RUN_CAPABILITIES);
@@ -166,7 +180,7 @@ describe('run-scoped config writer (P-7)', () => {
     expect(mcp.mcpServers.filesystem).toEqual({
       command: 'npx',
       args: ['-y', 'fs-server'],
-      env: { ROOT: '/workspace/main' },
+      env: { ROOT: '/repo/main' },
     });
 
     const skills = JSON.parse(await readFile(join(fragment.configDir, 'skills.json'), 'utf8')) as {
@@ -189,11 +203,74 @@ describe('run-scoped config writer (P-7)', () => {
 
   it('P-7: a run without capabilities still gets a complete, empty config set', async () => {
     const { runDir } = await createRoot();
-    const fragment = await writeRunConfig(runDir, defById('gemini'), []);
+    const fragment = await writeRunConfig(runDir, defById('copilot'), []);
     expect(fragment.mcpServers).toEqual({});
     expect(fragment.skills).toEqual([]);
     expect(fragment.hooks).toEqual([]);
     const mcp = JSON.parse(await readFile(join(fragment.configDir, 'mcp.json'), 'utf8')) as unknown;
     expect(mcp).toEqual({ mcpServers: {} });
+  });
+});
+
+describe('isolation and telemetry (P-44)', () => {
+  const isolatedDef = (): ProviderDef => ({
+    ...flagDef(),
+    id: 'isolated-probe',
+    isolation: {
+      env: { PROBE_NO_EXTERNAL_CONFIG: '1' },
+      args: ['--no-external-config'],
+      runScopedHome: 'PROBE_HOME',
+    },
+    telemetryOff: ['--no-telemetry'],
+  });
+
+  it('P-44: the isolation env and args and the telemetry-off flags are applied to the launch', async () => {
+    const { runDir } = await createRoot();
+
+    const config = await writeRunConfig(runDir, isolatedDef(), []);
+
+    expect(config.args).toEqual(['--mcp-config', config.configDir, '--no-external-config', '--no-telemetry']);
+    expect(config.env['PROBE_NO_EXTERNAL_CONFIG']).toBe('1');
+  });
+
+  it('P-44: a run-scoped home points at the run config dir and never at the real home, whatever the machine carries', async () => {
+    const { root, runDir } = await createRoot();
+    const realHome = join(root, 'real-home');
+    const def: ProviderDef = { ...isolatedDef(), isolation: { runScopedHome: 'HOME' } };
+
+    const config = await writeRunConfig(runDir, def, []);
+    // The transports spread the allowlisted machine env first and the run config on top of it.
+    const childEnv = { ...buildChildEnv(def.id, { HOME: realHome, PATH: '/bin' }, {}), ...config.env };
+
+    expect(childEnv['HOME']).toBe(config.configDir);
+    expect(Object.values(childEnv).some((value) => value.startsWith(realHome))).toBe(false);
+  });
+
+  it('P-44: an agy, copilot or cursor run never replaces HOME — the machine home reaches the child, and none is invented when the machine carries no HOME', async () => {
+    const { root, runDir } = await createRoot();
+    const realHome = join(root, 'real-home');
+    for (const id of ['agy', 'copilot', 'cursor']) {
+      const def = defById(id);
+      const config = await writeRunConfig(runDir, def, []);
+      const launch = def.buildLaunch({ prompt: 'x', configDir: config.configDir });
+      // The transports spread the allowlisted machine env first and the def's launch env last.
+      const withHome = { ...buildChildEnv(def.id, { HOME: realHome, PATH: '/bin' }, {}), ...config.env, ...launch.env };
+      expect(withHome.HOME, id).toBe(realHome);
+      expect(JSON.stringify(withHome), id).not.toContain(config.configDir);
+      // A machine without HOME gets none: neither the writer nor the launch names a home for a
+      // CLI whose login lives in the home it resolves itself.
+      const withoutHome = { ...buildChildEnv(def.id, { PATH: '/bin' }, {}), ...config.env, ...launch.env };
+      expect('HOME' in withoutHome, id).toBe(false);
+    }
+  });
+
+  it('P-44: a definition without isolation or telemetry flags launches exactly as before', async () => {
+    const { runDir } = await createRoot();
+
+    const config = await writeRunConfig(runDir, defById('claude-code'), []);
+
+    expect(config.args).toEqual([]);
+    // The login lives in the CLI's own config directory, so no variable carries the run's.
+    expect(config.env).toEqual({});
   });
 });

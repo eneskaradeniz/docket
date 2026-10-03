@@ -1,7 +1,7 @@
 // scenarios/standard-flow-node.test.ts — the docs/v2/infrastructure.md section-9 acceptance: the
 // Phase 2a standard-flow scenario replayed through createApi and the application services, but on
 // createNodeDeps over a temporary data folder — SQLite storage, YAML definitions under the global
-// root, a throw-away git workspace, the real command runner, secret scanner and worktrees — then
+// root, a throw-away git repo, the real command runner, secret scanner and worktrees — then
 // closed and reopened on the same folder to prove everything survived.
 import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -23,7 +23,7 @@ import {
   type QueueItem,
   type StageSlug,
   type WorkOrderId,
-  type WorkspaceSlug,
+  type RepoSlug,
 } from '../../domain/index';
 
 import { createApi } from '../../api/index';
@@ -63,7 +63,7 @@ const ulidOf = <B extends string>(input: string) => {
   return parsed.value;
 };
 
-const WS: WorkspaceSlug = slugOf('ws');
+const REPO: RepoSlug = slugOf('ws');
 const MAIN: AccountId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FCV');
 const USER: Actor = { kind: 'user', id: 'user-1', label: 'Operator' };
 
@@ -75,7 +75,7 @@ const REVIEW_VERDICT: GateSlug = slugOf<'gate'>('review-verdict');
 const REVIEW_APPROVAL: GateSlug = slugOf<'gate'>('review-approval');
 const CLOSURE: GateSlug = slugOf<'gate'>('closure');
 
-const LIMITS: DispatchLimits = { global: 4, perWorkspace: 3, perAccount: {} };
+const LIMITS: DispatchLimits = { global: 4, perRepo: 3, perAccount: {} };
 
 /** The implement stage's command gate runs this through the real command runner. */
 const TEST_COMMAND = 'node -e "process.exit(0)"';
@@ -128,7 +128,7 @@ beforeEach(async () => {
   homeDir = join(scratch, 'home');
   await mkdir(homeDir, { recursive: true });
   savedEnv = new Map(ENV_KEYS.map((key) => [key, process.env[key]]));
-  // The throw-away git workspace must not read or write the user's git config.
+  // The throw-away git repo must not read or write the user's git config.
   process.env.HOME = homeDir;
   transports = createFakeTransportResolver();
   notifier = createFakeNotifier();
@@ -149,7 +149,7 @@ async function git(cwd: string, args: readonly string[]): Promise<string> {
 }
 
 /** A throw-away git repository with one committed file the reviewer's evidence can point at. */
-async function seedWorkspaceRepo(): Promise<void> {
+async function seedGitRepo(): Promise<void> {
   await mkdir(join(repoDir, 'src'), { recursive: true });
   await writeFile(join(repoDir, 'src', 'main.ts'), 'export const version = 1;\n', 'utf8');
   await git(repoDir, ['init', '-b', 'main']);
@@ -169,15 +169,20 @@ async function seedGlobalDefinitions(): Promise<void> {
   await writeFile(join(dataDir, 'flows', 'standard.yaml'), stringify(standard), 'utf8');
 }
 
-/** The workspace's own definitions: enable standard, run the tests set with a real command. */
-async function seedWorkspaceDefinitions(): Promise<void> {
+/** The repo's own definitions: a project≡repo project.yaml naming itself mainRepo, and a
+ *  repo.yaml enabling standard with a command set that runs a real command. */
+async function seedRepoDefinitions(): Promise<void> {
   await mkdir(join(repoDir, '.docket'), { recursive: true });
   await writeFile(
-    join(repoDir, '.docket', 'workspace.yaml'),
+    join(repoDir, '.docket', 'project.yaml'),
+    stringify({ id: 'ws', name: 'Repo', mainRepo: 'ws', repos: ['ws'] }),
+    'utf8',
+  );
+  await writeFile(
+    join(repoDir, '.docket', 'repo.yaml'),
     stringify({
       id: 'ws',
-      name: 'Workspace',
-      repos: [],
+      name: 'Repo',
       flows: ['standard'],
       defaultFlow: 'standard',
       commandSets: { tests: [TEST_COMMAND] },
@@ -207,7 +212,12 @@ const expectState = (
 };
 
 const openViaApi = async (deps: AppDeps, title: string): Promise<WorkOrderId | undefined> => {
-  const result = await createApi(deps).command(USER, { type: 'workOrder.open', workspace: WS, title });
+  const result = await createApi(deps).command(USER, {
+    type: 'workOrder.open',
+    project: slugOf<'project'>('ws'),
+    repo: REPO,
+    title,
+  });
   if (!result.ok || result.id === undefined) return undefined;
   const parsed = parseUlid<'work-order'>(result.id);
   return parsed.ok ? parsed.value : undefined;
@@ -222,7 +232,7 @@ const runCurrentStage = async (deps: AppDeps, id: WorkOrderId) => {
   const view = await viewOf(deps, id);
   if (view.next.kind !== 'start_run') throw new Error(`expected start_run, got ${view.next.kind}`);
 
-  const routed = await resolveRoute(deps, { workspace: WS, workOrderId: id, role: view.next.role });
+  const routed = await resolveRoute(deps, { repo: REPO, workOrderId: id, role: view.next.role });
   if (!routed.ok) throw new Error(`route must resolve: ${JSON.stringify(routed.error)}`);
 
   const queued = await enqueueStage(deps, { id });
@@ -236,7 +246,7 @@ const runCurrentStage = async (deps: AppDeps, id: WorkOrderId) => {
   const item = started[0];
   if (item === undefined) throw new Error('the tick must hand over the started item');
 
-  const worktree = await deps.worktrees.ensure(WS, id);
+  const worktree = await deps.worktrees.ensure(REPO, id);
   if (!worktree.ok) throw new Error(`the worktree must exist: ${worktree.error}`);
 
   return {
@@ -258,13 +268,15 @@ describe('standard flow, headless end to end on real Node storage', () => {
     'section 9: open to done on createNodeDeps, then a fresh open reads the same state and runs',
     { timeout: 60_000 },
     async () => {
-      await seedWorkspaceRepo();
+      await seedGitRepo();
       await seedGlobalDefinitions();
-      await seedWorkspaceDefinitions();
+      await seedRepoDefinitions();
 
       const node = openNodeDeps();
       const deps = node.deps;
-      await node.workspaces.register(WS, repoDir);
+      const attached = await createApi(deps).command(USER, { type: 'project.attach', path: repoDir });
+      expect(attached).toEqual({ ok: true, id: REPO });
+      expect(await node.repos.path(REPO)).toBe(repoDir);
 
       // One account carries every role; one scripted transport completes each run.
       await deps.accounts.save({
@@ -392,7 +404,7 @@ describe('standard flow, headless end to end on real Node storage', () => {
       const beforeClose = view;
       node.close();
       const reopened = openNodeDeps();
-      expect(await reopened.workspaces.list()).toEqual([{ slug: WS, path: repoDir }]);
+      expect(await reopened.repos.list()).toEqual([{ slug: REPO, path: repoDir }]);
 
       const detail = (await createApi(reopened.deps).query({ type: 'workOrder.detail', id })) as WorkOrderView;
       expect(detail.state).toEqual(beforeClose.state);

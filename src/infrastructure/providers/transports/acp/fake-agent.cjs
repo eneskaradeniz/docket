@@ -37,17 +37,345 @@ const update = (updateBody) =>
 const advertiseLoadSession = scenario !== 'load-unsupported';
 const freshSessionId = scenario === 'load-fail' || scenario === 'load-unsupported' ? 'sess_fake_fresh' : 'sess_fake_1';
 
+// The models-* scenarios answer session/new the way the live CLIs do (observed 2026-10: one
+// answers with a models object plus a model config option; the other with config options only,
+// among them a thought_level select). The thought-level shape advertises sessionCapabilities.close
+// exactly as its live counterpart does; the available-models shape does not advertise it.
+const advertiseSessionClose = scenario === 'models-opencode' || scenario === 'models-kilo' || scenario === 'models-reasonix' || scenario === 'models-hermes-close' || scenario === 'models-atomcode' || scenario === 'models-atomcode-configured' || scenario === 'models-vibe' || scenario === 'models-mimo' || scenario === 'models-qoder' || scenario === 'models-qoder-loggedout' || scenario === 'models-kimi' || scenario === 'models-kimi-loggedout';
+
+const cursorModelsSession = () => ({
+  sessionId: freshSessionId,
+  modes: {},
+  models: {
+    currentModelId: 'default[]',
+    availableModels: [
+      { modelId: 'default[]', name: 'Auto' },
+      { modelId: 'grok-4.7[context=256k,reasoning_effort=high,fast=true]', name: 'grok-4.7' },
+      { modelId: 'claude-opus-5-5[context=300k,effort=medium,fast=false]', name: 'claude-opus-5-5' },
+    ],
+  },
+  configOptions: [
+    { id: 'mode', category: 'mode', type: 'select', currentValue: 'agent', options: [{ value: 'agent', name: 'Agent' }, { value: 'plan', name: 'Plan' }] },
+    {
+      id: 'model',
+      category: 'model',
+      type: 'select',
+      currentValue: 'default[]',
+      options: [
+        { value: 'default[]', name: 'Auto' },
+        { value: 'grok-4.7[context=256k,reasoning_effort=high,fast=true]', name: 'grok-4.7' },
+        { value: 'claude-opus-5-5[context=300k,effort=medium,fast=false]', name: 'claude-opus-5-5' },
+      ],
+    },
+  ],
+});
+
+// The kilo shape: a very long model list whose default is an image model, a thought-level option
+// named `effort` whose levels depend on the selected model and are recomputed when the model
+// changes (only `thinking` for the default model), and a mode option.
+const KILO_DEFAULT_MODEL = 'kilo/google/gemini-3-pro-image';
+const KILO_MODELS = [
+  KILO_DEFAULT_MODEL,
+  'kilo/anthropic/claude-opus-5',
+  'kilo/z-ai/glm-5.1',
+  'kilo/kilo-auto/free',
+];
+const KILO_EFFORTS = {
+  [KILO_DEFAULT_MODEL]: ['thinking'],
+  'kilo/anthropic/claude-opus-5': ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+  'kilo/z-ai/glm-5.1': ['instant', 'thinking'],
+  'kilo/kilo-auto/free': ['thinking'],
+};
+let kiloModel = KILO_DEFAULT_MODEL;
+let kiloEffort = 'thinking';
+const kiloConfigOptions = () => [
+  {
+    id: 'model',
+    category: 'model',
+    type: 'select',
+    currentValue: kiloModel,
+    options: KILO_MODELS.map((value) => ({ value, name: `Kilo Gateway/${value}` })),
+  },
+  {
+    id: 'effort',
+    category: 'thought_level',
+    type: 'select',
+    currentValue: kiloEffort,
+    options: KILO_EFFORTS[kiloModel].map((value) => ({ value, name: value })),
+  },
+  { id: 'mode', category: 'mode', type: 'select', currentValue: 'code', options: [{ value: 'code', name: 'Code' }, { value: 'plan', name: 'Plan' }] },
+];
+
+// The reasonix shape as its documentation gives it: select options named by id only (model,
+// effort, tool_approval), model values as `provider/model`, effort levels that depend on the
+// selected model and include `auto`, which names no level, and a rebuild on a model change that
+// resets the effort.
+const REASONIX_MODELS = ['deepseek-flash/deepseek-flash', 'deepseek-pro/deepseek-v4-pro'];
+const REASONIX_EFFORTS = {
+  'deepseek-flash/deepseek-flash': ['auto'],
+  'deepseek-pro/deepseek-v4-pro': ['auto', 'high', 'max'],
+};
+let reasonixModel = REASONIX_MODELS[0];
+let reasonixEffort = 'auto';
+let reasonixApproval = 'workspace-write';
+const reasonixConfigOptions = () => [
+  { id: 'model', type: 'select', currentValue: reasonixModel, options: REASONIX_MODELS.map((value) => ({ value, name: value })) },
+  { id: 'effort', type: 'select', currentValue: reasonixEffort, options: REASONIX_EFFORTS[reasonixModel].map((value) => ({ value, name: value })) },
+  {
+    id: 'tool_approval',
+    type: 'select',
+    currentValue: reasonixApproval,
+    options: ['read-only', 'workspace-write', 'danger-full-access'].map((value) => ({ value, name: value })),
+  },
+];
+
+// The atomcode shape: a mode select with four modes and a `reasoning_effort` thought-level select
+// (off, high, max), and a `model` select only when a provider is configured. The levels do not
+// depend on the model.
+const ATOMCODE_MODELS = ['deepseek-chat', 'glm-5.2'];
+let atomcodeModel = ATOMCODE_MODELS[0];
+let atomcodeEffort = 'off';
+const atomcodeConfigOptions = (configured) => [
+  { id: 'mode', category: 'mode', type: 'select', currentValue: 'build', options: ['build', 'accept_edits', 'bypass', 'plan'].map((value) => ({ value, name: value })) },
+  ...(configured
+    ? [{ id: 'model', category: 'model', type: 'select', currentValue: atomcodeModel, options: ATOMCODE_MODELS.map((value) => ({ value, name: value })) }]
+    : []),
+  {
+    id: 'reasoning_effort',
+    category: 'thought_level',
+    type: 'select',
+    currentValue: atomcodeEffort,
+    options: [
+      { value: 'off', name: 'Off (API default)' },
+      { value: 'high', name: 'High' },
+      { value: 'max', name: 'Max' },
+    ],
+  },
+];
+
+// The vibe shape: a mode select, a `model` select whose values are aliases, and a `thinking`
+// select under the category `thinking` (not `thought_level`) with levels off to max.
+const VIBE_MODELS = ['mistral-medium-3.5', 'local'];
+const VIBE_LEVELS = ['off', 'low', 'medium', 'high', 'max'];
+let vibeModel = VIBE_MODELS[0];
+let vibeThinking = 'high';
+const vibeConfigOptions = () => [
+  { id: 'mode', category: 'mode', type: 'select', currentValue: 'default', options: ['default', 'plan', 'accept-edits', 'auto-approve'].map((value) => ({ value, name: value })) },
+  {
+    id: 'model',
+    category: 'model',
+    type: 'select',
+    currentValue: vibeModel,
+    options: [
+      { value: 'mistral-medium-3.5', name: 'mistral-vibe-cli-latest', description: 'Mistral Medium 3.5' },
+      { value: 'local', name: 'devstral', description: 'Devstral (local)' },
+    ],
+  },
+  { id: 'thinking', category: 'thinking', type: 'select', currentValue: vibeThinking, options: VIBE_LEVELS.map((value) => ({ value, name: value })) },
+];
+
+// The mimo shape: no thought-level option at all; the model select lists every model plain and
+// once per level as `<model>/<level>` (the model ids themselves contain slashes), plus a mode.
+const MIMO_BASE_MODELS = ['mimo/mimo-auto', 'xiaomi/mimo-v2.6-pro'];
+const MIMO_MODELS = MIMO_BASE_MODELS.flatMap((base) => [base, `${base}/low`, `${base}/medium`, `${base}/high`]);
+let mimoModel = 'xiaomi/mimo-v2.6-pro/high';
+const mimoConfigOptions = () => [
+  { id: 'model', category: 'model', type: 'select', currentValue: mimoModel, options: MIMO_MODELS.map((value) => ({ value, name: value })) },
+  { id: 'mode', category: 'mode', type: 'select', currentValue: 'build', options: [{ value: 'build', name: 'build' }, { value: 'plan', name: 'plan' }] },
+];
+
+// The qwen shape: initialize offers one terminal auth method (the CLI's own API-key login), and a
+// configured machine answers session/new with BOTH a models object and config options — the model
+// select, a reasoning_effort thought_level select whose values include `default` (which names no
+// level), and the mode list whose `yolo` far end a launch never picks. The live initialize
+// advertises session list/resume but not close, so this one does not either.
+const QWEN_SCENARIOS = ['models-qwen', 'models-qwen-loggedout', 'models-qwen-empty'];
+const QWEN_MODELS = [
+  { modelId: 'qwen3.5-plus', name: 'Qwen3.5 Plus' },
+  { modelId: 'qwen3-coder-plus', name: 'Qwen3 Coder Plus' },
+];
+let qwenModel = 'qwen3.5-plus';
+const qwenConfigOptions = () => [
+  { id: 'model', category: 'model', type: 'select', currentValue: qwenModel, options: QWEN_MODELS.map((model) => ({ value: model.modelId, name: model.name })) },
+  {
+    id: 'reasoning_effort',
+    category: 'thought_level',
+    type: 'select',
+    currentValue: 'default',
+    options: ['none', 'default', 'low', 'medium', 'high', 'xhigh', 'max'].map((value) => ({ value, name: value })),
+  },
+  { id: 'mode', category: 'mode', type: 'select', currentValue: 'default', options: ['plan', 'default', 'auto-edit', 'auto', 'yolo'].map((value) => ({ value, name: value })) },
+];
+const qwenModelsSession = () => ({
+  sessionId: freshSessionId,
+  models: { currentModelId: qwenModel, availableModels: QWEN_MODELS },
+  configOptions: qwenConfigOptions(),
+});
+
+// The qoder shape: initialize offers the CLI's own login as the one auth method, and a logged-in
+// machine answers session/new with config options only — the tier-alias model select, a
+// thought_level select whose five values are level names, and the mode list whose bypass far end a
+// launch never picks. The live initialize advertises session close, so this one does too.
+const QODER_SCENARIOS = ['models-qoder', 'models-qoder-loggedout'];
+const QODER_TIERS = [
+  { value: 'auto', name: 'Auto' },
+  { value: 'ultimate', name: 'Ultimate' },
+  { value: 'performance', name: 'Performance' },
+  { value: 'efficient', name: 'Efficient' },
+];
+let qoderModel = 'auto';
+const qoderConfigOptions = () => [
+  { id: 'model', category: 'model', type: 'select', currentValue: qoderModel, options: QODER_TIERS },
+  {
+    id: 'thought_level',
+    category: 'thought_level',
+    type: 'select',
+    currentValue: 'high',
+    options: ['low', 'medium', 'high', 'xhigh', 'max'].map((value) => ({ value, name: value })),
+  },
+  { id: 'mode', category: 'mode', type: 'select', currentValue: 'default', options: ['default', 'accept_edits', 'bypass_permissions', 'dont_ask', 'auto'].map((value) => ({ value, name: value })) },
+];
+
+// The kimi shape: initialize offers the CLI's own terminal device-code login as the one auth
+// method, and a logged-in machine answers session/new with config options only — the model
+// select, a `thinking` select under the category `thought_level` whose values are recomputed for
+// the selected model (`off` plus the model's own efforts), and the mode list whose `auto`/`yolo`
+// far ends a launch never picks. A logged-out machine refuses the session outright (observed
+// live), so the model list exists only after a login.
+const KIMI_SCENARIOS = ['models-kimi', 'models-kimi-loggedout'];
+const KIMI_MODELS = [
+  { value: 'kimi-code/kimi-for-coding', name: 'Kimi for Coding' },
+  { value: 'kimi-code/k3', name: 'K3' },
+];
+const KIMI_EFFORTS = {
+  'kimi-code/kimi-for-coding': ['off', 'low', 'medium', 'high', 'xhigh', 'max'],
+  'kimi-code/k3': ['off', 'low', 'medium', 'high'],
+};
+let kimiModel = 'kimi-code/kimi-for-coding';
+let kimiThinking = 'high';
+const kimiConfigOptions = () => [
+  { id: 'model', category: 'model', type: 'select', currentValue: kimiModel, options: KIMI_MODELS },
+  {
+    id: 'thinking',
+    category: 'thought_level',
+    type: 'select',
+    currentValue: kimiThinking,
+    options: KIMI_EFFORTS[kimiModel].map((value) => ({ value, name: value === 'off' ? 'Thinking Off' : `Thinking ${value}` })),
+  },
+  { id: 'mode', category: 'mode', type: 'select', currentValue: 'default', options: ['default', 'plan', 'auto', 'yolo'].map((value) => ({ value, name: value })) },
+];
+
+// The kiro shape: initialize names the CLI's terminal login as its one auth method, and
+// session/new answers modes only — no configOptions, no models, the model list rides the CLI's
+// own listing command instead — followed by the CLI's own custom `_kiro.dev/*` notifications
+// (slash commands, usage metadata, subagent list), which a client must ignore, never answer.
+const KIRO_MODES = ['kiro_default', 'kiro_planner', 'kiro_guide'];
+const kiroModesSession = () => ({
+  sessionId: freshSessionId,
+  modes: { currentModeId: 'kiro_default', availableModes: KIRO_MODES.map((id) => ({ id })) },
+});
+const sendKiroNotifications = () => {
+  send({ jsonrpc: '2.0', method: '_kiro.dev/commands/available', params: { sessionId, commands: ['/model', '/effort', '/usage'] } });
+  send({ jsonrpc: '2.0', method: '_kiro.dev/metadata', params: { sessionId, contextUsagePercentage: 0 } });
+  send({ jsonrpc: '2.0', method: '_kiro.dev/subagent/list_update', params: { sessionId, subagents: [] } });
+};
+
+const opencodeModelsSession = () => ({
+  sessionId: freshSessionId,
+  configOptions: [
+    {
+      id: 'model',
+      category: 'model',
+      type: 'select',
+      currentValue: 'opencode/fledge-alpha-free',
+      options: [
+        { value: 'opencode/big-pickle', name: 'opencode/Big Pickle' },
+        { value: 'opencode/fledge-alpha-free', name: 'opencode/Fledge Alpha Free' },
+        { value: 'opencode/space-bunny-free', name: 'opencode/Space Bunny Free' },
+      ],
+    },
+    {
+      id: 'effort',
+      category: 'thought_level',
+      type: 'select',
+      currentValue: 'default',
+      options: [
+        { value: 'low', name: 'Low' },
+        { value: 'high', name: 'High' },
+        { value: 'max', name: 'Max' },
+        { value: 'default', name: 'Default' },
+      ],
+    },
+    { id: 'mode', category: 'mode', type: 'select', currentValue: 'build', options: [{ value: 'build', name: 'Build' }, { value: 'plan', name: 'Plan' }] },
+  ],
+});
+
+// The hermes-style session answer: a `models` object whose ids are `provider:model` and no
+// configOptions at all (so no thought_level).
+const hermesModelsSession = () => ({
+  sessionId: freshSessionId,
+  models: {
+    currentModelId: 'nous:hermes-4-405b',
+    availableModels: [
+      { modelId: 'nous:hermes-4-405b', name: 'Hermes 4 405B' },
+      { modelId: 'openrouter:vendor/some-model:free', name: 'some-model (free)' },
+      { modelId: 'custom:local:llama-3', name: 'llama-3' },
+    ],
+  },
+});
+
+// The refusal a machine with no configured inference provider answers session/new with: JSON-RPC
+// -32603 whose human-readable detail sits in `data`.
+const sendLoginRefusal = (id) =>
+  send({
+    jsonrpc: '2.0',
+    id,
+    error: {
+      code: -32603,
+      message: 'Internal error',
+      data: { details: 'Hermes is not connected to any AI provider yet. Run `hermes model` to choose one.' },
+    },
+  });
+
 process.on('SIGTERM', () => {
   // Drain what is already in the pipe, then leave; a hard hang would wedge stop(). The grace
   // is generous because the test suite runs many files in parallel on a loaded machine.
   setTimeout(() => process.exit(0), 500);
 });
 
+// The grok-style initialize answer: the model list rides `_meta.modelState` (given even when
+// logged out), each model with its own reasoning efforts, and the only auth method is a browser
+// login. Its session/new is refused with -32000 until a login exists, so a catalog flow that
+// opened a session would fail on it.
+const grokModelState = () => ({
+  currentModelId: 'grok-4.6',
+  availableModels: [
+    { modelId: 'grok-4.6', name: 'Grok 4.6', _meta: { totalContextTokens: 256000, supportsReasoningEffort: true, reasoningEfforts: [{ value: 'xhigh' }, { value: 'high' }, { value: 'medium' }, { value: 'low' }] } },
+    { modelId: 'grok-4.5', name: 'Grok 4.5', _meta: { totalContextTokens: 256000, supportsReasoningEffort: true, reasoningEfforts: [{ value: 'high' }, { value: 'medium' }, { value: 'low' }, { value: 'ludicrous' }] } },
+    { modelId: 'grok-code-fast', name: 'Grok Code Fast', _meta: { supportsReasoningEffort: false } },
+  ],
+});
+
 const initializeResult = () => ({
   protocolVersion: 1,
-  agentCapabilities: advertiseLoadSession ? { loadSession: true } : {},
-  agentInfo: { name: 'fake-agent', version: '1.0.0' },
-  authMethods: [],
+  agentCapabilities: {
+    ...(advertiseLoadSession ? { loadSession: true } : {}),
+    ...(advertiseSessionClose ? { sessionCapabilities: { close: {} } } : {}),
+  },
+  agentInfo: { name: scenario === 'models-kiro' ? 'Kiro CLI Agent' : 'fake-agent', version: '1.0.0' },
+  authMethods:
+    scenario === 'models-grok'
+      ? [{ id: 'grok.com' }]
+      : scenario === 'models-kiro'
+        ? [{ id: 'kiro-login', name: "Run 'kiro-cli login' in terminal" }]
+        : QWEN_SCENARIOS.includes(scenario)
+          ? [{ id: 'openai', name: 'Use OpenAI API key', _meta: { type: 'terminal', args: ['--auth-type=openai'] } }]
+          : QODER_SCENARIOS.includes(scenario)
+            ? [{ id: 'qodercli-login', name: 'Use your existing qodercli login' }]
+            : KIMI_SCENARIOS.includes(scenario)
+              ? [{ id: 'login', type: 'terminal', name: "Run 'kimi login' in terminal" }]
+              : [],
+  ...(scenario === 'models-grok' ? { _meta: { modelState: grokModelState() } } : {}),
 });
 
 const echoPromptText = (promptBlocks) =>
@@ -67,7 +395,44 @@ const runTurn = (promptBlocks) => {
     respond(promptId, { stopReason: 'end_turn' });
     return;
   }
-  if (scenario === 'permission') {
+  if (scenario === 'hang') {
+    // One chunk, then silence with the turn open: the stop path is under test.
+    update({ sessionUpdate: 'agent_message_chunk', messageId: 'msg_hang', content: { type: 'text', text: 'working' } });
+    return;
+  }
+  if (scenario === 'steady') {
+    // A long turn that never goes silent for long: six chunks a quarter second apart, so the
+    // whole turn outlasts a one-second watchdog while no single gap comes near it.
+    let sent = 0;
+    const timer = setInterval(() => {
+      sent += 1;
+      update({ sessionUpdate: 'agent_message_chunk', messageId: `msg_${sent}`, content: { type: 'text', text: `chunk ${sent}` } });
+      if (sent < 6) return;
+      clearInterval(timer);
+      update({ sessionUpdate: 'usage_update', used: 100, size: 200000 });
+      respond(promptId, { stopReason: 'end_turn' });
+    }, 250);
+    return;
+  }
+  if (scenario === 'permission' || scenario === 'permission-hermes' || scenario === 'permission-hermes-standing') {
+    const permissionOptions =
+      scenario === 'permission'
+        ? [
+            { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' },
+            { optionId: 'reject-once', name: 'Reject', kind: 'reject_once' },
+          ]
+        : scenario === 'permission-hermes'
+          ? [
+              { optionId: 'allow_session', name: 'Allow for this session', kind: 'allow_always' },
+              { optionId: 'allow_always', name: 'Always allow', kind: 'allow_always' },
+              { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
+              { optionId: 'deny', name: 'Deny', kind: 'reject_once' },
+            ]
+          : [
+              { optionId: 'allow_session', name: 'Allow for this session', kind: 'allow_always' },
+              { optionId: 'allow_always', name: 'Always allow', kind: 'allow_always' },
+              { optionId: 'deny', name: 'Deny', kind: 'reject_once' },
+            ];
     update({
       sessionUpdate: 'tool_call',
       toolCallId: 'call_001',
@@ -86,10 +451,7 @@ const runTurn = (promptBlocks) => {
       params: {
         sessionId,
         toolCall: { toolCallId: 'call_001', name: 'edit_file', title: 'Editing config', kind: 'edit', status: 'pending', locations: [{ path: '/tmp/docket-acp-fixture/config.json', line: 1 }] },
-        options: [
-          { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' },
-          { optionId: 'reject-once', name: 'Reject', kind: 'reject_once' },
-        ],
+        options: permissionOptions,
       },
     });
     return; // the agent waits: nothing else happens until the client answers
@@ -128,7 +490,193 @@ const onLine = (line) => {
   }
   if (message.method === 'session/new') {
     sessionId = freshSessionId;
+    if (scenario === 'models-grok') {
+      send({ jsonrpc: '2.0', id: message.id, error: { code: -32000, message: 'Authentication required', data: 'no auth method id provided' } });
+      return;
+    }
+    if (scenario === 'models-cursor') {
+      respond(message.id, cursorModelsSession());
+      return;
+    }
+    if (scenario === 'models-opencode') {
+      respond(message.id, opencodeModelsSession());
+      return;
+    }
+    if (scenario === 'models-hermes' || scenario === 'models-hermes-close') {
+      respond(message.id, hermesModelsSession());
+      return;
+    }
+    if (scenario === 'session-login-refused') {
+      sendLoginRefusal(message.id);
+      return;
+    }
+    if (scenario === 'session-internal-error') {
+      // Same code as the login refusal, different text: not a login answer.
+      send({ jsonrpc: '2.0', id: message.id, error: { code: -32603, message: 'Internal error', data: { details: 'disk full' } } });
+      return;
+    }
+    if (scenario === 'session-garbled') {
+      send({ jsonrpc: '2.0', id: message.id, error: 'not an object' });
+      return;
+    }
+    if (scenario === 'models-kilo') {
+      respond(message.id, { sessionId: freshSessionId, configOptions: kiloConfigOptions() });
+      return;
+    }
+    if (scenario === 'models-reasonix') {
+      respond(message.id, { sessionId: freshSessionId, configOptions: reasonixConfigOptions() });
+      return;
+    }
+    if (scenario === 'models-atomcode' || scenario === 'models-atomcode-configured') {
+      respond(message.id, {
+        sessionId: freshSessionId,
+        modes: { currentModeId: 'build', availableModes: [{ id: 'build' }, { id: 'accept_edits' }, { id: 'bypass' }, { id: 'plan' }] },
+        configOptions: atomcodeConfigOptions(scenario === 'models-atomcode-configured'),
+      });
+      return;
+    }
+    if (scenario === 'models-vibe') {
+      respond(message.id, { sessionId: freshSessionId, configOptions: vibeConfigOptions() });
+      return;
+    }
+    if (scenario === 'models-mimo') {
+      respond(message.id, { sessionId: freshSessionId, configOptions: mimoConfigOptions() });
+      return;
+    }
+    if (scenario === 'models-qwen') {
+      respond(message.id, qwenModelsSession());
+      return;
+    }
+    if (scenario === 'models-kiro') {
+      respond(message.id, kiroModesSession());
+      sendKiroNotifications();
+      return;
+    }
+    // The refusal a machine with no configured provider answers with (observed live).
+    if (scenario === 'models-qwen-loggedout') {
+      send({
+        jsonrpc: '2.0',
+        id: message.id,
+        error: { code: -32000, message: 'Authentication required: Use Qwen Code CLI to authenticate first.' },
+      });
+      return;
+    }
+    // A session that opens without a model select and without a models object: the user
+    // configured no provider, so the list is empty rather than malformed.
+    if (scenario === 'models-qwen-empty') {
+      respond(message.id, { sessionId: freshSessionId, configOptions: qwenConfigOptions().slice(1) });
+      return;
+    }
+    if (scenario === 'models-qoder') {
+      respond(message.id, { sessionId: freshSessionId, configOptions: qoderConfigOptions() });
+      return;
+    }
+    // The refusal a logged-out machine answers with (observed live).
+    if (scenario === 'models-qoder-loggedout') {
+      send({
+        jsonrpc: '2.0',
+        id: message.id,
+        error: { code: -32000, message: 'Authentication required: Authentication is required.' },
+      });
+      return;
+    }
+    if (scenario === 'models-kimi') {
+      respond(message.id, { sessionId: freshSessionId, configOptions: kimiConfigOptions() });
+      return;
+    }
+    // The refusal a machine without a login answers with (observed live): no session, so the
+    // model list the session would carry exists only after a login.
+    if (scenario === 'models-kimi-loggedout') {
+      send({
+        jsonrpc: '2.0',
+        id: message.id,
+        error: { code: -32000, message: 'Authentication required' },
+      });
+      return;
+    }
+    if (scenario === 'models-vibe-nokey') {
+      send({ jsonrpc: '2.0', id: message.id, error: { code: -32000, message: 'Missing API key for mistral provider.' } });
+      return;
+    }
+    if (scenario === 'models-silent') return; // never answers: the client's timeout is under test
+    if (scenario === 'models-die') process.exit(1);
     respond(message.id, { sessionId });
+    return;
+  }
+  if (message.method === 'session/set_config_option') {
+    if (scenario === 'models-atomcode' || scenario === 'models-atomcode-configured') {
+      const { configId, value } = message.params;
+      if (configId === 'model' && ATOMCODE_MODELS.includes(value)) atomcodeModel = value;
+      if (configId === 'reasoning_effort' && ['off', 'high', 'max'].includes(value)) atomcodeEffort = value;
+      respond(message.id, { configOptions: atomcodeConfigOptions(scenario === 'models-atomcode-configured') });
+      return;
+    }
+    if (scenario === 'models-reasonix') {
+      const { configId, value } = message.params;
+      if (configId === 'model' && REASONIX_MODELS.includes(value)) {
+        reasonixModel = value;
+        reasonixEffort = 'auto';
+      } else if (configId === 'effort' && REASONIX_EFFORTS[reasonixModel].includes(value)) {
+        reasonixEffort = value;
+      } else if (configId === 'tool_approval') {
+        reasonixApproval = value;
+      }
+      respond(message.id, { configOptions: reasonixConfigOptions() });
+      return;
+    }
+    if (scenario === 'models-vibe') {
+      const { configId, value } = message.params;
+      if (configId === 'model' && VIBE_MODELS.includes(value)) vibeModel = value;
+      if (configId === 'thinking' && VIBE_LEVELS.includes(value)) vibeThinking = value;
+      respond(message.id, { configOptions: vibeConfigOptions() });
+      return;
+    }
+    if (scenario === 'models-mimo') {
+      const { configId, value } = message.params;
+      if (configId === 'model' && MIMO_MODELS.includes(value)) mimoModel = value;
+      respond(message.id, { configOptions: mimoConfigOptions() });
+      return;
+    }
+    if (scenario === 'models-qwen') {
+      const { configId, value } = message.params;
+      if (configId === 'model' && QWEN_MODELS.some((model) => model.modelId === value)) qwenModel = value;
+      respond(message.id, qwenModelsSession());
+      return;
+    }
+    if (scenario === 'models-qoder') {
+      const { configId, value } = message.params;
+      if (configId === 'model' && QODER_TIERS.some((tier) => tier.value === value)) qoderModel = value;
+      respond(message.id, { sessionId: freshSessionId, configOptions: qoderConfigOptions() });
+      return;
+    }
+    if (scenario === 'models-kimi') {
+      const { configId, value } = message.params;
+      if (configId === 'model' && KIMI_MODELS.some((model) => model.value === value)) {
+        kimiModel = value;
+        // The thinking levels belong to the selected model and are recomputed with it.
+        kimiThinking = KIMI_EFFORTS[value].includes('high') ? 'high' : KIMI_EFFORTS[value][1];
+      } else if (configId === 'thinking' && KIMI_EFFORTS[kimiModel].includes(value)) {
+        kimiThinking = value;
+      }
+      respond(message.id, { sessionId: freshSessionId, configOptions: kimiConfigOptions() });
+      return;
+    }
+    if (scenario === 'models-kilo') {
+      const { configId, value } = message.params;
+      if (configId === 'model' && KILO_MODELS.includes(value)) {
+        kiloModel = value;
+        kiloEffort = KILO_EFFORTS[value][0];
+      } else if (configId === 'effort' && KILO_EFFORTS[kiloModel].includes(value)) {
+        kiloEffort = value;
+      }
+      respond(message.id, { configOptions: kiloConfigOptions() });
+      return;
+    }
+    respond(message.id, { configOptions: [] });
+    return;
+  }
+  if (message.method === 'session/close') {
+    respond(message.id, {});
     return;
   }
   if (message.method === 'session/load') {

@@ -15,7 +15,7 @@ named in code or comments.
 | --- | --- | --- |
 | `sdk` | Claude Code via the Agent SDK | Richest channel: permission callback, resume, usage, `rate_limit_event`, `get_usage` |
 | `app-server` | Codex (`codex app-server`, JSON-RPC over stdio) | Streaming deltas, approval requests, `account/rateLimits/read` + `updated`, thread resume. Do **not** use `codex exec --json` (no quota, no streaming deltas) |
-| `acp` | Agent Client Protocol agents (Gemini CLI, Copilot, Cursor, opencode, Kimi, Kiro, Qwen, Mistral Vibe, Goose, Droid, …) | `initialize` → `session/new` / `session/load` → `session/prompt`; `session/update` notifications; `session/request_permission` must be **answered by the user**, never auto-approved |
+| `acp` | Agent Client Protocol agents (Copilot, Cursor, opencode, Kimi, Kiro, Qwen, Mistral Vibe, Goose, Droid, …) | `initialize` → `session/new` / `session/load` → `session/prompt`; `session/update` notifications; `session/request_permission` must be **answered by the user**, never auto-approved |
 | `stream-json` | CLIs with a JSON-lines output mode but no ACP (e.g. Antigravity `agy`, Amp) | One parser per stream dialect |
 
 Plain-text-only CLIs are supported in the `experimental` tier through `stream-json`'s raw passthrough
@@ -34,11 +34,12 @@ interface ProviderDef {
   optionalFlags?: Record<string, string>;       // flag → capability name, enabled only if --help lists it
   transport: 'sdk' | 'app-server' | 'acp' | 'stream-json';
   streamDialect?: string;                       // stream-json only
-  config: { readonly mechanism: 'env-var' | 'flag'; readonly name: string }; // how the run-scoped config dir is passed
+  config: { readonly mechanism: 'env-var' | 'flag'; readonly name: string } | { readonly mechanism: 'none' }; // how the run-scoped config dir is passed; 'none' when the CLI's only config dir is the home that holds its login (P-44)
   buildLaunch(input: LaunchInput): { args: string[]; env: Record<string, string>; stdin: 'prompt' | 'none' };
   resume: 'specify' | 'capture' | 'protocol' | 'none';
   capabilities: ProviderCapabilities;           // declared; refined by probes at discovery
   installHint: { url: string };
+  mark: ProviderMark | null;                    // the provider's own mark, with its fill rule; null when no file exists — never redrawn
 }
 
 `buildLaunch` receives a `LaunchInput`:
@@ -48,8 +49,9 @@ interface LaunchInput {
   readonly prompt: string;                        // travels via stdin/envelope, never argv
   readonly configDir: string;                     // the run-scoped config dir (launch module)
   readonly resume?: { readonly sessionRef: string };
+  readonly effort?: EffortLevel;                  // already clamped to the model (R-50, A-46)
+  readonly model?: string;                        // the route's model, so a `model-suffix` effort can build the id (P-43)
 }
-```
 ```
 
 ## Discovery
@@ -72,15 +74,20 @@ interface LaunchInput {
 3. **Billing mode is Docket's decision.** The run environment is built from an allowlist; a stray
    `ANTHROPIC_API_KEY` (or similar) is removed unless the chosen account is that API key.
 4. **Kill the whole process group** on stop; inactivity and first-output watchdogs per provider.
+   A watchdog that fires stops the run and emits `error` with `class: 'timeout'` and
+   `reason: 'first_output_timeout' | 'inactivity_timeout'`, then `finished` with `reason: 'failed'`.
+   The timers are paused while a permission question is unanswered and while a tool call is in flight.
 5. **Resume:** `specify` (Docket passes a session id), `capture` (read it from the stream),
    `protocol` (`session/load`, thread resume). If resume fails, start fresh with a summary of the
    previous transcript.
 
+Subscription identity on the SDK leg (no per-run config directory today) is specified in provider-capabilities.md (P-32).
+
 ## Support tiers
 
-`supportTier()` (domain) derives the tier from capabilities:
+The support level (P-28, `supportLevel` over the capability record) decides the behaviour:
 
-| Tier | Condition | Behaviour |
+| Level | Condition | Behaviour |
 | --- | --- | --- |
 | `full` | structured stream + permission asks that really wait | Live approvals, write-scope enforcement by denial |
 | `isolated` | structured stream, no reliable permission asks | Runs freely inside its own worktree; changes reach the main line only through the diff gate with human approval |
@@ -88,6 +95,8 @@ interface LaunchInput {
 
 Whether each ACP agent's `session/request_permission` really blocks until answered is verified by a
 Phase 0 probe per agent. Agents that do not block drop to `isolated`.
+
+The tier shown to users is derived from the capability record described in [provider-capabilities.md](provider-capabilities.md) (P-27, P-28); the model catalog, routes and account discovery are specified there.
 
 ---
 
@@ -106,7 +115,7 @@ application.md for signatures.
   `transport` one of the four; `streamDialect` present exactly when `transport === 'stream-json'`;
   `config.mechanism` matches how the CLI accepts a config dir), and `buildLaunch` never places the
   prompt in `argv` — `stdin: 'prompt'` carries it. Initial set: `claude-code` (sdk), `codex`
-  (app-server), `agy` (stream-json, dialect `agy`), `gemini`, `copilot`, `cursor`, `opencode` (acp).
+  (app-server), `agy` (stream-json, dialect `agy`), `copilot`, `cursor`, `opencode` (acp).
   Flag accuracy is data, verified by operator probes; a wrong flag is a data fix, not a contract change.
 
 ### Discovery (P-2 … P-6)
@@ -202,7 +211,9 @@ from the public ACP specification. Tests drive a scripted fake agent process.
 - **P-16** `session/request_permission` becomes a `permission_ask` and the agent is expected to wait;
   the client never auto-approves. The only automated answer is `deny`, sent by `stop()`. (Whether a
   given CLI really waits is probe #139's table; non-blocking agents drop to `isolated` via
-  capabilities data, not code.)
+  capabilities data, not code.) A user's `allow` answers with the agent's one-time option
+  (`allow_once`); a standing grant (`allow_session`, `allow_always`) is never chosen on the user's
+  behalf, and when the agent offers no one-time option the answer is `cancelled`.
 - **P-17** Resume uses `session/load` with the captured session id. If loading fails, the client
   starts a fresh `session/new` and prefixes the prompt with a bounded summary of the previous
   transcript.
@@ -268,3 +279,76 @@ dependency; the command runner is injected so tests script it):
   `AgentEvent` stream (`session_started → text → usage → finished`) and exactly one `finished`
   (reason `completed`, last event) per stage run; transport-specific kinds beyond the common set are
   expected and do not count against equality.
+
+---
+
+## Provider marks (P-25)
+
+Port (application, `ports/provider-marks.ts`); the built-in implementation sits beside the defs
+(`src/infrastructure/providers/defs/builtin-provider-marks.ts`) and the composition root hands it
+to `createApi` as its marks argument (the discovery pattern; the query side is A-41 in
+[application.md](application.md)):
+
+```ts
+export interface ProviderMark {
+  readonly viewBox: string;
+  readonly path: string;
+  readonly fillRule: 'nonzero' | 'evenodd';
+}
+export interface ProviderMarks { marks(): Record<string, ProviderMark | null> }
+```
+
+- **P-25** Every built-in definition carries `mark`: the provider's own mark as one SVG path —
+  `d` data copied unmodified from the file it came from, rendered with `currentColor`,
+  24×24 viewBox — or `null` when no file exists; a mark is never redrawn. Twelve built-ins carry a
+  mark: four from the provider's official file (`claude-code`, `copilot`, `cursor`, `opencode`) and
+  eight operator-placed files from an MIT-licensed icon set (`codex`, `agy`, `kilo`, `grok-build`,
+  `vibe`, `mimo`, `qwen`, `kiro`; the marks remain their owners' trademarks, used unmodified only to
+  identify the provider; they are not the owners' official brand kits — if official files arrive,
+  only the def's path changes). The source record (URL, license, date, sha256) is kept outside the
+  repo with the operator's design files. The marks identify the provider only.
+  `isProviderDef` rejects a mark that is neither `null` nor a `{ viewBox, path, fillRule }` of
+  non-empty strings with a known fill rule, and `builtinProviderMarks` keys every built-in def
+  id to its own mark, so adding a provider touches no code beyond its def.
+- **P-25a** A built-in definition whose provider has no mark file carries `mark: null`; the marks test lists those ids explicitly, so a missing mark is a recorded fact, never an omission.
+- **P-26** A mark carries the fill rule its file declares: `nonzero` for the four official
+  marks, `evenodd` for the eight placed files (each sets `fill-rule="evenodd"`; the codex path also
+  `clip-rule="evenodd"`, carried by the same `fillRule`). The rule travels through the marks
+  query untouched (A-42) — a renderer never guesses it, since the same `d` renders differently
+  under the two rules.
+
+## Thinking levels and model ids (P-41, P-42)
+
+Design: [provider-capabilities.md](provider-capabilities.md) §3–§4.
+
+- **P-41** `buildLaunch` turns `LaunchInput.effort` into the provider's own parameter, defined as data in the definition (`effortArg`, from the CLI's own documentation or help output): a flag with the level as its value, a config key, or a session option; the ACP and app-server transports send it through their session or turn request instead of argv. An absent effort adds nothing. A definition without an effort parameter ignores the effort and never fails the launch. A transport that reports reasoning or thinking token counts maps them to the `usage` event's `reasoningTokens`, still counted inside `outputTokens`.
+- **P-42** Live model ids resolve to registry records: `LiveModel` carries `resolvedId?` (the canonical id an alias row stands for, as the provider reports it) and `isDefault?: true` (the row the provider uses when no model is pinned). Matching uses `canonicalModelId(resolvedId ?? id)`, which drops one trailing bracketed variant (`[...]`) and one trailing `-YYYYMMDD` date, compared with the record's `canonicalModelId(id)`; family patterns test `resolvedId ?? id`. Billing of a live row, first answer wins: the row's own `billing`; the matched record's `billing`; the route kind's `familyBilling` (data: `{ contains, billing }[]`, matched like family patterns); the route kind's `defaultBilling`; `unknown`. The selectable id stays the row's own `id` (an alias row stays an alias); `isDefault` and `resolvedId` travel to the merged entry (`CatalogModel.resolvedId?`), so quota matching can use the id an alias stands for (A-20). A subscription route kind lists in `familyBilling` only the families the provider's plan documentation covers on every plan; a family that splits per plan is left out and stays `unknown` until the account's own quota report settles it (`billingFromPools`).
+
+## Capability record, routes and spend safety (P-27 … P-40, P-46; P-41 … P-45 sit in their own sections)
+
+Design and evidence: [provider-capabilities.md](provider-capabilities.md), one section per rule. The rules below are the testable statements.
+
+- **P-27** The capability registry (`registry/capability-registry.ts`) is the only table of providers, route kinds and models; it is plain data checked with `satisfies` against the domain types, and every derived value (support level, thinking options, tier) is a pure function over it.
+- **P-28** `supportLevel` derives `planned | experimental | isolated | full` from the six gates exactly as provider-capabilities.md §2 states; `planned` is the only hand-set level and `full` requires a recorded operator run.
+- **P-29** A route's catalog is live ∪ bundled, cached per account and route kind; a failed refresh keeps the last good list marked stale; `liveIsAuthoritative` drops bundled models the live list lacks; an unknown live id stays selectable with unknown capabilities.
+- **P-30** Fast / Balanced / Deep map to a model's own effort levels through `thinkingFor` (R-50 for exact efforts); a model with `thinking: none` offers no level.
+- **P-31** An account's route fields (`routeKind`, `endpoint`, `identityDir`, `tierModels`) are non-secret; `saveAccount` rejects an endpoint whose host differs from the route kind's preset host and an `identityDir` on a non-subscription route kind.
+- **P-32** A subscription account with `identityDir` passes it to the child as the config-directory variable; Docket never writes into it and never reads credential values from it.
+- **P-33** Local account discovery proposes candidates from key names and the endpoint host only; a candidate never carries a value other than the endpoint host, and adopting one never imports a token without explicit consent.
+- **P-34** Quota is probed per route kind (`quotaProbe`); a failed probe makes quota `unknown` without blocking the run; the cost kind is per route (`equivalent` for subscriptions and presets, `reported` or `computed` for API keys, `credits` where the provider meters credits).
+- **P-35** A new provider that fits an existing transport is a definition plus its argument builder; it enters as `experimental` or `isolated` and is promoted only through the gates.
+- **P-36** The README provider matrix is generated from the registry between marker comments, and a test fails on any difference.
+- **P-37** The effective instructions of a run are the instruction files the chosen provider reads natively plus the Docket layers; a repo instruction file the provider does not read natively is inlined at the start of the prompt within the prompt budget; nothing is written to the repo. The native set is registry **data** — the provider's best-known set, not a fixed law of the CLI: some CLIs make the set configurable (a fallback-filename list can add `CLAUDE.md`, a context-file setting can rename it), so a file the CLI reads natively but the row does not list is inlined too (rules delivered twice beat rules lost), and the row for the CLI that loads an automatic project memory even with setting sources off names that memory in its set (it lives outside the repo, so it is never an inline candidate). The application contract is [application.md](application.md) → "Instructions, checkpoints, handoff (#581)" (**A-53 … A-56**; the pure core is R-53, R-54 in [domain.md](domain.md) §11).
+- **P-38** A run that continues on another provider starts from a handoff pack Docket assembles (stage prompt, effective instructions, derived task state, the same worktree with checkpoint commits, a bounded rolling summary); native resume is never mixed with the pack; raw transcripts do not travel. The application contract is [application.md](application.md) → "Instructions, checkpoints, handoff (#581)" (**A-57 … A-65**, acceptance §7; the pure core is R-55 … R-57 in [domain.md](domain.md) §11).
+- **P-39** Quota parsers turn any reported bucket into meters with the provider's own label, window, remaining share, reset and unit; bucket applicability is data (quota.md "Bucket applicability"); an unknown bucket never blocks; an unreadable payload reports `probe_failed` naming field names, never values.
+- **P-40** Every route and model has billing `included | metered | unknown`; `unknown` is never assumed free and shows `?`; tier resolution and limit-driven switches never pick a non-included model; a non-included model runs only with the user's consent and a spend cap (`needs_spend_consent` otherwise).
+- **P-46** A handoff continuation (P-38) never starts on a route whose model billing is `unknown` without the user's consent and a spend cap on the account: the continuation run passes the same preflight as any run (`needs_spend_consent`), and an automatic fallback treats an `unknown`-billing candidate exactly like a `metered` one — skipped. The pack changes the provider, never the money boundary (P-40).
+
+## Candidate providers: effort, isolation, discovery safety (P-43 … P-45)
+
+Design: [provider-capabilities.md](provider-capabilities.md) §9.
+
+- **P-43** `EffortArg` covers how candidates take an effort: `flag` (argv), `request-field` (turn or thread request), `session-option` (an ACP config option, named by its `category` or its `configId`), and `model-suffix` (the level joins the model id with the definition's `separator`, e.g. `<model>/<level>`; the effort then never travels separately). A definition may carry `levelNames`, a map from `EffortLevel` to the provider's own value names (e.g. `none` ↔ `off`); when a definition has `levelNames`, only the mapped levels are sent or offered (catalogs read advertised levels through the reverse map); without it, provider values that equal an `EffortLevel` are used as is and others are never offered. Unmapped effort → nothing is sent (never a guessed name).
+- **P-44** A definition declares how the CLI is kept from reading the user's configuration of other tools (instruction files, skills, hooks, MCP servers of another agent): an environment variable, a flag or a run-scoped home directory, plus the CLI's own telemetry-off flag where one exists. A definition that cannot declare such isolation is capped at `experimental` and its runs show that the CLI may read the user's other tool configuration. A CLI whose login lives in its own home directory never gets that home redirected to the run directory (the login would be lost) and never gets it set to the user's real home either: its `config.mechanism` is `'none'` and the variable is left unset, until an operator run proves that a run-scoped home keeps the login.
+- **P-45** Discovery runs only probes that are safe without a login: a definition marks commands that may open a browser, start a login flow or need an account (`needsLogin`); discovery runs them only when the login probe returned `loggedIn === true`, never when it is `false` or `null`. A model-list command marked `needsLogin` is skipped while logged out and the catalog falls back to bundled data; the catalog takes `loggedIn` from the account's latest discovery result, and a definition with any `needsLogin` command is not added to the built-ins until that value reaches the catalog.
+

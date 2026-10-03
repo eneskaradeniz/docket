@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { parseSlug, parseUlid, type Actor, type WorkOrderId, type WorkspaceSlug } from '../../domain/index';
+import { parseSlug, parseUlid, type Actor, type RunId, type WorkOrderId, type RepoSlug } from '../../domain/index';
 import {
   createFakeClock,
   createFakeNotifier,
@@ -34,7 +34,8 @@ const ulidOf = <B extends string>(input: string) => {
   return parsed.value;
 };
 
-const WS: WorkspaceSlug = slugOf('demo');
+const REPO: RepoSlug = slugOf('demo');
+const RUN: RunId = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FAV');
 const WO: WorkOrderId = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FAV');
 const AUDIT = ulidOf<'audit'>('01ARZ3NDEKTSV4RRFFQ69G5FAW');
 const USER: Actor = { kind: 'user', id: 'user-1', label: 'Operator' };
@@ -83,10 +84,9 @@ const FLOW_YAML = [
   '',
 ].join('\n');
 
-const WORKSPACE_YAML = [
+const REPO_YAML = [
   'id: demo',
   'name: Demo',
-  'repos: []',
   'flows:',
   '  - standard',
   'defaultFlow: standard',
@@ -159,16 +159,28 @@ async function initRepoWithCommit(cwd: string): Promise<void> {
 // --- the composition root ----------------------------------------------------------------------------
 
 describe('createNodeDeps', () => {
+  it('I-31: exposes the adoption ports createApi takes, and the app entry hands them to createApi', async () => {
+    const node = makeNode();
+
+    expect(node.adoption.discovery).toBe(node.accountDiscovery);
+    expect(node.adoption.importer).toBe(node.credentialImporter);
+    // The entry point cannot run without Electron, so its createApi call is checked as text: a
+    // call that drops the adoption ports would leave both adoption endpoints answering not_found.
+    const main = await readFile(join(process.cwd(), 'electron', 'main.ts'), 'utf8');
+    const call = /createApi\(([^;]*)\);/.exec(main)?.[1] ?? '';
+    expect(call).toContain('node.adoption');
+  });
+
   it('I-31: opens <dataDir>/docket.db, exposes the registry, and close() closes the database', async () => {
     const node = makeNode();
 
     expect((await stat(join(dataDir, 'docket.db'))).isFile()).toBe(true);
 
-    await node.workspaces.register(WS, repoDir);
-    expect(await node.workspaces.list()).toEqual([{ slug: WS, path: repoDir }]);
+    await node.repos.register(REPO, repoDir);
+    expect(await node.repos.list()).toEqual([{ slug: REPO, path: repoDir }]);
 
     node.close();
-    await expect(node.workspaces.list()).rejects.toThrow();
+    await expect(node.repos.list()).rejects.toThrow();
   });
 
   it('I-31: a too-new database returns the openDatabase error', async () => {
@@ -187,21 +199,21 @@ describe('createNodeDeps', () => {
 
   it('I-31: uses <dataDir> as the global definitions root over the registry-backed YAML store', async () => {
     await mkdir(join(repoDir, '.docket'), { recursive: true });
-    await writeFile(join(repoDir, '.docket', 'workspace.yaml'), WORKSPACE_YAML, 'utf8');
+    await writeFile(join(repoDir, '.docket', 'repo.yaml'), REPO_YAML, 'utf8');
     await mkdir(join(dataDir, 'roles'), { recursive: true });
     await mkdir(join(dataDir, 'flows'), { recursive: true });
     await writeFile(join(dataDir, 'roles', 'planner.yaml'), ROLE_YAML, 'utf8');
     await writeFile(join(dataDir, 'flows', 'standard.yaml'), FLOW_YAML, 'utf8');
     const node = makeNode();
-    await node.workspaces.register(WS, repoDir);
+    await node.repos.register(REPO, repoDir);
 
-    const loaded = await node.deps.definitions.load(WS);
+    const loaded = await node.deps.definitions.load(REPO);
 
     expect(loaded.ok).toBe(true);
     if (!loaded.ok) return;
     expect(loaded.value.roles.map((role) => role.id)).toEqual([slugOf<'role'>('planner')]);
     expect(loaded.value.flows.map((flow) => flow.id)).toEqual([slugOf<'flow'>('standard')]);
-    expect(loaded.value.workspace?.commandSets).toEqual({ tests: ['node -e "process.exit(0)"'] });
+    expect(loaded.value.repo?.commandSets).toEqual({ tests: ['node -e "process.exit(0)"'] });
     const globalFile = await node.deps.definitions.readFile({ kind: 'global' }, 'roles/planner.yaml');
     expect(globalFile?.content).toBe(ROLE_YAML);
   });
@@ -211,14 +223,15 @@ describe('createNodeDeps', () => {
 
     await node.deps.workOrders.create({
       id: WO,
-      workspace: WS,
+      project: slugOf<'project'>('proj'),
+      repo: REPO,
       flow: slugOf<'flow'>('standard'),
       title: 'wire the repos',
       createdAt: 5,
       createdBy: USER,
     });
     expect((await node.deps.workOrders.get(WO))?.title).toBe('wire the repos');
-    expect(await node.deps.workOrders.list({ workspace: WS })).toHaveLength(1);
+    expect(await node.deps.workOrders.list({ repo: REPO })).toHaveLength(1);
 
     await node.deps.workOrders.appendEvent(WO, {
       type: 'created',
@@ -257,9 +270,9 @@ describe('createNodeDeps', () => {
   it('I-31: wires worktrees with <dataDir>/worktrees as the root', async () => {
     await initRepoWithCommit(repoDir);
     const node = makeNode();
-    await node.workspaces.register(WS, repoDir);
+    await node.repos.register(REPO, repoDir);
 
-    const ensured = await node.deps.worktrees.ensure(WS, WO);
+    const ensured = await node.deps.worktrees.ensure(REPO, WO);
 
     expect(ensured).toEqual({ ok: true, value: { path: join(dataDir, 'worktrees', 'demo', WO) } });
     expect((await stat(join(dataDir, 'worktrees', 'demo', WO))).isDirectory()).toBe(true);
@@ -342,5 +355,48 @@ describe('createNodeDeps', () => {
 
     node.deps.notifier.notify('title', 'body');
     expect(notifier.notifications()).toEqual([{ title: 'title', body: 'body' }]);
+  });
+
+  // The composed deps carry the real InstructionFiles adapter, not a stopgap: it reads the named
+  // files from disk at the worktree root.
+  it('compose: the composed deps carry the real instruction-files adapter', async () => {
+    const node = makeNode();
+    await mkdir(repoDir, { recursive: true });
+    await writeFile(join(repoDir, 'AGENTS.md'), 'guide', 'utf8');
+
+    const files = await node.deps.instructionFiles.read(repoDir, ['AGENTS.md', 'MISSING.md']);
+
+    expect(files).toEqual([{ name: 'AGENTS.md', content: 'guide' }]);
+  });
+
+  // The composed deps carry the real checkpoints adapter, not a stopgap: a commit lands in a real
+  // repo authored by the Docket identity, a clean tree answers { changed: false }, and the patch
+  // is redacted with the scanner's real patterns (the vcs module's own test runs with an injected
+  // redactor — the module map keeps vcs off gates, so this is where the real one is proven).
+  it('compose: the composed deps carry the real checkpoints adapter', async () => {
+    const node = makeNode();
+    await initRepoWithCommit(repoDir);
+    const base = (await git(repoDir, ['rev-parse', 'HEAD'])).trim();
+    await writeFile(join(repoDir, 'token.txt'), `token: ghp_${'a'.repeat(36)}\n`, 'utf8');
+
+    const committed = await node.deps.checkpoints.commit({ cwd: repoDir, runId: RUN, seq: 1 });
+    expect(committed).toEqual({
+      ok: true,
+      value: { sha: expect.stringMatching(/^[0-9a-f]{40,64}$/), changed: true },
+    });
+    expect((await git(repoDir, ['log', '-1', '--format=%an <%ae>'])).trim()).toBe(
+      'Docket <checkpoints@docket.local>',
+    );
+
+    const again = await node.deps.checkpoints.commit({ cwd: repoDir, runId: RUN, seq: 2 });
+    expect(again).toEqual({ ok: true, value: { sha: '', changed: false } });
+
+    const diff = await node.deps.checkpoints.diffSince({ cwd: repoDir, since: base });
+    expect(diff.ok).toBe(true);
+    if (diff.ok) {
+      expect(diff.value.files).toEqual(['token.txt']);
+      expect(diff.value.patch).toContain('[redacted]');
+      expect(diff.value.patch).not.toContain('ghp_');
+    }
   });
 });

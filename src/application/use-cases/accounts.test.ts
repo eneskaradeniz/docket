@@ -16,7 +16,16 @@ import {
 } from '../../domain/index';
 
 import type { AccountRecord, AppDeps, BindingScope } from '../ports';
-import { createFakeClock, createFakeDeps, createFakeEventLog, createFakeSecretVault, type FakeEventLog, type FakeSecretVault } from '../ports/fakes';
+import {
+  createFakeCapabilityCatalog,
+  createFakeClock,
+  createFakeDeps,
+  createFakeEventLog,
+  createFakeSecretVault,
+  type FakeEventLog,
+  type FakeRouteKind,
+  type FakeSecretVault,
+} from '../ports/fakes';
 
 import { removeAccount, saveAccount, saveBinding } from './accounts';
 
@@ -58,7 +67,7 @@ const bindingFor = (role: string, accounts: readonly AccountRoute[] = [{ account
 });
 
 const GLOBAL_SCOPE: BindingScope = { level: 'global' };
-const WORKSPACE_SCOPE: BindingScope = { level: 'workspace', workspace: slugOf<'workspace'>('ws') };
+const REPO_SCOPE: BindingScope = { level: 'repo', repo: slugOf<'repo'>('ws') };
 const WORK_ORDER_SCOPE: BindingScope = { level: 'workOrder', workOrderId: ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FAV') };
 
 interface Harness {
@@ -67,11 +76,11 @@ interface Harness {
   readonly secrets: FakeSecretVault;
 }
 
-const makeHarness = (): Harness => {
+const makeHarness = (routeKinds: readonly FakeRouteKind[] = []): Harness => {
   const clock = createFakeClock(1_000);
   const log = createFakeEventLog();
   const secrets = createFakeSecretVault();
-  const deps = createFakeDeps({ clock, log, secrets });
+  const deps = createFakeDeps({ clock, log, secrets, capabilities: createFakeCapabilityCatalog(routeKinds) });
   return { deps, log, secrets };
 };
 
@@ -144,6 +153,222 @@ describe('saveAccount', () => {
     expect(h.log.entries()).toHaveLength(1);
     expect(isUlid(h.log.entries()[0].id)).toBe(true);
   });
+
+  // --- route fields (A-43, A-44) -------------------------------------------------------------------
+
+  // `route-endpoint` plays a compatible-endpoint preset: it fixes the host A-43 matches against;
+  // `route-machine` fixes none, like the machine-login routes the registry ships today.
+  const ROUTE_KINDS: readonly FakeRouteKind[] = [
+    { id: 'route-endpoint', provider: 'provider-a', authMode: 'api_key', endpointHost: 'api.preset.example' },
+    { id: 'route-machine', provider: 'provider-a', authMode: 'subscription' },
+  ];
+
+  it('A-43: an endpoint that is not an https URL fails with invalid_endpoint and writes nothing', async () => {
+    const h = makeHarness(ROUTE_KINDS);
+
+    const http = await saveAccount(h.deps, {
+      record: accountRecord({ authMode: 'api_key', secretRef: SECRET_REF, endpoint: 'http://api.preset.example/v1' }),
+      secret: SECRET,
+      actor: USER,
+    });
+    const unparsable = await saveAccount(h.deps, {
+      record: accountRecord({ authMode: 'api_key', endpoint: 'api.preset.example' }),
+      actor: USER,
+    });
+
+    expect(http).toEqual({ ok: false, error: 'invalid_endpoint' });
+    expect(unparsable).toEqual({ ok: false, error: 'invalid_endpoint' });
+    expect(await h.deps.accounts.list()).toEqual([]);
+    expect(await h.deps.secrets.get(SECRET_REF)).toBeUndefined();
+    expect(h.log.entries()).toEqual([]);
+  });
+
+  it('A-43: an endpoint whose host differs from the host fixed by the account’s route kind fails with endpoint_mismatch', async () => {
+    const h = makeHarness(ROUTE_KINDS);
+
+    // provider-a + api_key resolves to route-endpoint by default, whose host is api.preset.example.
+    const result = await saveAccount(h.deps, {
+      record: accountRecord({ authMode: 'api_key', endpoint: 'https://api.other.example/v1' }),
+      actor: USER,
+    });
+
+    expect(result).toEqual({ ok: false, error: 'endpoint_mismatch' });
+    expect(await h.deps.accounts.list()).toEqual([]);
+  });
+
+  it('A-43: a matching host passes; an explicit routeKind replaces the default; no fixed host means nothing to mismatch', async () => {
+    const h = makeHarness(ROUTE_KINDS);
+
+    const matching = await saveAccount(h.deps, {
+      record: accountRecord({ authMode: 'api_key', endpoint: 'https://api.preset.example/v1' }),
+      actor: USER,
+    });
+    const explicit = await saveAccount(h.deps, {
+      record: accountRecord({ authMode: 'api_key', routeKind: 'route-machine', endpoint: 'https://any.example/v1' }),
+      actor: USER,
+    });
+    const hostlessDefault = await saveAccount(h.deps, {
+      record: accountRecord({ endpoint: 'https://any.example/v1' }), // subscription default: route-machine
+      actor: USER,
+    });
+
+    expect(matching).toEqual({ ok: true, value: undefined });
+    expect(explicit).toEqual({ ok: true, value: undefined });
+    expect(hostlessDefault).toEqual({ ok: true, value: undefined });
+    expect(await h.deps.accounts.list()).toHaveLength(1); // the same id upserts
+  });
+
+  it('P-31: a foreign endpoint host and an identityDir on a non-subscription route kind are both rejected', async () => {
+    const h = makeHarness(ROUTE_KINDS);
+
+    const foreignHost = await saveAccount(h.deps, {
+      record: accountRecord({ authMode: 'api_key', endpoint: 'https://api.other.example/v1' }),
+      actor: USER,
+    });
+    const dirOnApiKey = await saveAccount(h.deps, {
+      record: accountRecord({ authMode: 'api_key', identityDir: '/Users/op/.config/agent-a' }),
+      actor: USER,
+    });
+
+    expect(foreignHost).toEqual({ ok: false, error: 'endpoint_mismatch' });
+    expect(dirOnApiKey).toEqual({ ok: false, error: 'identity_dir_not_allowed' });
+    expect(await h.deps.accounts.list()).toEqual([]);
+  });
+
+  it('A-43: an identityDir that is not an absolute path, or set on a non-subscription account, fails with identity_dir_not_allowed', async () => {
+    const h = makeHarness(ROUTE_KINDS);
+
+    const relative = await saveAccount(h.deps, {
+      record: accountRecord({ identityDir: 'configs/agent-a' }),
+      actor: USER,
+    });
+    const wrongMode = await saveAccount(h.deps, {
+      record: accountRecord({ authMode: 'api_key', identityDir: '/Users/op/.config/agent-a' }),
+      actor: USER,
+    });
+    const allowed = await saveAccount(h.deps, {
+      record: accountRecord({ identityDir: '/Users/op/.config/agent-a' }),
+      actor: USER,
+    });
+
+    expect(relative).toEqual({ ok: false, error: 'identity_dir_not_allowed' });
+    expect(wrongMode).toEqual({ ok: false, error: 'identity_dir_not_allowed' });
+    expect(allowed).toEqual({ ok: true, value: undefined });
+    expect(await h.deps.accounts.list()).toHaveLength(1);
+  });
+
+  it('A-43: an identityDir may be a POSIX path, a Windows drive path with either separator, or a UNC share', async () => {
+    const h = makeHarness(ROUTE_KINDS);
+
+    const posix = await saveAccount(h.deps, {
+      record: accountRecord({ identityDir: '/Users/op/.config/agent-a' }),
+      actor: USER,
+    });
+    const driveBackslash = await saveAccount(h.deps, {
+      record: accountRecord({ identityDir: 'C:\\Users\\op\\.claude' }),
+      actor: USER,
+    });
+    const driveSlash = await saveAccount(h.deps, {
+      record: accountRecord({ identityDir: 'C:/Users/op/.claude' }),
+      actor: USER,
+    });
+    const driveLowercase = await saveAccount(h.deps, {
+      record: accountRecord({ identityDir: 'c:\\users\\op\\.claude' }),
+      actor: USER,
+    });
+    const unc = await saveAccount(h.deps, {
+      record: accountRecord({ identityDir: '\\\\fileserver\\shares\\agent-a' }),
+      actor: USER,
+    });
+
+    expect(posix).toEqual({ ok: true, value: undefined });
+    expect(driveBackslash).toEqual({ ok: true, value: undefined });
+    expect(driveSlash).toEqual({ ok: true, value: undefined });
+    expect(driveLowercase).toEqual({ ok: true, value: undefined });
+    expect(unc).toEqual({ ok: true, value: undefined });
+    expect(await h.deps.accounts.list()).toHaveLength(1); // the same id upserts
+  });
+
+  it('A-43: an identityDir that is empty, relative, home-relative, or a bare drive stays invalid', async () => {
+    const h = makeHarness(ROUTE_KINDS);
+
+    const empty = await saveAccount(h.deps, {
+      record: accountRecord({ identityDir: '' }),
+      actor: USER,
+    });
+    const relative = await saveAccount(h.deps, {
+      record: accountRecord({ identityDir: 'configs\\agent-a' }),
+      actor: USER,
+    });
+    const homeRelative = await saveAccount(h.deps, {
+      record: accountRecord({ identityDir: '~/agent-a' }),
+      actor: USER,
+    });
+    const bareDrive = await saveAccount(h.deps, {
+      record: accountRecord({ identityDir: 'C:' }),
+      actor: USER,
+    });
+
+    expect(empty).toEqual({ ok: false, error: 'identity_dir_not_allowed' });
+    expect(relative).toEqual({ ok: false, error: 'identity_dir_not_allowed' });
+    expect(homeRelative).toEqual({ ok: false, error: 'identity_dir_not_allowed' });
+    expect(bareDrive).toEqual({ ok: false, error: 'identity_dir_not_allowed' });
+    expect(await h.deps.accounts.list()).toEqual([]); // no rejected leg wrote anything
+  });
+
+  it('A-43: validation order — secret_without_ref first, then invalid_endpoint, endpoint_mismatch, identity_dir_not_allowed', async () => {
+    const h = makeHarness(ROUTE_KINDS);
+
+    const noRef = await saveAccount(h.deps, {
+      record: accountRecord({ authMode: 'api_key', endpoint: 'http://wrong.example', identityDir: 'relative' }),
+      secret: SECRET,
+      actor: USER,
+    });
+    const notHttps = await saveAccount(h.deps, {
+      record: accountRecord({ authMode: 'api_key', secretRef: SECRET_REF, endpoint: 'http://wrong.example', identityDir: 'relative' }),
+      secret: SECRET,
+      actor: USER,
+    });
+    const hostMismatch = await saveAccount(h.deps, {
+      record: accountRecord({
+        authMode: 'api_key',
+        secretRef: SECRET_REF,
+        endpoint: 'https://wrong.example/v1',
+        identityDir: 'relative',
+      }),
+      secret: SECRET,
+      actor: USER,
+    });
+    const identity = await saveAccount(h.deps, {
+      record: accountRecord({
+        authMode: 'api_key',
+        secretRef: SECRET_REF,
+        endpoint: 'https://api.preset.example/v1',
+        identityDir: 'relative',
+      }),
+      secret: SECRET,
+      actor: USER,
+    });
+
+    expect(noRef).toEqual({ ok: false, error: 'secret_without_ref' });
+    expect(notHttps).toEqual({ ok: false, error: 'invalid_endpoint' });
+    expect(hostMismatch).toEqual({ ok: false, error: 'endpoint_mismatch' });
+    expect(identity).toEqual({ ok: false, error: 'identity_dir_not_allowed' });
+    // No leg wrote anything — not the record, not the secret, not the audit trail.
+    expect(await h.deps.accounts.list()).toEqual([]);
+    expect(await h.deps.secrets.get(SECRET_REF)).toBeUndefined();
+    expect(h.log.entries()).toEqual([]);
+  });
+
+  it('A-44: a record saved before the route fields existed reads back unchanged — no defaults are injected', async () => {
+    const h = makeHarness(ROUTE_KINDS);
+    const record = accountRecord({ secretRef: SECRET_REF });
+
+    await saveAccount(h.deps, { record, secret: SECRET, actor: USER });
+
+    expect(await h.deps.accounts.get(ACCOUNT)).toEqual(record);
+    expect(await h.deps.accounts.list()).toEqual([record]);
+  });
 });
 
 // --- removeAccount (A-13) ---------------------------------------------------------------------------
@@ -193,7 +418,7 @@ describe('removeAccount', () => {
     await saveAccount(h.deps, { record: accountRecord({ id: OTHER_ACCOUNT, label: 'Spare' }), actor: USER });
     await saveBinding(h.deps, { scope: GLOBAL_SCOPE, binding: bindingFor('worker'), actor: USER });
     await saveBinding(h.deps, {
-      scope: WORKSPACE_SCOPE,
+      scope: REPO_SCOPE,
       binding: bindingFor('reviewer', [{ accountId: ACCOUNT }, { accountId: OTHER_ACCOUNT }]),
       actor: USER,
     });
@@ -252,10 +477,10 @@ describe('saveBinding', () => {
     const role = slugOf<'role'>('reviewer');
     const binding = bindingFor('reviewer', [{ accountId: ACCOUNT }, { accountId: OTHER_ACCOUNT }]);
 
-    const result = await saveBinding(h.deps, { scope: WORKSPACE_SCOPE, binding, actor: USER });
+    const result = await saveBinding(h.deps, { scope: REPO_SCOPE, binding, actor: USER });
 
     expect(result).toEqual({ ok: true, value: undefined });
-    expect(await h.deps.bindings.get(WORKSPACE_SCOPE, role)).toEqual(binding);
+    expect(await h.deps.bindings.get(REPO_SCOPE, role)).toEqual(binding);
     const audit = h.log.entries();
     expect(audit).toHaveLength(1);
     expect(audit[0]).toMatchObject({
@@ -267,7 +492,7 @@ describe('saveBinding', () => {
     });
   });
 
-  it('saves per scope, so global, workspace and work-order levels stay independent', async () => {
+  it('saves per scope, so global, repo and work-order levels stay independent', async () => {
     const h = makeHarness();
     const role = slugOf<'role'>('worker');
 
@@ -281,5 +506,50 @@ describe('saveBinding', () => {
     expect(await h.deps.bindings.get(GLOBAL_SCOPE, role)).toEqual(bindingFor('worker', [{ accountId: ACCOUNT }]));
     expect(await h.deps.bindings.get(WORK_ORDER_SCOPE, role)).toEqual(bindingFor('worker', [{ accountId: OTHER_ACCOUNT }]));
     expect(h.log.entries()).toHaveLength(2);
+  });
+
+  // --- reserve (A-45) ------------------------------------------------------------------------------
+
+  it('A-45: a reserve that is NaN, infinite, negative or above 0.95 fails with invalid_reserve and writes nothing', async () => {
+    const h = makeHarness();
+    const bad: readonly { readonly short?: number; readonly long?: number }[] = [
+      { short: Number.NaN },
+      { long: Number.NaN },
+      { short: Number.POSITIVE_INFINITY },
+      { long: Number.NEGATIVE_INFINITY },
+      { short: -0.01 },
+      { long: -1 },
+      { short: 0.96 },
+      { long: 1 },
+      { short: 0.5, long: 0.951 },
+    ];
+    for (const reserve of bad) {
+      const result = await saveAccount(h.deps, {
+        record: accountRecord({ secretRef: SECRET_REF, reserve }),
+        secret: SECRET,
+        actor: USER,
+      });
+      expect(result).toEqual({ ok: false, error: 'invalid_reserve' });
+    }
+    expect(await h.deps.accounts.list()).toEqual([]);
+    expect(await h.deps.secrets.get(SECRET_REF)).toBeUndefined();
+    expect(h.log.entries()).toEqual([]);
+  });
+
+  it('A-45: 0, 0.95, a value between and an absent reserve are saved verbatim', async () => {
+    const h = makeHarness();
+    const reserves: readonly ({ readonly short?: number; readonly long?: number } | undefined)[] = [
+      { short: 0 },
+      { long: 0.95 },
+      { short: 0.95, long: 0.95 },
+      { short: 0.2, long: 0.4 },
+      {},
+      undefined,
+    ];
+    for (const reserve of reserves) {
+      const record = accountRecord(reserve === undefined ? {} : { reserve });
+      expect(await saveAccount(h.deps, { record, actor: USER })).toEqual({ ok: true, value: undefined });
+      expect(await h.deps.accounts.get(record.id)).toEqual(record);
+    }
   });
 });

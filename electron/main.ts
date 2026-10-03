@@ -6,13 +6,14 @@
 //   1. Node deps (SQLite, YAML definitions, keychain, worktrees) — everything except Electron
 //      objects, which arrive as injected adapters (safeStorage, Notification).
 //   2. The permission board — in-process state beside the ports, never a port itself.
-//   3. The api over deps + board + discovery; its runUpdated and workOrdersChanged members are
+//   3. The api over deps + board + discovery + the update checker; its runUpdated and
+//      workOrdersChanged members are
 //      the executor's notify hooks, so run events and the executor's run-finished append reach
 //      the subscribed stores without the executor knowing the api.
 //   4. The dispatcher/executor loop: tick → start → executeRun → limit/gate follow-ups.
 //   5. IPC handlers and the window last — the renderer boots only once every surface it can
 //      call already exists.
-import { app, BrowserWindow, Notification, dialog, ipcMain, safeStorage } from 'electron';
+import { app, BrowserWindow, Notification, dialog, ipcMain, safeStorage, screen } from 'electron';
 import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -24,6 +25,7 @@ import type { Api, RunEventFeed, UiEvent } from '../src/api/index';
 import type { AppDeps, Notifier, PermissionBoard, TransportResolver } from '../src/application/index';
 import {
   applyLimitDecision,
+  composeRunPrompt,
   createPermissionBoard,
   dispatcherTick,
   evaluateMachineGates,
@@ -32,16 +34,26 @@ import {
 import type { CipherFns, NodeDeps } from '../src/infrastructure/index';
 import {
   BUILTIN_PROVIDER_DEFS,
+  builtinProviderMarks,
+  createDesignUpdateChecker,
   createNodeDeps,
+  createNoopUpdateChecker,
+  createLoginStates,
   createPathDiscovery,
   createProviderTransportFactory,
 } from '../src/infrastructure/index';
+import {
+  WINDOW_MIN_HEIGHT,
+  WINDOW_MIN_WIDTH,
+  clampDefaultWindowSize,
+  titleBarOptionsFor,
+} from './window-options';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
 /** The domain contract's documented defaults: enough concurrency for one operator's work orders
  *  without dogpiling a single account; per-account caps arrive with account settings later. */
-const DISPATCH_LIMITS: DispatchLimits = { global: 4, perWorkspace: 3, perAccount: {} };
+const DISPATCH_LIMITS: DispatchLimits = { global: 4, perRepo: 3, perAccount: {} };
 
 /** The dispatcher polls: queue items arrive from commands and scheduled resumes, and neither can
  *  push into this process, so a short cadence is the whole scheduler. */
@@ -101,6 +113,10 @@ const electronNotifier = (): Notifier => ({
  *  run loop) runs strictly after that point. */
 let deps: AppDeps | undefined;
 
+/** Every discovery pass records here; the model catalog reads it to know whether a listing that
+ *  needs a login may run. */
+const loginStates = createLoginStates();
+
 let node: NodeDeps | undefined;
 let dispatchTimer: NodeJS.Timeout | undefined;
 
@@ -116,6 +132,7 @@ const buildTransportFactory = (
     (command, args, options) => spawn(command, [...args], options),
     env,
     homedir(),
+    { loginStates },
   )
     .discover((result) => {
       binPaths[result.defId] = result.binPath;
@@ -159,9 +176,10 @@ const discoveredTransports = (
   };
 };
 
-/** Drives one dispatcher-started queue item to completion: definitions give the stage's role
- *  (whose instructions are the prompt) and capabilities, the worktree gives the cwd, and the
- *  board is both the permission gate and the run's registry. */
+/** Drives one dispatcher-started queue item to completion: definitions give the stage's role and
+ *  capabilities, composeRunPrompt builds the run's prompt (the Docket layers plus the instruction
+ *  files this route's provider does not read natively), the worktree gives the cwd, and the board
+ *  is both the permission gate and the run's registry. */
 const runStartedItem = async (api: Api & RunEventFeed, board: PermissionBoard, item: QueueItem): Promise<void> => {
   if (deps === undefined) return;
   try {
@@ -172,7 +190,7 @@ const runStartedItem = async (api: Api & RunEventFeed, board: PermissionBoard, i
       console.error(`cannot run queue item ${item.id}: its work order is gone`);
       return;
     }
-    const loaded = await deps.definitions.load(record.workspace);
+    const loaded = await deps.definitions.load(record.repo);
     if (!loaded.ok) {
       console.error(`cannot run queue item ${item.id}: definitions did not load`);
       return;
@@ -188,7 +206,7 @@ const runStartedItem = async (api: Api & RunEventFeed, board: PermissionBoard, i
       console.error(`cannot run queue item ${item.id}: its stage has no runnable role`);
       return;
     }
-    const worktree = await deps.worktrees.ensure(record.workspace, record.id);
+    const worktree = await deps.worktrees.ensure(record.repo, record.id);
     if (!worktree.ok) {
       console.error(`cannot run queue item ${item.id}: no worktree (${worktree.error})`);
       return;
@@ -197,10 +215,26 @@ const runStartedItem = async (api: Api & RunEventFeed, board: PermissionBoard, i
       role.capabilities.includes(capability.id),
     );
 
+    // The single prompt entry point builds the run's prompt; this callback stopped building
+    // `role.instructions` itself. A failure is loud like every other refusal above: the item is
+    // already off the queue, and the operator can re-enqueue the stage.
+    const composed = await composeRunPrompt(deps, {
+      repo: record.repo,
+      workOrderId: record.id,
+      cwd: worktree.value.path,
+      stage: item.stage,
+      role: role.id,
+      route: item.route,
+    });
+    if (!composed.ok) {
+      console.error(`cannot run queue item ${item.id}: prompt composition failed (${composed.error})`);
+      return;
+    }
+
     const outcome = await executeRun(
       deps,
       board,
-      { item, role, prompt: role.instructions, cwd: worktree.value.path, capabilities },
+      { item, role, prompt: composed.value.prompt, cwd: worktree.value.path, capabilities },
       board,
       api.runUpdated,
       api.workOrdersChanged,
@@ -230,6 +264,21 @@ const runStartedItem = async (api: Api & RunEventFeed, board: PermissionBoard, i
 
 // --- IPC surface ------------------------------------------------------------------------------------
 
+/** The design harness's slow mode: `DOCKET_API_DELAY_MS` holds every API reply back for this
+ *  many milliseconds so loading standings stay on screen long enough to see (and to audit).
+ *  Only e2e/design-run.mjs's --slow ever sets it; read once here — the composition root — and
+ *  nowhere else. Unset or unparsable means no delay, exactly today's behaviour. */
+const API_DELAY_MS = (() => {
+  const parsed = Number(process.env.DOCKET_API_DELAY_MS);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+})();
+
+const withDesignDelay = async <T>(reply: Promise<T>): Promise<T> => {
+  const value = await reply;
+  if (API_DELAY_MS > 0) await new Promise((resolve) => setTimeout(resolve, API_DELAY_MS));
+  return value;
+};
+
 const windows = new Set<BrowserWindow>();
 
 /** The api validates ids and shapes on its own side (A-21); these guards only keep malformed
@@ -254,7 +303,7 @@ const registerIpc = (api: Api): void => {
       ? (commandValue as Parameters<Api['command']>[1])
       : undefined;
     if (actor === undefined || command === undefined) return { ok: false as const, code: 'unknown' };
-    return api.command(actor, command);
+    return withDesignDelay(api.command(actor, command));
   });
 
   ipcMain.handle('docket:query', (_event, queryValue: unknown) => {
@@ -262,18 +311,24 @@ const registerIpc = (api: Api): void => {
       ? (queryValue as Parameters<Api['query']>[0])
       : undefined;
     if (query === undefined) return { ok: false as const, code: 'unknown' };
-    return api.query(query);
+    return withDesignDelay(api.query(query));
   });
 };
 
 // --- the window -------------------------------------------------------------------------------------
 
 function createWindow(): BrowserWindow {
+  // The first window must fit the display it opens on: the default size clamped to the primary
+  // display's work area (window-options.ts) — never below the minimums, never spilling off screen.
+  const size = clampDefaultWindowSize(screen.getPrimaryDisplay().workArea);
   const win = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    minWidth: 760,
-    minHeight: 480,
+    width: size.width,
+    height: size.height,
+    minWidth: WINDOW_MIN_WIDTH,
+    minHeight: WINDOW_MIN_HEIGHT,
+    // On darwin the traffic lights sit inside the app bar (see window-options.ts); everywhere
+    // else this spreads nothing and the default frame applies.
+    ...titleBarOptionsFor(process.platform),
     webPreferences: {
       // The renderer reaches the core only through the preload's one bridge; everything else
       // about this window is deliberately the Electron default-secure set.
@@ -305,6 +360,7 @@ const startApp = async (): Promise<void> => {
     (command, args, options) => spawn(command, [...args], options),
     env,
     homedir(),
+    { loginStates },
   );
 
   const opened = createNodeDeps({
@@ -313,6 +369,7 @@ const startApp = async (): Promise<void> => {
     transports: discoveredTransports(baseEnv, env),
     notifier: electronNotifier(),
     commandEnv: baseEnv,
+    loginStates,
   });
   if (!opened.ok) {
     dialog.showErrorBox('Docket', `Storage could not be opened: ${JSON.stringify(opened.error)}`);
@@ -324,9 +381,19 @@ const startApp = async (): Promise<void> => {
   deps = nodeDeps;
 
   const board = createPermissionBoard();
-  // The workspace registry rides beside deps (NodeDeps exposes it); the api reads it for
-  // `workspaces.list`, the enumeration the switcher and the wizard's re-appear guard live on.
-  const api = createApi(nodeDeps, board, discovery, node.workspaces);
+  // The app's update story in one seam: the no-op checker is the default (no updater ships
+  // yet), and a DOCKET_UPDATE_FAKE version string swaps in the scripted checker the design seed
+  // reviews with. This line is production's only read of the variable.
+  const updateFake = process.env.DOCKET_UPDATE_FAKE;
+  const updates =
+    updateFake === undefined
+      ? createNoopUpdateChecker(app.getVersion())
+      : createDesignUpdateChecker(app.getVersion(), updateFake);
+  // The repo registry rides beside deps (NodeDeps exposes it); the api reads it for
+  // `repos.list`, the enumeration the switcher and the wizard's re-appear guard live on. The
+  // defs' marks ride the same way (P-25): the api reads them for `providers.marks`, the query
+  // every account badge resolves its mark through.
+  const api = createApi(nodeDeps, board, discovery, node.repos, updates, builtinProviderMarks, node.adoption);
 
   // The push channel: every UiEvent goes to every live window over one channel, verbatim — a
   // store re-queries on receipt, which is the whole protocol (U-12).

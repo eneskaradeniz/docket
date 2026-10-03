@@ -7,6 +7,7 @@ export interface RunSummary {
   readonly inputTokens: number;
   readonly outputTokens: number;
   readonly cachedInputTokens: number;
+  readonly reasoningTokens: number; // part of outputTokens, shown as its own line
   readonly costUsd?: number; // sum of events that carried a cost
   readonly costKind?: CostKind; // the kind of the first costed event
   readonly toolCalls: number;
@@ -36,6 +37,7 @@ export function foldRun(events: readonly AgentEvent[]): RunSummary {
   let inputTokens = 0;
   let outputTokens = 0;
   let cachedInputTokens = 0;
+  let reasoningTokens = 0;
   let costUsd: number | undefined;
   let costKind: CostKind | undefined;
   let toolCalls = 0;
@@ -65,6 +67,7 @@ export function foldRun(events: readonly AgentEvent[]): RunSummary {
         inputTokens += event.inputTokens;
         outputTokens += event.outputTokens;
         cachedInputTokens += event.cachedInputTokens ?? 0;
+        reasoningTokens += event.reasoningTokens ?? 0;
         if (event.costUsd !== undefined) {
           costUsd = (costUsd ?? 0) + event.costUsd;
           if (!sawCost) {
@@ -89,6 +92,7 @@ export function foldRun(events: readonly AgentEvent[]): RunSummary {
     inputTokens,
     outputTokens,
     cachedInputTokens,
+    reasoningTokens,
     costUsd,
     costKind,
     toolCalls,

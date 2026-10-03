@@ -46,7 +46,7 @@ const loadWorkOrder = async (
 > => {
   const record = await deps.workOrders.get(id);
   if (record === undefined) return err('not_found');
-  const definitions = await deps.definitions.load(record.workspace);
+  const definitions = await deps.definitions.load(record.repo);
   if (!definitions.ok) return err('definitions_invalid');
   const flow = definitions.value.flows.find((candidate) => candidate.id === record.flow);
   if (flow === undefined) return err('not_found');
@@ -74,10 +74,10 @@ const findCurrentGate = (
   return found === undefined ? undefined : { stage: state.stage, gate: found };
 };
 
-/** A deploy gate can only be judged against the environments the workspace defines. */
+/** A deploy gate can only be judged against the environments the repo defines. */
 const gateContext = (definitions: Definitions): GateContext => ({
-  commandSets: definitions.workspace?.commandSets ?? {},
-  environments: definitions.workspace?.environments,
+  commandSets: definitions.repo?.commandSets ?? {},
+  environments: definitions.repo?.environments,
 });
 
 interface ResolvedEnv {
@@ -216,7 +216,7 @@ export async function approveAndDeploy(
     return err('confirmation_mismatch');
   }
 
-  const worktree = await deps.worktrees.ensure(record.workspace, record.id);
+  const worktree = await deps.worktrees.ensure(record.repo, record.id);
   if (!worktree.ok) return err('no_repo');
 
   if (environment.promoteFrom !== undefined) {

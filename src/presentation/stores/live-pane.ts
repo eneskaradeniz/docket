@@ -60,7 +60,8 @@ export interface LivePaneState {
  *  type lives here, as in the sibling stores. */
 export type LivePaneChange =
   | { readonly type: 'workOrders.changed' }
-  | { readonly type: 'run.updated'; readonly runId: string };
+  | { readonly type: 'run.updated'; readonly runId: string }
+  | { readonly type: 'update.changed' };
 
 /** Subscription to the change events; the api's `subscribe` (U-12) satisfies it as-is. */
 export type LivePaneChangeSignal = (listener: (change: LivePaneChange) => void) => () => void;

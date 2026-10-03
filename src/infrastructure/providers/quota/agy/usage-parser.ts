@@ -1,14 +1,14 @@
 // Parser for the agy `/usage` print-mode payload. Contract: docs/v2/quota.md →
-// "Observed: Antigravity /usage"; rule P-19 in docs/v2/providers.md → "Quota probes".
+// "Observed: Antigravity /usage"; rule P-19 in docs/v2/providers.md → "Quota probes"; group
+// applicability follows the group table (P-39, docs/v2/provider-capabilities.md §13).
 // Pure on purpose: the probe hands it both streams and the observation time; everything here is
-// derivation from the payload text. Mapping: group → pool (label = name, model matchers only
-// from the description's model list, verbatim), bucket → meter (unit 'fraction', remaining,
-// resetsAt, resetPrecision 'exact', source 'polled').
-import type { EpochMs, PoolKind } from '../../../../domain/index';
+// derivation from the payload text. Mapping: group → pool (label = name, model matchers from the
+// group table; a group the table does not know is informational), bucket → meter (unit
+// 'fraction', remaining, resetsAt, resetPrecision 'exact', source 'polled').
+import type { EpochMs, ModelMatcher, PoolKind } from '../../../../domain/index';
 import type { MeterReading } from '../../../../application/index';
 
-/** Description prefix that carries a pool's model list; matchers exist only when it is present. */
-const MODEL_LIST_PREFIX = 'Models within this group:';
+import { agyGroupMatchers } from './usage-groups';
 
 /** agy groups are subscription usage allowances — a shared quota to spend, not a balance or cap. */
 const POOL_KIND: PoolKind = 'allowance';
@@ -77,21 +77,13 @@ const findUsageGroups = (text: string): readonly unknown[] | undefined => {
 };
 
 /**
- * Model matchers exist only as the verbatim items of the description's model list — never from
- * the group name or a bucket id. Without a usable list the pool applies to everything: an
- * unattributed pool that blocks too much is the safer failure than one that never blocks.
+ * Applicability comes only from the group table (P-39): the description's model list carries
+ * display-family names that never match a run's model id. A group the table does not know
+ * becomes an informational pool (`appliesTo: 'unknown'`) — its meters never block a run, and
+ * exhaustion still surfaces through `limit_hit`.
  */
-const appliesToOf = (description: unknown): readonly { readonly exact: string }[] | 'all' => {
-  if (typeof description !== 'string') return 'all';
-  const marker = description.indexOf(MODEL_LIST_PREFIX);
-  if (marker < 0) return 'all';
-  const items = description
-    .slice(marker + MODEL_LIST_PREFIX.length)
-    .split(',')
-    .map((item) => item.trim())
-    .filter((item) => item !== '');
-  return items.length === 0 ? 'all' : items.map((item) => ({ exact: item }));
-};
+const appliesToOf = (label: string): readonly ModelMatcher[] | 'unknown' =>
+  agyGroupMatchers(label) ?? 'unknown';
 
 const toMeter = (bucket: Record<string, unknown>, observedAt: EpochMs): MeterReading['meter'] | undefined => {
   const label = bucket['name'];
@@ -131,7 +123,7 @@ export function parseAgyUsage(stdout: string, stderr: string, observedAt: EpochM
     const label = group['name'];
     const buckets = group['buckets'];
     if (typeof label !== 'string' || label === '' || !Array.isArray(buckets)) continue;
-    const pool = { label, kind: POOL_KIND, appliesTo: appliesToOf(group['description']) };
+    const pool = { label, kind: POOL_KIND, appliesTo: appliesToOf(label) };
     for (const bucket of buckets) {
       if (!isRecord(bucket)) continue;
       const meter = toMeter(bucket, observedAt);

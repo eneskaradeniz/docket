@@ -28,7 +28,7 @@ This keeps Phase 1 issues independent and conflict-free.
 | `proposal` | `shared` |
 | `resolver` | `shared`, `definitions`, `quota` |
 | `gates` | `shared`, `definitions` |
-| `providers` | `shared`, `quota` |
+| `providers` | `shared`, `quota`, `definitions` |
 | `library` | `shared`, `definitions` |
 | `flow` | `shared`, `definitions`, `gates` |
 | `dispatch` | `shared`, `quota`, `budget` |
@@ -91,6 +91,22 @@ export function isUlid(input: string): boolean;
 // shared/run.ts
 export type RunOutcome = 'succeeded' | 'failed' | 'limit' | 'cancelled';
 
+// shared/billing.ts — how a model's use is paid for on a route; the spend-consent boundary
+// the providers capability records and the quota limit policy both speak.
+export type Billing = 'included' | 'metered' | 'unknown';   // included = the plan covers it (verified); metered = billed per use (verified); unknown = not verified and never assumed free
+
+// shared/thinking.ts — the effort scale and the user's thinking choice (P-30), shared because the
+// resolver (RoleBinding) and providers (capability records) both speak them; providers re-exports
+// EffortLevel so existing imports keep working.
+export type EffortLevel = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
+/** One of the three user levels, or an exact effort from advanced settings (the only way to reach
+ *  `max` and `ultra`). */
+export type ThinkingChoice =
+  | { readonly level: 'fast' | 'balanced' | 'deep' }
+  | { readonly effort: EffortLevel };
+/** A model class a route resolves to a concrete model (P-29); shared for the same reason. */
+export type Tier = 'strong' | 'balanced' | 'fast';
+
 // shared/actor.ts
 export type Actor =
   | { readonly kind: 'user'; readonly id: string; readonly label?: string }
@@ -141,6 +157,11 @@ export interface StageDef {
   readonly role: RoleSlug | null;          // null = a human-only stage (e.g. staging test)
   readonly exit: readonly GateDef[];       // all must pass to advance
   readonly onFail?: { readonly goto: StageSlug; readonly maxAttempts: number };
+  readonly tier?: Tier;                    // overrides the binding's tier for this stage
+  readonly thinking?: ThinkingChoice;      // overrides the binding's thinking for this stage
+  /** The earlier stage of the same flow whose output this stage reviews; its runs prefer another
+   *  provider than the one that wrote it (R-52). */
+  readonly reviewOf?: StageSlug;
 }
 
 export interface FlowDef {
@@ -220,7 +241,7 @@ export type DefinitionIssueCode =
   | 'default_flow_not_enabled' | 'unknown_command_set' | 'secret_literal' | 'missing_field' | 'wrong_type'
   | 'unknown_environment' | 'missing_promote_from' | 'promote_cycle'
   | 'env_command_set_missing' | 'duplicate_env_order'
-  | 'empty_repos' | 'main_repo_not_listed';
+  | 'empty_repos' | 'main_repo_not_listed' | 'bad_review_of';
 
 /** Validates untyped input (parsed YAML/JSON). All-or-nothing: any issue → err with ALL issues. */
 export function validateDefinitions(input: unknown): Result<Definitions, readonly DefinitionIssue[]>;
@@ -234,6 +255,7 @@ Rules:
 - **R-7** `command` gates must name a `commandSet` present in `repo.commandSets` when a repo definition is given.
 - **R-8** A `CapabilityDef` env value that is a bare string (not `{literal}` / `{secretRef}`) is `wrong_type`; a `{literal}` whose key matches `/(KEY|TOKEN|SECRET|PASSWORD)/i` is `secret_literal`.
 - **R-9** `repo.defaultFlow` must be listed in `repo.flows`, and every listed flow must exist.
+- **R-51** `stage.reviewOf` must name a stage of the same flow with a lower index and a non-null role (`bad_review_of` otherwise; a stage cannot review itself or a human-only stage). `stage.tier` must be a `Tier` and `stage.thinking` a `ThinkingChoice` (`wrong_type` otherwise).
 - **R-46** `ProjectDef`: `repos` is non-empty (`empty_repos`), has no duplicates (`duplicate_id`), and
   contains `mainRepo` (`main_repo_not_listed`); a `budget`, when present, must be a valid `SpendCap`
   (`wrong_type` otherwise). Validated whenever a project is validated (project scope load, attach).
@@ -261,13 +283,29 @@ export function applyRoleOverrides(base: RoleDef, overrides: readonly RoleOverri
 
 /** Machine-local binding of a role to an ordered chain of accounts (first = preferred).
  *  AccountRoute comes from quota/types.ts. */
-export interface RoleBinding { readonly role: RoleSlug; readonly accounts: readonly AccountRoute[] }
+export interface RoleBinding {
+  readonly role: RoleSlug;
+  readonly accounts: readonly AccountRoute[];
+  readonly thinking?: ThinkingChoice;   // absent → { level: 'balanced' }
+  readonly tier?: Tier;                 // for unpinned routes of the chain; absent → the CLI's own default model
+}
+/** What a stage run asks for: the stage's own setting wins over the binding's. */
+export interface StageRouting { readonly tier?: Tier; readonly thinking?: ThinkingChoice }
+export function stageRouting(stage: StageDef, binding: RoleBinding): StageRouting;
+/** One chain entry with the provider definition id of its account (data, never a vendor name in code). */
+export interface ChainEntry { readonly route: AccountRoute; readonly provider: string }
+/** Review ordering (R-52): accounts on another provider than `reviewedProvider` move to the front. */
+export function orderForReview(
+  chain: readonly ChainEntry[],
+  reviewedProvider: string | undefined,
+): { readonly chain: readonly ChainEntry[]; readonly sameProvider: boolean };
 export function resolveBinding(layers: readonly Layer<RoleBinding>[]): Resolved<RoleBinding> | undefined;
 ```
 
 Rules:
 - **R-10** `resolve` ignores `undefined` layers and picks by `LEVEL_ORDER`, not array position.
 - **R-11** `applyRoleOverrides` never changes `id`; an override with a different id is ignored.
+- **R-52** `stageRouting`: each field is the stage's when set, else the binding's, else absent. `orderForReview`: with `reviewedProvider` undefined the chain is returned unchanged and `sameProvider` is false; otherwise entries whose `provider` differs keep their relative order and come first, followed by the same-provider entries in their order; `sameProvider` is true when the first entry of the result has the reviewed provider (no other provider is available). Inputs are never mutated.
 
 Project defaults sit between global and repo (S3): a repo's `.docket/` overrides the project, the
 project overrides `~/.docket`; the work-order level resolves above all three.
@@ -410,7 +448,7 @@ export interface Pool {
   readonly accountId: AccountId;
   readonly label: string;               // server-supplied, verbatim
   readonly kind: PoolKind;
-  readonly appliesTo: readonly ModelMatcher[] | 'all';
+  readonly appliesTo: readonly ModelMatcher[] | 'all' | 'unknown';   // 'unknown' is shown for information only, takes no part in headroom and never blocks a run
 }
 export type ModelMatcher = { readonly exact: string } | { readonly prefix: string };
 export type Cadence = 'rolling_from_first_use' | 'rolling_continuous' | 'fixed' | 'calendar' | 'billing_cycle' | 'none';
@@ -454,28 +492,53 @@ export function normalizedRemaining(meter: Meter): number | undefined;
 export function isStale(meter: Meter, now: EpochMs): boolean;
 export type Headroom =
   | { readonly ok: true; readonly lowest?: number }                        // lowest normalized remaining seen
-  | { readonly ok: false; readonly blockedBy: readonly MeterId[]; readonly earliestRelief?: EpochMs }
+  | { readonly ok: false; readonly blockedBy: readonly MeterId[]; readonly earliestRelief?: EpochMs; readonly byReserve?: true }
   | { readonly ok: 'unknown'; readonly reason: 'no_data' | 'stale' };
-export function headroom(pools: readonly Pool[], meters: readonly Meter[], accountId: AccountId, model: string, now: EpochMs): Headroom;
+/** The share of a window the user keeps back for their own use (0..0.95). `short` applies to
+ *  windows shorter than one day (e.g. five hours), `long` to windows of a day or longer (weekly,
+ *  monthly). Absent or 0 → no reserve. */
+export interface QuotaReserve { readonly short?: number; readonly long?: number }
+export const RESERVE_MAX: number;           // 0.95
+/** The class R-49 puts a meter in; `larger` = no window length and no calendar cadence, so the
+ *  larger of the two values governs it. */
+export type ReserveClass = 'short' | 'long' | 'larger';
+export function reserveClassOf(meter: Meter): ReserveClass;
+/** The reserve share that governs this meter under R-49 (0 when none). */
+export function reserveFor(meter: Meter, reserve: QuotaReserve): number;
+export function headroom(pools: readonly Pool[], meters: readonly Meter[], accountId: AccountId, model: string, now: EpochMs, reserve?: QuotaReserve): Headroom;
 
 // quota/limit-policy.ts
 export type LimitPolicy = 'wait_resume' | 'switch_pool' | 'fallback_account' | 'ask';
+export interface PoolCandidate {
+  readonly poolId: PoolId;
+  readonly billing: Billing;
+  readonly consented: boolean;
+}
+export interface FallbackCandidate {
+  readonly route: AccountRoute;
+  readonly billing: Billing;
+  readonly consented: boolean;
+}
 export interface LimitContext {
   readonly policy: LimitPolicy;
   readonly autoResumesUsed: number;
   readonly maxAutoResumes: number;           // default 3
-  readonly alternativePools: readonly PoolId[];   // same account, pools with headroom for another model
-  readonly fallbackAccounts: readonly AccountRoute[]; // next in the role's chain, with headroom
+  readonly alternativePools: readonly PoolCandidate[];      // same account, pools with headroom for another model
+  readonly fallbackAccounts: readonly FallbackCandidate[];  // next in the role's chain, with headroom
   readonly now: EpochMs;
 }
 export type LimitDecision =
   | { readonly kind: 'schedule_resume'; readonly at: EpochMs; readonly requeryFirst: true }
   | { readonly kind: 'switch_pool'; readonly poolId: PoolId }
   | { readonly kind: 'fallback'; readonly route: AccountRoute }
-  | { readonly kind: 'ask'; readonly reason: 'policy' | 'no_reset_time' | 'max_resumes' | 'not_resumable' };
+  | { readonly kind: 'ask'; readonly reason: 'policy' | 'no_reset_time' | 'max_resumes' | 'not_resumable' | 'billing_boundary' };
 export const RESUME_JITTER_MS: number;      // 60_000
 export function decideOnLimit(hit: LimitHit, ctx: LimitContext): LimitDecision;
 ```
+
+Fallback and pool-switch candidates carry the billing of the target and whether the user consented
+to it; a candidate that is not included is eligible only with consent, otherwise the decision falls
+back to asking or waiting and its reason is `billing_boundary`.
 
 Rules:
 - **R-25** `matchesModel`: `'all'` matches everything; `exact` compares case-insensitively; `prefix` is a case-insensitive prefix.
@@ -483,6 +546,7 @@ Rules:
 - **R-27** `isStale`: `staleAfterMs` given and `now - observedAt > staleAfterMs`.
 - **R-28** `headroom` ANDs every meter of every pool matching the model: any meter with normalized remaining `0` (or `remaining <= 0`) and (`resetsAt` undefined or `> now`) blocks. A meter whose `resetsAt <= now` is treated as unknown-but-not-blocking. `throughput` pools never block (they are transient). No meters at all → `{ok:'unknown', reason:'no_data'}`; all relevant meters stale → `'stale'`.
 - **R-29** `earliestRelief` = the minimum `resetsAt` among blocking meters, if any.
+- **R-49** Reserve: with a `reserve`, a non-throughput meter whose normalized remaining is known and `<=` its class's reserve (and `> 0`) blocks like an exhausted one (same `earliestRelief` rule). Class: `durationMs < 86_400_000` → `short`; `durationMs >= 86_400_000` → `long`; no `durationMs` → `long` for cadence `calendar` or `billing_cycle`, otherwise the larger of the two values. A meter whose normalized remaining is unknown never blocks by reserve. `byReserve: true` only when every blocking meter blocks by reserve alone. A reserve of `0` or absent changes nothing (R-28 unchanged). `reserveClassOf` returns that class (`larger` for the no-length, non-calendar case) and `reserveFor` the governing share (the class's value, the larger of the two for `larger`, 0 when absent); `headroom` uses `reserveFor`.
 - **R-30** `decideOnLimit`:
   - `class` `throughput` → `schedule_resume` at `now + (retryAfterMs ?? MINUTE)` (does not consume an auto-resume).
   - `fair_use`, `entitlement`, `plan_expired`, `balance_exhausted`, `spend_cap` → `ask` with `not_resumable`, unless policy is `fallback_account` and a fallback exists.
@@ -530,6 +594,10 @@ export interface QueueItem {
   readonly priority: number;            // higher first
   readonly enqueuedAt: EpochMs;
   readonly notBefore?: EpochMs;         // e.g. a scheduled resume
+  readonly thinking?: ThinkingChoice;   // from stageRouting (A-19); absent → balanced
+  readonly tier?: Tier;                 // from stageRouting (A-19)
+  readonly sameProviderReview?: true;   // a review stage found no other provider in the chain (R-52)
+  readonly handoffOf?: RunId;           // the failed run this item continues from through the handoff pack (A-65)
 }
 export interface RunningRun { readonly workOrderId: WorkOrderId; readonly repo: RepoSlug; readonly accountId: AccountId }
 export interface DispatchLimits {
@@ -649,13 +717,13 @@ export interface ProviderCapabilities {
   readonly skills: Tri;
   readonly images: Tri;
   readonly quotaReport: 'stream' | 'query' | 'error_only' | 'none';
-  readonly costReport: 'reported' | 'computed' | 'equivalent' | 'none';
+  readonly costReport: 'reported' | 'computed' | 'equivalent' | 'credits' | 'none';
 }
-export type SupportTier = 'full' | 'isolated' | 'experimental';
-export function supportTier(c: ProviderCapabilities): SupportTier;
 
 // providers/agent-event.ts
-export type CostKind = 'reported' | 'computed' | 'equivalent';
+export type CostKind = 'reported' | 'computed' | 'equivalent' | 'credits';
+// credits: the provider meters usage in its own credit unit; the amount is a number of credits
+// in the provider's smallest unit.
 export type AgentEvent =
   | { readonly type: 'session_started'; readonly at: EpochMs; readonly sessionRef: string }
   | { readonly type: 'text'; readonly at: EpochMs; readonly delta: string }
@@ -663,10 +731,10 @@ export type AgentEvent =
   | { readonly type: 'tool_call'; readonly at: EpochMs; readonly id: string; readonly name: string; readonly target?: string }
   | { readonly type: 'tool_result'; readonly at: EpochMs; readonly id: string; readonly ok: boolean }
   | { readonly type: 'permission_ask'; readonly at: EpochMs; readonly id: string; readonly tool: string; readonly target?: string; readonly options: readonly string[] }
-  | { readonly type: 'usage'; readonly at: EpochMs; readonly inputTokens: number; readonly outputTokens: number; readonly cachedInputTokens?: number; readonly costUsd?: number; readonly costKind?: CostKind }
+  | { readonly type: 'usage'; readonly at: EpochMs; readonly inputTokens: number; readonly outputTokens: number; readonly cachedInputTokens?: number; readonly reasoningTokens?: number; readonly costUsd?: number; readonly costKind?: CostKind }
   | { readonly type: 'quota_signal'; readonly at: EpochMs; readonly meter: Omit<Meter, 'id' | 'poolId'> & { readonly poolLabel?: string } }
   | { readonly type: 'limit_hit'; readonly at: EpochMs; readonly hit: Omit<LimitHit, 'accountId' | 'at'> }
-  | { readonly type: 'error'; readonly at: EpochMs; readonly class: 'auth' | 'network' | 'crash' | 'protocol' | 'unknown'; readonly message: string }
+  | { readonly type: 'error'; readonly at: EpochMs; readonly class: 'auth' | 'network' | 'crash' | 'protocol' | 'timeout' | 'unknown'; readonly reason?: 'first_output_timeout' | 'inactivity_timeout'; readonly message: string }
   | { readonly type: 'finished'; readonly at: EpochMs; readonly reason: 'completed' | 'failed' | 'cancelled' | 'limit' }
   | { readonly type: 'raw'; readonly at: EpochMs; readonly line: string };
 
@@ -676,6 +744,7 @@ export interface RunSummary {
   readonly inputTokens: number;
   readonly outputTokens: number;
   readonly cachedInputTokens: number;
+  readonly reasoningTokens: number;      // part of outputTokens, shown as its own line (P-30)
   readonly costUsd?: number;             // sum of events that carried a cost
   readonly costKind?: CostKind;          // the kind of the first costed event
   readonly toolCalls: number;
@@ -685,11 +754,100 @@ export interface RunSummary {
   readonly outcome?: RunOutcome;          // from 'finished': completed→succeeded, failed, cancelled, limit
 }
 export function foldRun(events: readonly AgentEvent[]): RunSummary;
+
+// providers/catalog.ts — Thinking and EffortLevel as in provider-capabilities.md §1
+/** The effort a run sends for a role's choice on one model; undefined → send nothing. */
+export function effortForChoice(choice: ThinkingChoice | undefined, thinking: Thinking | 'unknown'): EffortLevel | undefined;
+
+// providers/instructions.ts — the effective-instructions core (P-37); pure and provider-agnostic
+/** The Docket layers: flow + stage + role. Deterministic; identical for every provider given the
+ *  same definitions (P-37: behaviour does not depend on the provider). */
+export function stageBrief(
+  flow: FlowDef, stage: StageDef, role: RoleDef | null,
+  workOrder: { readonly id: WorkOrderId; readonly title: string },
+): string;
+
+/** A stage's acceptance criteria rendered as checkable statements from its exit gates (command
+ *  sets by name, secret_scan, agent_verdict role, human gates). StageDef carries no authored
+ *  brief, so the gate rendering IS the criteria — an authored `brief` field is deliberately not
+ *  added; it arrives only if the rendered criteria prove too thin. */
+export function acceptanceCriteria(stage: StageDef, repo: RepoDef): readonly string[];
+
+export interface RepoInstructionFile { readonly name: string; readonly content: string }
+export interface InstructionBudget { readonly maxChars: number }
+export const DEFAULT_INSTRUCTION_BUDGET_CHARS: number;   // 24_000
+export interface InstructionPlan {
+  readonly native: readonly string[];                 // names the provider reads itself; never inlined
+  readonly inlined: readonly RepoInstructionFile[];   // truncated to the budget, candidate order
+  readonly truncated: readonly string[];             // names that did not fit whole
+}
+/** `present` — the candidate files found in the worktree; `native` — the chosen provider's set.
+ *  A file both native and present is never inlined. A non-native file is inlined whole while the
+ *  budget allows, then truncated to the remainder with an end marker; later candidates are dropped. */
+export function planInstructions(
+  native: readonly string[],
+  present: readonly RepoInstructionFile[],
+  budget: InstructionBudget,
+): InstructionPlan;
+/** The prompt block: the inlined files under one "project context" heading that marks them as
+ *  quoted repo data — never Docket instructions; files in plan order. */
+export function renderInstructionBlock(plan: InstructionPlan): string;
+
+// providers/handoff.ts — the handoff pack core (P-38)
+export interface TaskState {
+  readonly lastCommand?: { readonly name: string; readonly target?: string; readonly ok: boolean };
+  readonly toolCalls: number;
+  readonly failedToolCalls: number;
+  readonly openPermissionAsks: readonly string[];
+  readonly filesTouched: readonly string[];   // from the checkpoint diff — ground truth, not event targets
+}
+/** Deterministic extraction from run events (P-38 item 3). Raw transcripts never enter it. */
+export function deriveTaskState(events: readonly AgentEvent[], filesTouched: readonly string[]): TaskState;
+
+export interface RollingNote { readonly text: string; readonly capped: boolean }
+export const ROLLING_NOTE_MAX_CHARS: number;            // 8_000
+/** Pure fold: appends new text/thinking deltas and keeps the tail; `capped: true` once truncated. */
+export function extendRollingNote(note: RollingNote | undefined, events: readonly AgentEvent[]): RollingNote;
+
+export interface HandoffPack {
+  readonly stagePrompt: string;                       // item 1 — stageBrief, recomputed (A-62)
+  readonly acceptance: readonly string[];             // item 1
+  readonly instructionPlan: InstructionPlan;          // item 2 — for the TARGET provider (P-37)
+  readonly taskState: TaskState;                      // item 3
+  readonly codeState: { readonly files: readonly string[]; readonly patch: string };   // item 4
+  readonly summary: RollingNote;                      // item 5
+  readonly definitionsChanged: boolean;               // the definitions changed since the first leg (A-62)
+}
+export interface PackBudget { readonly maxChars: number }
+export const PACK_CHARS_PER_TOKEN: number;            // 4 — chars ↔ tokens estimate for sizing only
+export const DEFAULT_CONTEXT_WINDOW_TOKENS: number;   // 32_768 — the stand-in for an unknown window; the fixed ceilings sit below it, so an unknown window sizes the pack to the ceilings alone (A-63)
+/** Throttles checkpoint commits; no timer exists — the cadence is event-boundary + terminal (A-57). */
+export const CHECKPOINT_MIN_INTERVAL_MS: number;      // 30_000
+/** Deterministic truncation to the budget. Priority: stagePrompt and the Docket layers never
+ *  truncate; then inlined files (reverse candidate order), then the patch body (file list kept,
+ *  marker left in place of the cut), then the summary. */
+export function sizeHandoffPack(pack: HandoffPack, budget: PackBudget): HandoffPack;
+/** The continuation prompt: checks-first preamble, stage prompt, acceptance, effective
+ *  instructions block, task state, code state, summary — fixed order, English. With
+ *  `definitionsChanged` set, the note "definition changed since the first leg" follows the
+ *  preamble; quoted repo material stays under its data heading (never Docket instructions). */
+export function renderHandoffPrompt(pack: HandoffPack): string;
+/** Pure 32-bit FNV-1a over the text, rendered as 8 lower-case hex chars. `executeRun` writes it
+ *  as the run record's `definitionsRev` — the digest of the Docket layers the agent was given
+ *  (`stageBrief`, then `role.instructions`); `buildHandoff` compares it to the current layers
+ *  for `definitionsChanged` (A-62). */
+export function definitionsDigest(text: string): string;
 ```
 
 Rules:
-- **R-43** `supportTier`: `structuredStream && permissionAsk === true` → `full`; `structuredStream` → `isolated`; else `experimental`.
-- **R-44** `foldRun` sums token counts across all `usage` events; `sessionRef` is the last `session_started`; `outcome` maps from the last `finished` event.
+- R-43 (retired): `supportTier` is replaced by `supportLevel` from the capability record (P-28); the function and its type are removed.
+- **R-44** `foldRun` sums token counts across all `usage` events (`reasoningTokens` absent counts as 0); `sessionRef` is the last `session_started`; `outcome` maps from the last `finished` event.
+- **R-50** `effortForChoice`: absent choice → `{ level: 'balanced' }`; a `level` maps through `thinkingFor`; an `effort` is sent as is when the model lists it, otherwise clamped down to the highest listed level below it, and undefined when none is below; `thinking` `unknown` or `{ kind: 'none' }` → undefined for every choice. A level the model does not list is never returned.
+- **R-53** `stageBrief`/`acceptanceCriteria` are pure functions of the definitions — the same inputs render the same bytes; no timestamps, no account data, no provider ids. The acceptance criteria are rendered from the stage's exit gates because `StageDef` carries no authored brief; a `brief` field is added only if the rendered criteria prove too thin.
+- **R-54** `planInstructions`: native files never inline; a file both native and absent is not an error; truncation markers name the file and the kept char count; the plan is a pure function of (`native`, `present`, budget).
+- **R-55** `deriveTaskState` reads only `tool_call`/`tool_result`/`permission_ask` events; `extendRollingNote` reads only `text`/`thinking` deltas; neither sees the raw transcript. P-38 item 3's plan/done/remaining lists are not derivable from today's events: the deterministic core ships first, a plan-like structure arrives later as registry data (plan-tool names per provider), and the model-written summary stays open decision O-8.
+- **R-56** `sizeHandoffPack` never drops `stagePrompt`, `acceptance` or the Docket layers, and never empties the pack: a budget below the untouchable core is a caller bug, not a smaller pack.
+- **R-57** `renderHandoffPrompt` places "first run the stage's checks, then continue" as the first line (P-38: the new agent first runs the stage's checks) and never embeds a session ref, an account id, or environment values. With `definitionsChanged` set, the note "definition changed since the first leg" sits directly after the preamble — the change is surfaced to the continuation, never silently absorbed. `definitionsDigest` is deterministic: the same text always yields the same 8 lower-case hex chars, and different text yields a different digest (A-62's rev marker stands on this).
 
 ---
 
@@ -703,6 +861,8 @@ Roles (`RoleSlug` → name, write scope):
 `test-writer` Test yazarı (tests) · `reviewer` Gözden geçirici (none) ·
 `security-auditor` Güvenlik denetçisi (none) · `documenter` Belgeci (docs). All `active: true`,
 `capabilities: []`.
+
+Every built-in stage whose role is `reviewer` or `security-auditor` sets `tier: 'strong'` and `reviewOf` the flow's `implement` stage; no other built-in stage sets a tier or thinking.
 
 Flows:
 - `standard` Standart: `plan` (planner; human gate `plan-approval`) → `implement` (developer; command

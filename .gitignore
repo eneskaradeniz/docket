@@ -25,3 +25,6 @@ docs/work-orders/*/screenshots/
 release/
 # WO-0100: the icns intermediate scripts/icons.mjs builds and deletes.
 build/icon.iconset/
+
+# E2E screenshots and the gallery are local evidence, not committed artifacts.
+e2e/.out/

@@ -10,13 +10,12 @@ import type { AgentTransport, RunHandle, RunRequest, TransportError } from '../.
 import type { AgentEvent, Result } from '../../../../domain/index';
 import { err, ok } from '../../../../domain/index';
 import { createSystemClock } from '../../../system/index';
-import type { ProviderDef } from '../../defs/index';
+import { effortModelId, providerLevelOf, type ProviderDef } from '../../defs/index';
 import { buildChildEnv, writeRunConfig, type RunCapability } from '../../launch/index';
+import { ACP_INITIALIZE_PARAMS, ACP_PROTOCOL_VERSION } from './connection';
 import { mapSessionUpdate, transcriptEntryOf, type TranscriptEntry } from './map-update';
 import { buildResumePrompt } from './resume-summary';
 
-const PROTOCOL_VERSION = 1;
-const CLIENT_INFO = { name: 'Docket', version: '2' };
 const METHOD_NOT_FOUND = -32601;
 const CRASH_MESSAGE = 'The agent session ended unexpectedly.';
 
@@ -76,6 +75,42 @@ const asRecord = (value: unknown): UnknownRecord | null =>
 
 const asString = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined);
 
+/** The values of a select config option: plain entries, or the entries a group wraps. */
+const optionValues = (options: unknown): readonly string[] => {
+  if (!Array.isArray(options)) return [];
+  const values: string[] = [];
+  for (const raw of options) {
+    const entry = asRecord(raw);
+    if (entry === null) continue;
+    const value = asString(entry.value);
+    if (value !== undefined) values.push(value);
+    else values.push(...optionValues(entry.options));
+  }
+  return values;
+};
+
+/** The id of the session's config option named by `target` (its reserved category, or its own id),
+ *  when it offers `value`. A value the session does not offer is not sent: the agent would refuse
+ *  it and the run keeps its default. */
+const effortOptionId = (
+  session: UnknownRecord | null,
+  target: { readonly category?: string; readonly configId?: string },
+  value: string,
+): string | undefined => {
+  const options = session === null ? undefined : session.configOptions;
+  if (!Array.isArray(options)) return undefined;
+  for (const raw of options) {
+    const option = asRecord(raw);
+    if (option === null) continue;
+    const id = asString(option.id);
+    const category = option.category ?? (target.category === 'model' && id === 'model' ? 'model' : undefined);
+    const matches = target.configId !== undefined ? id === target.configId : category === target.category;
+    if (!matches) continue;
+    if (id !== undefined && optionValues(option.options).includes(value)) return id;
+  }
+  return undefined;
+};
+
 type RpcSettled =
   | { readonly kind: 'result'; readonly result: unknown }
   | { readonly kind: 'error'; readonly message: string };
@@ -105,11 +140,20 @@ const finishReasonOf = (stopReason: unknown): Extract<AgentEvent, { readonly typ
   }
 };
 
-/** The option the user's binary decision maps onto, if the agent offered one. */
+/** The option the user's binary decision maps onto, if the agent offered one. A single "allow"
+ * is a one-time grant: an option that outlives the call (`allow_always`, or a provider's
+ * session-wide variant) is never picked for it, even when it is the only allow offered — the
+ * answer is then the cancelled outcome, never a standing approval the user did not make. A deny
+ * prefers the one-time rejection and falls back to any rejection, then to an option the agent
+ * itself names `deny`; an allow falls back to an option the agent itself names `allow_once`. */
 const pickOptionId = (options: readonly PermissionOption[], decision: 'allow' | 'deny'): string | undefined => {
-  const prefix = decision === 'allow' ? 'allow' : 'reject';
-  const match = options.find((option) => option.kind.startsWith(prefix));
-  return match === undefined ? undefined : match.optionId;
+  const byKind = (kind: string): string | undefined => options.find((option) => option.kind === kind)?.optionId;
+  if (decision === 'allow') return byKind('allow_once') ?? options.find((option) => option.optionId === 'allow_once')?.optionId;
+  return (
+    byKind('reject_once') ??
+    options.find((option) => option.kind.startsWith('reject'))?.optionId ??
+    options.find((option) => option.optionId === 'deny')?.optionId
+  );
 };
 
 export function createAcpTransport(def: ProviderDef): AgentTransport {
@@ -164,6 +208,8 @@ export function createAcpTransport(def: ProviderDef): AgentTransport {
         prompt: request.prompt,
         configDir: runConfig.configDir,
         ...(request.resume === undefined ? {} : { resume: request.resume }),
+        ...(request.effort === undefined ? {} : { effort: request.effort }),
+        ...(request.route.model === undefined ? {} : { model: request.route.model }),
       });
 
       // The ambient environment reaches the child only through the launch allowlist; the def's
@@ -412,20 +458,14 @@ export function createAcpTransport(def: ProviderDef): AgentTransport {
       };
 
       const handshake = async (): Promise<void> => {
-        const initialised = await requestRpc('initialize', {
-          protocolVersion: PROTOCOL_VERSION,
-          // Docket implements none of the optional client methods (filesystem, terminals,
-          // elicitation); omitted capabilities are the protocol's way of saying unsupported.
-          clientCapabilities: {},
-          clientInfo: CLIENT_INFO,
-        });
+        const initialised = await requestRpc('initialize', ACP_INITIALIZE_PARAMS);
         if (initialised.kind === 'error') {
           protocolFail('The agent did not complete the Agent Client Protocol handshake.');
           return;
         }
         const agentResult = asRecord(initialised.result);
         const version = agentResult === null ? undefined : agentResult.protocolVersion;
-        if (version !== PROTOCOL_VERSION) {
+        if (version !== ACP_PROTOCOL_VERSION) {
           protocolFail('The agent speaks a different Agent Client Protocol version.');
           return;
         }
@@ -471,6 +511,39 @@ export function createAcpTransport(def: ProviderDef): AgentTransport {
             return;
           }
           sessionId = createdId;
+          // A pinned model is selected before anything else: a session's own default can be a
+          // model that cannot do the work (an image model), and the thought levels on offer
+          // belong to the selected model, so they are read from the answer to the model change.
+          let levelSession = createdSession;
+          // A `model-suffix` effort rides the model id itself, so the id the session is asked for
+          // is `<model><separator><level>`; a session that does not offer that id gets the plain
+          // model (the effort is dropped, never guessed), and an unpinned route sends no effort.
+          const suffixedModel = effortModelId(def.effortArg, request.route.model, request.effort, def.levelNames);
+          const wantedModel =
+            suffixedModel !== undefined && effortOptionId(createdSession, { category: 'model' }, suffixedModel) !== undefined
+              ? suffixedModel
+              : request.route.model;
+          const modelOptionId =
+            wantedModel === undefined ? undefined : effortOptionId(createdSession, { category: 'model' }, wantedModel);
+          if (modelOptionId !== undefined) {
+            const selected = await requestRpc('session/set_config_option', {
+              sessionId,
+              configId: modelOptionId,
+              value: wantedModel,
+            });
+            const answered = selected.kind === 'result' ? asRecord(selected.result) : null;
+            if (answered !== null && Array.isArray(answered.configOptions) && answered.configOptions.length > 0) {
+              levelSession = answered;
+            }
+          }
+          const effortValue = providerLevelOf(def.levelNames, request.effort);
+          if (def.effortArg?.kind === 'session-option' && effortValue !== undefined) {
+            const configId = effortOptionId(levelSession, def.effortArg, effortValue);
+            // A refused effort leaves the session on its own default; it never fails the run.
+            if (configId !== undefined) {
+              await requestRpc('session/set_config_option', { sessionId, configId, value: effortValue });
+            }
+          }
         }
         establishedSessionId = sessionId;
         events.push({ type: 'session_started', at: clock.now(), sessionRef: sessionId });

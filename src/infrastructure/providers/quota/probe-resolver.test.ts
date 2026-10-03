@@ -1,7 +1,9 @@
 // Probe resolver wiring tests: the resolver hands each provider's probe the injected spawn and
 // clock, so pollQuota can reach agy, codex and claude-code through one QuotaProbeResolver. The
 // provider-specific mappings are covered by the probes' own test files; these tests pin the
-// wiring: right probe per def id, spawn passed through, unknown ids unresolved.
+// wiring: right probe per def id, spawn passed through, unknown ids unresolved, and the
+// http_monitor route kinds resolved from their accounts and the vault against the fake monitor
+// endpoint.
 import { spawn as nodeSpawn } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -9,7 +11,17 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import type { AccountRecord } from '../../../application/index';
+import { parseUlid } from '../../../domain/index';
+
 import { createQuotaProbeResolver } from './probe-resolver';
+import { createFakeMonitorPool, FAKE_MONITOR_TOKEN, type FakeMonitorPool } from './zai/fixtures/fake-monitor-server-harness';
+
+const ulidOf = <B extends string>(input: string) => {
+  const parsed = parseUlid<B>(input);
+  if (!parsed.ok) throw new Error(`bad ulid fixture: ${input}`);
+  return parsed.value;
+};
 
 const CODEX_FIXTURE = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -19,13 +31,16 @@ const CODEX_FIXTURE = join(
 );
 
 let root: string;
+let monitors: FakeMonitorPool;
 
 beforeAll(() => {
   root = mkdtempSync(join(tmpdir(), 'docket-probe-resolver-'));
+  monitors = createFakeMonitorPool();
 });
 
 afterAll(() => {
   rmSync(root, { recursive: true, force: true });
+  monitors.dispose();
 });
 
 const AGY_PAYLOAD = `{"status": "SUCCESS", "num_turns": 0, "command": { "name": "usage", "data": { "groups": [
@@ -99,6 +114,104 @@ describe('createQuotaProbeResolver', () => {
   it('a provider without a probe resolves to undefined', () => {
     const resolver = makeResolver(undefined);
 
-    expect(resolver.forProvider('gemini')).toBeUndefined();
+    expect(resolver.forProvider('cursor')).toBeUndefined();
+  });
+
+  it('wires the http_monitor route kinds: a poll through the resolver reads the account endpoint over the real fetch', async () => {
+    const server = await monitors.start({
+      status: 200,
+      body: JSON.stringify({
+        data: {
+          limits: [
+            { type: 'TOKENS_LIMIT', unit: 3, number: 5, percentage: 40, nextResetTime: 1_759_100_000_000 },
+            { type: 'TIME_LIMIT', unit: 5, percentage: 10, nextResetTime: 1_762_000_000_000 },
+          ],
+        },
+      }),
+    });
+    const account: AccountRecord = {
+      id: ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FA2'),
+      provider: 'claude-code',
+      label: 'GLM Coding',
+      authMode: 'api_key',
+      limitPolicy: 'wait_resume',
+      routeKind: 'zai-glm',
+      endpoint: server.endpoint,
+      secretRef: 'token-acct-glm',
+      caps: [],
+    };
+    // No injected fetch: the resolver's default global fetch must carry the poll.
+    const resolver = createQuotaProbeResolver({
+      now: () => 1_790_000_000_000,
+      accounts: { list: async () => [account] },
+      secrets: { get: async (ref) => (ref === 'token-acct-glm' ? FAKE_MONITOR_TOKEN : undefined) },
+    });
+    const probe = resolver.forProvider('zai-glm');
+    if (probe === undefined) throw new Error('zai-glm probe not registered');
+
+    const result = await probe.poll('zai-glm', null);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.value).toHaveLength(2);
+    expect(result.value[0]?.pool).toEqual({ label: 'GLM Coding', kind: 'allowance', appliesTo: [{ prefix: 'glm-' }] });
+    expect(server.requests()).toEqual([
+      { method: 'GET', url: '/api/monitor/usage/quota/limit', auth: 'raw-match' },
+    ]);
+  });
+
+  it('without the account and vault ports the http_monitor route kinds resolve to nothing', () => {
+    const resolver = makeResolver(undefined);
+
+    expect(resolver.forProvider('zai-glm')).toBeUndefined();
+  });
+
+  it('answers the route-kind question: provider id plus kind id resolves the kind probe, polled under the kind id', async () => {
+    const server = await monitors.start({
+      status: 200,
+      body: JSON.stringify({
+        data: {
+          limits: [
+            { type: 'TOKENS_LIMIT', unit: 3, number: 5, percentage: 40, nextResetTime: 1_759_100_000_000 },
+            { type: 'TIME_LIMIT', unit: 5, percentage: 10, nextResetTime: 1_762_000_000_000 },
+          ],
+        },
+      }),
+    });
+    const account: AccountRecord = {
+      id: ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FA2'),
+      provider: 'claude-code',
+      label: 'GLM Coding',
+      authMode: 'api_key',
+      limitPolicy: 'wait_resume',
+      routeKind: 'zai-glm',
+      endpoint: server.endpoint,
+      secretRef: 'token-acct-glm',
+      caps: [],
+    };
+    const resolver = createQuotaProbeResolver({
+      now: () => 1_790_000_000_000,
+      accounts: { list: async () => [account] },
+      secrets: { get: async (ref) => (ref === 'token-acct-glm' ? FAKE_MONITOR_TOKEN : undefined) },
+    });
+    // The two-argument question a compatible-endpoint account asks: its provider id plus its
+    // route kind must resolve the kind's monitor probe, never the provider's SDK probe.
+    const probe = resolver.forProvider('claude-code', 'zai-glm');
+    if (probe === undefined) throw new Error('zai-glm probe not registered');
+
+    const result = await probe.poll('zai-glm', null);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.value).toHaveLength(2);
+    expect(server.requests()).toEqual([
+      { method: 'GET', url: '/api/monitor/usage/quota/limit', auth: 'raw-match' },
+    ]);
+  });
+
+  it('a route kind with no dedicated probe answers undefined, leaving the provider id as the fallback', () => {
+    const resolver = makeResolver(undefined);
+
+    expect(resolver.forProvider('claude-code', 'anthropic-subscription')).toBeUndefined();
   });
 });

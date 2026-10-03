@@ -42,6 +42,22 @@ const RATE_LIMITS = {
 // inventing a duration or a reset time.
 const SPARSE_RATE_LIMITS = { primary: { usedPercent: 80 } };
 
+// model/list pages (the catalog adapter's scenarios, shapes as recorded from the CLI): each row
+// carries id, displayName, isDefault, supportedReasoningEfforts and defaultReasoningEffort, and
+// the effort sets differ per model — one lists low…ultra, another has no max, one advertises an
+// unknown level, one lists none at all.
+const CODEX_MODEL = { id: 'gpt-5.3-codex', displayName: 'GPT-5.3 Codex', isDefault: false, supportedReasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'], defaultReasoningEffort: 'high' };
+const MINI_MODEL = { id: 'gpt-5.3-mini', displayName: 'GPT-5.3 mini', isDefault: false, supportedReasoningEfforts: ['minimal', 'low', 'medium', 'high', 'xhigh'], defaultReasoningEffort: 'medium' };
+const NANO_MODEL = { id: 'gpt-5.3-nano', displayName: 'GPT-5.3 nano', isDefault: true, supportedReasoningEfforts: ['low', 'sport', 'high'], defaultReasoningEffort: 'low' };
+const PLAIN_MODEL = { id: 'gpt-5.3', displayName: 'GPT-5.3', isDefault: false, defaultReasoningEffort: 'medium' };
+
+const MODEL_LIST_SCENARIOS = new Set(['model-list', 'model-list-two', 'model-list-forever', 'model-list-timeout']);
+const MODEL_LIST_ONE_PAGE = [{ data: [CODEX_MODEL, MINI_MODEL, NANO_MODEL, PLAIN_MODEL], nextCursor: null }];
+const MODEL_LIST_TWO_PAGES = [
+  { data: [CODEX_MODEL], nextCursor: 'page-2' },
+  { data: [MINI_MODEL], nextCursor: null },
+];
+
 const RESULTS = {
   initialize: { userAgent: 'fake-app-server/1', codexHome: '/tmp/fake-codex-home', platformFamily: 'unix', platformOs: 'macos' },
   'thread/start': { thread: THREAD, model: 'gpt-5', modelProvider: 'openai', cwd: '/tmp' },
@@ -84,6 +100,25 @@ const afterTurnStart = () => {
     finishTurn('completed');
     return;
   }
+  if (scenario === 'tools') {
+    note('item/started', { threadId: THREAD_ID, turnId: TURN_ID, item: { id: 'item_cmd', type: 'commandExecution', command: 'ls -la', status: 'inProgress' } });
+    note('item/completed', { threadId: THREAD_ID, turnId: TURN_ID, item: { id: 'item_cmd', type: 'commandExecution', command: 'ls -la', status: 'completed' } });
+    finishTurn('completed');
+    return;
+  }
+  if (scenario === 'steady') {
+    // Six deltas a quarter second apart: the turn outlasts a one-second watchdog while no
+    // single gap comes near it.
+    let sent = 0;
+    const timer = setInterval(() => {
+      sent += 1;
+      note('item/agentMessage/delta', { threadId: THREAD_ID, turnId: TURN_ID, itemId: 'item_msg', delta: `chunk ${sent}` });
+      if (sent < 6) return;
+      clearInterval(timer);
+      finishTurn('completed');
+    }, 250);
+    return;
+  }
   if (scenario === 'steer') {
     note('item/agentMessage/delta', { threadId: THREAD_ID, turnId: TURN_ID, itemId: 'item_msg', delta: 'working' });
     return; // the turn completes once the steer request arrives
@@ -95,6 +130,17 @@ const handleRequest = (msg) => {
   if (msg.method === 'account/rateLimits/read') {
     if (scenario === 'rate-limits') reply(msg.id, { ordinaryUsageAllowed: true, rateLimits: RATE_LIMITS, rateLimitsByLimitId: null, rateLimitResetCredits: null, accountId: 'acc_1', rateLimitUpsell: null });
     else replyError(msg.id, -32601, 'method not found'); // a server without quota answers with an error; the run must not care
+    return;
+  }
+  if (msg.method === 'model/list' && MODEL_LIST_SCENARIOS.has(scenario)) {
+    if (scenario === 'model-list-timeout') return; // the list is never answered; the caller's timeout fires
+    if (scenario === 'model-list-forever') {
+      reply(msg.id, { data: [], nextCursor: `more-${msg.id}` }); // every page promises one more
+      return;
+    }
+    const pages = scenario === 'model-list-two' ? MODEL_LIST_TWO_PAGES : MODEL_LIST_ONE_PAGE;
+    const cursor = msg.params === undefined || msg.params === null ? undefined : msg.params.cursor;
+    reply(msg.id, cursor === 'page-2' ? pages[1] : pages[0]);
     return;
   }
   if (scenario === 'exit-early') {

@@ -1,0 +1,4 @@
+{"type":"system","subtype":"init","cwd":"/tmp/amp-probe","session_id":"T-fake1001","tools":["Bash","Read","Task"],"mcp_servers":[],"agent_mode":"medium"}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"what file in this folder is in markdown format?"}]},"parent_tool_use_id":null,"session_id":"T-fake1001"}
+{"type":"assistant","message":{"type":"message","role":"assistant","content":[{"type":"text","text":"All Markdown files in this folder:\n- README.md (root)"}],"stop_reason":"end_turn","usage":{"input_tokens":1200,"output_tokens":340,"cache_read_input_tokens":800}},"parent_tool_use_id":null,"session_id":"T-fake1001"}
+{"type":"result","subtype":"success","duration_ms":4100,"is_error":false,"num_turns":1,"result":"All Markdown files in this folder:\n- README.md (root)","session_id":"T-fake1001","usage":{"input_tokens":1200,"output_tokens":340,"cache_read_input_tokens":800}}

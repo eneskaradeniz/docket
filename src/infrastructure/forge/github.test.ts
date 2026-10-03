@@ -6,7 +6,7 @@ import type { CommandResult } from '../../application/index';
 import { createFakeCommandRunner, type FakeCommandRunner } from '../../application/ports/fakes/index';
 import { createGhForge } from './github';
 
-const REPO_PATH = '/workspace/hello';
+const REPO_PATH = '/repo/hello';
 const REPO = { id: 'hello', remote: 'https://github.com/octo/hello.git', defaultBranch: 'main' } as const;
 
 const result = (exitCode: number, outputTail = ''): CommandResult => ({ exitCode, durationMs: 1, outputTail });

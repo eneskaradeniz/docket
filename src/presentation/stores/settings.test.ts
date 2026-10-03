@@ -17,6 +17,17 @@ import { createSettingsStore, type SettingsChange, type SettingsChangeSignal } f
 
 const ACTOR: Actor = { kind: 'user', id: 'u-1' };
 
+const ACCOUNT_SETTINGS = {
+  limitPolicy: 'wait_resume',
+  reserve: { short: null, long: null },
+  caps: [],
+  consentedModels: [],
+  routeKind: null,
+  identityDir: null,
+  endpointHost: null,
+  hasSecret: false,
+} as const;
+
 const METER_WINDOW = {
   id: 'meter-1',
   poolId: 'pool-1',
@@ -32,6 +43,8 @@ const METER_WINDOW = {
   observedAt: 8_000,
   source: 'polled',
   staleAfterMs: null,
+  reserveClass: 'long',
+  reserveShare: 0,
 } as const;
 
 /** The bare meter pins the nulls: no label of its own, nothing measured, no reset time. */
@@ -50,6 +63,8 @@ const METER_BARE = {
   observedAt: 8_500,
   source: 'pushed',
   staleAfterMs: null,
+  reserveClass: 'long',
+  reserveShare: 0,
 } as const;
 
 const VIEW: SettingsAccountsView = {
@@ -60,6 +75,7 @@ const VIEW: SettingsAccountsView = {
       label: 'Main',
       authMode: 'subscription',
       plan: 'pro',
+      ...ACCOUNT_SETTINGS,
       pools: [{ id: 'pool-1', label: 'Weekly allowance', kind: 'allowance', appliesTo: 'all' }],
       meters: [METER_WINDOW, METER_BARE],
     },
@@ -69,6 +85,7 @@ const VIEW: SettingsAccountsView = {
       label: 'Spare',
       authMode: 'api_key',
       plan: null,
+      ...ACCOUNT_SETTINGS,
       pools: [],
       meters: [],
     },
@@ -78,15 +95,18 @@ const VIEW: SettingsAccountsView = {
       label: 'Unbound',
       authMode: 'cloud',
       plan: null,
+      ...ACCOUNT_SETTINGS,
       pools: [],
       meters: [],
     },
   ],
   bindings: [
-    { scope: { level: 'global' }, role: 'worker', accounts: [{ accountId: 'acc-1', model: 'atlas-max' }] },
+    { scope: { level: 'global' }, role: 'worker', thinking: null, tier: null, accounts: [{ accountId: 'acc-1', model: 'atlas-max' }] },
     {
-      scope: { level: 'workspace', workspace: 'atolye' },
+      scope: { level: 'repo', repo: 'atolye' },
       role: 'reviewer',
+      thinking: null,
+      tier: null,
       accounts: [
         { accountId: 'acc-2', model: null },
         { accountId: 'acc-1', model: null },
@@ -95,6 +115,8 @@ const VIEW: SettingsAccountsView = {
     {
       scope: { level: 'workOrder', workOrderId: 'wo-1' },
       role: 'worker',
+      thinking: null,
+      tier: null,
       accounts: [{ accountId: 'acc-2', model: null }],
     },
   ],
@@ -248,6 +270,7 @@ describe('settings store', () => {
         label: 'Main',
         authMode: 'subscription',
         plan: 'pro',
+        detail: expect.objectContaining({ id: 'acc-1' }),
         pools: [{ id: 'pool-1', label: 'Weekly allowance', kind: 'allowance', appliesTo: 'all' }],
         meters: [
           {
@@ -273,8 +296,8 @@ describe('settings store', () => {
           },
         ],
       },
-      { id: 'acc-2', provider: 'beta-prov', label: 'Spare', authMode: 'api_key', plan: null, pools: [], meters: [] },
-      { id: 'acc-3', provider: 'gamma-prov', label: 'Unbound', authMode: 'cloud', plan: null, pools: [], meters: [] },
+      { id: 'acc-2', provider: 'beta-prov', label: 'Spare', authMode: 'api_key', plan: null, detail: expect.objectContaining({ id: 'acc-2' }), pools: [], meters: [] },
+      { id: 'acc-3', provider: 'gamma-prov', label: 'Unbound', authMode: 'cloud', plan: null, detail: expect.objectContaining({ id: 'acc-3' }), pools: [], meters: [] },
     ]);
   });
 
@@ -297,10 +320,12 @@ describe('settings store', () => {
     await h.store.load();
 
     expect(h.store.state().view?.bindings).toEqual([
-      { scope: { level: 'global' }, role: 'worker', accounts: [{ accountId: 'acc-1', model: 'atlas-max' }] },
+      { scope: { level: 'global' }, role: 'worker', thinking: null, tier: null, accounts: [{ accountId: 'acc-1', model: 'atlas-max' }] },
       {
-        scope: { level: 'workspace', workspace: 'atolye' },
+        scope: { level: 'repo', repo: 'atolye' },
         role: 'reviewer',
+        thinking: null,
+        tier: null,
         accounts: [
           { accountId: 'acc-2', model: null },
           { accountId: 'acc-1', model: null },
@@ -309,6 +334,8 @@ describe('settings store', () => {
       {
         scope: { level: 'workOrder', workOrderId: 'wo-1' },
         role: 'worker',
+        thinking: null,
+        tier: null,
         accounts: [{ accountId: 'acc-2', model: null }],
       },
     ]);

@@ -3,14 +3,21 @@ import type { AppDeps } from '../deps';
 
 import { createFakeAccountRepo } from './fake-account-repo';
 import { createFakeBindingRepo } from './fake-binding-repo';
+import { createFakeCapabilityCatalog } from './fake-capability-catalog';
+import { createFakeCheckpointCommitter } from './fake-checkpoints';
 import { createFakeClock } from './fake-clock';
-import { createFakeCommandRunner, createFakeEvidenceChecker, createFakeSecretScanner, createFakeWorktrees } from './fake-workspace-tools';
+import { createFakeCommandRunner, createFakeEvidenceChecker, createFakeSecretScanner, createFakeWorktrees } from './fake-repo-tools';
 import { createFakeDefinitionStore } from './fake-definition-store';
 import { createFakeEventLog } from './fake-event-log';
+import { createFakeGitProbe } from './fake-git-probe';
 import { createFakeIdGen } from './fake-id-gen';
+import { createFakeInstructionFiles } from './fake-instruction-files';
+import { createFakeModelCatalog } from './fake-model-catalog';
 import { createFakeNotifier } from './fake-notifier';
+import { createFakeProjectRepo } from './fake-project-repo';
 import { createFakeProposalRepo } from './fake-proposal-repo';
 import { createFakeQueueRepo } from './fake-queue-repo';
+import { createFakeRepoRegistry } from './fake-repo-registry';
 import { createFakeRunRepo } from './fake-run-repo';
 import { createFakeSecretVault } from './fake-secret-vault';
 import { createFakeTransportResolver } from './fake-transport';
@@ -27,6 +34,10 @@ export const createFakeDeps = (overrides: Partial<AppDeps> = {}): AppDeps => ({
   workOrders: createFakeWorkOrderRepo(),
   runs: createFakeRunRepo(),
   accounts: createFakeAccountRepo(),
+  capabilities: createFakeCapabilityCatalog(),
+  modelCatalog: createFakeModelCatalog(),
+  projects: createFakeProjectRepo(),
+  repos: createFakeRepoRegistry(),
   bindings: createFakeBindingRepo(),
   queue: createFakeQueueRepo(),
   definitions: createFakeDefinitionStore(),
@@ -37,6 +48,9 @@ export const createFakeDeps = (overrides: Partial<AppDeps> = {}): AppDeps => ({
   secretScanner: createFakeSecretScanner(),
   worktrees: createFakeWorktrees(),
   evidence: createFakeEvidenceChecker(),
+  git: createFakeGitProbe(),
   notifier: createFakeNotifier(),
+  instructionFiles: createFakeInstructionFiles(),
+  checkpoints: createFakeCheckpointCommitter(),
   ...overrides,
 });

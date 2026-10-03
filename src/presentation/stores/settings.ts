@@ -22,6 +22,7 @@ import type {
 import type { Actor } from '../../domain/index';
 import type { LabelKey } from '../labels/keys';
 import type { Locale } from '../labels/t';
+import { resetLine } from './reset-line';
 import { commandResultKey, isQueryFailure } from './results';
 
 /** The coarse change events the api emits (docs/v2/ui.md, U-12). Notifications carry no
@@ -29,7 +30,8 @@ import { commandResultKey, isQueryFailure } from './results';
  *  signal as-is. */
 export type SettingsChange =
   | { readonly type: 'workOrders.changed' }
-  | { readonly type: 'run.updated'; readonly runId: string };
+  | { readonly type: 'run.updated'; readonly runId: string }
+  | { readonly type: 'update.changed' };
 
 /** Subscription to the change events; the api's `subscribe` (U-12) satisfies it as-is. */
 export type SettingsChangeSignal = (listener: (change: SettingsChange) => void) => () => void;
@@ -68,6 +70,9 @@ export interface AccountDisplay {
   readonly plan: string | null;
   readonly pools: readonly SettingsPoolView[];
   readonly meters: readonly MeterDisplay[];
+  /** The account exactly as `settings.accounts` reported it (A-48): the account editor reads its
+   *  facts, reserve, policy and caps from here. */
+  readonly detail: SettingsAccountView;
 }
 
 export interface SettingsView {
@@ -141,8 +146,12 @@ export interface SettingsStore {
   /** The reset time of a meter in the active locale, or null when the meter has none.
    *  Computed on demand so a locale switch re-renders without a re-query. */
   resetsAtLabel(resetsAt: number | null): string | null;
+  /** U-20's "…'de sıfırlanır · … kaldı" for a reset instant, read now; null without one. */
+  resetLine(resetsAt: number | null): string | null;
   saveAccount(input: AccountSaveInput): Promise<SettingsIntentOutcome>;
   saveBinding(input: BindingSaveInput): Promise<SettingsIntentOutcome>;
+  /** Issue any command as the user and re-query (the account editor's writes, U-29). */
+  runCommand(command: Command): Promise<SettingsIntentOutcome>;
   /** Remove an account; with bindings still referencing it, issues nothing and surfaces the
    *  `binding_exists` warning with the referencing roles. */
   removeAccount(accountId: string): Promise<SettingsIntentOutcome>;
@@ -160,6 +169,7 @@ const accountDisplay = (account: SettingsAccountView): AccountDisplay => {
     authMode: account.authMode,
     plan: account.plan,
     pools: account.pools,
+    detail: account,
     meters: account.meters.map((meter) => ({
       id: meter.id,
       poolId: meter.poolId,
@@ -251,8 +261,10 @@ export const createSettingsStore = (deps: SettingsStoreDeps): SettingsStore => {
 
   // Both event kinds can move what settings shows (meters move with runs, accounts with
   // commands), so every notification re-queries the accounts view. Discovery is intentionally
-  // absent: a pass spawns probes, and change events must not pay for one.
-  changes(() => {
+  // absent: a pass spawns probes, and change events must not pay for one. The update channel is
+  // absent for the same economy — the update surface tracks it in its own wave.
+  changes((change) => {
+    if (change.type === 'update.changed') return;
     void load();
   });
 
@@ -283,6 +295,7 @@ export const createSettingsStore = (deps: SettingsStoreDeps): SettingsStore => {
     load,
     discover,
     state: () => state,
+    resetLine: (resetsAt) => (resetsAt === null ? null : resetLine(locale(), zone, resetsAt, Date.now())),
     resetsAtLabel: (resetsAt) => {
       if (resetsAt === null) return null;
       const tag = locale();
@@ -303,6 +316,7 @@ export const createSettingsStore = (deps: SettingsStoreDeps): SettingsStore => {
         authMode: input.authMode,
         ...(input.plan !== undefined ? { plan: input.plan } : {}),
       }),
+    runCommand: runIntent,
     saveBinding: (input) =>
       runIntent({
         type: 'binding.save',

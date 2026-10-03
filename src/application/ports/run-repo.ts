@@ -4,6 +4,7 @@ import type {
   AgentEvent,
   EpochMs,
   RoleSlug,
+  RollingNote,
   RunId,
   RunOutcome,
   StageSlug,
@@ -17,6 +18,7 @@ export interface RunRecord {
   readonly attempt: number;
   readonly role: RoleSlug;
   readonly route: AccountRoute;
+  readonly definitionsRev?: string; // revision marker of the definitions the stage prompt was computed from; drives A-62's changed-note
   readonly startedAt: EpochMs;
   readonly endedAt?: EpochMs;
   readonly outcome?: RunOutcome;
@@ -34,4 +36,9 @@ export interface RunRepo {
   listActive(): Promise<readonly RunRecord[]>; // no endedAt
   appendEvents(id: RunId, events: readonly AgentEvent[]): Promise<void>;
   events(id: RunId): Promise<readonly AgentEvent[]>;
+  saveHandoffNote(id: RunId, note: RollingNote): Promise<void>;
+  handoffNote(id: RunId): Promise<RollingNote | undefined>;
+  /** The first checkpoint sha of the run's stage attempt; set by the executor (A-59). */
+  saveStageBase(id: RunId, sha: string): Promise<void>;
+  stageBase(id: RunId): Promise<string | undefined>;
 }

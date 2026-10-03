@@ -4,15 +4,17 @@ import type { CanUseTool, McpServerConfig, Options, SDKUserMessage } from '@anth
 import type {
   AccountRepo,
   AgentTransport,
+  CapabilityCatalog,
   Clock,
   RunHandle,
   RunRequest,
   SecretVault,
   TransportError,
 } from '../../../../application/index';
-import type { AgentEvent, CostKind, Result } from '../../../../domain/index';
+import type { AgentEvent, Result } from '../../../../domain/index';
 import { err, ok } from '../../../../domain/index';
 import { mapSdkMessage, toolTarget } from './map-message';
+import { buildRouteEnvironment } from './route-env';
 
 export type QueryFn = typeof sdkQuery;
 
@@ -23,10 +25,15 @@ export interface SdkTransportConfig {
   readonly baseEnv: Readonly<Record<string, string>>; // allowlisted environment from the composition root
   readonly query?: QueryFn; // default: the SDK's query
   readonly executablePath?: string; // from discovery (Phase 3); SDK default when absent
+  /** Route-kind resolution; default: the capability registry's own catalog. */
+  readonly capabilities?: Pick<CapabilityCatalog, 'routeKindOf'>;
+  /** True when the definition declares the SDK `effort` option; without it the effort is ignored. */
+  readonly sendsEffort?: boolean;
 }
 
-/** Credential variables never pass through from the allowlist; the vault is their only source. */
-const CREDENTIAL_ENV_KEYS: readonly string[] = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'];
+/** The levels the SDK's `effort` option takes; a wider level never reaches it. */
+const sdkEffort = (level: string | undefined): Options['effort'] =>
+  level === 'low' || level === 'medium' || level === 'high' || level === 'xhigh' || level === 'max' ? level : undefined;
 
 const DENIED_BY_OPERATOR = 'Denied by the operator';
 // The vendor's crash text is not relayed into events: it may quote environment values or secrets.
@@ -94,27 +101,11 @@ export function createSdkTransport(config: SdkTransportConfig): AgentTransport {
         return err({ code: 'unsupported', message: `no account ${request.route.accountId} for this transport` });
       }
 
-      // Environment: the allowlist minus credential variables; the vault is the only key source.
-      const env: Record<string, string> = {};
-      for (const [name, value] of Object.entries(config.baseEnv)) {
-        if (CREDENTIAL_ENV_KEYS.includes(name)) continue;
-        env[name] = value;
-      }
-
-      let costKind: CostKind;
-      if (account.authMode === 'api_key') {
-        const secretRef = account.secretRef;
-        const apiKey = secretRef === undefined ? undefined : await config.secrets.get(secretRef);
-        if (apiKey === undefined) {
-          return err({ code: 'not_logged_in', message: 'the account has no api key in the vault' });
-        }
-        env.ANTHROPIC_API_KEY = apiKey;
-        costKind = 'reported';
-      } else if (account.authMode === 'subscription') {
-        costKind = 'equivalent';
-      } else {
-        return err({ code: 'unsupported', message: `auth mode ${account.authMode} is not supported by this transport` });
-      }
+      // Environment and route cost kind: the one shared route-environment build (I-34), so a run
+      // and every other SDK call on this account — the model catalog's listing — see the same child.
+      const route = await buildRouteEnvironment(account, config);
+      if (!route.ok) return err(route.error);
+      const { env, costKind } = route.value;
 
       const mcpServers: Record<string, McpServerConfig> = {};
       for (const capability of request.capabilities) {
@@ -197,9 +188,15 @@ export function createSdkTransport(config: SdkTransportConfig): AgentTransport {
         abortController,
         canUseTool,
         pathToClaudeCodeExecutable: config.executablePath,
+        ...(config.sendsEffort === true && sdkEffort(request.effort) !== undefined ? { effort: sdkEffort(request.effort) } : {}),
       };
 
       const pump = async (): Promise<void> => {
+        // The outcome maps from the last `finished` (R-44), so a run the stream already spoiled —
+        // an auth error, or any error before a first assistant output — must not finish
+        // `completed`, even when the CLI closes its turn with a success result.
+        let sawAssistantOutput = false;
+        let spoiled = false;
         try {
           const session = runQuery({ prompt: prompt.stream, options });
           for await (const message of session) {
@@ -208,9 +205,14 @@ export function createSdkTransport(config: SdkTransportConfig): AgentTransport {
               if (finished) break;
               if (event.type === 'finished') {
                 finished = true;
-                events.push(event);
+                events.push(event.reason === 'completed' && spoiled ? { ...event, reason: 'failed' } : event);
                 closeRun();
                 continue;
+              }
+              if (event.type === 'text' || event.type === 'thinking' || event.type === 'tool_call') {
+                sawAssistantOutput = true;
+              } else if (event.type === 'error' && (event.class === 'auth' || !sawAssistantOutput)) {
+                spoiled = true;
               }
               events.push(event);
             }
