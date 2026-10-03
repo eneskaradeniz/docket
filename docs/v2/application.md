@@ -592,13 +592,22 @@ building `prompt: role.instructions` itself and calls this instead. The use case
 order record itself: `flow` comes from the record's `record.flow` — the value the dispatcher and
 the gates resolve against — and the title from the same record; the input shape does not change.
 `buildHandoff` takes the failed run's worktree as `cwd`: the executor supplies it, the same way
-`composeRunPrompt` and `commitCheckpoint` receive theirs — a handoff never recreates a worktree,
-and `no_repo` is the checkpoint adapter's verdict that `cwd` is not a git working tree. It loads
-the failed run and its events, the work order and definitions, the rolling note, the stage base
-(falling back to the worktree base ref), the diff, and the candidates' context windows (`null`
-where none is known); assembles the pack **for the target provider** (its native files), sizes it
-(fixed ceilings first; a known window only tightens them — A-63), renders it, and appends audit
-`run.handoff` with `detail: { fromRun: runId, candidates: candidates.length }`.
+`composeRunPrompt` and `commitCheckpoint` receive theirs — a handoff never recreates a worktree.
+The checkpoint adapter fails flat (`CheckpointError` is a single `git_failed`), so `buildHandoff`
+maps by where the failure happened: the stage base resolution (`RunRepo.stageBase`, falling back
+to the worktree base ref through `base`) yielding no sha is `no_repo` — in a healthy Docket
+worktree the base ref always resolves, so a base failure is the not-a-working-tree verdict —
+while a `diffSince` failure stays `git_failed`. It loads the failed run and its events, the work
+order and definitions, the rolling note, the stage base, the diff, and the candidates' context
+windows (`null` where none is known); assembles the pack **for the target provider** (its native
+files), sizes it (fixed ceilings first; a known window only tightens them — A-63), and renders
+it. The first candidate is the target: a missing account there is `unknown_account`; the
+remaining candidates only tighten the budget, so a missing account on one of them merely
+contributes no bound of its own. Empty `candidates` still build a pack, targetless: the natural
+instruction set is empty, so every present file inlines (A-54's safe direction) and no window
+binds. Every return appends exactly one audit `run.handoff` entry, failure paths included, with
+the fixed detail `{ fromRun: runId, candidates: candidates.length }` and no error field — on a
+refused handoff that entry is the run's only write (A-64).
 
 Rules:
 - **A-53** `composeRunPrompt` builds every run's prompt: Docket layers first (`stageBrief`, then `role.instructions`), then the instruction block as project context. The Docket layers are byte-identical for every provider given the same definitions; only the instruction block varies. `not_found` is the record-or-resolution error: the work order record is missing, or a record exists whose `record.flow`, or whose requested `stage`/`role`, the loaded definitions can no longer resolve (the gates' precedent — a run that can no longer be prompted). Definitions that fail to load are `definitions_invalid`, never `not_found`.
@@ -623,7 +632,7 @@ export type ExecuteOutcome =
   | { readonly kind: 'refused'; readonly error: 'needs_spend_consent' };
 export interface PermissionGate { onAsk(runId: RunId, ask: Extract<AgentEvent, { readonly type: 'permission_ask' }>): Promise<'allow' | 'deny'> }
 export function executeRun(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'runs' | 'accounts' | 'transports' | 'modelCatalog' | 'capabilities' | 'checkpoints'>,
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'runs' | 'accounts' | 'transports' | 'modelCatalog' | 'capabilities' | 'checkpoints' | 'definitions' | 'instructionFiles'>,
   permissions: PermissionGate,
   input: ExecuteRunInput,
 ): Promise<ExecuteOutcome>;
@@ -670,7 +679,7 @@ Rules:
 - **A-58** Checkpoint commits touch only the work order's worktree (I-20's guarantee unchanged); the user's checkout, its branch and its index are never modified.
 - **A-59** The first commit of a stage attempt records its sha via `RunRepo.saveStageBase`. The pack's code state is `diffSince(stageBase)`; with no checkpoint (a clean stage) it is `diffSince(worktree base ref)`.
 - **A-60** The rolling note is extended with every persisted event batch (`extendRollingNote`) and saved through `RunRepo.saveHandoffNote` on the same cadence — so it exists the moment the account blocks. It is the tail of the text/thinking stream, capped at `ROLLING_NOTE_MAX_CHARS` with `capped: true`; no other content is derived into it (the model-written summary stays optional and unanswered, open decision O-8).
-- **A-64** A run started for a queue item with `handoffOf` builds the pack before the transport starts, sends `renderHandoffPrompt`'s prompt (checks-first preamble per R-57), and never passes a `resume` reference — native resume and the pack are never mixed (P-38). A pack failure refuses the run (`refused: 'handoff_failed'`) with only the audit entry written. The `run.started` audit detail carries `handoff: true` and `handoffOf`.
+- **A-64** A run started for a queue item with `handoffOf` builds the pack before the transport starts, sends `renderHandoffPrompt`'s prompt (checks-first preamble per R-57), and never passes a `resume` reference — native resume and the pack are never mixed (P-38). A pack failure refuses the run (`refused: 'handoff_failed'`) with only the audit entry written — the `run.handoff` entry above, appended on every return, failure paths included. The `run.started` audit detail carries `handoff: true` and `handoffOf`.
 - **A-65** `applyLimitDecision` with a `fallback` route sets `handoffOf = runId` on the queue item whenever the target **account** differs from the failed run's account — including a second account of the same provider, because whether one CLI login sees another's sessions is not knowable, so the pack is the one continuation mechanism. The evidence sides with the default: the one provider whose documentation covers the question pairs its session history with the login's own identity directory — a different account is a different directory, so native resume cannot see the earlier history (a documented negative) — while the other eighteen providers carry no evidence either way, so the pack rule stands and remains open to a revisit with evidence from an operator run. The billing boundary is unchanged: candidate eligibility still comes from `decideOnLimit`'s `FallbackCandidate` (P-40 — an automatic switch never crosses to `metered`/`unknown`), and the continuation itself passes the same spend preflight as any run (P-46). Autonomy and approvals travel as policy: the continuation run wires the same `PermissionGate` as any run.
 
 ---
