@@ -103,7 +103,7 @@ export interface RunRecord {
   readonly attempt: number;
   readonly role: RoleSlug;
   readonly route: AccountRoute;
-  readonly definitionsRev?: string;       // revision marker of the definitions the stage prompt was computed from; drives A-62's changed-note
+  readonly definitionsRev?: string;       // definitionsDigest of the Docket layers the agent was given (stageBrief, then role.instructions); executeRun writes it at record creation; drives A-62's changed-note
   readonly startedAt: EpochMs;
   readonly endedAt?: EpochMs;
   readonly outcome?: RunOutcome;
@@ -583,7 +583,7 @@ export type HandoffError = 'not_found' | 'no_repo' | 'git_failed' | 'definitions
 export function buildHandoff(
   deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'definitions' | 'workOrders' | 'runs' | 'accounts'
                    | 'capabilities' | 'instructionFiles' | 'checkpoints' | 'modelCatalog'>,
-  input: { readonly runId: RunId; readonly candidates: readonly AccountRoute[] },
+  input: { readonly runId: RunId; readonly cwd: string; readonly candidates: readonly AccountRoute[] },
 ): Promise<Result<HandoffPlan, HandoffError>>;
 ```
 
@@ -591,11 +591,13 @@ export function buildHandoff(
 building `prompt: role.instructions` itself and calls this instead. The use case loads the work
 order record itself: `flow` comes from the record's `record.flow` — the value the dispatcher and
 the gates resolve against — and the title from the same record; the input shape does not change.
-`buildHandoff` loads the failed
-run and its events, the work order and definitions, the rolling note, the stage base (falling back
-to the worktree base ref), the diff, and the candidates' context windows (`null` where none is
-known); assembles the pack **for the target provider** (its native files), sizes it (fixed
-ceilings first; a known window only tightens them — A-63), renders it, and appends audit
+`buildHandoff` takes the failed run's worktree as `cwd`: the executor supplies it, the same way
+`composeRunPrompt` and `commitCheckpoint` receive theirs — a handoff never recreates a worktree,
+and `no_repo` is the checkpoint adapter's verdict that `cwd` is not a git working tree. It loads
+the failed run and its events, the work order and definitions, the rolling note, the stage base
+(falling back to the worktree base ref), the diff, and the candidates' context windows (`null`
+where none is known); assembles the pack **for the target provider** (its native files), sizes it
+(fixed ceilings first; a known window only tightens them — A-63), renders it, and appends audit
 `run.handoff` with `detail: { fromRun: runId, candidates: candidates.length }`.
 
 Rules:
@@ -604,7 +606,7 @@ Rules:
 - **A-55** Inlining stays within `DEFAULT_INSTRUCTION_BUDGET_CHARS`: candidates in registry order, whole while the budget allows, then truncated to the remainder with a marker naming the file and the kept chars; `plan.truncated` lists the dropped. Deterministic for the same inputs. Budgets are chars, not tokens — no provider's tokenizer is consulted; the constants (`DEFAULT_INSTRUCTION_BUDGET_CHARS`, `ROLLING_NOTE_MAX_CHARS`, `PACK_CHARS_PER_TOKEN`) are revisited only when a tokenizer actually matters in practice.
 - **A-56** The instructions path never writes to the repo (the O-6 canonical-file proposal stays a normal diff in a work order). Instruction-file content is repo-author content below the Docket layers and never becomes a Docket instruction. The trust boundary is marked, not implied: everything the pack and the prompt quote — instruction files read from the repo, and any issue, page or upload content that later rides the same path — travels as **data** under a heading that says so, never as Docket's system instruction; content read from the repo or the web is untrusted input to Docket, and the pack says so where the agent reads it.
 - **A-61** `deriveTaskState` is deterministic from stored events plus the checkpoint diff's file list; raw transcripts and session refs never enter the pack.
-- **A-62** `buildHandoff` assembles P-38 items 1–6 in the `HandoffPack` field order, plus the `definitionsChanged` marker. The stage prompt is recomputed from the current definitions — it is never stored on the run; the run record carries `definitionsRev`, the revision marker of the definitions its stage prompt was computed from, and when the continuation sees a different revision the pack sets `definitionsChanged` and the prompt carries the note "definition changed since the first leg" (R-57) — the change is surfaced to the continuation, never silently absorbed; whether old and new definitions are equivalent stays outside the pack's guarantees. The patch is redacted at the port boundary before it enters the pack; the previous provider's `sessionRef` never enters it.
+- **A-62** `buildHandoff` assembles P-38 items 1–6 in the `HandoffPack` field order, plus the `definitionsChanged` marker. The stage prompt is recomputed from the current definitions — it is never stored on the run. The run record carries `definitionsRev`: `executeRun` writes it at record creation as `definitionsDigest` of the Docket layers the agent was given (`stageBrief` then `role.instructions`). `buildHandoff` sets `definitionsChanged` when the recorded rev differs from the digest of the current layers; a run with no recorded rev counts as unchanged. With `definitionsChanged` set the prompt carries the note "definition changed since the first leg" (R-57) — the change is surfaced to the continuation, never silently absorbed; whether old and new definitions are equivalent stays outside the pack's guarantees. The patch is redacted at the port boundary before it enters the pack; the previous provider's `sessionRef` never enters it.
 - **A-63** The pack's budget starts from the fixed ceilings (`DEFAULT_INSTRUCTION_BUDGET_CHARS` for the instruction block, `ROLLING_NOTE_MAX_CHARS` for the summary); a known window only tightens it — `min` over the candidate routes' known windows × `PACK_CHARS_PER_TOKEN` (`ModelCatalog` entries; `contextWindow` rides the P-29 merge on `CatalogModel`, `null` = no window known). A `null` window contributes no bound: the ceilings alone size the pack, with `DEFAULT_CONTEXT_WINDOW_TOKENS` as the stand-in for the unknown window — it sits above the ceilings, so the no-data path is the rule rather than the exception (ten of nineteen surveyed providers report no window through any channel and no registry row carries a value; the handoff works without the data, and filling windows per adapter is follow-up issues). Truncation priority is fixed (R-56): stage prompt and Docket layers never truncate.
 
 ---
@@ -652,7 +654,7 @@ for every other auth mode. Billing comes from the `ModelCatalog` port. The refus
 any write, so a refused run leaves every store unchanged.
 
 Rules:
-- **A-15** `executeRun`: creates the `RunRecord` (`autoResumesUsed` from a previous run of the same stage+attempt if resuming, else 0), appends `run_started` to the work order and audit `run.started`, then starts the transport for `route.accountId`. A missing transport or a start error → `transport_error`, the run record gets `endedAt` and outcome `failed`, and `run_finished: failed` is appended.
+- **A-15** `executeRun`: creates the `RunRecord` (`autoResumesUsed` from a previous run of the same stage+attempt if resuming, else 0; `definitionsRev` = `definitionsDigest` of the Docket layers the agent was given — `stageBrief`, then `role.instructions`), appends `run_started` to the work order and audit `run.started`, then starts the transport for `route.accountId`. A missing transport or a start error → `transport_error`, the run record gets `endedAt` and outcome `failed`, and `run_finished: failed` is appended.
 - **A-16** While streaming, every event is persisted with `RunRepo.appendEvents` in arrival order (batched is fine, order is not negotiable). `session_started` sets `sessionRef`. `permission_ask` is passed to `PermissionGate.onAsk` and the answer to `answerPermission`. `quota_signal` → `AccountRepo.saveMeter` (a new `MeterId` from `IdGen` unless a meter with the same pool label and duration exists). `usage` with a cost → `recordSpend`.
 - **A-17** On `limit_hit`: build a `LimitHit` for the run's account, ask the domain `decideOnLimit` with the account's policy and `autoResumesUsed`, end the run with outcome `limit`, append `run_finished: limit`, and return `{ kind: 'limit', decision }`. Scheduling the resume is the caller's job.
 - **A-17a** `applyLimitDecision`: `schedule_resume` → put a queue item for the run's work order and stage with the same route, `notBefore = decision.at`, and increment the run's `autoResumesUsed` on the record; `switch_pool` → a queue item routed to the same account (pool choice is re-evaluated at dispatch); `fallback` → a queue item with `route = decision.route`; `ask` → no queue item (the work order stays `limit_waiting` and shows in the cockpit).
