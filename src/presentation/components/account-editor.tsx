@@ -1,7 +1,7 @@
 // components/account-editor.tsx — the account editor body (U-30): a head with the recommendation
 // count and "Hepsini önerilene döndür" (U-29), four tabs, and the tab's content. Genel holds the
 // label (saved on commit) and the read-only facts; Kullanım the meter bars or the spend against
-// the cap; Limitler is a placeholder until its screen lands; Modeller lists the catalog by billing with the spend-consent card (U-32). The rules live in
+// the cap; Limitler holds the limit policy, the reserve and the spend cap (U-30); Modeller lists the catalog by billing with the spend-consent card (U-32). The rules live in
 // stores/account-editor.ts; this file renders them. The host (Settings sub-page, later the
 // wizard window) frames the body.
 import { useEffect, useState, useSyncExternalStore } from 'react';
@@ -10,16 +10,25 @@ import type { SettingsAccountView } from '../../api/queries';
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
 import {
+  CAP_SCOPES,
   EDITOR_TABS,
+  RESERVE_PRESETS,
   SAVED_FLAG_MS,
+  capFormStartsOpen,
+  diffValueLabel,
   generalFacts,
+  mayHaveCap,
+  policyOptions,
+  reserveChoice,
+  reserveFieldMeters,
+  reserveSplitStartsOpen,
   usageView,
   type AccountEditorStore,
   type EditorTab,
   type FactKey,
 } from '../stores/account-editor';
-import type { AccountModelsStore } from '../stores/account-models';
-import { settingDiffs } from '../stores/recommended';
+import type { AccountModelsStore, CapScope } from '../stores/account-models';
+import { RECOMMENDED, settingDiffs } from '../stores/recommended';
 import { ActionButton } from './action-button';
 import { MeterBar } from './meter-bar';
 import { ModelList } from './model-list';
@@ -71,27 +80,33 @@ export interface AccountEditorProps {
   readonly onOpenRole?: (roleId: string) => void;
 }
 
-function LabelRow({ account, locale, store }: Pick<AccountEditorProps, 'account' | 'locale' | 'store'>) {
-  const [draft, setDraft] = useState(account.label);
-  // A saved name coming back from the query replaces the draft; typing in between is the user's.
-  useEffect(() => setDraft(account.label), [account.label]);
+// "Kaydedildi" beside a row for 1.5 s, and the row's failure copy.
+function useRowStatus(store: AccountEditorStore, row: string, locale: Locale): { saved: boolean; failure: string | undefined } {
   const state = useSyncExternalStore(store.subscribe, store.state);
   const [, bump] = useState(0);
-  const saved = store.isSaved('label');
+  const saved = store.isSaved(row);
   // The flag leaves by itself: one re-render when its 1.5 s are up.
   useEffect(() => {
     if (!saved) return;
     const timer = window.setTimeout(() => bump((n) => n + 1), SAVED_FLAG_MS);
     return () => window.clearTimeout(timer);
   }, [saved, state.savedUntil]);
+  return { saved, failure: state.failure?.row === row ? t(locale, state.failure.labelKey) : undefined };
+}
+
+function LabelRow({ account, locale, store }: Pick<AccountEditorProps, 'account' | 'locale' | 'store'>) {
+  const [draft, setDraft] = useState(account.label);
+  // A saved name coming back from the query replaces the draft; typing in between is the user's.
+  useEffect(() => setDraft(account.label), [account.label]);
+  const status = useRowStatus(store, 'label', locale);
   const commit = (): void => void store.saveLabel(account, draft);
   return (
     <SettingRow
       locale={locale}
       title={t(locale, 'editor.general.label')}
       purpose={t(locale, 'editor.general.labelHint')}
-      saved={saved}
-      failure={state.failure?.row === 'label' ? t(locale, state.failure.labelKey) : undefined}
+      saved={status.saved}
+      failure={status.failure}
       control={
         <input
           value={draft}
@@ -203,6 +218,293 @@ function Usage({ account, locale, formatTime, onRefresh }: Pick<AccountEditorPro
   );
 }
 
+const INPUT_CLASS =
+  'rounded-control border border-bord bg-transparent px-2.5 py-1 text-[13px] text-ink focus:border-signal focus:outline-none';
+
+const OPTION_CLASS = (selected: boolean, disabled: boolean): string =>
+  `inline-flex items-center gap-1.5 rounded-control border px-2.5 py-1 text-[12.5px] ${
+    selected ? 'border-signal text-ink' : 'border-bord text-inkdim'
+  } ${disabled ? 'opacity-50' : 'hover:text-ink'}`;
+
+const PERIOD_KEY: Readonly<Record<string, LabelKey>> = {
+  account_day: 'editor.limits.cap.period.account_day',
+  account_week: 'editor.limits.cap.period.account_week',
+  account_month: 'editor.limits.cap.period.account_month',
+};
+
+function RecommendedMark({ locale }: { readonly locale: Locale }) {
+  return (
+    <span className="rounded-control border border-hairline px-1.5 text-[10.5px] text-signal-soft">{t(locale, 'editor.recommended')}</span>
+  );
+}
+
+function PolicyRow({ account, locale, store }: Pick<AccountEditorProps, 'account' | 'locale' | 'store'>) {
+  const status = useRowStatus(store, 'limitPolicy', locale);
+  const diff = settingDiffs(account).find((entry) => entry.key === 'limitPolicy');
+  return (
+    <SettingRow
+      locale={locale}
+      title={t(locale, 'editor.limits.policy.title')}
+      purpose={t(locale, 'editor.limits.policy.purpose')}
+      saved={status.saved}
+      failure={status.failure}
+      differsFrom={diff === undefined ? undefined : diffValueLabel(locale, 'limitPolicy', diff.recommended)}
+      onReset={() => void store.reset(account, 'limitPolicy')}
+      control={
+        <div role="radiogroup" aria-label={t(locale, 'editor.limits.policy.title')} className="grid w-72 gap-1.5">
+          {policyOptions(account).map((option) => {
+            const disabled = option.disabledReasonKey !== undefined;
+            return (
+              <button
+                key={option.policy}
+                type="button"
+                role="radio"
+                aria-checked={account.limitPolicy === option.policy}
+                aria-disabled={disabled}
+                disabled={disabled}
+                onClick={() => void store.savePolicy(account, option.policy)}
+                className={`${OPTION_CLASS(account.limitPolicy === option.policy, disabled)} grid gap-0.5 text-left`}
+                data-policy={option.policy}
+              >
+                <span className="flex items-center gap-2">
+                  <span>{t(locale, option.labelKey)}</span>
+                  {option.recommended ? <RecommendedMark locale={locale} /> : null}
+                </span>
+                <span className="text-[11.5px] text-inkdim">
+                  {option.disabledReasonKey !== undefined ? t(locale, option.disabledReasonKey) : t(locale, option.purposeKey)}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      }
+    />
+  );
+}
+
+function ReserveRow({ account, locale, store }: Pick<AccountEditorProps, 'account' | 'locale' | 'store'>) {
+  const status = useRowStatus(store, 'reserve', locale);
+  const percent = (share: number | null): string => String(Math.round((share ?? 0) * 100));
+  const [short, setShort] = useState(percent(account.reserve.short));
+  const [long, setLong] = useState(percent(account.reserve.long));
+  const [splitOpen, setSplitOpen] = useState(reserveSplitStartsOpen(account));
+  // A saved reserve coming back from the query replaces the drafts.
+  useEffect(() => {
+    setShort(percent(account.reserve.short));
+    setLong(percent(account.reserve.long));
+  }, [account.reserve.short, account.reserve.long]);
+  const choice = splitOpen ? 'split' : reserveChoice(account);
+  const diff = settingDiffs(account).find((entry) => entry.key === 'reserve');
+  const meters = reserveFieldMeters(account);
+  const commit = (nextShort: string, nextLong: string): void => void store.saveReserve(account, nextShort, nextLong);
+  const field = (which: 'short' | 'long') => {
+    const value = which === 'short' ? short : long;
+    const named = meters[which];
+    return (
+      <label key={which} className="grid gap-0.5 text-[12px] text-inkdim">
+        <span>{t(locale, which === 'short' ? 'editor.limits.reserve.shortField' : 'editor.limits.reserve.longField')}</span>
+        <input
+          inputMode="numeric"
+          value={value}
+          onChange={(event) => (which === 'short' ? setShort(event.target.value) : setLong(event.target.value))}
+          onBlur={() => commit(short, long)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') commit(short, long);
+          }}
+          aria-label={t(locale, which === 'short' ? 'editor.limits.reserve.shortField' : 'editor.limits.reserve.longField')}
+          className={`${INPUT_CLASS} w-24 font-mono`}
+          data-reserve-field={which}
+        />
+        <span className="text-[11.5px]">
+          {named.length === 0
+            ? t(locale, 'editor.limits.reserve.noMeters')
+            : named
+                .map((meter) => (meter.larger ? `${meter.name} (${t(locale, 'editor.limits.reserve.larger')})` : meter.name))
+                .join(' · ')}
+        </span>
+      </label>
+    );
+  };
+  const options: readonly { readonly id: string; readonly selected: boolean; readonly label: string; readonly onPick: () => void }[] = [
+    { id: 'none', selected: choice === 'none', label: t(locale, 'editor.limits.reserve.none'), onPick: () => pick(0) },
+    ...RESERVE_PRESETS.map((value) => ({
+      id: String(value),
+      selected: choice === value,
+      label: t(locale, 'editor.limits.reserve.preset').replace('{value}', String(value)),
+      onPick: () => pick(value),
+    })),
+    { id: 'split', selected: choice === 'split', label: t(locale, 'editor.limits.reserve.split'), onPick: () => setSplitOpen(true) },
+  ];
+  function pick(value: number): void {
+    setSplitOpen(false);
+    setShort(String(value));
+    setLong(String(value));
+    commit(String(value), String(value));
+  }
+  return (
+    <SettingRow
+      locale={locale}
+      title={t(locale, 'editor.limits.reserve.title')}
+      purpose={t(locale, 'editor.limits.reserve.purpose')}
+      saved={status.saved}
+      failure={status.failure}
+      differsFrom={diff === undefined ? undefined : t(locale, 'editor.limits.reserve.none')}
+      onReset={() => {
+        setSplitOpen(false);
+        void store.reset(account, 'reserve');
+      }}
+      control={
+        <div className="grid justify-items-end gap-2">
+          <div role="radiogroup" aria-label={t(locale, 'editor.limits.reserve.title')} className="flex flex-wrap justify-end gap-1.5">
+            {options.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                role="radio"
+                aria-checked={option.selected}
+                onClick={option.onPick}
+                className={OPTION_CLASS(option.selected, false)}
+                data-reserve-option={option.id}
+              >
+                {option.label}
+                {option.id === 'none' ? <RecommendedMark locale={locale} /> : null}
+              </button>
+            ))}
+          </div>
+          {splitOpen ? (
+            <div className="grid gap-2" data-reserve-split="">
+              {field('short')}
+              {field('long')}
+              <p className="text-[11.5px] text-inkdim">{t(locale, 'editor.limits.reserve.fieldHint')}</p>
+            </div>
+          ) : null}
+        </div>
+      }
+    />
+  );
+}
+
+function CapRow({ account, locale, store }: Pick<AccountEditorProps, 'account' | 'locale' | 'store'>) {
+  const capStatus = useRowStatus(store, 'cap', locale);
+  const warnStatus = useRowStatus(store, 'warnPercent', locale);
+  const stored = account.caps[0];
+  const [amount, setAmount] = useState(stored === undefined ? '' : String(stored.amountUsd));
+  const [scope, setScope] = useState<CapScope>(stored?.scope ?? RECOMMENDED.cap.scope);
+  const [warn, setWarn] = useState(String(stored?.warnPercent ?? RECOMMENDED.warnPercent));
+  // A saved cap coming back from the query replaces the drafts.
+  useEffect(() => {
+    setAmount(stored === undefined ? '' : String(stored.amountUsd));
+    setScope(stored?.scope ?? RECOMMENDED.cap.scope);
+    setWarn(String(stored?.warnPercent ?? RECOMMENDED.warnPercent));
+  }, [stored?.amountUsd, stored?.scope, stored?.warnPercent]);
+  const diffs = settingDiffs(account);
+  const capDiff = diffs.find((entry) => entry.key === 'cap');
+  const warnDiff = diffs.find((entry) => entry.key === 'warnPercent');
+  // Nothing is written until an amount stands: a bare focus or a period pick on an empty row is no commit.
+  const commit = (row: 'cap' | 'warnPercent', nextScope: CapScope = scope): void => {
+    if (stored === undefined && amount.trim() === '' && warn === String(RECOMMENDED.warnPercent)) return;
+    void store.saveCap(account, row, { amount, scope: nextScope, warn });
+  };
+  const onEnter = (row: 'cap' | 'warnPercent') => (event: { readonly key: string }): void => {
+    if (event.key === 'Enter') commit(row);
+  };
+  return (
+    <SettingRow
+      locale={locale}
+      title={t(locale, 'editor.limits.cap.title')}
+      purpose={t(locale, 'editor.limits.cap.purpose')}
+      saved={capStatus.saved || warnStatus.saved}
+      failure={capStatus.failure ?? warnStatus.failure}
+      differsFrom={capDiff === undefined ? undefined : diffValueLabel(locale, 'cap', capDiff.recommended)}
+      onReset={() => void store.reset(account, 'cap')}
+      control={
+        <div className="grid justify-items-end gap-2">
+          <div className="flex items-center gap-2">
+            <span className="flex items-center gap-1 text-[13px] text-inkdim">
+              $
+              <input
+                inputMode="decimal"
+                value={amount}
+                placeholder={t(locale, 'editor.limits.cap.amountPlaceholder')}
+                onChange={(event) => setAmount(event.target.value)}
+                onBlur={() => commit('cap')}
+                onKeyDown={onEnter('cap')}
+                aria-label={t(locale, 'editor.limits.cap.amount')}
+                className={`${INPUT_CLASS} w-24 font-mono`}
+                data-cap-field="amount"
+              />
+            </span>
+            <div role="radiogroup" aria-label={t(locale, 'editor.limits.cap.period')} className="flex gap-1">
+              {CAP_SCOPES.map((entry) => (
+                <button
+                  key={entry}
+                  type="button"
+                  role="radio"
+                  aria-checked={scope === entry}
+                  onClick={() => {
+                    setScope(entry);
+                    commit('cap', entry);
+                  }}
+                  className={OPTION_CLASS(scope === entry, false)}
+                  data-cap-period={entry}
+                >
+                  {t(locale, PERIOD_KEY[entry] ?? 'editor.limits.cap.period')}
+                  {entry === RECOMMENDED.cap.scope ? <RecommendedMark locale={locale} /> : null}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      }
+      disclosure={{
+        label: t(locale, 'editor.limits.reserve.fineTune'),
+        startsOpen: capFormStartsOpen(account),
+        children: (
+          <div className="grid gap-1">
+            <label className="flex items-center justify-between gap-3 text-[12.5px] text-inkdim">
+              <span>
+                {t(locale, 'editor.limits.cap.warn')}
+                <span className="block text-[11.5px]">{t(locale, 'editor.limits.cap.warnHint')}</span>
+              </span>
+              <input
+                inputMode="numeric"
+                value={warn}
+                onChange={(event) => setWarn(event.target.value)}
+                onBlur={() => commit('warnPercent')}
+                onKeyDown={onEnter('warnPercent')}
+                aria-label={t(locale, 'editor.limits.cap.warn')}
+                className={`${INPUT_CLASS} w-20 font-mono`}
+                data-cap-field="warn"
+              />
+            </label>
+            {warnDiff !== undefined ? (
+              <p className="flex flex-wrap items-center gap-2 text-[12px] text-signal-soft">
+                <span>{t(locale, 'editor.differs').replace('{value}', diffValueLabel(locale, 'warnPercent', warnDiff.recommended))}</span>
+                <ActionButton variant="ghost" onClick={() => void store.reset(account, 'warnPercent')}>
+                  {t(locale, 'editor.reset')}
+                </ActionButton>
+              </p>
+            ) : null}
+          </div>
+        ),
+      }}
+    />
+  );
+}
+
+function Limits({ account, locale, store }: Pick<AccountEditorProps, 'account' | 'locale' | 'store'>) {
+  return (
+    <div data-limits="">
+      <PolicyRow account={account} locale={locale} store={store} />
+      <ReserveRow account={account} locale={locale} store={store} />
+      {mayHaveCap(account) ? <CapRow account={account} locale={locale} store={store} /> : null}
+      <p className="py-3 text-[12px] text-inkdim" data-p40-note="">
+        {t(locale, 'editor.limits.p40note')}
+      </p>
+    </div>
+  );
+}
+
 function Models({ account, locale, models, onRefresh }: Pick<AccountEditorProps, 'account' | 'locale' | 'models' | 'onRefresh'>) {
   const state = useSyncExternalStore(models.subscribe, models.state);
   // The catalog loads when the tab opens and again for another account.
@@ -279,7 +581,7 @@ export function AccountEditor(props: AccountEditorProps) {
         {state.tab === 'usage' ? (
           <Usage account={account} locale={locale} formatTime={props.formatTime} onRefresh={props.onRefresh} />
         ) : null}
-        {state.tab === 'limits' ? <p className="py-3 text-[13px] text-inkdim">{t(locale, 'editor.limits.placeholder')}</p> : null}
+        {state.tab === 'limits' ? <Limits account={account} locale={locale} store={store} /> : null}
         {state.tab === 'models' ? (
           <Models account={account} locale={locale} models={props.models} onRefresh={props.onRefresh} />
         ) : null}
