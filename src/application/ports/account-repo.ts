@@ -32,6 +32,22 @@ export interface AccountRecord {
   readonly caps: readonly { readonly scope: 'account_day' | 'account_week' | 'account_month'; readonly cap: SpendCap }[];
 }
 
+export type RunSpendEntry = {
+  readonly accountId: AccountId;
+  readonly project: ProjectSlug;
+  readonly repo: RepoSlug;
+  readonly workOrderId: WorkOrderId;
+  readonly at: EpochMs;
+  readonly usd: number;
+};
+/** A test request spends from the account's caps only, never from a repo or project budget. */
+export type AccountTestSpendEntry = {
+  readonly kind: 'account_test';
+  readonly accountId: AccountId;
+  readonly at: EpochMs;
+  readonly usd: number;
+};
+
 export interface AccountRepo {
   save(record: AccountRecord): Promise<void>; // upsert
   get(id: AccountId): Promise<AccountRecord | undefined>;
@@ -41,14 +57,7 @@ export interface AccountRepo {
   saveMeter(meter: Meter): Promise<void>; // upsert by id
   pools(accountId?: AccountId): Promise<readonly Pool[]>;
   meters(accountId?: AccountId): Promise<readonly Meter[]>;
-  recordSpend(entry: {
-    readonly accountId: AccountId;
-    readonly project: ProjectSlug;
-    readonly repo: RepoSlug;
-    readonly workOrderId: WorkOrderId;
-    readonly at: EpochMs;
-    readonly usd: number;
-  }): Promise<void>;
+  recordSpend(entry: RunSpendEntry | AccountTestSpendEntry): Promise<void>;
   spend(filter: {
     readonly accountId?: AccountId;
     readonly project?: ProjectSlug;

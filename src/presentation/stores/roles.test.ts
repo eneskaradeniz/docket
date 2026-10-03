@@ -26,6 +26,7 @@ const account = (id: string, provider: string): SettingsAccountsView['accounts']
   identityDir: null,
   endpointHost: null,
   hasSecret: false,
+  test: null,
   pools: [],
   meters: [],
 });

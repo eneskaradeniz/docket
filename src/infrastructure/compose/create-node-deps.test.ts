@@ -171,6 +171,21 @@ describe('createNodeDeps', () => {
     expect(call).toContain('node.adoption');
   });
 
+  it('I-35: wires the account-test adapters — a redacting in-memory repo and real scratch directories', async () => {
+    const node = makeNode();
+    const account = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FA4');
+    await node.deps.accountTests.save({
+      accountId: account, model: null, state: 'failed', class: 'auth', startedAt: 1, endedAt: 2,
+      detail: 'rejected sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789 today',
+    });
+    expect((await node.deps.accountTests.get(account))?.detail).not.toContain('sk-ant');
+
+    const dir = await node.deps.scratch.create('account-test');
+    expect((await stat(dir.path)).isDirectory()).toBe(true);
+    await dir.dispose();
+    await expect(stat(dir.path)).rejects.toThrow();
+  });
+
   it('I-31: opens <dataDir>/docket.db, exposes the registry, and close() closes the database', async () => {
     const node = makeNode();
 

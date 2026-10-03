@@ -26,6 +26,7 @@ const ACCOUNT_SETTINGS = {
   identityDir: null,
   endpointHost: null,
   hasSecret: false,
+  test: null,
 } as const;
 
 const METER_WINDOW = {
