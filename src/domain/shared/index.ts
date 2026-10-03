@@ -4,5 +4,6 @@ export * from './thinking';
 export * from './result';
 export * from './time';
 export * from './ids';
+export * from './slug-from-name';
 export * from './run';
 export * from './actor';

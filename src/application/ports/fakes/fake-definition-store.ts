@@ -9,6 +9,7 @@ import type {
   Definitions,
   ProjectDef,
   ProjectSlug,
+  RepoDef,
   Roadmap,
   RoadmapIssue,
   Result,
@@ -33,6 +34,12 @@ export interface FakeDefinitionStore extends DefinitionStore {
   setProject(def: ProjectDef): void;
   /** Seeds the project.yaml content `readProjectAt` finds at a checkout path. */
   seedProjectAt(path: string, content: string): void;
+  /** Seeds the repo.yaml content a checkout path already holds (scaffoldProject refuses it). */
+  seedRepoAt(path: string, content: string): void;
+  /** The repo.yaml content scaffoldProject wrote at a checkout path. */
+  repoAt(path: string): string | undefined;
+  /** Makes the next scaffoldProject answer `io_failed`, writing nothing. */
+  failNextScaffold(): void;
 }
 
 interface StoredFile extends DefinitionFile {
@@ -130,6 +137,8 @@ export const createFakeDefinitionStore = (): FakeDefinitionStore => {
   const pathsByRepo = new Map<RepoSlug, string | undefined>();
   const projects: ProjectDef[] = [];
   const projectAt = new Map<string, string>();
+  const repoFileAt = new Map<string, string>();
+  let failScaffold = false;
 
   const keyOf = (scope: DefinitionScope, target: string): string => `${scopeKey(scope)}\n${target}`;
 
@@ -248,6 +257,49 @@ export const createFakeDefinitionStore = (): FakeDefinitionStore => {
 
     seedProjectAt: (path: string, content: string): void => {
       projectAt.set(path, content);
+    },
+
+    seedRepoAt: (path: string, content: string): void => {
+      repoFileAt.set(path, content);
+    },
+
+    repoAt: (path: string): string | undefined => repoFileAt.get(path),
+
+    failNextScaffold: (): void => {
+      failScaffold = true;
+    },
+
+    // Library copies land as global files keyed by kind and id; an existing id is never touched.
+    installBuiltins: async (library): Promise<{ readonly written: readonly string[] }> => {
+      const written: string[] = [];
+      const install = (kind: 'roles' | 'flows', id: string, value: unknown): void => {
+        const target = `${kind}/${id}.json`;
+        const key = keyOf({ kind: 'global' }, target);
+        if (files.has(key)) return;
+        const content = JSON.stringify({ [kind]: [value] });
+        files.set(key, { target, content, hash: contentHash(content), scope: { kind: 'global' } });
+        written.push(target);
+      };
+      for (const role of library.roles) install('roles', role.id, role);
+      for (const flow of library.flows) install('flows', flow.id, flow);
+      return { written };
+    },
+
+    // Both files are checked before either is written, like the real store.
+    scaffoldProject: async (
+      path: string,
+      project: ProjectDef,
+      repo: RepoDef,
+    ): Promise<Result<void, 'project_yaml_exists' | 'repo_yaml_exists' | 'io_failed'>> => {
+      if (projectAt.has(path)) return err('project_yaml_exists');
+      if (repoFileAt.has(path)) return err('repo_yaml_exists');
+      if (failScaffold) {
+        failScaffold = false;
+        return err('io_failed');
+      }
+      projectAt.set(path, JSON.stringify(project));
+      repoFileAt.set(path, JSON.stringify(repo));
+      return ok(undefined);
     },
 
     load: async (repo: RepoSlug): Promise<Result<Definitions, readonly DefinitionIssue[]>> => {

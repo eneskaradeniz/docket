@@ -13,6 +13,8 @@ import {
   createFakeDefinitionStore,
   createFakeDeps,
   createFakeEventLog,
+  createFakeGitProbe,
+  createFakeRepoFolders,
   createFakeTransport,
   createFakeTransportResolver,
   createFakeUpdateChecker,
@@ -20,6 +22,8 @@ import {
   type FakeCommandRunner,
   type FakeDefinitionStore,
   type FakeEventLog,
+  type FakeGitProbe,
+  type FakeRepoFolders,
   type FakeWorktrees,
 } from '../application/ports/fakes';
 
@@ -870,6 +874,69 @@ describe('createApi', () => {
         endpoint: 'https://api.compatible.example/v1',
         identityDir: '/Users/op/.config/agent-a',
         tierModels,
+      });
+    });
+
+    describe('project.create', () => {
+      const create = (): { readonly deps: AppDeps; readonly git: FakeGitProbe; readonly folders: FakeRepoFolders; readonly log: FakeEventLog } => {
+        const git = createFakeGitProbe();
+        const folders = createFakeRepoFolders();
+        const log = createFakeEventLog();
+        return { deps: createFakeDeps({ git, repoFolders: folders, log }), git, folders, log };
+      };
+
+      it('A-79: mode existing maps to createProject with the actor of the call; ok answers the project slug', async () => {
+        const h = create();
+        h.git.markWorkTree('/work/atolye');
+
+        const result = await createApi(h.deps).command(ACTOR, { type: 'project.create', mode: 'existing', path: '/work/atolye', name: 'Atölye' });
+
+        expect(result).toEqual({ ok: true, id: 'atolye' });
+        expect(h.log.entries().map((entry) => [entry.action, entry.actor])).toEqual([
+          ['project.created', ACTOR],
+          ['project.attached', ACTOR],
+        ]);
+        expect(await h.deps.repos.path(slugOf<'repo'>('atolye'))).toBe('/work/atolye');
+      });
+
+      it('A-79: mode blank creates the folder under parent', async () => {
+        const h = create();
+        h.folders.markFolder('/work');
+        h.git.markWorkTree('/work/atolye');
+
+        const result = await createApi(h.deps).command(ACTOR, { type: 'project.create', mode: 'blank', parent: '/work', name: 'Atölye' });
+
+        expect(result).toEqual({ ok: true, id: 'atolye' });
+        expect(h.folders.created()).toEqual(['/work/atolye']);
+      });
+
+      it('A-79: an error is { ok: false, code } with the use case error as the code', async () => {
+        const h = create();
+
+        expect(await createApi(h.deps).command(ACTOR, { type: 'project.create', mode: 'existing', path: '/nope', name: 'Atölye' })).toEqual({
+          ok: false,
+          code: 'not_a_repo',
+        });
+        expect(await createApi(h.deps).command(ACTOR, { type: 'project.create', mode: 'blank', parent: '/nope', name: 'Atölye' })).toEqual({
+          ok: false,
+          code: 'not_a_folder',
+        });
+        expect(await createApi(h.deps).command(ACTOR, { type: 'project.create', mode: 'existing', path: '/nope', name: ' ' })).toEqual({
+          ok: false,
+          code: 'invalid_name',
+        });
+      });
+
+      it('A-79: an unknown mode is rejected at the edge and no port is called', async () => {
+        const h = create();
+        const spies = [vi.spyOn(h.deps.definitions, 'installBuiltins'), vi.spyOn(h.deps.definitions, 'scaffoldProject'), vi.spyOn(h.deps.repoFolders, 'createRepo'), vi.spyOn(h.deps.log, 'append')];
+
+        // The wire carries a plain string; the cast stands in for a hostile payload.
+        const hostile = { type: 'project.create', mode: 'clone', path: '/work/atolye', name: 'Atölye' } as unknown as Command;
+        const result = await createApi(h.deps).command(ACTOR, hostile);
+
+        expect(result).toEqual({ ok: false, code: 'invalid_id' });
+        for (const spy of spies) expect(spy).not.toHaveBeenCalled();
       });
     });
 
