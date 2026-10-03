@@ -33,7 +33,7 @@ test('the provider is the one positional; every option takes a value', () => {
 test('a missing provider, unknown flag, extra word, bad effort or bad cap is an error', () => {
   assert.throws(() => parseArgs([]), /provider definition id is required/);
   assert.throws(() => parseArgs(['codex', '--yes']), /unknown argument: --yes/);
-  assert.throws(() => parseArgs(['codex', 'kilo']), /unexpected extra argument: kilo/);
+  assert.throws(() => parseArgs(['codex', 'p-x']), /unexpected extra argument: p-x/);
   assert.throws(() => parseArgs(['codex', '--model']), /--model needs a value/);
   assert.throws(() => parseArgs(['codex', '--model', '--effort']), /--model needs a value/);
   assert.throws(() => parseArgs(['codex', '--effort', 'turbo']), /--effort must be one of/);
@@ -57,15 +57,15 @@ test('only a model billed `included` runs without a cap', () => {
 });
 
 test('the consent text names what runs, the prompt and the cap, and never an env value', () => {
-  const text = consentText({ provider: 'kilo', routeKind: 'kilo-sub', authMode: 'subscription', model: undefined, effort: 'low', billing: 'metered', capUsd: 2, canary: 'x', tempRoot: '/tmp/r' });
-  assert.match(text, /provider\s+kilo/);
+  const text = consentText({ provider: 'p-x', routeKind: 'p-x-sub', authMode: 'subscription', model: undefined, effort: 'low', billing: 'metered', capUsd: 2, canary: 'x', tempRoot: '/tmp/r' });
+  assert.match(text, /provider\s+p-x/);
   assert.match(text, /\(the CLI default\)/);
   assert.match(text, /\$2 per day/);
   assert.match(text, /may cost real money/);
   assert.ok(text.includes(JSON.stringify(PROMPT)));
   assert.match(text, /Type `yes`/);
   assert.equal(text.includes('canary check    on'), true);
-  const free = consentText({ provider: 'kilo', routeKind: 'k', authMode: 'subscription', model: 'm', billing: 'included', tempRoot: '/tmp/r' });
+  const free = consentText({ provider: 'p-x', routeKind: 'k', authMode: 'subscription', model: 'm', billing: 'included', tempRoot: '/tmp/r' });
   assert.match(free, /none \(included model\)/);
   assert.equal(free.includes('real money'), false);
 });
@@ -123,7 +123,7 @@ test('the login state: the probe is the answer; an auth error or a started sessi
   assert.equal(loginState(null, []), 'unknown');
 });
 
-const base = { date: '2026-10-02', provider: 'kilo', routeKind: 'kilo-sub', version: '1.2.3', discoveredLoggedIn: true, startedAt: 900, permissions: [], outcome: 'succeeded' };
+const base = { date: '2026-10-02', provider: 'p-x', routeKind: 'p-x-sub', version: '1.2.3', discoveredLoggedIn: true, startedAt: 900, permissions: [], outcome: 'succeeded' };
 
 test('the summary answers each question and carries no event text beyond the answer and redacted errors', () => {
   const events = [
@@ -159,7 +159,7 @@ test('a run with no output, usage or ask says so', () => {
 });
 
 test('the output name is <date>-<provider>.json and never overwrites', () => {
-  assert.equal(summaryFileName('2026-10-02', 'kilo', () => false), '2026-10-02-kilo.json');
-  const taken = new Set(['2026-10-02-kilo.json', '2026-10-02-kilo-2.json']);
-  assert.equal(summaryFileName('2026-10-02', 'kilo', (name) => taken.has(name)), '2026-10-02-kilo-3.json');
+  assert.equal(summaryFileName('2026-10-02', 'p-x', () => false), '2026-10-02-p-x.json');
+  const taken = new Set(['2026-10-02-p-x.json', '2026-10-02-p-x-2.json']);
+  assert.equal(summaryFileName('2026-10-02', 'p-x', (name) => taken.has(name)), '2026-10-02-p-x-3.json');
 });

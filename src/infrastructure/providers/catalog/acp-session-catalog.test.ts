@@ -149,47 +149,19 @@ describe('listAcpSessionModels (P-29)', () => {
     ]);
   });
 
-  it('P-29: the kilo listing reads the model select whole, offers no level for a model with only thinking, never prompts, and launches with the switches', async () => {
-    const harness = makeSpawn('models-kilo');
+  it('P-29: a listing whose model list rides the initialize answer gives each model its own levels and the default row, and never opens a session even though session/new would be refused', async () => {
+    const harness = makeSpawn('models-init-state');
     const envs: Array<Readonly<Record<string, string>> | undefined> = [];
     const spawn: AcpSpawn = (command, args, options) => {
       envs.push(options.env);
       return harness.spawn(command, args, options);
     };
 
-    const listed = await listAcpSessionModels(accountOf('kilo'), { baseEnv: { PATH: '/bin' }, spawn });
+    const listed = await listAcpSessionModels(accountOf('acp-x'), { baseEnv: { PATH: '/bin', XAI_API_KEY: 'ambient' }, spawn });
 
     expect(listed.ok).toBe(true);
     if (!listed.ok) throw new Error('unreachable');
-    expect(harness.calls).toEqual([{ command: 'kilo', args: ['acp'] }]);
-    expect(envs[0]).toMatchObject({ KILO_DISABLE_CLAUDE_CODE: '1', KILO_DISABLE_CLAUDE_CODE_SKILLS: '1' });
-    expect(listed.value.map((model) => model.id)).toEqual([
-      'kilo/google/gemini-3-pro-image',
-      'kilo/anthropic/claude-opus-5',
-      'kilo/z-ai/glm-5.1',
-      'kilo/kilo-auto/free',
-    ]);
-    // The session's own levels belong to its default model, and `thinking` names no level.
-    expect(listed.value.every((model) => model.efforts === undefined)).toBe(true);
-    const methods = clientRequests(harness.logPath).map((entry) => entry.msg['method']);
-    expect(methods).not.toContain('session/prompt');
-    expect(methods).not.toContain('session/set_config_option');
-  });
-
-  it('P-29: the grok-build listing reads the initialize answer, gives each model its own levels and the default row, and never opens a session even though session/new would be refused', async () => {
-    const harness = makeSpawn('models-grok');
-    const envs: Array<Readonly<Record<string, string>> | undefined> = [];
-    const spawn: AcpSpawn = (command, args, options) => {
-      envs.push(options.env);
-      return harness.spawn(command, args, options);
-    };
-
-    const listed = await listAcpSessionModels(accountOf('grok-build'), { baseEnv: { PATH: '/bin', XAI_API_KEY: 'ambient' }, spawn });
-
-    expect(listed.ok).toBe(true);
-    if (!listed.ok) throw new Error('unreachable');
-    expect(harness.calls).toEqual([{ command: 'grok', args: ['agent', '--no-leader', 'stdio'] }]);
-    expect(envs[0]).toMatchObject({ GROK_TELEMETRY_ENABLED: '0' });
+    expect(harness.calls).toEqual([{ command: 'acp-x', args: ['acp'] }]);
     expect(envs[0]).not.toHaveProperty('XAI_API_KEY');
     // 'ludicrous' names no level, so it is not offered; a model without levels carries none. The
     // initialize answer's own `totalContextTokens` rides each row that reports a positive integer
@@ -203,19 +175,19 @@ describe('listAcpSessionModels (P-29)', () => {
     expect(methods).toEqual(['initialize']);
   });
 
-  it('P-29: a slow cold start is not cut short by a caller ceiling below the kilo floor', async () => {
+  it('P-29: a slow cold start is not cut short by a caller ceiling below the table entry floor', async () => {
     const harness = makeSpawn('models-silent');
     // A 300 ms ceiling would end the wait almost at once; the floor keeps it open well past that.
-    const pending = listAcpSessionModels(accountOf('kilo'), { baseEnv: {}, spawn: harness.spawn, timeoutMs: 300 });
+    const pending = listAcpSessionModels(accountOf('acp-x'), { baseEnv: {}, spawn: harness.spawn, timeoutMs: 300 });
     const early = await Promise.race([pending, new Promise<'open'>((resolve) => setTimeout(() => resolve('open'), 1_000))]);
     expect(early).toBe('open');
     harness.children[0]?.kill();
     await pending;
   }, 15_000);
 
-  it('P-29: an atomcode session with a configured provider lists the model select, reads the levels through its names, launches with telemetry off and never prompts', async () => {
-    const harness = makeSpawn('models-atomcode-configured');
-    const listed = await listAcpSessionModels(accountOf('atomcode'), {
+  it('P-29: a session listing the model select reads the levels through the provider level names and never prompts', async () => {
+    const harness = makeSpawn('models-optional-configured');
+    const listed = await listAcpSessionModels(accountOf('acp-x'), {
       baseEnv: {},
       spawn: harness.spawn,
       levelNames: { none: 'off', high: 'high', max: 'max' },
@@ -223,7 +195,7 @@ describe('listAcpSessionModels (P-29)', () => {
 
     expect(listed.ok).toBe(true);
     if (!listed.ok) throw new Error('unreachable');
-    expect(harness.calls).toEqual([{ command: 'atomcode', args: ['acp', '--no-telemetry'] }]);
+    expect(harness.calls).toEqual([{ command: 'acp-x', args: ['acp'] }]);
     expect(listed.value.map((model) => model.id)).toEqual(['deepseek-chat', 'glm-5.2']);
     expect(listed.value.every((model) => model.efforts?.join() === 'none,high,max')).toBe(true);
     const methods = clientRequests(harness.logPath).map((entry) => entry.msg['method']);
@@ -232,16 +204,16 @@ describe('listAcpSessionModels (P-29)', () => {
     expect(methods).toContain('session/close');
   });
 
-  it('P-29: an atomcode session without a model option (no provider configured) is an empty list, not a failure', async () => {
-    const harness = makeSpawn('models-atomcode');
-    const listed = await listAcpSessionModels(accountOf('atomcode'), { baseEnv: {}, spawn: harness.spawn });
+  it('P-29: a session without a model option (no provider configured) is an empty list, not a failure, where the entry allows it', async () => {
+    const harness = makeSpawn('models-optional');
+    const listed = await listAcpSessionModels(accountOf('acp-x'), { baseEnv: {}, spawn: harness.spawn });
     expect(listed).toEqual({ ok: true, value: [] });
     expect(clientRequests(harness.logPath).map((entry) => entry.msg['method'])).not.toContain('session/prompt');
   });
 
-  it('P-29: a vibe session lists the model aliases with their names, reads the thinking category through the level names, launches the ACP binary bare and never prompts', async () => {
-    const harness = makeSpawn('models-vibe');
-    const listed = await listAcpSessionModels(accountOf('vibe'), {
+  it('P-29: a session whose thought-level select carries a category of its own is read through the level names and never prompts', async () => {
+    const harness = makeSpawn('models-thinking');
+    const listed = await listAcpSessionModels(accountOf('acp-x'), {
       baseEnv: { MISTRAL_API_KEY: 'sk-ambient' },
       spawn: harness.spawn,
       levelNames: { none: 'off', low: 'low', medium: 'medium', high: 'high', max: 'max' },
@@ -249,9 +221,9 @@ describe('listAcpSessionModels (P-29)', () => {
 
     expect(listed.ok).toBe(true);
     if (!listed.ok) throw new Error('unreachable');
-    expect(harness.calls).toEqual([{ command: 'vibe-acp', args: [] }]);
+    expect(harness.calls).toEqual([{ command: 'acp-x', args: ['acp'] }]);
     expect(listed.value.map((model) => [model.id, model.displayName])).toEqual([
-      ['mistral-medium-3.5', 'mistral-vibe-cli-latest'],
+      ['mistral-medium-3.5', 'mistral-latest'],
       ['local', 'devstral'],
     ]);
     expect(listed.value.every((model) => model.efforts?.join() === 'none,low,medium,high,max')).toBe(true);
@@ -261,191 +233,19 @@ describe('listAcpSessionModels (P-29)', () => {
     expect(methods).toContain('session/close');
   });
 
-  it('P-29: a vibe session refused for a missing key is an error, never a prompt, and carries none of the agent text', async () => {
-    const harness = makeSpawn('models-vibe-nokey');
-    const listed = await listAcpSessionModels(accountOf('vibe'), { baseEnv: {}, spawn: harness.spawn });
-    expect(listed.ok).toBe(false);
-    if (listed.ok) throw new Error('unreachable');
-    expect(JSON.stringify(listed.error)).not.toContain('API key');
-    expect(clientRequests(harness.logPath).map((entry) => entry.msg['method'])).not.toContain('session/prompt');
-  });
-
-  it('P-43: a mimo session lists each model once — the `<model>/<level>` variants fold into the plain row and its efforts — and never prompts', async () => {
-    const harness = makeSpawn('models-mimo');
-    const listed = await listAcpSessionModels(accountOf('mimo'), {
-      baseEnv: {},
-      spawn: harness.spawn,
-      levelNames: { low: 'low', medium: 'medium', high: 'high' },
-    });
-
-    expect(listed.ok).toBe(true);
-    if (!listed.ok) throw new Error('unreachable');
-    expect(harness.calls).toEqual([{ command: 'mimo', args: ['acp'] }]);
-    expect(listed.value.map((model) => model.id)).toEqual(['mimo/mimo-auto', 'xiaomi/mimo-v2.6-pro']);
-    expect(listed.value.every((model) => model.efforts?.join() === 'low,medium,high')).toBe(true);
-    expect(listed.value.some((model) => model.id.endsWith('/high'))).toBe(false);
-    const methods = clientRequests(harness.logPath).map((entry) => entry.msg['method']);
-    expect(methods).not.toContain('session/prompt');
-    expect(methods).not.toContain('session/set_config_option');
-    expect(methods).toContain('session/close');
-  });
-
-  it('P-43: a level the CLI does not name keeps its variant out of the efforts, and a row with no plain sibling stays whole', async () => {
-    const harness = makeSpawn('models-mimo');
-    const listed = await listAcpSessionModels(accountOf('mimo'), {
-      baseEnv: {},
-      spawn: harness.spawn,
-      levelNames: { high: 'high' },
-    });
-    expect(listed.ok).toBe(true);
-    if (!listed.ok) throw new Error('unreachable');
-    // `/low` and `/medium` name no known level, so they are not folded: they stay listed whole.
-    expect(listed.value.filter((model) => model.id.startsWith('mimo/mimo-auto')).map((model) => model.id)).toEqual([
-      'mimo/mimo-auto',
-      'mimo/mimo-auto/low',
-      'mimo/mimo-auto/medium',
-    ]);
-    expect(listed.value.find((model) => model.id === 'mimo/mimo-auto')?.efforts).toEqual(['high']);
-  });
-
-  it('P-29: a configured qwen session lists the available-models rows once each, launches the ACP flag, offers no thought level and never prompts', async () => {
-    const harness = makeSpawn('models-qwen');
-    const listed = await listAcpSessionModels(accountOf('qwen'), {
-      baseEnv: {},
-      spawn: harness.spawn,
-      // The definition carries an empty map: the CLI names levels, but sending one may persist
-      // into the user's settings, so none is offered until an operator run settles it.
-      levelNames: {},
-    });
-
-    expect(listed.ok).toBe(true);
-    if (!listed.ok) throw new Error('unreachable');
-    expect(harness.calls).toEqual([{ command: 'qwen', args: ['--acp'] }]);
-    // The answer carries both shapes at once — models.availableModels and the model select — and
-    // the same model through both lists exactly once, under its available-models name. The row's
-    // own `_meta.contextLimit` rides it as the window (A-63) when it is a positive integer; a
-    // negative value is not a window, so that row carries none.
-    expect(listed.value).toEqual([
-      { id: 'qwen3.5-plus', displayName: 'Qwen3.5 Plus', contextWindow: 131072 },
-      { id: 'qwen3-coder-plus', displayName: 'Qwen3 Coder Plus', contextWindow: 262144 },
-      { id: 'qwen3.5-flash', displayName: 'Qwen3.5 Flash' },
-    ]);
-    expect(listed.value.every((model) => model.efforts === undefined)).toBe(true);
-    const methods = clientRequests(harness.logPath).map((entry) => entry.msg['method']);
-    expect(methods).toEqual(['initialize', 'session/new']);
-    expect(methods).not.toContain('session/prompt');
-    expect(methods).not.toContain('session/set_config_option');
-    expect(methods).not.toContain('session/close');
-  });
-
-  it('P-45: a logged-out qwen session is the not-logged-in answer — an unavailable catalog, never a transport failure and never the agent text', async () => {
-    const harness = makeSpawn('models-qwen-loggedout');
-
-    const listed = await listAcpSessionModels(accountOf('qwen'), { baseEnv: {}, spawn: harness.spawn });
-
-    expect(listed).toEqual({
-      ok: false,
-      error: { code: 'not_logged_in', message: 'the provider has no login on this machine' },
-    });
-    expect(JSON.stringify(listed)).not.toContain('authenticate');
-    expect(clientRequests(harness.logPath).map((entry) => entry.msg['method'])).toEqual(['initialize', 'session/new']);
-    expect(await exited(harness.children[0], 3_000)).toBe(true);
-  }, 10_000);
-
-  it('P-29: a qwen session that opens with no model select and no models object is an empty list, not a malformed answer', async () => {
-    const harness = makeSpawn('models-qwen-empty');
-
-    const listed = await listAcpSessionModels(accountOf('qwen'), { baseEnv: {}, spawn: harness.spawn, levelNames: {} });
-
-    expect(listed).toEqual({ ok: true, value: [] });
-  });
-
-  it('P-29: a configured qoder session lists the tier aliases once each with the session\'s thought levels, closes the session and never prompts', async () => {
-    const harness = makeSpawn('models-qoder');
-    const listed = await listAcpSessionModels(accountOf('qoder'), { baseEnv: {}, spawn: harness.spawn });
-
-    expect(listed.ok).toBe(true);
-    if (!listed.ok) throw new Error('unreachable');
-    expect(harness.calls).toEqual([{ command: 'qoder', args: ['--acp'] }]);
-    // The session answer carries config options only: the model select lists the tier aliases the
-    // documentation names, and the thought_level sibling's values are level names Docket knows, so
-    // every row offers them (which levels a chosen alias takes is model-dependent, the live list's
-    // own answer once an operator run shows it).
-    expect(listed.value).toEqual([
-      { id: 'auto', displayName: 'Auto', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
-      { id: 'ultimate', displayName: 'Ultimate', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
-      { id: 'performance', displayName: 'Performance', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
-      { id: 'efficient', displayName: 'Efficient', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
-    ]);
-    // The live initialize advertises session close, so a listing that opened one closes it.
-    const methods = clientRequests(harness.logPath).map((entry) => entry.msg['method']);
-    expect(methods).toEqual(['initialize', 'session/new', 'session/close']);
-    expect(methods).not.toContain('session/prompt');
-    expect(methods).not.toContain('session/set_config_option');
-  });
-
-  it('P-45: a logged-out qoder session is the not-logged-in answer — an unavailable catalog, never a transport failure and never the agent text', async () => {
-    const harness = makeSpawn('models-qoder-loggedout');
-
-    const listed = await listAcpSessionModels(accountOf('qoder'), { baseEnv: {}, spawn: harness.spawn });
-
-    expect(listed).toEqual({
-      ok: false,
-      error: { code: 'not_logged_in', message: 'the provider has no login on this machine' },
-    });
-    expect(JSON.stringify(listed)).not.toContain('Authentication required');
-    expect(clientRequests(harness.logPath).map((entry) => entry.msg['method'])).toEqual(['initialize', 'session/new']);
-    expect(await exited(harness.children[0], 3_000)).toBe(true);
-  }, 10_000);
-
-  it('P-29: a logged-in kimi session lists the model select rows with the default model\'s thinking levels — `off` names no level and is never offered — and never prompts', async () => {
-    const harness = makeSpawn('models-kimi');
-    const listed = await listAcpSessionModels(accountOf('kimi'), { baseEnv: {}, spawn: harness.spawn });
-
-    expect(listed.ok).toBe(true);
-    if (!listed.ok) throw new Error('unreachable');
-    expect(harness.calls).toEqual([{ command: 'kimi', args: ['acp'] }]);
-    // The session answer carries config options only: the model select lists the ids the login's
-    // plan offers, and the `thinking` sibling (category thought_level) lists `off` plus the default
-    // model's own levels — `off` names no EffortLevel, so the offered set is the levels alone.
-    expect(listed.value).toEqual([
-      { id: 'kimi-code/kimi-for-coding', displayName: 'Kimi for Coding', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
-      { id: 'kimi-code/k3', displayName: 'K3', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
-    ]);
-    // The live initialize advertises session close, so a listing that opened one closes it.
-    const methods = clientRequests(harness.logPath).map((entry) => entry.msg['method']);
-    expect(methods).toEqual(['initialize', 'session/new', 'session/close']);
-    expect(methods).not.toContain('session/prompt');
-    expect(methods).not.toContain('session/set_config_option');
-  });
-
-  it('P-45: a logged-out kimi session is the not-logged-in answer — an unavailable catalog, never a transport failure and never the agent text', async () => {
-    const harness = makeSpawn('models-kimi-loggedout');
-
-    const listed = await listAcpSessionModels(accountOf('kimi'), { baseEnv: {}, spawn: harness.spawn });
-
-    expect(listed).toEqual({
-      ok: false,
-      error: { code: 'not_logged_in', message: 'the provider has no login on this machine' },
-    });
-    expect(JSON.stringify(listed)).not.toContain('Authentication required');
-    expect(clientRequests(harness.logPath).map((entry) => entry.msg['method'])).toEqual(['initialize', 'session/new']);
-    expect(await exited(harness.children[0], 3_000)).toBe(true);
-  }, 10_000);
-
   it('P-29: a missing model option stays a malformed answer for a provider that always has one', async () => {
-    const harness = makeSpawn('models-atomcode');
-    const listed = await listAcpSessionModels(accountOf('kilo'), { baseEnv: {}, spawn: harness.spawn });
+    const harness = makeSpawn('models-optional');
+    const listed = await listAcpSessionModels(accountOf('cursor'), { baseEnv: {}, spawn: harness.spawn });
     expect(listed.ok).toBe(false);
   });
 
-  it('P-29: the reasonix listing finds the model select by its id, keeps provider/model entries whole, offers no level the default model lacks and never prompts', async () => {
-    const harness = makeSpawn('models-reasonix');
-    const listed = await listAcpSessionModels(accountOf('reasonix'), { baseEnv: {}, spawn: harness.spawn });
+  it('P-29: a listing whose selects are named by id alone still finds the model select and keeps provider/model entries whole', async () => {
+    const harness = makeSpawn('models-by-id');
+    const listed = await listAcpSessionModels(accountOf('acp-x'), { baseEnv: {}, spawn: harness.spawn });
 
     expect(listed.ok).toBe(true);
     if (!listed.ok) throw new Error('unreachable');
-    expect(harness.calls).toEqual([{ command: 'reasonix', args: ['acp'] }]);
+    expect(harness.calls).toEqual([{ command: 'acp-x', args: ['acp'] }]);
     expect(listed.value.map((model) => model.id)).toEqual(['deepseek-flash/deepseek-flash', 'deepseek-pro/deepseek-v4-pro']);
     // The default model offers only `auto`, which names no level.
     expect(listed.value.every((model) => model.efforts === undefined)).toBe(true);
@@ -554,39 +354,10 @@ describe('listAcpSessionModels (P-29)', () => {
     expect(harness.calls).toEqual([]);
   });
 
-  it('P-29: the available-models list of a hermes session keeps provider:model ids whole and offers no thought levels', async () => {
-    const harness = makeSpawn('models-hermes');
-
-    const listed = await listAcpSessionModels(accountOf('hermes'), { baseEnv: {}, spawn: harness.spawn });
-
-    expect(listed.ok).toBe(true);
-    if (!listed.ok) throw new Error('unreachable');
-    expect(harness.calls).toEqual([{ command: 'hermes', args: ['acp'] }]);
-    // Colons and slashes inside an id are the provider's own syntax; nothing is split or rewritten.
-    expect(listed.value).toEqual([
-      { id: 'nous:hermes-4-405b', displayName: 'Hermes 4 405B' },
-      { id: 'openrouter:vendor/some-model:free', displayName: 'some-model (free)' },
-      { id: 'custom:local:llama-3', displayName: 'llama-3' },
-    ]);
-    expect(listed.value.every((row) => row.efforts === undefined)).toBe(true);
-    // No prompt is ever sent, and the session is closed only where the agent advertises it.
-    expect(clientRequests(harness.logPath).map((entry) => entry.msg['method'])).toEqual(['initialize', 'session/new']);
-    expect(await exited(harness.children[0], 3_000)).toBe(true);
-  }, 10_000);
-
-  it('P-29: a hermes session closes when the agent advertises close', async () => {
-    const harness = makeSpawn('models-hermes-close');
-
-    const listed = await listAcpSessionModels(accountOf('hermes'), { baseEnv: {}, spawn: harness.spawn });
-
-    expect(listed.ok).toBe(true);
-    expect(clientRequests(harness.logPath).map((entry) => entry.msg['method'])).toEqual(['initialize', 'session/new', 'session/close']);
-  });
-
   it('P-45: the login refusal of session/new is a not_logged_in error that relays no agent text, and the child is gone', async () => {
     const harness = makeSpawn('session-login-refused');
 
-    const listed = await listAcpSessionModels(accountOf('hermes'), { baseEnv: {}, spawn: harness.spawn });
+    const listed = await listAcpSessionModels(accountOf('acp-x'), { baseEnv: {}, spawn: harness.spawn });
 
     expect(listed).toEqual({
       ok: false,
@@ -599,7 +370,7 @@ describe('listAcpSessionModels (P-29)', () => {
   it('P-45: another error at session/new stays an ordinary refusal, not a login state', async () => {
     const harness = makeSpawn('session-internal-error');
 
-    const listed = await listAcpSessionModels(accountOf('hermes'), { baseEnv: {}, spawn: harness.spawn });
+    const listed = await listAcpSessionModels(accountOf('acp-x'), { baseEnv: {}, spawn: harness.spawn });
 
     expect(listed).toEqual({
       ok: false,
@@ -607,14 +378,23 @@ describe('listAcpSessionModels (P-29)', () => {
     });
   });
 
-  it('P-29: a hermes agent that never answers fails at the timeout and does not outlive the listing', async () => {
-    const harness = makeSpawn('models-silent');
+  it('P-47: the modelOptionOptional and minTimeoutMs launch options work with a neutral fixture provider', async () => {
+    // No built-in launch entry exercises these options today (P-47); the fixture entry keeps them
+    // driven, so the next definition that needs either lands as one table entry with no code
+    // change. The optional-model answer lists nothing rather than failing, and the entry's floor
+    // keeps the connection open past a caller ceiling below it.
+    const empty = await listAcpSessionModels(accountOf('acp-x'), {
+      baseEnv: {},
+      spawn: makeSpawn('models-optional').spawn,
+    });
+    expect(empty).toEqual({ ok: true, value: [] });
 
-    const listed = await listAcpSessionModels(accountOf('hermes'), { baseEnv: {}, spawn: harness.spawn, timeoutMs: 300 });
+    const silent = makeSpawn('models-silent');
+    const pending = listAcpSessionModels(accountOf('acp-x'), { baseEnv: {}, spawn: silent.spawn, timeoutMs: 300 });
+    const early = await Promise.race([pending, new Promise<'open'>((resolve) => setTimeout(() => resolve('open'), 1_000))]);
+    expect(early).toBe('open');
+    silent.children[0]?.kill();
+    await pending;
+  }, 15_000);
 
-    expect(listed.ok).toBe(false);
-    if (listed.ok) throw new Error('unreachable');
-    expect(listed.error.code).toBe('timeout');
-    expect(await exited(harness.children[0], 3_000)).toBe(true);
-  }, 10_000);
 });

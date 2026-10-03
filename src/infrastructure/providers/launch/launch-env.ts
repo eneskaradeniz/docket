@@ -54,28 +54,6 @@ const PROVIDER_ENV_ALLOWLIST: Readonly<Record<string, readonly string[]>> = {
   copilot: ['COPILOT_HOME'],
   cursor: [],
   opencode: [],
-  hermes: [],
-  kilo: [],
-  // The CLI's own home variable: the login probe and a run must read the same one.
-  'grok-build': ['GROK_HOME'],
-  atomcode: [],
-  reasonix: [],
-  // The CLI's own home variable, where its login lives (the definition leaves the variable unset,
-  // mechanism 'none'): the login state a run reads is the machine's own, so an ambient relocation
-  // survives — Docket never sets it.
-  vibe: ['VIBE_HOME'],
-  mimo: [],
-  // The CLI reads its credential from the environment variable the user's own settings name, so
-  // none is passed through here: an ambient key of another account never reaches a run.
-  qwen: [],
-  // The CLI's documented headless key is a credential-shaped variable, so it reaches a child only
-  // through the chosen account, never through the ambient environment.
-  kiro: [],
-  // The CLI's own home variable, where its login lives: the credentials-directory probe and a run
-  // must read the same one, so the machine's own relocation survives — Docket never sets it. The
-  // CLI's model variables (KIMI_MODEL_*) are not listed: an ambient model configuration of another
-  // account never reaches a run.
-  kimi: ['KIMI_CODE_HOME'],
 };
 
 /** Names that look like credentials. The match is deliberately broad: dropping a variable the

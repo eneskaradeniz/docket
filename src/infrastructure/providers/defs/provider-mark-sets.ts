@@ -4,6 +4,8 @@
 // tell a markless provider's badge from an id the defs do not know at all, and the marks test
 // pins them against BUILTIN_PROVIDER_DEFS. Dependency-free on purpose: the audit runs under
 // plain node, which cannot follow the extensionless TS imports the defs themselves use.
+// With the launch set (P-47) every built-in carries a mark, so the markless list is empty — it
+// stays an explicit list, and a provider added later without a mark file has to be named here.
 export const MARKED_PROVIDER_IDS: readonly string[] = [
   'claude-code',
   'codex',
@@ -11,20 +13,6 @@ export const MARKED_PROVIDER_IDS: readonly string[] = [
   'copilot',
   'cursor',
   'opencode',
-  'kilo',
-  'grok-build',
-  'vibe',
-  'mimo',
-  'qwen',
-  'kiro',
 ];
 
-export const MARKLESS_PROVIDER_IDS: readonly string[] = [
-  'hermes',
-  'atomcode',
-  'reasonix',
-  'qoder',
-  'kimi',
-  'amp',
-  'codebuddy',
-];
+export const MARKLESS_PROVIDER_IDS: readonly string[] = [];

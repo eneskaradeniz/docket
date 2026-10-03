@@ -62,55 +62,16 @@ const ACP_SESSION_LAUNCHES: Readonly<
   // The documented switch keeps the listing from reading the user's own global instruction and
   // skill files, the same isolation the provider's run launch pins.
   opencode: { command: 'opencode', args: ['acp'], env: { OPENCODE_DISABLE_CLAUDE_CODE: '1' } },
-  // The CLI reads its own home; no run-scoped redirection exists for it.
-  hermes: { command: 'hermes', args: ['acp'] },
-  // `--no-leader` keeps the listing off the shared leader socket; the model list comes from the
-  // initialize answer, so no session is ever opened for it.
-  'grok-build': { command: 'grok', args: ['agent', '--no-leader', 'stdio'], env: { GROK_TELEMETRY_ENABLED: '0' } },
-  // The model select exists only once a provider key is configured, so a session without one lists no models.
-  reasonix: { command: 'reasonix', args: ['acp'], modelOptionOptional: true },
-  // Telemetry is on by default and the flag is documented for this subcommand.
-  atomcode: { command: 'atomcode', args: ['acp', '--no-telemetry'], modelOptionOptional: true },
-  // The ACP entry is a separate binary from the interactive CLI and takes no arguments; the CLI
-  // reads its own home, which also holds its key, so no run-scoped redirection exists for it.
-  vibe: { command: 'vibe-acp', args: [] },
-  // The switches are unverified (see the definition) but harmless; the cold start needs a longer wait.
-  // The ACP server needs no login to open a session; its model select carries every model plain
-  // and once per level (`<model>/<level>`), which the listing folds back into one row.
-  mimo: { command: 'mimo', args: ['acp'], minTimeoutMs: 30_000 },
-  kilo: {
-    command: 'kilo',
+  // The mechanism fixture of the launch options no real provider exercises today (P-47 step 2):
+  // a neutral id — never a provider, listed nowhere else — keeps `modelOptionOptional`,
+  // `minTimeoutMs` and the table-level `notLoggedIn` rule driven, so the next definition that
+  // needs them lands as this one entry with no code change.
+  'acp-x': {
+    command: 'acp-x',
     args: ['acp'],
-    env: { KILO_DISABLE_CLAUDE_CODE: '1', KILO_DISABLE_CLAUDE_CODE_SKILLS: '1' },
-    minTimeoutMs: 30_000,
-  },
-  // The catalog is the user's own configured providers, so a machine without one refuses the
-  // session with the live refusal below; a session that opens but carries no model select and no
-  // models object also means no provider is configured, not a malformed answer.
-  qwen: {
-    command: 'qwen',
-    args: ['--acp'],
-    notLoggedIn: { rpcCode: -32000, textContains: 'Authentication required' },
     modelOptionOptional: true,
-  },
-  // The docs name `qoder` and the npm package installs both bins, so the documented name is the
-  // command here. A logged-out machine refuses the session with the live refusal below; the
-  // refusal maps to the not-logged-in answer in this catalog path alone, because discovery reads
-  // the login from the CLI's own status command, never from a session.
-  qoder: {
-    command: 'qoder',
-    args: ['--acp'],
-    notLoggedIn: { rpcCode: -32000, textContains: 'Authentication required' },
-  },
-  // The ACP entry is the subcommand `acp`. A machine without a login refuses the session with the
-  // live refusal below; the refusal maps to the not-logged-in answer in this catalog path alone,
-  // because discovery reads the login from the credentials directory, never from a session. The
-  // same telemetry and auto-update variables a run pins keep the listing from phoning home.
-  kimi: {
-    command: 'kimi',
-    args: ['acp'],
-    env: { KIMI_DISABLE_TELEMETRY: '1', KIMI_CODE_NO_AUTO_UPDATE: '1' },
-    notLoggedIn: { rpcCode: -32000, textContains: 'Authentication required' },
+    minTimeoutMs: 30_000,
+    notLoggedIn: { rpcCode: -32603, textContains: 'not connected to any inference provider' },
   },
 };
 

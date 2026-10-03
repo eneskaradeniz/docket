@@ -987,6 +987,26 @@ describe('settings.accounts', () => {
     ]);
   });
 
+  it('P-47: an account whose provider id has no definition still loads in the account views — a removed provider never breaks the surface', async () => {
+    // A stored account adopted before a provider's removal (P-47 step 4): no migration rewrites
+    // it, so the id stays as the stale value and every account view still answers it.
+    const h = createHarness();
+    await h.deps.accounts.save({
+      id: ACCOUNT,
+      provider: 'kimi', // a removed provider id (P-47): no definition, no registry row
+      label: 'Adopted before the launch set',
+      authMode: 'subscription',
+      limitPolicy: 'wait_resume',
+      caps: [],
+    });
+
+    const view = (await createApi(h.deps).query({ type: 'settings.accounts' })) as SettingsAccountsView;
+
+    expect(view.accounts).toEqual([
+      { id: ACCOUNT, provider: 'kimi', label: 'Adopted before the launch set', authMode: 'subscription', plan: null, ...SETTINGS_DEFAULTS, pools: [], meters: [] },
+    ]);
+  });
+
   it('U-13: an empty store yields empty account and binding lists', async () => {
     const h = createHarness();
 
