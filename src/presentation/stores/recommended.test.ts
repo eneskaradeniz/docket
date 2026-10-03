@@ -64,6 +64,13 @@ describe('recommended', () => {
     ]);
   });
 
+  it('U-29: a cap that was never set is not a difference, for a subscription or a pay-per-use account', () => {
+    const paid = { ...ACCOUNT, authMode: 'api_key' };
+    expect(settingDiffs(paid)).toEqual([]);
+    expect(settingDiffs({ ...ACCOUNT, consentedModels: ['*'] })).toEqual([]);
+    expect(settingDiffs({ ...paid, caps: [{ scope: 'account_week', amountUsd: 50, warnPercent: 80 }] }).map((diff) => diff.key)).toEqual(['cap']);
+  });
+
   it('U-29: a zero reserve is no reserve and an absent cap is no diff', () => {
     expect(settingDiffs({ ...ACCOUNT, reserve: { short: 0, long: null } })).toEqual([]);
     expect(settingDiffs({ ...ACCOUNT, reserve: { short: null, long: 0.1 } }).map((diff) => diff.key)).toEqual(['reserve']);

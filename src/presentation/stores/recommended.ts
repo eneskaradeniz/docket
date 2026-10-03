@@ -35,6 +35,12 @@ export interface SettingDiff {
   readonly recommended: string | number;
 }
 
+/** An account that is billed per use: every connection except a subscription. */
+export const isPayPerUse = (account: SettingsAccountView): boolean => account.authMode !== 'subscription';
+
+/** Whether the account may spend money, so a cap row belongs on it (U-30). */
+export const mayHaveCap = (account: SettingsAccountView): boolean => isPayPerUse(account) || account.consentedModels.length > 0;
+
 export const settingDiffs = (account: SettingsAccountView): readonly SettingDiff[] => {
   const diffs: SettingDiff[] = [];
   if (account.limitPolicy !== RECOMMENDED.limitPolicy) {
