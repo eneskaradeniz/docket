@@ -33,6 +33,7 @@
     "seed:design": "tsx e2e/seed-design.ts",
     "design": "node e2e/design-run.mjs",
     "operator-run": "tsx e2e/operator-run.mjs",
+    "operator-handoff": "tsx e2e/operator-handoff.mjs",
     "test:seed-design": "node --test e2e/seed-design.test.mjs"
   },
   "dependencies": {
