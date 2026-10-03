@@ -585,9 +585,9 @@ describe('createModelCatalog (P-29)', () => {
   });
 
   // A-63/P-29a per adapter: a window the provider's own channel reports rides the merged entry —
-  // a session row's own `_meta.contextLimit` (driven through the neutral fixture entry), the
-  // initialize answer's `totalContextTokens`, and the window embedded in a cursor id's `context=`
-  // parameter. The answers come from the fixtures; the values are the recorded ones.
+  // a session row's own `_meta.contextLimit`, the initialize answer's `totalContextTokens`, and
+  // the window embedded in a cursor id's `context=` parameter. The answers come from the neutral
+  // fixtures; the values are the recorded ones.
   describe('A-63: windows the providers themselves report reach the merged entries', () => {
     const acpFixture = join(dirname(fileURLToPath(import.meta.url)), '..', 'transports', 'acp', 'fake-agent.cjs');
     const acpSpawnOf = (scenario: string) => {
@@ -598,7 +598,7 @@ describe('createModelCatalog (P-29)', () => {
 
     it("A-63: a listing whose model list rides the initialize answer carries each row's own total-context tokens onto the merged entries", async () => {
       const accounts = createFakeAccountRepo();
-      await accounts.save(account(ACCOUNT_A, { provider: 'acp-x', routeKind: 'cursor-subscription' }));
+      await accounts.save(account(ACCOUNT_A, { provider: 'cursor', routeKind: 'cursor-subscription' }));
       const catalog = createModelCatalog({
         ...baseConfig(scriptedQuery([[]]).query),
         accounts,
@@ -615,7 +615,7 @@ describe('createModelCatalog (P-29)', () => {
 
     it("A-63: a session listing carries each row's own context limit onto the merged entries", async () => {
       const accounts = createFakeAccountRepo();
-      await accounts.save(account(ACCOUNT_A, { provider: 'acp-x', routeKind: 'cursor-subscription' }));
+      await accounts.save(account(ACCOUNT_A, { provider: 'cursor', routeKind: 'cursor-subscription' }));
       const catalog = createModelCatalog({
         ...baseConfig(scriptedQuery([[]]).query),
         accounts,

@@ -4,9 +4,8 @@
 // `models` subcommand answer (1.2.14) is tab-separated rows of model id and display name with no
 // header and progress noise on stderr — extra columns are ignored, and the display name's
 // trailing parenthesised word names the row's effort variant where it names a level at all. Only
-// the spawn function is
-// injected; every failure is a Result, never a throw, and no error message quotes the output —
-// it could carry values the child saw.
+// the spawn function is injected; every failure is a Result, never a throw, and no error message
+// quotes the output — it could carry values the child saw.
 import { spawn as nodeSpawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 
@@ -18,22 +17,23 @@ import type { CatalogError } from './model-catalog';
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
-/** The models command of each provider whose live list rides its CLI — the subcommand the CLI's
- * own `--help` advertises ("models  List available models"), stated here because the catalog
- * receives an account, not a definition. `format` names the recorded output shape the parser
- * reads; `needsLogin` marks a command that would open a browser login flow when nobody is logged
- * in, so it runs only on the login probe's `true` (P-45). */
-const CLI_MODEL_COMMANDS: Readonly<
-  Record<
-    string,
-    { readonly command: string; readonly args: readonly string[]; readonly needsLogin?: true; readonly format: 'tsv' }
-  >
-> = {
+/** One provider's models command — the subcommand the CLI's own `--help` advertises. */
+export interface CliModelCommand {
+  readonly command: string;
+  readonly args: readonly string[];
+  /** Marks a command that would open a browser login flow when nobody is logged in, so it runs
+   * only on the login probe's `true` (P-45). */
+  readonly needsLogin?: true;
+  /** The recorded output shape the parser reads. */
+  readonly format: 'tsv';
+}
+
+/** The models command of each provider whose live list rides its CLI, stated here because the
+ * catalog receives an account, not a definition. Production rows only (P-47a): a table-driven
+ * option no real provider exercises is driven through the `commands` factory option with a test
+ * table, never through a fixture row here. */
+export const CLI_MODEL_COMMANDS: Readonly<Record<string, CliModelCommand>> = {
   agy: { command: 'agy', args: ['models'], format: 'tsv' },
-  // The mechanism fixture of the table-level `needsLogin` mark no real provider carries today
-  // (P-47 step 2): a neutral id — never a provider, listed nowhere else — keeps the gating driven,
-  // so the next definition whose listing command starts a login flow lands as this one entry.
-  'cli-x': { command: 'cli-x', args: ['models'], needsLogin: true, format: 'tsv' },
 };
 
 /** The narrow spawn surface the adapter needs; the real node spawn satisfies it directly. */
@@ -55,6 +55,10 @@ export interface CliCommandCatalogConfig {
   /** The login probe's answer for this account's provider; a command marked `needsLogin` runs only
    * on `true`, so a logged-out CLI never opens a browser or starts a login flow from a listing. */
   readonly loggedIn?: boolean | null;
+  /** The command table to read (P-47a); the default is the built-in one. A production table never
+   * carries a fixture row, so a table-level option no built-in row exercises today is driven by
+   * tests passing a test table here. */
+  readonly commands?: Readonly<Record<string, CliModelCommand>>;
   /** Ceiling for the whole call; the default leaves a slow CLI an order of magnitude more than a
    * control round-trip needs. */
   readonly timeoutMs?: number;
@@ -152,7 +156,7 @@ export async function listCliCommandRouteModels(
   account: AccountRecord,
   config: CliCommandCatalogConfig,
 ): Promise<Result<readonly LiveModel[], CatalogError>> {
-  const launch = CLI_MODEL_COMMANDS[account.provider];
+  const launch = (config.commands ?? CLI_MODEL_COMMANDS)[account.provider];
   if (launch === undefined) {
     return err({ code: 'unsupported', message: 'the provider has no model-listing command' });
   }

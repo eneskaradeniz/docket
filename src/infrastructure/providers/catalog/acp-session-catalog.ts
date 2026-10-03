@@ -33,46 +33,34 @@ import {
 } from '../transports/acp/index';
 import type { CatalogError } from './model-catalog';
 
-/** The ACP-mode launch of each provider whose live list rides a session — the same subcommand the
- * provider's own definition runs, stated here because the catalog receives an account, not a
- * definition. */
-const ACP_SESSION_LAUNCHES: Readonly<
-  Record<
-    string,
-    {
-      readonly command: string;
-      readonly args: readonly string[];
-      readonly env?: Readonly<Record<string, string>>;
-      /** A cold start of this CLI can take several seconds, so no caller's ceiling may sit below it. */
-      readonly minTimeoutMs?: number;
-      /** The model select exists only once the user configured an inference provider, so a session
-       * without one is an empty list, not a malformed answer. */
-      readonly modelOptionOptional?: true;
-      /** The refusal a logged-out session answers, pinned here for a CLI whose login is probed
-       * nowhere else: discovery reads no login state for it, so only this catalog path maps the
-       * refusal to the not-logged-in answer. */
-      readonly notLoggedIn?: NotLoggedInRule;
-      /** The provider reports each model's window inside the id itself — a bracketed `context=`
-       * parameter — so the listing reads it out of the ids it keeps whole. */
-      readonly contextFromModelId?: true;
-    }
-  >
-> = {
+/** One provider's ACP-mode launch — the same subcommand the provider's own definition runs. */
+export interface AcpSessionLaunch {
+  readonly command: string;
+  readonly args: readonly string[];
+  readonly env?: Readonly<Record<string, string>>;
+  /** A cold start of this CLI can take several seconds, so no caller's ceiling may sit below it. */
+  readonly minTimeoutMs?: number;
+  /** The model select exists only once the user configured an inference provider, so a session
+   * without one is an empty list, not a malformed answer. */
+  readonly modelOptionOptional?: true;
+  /** The refusal a logged-out session answers, pinned here for a CLI whose login is probed
+   * nowhere else: discovery reads no login state for it, so only this catalog path maps the
+   * refusal to the not-logged-in answer. */
+  readonly notLoggedIn?: NotLoggedInRule;
+  /** The provider reports each model's window inside the id itself — a bracketed `context=`
+   * parameter — so the listing reads it out of the ids it keeps whole. */
+  readonly contextFromModelId?: true;
+}
+
+/** The ACP-mode launch of each provider whose live list rides a session, stated here because the
+ * catalog receives an account, not a definition. Production rows only (P-47a): a table-driven
+ * option no real provider exercises is driven through the `launches` factory option with a test
+ * table, never through a fixture row here. */
+export const ACP_SESSION_LAUNCHES: Readonly<Record<string, AcpSessionLaunch>> = {
   cursor: { command: 'cursor-agent', args: ['acp'], contextFromModelId: true },
   // The documented switch keeps the listing from reading the user's own global instruction and
   // skill files, the same isolation the provider's run launch pins.
   opencode: { command: 'opencode', args: ['acp'], env: { OPENCODE_DISABLE_CLAUDE_CODE: '1' } },
-  // The mechanism fixture of the launch options no real provider exercises today (P-47 step 2):
-  // a neutral id — never a provider, listed nowhere else — keeps `modelOptionOptional`,
-  // `minTimeoutMs` and the table-level `notLoggedIn` rule driven, so the next definition that
-  // needs them lands as this one entry with no code change.
-  'acp-x': {
-    command: 'acp-x',
-    args: ['acp'],
-    modelOptionOptional: true,
-    minTimeoutMs: 30_000,
-    notLoggedIn: { rpcCode: -32603, textContains: 'not connected to any inference provider' },
-  },
 };
 
 /** The refusal a logged-out session answers, as the provider's own definition declares it — the
@@ -95,6 +83,10 @@ export interface AcpSessionCatalogConfig {
   /** The provider's own names for levels (its definition's `levelNames`); the advertised levels
    * are read back through them. */
   readonly levelNames?: LevelNames;
+  /** The launch table to read (P-47a); the default is the built-in one. A production table never
+   * carries a fixture row, so the options no built-in row exercises today are driven by tests
+   * passing a test table here. */
+  readonly launches?: Readonly<Record<string, AcpSessionLaunch>>;
   /** Ceiling per request; the default leaves a slow CLI an order of magnitude more than a
    * control round-trip needs. */
   readonly timeoutMs?: number;
@@ -303,7 +295,7 @@ export async function listAcpSessionModels(
   account: AccountRecord,
   config: AcpSessionCatalogConfig,
 ): Promise<Result<readonly LiveModel[], CatalogError>> {
-  const launch = ACP_SESSION_LAUNCHES[account.provider];
+  const launch = (config.launches ?? ACP_SESSION_LAUNCHES)[account.provider];
   if (launch === undefined) {
     return err({ code: 'unsupported', message: 'the provider has no ACP session model list' });
   }

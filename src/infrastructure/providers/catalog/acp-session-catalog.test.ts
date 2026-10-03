@@ -13,8 +13,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { AccountRecord } from '../../../application/index';
 import { parseUlid, type AccountId } from '../../../domain/index';
+import { BUILTIN_PROVIDER_DEFS } from '../defs/index';
 import type { AcpSpawn } from '../transports/acp/index';
-import { listAcpSessionModels } from './acp-session-catalog';
+import { CLI_MODEL_COMMANDS } from './cli-command-catalog';
+import { ACP_SESSION_LAUNCHES, listAcpSessionModels } from './acp-session-catalog';
 
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), '..', 'transports', 'acp', 'fake-agent.cjs');
 
@@ -45,6 +47,19 @@ const accountOf = (provider: string): AccountRecord => ({
   limitPolicy: 'wait_resume',
   caps: [],
 });
+
+/** A test launch table (P-47a: a production table never carries a fixture row) — one neutral
+ *  entry exercising the options no built-in row carries today, passed through the `launches`
+ *  factory option exactly the way a real provider's row will land in the built-in table. */
+const TEST_LAUNCHES = {
+  'acp-x': {
+    command: 'acp-x',
+    args: ['acp'],
+    modelOptionOptional: true,
+    minTimeoutMs: 30_000,
+    notLoggedIn: { rpcCode: -32603, textContains: 'not connected to any inference provider' },
+  },
+} as const;
 
 interface SpawnCall {
   readonly command: string;
@@ -157,7 +172,7 @@ describe('listAcpSessionModels (P-29)', () => {
       return harness.spawn(command, args, options);
     };
 
-    const listed = await listAcpSessionModels(accountOf('acp-x'), { baseEnv: { PATH: '/bin', XAI_API_KEY: 'ambient' }, spawn });
+    const listed = await listAcpSessionModels(accountOf('acp-x'), { baseEnv: { PATH: '/bin', XAI_API_KEY: 'ambient' }, launches: TEST_LAUNCHES, spawn });
 
     expect(listed.ok).toBe(true);
     if (!listed.ok) throw new Error('unreachable');
@@ -178,7 +193,7 @@ describe('listAcpSessionModels (P-29)', () => {
   it('P-29: a slow cold start is not cut short by a caller ceiling below the table entry floor', async () => {
     const harness = makeSpawn('models-silent');
     // A 300 ms ceiling would end the wait almost at once; the floor keeps it open well past that.
-    const pending = listAcpSessionModels(accountOf('acp-x'), { baseEnv: {}, spawn: harness.spawn, timeoutMs: 300 });
+    const pending = listAcpSessionModels(accountOf('acp-x'), { baseEnv: {}, launches: TEST_LAUNCHES, spawn: harness.spawn, timeoutMs: 300 });
     const early = await Promise.race([pending, new Promise<'open'>((resolve) => setTimeout(() => resolve('open'), 1_000))]);
     expect(early).toBe('open');
     harness.children[0]?.kill();
@@ -189,6 +204,7 @@ describe('listAcpSessionModels (P-29)', () => {
     const harness = makeSpawn('models-optional-configured');
     const listed = await listAcpSessionModels(accountOf('acp-x'), {
       baseEnv: {},
+      launches: TEST_LAUNCHES,
       spawn: harness.spawn,
       levelNames: { none: 'off', high: 'high', max: 'max' },
     });
@@ -206,7 +222,7 @@ describe('listAcpSessionModels (P-29)', () => {
 
   it('P-29: a session without a model option (no provider configured) is an empty list, not a failure, where the entry allows it', async () => {
     const harness = makeSpawn('models-optional');
-    const listed = await listAcpSessionModels(accountOf('acp-x'), { baseEnv: {}, spawn: harness.spawn });
+    const listed = await listAcpSessionModels(accountOf('acp-x'), { baseEnv: {}, launches: TEST_LAUNCHES, spawn: harness.spawn });
     expect(listed).toEqual({ ok: true, value: [] });
     expect(clientRequests(harness.logPath).map((entry) => entry.msg['method'])).not.toContain('session/prompt');
   });
@@ -215,6 +231,7 @@ describe('listAcpSessionModels (P-29)', () => {
     const harness = makeSpawn('models-thinking');
     const listed = await listAcpSessionModels(accountOf('acp-x'), {
       baseEnv: { MISTRAL_API_KEY: 'sk-ambient' },
+      launches: TEST_LAUNCHES,
       spawn: harness.spawn,
       levelNames: { none: 'off', low: 'low', medium: 'medium', high: 'high', max: 'max' },
     });
@@ -241,7 +258,7 @@ describe('listAcpSessionModels (P-29)', () => {
 
   it('P-29: a listing whose selects are named by id alone still finds the model select and keeps provider/model entries whole', async () => {
     const harness = makeSpawn('models-by-id');
-    const listed = await listAcpSessionModels(accountOf('acp-x'), { baseEnv: {}, spawn: harness.spawn });
+    const listed = await listAcpSessionModels(accountOf('acp-x'), { baseEnv: {}, launches: TEST_LAUNCHES, spawn: harness.spawn });
 
     expect(listed.ok).toBe(true);
     if (!listed.ok) throw new Error('unreachable');
@@ -357,7 +374,7 @@ describe('listAcpSessionModels (P-29)', () => {
   it('P-45: the login refusal of session/new is a not_logged_in error that relays no agent text, and the child is gone', async () => {
     const harness = makeSpawn('session-login-refused');
 
-    const listed = await listAcpSessionModels(accountOf('acp-x'), { baseEnv: {}, spawn: harness.spawn });
+    const listed = await listAcpSessionModels(accountOf('acp-x'), { baseEnv: {}, launches: TEST_LAUNCHES, spawn: harness.spawn });
 
     expect(listed).toEqual({
       ok: false,
@@ -370,7 +387,7 @@ describe('listAcpSessionModels (P-29)', () => {
   it('P-45: another error at session/new stays an ordinary refusal, not a login state', async () => {
     const harness = makeSpawn('session-internal-error');
 
-    const listed = await listAcpSessionModels(accountOf('acp-x'), { baseEnv: {}, spawn: harness.spawn });
+    const listed = await listAcpSessionModels(accountOf('acp-x'), { baseEnv: {}, launches: TEST_LAUNCHES, spawn: harness.spawn });
 
     expect(listed).toEqual({
       ok: false,
@@ -379,22 +396,37 @@ describe('listAcpSessionModels (P-29)', () => {
   });
 
   it('P-47: the modelOptionOptional and minTimeoutMs launch options work with a neutral fixture provider', async () => {
-    // No built-in launch entry exercises these options today (P-47); the fixture entry keeps them
-    // driven, so the next definition that needs either lands as one table entry with no code
-    // change. The optional-model answer lists nothing rather than failing, and the entry's floor
-    // keeps the connection open past a caller ceiling below it.
+    // No built-in launch entry exercises these options today (P-47), so the test drives them with
+    // a neutral entry passed through the `launches` factory option (P-47a): the next definition
+    // that needs either lands as one built-in table entry with no code change. The
+    // optional-model answer lists nothing rather than failing, and the entry's floor keeps the
+    // connection open past a caller ceiling below it.
     const empty = await listAcpSessionModels(accountOf('acp-x'), {
       baseEnv: {},
+      launches: TEST_LAUNCHES,
       spawn: makeSpawn('models-optional').spawn,
     });
     expect(empty).toEqual({ ok: true, value: [] });
 
     const silent = makeSpawn('models-silent');
-    const pending = listAcpSessionModels(accountOf('acp-x'), { baseEnv: {}, spawn: silent.spawn, timeoutMs: 300 });
+    const pending = listAcpSessionModels(accountOf('acp-x'), { baseEnv: {}, launches: TEST_LAUNCHES, spawn: silent.spawn, timeoutMs: 300 });
     const early = await Promise.race([pending, new Promise<'open'>((resolve) => setTimeout(() => resolve('open'), 1_000))]);
     expect(early).toBe('open');
     silent.children[0]?.kill();
     await pending;
   }, 15_000);
+
+  it('P-47a: a production table carries no fixture row', () => {
+    // P-47a: every key of a production table names a real built-in provider id — a neutral
+    // fixture id drives its mechanism through the `launches`/`commands` factory options only.
+    // The stream-json dialect registry carries the same invariant (its P-47 test).
+    const builtInIds = new Set(BUILTIN_PROVIDER_DEFS.map((def) => def.id));
+    for (const key of Object.keys(ACP_SESSION_LAUNCHES)) {
+      expect(builtInIds.has(key), key).toBe(true);
+    }
+    for (const key of Object.keys(CLI_MODEL_COMMANDS)) {
+      expect(builtInIds.has(key), key).toBe(true);
+    }
+  });
 
 });

@@ -13,7 +13,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AccountRecord } from '../../../application/index';
 import type { LiveModel } from '../../../domain/index';
 import { parseUlid, type AccountId } from '../../../domain/index';
-import { listCliCommandRouteModels, parseCliModelsOutput, type CliModelSpawn } from './cli-command-catalog';
+import {
+  listCliCommandRouteModels,
+  parseCliModelsOutput,
+  type CliModelCommand,
+  type CliModelSpawn,
+} from './cli-command-catalog';
 
 let root: string;
 let sequence = 0;
@@ -105,7 +110,12 @@ const binBody = (script: BinScript): string => {
 
 const makeLister = (
   script: BinScript | undefined,
-  options: { readonly timeoutMs?: number; readonly needsLogin?: true; readonly loggedIn?: boolean | null } = {},
+  options: {
+    readonly timeoutMs?: number;
+    readonly needsLogin?: true;
+    readonly loggedIn?: boolean | null;
+    readonly commands?: Readonly<Record<string, CliModelCommand>>;
+  } = {},
 ): {
   readonly calls: SpawnCall[];
   readonly binPath: string | null;
@@ -135,6 +145,7 @@ const makeLister = (
         ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
         ...(options.needsLogin === undefined ? {} : { needsLogin: options.needsLogin }),
         ...(options.loggedIn === undefined ? {} : { loggedIn: options.loggedIn }),
+        ...(options.commands === undefined ? {} : { commands: options.commands }),
       }),
   };
 };
@@ -291,12 +302,14 @@ describe('login-gated listing (P-45)', () => {
   });
 
   it('P-47: the table-level needsLogin path works with a neutral fixture provider', async () => {
-    // No built-in table entry is marked needsLogin today (P-47); the fixture entry keeps the
-    // table's own gating driven, so the next definition whose listing command starts a login
-    // flow lands as one entry with no code change.
+    // No built-in table entry is marked needsLogin today (P-47), so the test drives the table's
+    // own gating with a neutral entry passed through the `commands` factory option (P-47a: a
+    // production table never carries a fixture row); the next definition whose listing command
+    // starts a login flow lands as one built-in entry with no code change.
+    const TEST_COMMANDS = { 'cli-x': { command: 'cli-x', args: ['models'], needsLogin: true, format: 'tsv' } } as const;
     const gated = (): AccountRecord => ({ ...agyAccount(), provider: 'cli-x' });
     for (const loggedIn of [false, null, undefined] as const) {
-      const lister = makeLister({}, { ...(loggedIn === undefined ? {} : { loggedIn }) });
+      const lister = makeLister({}, { ...(loggedIn === undefined ? {} : { loggedIn }), commands: TEST_COMMANDS });
 
       const result = await lister.list(gated());
 
@@ -304,7 +317,7 @@ describe('login-gated listing (P-45)', () => {
       expect(lister.calls, String(loggedIn)).toEqual([]);
     }
 
-    const lister = makeLister({}, { loggedIn: true });
+    const lister = makeLister({}, { loggedIn: true, commands: TEST_COMMANDS });
     const result = await lister.list(gated());
 
     expect(result.ok).toBe(true);
