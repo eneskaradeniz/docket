@@ -349,12 +349,18 @@ export function ShellScreen({
   const finishNewProject = useCallback(
     (done: NewProjectDone): void => {
       newProject.reset();
+      wizard.leave();
       const target = done.target;
       navigate(target === null ? { name: 'cockpit' } : target.kind === 'roadmap' ? { name: 'roadmap', project: target.project } : { name: 'board', repo: target.repo });
       setToastKey(done.toastKey);
     },
-    [newProject, navigate],
+    [newProject, wizard, navigate],
   );
+  /** Vazgeç: back where the page was opened from; from the wizard's moment, back into the wizard. */
+  const cancelNewProject = useCallback((): void => {
+    wizard.resume();
+    goBack();
+  }, [wizard, goBack]);
   /** Opens the Yeni proje page with a fresh form. */
   const openNewProject = useCallback((): void => {
     newProject.reset();
@@ -512,7 +518,7 @@ export function ShellScreen({
             />
           ) : null}
           {route.name === 'newProject' ? (
-            <NewProjectScreen store={newProject} locale={locale} onCancel={goBack} onDone={finishNewProject} />
+            <NewProjectScreen store={newProject} locale={locale} onCancel={cancelNewProject} onDone={finishNewProject} />
           ) : null}
           {route.name === 'workOrder' ? (
             <WorkOrderDetailScreen

@@ -497,20 +497,44 @@ describe('wizard store (U-35)', () => {
     expect(store.state().visible).toBe(false);
   });
 
-  it('U-40: "Yeni proje oluştur" on the Kurulum tamam moment leaves the wizard for the Yeni proje page and sends nothing', async () => {
+  it('U-40: "Yeni proje oluştur" in the inline attach form leaves the wizard for the Yeni proje page; Vazgeç there returns to the moment with the form intact', async () => {
     const bundle = setup();
     await toAccounts(bundle, ['.claude']);
     await bundle.store.next();
     bundle.store.createProject();
     // Only the finished setup offers it.
     expect(bundle.store.state().opened).toBeNull();
+    expect(bundle.store.resume()).toBe(false);
     await bundle.store.next();
     expect(bundle.store.state().step).toBe('done');
+    bundle.store.attachProject();
+    bundle.store.setAttachPath('/work/atolye');
     const before = bundle.api.commands.length;
     bundle.store.createProject();
     expect(bundle.store.state().opened).toEqual({ kind: 'newProject' });
     expect(bundle.store.state().visible).toBe(false);
     expect(bundle.api.commands.length).toBe(before);
+
+    expect(bundle.store.resume()).toBe(true);
+    const back = bundle.store.state();
+    expect(back.visible).toBe(true);
+    expect(back.opened).toBeNull();
+    expect(back.step).toBe('done');
+    expect(back.attach.open).toBe(true);
+    expect(back.attach.path).toBe('/work/atolye');
+    expect(bundle.store.resume()).toBe(false);
+  });
+
+  it('U-40: once the Yeni proje page ends in a project the wizard does not come back', async () => {
+    const bundle = setup();
+    await toAccounts(bundle, ['.claude']);
+    await bundle.store.next();
+    await bundle.store.next();
+    bundle.store.attachProject();
+    bundle.store.createProject();
+    bundle.store.leave();
+    expect(bundle.store.resume()).toBe(false);
+    expect(bundle.store.state().visible).toBe(false);
   });
 
   it('U-35: a failed project.attach shows its U-8 label under the field and keeps the wizard open', async () => {

@@ -615,14 +615,6 @@ export function WizardScreen({ store, locale, localeStore, themeStore, marks, on
                       first: state.summary.firstLabel,
                     })}
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => store.createProject()}
-                    data-wizard-new-project=""
-                    className="justify-self-center rounded-control text-[12.5px] text-signal hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-signal"
-                  >
-                    {t(locale, 'wizard.newProject')}
-                  </button>
                 </div>
               )
             ) : null}

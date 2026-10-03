@@ -191,6 +191,11 @@ export interface WizardStore {
   cancelAttach(): void;
   /** "Yeni proje oluştur": the wizard leaves and `opened` names the Yeni proje page. */
   createProject(): void;
+  /** Vazgeç on the Yeni proje page: brings the suspended Kurulum tamam moment back with its state
+   *  and inline attach form intact; false when the wizard was not left for that page. */
+  resume(): boolean;
+  /** The Yeni proje page ended in a project: the suspended wizard is not coming back. */
+  leave(): void;
   /** "Bağla": `project.attach`; on success the wizard leaves and `opened` names the view. */
   submitAttach(): Promise<void>;
   subscribe(listener: () => void): () => void;
@@ -359,6 +364,8 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
   let loaded = false;
   let attach: WizardAttach = { open: false, path: '', busy: false, failureKey: null };
   let opened: WizardOpenTarget | null = null;
+  /** Left for the Yeni proje page with the setup finished; Vazgeç there returns here. */
+  let suspended = false;
   let openAttempts = 0;
 
   const capabilities = deps.capabilities ?? [];
@@ -796,9 +803,20 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
     createProject: () => {
       if (!visible || step !== 'done') return;
       opened = { kind: 'newProject' };
-      attach = { ...attach, open: false, failureKey: null };
+      suspended = true;
       visible = false;
       publish();
+    },
+    resume: () => {
+      if (!suspended) return false;
+      suspended = false;
+      opened = null;
+      visible = true;
+      publish();
+      return true;
+    },
+    leave: () => {
+      suspended = false;
     },
     submitAttach: async () => {
       const path = attach.path.trim();
