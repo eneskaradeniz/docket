@@ -330,3 +330,55 @@ describe('U-33: stages and the review line', () => {
     expect(flags).toEqual({ developer: false, planner: false, reviewer: true });
   });
 });
+
+describe('U-33: unset styles and the apply-all line', () => {
+  const unsetBindings: readonly SettingsBindingView[] = [
+    binding('developer', ['a1', 'a2']),
+    binding('planner', ['a1'], { tier: null, thinking: null }),
+    binding('reviewer', ['a1', 'a2'], { tier: 'fast', thinking: { effort: 'high' } }),
+  ];
+
+  it('U-33: workStyle of neither tier nor thinking is unset, not custom', () => {
+    expect(workStyle(null, null)).toBe('unset');
+    expect(workStyle('balanced', null)).toBe('custom');
+  });
+
+  it('U-29: a role with nothing stored has no difference and its disclosure stays closed', async () => {
+    const store = makeStore(fake(unsetBindings));
+    await store.load();
+    const rows = store.state().rows ?? [];
+    expect(rows.find((row) => row.id === 'developer')).toMatchObject({ style: 'unset', differs: false });
+    expect(rows.find((row) => row.id === 'reviewer')).toMatchObject({ style: 'custom', differs: true });
+  });
+
+  it('U-29: an explicit style differing from its recommendation keeps the diff', async () => {
+    const store = makeStore(fake([binding('developer', ['a1', 'a2'], { tier: 'fast', thinking: { level: 'fast' } })]));
+    await store.load();
+    const developer = (store.state().rows ?? []).find((row) => row.id === 'developer');
+    expect(developer).toMatchObject({ style: 'fast', differs: true });
+  });
+
+  it('U-33: the unset count counts roles with neither tier nor thinking and is 0 once all are set', async () => {
+    const store = makeStore(fake(unsetBindings));
+    await store.load();
+    expect(store.state().unsetCount).toBe(2);
+    const settled = makeStore(fake());
+    await settled.load();
+    expect(settled.state().unsetCount).toBe(0);
+  });
+
+  it('U-33: apply-recommended saves the recommended style for exactly the unset roles with complete bindings (A-49)', async () => {
+    const api = fake([
+      binding('developer', ['a1', 'a2']),
+      binding('planner', ['a1'], { accounts: [{ accountId: 'a1', model: 'atlas-max' }] }),
+      binding('reviewer', ['a1', 'a2'], { tier: 'fast', thinking: { effort: 'high' } }),
+    ]);
+    const store = makeStore(api);
+    await store.load();
+    await store.applyRecommended();
+    expect(saves(api)).toEqual([
+      { type: 'binding.save', role: 'developer', accounts: [{ accountId: 'a1' }, { accountId: 'a2' }], tier: 'balanced', thinking: { level: 'balanced' } },
+      { type: 'binding.save', role: 'planner', accounts: [{ accountId: 'a1', model: 'atlas-max' }], tier: 'strong', thinking: { level: 'deep' } },
+    ]);
+  });
+});

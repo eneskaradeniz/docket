@@ -56,6 +56,7 @@ import {
   type SettingsPanelOrigin,
 } from '../stores/settings-panel';
 import type { CandidatesStore } from '../stores/candidates';
+import type { ProvidersStore } from '../stores/providers';
 import type { ShellStore } from '../stores/shell';
 import type { ThemeStore } from '../stores/theme';
 import type { UpdateStore } from '../stores/update';
@@ -97,6 +98,8 @@ export interface ShellScreenProps {
   readonly candidates: CandidateDotStore;
   /** The discovered accounts list Settings → Hesaplar renders (U-34). */
   readonly candidateList: CandidatesStore;
+  /** The providers Settings → Sağlayıcılar renders (U-38). */
+  readonly providerList: ProvidersStore;
   readonly locale: Locale;
   /** The machine's zone, for the account view's reset times; tests pass 'UTC'. */
   readonly timeZone: string;
@@ -161,6 +164,7 @@ export function ShellScreen({
   themeStore,
   candidates,
   candidateList,
+  providerList,
   locale,
   timeZone,
 }: ShellScreenProps) {
@@ -500,6 +504,7 @@ export function ShellScreen({
         onEscape={() => dispatchSettingsPanel({ type: 'escape' })}
         candidateDot={candidateDot}
         candidates={candidateList}
+        providers={providerList}
         themeStore={themeStore}
         onClose={() => dispatchSettingsPanel({ type: 'close' })}
         store={settings}
