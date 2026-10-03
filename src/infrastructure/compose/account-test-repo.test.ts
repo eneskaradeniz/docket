@@ -45,6 +45,7 @@ describe('createMemoryAccountTestRepo', () => {
     await repo.save(failed(`${'x'.repeat(289)} ${token}`));
     const detail = (await repo.get(ACCOUNT))?.detail ?? '';
     expect(detail).not.toContain('sk-ant');
+    expect(detail).not.toContain('abcdef');
   });
 
   it('I-35: records without a detail are stored as given', async () => {

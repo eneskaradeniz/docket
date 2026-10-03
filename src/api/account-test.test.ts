@@ -39,10 +39,11 @@ const record = (overrides: Partial<AccountRecord> = {}): AccountRecord => ({
 const setup = async (script: readonly AgentEvent[] = [{ type: 'finished', at: T0, reason: 'completed' }]) => {
   const resolver = createFakeTransportResolver();
   const transport = createFakeTransport(script);
-  const deps = createFakeDeps({ clock: createFakeClock(T0), log: createFakeEventLog(), transports: resolver });
+  const log = createFakeEventLog();
+  const deps = createFakeDeps({ clock: createFakeClock(T0), log, transports: resolver });
   await deps.accounts.save(record());
   resolver.register(ACCOUNT, transport);
-  return { deps, transport, api: createApi(deps) };
+  return { deps, log, transport, api: createApi(deps) };
 };
 
 const rows = async (api: ReturnType<typeof createApi>): Promise<SettingsAccountsView> =>
@@ -103,6 +104,14 @@ describe('settings.accounts test field', () => {
     expect((await rows(h.api)).accounts[0]?.test).toEqual({ state: 'ok', class: null, model: 'm', at: 5, detail: null });
     await h.deps.accountTests.save({ accountId: ACCOUNT, model: 'm', state: 'failed', class: 'limit', detail: '', startedAt: 1, endedAt: 6 });
     expect((await rows(h.api)).accounts[0]?.test).toEqual({ state: 'failed', class: 'limit', model: 'm', at: 6, detail: '' });
+  });
+
+  it('A-70a: the audit entry carries the actor of the call', async () => {
+    const h = await setup();
+    await h.api.command(ACTOR, { type: 'account.test', id: ID });
+    const tested = h.log.entries().filter((e) => e.action === 'account.tested');
+    expect(tested).toHaveLength(1);
+    expect(tested[0]?.actor).toEqual(ACTOR);
   });
 
   it('A-73: account.save and account.remove clear the stored result through the command surface', async () => {
