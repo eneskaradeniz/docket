@@ -103,22 +103,34 @@ export const candidateRows = (
       };
     });
 
-/** A provider row: found + logged in is ready, found + logged out needs a login, not found is not
- *  installed; a missing login probe proves nothing and reads as unknown. Pure. */
+export type ProviderStatus = 'ready' | 'needs_login' | 'not_installed' | 'unknown';
+
+/** Found + logged in is ready, found + logged out needs a login, not found is not installed; a
+ *  missing login probe proves nothing and reads as unknown. Shared by every provider list. Pure. */
+export const providerStatus = (fact: Pick<ProviderFact, 'binPath' | 'loggedIn'>): ProviderStatus =>
+  fact.binPath === null
+    ? 'not_installed'
+    : fact.loggedIn === true
+      ? 'ready'
+      : fact.loggedIn === false
+        ? 'needs_login'
+        : 'unknown';
+
+const CANDIDATE_STATUS_KEY: Readonly<Record<ProviderStatus, CandidateStatusKey>> = {
+  ready: 'candidates.status.ready',
+  needs_login: 'candidates.status.needs_login',
+  not_installed: 'candidates.status.not_installed',
+  unknown: 'candidates.status.unknown',
+};
+
+/** A provider row of the discovered-accounts list. Pure. */
 export const providerRows = (facts: readonly ProviderFact[]): readonly ProviderRow[] =>
   facts.map((fact): ProviderRow => ({
     id: fact.defId,
     name: fact.name,
     hintKey: fact.binPath !== null && fact.loggedIn === false ? 'candidates.hint.login' : null,
     installUrl: fact.binPath === null ? fact.installUrl : null,
-    statusKey:
-      fact.binPath === null
-        ? 'candidates.status.not_installed'
-        : fact.loggedIn === true
-          ? 'candidates.status.ready'
-          : fact.loggedIn === false
-            ? 'candidates.status.needs_login'
-            : 'candidates.status.unknown',
+    statusKey: CANDIDATE_STATUS_KEY[providerStatus(fact)],
   }));
 
 export interface CandidatesState {
@@ -167,7 +179,7 @@ const isFact = (value: unknown): value is CandidateFact =>
   'alreadyAdded' in value &&
   typeof value.alreadyAdded === 'boolean';
 
-const isProviderFact = (value: unknown): value is ProviderFact =>
+export const isProviderFact = (value: unknown): value is ProviderFact =>
   typeof value === 'object' && value !== null && 'defId' in value && typeof value.defId === 'string' && 'name' in value && typeof value.name === 'string' && 'binPath' in value;
 
 /** The account's default label: the last segment of the candidate's display path. */
