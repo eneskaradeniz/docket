@@ -233,6 +233,12 @@ export async function applyLimitDecision(
     priority: 0,
     enqueuedAt: deps.clock.now(),
     ...(input.decision.kind === 'schedule_resume' ? { notBefore: input.decision.at } : {}),
+    // A-65: the pack rule keys on the ACCOUNT, not the provider — a second account of the same
+    // provider is a different identity directory, so native resume cannot be assumed to see the
+    // earlier history and the handoff pack is the one continuation mechanism.
+    ...(input.decision.kind === 'fallback' && input.decision.route.accountId !== run.route.accountId
+      ? { handoffOf: run.id }
+      : {}),
   });
 
   // A scheduled resume is the one decision that spends one of the run's auto-resumes.

@@ -6,6 +6,7 @@ import {
   DEFAULT_CONTEXT_WINDOW_TOKENS,
   PACK_CHARS_PER_TOKEN,
   ROLLING_NOTE_MAX_CHARS,
+  definitionsDigest,
   deriveTaskState,
   extendRollingNote,
   renderHandoffPrompt,
@@ -276,6 +277,18 @@ describe('renderHandoffPrompt', () => {
   it('renders no instruction section when the plan has nothing inlined', () => {
     const prompt = renderHandoffPrompt(pack({ instructionPlan: { native: ['AGENTS.md'], inlined: [], truncated: [] } }));
     expect(prompt.toLowerCase()).not.toContain('project context');
+  });
+});
+
+describe('definitionsDigest', () => {
+  it('R-57: deterministic — the same text yields the same 8 lower-case hex chars, different text a different digest', () => {
+    const layers = 'Work order: Fix the login bug\nFlow: Standard flow\nStage: Implement';
+    const first = definitionsDigest(layers);
+    expect(first).toMatch(/^[0-9a-f]{8}$/);
+    expect(definitionsDigest(layers)).toBe(first);
+    expect(definitionsDigest(`${layers}\nRole instructions: ship it`)).not.toBe(first);
+    // The FNV-1a offset basis: the empty text's digest is the algorithm's starting state.
+    expect(definitionsDigest('')).toBe('811c9dc5');
   });
 });
 

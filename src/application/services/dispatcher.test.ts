@@ -654,6 +654,38 @@ describe('applyLimitDecision', () => {
     expect(await h.deps.runs.get(RUN1)).toMatchObject({ autoResumesUsed: 0 });
   });
 
+  it('A-65: a fallback to a different account sets handoffOf — the pack is the one continuation mechanism', async () => {
+    const h = makeHarness();
+    await createWorkOrder(h, WO1);
+    await createRun(h, RUN1, WO1, route(A1));
+
+    const result = await applyLimitDecision(h.deps, {
+      runId: RUN1,
+      decision: { kind: 'fallback', route: route(A2, 'model-y') },
+    });
+
+    expect(result.ok).toBe(true);
+    const items = await queueAfter(h);
+    // The target ACCOUNT differs — the rule keys on the account, not the provider: whether one
+    // CLI login sees another's sessions is not knowable, even on the same provider.
+    expect(items[0]?.handoffOf).toBe(RUN1);
+  });
+
+  it('A-65: a fallback to the same account sets no handoffOf — the stage may still resume natively', async () => {
+    const h = makeHarness();
+    await createWorkOrder(h, WO1);
+    await createRun(h, RUN1, WO1, route(A1));
+
+    const result = await applyLimitDecision(h.deps, {
+      runId: RUN1,
+      decision: { kind: 'fallback', route: route(A1, 'model-y') },
+    });
+
+    expect(result.ok).toBe(true);
+    const items = await queueAfter(h);
+    expect(items[0]?.handoffOf).toBeUndefined();
+  });
+
   it('A-17a: ask queues nothing; the work order stays limit_waiting for the cockpit', async () => {
     const h = makeHarness();
     await createWorkOrder(h, WO1);
