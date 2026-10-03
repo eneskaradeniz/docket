@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import type { RunHandle, RunRequest, TransportError } from '../../../../application/index';
+import type { AccountRepo, RunHandle, RunRequest, TransportError } from '../../../../application/index';
 import type { Result, RoleDef, RunId } from '../../../../domain/index';
 import { parseSlug, parseUlid, type AccountId, type AgentEvent } from '../../../../domain/index';
 import type { ProviderDef } from '../../defs/index';
@@ -87,7 +87,8 @@ const defOf = (binPath: string): ProviderDef => ({
 });
 
 /** The account a factory resolves the def through: provider p-x (p-y in the second case). */
-const accountOf = (provider: string) => async (): Promise<{ provider: string } | undefined> => ({ provider });
+const accountOf = (provider: string): AccountRepo['get'] => async () =>
+  ({ id: ACCOUNT, provider, label: 'probe', authMode: 'subscription', limitPolicy: 'wait_resume', caps: [] });
 
 const request = (cwd: string): RunRequest => ({
   runId: RUN_ID,
