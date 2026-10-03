@@ -1,7 +1,7 @@
 // use-cases/account-test.ts — the account test ("Test et"), docs/v2/application.md A-68 … A-74.
 // One small real request on the account's route with a classified result. It is not a work-order
 // run: no RunRecord, no queue item, no worktree, and no event is persisted.
-import type { AccountId, AccountTestClass, AccountTestOutcome, AgentEvent, EpochMs, Result, RoleDef, RoleSlug, ScopedSpend } from '../../domain/index';
+import type { AccountId, AccountTestClass, Actor, AccountTestOutcome, AgentEvent, EpochMs, Result, RoleDef, RoleSlug, ScopedSpend } from '../../domain/index';
 import { ACCOUNT_TEST_PROMPT, classifyAccountTest, combinedSpendStatus, err, ok } from '../../domain/index';
 
 import type { AccountTestRecord, AppDeps, RunHandle } from '../ports';
@@ -42,8 +42,6 @@ export const accountTestViewOf = (record: AccountTestRecord): AccountTestView =>
     detail: failed ? (record.detail ?? null) : null,
   };
 };
-
-const SYSTEM_ACTOR = { kind: 'system', component: 'account-test' } as const;
 
 interface Collected {
   readonly events: AgentEvent[];
@@ -92,7 +90,7 @@ export async function testAccount(
     AppDeps,
     'clock' | 'ids' | 'log' | 'accounts' | 'transports' | 'modelCatalog' | 'capabilities' | 'accountTests' | 'scratch'
   >,
-  input: { readonly id: AccountId; readonly model?: string },
+  input: { readonly id: AccountId; readonly model?: string; readonly actor: Actor },
 ): Promise<Result<AccountTestView, AccountTestError>> {
   const { id } = input;
   // A-68: every refusal comes before the first write, in this order.
@@ -153,7 +151,7 @@ export async function testAccount(
   await deps.log.append({
     id: deps.ids.next<'audit'>(),
     at: endedAt,
-    actor: SYSTEM_ACTOR,
+    actor: input.actor,
     action: 'account.tested',
     subject: { kind: 'account', id },
     detail: { model: input.model ?? '*', result: outcome.ok ? 'ok' : outcome.class },

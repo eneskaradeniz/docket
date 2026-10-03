@@ -5,6 +5,7 @@ import {
   parseSlug,
   parseUlid,
   type AccountId,
+  type Actor,
   type AgentEvent,
   type EpochMs,
   type ProjectSlug,
@@ -94,6 +95,8 @@ const seed = async (h: Harness, record: AccountRecord = accountRecord(), script:
   return transport;
 };
 
+const ACTOR: Actor = { kind: 'user', id: 'user-1' };
+
 const FIELD = <T,>(result: Result<T, unknown>): T => {
   if (!result.ok) throw new Error('expected ok');
   return result.value;
@@ -116,7 +119,7 @@ describe('testAccount refusals', () => {
 
   it('A-68: an unknown account is not_found and nothing is written', async () => {
     const h = makeHarness();
-    expect(await testAccount(h.deps, { id: ACCOUNT })).toEqual({ ok: false, error: 'not_found' });
+    expect(await testAccount(h.deps, { id: ACCOUNT, actor: ACTOR })).toEqual({ ok: false, error: 'not_found' });
     await expectUntouched(h);
   });
 
@@ -124,7 +127,7 @@ describe('testAccount refusals', () => {
     const h = makeHarness();
     const transport = await seed(h);
     await h.deps.accountTests.save({ accountId: ACCOUNT, model: null, state: 'running', startedAt: T0 });
-    expect(await testAccount(h.deps, { id: ACCOUNT })).toEqual({ ok: false, error: 'busy' });
+    expect(await testAccount(h.deps, { id: ACCOUNT, actor: ACTOR })).toEqual({ ok: false, error: 'busy' });
     expect(await h.deps.accountTests.get(ACCOUNT)).toEqual({ accountId: ACCOUNT, model: null, state: 'running', startedAt: T0 });
     expect(h.log.entries()).toEqual([]);
     expect(h.scratch.created()).toEqual([]);
@@ -134,35 +137,35 @@ describe('testAccount refusals', () => {
   it('A-68: an account without a transport is unsupported', async () => {
     const h = makeHarness();
     await h.deps.accounts.save(accountRecord());
-    expect(await testAccount(h.deps, { id: ACCOUNT })).toEqual({ ok: false, error: 'unsupported' });
+    expect(await testAccount(h.deps, { id: ACCOUNT, actor: ACTOR })).toEqual({ ok: false, error: 'unsupported' });
     await expectUntouched(h);
   });
 
   it('A-68: a metered default model without consent is needs_spend_consent (P-40)', async () => {
     const h = makeHarness();
     const transport = await seed(h, accountRecord({ authMode: 'api_key', caps: [DAY_CAP] }));
-    expect(await testAccount(h.deps, { id: ACCOUNT })).toEqual({ ok: false, error: 'needs_spend_consent' });
+    expect(await testAccount(h.deps, { id: ACCOUNT, actor: ACTOR })).toEqual({ ok: false, error: 'needs_spend_consent' });
     await expectUntouched(h, transport);
   });
 
   it('A-68: a consented metered model without a cap is still needs_spend_consent', async () => {
     const h = makeHarness();
     const transport = await seed(h, accountRecord({ authMode: 'api_key', consentedModels: ['*'] }));
-    expect(await testAccount(h.deps, { id: ACCOUNT })).toEqual({ ok: false, error: 'needs_spend_consent' });
+    expect(await testAccount(h.deps, { id: ACCOUNT, actor: ACTOR })).toEqual({ ok: false, error: 'needs_spend_consent' });
     await expectUntouched(h, transport);
   });
 
   it('A-68: a consented metered model with a cap runs', async () => {
     const h = makeHarness();
     await seed(h, accountRecord({ authMode: 'api_key', consentedModels: ['*'], caps: [DAY_CAP] }));
-    expect((await testAccount(h.deps, { id: ACCOUNT })).ok).toBe(true);
+    expect((await testAccount(h.deps, { id: ACCOUNT, actor: ACTOR })).ok).toBe(true);
   });
 
   it('A-68: spend at the account cap inside the A-20 window is spend_cap_reached', async () => {
     const h = makeHarness();
     const transport = await seed(h, accountRecord({ caps: [DAY_CAP] }));
     await h.deps.accounts.recordSpend({ kind: 'account_test', accountId: ACCOUNT, at: T0, usd: 5 });
-    expect(await testAccount(h.deps, { id: ACCOUNT })).toEqual({ ok: false, error: 'spend_cap_reached' });
+    expect(await testAccount(h.deps, { id: ACCOUNT, actor: ACTOR })).toEqual({ ok: false, error: 'spend_cap_reached' });
     expect(await h.deps.accountTests.get(ACCOUNT)).toBeUndefined();
     expect(h.log.entries()).toEqual([]);
     expect(h.scratch.created()).toEqual([]);
@@ -173,7 +176,7 @@ describe('testAccount refusals', () => {
     const h = makeHarness();
     await seed(h, accountRecord({ caps: [DAY_CAP] }));
     await h.deps.accounts.recordSpend({ kind: 'account_test', accountId: ACCOUNT, at: T0 - 3 * 86_400_000, usd: 50 });
-    expect((await testAccount(h.deps, { id: ACCOUNT })).ok).toBe(true);
+    expect((await testAccount(h.deps, { id: ACCOUNT, actor: ACTOR })).ok).toBe(true);
   });
 
   it('A-68: the checks run in order — not_found, busy, unsupported, consent, cap', async () => {
@@ -181,14 +184,14 @@ describe('testAccount refusals', () => {
     // Everything wrong at once: busy wins over unsupported, consent and cap.
     await h.deps.accounts.save(accountRecord({ authMode: 'api_key', caps: [DAY_CAP] }));
     await h.deps.accountTests.save({ accountId: ACCOUNT, model: null, state: 'running', startedAt: T0 });
-    expect(await testAccount(h.deps, { id: ACCOUNT })).toEqual({ ok: false, error: 'busy' });
+    expect(await testAccount(h.deps, { id: ACCOUNT, actor: ACTOR })).toEqual({ ok: false, error: 'busy' });
     await h.deps.accountTests.clear(ACCOUNT);
     // No transport: unsupported wins over consent.
-    expect(await testAccount(h.deps, { id: ACCOUNT })).toEqual({ ok: false, error: 'unsupported' });
+    expect(await testAccount(h.deps, { id: ACCOUNT, actor: ACTOR })).toEqual({ ok: false, error: 'unsupported' });
     h.resolver.register(ACCOUNT, createFakeTransport([finished()]));
     // Not consented: consent wins over the cap.
     await h.deps.accounts.recordSpend({ kind: 'account_test', accountId: ACCOUNT, at: T0, usd: 99 });
-    expect(await testAccount(h.deps, { id: ACCOUNT })).toEqual({ ok: false, error: 'needs_spend_consent' });
+    expect(await testAccount(h.deps, { id: ACCOUNT, actor: ACTOR })).toEqual({ ok: false, error: 'needs_spend_consent' });
   });
 });
 
@@ -209,7 +212,7 @@ describe('testAccount run', () => {
     await h.deps.accounts.save(accountRecord({ consentedModels: ['model-x'], caps: [DAY_CAP] }));
     h.resolver.register(ACCOUNT, spying);
 
-    await testAccount(h.deps, { id: ACCOUNT, model: 'model-x' });
+    await testAccount(h.deps, { id: ACCOUNT, model: 'model-x', actor: ACTOR });
 
     expect(seenWhileRunning).toEqual({ accountId: ACCOUNT, model: 'model-x', state: 'running', startedAt: T0 });
     const [request] = inner.requests();
@@ -228,7 +231,7 @@ describe('testAccount run', () => {
   it('A-69: without a model the route carries none and the record says null', async () => {
     const h = makeHarness();
     const transport = await seed(h);
-    await testAccount(h.deps, { id: ACCOUNT });
+    await testAccount(h.deps, { id: ACCOUNT, actor: ACTOR });
     expect(transport.requests()[0]?.route).toEqual({ accountId: ACCOUNT });
     expect((await h.deps.accountTests.get(ACCOUNT))?.model).toBeNull();
   });
@@ -240,7 +243,7 @@ describe('testAccount run', () => {
       { type: 'permission_ask', at: T0, id: 'ask-2', tool: 'Write', options: ['allow', 'deny'] },
       finished(),
     ]);
-    const result = await testAccount(h.deps, { id: ACCOUNT });
+    const result = await testAccount(h.deps, { id: ACCOUNT, actor: ACTOR });
     expect(result.ok).toBe(true);
     expect(transport.answers()).toEqual([
       { askId: 'ask-1', decision: 'deny' },
@@ -278,7 +281,7 @@ describe('testAccount run', () => {
     await h.deps.accounts.save(accountRecord());
     h.resolver.register(ACCOUNT, hanging);
 
-    const pending = testAccount(h.deps, { id: ACCOUNT });
+    const pending = testAccount(h.deps, { id: ACCOUNT, actor: ACTOR });
     await vi.advanceTimersByTimeAsync(ACCOUNT_TEST_TIMEOUT_MS - 1);
     expect((await h.deps.accountTests.get(ACCOUNT))?.state).toBe('running');
     expect(stops).toBe(0);
@@ -293,7 +296,7 @@ describe('testAccount run', () => {
   it('A-69: the scratch dir is disposed after a success', async () => {
     const h = makeHarness();
     await seed(h);
-    await testAccount(h.deps, { id: ACCOUNT });
+    await testAccount(h.deps, { id: ACCOUNT, actor: ACTOR });
     expect(h.scratch.created()).toEqual(['/scratch/account-test-1']);
     expect(h.scratch.disposed()).toEqual(['/scratch/account-test-1']);
   });
@@ -302,7 +305,7 @@ describe('testAccount run', () => {
     const h = makeHarness();
     const transport = await seed(h);
     transport.failStart({ code: 'not_installed', message: 'cli missing' });
-    const result = await testAccount(h.deps, { id: ACCOUNT });
+    const result = await testAccount(h.deps, { id: ACCOUNT, actor: ACTOR });
     expect(FIELD(result)).toMatchObject({ state: 'failed', class: 'install', detail: 'cli missing' });
     expect(h.scratch.disposed()).toEqual(['/scratch/account-test-1']);
   });
@@ -315,7 +318,7 @@ describe('testAccount run', () => {
         throw new Error('transport exploded');
       },
     });
-    await expect(testAccount(h.deps, { id: ACCOUNT })).rejects.toThrow('transport exploded');
+    await expect(testAccount(h.deps, { id: ACCOUNT, actor: ACTOR })).rejects.toThrow('transport exploded');
     expect(await h.deps.accountTests.get(ACCOUNT)).toMatchObject({ state: 'failed', class: 'unknown' });
     expect(h.scratch.disposed()).toEqual(['/scratch/account-test-1']);
   });
@@ -327,7 +330,7 @@ describe('testAccount outcome', () => {
   it('A-70: a completed run saves ok with endedAt, audits account.tested and returns the saved view', async () => {
     const h = makeHarness();
     await seed(h, accountRecord({ consentedModels: ['model-x'], caps: [DAY_CAP] }));
-    const result = await testAccount(h.deps, { id: ACCOUNT, model: 'model-x' });
+    const result = await testAccount(h.deps, { id: ACCOUNT, model: 'model-x', actor: ACTOR });
     expect(result).toEqual({ ok: true, value: { state: 'ok', class: null, model: 'model-x', at: T0, detail: null } });
     expect(await h.deps.accountTests.get(ACCOUNT)).toEqual({ accountId: ACCOUNT, model: 'model-x', state: 'ok', startedAt: T0, endedAt: T0 });
     const [entry] = h.log.entries();
@@ -338,10 +341,19 @@ describe('testAccount outcome', () => {
     });
   });
 
+  it('A-70a: the audit entry carries the caller\'s actor', async () => {
+    const h = makeHarness();
+    await seed(h);
+    const caller: Actor = { kind: 'user', id: 'user-7', label: 'Operator' };
+    await testAccount(h.deps, { id: ACCOUNT, actor: caller });
+    expect(h.log.entries()).toHaveLength(1);
+    expect(h.log.entries()[0]?.actor).toEqual(caller);
+  });
+
   it('A-70: a failure is saved with its class and detail; the audit names the class, never the detail', async () => {
     const h = makeHarness();
     await seed(h, accountRecord(), [{ type: 'error', at: T0, class: 'auth', message: 'invalid x-api-key sk-secret-detail' }, finished('failed')]);
-    const result = await testAccount(h.deps, { id: ACCOUNT });
+    const result = await testAccount(h.deps, { id: ACCOUNT, actor: ACTOR });
     expect(FIELD(result)).toEqual({ state: 'failed', class: 'auth', model: null, at: T0, detail: 'invalid x-api-key sk-secret-detail' });
     const [entry] = h.log.entries();
     expect(entry?.detail).toEqual({ model: '*', result: 'auth' });
@@ -351,7 +363,7 @@ describe('testAccount outcome', () => {
   it('A-70: a limit hit is class limit with an empty detail', async () => {
     const h = makeHarness();
     await seed(h, accountRecord(), [{ type: 'limit_hit', at: T0, hit: { class: 'window_exhausted', remedies: ['wait'] } }, finished('limit')]);
-    expect(FIELD(await testAccount(h.deps, { id: ACCOUNT }))).toMatchObject({ state: 'failed', class: 'limit', detail: '' });
+    expect(FIELD(await testAccount(h.deps, { id: ACCOUNT, actor: ACTOR }))).toMatchObject({ state: 'failed', class: 'limit', detail: '' });
   });
 
   it('A-70: the endedAt is read after the run, the view time is endedAt', async () => {
@@ -360,7 +372,7 @@ describe('testAccount outcome', () => {
     const inner = createFakeTransport([finished()]);
     await h.deps.accounts.save(accountRecord());
     h.resolver.register(ACCOUNT, { start: async (request) => { clock.advance(1_500); return inner.start(request); } });
-    const view = FIELD(await testAccount(h.deps, { id: ACCOUNT }));
+    const view = FIELD(await testAccount(h.deps, { id: ACCOUNT, actor: ACTOR }));
     expect(view.at).toBe(T0 + 1_500);
     expect((await h.deps.accountTests.get(ACCOUNT))?.startedAt).toBe(T0);
   });
@@ -372,14 +384,14 @@ describe('testAccount spend', () => {
   it('A-71: usage with a cost is recorded as account spend; usage without one is not', async () => {
     const h = makeHarness();
     await seed(h, accountRecord(), [usage(0.25), usage(), usage(0.5), finished()]);
-    await testAccount(h.deps, { id: ACCOUNT });
+    await testAccount(h.deps, { id: ACCOUNT, actor: ACTOR });
     expect(await h.deps.accounts.spend({ accountId: ACCOUNT, from: T0, to: T0 })).toBeCloseTo(0.75);
   });
 
   it('A-71: an account-filtered spend counts the entry; repo, project and work-order filters do not', async () => {
     const h = makeHarness();
     await seed(h, accountRecord(), [usage(1), finished()]);
-    await testAccount(h.deps, { id: ACCOUNT });
+    await testAccount(h.deps, { id: ACCOUNT, actor: ACTOR });
     const window = { from: T0 - 1, to: T0 + 1 };
     expect(await h.deps.accounts.spend({ accountId: ACCOUNT, ...window })).toBe(1);
     expect(await h.deps.accounts.spend({ ...window })).toBe(1);
@@ -391,9 +403,9 @@ describe('testAccount spend', () => {
   it('A-71: the recorded spend counts against the next test through the account cap', async () => {
     const h = makeHarness();
     await seed(h, accountRecord({ caps: [DAY_CAP] }), [usage(5), finished()]);
-    expect((await testAccount(h.deps, { id: ACCOUNT })).ok).toBe(true);
+    expect((await testAccount(h.deps, { id: ACCOUNT, actor: ACTOR })).ok).toBe(true);
     await h.deps.accountTests.clear(ACCOUNT);
-    expect(await testAccount(h.deps, { id: ACCOUNT })).toEqual({ ok: false, error: 'spend_cap_reached' });
+    expect(await testAccount(h.deps, { id: ACCOUNT, actor: ACTOR })).toEqual({ ok: false, error: 'spend_cap_reached' });
   });
 });
 
