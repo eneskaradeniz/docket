@@ -400,7 +400,8 @@ export type CheckpointError = 'git_failed';
 export interface CheckpointCommitter {
   /** `git add -A` + commit in the worktree. A clean tree → { changed: false }, no commit. Commits
    *  are local-only (push stays with the forge flow); author/committer is the Docket checkpoint
-   *  identity, never a user. */
+   *  identity `Docket <checkpoints@docket.local>` — passed as `git -c user.name -c user.email`, so
+   *  it outranks repo and global config alike — never a user. */
   commit(input: { readonly cwd: string; readonly runId: RunId; readonly seq: number }): Promise<Result<CheckpointRef, CheckpointError>>;
   /** The diff since `since`. The patch is redacted through the secret patterns (the scanner's
    *  `redactSecrets`) at this boundary — application and domain never see unredacted patch text. */
@@ -598,7 +599,7 @@ ceilings first; a known window only tightens them — A-63), renders it, and app
 `run.handoff` with `detail: { fromRun: runId, candidates: candidates.length }`.
 
 Rules:
-- **A-53** `composeRunPrompt` builds every run's prompt: Docket layers first (`stageBrief`, then `role.instructions`), then the instruction block as project context. The Docket layers are byte-identical for every provider given the same definitions; only the instruction block varies. A missing work order record is `not_found`.
+- **A-53** `composeRunPrompt` builds every run's prompt: Docket layers first (`stageBrief`, then `role.instructions`), then the instruction block as project context. The Docket layers are byte-identical for every provider given the same definitions; only the instruction block varies. `not_found` is the record-or-resolution error: the work order record is missing, or a record exists whose `record.flow`, or whose requested `stage`/`role`, the loaded definitions can no longer resolve (the gates' precedent — a run that can no longer be prompted). Definitions that fail to load are `definitions_invalid`, never `not_found`.
 - **A-54** Native instruction files come from the registry through `CapabilityCatalog.nativeInstructionFiles` for the route account's provider; a file the provider reads natively is never inlined. An unknown provider (no registry record) has no native set: every present candidate is inlined, so the "same rules on both providers" guarantee survives where the registry has never heard of the provider — inlining all beats a smaller prompt. The registry row is the provider's best-known set, not a fixed law of the CLI — some CLIs make the set configurable (a fallback-filename list can add `CLAUDE.md`, a context-file setting can rename it) — so a file the CLI reads natively but the row misses is inlined as well: the content reaching the agent twice is the safe failure, missing it is not.
 - **A-55** Inlining stays within `DEFAULT_INSTRUCTION_BUDGET_CHARS`: candidates in registry order, whole while the budget allows, then truncated to the remainder with a marker naming the file and the kept chars; `plan.truncated` lists the dropped. Deterministic for the same inputs. Budgets are chars, not tokens — no provider's tokenizer is consulted; the constants (`DEFAULT_INSTRUCTION_BUDGET_CHARS`, `ROLLING_NOTE_MAX_CHARS`, `PACK_CHARS_PER_TOKEN`) are revisited only when a tokenizer actually matters in practice.
 - **A-56** The instructions path never writes to the repo (the O-6 canonical-file proposal stays a normal diff in a work order). Instruction-file content is repo-author content below the Docket layers and never becomes a Docket instruction. The trust boundary is marked, not implied: everything the pack and the prompt quote — instruction files read from the repo, and any issue, page or upload content that later rides the same path — travels as **data** under a heading that says so, never as Docket's system instruction; content read from the repo or the web is untrusted input to Docket, and the pack says so where the agent reads it.
@@ -620,7 +621,7 @@ export type ExecuteOutcome =
   | { readonly kind: 'refused'; readonly error: 'needs_spend_consent' };
 export interface PermissionGate { onAsk(runId: RunId, ask: Extract<AgentEvent, { readonly type: 'permission_ask' }>): Promise<'allow' | 'deny'> }
 export function executeRun(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'runs' | 'accounts' | 'transports' | 'modelCatalog' | 'capabilities'>,
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'runs' | 'accounts' | 'transports' | 'modelCatalog' | 'capabilities' | 'checkpoints'>,
   permissions: PermissionGate,
   input: ExecuteRunInput,
 ): Promise<ExecuteOutcome>;
@@ -663,7 +664,7 @@ Rules:
 
 `ExecuteOutcome`'s `refused` error union gains `'handoff_failed'` (A-64). Rules:
 
-- **A-57** The executor commits a checkpoint at each `tool_result` boundary when `CHECKPOINT_MIN_INTERVAL_MS` has elapsed since the last commit, and always at `limit_hit`, `finished` and stream end. A clean tree is a no-op (`changed: false`), never an error. Commits are local-only and authored by the Docket checkpoint identity, never a user; they never travel to the forge. The cadence is event-boundary + terminal only — no background timer exists; the executor's stream is the only clock application may read. (`AgentEvent.tool_result` carries only `{ id, ok }`, so "each tool-result boundary that changed files" is implemented as commit-at-each-boundary with git as the arbiter.)
+- **A-57** The executor commits a checkpoint at each `tool_result` boundary when `CHECKPOINT_MIN_INTERVAL_MS` (`30_000`, [domain.md](domain.md) §11) has elapsed since the last commit, and always at `limit_hit`, `finished` and stream end. The threshold is a clock comparison made inside the event flow at each boundary, not a scheduler: the cadence is event-boundary + terminal only — no background timer exists; the executor's stream is the only clock application may read. A clean tree is a no-op (`changed: false`), never an error. Commits are local-only and authored by the Docket checkpoint identity `Docket <checkpoints@docket.local>`, never a user; they never travel to the forge. (`AgentEvent.tool_result` carries only `{ id, ok }`, so "each tool-result boundary that changed files" is implemented as commit-at-each-boundary with git as the arbiter.)
 - **A-58** Checkpoint commits touch only the work order's worktree (I-20's guarantee unchanged); the user's checkout, its branch and its index are never modified.
 - **A-59** The first commit of a stage attempt records its sha via `RunRepo.saveStageBase`. The pack's code state is `diffSince(stageBase)`; with no checkpoint (a clean stage) it is `diffSince(worktree base ref)`.
 - **A-60** The rolling note is extended with every persisted event batch (`extendRollingNote`) and saved through `RunRepo.saveHandoffNote` on the same cadence — so it exists the moment the account blocks. It is the tail of the text/thinking stream, capped at `ROLLING_NOTE_MAX_CHARS` with `capped: true`; no other content is derived into it (the model-written summary stays optional and unanswered, open decision O-8).
