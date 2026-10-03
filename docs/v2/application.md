@@ -1000,6 +1000,58 @@ Rules:
 
 ---
 
+### Create a project from the built-in library (#370)
+
+A first run from an empty data dir reaches a working board without hand-written files. Operator
+decision of 2026-10-03 (option A on #370): Docket writes the project's `.docket/project.yaml` and
+`.docket/repo.yaml` into the chosen work tree — only when neither exists, and only on the user's
+explicit "Oluştur" — so membership stays versioned truth in the repo (A-26), then attaches it
+through the existing `attachProject`. Two sources, as the approved "Yeni proje" screen names them:
+an existing folder ("Var olan klasör") and a new folder ("Boş proje"). Cloning and "Birlikte sıfırdan
+başla" are not part of this contract.
+
+```ts
+// definition-store.ts — DefinitionStore gains
+/** Writes each built-in role and flow as a global-root file unless a file with that id exists; never overwrites. */
+installBuiltins(library: { readonly roles: readonly RoleDef[]; readonly flows: readonly FlowDef[] }): Promise<{ readonly written: readonly string[] }>;
+/** Writes <path>/.docket/project.yaml and <path>/.docket/repo.yaml; writes nothing when either exists. */
+scaffoldProject(path: string, project: ProjectDef, repo: RepoDef): Promise<Result<void, 'project_yaml_exists' | 'repo_yaml_exists' | 'io_failed'>>;
+
+// repo-folders.ts — the one write the create flow needs outside .docket
+export interface RepoFolders {
+  /** Creates <parent>/<folder> and initialises a git repository in it with initial branch `main`. */
+  createRepo(parent: string, folder: string): Promise<Result<{ readonly path: string }, 'not_a_folder' | 'folder_exists' | 'io_failed'>>;
+}
+// AppDeps gains
+readonly repoFolders: RepoFolders;
+
+// event-log.ts — AuditAction gains
+| 'project.created'
+
+// projects.ts
+export type CreateProjectSource =
+  | { readonly kind: 'existing'; readonly path: string }
+  | { readonly kind: 'blank'; readonly parent: string };
+export type CreateProjectError =
+  | 'invalid_name' | 'not_a_repo' | 'project_exists' | 'docket_folder_exists'
+  | 'not_a_folder' | 'folder_exists' | 'io_failed' | 'definitions_invalid' | AttachError;
+export function createProject(
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'projects' | 'repos' | 'definitions' | 'git' | 'repoFolders'>,
+  input: { readonly source: CreateProjectSource; readonly name: string; readonly actor: Actor },
+): Promise<Result<ProjectDef, CreateProjectError>>;
+
+// commands.ts
+| { type: 'project.create'; mode: 'existing'; path: string; name: string }
+| { type: 'project.create'; mode: 'blank'; parent: string; name: string }   // ok → { ok: true, id: <project slug> }
+```
+
+Rules:
+- **A-75** `createProject` validates before any write: the trimmed `name` is empty or longer than 80 characters → `invalid_name`; the slug is `slugFromName(name, taken)` (R-59) with `taken` = every `ProjectRepo.list()` id and every `RepoRegistry.list()` slug; source `existing` whose `path` is not a git work tree (`git.isWorkTree`) → `not_a_repo`. The definitions it will write are built and checked with `validateDefinitions({ roles: BUILTIN_ROLES, flows: BUILTIN_FLOWS, capabilities: [], project, repo })`; issues → `definitions_invalid` (a library bug, nothing written).
+- **A-76** The written definitions: `project` = `{ id: slug, name, mainRepo: slug, repos: [slug] }` (project ≡ repo); `repo` = `{ id: slug, name, flows: <every BUILTIN_FLOWS id in library order>, defaultFlow: 'standard', commandSets: <every BUILTIN_COMMAND_SET_NAMES name → []>, roleOverrides: [], docsRoot: 'docs', testGlobs: [] }`. The command sets are empty on purpose: a `command` gate on an empty set reads `unknown` and never passes (R-13, R-16), so the work order waits at the tests gate until the user writes the commands into `repo.yaml`; Docket never guesses a test command.
+- **A-77** Writes, in this order: source `blank` → `repoFolders.createRepo(parent, slug)` (its errors returned as they are; the path it returns is the project path); `definitions.installBuiltins({ roles: BUILTIN_ROLES, flows: BUILTIN_FLOWS })`; `definitions.scaffoldProject(path, project, repo)` — `project_yaml_exists` → `project_exists` (the folder is already a Docket project: attach it instead), `repo_yaml_exists` → `docket_folder_exists`, `io_failed` as is; then `attachProject({ path, actor })` and its result is returned. A failure after `createRepo` leaves the new folder in place (Docket never deletes a folder it showed the user); a failure after `installBuiltins` leaves the global files (they are idempotent library copies).
+- **A-78** On success audit `project.created` with subject the project and `detail: { source: 'existing' | 'blank', builtinsWritten: <count> }`, before the `project.attached` entry `attachProject` writes. A refusal writes no audit entry.
+- **A-79** `project.create` maps to `createProject` with the actor of the call; ok → `{ ok: true, id: <project slug> }`, an error → `{ ok: false, code }`. An unknown `mode` is rejected at the edge like an unknown `authMode`.
+
 ### Account test — "Test et" (#716)
 
 An account whose login cannot be probed (`loggedIn: null`, "Doğrulanamadı") gets a **Test et**
