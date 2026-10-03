@@ -236,7 +236,6 @@ describe('settings store', () => {
       loading: false,
       view: null,
       problem: null,
-      discovery: { running: false, rows: [], failed: false },
       lastOutcome: null,
       removeWarning: null,
     });
