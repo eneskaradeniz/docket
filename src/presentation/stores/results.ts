@@ -51,6 +51,10 @@ export const KNOWN_FAILURE_CODES: readonly string[] = [
   'promote_prerequisite_missing',
   'unknown_environment',
   'no_repo',
+  // project.attach refusals (AttachError).
+  'not_a_repo',
+  'no_project_yaml',
+  'repo_not_in_project',
   // saveBinding: a role's account chain cannot be empty (A-14).
   'empty_chain',
 ];

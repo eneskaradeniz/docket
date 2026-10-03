@@ -89,13 +89,14 @@ if (mount !== null) {
   const accountModels = createAccountModelsStore({ api, changes, actor: USER });
   // The Roller section: roles.list with the stored bindings (U-33).
   const roles = createRolesStore({ api, changes, actor: USER, now: () => Date.now() });
-  const wizard = createWizardStore({ api, actor: USER });
   const shell = createShellStore({ api, changes });
   // The app's own newer version — the title bar's button and the panel's Güncelleme section.
   const update = createUpdateStore({ api, changes, actor: USER });
   // The sidebar's tree (U-15) and accounts frame (U-16) mirror their queries; the sort choice
   // persists where the locale choice does.
   const tree = createProjectTreeStore({ api, changes, now: () => Date.now(), persistence: window.localStorage });
+  // The wizard's attach appends no work-order event, so it reloads the tree itself.
+  const wizard = createWizardStore({ api, actor: USER, reloadTree: () => tree.load() });
   const accountsFrame = createAccountsFrameStore({ api, changes });
   // The provider marks every account badge reads: one query, kept for the session (A-41).
   const marks = createProviderMarksStore({ api });
