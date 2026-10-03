@@ -359,6 +359,47 @@ being reset.
   updates as its provider answers (U-6); providers not found on the machine fold into one closed
   group "Kurulu değil · n" whose rows show `installUrl` as copyable text. No row invents a version,
   a status or a command.
+- **U-39** (account test, A-68 … A-74; added 2026-10-03) "Test et" sends `account.test` for a
+  **saved** account (it needs an account id): inline on a Settings → Hesaplar account row whose
+  provider reads Doğrulanamadı (`loggedIn: null`, U-38), and on every account's editor Genel tab
+  (U-30). It tests the route's default model (no `model` is sent; the line names it "asistanın
+  varsayılanı"). While the command is open the button reads "Test ediliyor…" and is disabled; on its
+  answer the store re-queries `settings.accounts` and renders the row's `test` view as one result
+  line: `null` → "Test edilmedi"; `ok` → "Çalışıyor" with the relative time of `at`; `failed` → the
+  class sentence — `auth` "Giriş gerekli ya da anahtar geçersiz", `limit` "Bu model şu an
+  kullanılamıyor — plan limiti", `model` "Bu model bu hesapta kullanılamıyor", `network` "Bağlantı
+  kurulamadı ya da yanıt gelmedi", `install` "Asistan bu makinede çalıştırılamadı", `unknown` "Test
+  başarısız oldu" — with a closed "Ayrıntı" disclosure showing `detail` (mono) only when it is not
+  empty. A `failed` view of class `model` sets the account row's status to "Model hatası" (error
+  tone) until the next test or reset. Refusals are U-8 labels under the button:
+  `needs_spend_consent` "Bu model ücretli ya da doğrulanmadı — önce Modeller'de izin ve tavan ver"
+  with a link to the Modeller tab, `spend_cap_reached` "Harcama tavanı doldu", `busy` "Test zaten
+  sürüyor", `unsupported` "Bu hesap test edilemiyor", `not_found` the generic not-found label. The
+  model's output is never shown anywhere. The wizard's Hesaplar rows are discovery candidates, not
+  accounts yet, so they carry no "Test et": a Doğrulanamadı candidate's status line adds "Kurulumdan
+  sonra Ayarlar'da test edebilirsin".
+- **U-40** (Yeni proje, A-75 … A-79; added 2026-10-03; approved prototype
+  `docket-tasarim/rev8/index.html` → calismaAlan*) A page at route `#/yeni-proje` in the wizard's
+  page language: a centred 880×580 card, title "Yeni proje", one line "Docket'in çalışacağı projeyi
+  seç ya da yenisini birlikte kuralım.", and a fixed bottom band (Vazgeç · reason line · primary).
+  Cards, in the prototype's order: the featured "Birlikte sıfırdan başla" card is shown **disabled**
+  with a "Yakında" tag (Phase 7, #658) and is never selected; under the divider "ya da var olan bir
+  yoldan başla": "Var olan klasör" (selected by default), "Git'ten klonla" disabled with "Yakında",
+  "Boş proje". Var olan klasör: "Klasör" path field and "Proje adı" (pre-filled with the folder's
+  last path segment once a path is typed, editable); primary "Oluştur" sends `project.create`
+  `mode: 'existing'`. Boş proje: "Proje adı" and "Konum" (parent folder path) with the note
+  "Konum içinde yeni bir klasör oluşturulacak."; primary "Oluştur" sends `mode: 'blank'`. The reason
+  line names the missing input ("Bir klasör seç." / "Projeye bir ad ver.") and the primary stays
+  disabled until it is satisfied. Errors are U-8 labels under the field they concern:
+  `invalid_name`, `not_a_repo` ("Bu klasör bir git deposu değil"), `not_a_folder`, `folder_exists`,
+  `docket_folder_exists` ("Bu klasörde yarım bir .docket var; elle düzelt"), `io_failed`,
+  `definitions_invalid`; `project_exists` shows "Bu klasör zaten bir Docket projesi" with a "Bağla"
+  action that sends `project.attach` for the same path. Success closes the page, refreshes the tree
+  (U-15) and opens the new project's board, with one toast: "Proje oluşturuldu. Test komutlarını
+  .docket/repo.yaml'a yaz; yazılana kadar test kapısı bekler." Entries: the wizard's "Kurulum tamam"
+  moment keeps its inline "Proje bağla" form (U-35) and adds a "Yeni proje oluştur" link under it
+  that opens this page; the sidebar's "Projeler" header gets a "+" icon button (title "Yeni proje")
+  opening it. No folder picker exists yet: paths are typed (mono fields).
 - **U-34** (discovered accounts) The candidates (`accounts.candidates`) and the discovered
   providers appear in the wizard's Hesaplar step and under Settings → Hesaplar → "Eklenmemiş":
   a row per candidate with mark, label, status and selection. `unreadable` disables the row with
@@ -400,7 +441,7 @@ being reset.
 
 Deferred: a "Docket AI'a sor" entry in the editor and in Roller, answering with a Proposal card
 (eski → yeni, Vazgeç / Uygula; invariant 5), lands with the chat surface (Phase 6); account test
-("Test et") and capability import land with their own contracts.
+("Test et") and capability import land with their own contracts. (2026-10-03: account test → U-39.)
 
 ### Prototype vs rules (2026-09-29)
 
