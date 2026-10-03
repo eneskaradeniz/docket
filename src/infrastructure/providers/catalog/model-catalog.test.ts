@@ -638,6 +638,134 @@ describe('createModelCatalog (P-29)', () => {
     });
   });
 
+  // A-63/P-29a per adapter: a window the provider's own channel reports rides the merged entry —
+  // the kiro command's `context_window_tokens`, the grok initialize answer's
+  // `totalContextTokens`, the qwen session's `_meta.contextLimit`, the window embedded in a
+  // cursor id's `context=` parameter, and the reasonix registry rows the CLI's own doctor output
+  // documents. The recorded answers come from the fixtures; the values are the recorded ones.
+  describe('A-63: windows the providers themselves report reach the merged entries', () => {
+    const acpFixture = join(dirname(fileURLToPath(import.meta.url)), '..', 'transports', 'acp', 'fake-agent.cjs');
+    const acpSpawnOf = (scenario: string) => {
+      const dir = mkdtempSync(join(tmpdir(), `docket-model-catalog-${scenario}-`));
+      return (_command: string, _args: readonly string[], _options: unknown) =>
+        nodeSpawn(process.execPath, [acpFixture, scenario, join(dir, 'agent-log.jsonl')]);
+    };
+
+    it('A-63: a kiro listing carries the windows the command reports onto the merged entries', async () => {
+      // The recorded answer of the CLI's own listing command (operator-logged-in run): every row
+      // states its window; the merged entry carries it verbatim and the alias row stays the default.
+      const dir = mkdtempSync(join(tmpdir(), 'docket-model-catalog-kiro-'));
+      const binPath = join(dir, 'kiro-cli');
+      const answer = JSON.stringify({
+        models: [
+          { model_name: 'Auto', model_id: 'auto', context_window_tokens: 1000000, rate_multiplier: 1.0, rate_unit: 'Credit' },
+          { model_name: 'DeepSeek 3.2', model_id: 'deepseek-3.2', context_window_tokens: 163840, rate_multiplier: 0.25, rate_unit: 'Credit' },
+          { model_name: 'Qwen3 Coder Next', model_id: 'qwen3-coder-next', context_window_tokens: 256000, rate_multiplier: 0.05, rate_unit: 'Credit' },
+        ],
+        default_model: 'auto',
+      });
+      writeFileSync(binPath, `#!/bin/sh\ncat <<'DOCKET_MODELS'\n${answer}\nDOCKET_MODELS\n`);
+      chmodSync(binPath, 0o755);
+      const accounts = createFakeAccountRepo();
+      await accounts.save(account(ACCOUNT_A, { provider: 'kiro' }));
+      const catalog = createModelCatalog({
+        ...baseConfig(scriptedQuery([[]]).query),
+        accounts,
+        capabilities: createFakeCapabilityCatalog([{ id: 'kiro-login', authMode: 'subscription', provider: 'kiro' }]),
+        cli: { command: binPath, spawn: nodeSpawn },
+        loggedIn: { kiro: true },
+      });
+
+      const listed = await catalog.list(ACCOUNT_A);
+
+      expect(listed.find((model) => model.id === 'auto')).toMatchObject({ contextWindow: 1000000, isDefault: true });
+      expect(listed.find((model) => model.id === 'deepseek-3.2')).toMatchObject({ contextWindow: 163840 });
+      expect(listed.find((model) => model.id === 'qwen3-coder-next')).toMatchObject({ contextWindow: 256000 });
+    });
+
+    it('A-63: a grok-build listing carries the initialize answer\'s own total-context tokens onto the merged entries', async () => {
+      const accounts = createFakeAccountRepo();
+      await accounts.save(account(ACCOUNT_A, { provider: 'grok-build' }));
+      const catalog = createModelCatalog({
+        ...baseConfig(scriptedQuery([[]]).query),
+        accounts,
+        capabilities: createFakeCapabilityCatalog([{ id: 'grok-build-login', authMode: 'subscription', provider: 'grok-build' }]),
+        acp: { spawn: acpSpawnOf('models-grok') },
+      });
+
+      const listed = await catalog.list(ACCOUNT_A);
+
+      expect(listed.find((model) => model.id === 'grok-4.6')).toMatchObject({ contextWindow: 256000, isDefault: true });
+      expect(listed.find((model) => model.id === 'grok-4.5')).toMatchObject({ contextWindow: 256000 });
+      // The row whose value is a string reports no window the merge may trust: null, the honest answer.
+      expect(listed.find((model) => model.id === 'grok-code-fast')).toMatchObject({ contextWindow: null });
+    });
+
+    it('A-63: a qwen listing carries each row\'s own context limit onto the merged entries', async () => {
+      const accounts = createFakeAccountRepo();
+      await accounts.save(account(ACCOUNT_A, { provider: 'qwen' }));
+      const catalog = createModelCatalog({
+        ...baseConfig(scriptedQuery([[]]).query),
+        accounts,
+        capabilities: createFakeCapabilityCatalog([{ id: 'qwen-login', authMode: 'subscription', provider: 'qwen' }]),
+        acp: { spawn: acpSpawnOf('models-qwen') },
+      });
+
+      const listed = await catalog.list(ACCOUNT_A);
+
+      expect(listed.find((model) => model.id === 'qwen3.5-plus')).toMatchObject({ contextWindow: 131072 });
+      expect(listed.find((model) => model.id === 'qwen3-coder-plus')).toMatchObject({ contextWindow: 262144 });
+      expect(listed.find((model) => model.id === 'qwen3.5-flash')).toMatchObject({ contextWindow: null });
+    });
+
+    it('A-63: a cursor listing carries the window each parameterized id embeds onto the merged entries', async () => {
+      const accounts = createFakeAccountRepo();
+      await accounts.save(account(ACCOUNT_A, { provider: 'cursor' }));
+      const catalog = createModelCatalog({
+        ...baseConfig(scriptedQuery([[]]).query),
+        accounts,
+        capabilities: createFakeCapabilityCatalog([{ id: 'cursor-subscription', authMode: 'subscription', provider: 'cursor' }]),
+        acp: { spawn: acpSpawnOf('models-cursor') },
+      });
+
+      const listed = await catalog.list(ACCOUNT_A);
+
+      // The id stays whole — it is the value the session expects — and the window its `context=`
+      // parameter states rides the entry; a parameter that names no magnitude leaves null.
+      expect(listed.find((model) => model.id === 'grok-4.7[context=256k,reasoning_effort=high,fast=true]')).toMatchObject({
+        contextWindow: 256000,
+      });
+      expect(listed.find((model) => model.id === 'claude-opus-5-5[context=300k,effort=medium,fast=false]')).toMatchObject({
+        contextWindow: 300000,
+      });
+      expect(listed.find((model) => model.id === 'claude-opus-4-8[context=1m,effort=high,fast=false]')).toMatchObject({
+        contextWindow: 1000000,
+      });
+      expect(listed.find((model) => model.id === 'grok-4.6[context=vast,reasoning_effort=high,fast=false]')).toMatchObject({
+        contextWindow: null,
+      });
+      expect(listed.find((model) => model.id === 'default[]')).toMatchObject({ contextWindow: null });
+    });
+
+    it('A-63: a reasonix listing merges the session\'s rows with the registry windows the CLI\'s own doctor output documents', async () => {
+      const accounts = createFakeAccountRepo();
+      await accounts.save(account(ACCOUNT_A, { provider: 'reasonix' }));
+      const catalog = createModelCatalog({
+        ...baseConfig(scriptedQuery([[]]).query),
+        accounts,
+        capabilities: createFakeCapabilityCatalog([{ id: 'reasonix-login', authMode: 'subscription', provider: 'reasonix' }]),
+        acp: { spawn: acpSpawnOf('models-reasonix') },
+      });
+
+      const listed = await catalog.list(ACCOUNT_A);
+
+      // The session answer carries no window; the bundled rows the doctor output documents fill
+      // it on the ids the session lists, so the merged entry carries the documented 1M.
+      expect(listed.find((model) => model.id === 'deepseek-flash/deepseek-flash')).toMatchObject({ contextWindow: 1000000 });
+      expect(listed.find((model) => model.id === 'deepseek-pro/deepseek-v4-pro')).toMatchObject({ contextWindow: 1000000 });
+    });
+  });
+
   describe('P-45: the account\'s latest discovery login state reaches a needsLogin listing', () => {
     const TABLE = 'gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n';
     const setup = async (): Promise<{

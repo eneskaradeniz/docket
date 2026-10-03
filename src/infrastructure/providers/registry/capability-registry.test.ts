@@ -538,6 +538,18 @@ describe('isolation evidence (P-44)', () => {
     });
   });
 
+  it('A-63: the reasonix kind bundles the two models the CLI\'s own doctor output documents, each with its reported window', () => {
+    // The session answer carries no window, so the bundled rows are the channel the window rides:
+    // the doctor output reports context_window 1.000.000 for both configured models, and the ids
+    // follow the session's documented provider/model shape the listing keeps whole.
+    expect(findRouteKind('reasonix-login')).toMatchObject({
+      models: [
+        { id: 'deepseek-flash/deepseek-flash', contextWindow: 1_000_000 },
+        { id: 'deepseek-pro/deepseek-v4-pro', contextWindow: 1_000_000 },
+      ],
+    });
+  });
+
   it('P-28: the mimo record waives G5 with the limit_hit reason, claims no permission gate, and its route kind lists session models with unknown billing', () => {
     const gates = findProvider('mimo')?.gates;
     expect(gates?.G5).toMatchObject({ kind: 'waived', reason: 'provider reports no machine-readable quota; a limit error maps to limit_hit' });

@@ -329,14 +329,49 @@ describe('kiro models command (P-29, P-45)', () => {
       'glm-5',
       'qwen3-coder-next',
     ]);
-    expect(parsed.value[0]).toEqual({ id: 'auto', displayName: 'Auto', isDefault: true });
-    expect(parsed.value[1]).toEqual({ id: 'claude-sonnet-4.5', displayName: 'Claude Sonnet 4.5' });
+    expect(parsed.value[0]).toEqual({ id: 'auto', displayName: 'Auto', isDefault: true, contextWindow: 1000000 });
+    expect(parsed.value[1]).toEqual({ id: 'claude-sonnet-4.5', displayName: 'Claude Sonnet 4.5', contextWindow: 200000 });
     // The list carries no effort field, so no row states levels, and the credit multiplier is
-    // never read as a price: no row carries a billing.
+    // never read as a price: no row carries a billing. Every recorded window rides its row.
     for (const row of parsed.value) {
       expect(row.efforts).toBeUndefined();
       expect(row.billing).toBeUndefined();
     }
+    expect(parsed.value.map((row) => row.contextWindow)).toEqual([
+      1000000,
+      200000,
+      200000,
+      200000,
+      163840,
+      200000,
+      200000,
+      200000,
+      256000,
+    ]);
+  });
+
+  it('A-63: a window that is not a positive integer is absent — a negative, fractional, zero or string value is never carried', () => {
+    const parsed = parseKiroModelsOutput(
+      JSON.stringify({
+        models: [
+          { model_name: 'N', model_id: 'negative', context_window_tokens: -5 },
+          { model_name: 'F', model_id: 'fractional', context_window_tokens: 131072.5 },
+          { model_name: 'Z', model_id: 'zero', context_window_tokens: 0 },
+          { model_name: 'S', model_id: 'string', context_window_tokens: '200000' },
+          { model_name: 'V', model_id: 'valid', context_window_tokens: 200000 },
+        ],
+      }),
+    );
+
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) throw new Error('unreachable');
+    expect(parsed.value.map((row) => [row.id, row.contextWindow])).toEqual([
+      ['negative', undefined],
+      ['fractional', undefined],
+      ['zero', undefined],
+      ['string', undefined],
+      ['valid', 200000],
+    ]);
   });
 
   it('P-29: a duplicate id is listed once, and a default naming no row marks none', () => {
