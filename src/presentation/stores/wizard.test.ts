@@ -52,6 +52,7 @@ const accountView = (id: string, label: string, authMode: string): SettingsAccou
   identityDir: null,
   endpointHost: null,
   hasSecret: false,
+  test: null,
   pools: [],
   meters: [],
 });

@@ -1000,6 +1000,137 @@ Rules:
 
 ---
 
+### Create a project from the built-in library (#370)
+
+A first run from an empty data dir reaches a working board without hand-written files. Operator
+decision of 2026-10-03 (option A on #370): Docket writes the project's `.docket/project.yaml` and
+`.docket/repo.yaml` into the chosen work tree — only when neither exists, and only on the user's
+explicit "Oluştur" — so membership stays versioned truth in the repo (A-26), then attaches it
+through the existing `attachProject`. Two sources, as the approved "Yeni proje" screen names them:
+an existing folder ("Var olan klasör") and a new folder ("Boş proje"). Cloning and "Birlikte sıfırdan
+başla" are not part of this contract.
+
+```ts
+// definition-store.ts — DefinitionStore gains
+/** Writes each built-in role and flow as a global-root file unless a file with that id exists; never overwrites. */
+installBuiltins(library: { readonly roles: readonly RoleDef[]; readonly flows: readonly FlowDef[] }): Promise<{ readonly written: readonly string[] }>;
+/** Writes <path>/.docket/project.yaml and <path>/.docket/repo.yaml; writes nothing when either exists. */
+scaffoldProject(path: string, project: ProjectDef, repo: RepoDef): Promise<Result<void, 'project_yaml_exists' | 'repo_yaml_exists' | 'io_failed'>>;
+
+// repo-folders.ts — the one write the create flow needs outside .docket
+export interface RepoFolders {
+  /** Creates <parent>/<folder> and initialises a git repository in it with initial branch `main`. */
+  createRepo(parent: string, folder: string): Promise<Result<{ readonly path: string }, 'not_a_folder' | 'folder_exists' | 'io_failed'>>;
+}
+// AppDeps gains
+readonly repoFolders: RepoFolders;
+
+// event-log.ts — AuditAction gains
+| 'project.created'
+
+// projects.ts
+export type CreateProjectSource =
+  | { readonly kind: 'existing'; readonly path: string }
+  | { readonly kind: 'blank'; readonly parent: string };
+export type CreateProjectError =
+  | 'invalid_name' | 'not_a_repo' | 'project_exists' | 'docket_folder_exists'
+  | 'not_a_folder' | 'folder_exists' | 'io_failed' | 'definitions_invalid' | AttachError;
+export function createProject(
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'projects' | 'repos' | 'definitions' | 'git' | 'repoFolders'>,
+  input: { readonly source: CreateProjectSource; readonly name: string; readonly actor: Actor },
+): Promise<Result<ProjectDef, CreateProjectError>>;
+
+// commands.ts
+| { type: 'project.create'; mode: 'existing'; path: string; name: string }
+| { type: 'project.create'; mode: 'blank'; parent: string; name: string }   // ok → { ok: true, id: <project slug> }
+```
+
+Rules:
+- **A-75** `createProject` validates before any write: the trimmed `name` is empty or longer than 80 characters → `invalid_name`; the slug is `slugFromName(name, taken)` (R-59) with `taken` = every `ProjectRepo.list()` id and every `RepoRegistry.list()` slug; source `existing` whose `path` is not a git work tree (`git.isWorkTree`) → `not_a_repo`. The definitions it will write are built and checked with `validateDefinitions({ roles: BUILTIN_ROLES, flows: BUILTIN_FLOWS, capabilities: [], project, repo })`; issues → `definitions_invalid` (a library bug, nothing written).
+- **A-76** The written definitions: `project` = `{ id: slug, name, mainRepo: slug, repos: [slug] }` (project ≡ repo); `repo` = `{ id: slug, name, flows: <every BUILTIN_FLOWS id in library order>, defaultFlow: 'standard', commandSets: <every BUILTIN_COMMAND_SET_NAMES name → []>, roleOverrides: [], docsRoot: 'docs', testGlobs: [] }`. The command sets are empty on purpose: a `command` gate on an empty set reads `unknown` and never passes (R-13, R-16), so the work order waits at the tests gate until the user writes the commands into `repo.yaml`; Docket never guesses a test command.
+- **A-77** Writes, in this order: source `blank` → `repoFolders.createRepo(parent, slug)` (its errors returned as they are; the path it returns is the project path); `definitions.installBuiltins({ roles: BUILTIN_ROLES, flows: BUILTIN_FLOWS })`; `definitions.scaffoldProject(path, project, repo)` — `project_yaml_exists` → `project_exists` (the folder is already a Docket project: attach it instead), `repo_yaml_exists` → `docket_folder_exists`, `io_failed` as is; then `attachProject({ path, actor })` and its result is returned. A failure after `createRepo` leaves the new folder in place (Docket never deletes a folder it showed the user); a failure after `installBuiltins` leaves the global files (they are idempotent library copies).
+- **A-78** On success audit `project.created` with subject the project and `detail: { source: 'existing' | 'blank', builtinsWritten: <count> }`, before the `project.attached` entry `attachProject` writes. A refusal writes no audit entry.
+- **A-79** `project.create` maps to `createProject` with the actor of the call; ok → `{ ok: true, id: <project slug> }`, an error → `{ ok: false, code }`. An unknown `mode` is rejected at the edge like an unknown `authMode`.
+
+### Account test — "Test et" (#716)
+
+An account whose login cannot be probed (`loggedIn: null`, "Doğrulanamadı") gets a **Test et**
+action: one small real request on the account's route, with a classified result (R-58). It is not a
+work-order run: no `RunRecord`, no queue item, no worktree, no events persisted. It is a real request,
+so P-40 holds exactly as for a run and its spend counts against the account's caps.
+
+```ts
+// ports/account-test-repo.ts — machine-local state for the app's lifetime (in memory, I-35)
+export interface AccountTestRecord {
+  readonly accountId: AccountId;
+  readonly model: string | null;            // the model tested; null = the route's default model
+  readonly state: 'running' | 'ok' | 'failed';
+  readonly class?: AccountTestClass;        // failed only
+  readonly detail?: string;                 // failed only; redacted by the adapter (I-35)
+  readonly startedAt: EpochMs;
+  readonly endedAt?: EpochMs;
+}
+export interface AccountTestRepo {
+  get(accountId: AccountId): Promise<AccountTestRecord | undefined>;
+  save(record: AccountTestRecord): Promise<void>;   // upsert by accountId
+  clear(accountId: AccountId): Promise<void>;
+}
+
+// ports/scratch-dirs.ts — an empty directory outside every repo, for runs that need a cwd but no checkout
+export interface ScratchDir { readonly path: string; dispose(): Promise<void> }
+export interface ScratchDirs { create(purpose: 'account-test'): Promise<ScratchDir> }
+
+// AppDeps gains
+readonly accountTests: AccountTestRepo; readonly scratch: ScratchDirs;
+
+// account-repo.ts — recordSpend takes either entry
+export type RunSpendEntry = { readonly accountId: AccountId; readonly project: ProjectSlug; readonly repo: RepoSlug; readonly workOrderId: WorkOrderId; readonly at: EpochMs; readonly usd: number };
+export type AccountTestSpendEntry = { readonly kind: 'account_test'; readonly accountId: AccountId; readonly at: EpochMs; readonly usd: number };
+recordSpend(entry: RunSpendEntry | AccountTestSpendEntry): Promise<void>;
+
+// event-log.ts — AuditAction gains
+| 'account.tested'
+
+// services/spend-consent.ts — moved out of run-executor.ts unchanged, shared by executeRun and testAccount
+export function spendConsentSatisfied(
+  deps: Pick<AppDeps, 'accounts' | 'modelCatalog' | 'capabilities'>,
+  accountId: AccountId,
+  model: string | undefined,
+): Promise<boolean>;
+
+// use-cases/account-test.ts
+export const ACCOUNT_TEST_TIMEOUT_MS: number;   // 90_000, from the transport start to the deadline
+export const ACCOUNT_TEST_ROLE: RoleDef;        // id 'account-test', name 'Account test', instructions = ACCOUNT_TEST_PROMPT, writeScope { kind: 'none' }, capabilities [], active true
+export type AccountTestError = 'not_found' | 'busy' | 'unsupported' | 'needs_spend_consent' | 'spend_cap_reached';
+export function testAccount(
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'transports' | 'modelCatalog' | 'capabilities' | 'accountTests' | 'scratch'>,
+  input: { readonly id: AccountId; readonly model?: string },
+): Promise<Result<AccountTestView, AccountTestError>>;
+
+// commands.ts
+| { type: 'account.test'; id: string; model?: string }   // answers when the test has ended: { ok: true } or { ok: false, code: AccountTestError }
+
+// queries.ts — SettingsAccountView gains
+readonly test: AccountTestView | null;          // null = never tested since the app started or since the last reset (A-73)
+export interface AccountTestView {
+  readonly state: 'running' | 'ok' | 'failed';
+  readonly class: AccountTestClass | null;      // failed only
+  readonly model: string | null;                // null = the route's default model
+  readonly at: EpochMs;                         // endedAt, or startedAt while running
+  readonly detail: string | null;               // failed only; redacted, at most 300 code points
+}
+```
+
+Rules:
+- **A-68** `testAccount` checks, in this order, before anything is written: unknown account → `not_found`; a stored record in state `running` → `busy`; no transport for the account (`TransportResolver.forAccount` → `undefined`) → `unsupported`; `spendConsentSatisfied(account, model)` false → `needs_spend_consent` (P-40; the same helper as `executeRun`, whose behaviour and tests stay unchanged by the move); `combinedSpendStatus` over the account's own caps (the A-20 windows for `account_day`, `account_week`, `account_month`) blocked → `spend_cap_reached`. A refusal leaves every store unchanged and writes no audit entry.
+- **A-69** Then: save a `running` record (`model` = `input.model ?? null`, `startedAt` = now); create a scratch dir; start the transport with `{ runId: ids.next<'run'>(), cwd: scratch.path, role: ACCOUNT_TEST_ROLE, route: { accountId, model: input.model }, prompt: ACCOUNT_TEST_PROMPT, capabilities: [] }` and no `effort`. Every `permission_ask` is answered `deny`. Events are collected in memory only (never `RunRepo`, never the work-order stream). At `ACCOUNT_TEST_TIMEOUT_MS` after the start the use case calls `stop()` and sets `timedOut`. The scratch dir is disposed on every path, including a start failure and a thrown error; a thrown error saves the record as `failed` with class `unknown` before it propagates.
+- **A-70** The outcome is `classifyAccountTest` (R-58) over the start failure or the collected events. The record is saved as `ok` or `failed` (with `class`, `detail`) and `endedAt`; audit `account.tested` with subject the account and `detail: { model: model ?? '*', result: 'ok' | <class> }` — never the detail text. The returned view is the saved record's view.
+- **A-70a** (amends A-70 and A-74, 2026-10-03, #735) `testAccount`'s input gains `actor: Actor`; `account.tested` is audited with that actor, and `account.test` passes the actor of the call (as `project.create` does, A-79). The signature becomes `testAccount(deps, input: { readonly id: AccountId; readonly model?: string; readonly actor: Actor })`.
+- **A-71** Each `usage` event that carries a cost is recorded with `recordSpend({ kind: 'account_test', accountId, at, usd })`. `spend` with an `accountId` filter counts these entries; a filter by `project`, `repo` or `workOrderId` never matches them — a test spends from the account's caps, never from a repo or project budget.
+- **A-72** `settings.accounts` fills each row's `test` from `AccountTestRepo.get` (`null` without a record); `class` and `detail` are `null` unless the state is `failed`.
+- **A-73** A change that makes an old result meaningless clears it: `account.save` that changes `routeKind`, `endpoint`, `identityDir`, `tierModels` or the secret, and `account.remove`, call `AccountTestRepo.clear` for the account. The view carries `model`, so a surface whose selected model differs from it shows the account as untested; no stored state is needed for that.
+- **A-74** `account.test` maps to `testAccount`: `{ ok: true }` on a finished test (whatever its outcome — the outcome is read from `settings.accounts`), `{ ok: false, code }` on a refusal. An absent or empty `model` means the route's default model.
+
 ## 5. Phase 2a acceptance — headless end to end
 
 `src/api/scenarios/standard-flow.test.ts` (test-only folder in the API layer, which may import the

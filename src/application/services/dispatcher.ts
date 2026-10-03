@@ -86,7 +86,7 @@ const startOfNextUtcMonth = (at: EpochMs): EpochMs => {
 };
 
 /** Both bounds inclusive: the spend port's window is `[from, to]`, so a boundary entry counts. */
-const spendWindow = (
+export const spendWindow = (
   scope: 'account_day' | 'account_week' | 'account_month',
   now: EpochMs,
 ): { readonly from: EpochMs; readonly to: EpochMs } => {

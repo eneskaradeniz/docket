@@ -5,6 +5,7 @@ export * from './routing';
 export * from './projects';
 export * from './proposals';
 export * from './accounts';
+export * from './account-test';
 export * from './account-adoption';
 export * from './spend-consent';
 export * from './account-caps';

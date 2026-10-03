@@ -17,6 +17,7 @@ export type Command =
   | { readonly type: 'account.save'; readonly id?: string; readonly provider: string; readonly label: string; readonly authMode: string; readonly plan?: string; readonly reserve?: { readonly short?: number; readonly long?: number }; readonly limitPolicy?: string }
   | { readonly type: 'account.adopt'; readonly sourcePath: string; readonly label: string; readonly importToken?: boolean }
   | { readonly type: 'account.remove'; readonly id: string }
+  | { readonly type: 'account.test'; readonly id: string; readonly model?: string } // answers when the test has ended: { ok: true } or { ok: false, code: AccountTestError }
   | { readonly type: 'account.cap.save'; readonly id: string; readonly scope: string; readonly amountUsd: number; readonly warnPercent: number }
   | { readonly type: 'account.cap.remove'; readonly id: string; readonly scope: string }
   | { readonly type: 'account.consent.grant'; readonly id: string; readonly model: string; readonly cap?: { readonly scope: string; readonly amountUsd: number; readonly warnPercent: number } }

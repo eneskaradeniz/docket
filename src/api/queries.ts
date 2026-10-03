@@ -1,7 +1,9 @@
 // api/queries.ts — the read side of the boundary. Exact contract: docs/v2/application.md § 4.
 // Plain JSON-serialisable shapes only; ids travel as strings and are parsed in api.ts.
 import type { ModelMatcher } from '../domain/index';
-import type { ProviderMark } from '../application';
+import type { AccountTestView, ProviderMark } from '../application';
+
+export type { AccountTestView };
 
 export type Query =
   | { readonly type: 'workOrder.detail'; readonly id: string }
@@ -202,6 +204,8 @@ export interface SettingsAccountView {
   readonly endpointHost: string | null;
   /** `secretRef` is present; never the value. */
   readonly hasSecret: boolean;
+  /** null = never tested since the app started or since the last reset (A-73). */
+  readonly test: AccountTestView | null;
   readonly pools: readonly SettingsPoolView[];
   readonly meters: readonly SettingsMeterView[];
 }

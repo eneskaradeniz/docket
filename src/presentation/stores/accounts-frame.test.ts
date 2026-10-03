@@ -19,6 +19,7 @@ const ACCOUNT_SETTINGS = {
   identityDir: null,
   endpointHost: null,
   hasSecret: false,
+  test: null,
 } as const;
 
 const meter = (id: string, poolId: string, overrides: Partial<SettingsMeterView> = {}): SettingsMeterView => ({

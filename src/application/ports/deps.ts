@@ -1,5 +1,6 @@
 // The dependency bundle every use case and service takes a Pick of.
 import type { AccountRepo } from './account-repo';
+import type { AccountTestRepo } from './account-test-repo';
 import type { TransportResolver } from './agent-transport';
 import type { BindingRepo } from './binding-repo';
 import type { CapabilityCatalog } from './capability-catalog';
@@ -17,6 +18,7 @@ import type { ProposalRepo } from './proposal-repo';
 import type { QueueRepo } from './queue-repo';
 import type { RepoRegistry } from './repo-registry';
 import type { RunRepo } from './run-repo';
+import type { ScratchDirs } from './scratch-dirs';
 import type { SecretVault } from './secret-vault';
 import type { CommandRunner, EvidenceChecker, SecretScanner, Worktrees } from './repo-tools';
 import type { WorkOrderRepo } from './work-order-repo';
@@ -46,4 +48,6 @@ export interface AppDeps {
   readonly notifier: Notifier;
   readonly instructionFiles: InstructionFiles;
   readonly checkpoints: CheckpointCommitter;
+  readonly accountTests: AccountTestRepo;
+  readonly scratch: ScratchDirs;
 }

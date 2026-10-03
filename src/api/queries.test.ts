@@ -878,6 +878,7 @@ const SETTINGS_DEFAULTS = {
   identityDir: null,
   endpointHost: null,
   hasSecret: false,
+  test: null,
 } as const;
 
 describe('settings.accounts', () => {
