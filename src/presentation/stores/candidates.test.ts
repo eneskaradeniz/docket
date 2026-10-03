@@ -12,6 +12,7 @@ const base: CandidateFact = {
   kind: 'subscription',
   routeKind: 'route-a',
   provider: 'prov-a',
+  billing: 'included',
   hasOauthLogin: true,
   envOverrides: [],
   warnings: [],

@@ -784,10 +784,15 @@ const runQuery = async (
         query.refresh === true ? { refresh: true } : undefined,
       );
       // The provider is the def id the route kind belongs to, the lookup adoption makes too.
-      return found.map((candidate) => ({
-        ...candidate,
-        provider: deps.capabilities.routeKind(candidate.routeKind)?.providerId ?? null,
-      }));
+      return found.map((candidate) => {
+        const route = deps.capabilities.routeKind(candidate.routeKind);
+        return {
+          ...candidate,
+          provider: route?.providerId ?? null,
+          // A-83a: the route kind's declared billing, else P-51's fallback by the candidate's kind.
+          billing: route?.defaultBilling ?? (candidate.kind === 'compatible_endpoint' ? 'unknown' : 'included'),
+        };
+      });
     }
 
     case 'providers.marks': {

@@ -273,9 +273,8 @@ const syntheticView = (fact: CandidateFact, importToken: boolean): SettingsAccou
   provider: fact.provider ?? '',
   label: labelOf(fact.displayPath),
   authMode: fact.kind === 'compatible_endpoint' && fact.endpointHost !== undefined ? 'api_key' : 'subscription',
-  // The registry is out of the presentation's reach, so a not-yet-adopted key-based candidate reads
-  // `unknown` (consent and cap needed); the stored account's own billing view replaces it (P-51).
-  billing: fact.kind === 'compatible_endpoint' && fact.endpointHost !== undefined ? 'unknown' : 'included',
+  // The candidate row carries its route's billing (A-83a); the stored account's own view replaces it.
+  billing: fact.billing,
   plan: null,
   limitPolicy: RECOMMENDED.limitPolicy,
   reserve: { short: null, long: null },

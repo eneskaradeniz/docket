@@ -16,6 +16,7 @@ const candidate = (path: string, patch: Record<string, unknown> = {}): Record<st
   kind: 'subscription',
   routeKind: 'anthropic',
   provider: 'claude',
+  billing: 'included',
   hasOauthLogin: true,
   envOverrides: [],
   warnings: [],
@@ -27,6 +28,7 @@ const claudeA = candidate('.claude');
 const claudeB = candidate('.claude-b');
 const endpoint = candidate('.claude-zai', {
   kind: 'compatible_endpoint',
+  billing: 'unknown',
   endpointHost: 'api.z.ai',
   envOverrides: ['token', 'endpoint'],
 });
@@ -247,6 +249,19 @@ describe('wizard store (U-35)', () => {
     await bundle.store.open();
     await bundle.store.next();
     expect(bundle.store.state().rows.map((row) => [row.id, row.selected])).toEqual([['acc-9', true]]);
+    expect(bundle.store.state().nextEnabled).toBe(true);
+  });
+
+  it('A-83a: a candidate whose route declares included billing lands in Abonelikler with no consent gate', async () => {
+    const zaiPlan = candidate('.claude-zai-plan', { kind: 'compatible_endpoint', billing: 'included', endpointHost: 'api.z.ai' });
+    const bundle = setup([zaiPlan]);
+    await toAccounts(bundle, ['.claude-zai-plan']);
+    bundle.store.setImportToken(keyOf('.claude-zai-plan'), true);
+    await bundle.store.next();
+    expect(bundle.store.state().step).toBe('budget');
+    const { subscriptions, payPerUse } = bundle.store.state().budget;
+    expect(subscriptions.map((row) => row.id)).toEqual([keyOf('.claude-zai-plan')]);
+    expect(payPerUse).toEqual([]);
     expect(bundle.store.state().nextEnabled).toBe(true);
   });
 
