@@ -27,6 +27,7 @@ import { createShellStore } from './stores/shell';
 import { createThemeStore, mediaSchemeSource } from './stores/theme';
 import { createProviderMarksStore } from './stores/provider-marks';
 import { createUpdateStore } from './stores/update';
+import { createNewProjectStore } from './stores/new-project';
 import { createWizardStore } from './stores/wizard';
 import { createWorkOrderDetailStore } from './stores/work-order-detail';
 
@@ -97,6 +98,8 @@ if (mount !== null) {
   const tree = createProjectTreeStore({ api, changes, now: () => Date.now(), persistence: window.localStorage });
   // The wizard's attach appends no work-order event, so it reloads the tree itself.
   const wizard = createWizardStore({ api, actor: USER, reloadTree: () => tree.load() });
+  // The Yeni proje page (U-40) reloads the tree the same way: a creation appends no event.
+  const newProject = createNewProjectStore({ api, actor: USER, reloadTree: () => tree.load() });
   const accountsFrame = createAccountsFrameStore({ api, changes });
   // The provider marks every account badge reads: one query, kept for the session (A-41).
   const marks = createProviderMarksStore({ api });
@@ -132,6 +135,7 @@ if (mount !== null) {
           marks={marks}
           update={update}
           wizard={wizard}
+          newProject={newProject}
           timeZone={timeZone}
         />
       </ErrorBoundary>

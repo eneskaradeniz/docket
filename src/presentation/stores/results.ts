@@ -55,6 +55,13 @@ export const KNOWN_FAILURE_CODES: readonly string[] = [
   'not_a_repo',
   'no_project_yaml',
   'repo_not_in_project',
+  // project.create refusals (A-75 … A-77).
+  'invalid_name',
+  'not_a_folder',
+  'folder_exists',
+  'docket_folder_exists',
+  'io_failed',
+  'project_exists',
   // saveBinding: a role's account chain cannot be empty (A-14).
   'empty_chain',
 ];
@@ -72,8 +79,7 @@ const SUCCESS_KEYS: Readonly<Record<Command['type'], LabelKey>> = {
   'workOrder.enqueue': 'success.workOrder.enqueue',
   'task.open': 'success.task.open',
   'project.attach': 'success.project.attach',
-  // No surface issues the creation yet; it reads back as an attached project until its screen brings copy.
-  'project.create': 'success.project.attach',
+  'project.create': 'newProject.created',
   'repo.register': 'success.repo.register',
   'repo.unregister': 'success.repo.unregister',
   'gate.decide': 'success.gate.decide',

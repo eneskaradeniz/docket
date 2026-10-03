@@ -27,6 +27,8 @@ export interface SidebarTreeProps {
   readonly onOpenProject: (project: string) => void;
   /** A repo row's target — the ★ row included: that repo's board. */
   readonly onOpenRepo: (project: string, repo: string) => void;
+  /** The header's "+": the Yeni proje page (U-40). */
+  readonly onNewProject: () => void;
 }
 
 const DOT_CLASS: Readonly<Record<RepoNode['status'], string>> = {
@@ -150,7 +152,7 @@ const TreeRowSkeleton = () => (
   </div>
 );
 
-export function SidebarTree({ store, selection, locale, onOpenProject, onOpenRepo }: SidebarTreeProps) {
+export function SidebarTree({ store, selection, locale, onOpenProject, onOpenRepo, onNewProject }: SidebarTreeProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
   const rows = projectRows(orderTree(state.tree, state.sort, state.usedAt));
   // Only a tree with nothing to show can carry a skeleton (U-26); a re-query over the standing
@@ -176,6 +178,7 @@ export function SidebarTree({ store, selection, locale, onOpenProject, onOpenRep
         </button>
         <button
           type="button"
+          onClick={onNewProject}
           aria-label={t(locale, 'nav.projects.new')}
           title={t(locale, 'nav.projects.new')}
           className={SIDEBAR_HEADER_BUTTON}

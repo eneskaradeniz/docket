@@ -29,6 +29,14 @@ const forward = (state: NavHistory, exists: (route: NavRoute) => boolean = () =>
 const current = (state: NavHistory): NavRoute => state.entries[state.index].route;
 
 describe('navHistoryReducer', () => {
+  it('U-40: the Yeni proje page is a route of its own — pushed once, never doubled, left by back', () => {
+    const page: NavRoute = { name: 'newProject' };
+    const opened = push(START_NAV_HISTORY, page);
+    expect(current(opened)).toStrictEqual(page);
+    expect(push(opened, page)).toBe(opened);
+    expect(current(back(opened))).toStrictEqual(cockpit);
+  });
+
   it('U-25: push appends an entry and truncates the forward part', () => {
     const opened = push(push(START_NAV_HISTORY, board('antreo-api')), roadmap('antero'));
     const wentBack = back(opened);
