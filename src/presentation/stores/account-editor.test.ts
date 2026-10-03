@@ -41,6 +41,7 @@ const ACCOUNT: SettingsAccountView = {
   identityDir: '/home/u/.claude-work',
   endpointHost: null,
   hasSecret: false,
+  test: null,
   pools: [],
   meters: [],
 };

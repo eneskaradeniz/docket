@@ -13,3 +13,4 @@ export * from './provider-matrix';
 // module itself and travels inside RouteKindRecord. This explicit re-export keeps the two stars
 // from colliding.
 export type { CostKind } from './agent-event';
+export * from './account-test';

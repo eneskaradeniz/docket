@@ -273,6 +273,7 @@ const syntheticView = (fact: CandidateFact, importToken: boolean): SettingsAccou
   identityDir: fact.displayPath,
   endpointHost: fact.endpointHost ?? null,
   hasSecret: importToken,
+  test: null,
   pools: [],
   meters: [],
 });

@@ -12,6 +12,8 @@ import type {
   RepoRegistry,
   TransportResolver,
 } from '../../application/index';
+import { createMemoryAccountTestRepo } from './account-test-repo';
+import { createScratchDirs } from './scratch-dirs';
 import { createCommandRunner, createSecretScanner, redactSecrets } from '../gates/index';
 import { createKeychainVault, type CipherFns } from '../storage/keychain/index';
 import { createYamlDefinitionStore } from '../storage/definitions-yaml/index';
@@ -105,6 +107,8 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     instructionFiles: createNodeInstructionFiles(),
     // The committer redacts every patch with the scanner's real patterns at the port boundary.
     checkpoints: createCheckpoints({ redact: redactSecrets }),
+    accountTests: createMemoryAccountTestRepo(),
+    scratch: createScratchDirs(),
   };
 
   const accountDiscovery = createNodeAccountScan(accounts);

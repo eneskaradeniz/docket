@@ -37,6 +37,7 @@ const ACCOUNT: SettingsAccountView = {
   identityDir: null,
   endpointHost: null,
   hasSecret: false,
+  test: null,
   pools: [],
   meters: [],
 };

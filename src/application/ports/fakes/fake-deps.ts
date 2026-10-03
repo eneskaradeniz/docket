@@ -2,6 +2,7 @@
 import type { AppDeps } from '../deps';
 
 import { createFakeAccountRepo } from './fake-account-repo';
+import { createFakeAccountTestRepo } from './fake-account-test-repo';
 import { createFakeBindingRepo } from './fake-binding-repo';
 import { createFakeCapabilityCatalog } from './fake-capability-catalog';
 import { createFakeCheckpointCommitter } from './fake-checkpoints';
@@ -19,6 +20,7 @@ import { createFakeProposalRepo } from './fake-proposal-repo';
 import { createFakeQueueRepo } from './fake-queue-repo';
 import { createFakeRepoRegistry } from './fake-repo-registry';
 import { createFakeRunRepo } from './fake-run-repo';
+import { createFakeScratchDirs } from './fake-scratch-dirs';
 import { createFakeSecretVault } from './fake-secret-vault';
 import { createFakeTransportResolver } from './fake-transport';
 import { createFakeWorkOrderRepo } from './fake-work-order-repo';
@@ -52,5 +54,7 @@ export const createFakeDeps = (overrides: Partial<AppDeps> = {}): AppDeps => ({
   notifier: createFakeNotifier(),
   instructionFiles: createFakeInstructionFiles(),
   checkpoints: createFakeCheckpointCommitter(),
+  accountTests: createFakeAccountTestRepo(),
+  scratch: createFakeScratchDirs(),
   ...overrides,
 });
