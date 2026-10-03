@@ -381,3 +381,57 @@ before. The removed definitions stay reachable at the git tag `providers-extende
   5. **Generated docs:** the README provider matrix is regenerated from the registry (P-36).
 - **P-47a** (amends P-47 step 2, 2026-10-03, review of #738) A production table never carries a fixture row: no entry keyed by a neutral id (`acp-x`, `cli-x`, …) and no text copied from a removed provider sits in a table the product reads. A table-driven mechanism that loses its last real provider is exercised by giving the adapter a test table through an **optional** factory option (e.g. `launches` for the ACP session catalog, `commands` for the CLI model-command catalog) whose default is the built-in table; adding such an option is the one signature change step 2 allows.
 
+## Quota reading, billing truth and machine-login accounts (P-48 … P-53)
+
+Decisions of 2026-10-04 after the operator's first live setup: no account showed a limit (nothing
+ever called `pollQuota`, and the Claude probe ignored the account's config directory), a z.ai coding
+plan was grouped as pay-per-use (the surface read `authMode` as billing), and Codex was missing (the
+account scan knew only Claude-style directories). Contracts: [application.md](application.md) →
+"Quota wiring, billing view, machine-login candidates" (A-80 … A-84); adapters I-37, I-38.
+
+```ts
+// ports/quota-probe.ts — poll gains the account it reads for
+export interface QuotaProbeContext {
+  readonly accountId: AccountId | null;   // null = a candidate preview (P-50)
+  readonly identityDir: string | null;    // the config directory the CLI reads its login from; null = machine login
+}
+export interface QuotaProbe {
+  poll(defId: string, binPath: string | null, context: QuotaProbeContext): Promise<Result<readonly MeterReading[], QuotaProbeError>>;
+}
+```
+
+- **P-48** A probe reads the account it is given, never the machine's ambient one: the `claude-code`
+  probe runs its usage read with the same environment rules as a run of that account (I-34: ambient
+  `ANTHROPIC_*` dropped; `identityDir` → the config-directory variable), so two subscription accounts
+  with different `identityDir` read two different usages. A probe never reads credential values and
+  never starts an agent turn (no prompt, no quota spent). `pollQuota` passes the account's
+  `identityDir` (or `null`) and the discovered `binPath` of its provider.
+- **P-49** Quota is read without a run: once after an account is adopted or saved with a changed route
+  (A-80), once for every account when the app starts, every `QUOTA_POLL_INTERVAL_MS` (300 000) for every
+  account whose route kind has a `quotaProbe` other than `none`, and on demand (`quota.refresh`, A-81).
+  At most one poll per account is in flight; a failed poll keeps the last stored meters (stale per
+  their `staleAfterMs`) and never blocks a run (P-34). Every completed poll emits `accounts.changed`.
+- **P-50** A discovery candidate may be previewed before it is adopted: `accounts.candidateQuota`
+  (A-82) runs the provider's probe with `accountId: null` and the candidate's `identityDir`
+  (Claude-style directory) or `null` (machine login, P-53); the readings are returned, never stored.
+  A compatible-endpoint candidate needs its key and is not previewed (`needs_account`).
+- **P-51** (amends P-40's fallback) The default billing of a route whose kind declares no
+  `defaultBilling` is `included` for a subscription and **`unknown`** for every other auth mode —
+  never `metered`, which claims a verified per-use charge. P-40's gate is unchanged: `metered` and
+  `unknown` both need consent and a cap. An account's **billing view** is that default billing,
+  upgraded to `included` when `billingFromPools` finds an allowance pool covering the route's default
+  model (P-42); surfaces group and gate accounts by this view, never by `authMode` (A-83).
+- **P-52** The `zai-glm` route kind is `defaultBilling: 'included'` with `familyBilling` `glm` →
+  `included`. Evidence (provider FAQ, read 2026-10-04): GLM calls made through the coding plan "only
+  use your Coding Plan quota … The system will not deduct from your account balance"; the quota is a
+  5-hour window plus a weekly window. A model id outside the `glm` family on this route stays `unknown`.
+- **P-53** A provider that discovery found installed (`binPath` set) and whose route kinds have no
+  directory scanner yields exactly one **machine-login candidate**: `kind: 'machine_login'`,
+  `sourcePath: 'machine-login:<defId>'` (an opaque key, not a path), `displayPath` = the def's
+  `accountHome` hint (data; the documented home directory, e.g. `~/.codex`, with its override variable
+  when the CLI documents one) or the provider's name, `routeKind` = the provider's default subscription
+  route kind, `hasOauthLogin` = discovery's `loggedIn === true`. It is `alreadyAdded` when an account of
+  that provider with no `identityDir` exists. Adopting it creates a subscription account with no
+  `identityDir` (the CLI's own login on this machine). An installed provider is therefore always
+  listed — a missing scanner can no longer make it invisible.
+
