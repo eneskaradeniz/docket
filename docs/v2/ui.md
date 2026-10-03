@@ -373,7 +373,12 @@ being reset.
 - **U-35** (setup wizard; replaces U-7) The rev 28.1 flow: Hoş geldin (Dil, Tema) → Hesaplar
   (U-34, ✎ opens the U-30 window; gate: at least one ready account selected) → Yetenekler →
   Asistan sırası → Bütçe → the "Kurulum tamam" moment (rail all ✓, one summary line, "Proje
-  bağla" opening the project-attach flow). A step with nothing to decide is skipped and shown
+  bağla", which opens an inline attach form in the same window: the project folder as a path
+  field and "Bağla" issuing `project.attach`; success closes the wizard and opens the project's default
+  view (K-4:B), a failure shows its U-8 label under the field; creating a project from the built-in
+  library is #370's). An account row reads "<provider name> · <account label>" (A-67 `name`;
+  the label derives from the config folder), as rev 28.1 shows it; providers that can be installed fold
+  into a closed "Kurulabilir (n)" group under the found ones. A step with nothing to decide is skipped and shown
   with "–" in the rail: Asistan sırası with fewer than two accounts, Yetenekler while no
   capability source is composed or none was found. Footer slots are fixed (Geri · Bu adımı atla
   left; reason line · primary right). Bütçe lists the selected accounts in two groups —
