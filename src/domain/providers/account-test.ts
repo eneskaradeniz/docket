@@ -14,16 +14,14 @@ export interface AccountTestInput {
 
 /** The fixed request. English, no tools, one word back. */
 export const ACCOUNT_TEST_PROMPT = 'Reply with the single word OK. Do not use any tools.';
+/** Shared bound; applied by the storing adapter after redaction. */
 export const ACCOUNT_TEST_DETAIL_MAX_CHARS = 300;
 
 const MODEL_PROBLEM = /\bmodel\b[\s\S]*\b(not found|not available|unavailable|not supported|unsupported|invalid|does not exist|no access|not allowed)\b/i;
 
-const cut = (text: string): string => {
-  const points = Array.from(text);
-  return points.length <= ACCOUNT_TEST_DETAIL_MAX_CHARS ? text : points.slice(0, ACCOUNT_TEST_DETAIL_MAX_CHARS).join('');
-};
-
-const failed = (cls: AccountTestClass, detail: string): AccountTestOutcome => ({ ok: false, class: cls, detail: cut(detail) });
+// The detail is returned whole: the cut to ACCOUNT_TEST_DETAIL_MAX_CHARS belongs to the adapter, after
+// redaction, so a token straddling the bound is never split into an unrecognisable fragment.
+const failed = (cls: AccountTestClass, detail: string): AccountTestOutcome => ({ ok: false, class: cls, detail });
 
 export function classifyAccountTest(input: AccountTestInput): AccountTestOutcome {
   const { startFailure, events, timedOut } = input;

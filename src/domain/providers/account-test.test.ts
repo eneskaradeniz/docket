@@ -78,13 +78,13 @@ describe('classifyAccountTest', () => {
     expect(run({ events: [] })).toEqual({ ok: false, class: 'unknown', detail: '' });
   });
 
-  it('R-58: the detail is cut at 300 code points, not UTF-16 units', () => {
+  it('R-58a: a detail longer than 300 code points is returned whole', () => {
     const long = '\u{1F600}'.repeat(400);
     const out = run({ events: [err('auth', long)] });
     expect(out.ok).toBe(false);
-    if (!out.ok) expect([...out.detail]).toHaveLength(300);
-    const start = run({ startFailure: { code: 'spawn_failed', message: 'a'.repeat(500) } });
-    if (!start.ok) expect(start.detail).toHaveLength(300);
+    if (!out.ok) expect(out.detail).toBe(long);
+    const message = 'a'.repeat(500);
+    expect(run({ startFailure: { code: 'spawn_failed', message } })).toEqual({ ok: false, class: 'install', detail: message });
   });
 
   it('R-58: text and thinking deltas never reach a detail', () => {
