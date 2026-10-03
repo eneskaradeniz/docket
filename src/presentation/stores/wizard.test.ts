@@ -464,6 +464,38 @@ describe('wizard store (U-35)', () => {
     expect(multi.store.state().opened).toEqual({ kind: 'roadmap', project: 'atolye' });
   });
 
+  it('U-35: a successful project.attach reloads the project tree once before the wizard leaves', async () => {
+    const api = fakeApi();
+    api.setCandidates([claudeA]);
+    const seen: boolean[] = [];
+    let reloads = 0;
+    const holder: { store: WizardStore | null } = { store: null };
+    const store = createWizardStore({
+      api,
+      actor: userActor,
+      reloadTree: () => {
+        reloads += 1;
+        seen.push(holder.store?.state().visible ?? false);
+        return Promise.resolve();
+      },
+    });
+    holder.store = store;
+    await toAccounts({ api, store }, ['.claude']);
+    await store.next();
+    await store.next();
+    store.attachProject();
+    store.setAttachPath('/nope');
+    api.failOn('project.attach', { ok: false, code: 'not_a_repo' });
+    await store.submitAttach();
+    expect(reloads).toBe(0);
+    api.failOn('project.attach', { ok: true });
+    api.setTree([{ project: 'atolye', mainRepo: 'a', repos: [{ repo: 'a' }] }]);
+    await store.submitAttach();
+    expect(reloads).toBe(1);
+    expect(seen).toEqual([true]);
+    expect(store.state().visible).toBe(false);
+  });
+
   it('U-35: a failed project.attach shows its U-8 label under the field and keeps the wizard open', async () => {
     const bundle = setup();
     await toAccounts(bundle, ['.claude']);

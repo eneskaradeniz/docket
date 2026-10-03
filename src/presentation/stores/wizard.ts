@@ -60,6 +60,8 @@ export interface WizardStoreDeps {
   readonly actor: Actor;
   /** What the composed capability source found; absent or empty skips Yetenekler. */
   readonly capabilities?: readonly WizardCapability[];
+  /** Re-queries the sidebar tree: an attach appends no work-order event, so nothing else would. */
+  readonly reloadTree?: () => Promise<void>;
 }
 
 /** One line of Hesaplar: a candidate not yet added, or an account added earlier. */
@@ -798,6 +800,7 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
         publish();
         return;
       }
+      await deps.reloadTree?.();
       const tree: unknown = await api.query({ type: 'project.tree' });
       const projects = !isQueryFailure(tree) && Array.isArray(tree) ? (tree as readonly ProjectTreeItem[]) : [];
       const project = projects.find((item) => item.project === result.id) ?? projects[projects.length - 1];

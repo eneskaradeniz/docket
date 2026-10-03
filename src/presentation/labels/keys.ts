@@ -38,6 +38,9 @@ export const LABEL_KEYS = [
   'error.promote_prerequisite_missing',
   'error.unknown_environment',
   'error.no_repo',
+  'error.not_a_repo',
+  'error.no_project_yaml',
+  'error.repo_not_in_project',
   // Generic failure for an unknown code (U-8).
   'error.unknown',
   // Attention kinds (api/queries.ts AttentionItem).
