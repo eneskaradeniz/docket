@@ -52,4 +52,39 @@ describe('createNodeInstructionFiles', () => {
     expect(files).toEqual([{ name: 'AGENTS.md', content: 'guide' }]);
     expect((await readdir(scratch)).sort()).toEqual(before);
   });
+
+  it('A-54: a name that exists only through case-insensitive aliasing is skipped like an absent name', async () => {
+    await writeFile(join(scratch, 'AGENTS.md'), 'guide', 'utf8');
+
+    const files = await createNodeInstructionFiles().read(scratch, ['AGENTS.md', 'Agents.md', 'MISSING.md']);
+
+    // On a case-insensitive filesystem `Agents.md` stats through to the real `AGENTS.md`; only the
+    // exact-case spelling counts as present, so the variant and the absent name are both skipped.
+    expect(files).toEqual([{ name: 'AGENTS.md', content: 'guide' }]);
+  });
+
+  it('A-54: exact-case variants that truly exist are all returned', async () => {
+    await writeFile(join(scratch, 'AGENTS.md'), 'upper', 'utf8');
+    await writeFile(join(scratch, 'Agents.md'), 'mixed', 'utf8');
+    const listing = await readdir(scratch);
+
+    const files = await createNodeInstructionFiles().read(scratch, ['AGENTS.md', 'Agents.md']);
+
+    // A case-sensitive filesystem keeps both spellings and returns both; a case-insensitive one
+    // folded the second write into the first file, whose directory entry keeps its original case.
+    // Either way the answer is the same rule: the names the listing spells exactly.
+    expect(files.map((file) => file.name)).toEqual(['AGENTS.md', 'Agents.md'].filter((name) => listing.includes(name)));
+    for (const file of files) expect(file.content.length).toBeGreaterThan(0);
+  });
+
+  it('A-54: a nested name checks the listing of its own parent directory', async () => {
+    await mkdir(join(scratch, 'rules'), { recursive: true });
+    await writeFile(join(scratch, 'rules', 'AGENTS.md'), 'nested', 'utf8');
+
+    const files = await createNodeInstructionFiles().read(scratch, ['rules/AGENTS.md', 'rules/agents.md', 'AGENTS.md']);
+
+    // The nested exact-case name is present; its case variant is only an alias, and the root name
+    // is absent outright.
+    expect(files).toEqual([{ name: 'rules/AGENTS.md', content: 'nested' }]);
+  });
 });

@@ -275,7 +275,7 @@ export function buildRecord(input) {
 
 /** Pure: the printed form — one line per leg, the audit actions in order, the simulation note. */
 export function recordLines(record) {
-  const legLine = (leg, suffix) =>
+  const legLine = (leg, suffix = '') =>
     `leg ${leg.leg}   ${leg.provider.padEnd(11)} outcome ${leg.outcome}${suffix}; first output ${
       leg.firstOutput.seen ? `after ${leg.firstOutput.afterMs} ms` : 'never'
     }; canary: ${leg.canaryInPrompt ? 'present' : 'absent'}`;
