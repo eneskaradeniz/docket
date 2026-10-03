@@ -4,7 +4,7 @@
 import type { CapabilityCatalog } from '../../../application/index';
 import type { AuthMode } from '../../../domain/index';
 
-import { findRouteKind } from './capability-registry';
+import { findRouteKind, PROVIDER_INSTRUCTION_FILES } from './capability-registry';
 
 // Explicit ids, not a registry search: when later presets add more route kinds for the same
 // provider, the default an account resolves to must not silently change with the data.
@@ -31,9 +31,11 @@ const DEFAULT_ROUTE_KINDS: Readonly<Record<string, Readonly<Partial<Record<AuthM
 export const createCapabilityCatalog = (): CapabilityCatalog => ({
   routeKindOf: (account) => account.routeKind ?? DEFAULT_ROUTE_KINDS[account.provider]?.[account.authMode],
   routeKind: (id) => findRouteKind(id),
-  // The registry carries no per-provider instruction-file rows yet; the data lands with the
-  // effective-instructions issue, so both answers are honestly empty until then (A-54's unknown
-  // provider is exactly this shape: every candidate inlines).
-  nativeInstructionFiles: () => [],
-  instructionFileNames: () => [],
+  // Registry order: the row's own order for a provider, first appearance for the union. A provider
+  // without a row has no native set — every present candidate inlines (A-54).
+  nativeInstructionFiles: (providerId) =>
+    PROVIDER_INSTRUCTION_FILES.find((row) => row.providerId === providerId)?.instructionFiles ?? [],
+  instructionFileNames: () => [
+    ...new Set(PROVIDER_INSTRUCTION_FILES.flatMap((row) => row.instructionFiles)),
+  ],
 });
