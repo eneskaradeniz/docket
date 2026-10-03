@@ -76,7 +76,7 @@ describe('createCodexRateLimitProbe', () => {
   it('P-20: reads rate limits through the app-server connection and maps primary/secondary windows to meters with exact resets, source polled', async () => {
     const { calls, logPath, probe } = makeProbe('happy');
 
-    const result = await probe.poll('codex', '/fake/codex-bin');
+    const result = await probe.poll('codex', '/fake/codex-bin', { accountId: null, identityDir: null });
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error('unreachable');
@@ -119,7 +119,7 @@ describe('createCodexRateLimitProbe', () => {
   it('P-20: the recorded free-plan answer — one codex pool, a single 30-day window — maps from windowDurationMins, never from an assumed cadence', async () => {
     const { probe } = makeProbe('free-plan');
 
-    const result = await probe.poll('codex', '/fake/codex-bin');
+    const result = await probe.poll('codex', '/fake/codex-bin', { accountId: null, identityDir: null });
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error('unreachable');
@@ -145,7 +145,7 @@ describe('createCodexRateLimitProbe', () => {
   it('P-20: absent window values stay absent — no duration without windowDurationMins, no reset without resetsAt, no pool label without limitName', async () => {
     const { probe } = makeProbe('sparse');
 
-    const result = await probe.poll('codex', '/fake/codex-bin');
+    const result = await probe.poll('codex', '/fake/codex-bin', { accountId: null, identityDir: null });
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error('unreachable');
@@ -172,7 +172,7 @@ describe('createCodexRateLimitProbe', () => {
   it('P-20: a missing binary reports not_installed', async () => {
     const { probe } = makeProbe(undefined);
 
-    const result = await probe.poll('codex', join(root, 'nowhere', 'codex'));
+    const result = await probe.poll('codex', join(root, 'nowhere', 'codex'), { accountId: null, identityDir: null });
 
     expect(result).toEqual({ ok: false, error: 'not_installed' });
   });
@@ -180,7 +180,7 @@ describe('createCodexRateLimitProbe', () => {
   it('P-20: a rate-limit read answered with an error reports probe_failed', async () => {
     const { probe } = makeProbe('rpc-error');
 
-    const result = await probe.poll('codex', '/fake/codex-bin');
+    const result = await probe.poll('codex', '/fake/codex-bin', { accountId: null, identityDir: null });
 
     expect(result).toEqual({ ok: false, error: 'probe_failed' });
   });
@@ -188,7 +188,7 @@ describe('createCodexRateLimitProbe', () => {
   it('P-20: a server that dies before answering the read reports probe_failed', async () => {
     const { probe } = makeProbe('exit-early');
 
-    const result = await probe.poll('codex', '/fake/codex-bin');
+    const result = await probe.poll('codex', '/fake/codex-bin', { accountId: null, identityDir: null });
 
     expect(result).toEqual({ ok: false, error: 'probe_failed' });
   }, 10_000);
@@ -196,7 +196,7 @@ describe('createCodexRateLimitProbe', () => {
   it('P-20: a hung server is killed at the timeout and reported as probe_failed', async () => {
     const { probe } = makeProbe('hang', { timeoutMs: 300 });
 
-    const result = await probe.poll('codex', '/fake/codex-bin');
+    const result = await probe.poll('codex', '/fake/codex-bin', { accountId: null, identityDir: null });
 
     expect(result).toEqual({ ok: false, error: 'probe_failed' });
   }, 10_000);
@@ -204,7 +204,7 @@ describe('createCodexRateLimitProbe', () => {
   it('P-20: a foreign provider id is refused without spawning anything', async () => {
     const { calls, probe } = makeProbe('happy');
 
-    const result = await probe.poll('agy', '/fake/agy-bin');
+    const result = await probe.poll('agy', '/fake/agy-bin', { accountId: null, identityDir: null });
 
     expect(result).toEqual({ ok: false, error: 'unknown_provider' });
     expect(calls).toEqual([]);

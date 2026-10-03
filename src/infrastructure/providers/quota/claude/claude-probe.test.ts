@@ -68,7 +68,7 @@ const pollOk = async (
   probe: ReturnType<typeof createClaudeUsageProbe>,
   binPath: string | null = '/fake/claude-bin',
 ) => {
-  const result = await probe.poll('claude-code', binPath);
+  const result = await probe.poll('claude-code', binPath, { accountId: null, identityDir: null });
   expect(result.ok).toBe(true);
   if (!result.ok) throw new Error('unreachable');
   return result.value;
@@ -165,7 +165,7 @@ describe('createClaudeUsageProbe', () => {
   it('P-21: plan limits that do not apply (rate_limits null) report a failed probe, not invented meters', async () => {
     const { probe } = makeProbe([{ payload: makePayload(null) }]);
 
-    const result = await probe.poll('claude-code', '/fake/claude-bin');
+    const result = await probe.poll('claude-code', '/fake/claude-bin', { accountId: null, identityDir: null });
 
     expect(result).toEqual({ ok: false, error: 'probe_failed' });
   });
@@ -176,14 +176,14 @@ describe('createClaudeUsageProbe', () => {
       { payload: 'not an object' },
     ]);
 
-    expect(await probe.poll('claude-code', null)).toEqual({ ok: false, error: 'probe_failed' });
-    expect(await probe.poll('claude-code', null)).toEqual({ ok: false, error: 'probe_failed' });
+    expect(await probe.poll('claude-code', null, { accountId: null, identityDir: null })).toEqual({ ok: false, error: 'probe_failed' });
+    expect(await probe.poll('claude-code', null, { accountId: null, identityDir: null })).toEqual({ ok: false, error: 'probe_failed' });
   });
 
   it('P-21: a failing usage call reports probe_failed', async () => {
     const { probe } = makeProbe([{ rejects: true }]);
 
-    const result = await probe.poll('claude-code', '/fake/claude-bin');
+    const result = await probe.poll('claude-code', '/fake/claude-bin', { accountId: null, identityDir: null });
 
     expect(result).toEqual({ ok: false, error: 'probe_failed' });
   });
@@ -191,7 +191,7 @@ describe('createClaudeUsageProbe', () => {
   it('P-21: a foreign provider id is refused without calling the usage source', async () => {
     const { probe, calls } = makeProbe([{ payload: makePayload(FULL_RATE_LIMITS) }]);
 
-    const result = await probe.poll('codex', '/fake/claude-bin');
+    const result = await probe.poll('codex', '/fake/claude-bin', { accountId: null, identityDir: null });
 
     expect(result).toEqual({ ok: false, error: 'unknown_provider' });
     expect(calls).toEqual([]);
@@ -280,8 +280,8 @@ describe('createClaudeUsageProbe', () => {
       { payload: { session: { total_cost_usd: 1.25 }, subscription_type: 'max', rate_limits: 'nope' } },
     ]);
 
-    expect(await probe.poll('claude-code', null)).toEqual({ ok: false, error: 'probe_failed' });
-    expect(await probe.poll('claude-code', null)).toEqual({ ok: false, error: 'probe_failed' });
+    expect(await probe.poll('claude-code', null, { accountId: null, identityDir: null })).toEqual({ ok: false, error: 'probe_failed' });
+    expect(await probe.poll('claude-code', null, { accountId: null, identityDir: null })).toEqual({ ok: false, error: 'probe_failed' });
 
     // Field names only: the note names the keys the payload carried, never their values.
     expect(notes[0]).toBe('get_usage payload unreadable; unrecognized fields: five_hour, seven_day');

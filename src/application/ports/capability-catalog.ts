@@ -15,6 +15,8 @@ export interface CapabilityCatalog {
     readonly endpointHost?: string;
     /** The billing of the CLI's own default model on this kind, when the kind fixes one (P-40). */
     readonly defaultBilling?: Billing;
+    /** How the kind's quota is read (P-49): `none` and `rate_limit_events` (pushed by runs) have no poll. */
+    readonly quotaProbe?: 'sdk_usage' | 'rate_limit_events' | 'http_monitor' | 'provider_query' | 'none';
     /** The model the kind fixes for each tier; an account's own table wins over it. */
     readonly tierModels?: Readonly<Record<Tier, string>>;
   } | undefined;

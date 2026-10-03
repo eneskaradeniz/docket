@@ -1,7 +1,7 @@
 // api/queries.ts — the read side of the boundary. Exact contract: docs/v2/application.md § 4.
 // Plain JSON-serialisable shapes only; ids travel as strings and are parsed in api.ts.
 import type { ModelMatcher } from '../domain/index';
-import type { AccountTestView, ProviderMark } from '../application';
+import type { AccountTestView, ProviderMark, QuotaProbeError } from '../application';
 
 export type { AccountTestView };
 
@@ -19,6 +19,7 @@ export type Query =
   | { readonly type: 'roles.list' }
   | { readonly type: 'providers.discovered' }
   | { readonly type: 'accounts.candidates'; readonly refresh?: boolean }
+  | { readonly type: 'accounts.candidateQuota'; readonly sourcePath: string }
   | { readonly type: 'providers.marks' }
   | { readonly type: 'run.events'; readonly runId: string }
   | { readonly type: 'permissions.open' }
@@ -185,6 +186,11 @@ export interface SettingsPoolView {
   readonly kind: string;
   readonly appliesTo: readonly ModelMatcher[] | 'all' | 'unknown';
 }
+
+/** The quota a discovered account would show, read before adoption (A-82); ids are synthetic. */
+export type CandidateQuotaView =
+  | { readonly ok: true; readonly pools: readonly SettingsPoolView[]; readonly meters: readonly SettingsMeterView[] }
+  | { readonly ok: false; readonly code: QuotaProbeError | 'needs_account' | 'not_found' };
 
 export interface SettingsAccountView {
   readonly id: string;

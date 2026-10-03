@@ -10,6 +10,8 @@ import type {
   CredentialImporter,
   Notifier,
   ProviderDiscovery,
+  QuotaProbeResolver,
+  QuotaTimers,
   RepoRegistry,
   TransportResolver,
 } from '../../application/index';
@@ -36,6 +38,7 @@ import { createSystemClock, createUlidGen, type ProjectPaths, type RandomBytes }
 import { createCheckpoints, createEvidenceChecker, createGitProbe, createRepoFolders, createWorktrees } from '../vcs/index';
 import { createCapabilityCatalog } from '../providers/registry/index';
 import { createModelCatalog } from '../providers/catalog/index';
+import { createQuotaProbeResolver } from '../providers/quota/index';
 import { createNodeAccountScan, createNodeCredentialImporter, type LoginStates } from '../providers/discovery/index';
 import { createNodeInstructionFiles } from './instruction-files';
 
@@ -62,6 +65,10 @@ export interface NodeDeps {
   readonly accountDiscovery: AccountDiscovery; // scans the real home on demand; nothing runs at construction
   /** The two ports account adoption needs, in the shape createApi takes; construction scans nothing. */
   readonly adoption: { readonly discovery: AccountDiscovery; readonly importer: CredentialImporter };
+  /** What the api needs to own the quota schedule: the probes (reading each account's own login,
+   * with the same child environment rules as a run) and the real timers. Nothing runs until the
+   * root starts the service. */
+  readonly quota: { readonly probes: QuotaProbeResolver; readonly timers: QuotaTimers };
   readonly credentialImporter: CredentialImporter; // reads a token only when an adoption asks for the import
   close(): void;
 }
@@ -121,8 +128,21 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     config.providerDiscovery === undefined ? undefined : { providers: config.providerDiscovery, env: config.commandEnv },
   );
   const credentialImporter = createNodeCredentialImporter();
+  const quota = {
+    probes: createQuotaProbeResolver({
+      now: () => clock.now(),
+      baseEnv: config.commandEnv,
+      accounts,
+      secrets,
+    }),
+    timers: {
+      setInterval: (fn: () => void, ms: number): unknown => setInterval(fn, ms),
+      clearInterval: (handle: unknown): void => clearInterval(handle as ReturnType<typeof setInterval>),
+    },
+  };
   return ok({
     deps,
+    quota,
     repos,
     projects,
     accountDiscovery,

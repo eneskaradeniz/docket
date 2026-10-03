@@ -30,6 +30,8 @@ export interface ProbeResolverConfig {
   readonly now: () => EpochMs;
   /** Injectable spawn for tests; default: the real node spawn. */
   readonly spawn?: QuotaProbeSpawn;
+  /** The allowlisted child environment of the Claude usage read (I-37); default: the process's own. */
+  readonly baseEnv?: Readonly<Record<string, string>>;
   /** Fetch for the http_monitor route kinds; default: the real global fetch. */
   readonly fetch?: MonitorFetch;
   /** With secrets, enables the http_monitor route kinds; absent: they resolve to nothing. */
@@ -40,12 +42,15 @@ export interface ProbeResolverConfig {
 const realSpawn: QuotaProbeSpawn = (command, args, options) =>
   nodeSpawn(command, [...args], { timeout: options.timeout });
 
+const ownEnv = (): Record<string, string> =>
+  Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
+
 export function createQuotaProbeResolver(config: ProbeResolverConfig): QuotaProbeResolver {
   const spawn: UsageSpawn = config.spawn ?? realSpawn;
   const probes: Record<string, QuotaProbe> = {
     agy: createAgyUsageProbe({ spawn, now: config.now }),
     codex: createCodexRateLimitProbe({ spawn, now: config.now }),
-    'claude-code': createClaudeUsageProbe({ getUsage: createSdkGetUsage({}), now: config.now }),
+    'claude-code': createClaudeUsageProbe({ getUsage: createSdkGetUsage({ baseEnv: config.baseEnv ?? ownEnv() }), now: config.now }),
   };
   if (config.accounts !== undefined && config.secrets !== undefined) {
     const monitorProbe = createZaiRouteProbe({
