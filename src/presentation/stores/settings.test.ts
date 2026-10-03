@@ -239,6 +239,8 @@ describe('settings store', () => {
       problem: null,
       lastOutcome: null,
       removeWarning: null,
+      testing: [],
+      testRefusals: {},
     });
 
     await h.store.load();
