@@ -453,6 +453,7 @@ export const TR: LabelBundle = {
   'candidates.status.needs_login': "Giriş gerekli",
   'candidates.status.not_installed': "Kurulu değil",
   'candidates.status.unknown': "Durum bilinmiyor",
+  'candidates.status.scanning': 'Taranıyor…',
   'candidates.reason.unreadable': "Yapılandırma klasörü okunamadı; erişim iznini kontrol edip yeniden tara.",
   'candidates.warn.env_overrides_login': "Ortam değişkeni girişi geçersiz kılıyor",
   'candidates.info.env_overrides_login': "Bu klasördeki oturum açma yerine ortam değişkenleri kullanılıyor. Hesap eklenir, ancak çalışırken ortamdaki değerler öncelik alır.",

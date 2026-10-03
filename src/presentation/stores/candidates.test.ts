@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Command, CommandResult } from '../../api/commands';
 import type { Query } from '../../api/queries';
-import { createCandidatesStore, candidateRows, candidateDot, candidateStatusTone, listedCandidateCount, providerRows, type CandidateFact } from './candidates';
+import { createCandidatesStore, candidateRows, candidateDot, candidateStatusTone, listedCandidateCount, listBody, providerRows, type CandidateFact } from './candidates';
 
 const base: CandidateFact = {
   sourcePath: '/home/u/.alpha',
@@ -270,5 +270,15 @@ describe('Eklenmemiş list (U-28, U-34)', () => {
     const other = createCandidatesStore({ api: g.api, actor: { kind: 'user', id: 'u' } as never });
     await other.load();
     expect(candidateDot(other.state(), false)).toBe(true);
+  });
+});
+
+describe('list body', () => {
+  it('U-34: while the scan loads the body is "scanning" (a lamp line), never the empty text; empty only after the answer', () => {
+    expect(listBody({ loading: true, loaded: false, rows: [], providers: [] })).toBe('scanning');
+    expect(listBody({ loading: true, loaded: true, rows: [], providers: [] })).toBe('scanning');
+    expect(listBody({ loading: false, loaded: true, rows: [], providers: [] })).toBe('empty');
+    expect(listBody({ loading: false, loaded: true, rows: candidateRows([base], null, false), providers: [] })).toBe('list');
+    expect(candidateStatusTone('candidates.status.scanning')).toBe('info');
   });
 });

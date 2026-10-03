@@ -8,6 +8,7 @@ import type { Api } from '../../api/api';
 import type { AccountDetailView, Query } from '../../api/queries';
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
+import { resetLine } from './reset-line';
 import { isQueryFailure } from './results';
 import type { SettingsOpenTarget } from './settings-panel';
 
@@ -53,6 +54,8 @@ export interface AccountViewStore {
   state(): AccountViewState;
   /** Milliseconds until the stamp, never negative — zero once it has passed. */
   remainingMs(resetsAt: number): number;
+  /** The shared "…'de sıfırlanır · … kaldı" line for a window's reset, read at the injected clock. */
+  resetLine(locale: Locale, timeZone: string, resetsAt: number): string;
   subscribe(listener: () => void): () => void;
 }
 
@@ -163,6 +166,7 @@ export const createAccountViewStore = (deps: AccountViewStoreDeps): AccountViewS
     load,
     state: () => state,
     remainingMs: (resetsAt) => Math.max(0, resetsAt - now()),
+    resetLine: (locale, timeZone, resetsAt) => resetLine(locale, timeZone, resetsAt, now()),
     subscribe: (listener) => {
       listeners.add(listener);
       return () => {

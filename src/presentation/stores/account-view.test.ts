@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { CLOSED_SETTINGS_PANEL, settingsPanelReducer } from './settings-panel';
 import type { Api } from '../../api/api';
 import type { AccountDetailView, Query } from '../../api/queries';
+import { resetLine } from './reset-line';
 import { createAccountViewStore, editInSettingsTarget, limitBand, policyKey, windowBars, type AccountViewChange, type AccountViewChangeSignal } from './account-view';
 
 const detailView: AccountDetailView = {
@@ -146,6 +147,16 @@ describe('window bars (U-20)', () => {
     expect(store.remainingMs(1_000)).toBe(500);
     now = 2_000;
     expect(store.remainingMs(1_000)).toBe(0);
+  });
+});
+
+describe('reset line (U-20)', () => {
+  it('U-20: the window reset line is the shared reset line, read through the injected clock', async () => {
+    const api = fakeApi(detailView);
+    const store = createAccountViewStore({ api, changes: fakeSignal().signal, now: () => 500 });
+    await store.load('acc-1');
+    expect(store.resetLine('tr', 'UTC', 1_000)).toBe(resetLine('tr', 'UTC', 1_000, 500));
+    expect(store.resetLine('en', 'UTC', 1_000)).toBe(resetLine('en', 'UTC', 1_000, 500));
   });
 });
 
