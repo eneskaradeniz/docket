@@ -398,7 +398,7 @@ describe('createModelCatalog (P-29)', () => {
         source: 'live',
         contextWindow: null,
         thinking: { kind: 'levels', levels: ['low', 'medium', 'high'] },
-        billing: 'unknown',
+        billing: 'included',
       },
     ]);
   });

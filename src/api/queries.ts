@@ -191,6 +191,8 @@ export interface SettingsAccountView {
   readonly provider: string;
   readonly label: string;
   readonly authMode: string;
+  /** The account's billing view (P-51): default billing, settled by the account's own pools. */
+  readonly billing: 'included' | 'metered' | 'unknown';
   readonly plan: string | null;
   readonly limitPolicy: 'wait_resume' | 'switch_pool' | 'fallback_account' | 'ask';
   readonly reserve: { readonly short: number | null; readonly long: number | null };

@@ -7,6 +7,8 @@ import type {
   AccountRoute,
   Actor,
   AuthMode,
+  Billing,
+  CatalogModel,
   EpochMs,
   FlowDef,
   LimitPolicy,
@@ -110,6 +112,7 @@ import type {
   AccountTestView,
   SettingsAccountsView,
   SettingsBindingScope,
+  SettingsAccountView,
   SettingsBindingView,
   SettingsMeterView,
   SettingsPoolView,
@@ -919,14 +922,18 @@ const settingsAccountsView = async (deps: AppDeps): Promise<SettingsAccountsView
     if (stored !== undefined) tests.set(record.id, accountTestViewOf(stored));
   }
 
-  const accounts = records.map((record) => {
+  const accounts: SettingsAccountView[] = [];
+  for (const record of records) {
     const ownPools = pools.filter((pool) => pool.accountId === record.id);
+    // P-51: the billing view reads the catalog's default row; a failing read leaves the route's own rule.
+    const catalog = await catalogOrEmpty(() => deps.modelCatalog.list(record.id));
     const ownPoolIds = new Set(ownPools.map((pool) => pool.id));
-    return {
+    accounts.push({
       id: record.id,
       provider: record.provider,
       label: record.label,
       authMode: record.authMode,
+      billing: unpinnedBilling(deps, record, catalog, ownPools),
       plan: record.plan ?? null,
       limitPolicy: record.limitPolicy,
       reserve: { short: record.reserve?.short ?? null, long: record.reserve?.long ?? null },
@@ -941,8 +948,8 @@ const settingsAccountsView = async (deps: AppDeps): Promise<SettingsAccountsView
       test: tests.get(record.id) ?? null,
       pools: ownPools.map(poolView),
       meters: meters.filter((meter) => ownPoolIds.has(meter.poolId)).map((meter) => meterView(meter, record.reserve)),
-    };
-  });
+    });
+  }
 
   const bindings: readonly SettingsBindingView[] = (await deps.bindings.listAll()).map(({ scope, binding }) => ({
     scope: bindingScopeView(scope),
@@ -1483,6 +1490,20 @@ const accountDetailView = async (
   };
 };
 
+/** The billing an unpinned run on the account takes (P-40, P-51): the row the provider names as its
+ *  default, settled by the account's pools; without such a row the route's own rule answers. */
+const unpinnedBilling = (
+  deps: Pick<AppDeps, 'capabilities'>,
+  record: AccountRecord,
+  models: readonly CatalogModel[],
+  pools: readonly Pool[],
+): Billing => {
+  const defaultModel = models.find((model) => model.isDefault === true);
+  return defaultModel === undefined
+    ? defaultBillingOf(deps.capabilities, record)
+    : billingFromPools(defaultModel.billing, defaultModel.resolvedId ?? defaultModel.id, pools);
+};
+
 /** The account's model catalog as the surface sees it (P-29): the merged list read through the
  *  port, joined with the account's recorded consents (P-40). A billing the catalog leaves
  *  `unknown` is settled by the account's own quota reading (`billingFromPools`) — the same
@@ -1503,7 +1524,7 @@ const accountModelsView = async (
   ]);
   // The provider names the row an unpinned run uses; its billing, settled the same way as any
   // row's, is the unpinned run's billing. Without such a row the route's own rule answers.
-  const defaultModel = models.find((model) => model.isDefault === true);
+  const defaultBilling = unpinnedBilling(deps, record, models, pools);
   return {
     models: models.map((model) => ({
       id: model.id,
@@ -1518,10 +1539,7 @@ const accountModelsView = async (
     })),
     // The marker names the route's own default model, never a catalog row.
     defaultConsented: consented.includes(DEFAULT_MODEL_CONSENT),
-    defaultBilling:
-      defaultModel === undefined
-        ? defaultBillingOf(deps.capabilities, record)
-        : billingFromPools(defaultModel.billing, defaultModel.resolvedId ?? defaultModel.id, pools),
+    defaultBilling,
   };
 };
 

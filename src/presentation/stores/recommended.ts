@@ -35,8 +35,9 @@ export interface SettingDiff {
   readonly recommended: string | number;
 }
 
-/** An account that is billed per use: every connection except a subscription. */
-export const isPayPerUse = (account: SettingsAccountView): boolean => account.authMode !== 'subscription';
+/** An account whose billing view is not `included` may spend money (P-51, A-83) — never decided by
+ *  the connection kind. */
+export const isPayPerUse = (account: SettingsAccountView): boolean => account.billing !== 'included';
 
 /** Whether the account may spend money, so a cap row belongs on it (U-30). */
 export const mayHaveCap = (account: SettingsAccountView): boolean => isPayPerUse(account) || account.consentedModels.length > 0;

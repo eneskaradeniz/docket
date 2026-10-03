@@ -23,6 +23,7 @@ const ACCOUNT: SettingsAccountView = {
   provider: 'acme',
   label: 'Main',
   authMode: 'subscription',
+  billing: 'included',
   plan: null,
   limitPolicy: 'wait_resume',
   reserve: { short: null, long: null },

@@ -9,8 +9,9 @@ import { catalogOrEmpty, matchIdFor } from './match-id';
 export const DEFAULT_MODEL_CONSENT = '*';
 
 /** An unpinned route runs the CLI's default model, whose billing the catalog cannot name. The
- *  route kind fixes it when it knows (`defaultBilling`); only a subscription rides a plan, every
- *  other auth mode is billed per use by nature. */
+ *  route kind fixes it when it knows (`defaultBilling`); only a subscription rides a plan, and
+ *  every other auth mode is `unknown` — never `metered`, which would claim a verified charge (P-51).
+ *  Both still need consent and a cap. */
 export const defaultBillingOf = (
   capabilities: Pick<AppDeps, 'capabilities'>['capabilities'],
   account: AccountRecord | undefined,
@@ -21,7 +22,7 @@ export const defaultBillingOf = (
       : capabilities.routeKindOf({ provider: account.provider, authMode: account.authMode, routeKind: account.routeKind });
   const fixed = routeId === undefined ? undefined : capabilities.routeKind(routeId)?.defaultBilling;
   if (fixed !== undefined) return fixed;
-  return account?.authMode === 'subscription' ? 'included' : 'metered';
+  return account?.authMode === 'subscription' ? 'included' : 'unknown';
 };
 
 /** P-40: a run whose model may spend real money starts only with the user's recorded consent and

@@ -881,6 +881,41 @@ const SETTINGS_DEFAULTS = {
   test: null,
 } as const;
 
+describe('settings.accounts billing view', () => {
+  const view = async (deps: AppDeps): Promise<SettingsAccountsView> =>
+    (await createApi(deps).query({ type: 'settings.accounts' })) as SettingsAccountsView;
+
+  it('A-83: billing is the route default billing — subscription included, other auth modes unknown, a fixed kind wins', async () => {
+    const h = createHarness();
+    await h.deps.accounts.save({ id: ACCOUNT, provider: 'acme-prov', label: 'Plan', authMode: 'subscription', limitPolicy: 'wait_resume', caps: [] });
+    await h.deps.accounts.save({ id: ACCOUNT_SPARE, provider: 'acme-prov', label: 'Key', authMode: 'api_key', limitPolicy: 'wait_resume', caps: [] });
+    expect((await view(h.deps)).accounts.map((account) => account.billing)).toEqual(['included', 'unknown']);
+
+    const fixed: AppDeps = {
+      ...h.deps,
+      capabilities: createFakeCapabilityCatalog([{ id: 'acme-key', provider: 'acme-prov', authMode: 'api_key', defaultBilling: 'included' }]),
+    };
+    expect((await view(fixed)).accounts.map((account) => account.billing)).toEqual(['included', 'included']);
+  });
+
+  it('A-83: an allowance pool covering the default model upgrades an unknown billing to included', async () => {
+    const h = createHarness();
+    await h.deps.accounts.save({ id: ACCOUNT, provider: 'acme-prov', label: 'Key', authMode: 'api_key', limitPolicy: 'wait_resume', caps: [] });
+    const withDefault: AppDeps = {
+      ...h.deps,
+      modelCatalog: createFakeModelCatalog({
+        [ACCOUNT]: [{ id: 'atlas-max', source: 'live', thinking: { kind: 'none' }, billing: 'unknown', isDefault: true, contextWindow: null }],
+      }),
+    };
+    expect((await view(withDefault)).accounts[0]?.billing).toBe('unknown');
+
+    await h.deps.accounts.savePools(ACCOUNT, [
+      { id: POOL, accountId: ACCOUNT, label: 'Atlas weekly', kind: 'allowance', appliesTo: [{ exact: 'atlas-max' }] },
+    ]);
+    expect((await view(withDefault)).accounts[0]?.billing).toBe('included');
+  });
+});
+
 describe('settings.accounts', () => {
   it('U-13: returns every account with its pools and meters plus the per-role binding chains', async () => {
     const h = createHarness();
@@ -894,6 +929,7 @@ describe('settings.accounts', () => {
         provider: 'acme-prov',
         label: 'Main',
         authMode: 'subscription',
+        billing: 'included',
         plan: 'pro',
         ...SETTINGS_DEFAULTS,
         pools: [{ id: POOL, label: 'Weekly allowance', kind: 'allowance', appliesTo: 'all' }],
@@ -941,6 +977,7 @@ describe('settings.accounts', () => {
         provider: 'beta-prov',
         label: 'Spare',
         authMode: 'api_key',
+        billing: 'unknown',
         plan: null,
         ...SETTINGS_DEFAULTS,
         limitPolicy: 'ask',
@@ -984,7 +1021,7 @@ describe('settings.accounts', () => {
     const view = (await createApi(h.deps).query({ type: 'settings.accounts' })) as SettingsAccountsView;
 
     expect(view.accounts).toEqual([
-      { id: ACCOUNT, provider: 'gemini', label: 'Leftover', authMode: 'subscription', plan: null, ...SETTINGS_DEFAULTS, pools: [], meters: [] },
+      { id: ACCOUNT, provider: 'gemini', label: 'Leftover', authMode: 'subscription', billing: 'included', plan: null, ...SETTINGS_DEFAULTS, pools: [], meters: [] },
     ]);
   });
 
@@ -1004,7 +1041,7 @@ describe('settings.accounts', () => {
     const view = (await createApi(h.deps).query({ type: 'settings.accounts' })) as SettingsAccountsView;
 
     expect(view.accounts).toEqual([
-      { id: ACCOUNT, provider: 'kimi', label: 'Adopted before the launch set', authMode: 'subscription', plan: null, ...SETTINGS_DEFAULTS, pools: [], meters: [] },
+      { id: ACCOUNT, provider: 'kimi', label: 'Adopted before the launch set', authMode: 'subscription', billing: 'included', plan: null, ...SETTINGS_DEFAULTS, pools: [], meters: [] },
     ]);
   });
 
@@ -1332,7 +1369,7 @@ describe('account.models', () => {
     expect(view.models.map((model) => [model.id, model.billing])).toEqual([['fable', 'included']]);
   });
 
-  it('P-40: defaultBilling is what an unpinned run would take — the route kind’s fixed value, else subscription included and the rest metered', async () => {
+  it('P-51: defaultBilling is what an unpinned run would take — the route kind’s fixed value, else subscription included and the rest unknown', async () => {
     const h = createHarness();
     await h.deps.accounts.save({ id: ACCOUNT, provider: 'acme-prov', label: 'Main', authMode: 'subscription', limitPolicy: 'wait_resume', caps: [] });
     await h.deps.accounts.save({ id: ACCOUNT_SPARE, provider: 'acme-prov', label: 'Key', authMode: 'api_key', limitPolicy: 'wait_resume', caps: [] });
@@ -1346,9 +1383,9 @@ describe('account.models', () => {
       createApi(deps).query({ type: 'account.models', accountId });
     expect(((await answer(fixed, ACCOUNT)) as AccountModelsView).defaultBilling).toBe('metered');
 
-    // Without a fixed kind, only a subscription rides a plan; every other auth mode pays per use.
+    // Without a fixed kind, only a subscription rides a plan; every other auth mode is unknown, never metered.
     expect(((await answer(h.deps, ACCOUNT)) as AccountModelsView).defaultBilling).toBe('included');
-    expect(((await answer(h.deps, ACCOUNT_SPARE)) as AccountModelsView).defaultBilling).toBe('metered');
+    expect(((await answer(h.deps, ACCOUNT_SPARE)) as AccountModelsView).defaultBilling).toBe('unknown');
   });
 
   it('P-42: defaultBilling takes the merged default entry’s billing; without one the route rule answers', async () => {

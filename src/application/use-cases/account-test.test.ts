@@ -148,6 +148,13 @@ describe('testAccount refusals', () => {
     await expectUntouched(h, transport);
   });
 
+  it('P-51: an api_key route without a fixed billing reads unknown and is refused without a cap even when consented', async () => {
+    const h = makeHarness();
+    const transport = await seed(h, accountRecord({ authMode: 'api_key', provider: 'provider-without-kinds', consentedModels: ['*'] }));
+    expect(await testAccount(h.deps, { id: ACCOUNT, actor: ACTOR })).toEqual({ ok: false, error: 'needs_spend_consent' });
+    await expectUntouched(h, transport);
+  });
+
   it('A-68: a consented metered model without a cap is still needs_spend_consent', async () => {
     const h = makeHarness();
     const transport = await seed(h, accountRecord({ authMode: 'api_key', consentedModels: ['*'] }));

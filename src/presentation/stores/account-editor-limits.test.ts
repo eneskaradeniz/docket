@@ -28,6 +28,7 @@ const ACCOUNT: SettingsAccountView = {
   provider: 'claude',
   label: 'Work',
   authMode: 'subscription',
+  billing: 'included',
   plan: 'pro',
   limitPolicy: 'wait_resume',
   reserve: { short: null, long: null },
@@ -63,7 +64,7 @@ const meter = (id: string, reserveClass: SettingsMeterView['reserveClass'], labe
   reserveShare: 0,
 });
 
-const PAID: SettingsAccountView = { ...ACCOUNT, authMode: 'api_key', plan: null };
+const PAID: SettingsAccountView = { ...ACCOUNT, authMode: 'api_key', billing: 'unknown', plan: null };
 
 const harness = (result: CommandResult = { ok: true }) => {
   const issued: Command[] = [];

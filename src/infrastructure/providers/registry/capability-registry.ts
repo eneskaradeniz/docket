@@ -173,6 +173,10 @@ export const CAPABILITY_REGISTRY = {
       quotaProbe: 'http_monitor',
       modelSource: 'sdk',
       liveIsAuthoritative: true,
+      // The provider documents that coding-plan calls only draw on the plan's quota and never on the
+      // account balance; a model outside the glm family stays unknown.
+      defaultBilling: 'included',
+      familyBilling: [{ contains: 'glm', billing: 'included' }],
       models: [],
       tierModels: { strong: 'glm-5.3', balanced: 'glm-5.3-flash', fast: 'glm-5.3-flash' },
     },
