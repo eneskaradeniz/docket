@@ -18,6 +18,7 @@ import { createFakeNotifier } from './fake-notifier';
 import { createFakeProjectRepo } from './fake-project-repo';
 import { createFakeProposalRepo } from './fake-proposal-repo';
 import { createFakeQueueRepo } from './fake-queue-repo';
+import { createFakeRepoFolders } from './fake-repo-folders';
 import { createFakeRepoRegistry } from './fake-repo-registry';
 import { createFakeRunRepo } from './fake-run-repo';
 import { createFakeScratchDirs } from './fake-scratch-dirs';
@@ -56,5 +57,6 @@ export const createFakeDeps = (overrides: Partial<AppDeps> = {}): AppDeps => ({
   checkpoints: createFakeCheckpointCommitter(),
   accountTests: createFakeAccountTestRepo(),
   scratch: createFakeScratchDirs(),
+  repoFolders: createFakeRepoFolders(),
   ...overrides,
 });

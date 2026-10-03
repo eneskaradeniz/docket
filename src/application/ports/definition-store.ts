@@ -2,13 +2,16 @@
 // overrides — the repo's .docket wins over the project's, the project's over the global).
 import type {
   Definitions,
+  FlowDef,
   DefinitionIssue,
   ProjectDef,
   ProjectSlug,
+  RepoDef,
   Result,
   Roadmap,
   RoadmapIssue,
   RepoSlug,
+  RoleDef,
 } from '../../domain/index';
 
 export type DefinitionScope =
@@ -39,4 +42,15 @@ export interface DefinitionStore {
   repoPath(repo: RepoSlug): Promise<string | undefined>; // repo checkout root on this machine
   /** Parses the candidate content and validates the definitions as they WOULD be with it; writes nothing. */
   validateCandidate(scope: DefinitionScope, target: string, content: string): Promise<Result<void, readonly DefinitionIssue[]>>;
+  /** Writes each built-in role and flow as a global-root file unless a file with that id exists; never overwrites. */
+  installBuiltins(library: {
+    readonly roles: readonly RoleDef[];
+    readonly flows: readonly FlowDef[];
+  }): Promise<{ readonly written: readonly string[] }>;
+  /** Writes <path>/.docket/project.yaml and <path>/.docket/repo.yaml; writes nothing when either exists. */
+  scaffoldProject(
+    path: string,
+    project: ProjectDef,
+    repo: RepoDef,
+  ): Promise<Result<void, 'project_yaml_exists' | 'repo_yaml_exists' | 'io_failed'>>;
 }

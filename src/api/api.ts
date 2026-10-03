@@ -48,6 +48,7 @@ import type {
   AccountDiscovery,
   AccountRecord,
   AppDeps,
+  CreateProjectSource,
   CredentialImporter,
   BindingScope,
   DiscoveredProvider,
@@ -66,6 +67,7 @@ import {
   checkForUpdates,
   closeWorkOrder,
   createAccountCandidateList,
+  createProject,
   decideHumanGate,
   decideProposalUseCase,
   DEFAULT_MODEL_CONSENT,
@@ -330,6 +332,23 @@ const runCommand = async (
         { path: command.path, repos: repos.length === 0 ? undefined : repos, actor },
       );
       return attached.ok ? { ok: true, id: attached.value.id } : { ok: false, code: attached.error };
+    }
+
+    case 'project.create': {
+      // The mode is a closed set in the record but a plain string on the wire; an unknown value
+      // is rejected before any port is touched (A-79).
+      const source: CreateProjectSource | undefined =
+        command.mode === 'existing'
+          ? { kind: 'existing', path: command.path }
+          : command.mode === 'blank'
+            ? { kind: 'blank', parent: command.parent }
+            : undefined;
+      if (source === undefined) return invalidId();
+      const created = await createProject(
+        { clock: deps.clock, ids: deps.ids, log: deps.log, projects: deps.projects, repos: deps.repos, definitions: deps.definitions, git: deps.git, repoFolders: deps.repoFolders },
+        { source, name: command.name, actor },
+      );
+      return created.ok ? { ok: true, id: created.value.id } : { ok: false, code: created.error };
     }
 
     case 'repo.register': {

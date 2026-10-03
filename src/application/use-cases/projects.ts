@@ -5,13 +5,22 @@ import type {
   Actor,
   ProjectDef,
   ProjectSlug,
+  RepoDef,
   RepoSlug,
   Result,
   TaskSlug,
   WorkOrderEvent,
   WorkOrderId,
 } from '../../domain/index';
-import { err, ok } from '../../domain/index';
+import {
+  BUILTIN_COMMAND_SET_NAMES,
+  BUILTIN_FLOWS,
+  BUILTIN_ROLES,
+  err,
+  ok,
+  slugFromName,
+  validateDefinitions,
+} from '../../domain/index';
 
 import type { AppDeps } from '../ports/index';
 import { openWorkOrder, type OpenError } from './work-orders';
@@ -55,6 +64,85 @@ export async function attachProject(
     subject: { kind: 'project', id: def.id },
   });
   return ok(def);
+}
+
+export type CreateProjectSource =
+  | { readonly kind: 'existing'; readonly path: string }
+  | { readonly kind: 'blank'; readonly parent: string };
+
+export type CreateProjectError =
+  | 'invalid_name' | 'not_a_repo' | 'project_exists' | 'docket_folder_exists'
+  | 'not_a_folder' | 'folder_exists' | 'io_failed' | 'definitions_invalid' | AttachError;
+
+const MAX_NAME_LENGTH = 80;
+const DEFAULT_FLOW = 'standard';
+
+/**
+ * A-75..A-78: validates first, then writes in the contract's order. A folder this creates stays when a
+ * later step fails (Docket never deletes a folder it showed the user), and built-in library copies in
+ * the global root stay too — they are idempotent.
+ */
+export async function createProject(
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'projects' | 'repos' | 'definitions' | 'git' | 'repoFolders'>,
+  input: { readonly source: CreateProjectSource; readonly name: string; readonly actor: Actor },
+): Promise<Result<ProjectDef, CreateProjectError>> {
+  const name = input.name.trim();
+  if (name === '' || [...name].length > MAX_NAME_LENGTH) return err('invalid_name');
+
+  const taken = new Set<string>();
+  for (const project of await deps.projects.list()) taken.add(project.id);
+  for (const entry of await deps.repos.list()) taken.add(entry.slug);
+  const slug = slugFromName<'project'>(name, taken);
+  const repoSlug = slugFromName<'repo'>(slug, new Set());
+
+  if (input.source.kind === 'existing' && !(await deps.git.isWorkTree(input.source.path))) return err('not_a_repo');
+
+  const defaultFlow = BUILTIN_FLOWS.find((flow) => flow.id === DEFAULT_FLOW);
+  if (defaultFlow === undefined) return err('definitions_invalid');
+
+  const project: ProjectDef = { id: slug, name, mainRepo: repoSlug, repos: [repoSlug] };
+  const repo: RepoDef = {
+    id: repoSlug,
+    name,
+    flows: BUILTIN_FLOWS.map((flow) => flow.id),
+    defaultFlow: defaultFlow.id,
+    // Empty on purpose: a command gate on an empty set reads unknown and never passes, so the user
+    // writes the real commands; Docket never guesses a test command.
+    commandSets: Object.fromEntries(BUILTIN_COMMAND_SET_NAMES.map((setName) => [setName, [] as readonly string[]])),
+    roleOverrides: [],
+    docsRoot: 'docs',
+    testGlobs: [],
+  };
+  const checked = validateDefinitions({ roles: BUILTIN_ROLES, flows: BUILTIN_FLOWS, capabilities: [], project, repo });
+  if (!checked.ok) return err('definitions_invalid');
+
+  let path: string;
+  if (input.source.kind === 'blank') {
+    const created = await deps.repoFolders.createRepo(input.source.parent, slug);
+    if (!created.ok) return err(created.error);
+    path = created.value.path;
+  } else {
+    path = input.source.path;
+  }
+
+  const installed = await deps.definitions.installBuiltins({ roles: BUILTIN_ROLES, flows: BUILTIN_FLOWS });
+  const scaffolded = await deps.definitions.scaffoldProject(path, project, repo);
+  if (!scaffolded.ok) {
+    if (scaffolded.error === 'project_yaml_exists') return err('project_exists');
+    if (scaffolded.error === 'repo_yaml_exists') return err('docket_folder_exists');
+    return err('io_failed');
+  }
+
+  // Before attachProject's own entry: the creation reads first in the history.
+  await deps.log.append({
+    id: deps.ids.next<'audit'>(),
+    at: deps.clock.now(),
+    actor: input.actor,
+    action: 'project.created',
+    subject: { kind: 'project', id: slug },
+    detail: { source: input.source.kind, builtinsWritten: installed.written.length },
+  });
+  return attachProject(deps, { path, actor: input.actor });
 }
 
 export type RepoRegistrationError = 'unknown_project' | 'repo_not_in_project' | 'repo_in_use';

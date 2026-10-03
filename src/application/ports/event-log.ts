@@ -17,7 +17,7 @@ export type AuditAction =
   | 'run.started' | 'run.finished' | 'run.handoff' | 'gate.decided' | 'permission.answered'
   | 'proposal.created' | 'proposal.decided' | 'account.saved' | 'account.adopted' | 'account.removed' | 'binding.saved'
   | 'account.consent.granted' | 'account.consent.revoked' | 'account.tested'
-  | 'project.attached' | 'repo.registered' | 'repo.unregistered';
+  | 'project.created' | 'project.attached' | 'repo.registered' | 'repo.unregistered';
 
 export type AuditSubject =
   | { readonly kind: 'work_order'; readonly id: WorkOrderId }

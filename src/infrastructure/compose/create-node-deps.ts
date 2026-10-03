@@ -32,7 +32,7 @@ import {
   type OpenDbError,
 } from '../storage/sqlite/index';
 import { createSystemClock, createUlidGen, type ProjectPaths, type RandomBytes } from '../system/index';
-import { createCheckpoints, createEvidenceChecker, createGitProbe, createWorktrees } from '../vcs/index';
+import { createCheckpoints, createEvidenceChecker, createGitProbe, createRepoFolders, createWorktrees } from '../vcs/index';
 import { createCapabilityCatalog } from '../providers/registry/index';
 import { createModelCatalog } from '../providers/catalog/index';
 import { createNodeAccountScan, createNodeCredentialImporter, type LoginStates } from '../providers/discovery/index';
@@ -109,6 +109,7 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     checkpoints: createCheckpoints({ redact: redactSecrets }),
     accountTests: createMemoryAccountTestRepo(),
     scratch: createScratchDirs(),
+    repoFolders: createRepoFolders(),
   };
 
   const accountDiscovery = createNodeAccountScan(accounts);

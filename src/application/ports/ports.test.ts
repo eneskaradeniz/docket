@@ -35,6 +35,7 @@ import type { RepoRegistry } from './repo-registry';
 import type { ProposalRecord, ProposalRepo } from './proposal-repo';
 import type { QueueRepo } from './queue-repo';
 import type { RunPatch, RunRecord, RunRepo } from './run-repo';
+import type { RepoFolders } from './repo-folders';
 import type { ScratchDirs } from './scratch-dirs';
 import type { SecretVault } from './secret-vault';
 import type {
@@ -74,6 +75,7 @@ describe('AppDeps', () => {
     expectTypeOf<AppDeps['checkpoints']>().toEqualTypeOf<CheckpointCommitter>();
     expectTypeOf<AppDeps['accountTests']>().toEqualTypeOf<AccountTestRepo>();
     expectTypeOf<AppDeps['scratch']>().toEqualTypeOf<ScratchDirs>();
+    expectTypeOf<AppDeps['repoFolders']>().toEqualTypeOf<RepoFolders>();
   });
 
   it('exposes exactly the contract keys', () => {
@@ -104,6 +106,7 @@ describe('AppDeps', () => {
       | 'checkpoints'
       | 'accountTests'
       | 'scratch'
+      | 'repoFolders'
     >();
   });
 

@@ -19,6 +19,7 @@ export * from './fake-notifier';
 export * from './fake-project-repo';
 export * from './fake-proposal-repo';
 export * from './fake-queue-repo';
+export * from './fake-repo-folders';
 export * from './fake-repo-registry';
 export * from './fake-repo-tools';
 export * from './fake-run-repo';

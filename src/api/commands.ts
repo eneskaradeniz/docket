@@ -4,6 +4,8 @@ export type Command =
   | { readonly type: 'workOrder.open'; readonly project: string; readonly repo: string; readonly title: string; readonly flow?: string; readonly task?: string }
   | { readonly type: 'task.open'; readonly project: string; readonly task: string }
   | { readonly type: 'project.attach'; readonly path: string; readonly repos?: readonly { readonly repo: string; readonly path: string }[] }
+  | { readonly type: 'project.create'; readonly mode: 'existing'; readonly path: string; readonly name: string }
+  | { readonly type: 'project.create'; readonly mode: 'blank'; readonly parent: string; readonly name: string } // ok → { ok: true, id: <project slug> }
   | { readonly type: 'repo.register'; readonly project: string; readonly repo: string; readonly path: string }
   | { readonly type: 'repo.unregister'; readonly project: string; readonly repo: string }
   | { readonly type: 'workOrder.block'; readonly id: string; readonly reason: string }
