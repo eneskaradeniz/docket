@@ -17,7 +17,6 @@ describe('createCapabilityCatalog', () => {
     expect(catalog.routeKindOf({ provider: 'copilot', authMode: 'subscription' })).toBe('copilot-subscription');
     expect(catalog.routeKindOf({ provider: 'cursor', authMode: 'subscription' })).toBe('cursor-subscription');
     expect(catalog.routeKindOf({ provider: 'opencode', authMode: 'subscription' })).toBe('opencode-subscription');
-    expect(catalog.routeKindOf({ provider: 'hermes', authMode: 'subscription' })).toBe('hermes-subscription');
   });
 
   it('A-44: an explicit routeKind wins over the default; an unknown provider resolves no kind', () => {
@@ -82,12 +81,10 @@ describe('createCapabilityCatalog', () => {
       'CLAUDE.local.md',
       '~/.claude/projects/<project>/memory/',
     ]);
-    // kimi reads AGENTS.md natively and does not read CLAUDE.md — the handoff scenario's Y leg.
-    expect(catalog.nativeInstructionFiles('kimi')).toEqual(['AGENTS.md', '.kimi-code/AGENTS.md']);
-    // amp reads AGENT.md and CLAUDE.md only when AGENTS.md is absent, so those stay inline
-    // candidates (A-54: content twice beats content lost).
-    expect(catalog.nativeInstructionFiles('amp')).toEqual(['AGENTS.md']);
-    expect(catalog.nativeInstructionFiles('grok-build')).toContain('CLAUDE.md');
+    // opencode reads AGENTS.md natively and does not read a repo CLAUDE.md — the handoff
+    // scenario's Y leg; cursor reads both root files natively.
+    expect(catalog.nativeInstructionFiles('opencode')).toEqual(['AGENTS.md']);
+    expect(catalog.nativeInstructionFiles('cursor')).toEqual(['AGENTS.md', 'CLAUDE.md']);
     expect(catalog.nativeInstructionFiles('never-heard-of')).toEqual([]);
   });
 
@@ -97,7 +94,7 @@ describe('createCapabilityCatalog', () => {
     expect(names.slice(0, 3)).toEqual(['CLAUDE.md', 'CLAUDE.local.md', '~/.claude/projects/<project>/memory/']);
     expect(names[3]).toBe('AGENTS.md');
     expect(new Set(names).size).toBe(names.length);
-    for (const expected of ['AGENTS.override.md', 'GEMINI.md', 'QWEN.md', 'CODEBUDDY.md', '.github/copilot-instructions.md']) {
+    for (const expected of ['AGENTS.override.md', 'GEMINI.md', '.github/copilot-instructions.md']) {
       expect(names).toContain(expected);
     }
   });

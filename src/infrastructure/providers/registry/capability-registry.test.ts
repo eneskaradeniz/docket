@@ -67,11 +67,15 @@ describe('capability registry validity (P-28)', () => {
     }
   });
 
-  it('P-28: the devin record is planned with no definition, because no documented switch the launch can pass stops its import of the user\'s Claude Code configuration', () => {
-    expect(findProvider('devin')).toMatchObject({ planned: true });
-    expect(BUILTIN_PROVIDER_DEFS.some((def) => def.id === 'devin')).toBe(false);
-    const record = findProvider('devin');
-    expect(record === undefined ? undefined : supportLevel(record)).toBe('planned');
+  it('P-47: the registry carries provider rows and route kinds for the launch set only', () => {
+    // The registry is the single table of providers (P-27), so the launch set shows here first:
+    // provider rows for exactly the six built-in ids, and every route kind naming one of them —
+    // a removed provider leaves no row, no kind and no default behind.
+    const launchSet = ['agy', 'claude-code', 'codex', 'copilot', 'cursor', 'opencode'];
+    expect(CAPABILITY_REGISTRY.providers.map((provider) => provider.providerId).sort()).toEqual(launchSet);
+    for (const kind of CAPABILITY_REGISTRY.routeKinds) {
+      expect(launchSet, kind.id).toContain(kind.providerId);
+    }
   });
 
   it('P-28: findProvider and findRouteKind resolve entries and stay undefined for the unknown', () => {
@@ -97,21 +101,10 @@ describe('model catalog data (P-29)', () => {
       'agy-subscription',
       'anthropic-api',
       'anthropic-subscription',
-      'atomcode-login',
       'codex-subscription',
       'copilot-subscription',
       'cursor-subscription',
-      'grok-build-login',
-      'hermes-subscription',
-      'kilo-login',
-      'kimi-login',
-      'kiro-login',
-      'mimo-login',
       'opencode-subscription',
-      'qoder-login',
-      'qwen-login',
-      'reasonix-login',
-      'vibe-login',
       'zai-glm',
     ]);
   });
@@ -317,14 +310,13 @@ describe('bundled model records (P-29, P-40)', () => {
 });
 
 describe('isolation evidence (P-44)', () => {
-  it('P-44: every built-in record but agy, copilot, cursor, codex, kilo, hermes, atomcode, grok-build, reasonix, vibe, mimo, qwen, qoder, kiro, kimi, amp, codebuddy and devin carries isolation evidence, and all eighteen stay capped at or below experimental', () => {
-    // codex and hermes keep their login in their own home, which is left alone, agy, copilot and
-    // cursor document no home their login does not live in (copilot's COPILOT_HOME holds it), and
-    // kilo's switches are unverified; none can evidence isolation, so their records carry none and
-    // the cap applies.
+  it('P-44: every built-in record but agy, copilot, cursor and codex carries isolation evidence, and the rest stay capped at experimental', () => {
+    // codex keeps its login in its own home, which is left alone, and agy, copilot and cursor
+    // document no home their login does not live in (copilot's COPILOT_HOME holds it); none can
+    // evidence isolation, so their records carry none and the cap applies.
     const records: readonly ProviderRecord[] = CAPABILITY_REGISTRY.providers;
     for (const provider of records) {
-      if (['agy', 'copilot', 'cursor', 'codex', 'kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder', 'kiro', 'kimi', 'amp', 'codebuddy', 'devin'].includes(provider.providerId)) {
+      if (['agy', 'copilot', 'cursor', 'codex'].includes(provider.providerId)) {
         expect(provider.isolation, provider.providerId).toBeUndefined();
       } else {
         expect(provider.isolation, provider.providerId).toBeDefined();
@@ -338,315 +330,6 @@ describe('isolation evidence (P-44)', () => {
       copilot: 'experimental',
       cursor: 'experimental',
       opencode: 'experimental',
-      hermes: 'experimental',
-      kilo: 'experimental',
-      'grok-build': 'experimental',
-      atomcode: 'experimental',
-      reasonix: 'experimental',
-      vibe: 'experimental',
-      mimo: 'experimental',
-      qwen: 'experimental',
-      qoder: 'experimental',
-      kiro: 'experimental',
-      kimi: 'experimental',
-      amp: 'experimental',
-      codebuddy: 'experimental',
-      devin: 'planned',
-    });
-  });
-
-  it('P-28: the amp record waives G5 for the unverified usage output, claims no login, permission or scenario gate, and stays experimental', () => {
-    const gates = findProvider('amp')?.gates;
-    expect(gates?.G5).toMatchObject({
-      kind: 'waived',
-      reason: 'provider reports no machine-readable quota; the usage command\'s output is unverified and its adapter is a separate issue; a limit error maps to limit_hit',
-    });
-    // The account-list probe's logged-in output is unverified, so G1 stays missing; the CLI asks
-    // no tool approval, so G3 cannot be met at the source; the end-to-end scenario test covers
-    // sdk, app-server and acp, not stream-json.
-    expect(gates?.G1).toBeUndefined();
-    expect(gates?.G3).toBeUndefined();
-    expect(gates?.G6).toBeUndefined();
-    expect(findProvider('amp')?.isolation).toBeUndefined();
-    expect(supportLevel(findProvider('amp') ?? { providerId: 'amp', gates: {} })).toBe('experimental');
-  });
-
-  it('P-29: the amp route kind lists the four modes as its whole static catalog, every one billing-unknown, with no live list and no quota probe', () => {
-    // Widened to the record type: the literal registry union drops the optional keys a kind
-    // simply does not carry, and the assertions below are exactly about their absence.
-    const kind: RouteKindRecord | undefined = findRouteKind('amp-login');
-    expect(kind).toMatchObject({
-      providerId: 'amp',
-      authMode: 'subscription',
-      identity: 'machine_login',
-      costKind: 'none',
-      quotaProbe: 'none',
-      modelSource: 'static',
-    });
-    // The modes are the models (architect decision): a mode is a fixed model-plus-effort bundle,
-    // so no separate thinking level exists on a row and no live list can be authoritative.
-    expect(kind?.liveIsAuthoritative).toBeUndefined();
-    expect(kind?.models.map((model) => model.id)).toEqual(['low', 'medium', 'high', 'ultra']);
-    for (const model of kind?.models ?? []) {
-      expect(model.thinking).toEqual({ kind: 'none' });
-      expect(model.billing, model.id).toBeUndefined();
-      expect(model.family).toBe('tier');
-    }
-    expect(kind?.tierModels).toBeUndefined();
-  });
-
-  it('P-28: the codebuddy record waives G5, cites the ACP login probe and the dialect fixtures, claims no permission or scenario gate, and stays experimental', () => {
-    const gates = findProvider('codebuddy')?.gates;
-    expect(gates?.G1).toMatchObject({
-      kind: 'test',
-      name: 'P-45: an ACP login probe reads an opened session as logged in, the documented refusal as logged out and any other answer as unknown',
-    });
-    expect(gates?.G2).toMatchObject({
-      kind: 'test',
-      name: 'P-11: the text turn fixture maps to session_started, one text, usage with the reported cost and one completed finished',
-    });
-    expect(gates?.G4).toMatchObject({
-      kind: 'test',
-      name: 'P-11: a quota result ends usage, limit_hit and one finished limit, so exhausted runs still fold into one finished',
-    });
-    expect(gates?.G5).toMatchObject({
-      kind: 'waived',
-      reason: 'provider reports no machine-readable quota; a limit error maps to limit_hit',
-    });
-    // The headless canUseTool ask is unverified until an operator run, and the end-to-end
-    // scenario test covers sdk, app-server and acp, not stream-json.
-    expect(gates?.G3).toBeUndefined();
-    expect(gates?.G6).toBeUndefined();
-    expect(findProvider('codebuddy')?.isolation).toBeUndefined();
-    expect(supportLevel(findProvider('codebuddy') ?? { providerId: 'codebuddy', gates: {} })).toBe('experimental');
-  });
-
-  it('P-29: the codebuddy route kind lists the help text ids as its whole static catalog, every row billing-unknown, with the reported cost and no live list', () => {
-    const kind: RouteKindRecord | undefined = findRouteKind('codebuddy-login');
-    expect(kind).toMatchObject({
-      providerId: 'codebuddy',
-      authMode: 'subscription',
-      identity: 'machine_login',
-      costKind: 'reported',
-      quotaProbe: 'none',
-      modelSource: 'static',
-    });
-    // No logged-out machine can read the account's real list, so nothing live can be
-    // authoritative; the rows the help text lists are the whole answer and the default their
-    // billing takes is unknown (P-40).
-    expect(kind?.liveIsAuthoritative).toBeUndefined();
-    expect(kind?.defaultBilling).toBe('unknown');
-    expect(kind?.tierModels).toBeUndefined();
-    expect(kind?.models.map((model) => model.id)).toEqual([
-      'default-model',
-      'fast-model',
-      'balanced-model',
-      'primary-model',
-      'deep-model',
-      'hy4-preview',
-      'hy3',
-      'deepseek-v4.1-flash',
-      'gpt-6-astra',
-      'gpt-5.6-sol',
-      'gpt-5.6-terra',
-      'gpt-5.6-luna',
-      'gpt-5.5',
-      'gpt-5.4',
-      'gemini-3.5-flash',
-      'glm-5.3-flash',
-      'glm-5.3',
-      'glm-5.2',
-      'kimi-k3',
-      'kimi-k2.6',
-      'kimi-k2.8-preview',
-    ]);
-    for (const model of kind?.models ?? []) {
-      // The effort flag's CLI-wide vocabulary rides every row; per-model support is an
-      // operator-run refinement, and no plan source says what a login covers.
-      expect(model.thinking).toEqual({ kind: 'levels', levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] });
-      expect(model.billing, model.id).toBeUndefined();
-    }
-    expect(kind?.models.filter((model) => model.family === 'tier').map((model) => [model.id, model.tier])).toEqual([
-      ['default-model', 'balanced'],
-      ['fast-model', 'fast'],
-      ['balanced-model', 'balanced'],
-      ['primary-model', 'strong'],
-      ['deep-model', 'strong'],
-    ]);
-  });
-
-  it('P-28: the hermes record waives G5 with a written reason and its route kind lists live models with unknown billing', () => {
-    expect(findProvider('hermes')?.gates.G5).toMatchObject({ kind: 'waived' });
-    expect((findProvider('hermes')?.gates.G5 as { reason: string }).reason.length).toBeGreaterThan(20);
-    expect(findRouteKind('hermes-subscription')).toMatchObject({
-      providerId: 'hermes',
-      modelSource: 'acp-session',
-      liveIsAuthoritative: true,
-      defaultBilling: 'unknown',
-      quotaProbe: 'none',
-    });
-  });
-
-  it('P-28: the grok-build record waives G5 with a written reason and its route kind lists live models with unknown billing', () => {
-    expect(findProvider('grok-build')?.gates.G5).toMatchObject({ kind: 'waived' });
-    expect((findProvider('grok-build')?.gates.G5 as { reason: string }).reason).toContain('limit_hit');
-    expect(findRouteKind('grok-build-login')).toMatchObject({
-      providerId: 'grok-build',
-      modelSource: 'acp-session',
-      liveIsAuthoritative: true,
-      defaultBilling: 'unknown',
-      quotaProbe: 'none',
-    });
-  });
-
-  it('P-28: the atomcode record waives G5 with a written reason and its route kind lists session models with unknown billing', () => {
-    expect(findProvider('atomcode')?.gates.G5).toMatchObject({ kind: 'waived' });
-    expect((findProvider('atomcode')?.gates.G5 as { reason: string }).reason.length).toBeGreaterThan(20);
-    expect(findRouteKind('atomcode-login')).toMatchObject({
-      providerId: 'atomcode',
-      modelSource: 'acp-session',
-      liveIsAuthoritative: true,
-      defaultBilling: 'unknown',
-      quotaProbe: 'none',
-    });
-  });
-
-  it('P-28: the vibe record waives G5 with the limit_hit reason, claims no login or permission gate, and its route kind lists session models with unknown billing', () => {
-    const gates = findProvider('vibe')?.gates;
-    expect(gates?.G5).toMatchObject({ kind: 'waived', reason: 'provider reports no machine-readable quota; a limit error maps to limit_hit' });
-    expect(gates?.G1).toBeUndefined();
-    expect(gates?.G3).toBeUndefined();
-    expect(findRouteKind('vibe-login')).toMatchObject({
-      providerId: 'vibe',
-      modelSource: 'acp-session',
-      liveIsAuthoritative: true,
-      defaultBilling: 'unknown',
-      quotaProbe: 'none',
-    });
-  });
-
-  it('P-40: the reasonix route kind defaults its live models to metered, so each run needs spend consent, and its record waives G5 with a written reason', () => {
-    expect(findProvider('reasonix')?.gates.G5).toMatchObject({ kind: 'waived' });
-    expect((findProvider('reasonix')?.gates.G5 as { reason: string }).reason).toContain('limit_hit');
-    expect(findRouteKind('reasonix-login')).toMatchObject({
-      providerId: 'reasonix',
-      modelSource: 'acp-session',
-      liveIsAuthoritative: true,
-      defaultBilling: 'metered',
-      quotaProbe: 'none',
-      costKind: 'none',
-    });
-  });
-
-  it('A-63: the reasonix kind bundles the two models the CLI\'s own doctor output documents, each with its reported window', () => {
-    // The session answer carries no window, so the bundled rows are the channel the window rides:
-    // the doctor output reports context_window 1.000.000 for both configured models, and the ids
-    // follow the session's documented provider/model shape the listing keeps whole.
-    expect(findRouteKind('reasonix-login')).toMatchObject({
-      models: [
-        { id: 'deepseek-flash/deepseek-flash', contextWindow: 1_000_000 },
-        { id: 'deepseek-pro/deepseek-v4-pro', contextWindow: 1_000_000 },
-      ],
-    });
-  });
-
-  it('P-28: the mimo record waives G5 with the limit_hit reason, claims no permission gate, and its route kind lists session models with unknown billing', () => {
-    const gates = findProvider('mimo')?.gates;
-    expect(gates?.G5).toMatchObject({ kind: 'waived', reason: 'provider reports no machine-readable quota; a limit error maps to limit_hit' });
-    expect(gates?.G3).toBeUndefined();
-    expect(findRouteKind('mimo-login')).toMatchObject({
-      providerId: 'mimo',
-      modelSource: 'acp-session',
-      liveIsAuthoritative: true,
-      defaultBilling: 'unknown',
-      quotaProbe: 'none',
-    });
-  });
-
-  it('P-28: the qwen record waives G5 with the limit_hit reason, claims no permission gate, and its route kind lists the user\'s own configured models with unknown billing', () => {
-    const gates = findProvider('qwen')?.gates;
-    expect(gates?.G5).toMatchObject({
-      kind: 'waived',
-      reason: 'provider reports no quota; a limit error maps to limit_hit (failed fast, not retried)',
-    });
-    expect(gates?.G3).toBeUndefined();
-    expect(findRouteKind('qwen-login')).toMatchObject({
-      providerId: 'qwen',
-      modelSource: 'acp-session',
-      liveIsAuthoritative: true,
-      defaultBilling: 'unknown',
-      quotaProbe: 'none',
-    });
-  });
-
-  it('P-28: the qoder record waives G5 with the limit_hit reason, claims no permission gate, and its route kind bundles the four documented tier aliases with unknown billing', () => {
-    const gates = findProvider('qoder')?.gates;
-    expect(gates?.G5).toMatchObject({
-      kind: 'waived',
-      reason: 'provider reports no machine-readable quota; a limit error maps to limit_hit',
-    });
-    expect(gates?.G3).toBeUndefined();
-    expect(findRouteKind('qoder-login')).toMatchObject({
-      providerId: 'qoder',
-      authMode: 'subscription',
-      identity: 'machine_login',
-      modelSource: 'acp-session',
-      liveIsAuthoritative: true,
-      defaultBilling: 'unknown',
-      costKind: 'none',
-      quotaProbe: 'none',
-    });
-    // The bundled fallback is exactly the four tier aliases the documentation names, each with
-    // billing unknown: which models a plan covers is not visible to a machine (P-40).
-    expect(findRouteKind('qoder-login')?.models.map((model) => [model.id, model.billing ?? 'unknown'])).toEqual([
-      ['auto', 'unknown'],
-      ['ultimate', 'unknown'],
-      ['performance', 'unknown'],
-      ['efficient', 'unknown'],
-    ]);
-  });
-
-  it('P-28: the kimi record waives G5 with the local-server reason, claims no permission gate, and its route kind lists the login-gated session models with unknown billing and no bundled fallback', () => {
-    const gates = findProvider('kimi')?.gates;
-    expect(gates?.G5).toMatchObject({
-      kind: 'waived',
-      reason: 'the provider\'s quota channel is only a local REST server; a limit error maps to limit_hit (failed fast, not retried)',
-    });
-    expect(gates?.G3).toBeUndefined();
-    expect(findRouteKind('kimi-login')).toMatchObject({
-      providerId: 'kimi',
-      authMode: 'subscription',
-      identity: 'machine_login',
-      modelSource: 'acp-session',
-      liveIsAuthoritative: true,
-      defaultBilling: 'unknown',
-      costKind: 'none',
-      quotaProbe: 'none',
-    });
-    // No model id is verified without a login (a logged-out session is refused), so the route
-    // bundles nothing: the live list is the only source, each row unknown (P-40) — a hand pick
-    // with spend consent.
-    expect(findRouteKind('kimi-login')?.models).toEqual([]);
-  });
-
-  it('P-28: the kiro record waives G5 with the limit_hit reason, claims no permission gate, and its route kind lists the login-gated CLI models with unknown billing', () => {
-    const gates = findProvider('kiro')?.gates;
-    expect(gates?.G5).toMatchObject({
-      kind: 'waived',
-      reason: 'provider reports no machine-readable quota; a limit error maps to limit_hit',
-    });
-    // The ask-first default is documented but the permission wait is unproven until an operator
-    // run, and no usage mapping is proven either.
-    expect(gates?.G3).toBeUndefined();
-    expect(gates?.G4).toBeUndefined();
-    expect(findRouteKind('kiro-login')).toMatchObject({
-      providerId: 'kiro',
-      authMode: 'subscription',
-      identity: 'machine_login',
-      modelSource: 'cli-command',
-      liveIsAuthoritative: true,
-      defaultBilling: 'unknown',
-      quotaProbe: 'none',
     });
   });
 

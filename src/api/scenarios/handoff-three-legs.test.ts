@@ -101,7 +101,7 @@ const ACCOUNT_B: AccountId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FCW');
 // included, so the continuation rides the P-46 consent the fixture records instead of a billing
 // the fake invented.
 const PROVIDER_X = 'claude-code';
-const PROVIDER_Y = 'vibe';
+const PROVIDER_Y = 'p-y';
 const ROUTE_KINDS: readonly FakeRouteKind[] = [
   {
     id: 'anthropic-subscription',
@@ -109,7 +109,7 @@ const ROUTE_KINDS: readonly FakeRouteKind[] = [
     authMode: 'subscription',
     instructionFiles: ['CLAUDE.md', 'CLAUDE.local.md', '~/.claude/projects/<project>/memory/'],
   },
-  { id: 'vibe-login', provider: PROVIDER_Y, authMode: 'subscription', defaultBilling: 'unknown', instructionFiles: ['AGENTS.md'] },
+  { id: 'p-y-login', provider: PROVIDER_Y, authMode: 'subscription', defaultBilling: 'unknown', instructionFiles: ['AGENTS.md'] },
 ];
 
 const USER: Actor = { kind: 'user', id: 'user-1', label: 'Operator' };

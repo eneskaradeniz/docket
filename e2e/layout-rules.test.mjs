@@ -195,19 +195,23 @@ test("L-12: a marked provider's badge drawing no path at all fails", () => {
 });
 
 test("L-12: a markless provider's badge drawing the neutral glyph passes", () => {
+  // No built-in is markless today (P-47), so the markless standings ride a fixture set: the
+  // verdict logic must keep reading them for the next provider added without a mark file.
+  const fixtureSets = { marked: new Set(['codex']), nullMark: new Set(['p-x']) };
   const verdict = l12BadgeFailures(
-    { provider: 'kimi', path: '', neutral: true, outsideRow: false },
-    L12_MARK_SETS,
+    { provider: 'p-x', path: '', neutral: true, outsideRow: false },
+    fixtureSets,
   );
   assert.deepEqual(verdict, []);
 });
 
 test("L-12: a markless provider's badge drawing a path fails", () => {
+  const fixtureSets = { marked: new Set(['codex']), nullMark: new Set(['p-x']) };
   const verdict = l12BadgeFailures(
-    { provider: 'amp', path: 'M0 0', neutral: true, outsideRow: false },
-    L12_MARK_SETS,
+    { provider: 'p-x', path: 'M0 0', neutral: true, outsideRow: false },
+    fixtureSets,
   );
-  assert.deepEqual(verdict, ['markless provider amp drew a path it does not own']);
+  assert.deepEqual(verdict, ['markless provider p-x drew a path it does not own']);
 });
 
 test('L-12: a badge outside its row fails', () => {

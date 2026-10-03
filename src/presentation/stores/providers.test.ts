@@ -86,13 +86,13 @@ describe('U-38', () => {
 
 describe('Sağlayıcılar presentation (U-38)', () => {
   it('U-38: the version cell shows the parsed number; the raw line stays for the title; no number reads raw', () => {
-    expect(parseVersion('Hermes Agent v0.21.4 (2026.9.21)')).toBe('0.21.4');
-    expect(parseVersion('kiro-cli 2.27.0')).toBe('2.27.0');
+    expect(parseVersion('Probe Agent v0.21.4 (2026.9.21)')).toBe('0.21.4');
+    expect(parseVersion('p-x-cli 2.27.0')).toBe('2.27.0');
     expect(parseVersion('1.2.3')).toBe('1.2.3');
     expect(parseVersion('2.1.0-beta.2 build')).toBe('2.1.0-beta.2');
     expect(parseVersion('nightly')).toBeNull();
-    const view = providerViewRows([{ ...ready, version: 'kiro-cli 2.27.0' }, { ...ready, defId: 'p-x', version: 'nightly' }], new Set());
-    expect(view.installed[0]).toMatchObject({ version: '2.27.0', versionFull: 'kiro-cli 2.27.0' });
+    const view = providerViewRows([{ ...ready, version: 'p-x-cli 2.27.0' }, { ...ready, defId: 'p-x', version: 'nightly' }], new Set());
+    expect(view.installed[0]).toMatchObject({ version: '2.27.0', versionFull: 'p-x-cli 2.27.0' });
     expect(view.installed[1]).toMatchObject({ version: 'nightly', versionFull: 'nightly' });
   });
 

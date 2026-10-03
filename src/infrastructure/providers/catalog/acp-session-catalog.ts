@@ -33,85 +33,34 @@ import {
 } from '../transports/acp/index';
 import type { CatalogError } from './model-catalog';
 
-/** The ACP-mode launch of each provider whose live list rides a session — the same subcommand the
- * provider's own definition runs, stated here because the catalog receives an account, not a
- * definition. */
-const ACP_SESSION_LAUNCHES: Readonly<
-  Record<
-    string,
-    {
-      readonly command: string;
-      readonly args: readonly string[];
-      readonly env?: Readonly<Record<string, string>>;
-      /** A cold start of this CLI can take several seconds, so no caller's ceiling may sit below it. */
-      readonly minTimeoutMs?: number;
-      /** The model select exists only once the user configured an inference provider, so a session
-       * without one is an empty list, not a malformed answer. */
-      readonly modelOptionOptional?: true;
-      /** The refusal a logged-out session answers, pinned here for a CLI whose login is probed
-       * nowhere else: discovery reads no login state for it, so only this catalog path maps the
-       * refusal to the not-logged-in answer. */
-      readonly notLoggedIn?: NotLoggedInRule;
-      /** The provider reports each model's window inside the id itself — a bracketed `context=`
-       * parameter — so the listing reads it out of the ids it keeps whole. */
-      readonly contextFromModelId?: true;
-    }
-  >
-> = {
+/** One provider's ACP-mode launch — the same subcommand the provider's own definition runs. */
+export interface AcpSessionLaunch {
+  readonly command: string;
+  readonly args: readonly string[];
+  readonly env?: Readonly<Record<string, string>>;
+  /** A cold start of this CLI can take several seconds, so no caller's ceiling may sit below it. */
+  readonly minTimeoutMs?: number;
+  /** The model select exists only once the user configured an inference provider, so a session
+   * without one is an empty list, not a malformed answer. */
+  readonly modelOptionOptional?: true;
+  /** The refusal a logged-out session answers, pinned here for a CLI whose login is probed
+   * nowhere else: discovery reads no login state for it, so only this catalog path maps the
+   * refusal to the not-logged-in answer. */
+  readonly notLoggedIn?: NotLoggedInRule;
+  /** The provider reports each model's window inside the id itself — a bracketed `context=`
+   * parameter — so the listing reads it out of the ids it keeps whole. */
+  readonly contextFromModelId?: true;
+}
+
+/** The ACP-mode launch of each provider whose live list rides a session, stated here because the
+ * catalog receives an account, not a definition. Production rows only (P-47a): a table-driven
+ * option no real provider exercises is driven through the `launches` factory option with a test
+ * table, never through a fixture row here. */
+export const ACP_SESSION_LAUNCHES: Readonly<Record<string, AcpSessionLaunch>> = {
   cursor: { command: 'cursor-agent', args: ['acp'], contextFromModelId: true },
   // The documented switch keeps the listing from reading the user's own global instruction and
   // skill files, the same isolation the provider's run launch pins.
   opencode: { command: 'opencode', args: ['acp'], env: { OPENCODE_DISABLE_CLAUDE_CODE: '1' } },
-  // The CLI reads its own home; no run-scoped redirection exists for it.
-  hermes: { command: 'hermes', args: ['acp'] },
-  // `--no-leader` keeps the listing off the shared leader socket; the model list comes from the
-  // initialize answer, so no session is ever opened for it.
-  'grok-build': { command: 'grok', args: ['agent', '--no-leader', 'stdio'], env: { GROK_TELEMETRY_ENABLED: '0' } },
-  // The model select exists only once a provider key is configured, so a session without one lists no models.
-  reasonix: { command: 'reasonix', args: ['acp'], modelOptionOptional: true },
-  // Telemetry is on by default and the flag is documented for this subcommand.
-  atomcode: { command: 'atomcode', args: ['acp', '--no-telemetry'], modelOptionOptional: true },
-  // The ACP entry is a separate binary from the interactive CLI and takes no arguments; the CLI
-  // reads its own home, which also holds its key, so no run-scoped redirection exists for it.
-  vibe: { command: 'vibe-acp', args: [] },
-  // The switches are unverified (see the definition) but harmless; the cold start needs a longer wait.
-  // The ACP server needs no login to open a session; its model select carries every model plain
-  // and once per level (`<model>/<level>`), which the listing folds back into one row.
-  mimo: { command: 'mimo', args: ['acp'], minTimeoutMs: 30_000 },
-  kilo: {
-    command: 'kilo',
-    args: ['acp'],
-    env: { KILO_DISABLE_CLAUDE_CODE: '1', KILO_DISABLE_CLAUDE_CODE_SKILLS: '1' },
-    minTimeoutMs: 30_000,
-  },
-  // The catalog is the user's own configured providers, so a machine without one refuses the
-  // session with the live refusal below; a session that opens but carries no model select and no
-  // models object also means no provider is configured, not a malformed answer.
-  qwen: {
-    command: 'qwen',
-    args: ['--acp'],
-    notLoggedIn: { rpcCode: -32000, textContains: 'Authentication required' },
-    modelOptionOptional: true,
-  },
-  // The docs name `qoder` and the npm package installs both bins, so the documented name is the
-  // command here. A logged-out machine refuses the session with the live refusal below; the
-  // refusal maps to the not-logged-in answer in this catalog path alone, because discovery reads
-  // the login from the CLI's own status command, never from a session.
-  qoder: {
-    command: 'qoder',
-    args: ['--acp'],
-    notLoggedIn: { rpcCode: -32000, textContains: 'Authentication required' },
-  },
-  // The ACP entry is the subcommand `acp`. A machine without a login refuses the session with the
-  // live refusal below; the refusal maps to the not-logged-in answer in this catalog path alone,
-  // because discovery reads the login from the credentials directory, never from a session. The
-  // same telemetry and auto-update variables a run pins keep the listing from phoning home.
-  kimi: {
-    command: 'kimi',
-    args: ['acp'],
-    env: { KIMI_DISABLE_TELEMETRY: '1', KIMI_CODE_NO_AUTO_UPDATE: '1' },
-    notLoggedIn: { rpcCode: -32000, textContains: 'Authentication required' },
-  },
 };
 
 /** The refusal a logged-out session answers, as the provider's own definition declares it — the
@@ -134,6 +83,10 @@ export interface AcpSessionCatalogConfig {
   /** The provider's own names for levels (its definition's `levelNames`); the advertised levels
    * are read back through them. */
   readonly levelNames?: LevelNames;
+  /** The launch table to read (P-47a); the default is the built-in one. A production table never
+   * carries a fixture row, so the options no built-in row exercises today are driven by tests
+   * passing a test table here. */
+  readonly launches?: Readonly<Record<string, AcpSessionLaunch>>;
   /** Ceiling per request; the default leaves a slow CLI an order of magnitude more than a
    * control round-trip needs. */
   readonly timeoutMs?: number;
@@ -342,7 +295,7 @@ export async function listAcpSessionModels(
   account: AccountRecord,
   config: AcpSessionCatalogConfig,
 ): Promise<Result<readonly LiveModel[], CatalogError>> {
-  const launch = ACP_SESSION_LAUNCHES[account.provider];
+  const launch = (config.launches ?? ACP_SESSION_LAUNCHES)[account.provider];
   if (launch === undefined) {
     return err({ code: 'unsupported', message: 'the provider has no ACP session model list' });
   }

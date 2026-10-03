@@ -8,17 +8,15 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { BUILTIN_PROVIDER_DEFS } from '../../defs/index';
 import type { AcpSpawn } from './connection';
 import { loginStateOfSessionError, probeAcpLogin, type NotLoggedInRule } from './login-probe';
 
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), 'fake-agent.cjs');
 
-const rule: NotLoggedInRule = (() => {
-  const found = BUILTIN_PROVIDER_DEFS.find((def) => def.id === 'hermes')?.authProbe?.acpSession?.notLoggedIn;
-  if (found === undefined) throw new Error('the hermes definition carries no login rule');
-  return found;
-})();
+// A neutral fixture rule of the shape a definition's acpSession probe declares (P-47): no
+// built-in carries one today, so the probe's contract is pinned with fixture data — the fake
+// agent's session-login-refused answer matches it.
+const rule: NotLoggedInRule = { rpcCode: -32603, textContains: 'not connected to any inference provider' };
 
 let root: string;
 let sequence = 0;
@@ -72,11 +70,11 @@ const exited = async (child: ChildProcess | undefined, withinMs: number): Promis
 };
 
 const probe = (harness: Harness, timeoutMs?: number): Promise<boolean | null> =>
-  probeAcpLogin({ command: 'hermes', args: ['acp'], env: {}, rule, spawn: harness.spawn, ...(timeoutMs === undefined ? {} : { timeoutMs }) });
+  probeAcpLogin({ command: 'acp-x', args: ['acp'], env: {}, rule, spawn: harness.spawn, ...(timeoutMs === undefined ? {} : { timeoutMs }) });
 
 describe('ACP login probe (P-45)', () => {
   it('P-45: an ACP login probe reads an opened session as logged in, the documented refusal as logged out and any other answer as unknown', async () => {
-    expect(await probe(makeSpawn('models-hermes'))).toBe(true);
+    expect(await probe(makeSpawn('models-cursor'))).toBe(true);
     expect(await probe(makeSpawn('session-login-refused'))).toBe(false);
     // Same JSON-RPC code, other text; an error that is not an object; an agent that dies; one that
     // never answers: none of them is evidence of a logout.
@@ -87,8 +85,8 @@ describe('ACP login probe (P-45)', () => {
   }, 20_000);
 
   it('P-45: the probe sends initialize and session/new only — never a prompt — and closes the session when the agent advertises it', async () => {
-    const plain = makeSpawn('models-hermes');
-    const closing = makeSpawn('models-hermes-close');
+    const plain = makeSpawn('models-cursor');
+    const closing = makeSpawn('models-opencode');
     const refused = makeSpawn('session-login-refused');
 
     await probe(plain);
@@ -101,7 +99,7 @@ describe('ACP login probe (P-45)', () => {
   });
 
   it('P-45: the child never outlives the probe, on success and on error', async () => {
-    const ok = makeSpawn('models-hermes');
+    const ok = makeSpawn('models-cursor');
     const refused = makeSpawn('session-login-refused');
 
     await probe(ok);
@@ -115,11 +113,11 @@ describe('ACP login probe (P-45)', () => {
     const failing: AcpSpawn = () => {
       throw new Error('no such binary');
     };
-    expect(await probeAcpLogin({ command: 'hermes', args: ['acp'], env: {}, rule, spawn: failing })).toBeNull();
+    expect(await probeAcpLogin({ command: 'acp-x', args: ['acp'], env: {}, rule, spawn: failing })).toBeNull();
   });
 
   it('P-45: only a protocol error with the rule’s code and text is a logout', () => {
-    const refusal = { code: 'protocol', message: 'x', rpc: { code: -32603, text: 'Internal error\nHermes is not connected to any AI provider yet.' } } as const;
+    const refusal = { code: 'protocol', message: 'x', rpc: { code: -32603, text: 'Internal error\nThe agent is not connected to any inference provider yet.' } } as const;
     expect(loginStateOfSessionError(refusal, rule)).toBe(false);
     expect(loginStateOfSessionError({ ...refusal, rpc: { code: -32602, text: refusal.rpc.text } }, rule)).toBeNull();
     expect(loginStateOfSessionError({ ...refusal, rpc: { code: -32603, text: 'disk full' } }, rule)).toBeNull();

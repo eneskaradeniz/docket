@@ -41,9 +41,9 @@ describe('ProviderMark', () => {
   });
 
   it('renders the neutral rounded-square outline for a null mark, at the same size', () => {
-    const html = renderToStaticMarkup(createElement(ProviderMark, { provider: 'kimi', mark: null }));
+    const html = renderToStaticMarkup(createElement(ProviderMark, { provider: 'p-x', mark: null }));
     expect(html).toContain('data-provider-mark');
-    expect(html).toContain('data-provider="kimi"');
+    expect(html).toContain('data-provider="p-x"');
     expect(html).toContain('data-mark="neutral"');
     expect(html).toContain('aria-hidden="true"');
     expect(html).toContain('rounded-control');

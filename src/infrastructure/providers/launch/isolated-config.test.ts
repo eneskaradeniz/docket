@@ -142,17 +142,19 @@ describe('run-scoped config writer (P-7)', () => {
     expect([...after.entries()].sort()).toEqual([...before.entries()].sort());
   });
 
-  it('P-44: a none config sets no home variable and no flag, and hermes never gets HERMES_HOME', async () => {
+  it('P-44: a none config sets no home variable and no flag, and no home variable is invented for it', async () => {
     const { runDir } = await createRoot();
-    const hermes = defById('hermes');
-    expect(hermes.config).toEqual({ mechanism: 'none' });
+    // A neutral fixture def carrying the none mechanism — a CLI whose login lives in a home the
+    // launch never names, so neither the writer nor the launch may invent a variable for it.
+    const def: ProviderDef = { ...defById('copilot'), id: 'p-x', displayName: 'Probe CLI' };
+    expect(def.config).toEqual({ mechanism: 'none' });
 
-    const fragment = await writeRunConfig(runDir, hermes, RUN_CAPABILITIES);
+    const fragment = await writeRunConfig(runDir, def, RUN_CAPABILITIES);
     expect(fragment.env).toEqual({});
     expect(fragment.args).toEqual([]);
-    expect(JSON.stringify(fragment)).not.toContain('HERMES_HOME');
+    expect(JSON.stringify(fragment)).not.toContain('P_X_HOME');
 
-    const launch = hermes.buildLaunch({ configDir: fragment.configDir } as Parameters<ProviderDef['buildLaunch']>[0]);
+    const launch = def.buildLaunch({ configDir: fragment.configDir } as Parameters<ProviderDef['buildLaunch']>[0]);
     expect(Object.keys(launch.env)).toEqual([]);
     expect(launch.args).not.toContain(fragment.configDir);
   });

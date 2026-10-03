@@ -114,7 +114,7 @@ const STAGES = [
 ] as const;
 const FLOW_ID = 'standart-akis';
 
-type AccountKey = 'claude-max' | 'zai-glm' | 'codex-pro' | 'antigravity' | 'copilot' | 'kimi';
+type AccountKey = 'claude-max' | 'zai-glm' | 'codex-pro' | 'antigravity' | 'copilot' | 'opencode-key';
 
 /** running: an unfinished run in `stage`; awaiting: the stage's run finished and its human gate
  *  is open; ready: the stage is entered, nothing started; done: the whole flow finished. */
@@ -148,7 +148,7 @@ const ORDERS: readonly OrderPlan[] = [
   { code: 'İE-0032', repo: 'antreo-api', title: 'Swagger belgeleri', stage: 4, state: 'running', minutes: 14, account: 'antigravity', usd: 0.18 },
   { code: 'İE-0046', repo: 'antreo-api', title: 'Swagger staging testi', stage: 4, state: 'awaiting', minutes: 12, account: 'antigravity', usd: 0.27 },
   { code: 'İE-0009', repo: 'antreo-api', title: 'Müşteri etiketi', stage: 5, state: 'done', minutes: 1300, account: 'claude-max', usd: 0.6 },
-  { code: 'İE-0036', repo: 'antreo-api', title: 'Webhook doğrulaması', stage: 5, state: 'done', minutes: 1500, account: 'kimi', usd: 0.4 },
+  { code: 'İE-0036', repo: 'antreo-api', title: 'Webhook doğrulaması', stage: 5, state: 'done', minutes: 1500, account: 'opencode-key', usd: 0.4 },
   { code: 'İE-0007', repo: 'antreo-api', title: 'Sipariş e-postası', stage: 5, state: 'done', minutes: 4300, account: 'claude-max', usd: 0.7 },
   // the cross-repo "Mobil login" task: İE-0044 (api) finished, İE-0045 (mobile) waits in Test
   { code: 'İE-0044', repo: 'antreo-api', title: 'Mobil login', stage: 5, state: 'done', minutes: 13_000, account: 'claude-max', usd: 1.1, task: 'mobil-login' },
@@ -295,7 +295,7 @@ const ACCOUNTS: readonly AccountPlan[] = [
     windows: [{ label: 'Haftalık pencere', kind: 'week', percent: 91, resetsAt: WEEK_RESET }],
   },
   {
-    key: 'kimi', label: 'Kimi', provider: 'opencode', authMode: 'api_key',
+    key: 'opencode-key', label: 'OpenCode API', provider: 'opencode', authMode: 'api_key',
     windows: [{ label: 'Aylık pencere', kind: 'month', percent: 99, resetsAt: MONTH_RESET }],
     monthUsd: 8.9, capUsd: 9,
   },
@@ -643,7 +643,7 @@ for (const plan of ORDERS_BY_CODE) {
 
 // The API-key accounts show this month's spend against their cap; one earlier order carries the
 // remainder so the totals read exactly 12,40 $ and 8,90 $.
-const carriers: Readonly<Partial<Record<AccountKey, string>>> = { 'zai-glm': 'İE-0021', kimi: 'İE-0036' };
+const carriers: Readonly<Partial<Record<AccountKey, string>>> = { 'zai-glm': 'İE-0021', 'opencode-key': 'İE-0036' };
 for (const plan of ACCOUNTS) {
   const carrier = carriers[plan.key];
   if (plan.monthUsd === undefined || carrier === undefined) continue;

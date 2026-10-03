@@ -1,2 +1,0 @@
-{"type":"system","subtype":"init","cwd":"/tmp/cb-probe","session_id":"cbf1004","model":"default-model","tools":["read_file"],"mcp_servers":[],"permissionMode":"default","codebuddy_code_version":"2.161.1"}
-{"type":"result","subtype":"error_during_execution","is_error":true,"num_turns":0,"result":"","usage":{"input_tokens":10,"output_tokens":0},"errors_info":[{"status":401,"code":"authentication_required","category":"auth"}],"session_id":"cbf1004"}
