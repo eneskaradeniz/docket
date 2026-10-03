@@ -635,6 +635,15 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
             {listSection === 'roles' ? (
               <SectionCard title={t(locale, 'settings.section.roles')}>
                 <div className="grid gap-3">
+                  {rolesState.unsetCount > 0 ? (
+                    <p className="flex flex-wrap items-center gap-2 text-[12.5px] text-inkdim" data-roles-unset>
+                      <span>{t(locale, 'roles.unset.line').replace('{n}', String(rolesState.unsetCount))}</span>
+                      <span aria-hidden="true">·</span>
+                      <ActionButton variant="ghost" onClick={() => void roles.applyRecommended()}>
+                        {t(locale, 'roles.unset.apply')}
+                      </ActionButton>
+                    </p>
+                  ) : null}
                   <ChainSection store={roles} locale={locale} markFor={marks.markFor} />
                   {rolesState.rows === null || rolesState.rows.length === 0 ? (
                     <p className="text-[13px] text-inkdim">{t(locale, 'roles.empty')}</p>

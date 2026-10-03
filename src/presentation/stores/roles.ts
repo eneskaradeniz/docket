@@ -25,7 +25,8 @@ import { commandResultKey, isQueryFailure } from './results';
 
 export type Tier = 'strong' | 'balanced' | 'fast';
 export type Thinking = { readonly level: string } | { readonly effort: string };
-export type RoleWorkStyle = WorkStyle | 'custom';
+/** `unset`: neither tier nor thinking stored; `custom`: a stored pair matching none of the styles. */
+export type RoleWorkStyle = WorkStyle | 'custom' | 'unset';
 
 export const WORK_STYLES: readonly WorkStyle[] = ['fast', 'balanced', 'careful'];
 export const TIERS: readonly Tier[] = ['fast', 'balanced', 'strong'];
@@ -37,8 +38,9 @@ const STYLE_PAIRS: Readonly<Record<WorkStyle, { readonly tier: Tier; readonly th
   careful: { tier: 'strong', thinking: { level: 'deep' } },
 };
 
-/** The preset a stored pair stands for, or `custom` ("Özel") for any other pair. Pure. */
+/** The preset a stored pair stands for, `unset` when nothing is stored, `custom` ("Özel") for any other pair. Pure. */
 export const workStyle = (tier: Tier | null, thinking: Thinking | null): RoleWorkStyle => {
+  if (tier === null && thinking === null) return 'unset';
   if (tier === null || thinking === null || !('level' in thinking)) return 'custom';
   for (const style of WORK_STYLES) {
     const pair = STYLE_PAIRS[style];
@@ -105,6 +107,8 @@ export interface RolesState {
   readonly accounts: readonly RoleAccount[];
   /** Asistan sırası: account ids, the chain most roles share. */
   readonly globalChain: readonly string[];
+  /** Roles whose binding stores neither tier nor thinking (the "Önerilenleri uygula" line). */
+  readonly unsetCount: number;
   readonly catalogs: Readonly<Record<string, AccountModelsView>>;
   readonly failure: { readonly row: string; readonly labelKey: LabelKey } | null;
 }
@@ -172,7 +176,7 @@ const buildRows = (
       thinking,
       style,
       recommended,
-      differs: style !== recommended,
+      differs: style !== 'unset' && style !== recommended,
       chainMode: overrides[role.id] ?? (storedOwn ? 'own' : 'all'),
       chain,
       efforts: effortOptions(models),
@@ -199,6 +203,8 @@ export interface RolesStore {
   moveGlobal(from: number, delta: number): Promise<void>;
   setStyle(role: string, style: WorkStyle): Promise<void>;
   resetStyle(role: string): Promise<void>;
+  /** "Önerilenleri uygula": the recommended style for exactly the roles with no style stored. */
+  applyRecommended(): Promise<void>;
   setChainMode(role: string, mode: ChainMode): Promise<void>;
   toggleAccount(role: string, accountId: string): Promise<void>;
   moveOwn(role: string, from: number, delta: number): Promise<void>;
@@ -214,7 +220,7 @@ export interface RolesStore {
 
 export const createRolesStore = (deps: RolesStoreDeps): RolesStore => {
   const { api, actor } = deps;
-  let state: RolesState = { loading: false, rows: null, accounts: [], globalChain: [], catalogs: {}, failure: null };
+  let state: RolesState = { loading: false, rows: null, accounts: [], globalChain: [], unsetCount: 0, catalogs: {}, failure: null };
   let roles: readonly RoleListItem[] = [];
   let bindings: readonly SettingsBindingView[] = [];
   let overrides: Readonly<Record<string, ChainMode>> = {};
@@ -230,7 +236,8 @@ export const createRolesStore = (deps: RolesStoreDeps): RolesStore => {
   const rebuild = (patch: Partial<RolesState> = {}): void => {
     const globalChain = globalChainOf(bindings);
     const catalogs = patch.catalogs ?? state.catalogs;
-    set({ ...state, ...patch, globalChain, rows: buildRows(roles, bindings, globalChain, overrides, catalogs) });
+    const rows = buildRows(roles, bindings, globalChain, overrides, catalogs);
+    set({ ...state, ...patch, globalChain, rows, unsetCount: rows.filter((row) => row.style === 'unset').length });
   };
 
   const load = async (): Promise<void> => {
@@ -330,6 +337,16 @@ export const createRolesStore = (deps: RolesStoreDeps): RolesStore => {
     resetStyle: (role) => {
       const pair = styleSettings(recommendedWorkStyle(role));
       return saveRole(role, { tier: pair.tier, thinking: pair.thinking });
+    },
+    applyRecommended: async () => {
+      const commands = (state.rows ?? [])
+        .filter((row) => row.style === 'unset')
+        .map((row) => {
+          const pair = styleSettings(row.recommended);
+          return bindingCommand(row.id, row.chain, pair.tier, pair.thinking);
+        });
+      if (commands.length === 0) return;
+      await runAll('roles', commands);
     },
     setChainMode: async (role, mode) => {
       if (mode === 'own') {

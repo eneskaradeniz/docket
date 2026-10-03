@@ -65,11 +65,14 @@ function Segmented<T extends string>({
   value,
   label,
   onPick,
+  standing,
 }: {
   readonly options: readonly { readonly id: T; readonly text: string; readonly hint?: string }[];
   readonly value: T | null;
   readonly label: string;
   readonly onPick: (id: T) => void;
+  /** A fourth, non-clickable standing: selected-looking, aria-disabled. */
+  readonly standing?: string;
 }) {
   return (
     <div role="group" aria-label={label} className="inline-flex overflow-hidden rounded-control border border-bord">
@@ -85,6 +88,11 @@ function Segmented<T extends string>({
           {option.hint !== undefined ? <span className="ml-1 text-[10.5px] text-inkdim">{option.hint}</span> : null}
         </button>
       ))}
+      {standing !== undefined ? (
+        <span aria-disabled="true" className="bg-raised px-2.5 py-1 text-[12.5px] font-semibold text-ink">
+          {standing}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -348,17 +356,17 @@ export function RoleRowView({ row, store, locale, markFor, fineTuneOpen = false 
     <SettingRow
       locale={locale}
       title={row.name}
-      purpose={t(locale, 'roles.style.purpose')}
+      purpose=""
       saved={saved}
       {...(row.differs ? { differsFrom: t(locale, STYLE_KEY[row.recommended]), onReset: () => void store.resetStyle(row.id) } : {})}
       {...(failure !== undefined ? { failure: t(locale, failure) } : {})}
       {...(row.sameProviderReview ? { note: t(locale, 'roles.review.sameProvider') } : {})}
       control={
         <span className="flex items-center gap-2">
-          {row.style === 'custom' ? <span className="font-mono text-[11px] text-inkdim">{t(locale, STYLE_KEY.custom)}</span> : null}
           <Segmented
             label={`${row.name} · ${t(locale, 'roles.style.title')}`}
-            value={row.style === 'custom' ? null : row.style}
+            value={row.style === 'custom' || row.style === 'unset' ? null : row.style}
+            {...(row.style === 'custom' ? { standing: t(locale, STYLE_KEY.custom) } : {})}
             options={WORK_STYLES.map((style) => ({
               id: style,
               text: t(locale, STYLE_KEY[style]),
@@ -370,7 +378,7 @@ export function RoleRowView({ row, store, locale, markFor, fineTuneOpen = false 
       }
       disclosure={{
         label: t(locale, 'roles.fine'),
-        startsOpen: fineTuneOpen || row.style === 'custom' || row.chainMode === 'own',
+        startsOpen: fineTuneOpen || row.differs || row.chainMode === 'own',
         children: <FineTune row={row} store={store} locale={locale} markFor={markFor} />,
       }}
     />
