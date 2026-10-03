@@ -25,6 +25,7 @@ import type { Api, RunEventFeed, UiEvent } from '../src/api/index';
 import type { AppDeps, Notifier, PermissionBoard, TransportResolver } from '../src/application/index';
 import {
   applyLimitDecision,
+  composeRunPrompt,
   createPermissionBoard,
   dispatcherTick,
   evaluateMachineGates,
@@ -175,9 +176,10 @@ const discoveredTransports = (
   };
 };
 
-/** Drives one dispatcher-started queue item to completion: definitions give the stage's role
- *  (whose instructions are the prompt) and capabilities, the worktree gives the cwd, and the
- *  board is both the permission gate and the run's registry. */
+/** Drives one dispatcher-started queue item to completion: definitions give the stage's role and
+ *  capabilities, composeRunPrompt builds the run's prompt (the Docket layers plus the instruction
+ *  files this route's provider does not read natively), the worktree gives the cwd, and the board
+ *  is both the permission gate and the run's registry. */
 const runStartedItem = async (api: Api & RunEventFeed, board: PermissionBoard, item: QueueItem): Promise<void> => {
   if (deps === undefined) return;
   try {
@@ -213,10 +215,26 @@ const runStartedItem = async (api: Api & RunEventFeed, board: PermissionBoard, i
       role.capabilities.includes(capability.id),
     );
 
+    // The single prompt entry point builds the run's prompt; this callback stopped building
+    // `role.instructions` itself. A failure is loud like every other refusal above: the item is
+    // already off the queue, and the operator can re-enqueue the stage.
+    const composed = await composeRunPrompt(deps, {
+      repo: record.repo,
+      workOrderId: record.id,
+      cwd: worktree.value.path,
+      stage: item.stage,
+      role: role.id,
+      route: item.route,
+    });
+    if (!composed.ok) {
+      console.error(`cannot run queue item ${item.id}: prompt composition failed (${composed.error})`);
+      return;
+    }
+
     const outcome = await executeRun(
       deps,
       board,
-      { item, role, prompt: role.instructions, cwd: worktree.value.path, capabilities },
+      { item, role, prompt: composed.value.prompt, cwd: worktree.value.path, capabilities },
       board,
       api.runUpdated,
       api.workOrdersChanged,

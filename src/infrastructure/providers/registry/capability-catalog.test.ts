@@ -44,11 +44,34 @@ describe('createCapabilityCatalog', () => {
     expect(catalog.routeKind('no-such-route-kind')).toBeUndefined();
   });
 
-  it('instruction-file answers are empty while the registry carries no per-provider data (P-37)', () => {
+  it('P-37: native instruction sets come from the registry rows; an unknown provider has none', () => {
     const catalog = createCapabilityCatalog();
 
-    expect(catalog.nativeInstructionFiles('claude-code')).toEqual([]);
+    // The documented sets, each cited to the CLI's own documentation in the data rows. claude-code
+    // names its automatic project memory per P-37 — it lives outside the repo, so it never matches
+    // a repo file and is never an inline candidate.
+    expect(catalog.nativeInstructionFiles('claude-code')).toEqual([
+      'CLAUDE.md',
+      'CLAUDE.local.md',
+      '~/.claude/projects/<project>/memory/',
+    ]);
+    // kimi reads AGENTS.md natively and does not read CLAUDE.md — the handoff scenario's Y leg.
+    expect(catalog.nativeInstructionFiles('kimi')).toEqual(['AGENTS.md', '.kimi-code/AGENTS.md']);
+    // amp reads AGENT.md and CLAUDE.md only when AGENTS.md is absent, so those stay inline
+    // candidates (A-54: content twice beats content lost).
+    expect(catalog.nativeInstructionFiles('amp')).toEqual(['AGENTS.md']);
+    expect(catalog.nativeInstructionFiles('grok-build')).toContain('CLAUDE.md');
     expect(catalog.nativeInstructionFiles('never-heard-of')).toEqual([]);
-    expect(catalog.instructionFileNames()).toEqual([]);
+  });
+
+  it('P-37: instructionFileNames is the deduplicated union of the rows in registry order', () => {
+    const names = createCapabilityCatalog().instructionFileNames();
+
+    expect(names.slice(0, 3)).toEqual(['CLAUDE.md', 'CLAUDE.local.md', '~/.claude/projects/<project>/memory/']);
+    expect(names[3]).toBe('AGENTS.md');
+    expect(new Set(names).size).toBe(names.length);
+    for (const expected of ['AGENTS.override.md', 'GEMINI.md', 'QWEN.md', 'CODEBUDDY.md', '.github/copilot-instructions.md']) {
+      expect(names).toContain(expected);
+    }
   });
 });
