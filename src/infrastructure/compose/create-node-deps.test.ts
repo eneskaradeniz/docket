@@ -8,6 +8,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { parseSlug, parseUlid, type Actor, type RunId, type WorkOrderId, type RepoSlug } from '../../domain/index';
+import type { DiscoveredProvider } from '../../application/index';
 import {
   createFakeClock,
   createFakeNotifier,
@@ -413,5 +414,28 @@ describe('createNodeDeps', () => {
       expect(diff.value.patch).toContain('[redacted]');
       expect(diff.value.patch).not.toContain('ghp_');
     }
+  });
+
+  it('P-53: with a discovery reporting codex installed, the account discovery lists a codex machine-login candidate and reads nothing under its home', async () => {
+    const sentinel = 'sk-codex-home-sentinel-123456';
+    await mkdir(join(homeDir, '.codex'), { recursive: true });
+    await writeFile(join(homeDir, '.codex', 'auth.json'), sentinel);
+    const providerDiscovery = {
+      discover: async (onResult: (r: DiscoveredProvider) => void): Promise<void> => {
+        onResult({ defId: 'codex', name: 'Codex', installUrl: null, binPath: '/usr/local/bin/codex', version: '1', loggedIn: true, optionalFlags: [] });
+      },
+    };
+    const node = makeNode({ providerDiscovery });
+    const candidates = await node.accountDiscovery.scan();
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({
+      kind: 'machine_login',
+      provider: 'codex',
+      sourcePath: 'machine-login:codex',
+      routeKind: 'codex-subscription',
+      hasOauthLogin: true,
+    });
+    expect(JSON.stringify(candidates)).not.toContain(sentinel);
+    node.close();
   });
 });

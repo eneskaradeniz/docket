@@ -181,6 +181,10 @@ export const DEFAULT_INACTIVITY_TIMEOUT_MS = 600_000;
 
 export interface ProviderDef {
   readonly id: string;
+  /** The documented home directory of the CLI's own login, as display data for a machine-login
+   * candidate — never read or opened. `env` names the variable the CLI documents as its override.
+   * Set only for a CLI that documents one. */
+  readonly accountHome?: { readonly path: string; readonly env?: string };
   readonly displayName: string;
   /** Candidate executable names; discovery takes the first one found. */
   readonly bins: readonly string[];

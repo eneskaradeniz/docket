@@ -16,6 +16,7 @@ const ENDPOINT: AccountCandidate = {
   sourcePath: '/home/u/.claude-glm',
   displayPath: '~/.claude-glm',
   kind: 'compatible_endpoint',
+  provider: 'prov-a',
   routeKind: 'endpoint-route',
   endpointHost: 'api.example.test',
   hasOauthLogin: false,

@@ -6,9 +6,10 @@ import { readdir, stat, open } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-import type { AccountCandidate, AccountDiscovery, AccountRecord } from '../../../application/index';
+import type { AccountCandidate, AccountDiscovery, AccountRecord, DiscoveredProvider, ProviderDiscovery } from '../../../application/index';
 import type { RouteKindRecord } from '../../../domain/index';
-import { CAPABILITY_REGISTRY } from '../registry/index';
+import { BUILTIN_PROVIDER_DEFS, type ProviderDef } from '../defs/index';
+import { CAPABILITY_REGISTRY, createCapabilityCatalog } from '../registry/index';
 
 /** A file larger than this is treated as unreadable instead of being parsed. */
 export const MAX_READ_BYTES = 1024 * 1024;
@@ -45,6 +46,12 @@ export interface AccountScanOptions {
   readonly accounts: { list(): Promise<readonly AccountRecord[]> };
   /** Defaults to the capability registry's route kinds. */
   readonly routeKinds?: readonly RouteKindRecord[];
+  /** The discovery whose facts decide which providers are installed (P-53); absent = no machine-login candidates. */
+  readonly providers?: ProviderDiscovery;
+  /** Defaults to the built-in definitions; their `accountHome` is display data only. */
+  readonly defs?: readonly ProviderDef[];
+  /** The environment the `accountHome` override variable is looked up in (presence only, never the value). */
+  readonly env?: Readonly<Record<string, string>>;
 }
 
 type Override = 'endpoint' | 'token' | 'model';
@@ -147,54 +154,99 @@ export function createAccountScan(options: AccountScanOptions): AccountDiscovery
     return undefined;
   }
 
+  const catalog = createCapabilityCatalog();
+  const defs = options.defs ?? BUILTIN_PROVIDER_DEFS;
+
+  /** One candidate per installed provider that has no directory scanner (P-53, I-38). Nothing is read from disk. */
+  async function machineLogins(existing: readonly AccountRecord[]): Promise<readonly AccountCandidate[]> {
+    if (options.providers === undefined) return [];
+    const found: DiscoveredProvider[] = [];
+    try {
+      await options.providers.discover((result) => {
+        found.push(result);
+      });
+    } catch {
+      return [];
+    }
+    const candidates: AccountCandidate[] = [];
+    for (const def of defs) {
+      if (def.id === PROVIDER_ID) continue; // its candidates come from the directory scan
+      const fact = found.find((entry) => entry.defId === def.id);
+      if (fact === undefined || fact.binPath === null) continue;
+      const routeKind = catalog.routeKindOf({ provider: def.id, authMode: 'subscription' });
+      if (routeKind === undefined) continue;
+      const home = def.accountHome;
+      const displayPath =
+        home?.env !== undefined && options.env?.[home.env] !== undefined && options.env[home.env] !== ''
+          ? `$${home.env}`
+          : (home?.path ?? def.displayName);
+      candidates.push({
+        sourcePath: `machine-login:${def.id}`,
+        displayPath,
+        kind: 'machine_login',
+        provider: def.id,
+        routeKind,
+        hasOauthLogin: fact.loggedIn === true,
+        envOverrides: [],
+        warnings: [],
+        alreadyAdded: existing.some((account) => account.provider === def.id && account.identityDir === undefined),
+      });
+    }
+    return candidates;
+  }
+
   return {
     async scan() {
-      let names: readonly string[];
-      try {
-        names = await fs.listEntries(homeDir);
-      } catch {
-        return [];
-      }
       let existing: readonly AccountRecord[] = [];
       try {
         existing = await options.accounts.list();
       } catch {
         existing = [];
       }
-
-      const candidates: AccountCandidate[] = [];
-      for (const name of [...names].filter((n) => DIR_NAME.test(n)).sort()) {
-        const sourcePath = join(homeDir, name);
-        try {
-          if (!(await fs.isDirectory(sourcePath))) continue;
-          const evidence = await gather(fs, sourcePath, name === DEFAULT_DIR_NAME, homeDir);
-          const classified = classify(evidence);
-          if (classified === undefined) continue;
-          const alreadyAdded = existing.some(
-            (account) =>
-              account.identityDir === sourcePath ||
-              (classified.endpointHost !== undefined &&
-                account.routeKind === classified.routeKind &&
-                hostOfAccount(account.endpoint) === classified.endpointHost),
-          );
-          candidates.push({
-            sourcePath,
-            displayPath: `~/${name}`,
-            kind: classified.kind,
-            routeKind: classified.routeKind,
-            ...(classified.endpointHost !== undefined ? { endpointHost: classified.endpointHost } : {}),
-            hasOauthLogin: evidence.hasOauthLogin,
-            envOverrides: evidence.envOverrides,
-            warnings: evidence.readable ? classified.warnings : [...classified.warnings, 'unreadable'],
-            alreadyAdded,
-          });
-        } catch {
-          // one broken directory never stops the scan
-        }
-      }
-      return candidates;
+      return [...(await scanDirectories(existing)), ...(await machineLogins(existing))];
     },
   };
+
+  async function scanDirectories(existing: readonly AccountRecord[]): Promise<readonly AccountCandidate[]> {
+    let names: readonly string[];
+    try {
+      names = await fs.listEntries(homeDir);
+    } catch {
+      return [];
+    }
+    const candidates: AccountCandidate[] = [];
+    for (const name of [...names].filter((n) => DIR_NAME.test(n)).sort()) {
+      const sourcePath = join(homeDir, name);
+      try {
+        if (!(await fs.isDirectory(sourcePath))) continue;
+        const evidence = await gather(fs, sourcePath, name === DEFAULT_DIR_NAME, homeDir);
+        const classified = classify(evidence);
+        if (classified === undefined) continue;
+        const alreadyAdded = existing.some(
+          (account) =>
+            account.identityDir === sourcePath ||
+            (classified.endpointHost !== undefined &&
+              account.routeKind === classified.routeKind &&
+              hostOfAccount(account.endpoint) === classified.endpointHost),
+        );
+        candidates.push({
+          sourcePath,
+          displayPath: `~/${name}`,
+          kind: classified.kind,
+          provider: PROVIDER_ID,
+          routeKind: classified.routeKind,
+          ...(classified.endpointHost !== undefined ? { endpointHost: classified.endpointHost } : {}),
+          hasOauthLogin: evidence.hasOauthLogin,
+          envOverrides: evidence.envOverrides,
+          warnings: evidence.readable ? classified.warnings : [...classified.warnings, 'unreadable'],
+          alreadyAdded,
+        });
+      } catch {
+        // one broken directory never stops the scan
+      }
+    }
+    return candidates;
+  }
 }
 
 /** The real reader over node:fs; the file is read through a capped handle so a huge file never loads. */
@@ -225,6 +277,9 @@ export function createNodeAccountScanFs(): AccountScanFs {
   };
 }
 
-export function createNodeAccountScan(accounts: AccountScanOptions['accounts']): AccountDiscovery {
-  return createAccountScan({ fs: createNodeAccountScanFs(), homeDir: homedir(), accounts });
+export function createNodeAccountScan(
+  accounts: AccountScanOptions['accounts'],
+  machine?: { readonly providers: ProviderDiscovery; readonly env: Readonly<Record<string, string>> },
+): AccountDiscovery {
+  return createAccountScan({ fs: createNodeAccountScanFs(), homeDir: homedir(), accounts, ...(machine ?? {}) });
 }
