@@ -16,6 +16,7 @@ import type { Notifier } from './notifier';
 import type { ProjectRepo } from './project-repo';
 import type { ProposalRepo } from './proposal-repo';
 import type { QueueRepo } from './queue-repo';
+import type { RepoFolders } from './repo-folders';
 import type { RepoRegistry } from './repo-registry';
 import type { RunRepo } from './run-repo';
 import type { ScratchDirs } from './scratch-dirs';
@@ -50,4 +51,5 @@ export interface AppDeps {
   readonly checkpoints: CheckpointCommitter;
   readonly accountTests: AccountTestRepo;
   readonly scratch: ScratchDirs;
+  readonly repoFolders: RepoFolders;
 }

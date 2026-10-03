@@ -1,7 +1,7 @@
 // Definition store over YAML files: global root merged with per-project and per-repo overrides.
-import { mkdir, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
-import { parse as parseYaml } from 'yaml';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 
 import type { DefinitionScope, DefinitionStore } from '../../../application/index';
 import type { DefinitionIssue, Definitions, ProjectDef, Result, RoadmapIssue } from '../../../domain/index';
@@ -40,7 +40,32 @@ const firstLine = (error: unknown): string => {
   return message.split('\n')[0] ?? '';
 };
 
-const issuePath = (label: ScopeLabel, target: string): string => `${label}:${target}`;
+const isExisting = (error: unknown): boolean =>
+  typeof error === 'object' && error !== null && 'code' in error && error.code === 'EEXIST';
+
+/** Anything at the path counts, a dangling link included. */
+const pathExists = async (file: string): Promise<boolean> => {
+  try {
+    await lstat(file);
+    return true;
+  } catch (error) {
+    if (isMissing(error)) return false;
+    throw error;
+  }
+};
+
+/** Creates the file only when nothing is there (`wx`); false = it already existed and stays untouched. */
+const createExclusive = async (file: string, content: string): Promise<boolean> => {
+  try {
+    await writeFile(file, content, { encoding: 'utf8', flag: 'wx' });
+    return true;
+  } catch (error) {
+    if (isExisting(error)) return false;
+    throw error;
+  }
+};
+
+const issuePath =(label: ScopeLabel, target: string): string => `${label}:${target}`;
 
 type ParsedDocument =
   | { readonly ok: true; readonly mapping: UnknownRecord }
@@ -499,6 +524,37 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
         candidate: { label: scope.kind === 'global' ? 'global' : scope.kind, target, text: content },
       });
       return result.ok ? ok(undefined) : err(result.error);
+    },
+
+    installBuiltins: async (library) => {
+      const written: string[] = [];
+      const install = async (kind: 'roles' | 'flows', id: string, value: unknown): Promise<void> => {
+        const target = `${kind}/${id}${EXTENSION}`;
+        const file = join(config.globalRoot, target);
+        await mkdir(dirname(file), { recursive: true });
+        // Exclusive create: a file that exists in any form, whatever its content, is the user's.
+        if (await createExclusive(file, stringifyYaml(value))) written.push(target);
+      };
+      for (const role of library.roles) await install('roles', role.id, role);
+      for (const flow of library.flows) await install('flows', flow.id, flow);
+      return { written };
+    },
+
+    scaffoldProject: async (path, project, repo) => {
+      const folder = join(path, DOCKET_DIR);
+      const projectFile = join(folder, PROJECT_FILE);
+      const repoFile = join(folder, REPO_FILE);
+      try {
+        if (await pathExists(projectFile)) return err('project_yaml_exists');
+        if (await pathExists(repoFile)) return err('repo_yaml_exists');
+        await mkdir(folder, { recursive: true });
+        // project.yaml first; a file that appeared since the check still never gets overwritten.
+        if (!(await createExclusive(projectFile, stringifyYaml(project)))) return err('project_yaml_exists');
+        if (!(await createExclusive(repoFile, stringifyYaml(repo)))) return err('repo_yaml_exists');
+        return ok(undefined);
+      } catch {
+        return err('io_failed');
+      }
     },
   };
 }

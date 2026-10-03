@@ -72,6 +72,8 @@ const SUCCESS_KEYS: Readonly<Record<Command['type'], LabelKey>> = {
   'workOrder.enqueue': 'success.workOrder.enqueue',
   'task.open': 'success.task.open',
   'project.attach': 'success.project.attach',
+  // No surface issues the creation yet; it reads back as an attached project until its screen brings copy.
+  'project.create': 'success.project.attach',
   'repo.register': 'success.repo.register',
   'repo.unregister': 'success.repo.unregister',
   'gate.decide': 'success.gate.decide',

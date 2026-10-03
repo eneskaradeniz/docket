@@ -24,6 +24,7 @@ export * from './provider-discovery';
 export * from './provider-marks';
 export * from './quota-probe';
 export * from './queue-repo';
+export * from './repo-folders';
 export * from './repo-registry';
 export * from './repo-tools';
 export * from './run-repo';
