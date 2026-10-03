@@ -357,14 +357,22 @@ describe('createNodeDeps', () => {
     expect(notifier.notifications()).toEqual([{ title: 'title', body: 'body' }]);
   });
 
+  // The composed deps carry the real InstructionFiles adapter, not a stopgap: it reads the named
+  // files from disk at the worktree root.
+  it('compose: the composed deps carry the real instruction-files adapter', async () => {
+    const node = makeNode();
+    await mkdir(repoDir, { recursive: true });
+    await writeFile(join(repoDir, 'AGENTS.md'), 'guide', 'utf8');
+
+    const files = await node.deps.instructionFiles.read(repoDir, ['AGENTS.md', 'MISSING.md']);
+
+    expect(files).toEqual([{ name: 'AGENTS.md', content: 'guide' }]);
+  });
+
   // The exhaustive placeholder list: every entry below throws until its real adapter is wired, so
   // wiring one must delete its row here together with the stopgap in create-node-deps.ts.
   it('compose: the unwired stopgaps are the only placeholders', async () => {
     const node = makeNode();
-
-    await expect(node.deps.instructionFiles.read(repoDir, ['AGENTS.md'])).rejects.toThrow(
-      'instructionFiles adapter is not wired (#670)',
-    );
 
     await expect(
       node.deps.checkpoints.commit({ cwd: repoDir, runId: RUN, seq: 1 }),

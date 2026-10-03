@@ -753,6 +753,136 @@ export const CAPABILITY_REGISTRY = {
   ],
 } as const satisfies CapabilityRegistry;
 
+/** The instruction files each provider reads natively (P-37) — the provider's best-known set, not a
+ *  fixed law of the CLI. Entries name repo-level files and paths the CLI reads on its own; where a
+ *  CLI reads a file only conditionally (a documented "X first, otherwise Y" chain), the conditional
+ *  names stay OUT of the row so they remain inline candidates — content delivered twice beats
+ *  content lost (A-54). Directory-shaped and home-level lookups cannot be flat names, so they ride
+ *  the comments. Rows follow the provider order above; the union keeps this order. */
+export const PROVIDER_INSTRUCTION_FILES: readonly {
+  readonly providerId: string;
+  readonly instructionFiles: readonly string[];
+}[] = [
+  {
+    // Its own docs: CLAUDE.md with the project-local and user-level variants. The automatic project
+    // memory loads even with every setting source off, so the row names it per P-37 — it lives
+    // outside the repo and never matches a repo file, hence never an inline candidate.
+    providerId: 'claude-code',
+    instructionFiles: ['CLAUDE.md', 'CLAUDE.local.md', '~/.claude/projects/<project>/memory/'],
+  },
+  {
+    // Its own docs: AGENTS.md plus the override companion, walked root→cwd; a global ~/.codex/
+    // AGENTS.md and a configurable fallback-filename list (which can add CLAUDE.md) also exist — a
+    // fallback entry is exactly the conditional case that stays out of the row.
+    providerId: 'codex',
+    instructionFiles: ['AGENTS.md', 'AGENTS.override.md'],
+  },
+  {
+    // Its own docs: either context name at the repo root and under .agents/, plus .agents/rules/
+    // and ~/.gemini/ rule files (directories, not names). Both names are documented lookups.
+    providerId: 'agy',
+    instructionFiles: ['AGENTS.md', 'GEMINI.md', '.agents/AGENTS.md', '.agents/GEMINI.md'],
+  },
+  {
+    // Live `instruction list` probe with planted candidate files: the root files it loads. The
+    // .github/instructions/*.instructions.md set applies too but is a glob, not a name.
+    providerId: 'copilot',
+    instructionFiles: ['.github/copilot-instructions.md', 'AGENTS.md', 'CLAUDE.md'],
+  },
+  {
+    // Its own docs: both root files; .cursor/rules/ loads automatically (a directory, not a name).
+    providerId: 'cursor',
+    instructionFiles: ['AGENTS.md', 'CLAUDE.md'],
+  },
+  {
+    // Its own docs: AGENTS.md walked cwd→root. The Claude fallback is the HOME ~/.claude/CLAUDE.md
+    // (behind a documented off switch), not a repo file — a repo CLAUDE.md is not read natively.
+    providerId: 'opencode',
+    instructionFiles: ['AGENTS.md'],
+  },
+  {
+    // The CLI's own --ignore-rules help text: the files it auto-injects. CLAUDE.md auto-reading is
+    // unverified, so it stays out (inlined, never lost).
+    providerId: 'hermes',
+    instructionFiles: ['AGENTS.md', 'SOUL.md', '.cursorrules', '.hermes.md', 'HERMES.md'],
+  },
+  {
+    // Its own docs and live inspect output: the case variants plus the rules directories
+    // (.grok/rules, .claude/rules, .cursor/rules and their home equivalents) and the ~/.claude/*
+    // compatibility layer, on by default.
+    providerId: 'grok-build',
+    instructionFiles: ['AGENTS.md', 'Agents.md', 'AGENT.md', 'CLAUDE.md', 'Claude.md', 'CLAUDE.local.md'],
+  },
+  {
+    // Its own docs: AGENTS.md (/init); .kilo/rules/*.md and the kilo.jsonc instruction globs are
+    // directory/glob lookups. Claude-file reading is unverified, so CLAUDE.md stays out.
+    providerId: 'kilo',
+    instructionFiles: ['AGENTS.md'],
+  },
+  {
+    // Its own README: the preferred file plus AGENTS.md. CLAUDE.md reading is unverified.
+    providerId: 'atomcode',
+    instructionFiles: ['.atomcode.md', 'AGENTS.md'],
+  },
+  {
+    // Its own docs and source: only AGENTS.md, in trusted folders (project + user home); the
+    // source grep shows CLAUDE.md is not read.
+    providerId: 'vibe',
+    instructionFiles: ['AGENTS.md'],
+  },
+  // devin (planned, no definition) has no row on purpose: nothing repo-level is documented — it
+  // imports the user's ~/.claude configuration — so every present candidate inlines (A-54).
+  {
+    // Its own guide: the hierarchical standing-instruction files, all read walking up.
+    providerId: 'reasonix',
+    instructionFiles: ['REASONIX.md', 'AGENTS.md', 'CLAUDE.md'],
+  },
+  {
+    // Its own docs: AGENTS.md (/init) and the CLI's own memory files; the .claude/skills fallback
+    // needs an opt-in variable and CLAUDE.md reading is unverified, so both stay out.
+    providerId: 'mimo',
+    instructionFiles: ['AGENTS.md', 'MEMORY.md', 'checkpoint.md'],
+  },
+  {
+    // Installed CLI source: the default and agent context files plus the local variant; .qwen/rules
+    // is a directory. CLAUDE.md is deliberately not auto-loaded (source-verified).
+    providerId: 'qwen',
+    instructionFiles: ['QWEN.md', 'AGENTS.md', 'QWEN.local.md'],
+  },
+  {
+    // Its own docs: AGENTS.md (renameable via a config key — a renamed file never matches the
+    // candidate list, which inlines it: twice beats lost) plus the local variant; .qoder/rules/**
+    // is a glob. CLAUDE.md is not read by default.
+    providerId: 'qoder',
+    instructionFiles: ['AGENTS.md', 'AGENTS.local.md'],
+  },
+  {
+    // Its own docs: AGENTS.md plus the .kiro/steering/ and ~/.kiro/steering/ directories (not
+    // names). CLAUDE.md is undocumented, so it stays out.
+    providerId: 'kiro',
+    instructionFiles: ['AGENTS.md'],
+  },
+  {
+    // Its own docs: AGENTS.md walked cwd→$HOME. AGENT.md and CLAUDE.md load only when no AGENTS.md
+    // exists — the documented conditional — so they stay inline candidates.
+    providerId: 'amp',
+    instructionFiles: ['AGENTS.md'],
+  },
+  {
+    // Its own docs: the project-root file and the repo-local .kimi-code/ companion; the home and
+    // shared-global copies live outside the repo. CLAUDE.md is not auto-read (source-checked).
+    providerId: 'kimi',
+    instructionFiles: ['AGENTS.md', '.kimi-code/AGENTS.md'],
+  },
+  {
+    // Its own docs: CODEBUDDY.md first, otherwise AGENTS.md — the conditional fallback stays out of
+    // the row — plus the local variant; .codebuddy/rules/ is a directory. CLAUDE.md is not
+    // documented as read.
+    providerId: 'codebuddy',
+    instructionFiles: ['CODEBUDDY.md', 'CODEBUDDY.local.md'],
+  },
+];
+
 export function findProvider(id: string): ProviderRecord | undefined {
   return CAPABILITY_REGISTRY.providers.find((provider) => provider.providerId === id);
 }
