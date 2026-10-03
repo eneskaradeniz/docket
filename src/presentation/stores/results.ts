@@ -96,6 +96,8 @@ const SUCCESS_KEYS: Readonly<Record<Command['type'], LabelKey>> = {
   'account.consent.grant': 'success.account.consent.grant',
   'account.consent.revoke': 'success.account.consent.revoke',
   'binding.save': 'success.binding.save',
+  // No surface issues a refresh yet; it is a read, so it borrows the neutral account copy.
+  'quota.refresh': 'success.account.save',
   'app.update.check': 'success.app.update.check',
   'app.update.apply': 'success.app.update.apply',
 };

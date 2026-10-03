@@ -23,6 +23,16 @@ const ROUTE_ENV_KEYS: readonly string[] = [
   'ANTHROPIC_DEFAULT_HAIKU_MODEL',
 ];
 
+/** The allowlisted environment without the route-owned variables (I-34): what a child may inherit
+ * before its own account's route adds back what it needs. */
+export function withoutRouteEnv(baseEnv: Readonly<Record<string, string>>): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [name, value] of Object.entries(baseEnv)) {
+    if (!ROUTE_ENV_KEYS.includes(name)) env[name] = value;
+  }
+  return env;
+}
+
 /** Set on every run: a run must never edit the user's personal memory files. */
 const AUTO_MEMORY_OFF = 'CLAUDE_CODE_DISABLE_AUTO_MEMORY';
 
@@ -58,11 +68,7 @@ export async function buildRouteEnvironment(
 
   // Environment: the allowlist minus the route-owned variables; the vault and the route kind
   // are their only sources. Auto memory is off on every run, whatever the allowlist carried.
-  const env: Record<string, string> = {};
-  for (const [name, value] of Object.entries(config.baseEnv)) {
-    if (ROUTE_ENV_KEYS.includes(name)) continue;
-    env[name] = value;
-  }
+  const env = withoutRouteEnv(config.baseEnv);
   env[AUTO_MEMORY_OFF] = '1';
 
   // Route kind: which kind the account rides is resolved through the catalog port; the kind's

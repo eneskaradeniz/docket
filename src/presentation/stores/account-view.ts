@@ -20,7 +20,8 @@ export const WARN_PERCENT = 80;
 export type AccountViewChange =
   | { readonly type: 'workOrders.changed' }
   | { readonly type: 'run.updated'; readonly runId: string }
-  | { readonly type: 'update.changed' };
+  | { readonly type: 'update.changed' }
+  | { readonly type: 'accounts.changed' };
 
 export type AccountViewChangeSignal = (listener: (change: AccountViewChange) => void) => () => void;
 

@@ -72,7 +72,7 @@ describe('createZaiRouteProbe', () => {
       now: () => 1_790_000_000_000,
     });
 
-    const result = await probe.poll('zai-glm', null);
+    const result = await probe.poll('zai-glm', null, { accountId: null, identityDir: null });
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error('unreachable');
@@ -93,7 +93,7 @@ describe('createZaiRouteProbe', () => {
       now: () => 1_790_000_000_000,
     });
 
-    const result = await probe.poll('anthropic-subscription', null);
+    const result = await probe.poll('anthropic-subscription', null, { accountId: null, identityDir: null });
 
     expect(result).toEqual(err('unknown_provider'));
     expect(server.requests()).toEqual([]);
@@ -108,7 +108,7 @@ describe('createZaiRouteProbe', () => {
       now: () => 1_790_000_000_000,
     });
 
-    const result = await probe.poll('zai-glm', null);
+    const result = await probe.poll('zai-glm', null, { accountId: null, identityDir: null });
 
     expect(result).toEqual(err('probe_failed'));
     expect(server.requests()).toEqual([]);
@@ -128,8 +128,8 @@ describe('createZaiRouteProbe', () => {
       now: () => 1_790_000_000_000,
     });
 
-    await probe.poll('zai-glm', null);
-    await probe.poll('zai-glm', null);
+    await probe.poll('zai-glm', null, { accountId: null, identityDir: null });
+    await probe.poll('zai-glm', null, { accountId: null, identityDir: null });
 
     // Two accounts, one request each; the second poll of each hits its cache.
     expect(server.requests()).toHaveLength(2);
@@ -151,7 +151,7 @@ describe('createZaiRouteProbe', () => {
       now: () => 1_790_000_000_000,
     });
 
-    const result = await probe.poll('zai-glm', null);
+    const result = await probe.poll('zai-glm', null, { accountId: null, identityDir: null });
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error('unreachable');

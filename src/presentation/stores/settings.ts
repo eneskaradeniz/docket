@@ -26,7 +26,8 @@ import { testRefusal, type TestRefusal } from './account-test';
 export type SettingsChange =
   | { readonly type: 'workOrders.changed' }
   | { readonly type: 'run.updated'; readonly runId: string }
-  | { readonly type: 'update.changed' };
+  | { readonly type: 'update.changed' }
+  | { readonly type: 'accounts.changed' };
 
 /** Subscription to the change events; the api's `subscribe` (U-12) satisfies it as-is. */
 export type SettingsChangeSignal = (listener: (change: SettingsChange) => void) => () => void;
