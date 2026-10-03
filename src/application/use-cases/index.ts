@@ -13,3 +13,4 @@ export * from './deploy-gate';
 export * from './quota-poll';
 export * from './remote-checks-gate';
 export * from './instructions';
+export * from './checkpoints';

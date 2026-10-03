@@ -369,19 +369,34 @@ describe('createNodeDeps', () => {
     expect(files).toEqual([{ name: 'AGENTS.md', content: 'guide' }]);
   });
 
-  // The exhaustive placeholder list: every entry below throws until its real adapter is wired, so
-  // wiring one must delete its row here together with the stopgap in create-node-deps.ts.
-  it('compose: the unwired stopgaps are the only placeholders', async () => {
+  // The composed deps carry the real checkpoints adapter, not a stopgap: a commit lands in a real
+  // repo authored by the Docket identity, a clean tree answers { changed: false }, and the patch
+  // is redacted with the scanner's real patterns (the vcs module's own test runs with an injected
+  // redactor — the module map keeps vcs off gates, so this is where the real one is proven).
+  it('compose: the composed deps carry the real checkpoints adapter', async () => {
     const node = makeNode();
+    await initRepoWithCommit(repoDir);
+    const base = (await git(repoDir, ['rev-parse', 'HEAD'])).trim();
+    await writeFile(join(repoDir, 'token.txt'), `token: ghp_${'a'.repeat(36)}\n`, 'utf8');
 
-    await expect(
-      node.deps.checkpoints.commit({ cwd: repoDir, runId: RUN, seq: 1 }),
-    ).rejects.toThrow('checkpoints adapter is not wired (#671)');
-    await expect(
-      node.deps.checkpoints.diffSince({ cwd: repoDir, since: '0000000000000000000000000000000000000000' }),
-    ).rejects.toThrow('checkpoints adapter is not wired (#671)');
-    await expect(
-      node.deps.checkpoints.base({ cwd: repoDir, workOrderId: WO }),
-    ).rejects.toThrow('checkpoints adapter is not wired (#671)');
+    const committed = await node.deps.checkpoints.commit({ cwd: repoDir, runId: RUN, seq: 1 });
+    expect(committed).toEqual({
+      ok: true,
+      value: { sha: expect.stringMatching(/^[0-9a-f]{40,64}$/), changed: true },
+    });
+    expect((await git(repoDir, ['log', '-1', '--format=%an <%ae>'])).trim()).toBe(
+      'Docket <checkpoints@docket.local>',
+    );
+
+    const again = await node.deps.checkpoints.commit({ cwd: repoDir, runId: RUN, seq: 2 });
+    expect(again).toEqual({ ok: true, value: { sha: '', changed: false } });
+
+    const diff = await node.deps.checkpoints.diffSince({ cwd: repoDir, since: base });
+    expect(diff.ok).toBe(true);
+    if (diff.ok) {
+      expect(diff.value.files).toEqual(['token.txt']);
+      expect(diff.value.patch).toContain('[redacted]');
+      expect(diff.value.patch).not.toContain('ghp_');
+    }
   });
 });
