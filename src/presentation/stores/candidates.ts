@@ -9,6 +9,7 @@ import type { Command } from '../../api/commands';
 import type { Query } from '../../api/queries';
 import type { Actor } from '../../domain/index';
 import type { LabelKey } from '../labels/keys';
+import type { RowStanding } from './account-groups';
 import { commandResultKey, isQueryFailure } from './results';
 import type { SettingsIntentOutcome } from './settings';
 
@@ -101,6 +102,21 @@ const CANDIDATE_TONE: Readonly<Record<CandidateStatusKey, LampTone>> = {
 };
 
 export const candidateStatusTone = (key: CandidateStatusKey): LampTone => CANDIDATE_TONE[key];
+
+/** A candidate row's U-45 standing: needs-login and the probe that proved nothing (U-42's
+ *  Doğrulanamadı) are the only failing ones (U-45a) and feed the closed summary; every other
+ *  status stays in Bulunanlar. */
+const CANDIDATE_STANDING: Readonly<Record<CandidateStatusKey, RowStanding>> = {
+  'candidates.status.ready': 'ready',
+  'candidates.status.key_needed': 'other',
+  'candidates.status.needs_login': 'needsLogin',
+  'candidates.status.unreadable': 'other',
+  'candidates.status.not_installed': 'other',
+  'candidates.status.unknown': 'unverified',
+  'candidates.status.scanning': 'other',
+};
+
+export const candidateStanding = (key: CandidateStatusKey): RowStanding => CANDIDATE_STANDING[key];
 
 export type ProviderStatus = 'ready' | 'needs_login' | 'not_installed' | 'unknown';
 

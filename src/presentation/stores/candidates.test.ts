@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Command, CommandResult } from '../../api/commands';
 import type { Query } from '../../api/queries';
-import { createCandidatesStore, candidateRows, candidateDot, candidateStatusTone, listedCandidateCount, listBody, providerRows, type CandidateFact } from './candidates';
+import { createCandidatesStore, candidateRows, candidateDot, candidateStanding, candidateStatusTone, listedCandidateCount, listBody, providerRows, type CandidateFact } from './candidates';
 
 const base: CandidateFact = {
   sourcePath: '/home/u/.alpha',
@@ -108,6 +108,16 @@ describe('candidateRows', () => {
   it('U-34: a candidate without a token override never shows the key-move card', () => {
     const [row] = candidateRows([base], base.sourcePath, false);
     expect(row?.keyMoveCard).toBe(false);
+  });
+});
+
+describe('candidate section standing (U-45)', () => {
+  it('U-45: a candidate row carries its section standing — ready is found; needs-login and the probe that proved nothing feed the failed summary', () => {
+    expect(candidateStanding('candidates.status.ready')).toBe('ready');
+    expect(candidateStanding('candidates.status.needs_login')).toBe('needsLogin');
+    expect(candidateStanding('candidates.status.unknown')).toBe('unverified');
+    expect(candidateStanding('candidates.status.key_needed')).toBe('other');
+    expect(candidateStanding('candidates.status.unreadable')).toBe('other');
   });
 });
 
