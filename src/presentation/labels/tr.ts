@@ -420,6 +420,8 @@ export const TR: LabelBundle = {
   'candidates.title': "Eklenmemiş",
   'candidates.empty': "Eklenecek hesap bulunamadı.",
   'candidates.rescan': "Yeniden tara",
+  'candidates.scan.title': 'Asistanlar ve hesaplar taranıyor…',
+  'candidates.scan.done': '{n} hesap bulundu',
   'candidates.add': "Ekle",
   'candidates.status.ready': "Hazır",
   'candidates.status.key_needed': "Anahtar gerekli",

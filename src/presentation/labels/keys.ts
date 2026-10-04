@@ -454,6 +454,8 @@ export const LABEL_KEYS = [
   'candidates.title',
   'candidates.empty',
   'candidates.rescan',
+  'candidates.scan.title',
+  'candidates.scan.done',
   'candidates.add',
   'candidates.status.ready',
   'candidates.status.key_needed',

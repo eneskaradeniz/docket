@@ -422,6 +422,8 @@ export const EN: LabelBundle = {
   'candidates.title': "Not added",
   'candidates.empty': "No accounts to add were found.",
   'candidates.rescan': "Scan again",
+  'candidates.scan.title': 'Scanning assistants and accounts…',
+  'candidates.scan.done': '{n} accounts found',
   'candidates.add': "Add",
   'candidates.status.ready': "Ready",
   'candidates.status.key_needed': "Key needed",
