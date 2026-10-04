@@ -39,8 +39,9 @@ export interface GroupableRow {
 /** The two collapsible sections the visible accounts split into (U-45). */
 export type AccountSectionKind = 'found' | 'failed';
 
-/** A row's section standing (U-45): a ready row sits in Bulunanlar, every other visible row in
- *  Hatalı ve bulunamayanlar; a needs-login or Doğrulanamadı row also feeds the closed summary. */
+/** A row's section standing (U-45, U-45a): a needs-login or Doğrulanamadı row sits in Hatalı ve
+ *  bulunamayanlar and feeds the closed summary; every other visible row — ready, Rezervde, Veri
+ *  yok, any later status that still works — stays in Bulunanlar. */
 export type RowStanding = 'ready' | 'needsLogin' | 'unverified' | 'other';
 
 export interface SectionableRow extends GroupableRow {
@@ -104,17 +105,17 @@ export interface SectionedGroups<R extends SectionableRow> {
   readonly failed: readonly AccountGroup<R>[];
 }
 
-/** Splits the groups into the two U-45 sections: found holds the ready rows — and an installed
- *  assistant's empty card, which never turns "failed" — while needs-login, Doğrulanamadı and every
- *  other visible row land in failed. A group may appear in both. Pure. */
+/** Splits the groups into the two U-45 sections: only a needs-login or Doğrulanamadı row (U-45a)
+ *  lands in failed; every other visible row — and an installed assistant's empty card, which never
+ *  turns "failed" — stays in found. A group may appear in both. Pure. */
 export const splitSections = <R extends SectionableRow>(groups: readonly AccountGroup<R>[]): SectionedGroups<R> => ({
   found: groups.flatMap((group) => {
-    const ready = group.rows.filter((row) => row.standing === 'ready');
-    return ready.length > 0 || group.rows.length === 0 ? [ready.length === group.rows.length ? group : { ...group, rows: ready }] : [];
+    const working = group.rows.filter((row) => row.standing !== 'needsLogin' && row.standing !== 'unverified');
+    return working.length > 0 || group.rows.length === 0 ? [working.length === group.rows.length ? group : { ...group, rows: working }] : [];
   }),
   failed: groups.flatMap((group) => {
-    const failed = group.rows.filter((row) => row.standing !== 'ready');
-    return failed.length > 0 ? [failed.length === group.rows.length ? group : { ...group, rows: failed }] : [];
+    const failing = group.rows.filter((row) => row.standing === 'needsLogin' || row.standing === 'unverified');
+    return failing.length > 0 ? [failing.length === group.rows.length ? group : { ...group, rows: failing }] : [];
   }),
 });
 

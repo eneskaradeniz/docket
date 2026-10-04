@@ -103,8 +103,9 @@ const CANDIDATE_TONE: Readonly<Record<CandidateStatusKey, LampTone>> = {
 
 export const candidateStatusTone = (key: CandidateStatusKey): LampTone => CANDIDATE_TONE[key];
 
-/** A candidate row's U-45 standing: ready is the only one Bulunanlar holds; needs-login and the
- *  probe that proved nothing (U-42's Doğrulanamadı) also feed the failed section's closed summary. */
+/** A candidate row's U-45 standing: needs-login and the probe that proved nothing (U-42's
+ *  Doğrulanamadı) are the only failing ones (U-45a) and feed the closed summary; every other
+ *  status stays in Bulunanlar. */
 const CANDIDATE_STANDING: Readonly<Record<CandidateStatusKey, RowStanding>> = {
   'candidates.status.ready': 'ready',
   'candidates.status.key_needed': 'other',

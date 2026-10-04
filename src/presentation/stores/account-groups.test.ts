@@ -71,7 +71,7 @@ describe('account groups (U-41)', () => {
 describe('account sections (U-45)', () => {
   const standingRow = (id: string, providerId: string, standing: RowStanding) => ({ id, providerId, standing });
 
-  it('U-45: ready rows sit in Bulunanlar; needs-login, Doğrulanamadı and every other visible row in Hatalı ve bulunamayanlar', () => {
+  it('U-45: ready rows sit in Bulunanlar; needs-login and Doğrulanamadı rows in Hatalı ve bulunamayanlar', () => {
     const rows = [
       standingRow('ok-a', 'claude', 'ready'),
       standingRow('login-a', 'claude', 'needsLogin'),
@@ -80,8 +80,20 @@ describe('account sections (U-45)', () => {
     ];
     const split = splitSections(groupAccountRows(rows, PROVIDERS));
     // A group may appear in both sections; an installed assistant's empty card stays in Bulunanlar.
-    expect(split.found.map((group) => [group.providerId, group.rows.map((row) => row.id)])).toEqual([['claude', ['ok-a']], ['agy', []]]);
-    expect(split.failed.map((group) => [group.providerId, group.rows.map((row) => row.id)])).toEqual([['claude', ['login-a']], ['codex', ['unv-b', 'key-b']]]);
+    expect(split.found.map((group) => [group.providerId, group.rows.map((row) => row.id)])).toEqual([['claude', ['ok-a']], ['codex', ['key-b']], ['agy', []]]);
+    expect(split.failed.map((group) => [group.providerId, group.rows.map((row) => row.id)])).toEqual([['claude', ['login-a']], ['codex', ['unv-b']]]);
+  });
+
+  it('U-45a: a Rezervde or Veri yok row — any standing but the two failing ones — stays in Bulunanlar; Hatalı ve bulunamayanlar holds only needs-login and Doğrulanamadı', () => {
+    const rows = [
+      standingRow('reserve-b', 'codex', 'other'),
+      standingRow('nodata-b', 'codex', 'other'),
+      standingRow('login-b', 'codex', 'needsLogin'),
+      standingRow('unv-a', 'claude', 'unverified'),
+    ];
+    const split = splitSections(groupAccountRows(rows, PROVIDERS));
+    expect(split.found.map((group) => [group.providerId, group.rows.map((row) => row.id)])).toEqual([['codex', ['reserve-b', 'nodata-b']], ['agy', []]]);
+    expect(split.failed.map((group) => [group.providerId, group.rows.map((row) => row.id)])).toEqual([['claude', ['unv-a']], ['codex', ['login-b']]]);
   });
 
   it('U-45: Bulunanlar starts open, Hatalı ve bulunamayanlar starts closed; one toggle flips its own section only', () => {

@@ -3,8 +3,9 @@
 // and the selection circle where the host selects (the wizard's Hesaplar; Settings has none). The
 // same component draws discovery candidates and stored accounts: the host maps its rows to
 // `AccountRowView`. Extras a host owns (the key-move card, the test line) are passed per row.
-// With `sections` the list splits into U-45's two collapsible sections — Bulunanlar over the ready
-// rows, Hatalı ve bulunamayanlar over the rest; the screen owns the open standing.
+// With `sections` the list splits into U-45's two collapsible sections — Bulunanlar over every
+// working row, Hatalı ve bulunamayanlar over the needs-login and Doğrulanamadı rows alone (U-45a);
+// the screen owns the open standing.
 import type { ReactNode } from 'react';
 
 import { t, type Locale } from '../labels/t';

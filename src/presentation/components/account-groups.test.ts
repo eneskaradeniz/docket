@@ -82,15 +82,25 @@ describe('AccountGroups sections (U-45)', () => {
     expect(out).toContain('1 doğrulanamadı');
   });
 
-  it('U-45: each summary part is omitted at zero, and with none to name the closed header carries only its count', () => {
+  it('U-45: each summary part is omitted at zero', () => {
     const onlyLogin = html({ rows: [row('ok-1', 'ready', 'claude'), row('login-1', 'needsLogin', 'claude')] });
     expect(onlyLogin).toContain('1 giriş gerekli');
     expect(onlyLogin).not.toContain('doğrulanamadı');
-    const noneNamed = html({ rows: [row('ok-1', 'ready', 'claude'), row('key-1', 'other', 'codex')] });
-    expect(noneNamed).toContain('data-account-section="failed"');
-    expect(noneNamed).toContain('1 hesap');
-    expect(noneNamed).not.toContain('giriş gerekli');
-    expect(noneNamed).not.toContain('doğrulanamadı');
+    const onlyUnverified = html({ rows: [row('ok-1', 'ready', 'claude'), row('unv-1', 'unverified', 'claude')] });
+    expect(onlyUnverified).toContain('1 doğrulanamadı');
+    expect(onlyUnverified).not.toContain('giriş gerekli');
+  });
+
+  it('U-45a: a Rezervde or Veri yok row renders in Bulunanlar; Hatalı ve bulunamayanlar holds only the failing rows', () => {
+    const out = html({
+      rows: [row('ok-1', 'ready', 'claude'), row('reserve-1', 'other', 'claude'), row('nodata-1', 'other', 'codex'), row('login-1', 'needsLogin', 'codex')],
+    });
+    const failedAt = out.indexOf('data-account-section="failed"');
+    expect(failedAt).toBeGreaterThan(-1);
+    expect(out.indexOf('data-account-row="reserve-1"')).toBeGreaterThan(-1);
+    expect(out.indexOf('data-account-row="reserve-1"')).toBeLessThan(failedAt);
+    expect(out.indexOf('data-account-row="nodata-1"')).toBeLessThan(failedAt);
+    expect(out.indexOf('data-account-row="login-1"')).toBeGreaterThan(failedAt);
   });
 
   it('U-45: the open state is the screen\'s — a state the screen holds through "Yeniden tara" and re-renders draws exactly what the screen holds', () => {

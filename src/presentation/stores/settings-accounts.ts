@@ -24,8 +24,9 @@ export interface SettingsAccountRow extends GroupableRow {
   readonly unverified: boolean;
 }
 
-/** A stored account's U-45 standing: its status is the section's only test, so a ready account
- *  sits in Bulunanlar and reserve, no-data and model-error rows in Hatalı ve bulunamayanlar. */
+/** A stored account's U-45 standing: none of its statuses is needs-login or Doğrulanamadı, so
+ *  every stored account — ready, Rezervde, Veri yok, Model hatası — stays in Bulunanlar (U-45a);
+ *  an unverified provider keeps its Test et, never a failing section. */
 const SETTINGS_STANDING: Readonly<Record<AccountStatus, RowStanding>> = {
   ready: 'ready',
   reserve: 'other',
