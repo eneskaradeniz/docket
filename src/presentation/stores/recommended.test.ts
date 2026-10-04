@@ -4,13 +4,14 @@ import { describe, expect, it } from 'vitest';
 
 import type { SettingsAccountView } from '../../api/queries';
 
-import { RECOMMENDED, recommendedWorkStyle, settingDiffs } from './recommended';
+import { RECOMMENDED, isPayPerUse, mayHaveCap, recommendedWorkStyle, settingDiffs } from './recommended';
 
 const ACCOUNT: SettingsAccountView = {
   id: 'a-1',
   provider: 'claude',
   label: 'Work',
   authMode: 'subscription',
+  billing: 'included',
   plan: 'pro',
   limitPolicy: 'wait_resume',
   reserve: { short: null, long: null },
@@ -65,8 +66,17 @@ describe('recommended', () => {
     ]);
   });
 
+  it('A-83: pay-per-use follows the billing view, not the connection kind', () => {
+    expect(isPayPerUse({ ...ACCOUNT, authMode: 'api_key', billing: 'included' })).toBe(false);
+    expect(isPayPerUse({ ...ACCOUNT, authMode: 'api_key', billing: 'unknown' })).toBe(true);
+    expect(isPayPerUse({ ...ACCOUNT, authMode: 'api_key', billing: 'metered' })).toBe(true);
+    expect(isPayPerUse({ ...ACCOUNT, authMode: 'subscription', billing: 'included' })).toBe(false);
+    expect(mayHaveCap({ ...ACCOUNT, authMode: 'api_key', billing: 'included' })).toBe(false);
+    expect(mayHaveCap({ ...ACCOUNT, authMode: 'api_key', billing: 'metered' })).toBe(true);
+  });
+
   it('U-29: a cap that was never set is not a difference, for a subscription or a pay-per-use account', () => {
-    const paid = { ...ACCOUNT, authMode: 'api_key' };
+    const paid = { ...ACCOUNT, authMode: 'api_key', billing: 'unknown' as const };
     expect(settingDiffs(paid)).toEqual([]);
     expect(settingDiffs({ ...ACCOUNT, consentedModels: ['*'] })).toEqual([]);
     expect(settingDiffs({ ...paid, caps: [{ scope: 'account_week', amountUsd: 50, warnPercent: 80 }] }).map((diff) => diff.key)).toEqual(['cap']);

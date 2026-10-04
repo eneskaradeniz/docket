@@ -47,6 +47,7 @@ const account = (id: string, label: string, meters: readonly SettingsMeterView[]
   provider: 'opencode',
   label,
   authMode: 'api_key',
+  billing: 'unknown',
   plan: null,
   ...ACCOUNT_SETTINGS,
   pools: [{ id: `pool-${id}`, label, kind: 'allowance', appliesTo: 'all' }],

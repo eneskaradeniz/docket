@@ -32,6 +32,7 @@ const ACCOUNT: SettingsAccountView = {
   provider: 'claude',
   label: 'Work',
   authMode: 'subscription',
+  billing: 'included',
   plan: 'pro',
   limitPolicy: 'wait_resume',
   reserve: { short: null, long: null },

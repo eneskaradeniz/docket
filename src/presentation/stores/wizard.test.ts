@@ -16,6 +16,7 @@ const candidate = (path: string, patch: Record<string, unknown> = {}): Record<st
   kind: 'subscription',
   routeKind: 'anthropic',
   provider: 'claude',
+  billing: 'included',
   hasOauthLogin: true,
   envOverrides: [],
   warnings: [],
@@ -27,6 +28,7 @@ const claudeA = candidate('.claude');
 const claudeB = candidate('.claude-b');
 const endpoint = candidate('.claude-zai', {
   kind: 'compatible_endpoint',
+  billing: 'unknown',
   endpointHost: 'api.z.ai',
   envOverrides: ['token', 'endpoint'],
 });
@@ -43,6 +45,7 @@ const accountView = (id: string, label: string, authMode: string): SettingsAccou
   provider: 'claude',
   label,
   authMode,
+  billing: authMode === 'subscription' ? 'included' : 'unknown',
   plan: null,
   limitPolicy: 'wait_resume',
   reserve: { short: null, long: null },
@@ -247,6 +250,36 @@ describe('wizard store (U-35)', () => {
     await bundle.store.next();
     expect(bundle.store.state().rows.map((row) => [row.id, row.selected])).toEqual([['acc-9', true]]);
     expect(bundle.store.state().nextEnabled).toBe(true);
+  });
+
+  it('A-83a: a candidate whose route declares included billing lands in Abonelikler with no consent gate', async () => {
+    const zaiPlan = candidate('.claude-zai-plan', { kind: 'compatible_endpoint', billing: 'included', endpointHost: 'api.z.ai' });
+    const bundle = setup([zaiPlan]);
+    await toAccounts(bundle, ['.claude-zai-plan']);
+    bundle.store.setImportToken(keyOf('.claude-zai-plan'), true);
+    await bundle.store.next();
+    expect(bundle.store.state().step).toBe('budget');
+    const { subscriptions, payPerUse } = bundle.store.state().budget;
+    expect(subscriptions.map((row) => row.id)).toEqual([keyOf('.claude-zai-plan')]);
+    expect(payPerUse).toEqual([]);
+    expect(bundle.store.state().nextEnabled).toBe(true);
+  });
+
+  it('A-83: Bütçe groups and gates by the billing view — an included key-based account is no pay-per-use, an unknown one is', async () => {
+    const bundle = setup([]);
+    bundle.api.setAccounts([
+      { ...accountView('acc-plan', 'z.ai planı', 'api_key'), billing: 'included' },
+      accountView('acc-key', 'Anahtar', 'api_key'),
+    ]);
+    await bundle.store.open();
+    await bundle.store.next();
+    await bundle.store.next();
+    await bundle.store.next();
+    expect(bundle.store.state().step).toBe('budget');
+    const { subscriptions, payPerUse } = bundle.store.state().budget;
+    expect(subscriptions.map((row) => row.id)).toEqual(['acc-plan']);
+    expect(payPerUse.map((row) => row.id)).toEqual(['acc-key']);
+    expect(bundle.store.state().nextEnabled).toBe(false);
   });
 
   it('U-35: "Bu adımı atla" is offered on the steps with a default and never on a gate', async () => {

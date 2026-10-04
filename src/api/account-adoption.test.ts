@@ -49,7 +49,7 @@ describe('accounts.candidates', () => {
   it('returns the scan result, cached for the session, and rescans on refresh', async () => {
     const h = setup();
     const api = createApi(h.deps, undefined, undefined, undefined, undefined, undefined, h);
-    expect(await api.query({ type: 'accounts.candidates' })).toEqual([{ ...ENDPOINT, provider: 'prov-a' }]);
+    expect(await api.query({ type: 'accounts.candidates' })).toEqual([{ ...ENDPOINT, provider: 'prov-a', billing: 'unknown' }]);
     await api.query({ type: 'accounts.candidates' });
     expect(h.scans.count).toBe(1);
     await api.query({ type: 'accounts.candidates', refresh: true });
@@ -65,9 +65,38 @@ describe('accounts.candidates', () => {
     });
     const rows = await api.query({ type: 'accounts.candidates' });
     expect(rows).toEqual([
-      { ...ENDPOINT, provider: 'prov-a' },
-      { ...stranger, provider: null },
+      { ...ENDPOINT, provider: 'prov-a', billing: 'unknown' },
+      { ...stranger, provider: null, billing: 'unknown' },
     ]);
+  });
+
+  it('A-83a: a candidate carries its route kind’s declared billing, else the fallback by kind', async () => {
+    const h = setup();
+    const zai: AccountCandidate = { ...ENDPOINT, sourcePath: '/home/u/.zai', routeKind: 'zai-route' };
+    const metered: AccountCandidate = { ...ENDPOINT, sourcePath: '/home/u/.api', routeKind: 'api-route' };
+    const subscription: AccountCandidate = {
+      ...ENDPOINT,
+      sourcePath: '/home/u/.sub',
+      kind: 'subscription',
+      routeKind: 'sub-route',
+      hasOauthLogin: true,
+      envOverrides: [],
+    };
+    const deps = createFakeDeps({
+      clock: createFakeClock(1_000),
+      capabilities: createFakeCapabilityCatalog([
+        { id: 'endpoint-route', provider: 'prov-a', authMode: 'api_key' },
+        { id: 'zai-route', provider: 'prov-a', authMode: 'api_key', defaultBilling: 'included' },
+        { id: 'api-route', provider: 'prov-a', authMode: 'api_key', defaultBilling: 'metered' },
+        { id: 'sub-route', provider: 'prov-a', authMode: 'subscription' },
+      ]),
+    });
+    const api = createApi(deps, undefined, undefined, undefined, undefined, undefined, {
+      ...h,
+      discovery: { scan: async () => [ENDPOINT, zai, metered, subscription] },
+    });
+    const rows = (await api.query({ type: 'accounts.candidates' })) as readonly { readonly billing: string }[];
+    expect(rows.map((row) => row.billing)).toEqual(['unknown', 'included', 'metered', 'included']);
   });
 
   it('answers not_found when no discovery is composed', async () => {

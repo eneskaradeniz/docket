@@ -20,6 +20,8 @@ export interface CandidateFact {
   readonly routeKind: string;
   /** The def id the route kind belongs to; null when unknown (A-67). */
   readonly provider: string | null;
+  /** The candidate's route billing (A-83a). */
+  readonly billing: 'included' | 'metered' | 'unknown';
   readonly endpointHost?: string;
   readonly hasOauthLogin: boolean;
   readonly envOverrides: readonly ('endpoint' | 'token' | 'model')[];

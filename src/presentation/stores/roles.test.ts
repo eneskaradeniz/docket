@@ -17,6 +17,7 @@ const account = (id: string, provider: string): SettingsAccountsView['accounts']
   provider,
   label: id,
   authMode: 'subscription',
+  billing: 'included',
   plan: null,
   limitPolicy: 'wait_resume',
   reserve: { short: null, long: null },

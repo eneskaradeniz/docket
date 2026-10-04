@@ -180,23 +180,29 @@ describe('model catalog data (P-29)', () => {
     });
   });
 
-  it('P-40: the API-key route kind defaults its live models to metered — the other kinds fix no default', () => {
+  it('P-40: the API-key route kind defaults its live models to metered — only the subscription kind fixes none', () => {
     // Everything on an API-key route is billed per use, so a live row that reports no billing of
     // its own must never read as unknown-free. A subscription rides a plan the SDK reports per
     // model, and a compatible endpoint's costs read as plan equivalents — neither fixes a default.
     expect(findRouteKind('anthropic-api')?.defaultBilling).toBe('metered');
     expect(findRouteKind('anthropic-subscription')?.defaultBilling).toBeUndefined();
-    expect(findRouteKind('zai-glm')?.defaultBilling).toBeUndefined();
+    expect(findRouteKind('zai-glm')?.defaultBilling).toBe('included'); // P-52
   });
 
-  it('P-42: the Claude subscription kind lists exactly the opus, sonnet and haiku families as included — no other route kind does', () => {
+  it('P-42: the Claude subscription kind lists exactly the opus, sonnet and haiku families as included — the only other family list is the z.ai glm kind', () => {
     expect(findRouteKind('anthropic-subscription')?.familyBilling).toEqual([
       { contains: 'opus', billing: 'included' },
       { contains: 'sonnet', billing: 'included' },
       { contains: 'haiku', billing: 'included' },
     ]);
     expect(findRouteKind('anthropic-api')?.familyBilling).toBeUndefined();
-    expect(findRouteKind('zai-glm')?.familyBilling).toBeUndefined();
+    expect(findRouteKind('zai-glm')?.familyBilling).toEqual([{ contains: 'glm', billing: 'included' }]); // P-52
+  });
+
+  it('P-52: the z.ai route kind is included by default and lists exactly the glm family as included', () => {
+    const kind = findRouteKind('zai-glm');
+    expect(kind?.defaultBilling).toBe('included');
+    expect(kind?.familyBilling).toEqual([{ contains: 'glm', billing: 'included' }]);
   });
 
   it('P-40: the Codex subscription kind defaults its live models to included — the plan coverage is documented', () => {
