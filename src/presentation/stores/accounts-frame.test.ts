@@ -7,10 +7,7 @@ import { describe, expect, it } from 'vitest';
 import type { Api } from '../../api/api';
 import type { Query, SettingsAccountView, SettingsAccountsView, SettingsMeterView } from '../../api/queries';
 import {
-  VISIBLE_ACCOUNTS,
   accountCards,
-  accountFold,
-  accountsMoreLabel,
   createAccountsFrameStore,
   remainingTone,
   tightestOf,
@@ -284,26 +281,6 @@ describe('accounts frame store', () => {
     emitter.emit({ type: 'workOrders.changed' });
     await flush();
     expect(api.queries.length).toBe(3);
-  });
-});
-
-describe('U-51: the five-account fold', () => {
-  it('U-51: five accounts show at first, the rest sit behind the fold until it opens', () => {
-    expect(VISIBLE_ACCOUNTS).toBe(5);
-    expect(accountFold(3, false)).toStrictEqual({ visible: 3, hidden: 0 });
-    expect(accountFold(5, false)).toStrictEqual({ visible: 5, hidden: 0 });
-    expect(accountFold(6, false)).toStrictEqual({ visible: 5, hidden: 1 });
-    expect(accountFold(9, false)).toStrictEqual({ visible: 5, hidden: 4 });
-    expect(accountFold(9, true)).toStrictEqual({ visible: 9, hidden: 0 });
-    expect(accountFold(3, true)).toStrictEqual({ visible: 3, hidden: 0 });
-  });
-
-  it('U-51: the fold button reads +n hesap daha closed and Daha az göster open', () => {
-    expect(accountsMoreLabel('tr', 1)).toBe('+1 hesap daha');
-    expect(accountsMoreLabel('tr', 4)).toBe('+4 hesap daha');
-    expect(accountsMoreLabel('tr', 0)).toBe('Daha az göster');
-    expect(accountsMoreLabel('en', 2)).toBe('+2 more accounts');
-    expect(accountsMoreLabel('en', 0)).toBe('Show fewer');
   });
 });
 

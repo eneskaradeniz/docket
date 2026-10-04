@@ -157,8 +157,6 @@ export const EN: LabelBundle = {
   'accounts.unadded.see': "View ›",
   'accounts.barHint': "The bar shows the tightest limit.",
   'accounts.noLimit': "No limit data",
-  'accounts.more': "+{n} more accounts",
-  'accounts.less': "Show fewer",
   'accounts.tightest': "Tightest",
   'accounts.limits': "Limits",
   'accounts.open': "Open account",

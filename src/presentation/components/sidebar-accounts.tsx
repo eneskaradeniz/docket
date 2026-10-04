@@ -1,25 +1,23 @@
-// components/sidebar-accounts.tsx — the sidebar's Hesaplar section (U-16, cards per U-51): the
-// one collapsible part of the sidebar, collapsed when the session starts, its header a chevron,
-// the section name and the account count, with the usage refresh beside it. Open, one dim line
-// says what the bars read, and every account is one equal 56 px card — mark, the account's name
-// only, a status dot, then one bar for the tightest limit with its percent on the right (or the
-// dim no-data line); the bar and the dot colour by what remains (U-51's thresholds). Click or
-// Enter opens the limits popover; Esc or an outside click closes it and the focus never leaves
-// the card. Five cards show at first, the rest behind the "+n hesap daha" fold; the open list
-// scrolls inside the section, never the sidebar. The refresh intent re-polls usage through the
-// store while the icon spins.
+// components/sidebar-accounts.tsx — the sidebar's Hesaplar section (U-16, cards per U-51, its
+// visible count per U-51b): the one collapsible part of the sidebar, collapsed when the session
+// starts, its header a chevron, the section name and the account count, with the usage refresh
+// beside it. Open, one dim line says what the bars read, and every account is one equal 56 px
+// card — mark, the account's name only, a status dot, then one bar for the tightest limit with
+// its percent on the right (or the dim no-data line); the bar and the dot colour by what remains
+// (U-51's thresholds). Click or Enter opens the limits popover; Esc or an outside click closes
+// it and the focus never leaves the card. The body is one fixed height — two cards with the top
+// of a third peeking beneath — and the rest scroll inside it, never the sidebar. The refresh
+// intent re-polls usage through the store while the icon spins.
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
 
 import { ACTIVE_CLASS } from './active-state';
 import { MARK_SIZE, ProviderMark } from './provider-mark';
+import { ACCOUNTS_BODY_MAX_HEIGHT } from './sidebar-geometry';
 import { SIDEBAR_HEADER_BUTTON } from './sidebar-header-button';
 import { Skeleton, SkeletonReveal, SkeletonStyle, useSkeleton } from './skeleton';
 import { t, type Locale } from '../labels/t';
 import {
-  accountFold,
-  accountsMoreLabel,
   remainingTone,
-  VISIBLE_ACCOUNTS,
   type AccountCard,
   type AccountLimit,
   type AccountsFrameStore,
@@ -81,7 +79,7 @@ const InfoIcon = () => (
 );
 
 /** One account card's shape as a placeholder (U-26): the card's own fixed 56 px wrapper — a mark
- *  box, a name line, the tightest bar's row — five of them fill the section's folded standing. */
+ *  box, a name line, the tightest bar's row — three of them fill the body's fixed standing. */
 const AccountCardSkeleton = () => (
   <div className="flex h-14 w-full gap-2 rounded-card border border-hairline p-2.5 px-3">
     <Skeleton radius="control" width="16px" height="16px" className="mt-0.5" />
@@ -322,11 +320,7 @@ export function SidebarAccounts({
   // Only a section with no cards yet can carry a skeleton (U-26); a refresh keeps the cards up.
   const { skeleton, reveal } = useSkeleton(state.loading && state.cards === null, () => Date.now());
   const unadded = unaddedRow(locale, unaddedCount);
-  // The five-account fold (U-51): five show at first, the button unfolds the rest.
-  const [allShown, setAllShown] = useState(false);
   const cards = state.cards ?? [];
-  const fold = accountFold(cards.length, allShown);
-  const visible = cards.slice(0, fold.visible);
   const listId = useId();
 
   // The limits popover (U-51): one at a time, placed beside its card. The card keeps the focus —
@@ -379,7 +373,7 @@ export function SidebarAccounts({
     <section
       data-accounts-frame=""
       aria-label={t(locale, 'accounts.title')}
-      className={`mt-2.5 flex flex-col ${state.open ? 'min-h-0 flex-auto' : 'flex-none'}`}
+      className="mt-2.5 flex flex-none flex-col"
     >
       {/* The header row's classes never change with the state — its top offset and height are the
           same collapsed and expanded, so expanding only adds the body below. The chevron, the
@@ -413,20 +407,22 @@ export function SidebarAccounts({
       </div>
       <div
         data-accounts-body=""
-        className={`grid transition-all duration-200 ${state.open ? 'min-h-0 flex-1 grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
+        className={`grid transition-all duration-200 ${state.open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
       >
         <div className="flex min-h-0 flex-col overflow-hidden">
           <p className="flex-none px-3 pb-1 text-[12px] text-inkdim">{t(locale, 'accounts.barHint')}</p>
+          {/* The body's one fixed height (U-51b): two cards with the top of a third peeking
+              beneath them, whatever the window's height — the peek is what says it scrolls. */}
           <div
             id={listId}
             data-accounts-list=""
-            className={`grid content-start gap-2 overflow-y-auto px-2 pb-1 ${state.open ? 'min-h-0 flex-1' : ''}`}
+            className={`grid content-start gap-2 overflow-y-auto px-2 pb-1 [scrollbar-width:thin] ${ACCOUNTS_BODY_MAX_HEIGHT}`}
             aria-busy={skeleton ? 'true' : undefined}
           >
             {skeleton ? (
               <div data-skeleton="" className="grid">
                 <SkeletonStyle />
-                {Array.from({ length: VISIBLE_ACCOUNTS }, (_, index) => (
+                {[0, 1, 2].map((index) => (
                   <AccountCardSkeleton key={index} />
                 ))}
               </div>
@@ -434,7 +430,7 @@ export function SidebarAccounts({
               <p className="px-1 pb-1 text-xs text-inkdim">{t(locale, 'accounts.empty')}</p>
             ) : (
               <SkeletonReveal active={reveal}>
-                {visible.map((card) => (
+                {cards.map((card) => (
                   <AccountCardView
                     key={card.id}
                     card={card}
@@ -449,18 +445,6 @@ export function SidebarAccounts({
               </SkeletonReveal>
             )}
           </div>
-          {cards.length > VISIBLE_ACCOUNTS ? (
-            <button
-              type="button"
-              data-accounts-more=""
-              onClick={() => setAllShown((standing) => !standing)}
-              aria-expanded={allShown}
-              aria-controls={listId}
-              className="mx-2 mt-2 flex flex-none items-center gap-1.5 rounded-control px-2.5 py-1.5 text-left text-[12.5px] font-semibold text-inkdim hover:bg-raised hover:text-ink"
-            >
-              {accountsMoreLabel(locale, fold.hidden)}
-            </button>
-          ) : null}
           {unadded === null ? null : (
             <button
               type="button"

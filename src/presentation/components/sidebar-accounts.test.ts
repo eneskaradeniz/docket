@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import type { Api } from '../../api/api';
 import type { SettingsAccountView, SettingsAccountsView, SettingsMeterView } from '../../api/queries';
 import { AccountLimitsPopover, SidebarAccounts } from './sidebar-accounts';
+import { ACCOUNTS_BODY_MAX_HEIGHT } from './sidebar-geometry';
 import { createAccountsFrameStore, type AccountCard } from '../stores/accounts-frame';
 import { createProviderMarksStore } from '../stores/provider-marks';
 import type { ShellChangeSignal } from '../stores/shell';
@@ -174,17 +175,27 @@ describe('SidebarAccounts (U-51)', () => {
     expect(html).toContain('data-account-dot="none"');
   });
 
-  it('U-51: five accounts show at first, the rest behind a +n hesap daha button that folds the list open', async () => {
-    const accounts = Array.from({ length: 7 }, (_, index) => account(`a${index}`, `Hesap ${index}`, [meterAt(`a${index}`, 50)]));
+  it('U-51b: two cards show at a time with a third peeking — no fold button, the rest scroll inside', async () => {
+    const accounts = Array.from({ length: 9 }, (_, index) => account(`a${index}`, `Hesap ${index}`, [meterAt(`a${index}`, 50)]));
     const html = await renderFrame(view(accounts), true);
-    expect((html.match(/data-account-card=/g) ?? []).length).toBe(5);
-    expect(html).toContain('+2 hesap daha');
-    expect(html).toContain('data-accounts-more');
-    expect(html).toContain('aria-expanded="false"');
-    // The open list scrolls inside the section, never the sidebar.
+    // Every card is in the DOM; the body's fixed height is what shows two and a peek.
+    expect((html.match(/data-account-card=/g) ?? []).length).toBe(9);
+    // The fold button is gone — neither of its words, neither of its marks.
+    expect(html).not.toContain('data-accounts-more');
+    expect(html).not.toContain('hesap daha');
+    expect(html).not.toContain('Daha az göster');
+    // The scroll stays inside the section, vertical only.
     expect(html).toContain('overflow-y-auto');
-    expect(html).toContain('flex-auto');
-    expect(html).toContain('min-h-0');
+    expect(html).not.toContain('overflow-x');
+  });
+
+  it('U-51b: the section body is the fixed two-cards-plus-peek measure, not the leftover height', async () => {
+    expect(ACCOUNTS_BODY_MAX_HEIGHT).toBe('max-h-[148px]');
+    const accounts = Array.from({ length: 9 }, (_, index) => account(`a${index}`, `Hesap ${index}`, [meterAt(`a${index}`, 50)]));
+    const html = await renderFrame(view(accounts), true);
+    expect(html).toContain(ACCOUNTS_BODY_MAX_HEIGHT);
+    // The section no longer grows into the sidebar's leftover: the peek survives every height.
+    expect(html).not.toContain('flex-auto');
   });
 
   it('U-51: the popover lists every limit with its name and reset time, marking the tightest', () => {
@@ -288,7 +299,7 @@ describe('SidebarAccounts (U-51)', () => {
     expect(html).toContain('Hesabı aç');
   });
 
-  it('U-51: helper text holds at least 12 px — the hint, the percent, the no-limit line, the fold button', async () => {
+  it('U-51: helper text holds at least 12 px — the hint, the percent, the no-limit line', async () => {
     const accounts = Array.from({ length: 6 }, (_, index) => account(`a${index}`, `Hesap ${index}`, [meterAt(`a${index}`, 50)]));
     const html = await renderFrame(view(accounts), true);
     expect(html).not.toContain('text-[9.5px]');

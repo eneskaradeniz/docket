@@ -183,11 +183,9 @@ export const LABEL_KEYS = [
   'accounts.unadded.one',
   'accounts.unadded.see',
   // U-51: the Hesaplar section's own words — the helper line under the header, the no-data card
-  // line, the five-account fold and the limits popover's title and tightest mark.
+  // line and the limits popover's title and tightest mark.
   'accounts.barHint',
   'accounts.noLimit',
-  'accounts.more',
-  'accounts.less',
   'accounts.tightest',
   'accounts.limits',
   // U-51a: the popover's way into the account view — the one control it carries.

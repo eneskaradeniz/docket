@@ -156,8 +156,6 @@ export const TR: LabelBundle = {
   'accounts.unadded.see': "Gör ›",
   'accounts.barHint': "Çubuk en dar limiti gösterir.",
   'accounts.noLimit': "Limit bilgisi yok",
-  'accounts.more': "+{n} hesap daha",
-  'accounts.less': "Daha az göster",
   'accounts.tightest': "En dar",
   'accounts.limits': "Limitler",
   'accounts.open': "Hesabı aç",

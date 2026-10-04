@@ -13,9 +13,6 @@ import { t, type Locale } from '../labels/t';
 import { meterListView, type MeterName } from './meter-list';
 import type { ShellChangeSignal } from './shell';
 
-/** How many account cards show at first; the rest sit behind the fold (U-51). */
-export const VISIBLE_ACCOUNTS = 5;
-
 /** The tone of what remains (U-51): 40 % or more proceeds, 15–40 % amber, under 15 % red. */
 export type RemainingTone = 'proceed' | 'warn' | 'error';
 
@@ -108,19 +105,6 @@ export const accountCards = (view: SettingsAccountsView): readonly AccountCard[]
       reserve: account.reserve,
     };
   });
-
-/** How many cards show and how many sit behind the fold (U-51): five at first, all of them once
- *  the fold opens; a list that never exceeded five has no fold at all. Pure. */
-export const accountFold = (
-  count: number,
-  allShown: boolean,
-): { readonly visible: number; readonly hidden: number } =>
-  allShown || count <= VISIBLE_ACCOUNTS ? { visible: count, hidden: 0 } : { visible: VISIBLE_ACCOUNTS, hidden: count - VISIBLE_ACCOUNTS };
-
-/** The fold button's own words (U-51): "+n hesap daha" while it holds accounts, "Daha az
- *  göster" once the list stands open. Pure. */
-export const accountsMoreLabel = (locale: Locale, hidden: number): string =>
-  hidden > 0 ? t(locale, 'accounts.more').replace('{n}', String(hidden)) : t(locale, 'accounts.less');
 
 export const createAccountsFrameStore = (deps: {
   readonly api: Pick<Api, 'query'>;
