@@ -84,6 +84,7 @@ import {
   getUpdateState,
   getWorkOrder,
   grantSpendConsent,
+  isSourceTaken,
   openTaskWorkOrders,
   openWorkOrder,
   registerRepo,
@@ -839,12 +840,16 @@ const runQuery = async (
       const found: readonly AccountCandidate[] = await adopting.candidates.get(
         query.fresh === true ? { fresh: true } : undefined,
       );
+      // The remembered scan's alreadyAdded flags can predate accounts adopted or removed inside
+      // its window, so each row is decided against the store — never by a hidden rescan.
+      const stored = await deps.accounts.list();
       // The provider is the def id the route kind belongs to, the lookup adoption makes too.
       return found.map((candidate) => {
         const route = deps.capabilities.routeKind(candidate.routeKind);
         return {
           ...candidate,
           provider: route?.providerId ?? null,
+          alreadyAdded: isSourceTaken(candidate, stored),
           // A-83a: the route kind's declared billing, else by kind: subscription and machine_login are
           // included, a compatible endpoint unknown.
           billing: route?.defaultBilling ?? (candidate.kind === 'compatible_endpoint' ? 'unknown' : 'included'),

@@ -103,6 +103,66 @@ describe('accounts.candidates', () => {
     const api = createApi(setup().deps);
     expect(await api.query({ type: 'accounts.candidates' })).toEqual({ ok: false, code: 'not_found' });
   });
+
+  it('A-85: a just-adopted source reads alreadyAdded without a new scan', async () => {
+    const SUBSCRIPTION: AccountCandidate = {
+      sourcePath: '/home/u/.claude-work',
+      displayPath: '~/.claude-work',
+      kind: 'subscription',
+      provider: 'prov-a',
+      routeKind: 'sub-route',
+      hasOauthLogin: true,
+      envOverrides: [],
+      warnings: [],
+      alreadyAdded: false,
+    };
+    const UNTOUCHED: AccountCandidate = { ...SUBSCRIPTION, sourcePath: '/home/u/.claude-other', displayPath: '~/.claude-other' };
+    const MACHINE: AccountCandidate = {
+      sourcePath: 'machine-login:prov-b',
+      displayPath: '~/.prov-b',
+      kind: 'machine_login',
+      provider: 'prov-b',
+      routeKind: 'machine-route',
+      hasOauthLogin: true,
+      envOverrides: [],
+      warnings: [],
+      alreadyAdded: false,
+    };
+    const scans = { count: 0 };
+    const discovery: AccountDiscovery = {
+      scan: async () => {
+        scans.count += 1;
+        return [SUBSCRIPTION, ENDPOINT, MACHINE, UNTOUCHED];
+      },
+    };
+    const deps = createFakeDeps({
+      clock: createFakeClock(1_000),
+      capabilities: createFakeCapabilityCatalog([
+        { id: 'sub-route', provider: 'prov-a', authMode: 'subscription' },
+        { id: 'endpoint-route', provider: 'prov-a', authMode: 'api_key', endpointHost: 'api.example.test' },
+        { id: 'machine-route', provider: 'prov-b', authMode: 'subscription' },
+      ]),
+    });
+    const api = createApi(deps, undefined, undefined, undefined, undefined, undefined, { discovery, importer: setup().importer });
+
+    await api.query({ type: 'accounts.candidates' });
+    expect(scans.count).toBe(1);
+    for (const candidate of [SUBSCRIPTION, ENDPOINT, MACHINE]) {
+      const adopted = await api.command(ACTOR, { type: 'account.adopt', sourcePath: candidate.sourcePath, label: 'L' });
+      expect(adopted.ok).toBe(true);
+    }
+    // The remembered scan still answers, but its alreadyAdded flags are decided against the store.
+    const rows = (await api.query({ type: 'accounts.candidates' })) as readonly {
+      readonly sourcePath: string;
+      readonly alreadyAdded: boolean;
+    }[];
+    expect(scans.count).toBe(1);
+    const byPath = new Map(rows.map((row) => [row.sourcePath, row.alreadyAdded]));
+    expect(byPath.get(SUBSCRIPTION.sourcePath)).toBe(true);
+    expect(byPath.get(ENDPOINT.sourcePath)).toBe(true);
+    expect(byPath.get(MACHINE.sourcePath)).toBe(true);
+    expect(byPath.get(UNTOUCHED.sourcePath)).toBe(false);
+  });
 });
 
 describe('account.adopt', () => {

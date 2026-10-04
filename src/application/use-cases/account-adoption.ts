@@ -60,6 +60,21 @@ export function createAccountCandidateList(clock: Clock, discovery: AccountDisco
   };
 }
 
+/** Whether an account already occupies a candidate's source: the identity directory, the
+ *  provider's machine login, or the route's endpoint — the scan's own alreadyAdded rule. A
+ *  remembered scan can predate the accounts adopted (or removed) inside its window, so every
+ *  reader decides against the accounts store, never against the scan-time flag. */
+export const isSourceTaken = (candidate: AccountCandidate, accounts: readonly AccountRecord[]): boolean =>
+  accounts.some(
+    (account) =>
+      account.identityDir === candidate.sourcePath ||
+      (candidate.kind === 'machine_login'
+        ? account.provider === candidate.provider && account.identityDir === undefined
+        : candidate.endpointHost !== undefined &&
+          account.routeKind === candidate.routeKind &&
+          httpsUrlOf(account.endpoint ?? '')?.host === candidate.endpointHost),
+  );
+
 export async function adoptAccountCandidate(
   deps: AdoptDeps,
   input: { readonly sourcePath: string; readonly label: string; readonly importToken?: boolean; readonly actor: Actor },
@@ -73,19 +88,8 @@ export async function adoptAccountCandidate(
   const providerId = candidate.provider;
 
   // The remembered scan can predate the accounts this window produced, so the store — not the
-  // scan-time flag — decides whether the source is already an account. The rule mirrors the scan's
-  // own alreadyAdded: the identity directory, the provider's machine login, or the route's endpoint.
-  const stored = await deps.accounts.list();
-  const taken = stored.some(
-    (account) =>
-      account.identityDir === input.sourcePath ||
-      (candidate.kind === 'machine_login'
-        ? account.provider === candidate.provider && account.identityDir === undefined
-        : candidate.endpointHost !== undefined &&
-          account.routeKind === candidate.routeKind &&
-          httpsUrlOf(account.endpoint ?? '')?.host === candidate.endpointHost),
-  );
-  if (taken) return err('already_added');
+  // scan-time flag — decides whether the source is already an account.
+  if (isSourceTaken(candidate, await deps.accounts.list())) return err('already_added');
 
   const id = deps.ids.next<'account'>();
   const isMachineLogin = candidate.kind === 'machine_login';
