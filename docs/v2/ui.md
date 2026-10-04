@@ -531,6 +531,13 @@ being reset.
   stacked, at most three visible. A toast slides in from the right, dismisses itself after 5 s (warn and
   error 8 s) with a thin progress line, pauses while hovered or focused, and has a close button. `aria-live`
   is polite, assertive for error. Only existing colour tokens. No screen draws its own toast.
+- **U-50a** (amends U-50 and U-8; 2026-10-04, review of #771) `ToastInput` has an optional `copy` text. A
+  toast that carries it shows a "Kodu kopyala" button (it copies that text and says so by changing to
+  "Kopyalandı" for two seconds) so U-8's "the code itself is available for copying" holds: a command result
+  with `ok: false` toasts as `error` with the code's label as its text and the code as `copy`; an unknown
+  code shows the generic failure text with the raw code only behind "Kodu kopyala", never in the text. A
+  toast with a copy button does not dismiss itself while the pointer or focus is on it (U-50) and, being
+  an error, stays 8 s.
 - **U-34** (discovered accounts) The candidates (`accounts.candidates`) and the discovered
   providers appear in the wizard's Hesaplar step and under Settings → Hesaplar → "Eklenmemiş":
   a row per candidate with mark, label, status and selection. `unreadable` disables the row with
