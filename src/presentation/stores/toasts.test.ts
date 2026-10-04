@@ -50,6 +50,34 @@ const storeWithClock = () => {
 };
 
 describe('createToastStore', () => {
+  it('U-50: state() returns the same reference until the stack changes', () => {
+    const { store } = storeWithClock();
+    // useSyncExternalStore compares snapshots by reference: a fresh array per read would loop
+    // re-renders (React error #185). Reading alone must never look like a change.
+    const empty = store.state();
+    expect(store.state()).toBe(empty);
+    store.toast({ type: 'info', text: 'one' });
+    const one = store.state();
+    expect(one).not.toBe(empty);
+    expect(store.state()).toBe(one);
+    store.toast({ type: 'info', text: 'two' });
+    const two = store.state();
+    expect(two).not.toBe(one);
+    store.close(two[0].id);
+    const oneAgain = store.state();
+    expect(oneAgain).not.toBe(two);
+    // A hold moves timing, not the stack — the snapshot stands.
+    store.pause(oneAgain[0].id);
+    expect(store.state()).toBe(oneAgain);
+    store.resume(oneAgain[0].id);
+    expect(store.state()).toBe(oneAgain);
+    // Empty again is the standing empty reference, not a fresh array.
+    store.close(oneAgain[0].id);
+    const emptyAgain = store.state();
+    expect(emptyAgain).toEqual([]);
+    expect(store.state()).toBe(emptyAgain);
+  });
+
   it('U-50: the one call shows a toast of the given type and text, newest on top', () => {
     const { store } = storeWithClock();
     store.toast({ type: 'success', text: 'Kurulum tamamlandı · 2 hesap hazır' });

@@ -83,14 +83,25 @@ interface ToastEntry {
   remainingMs: number;
 }
 
+/** The standing empty stack — one reference, so an empty store never reads as a change. */
+const EMPTY_ITEMS: readonly ToastItem[] = [];
+
 export const createToastStore = (clock: ToastClock = windowClock): ToastStore => {
   let nextId = 1;
   // Newest first: the host renders the stack top-down in this order.
   let entries: ToastEntry[] = [];
   const listeners = new Set<() => void>();
+  // useSyncExternalStore compares snapshots by reference: a fresh array per state() call reads
+  // as a change and loops re-renders (React error #185). The snapshot is rebuilt only where the
+  // stack itself moves — a pause moves timing, never the items.
+  let snapshot: readonly ToastItem[] = EMPTY_ITEMS;
 
   const emit = (): void => {
     for (const listener of listeners) listener();
+  };
+
+  const resnapshot = (): void => {
+    snapshot = entries.length === 0 ? EMPTY_ITEMS : entries.map((entry) => entry.item);
   };
 
   const find = (id: number): ToastEntry | undefined => entries.find((entry) => entry.item.id === id);
@@ -106,6 +117,7 @@ export const createToastStore = (clock: ToastClock = windowClock): ToastStore =>
     if (entry === undefined) return;
     stopTimer(entry);
     entries = entries.filter((candidate) => candidate.item.id !== id);
+    resnapshot();
     emit();
   };
 
@@ -116,7 +128,7 @@ export const createToastStore = (clock: ToastClock = windowClock): ToastStore =>
   };
 
   return {
-    state: () => entries.map((entry) => entry.item),
+    state: () => snapshot,
     subscribe: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -138,6 +150,7 @@ export const createToastStore = (clock: ToastClock = windowClock): ToastStore =>
         entries = entries.slice(0, -1);
       }
       startTimer(entry);
+      resnapshot();
       emit();
     },
     close: drop,

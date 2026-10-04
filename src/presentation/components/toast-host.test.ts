@@ -101,6 +101,17 @@ describe('ToastHost', () => {
     }
   });
 
+  it('U-50: the host renders from a stable snapshot — repeated reads never look like a change', () => {
+    const store = createToastStore(stillClock);
+    store.toast({ type: 'success', text: 'copy' });
+    // The getSnapshot contract the host's subscription rides on: the same stack reads as the
+    // same reference, so a re-render never follows from reading alone.
+    expect(store.state()).toBe(store.state());
+    const first = renderToStaticMarkup(createElement(ToastHost, { store, locale: 'tr' }));
+    const second = renderToStaticMarkup(createElement(ToastHost, { store, locale: 'tr' }));
+    expect(second).toBe(first);
+  });
+
   it('U-50: no screen draws its own toast — the only data-toast markup in the layer is the host', () => {
     const raw = import.meta.glob(['../**/*.tsx', '!../**/*.test.tsx'], { query: '?raw', import: 'default', eager: true });
     const sources = raw as Readonly<Record<string, string>>;
