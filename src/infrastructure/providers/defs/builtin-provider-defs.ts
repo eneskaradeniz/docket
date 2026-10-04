@@ -79,6 +79,10 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     bins: ['agy'],
     versionArgs: ['--version'],
     helpArgs: ['--help'],
+    // The token file's presence is a weak signal: the CLI's credentials may live only in the
+    // OS keyring, so a missing file answers unknown, never logged out. Only presence is read,
+    // and the CLI documents no home override, so none is declared.
+    authProbe: { args: [], presenceFile: { homeDir: '.gemini/antigravity-cli', file: 'antigravity-oauth-token', absent: 'unknown' } },
     transport: 'stream-json',
     streamDialect: 'agy',
     effortArg: AGY_EFFORT,
@@ -120,6 +124,9 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     bins: ['copilot'],
     versionArgs: ['--version'],
     helpArgs: ['--help'],
+    // config.json's `loggedInUsers` array is the login signal: the probe reads only whether it
+    // holds an entry, never a user inside it, so no account value can reach a log.
+    authProbe: { args: [], jsonKey: { homeEnv: 'COPILOT_HOME', homeDir: '.copilot', file: 'config.json', key: 'loggedInUsers' } },
     transport: 'acp',
     // The CLI documents COPILOT_HOME as the override of the directory holding its configuration
     // and state files — the stored login among them — so neither HOME nor COPILOT_HOME is ever
@@ -154,6 +161,10 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     bins: ['cursor-agent'],
     versionArgs: ['--version'],
     helpArgs: ['--help'],
+    // `status --format json` answers without a browser and without a login; only the
+    // `isAuthenticated` boolean is read — the object also carries account data, which is never
+    // looked at.
+    authProbe: { args: ['status', '--format', 'json'], parse: 'is-authenticated-json' },
     transport: 'acp',
     // The CLI documents no config-dir or home override (its help names only the API variables)
     // and says only that the stored authentication is kept locally, so HOME is never redirected:
@@ -183,6 +194,9 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     bins: ['opencode'],
     versionArgs: ['--version'],
     helpArgs: ['--help'],
+    // auth.json's top-level entries are the login signal (one per authenticated provider); only
+    // whether any entry exists is read, never a key or a value inside it.
+    authProbe: { args: [], jsonKey: { homeEnv: 'XDG_DATA_HOME', homeDir: '.local/share', file: 'opencode/auth.json' } },
     transport: 'acp',
     effortArg: { kind: 'session-option', category: 'thought_level' },
     config: { mechanism: 'env-var', name: 'OPENCODE_CONFIG_DIR' },

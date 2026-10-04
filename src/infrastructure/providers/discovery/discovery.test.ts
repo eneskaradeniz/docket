@@ -16,6 +16,8 @@ import {
   createPathDiscovery,
   loggedInFromAuthStatus,
   loggedInFromCredentialCount,
+  loggedInFromIsAuthenticated,
+  loggedInFromJsonKeyText,
   loggedInFromProviderKeys,
   loggedInFromWhoami,
   type ProbeSpawn,
@@ -143,6 +145,13 @@ const collect = async (discovery: ProviderDiscovery): Promise<DiscoveredProvider
 
 const EMPTY_PATH = (): string => join(root, 'empty-path');
 const HOME = (): string => join(root, 'home');
+
+/** A built-in definition, for tests that pin a real probe entry through the whole discovery path. */
+const builtin = (id: string): ProviderDef => {
+  const def = BUILTIN_PROVIDER_DEFS.find((candidate) => candidate.id === id);
+  if (def === undefined) throw new Error(`missing built-in def ${id}`);
+  return def;
+};
 
 describe('path discovery', () => {
   it('P-2: the DOCKET_<ID>_BIN override wins over every search path', async () => {
@@ -815,6 +824,199 @@ describe('credentials-directory presence login probe', () => {
 
     rmSync(elsewhere, { recursive: true, force: true });
     clearCredentialsHome();
+  });
+});
+
+describe('json-key login probe (P-54)', () => {
+  // Fixtures are built from the recorded shapes only — field names with invented values; a real
+  // config file carries account names and tokens that must never reach a test or an answer.
+  const clearCopilotHome = (): void => rmSync(join(HOME(), '.copilot'), { recursive: true, force: true });
+  const discoverCopilot = async (
+    env: Readonly<Record<string, string>>,
+  ): Promise<{ readonly result: DiscoveredProvider | undefined; readonly calls: SpawnCall[] }> => {
+    writeBin('jsonkey-path/copilot', 'case "$1" in\n  --version) echo "1.0.6"; exit 0;;\nesac\nexit 0');
+    const { discovery, calls } = makeDiscovery([builtin('copilot')], { PATH: join(root, 'jsonkey-path'), HOME: HOME(), ...env }, { probeTimeoutMs: 2000 });
+    const results = await collect(discovery);
+    return { result: results[0], calls };
+  };
+
+  it('P-54: a config.json whose loggedInUsers holds an entry is a login, and only the array\'s emptiness is read', async () => {
+    clearCopilotHome();
+    mkdirSync(join(HOME(), '.copilot'), { recursive: true });
+    writeFileSync(join(HOME(), '.copilot', 'config.json'), JSON.stringify({ loggedInUsers: [{ email: 'fixture-user@example.invalid' }], other: 'fixture-value' }));
+    const { result, calls } = await discoverCopilot({});
+    expect(result?.loggedIn).toBe(true);
+    // The answer is a bare boolean and the serialized discovery row carries no account value;
+    // nothing is spawned for the login read — the file is never cat'ed through a child.
+    expect(typeof result?.loggedIn).toBe('boolean');
+    expect(JSON.stringify(result)).not.toContain('fixture-user@example.invalid');
+    expect(calls.map((call) => call.args)).toEqual([['--version']]);
+    clearCopilotHome();
+  });
+
+  it('P-54: the key absent, empty or null and a missing file = not logged in; an unparseable file or a wrong shape = unknown', async () => {
+    expect(loggedInFromJsonKeyText('{"loggedInUsers":[]}', 'loggedInUsers')).toBe(false);
+    expect(loggedInFromJsonKeyText('{"loggedInUsers":{}}', 'loggedInUsers')).toBe(false);
+    expect(loggedInFromJsonKeyText('{"loggedInUsers":null}', 'loggedInUsers')).toBe(false);
+    expect(loggedInFromJsonKeyText('{}', 'loggedInUsers')).toBe(false);
+    // A key holding anything but an array or object names no state Docket can read.
+    expect(loggedInFromJsonKeyText('{"loggedInUsers":"fixture-user@example.invalid"}', 'loggedInUsers')).toBeNull();
+    expect(loggedInFromJsonKeyText('not json', 'loggedInUsers')).toBeNull();
+    expect(loggedInFromJsonKeyText('[]', 'loggedInUsers')).toBeNull();
+    clearCopilotHome();
+    expect((await discoverCopilot({})).result?.loggedIn).toBe(false);
+  });
+
+  it('P-54: JSONC is tolerated — // and /* */ comments are stripped before parsing, a // inside a string is not one', async () => {
+    clearCopilotHome();
+    mkdirSync(join(HOME(), '.copilot'), { recursive: true });
+    writeFileSync(
+      join(HOME(), '.copilot', 'config.json'),
+      [
+        '// leading comment',
+        '/* block',
+        '   comment */',
+        '{',
+        '  "loggedInUsers": [ { "email": "fixture-user@example.invalid" } ], // trailing comment',
+        '  "note": "a url https://example.invalid is not a comment"',
+        '}',
+      ].join('\n'),
+    );
+    expect((await discoverCopilot({})).result?.loggedIn).toBe(true);
+    clearCopilotHome();
+  });
+
+  it('P-54: the homeEnv value wins over the user home for the probe path', async () => {
+    const elsewhere = join(root, 'copilot-elsewhere');
+    mkdirSync(elsewhere, { recursive: true });
+    clearCopilotHome();
+    mkdirSync(join(HOME(), '.copilot'), { recursive: true });
+    writeFileSync(join(HOME(), '.copilot', 'config.json'), JSON.stringify({ loggedInUsers: [{ email: 'fixture-user@example.invalid' }] }));
+
+    // The override names a home without the file: the default home's login no longer counts.
+    expect((await discoverCopilot({ COPILOT_HOME: elsewhere })).result?.loggedIn).toBe(false);
+    writeFileSync(join(elsewhere, 'config.json'), JSON.stringify({ loggedInUsers: [{ email: 'fixture-user@example.invalid' }] }));
+    expect((await discoverCopilot({ COPILOT_HOME: elsewhere })).result?.loggedIn).toBe(true);
+    clearCopilotHome();
+    rmSync(elsewhere, { recursive: true, force: true });
+  });
+
+  it('P-54: without a key, a top-level object with an entry is a login and {} is not — opencode under XDG_DATA_HOME or the default home', async () => {
+    expect(loggedInFromJsonKeyText('{"fixture-entry":{}}', undefined)).toBe(true);
+    expect(loggedInFromJsonKeyText('{}', undefined)).toBe(false);
+
+    writeBin('jsonkey-path/opencode', 'case "$1" in\n  --version) echo "2.0.0"; exit 0;;\nesac\nexit 0');
+    const discoverOpencode = async (env: Readonly<Record<string, string>>): Promise<boolean | null | undefined> => {
+      const { discovery } = makeDiscovery([builtin('opencode')], { PATH: join(root, 'jsonkey-path'), HOME: HOME(), ...env }, { probeTimeoutMs: 2000 });
+      const results = await collect(discovery);
+      return results[0]?.loggedIn;
+    };
+    const dataHome = join(root, 'xdg-data');
+    mkdirSync(join(dataHome, 'opencode'), { recursive: true });
+    writeFileSync(join(dataHome, 'opencode', 'auth.json'), JSON.stringify({ 'fixture-provider': { type: 'oauth' } }));
+    expect(await discoverOpencode({ XDG_DATA_HOME: dataHome })).toBe(true);
+    rmSync(dataHome, { recursive: true, force: true });
+    expect(await discoverOpencode({ XDG_DATA_HOME: dataHome })).toBe(false); // the file is gone: logged out
+
+    mkdirSync(join(HOME(), '.local', 'share', 'opencode'), { recursive: true });
+    writeFileSync(join(HOME(), '.local', 'share', 'opencode', 'auth.json'), JSON.stringify({ 'fixture-provider': {} }));
+    expect(await discoverOpencode({})).toBe(true);
+    rmSync(join(HOME(), '.local', 'share', 'opencode'), { recursive: true, force: true });
+  });
+
+  it('P-54: environment tokens never count — an ambient key without the file is still logged out', async () => {
+    clearCopilotHome();
+    expect((await discoverCopilot({ GITHUB_TOKEN: 'ghp_fixture-value' })).result?.loggedIn).toBe(false);
+  });
+});
+
+describe('cursor status login probe (P-55)', () => {
+  // The status answer carries account data next to the boolean; fixture values are invented, and
+  // the test asserts none of them can survive into the discovery row.
+  const discoverCursor = async (
+    statusBody: string,
+    statusExit = 0,
+  ): Promise<{ readonly result: DiscoveredProvider | undefined; readonly calls: SpawnCall[] }> => {
+    writeBin(
+      'cursor-path/cursor-agent',
+      `case "$1" in\n  --version) echo "0.4.0"; exit 0;;\n  status) printf '%s' '${statusBody}'; exit ${statusExit};;\nesac\nexit 0`,
+    );
+    const { discovery, calls } = makeDiscovery([builtin('cursor')], { PATH: join(root, 'cursor-path'), HOME: HOME() }, { probeTimeoutMs: 2000 });
+    const results = await collect(discovery);
+    return { result: results[0], calls };
+  };
+
+  it('P-55: status --format json runs once and only its isAuthenticated boolean is read — account data never reaches the answer', async () => {
+    const { result, calls } = await discoverCursor('{"isAuthenticated":true,"userInfo":{"email":"fixture-user@example.invalid"}}');
+    expect(result?.loggedIn).toBe(true);
+    expect(calls.map((call) => call.args)).toEqual([['--version'], ['status', '--format', 'json']]);
+    expect(typeof result?.loggedIn).toBe('boolean');
+    expect(JSON.stringify(result)).not.toContain('fixture-user@example.invalid');
+
+    expect((await discoverCursor('{"isAuthenticated":false,"userInfo":{}}', 0)).result?.loggedIn).toBe(false);
+  });
+
+  it('P-55: a missing key, a non-boolean, unparseable output or a failed run = unknown', async () => {
+    expect(loggedInFromIsAuthenticated('{"isAuthenticated":true}')).toBe(true);
+    expect(loggedInFromIsAuthenticated('{"isAuthenticated":false}')).toBe(false);
+    expect(loggedInFromIsAuthenticated('{"userInfo":{}}')).toBeNull();
+    expect(loggedInFromIsAuthenticated('{"isAuthenticated":"yes"}')).toBeNull();
+    expect(loggedInFromIsAuthenticated('not json')).toBeNull();
+    // A non-zero exit is a failed run even when the body parses: never a guessed answer.
+    expect((await discoverCursor('{"isAuthenticated":true}', 1)).result?.loggedIn).toBeNull();
+    expect((await discoverCursor('garbage', 0)).result?.loggedIn).toBeNull();
+  });
+});
+
+describe('weak presence login probe (P-56)', () => {
+  const tokenFile = (): string => join(HOME(), '.gemini', 'antigravity-cli', 'antigravity-oauth-token');
+  const clearToken = (): void => rmSync(join(HOME(), '.gemini'), { recursive: true, force: true });
+  const discoverAgy = async (env: Readonly<Record<string, string>> = {}): Promise<{ readonly result: DiscoveredProvider | undefined; readonly calls: SpawnCall[] }> => {
+    writeBin('agy-path/agy', 'case "$1" in\n  --version) echo "0.1.0"; exit 0;;\nesac\nexit 0');
+    const { discovery, calls } = makeDiscovery([builtin('agy')], { PATH: join(root, 'agy-path'), HOME: HOME(), ...env }, { probeTimeoutMs: 2000 });
+    const results = await collect(discovery);
+    return { result: results[0], calls };
+  };
+
+  it('P-56: the token file present is a login whatever it holds; missing = unknown, never logged out — only presence is read', async () => {
+    clearToken();
+    // The CLI\'s credentials may live only in the OS keyring, so a missing file decides nothing.
+    expect((await discoverAgy()).result?.loggedIn).toBeNull();
+    mkdirSync(dirname(tokenFile()), { recursive: true });
+    writeFileSync(tokenFile(), 'opaque fixture bytes'); // the content is never opened
+    const { result, calls } = await discoverAgy();
+    expect(result?.loggedIn).toBe(true);
+    expect(calls.map((call) => call.args)).toEqual([['--version']]);
+    clearToken();
+  });
+
+  it('P-56: with no homeEnv declared, no environment variable redirects the probe — the user home is the only location', async () => {
+    const elsewhere = join(root, 'agy-elsewhere');
+    mkdirSync(elsewhere, { recursive: true });
+    clearToken();
+    mkdirSync(dirname(tokenFile()), { recursive: true });
+    writeFileSync(tokenFile(), 'x');
+    const overrides = { AGY_HOME: elsewhere, GEMINI_HOME: elsewhere };
+    expect((await discoverAgy(overrides)).result?.loggedIn).toBe(true);
+    clearToken();
+    // Missing under the user home stays unknown even with overrides pointing somewhere else.
+    expect((await discoverAgy(overrides)).result?.loggedIn).toBeNull();
+    rmSync(elsewhere, { recursive: true, force: true });
+  });
+
+  it('P-56: a presence rule without absent keeps the old answer — a missing file stays not-logged-in', async () => {
+    const def = defOf({
+      id: 'p-x',
+      bins: ['p-x'],
+      helpArgs: undefined,
+      optionalFlags: undefined,
+      authProbe: { args: [], presenceFile: { homeEnv: 'P_X_HOME', homeDir: '.p-x', file: 'auth.json' } },
+    });
+    writeBin('presence-plain-path/p-x', 'case "$1" in\n  --version) echo "1.0.0"; exit 0;;\nesac\nexit 3');
+    rmSync(join(HOME(), '.p-x'), { recursive: true, force: true });
+    const { discovery } = makeDiscovery([def], { PATH: join(root, 'presence-plain-path'), HOME: HOME() }, { probeTimeoutMs: 2000 });
+    const results = await collect(discovery);
+    expect(results[0]?.loggedIn).toBe(false);
   });
 });
 
