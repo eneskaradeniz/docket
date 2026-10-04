@@ -562,6 +562,10 @@ being reset.
   container has `aria-busy` while scanning and the end announces "n hesap bulundu" politely. Settings → Hesaplar
   uses the same component. Under `prefers-reduced-motion` there is no shimmer or rise: a static dim skeleton and
   an immediate swap.
+- **U-51a** (amends U-51 and U-16; 2026-10-05, review of #779) The popover a sidebar account card opens ends with
+  a "Hesabı aç" button that opens that account's view (the page U-16's card click used to open), so the sidebar
+  keeps a one-step way into the account; the card itself opens only the popover. Esc closes the popover and
+  the focus stays on the card.
 - **U-34** (discovered accounts) The candidates (`accounts.candidates`) and the discovered
   providers appear in the wizard's Hesaplar step and under Settings → Hesaplar → "Eklenmemiş":
   a row per candidate with mark, label, status and selection. `unreadable` disables the row with
