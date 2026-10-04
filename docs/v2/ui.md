@@ -495,6 +495,42 @@ being reset.
   Hatalı ve bulunamayanlar. Every other visible row — ready, Rezervde (reserve reached), Veri yok (no meter
   reading) and any later status that still works — stays in Bulunanlar, and an installed assistant's empty
   card stays there too. The closed summary counts only the two failing standings.
+- **U-46** (window sizes; amends U-42, U-43; 2026-10-04, #766; approved prototype
+  `docket-tasarim/kurulum-v3/index.html`) The setup wizard and Settings share one window: 1040×680 at most,
+  `max-width: calc(100vw - 48px)`, `max-height: calc(100vh - 96px)`; on a narrow window the existing
+  single-column layout applies. The AccountEditor dialog (U-43) stays 820×600 at most, so an editor is
+  always visibly smaller than the window it opens over.
+- **U-47** (DragOrderList motion; amends U-41, U-42; 2026-10-04, #767; approved prototype
+  `docket-tasarim/kurulum-v3/index.html`) DragOrderList (wizard Asistan sırası and Settings → Roller) uses
+  pointer events with pointer capture, not the HTML5 drag API. The held row lifts (shadow, scale 1.01,
+  amber outline) and follows the pointer; the other rows slide to open the gap (FLIP, 160 ms ease-out); on
+  release the row settles (140 ms); the list scrolls itself near its edge; text is not selected during a
+  drag; touch works (`touch-action: none` only on the grip). Alt+↑/Alt+↓ moves a row with the same slide
+  and the "n. sıraya taşındı" announcement (U-41). Under `prefers-reduced-motion` there is no motion: the
+  order changes at once.
+- **U-48** (compact Bütçe; amends U-42, U-44a; 2026-10-04, #766; approved prototype
+  `docket-tasarim/kurulum-v3/index.html`) Each account is one compact row in the wizard's Bütçe: mark, name,
+  billing tag, one summary line ("Limit dolunca bekler · rezerv yok", "Tavan $50 · izinli") and an "Ayrıntı"
+  button (`aria-expanded`) that opens the row's controls in place — limit-full choice, reserve, cap, ✎ and a
+  Max account's three limit lines — one row open at a time; all rows start closed. A pay-per-use or
+  unknown-billing row always shows its consent control and cap field in the row (U-44a; U-35's gate stays).
+  A line above the groups says "Önerilen ayarlar uygulandı — değiştirmek istersen satırı aç.". The two
+  billing groups (Abonelikler, Kullandıkça öde ya da ücreti bilinmeyen) keep their headers.
+- **U-49** (finishing progress; amends U-42, U-44a; 2026-10-04, #766; approved prototype
+  `docket-tasarim/kurulum-v3/index.html`) "Kurulumu bitir" turns into a spinner button "Kuruluyor…" and the
+  window body into a four-line progress list — "Hesaplar kaydediliyor", "Sıra kaydediliyor", "Bütçe
+  uygulanıyor", "Anasayfa hazırlanıyor" — each line going from a spinner to a drawn check as its real step
+  completes (never a fixed delay); Geri and the step buttons are disabled meanwhile; on completion the
+  window fades to Anasayfa and the U-50 toast reads "Kurulum tamamlandı · n hesap hazır". A failing step
+  stops the list on that line with its reason and a "Tekrar dene" button. Under `prefers-reduced-motion`
+  the lines change without animation, in the same order.
+- **U-50** (ToastHost; amends U-8; 2026-10-04, #768; approved prototype
+  `docket-tasarim/kurulum-v3/index.html`) Every toast in the app — command results (U-8), wizard completion,
+  new project and any other — goes through one component and one call, `toast({ type, text })` with `type`
+  one of success, info, warn, error, rendered by one ToastHost at the top right (16 px from the edges),
+  stacked, at most three visible. A toast slides in from the right, dismisses itself after 5 s (warn and
+  error 8 s) with a thin progress line, pauses while hovered or focused, and has a close button. `aria-live`
+  is polite, assertive for error. Only existing colour tokens. No screen draws its own toast.
 - **U-34** (discovered accounts) The candidates (`accounts.candidates`) and the discovered
   providers appear in the wizard's Hesaplar step and under Settings → Hesaplar → "Eklenmemiş":
   a row per candidate with mark, label, status and selection. `unreadable` disables the row with
