@@ -1,5 +1,5 @@
 // components/account-editor.tsx — the account editor's four tabs (U-30, U-43): Genel holds the
-// name, the model Listbox and the account facts; Kullanım the MeterList (or the spend against the
+// name and the account facts; Kullanım the MeterList (or the spend against the
 // cap) with "Son okuma · Yenile"; Limitler the "Limit dolunca" radio cards, the reserve Listbox and
 // the spend cap; Modeller the catalog by billing with the spend-consent card (U-32). The rules live
 // in stores/account-editor.ts; this file renders them. The frame — scrim, head, vertical tabs,
@@ -211,20 +211,6 @@ function General({
   return (
     <div className="grid gap-[22px]">
       <LabelRow account={account} locale={locale} store={store} />
-      {/* The account has no stored model choice: every run takes the assistant's own default, so the
-          list offers that one standing and nothing it could not keep. */}
-      <Section title={t(locale, 'editor.general.model')} hint={t(locale, 'editor.general.modelHint')}>
-        <div>
-          <Listbox
-            label={t(locale, 'editor.general.model')}
-            value="default"
-            options={[{ value: 'default', label: t(locale, 'editor.general.modelDefault'), recommended: true }]}
-            recommendedLabel={t(locale, 'editor.recommended')}
-            onPick={() => undefined}
-            minWidth={220}
-          />
-        </div>
-      </Section>
       {accountTest !== undefined ? (
         <div className="py-1">
           <AccountTest
