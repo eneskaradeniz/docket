@@ -538,6 +538,30 @@ being reset.
   code shows the generic failure text with the raw code only behind "Kodu kopyala", never in the text. A
   toast with a copy button does not dismiss itself while the pointer or focus is on it (U-50) and, being
   an error, stays 8 s.
+- **U-51** (sidebar; amends U-16 and U-44; 2026-10-04, #774; approved prototype
+  `docket-tasarim/kurulum-v3/index.html`) The sidebar is 264 px wide; section headers (Projeler, Hesaplar) are 14
+  px/700, rows 13.5–14 px, helper text at least 12 px. The Hesaplar section has a collapsible header (chevron,
+  count) and, once under it, one dim line "Çubuk en dar limiti gösterir.". Every account card has the same fixed
+  height (56 px) whatever its number of limits: row one is the provider mark, the account's name only (ellipsis
+  when long; the full "Asistan · ad" in the `title` and the popover) and a status dot; row two is one bar for the
+  account's tightest limit with its percent on the right, no per-card limit label; an account without limit data
+  shows a dim "Limit bilgisi yok" in that row instead. The bar and dot colour by what remains: 40 % or more
+  proceed (green), 15–40 % amber, under 15 % red. Click or Enter opens a popover listing every limit with its name
+  and reset time and marking the tightest; Esc closes it and the focus stays on the card. Five accounts show at
+  first; the rest sit behind a "+n hesap daha" button (`aria-expanded`, "Daha az göster" when open) and the open
+  list scrolls inside the section. With no project, Projeler shows a centred dashed box (`rounded-card`) with a
+  folder icon, the line "Projelerin burada görünecek." and a secondary "Yeni proje" button that opens the U-40
+  page — the text "Henüz proje yok." is gone.
+- **U-52** (scanning state; amends U-42 and U-43; 2026-10-04, #775; approved prototype
+  `docket-tasarim/kurulum-v3/index.html`) Arriving on the wizard's Hesaplar step, and pressing "Yeniden tara",
+  shows six skeleton assistant groups (mark, dimmed name, one or two shimmering placeholder rows, about the size
+  of the real groups) under the toolbar line "Asistanlar ve hesaplar taranıyor…" with a thin indeterminate
+  progress line — never a percentage or a counter, because discovery reports none. The toolbar count reads
+  "Taranan · —" and the button "Taranıyor…" (spinning icon, disabled) until the scan ends. The skeleton stays at
+  least 400 ms; the groups then appear in order, 40 ms apart, each fading in over 160 ms with an 8 px rise. The
+  container has `aria-busy` while scanning and the end announces "n hesap bulundu" politely. Settings → Hesaplar
+  uses the same component. Under `prefers-reduced-motion` there is no shimmer or rise: a static dim skeleton and
+  an immediate swap.
 - **U-34** (discovered accounts) The candidates (`accounts.candidates`) and the discovered
   providers appear in the wizard's Hesaplar step and under Settings → Hesaplar → "Eklenmemiş":
   a row per candidate with mark, label, status and selection. `unreadable` disables the row with
