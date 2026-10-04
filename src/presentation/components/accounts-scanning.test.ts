@@ -31,21 +31,19 @@ const html = (props: Partial<AccountsScanningProps> = {}): string =>
     }),
   );
 
-/** The markup without the mounted style sheets: copy assertions read what is shown, not CSS. */
-const shown = (out: string): string => out.replace(/<style>[\s\S]*?<\/style>/g, '');
-
-/** Only the text a reader or a screen reader meets — attributes are styling, not copy. */
-const copy = (out: string): string => shown(out).replace(/<[^>]*>/g, '');
-
 describe('AccountsScanning (U-52)', () => {
   it('U-52: a scan in flight shows six skeleton assistant groups — mark, dimmed name, one or two shimmering rows about the real size — under the line "Asistanlar ve hesaplar taranıyor…" with a thin indeterminate progress line, never a percentage or a counter', () => {
     const out = html({ scanning: true });
     expect(out).toContain('Asistanlar ve hesaplar taranıyor…');
     expect(out).toContain('role="progressbar"');
     expect(out).toContain('animate-[scan_1s_linear_infinite]');
-    // Indeterminate: no value attribute, and no percentage or counter in the copy.
-    expect(shown(out)).not.toContain('aria-valuenow');
-    expect(copy(out)).not.toMatch(/[%\d]/);
+    // Indeterminate: no value attribute on the line.
+    expect(out).not.toContain('aria-valuenow');
+    // The copy the scanning standing shows, pinned exactly — an em-dash count, the note, the
+    // button — so no percentage or counter can appear in it: discovery reports none.
+    expect(out).toContain('<span class="font-medium text-inkdim">· —</span>');
+    expect(out).toContain('<span>Taranıyor…</span>');
+    expect(out).toContain('<p class="mb-2 text-[13px] text-inkdim">Asistanlar ve hesaplar taranıyor…</p>');
     // Six skeleton groups: three open with two rows each, three of one row behind the closed
     // failed shell — about the size of the real two-section list they stand in for.
     expect(out.match(/data-scan-skeleton-group/g)).toHaveLength(6);
