@@ -1,27 +1,33 @@
-// stores/wizard.ts — the setup wizard's machine (U-35): Hoş geldin → Hesaplar → Yetenekler →
-// Asistan sırası → Bütçe → the "Kurulum tamam" moment. A step with nothing to decide is skipped
-// and reads "–" in the rail (Yetenekler while no capability source holds anything, Asistan sırası
-// under two accounts). Every choice is a draft held here: the selection and its key-move
-// switches (U-34), an account's editor draft (U-30) and the spend consents (U-32). Nothing is
+// stores/wizard.ts — the setup wizard's machine (U-42): Hoş geldin → Hesaplar → Yetenekler →
+// Asistan sırası → Bütçe, then straight to Anasayfa. A step with nothing to decide is skipped and
+// reads "–" in the rail (Yetenekler while no capability source holds anything, Asistan sırası
+// under two selected accounts). Every choice is a draft held here: the selection and its key-move
+// switches (U-34), an account's editor draft (U-43) and the spend consents (U-32). Nothing is
 // written before the finish; the finish adopts or saves every selected account with its draft,
 // writes caps and consents, and binds every role with the chosen chain and the role's
-// recommended work style (complete bindings, A-49). `back` never touches an entry. The wizard
-// shows only while no project exists. Failures map through U-8.
+// recommended work style (complete bindings, A-49), then leaves with `finished` set — the shell
+// opens Anasayfa and shows the one toast. `back` never touches an entry and does not exist on
+// Hoş geldin. Discovery candidates carry their route's billing (A-83a) and, before they are
+// accounts, their quota is read with `accounts.candidateQuota` (A-82). Failures map through U-8.
 import type { Api } from '../../api/api';
 import type { Command, CommandResult } from '../../api/commands';
-import type { ProjectTreeItem, Query, RoleListItem, SettingsAccountView, SettingsAccountsView } from '../../api/queries';
+import type { CandidateQuotaView, Query, RoleListItem, SettingsAccountView, SettingsAccountsView, SettingsMeterView, SettingsPoolView } from '../../api/queries';
 import type { Actor } from '../../domain/index';
 import type { LabelKey } from '../labels/keys';
 import {
   labelSaveCommand,
-  meterBar,
+  policyChoices,
   policyLabelKey,
   policySaveCommand,
   reserveSaveCommand,
   usageView,
   type EditorOutcome,
+  type EditorTab,
+  type LimitPolicy,
 } from './account-editor';
 import { parseAmountUsd, type CapScope } from './account-models';
+import { spendsMoney, type Billing } from './account-groups';
+import { meterListEmpty, meterListView, type MeterListEmpty, type MeterListView } from './meter-list';
 import {
   candidateRows,
   isProviderFact,
@@ -33,12 +39,17 @@ import {
 } from './candidates';
 import { RECOMMENDED, isPayPerUse, recommendedWorkStyle, settingDiffs } from './recommended';
 import { commandResultKey, isQueryFailure, queryFailureKey } from './results';
+import { moveItem } from './drag-order';
 import { bindingCommand, styleSettings } from './roles';
 
-export type WizardStep = 'welcome' | 'accounts' | 'capabilities' | 'order' | 'budget' | 'done';
+export type WizardStep = 'welcome' | 'accounts' | 'capabilities' | 'order' | 'budget';
 
-/** The rail's steps in walking order; the "Kurulum tamam" moment is not a step. */
+/** The rail's steps in walking order. */
 export const WIZARD_STEPS: readonly WizardStep[] = ['welcome', 'accounts', 'capabilities', 'order', 'budget'];
+
+/** The tabs of the wizard's editor: a draft has no stored account to list models of, and Genel holds
+ *  no model choice — no contract stores one (U-44a). */
+export const WIZARD_EDITOR_TABS: readonly EditorTab[] = ['general', 'usage', 'limits'];
 
 export type RailStanding = 'done' | 'cur' | 'todo' | 'skipped';
 
@@ -54,14 +65,17 @@ export interface WizardCapability {
   readonly kind: string;
 }
 
+/** The change events the wizard reads: an `accounts.changed` re-reads what it shows (U-44). */
+export type WizardChangeSignal = (listener: (change: { readonly type: string }) => void) => () => void;
+
 export interface WizardStoreDeps {
   readonly api: Pick<Api, 'query' | 'command'>;
   /** Every issued command travels as this actor — the wizard acts as the user. */
   readonly actor: Actor;
   /** What the composed capability source found; absent or empty skips Yetenekler. */
   readonly capabilities?: readonly WizardCapability[];
-  /** Re-queries the sidebar tree: an attach appends no work-order event, so nothing else would. */
-  readonly reloadTree?: () => Promise<void>;
+  /** The api's change events; absent in tests that do not need them. */
+  readonly changes?: WizardChangeSignal;
 }
 
 /** One line of Hesaplar: a candidate not yet added, or an account added earlier. */
@@ -77,21 +91,42 @@ export interface OrderEntry {
   readonly providerName: string | null;
   readonly label: string;
   readonly markKey: string | null;
+  readonly billing: Billing;
+  readonly viaKey: boolean;
+  /** An account that may spend money: automatic switching skips it, only the user picks it. */
+  readonly autoSkipped: boolean;
 }
+
+/** What a candidate's quota read stands at: still loading, answered, or an error (A-82). */
+export type QuotaStanding =
+  | { readonly state: 'loading' }
+  | { readonly state: 'ok'; readonly pools: readonly SettingsPoolView[]; readonly meters: readonly SettingsMeterView[] }
+  | { readonly state: 'error' };
 
 export interface BudgetRow {
   readonly id: string;
   readonly providerName: string | null;
   readonly label: string;
   readonly markKey: string | null;
+  readonly billing: Billing;
+  readonly viaKey: boolean;
+  readonly displayPath: string;
+  readonly host: string | null;
   /** The U-29 count of settings that differ from the recommendation. */
   readonly diffCount: number;
+  readonly policy: LimitPolicy;
   readonly policyKey: LabelKey;
+  /** The "Limit dolunca" options, in display order; the pool switch only with a model-scoped pool. */
+  readonly policyChoices: readonly LimitPolicy[];
   readonly reserveShort: number;
   readonly reserveLong: number;
-  /** Each meter's remaining share, 0..1, null when unreadable; empty before the account exists. */
-  readonly bars: readonly (number | null)[];
+  /** The MeterList rows; empty before a quota answer or when the provider reports none. */
+  readonly meters: MeterListView;
+  /** The line shown instead of rows; null while rows exist. */
+  readonly meterEmpty: MeterListEmpty | null;
   readonly cap: { readonly scope: string; readonly amountUsd: number; readonly warnPercent: number } | null;
+  /** The cap the row shows: the stored one, else the recommendation. */
+  readonly capShown: { readonly scope: CapScope; readonly amountUsd: number };
   readonly spentUsd: number | null;
   readonly needsConsent: boolean;
   readonly consented: boolean;
@@ -103,26 +138,10 @@ export interface WizardOutcome {
   readonly labelKey: LabelKey;
 }
 
-export interface WizardSummary {
+/** Set once the finish has written everything: the shell opens Anasayfa with the one toast. */
+export interface WizardFinished {
+  /** Ready accounts the setup leaves behind ("Kurulum tamamlandı · n hesap hazır"). */
   readonly accounts: number;
-  readonly capabilities: number;
-  readonly firstLabel: string;
-}
-
-/** Where the project's default view is: a multi-repo project opens its roadmap, a single-repo one
- *  its board (as the cockpit's project cards do). */
-export type WizardOpenTarget =
-  | { readonly kind: 'roadmap'; readonly project: string }
-  | { readonly kind: 'board'; readonly repo: string }
-  /** "Yeni proje oluştur": the wizard leaves for the Yeni proje page (U-40). */
-  | { readonly kind: 'newProject' };
-
-export interface WizardAttach {
-  readonly open: boolean;
-  readonly path: string;
-  readonly busy: boolean;
-  /** The U-8 label of a failed attach, shown under the field. */
-  readonly failureKey: LabelKey | null;
 }
 
 export interface WizardState {
@@ -133,12 +152,17 @@ export interface WizardState {
   readonly rail: readonly RailEntry[];
   readonly rows: readonly WizardAccountRow[];
   readonly providers: readonly ProviderRow[];
+  /** The providers that are installed, for the account groups (an installed one always has a card). */
+  readonly installed: readonly { readonly id: string; readonly name: string }[];
   readonly loading: boolean;
   readonly capabilities: readonly (WizardCapability & { readonly selected: boolean })[];
   readonly order: readonly OrderEntry[];
   readonly budget: { readonly subscriptions: readonly BudgetRow[]; readonly payPerUse: readonly BudgetRow[] };
   /** The open editor window: its working copy of one account. */
   readonly editor: { readonly key: string; readonly account: SettingsAccountView } | null;
+  /** Geri does not exist on Hoş geldin. */
+  readonly canBack: boolean;
+  /** "Bu adımı atla" is offered on Bütçe only (it finishes with the recommended values). */
   readonly canSkip: boolean;
   /** Whether the primary footer slot is enabled — on Bütçe it is "Kurulumu bitir". */
   readonly nextEnabled: boolean;
@@ -146,12 +170,8 @@ export interface WizardState {
   readonly reasonKey: LabelKey | null;
   readonly finishing: boolean;
   readonly lastOutcome: WizardOutcome | null;
-  /** The one line of the "Kurulum tamam" moment; null before it. */
-  readonly summary: WizardSummary | null;
-  /** The inline attach form of "Proje bağla". */
-  readonly attach: WizardAttach;
-  /** Set once a project is attached: the view to open; the wizard has left by then. */
-  readonly opened: WizardOpenTarget | null;
+  /** Non-null from the finish until the shell has taken it. */
+  readonly finished: WizardFinished | null;
 }
 
 export interface SpendInput {
@@ -166,13 +186,15 @@ export interface WizardStore {
   next(): Promise<void>;
   skip(): Promise<void>;
   back(): void;
+  /** A done step in the rail: goes back to it, keeping every entry. Later and skipped steps do nothing. */
+  goTo(target: WizardStep): void;
   select(key: string): void;
   setImportToken(key: string, on: boolean): void;
   /** "Yeniden tara": a fresh scan of candidates and providers. */
   rescan(): Promise<void>;
   toggleCapability(id: string): void;
-  moveUp(key: string): void;
-  moveDown(key: string): void;
+  /** Drag and drop or Alt+↑/↓ on Asistan sırası: the account takes the slot (clamped). */
+  moveTo(key: string, index: number): void;
   /** Opens the editor window on a working copy of the account's draft. */
   openEditor(key: string): Promise<void>;
   /** The editor's command runner: applied to the working copy, issued to nothing. */
@@ -181,23 +203,17 @@ export interface WizardStore {
   saveEditor(): void;
   /** Vazgeç: the working copy is dropped. */
   cancelEditor(): void;
-  /** The U-32 card's İzin ver: false while the amount does not parse. */
+  /** The "Limit dolunca" Listbox of a subscription row. */
+  setPolicy(key: string, policy: LimitPolicy): void;
+  /** The cap amount and period of a pay-per-use row; false while the amount does not parse. */
+  setCap(key: string, input: SpendInput): boolean;
+  /** The U-32 consent: grants with the cap; false while the amount does not parse. */
   allowSpend(key: string, input: SpendInput): boolean;
   revokeSpend(key: string): void;
-  /** "Proje bağla": opens the inline attach form. */
-  attachProject(): void;
-  setAttachPath(path: string): void;
-  /** Leaves the form for the summary. */
-  cancelAttach(): void;
-  /** "Yeni proje oluştur": the wizard leaves and `opened` names the Yeni proje page. */
-  createProject(): void;
-  /** Vazgeç on the Yeni proje page: brings the suspended Kurulum tamam moment back with its state
-   *  and inline attach form intact; false when the wizard was not left for that page. */
-  resume(): boolean;
-  /** The Yeni proje page ended in a project: the suspended wizard is not coming back. */
-  leave(): void;
-  /** "Bağla": `project.attach`; on success the wizard leaves and `opened` names the view. */
-  submitAttach(): Promise<void>;
+  /** Reads a candidate's quota again (the editor's Yenile). */
+  refreshQuota(key: string): Promise<void>;
+  /** The shell has opened Anasayfa and shown the toast. */
+  ackFinish(): void;
   subscribe(listener: () => void): () => void;
 }
 
@@ -268,7 +284,7 @@ const viewOf = (base: SettingsAccountView, settings: DraftSettings): SettingsAcc
 
 /** A candidate before it exists: `account.adopt` stores subscription routes as subscriptions and
  *  compatible endpoints as key-based accounts. */
-const syntheticView = (fact: CandidateFact, importToken: boolean): SettingsAccountView => ({
+const syntheticView = (fact: CandidateFact, importToken: boolean, quota: QuotaStanding | undefined): SettingsAccountView => ({
   id: fact.sourcePath,
   provider: fact.provider ?? '',
   label: labelOf(fact.displayPath),
@@ -285,8 +301,9 @@ const syntheticView = (fact: CandidateFact, importToken: boolean): SettingsAccou
   endpointHost: fact.endpointHost ?? null,
   hasSecret: importToken,
   test: null,
-  pools: [],
-  meters: [],
+  // The candidate's own quota preview (A-82): ids exist only in that answer.
+  pools: quota?.state === 'ok' ? quota.pools : [],
+  meters: quota?.state === 'ok' ? quota.meters : [],
 });
 
 /** One editor command laid over a draft. Only the fields the editor writes are read; a command
@@ -343,6 +360,9 @@ export const settingsCommands = (real: SettingsAccountView, draft: DraftSettings
   return commands;
 };
 
+const isQuotaView = (value: unknown): value is CandidateQuotaView =>
+  typeof value === 'object' && value !== null && 'ok' in value && typeof value.ok === 'boolean';
+
 export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
   const { api, actor } = deps;
 
@@ -360,14 +380,15 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
   const drafts = new Map<string, DraftSettings>();
   /** Candidates the finish has already adopted (key → account id): a retry never adopts twice. */
   const adoptedIds = new Map<string, string>();
+  /** The quota preview of each candidate not yet adopted (A-82), by source path. */
+  const quotas = new Map<string, QuotaStanding>();
   let capabilityPicks: ReadonlySet<string> = new Set((deps.capabilities ?? []).map((capability) => capability.id));
   let editorWork: { readonly key: string; readonly settings: DraftSettings } | null = null;
   let lastOutcome: WizardOutcome | null = null;
   let loaded = false;
-  let attach: WizardAttach = { open: false, path: '', busy: false, failureKey: null };
-  let opened: WizardOpenTarget | null = null;
-  /** Left for the Yeni proje page with the setup finished; Vazgeç there returns here. */
-  let suspended = false;
+  let finished: WizardFinished | null = null;
+  /** The finish has run: the wizard never comes back in this session. */
+  let completed = false;
   let openAttempts = 0;
 
   const capabilities = deps.capabilities ?? [];
@@ -383,7 +404,7 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
     ...facts
       .filter((fact) => !fact.alreadyAdded)
       .map((fact): Entry => {
-        const base = syntheticView(fact, importTokens.has(fact.sourcePath));
+        const base = syntheticView(fact, importTokens.has(fact.sourcePath), quotas.get(fact.sourcePath));
         return { key: fact.sourcePath, base, fact, settings: drafts.get(fact.sourcePath) ?? settingsOf(base) };
       }),
   ];
@@ -405,11 +426,16 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
           disabledReasonKey: null,
           warnKeys: [],
           keyMoveCard: false,
+          provider: entry.base.provider === '' ? null : entry.base.provider,
+          displayPath: entry.base.identityDir ?? '',
+          billing: entry.base.billing,
+          viaKey: entry.base.authMode === 'api_key',
+          hintKey: null,
           existing: true,
           importToken: false,
         };
       }
-      const [row] = candidateRows([entry.fact], selection.includes(entry.key) ? entry.key : null, importTokens.has(entry.key));
+      const [row] = candidateRows([entry.fact], selection.includes(entry.key) ? entry.key : null, importTokens.has(entry.key), providerFacts);
       if (row === undefined) throw new Error('a listed candidate has no row');
       return { ...row, label: entry.settings.label, providerName: nameOf(entry.base.provider), existing: false, importToken: importTokens.has(entry.key) };
     });
@@ -419,7 +445,15 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
   const viewOfEntry = (entry: Entry): SettingsAccountView => viewOf(entry.base, entry.settings);
 
   const orderEntries = (): readonly OrderEntry[] =>
-    selectedEntries().map((entry) => ({ id: entry.key, providerName: nameOf(entry.base.provider), label: entry.settings.label, markKey: entry.base.provider === '' ? null : entry.base.provider }));
+    selectedEntries().map((entry) => ({
+      id: entry.key,
+      providerName: nameOf(entry.base.provider),
+      label: entry.settings.label,
+      markKey: entry.base.provider === '' ? null : entry.base.provider,
+      billing: entry.base.billing,
+      viaKey: entry.base.authMode === 'api_key',
+      autoSkipped: spendsMoney(entry.base.billing),
+    }));
 
   // --- the machine -------------------------------------------------------------------------------
 
@@ -432,22 +466,21 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
   const railOf = (): readonly RailEntry[] =>
     WIZARD_STEPS.map((entry, index): RailEntry => {
       if (skipped(entry)) return { step: entry, standing: 'skipped' };
-      if (step === 'done') return { step: entry, standing: 'done' };
       const current = WIZARD_STEPS.indexOf(step);
       return { step: entry, standing: index < current ? 'done' : index === current ? 'cur' : 'todo' };
     });
 
-  const stepAfter = (from: WizardStep): WizardStep => {
+  const stepAfter = (from: WizardStep): WizardStep | null => {
     const start = WIZARD_STEPS.indexOf(from);
     for (let at = start + 1; at < WIZARD_STEPS.length; at += 1) {
       const candidate = WIZARD_STEPS[at];
       if (candidate !== undefined && !skipped(candidate)) return candidate;
     }
-    return 'done';
+    return null;
   };
 
   const stepBefore = (from: WizardStep): WizardStep | null => {
-    const start = from === 'done' ? WIZARD_STEPS.length : WIZARD_STEPS.indexOf(from);
+    const start = WIZARD_STEPS.indexOf(from);
     for (let at = start - 1; at >= 0; at -= 1) {
       const candidate = WIZARD_STEPS[at];
       if (candidate !== undefined && !skipped(candidate)) return candidate;
@@ -455,8 +488,7 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
     return null;
   };
 
-  const readySelected = (): boolean =>
-    rowsOf().some((row) => row.selected && row.statusKey === 'candidates.status.ready');
+  const readySelected = (): boolean => rowsOf().some((row) => row.selected && row.statusKey === 'candidates.status.ready');
 
   const consentMissing = (): boolean =>
     selectedEntries().some((entry) => isPayPerUse(viewOfEntry(entry)) && !(entry.settings.consent && entry.settings.caps.length > 0));
@@ -467,21 +499,42 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
     return null;
   };
 
+  const capShown = (view: SettingsAccountView): { readonly scope: CapScope; readonly amountUsd: number } => {
+    const stored = view.caps[0];
+    return stored === undefined
+      ? { scope: RECOMMENDED.cap.scope, amountUsd: RECOMMENDED.cap.amountUsd }
+      : { scope: stored.scope, amountUsd: stored.amountUsd };
+  };
+
   const budgetRow = (entry: Entry): BudgetRow => {
     const view = viewOfEntry(entry);
     const usage = usageView(view);
     const cap = view.caps[0] ?? null;
+    const meters = meterListView(view.pools, view.meters);
+    const standing = entry.fact === null ? undefined : quotas.get(entry.fact.sourcePath);
+    const needsLogin = rowsOf().find((row) => row.id === entry.key)?.statusKey === 'candidates.status.needs_login';
     return {
       id: entry.key,
       providerName: nameOf(view.provider),
       label: view.label,
       markKey: view.provider === '' ? null : view.provider,
+      billing: view.billing,
+      viaKey: view.authMode === 'api_key',
+      displayPath: view.identityDir ?? '',
+      host: view.endpointHost,
       diffCount: settingDiffs(view).length,
+      policy: view.limitPolicy,
       policyKey: policyLabelKey(view.limitPolicy),
+      policyChoices: policyChoices(view),
       reserveShort: view.reserve.short ?? 0,
       reserveLong: view.reserve.long ?? 0,
-      bars: view.meters.map((meter) => meterBar(meter).fill),
+      meters,
+      meterEmpty:
+        meters.rows.length > 0
+          ? null
+          : meterListEmpty({ loading: standing?.state === 'loading', failed: standing?.state === 'error', needsLogin }),
       cap: cap === null ? null : { scope: cap.scope, amountUsd: cap.amountUsd, warnPercent: cap.warnPercent },
+      capShown: capShown(view),
       spentUsd: usage.kind === 'spend' ? usage.spentUsd : null,
       needsConsent: isPayPerUse(view),
       consented: view.consentedModels.includes('*'),
@@ -493,7 +546,6 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
     const budgetRows = selected.map(budgetRow);
     const reason = visible ? gate() : null;
     const editorEntry = editorWork === null ? undefined : entryOf(editorWork.key);
-    const first = selected[0];
     return {
       visible,
       checking,
@@ -501,6 +553,7 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
       rail: railOf(),
       rows: rowsOf(),
       providers: providerRows(providerFacts),
+      installed: providerFacts.filter((fact) => fact.binPath !== null).map((fact) => ({ id: fact.defId, name: fact.name })),
       loading,
       capabilities: capabilities.map((capability) => ({ ...capability, selected: capabilityPicks.has(capability.id) })),
       order: orderEntries(),
@@ -510,17 +563,13 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
       },
       editor:
         editorWork === null || editorEntry === undefined ? null : { key: editorWork.key, account: viewOf(editorEntry.base, editorWork.settings) },
-      canSkip: step === 'welcome' || step === 'capabilities' || step === 'order',
-      nextEnabled: step !== 'done' && !finishing && reason === null,
+      canBack: visible && !finishing && stepBefore(step) !== null,
+      canSkip: step === 'budget',
+      nextEnabled: !finishing && reason === null,
       reasonKey: reason,
       finishing,
       lastOutcome,
-      summary:
-        step === 'done' && first !== undefined
-          ? { accounts: selected.length, capabilities: capabilities.filter((c) => capabilityPicks.has(c.id)).length, firstLabel: first.settings.label }
-          : null,
-      attach,
-      opened,
+      finished,
     };
   };
 
@@ -531,6 +580,27 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
   };
 
   // --- reads -----------------------------------------------------------------------------------
+
+  /** Reads one candidate's quota preview; a compatible endpoint has no provider to ask (A-82). */
+  const readQuota = async (fact: CandidateFact): Promise<void> => {
+    if (fact.kind === 'compatible_endpoint') {
+      quotas.set(fact.sourcePath, { state: 'error' });
+      publish();
+      return;
+    }
+    if (!quotas.has(fact.sourcePath)) quotas.set(fact.sourcePath, { state: 'loading' });
+    publish();
+    const reply: unknown = await api.query({ type: 'accounts.candidateQuota', sourcePath: fact.sourcePath });
+    const view = isQuotaView(reply) ? reply : null;
+    quotas.set(fact.sourcePath, view !== null && view.ok ? { state: 'ok', pools: view.pools, meters: view.meters } : { state: 'error' });
+    publish();
+  };
+
+  /** The quota of every selected candidate that has none yet — the budget step and the editor need it. */
+  const ensureQuotas = async (): Promise<void> => {
+    const wanted = selectedEntries().flatMap((entry) => (entry.fact !== null && !quotas.has(entry.fact.sourcePath) ? [entry.fact] : []));
+    await Promise.all(wanted.map(readQuota));
+  };
 
   const read = async (refresh: boolean): Promise<void> => {
     loading = true;
@@ -545,14 +615,20 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
     providerFacts = !isQueryFailure(providerReply) && Array.isArray(providerReply) ? providerReply.filter(isProviderFact) : [];
     existing = isAccountsView(accountsReply) ? accountsReply.accounts.filter(isAccountView) : [];
     if (!loaded) {
-      // Accounts added earlier start chosen: a re-run of the wizard is never stuck behind an
-      // empty candidate list.
-      selection = [...selection, ...existing.map((view) => view.id).filter((id) => !selection.includes(id))];
+      // Accounts added earlier start chosen, and so does every ready candidate (U-42): a re-run of
+      // the wizard is never stuck behind an empty selection. A candidate whose token overrides its
+      // login waits for the user's key-move decision, so it is not chosen for them.
+      const ready = candidateRows(facts, null, false, providerFacts)
+        .filter((row) => row.statusKey === 'candidates.status.ready' && row.selectable)
+        .filter((row) => facts.find((fact) => fact.sourcePath === row.id)?.envOverrides.includes('token') !== true)
+        .map((row) => row.id);
+      selection = [...selection, ...[...existing.map((view) => view.id), ...ready].filter((id) => !selection.includes(id))];
       loaded = true;
     }
     // A choice that is no longer listed (added elsewhere, vanished on rescan) falls away.
     const listed = new Set(entries().map((entry) => entry.key));
     selection = selection.filter((key) => listed.has(key));
+    for (const key of [...quotas.keys()]) if (!listed.has(key)) quotas.delete(key);
     loading = false;
     publish();
   };
@@ -571,11 +647,22 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
       publish();
       return;
     }
-    visible = true;
-    if (step === 'done') step = 'welcome';
+    // A wizard already finished in this session does not come back (the shell opened Anasayfa).
+    visible = !completed;
     publish();
     if (!loaded) await read(false);
   };
+
+  // `accounts.changed` — an adoption, a removal or a quota poll elsewhere: the lists the wizard
+  // shows are read again, and a candidate's quota with them.
+  deps.changes?.((change) => {
+    if (change.type !== 'accounts.changed' || !visible || !loaded || loading || finishing) return;
+    void (async () => {
+      await read(false);
+      quotas.clear();
+      if (step === 'budget' || editorWork !== null) await ensureQuotas();
+    })();
+  });
 
   // --- the finish -------------------------------------------------------------------------------
 
@@ -595,6 +682,7 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
     finishing = true;
     lastOutcome = null;
     publish();
+    const readyCount = rowsOf().filter((row) => row.selected && row.statusKey === 'candidates.status.ready').length;
     // Adopt in list order; a stored account keeps its id.
     const ids = new Map<string, string>();
     for (const entry of entries().filter((candidate) => selection.includes(candidate.key))) {
@@ -665,19 +753,39 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
         return;
       }
     }
+    // Anasayfa opens directly: the wizard leaves and the shell takes `finished` once.
     finishing = false;
-    step = 'done';
+    visible = false;
+    completed = true;
+    finished = { accounts: readyCount };
     publish();
   };
 
+  /** Ready subscriptions first, then the rest; each class keeps its order (U-42). */
+  const rankSelection = (): void => {
+    const statusOf = new Map(rowsOf().map((row) => [row.id, row.statusKey]));
+    const rank = (key: string, at: number): number => {
+      const entry = entryOf(key);
+      return (entry !== undefined && spendsMoney(entry.base.billing) ? 1000 : 0) + (statusOf.get(key) === 'candidates.status.ready' ? 0 : 500) + at;
+    };
+    selection = selection
+      .map((key, at) => ({ key, rank: rank(key, at) }))
+      .sort((a, b) => a.rank - b.rank)
+      .map((item) => item.key);
+  };
+
   const advance = async (): Promise<void> => {
-    if (step === 'done') return;
     if (step === 'budget') {
       await finish();
       return;
     }
-    step = stepAfter(step);
+    // Leaving Hesaplar fixes the starting order of the chosen accounts.
+    if (step === 'accounts') rankSelection();
+    const next = stepAfter(step);
+    if (next === null) return;
+    step = next;
     publish();
+    if (step === 'budget') await ensureQuotas();
   };
 
   // --- the store ---------------------------------------------------------------------------------
@@ -688,17 +796,7 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
     drafts.set(key, patch(entry.settings));
   };
 
-  const move = (key: string, by: -1 | 1): void => {
-    const at = selection.indexOf(key);
-    const to = at + by;
-    if (at < 0 || to < 0 || to >= selection.length) return;
-    const next = [...selection];
-    const [moved] = next.splice(at, 1);
-    if (moved === undefined) return;
-    next.splice(to, 0, moved);
-    selection = next;
-    publish();
-  };
+  const capEntry = (scope: CapScope, amountUsd: number): Caps[number] => ({ scope, amountUsd, warnPercent: RECOMMENDED.warnPercent });
 
   return {
     open,
@@ -712,10 +810,16 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
       await advance();
     },
     back: () => {
-      if (!visible || finishing || step === 'done') return;
+      if (!visible || finishing) return;
       const before = stepBefore(step);
       if (before === null) return;
       step = before;
+      publish();
+    },
+    goTo: (target) => {
+      if (!visible || finishing) return;
+      if (WIZARD_STEPS.indexOf(target) >= WIZARD_STEPS.indexOf(step) || skipped(target)) return;
+      step = target;
       publish();
     },
     select: (key) => {
@@ -735,7 +839,11 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
       else importTokens.delete(key);
       publish();
     },
-    rescan: () => read(true),
+    rescan: async () => {
+      await read(true);
+      quotas.clear();
+      if (step === 'budget') await ensureQuotas();
+    },
     toggleCapability: (id) => {
       const next = new Set(capabilityPicks);
       if (next.has(id)) next.delete(id);
@@ -743,15 +851,18 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
       capabilityPicks = next;
       publish();
     },
-    moveUp: (key) => move(key, -1),
-    moveDown: (key) => move(key, 1),
-    openEditor: (key) => {
+    moveTo: (key, index) => {
+      const moved = moveItem(selection, selection.indexOf(key), index);
+      if (moved === null) return;
+      selection = moved;
+      publish();
+    },
+    openEditor: async (key) => {
       const entry = entryOf(key);
-      if (entry !== undefined) {
-        editorWork = { key, settings: entry.settings };
-        publish();
-      }
-      return Promise.resolve();
+      if (entry === undefined) return;
+      editorWork = { key, settings: entry.settings };
+      publish();
+      await ensureQuotas();
     },
     editorRun: (command) => {
       if (editorWork !== null) {
@@ -772,16 +883,27 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
       editorWork = null;
       publish();
     },
+    setPolicy: (key, policy) => {
+      patchDraft(key, (settings) => ({ ...settings, limitPolicy: policy }));
+      publish();
+    },
+    setCap: (key, input) => {
+      const amountUsd = parseAmountUsd(input.amount);
+      if (amountUsd === null || entryOf(key) === undefined) return false;
+      patchDraft(key, (settings) => ({
+        ...settings,
+        caps: [...settings.caps.filter((cap) => cap.scope !== input.scope), capEntry(input.scope, amountUsd)],
+      }));
+      publish();
+      return true;
+    },
     allowSpend: (key, input) => {
       const amountUsd = parseAmountUsd(input.amount);
       if (amountUsd === null || entryOf(key) === undefined) return false;
       patchDraft(key, (settings) => ({
         ...settings,
         consent: true,
-        caps: [
-          ...settings.caps.filter((cap) => cap.scope !== input.scope),
-          { scope: input.scope, amountUsd, warnPercent: RECOMMENDED.warnPercent },
-        ],
+        caps: [...settings.caps.filter((cap) => cap.scope !== input.scope), capEntry(input.scope, amountUsd)],
       }));
       publish();
       return true;
@@ -790,60 +912,15 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
       patchDraft(key, (settings) => ({ ...settings, consent: false }));
       publish();
     },
-    attachProject: () => {
-      attach = { ...attach, open: true, failureKey: null };
-      publish();
+    refreshQuota: async (key) => {
+      const fact = entryOf(key)?.fact ?? null;
+      if (fact === null) return;
+      quotas.delete(fact.sourcePath);
+      await readQuota(fact);
     },
-    setAttachPath: (path) => {
-      attach = { ...attach, path, failureKey: null };
-      publish();
-    },
-    cancelAttach: () => {
-      attach = { ...attach, open: false, failureKey: null };
-      publish();
-    },
-    createProject: () => {
-      if (!visible || step !== 'done') return;
-      opened = { kind: 'newProject' };
-      suspended = true;
-      visible = false;
-      publish();
-    },
-    resume: () => {
-      if (!suspended) return false;
-      suspended = false;
-      opened = null;
-      visible = true;
-      publish();
-      return true;
-    },
-    leave: () => {
-      suspended = false;
-    },
-    submitAttach: async () => {
-      const path = attach.path.trim();
-      if (!attach.open || attach.busy || path === '') return;
-      attach = { ...attach, busy: true, failureKey: null };
-      publish();
-      const command: Command = { type: 'project.attach', path };
-      const result = await api.command(actor, command);
-      if (!result.ok) {
-        attach = { ...attach, busy: false, failureKey: commandResultKey(command.type, result) };
-        publish();
-        return;
-      }
-      await deps.reloadTree?.();
-      const tree: unknown = await api.query({ type: 'project.tree' });
-      const projects = !isQueryFailure(tree) && Array.isArray(tree) ? (tree as readonly ProjectTreeItem[]) : [];
-      const project = projects.find((item) => item.project === result.id) ?? projects[projects.length - 1];
-      opened =
-        project === undefined
-          ? null
-          : project.repos.length > 1
-            ? { kind: 'roadmap', project: project.project }
-            : { kind: 'board', repo: project.mainRepo };
-      attach = { ...attach, busy: false };
-      visible = false;
+    ackFinish: () => {
+      if (finished === null) return;
+      finished = null;
       publish();
     },
     subscribe: (listener) => {

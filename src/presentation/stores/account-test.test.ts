@@ -160,7 +160,8 @@ describe('U-39: which rows carry the button', () => {
     ]);
     expect(rows[0]?.testLaterKey).toBe('candidates.hint.testLater');
     expect(rows[1]?.testLaterKey).toBeNull();
-    expect(TR['candidates.hint.testLater']).toBe("Kurulumdan sonra Ayarlar'da test edebilirsin");
+    // U-42 puts the reason before it: the wizard line reads "Giriş durumu okunamıyor. …".
+    expect(TR['candidates.hint.testLater']).toBe("Giriş durumu okunamıyor. Kurulumdan sonra Ayarlar'da test edebilirsin.");
   });
 });
 

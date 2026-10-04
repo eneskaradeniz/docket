@@ -30,6 +30,12 @@ const GROUP_KEY: Readonly<Record<'included' | 'metered' | 'unknown', LabelKey>> 
   unknown: 'settings.models.group.unknown',
 };
 
+const GROUP_HINT_KEY: Readonly<Record<'included' | 'metered' | 'unknown', LabelKey>> = {
+  included: 'settings.models.groupHint.included',
+  metered: 'settings.models.groupHint.metered',
+  unknown: 'settings.models.groupHint.unknown',
+};
+
 const CAP_SCOPE_KEY: Readonly<Record<CapScope, LabelKey>> = {
   account_day: 'cap.scope.account_day',
   account_week: 'cap.scope.account_week',
@@ -58,6 +64,7 @@ const ModelRow = ({
   onSelect,
   onRevoke,
   card,
+  reason,
 }: {
   readonly row: ModelRowDisplay;
   readonly locale: Locale;
@@ -65,15 +72,18 @@ const ModelRow = ({
   readonly onRevoke: (model: string) => void;
   /** The inline consent card, rendered under the row it belongs to. */
   readonly card: ReactNode;
+  /** Why an included model is in the plan ("haftalık limiti olduğu için planda"), or null. */
+  readonly reason: string | null;
 }) => (
-  <li className="grid gap-2">
+  <li className="grid gap-2 border-t border-hairline px-3.5 py-2.5 first:border-t-0">
    <div className="flex min-w-0 items-center gap-2.5">
     <span className="min-w-0 truncate text-[13px] text-ink" title={row.name}>
       {row.name}
     </span>
     {row.tier !== null ? <StateBadge tone="dim">{t(locale, TIER_KEY[row.tier])}</StateBadge> : null}
     {row.billing !== 'included' ? <BillingMarkGlyph locale={locale} billing={row.billing} /> : null}
-    <span className="ml-auto flex flex-none items-center gap-2">
+    {reason !== null ? <span className="ml-auto text-[12px] text-inkdim">{reason}</span> : null}
+    <span className={`flex flex-none items-center gap-2 ${reason === null ? 'ml-auto' : ''}`}>
       {row.consented ? (
         <>
           <StateBadge tone="proceed">{t(locale, 'settings.models.allowed')}</StateBadge>
@@ -183,9 +193,11 @@ export interface ModelListProps {
   readonly onAllow: () => void;
   readonly onCancel: () => void;
   readonly onRevoke: (model: string) => void;
+  /** Why an included model is in the plan, resolved; null when there is nothing to say. */
+  readonly reasonOf?: (row: ModelRowDisplay) => string | null;
 }
 
-export function ModelList({ locale, state, onSelect, onSelectDefault, onRefresh, onEditCap, onAllow, onCancel, onRevoke }: ModelListProps) {
+export function ModelList({ locale, state, onSelect, onSelectDefault, onRefresh, onEditCap, onAllow, onCancel, onRevoke, reasonOf }: ModelListProps) {
   const rows = state.rows;
   const defaultModel = state.defaultModel;
   const draftCard = (model: string): ReactNode =>
@@ -265,11 +277,14 @@ export function ModelList({ locale, state, onSelect, onSelectDefault, onRefresh,
                 </div>
               ) : null}
               {groupModels(rows).map((group) => (
-                <section key={group.billing} className="grid gap-1.5" data-billing-group={group.billing}>
-                  <h4 className="font-mono text-[11px] uppercase tracking-[0.06em] text-inkdim">{t(locale, GROUP_KEY[group.billing])}</h4>
-                  <ul className="grid gap-1.5">
+                <section key={group.billing} className="overflow-hidden rounded-card border border-hairline" data-billing-group={group.billing}>
+                  <h4 className="border-b border-hairline bg-band px-3.5 py-2 text-[13px] font-bold text-ink">
+                    {t(locale, GROUP_KEY[group.billing])}
+                    <span className="font-medium text-inkdim"> · {t(locale, GROUP_HINT_KEY[group.billing])}</span>
+                  </h4>
+                  <ul className="m-0 list-none p-0">
                     {group.rows.map((row) => (
-                      <ModelRow key={row.id} row={row} locale={locale} onSelect={onSelect} onRevoke={onRevoke} card={draftCard(row.id)} />
+                      <ModelRow key={row.id} row={row} locale={locale} onSelect={onSelect} onRevoke={onRevoke} card={draftCard(row.id)} reason={reasonOf?.(row) ?? null} />
                     ))}
                   </ul>
                 </section>

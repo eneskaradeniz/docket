@@ -26,16 +26,26 @@ export interface SettingRowProps {
   /** An amber line under the row, e.g. a standing warning that is not a failure. */
   readonly note?: string;
   readonly disclosure?: { readonly label: string; readonly startsOpen: boolean; readonly children: ReactNode };
+  /** The row sits in a `SettingRows` card (U-41): padded to the card, divided from its neighbours. */
+  readonly framed?: boolean;
 }
 
-export function SettingRow({ locale, title, purpose, control, below, differsFrom, onReset, saved = false, failure, note, disclosure }: SettingRowProps) {
+/** The card the wizard's and Settings' rows sit in (U-41): rows divided by hairlines. */
+export function SettingRows({ children }: { readonly children: ReactNode }) {
+  return <div className="rounded-card border border-hairline bg-surface">{children}</div>;
+}
+
+export function SettingRow({ locale, title, purpose, control, below, differsFrom, onReset, saved = false, failure, note, disclosure, framed = false }: SettingRowProps) {
   const [open, setOpen] = useState(disclosure?.startsOpen ?? false);
   return (
-    <div className="grid gap-1.5 border-b border-hairline py-3 last:border-b-0" data-setting-row={title}>
+    <div
+      className={framed ? 'grid min-h-16 content-center gap-1.5 border-t border-hairline px-4 py-3.5 first:border-t-0' : 'grid gap-1.5 border-b border-hairline py-3 last:border-b-0'}
+      data-setting-row={title}
+    >
       <div className={`flex justify-between gap-4 ${purpose === undefined || purpose === '' ? 'items-center' : 'items-start'}`}>
         <div className="min-w-0">
-          <p className="text-[13.5px] font-semibold text-ink">{title}</p>
-          {purpose !== undefined && purpose !== '' ? <p className="text-[12.5px] text-inkdim">{purpose}</p> : null}
+          <p className={framed ? 'font-bold text-ink' : 'text-[13.5px] font-semibold text-ink'}>{title}</p>
+          {purpose !== undefined && purpose !== '' ? <p className={framed ? 'text-[13px] text-inkdim' : 'text-[12.5px] text-inkdim'}>{purpose}</p> : null}
         </div>
         <div className="flex flex-none items-center gap-2">
           {saved ? (

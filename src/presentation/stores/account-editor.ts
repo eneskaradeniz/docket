@@ -10,6 +10,7 @@ import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
 import type { LampTone } from './candidates';
 import { CAP_SCOPES, parseAmountUsd, type CapScope } from './account-models';
+import { hasModelScopedPool } from './pool-scope';
 import { RECOMMENDED, mayHaveCap, settingDiffs, type SettingDiff, type SettingKey } from './recommended';
 import type { SettingsOpenTarget } from './settings-panel';
 
@@ -136,10 +137,11 @@ export type UsageView =
       readonly cap: { readonly scope: string; readonly amountUsd: number } | null;
     };
 
-/** Kullanım: a subscription account reads as bars, a pay-per-use one as this period's spend
- *  against its cap. */
+/** Kullanım: an account whose billing view is `included` reads as bars, any other (pay per use,
+ *  unknown) as this period's spend against its cap — decided by the billing view, never by the
+ *  connection kind (A-83: a coding plan on a key is still a subscription). */
 export const usageView = (account: SettingsAccountView): UsageView => {
-  if (account.authMode === 'subscription') return { kind: 'meters', meters: account.meters };
+  if (account.billing === 'included') return { kind: 'meters', meters: account.meters };
   const usd = account.meters.filter((meter) => meter.unit === 'usd' && meter.used !== null);
   const spentUsd = usd.length === 0 ? null : usd.reduce((sum, meter) => sum + (meter.used ?? 0), 0);
   const cap = account.caps[0];
@@ -236,9 +238,10 @@ export const diffValueLabel = (locale: Locale, key: SettingDiff['key'], value: s
   }
 };
 
-type LimitPolicy = SettingsAccountView['limitPolicy'];
+export type LimitPolicy = SettingsAccountView['limitPolicy'];
 
-const POLICY_ORDER: readonly LimitPolicy[] = ['wait_resume', 'switch_pool', 'fallback_account', 'ask'];
+// Display order of "Limit dolunca" (U-43): resume, next account, pool switch, ask.
+const POLICY_ORDER: readonly LimitPolicy[] = ['wait_resume', 'fallback_account', 'switch_pool', 'ask'];
 
 const POLICY_PURPOSE_KEY: Readonly<Record<LimitPolicy, LabelKey>> = {
   wait_resume: 'editor.policy.purpose.wait_resume',
@@ -247,23 +250,25 @@ const POLICY_PURPOSE_KEY: Readonly<Record<LimitPolicy, LabelKey>> = {
   ask: 'editor.policy.purpose.ask',
 };
 
+/** The policies an account offers (U-42, U-43): all but the pool switch, which needs a model-scoped
+ *  pool to switch within — kept visible when it is already the stored choice, so a value is never hidden. */
+export const policyChoices = (account: Pick<SettingsAccountView, 'pools' | 'limitPolicy'>): readonly LimitPolicy[] =>
+  POLICY_ORDER.filter((policy) => policy !== 'switch_pool' || hasModelScopedPool(account.pools) || account.limitPolicy === 'switch_pool');
+
 export interface PolicyOption {
   readonly policy: LimitPolicy;
   readonly labelKey: LabelKey;
   readonly purposeKey: LabelKey;
   readonly recommended: boolean;
-  /** Present when the option cannot be chosen on this account, and why. */
-  readonly disabledReasonKey?: LabelKey;
 }
 
-/** "Limit dolunca": all four policies; switching pool needs a second pool to switch to. */
-export const policyOptions = (account: SettingsAccountView): readonly PolicyOption[] =>
-  POLICY_ORDER.map((policy) => ({
+/** "Limit dolunca" as radio cards in the editor and as the wizard's Listbox: the same options. */
+export const policyOptions = (account: Pick<SettingsAccountView, 'pools' | 'limitPolicy'>): readonly PolicyOption[] =>
+  policyChoices(account).map((policy) => ({
     policy,
     labelKey: POLICY_KEY[policy],
     purposeKey: POLICY_PURPOSE_KEY[policy],
     recommended: policy === RECOMMENDED.limitPolicy,
-    ...(policy === 'switch_pool' && account.pools.length < 2 ? { disabledReasonKey: 'editor.limits.policy.singlePool' as const } : {}),
   }));
 
 export const policySaveCommand = (account: SettingsAccountView, policy: LimitPolicy): Command => ({

@@ -432,4 +432,22 @@ describe('settings store', () => {
     expect(accountsQueries()).toBe(3);
     expect(h.api.queries.some((q) => q.type === 'providers.discovered')).toBe(false);
   });
+
+  it('U-43: "Yenile" issues quota.refresh for one account, or for every account without an id, and re-reads the view', async () => {
+    const h = createHarness('tr');
+    await h.store.load();
+    const outcome = await h.store.refreshQuota('acc-1');
+    expect(outcome.result.ok).toBe(true);
+    await h.store.refreshQuota();
+    expect(h.api.commands).toEqual([{ type: 'quota.refresh', id: 'acc-1' }, { type: 'quota.refresh' }]);
+    expect(h.api.queries.filter((q) => q.type === 'settings.accounts').length).toBe(3);
+  });
+
+  it('U-44: an accounts.changed event re-queries the accounts view', async () => {
+    const h = createHarness('tr');
+    await h.store.load();
+    h.emitter.emit({ type: 'accounts.changed' });
+    await flush();
+    expect(h.api.queries.filter((q) => q.type === 'settings.accounts').length).toBe(2);
+  });
 });

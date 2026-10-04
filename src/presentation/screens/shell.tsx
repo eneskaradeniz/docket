@@ -62,7 +62,7 @@ import type { ShellStore } from '../stores/shell';
 import type { ThemeStore } from '../stores/theme';
 import type { UpdateStore } from '../stores/update';
 import type { NewProjectDone, NewProjectStore } from '../stores/new-project';
-import type { WizardOpenTarget, WizardStore } from '../stores/wizard';
+import type { WizardStore } from '../stores/wizard';
 import type { WorkOrderDetailStore } from '../stores/work-order-detail';
 import { AccountViewScreen } from './account-view';
 import { BoardScreen } from './board';
@@ -330,37 +330,36 @@ export function ShellScreen({
     lastMoveRef.current = 'back';
     dispatchNav({ type: 'push', route: next, scroll: mainRef.current?.scrollTop ?? 0 });
   }, []);
-  // A project the wizard attached opens in its default view: roadmap for several repos, board for one.
-  const openWizardTarget = useCallback(
-    (target: WizardOpenTarget): void => {
-      if (target.kind === 'newProject') navigate({ name: 'newProject' });
-      else navigate(target.kind === 'roadmap' ? { name: 'roadmap', project: target.project } : { name: 'board', repo: target.repo });
-    },
-    [navigate],
-  );
   // The Yeni proje page's success (U-40): its machine starts fresh, the new project's view opens
   // and the one toast shows; no target (the tree does not list it) lands on the cockpit.
-  const [toastKey, setToastKey] = useState<LabelKey | null>(null);
+  const [toast, setToast] = useState<{ readonly key: LabelKey; readonly count: number | null } | null>(null);
   useEffect(() => {
-    if (toastKey === null) return undefined;
-    const timer = window.setTimeout(() => setToastKey(null), TOAST_MS);
+    if (toast === null) return undefined;
+    const timer = window.setTimeout(() => setToast(null), TOAST_MS);
     return () => window.clearTimeout(timer);
-  }, [toastKey]);
+  }, [toast]);
+  // The setup finished (U-42): Anasayfa opens directly and the one toast says how many accounts are
+  // ready. The wizard hands the result over once.
+  const finished = wizardState.finished;
+  useEffect(() => {
+    if (finished === null) return;
+    navigate({ name: 'cockpit' });
+    setToast({ key: 'wizard.finished.toast', count: finished.accounts });
+    wizard.ackFinish();
+  }, [finished, navigate, wizard]);
   const finishNewProject = useCallback(
     (done: NewProjectDone): void => {
       newProject.reset();
-      wizard.leave();
       const target = done.target;
       navigate(target === null ? { name: 'cockpit' } : target.kind === 'roadmap' ? { name: 'roadmap', project: target.project } : { name: 'board', repo: target.repo });
-      setToastKey(done.toastKey);
+      setToast({ key: done.toastKey, count: null });
     },
-    [newProject, wizard, navigate],
+    [newProject, navigate],
   );
-  /** Vazgeç: back where the page was opened from; from the wizard's moment, back into the wizard. */
+  /** Vazgeç: back where the page was opened from. */
   const cancelNewProject = useCallback((): void => {
-    wizard.resume();
     goBack();
-  }, [wizard, goBack]);
+  }, [goBack]);
   /** Opens the Yeni proje page with a fresh form. */
   const openNewProject = useCallback((): void => {
     newProject.reset();
@@ -480,6 +479,7 @@ export function ShellScreen({
               onOpenWorkOrder={openWorkOrder}
               onOpenProject={(project) => navigate({ name: 'roadmap', project })}
               onOpenBoard={(repo) => navigate({ name: 'board', repo })}
+              onNewProject={openNewProject}
               accounts={accountsState.cards}
             />
           ) : null}
@@ -571,17 +571,17 @@ export function ShellScreen({
         }}
       />
 
-      {toastKey !== null ? (
+      {toast !== null ? (
         <div className="pointer-events-none fixed inset-x-0 bottom-5 z-40 grid place-items-center px-4">
           <div
             role="status"
             data-toast=""
             className="pointer-events-auto flex max-w-[560px] items-start gap-3 rounded-card border border-bord bg-raised px-3.5 py-2.5 text-[13px] text-ink"
           >
-            <span>{t(locale, toastKey)}</span>
+            <span>{t(locale, toast.key).replace('{n}', String(toast.count ?? ''))}</span>
             <button
               type="button"
-              onClick={() => setToastKey(null)}
+              onClick={() => setToast(null)}
               aria-label={t(locale, 'newProject.toast.dismiss')}
               title={t(locale, 'newProject.toast.dismiss')}
               className="flex-none rounded-control text-inkdim hover:text-ink"
@@ -592,7 +592,7 @@ export function ShellScreen({
         </div>
       ) : null}
 
-      <WizardScreen store={wizard} locale={locale} localeStore={localeStore} themeStore={themeStore} marks={marks} onOpenTarget={openWizardTarget} />
+      <WizardScreen store={wizard} locale={locale} localeStore={localeStore} themeStore={themeStore} marks={marks} />
     </div>
   );
 }

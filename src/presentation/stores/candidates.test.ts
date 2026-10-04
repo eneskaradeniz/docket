@@ -283,3 +283,83 @@ describe('list body', () => {
     expect(candidateStatusTone('candidates.status.scanning')).toBe('info');
   });
 });
+
+describe('machine-login candidates and the row\'s Ekle (U-42, U-43)', () => {
+  const login: CandidateFact = {
+    ...base,
+    sourcePath: 'machine-login:prov-m',
+    displayPath: '~/.prov-m',
+    kind: 'machine_login',
+    routeKind: 'route-m',
+    provider: 'prov-m',
+    hasOauthLogin: false,
+  };
+  const provider = (loggedIn: boolean | null) => ({ defId: 'prov-m', name: 'M', installUrl: null, binPath: '/bin/m', version: '1', loggedIn, optionalFlags: [] });
+
+  it('U-42: a machine-login candidate reads its provider\'s login probe — signed in is ready, signed out needs a login, unproven is Doğrulanamadı', () => {
+    const status = (loggedIn: boolean | null) => candidateRows([login], null, false, [provider(loggedIn)])[0];
+    expect(status(true)?.statusKey).toBe('candidates.status.ready');
+    expect(status(true)?.hintKey).toBeNull();
+    expect(status(false)?.statusKey).toBe('candidates.status.needs_login');
+    expect(status(false)?.hintKey).toBe('candidates.hint.login');
+    expect(status(null)?.statusKey).toBe('candidates.status.unknown');
+    expect(status(null)?.hintKey).toBe('candidates.hint.testLater');
+    // No probe answer yet proves nothing either.
+    expect(candidateRows([login], null, false, [])[0]?.statusKey).toBe('candidates.status.unknown');
+  });
+
+  it('U-42: a row carries the billing of its route and whether it rides a key', () => {
+    const [plain, keyedRow] = candidateRows([base, { ...keyed, billing: 'included' }], null, false);
+    expect(plain).toMatchObject({ billing: 'included', viaKey: false, provider: 'prov-a', displayPath: '~/.alpha', hintKey: null });
+    expect(keyedRow).toMatchObject({ billing: 'included', viaKey: true });
+  });
+
+  it('U-43: a row\'s Ekle selects the candidate and adopts it at once', async () => {
+    const f = fake([base]);
+    const store = make(f);
+    await store.load();
+    const outcome = await store.add(base.sourcePath);
+    expect(outcome?.result.ok).toBe(true);
+    expect(f.commands).toEqual([{ type: 'account.adopt', sourcePath: base.sourcePath, label: '.alpha' }]);
+  });
+
+  it('U-43: a candidate whose token overrides the login opens its key-move card first; a second Ekle adopts', async () => {
+    const f = fake([keyed]);
+    const store = make(f);
+    await store.load();
+    expect(await store.add(keyed.sourcePath)).toBeNull();
+    expect(f.commands).toHaveLength(0);
+    expect(store.state().rows[0]?.keyMoveCard).toBe(true);
+    await store.add(keyed.sourcePath);
+    expect(f.commands).toHaveLength(1);
+  });
+
+  it('U-43: an unreadable candidate cannot be added', async () => {
+    const f = fake([{ ...base, warnings: ['unreadable'] }]);
+    const store = make(f);
+    await store.load();
+    expect(await store.add(base.sourcePath)).toBeNull();
+    expect(f.commands).toHaveLength(0);
+  });
+
+  it('U-44: an accounts.changed event re-reads a list that has been read', async () => {
+    const f = fake([base]);
+    let emit: (change: { readonly type: string }) => void = () => undefined;
+    const store = createCandidatesStore({
+      api: f.api,
+      actor: ACTOR,
+      changes: (listener) => {
+        emit = listener;
+        return () => undefined;
+      },
+    });
+    emit({ type: 'accounts.changed' });
+    await Promise.resolve();
+    expect(f.queries).toHaveLength(0);
+    await store.load();
+    const before = f.queries.length;
+    emit({ type: 'accounts.changed' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(f.queries.length).toBeGreaterThan(before);
+  });
+});

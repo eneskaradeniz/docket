@@ -15,6 +15,7 @@ import {
   CAP_WARN_PERCENT,
   createAccountModelsStore,
   groupModels,
+  includedReason,
   modelRows,
   parseAmountUsd,
   type AccountModelsChange,
@@ -484,5 +485,30 @@ describe('models and spend consent (U-32)', () => {
     expect(store.state().draft).not.toBeNull();
     const revoked = await store.revoke('fable');
     expect(revoked?.result.ok).toBe(false);
+  });
+});
+
+describe('why an included model is in the plan (U-43)', () => {
+  const pools = [
+    { id: 'p-all', label: 'plan', kind: 'allowance', appliesTo: 'all' as const },
+    { id: 'p-fable', label: 'Fable', kind: 'allowance', appliesTo: [{ prefix: 'fable-' }] },
+    { id: 'p-exact', label: 'Solo', kind: 'allowance', appliesTo: [{ exact: 'solo-1' }] },
+  ];
+  const meters = [
+    { poolId: 'p-fable', label: 'seven_day', durationMs: null },
+    { poolId: 'p-exact', label: 'daily', durationMs: null },
+  ];
+
+  it('U-43: a model named by a model-scoped pool with a weekly window says the weekly limit is why', () => {
+    expect(includedReason('fable-5', pools, meters)).toBe('settings.models.includedWeekly');
+  });
+
+  it('U-43: a model named by a model-scoped pool of another window says it has its own limit', () => {
+    expect(includedReason('solo-1', pools, meters)).toBe('settings.models.includedOwn');
+  });
+
+  it('U-43: a model no model-scoped pool names has nothing to say', () => {
+    expect(includedReason('plain-1', pools, meters)).toBeNull();
+    expect(includedReason('solo-10', pools, meters)).toBeNull();
   });
 });

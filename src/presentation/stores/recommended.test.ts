@@ -86,4 +86,8 @@ describe('recommended', () => {
     expect(settingDiffs({ ...ACCOUNT, reserve: { short: 0, long: null } })).toEqual([]);
     expect(settingDiffs({ ...ACCOUNT, reserve: { short: null, long: 0.1 } }).map((diff) => diff.key)).toEqual(['reserve']);
   });
+
+  it('U-42: Sistem is the recommended theme', () => {
+    expect(RECOMMENDED.theme).toBe('system');
+  });
 });
