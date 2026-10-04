@@ -1,10 +1,20 @@
 // toasts.test.ts — U-50: the one toast service. Every sentence of the rule runs here against a
 // clock the test drives by hand: the one call, the three-visible cap (the oldest leaves outright),
 // the 5 s self-dismiss (warn and error 8 s), the hover/focus pause that holds a toast open and
-// resumes where it stood, and the close control that removes it and stops its timer.
-import { describe, expect, it } from 'vitest';
+// resumes where it stood, and the close control that removes it and stops its timer. U-50a adds
+// the optional `copy` text and how an ok:false command result maps onto the toast: the code's
+// label as text, the raw code only behind the copy button.
+import { afterEach, describe, expect, it } from 'vitest';
 
-import { MAX_VISIBLE_TOASTS, TOAST_MS, createToastStore } from './toasts';
+import { t } from '../labels/t';
+import { GENERIC_FAILURE_KEY, failureKey } from './results';
+import { MAX_VISIBLE_TOASTS, TOAST_MS, createToastStore, toastOutcome, toastStore } from './toasts';
+
+// The outcome bridge writes into the app's own service; each of its tests reads the newest
+// toast there and leaves nothing standing for the next one.
+afterEach(() => {
+  for (const item of toastStore.state()) toastStore.close(item.id);
+});
 
 /** The clock fake: time moves only when the test says so, so the durations read in fake
  *  milliseconds instead of real seconds. */
@@ -19,8 +29,8 @@ const manualClock = () => {
       jobs.set(seq, { at: now + ms, fn });
       return seq;
     },
-    clear: (id: number) => {
-      jobs.delete(id);
+    clear: (handle: unknown) => {
+      jobs.delete(handle as number);
     },
     advance: (ms: number) => {
       now += ms;
@@ -126,5 +136,46 @@ describe('createToastStore', () => {
     store.pause(id);
     store.resume(id);
     expect(store.state()).toEqual([]);
+  });
+
+  it('U-50a: the one call carries the optional copy text on the toast', () => {
+    const { store } = storeWithClock();
+    store.toast({ type: 'error', text: 'İş emri güncellenemedi', copy: 'stale' });
+    expect(store.state()[0].copy).toBe('stale');
+    store.toast({ type: 'success', text: 'Kaydedildi' });
+    expect(store.state()[0].copy).toBeUndefined();
+  });
+
+  it("U-50a: an ok:false result toasts as error, the code's label as its text and the code as copy", () => {
+    const outcome = {
+      result: { ok: false as const, code: 'stale' },
+      labelKey: 'error.stale' as const,
+    };
+    toastOutcome('tr', outcome);
+    const item = toastStore.state()[0];
+    expect(item.type).toBe('error');
+    expect(item.text).toBe(t('tr', outcome.labelKey));
+    expect(item.copy).toBe('stale');
+    // A success carries no copy — there is no code to hand over.
+    const ok = {
+      result: { ok: true as const },
+      labelKey: 'success.account.save' as const,
+    };
+    toastOutcome('tr', ok);
+    expect(toastStore.state()[0]).toMatchObject({ type: 'success', copy: undefined });
+  });
+
+  it('U-50a: an unknown code shows the generic failure text with the raw code only behind the button', () => {
+    // The stores map an unknown code to the generic key exactly this way (results.ts); the raw
+    // code must ride as `copy` alone — never in the text the toast shows.
+    const outcome = {
+      result: { ok: false as const, code: 'totally_new_refusal' },
+      labelKey: failureKey('totally_new_refusal'),
+    };
+    toastOutcome('tr', outcome);
+    const item = toastStore.state()[0];
+    expect(item.text).toBe(t('tr', GENERIC_FAILURE_KEY));
+    expect(item.text).not.toContain('totally_new_refusal');
+    expect(item.copy).toBe('totally_new_refusal');
   });
 });

@@ -3,13 +3,14 @@
 // announces itself politely (assertively for error), carries a close button whose label comes
 // from the bundle, and drains a thin progress line over its own duration that pauses while the
 // toast is hovered or focused. Colour rides only the existing tokens, and no other file in the
-// layer draws toast markup of its own.
+// layer draws toast markup of its own. U-50a adds the copy button a toast with a `copy` text
+// carries — labelled from the bundle, with the raw code never rendered in the markup.
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { ToastHost } from './toast-host';
-import { createToastStore } from '../stores/toasts';
+import { COPIED_MS, ToastHost } from './toast-host';
+import { createToastStore, type ToastInput } from '../stores/toasts';
 
 /** A clock that never fires: the host test renders standings, not the passage of time. */
 const stillClock = {
@@ -18,7 +19,7 @@ const stillClock = {
   clear: () => undefined,
 };
 
-const hostWith = (inputs: ReadonlyArray<{ readonly type: 'success' | 'info' | 'warn' | 'error'; readonly text: string }>): string => {
+const hostWith = (inputs: readonly ToastInput[]): string => {
   const store = createToastStore(stillClock);
   for (const input of inputs) store.toast(input);
   return renderToStaticMarkup(createElement(ToastHost, { store, locale: 'tr' }));
@@ -108,5 +109,34 @@ describe('ToastHost', () => {
       .filter(([, source]) => source.includes('data-toast'))
       .map(([file]) => file);
     expect(drawing).toEqual([expect.stringContaining('toast-host.tsx')]);
+  });
+
+  it("U-50a: a toast with copy shows the bundle's Kodu kopyala button, never the raw code in the markup", () => {
+    const html = hostWith([{ type: 'error', text: 'İş emri güncellenemedi', copy: 'stale' }]);
+    expect(html).toContain('Kodu kopyala');
+    // The raw code lives only behind the button — the press hands it to the clipboard, so it
+    // never appears in the rendered markup.
+    expect(html).not.toContain('stale');
+    const english = renderToStaticMarkup(
+      createElement(ToastHost, {
+        store: (() => {
+          const store = createToastStore(stillClock);
+          store.toast({ type: 'error', text: 'Could not update', copy: 'stale' });
+          return store;
+        })(),
+        locale: 'en',
+      }),
+    );
+    expect(english).toContain('Copy code');
+  });
+
+  it('U-50a: a toast without copy carries no copy button — the close button alone', () => {
+    const html = hostWith([{ type: 'success', text: 'ok' }]);
+    expect(html).not.toContain('Kodu kopyala');
+    expect((html.match(/<button/g) ?? [])).toHaveLength(1);
+  });
+
+  it('U-50a: the copied confirmation holds two seconds', () => {
+    expect(COPIED_MS).toBe(2000);
   });
 });

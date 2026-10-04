@@ -10,7 +10,7 @@ import { ActionButton } from '../components/action-button';
 import { StateBadge, type BadgeTone } from '../components/state-badge';
 import type { LivePaneItem, LivePaneStore, LivePaneState, QuotaSignalMeter, ToolCallStatus } from '../stores/live-pane';
 import { commandResultKey } from '../stores/results';
-import { toast } from '../stores/toasts';
+import { toastOutcome } from '../stores/toasts';
 
 export interface LivePaneScreenProps {
   readonly store: LivePaneStore;
@@ -108,10 +108,11 @@ function LiveItemRow({ item, locale }: { readonly item: LivePaneItem; readonly l
 export function LivePaneScreen({ store, locale }: LivePaneScreenProps) {
   const state: LivePaneState = useSyncExternalStore(store.subscribe, store.state);
   // The pane store keeps no outcome state (U-5's fold is display items only), so the screen
-  // toasts the latest answer itself through the same U-8 mapping every intent uses (U-50).
+  // toasts the latest answer itself through the same U-8 mapping every intent uses (U-50); a
+  // refusal carries its code behind the copy button (U-50a).
   const answer = (decision: 'allow' | 'deny'): void => {
     void store.answer(decision).then((result) => {
-      toast({ type: result.ok ? 'success' : 'error', text: t(locale, commandResultKey('permission.answer', result)) });
+      toastOutcome(locale, { result, labelKey: commandResultKey('permission.answer', result) });
     });
   };
 

@@ -623,6 +623,8 @@ export const LABEL_KEYS = [
   'newProject.attach',
   'newProject.created',
   'toast.close',
+  'toast.copy',
+  'toast.copied',
   'success.account.test',
   'editor.status.modelError',
   'accountTest.button',

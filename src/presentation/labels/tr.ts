@@ -570,6 +570,8 @@ export const TR: LabelBundle = {
   'newProject.attach': 'Bağla',
   'newProject.created': "Proje oluşturuldu. Test komutlarını .docket/repo.yaml'a yaz; yazılana kadar test kapısı bekler.",
   'toast.close': 'Kapat',
+  'toast.copy': 'Kodu kopyala',
+  'toast.copied': 'Kopyalandı',
   'success.account.test': 'Test tamamlandı.',
   'editor.status.modelError': 'Model hatası',
   'accountTest.button': 'Test et',

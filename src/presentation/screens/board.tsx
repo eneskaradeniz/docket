@@ -42,12 +42,12 @@ const INPUT_CLASS =
 const LABEL_CLASS = 'font-mono text-[11px] uppercase tracking-[0.06em] text-inkdim';
 
 /** What the create intent reports, mapped through U-8's discipline: validation refusals show
- *  their own copy, a command failure its code's label, a success its confirmation — the whole
- *  report now leaves as the one toast (U-50). */
-const createToast = (locale: Locale, outcome: CreateOutcome): { readonly type: 'success' | 'error'; readonly text: string } => {
+ *  their own copy, a command failure its code's label with the code itself behind the copy
+ *  button (U-50a), a success its confirmation — the whole report leaves as the one toast. */
+const createToast = (locale: Locale, outcome: CreateOutcome): { readonly type: 'success' | 'error'; readonly text: string; readonly copy?: string } => {
   if (outcome.ok) return { type: 'success', text: t(locale, 'success.workOrder.open') };
   if ('validation' in outcome) return { type: 'error', text: t(locale, VALIDATION_KEY[outcome.validation]) };
-  return { type: 'error', text: t(locale, failureKey(outcome.code)) };
+  return { type: 'error', text: t(locale, failureKey(outcome.code)), copy: outcome.code };
 };
 
 export function BoardScreen({ store, repo, locale, onOpenWorkOrder, roadmapProject, onOpenRoadmap, onOpenSettings }: BoardScreenProps) {

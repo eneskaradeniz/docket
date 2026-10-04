@@ -572,6 +572,8 @@ export const EN: LabelBundle = {
   'newProject.attach': 'Attach',
   'newProject.created': 'Project created. Write the test commands into .docket/repo.yaml; until then the test gate waits.',
   'toast.close': 'Dismiss',
+  'toast.copy': 'Copy code',
+  'toast.copied': 'Copied',
   'success.account.test': 'Test finished.',
   'editor.status.modelError': 'Model error',
   'accountTest.button': 'Test',

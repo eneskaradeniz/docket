@@ -12,10 +12,12 @@ import { t, type Locale } from '../labels/t';
 /** The four voices a toast can carry; the type picks the colour, the glyph and the duration. */
 export type ToastType = 'success' | 'info' | 'warn' | 'error';
 
-/** The one call's whole input: a voice and the copy to show. */
+/** The one call's whole input: a voice, the copy to show, and the text the copy button hands to
+ *  the clipboard (U-50a) — a refusal's raw code rides only there, never in the text. */
 export interface ToastInput {
   readonly type: ToastType;
   readonly text: string;
+  readonly copy?: string;
 }
 
 /** One standing toast, as the host renders it. */
@@ -23,6 +25,7 @@ export interface ToastItem {
   readonly id: number;
   readonly type: ToastType;
   readonly text: string;
+  readonly copy: string | undefined;
   /** The toast's own duration — the host's progress line drains over exactly this long. */
   readonly durationMs: number;
 }
@@ -39,17 +42,22 @@ export const TOAST_MS: Readonly<Record<ToastType, number>> = {
 export const MAX_VISIBLE_TOASTS = 3;
 
 /** The time the service runs on: `now` for the pause arithmetic, a pair of timer calls for the
- *  self-dismiss. Injected so tests drive seconds in fake milliseconds. */
+ *  self-dismiss. The handle is opaque — the window and the node test clock return different
+ *  shapes. Injected so tests drive seconds in fake milliseconds. */
 export interface ToastClock {
   readonly now: () => number;
-  readonly set: (fn: () => void, ms: number) => number;
-  readonly clear: (handle: number) => void;
+  readonly set: (fn: () => void, ms: number) => unknown;
+  readonly clear: (handle: unknown) => void;
 }
 
 const windowClock: ToastClock = {
   now: () => Date.now(),
-  set: (fn, ms) => window.setTimeout(fn, ms),
-  clear: (handle) => window.clearTimeout(handle),
+  // globalThis, not window: the module also loads in the node test environment, where only the
+  // call itself would touch the clock.
+  set: (fn, ms) => globalThis.setTimeout(fn, ms),
+  // The cast is typing-only: the handle came from the matching `setTimeout` above, whatever
+  // shape the platform gave it.
+  clear: (handle) => globalThis.clearTimeout(handle as number),
 };
 
 export interface ToastStore {
@@ -68,7 +76,7 @@ export interface ToastStore {
 /** One live entry: the item plus the timing the pause/resume arithmetic reads. */
 interface ToastEntry {
   readonly item: ToastItem;
-  handle: number | null;
+  handle: unknown;
   /** When the running leg of the timer started. */
   shownAt: number;
   /** How long remains, measured from `shownAt`. */
@@ -115,7 +123,7 @@ export const createToastStore = (clock: ToastClock = windowClock): ToastStore =>
     },
     toast: (input) => {
       const entry: ToastEntry = {
-        item: { id: nextId, type: input.type, text: input.text, durationMs: TOAST_MS[input.type] },
+        item: { id: nextId, type: input.type, text: input.text, copy: input.copy, durationMs: TOAST_MS[input.type] },
         handle: null,
         shownAt: clock.now(),
         remainingMs: TOAST_MS[input.type],
@@ -163,10 +171,15 @@ export interface ToastOutcome {
 // it, a remounted panel) must not repeat a toast that already left.
 const toastedOutcomes = new WeakSet<object>();
 
-/** How an intent outcome becomes the one toast (U-8's copy through U-50's call): ok reads
- *  success, a refusal error — once per outcome. */
+/** How an intent outcome becomes the one toast (U-8's copy through U-50's call, U-50a's copy
+ *  button): ok reads success; a refusal reads error with the code's label as its text and the
+ *  code itself behind the copy button — once per outcome. */
 export const toastOutcome = (locale: Locale, outcome: ToastOutcome): void => {
   if (toastedOutcomes.has(outcome)) return;
   toastedOutcomes.add(outcome);
-  toast({ type: outcome.result.ok ? 'success' : 'error', text: t(locale, outcome.labelKey) });
+  toast({
+    type: outcome.result.ok ? 'success' : 'error',
+    text: t(locale, outcome.labelKey),
+    copy: outcome.result.ok ? undefined : outcome.result.code,
+  });
 };

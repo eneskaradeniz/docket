@@ -3,11 +3,16 @@
 // glyph and colour (the amber signal token is the warn voice — the book has no separate warn),
 // a close button labelled from the bundle, and a thin progress line that drains over the
 // toast's own duration; hovering or focusing the card pauses both the line (CSS) and the
-// self-dismiss timer (the store's hold). Announcements are polite, assertive for error.
-import { useSyncExternalStore, type ReactNode } from 'react';
+// self-dismiss timer (the store's hold). Announcements are polite, assertive for error. A toast
+// with a `copy` text (U-50a) carries a copy button: pressing it hands the text to the clipboard
+// and the button says so for two seconds — a refusal's raw code never renders in the markup.
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 
 import { t, type Locale } from '../labels/t';
 import type { ToastItem, ToastStore, ToastType } from '../stores/toasts';
+
+/** How long the copy button reads "Kopyalandı" before returning to its offer (U-50a). */
+export const COPIED_MS = 2000;
 
 /** The icon grammar every small shell glyph shares: currentColor strokes on a 16×16 field. */
 const GLYPH_PROPS = {
@@ -79,16 +84,44 @@ export interface ToastHostProps {
 }
 
 function ToastCard({ item, store, locale }: { readonly item: ToastItem; readonly store: ToastStore; readonly locale: Locale }) {
+  // The copy button's two-second confirmation (U-50a): the flip lives with the card, so it
+  // leaves with the toast and a re-press restarts its own timer.
+  const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (copiedTimer.current !== null) globalThis.clearTimeout(copiedTimer.current);
+    },
+    [],
+  );
+  const onCopy = (): void => {
+    const written = navigator.clipboard?.writeText(item.copy ?? '');
+    if (written !== undefined) void written.catch(() => undefined);
+    setCopied(true);
+    if (copiedTimer.current !== null) globalThis.clearTimeout(copiedTimer.current);
+    copiedTimer.current = globalThis.setTimeout(() => setCopied(false), COPIED_MS);
+  };
+  // The hold (U-50): a hover or a focus pauses the card's own timer, and it resumes only when
+  // the last of them leaves — clicking the copy button keeps the focus, so the pointer moving
+  // on must not restart the clock under a toast the operator still reads.
+  const holds = useRef(new Set<'hover' | 'focus'>());
+  const hold = (kind: 'hover' | 'focus'): void => {
+    if (holds.current.size === 0) store.pause(item.id);
+    holds.current.add(kind);
+  };
+  const release = (kind: 'hover' | 'focus'): void => {
+    if (!holds.current.delete(kind)) return;
+    if (holds.current.size === 0) store.resume(item.id);
+  };
   return (
     <div
       data-toast={item.type}
       role={item.type === 'error' ? 'alert' : 'status'}
       aria-live={item.type === 'error' ? 'assertive' : 'polite'}
-      // The hold (U-50): a hover or a focus pauses the card's own timer; leaving resumes it.
-      onMouseEnter={() => store.pause(item.id)}
-      onMouseLeave={() => store.resume(item.id)}
-      onFocus={() => store.pause(item.id)}
-      onBlur={() => store.resume(item.id)}
+      onMouseEnter={() => hold('hover')}
+      onMouseLeave={() => release('hover')}
+      onFocus={() => hold('focus')}
+      onBlur={() => release('focus')}
       className={[
         'group pointer-events-auto relative flex items-start gap-2.5 overflow-hidden rounded-card border bg-raised px-3 pt-2.5 pb-[13px]',
         'text-[13px] text-ink shadow-2xl animate-[toast-in_220ms_ease-out] motion-reduce:animate-none',
@@ -99,6 +132,15 @@ function ToastCard({ item, store, locale }: { readonly item: ToastItem; readonly
         {GLYPHS[item.type]}
       </span>
       <span className="min-w-0 flex-1 break-words">{item.text}</span>
+      {item.copy !== undefined ? (
+        <button
+          type="button"
+          onClick={onCopy}
+          className="-mt-0.5 flex-none self-start rounded-control px-1.5 py-0.5 font-mono text-[11px] text-inkdim hover:bg-band hover:text-ink"
+        >
+          {copied ? t(locale, 'toast.copied') : t(locale, 'toast.copy')}
+        </button>
+      ) : null}
       <button
         type="button"
         onClick={() => store.close(item.id)}

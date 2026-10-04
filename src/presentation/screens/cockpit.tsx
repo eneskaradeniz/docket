@@ -27,7 +27,7 @@ import {
 } from '../stores/cockpit';
 import { commandResultKey } from '../stores/results';
 import type { ProviderMarksStore } from '../stores/provider-marks';
-import { toast } from '../stores/toasts';
+import { toastOutcome } from '../stores/toasts';
 
 export interface CockpitScreenProps {
   readonly store: CockpitStore;
@@ -84,10 +84,11 @@ export function CockpitScreen({ store, marks, locale, onOpenWorkOrder, onOpenPro
   }, [store]);
 
   // The answer toasts (U-50) through the same U-8 mapping every intent uses; the store owns the
-  // re-query that must drop the answered row.
+  // re-query that must drop the answered row. A refusal carries its code behind the copy
+  // button (U-50a).
   const answer = (ask: CockpitAsk, decision: 'allow' | 'deny'): void => {
     void store.answerPermission({ runId: ask.runId, askId: ask.askId, decision }).then((result) => {
-      toast({ type: result.ok ? 'success' : 'error', text: t(locale, commandResultKey('permission.answer', result)) });
+      toastOutcome(locale, { result, labelKey: commandResultKey('permission.answer', result) });
     });
   };
   const [expanded, setExpanded] = useState({ attention: false, running: false });
