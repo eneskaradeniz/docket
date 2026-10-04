@@ -201,8 +201,10 @@ await spec('the stage is enqueued through the real start button', async () => {
   const start = page.locator('main button').filter({ hasText: L.startStage });
   await waitFor('the start button', () => present(start));
   await start.click();
+  // The confirmation now leaves as the one toast (ToastHost, top right) and dismisses itself
+  // after 5 s, so the poll reads the card, not a standing strip.
   await waitFor('the enqueue notice', () =>
-    present(page.locator('[role="status"]').filter({ hasText: L.enqueuedNotice })),
+    present(page.locator('[data-toast-host] [role="status"]').filter({ hasText: L.enqueuedNotice })),
   );
 });
 

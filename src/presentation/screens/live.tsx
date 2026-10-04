@@ -2,16 +2,15 @@
 // earliest still-open permission ask with its answer actions, and the ended state. The screen
 // renders the store's fold and forwards clicks; number formatting is the only thing computed
 // here, and every user-visible string arrives through a label key (U-1).
-import { useState, useSyncExternalStore } from 'react';
-import type { CommandResult } from '../../api/commands';
+import { useSyncExternalStore } from 'react';
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
 import { formatMeterValue, meterUnitLabel } from '../components/meter-value';
 import { ActionButton } from '../components/action-button';
-import { OutcomeNotice } from '../components/outcome-notice';
 import { StateBadge, type BadgeTone } from '../components/state-badge';
 import type { LivePaneItem, LivePaneStore, LivePaneState, QuotaSignalMeter, ToolCallStatus } from '../stores/live-pane';
 import { commandResultKey } from '../stores/results';
+import { toastOutcome } from '../stores/toasts';
 
 export interface LivePaneScreenProps {
   readonly store: LivePaneStore;
@@ -108,12 +107,13 @@ function LiveItemRow({ item, locale }: { readonly item: LivePaneItem; readonly l
 
 export function LivePaneScreen({ store, locale }: LivePaneScreenProps) {
   const state: LivePaneState = useSyncExternalStore(store.subscribe, store.state);
-  // The pane store keeps no outcome state (U-5's fold is display items only), so the screen holds
-  // the latest answer's result to toast through the same U-8 mapping every intent uses.
-  const [answerResult, setAnswerResult] = useState<CommandResult | null>(null);
-
+  // The pane store keeps no outcome state (U-5's fold is display items only), so the screen
+  // toasts the latest answer itself through the same U-8 mapping every intent uses (U-50); a
+  // refusal carries its code behind the copy button (U-50a).
   const answer = (decision: 'allow' | 'deny'): void => {
-    void store.answer(decision).then(setAnswerResult);
+    void store.answer(decision).then((result) => {
+      toastOutcome(locale, { result, labelKey: commandResultKey('permission.answer', result) });
+    });
   };
 
   return (
@@ -139,14 +139,6 @@ export function LivePaneScreen({ store, locale }: LivePaneScreenProps) {
             </ActionButton>
           </div>
         </div>
-      ) : null}
-
-      {answerResult !== null ? (
-        <OutcomeNotice
-          ok={answerResult.ok}
-          text={t(locale, commandResultKey('permission.answer', answerResult))}
-          code={answerResult.ok ? undefined : answerResult.code}
-        />
       ) : null}
 
       {state.items.length === 0 ? (

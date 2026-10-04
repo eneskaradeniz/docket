@@ -19,7 +19,6 @@ import { DragOrderList, type DragOrderItem } from '../components/drag-order-list
 import { KeyMoveCard } from '../components/key-move-card';
 import { Listbox } from '../components/listbox';
 import { MeterList } from '../components/meter-list';
-import { OutcomeNotice } from '../components/outcome-notice';
 import { ProviderMark } from '../components/provider-mark';
 import { StatusLamp } from '../components/status-lamp';
 import { WindowFrame, WindowTitle } from '../components/window-frame';
@@ -31,6 +30,7 @@ import type { LocaleStore } from '../stores/locale';
 import type { ProviderMarksStore } from '../stores/provider-marks';
 import { RECOMMENDED } from '../stores/recommended';
 import type { ThemeStore } from '../stores/theme';
+import { toastOutcome } from '../stores/toasts';
 import type { BudgetRow, WizardAccountRow, WizardState, WizardStep, WizardStore } from '../stores/wizard';
 import { WIZARD_EDITOR_TABS, WIZARD_STEPS } from '../stores/wizard';
 
@@ -375,12 +375,17 @@ function EditorDialog({ state, store, locale, marks }: { readonly state: WizardS
 
 export function WizardScreen({ store, locale, localeStore, themeStore, marks }: WizardScreenProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
+  // A failed intent leaves as the one toast (U-50), once per outcome — the wizard's own body
+  // never draws a notice strip of its own.
+  const lastOutcome = state.lastOutcome;
+  useEffect(() => {
+    if (lastOutcome !== null && !lastOutcome.result.ok) toastOutcome(locale, lastOutcome);
+  }, [lastOutcome, locale]);
   // While `open` is still proving that no project exists, and when one does, the wizard has
   // nothing to show.
   if (state.checking || !state.visible) return null;
 
   const leadKey = LEAD_KEY[state.step];
-  const failure = state.lastOutcome !== null && !state.lastOutcome.result.ok ? state.lastOutcome : null;
   const primaryKey: LabelKey = state.step === 'budget' ? (state.finishing ? 'wizard.finishing' : 'wizard.finish') : 'wizard.next';
   const rail = (
     <ol className="m-0 grid list-none gap-0.5 p-0">
@@ -426,11 +431,6 @@ export function WizardScreen({ store, locale, localeStore, themeStore, marks }: 
           </>
         }
       >
-        {failure !== null ? (
-          <div className="mb-3">
-            <OutcomeNotice ok={false} text={t(locale, failure.labelKey)} code={failure.result.ok ? undefined : failure.result.code} />
-          </div>
-        ) : null}
         {state.step === 'welcome' ? <AppearanceRows locale={locale} localeStore={localeStore} themeStore={themeStore} /> : null}
         {state.step === 'accounts' ? <Accounts state={state} store={store} locale={locale} marks={marks} /> : null}
         {state.step === 'capabilities' ? <Capabilities state={state} store={store} locale={locale} /> : null}

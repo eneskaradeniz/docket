@@ -14,11 +14,11 @@ import { BoardList } from '../components/board-list';
 import { KanbanIcon, ListIcon, PencilIcon } from '../components/board-icons';
 import { boardMotionVars } from '../components/motion';
 import { BoardSkeleton } from '../components/board-skeleton';
-import { OutcomeNotice } from '../components/outcome-notice';
 import { SkeletonReveal, useSkeleton } from '../components/skeleton';
 import type { BoardStore, CreateOutcome, CreateValidation } from '../stores/board';
 import { kanbanColumns, listGroups } from '../stores/board';
 import { failureKey } from '../stores/results';
+import { toast } from '../stores/toasts';
 
 export interface BoardScreenProps {
   readonly store: BoardStore;
@@ -42,11 +42,12 @@ const INPUT_CLASS =
 const LABEL_CLASS = 'font-mono text-[11px] uppercase tracking-[0.06em] text-inkdim';
 
 /** What the create intent reports, mapped through U-8's discipline: validation refusals show
- *  their own copy, a command failure its code, a success its confirmation. */
-const createNotice = (locale: Locale, outcome: CreateOutcome): { readonly ok: boolean; readonly text: string; readonly code?: string } => {
-  if (outcome.ok) return { ok: true, text: t(locale, 'success.workOrder.open') };
-  if ('validation' in outcome) return { ok: false, text: t(locale, VALIDATION_KEY[outcome.validation]) };
-  return { ok: false, text: t(locale, failureKey(outcome.code)), code: outcome.code };
+ *  their own copy, a command failure its code's label with the code itself behind the copy
+ *  button (U-50a), a success its confirmation — the whole report leaves as the one toast. */
+const createToast = (locale: Locale, outcome: CreateOutcome): { readonly type: 'success' | 'error'; readonly text: string; readonly copy?: string } => {
+  if (outcome.ok) return { type: 'success', text: t(locale, 'success.workOrder.open') };
+  if ('validation' in outcome) return { type: 'error', text: t(locale, VALIDATION_KEY[outcome.validation]) };
+  return { type: 'error', text: t(locale, failureKey(outcome.code)), copy: outcome.code };
 };
 
 export function BoardScreen({ store, repo, locale, onOpenWorkOrder, roadmapProject, onOpenRoadmap, onOpenSettings }: BoardScreenProps) {
@@ -63,13 +64,12 @@ export function BoardScreen({ store, repo, locale, onOpenWorkOrder, roadmapProje
   const [title, setTitle] = useState('');
   const [flow, setFlow] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
-  const [notice, setNotice] = useState<ReturnType<typeof createNotice> | null>(null);
   const view = state.view;
   const flowValue = flow.trim() !== '' ? flow : (view?.flow ?? '');
 
   const submit = (): void => {
     void store.create({ repo, title, flow: flowValue }).then((outcome) => {
-      setNotice(createNotice(locale, outcome));
+      toast(createToast(locale, outcome));
       if (outcome.ok) setTitle('');
     });
   };
@@ -127,10 +127,6 @@ export function BoardScreen({ store, repo, locale, onOpenWorkOrder, roadmapProje
         <div role="alert" className="rounded-card border border-error/40 bg-surface px-3 py-2 text-[13px] text-error">
           {t(locale, failureKey(state.problem))}
         </div>
-      ) : null}
-
-      {notice !== null ? (
-        <OutcomeNotice ok={notice.ok} text={notice.text} code={notice.code} />
       ) : null}
 
       {view !== null && createOpen ? (

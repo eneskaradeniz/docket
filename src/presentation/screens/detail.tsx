@@ -11,7 +11,6 @@ import type { WorkOrderStatus } from '../../domain/index';
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
 import { ActionButton } from '../components/action-button';
-import { OutcomeNotice } from '../components/outcome-notice';
 import { SectionCard } from '../components/section-card';
 import { StateBadge, type BadgeTone } from '../components/state-badge';
 import { formatWorkOrderCode } from '../stores/work-order-code';
@@ -25,6 +24,7 @@ import type {
 } from '../stores/work-order-detail';
 import { flowChips } from '../stores/work-order-detail';
 import { failureKey } from '../stores/results';
+import { toastOutcome } from '../stores/toasts';
 import { LivePaneScreen } from './live';
 
 export interface WorkOrderDetailScreenProps {
@@ -272,6 +272,12 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
   useEffect(() => {
     void store.load(workOrderId);
   }, [store, workOrderId]);
+  // Every intent's report leaves as the one toast (U-50) — once per outcome, so a re-render or
+  // a reload of the same standing never repeats it.
+  const lastOutcome = state.lastOutcome;
+  useEffect(() => {
+    if (lastOutcome !== null) toastOutcome(locale, lastOutcome);
+  }, [lastOutcome, locale]);
 
   const view = state.view;
   const asks = state.asks;
@@ -339,14 +345,6 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
         <div role="alert" className="rounded-card border border-error/40 bg-surface px-3 py-2 text-[13px] text-error">
           {t(locale, failureKey(state.problem))}
         </div>
-      ) : null}
-
-      {state.lastOutcome !== null ? (
-        <OutcomeNotice
-          ok={state.lastOutcome.result.ok}
-          text={t(locale, state.lastOutcome.labelKey)}
-          code={state.lastOutcome.result.ok ? undefined : state.lastOutcome.result.code}
-        />
       ) : null}
 
       {view !== null ? <FlowStrip stages={state.stages} locale={locale} /> : null}
