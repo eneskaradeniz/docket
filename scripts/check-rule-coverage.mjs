@@ -50,6 +50,7 @@ const PENDING = new Map([
   ['ui:U-52', '#775'],
   ['ui:U-51a', '#774'],
   ['ui:U-51b', '#774'],
+  ['application:A-85', '#782'],
 ]);
 
 function walk(dir, acc = []) {
