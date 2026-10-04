@@ -5,6 +5,7 @@ import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
 import type { Options, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { tmpdir } from 'node:os';
 
+import { withoutRouteEnv } from '../../transports/sdk/route-env';
 import type { GetUsage } from './claude-probe';
 
 export type SdkQueryFn = typeof sdkQuery;
@@ -12,6 +13,8 @@ export type SdkQueryFn = typeof sdkQuery;
 export interface SdkUsageSourceConfig {
   /** Injectable SDK query for tests; default: the SDK's own. */
   readonly query?: SdkQueryFn;
+  /** The allowlisted environment of the child (I-37); the route-owned variables are dropped here. */
+  readonly baseEnv?: Readonly<Record<string, string>>;
 }
 
 /** A prompt stream that never yields: the probe session starts with no turn in flight. */
@@ -23,12 +26,18 @@ const neverPrompted = (): AsyncIterable<SDKUserMessage> => ({
 
 export function createSdkGetUsage(config: SdkUsageSourceConfig = {}): GetUsage {
   const runQuery = config.query ?? sdkQuery;
-  return async (binPath) => {
+  const baseEnv = config.baseEnv ?? {};
+  return async (binPath, context) => {
+    // The same rules as a run of that account (I-34): ambient route variables dropped, the
+    // account's config directory named — the login it selects is the usage that is read.
+    const env = withoutRouteEnv(baseEnv);
+    if (context.identityDir !== null) env.CLAUDE_CONFIG_DIR = context.identityDir;
     const abortController = new AbortController();
     const options: Options = {
       // The probe session owns no repo; a scratch directory keeps it away from real ones.
       cwd: tmpdir(),
       settingSources: [], // the user's own settings files are never read or written
+      env,
       abortController,
       ...(binPath === null ? {} : { pathToClaudeCodeExecutable: binPath }),
     };

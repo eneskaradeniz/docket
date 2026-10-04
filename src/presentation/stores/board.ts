@@ -16,7 +16,8 @@ import { isQueryFailure } from './results';
 export type BoardChange =
   | { readonly type: 'workOrders.changed' }
   | { readonly type: 'run.updated'; readonly runId: string }
-  | { readonly type: 'update.changed' };
+  | { readonly type: 'update.changed' }
+  | { readonly type: 'accounts.changed' };
 
 /** Subscription to the change events; the api's `subscribe` (U-12) satisfies it as-is. */
 export type BoardChangeSignal = (listener: (change: BoardChange) => void) => () => void;

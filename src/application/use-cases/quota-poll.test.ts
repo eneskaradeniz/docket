@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { err, isUlid, ok, parseUlid, type Result, type Ulid } from '../../domain/index';
 
-import type { AccountRecord, QuotaProbe, QuotaProbeError, QuotaProbeResolver } from '../ports';
+import type { AccountRecord, QuotaProbe, QuotaProbeContext, QuotaProbeError, QuotaProbeResolver } from '../ports';
 import { MeterReading } from '../ports';
 import { createFakeCapabilityCatalog, createFakeDeps } from '../ports/fakes';
 
@@ -333,5 +333,25 @@ describe('pollQuota', () => {
     expect(result.ok).toBe(true);
     expect(sdk.calls).toEqual([{ defId: 'other', binPath: null }]);
     expect(monitor.calls).toEqual([]);
+  });
+  it("P-48: the probe is handed the account's id and its identityDir, null for the machine login", async () => {
+    const deps = createFakeDeps();
+    await deps.accounts.save(accountRecord({ identityDir: '/home/u/.claude-work' }));
+    const contexts: QuotaProbeContext[] = [];
+    const probe: QuotaProbe = {
+      poll: async (_defId, _binPath, context) => {
+        contexts.push(context);
+        return ok([]);
+      },
+    };
+
+    await pollQuota(deps, resolverFor('agy', probe), { accountId: ACCOUNT });
+    await deps.accounts.save(accountRecord());
+    await pollQuota(deps, resolverFor('agy', probe), { accountId: ACCOUNT });
+
+    expect(contexts).toEqual([
+      { accountId: ACCOUNT, identityDir: '/home/u/.claude-work' },
+      { accountId: ACCOUNT, identityDir: null },
+    ]);
   });
 });

@@ -20,7 +20,8 @@ import { commandResultKey, isQueryFailure } from './results';
 export type AccountModelsChange =
   | { readonly type: 'workOrders.changed' }
   | { readonly type: 'run.updated'; readonly runId: string }
-  | { readonly type: 'update.changed' };
+  | { readonly type: 'update.changed' }
+  | { readonly type: 'accounts.changed' };
 
 export type AccountModelsChangeSignal = (listener: (change: AccountModelsChange) => void) => () => void;
 

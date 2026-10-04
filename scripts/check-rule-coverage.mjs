@@ -47,16 +47,9 @@ const PENDING = new Map([
   ['ui:U-42', '#750'],
   ['ui:U-43', '#750'],
   ['ui:U-44', '#750'],
-  ['providers:P-48', '#746'],
-  ['providers:P-49', '#746'],
-  ['providers:P-50', '#746'],
   ['providers:P-51', '#748'],
   ['providers:P-52', '#748'],
-  ['application:A-80', '#746'],
-  ['application:A-81', '#746'],
-  ['application:A-82', '#746'],
   ['application:A-83', '#748'],
-  ['infrastructure:I-37', '#746'],
 ]);
 
 function walk(dir, acc = []) {

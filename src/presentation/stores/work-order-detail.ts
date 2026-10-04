@@ -31,7 +31,8 @@ import { commandResultKey, isQueryFailure } from './results';
 export type DetailChange =
   | { readonly type: 'workOrders.changed' }
   | { readonly type: 'run.updated'; readonly runId: string }
-  | { readonly type: 'update.changed' };
+  | { readonly type: 'update.changed' }
+  | { readonly type: 'accounts.changed' };
 
 /** Subscription to the change events; the api's `subscribe` (U-12) satisfies it as-is. */
 export type DetailChangeSignal = (listener: (change: DetailChange) => void) => () => void;
