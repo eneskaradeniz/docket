@@ -39,7 +39,7 @@ const isValidReserve = (reserve: QuotaReserve | undefined): boolean =>
 
 // A-73: the fields a test result depends on. Tier models compare as stored JSON because the
 // record is plain data.
-const routeChanged = (before: AccountRecord, after: AccountRecord): boolean =>
+export const routeChanged = (before: AccountRecord, after: AccountRecord): boolean =>
   before.routeKind !== after.routeKind ||
   before.endpoint !== after.endpoint ||
   before.identityDir !== after.identityDir ||

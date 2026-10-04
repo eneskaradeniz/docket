@@ -80,7 +80,7 @@ describe('createAgyUsageProbe', () => {
     const { calls, binPath, probe } = makeProbe({ payloadStream: 'stderr' });
     if (binPath === null) throw new Error('fixture binary missing');
 
-    const result = await probe.poll('agy', binPath);
+    const result = await probe.poll('agy', binPath, { accountId: null, identityDir: null });
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error('unreachable');
@@ -105,7 +105,7 @@ describe('createAgyUsageProbe', () => {
     const previousPath = process.env.PATH;
     process.env.PATH = `${join(binPath, '..')}:${previousPath}`;
     try {
-      const result = await probe.poll('agy', null);
+      const result = await probe.poll('agy', null, { accountId: null, identityDir: null });
 
       expect(result.ok).toBe(true);
       if (!result.ok) throw new Error('unreachable');
@@ -121,7 +121,7 @@ describe('createAgyUsageProbe', () => {
   it('P-19: a missing binary reports not_installed', async () => {
     const { calls, probe } = makeProbe(undefined);
 
-    const result = await probe.poll('agy', join(root, 'nowhere', 'agy'));
+    const result = await probe.poll('agy', join(root, 'nowhere', 'agy'), { accountId: null, identityDir: null });
 
     expect(result).toEqual({ ok: false, error: 'not_installed' });
     expect(calls).toHaveLength(1);
@@ -131,13 +131,13 @@ describe('createAgyUsageProbe', () => {
     const failing = makeProbe({ payloadStream: 'stdout', exit: 1 });
     const failingPath = failing.binPath;
     if (failingPath !== null) {
-      expect(await failing.probe.poll('agy', failingPath)).toEqual({ ok: false, error: 'probe_failed' });
+      expect(await failing.probe.poll('agy', failingPath, { accountId: null, identityDir: null })).toEqual({ ok: false, error: 'probe_failed' });
     }
 
     const silent = makeProbe({ output: 'agy: nothing to report' });
     const silentPath = silent.binPath;
     if (silentPath !== null) {
-      expect(await silent.probe.poll('agy', silentPath)).toEqual({ ok: false, error: 'probe_failed' });
+      expect(await silent.probe.poll('agy', silentPath, { accountId: null, identityDir: null })).toEqual({ ok: false, error: 'probe_failed' });
     }
   });
 
@@ -145,7 +145,7 @@ describe('createAgyUsageProbe', () => {
     const { binPath, probe } = makeProbe({ hang: true }, { timeoutMs: 300 });
     if (binPath === null) throw new Error('fixture binary missing');
 
-    const result = await probe.poll('agy', binPath);
+    const result = await probe.poll('agy', binPath, { accountId: null, identityDir: null });
 
     expect(result).toEqual({ ok: false, error: 'probe_failed' });
   }, 10_000);
@@ -153,7 +153,7 @@ describe('createAgyUsageProbe', () => {
   it('P-19: a foreign provider id is refused without spawning anything', async () => {
     const { calls, probe } = makeProbe({ payloadStream: 'stdout' });
 
-    const result = await probe.poll('codex', null);
+    const result = await probe.poll('codex', null, { accountId: null, identityDir: null });
 
     expect(result).toEqual({ ok: false, error: 'unknown_provider' });
     expect(calls).toEqual([]);

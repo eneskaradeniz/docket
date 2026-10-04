@@ -50,12 +50,16 @@ import type {
   AccountDiscovery,
   AccountRecord,
   AppDeps,
+  CandidateQuotaPreview,
   CreateProjectSource,
   CredentialImporter,
   BindingScope,
   DiscoveredProvider,
   PermissionBoard,
   ProviderDiscovery,
+  QuotaProbeResolver,
+  QuotaService,
+  QuotaTimers,
   ProviderMarks,
   UpdateChecker,
 } from '../application';
@@ -69,6 +73,8 @@ import {
   checkForUpdates,
   closeWorkOrder,
   createAccountCandidateList,
+  createCandidateQuotaPreview,
+  createQuotaService,
   createProject,
   decideHumanGate,
   decideProposalUseCase,
@@ -83,6 +89,7 @@ import {
   registerRepo,
   removeAccount,
   removeAccountCap,
+  routeChanged,
   testAccount,
   revokeSpendConsent,
   saveAccount,
@@ -100,6 +107,7 @@ import type {
   AccountModelsView,
   AttentionItem,
   BoardView,
+  CandidateQuotaView,
   CockpitView,
   OpenAskView,
   ProjectSpendView,
@@ -125,7 +133,9 @@ import { RUN_EVENTS_TAIL_LIMIT } from './queries';
 export type UiEvent =
   | { readonly type: 'workOrders.changed' }
   | { readonly type: 'run.updated'; readonly runId: string }
-  | { readonly type: 'update.changed' };
+  | { readonly type: 'update.changed' }
+  /** A quota poll finished (P-49): meters and pools may have changed. */
+  | { readonly type: 'accounts.changed' };
 
 export interface Api {
   command(actor: Actor, command: Command): Promise<CommandResult>;
@@ -194,6 +204,15 @@ const ulidValue = <B extends string>(input: string): Ulid<B> | undefined => {
   return parsed.ok ? parsed.value : undefined;
 };
 
+/** What the api needs to own the quota schedule (A-80): the probes and the injected timers. */
+export interface QuotaWiring {
+  readonly probes: QuotaProbeResolver;
+  readonly timers: QuotaTimers;
+}
+
+/** The schedule's lifecycle, handed to the composition root: start on app ready, stop on quit. */
+export type QuotaLifecycle = Pick<QuotaService, 'start' | 'stop'>;
+
 /** The ports account adoption needs, composed beside AppDeps at the root like the discovery port. */
 export interface AccountAdoption {
   readonly discovery: AccountDiscovery;
@@ -227,7 +246,8 @@ export function createApi(
   updates?: UpdateChecker,
   marks?: ProviderMarks,
   adoption?: AccountAdoption,
-): Api & RunEventFeed {
+  quota?: QuotaWiring,
+): Api & RunEventFeed & { readonly quota: QuotaLifecycle } {
   // One cache per api instance: the candidates query reads it, an adoption drops it.
   const adopting: Adopting | undefined =
     adoption === undefined ? undefined : { ...adoption, candidates: createAccountCandidateList(adoption.discovery) };
@@ -244,7 +264,19 @@ export function createApi(
     }
   };
 
+  // The service reports every finished poll through the api's own push channel; without wiring
+  // there is no schedule and the quota commands answer not_found.
+  const quotaService: QuotaService | undefined =
+    quota === undefined
+      ? undefined
+      : createQuotaService(deps, quota.probes, quota.timers, () => emit({ type: 'accounts.changed' }));
+  const candidateQuota: CandidateQuotaPreview | undefined =
+    quota === undefined || adopting === undefined
+      ? undefined
+      : createCandidateQuotaPreview(deps, adopting.candidates, quota.probes);
+
   return {
+    quota: { start: () => quotaService?.start(), stop: () => quotaService?.stop() },
     command: async (actor, command) => {
       // workOrders.changed fires for a command that appended to the work order event log — the log
       // the board, cockpit and detail views derive from. The append is observed through a
@@ -261,7 +293,7 @@ export function createApi(
           },
         },
       };
-      const result = await runCommand(tracked, actor, command, board, updates, adopting);
+      const result = await runCommand(tracked, actor, command, board, updates, adopting, quotaService);
       if (appended) emit({ type: 'workOrders.changed' });
       // update.changed rides the same coarse pattern as workOrders.changed: the command answers
       // ok, the event tells every store to re-query — CommandResult carries no state payload. A
@@ -271,7 +303,7 @@ export function createApi(
       }
       return result;
     },
-    query: (query) => runQuery(deps, query, discovery, registry, board, updates, marks, adopting),
+    query: (query) => runQuery(deps, query, discovery, registry, board, updates, marks, adopting, candidateQuota),
     subscribe: (listener) => {
       listeners.add(listener);
       return () => {
@@ -290,6 +322,7 @@ const runCommand = async (
   board: Pick<PermissionBoard, 'answer'> | undefined,
   updates: UpdateChecker | undefined,
   adopting: Adopting | undefined,
+  quotaService: QuotaService | undefined,
 ): Promise<CommandResult> => {
   switch (command.type) {
     case 'workOrder.open': {
@@ -539,7 +572,30 @@ const runCommand = async (
         },
         { record, actor },
       );
+      // A new account, or one whose route changed, has no trustworthy meters: read them now (A-80).
+      if (
+        saved.ok &&
+        (existing === undefined ||
+          routeChanged(existing, record) ||
+          existing.provider !== record.provider ||
+          existing.authMode !== record.authMode)
+      ) {
+        void quotaService?.refresh(record.id);
+      }
       return saved.ok ? { ok: true, id: record.id } : { ok: false, code: saved.error };
+    }
+
+    case 'quota.refresh': {
+      if (quotaService === undefined) return { ok: false, code: 'not_found' };
+      if (command.id === undefined) {
+        await quotaService.refresh();
+        return { ok: true };
+      }
+      const id = ulidValue<'account'>(command.id);
+      if (id === undefined) return invalidId();
+      if ((await deps.accounts.get(id)) === undefined) return { ok: false, code: 'not_found' };
+      await quotaService.refresh(id);
+      return { ok: true };
     }
 
     case 'account.adopt': {
@@ -568,6 +624,7 @@ const runCommand = async (
       );
       // The candidates' alreadyAdded flags are stale after any attempt that reached a record.
       adopting.candidates.invalidate();
+      if (adopted.ok) void quotaService?.refresh(adopted.value);
       return adopted.ok ? { ok: true, id: adopted.value } : { ok: false, code: adopted.error };
     }
 
@@ -710,6 +767,7 @@ const runQuery = async (
   updates: UpdateChecker | undefined,
   marks: ProviderMarks | undefined,
   adopting: Adopting | undefined,
+  candidateQuota: CandidateQuotaPreview | undefined,
 ): Promise<unknown> => {
   switch (query.type) {
     case 'workOrder.detail': {
@@ -789,10 +847,23 @@ const runQuery = async (
         return {
           ...candidate,
           provider: route?.providerId ?? null,
-          // A-83a: the route kind's declared billing, else P-51's fallback by the candidate's kind.
+          // A-83a: the route kind's declared billing, else by kind: subscription and machine_login are
+          // included, a compatible endpoint unknown.
           billing: route?.defaultBilling ?? (candidate.kind === 'compatible_endpoint' ? 'unknown' : 'included'),
         };
       });
+    }
+
+    case 'accounts.candidateQuota': {
+      // Nothing is stored: the readings become views with ids that exist only in this answer.
+      if (candidateQuota === undefined) return { ok: false, code: 'not_found' };
+      const previewed = await candidateQuota.preview(query.sourcePath);
+      if (!previewed.ok) return { ok: false, code: previewed.error };
+      return {
+        ok: true,
+        pools: previewed.value.pools.map(poolView),
+        meters: previewed.value.meters.map((meter) => meterView(meter, undefined)),
+      } satisfies CandidateQuotaView;
     }
 
     case 'providers.marks': {

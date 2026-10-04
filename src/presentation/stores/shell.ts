@@ -13,7 +13,8 @@ import { isQueryFailure } from './results';
 export type ShellChange =
   | { readonly type: 'workOrders.changed' }
   | { readonly type: 'run.updated'; readonly runId: string }
-  | { readonly type: 'update.changed' };
+  | { readonly type: 'update.changed' }
+  | { readonly type: 'accounts.changed' };
 
 /** Subscription to the change events; the api's `subscribe` (U-12) satisfies it as-is. */
 export type ShellChangeSignal = (listener: (change: ShellChange) => void) => () => void;

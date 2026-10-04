@@ -24,6 +24,7 @@ const SUBSCRIPTION: AccountCandidate = {
   sourcePath: '/home/u/.claude-work',
   displayPath: '~/.claude-work',
   kind: 'subscription',
+  provider: 'prov-a',
   routeKind: 'sub-route',
   hasOauthLogin: true,
   envOverrides: [],
@@ -34,10 +35,23 @@ const ENDPOINT: AccountCandidate = {
   sourcePath: '/home/u/.claude-glm',
   displayPath: '~/.claude-glm',
   kind: 'compatible_endpoint',
+  provider: 'prov-a',
   routeKind: 'endpoint-route',
   endpointHost: 'api.example.test',
   hasOauthLogin: false,
   envOverrides: ['endpoint', 'token'],
+  warnings: [],
+  alreadyAdded: false,
+};
+
+const MACHINE: AccountCandidate = {
+  sourcePath: 'machine-login:prov-b',
+  displayPath: '~/.prov-b',
+  kind: 'machine_login',
+  provider: 'prov-b',
+  routeKind: 'machine-route',
+  hasOauthLogin: true,
+  envOverrides: [],
   warnings: [],
   alreadyAdded: false,
 };
@@ -77,6 +91,7 @@ const makeHarness = (
     capabilities: createFakeCapabilityCatalog([
       { id: 'sub-route', provider: 'prov-a', authMode: 'subscription' },
       { id: 'endpoint-route', provider: 'prov-a', authMode: 'api_key', endpointHost: 'api.example.test' },
+      { id: 'machine-route', provider: 'prov-b', authMode: 'subscription' },
     ]),
   });
   return { deps: { ...base, discovery, importer }, log, scans, reads };
@@ -100,6 +115,36 @@ describe('adoptAccountCandidate', () => {
     expect(record?.secretRef).toBeUndefined();
     expect(record?.endpoint).toBeUndefined();
     expect(h.reads).toEqual([]);
+  });
+
+  it('A-84: adopts a machine-login candidate: subscription record with no identityDir, endpoint or secret; importToken ignored', async () => {
+    const h = makeHarness([MACHINE]);
+    const result = await adoptAccountCandidate(h.deps, {
+      sourcePath: MACHINE.sourcePath,
+      label: 'Machine',
+      importToken: true,
+      actor: USER,
+    });
+    if (!result.ok) throw new Error('adoption must succeed');
+    const record = await h.deps.accounts.get(result.value);
+    expect(record).toMatchObject({
+      provider: 'prov-b',
+      label: 'Machine',
+      authMode: 'subscription',
+      routeKind: 'machine-route',
+      limitPolicy: 'wait_resume',
+      caps: [],
+    });
+    expect(record?.identityDir).toBeUndefined();
+    expect(record?.endpoint).toBeUndefined();
+    expect(record?.secretRef).toBeUndefined();
+    expect(h.reads).toEqual([]);
+  });
+
+  it('A-84: an already-added machine-login candidate is refused', async () => {
+    const h = makeHarness([{ ...MACHINE, alreadyAdded: true }]);
+    const result = await adoptAccountCandidate(h.deps, { sourcePath: MACHINE.sourcePath, label: 'M', actor: USER });
+    expect(result).toEqual({ ok: false, error: 'already_added' });
   });
 
   it('P-33: adopts a compatible-endpoint candidate without a secret: https endpoint, a secretRef, empty vault', async () => {

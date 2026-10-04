@@ -54,12 +54,25 @@ export async function adoptAccountCandidate(
   if (candidate === undefined) return err('not_found');
   if (candidate.alreadyAdded) return err('already_added');
 
-  const providerId = deps.capabilities.routeKind(candidate.routeKind)?.providerId;
-  if (providerId === undefined) return err('not_found');
+  // A candidate names its provider; the route kind must still exist in the registry.
+  if (deps.capabilities.routeKind(candidate.routeKind) === undefined) return err('not_found');
+  const providerId = candidate.provider;
 
   const id = deps.ids.next<'account'>();
+  const isMachineLogin = candidate.kind === 'machine_login';
   const isEndpoint = candidate.kind === 'compatible_endpoint' && candidate.endpointHost !== undefined;
-  const record: AccountRecord = isEndpoint
+  const record: AccountRecord = isMachineLogin
+    ? {
+        // The CLI's own login on this machine: no identityDir, endpoint or secret.
+        id,
+        provider: providerId,
+        label: input.label,
+        authMode: 'subscription',
+        limitPolicy: 'wait_resume',
+        caps: [],
+        routeKind: candidate.routeKind,
+      }
+    : isEndpoint
     ? {
         id,
         provider: providerId,

@@ -49,7 +49,12 @@ export async function pollQuota(
     // The use case has no discovery access; a null path tells the probe to resolve the binary
     // itself (bare name on PATH), and a probe that cannot find it reports not_installed. Provider
     // probes answer only to their provider id, so the poll carries the id that resolved.
-    const polled = await probe.poll(kindProbe === undefined || routeKind === undefined ? account.provider : routeKind, null);
+    const polled = await probe.poll(
+      kindProbe === undefined || routeKind === undefined ? account.provider : routeKind,
+      null,
+      // The account's own login (P-48): its config directory, or null for the machine login.
+      { accountId: input.accountId, identityDir: account.identityDir ?? null },
+    );
     if (!polled.ok) return polled;
 
     const storedPools = await deps.accounts.pools(input.accountId);

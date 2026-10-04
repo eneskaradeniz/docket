@@ -16,7 +16,7 @@ import type { SettingsIntentOutcome } from './settings';
 export interface CandidateFact {
   readonly sourcePath: string;
   readonly displayPath: string;
-  readonly kind: 'subscription' | 'compatible_endpoint';
+  readonly kind: 'subscription' | 'compatible_endpoint' | 'machine_login';
   readonly routeKind: string;
   /** The def id the route kind belongs to; null when unknown (A-67). */
   readonly provider: string | null;

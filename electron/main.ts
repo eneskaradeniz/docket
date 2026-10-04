@@ -119,6 +119,7 @@ const loginStates = createLoginStates();
 
 let node: NodeDeps | undefined;
 let dispatchTimer: NodeJS.Timeout | undefined;
+let quotaLifecycle: { stop(): void } | undefined;
 
 /** One discovery pass produces the binPaths the transport factory routes by. */
 const buildTransportFactory = (
@@ -370,6 +371,9 @@ const startApp = async (): Promise<void> => {
     notifier: electronNotifier(),
     commandEnv: baseEnv,
     loginStates,
+    // The same discovery the settings query runs: an installed provider without a directory
+    // scanner must still be listed as a machine-login candidate (P-53).
+    providerDiscovery: discovery,
   });
   if (!opened.ok) {
     dialog.showErrorBox('Docket', `Storage could not be opened: ${JSON.stringify(opened.error)}`);
@@ -393,7 +397,7 @@ const startApp = async (): Promise<void> => {
   // `repos.list`, the enumeration the switcher and the wizard's re-appear guard live on. The
   // defs' marks ride the same way (P-25): the api reads them for `providers.marks`, the query
   // every account badge resolves its mark through.
-  const api = createApi(nodeDeps, board, discovery, node.repos, updates, builtinProviderMarks, node.adoption);
+  const api = createApi(nodeDeps, board, discovery, node.repos, updates, builtinProviderMarks, node.adoption, node.quota);
 
   // The push channel: every UiEvent goes to every live window over one channel, verbatim — a
   // store re-queries on receipt, which is the whole protocol (U-12).
@@ -414,6 +418,9 @@ const startApp = async (): Promise<void> => {
   }, DISPATCH_INTERVAL_MS);
 
   createWindow();
+  // Quota is read without a run: once now for every account, then on the interval (P-49).
+  quotaLifecycle = api.quota;
+  api.quota.start();
 };
 
 void app.whenReady().then(() => {
@@ -430,6 +437,7 @@ app.on('activate', () => {
 });
 
 app.on('will-quit', () => {
+  quotaLifecycle?.stop();
   if (dispatchTimer !== undefined) clearInterval(dispatchTimer);
   node?.close();
 });
