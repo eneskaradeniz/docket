@@ -18,7 +18,7 @@ export type Query =
   | { readonly type: 'settings.accounts' }
   | { readonly type: 'roles.list' }
   | { readonly type: 'providers.discovered' }
-  | { readonly type: 'accounts.candidates'; readonly refresh?: boolean }
+  | { readonly type: 'accounts.candidates'; readonly fresh?: boolean }
   | { readonly type: 'accounts.candidateQuota'; readonly sourcePath: string }
   | { readonly type: 'providers.marks' }
   | { readonly type: 'run.events'; readonly runId: string }

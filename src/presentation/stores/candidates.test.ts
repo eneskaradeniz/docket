@@ -216,7 +216,7 @@ describe('createCandidatesStore', () => {
     expect(outcome?.labelKey).toBe('success.account.adopt');
     expect(store.state().selected).toBeNull();
     expect(store.state().rows).toHaveLength(0);
-    expect(f.queries).toContainEqual({ type: 'accounts.candidates', refresh: true });
+    expect(f.queries).toContainEqual({ type: 'accounts.candidates', fresh: true });
     expect(told).toBe(1);
   });
 
@@ -233,11 +233,11 @@ describe('createCandidatesStore', () => {
     expect(f.queries.length).toBe(before);
   });
 
-  it('U-34: rescan queries candidates with refresh, and discovery again', async () => {
+  it('U-34: rescan queries candidates with fresh, and discovery again', async () => {
     const f = fake([base]);
     const store = make(f);
     await store.rescan();
-    expect(f.queries).toContainEqual({ type: 'accounts.candidates', refresh: true });
+    expect(f.queries).toContainEqual({ type: 'accounts.candidates', fresh: true });
     expect(f.queries).toContainEqual({ type: 'providers.discovered' });
   });
 });

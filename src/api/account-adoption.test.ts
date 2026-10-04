@@ -46,13 +46,13 @@ const setup = () => {
 };
 
 describe('accounts.candidates', () => {
-  it('returns the scan result, cached for the session, and rescans on refresh', async () => {
+  it('A-85: returns the remembered scan to every reader; fresh: true scans anew and replaces it', async () => {
     const h = setup();
     const api = createApi(h.deps, undefined, undefined, undefined, undefined, undefined, h);
     expect(await api.query({ type: 'accounts.candidates' })).toEqual([{ ...ENDPOINT, provider: 'prov-a', billing: 'unknown' }]);
     await api.query({ type: 'accounts.candidates' });
     expect(h.scans.count).toBe(1);
-    await api.query({ type: 'accounts.candidates', refresh: true });
+    await api.query({ type: 'accounts.candidates', fresh: true });
     expect(h.scans.count).toBe(2);
   });
 
@@ -123,7 +123,7 @@ describe('account.adopt', () => {
     expect(h.log.entries().map((entry) => entry.action)).toContain('account.adopted');
   });
 
-  it('maps the use case errors onto codes and drops the stale candidate cache', async () => {
+  it('A-85: an adoption after the candidates query adds no scan; the remembered scan serves both', async () => {
     const h = setup();
     const api = createApi(h.deps, undefined, undefined, undefined, undefined, undefined, h);
     expect(await api.command(ACTOR, { type: 'account.adopt', sourcePath: '/nowhere', label: 'X' })).toEqual({
@@ -132,10 +132,15 @@ describe('account.adopt', () => {
     });
     await api.query({ type: 'accounts.candidates' });
     const before = h.scans.count;
-    await api.command(ACTOR, { type: 'account.adopt', sourcePath: ENDPOINT.sourcePath, label: 'GLM' });
+    const adopted = await api.command(ACTOR, { type: 'account.adopt', sourcePath: ENDPOINT.sourcePath, label: 'GLM' });
+    expect(adopted.ok).toBe(true);
     await api.query({ type: 'accounts.candidates' });
-    // The adoption scanned once itself and the cache was dropped, so the query scanned again.
-    expect(h.scans.count).toBe(before + 2);
+    expect(h.scans.count).toBe(before);
+    // The scan predates the stored account, so a second adoption of the same path is refused.
+    expect(await api.command(ACTOR, { type: 'account.adopt', sourcePath: ENDPOINT.sourcePath, label: 'Again' })).toEqual({
+      ok: false,
+      code: 'already_added',
+    });
   });
 
   it('answers not_found when no discovery is composed', async () => {
