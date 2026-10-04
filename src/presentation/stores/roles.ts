@@ -67,6 +67,20 @@ export const effortOptions = (models: readonly ModelView[]): readonly string[] =
   return seen;
 };
 
+export interface StyleChoice {
+  readonly style: WorkStyle;
+  /** The role's recommended style carries the "Önerilen" tag in the Listbox (U-33). */
+  readonly recommended: boolean;
+}
+
+/** The work-style Listbox of a role row (U-43): Hızlı · Dengeli · Özenli, the recommended one tagged. */
+export const styleChoices = (row: Pick<RoleRow, 'recommended'>): readonly StyleChoice[] =>
+  WORK_STYLES.map((style) => ({ style, recommended: style === row.recommended }));
+
+/** What the Listbox button reads for a role: a preset's own name; "Özel" for any other pair; and a
+ *  role with neither tier nor thinking set shows no selection. */
+export const styleStanding = (style: RoleWorkStyle): WorkStyle | 'custom' | null => (style === 'unset' ? null : style);
+
 export interface ChainEntry {
   readonly accountId: string;
   readonly model: string | null;
@@ -99,6 +113,10 @@ export interface RoleAccount {
   readonly id: string;
   readonly label: string;
   readonly provider: string;
+  /** The account's billing view: automatic switching skips one that is not included (U-42). */
+  readonly billing: 'included' | 'metered' | 'unknown';
+  /** The account rides a key: an included one reads "Abonelik · anahtarla". */
+  readonly viaKey: boolean;
 }
 
 export interface RolesState {
@@ -255,7 +273,13 @@ export const createRolesStore = (deps: RolesStoreDeps): RolesStore => {
     bindings = view.bindings;
     rebuild({
       loading: false,
-      accounts: view.accounts.map((account) => ({ id: account.id, label: account.label, provider: account.provider })),
+      accounts: view.accounts.map((account) => ({
+        id: account.id,
+        label: account.label,
+        provider: account.provider,
+        billing: account.billing,
+        viaKey: account.authMode === 'api_key',
+      })),
     });
   };
 

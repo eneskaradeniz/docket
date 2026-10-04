@@ -1,10 +1,10 @@
-// components/account-editor.tsx — the account editor body (U-30): a head with the recommendation
-// count and "Hepsini önerilene döndür" (U-29), four tabs, and the tab's content. Genel holds the
-// label (saved on commit) and the read-only facts; Kullanım the meter bars or the spend against
-// the cap; Limitler holds the limit policy, the reserve and the spend cap (U-30); Modeller lists the catalog by billing with the spend-consent card (U-32). The rules live in
-// stores/account-editor.ts; this file renders them. The host (Settings sub-page, later the
-// wizard window) frames the body.
-import { useEffect, useState, useSyncExternalStore } from 'react';
+// components/account-editor.tsx — the account editor's four tabs (U-30, U-43): Genel holds the
+// name, the model Listbox and the account facts; Kullanım the MeterList (or the spend against the
+// cap) with "Son okuma · Yenile"; Limitler the "Limit dolunca" radio cards, the reserve Listbox and
+// the spend cap; Modeller the catalog by billing with the spend-consent card (U-32). The rules live
+// in stores/account-editor.ts; this file renders them. The frame — scrim, head, vertical tabs,
+// footer — is components/account-editor-dialog.tsx, which both hosts (Settings, the wizard) use.
+import { useEffect, useId, useState, useSyncExternalStore } from 'react';
 
 import type { SettingsAccountView } from '../../api/queries';
 import type { TestRefusal } from '../stores/account-test';
@@ -13,7 +13,6 @@ import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
 import {
   CAP_SCOPES,
-  EDITOR_TABS,
   RESERVE_PRESETS,
   SAVED_FLAG_MS,
   capFormStartsOpen,
@@ -31,13 +30,15 @@ import {
   type EditorTab,
   type FactKey,
 } from '../stores/account-editor';
-import type { AccountModelsStore, CapScope } from '../stores/account-models';
+import { includedReason, type AccountModelsStore, type CapScope } from '../stores/account-models';
 import { RECOMMENDED, settingDiffs } from '../stores/recommended';
 import { ActionButton } from './action-button';
-import { MeterBar } from './meter-bar';
+import { Listbox } from './listbox';
+import { MeterList } from './meter-list';
 import { ModelList } from './model-list';
 import { formatMeterValue } from './meter-value';
 import { SettingRow } from './setting-row';
+import { meterListEmpty, meterListView } from '../stores/meter-list';
 
 const TAB_KEY: Readonly<Record<EditorTab, LabelKey>> = {
   general: 'editor.tab.general',
@@ -80,8 +81,6 @@ export interface AccountEditorProps {
   readonly onOpenRole?: (roleId: string) => void;
   /** The provider's display name (A-67) Genel shows in place of the id; absent or null = the id. */
   readonly providerName?: string | null;
-  /** U-20's reset wording for the Kullanım bars; absent = the host's plain moment (`formatTime`). */
-  readonly resetLine?: (resetsAt: number | null) => string | null;
   /** "Test et" on Genel (U-39); absent = the host has no stored account to test. */
   readonly accountTest?: {
     readonly testing: boolean;
@@ -114,30 +113,40 @@ function useRowStatus(store: AccountEditorStore, row: string, locale: Locale): {
 
 function LabelRow({ account, locale, store }: Pick<AccountEditorProps, 'account' | 'locale' | 'store'>) {
   const [draft, setDraft] = useState(account.label);
+  const inputId = useId();
   // A saved name coming back from the query replaces the draft; typing in between is the user's.
   useEffect(() => setDraft(account.label), [account.label]);
   const status = useRowStatus(store, 'label', locale);
   const commit = (): void => void store.saveLabel(account, draft);
   return (
-    <SettingRow
-      locale={locale}
-      title={t(locale, 'editor.general.label')}
-      purpose={t(locale, 'editor.general.labelHint')}
-      saved={status.saved}
-      failure={status.failure}
-      control={
-        <input
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={commit}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') commit();
-          }}
-          aria-label={t(locale, 'editor.general.label')}
-          className="w-56 rounded-control border border-bord bg-transparent px-2.5 py-1 text-[13px] text-ink focus:border-signal focus:outline-none"
-        />
-      }
-    />
+    <div className="grid max-w-[420px] gap-1.5" data-setting-row={t(locale, 'editor.general.label')}>
+      <label htmlFor={inputId} className="text-[13px] font-bold text-ink">
+        {t(locale, 'editor.general.label')}
+      </label>
+      <input
+        id={inputId}
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') commit();
+        }}
+        className="h-9 rounded-control border border-bord bg-raised px-3 text-ink outline-none focus:border-signal"
+      />
+      <span className="flex items-center gap-2 text-[12.5px] text-inkdim">
+        {t(locale, 'editor.general.labelHint')}
+        {status.saved ? (
+          <span role="status" className="text-proceed">
+            {t(locale, 'editor.saved')}
+          </span>
+        ) : null}
+      </span>
+      {status.failure !== undefined ? (
+        <p role="alert" className="text-[12px] text-error">
+          {status.failure}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -178,6 +187,16 @@ function DangerZone({ account, locale, onRemove, removeWarning }: Pick<AccountEd
   );
 }
 
+function Section({ title, hint, children }: { readonly title: string; readonly hint?: string; readonly children: React.ReactNode }) {
+  return (
+    <section className="grid gap-1.5">
+      <h3 className="text-[14px] font-bold text-ink">{title}</h3>
+      {hint !== undefined ? <p className="mb-1.5 max-w-[62ch] text-[13px] text-inkdim">{hint}</p> : null}
+      {children}
+    </section>
+  );
+}
+
 function General({
   account,
   accountTest,
@@ -190,10 +209,24 @@ function General({
   removeWarning,
 }: Pick<AccountEditorProps, 'account' | 'accountTest' | 'locale' | 'store' | 'roleChips' | 'onOpenRole' | 'providerName' | 'onRemove' | 'removeWarning'>) {
   return (
-    <div>
+    <div className="grid gap-[22px]">
       <LabelRow account={account} locale={locale} store={store} />
+      {/* The account has no stored model choice: every run takes the assistant's own default, so the
+          list offers that one standing and nothing it could not keep. */}
+      <Section title={t(locale, 'editor.general.model')} hint={t(locale, 'editor.general.modelHint')}>
+        <div>
+          <Listbox
+            label={t(locale, 'editor.general.model')}
+            value="default"
+            options={[{ value: 'default', label: t(locale, 'editor.general.modelDefault'), recommended: true }]}
+            recommendedLabel={t(locale, 'editor.recommended')}
+            onPick={() => undefined}
+            minWidth={220}
+          />
+        </div>
+      </Section>
       {accountTest !== undefined ? (
-        <div className="border-b border-hairline py-3">
+        <div className="py-1">
           <AccountTest
             locale={locale}
             test={account.test}
@@ -206,12 +239,8 @@ function General({
         </div>
       ) : null}
       {roleChips !== undefined && roleChips.length > 0 ? (
-        <div className="flex items-start justify-between gap-4 border-b border-hairline py-3" data-role-chips="">
-          <div className="min-w-0">
-            <p className="text-[13.5px] font-semibold text-ink">{t(locale, 'editor.general.roles')}</p>
-            <p className="text-[12.5px] text-inkdim">{t(locale, 'editor.general.rolesHint')}</p>
-          </div>
-          <span className="flex flex-wrap justify-end gap-1.5">
+        <Section title={t(locale, 'editor.general.roles')} hint={t(locale, 'editor.general.rolesHint')}>
+          <span className="flex flex-wrap gap-1.5" data-role-chips="">
             {roleChips.map((chip) => (
               <button
                 key={chip.id}
@@ -223,87 +252,76 @@ function General({
               </button>
             ))}
           </span>
-        </div>
+        </Section>
       ) : null}
-      <dl className="grid gap-2 py-3">
-        {generalFacts(account, providerName ?? null).map((fact) => {
-          const text =
-            typeof fact.value === 'boolean'
-              ? t(locale, fact.value ? 'editor.fact.secret.yes' : 'editor.fact.secret.no')
-              : fact.key === 'connection'
-                ? connectionText(locale, fact.value)
-                : fact.value;
-          return (
-            <div key={fact.key} className="flex items-baseline gap-3" data-fact={fact.key}>
-              <dt className="w-32 flex-none text-[12.5px] text-inkdim">{t(locale, FACT_KEY[fact.key])}</dt>
-              <dd className={`min-w-0 break-all text-[12.5px] text-ink ${MONO_FACTS.has(fact.key) ? 'font-mono' : ''}`}>{text}</dd>
-            </div>
-          );
-        })}
-      </dl>
+      <Section title={t(locale, 'editor.general.facts')}>
+        <dl className="m-0 grid grid-cols-[140px_minmax(0,1fr)] gap-x-4 gap-y-2 rounded-card border border-hairline p-4 text-[13px]">
+          {generalFacts(account, providerName ?? null).map((fact) => {
+            const text =
+              typeof fact.value === 'boolean'
+                ? t(locale, fact.value ? 'editor.fact.secret.yes' : 'editor.fact.secret.no')
+                : fact.key === 'connection'
+                  ? connectionText(locale, fact.value)
+                  : fact.value;
+            return (
+              <div key={fact.key} className="contents" data-fact={fact.key}>
+                <dt className="text-inkdim">{t(locale, FACT_KEY[fact.key])}</dt>
+                <dd className={`m-0 min-w-0 break-all text-ink ${MONO_FACTS.has(fact.key) ? 'font-mono text-[12.5px]' : ''}`}>{text}</dd>
+              </div>
+            );
+          })}
+        </dl>
+      </Section>
       <DangerZone account={account} locale={locale} onRemove={onRemove} removeWarning={removeWarning} />
     </div>
   );
 }
 
-function Usage({ account, locale, formatTime, resetLine, onRefresh }: Pick<AccountEditorProps, 'account' | 'locale' | 'formatTime' | 'resetLine' | 'onRefresh'>) {
+function Usage({ account, locale, formatTime, onRefresh }: Pick<AccountEditorProps, 'account' | 'locale' | 'formatTime' | 'onRefresh'>) {
   const view = usageView(account);
   const lastRead = account.meters.length === 0 ? null : formatTime(Math.max(...account.meters.map((meter) => meter.observedAt)));
   return (
-    <div className="grid gap-3 py-3">
-      {view.kind === 'meters' ? (
-        view.meters.length === 0 ? (
-          <p className="text-[13px] text-inkdim">{t(locale, 'settings.meters.empty')}</p>
+    <div className="grid gap-3.5">
+      <Section title={t(locale, 'editor.tab.usage')}>
+        <p className="flex items-center gap-2 text-[12.5px] text-inkdim">
+          <span>
+            {t(locale, 'editor.usage.lastRead')}
+            {lastRead !== null ? ` ${lastRead}` : ''}
+          </span>
+          <span aria-hidden="true">·</span>
+          <ActionButton variant="ghost" onClick={onRefresh}>
+            {t(locale, 'editor.usage.refresh')}
+          </ActionButton>
+        </p>
+        {view.kind === 'meters' ? (
+          <MeterList
+            locale={locale}
+            view={meterListView(account.pools, account.meters)}
+            empty={meterListEmpty({ loading: false, failed: false, needsLogin: false })}
+            now={Date.now()}
+          />
         ) : (
-          <ul className="grid gap-3">
-            {view.meters.map((meter) => (
-              <MeterBar
-                key={meter.id}
-                meter={meter}
-                name={meter.label ?? account.pools.find((pool) => pool.id === meter.poolId)?.label ?? meter.poolId}
-                locale={locale}
-                resetsAt={formatTime(meter.resetsAt)}
-                {...(resetLine !== undefined ? { resetLine: resetLine(meter.resetsAt) } : {})}
-              />
-            ))}
-          </ul>
-        )
-      ) : (
-        <div className="grid gap-1" data-spend="">
-          <p className="text-[13px] text-ink">
-            {t(locale, 'editor.usage.spend')}{' '}
-            <span className="font-mono">{view.spentUsd === null ? t(locale, 'editor.usage.spendNone') : formatMeterValue(locale, 'usd', view.spentUsd)}</span>
-          </p>
-          <p className="text-[12.5px] text-inkdim">
-            {view.cap === null
-              ? t(locale, 'editor.usage.noCap')
-              : `${t(locale, 'editor.usage.cap')} ${formatMeterValue(locale, 'usd', view.cap.amountUsd)} · ${
-                  SCOPE_KEY[view.cap.scope] === undefined ? view.cap.scope : t(locale, SCOPE_KEY[view.cap.scope] ?? 'editor.usage.cap')
-                }`}
-          </p>
-        </div>
-      )}
-      <p className="flex items-center gap-2 text-[12.5px] text-inkdim">
-        <span>
-          {t(locale, 'editor.usage.lastRead')}
-          {lastRead !== null ? ` ${lastRead}` : ''}
-        </span>
-        <span aria-hidden="true">·</span>
-        <ActionButton variant="ghost" onClick={onRefresh}>
-          {t(locale, 'editor.usage.refresh')}
-        </ActionButton>
-      </p>
+          <div className="grid gap-1" data-spend="">
+            <p className="text-[13px] text-ink">
+              {t(locale, 'editor.usage.spend')}{' '}
+              <span className="font-mono">{view.spentUsd === null ? t(locale, 'editor.usage.spendNone') : formatMeterValue(locale, 'usd', view.spentUsd)}</span>
+            </p>
+            <p className="text-[12.5px] text-inkdim">
+              {view.cap === null
+                ? t(locale, 'editor.usage.noCap')
+                : `${t(locale, 'editor.usage.cap')} ${formatMeterValue(locale, 'usd', view.cap.amountUsd)} · ${
+                    SCOPE_KEY[view.cap.scope] === undefined ? view.cap.scope : t(locale, SCOPE_KEY[view.cap.scope] ?? 'editor.usage.cap')
+                  }`}
+            </p>
+          </div>
+        )}
+      </Section>
     </div>
   );
 }
 
 const INPUT_CLASS =
   'rounded-control border border-bord bg-transparent px-2.5 py-1 text-[13px] text-ink focus:border-signal focus:outline-none';
-
-const OPTION_CLASS = (selected: boolean, disabled: boolean): string =>
-  `inline-flex items-center gap-1.5 rounded-control border px-2.5 py-1 text-[12.5px] ${
-    selected ? 'border-signal text-ink' : 'border-bord text-inkdim'
-  } ${disabled ? 'opacity-50' : 'hover:text-ink'}`;
 
 const PERIOD_KEY: Readonly<Record<string, LabelKey>> = {
   account_day: 'editor.limits.cap.period.account_day',
@@ -331,28 +349,27 @@ function PolicyRow({ account, locale, store }: Pick<AccountEditorProps, 'account
       onReset={() => void store.reset(account, 'limitPolicy')}
       control={null}
       below={
-        <div role="radiogroup" aria-label={t(locale, 'editor.limits.policy.title')} className="grid gap-1.5">
+        <div role="radiogroup" aria-label={t(locale, 'editor.limits.policy.title')} className="grid gap-2">
           {policyOptions(account).map((option) => {
-            const disabled = option.disabledReasonKey !== undefined;
+            const checked = account.limitPolicy === option.policy;
             return (
               <button
                 key={option.policy}
                 type="button"
                 role="radio"
-                aria-checked={account.limitPolicy === option.policy}
-                aria-disabled={disabled}
-                disabled={disabled}
+                aria-checked={checked}
                 onClick={() => void store.savePolicy(account, option.policy)}
-                className={`${OPTION_CLASS(account.limitPolicy === option.policy, disabled)} w-full !flex-col !items-start gap-0.5 text-left`}
+                className={`grid w-full grid-cols-[20px_minmax(0,1fr)] gap-x-2.5 gap-y-1 rounded-card border px-3.5 py-3 text-left hover:border-bord ${checked ? 'border-signal bg-signal/10' : 'border-hairline'}`}
                 data-policy={option.policy}
               >
-                <span className="flex items-center gap-2">
-                  <span>{t(locale, option.labelKey)}</span>
+                <span aria-hidden="true" className={`row-span-2 mt-px grid h-[18px] w-[18px] place-items-center rounded-full border-[1.5px] ${checked ? 'border-signal' : 'border-bord'}`}>
+                  {checked ? <span className="h-2 w-2 rounded-full bg-signal" /> : null}
+                </span>
+                <span className="flex items-center gap-2 font-bold text-ink">
+                  {t(locale, option.labelKey)}
                   {option.recommended ? <RecommendedMark locale={locale} /> : null}
                 </span>
-                <span className="text-[12px] text-inkdim">
-                  {option.disabledReasonKey !== undefined ? t(locale, option.disabledReasonKey) : t(locale, option.purposeKey)}
-                </span>
+                <span className="text-[12.5px] text-inkdim">{t(locale, option.purposeKey)}</span>
               </button>
             );
           })}
@@ -405,22 +422,16 @@ function ReserveRow({ account, locale, store }: Pick<AccountEditorProps, 'accoun
       </label>
     );
   };
-  const options: readonly { readonly id: string; readonly selected: boolean; readonly label: string; readonly onPick: () => void }[] = [
-    { id: 'none', selected: choice === 'none', label: t(locale, 'editor.limits.reserve.none'), onPick: () => pick(0) },
-    ...RESERVE_PRESETS.map((value) => ({
-      id: String(value),
-      selected: choice === value,
-      label: t(locale, 'editor.limits.reserve.preset').replace('{value}', String(value)),
-      onPick: () => pick(value),
-    })),
-    { id: 'split', selected: choice === 'split', label: t(locale, 'editor.limits.reserve.split'), onPick: () => setSplitOpen(true) },
-  ];
   function pick(value: number): void {
     setSplitOpen(false);
     setShort(String(value));
     setLong(String(value));
     commit(String(value), String(value));
   }
+  const listOptions = [
+    { value: 'none', label: t(locale, 'editor.limits.reserve.none'), recommended: true },
+    ...RESERVE_PRESETS.map((value) => ({ value: String(value), label: t(locale, 'editor.limits.reserve.preset').replace('{value}', String(value)) })),
+  ];
   return (
     <SettingRow
       locale={locale}
@@ -433,25 +444,28 @@ function ReserveRow({ account, locale, store }: Pick<AccountEditorProps, 'accoun
         setSplitOpen(false);
         void store.reset(account, 'reserve');
       }}
-      control={null}
+      control={
+        <Listbox
+          label={t(locale, 'editor.limits.reserve.title')}
+          value={choice === 'split' ? null : String(choice)}
+          standing={choice === 'split' ? t(locale, 'editor.limits.reserve.custom') : undefined}
+          options={listOptions}
+          recommendedLabel={t(locale, 'editor.recommended')}
+          minWidth={120}
+          onPick={(value) => pick(value === 'none' ? 0 : Number(value))}
+        />
+      }
       below={
         <div className="grid justify-items-start gap-2">
-          <div role="radiogroup" aria-label={t(locale, 'editor.limits.reserve.title')} className="flex flex-wrap gap-1.5">
-            {options.map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                role="radio"
-                aria-checked={option.selected}
-                onClick={option.onPick}
-                className={OPTION_CLASS(option.selected, false)}
-                data-reserve-option={option.id}
-              >
-                {option.label}
-                {option.id === 'none' ? <RecommendedMark locale={locale} /> : null}
-              </button>
-            ))}
-          </div>
+          <button
+            type="button"
+            aria-expanded={splitOpen}
+            onClick={() => setSplitOpen(!splitOpen)}
+            data-reserve-option="split"
+            className="rounded-control text-[12.5px] text-inkdim hover:text-ink"
+          >
+            {splitOpen ? '⌄' : '›'} {t(locale, 'editor.limits.reserve.split')}
+          </button>
           {splitOpen ? (
             <div className="grid gap-2" data-reserve-split="">
               {field('short')}
@@ -515,25 +529,21 @@ function CapRow({ account, locale, store }: Pick<AccountEditorProps, 'account' |
                 data-cap-field="amount"
               />
             </span>
-            <div role="radiogroup" aria-label={t(locale, 'editor.limits.cap.period')} className="flex gap-1">
-              {CAP_SCOPES.map((entry) => (
-                <button
-                  key={entry}
-                  type="button"
-                  role="radio"
-                  aria-checked={scope === entry}
-                  onClick={() => {
-                    setScope(entry);
-                    commit('cap', entry);
-                  }}
-                  className={OPTION_CLASS(scope === entry, false)}
-                  data-cap-period={entry}
-                >
-                  {t(locale, PERIOD_KEY[entry] ?? 'editor.limits.cap.period')}
-                  {entry === RECOMMENDED.cap.scope ? <RecommendedMark locale={locale} /> : null}
-                </button>
-              ))}
-            </div>
+            <Listbox
+              label={t(locale, 'editor.limits.cap.period')}
+              value={scope}
+              options={CAP_SCOPES.map((entry) => ({
+                value: entry,
+                label: t(locale, PERIOD_KEY[entry] ?? 'editor.limits.cap.period'),
+                recommended: entry === RECOMMENDED.cap.scope,
+              }))}
+              recommendedLabel={t(locale, 'editor.recommended')}
+              minWidth={110}
+              onPick={(entry) => {
+                setScope(entry);
+                commit('cap', entry);
+              }}
+            />
           </div>
         </div>
       }
@@ -612,17 +622,26 @@ function Models({ account, locale, models, onRefresh }: Pick<AccountEditorProps,
         }
         onCancel={() => models.cancel()}
         onRevoke={(model) => void models.revoke(model)}
+        reasonOf={(row) => {
+          const key = row.billing === 'included' ? includedReason(row.id, account.pools, account.meters) : null;
+          return key === null ? null : t(locale, key);
+        }}
       />
     </div>
   );
 }
 
-export function AccountEditor(props: AccountEditorProps) {
+/** The tab labels; the dialog frame lists them in the vertical tab column. */
+export { TAB_KEY };
+
+/** The body of the selected tab, with the U-29 line above it (the count of settings that differ
+ *  from the recommendation and "Hepsini önerilene döndür"). */
+export function AccountEditorPanels(props: AccountEditorProps) {
   const { account, locale, store } = props;
   const state = useSyncExternalStore(store.subscribe, store.state);
   const diffs = settingDiffs(account);
   return (
-    <div className="grid gap-2" data-account-editor={account.id}>
+    <div className="grid gap-4" data-account-editor={account.id}>
       <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
         {diffs.length === 0 ? (
           <p className="text-inkdim">{t(locale, 'editor.head.clean')}</p>
@@ -643,21 +662,7 @@ export function AccountEditor(props: AccountEditorProps) {
           </p>
         ) : null}
       </div>
-      <div role="tablist" className="flex gap-1 border-b border-hairline">
-        {(props.tabs ?? EDITOR_TABS).map((tab) => (
-          <button
-            key={tab}
-            type="button"
-            role="tab"
-            aria-selected={state.tab === tab}
-            onClick={() => store.setTab(tab)}
-            className={`rounded-control px-3 py-1.5 text-[13px] ${state.tab === tab ? 'border-b-2 border-signal text-ink' : 'text-inkdim hover:text-ink'}`}
-          >
-            {t(locale, TAB_KEY[tab])}
-          </button>
-        ))}
-      </div>
-      <div role="tabpanel">
+      <div role="tabpanel" aria-label={t(locale, TAB_KEY[state.tab])}>
         {state.tab === 'general' ? (
           <General
             account={account}
@@ -671,9 +676,7 @@ export function AccountEditor(props: AccountEditorProps) {
             removeWarning={props.removeWarning}
           />
         ) : null}
-        {state.tab === 'usage' ? (
-          <Usage account={account} locale={locale} formatTime={props.formatTime} resetLine={props.resetLine} onRefresh={props.onRefresh} />
-        ) : null}
+        {state.tab === 'usage' ? <Usage account={account} locale={locale} formatTime={props.formatTime} onRefresh={props.onRefresh} /> : null}
         {state.tab === 'limits' ? <Limits account={account} locale={locale} store={store} /> : null}
         {state.tab === 'models' && props.models !== undefined ? (
           <Models account={account} locale={locale} models={props.models} onRefresh={props.onRefresh} />

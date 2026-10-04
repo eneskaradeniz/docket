@@ -136,6 +136,9 @@ export interface SettingsStore {
    *  route's default — and re-queries on the answer. A second press while one is open sends
    *  nothing. A refusal lands in `testRefusals`; a finished test is read from the account's `test`. */
   testAccount(accountId: string): Promise<void>;
+  /** "Yenile" (U-43): `quota.refresh` for one account, or every account without an id; the view is
+   *  re-read when the polls have ended. */
+  refreshQuota(accountId?: string): Promise<SettingsIntentOutcome>;
   /** Remove an account; with bindings still referencing it, issues nothing and surfaces the
    *  `binding_exists` warning with the referencing roles. */
   removeAccount(accountId: string): Promise<SettingsIntentOutcome>;
@@ -301,6 +304,7 @@ export const createSettingsStore = (deps: SettingsStoreDeps): SettingsStore => {
       });
       await load();
     },
+    refreshQuota: (accountId) => runIntent(accountId === undefined ? { type: 'quota.refresh' } : { type: 'quota.refresh', id: accountId }),
     removeAccount: async (accountId) => {
       if (state.view === null) return notLoadedOutcome('account.remove');
       const roles = referencingRoles(state.view.bindings, accountId);

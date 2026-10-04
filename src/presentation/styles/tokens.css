@@ -90,3 +90,13 @@
   --font-sans: var(--sans);
   --font-mono: var(--mono);
 }
+
+/* The thin progress line under a toolbar while a scan runs (U-42): a bar sliding across its track. */
+@keyframes scan {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}

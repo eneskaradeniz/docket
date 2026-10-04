@@ -11,6 +11,8 @@ export const RECOMMENDED = {
   reserve: { short: 0, long: 0 },
   warnPercent: 80,
   cap: { scope: 'account_month', amountUsd: 50 },
+  /** Tema follows the computer's setting (U-42). */
+  theme: 'system',
 } as const;
 
 // By role id; a role outside the list is balanced (U-33).

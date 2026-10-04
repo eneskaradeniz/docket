@@ -9,9 +9,10 @@ import { t, type Locale } from '../labels/t';
 import type { LabelKey } from '../labels/keys';
 import {
   selectableModels,
+  styleChoices,
+  styleStanding,
   THINKING_LEVELS,
   TIERS,
-  WORK_STYLES,
   type RoleAccount,
   type RoleRow,
   type RolesStore,
@@ -20,7 +21,10 @@ import {
 } from '../stores/roles';
 import { SAVED_FLAG_MS } from '../stores/account-editor';
 import type { WorkStyle } from '../stores/recommended';
+import { billingTagKey } from '../stores/account-groups';
 import { ActionButton } from './action-button';
+import { DragOrderList, type DragOrderItem } from './drag-order-list';
+import { Listbox } from './listbox';
 import { ProviderMark, type ProviderMarkProps } from './provider-mark';
 import { SegmentedControl } from './segmented-control';
 import { SettingRow } from './setting-row';
@@ -93,7 +97,8 @@ export interface ChainSectionProps {
   readonly markFor: MarkFor;
 }
 
-/** Asistan sırası: the chain every role without its own uses. */
+/** Asistan sırası: the chain every role without its own uses, as the same DragOrderList the wizard
+ *  uses. A drop saves every listed role once (U-33). */
 export function ChainSection({ store, locale, markFor }: ChainSectionProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
   const saved = useSavedFlag(store, 'chain');
@@ -101,42 +106,35 @@ export function ChainSection({ store, locale, markFor }: ChainSectionProps) {
   const chain = state.globalChain
     .map((id) => state.accounts.find((account) => account.id === id))
     .filter((account): account is RoleAccount => account !== undefined);
+  const items: readonly DragOrderItem[] = chain.map((account, index) => {
+    const tag = t(locale, billingTagKey(account.billing, account.viaKey));
+    return {
+      id: account.id,
+      markKey: account.provider === '' ? null : account.provider,
+      label: account.label,
+      sub: account.billing !== 'included' ? `${tag} · ${t(locale, 'wizard.order.skipsAuto')}` : index === 0 ? t(locale, 'wizard.order.first') : tag,
+    };
+  });
   return (
-    <div className="grid gap-2 border-b border-hairline pb-3" data-roles-chain>
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <p className="text-[13.5px] font-semibold text-ink">{t(locale, 'roles.chain.title')}</p>
-          <p className="text-[12.5px] text-inkdim">{t(locale, 'roles.chain.purpose')}</p>
-        </div>
-        {saved ? (
-          <span role="status" className="text-[12px] text-proceed">
-            {t(locale, 'editor.saved')}
-          </span>
-        ) : null}
-      </div>
+    <div className="grid gap-2" data-roles-chain>
+      {saved ? (
+        <span role="status" className="text-[12px] text-proceed">
+          {t(locale, 'editor.saved')}
+        </span>
+      ) : null}
       {chain.length === 0 ? (
         <p className="text-[13px] text-inkdim">{t(locale, 'roles.chain.empty')}</p>
       ) : (
-        <ol className="grid gap-1.5">
-          {chain.map((account, index) => (
-            <li
-              key={account.id}
-              tabIndex={0}
-              onKeyDown={(event) => {
-                if (!event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return;
-                event.preventDefault();
-                void store.moveGlobal(index, event.key === 'ArrowUp' ? -1 : 1);
-              }}
-              className="flex items-center gap-3 rounded-card border border-hairline bg-surface px-3 py-2 focus:border-signal focus:outline-none"
-              data-chain-account={account.id}
-            >
-              <span className="w-4 flex-none text-[12px] text-inkdim">{index + 1}</span>
-              <ProviderMark provider={account.provider} mark={markFor(account.provider)} />
-              <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{account.label}</span>
-              <MoveButtons locale={locale} name={account.label} index={index} count={chain.length} onMove={(delta) => void store.moveGlobal(index, delta)} />
-            </li>
-          ))}
-        </ol>
+        <DragOrderList
+          locale={locale}
+          items={items}
+          markFor={markFor}
+          label={t(locale, 'roles.chain.title')}
+          onReorder={(id, index) => {
+            const from = state.globalChain.indexOf(id);
+            if (from >= 0) void store.moveGlobal(from, index - from);
+          }}
+        />
       )}
       {failure !== undefined ? (
         <p role="alert" className="text-[12px] text-error">
@@ -324,20 +322,17 @@ export function RoleRowView({ row, store, locale, markFor, fineTuneOpen = false 
       {...(row.differs ? { differsFrom: t(locale, STYLE_KEY[row.recommended]), onReset: () => void store.resetStyle(row.id) } : {})}
       {...(failure !== undefined ? { failure: t(locale, failure) } : {})}
       {...(row.sameProviderReview ? { note: t(locale, 'roles.review.sameProvider') } : {})}
+      framed
       control={
-        <span className="flex items-center gap-2">
-          <SegmentedControl
-            label={`${row.name} · ${t(locale, 'roles.style.title')}`}
-            value={row.style === 'custom' || row.style === 'unset' ? null : row.style}
-            {...(row.style === 'custom' ? { standing: t(locale, STYLE_KEY.custom) } : {})}
-            options={WORK_STYLES.map((style) => ({
-              id: style,
-              text: t(locale, STYLE_KEY[style]),
-              ...(style === row.recommended ? { hint: t(locale, 'editor.recommended') } : {}),
-            }))}
-            onPick={(style) => void store.setStyle(row.id, style)}
-          />
-        </span>
+        <Listbox
+          label={`${row.name} · ${t(locale, 'roles.style.title')}`}
+          value={row.style === 'custom' || row.style === 'unset' ? null : row.style}
+          {...(styleStanding(row.style) === 'custom' ? { standing: t(locale, STYLE_KEY.custom) } : {})}
+          options={styleChoices(row).map((choice) => ({ value: choice.style, label: t(locale, STYLE_KEY[choice.style]), recommended: choice.recommended }))}
+          recommendedLabel={t(locale, 'editor.recommended')}
+          minWidth={150}
+          onPick={(style) => void store.setStyle(row.id, style)}
+        />
       }
       disclosure={{
         label: t(locale, 'roles.fine'),

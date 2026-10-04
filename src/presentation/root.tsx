@@ -74,7 +74,7 @@ if (mount !== null) {
   theme.subscribe(applyTheme);
   const candidates = createCandidateDotStore(api);
   // The list under Hesaplar → Eklenmemiş; an adoption re-reads the dot.
-  const candidateList = createCandidatesStore({ api, actor: USER, onAdopted: () => void candidates.load() });
+  const candidateList = createCandidatesStore({ api, actor: USER, changes, onAdopted: () => void candidates.load() });
   const providerList = createProvidersStore({ api });
   // The meters' reset times render in the machine's zone; tests pass 'UTC' instead.
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -96,8 +96,8 @@ if (mount !== null) {
   // The sidebar's tree (U-15) and accounts frame (U-16) mirror their queries; the sort choice
   // persists where the locale choice does.
   const tree = createProjectTreeStore({ api, changes, now: () => Date.now(), persistence: window.localStorage });
-  // The wizard's attach appends no work-order event, so it reloads the tree itself.
-  const wizard = createWizardStore({ api, actor: USER, reloadTree: () => tree.load() });
+  // The wizard re-reads its lists on `accounts.changed`; the sidebar tree needs nothing from it.
+  const wizard = createWizardStore({ api, actor: USER, changes });
   // The Yeni proje page (U-40) reloads the tree the same way: a creation appends no event.
   const newProject = createNewProjectStore({ api, actor: USER, reloadTree: () => tree.load() });
   const accountsFrame = createAccountsFrameStore({ api, changes });

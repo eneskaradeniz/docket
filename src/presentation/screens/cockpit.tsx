@@ -39,6 +39,8 @@ export interface CockpitScreenProps {
    *  project the main repo's board. */
   readonly onOpenProject: (project: string) => void;
   readonly onOpenBoard: (repo: string) => void;
+  /** The start card's two buttons: both open the Yeni proje page (U-40). */
+  readonly onNewProject: () => void;
   /** The sidebar frame's account cards — the running rows' account names join onto them by id. */
   readonly accounts: readonly AccountCard[] | null;
 }
@@ -73,7 +75,7 @@ function FoldButton({ label, onClick }: { readonly label: string; readonly onCli
   );
 }
 
-export function CockpitScreen({ store, marks, locale, onOpenWorkOrder, onOpenProject, onOpenBoard, accounts }: CockpitScreenProps) {
+export function CockpitScreen({ store, marks, locale, onOpenWorkOrder, onOpenProject, onOpenBoard, onNewProject, accounts }: CockpitScreenProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
   // The marks land once, after the first paint; the subscription turns them into a re-render.
   useSyncExternalStore(marks.subscribe, marks.state);
@@ -135,7 +137,7 @@ export function CockpitScreen({ store, marks, locale, onOpenWorkOrder, onOpenPro
 
       {skeleton ? <CockpitSkeleton locale={locale} /> : null}
 
-      {!skeleton && phase === 'first-run' ? <FirstRunCard locale={locale} /> : null}
+      {!skeleton && phase === 'first-run' ? <FirstRunCard locale={locale} onNewProject={onNewProject} onAttach={onNewProject} /> : null}
 
       {!skeleton && phase === 'failed-empty' ? (
         <>

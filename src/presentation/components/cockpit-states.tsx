@@ -3,7 +3,6 @@
 // always says what it means and what happens next — never a bare grey line; the loading standing
 // is the shared skeleton composition (components/cockpit-skeleton.tsx).
 import type { ReactNode } from 'react';
-import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
 import { ActionButton } from './action-button';
 
@@ -80,25 +79,21 @@ export function CockpitAlert({ locale, detail, onRetry }: CockpitAlertProps) {
   );
 }
 
-const FIRST_STEPS: readonly LabelKey[] = ['cockpit.first.step1', 'cockpit.first.step2', 'cockpit.first.step3'];
-
-/** The first run: no project, no work, no history. It points at the next step and offers no
- *  second way to add a project — that lives in the sidebar. */
-export function FirstRunCard({ locale }: { readonly locale: Locale }) {
+/** The first run: no project, no work, no history. One dashed start card with the two ways in —
+ *  both open the Yeni proje page (U-40), whose default is an existing folder. */
+export function FirstRunCard({ locale, onNewProject, onAttach }: { readonly locale: Locale; readonly onNewProject: () => void; readonly onAttach: () => void }) {
   return (
-    <div className="grid max-w-[560px] justify-items-start gap-3.5 rounded-panel border border-dashed border-bord p-7">
-      <h2 className="text-[16px] font-semibold text-ink">{t(locale, 'cockpit.first.title')}</h2>
-      <p className="text-[13px] text-inkdim">{t(locale, 'cockpit.first.body')}</p>
-      <ol className="grid gap-2 text-[13px] text-ink">
-        {FIRST_STEPS.map((key, index) => (
-          <li key={key} className="flex items-center gap-2.5">
-            <span className="grid h-5 w-5 flex-none place-items-center rounded-full border border-bord font-mono text-[11px] text-inkdim">
-              {index + 1}
-            </span>
-            {t(locale, key)}
-          </li>
-        ))}
-      </ol>
+    <div className="grid max-w-[560px] justify-items-start gap-2.5 rounded-panel border border-dashed border-bord p-7" data-start-card="">
+      <h2 className="text-[17px] font-bold text-ink">{t(locale, 'cockpit.first.title')}</h2>
+      <p className="max-w-[52ch] text-[13.5px] text-inkdim">{t(locale, 'cockpit.first.body')}</p>
+      <div className="mt-1.5 flex gap-2">
+        <ActionButton variant="primary" size="md" onClick={onNewProject}>
+          {t(locale, 'cockpit.first.new')}
+        </ActionButton>
+        <ActionButton variant="neutral" size="md" onClick={onAttach}>
+          {t(locale, 'cockpit.first.attach')}
+        </ActionButton>
+      </div>
     </div>
   );
 }

@@ -20,12 +20,14 @@ export interface ProviderListProps {
 
 function Row({ row, marks, locale }: { readonly row: ProviderViewRow; readonly marks: ProviderMarksStore; readonly locale: Locale }) {
   return (
-    <li className="grid gap-1.5 rounded-card border border-hairline bg-surface px-3 py-2" aria-busy={row.scanning}>
-      <div className="flex items-center gap-2.5">
-        <ProviderMark provider={row.markKey} mark={marks.markFor(row.markKey)} />
-        <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{row.name}</span>
+    <li className="grid gap-1.5 border-t border-hairline px-3.5 py-3 first:border-t-0" aria-busy={row.scanning}>
+      <div className="flex items-center gap-3.5">
+        <span className="grid h-[26px] w-[26px] flex-none place-items-center rounded-control border border-hairline bg-raised text-ink">
+          <ProviderMark provider={row.markKey} mark={marks.markFor(row.markKey)} size={15} />
+        </span>
+        <span className="min-w-0 flex-1 truncate font-bold text-ink">{row.name}</span>
         {row.version !== null ? (
-          <span title={row.versionFull ?? undefined} className="max-w-[160px] flex-none truncate font-mono text-[11.5px] text-inkdim">
+          <span title={row.versionFull ?? undefined} className="max-w-[160px] flex-none truncate font-mono text-[12px] text-inkdim">
             {row.version}
           </span>
         ) : null}
@@ -36,7 +38,7 @@ function Row({ row, marks, locale }: { readonly row: ProviderViewRow; readonly m
         )}
       </div>
       {row.binPath !== null ? (
-        <span title={row.binPath} className="block truncate pl-[26px] font-mono text-[11px] text-inkdim">
+        <span title={row.binPath} className="block truncate pl-10 font-mono text-[12px] text-inkdim">
           {row.binPath}
         </span>
       ) : null}
@@ -71,7 +73,7 @@ export function ProviderList({ store, marks, locale }: ProviderListProps) {
       ) : null}
 
       {state.installed.length > 0 ? (
-        <ul className="grid gap-2">
+        <ul className="m-0 list-none overflow-hidden rounded-card border border-hairline bg-surface p-0">
           {state.installed.map((row) => (
             <Row key={row.id} row={row} marks={marks} locale={locale} />
           ))}
@@ -92,7 +94,7 @@ export function ProviderList({ store, marks, locale }: ProviderListProps) {
             {countedLabel(t(locale, 'providers.group'), folded)}
           </button>
           {state.groupOpen ? (
-            <ul className="grid gap-2">
+            <ul className="m-0 list-none overflow-hidden rounded-card border border-hairline bg-surface p-0">
               {state.notInstalled.map((row) => (
                 <Row key={row.id} row={row} marks={marks} locale={locale} />
               ))}

@@ -58,6 +58,16 @@ export interface CandidateRow {
   readonly warnKeys: readonly CandidateWarnKey[];
   /** Whether the separate key-move card shows: selected and `envOverrides` holds `token`. */
   readonly keyMoveCard: boolean;
+  /** The provider's def id; null when discovery does not know it. */
+  readonly provider: string | null;
+  /** The path the account reads from, as the candidate displays it (mono in the row). */
+  readonly displayPath: string;
+  /** The candidate's route billing (A-83a): the row's tag and the Bütçe grouping read it. */
+  readonly billing: 'included' | 'metered' | 'unknown';
+  /** The route rides a key (a compatible endpoint): an included one reads "Abonelik · anahtarla". */
+  readonly viaKey: boolean;
+  /** The sentence under a row that needs the user: a login in the terminal, or "test it after setup". */
+  readonly hintKey: LabelKey | null;
 }
 
 export interface ProviderRow {
@@ -92,6 +102,26 @@ const CANDIDATE_TONE: Readonly<Record<CandidateStatusKey, LampTone>> = {
 
 export const candidateStatusTone = (key: CandidateStatusKey): LampTone => CANDIDATE_TONE[key];
 
+export type ProviderStatus = 'ready' | 'needs_login' | 'not_installed' | 'unknown';
+
+/** Found + logged in is ready, found + logged out needs a login, not found is not installed; a
+ *  missing login probe proves nothing and reads as unknown. Shared by every provider list. Pure. */
+export const providerStatus = (fact: Pick<ProviderFact, 'binPath' | 'loggedIn'>): ProviderStatus =>
+  fact.binPath === null
+    ? 'not_installed'
+    : fact.loggedIn === true
+      ? 'ready'
+      : fact.loggedIn === false
+        ? 'needs_login'
+        : 'unknown';
+
+const CANDIDATE_STATUS_KEY: Readonly<Record<ProviderStatus, CandidateStatusKey>> = {
+  ready: 'candidates.status.ready',
+  needs_login: 'candidates.status.needs_login',
+  not_installed: 'candidates.status.not_installed',
+  unknown: 'candidates.status.unknown',
+};
+
 /** How many candidates the Eklenmemiş list shows: every one not yet added. The Hesaplar dot reads
  *  this same count, so the dot and the list cannot disagree. Pure. */
 export const listedCandidateCount = (facts: readonly Pick<CandidateFact, 'alreadyAdded'>[]): number =>
@@ -112,6 +142,7 @@ export const candidateRows = (
   facts: readonly CandidateFact[],
   selected: string | null,
   importToken: boolean,
+  providers: readonly ProviderFact[] = [],
 ): readonly CandidateRow[] =>
   facts
     .filter((fact) => !fact.alreadyAdded)
@@ -119,11 +150,26 @@ export const candidateRows = (
       const unreadable = fact.warnings.includes('unreadable');
       const isSelected = !unreadable && fact.sourcePath === selected;
       const keyMoveCard = isSelected && fact.envOverrides.includes('token');
+      // A machine-login candidate has no folder to read: its standing is its provider's login
+      // probe (P-53), and a probe that proved nothing is "Doğrulanamadı", never "Hazır".
+      const loginFact = fact.kind === 'machine_login' ? providers.find((provider) => provider.defId === fact.provider) : undefined;
+      const loginStatus: CandidateStatusKey | null =
+        fact.kind !== 'machine_login'
+          ? null
+          : loginFact === undefined
+            ? 'candidates.status.unknown'
+            : CANDIDATE_STATUS_KEY[providerStatus(loginFact)];
       const statusKey: CandidateStatusKey = unreadable
         ? 'candidates.status.unreadable'
         : keyMoveCard && !importToken
           ? 'candidates.status.key_needed'
-          : 'candidates.status.ready';
+          : (loginStatus ?? 'candidates.status.ready');
+      const hintKey: LabelKey | null =
+        statusKey === 'candidates.status.needs_login'
+          ? 'candidates.hint.login'
+          : statusKey === 'candidates.status.unknown'
+            ? 'candidates.hint.testLater'
+            : null;
       return {
         id: fact.sourcePath,
         markKey: fact.provider,
@@ -135,28 +181,13 @@ export const candidateRows = (
         disabledReasonKey: unreadable ? 'candidates.reason.unreadable' : null,
         warnKeys: fact.warnings.includes('env_overrides_login') ? [WARN_KEY.env_overrides_login] : [],
         keyMoveCard,
+        provider: fact.provider,
+        displayPath: fact.displayPath,
+        billing: fact.billing,
+        viaKey: fact.kind === 'compatible_endpoint' || fact.endpointHost !== undefined,
+        hintKey,
       };
     });
-
-export type ProviderStatus = 'ready' | 'needs_login' | 'not_installed' | 'unknown';
-
-/** Found + logged in is ready, found + logged out needs a login, not found is not installed; a
- *  missing login probe proves nothing and reads as unknown. Shared by every provider list. Pure. */
-export const providerStatus = (fact: Pick<ProviderFact, 'binPath' | 'loggedIn'>): ProviderStatus =>
-  fact.binPath === null
-    ? 'not_installed'
-    : fact.loggedIn === true
-      ? 'ready'
-      : fact.loggedIn === false
-        ? 'needs_login'
-        : 'unknown';
-
-const CANDIDATE_STATUS_KEY: Readonly<Record<ProviderStatus, CandidateStatusKey>> = {
-  ready: 'candidates.status.ready',
-  needs_login: 'candidates.status.needs_login',
-  not_installed: 'candidates.status.not_installed',
-  unknown: 'candidates.status.unknown',
-};
 
 /** A provider row of the discovered-accounts list. Pure. */
 export const providerRows = (facts: readonly ProviderFact[]): readonly ProviderRow[] =>
@@ -190,6 +221,8 @@ export interface CandidatesStoreDeps {
   readonly actor: Actor;
   /** Called after a successful adoption, so other mirrors (the Hesaplar dot) can re-read. */
   readonly onAdopted?: () => void;
+  /** The api's change events: an `accounts.changed` re-reads a list that has been read once (U-44). */
+  readonly changes?: (listener: (change: { readonly type: string }) => void) => () => void;
 }
 
 export interface CandidatesStore {
@@ -201,6 +234,9 @@ export interface CandidatesStore {
   setImportToken(on: boolean): void;
   /** Adopts the selected candidate; null when nothing adoptable is selected. */
   adopt(): Promise<SettingsIntentOutcome | null>;
+  /** A row's "Ekle" (U-43): selects the candidate and adopts it at once, unless it needs the
+   *  key-move decision first — then the row only opens its card and a second "Ekle" adopts. */
+  add(id: string): Promise<SettingsIntentOutcome | null>;
   state(): CandidatesState;
   subscribe(listener: () => void): () => void;
 }
@@ -239,7 +275,7 @@ export const createCandidatesStore = (deps: CandidatesStoreDeps): CandidatesStor
   const listeners = new Set<() => void>();
 
   const publish = (): void => {
-    const rows = candidateRows(facts, selected, importToken);
+    const rows = candidateRows(facts, selected, importToken, providerFacts);
     state = {
       loading,
       rows,
@@ -265,7 +301,7 @@ export const createCandidatesStore = (deps: CandidatesStoreDeps): CandidatesStor
     facts = !isQueryFailure(candidateReply) && Array.isArray(candidateReply) ? candidateReply.filter(isFact) : [];
     providerFacts = !isQueryFailure(providerReply) && Array.isArray(providerReply) ? providerReply.filter(isProviderFact) : [];
     // A selection that is no longer listed (added elsewhere, vanished on rescan) falls away.
-    if (selected !== null && !candidateRows(facts, selected, false).some((row) => row.id === selected)) {
+    if (selected !== null && !candidateRows(facts, selected, false, providerFacts).some((row) => row.id === selected)) {
       selected = null;
       importToken = false;
     }
@@ -274,11 +310,47 @@ export const createCandidatesStore = (deps: CandidatesStoreDeps): CandidatesStor
     publish();
   };
 
+  deps.changes?.((change) => {
+    if (change.type === 'accounts.changed' && loaded && !loading) void read(false);
+  });
+
+  const adopt = async (): Promise<SettingsIntentOutcome | null> => {
+    const row = candidateRows(facts, selected, importToken, providerFacts).find((entry) => entry.selected);
+    const fact = facts.find((entry) => entry.sourcePath === row?.id);
+    if (row === undefined || fact === undefined || adopting) return null;
+    adopting = true;
+    publish();
+    const command: Command = {
+      type: 'account.adopt',
+      sourcePath: fact.sourcePath,
+      label: labelOf(fact.displayPath),
+      ...(importToken ? { importToken: true } : {}),
+    };
+    const result = await api.command(actor, command);
+    const outcome: SettingsIntentOutcome = {
+      command: command.type,
+      result,
+      labelKey: commandResultKey(command.type, result),
+    };
+    lastOutcome = outcome;
+    adopting = false;
+    if (result.ok) {
+      selected = null;
+      importToken = false;
+      publish();
+      await read(true);
+      onAdopted?.();
+    } else {
+      publish();
+    }
+    return outcome;
+  };
+
   return {
     load: () => read(false),
     rescan: () => read(true),
     select: (id) => {
-      if (id !== null && !candidateRows(facts, null, false).some((row) => row.id === id && row.selectable)) return;
+      if (id !== null && !candidateRows(facts, null, false, providerFacts).some((row) => row.id === id && row.selectable)) return;
       selected = id === selected ? null : id;
       importToken = false;
       publish();
@@ -287,37 +359,19 @@ export const createCandidatesStore = (deps: CandidatesStoreDeps): CandidatesStor
       importToken = on;
       publish();
     },
-    adopt: async () => {
-      const row = candidateRows(facts, selected, importToken).find((entry) => entry.selected);
-      const fact = facts.find((entry) => entry.sourcePath === row?.id);
-      if (row === undefined || fact === undefined || adopting) return null;
-      adopting = true;
-      publish();
-      const command: Command = {
-        type: 'account.adopt',
-        sourcePath: fact.sourcePath,
-        label: labelOf(fact.displayPath),
-        ...(importToken ? { importToken: true } : {}),
-      };
-      const result = await api.command(actor, command);
-      const outcome: SettingsIntentOutcome = {
-        command: command.type,
-        result,
-        labelKey: commandResultKey(command.type, result),
-      };
-      lastOutcome = outcome;
-      adopting = false;
-      if (result.ok) {
-        selected = null;
+    add: async (id) => {
+      const row = candidateRows(facts, null, false, providerFacts).find((entry) => entry.id === id);
+      if (row === undefined || !row.selectable) return null;
+      if (selected !== id) {
+        selected = id;
         importToken = false;
         publish();
-        await read(true);
-        onAdopted?.();
-      } else {
-        publish();
+        // A candidate whose token overrides the login waits for the user's key-move choice.
+        if (candidateRows(facts, selected, false, providerFacts).some((entry) => entry.id === id && entry.keyMoveCard)) return null;
       }
-      return outcome;
+      return adopt();
     },
+    adopt,
     state: () => state,
     subscribe: (listener) => {
       listeners.add(listener);

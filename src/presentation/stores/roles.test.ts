@@ -8,7 +8,7 @@ import type { Api } from '../../api/api';
 import type { Command } from '../../api/commands';
 import type { AccountModelsView, Query, RoleListItem, SettingsAccountsView, SettingsBindingView } from '../../api/queries';
 
-import { createRolesStore, effortOptions, selectableModels, styleSettings, workStyle } from './roles';
+import { createRolesStore, effortOptions, selectableModels, styleChoices, styleSettings, styleStanding, workStyle } from './roles';
 
 type BindingSave = Extract<Command, { readonly type: 'binding.save' }>;
 
@@ -382,5 +382,31 @@ describe('U-33: unset styles and the apply-all line', () => {
       { type: 'binding.save', role: 'developer', accounts: [{ accountId: 'a1' }, { accountId: 'a2' }], tier: 'balanced', thinking: { level: 'balanced' } },
       { type: 'binding.save', role: 'planner', accounts: [{ accountId: 'a1', model: 'atlas-max' }], tier: 'strong', thinking: { level: 'deep' } },
     ]);
+  });
+});
+
+describe('U-43: the work-style Listbox and the drag order', () => {
+  it('U-43: a role row offers Hızlı · Dengeli · Özenli with its recommended style tagged', () => {
+    expect(styleChoices({ recommended: 'careful' })).toEqual([
+      { style: 'fast', recommended: false },
+      { style: 'balanced', recommended: false },
+      { style: 'careful', recommended: true },
+    ]);
+  });
+
+  it('U-43: the button reads a preset by name, "Özel" for any other pair, and no selection for an unset role', () => {
+    expect(styleStanding('balanced')).toBe('balanced');
+    expect(styleStanding('custom')).toBe('custom');
+    expect(styleStanding('unset')).toBeNull();
+  });
+
+  it('U-43: dropping an account on another slot saves every role once, with the chain in the new order', async () => {
+    const api = fake();
+    const store = makeStore(api);
+    await store.load();
+    // A drop reports (from, to − from): one call per drop, however many slots it crossed.
+    await store.moveGlobal(1, -1);
+    expect(saves(api)).toHaveLength(3);
+    for (const saved of saves(api)) expect(saved.accounts.map((entry) => entry.accountId)).toEqual(['a2', 'a1']);
   });
 });
