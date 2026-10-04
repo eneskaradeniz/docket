@@ -182,9 +182,14 @@ export const LABEL_KEYS = [
   'accounts.unadded',
   'accounts.unadded.one',
   'accounts.unadded.see',
-  'account.window.five_hour',
-  'account.window.week',
-  'account.window.month',
+  // U-51: the Hesaplar section's own words — the helper line under the header, the no-data card
+  // line, the five-account fold and the limits popover's title and tightest mark.
+  'accounts.barHint',
+  'accounts.noLimit',
+  'accounts.more',
+  'accounts.less',
+  'accounts.tightest',
+  'accounts.limits',
   // Account view (U-20): the windows' blocks, the active-work rows, the limit-behaviour band.
   'account.back',
   'account.loading',
