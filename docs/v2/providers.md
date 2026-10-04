@@ -381,7 +381,7 @@ before. The removed definitions stay reachable at the git tag `providers-extende
   5. **Generated docs:** the README provider matrix is regenerated from the registry (P-36).
 - **P-47a** (amends P-47 step 2, 2026-10-03, review of #738) A production table never carries a fixture row: no entry keyed by a neutral id (`acp-x`, `cli-x`, …) and no text copied from a removed provider sits in a table the product reads. A table-driven mechanism that loses its last real provider is exercised by giving the adapter a test table through an **optional** factory option (e.g. `launches` for the ACP session catalog, `commands` for the CLI model-command catalog) whose default is the built-in table; adding such an option is the one signature change step 2 allows.
 
-## Quota reading, billing truth and machine-login accounts (P-48 … P-53)
+## Quota reading, billing truth and machine-login accounts (P-48 … P-56)
 
 Decisions of 2026-10-04 after the operator's first live setup: no account showed a limit (nothing
 ever called `pollQuota`, and the Claude probe ignored the account's config directory), a z.ai coding
@@ -434,4 +434,27 @@ export interface QuotaProbe {
   that provider with no `identityDir` exists. Adopting it creates a subscription account with no
   `identityDir` (the CLI's own login on this machine). An installed provider is therefore always
   listed — a missing scanner can no longer make it invisible.
+- **P-54** (login probe by a JSON key; amends P-45; 2026-10-04, #764, from research #763) A definition
+  may declare an `authProbe` that reads one JSON file: `jsonKey: { homeEnv, homeDir, file, key? }`. The
+  path is `<homeEnv's value, else <user home>/<homeDir>>/<file>`. The file may be JSONC (leading `//` and
+  `/* */` comments are stripped before parsing). With `key`: that top-level key holding a non-empty array
+  or object = logged in; the key absent, empty or null = not logged in. Without `key`: the top-level
+  object having at least one entry = logged in, `{}` = not. A missing file = not logged in; an
+  unparseable file or a wrong shape = unknown. Only the emptiness of the named key (or the entry count)
+  is read — never a name inside it, never a value — so no credential reaches a log, and presence does
+  not prove the credential is still valid. Environment tokens never count (P-48). Used by `copilot`
+  (`homeEnv: 'COPILOT_HOME'`, `homeDir: '.copilot'`, `file: 'config.json'`, `key: 'loggedInUsers'`) and
+  `opencode` (`homeEnv: 'XDG_DATA_HOME'`, `homeDir: '.local/share'`, `file: 'opencode/auth.json'`, no
+  key).
+- **P-55** (`is-authenticated-json`; amends P-45) The `cursor` definition's probe runs `cursor-agent
+  status --format json` and reads only the boolean `isAuthenticated`: `true` = logged in, `false` = not
+  logged in, anything else (missing key, non-boolean, unparseable output, a failed run) = unknown. No
+  other field is read — the object also carries account data (`userInfo`), which never reaches a log.
+  The probe needs no browser and spends no quota (P-45: safe without a login).
+- **P-56** (weak presence signal; amends P-45) The `agy` definition's probe uses a presence file with
+  `absent: 'unknown'`: `~/.gemini/antigravity-cli/antigravity-oauth-token` existing = logged in; missing
+  = unknown, never not-logged-in, because the CLI's documentation says its credentials may live only in
+  the OS keyring. Only the file's presence is read, never its content; presence does not prove the
+  credential is still valid, and whether a logout removes the file is unverified. `homeEnv` is optional
+  for a presence rule (this CLI documents no home override); the existing presence rules are unchanged.
 
