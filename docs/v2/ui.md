@@ -479,6 +479,18 @@ being reset.
   candidate's models are unknown before adoption). Anasayfa's "Var olan projeyi bağla" opens the U-40
   page (its "Var olan klasör" card is the default). U-35's completion moment and inline attach form
   and U-40's wizard entry are superseded by U-42: the wizard ends on Anasayfa.
+- **U-45** (amends U-42 and U-43; 2026-10-04, #759; approved prototype `docket-tasarim/kurulum-v3/index.html` →
+  accounts()) AccountGroups splits the visible accounts into two collapsible sections, in the wizard's Hesaplar
+  step and in Settings → Hesaplar alike: **Bulunanlar** (status ready) and **Hatalı ve bulunamayanlar** (needs
+  login or Doğrulanamadı). Each header is a button with `aria-expanded` and `aria-controls`, a turning chevron,
+  the name and "n hesap"; Enter and Space toggle it. Bulunanlar starts open, Hatalı ve bulunamayanlar starts
+  closed and, while closed, shows a summary after its count ("n giriş gerekli · m doğrulanamadı", each part
+  omitted at zero, with the status lamp colours). The open state lives in the screen's state: it survives
+  "Yeniden tara" and re-renders, not a reload. An empty section is not drawn. Inside a section the
+  per-assistant groups, rows, selection, ✎ and Test et are unchanged (U-42, U-43); the rows of a closed
+  section are hidden and not focusable. The toolbar label "Bulunanlar · n hesap · m asistan" becomes
+  "Taranan · n hesap · m asistan" (EN "Scanned"; section names EN "Found" and "Failed or not found").
+  Settings' "Eklenmemiş" list stays as it is. Out of scope: a row for an assistant that is not installed.
 - **U-34** (discovered accounts) The candidates (`accounts.candidates`) and the discovered
   providers appear in the wizard's Hesaplar step and under Settings → Hesaplar → "Eklenmemiş":
   a row per candidate with mark, label, status and selection. `unreadable` disables the row with
