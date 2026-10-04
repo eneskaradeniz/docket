@@ -396,6 +396,9 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
   let finishing = false;
   let finishPhase: FinishPhase | null = null;
   let finishError: FinishError | null = null;
+  /** Where the next finish starts: a retry resumes at the phase the run stopped on, so a phase
+   *  that already completed is never walked or written again (U-49). */
+  let finishResume: FinishPhase = 'accounts';
   let facts: readonly CandidateFact[] = [];
   let providerFacts: readonly ProviderFact[] = [];
   let existing: readonly SettingsAccountView[] = [];
@@ -683,10 +686,11 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
   };
 
   // `accounts.changed` — an adoption, a removal or a quota poll elsewhere: the lists the wizard
-  // shows are read again, and a candidate's quota with them. A finish in flight or handing off
-  // owns the window; its own writes never re-read under it.
+  // shows are read again, and a candidate's quota with them. A finish in flight, stopped on its
+  // failed line or handing off owns the window: a re-read there could drop an already-adopted
+  // candidate out of the selection under the retry that must resume from it (U-49).
   deps.changes?.((change) => {
-    if (change.type !== 'accounts.changed' || !visible || !loaded || loading || finishing || finished !== null) return;
+    if (change.type !== 'accounts.changed' || !visible || !loaded || loading || finishing || finishPhase !== null || finished !== null) return;
     void (async () => {
       await read(false);
       quotas.clear();
@@ -716,90 +720,103 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
     finishing = true;
     lastOutcome = null;
     finishError = null;
-    finishPhase = 'accounts';
+    // A fresh run walks from the accounts; a retry picks the run up where it stopped, so the
+    // lines before the failure keep their checks and their writes (U-49).
+    finishPhase = finishResume;
     publish();
     const readyCount = rowsOf().filter((row) => row.selected && row.statusKey === 'candidates.status.ready').length;
-    // Adopt in list order; a stored account keeps its id.
+    // Every chosen entry's account id, read without writing anything: a stored account is its
+    // own id, an adopted one comes from the run's memo. The accounts phase adopts only what is
+    // still missing — a retry can never produce a second copy of an account.
+    const chosen = entries().filter((candidate) => selection.includes(candidate.key));
     const ids = new Map<string, string>();
-    for (const entry of entries().filter((candidate) => selection.includes(candidate.key))) {
-      if (entry.fact === null) {
-        ids.set(entry.key, entry.key);
-        continue;
+    for (const entry of chosen) {
+      if (entry.fact === null) ids.set(entry.key, entry.key);
+      else {
+        const adopted = adoptedIds.get(entry.key);
+        if (adopted !== undefined) ids.set(entry.key, adopted);
       }
-      const adopted = adoptedIds.get(entry.key);
-      if (adopted !== undefined) {
-        ids.set(entry.key, adopted);
-        continue;
+    }
+    if (finishPhase === 'accounts') {
+      // Adopt in list order; a stored account keeps its id.
+      for (const entry of chosen) {
+        if (ids.has(entry.key)) continue;
+        const command: Command = {
+          type: 'account.adopt',
+          sourcePath: entry.fact?.sourcePath ?? entry.key,
+          label: entry.settings.label,
+          ...(importTokens.has(entry.key) ? { importToken: true } : {}),
+        };
+        const result = await api.command(actor, command);
+        if (!result.ok || result.id === undefined) {
+          failWith('accounts', outcomeOf(command, result.ok ? { ok: false, code: 'not_found' } : result));
+          return;
+        }
+        adoptedIds.set(entry.key, result.id);
+        ids.set(entry.key, result.id);
       }
-      const command: Command = {
-        type: 'account.adopt',
-        sourcePath: entry.fact.sourcePath,
-        label: entry.settings.label,
-        ...(importTokens.has(entry.key) ? { importToken: true } : {}),
-      };
-      const result = await api.command(actor, command);
-      if (!result.ok || result.id === undefined) {
-        failWith('accounts', outcomeOf(command, result.ok ? { ok: false, code: 'not_found' } : result));
-        return;
-      }
-      adoptedIds.set(entry.key, result.id);
-      ids.set(entry.key, result.id);
+      finishPhase = 'order';
+      finishResume = 'order';
+      publish();
     }
 
-    // The chain is written before the budget: the progress lines check in their own order —
-    // the accounts exist, then the order binds every role (A-49), then the drafts land.
-    finishPhase = 'order';
-    publish();
-    const rolesReply: unknown = await api.query({ type: 'roles.list' });
-    if (isQueryFailure(rolesReply)) {
-      failWith('order', { command: 'binding.save', result: rolesReply, labelKey: queryFailureKey(rolesReply) });
-      return;
-    }
-    const roles = Array.isArray(rolesReply) ? rolesReply.filter(isRole) : [];
-    const chain = selection.flatMap((key) => {
-      const id = ids.get(key);
-      return id === undefined ? [] : [{ accountId: id, model: null }];
-    });
-    for (const role of roles) {
-      const { tier, thinking } = styleSettings(recommendedWorkStyle(role.id));
-      const command = bindingCommand(role.id, chain, tier, thinking);
-      const result = await api.command(actor, command);
-      if (!result.ok) {
-        failWith('order', outcomeOf(command, result));
+    if (finishPhase === 'order') {
+      // The chain is written before the budget: the progress lines check in their own order —
+      // the accounts exist, then the order binds every role (A-49), then the drafts land.
+      const rolesReply: unknown = await api.query({ type: 'roles.list' });
+      if (isQueryFailure(rolesReply)) {
+        failWith('order', { command: 'binding.save', result: rolesReply, labelKey: queryFailureKey(rolesReply) });
         return;
       }
-    }
-
-    // The drafts land on the stored accounts: only what differs from what is stored.
-    finishPhase = 'budget';
-    publish();
-    const accountsReply: unknown = await api.query({ type: 'settings.accounts' });
-    if (isQueryFailure(accountsReply)) {
-      failWith('budget', { command: 'account.save', result: accountsReply, labelKey: queryFailureKey(accountsReply) });
-      return;
-    }
-    const stored = isAccountsView(accountsReply) ? accountsReply.accounts.filter(isAccountView) : [];
-    for (const entry of selectedEntries()) {
-      const id = ids.get(entry.key);
-      const real = stored.find((view) => view.id === id);
-      if (real === undefined) {
-        failWith('budget', outcomeOf({ type: 'account.save', provider: '', label: '', authMode: '' }, { ok: false, code: 'not_found' }));
-        return;
-      }
-      for (const command of settingsCommands(real, entry.settings)) {
+      const roles = Array.isArray(rolesReply) ? rolesReply.filter(isRole) : [];
+      const chain = selection.flatMap((key) => {
+        const id = ids.get(key);
+        return id === undefined ? [] : [{ accountId: id, model: null }];
+      });
+      for (const role of roles) {
+        const { tier, thinking } = styleSettings(recommendedWorkStyle(role.id));
+        const command = bindingCommand(role.id, chain, tier, thinking);
         const result = await api.command(actor, command);
         if (!result.ok) {
-          failWith('budget', outcomeOf(command, result));
+          failWith('order', outcomeOf(command, result));
           return;
         }
       }
+      finishPhase = 'budget';
+      finishResume = 'budget';
+      publish();
     }
 
-    // The leave itself is the last line: its spinner stands while the handoff is prepared, then
-    // the shell opens Anasayfa with the toast, the window fades over it and `ackFinish` takes it
-    // down — the line's check is the finished flag itself.
-    finishPhase = 'home';
-    publish();
+    if (finishPhase === 'budget') {
+      // The drafts land on the stored accounts: only what differs from what is stored.
+      const accountsReply: unknown = await api.query({ type: 'settings.accounts' });
+      if (isQueryFailure(accountsReply)) {
+        failWith('budget', { command: 'account.save', result: accountsReply, labelKey: queryFailureKey(accountsReply) });
+        return;
+      }
+      const stored = isAccountsView(accountsReply) ? accountsReply.accounts.filter(isAccountView) : [];
+      for (const entry of selectedEntries()) {
+        const id = ids.get(entry.key);
+        const real = stored.find((view) => view.id === id);
+        if (real === undefined) {
+          failWith('budget', outcomeOf({ type: 'account.save', provider: '', label: '', authMode: '' }, { ok: false, code: 'not_found' }));
+          return;
+        }
+        for (const command of settingsCommands(real, entry.settings)) {
+          const result = await api.command(actor, command);
+          if (!result.ok) {
+            failWith('budget', outcomeOf(command, result));
+            return;
+          }
+        }
+      }
+      // The leave itself is the last line: its spinner stands while the handoff is prepared,
+      // then the shell opens Anasayfa with the toast, the window fades over it and `ackFinish`
+      // takes it down — the line's check is the finished flag itself.
+      finishPhase = 'home';
+      publish();
+    }
+
     finishing = false;
     completed = true;
     finished = { accounts: readyCount };
@@ -859,9 +876,11 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
       const before = stepBefore(step);
       if (before === null) return;
       step = before;
-      // Leaving the step drops a stopped finish's list with it (U-49).
+      // Leaving the step drops a stopped finish's list with it; the next finish is a fresh run
+      // (the adoption memo still holds, so it adopts nothing twice) (U-49).
       finishPhase = null;
       finishError = null;
+      finishResume = 'accounts';
       publish();
     },
     goTo: (target) => {
@@ -870,6 +889,7 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
       step = target;
       finishPhase = null;
       finishError = null;
+      finishResume = 'accounts';
       publish();
     },
     select: (key) => {

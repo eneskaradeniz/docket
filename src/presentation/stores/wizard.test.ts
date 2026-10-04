@@ -800,6 +800,35 @@ describe('wizard store (U-35, U-42)', () => {
     expect(bundle.api.commands.filter((command) => command.type === 'account.adopt')).toHaveLength(2);
   });
 
+  it('U-49: retry resumes from the failed phase without adopting twice', async () => {
+    const bundle = setup([claudeA, claudeB]);
+    await toAccounts(bundle);
+    await bundle.store.next();
+    await bundle.store.next();
+    expect(bundle.store.state().step).toBe('budget');
+    bundle.api.failOn('binding.save', { ok: false, code: 'unknown_role' });
+    await bundle.store.next();
+    const stopped = bundle.store.state();
+    expect(stopped.finishError?.phase).toBe('order');
+    // The accounts phase completed before the order phase failed: both accounts exist by now.
+    const adopts = bundle.api.commands.filter((command) => command.type === 'account.adopt');
+    expect(adopts).toHaveLength(2);
+    const walk: string[] = [];
+    bundle.store.subscribe(() => {
+      const standing = bundle.store.state();
+      if (!standing.finishing && standing.finishError === null && standing.finished === null) return;
+      const mark = `${standing.finishPhase ?? '-'}${standing.finished !== null ? '+' : standing.finishError !== null ? '!' : ''}`;
+      if (walk[walk.length - 1] !== mark) walk.push(mark);
+    });
+    bundle.api.failOn('binding.save', { ok: true });
+    await bundle.store.next();
+    expect(bundle.store.state().finished).toEqual({ accounts: 2 });
+    // The retry picks the run up at the failed line: no second adoption, no re-walk of the
+    // accounts phase — a duplicate account can never come out of a retry.
+    expect(bundle.api.commands.filter((command) => command.type === 'account.adopt')).toHaveLength(2);
+    expect(walk).toEqual(['order', 'budget', 'home', 'home+']);
+  });
+
   it('U-49: the finished wizard stays mounted for its fade and leaves only on ackFinish', async () => {
     const bundle = setup([claudeA]);
     await toAccounts(bundle);
