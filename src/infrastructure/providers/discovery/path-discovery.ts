@@ -3,7 +3,7 @@
 // the file system is consulted directly, so tests stage real binaries in throwaway trees.
 import type { ChildProcess } from 'node:child_process';
 import { accessSync, constants } from 'node:fs';
-import { readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import type { DiscoveredProvider, ProviderDiscovery } from '../../../application/index';
 import type { LoginStates } from './login-states';
@@ -248,19 +248,115 @@ export const loggedInFromWhoami = (output: string): boolean | null => {
   return typeof account === 'object' && !Array.isArray(account) ? true : null;
 };
 
-/** Presence only: the file is never opened, so no credential content is read, logged or stored. */
+/** The login answer of one JSON file read for the emptiness of a single top-level key (or, with
+ * no key, for whether the top-level object has any entry): a non-empty array or object at the
+ * key is a login, an absent/empty/null one is not, and anything the rule cannot read — an
+ * unparseable body, a top level that is not an object, a key holding neither array nor object —
+ * is unknown. Only that emptiness is read, never a name or a value inside the file, so no
+ * credential can reach a log; and presence never proves the credential is still valid. */
+export const loggedInFromJsonKeyText = (content: string, key: string | undefined): boolean | null => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stripJsoncComments(content));
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
+  const record = parsed as Record<string, unknown>;
+  if (key === undefined) return Object.keys(record).length > 0;
+  const value = record[key];
+  if (value === null || value === undefined) return false;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === 'object') return Object.keys(value as Record<string, unknown>).length > 0;
+  return null; // a value that is neither array nor object names no state the rule can read
+};
+
+/** Strips `//` line and `/* */` block comments so a JSONC config parses; string literals are
+ * copied verbatim, because a `//` inside a value (a URL) is not a comment. */
+const stripJsoncComments = (text: string): string => {
+  let out = '';
+  let i = 0;
+  while (i < text.length) {
+    const ch = text.charAt(i);
+    if (ch === '"') {
+      out += ch;
+      i += 1;
+      while (i < text.length) {
+        const inString = text.charAt(i);
+        out += inString;
+        i += 1;
+        if (inString === '\\' && i < text.length) {
+          out += text.charAt(i);
+          i += 1;
+        } else if (inString === '"') break;
+      }
+      continue;
+    }
+    if (ch === '/' && text.charAt(i + 1) === '/') {
+      while (i < text.length && text.charAt(i) !== '\n') i += 1;
+      continue;
+    }
+    if (ch === '/' && text.charAt(i + 1) === '*') {
+      i += 2;
+      while (i + 1 < text.length && !(text.charAt(i) === '*' && text.charAt(i + 1) === '/')) i += 1;
+      i = Math.min(i + 2, text.length);
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
+};
+
+/** The login answer of a command that prints JSON with an `isAuthenticated` boolean: `true` is a
+ * login and `false` is not, while a missing key, a non-boolean and an unparseable output are
+ * unknown. Nothing else in the object is looked at — it also carries account data, which never
+ * reaches a log. */
+export const loggedInFromIsAuthenticated = (output: string): boolean | null => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(output);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
+  const flag = (parsed as Record<string, unknown>)['isAuthenticated'];
+  return typeof flag === 'boolean' ? flag : null;
+};
+
+/** The file-backed form of the json-key rule: the path comes from the CLI's documented home
+ * override or the user home, a file that cannot be opened is the logged-out answer, and the
+ * emptiness read stays in `loggedInFromJsonKeyText`. Nothing is spawned. */
+const loggedInFromJsonKeyFile = (
+  rule: NonNullable<NonNullable<ProviderDef['authProbe']>['jsonKey']>,
+  env: Readonly<Record<string, string>>,
+  homedir: string,
+): boolean | null => {
+  const override = env[rule.homeEnv];
+  const home = override !== undefined && override !== '' ? override : join(homedir, rule.homeDir);
+  try {
+    return loggedInFromJsonKeyText(readFileSync(join(home, rule.file), 'utf8'), rule.key);
+  } catch {
+    return false;
+  }
+};
+
+/** Presence only: the file is never opened, so no credential content is read, logged or stored.
+ * A rule with `absent: 'unknown'` answers unknown for a missing file — the CLI's credentials may
+ * live only in the OS keyring, so absence decides nothing. */
 const loggedInFromPresenceFile = (
   rule: NonNullable<NonNullable<ProviderDef['authProbe']>['presenceFile']>,
   env: Readonly<Record<string, string>>,
   homedir: string,
-): boolean => {
-  const override = env[rule.homeEnv];
+): boolean | null => {
+  const override = rule.homeEnv !== undefined ? env[rule.homeEnv] : undefined;
   const home = override !== undefined && override !== '' ? override : join(homedir, rule.homeDir);
   try {
-    return statSync(join(home, rule.file)).isFile();
+    if (statSync(join(home, rule.file)).isFile()) return true;
   } catch {
-    return false;
+    // a missing path falls through to the rule's own absent answer
   }
+  return rule.absent === 'unknown' ? null : false;
 };
 
 /** Presence only, over a directory of credential files whose names are not documented: a
@@ -309,6 +405,7 @@ const probeAuth = async (
   homedir: string,
 ): Promise<boolean | null> => {
   if (def.authProbe === undefined) return null;
+  if (def.authProbe.jsonKey !== undefined) return loggedInFromJsonKeyFile(def.authProbe.jsonKey, env, homedir);
   if (def.authProbe.presenceFile !== undefined) return loggedInFromPresenceFile(def.authProbe.presenceFile, env, homedir);
   if (def.authProbe.presenceDir !== undefined) return loggedInFromPresenceDir(def.authProbe.presenceDir, env, homedir);
   if (def.authProbe.acpSession !== undefined) {
@@ -338,6 +435,10 @@ const probeAuth = async (
   if (def.authProbe.parse === 'logged-in-json') {
     // The boolean is the answer on both exit codes; no exit gate, unlike the count parsers above.
     return loggedInFromAuthStatus(outcome.stdout);
+  }
+  if (def.authProbe.parse === 'is-authenticated-json') {
+    // A non-zero exit is a failed run: unknown, never a guessed login or logout.
+    return outcome.exitCode === 0 ? loggedInFromIsAuthenticated(outcome.stdout) : null;
   }
   if (def.authProbe.parse === 'account-null-json') {
     return outcome.exitCode === 0 ? loggedInFromWhoami(outcome.stdout) : null;

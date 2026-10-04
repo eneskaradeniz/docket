@@ -195,6 +195,65 @@ describe('provider definitions (P-1)', () => {
     expect(JSON.stringify(launch)).not.toContain(LAUNCH_INPUT.configDir);
   });
 
+  it('P-54: copilot and opencode declare the documented jsonKey login probes', () => {
+    expect(defById('copilot').authProbe).toEqual({
+      args: [],
+      jsonKey: { homeEnv: 'COPILOT_HOME', homeDir: '.copilot', file: 'config.json', key: 'loggedInUsers' },
+    });
+    expect(defById('opencode').authProbe).toEqual({
+      args: [],
+      jsonKey: { homeEnv: 'XDG_DATA_HOME', homeDir: '.local/share', file: 'opencode/auth.json' },
+    });
+  });
+
+  it('P-55: cursor declares the is-authenticated-json status probe, which opens nothing else', () => {
+    // The status read answers without a browser and without an account (P-45), so the probe
+    // carries no extra environment; only the one boolean is ever read.
+    expect(defById('cursor').authProbe).toEqual({ args: ['status', '--format', 'json'], parse: 'is-authenticated-json' });
+  });
+
+  it('P-56: agy declares a weak presence probe — absent unknown, no home override', () => {
+    // The CLI's credentials may live only in the OS keyring, so a missing token file can never
+    // mean logged out; the def names no homeEnv because the CLI documents none.
+    expect(defById('agy').authProbe).toEqual({
+      args: [],
+      presenceFile: { homeDir: '.gemini/antigravity-cli', file: 'antigravity-oauth-token', absent: 'unknown' },
+    });
+  });
+
+  it('P-54: isProviderDef accepts a well-formed jsonKey probe and rejects malformed ones', () => {
+    expect(
+      isProviderDef({ ...createValidDef(), authProbe: { args: [], jsonKey: { homeEnv: 'P_X_HOME', homeDir: '.p-x', file: 'auth.json', key: 'users' } } }),
+    ).toBe(true);
+    expect(
+      isProviderDef({ ...createValidDef(), authProbe: { args: [], jsonKey: { homeEnv: 'P_X_HOME', homeDir: '.p-x', file: 'auth.json' } } }),
+    ).toBe(true);
+    rejectsWith({ ...createValidDef(), authProbe: { args: [], jsonKey: { homeDir: '.p-x', file: 'auth.json' } } }, 'jsonKey without homeEnv');
+    rejectsWith({ ...createValidDef(), authProbe: { args: [], jsonKey: { homeEnv: 'P_X_HOME', file: 'auth.json' } } }, 'jsonKey without homeDir');
+    rejectsWith({ ...createValidDef(), authProbe: { args: [], jsonKey: { homeEnv: 'P_X_HOME', homeDir: '.p-x' } } }, 'jsonKey without file');
+    rejectsWith(
+      { ...createValidDef(), authProbe: { args: [], jsonKey: { homeEnv: 'P_X_HOME', homeDir: '.p-x', file: 'auth.json', key: '' } } },
+      'jsonKey with a blank key',
+    );
+  });
+
+  it('P-55: isProviderDef accepts the is-authenticated-json parse and rejects an unknown one', () => {
+    expect(isProviderDef({ ...createValidDef(), authProbe: { args: ['status'], parse: 'is-authenticated-json' } })).toBe(true);
+    rejectsWith({ ...createValidDef(), authProbe: { args: ['status'], parse: 'authenticated-text' } }, 'unknown parse kind');
+  });
+
+  it('P-56: isProviderDef accepts a presenceFile without homeEnv and with absent unknown, and rejects a bad absent value', () => {
+    expect(isProviderDef({ ...createValidDef(), authProbe: { args: [], presenceFile: { homeDir: '.p-x', file: 'token', absent: 'unknown' } } })).toBe(true);
+    rejectsWith(
+      { ...createValidDef(), authProbe: { args: [], presenceFile: { homeDir: '.p-x', file: 'token', absent: 'false' } } },
+      'absent false is not a declared behaviour',
+    );
+    rejectsWith(
+      { ...createValidDef(), authProbe: { args: [], presenceFile: { homeEnv: '', homeDir: '.p-x', file: 'token' } } },
+      'blank homeEnv',
+    );
+  });
+
   it('P-1: buildLaunch never places the prompt in argv and carries it on stdin', () => {
     for (const def of BUILTIN_PROVIDER_DEFS) {
       const launch = def.buildLaunch(LAUNCH_INPUT);

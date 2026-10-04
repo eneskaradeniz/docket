@@ -93,10 +93,20 @@ function isProbeEnv(value: unknown): boolean {
   return value === undefined || (isRecord(value) && Object.entries(value).every(([name, v]) => name.length > 0 && typeof v === 'string'));
 }
 
+function isJsonKeyProbe(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!isRecord(value)) return false;
+  if (value['key'] !== undefined && !isNonEmptyString(value['key'])) return false;
+  return isNonEmptyString(value['homeEnv']) && isNonEmptyString(value['homeDir']) && isNonEmptyString(value['file']);
+}
+
 function isPresenceFileProbe(value: unknown): boolean {
   if (value === undefined) return true;
   if (!isRecord(value)) return false;
-  return isNonEmptyString(value['homeEnv']) && isNonEmptyString(value['homeDir']) && isNonEmptyString(value['file']);
+  // A rule that documents no home override carries none; `absent` names exactly one behaviour.
+  if (value['homeEnv'] !== undefined && !isNonEmptyString(value['homeEnv'])) return false;
+  if (value['absent'] !== undefined && value['absent'] !== 'unknown') return false;
+  return isNonEmptyString(value['homeDir']) && isNonEmptyString(value['file']);
 }
 
 function isPresenceDirProbe(value: unknown): boolean {
@@ -123,10 +133,10 @@ export function isProviderDef(value: unknown): value is ProviderDef {
   if (!isAgentDelegate(value['agentDelegate'])) return false;
   if (!isNonEmptyStringArray(value['versionArgs'])) return false;
   const authProbe = value['authProbe'];
-  if (authProbe !== undefined && !(isRecord(authProbe) && isStringArray(authProbe['args']) && isAcpSessionProbe(authProbe['acpSession']) && isPresenceFileProbe(authProbe['presenceFile']) && isPresenceDirProbe(authProbe['presenceDir']) && isProbeEnv(authProbe['env']))) {
+  if (authProbe !== undefined && !(isRecord(authProbe) && isStringArray(authProbe['args']) && isAcpSessionProbe(authProbe['acpSession']) && isJsonKeyProbe(authProbe['jsonKey']) && isPresenceFileProbe(authProbe['presenceFile']) && isPresenceDirProbe(authProbe['presenceDir']) && isProbeEnv(authProbe['env']))) {
     return false;
   }
-  if (isRecord(authProbe) && authProbe['parse'] !== undefined && authProbe['parse'] !== 'credential-count' && authProbe['parse'] !== 'logged-out-text' && authProbe['parse'] !== 'provider-key-present' && authProbe['parse'] !== 'logged-in-json' && authProbe['parse'] !== 'account-null-json') {
+  if (isRecord(authProbe) && authProbe['parse'] !== undefined && authProbe['parse'] !== 'credential-count' && authProbe['parse'] !== 'logged-out-text' && authProbe['parse'] !== 'provider-key-present' && authProbe['parse'] !== 'logged-in-json' && authProbe['parse'] !== 'is-authenticated-json' && authProbe['parse'] !== 'account-null-json') {
     return false;
   }
   if (isRecord(authProbe) && authProbe['parse'] === 'logged-out-text' && !isNonEmptyString(authProbe['loggedOutText'])) return false;
