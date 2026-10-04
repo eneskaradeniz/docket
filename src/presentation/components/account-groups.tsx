@@ -3,16 +3,27 @@
 // and the selection circle where the host selects (the wizard's Hesaplar; Settings has none). The
 // same component draws discovery candidates and stored accounts: the host maps its rows to
 // `AccountRowView`. Extras a host owns (the key-move card, the test line) are passed per row.
+// With `sections` the list splits into U-45's two collapsible sections — Bulunanlar over the ready
+// rows, Hatalı ve bulunamayanlar over the rest; the screen owns the open standing.
 import type { ReactNode } from 'react';
 
 import { t, type Locale } from '../labels/t';
-import { billingTag, type AccountGroup, type Billing, type GroupableRow } from '../stores/account-groups';
-import { candidateStatusTone, type CandidateRow, type LampTone } from '../stores/candidates';
+import {
+  billingTag,
+  sectionSummary,
+  splitSections,
+  type AccountGroup,
+  type AccountSectionKind,
+  type Billing,
+  type SectionOpen,
+  type SectionableRow,
+} from '../stores/account-groups';
+import { candidateStanding, candidateStatusTone, type CandidateRow, type LampTone } from '../stores/candidates';
 import { InfoBubble } from './info-bubble';
 import { ProviderMark, type ProviderMarkProps } from './provider-mark';
 import { StatusLamp } from './status-lamp';
 
-export interface AccountRowView extends GroupableRow {
+export interface AccountRowView extends SectionableRow {
   readonly id: string;
   readonly label: string;
   readonly billing: Billing;
@@ -44,6 +55,7 @@ export const candidateRowView = <R extends CandidateRow>(
 ): AccountRowView & { readonly source: R } => ({
   id: row.id,
   providerId: row.provider,
+  standing: candidateStanding(row.statusKey),
   label,
   billing: row.billing,
   viaKey: row.viaKey,
@@ -71,6 +83,12 @@ export interface AccountGroupsProps<R extends AccountRowView> {
   readonly trailing?: (row: R) => ReactNode;
   /** Content under the row's own lines (a test result, the key-move card). */
   readonly below?: (row: R) => ReactNode;
+  /** Present = the two collapsible sections (U-45) over the same rows; absent = one flat list
+   *  (Settings' Eklenmemiş). The screen owns the open standing, so it survives "Yeniden tara". */
+  readonly sections?: {
+    readonly open: SectionOpen;
+    readonly onToggle: (kind: AccountSectionKind) => void;
+  };
 }
 
 const Pencil = () => (
@@ -174,30 +192,99 @@ function Row<R extends AccountRowView>({ row, locale, onToggle, onEdit, trailing
   );
 }
 
-export function AccountGroups<R extends AccountRowView>({ locale, groups, markFor, nameOf, onToggle, onEdit, trailing, below }: AccountGroupsProps<R>) {
+/** One collapsible section (U-45): a header button — a turning chevron, the name, "n hesap", and
+ *  the closed failed section's summary with the lamp colours — over the same cards. The panel's
+ *  `hidden` keeps a closed section's rows off the screen and out of the tab order. */
+function Section<R extends SectionableRow>({
+  kind,
+  groups,
+  locale,
+  open,
+  onToggle,
+  cards,
+}: {
+  readonly kind: AccountSectionKind;
+  readonly groups: readonly AccountGroup<R>[];
+  readonly locale: Locale;
+  readonly open: boolean;
+  readonly onToggle: (kind: AccountSectionKind) => void;
+  readonly cards: readonly ReactNode[];
+}) {
+  // An empty section is not drawn.
+  if (groups.length === 0) return null;
+  const buttonId = `accounts-section-${kind}`;
+  const panelId = `${buttonId}-body`;
+  const count = groups.reduce((sum, group) => sum + group.rows.length, 0);
+  const summary = kind === 'failed' && !open ? sectionSummary(groups.flatMap((group) => group.rows)) : null;
+  return (
+    <div role="region" aria-labelledby={buttonId} data-account-section={kind} className="grid gap-2">
+      <button
+        type="button"
+        id={buttonId}
+        aria-expanded={open}
+        aria-controls={panelId}
+        onClick={() => onToggle(kind)}
+        className="flex w-full flex-wrap items-center gap-2 rounded-control px-2 py-[7px] text-left text-[13px] font-extrabold text-ink hover:bg-raised"
+      >
+        <svg
+          viewBox="0 0 16 16"
+          aria-hidden="true"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className={`h-3.5 w-3.5 flex-none text-inkdim transition-transform motion-reduce:transition-none ${open ? '' : '-rotate-90'}`}
+        >
+          <path d="m4 6 4 4 4-4" />
+        </svg>
+        <span>{t(locale, kind === 'found' ? 'accountGroups.found' : 'accountGroups.failed')}</span>
+        <span className="text-[12.5px] font-medium text-inkdim">{t(locale, 'accountGroups.count').replace('{n}', String(count))}</span>
+        {summary === null ? null : (
+          <span className="ml-auto flex min-w-0 flex-wrap items-center gap-3">
+            {summary.needsLogin > 0 ? <StatusLamp tone="signal">{t(locale, 'accountGroups.summary.needsLogin').replace('{n}', String(summary.needsLogin))}</StatusLamp> : null}
+            {summary.unverified > 0 ? <StatusLamp tone="dim">{t(locale, 'accountGroups.summary.unverified').replace('{n}', String(summary.unverified))}</StatusLamp> : null}
+          </span>
+        )}
+      </button>
+      <div id={panelId} hidden={!open}>
+        <div className="grid gap-2.5">{cards}</div>
+      </div>
+    </div>
+  );
+}
+
+export function AccountGroups<R extends AccountRowView>({ locale, groups, markFor, nameOf, onToggle, onEdit, trailing, below, sections }: AccountGroupsProps<R>) {
+  const cards = (list: readonly AccountGroup<R>[]): readonly ReactNode[] =>
+    list.map((group) => {
+      const name = nameOf(group);
+      return (
+        <section key={group.providerId ?? 'unknown'} role="group" aria-label={name} className="overflow-hidden rounded-card border border-hairline bg-surface" data-account-group={group.providerId ?? ''}>
+          <div className="flex items-center gap-2.5 border-b border-hairline bg-band px-3.5 py-2.5">
+            <span className="grid h-[26px] w-[26px] flex-none place-items-center rounded-control border border-hairline bg-raised text-ink">
+              <ProviderMark provider={group.providerId ?? ''} mark={group.providerId === null ? null : markFor(group.providerId)} size={15} />
+            </span>
+            <span className="font-bold text-ink">{name}</span>
+            <span className="text-[12.5px] text-inkdim">{t(locale, 'accountGroups.count').replace('{n}', String(group.rows.length))}</span>
+          </div>
+          {group.rows.length > 0 ? (
+            <ul className="m-0 list-none p-0">
+              {group.rows.map((row) => (
+                <Row key={row.id} row={row} locale={locale} onToggle={onToggle} onEdit={onEdit} trailing={trailing} below={below} />
+              ))}
+            </ul>
+          ) : null}
+        </section>
+      );
+    });
+  if (sections === undefined) {
+    return <div className="grid gap-2.5" data-account-groups="">{cards(groups)}</div>;
+  }
+  const split = splitSections(groups);
   return (
     <div className="grid gap-2.5" data-account-groups="">
-      {groups.map((group) => {
-        const name = nameOf(group);
-        return (
-          <section key={group.providerId ?? 'unknown'} role="group" aria-label={name} className="overflow-hidden rounded-card border border-hairline bg-surface" data-account-group={group.providerId ?? ''}>
-            <div className="flex items-center gap-2.5 border-b border-hairline bg-band px-3.5 py-2.5">
-              <span className="grid h-[26px] w-[26px] flex-none place-items-center rounded-control border border-hairline bg-raised text-ink">
-                <ProviderMark provider={group.providerId ?? ''} mark={group.providerId === null ? null : markFor(group.providerId)} size={15} />
-              </span>
-              <span className="font-bold text-ink">{name}</span>
-              <span className="text-[12.5px] text-inkdim">{t(locale, 'accountGroups.count').replace('{n}', String(group.rows.length))}</span>
-            </div>
-            {group.rows.length > 0 ? (
-              <ul className="m-0 list-none p-0">
-                {group.rows.map((row) => (
-                  <Row key={row.id} row={row} locale={locale} onToggle={onToggle} onEdit={onEdit} trailing={trailing} below={below} />
-                ))}
-              </ul>
-            ) : null}
-          </section>
-        );
-      })}
+      <Section kind="found" groups={split.found} locale={locale} open={sections.open.found} onToggle={sections.onToggle} cards={cards(split.found)} />
+      <Section kind="failed" groups={split.failed} locale={locale} open={sections.open.failed} onToggle={sections.onToggle} cards={cards(split.failed)} />
     </div>
   );
 }

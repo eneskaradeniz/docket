@@ -38,7 +38,7 @@ import {
   type AccountStatus,
   type EditorTab,
 } from '../stores/account-editor';
-import { groupAccountRows, groupTotals, type AccountGroup } from '../stores/account-groups';
+import { SECTION_OPEN_INITIAL, groupAccountRows, groupTotals, toggleSection, type AccountGroup } from '../stores/account-groups';
 import { candidateDot, type CandidatesStore } from '../stores/candidates';
 import type { LocaleStore } from '../stores/locale';
 import { providerDisplayName, type ProvidersStore } from '../stores/providers';
@@ -53,7 +53,7 @@ import {
   type SettingsPanelOrigin,
   type SettingsSection,
 } from '../stores/settings-panel';
-import { settingsAccountRows, type SettingsAccountRow } from '../stores/settings-accounts';
+import { settingsAccountRows, settingsStanding, type SettingsAccountRow } from '../stores/settings-accounts';
 import type { ThemeStore } from '../stores/theme';
 import type { SettingsStore } from '../stores/settings';
 import { failureKey } from '../stores/results';
@@ -233,6 +233,9 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
   // The dismissal of a remove warning is panel-transient (the store exposes no dismiss intent):
   // keyed by the account it was about, so a fresh warning for the same account re-shows the card.
   const [warningDismissedFor, setWarningDismissedFor] = useState<string | null>(null);
+  // The accounts sections' open standing is this screen's: a "Yeniden tara" re-renders it, never
+  // resets it (U-45).
+  const [sectionOpen, setSectionOpen] = useState(SECTION_OPEN_INITIAL);
   // One editor store per open account: the tab starts on Genel each time the dialog opens.
   const editor = useMemo(
     () =>
@@ -347,6 +350,7 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
   const accountView = (row: SettingsAccountRow): AccountRowView & { readonly source: SettingsAccountRow } => ({
     id: row.id,
     providerId: row.providerId,
+    standing: settingsStanding(row.status),
     label: row.label,
     billing: row.billing,
     viaKey: row.viaKey,
@@ -443,6 +447,7 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
         markFor={marks.markFor}
         nameOf={groupName}
         onEdit={(row) => onEnterSubPage(row.id)}
+        sections={{ open: sectionOpen, onToggle: (kind) => setSectionOpen(toggleSection(sectionOpen, kind)) }}
         below={(row) => {
           const account = accounts.find((entry) => entry.id === row.id);
           if (account === undefined) return null;

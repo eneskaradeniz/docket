@@ -25,7 +25,7 @@ import { StatusLamp } from '../components/status-lamp';
 import { WindowFrame, WindowTitle } from '../components/window-frame';
 import { policyLabelKey, createAccountEditorStore, type LimitPolicy } from '../stores/account-editor';
 import { CAP_SCOPES, type CapScope } from '../stores/account-models';
-import { billingTagKey, groupAccountRows, groupTotals, type AccountGroup } from '../stores/account-groups';
+import { SECTION_OPEN_INITIAL, billingTagKey, groupAccountRows, groupTotals, toggleSection, type AccountGroup } from '../stores/account-groups';
 import { candidateStatusTone } from '../stores/candidates';
 import type { LocaleStore } from '../stores/locale';
 import type { ProviderMarksStore } from '../stores/provider-marks';
@@ -105,6 +105,8 @@ function RailStep({ locale, step, index, standing, onGo }: { readonly locale: Lo
 }
 
 function Accounts({ state, store, locale, marks }: { readonly state: WizardState; readonly store: WizardStore; readonly locale: Locale; readonly marks: ProviderMarksStore }) {
+  // The sections' open standing is this screen's: a "Yeniden tara" re-renders it, never resets it (U-45).
+  const [sectionOpen, setSectionOpen] = useState(SECTION_OPEN_INITIAL);
   const installed = new Set(state.installed.map((entry) => entry.id));
   const groups = groupAccountRows(
     state.rows.map((row) => candidateRowView(row, locale, row.label, row.providerName)),
@@ -117,7 +119,7 @@ function Accounts({ state, store, locale, marks }: { readonly state: WizardState
     <div>
       <div className="mb-3 flex items-center gap-2.5">
         <span className="font-bold text-ink">
-          {t(locale, 'accountGroups.found')}{' '}
+          {t(locale, 'accountGroups.scanned')}{' '}
           <span className="font-medium text-inkdim">
             · {t(locale, 'accountGroups.counts').replace('{accounts}', String(totals.accounts)).replace('{assistants}', String(totals.assistants))}
           </span>
@@ -141,6 +143,7 @@ function Accounts({ state, store, locale, marks }: { readonly state: WizardState
         nameOf={nameOf}
         onToggle={(row) => store.select(row.id)}
         onEdit={(row) => void store.openEditor(row.id)}
+        sections={{ open: sectionOpen, onToggle: (kind) => setSectionOpen(toggleSection(sectionOpen, kind)) }}
         below={(row) =>
           row.source.keyMoveCard ? <KeyMoveCard locale={locale} on={row.source.importToken} onChange={(on) => store.setImportToken(row.id, on)} /> : null
         }

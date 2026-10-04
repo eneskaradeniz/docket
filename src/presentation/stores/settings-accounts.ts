@@ -5,7 +5,7 @@
 // a row whose provider's login probe proved nothing carries the inline "Test et" (U-39).
 import type { AccountDisplay } from './settings';
 import { accountStatus, accountStatusTone, type AccountStatus } from './account-editor';
-import type { Billing, GroupableRow } from './account-groups';
+import type { Billing, GroupableRow, RowStanding } from './account-groups';
 import { providerUnverified } from './account-test';
 import type { LampTone, ProviderRow } from './candidates';
 
@@ -23,6 +23,17 @@ export interface SettingsAccountRow extends GroupableRow {
   /** The provider's login probe proved nothing (U-38): the row offers "Test et". */
   readonly unverified: boolean;
 }
+
+/** A stored account's U-45 standing: its status is the section's only test, so a ready account
+ *  sits in Bulunanlar and reserve, no-data and model-error rows in Hatalı ve bulunamayanlar. */
+const SETTINGS_STANDING: Readonly<Record<AccountStatus, RowStanding>> = {
+  ready: 'ready',
+  reserve: 'other',
+  noData: 'other',
+  modelError: 'other',
+};
+
+export const settingsStanding = (status: AccountStatus): RowStanding => SETTINGS_STANDING[status];
 
 export const settingsAccountRows = (
   accounts: readonly AccountDisplay[],

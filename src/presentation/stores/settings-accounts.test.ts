@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { SettingsAccountView } from '../../api/queries';
-import { settingsAccountRows } from './settings-accounts';
+import { settingsAccountRows, settingsStanding } from './settings-accounts';
 import type { AccountDisplay } from './settings';
 
 const view = (patch: Partial<SettingsAccountView>): SettingsAccountView => ({
@@ -73,5 +73,12 @@ describe('settings account rows (U-43)', () => {
     const [row] = settingsAccountRows([display(failed)], []);
     expect(row?.status).toBe('modelError');
     expect(row?.tone).toBe('error');
+  });
+
+  it('U-45: a stored account reads its section standing from its status — ready is the only one Bulunanlar holds', () => {
+    expect(settingsStanding('ready')).toBe('ready');
+    expect(settingsStanding('reserve')).toBe('other');
+    expect(settingsStanding('noData')).toBe('other');
+    expect(settingsStanding('modelError')).toBe('other');
   });
 });

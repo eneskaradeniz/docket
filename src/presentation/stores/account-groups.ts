@@ -36,6 +36,17 @@ export interface GroupableRow {
   readonly providerId: string | null;
 }
 
+/** The two collapsible sections the visible accounts split into (U-45). */
+export type AccountSectionKind = 'found' | 'failed';
+
+/** A row's section standing (U-45): a ready row sits in Bulunanlar, every other visible row in
+ *  Hatalı ve bulunamayanlar; a needs-login or Doğrulanamadı row also feeds the closed summary. */
+export type RowStanding = 'ready' | 'needsLogin' | 'unverified' | 'other';
+
+export interface SectionableRow extends GroupableRow {
+  readonly standing: RowStanding;
+}
+
 export interface GroupProvider {
   readonly id: string;
   readonly name: string;
@@ -76,4 +87,40 @@ export const groupAccountRows = <R extends GroupableRow>(
 export const groupTotals = <R extends GroupableRow>(groups: readonly AccountGroup<R>[]): { readonly accounts: number; readonly assistants: number } => ({
   accounts: groups.reduce((sum, group) => sum + group.rows.length, 0),
   assistants: groups.length,
+});
+
+/** The sections' open standing; the screen holds it, so it survives "Yeniden tara" and
+ *  re-renders — not a reload (U-45). */
+export type SectionOpen = Readonly<Record<AccountSectionKind, boolean>>;
+
+/** Bulunanlar starts open, Hatalı ve bulunamayanlar starts closed (U-45). */
+export const SECTION_OPEN_INITIAL: SectionOpen = { found: true, failed: false };
+
+/** Flips one section's open standing, leaving the other untouched. Pure. */
+export const toggleSection = (open: SectionOpen, kind: AccountSectionKind): SectionOpen => ({ ...open, [kind]: !open[kind] });
+
+export interface SectionedGroups<R extends SectionableRow> {
+  readonly found: readonly AccountGroup<R>[];
+  readonly failed: readonly AccountGroup<R>[];
+}
+
+/** Splits the groups into the two U-45 sections: found holds the ready rows — and an installed
+ *  assistant's empty card, which never turns "failed" — while needs-login, Doğrulanamadı and every
+ *  other visible row land in failed. A group may appear in both. Pure. */
+export const splitSections = <R extends SectionableRow>(groups: readonly AccountGroup<R>[]): SectionedGroups<R> => ({
+  found: groups.flatMap((group) => {
+    const ready = group.rows.filter((row) => row.standing === 'ready');
+    return ready.length > 0 || group.rows.length === 0 ? [ready.length === group.rows.length ? group : { ...group, rows: ready }] : [];
+  }),
+  failed: groups.flatMap((group) => {
+    const failed = group.rows.filter((row) => row.standing !== 'ready');
+    return failed.length > 0 ? [failed.length === group.rows.length ? group : { ...group, rows: failed }] : [];
+  }),
+});
+
+/** The closed failed section's summary: how many rows need a login and how many read
+ *  Doğrulanamadı; each part is shown only above zero (U-45). Pure. */
+export const sectionSummary = <R extends SectionableRow>(rows: readonly R[]): { readonly needsLogin: number; readonly unverified: number } => ({
+  needsLogin: rows.filter((row) => row.standing === 'needsLogin').length,
+  unverified: rows.filter((row) => row.standing === 'unverified').length,
 });
