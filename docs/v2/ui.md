@@ -566,6 +566,11 @@ being reset.
   a "Hesabı aç" button that opens that account's view (the page U-16's card click used to open), so the sidebar
   keeps a one-step way into the account; the card itself opens only the popover. Esc closes the popover and
   the focus stays on the card.
+- **U-51b** (amends U-51; restores U-16's visible count; 2026-10-05, review of #779) The Hesaplar section shows two
+  account cards at a time with the top of a third peeking beneath them, and the rest scroll inside the section:
+  there is no "+n hesap daha" or "Daha az göster" button. U-51's "five accounts show at first … sit behind a button"
+  is superseded. The section starts collapsed (U-16) and its body keeps the cards' height equal (U-51); the scroll
+  area has no horizontal overflow.
 - **U-34** (discovered accounts) The candidates (`accounts.candidates`) and the discovered
   providers appear in the wizard's Hesaplar step and under Settings → Hesaplar → "Eklenmemiş":
   a row per candidate with mark, label, status and selection. `unreadable` disables the row with
@@ -659,6 +664,7 @@ belongs to the mobile app.
   screen × size × theme):
   - **L-1** The sidebar's left edge is 0 and its width is 240px at every window size — it never
     narrows — identical (±0.5px) on every screen.
+  - **L-1a** (amends L-1; 2026-10-05, U-51) the sidebar is 264 px wide, not 240.
   - **L-2** No page-level horizontal scroll: `documentElement.scrollWidth <= innerWidth`.
   - **L-3** Every visible button, link and input lies fully inside the window and inside its nearest
     clipping ancestor, except inside the declared Kanban scroller; inside the Settings window's content
