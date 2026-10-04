@@ -16,14 +16,14 @@
 // store's `open` decides whether it shows at all (U-35). The badge mirrors the shell store: the
 // cockpit's attention count, present only while attention exists — zero renders nothing, never
 // a zero (U-10). Every user-visible string arrives through a label key (U-1).
-import { useCallback, useEffect, useReducer, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useSyncExternalStore } from 'react';
 
 import { SearchPalette } from '../components/search-palette';
 import { SidebarAccounts } from '../components/sidebar-accounts';
 import { SidebarNav } from '../components/sidebar-nav';
 import { SidebarTree } from '../components/sidebar-tree';
 import { TitleBar } from '../components/title-bar';
-import type { LabelKey } from '../labels/keys';
+import { ToastHost } from '../components/toast-host';
 import { t, type Locale } from '../labels/t';
 import { unaddedRowTarget, type AccountsFrameStore } from '../stores/accounts-frame';
 import { editInSettingsTarget, type AccountViewStore } from '../stores/account-view';
@@ -59,6 +59,7 @@ import {
 import type { CandidatesStore } from '../stores/candidates';
 import type { ProvidersStore } from '../stores/providers';
 import type { ShellStore } from '../stores/shell';
+import { toast, toastStore } from '../stores/toasts';
 import type { ThemeStore } from '../stores/theme';
 import type { UpdateStore } from '../stores/update';
 import type { NewProjectDone, NewProjectStore } from '../stores/new-project';
@@ -72,9 +73,6 @@ import { NewProjectScreen } from './new-project';
 import { RoadmapScreen } from './roadmap';
 import { SettingsPanel, type SettingsSection } from './settings';
 import { WizardScreen } from './wizard';
-
-/** How long the success toast stays before it dismisses itself. */
-const TOAST_MS = 9000;
 
 export interface ShellScreenProps {
   readonly shell: ShellStore;
@@ -331,30 +329,24 @@ export function ShellScreen({
     dispatchNav({ type: 'push', route: next, scroll: mainRef.current?.scrollTop ?? 0 });
   }, []);
   // The Yeni proje page's success (U-40): its machine starts fresh, the new project's view opens
-  // and the one toast shows; no target (the tree does not list it) lands on the cockpit.
-  const [toast, setToast] = useState<{ readonly key: LabelKey; readonly count: number | null } | null>(null);
-  useEffect(() => {
-    if (toast === null) return undefined;
-    const timer = window.setTimeout(() => setToast(null), TOAST_MS);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
+  // and the one toast (U-50) shows; no target (the tree does not list it) lands on the cockpit.
   // The setup finished (U-42): Anasayfa opens directly and the one toast says how many accounts are
   // ready. The wizard hands the result over once.
   const finished = wizardState.finished;
   useEffect(() => {
     if (finished === null) return;
     navigate({ name: 'cockpit' });
-    setToast({ key: 'wizard.finished.toast', count: finished.accounts });
+    toast({ type: 'success', text: t(locale, 'wizard.finished.toast').replace('{n}', String(finished.accounts)) });
     wizard.ackFinish();
-  }, [finished, navigate, wizard]);
+  }, [finished, navigate, wizard, locale]);
   const finishNewProject = useCallback(
     (done: NewProjectDone): void => {
       newProject.reset();
       const target = done.target;
       navigate(target === null ? { name: 'cockpit' } : target.kind === 'roadmap' ? { name: 'roadmap', project: target.project } : { name: 'board', repo: target.repo });
-      setToast({ key: done.toastKey, count: null });
+      toast({ type: 'success', text: t(locale, done.toastKey) });
     },
-    [newProject, navigate],
+    [newProject, navigate, locale],
   );
   /** Vazgeç: back where the page was opened from. */
   const cancelNewProject = useCallback((): void => {
@@ -571,28 +563,10 @@ export function ShellScreen({
         }}
       />
 
-      {toast !== null ? (
-        <div className="pointer-events-none fixed inset-x-0 bottom-5 z-40 grid place-items-center px-4">
-          <div
-            role="status"
-            data-toast=""
-            className="pointer-events-auto flex max-w-[560px] items-start gap-3 rounded-card border border-bord bg-raised px-3.5 py-2.5 text-[13px] text-ink"
-          >
-            <span>{t(locale, toast.key).replace('{n}', String(toast.count ?? ''))}</span>
-            <button
-              type="button"
-              onClick={() => setToast(null)}
-              aria-label={t(locale, 'newProject.toast.dismiss')}
-              title={t(locale, 'newProject.toast.dismiss')}
-              className="flex-none rounded-control text-inkdim hover:text-ink"
-            >
-              ×
-            </button>
-          </div>
-        </div>
-      ) : null}
-
       <WizardScreen store={wizard} locale={locale} localeStore={localeStore} themeStore={themeStore} marks={marks} />
+
+      {/* The one toast surface (U-50), above every overlay the shell mounts. */}
+      <ToastHost store={toastStore} locale={locale} />
     </div>
   );
 }

@@ -100,3 +100,25 @@
     transform: translateX(340%);
   }
 }
+
+/* The toast's two legs (U-50): the card slides in from the right; its progress line drains from
+   full to empty over the toast's own duration (set inline per toast), holding still under a
+   hover or a focus through the play-state the host pauses with. */
+@keyframes toast-in {
+  from {
+    transform: translateX(28px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+@keyframes toast-drain {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}

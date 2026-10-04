@@ -569,7 +569,7 @@ export const TR: LabelBundle = {
   'newProject.cancel': 'Vazgeç',
   'newProject.attach': 'Bağla',
   'newProject.created': "Proje oluşturuldu. Test komutlarını .docket/repo.yaml'a yaz; yazılana kadar test kapısı bekler.",
-  'newProject.toast.dismiss': 'Kapat',
+  'toast.close': 'Kapat',
   'success.account.test': 'Test tamamlandı.',
   'editor.status.modelError': 'Model hatası',
   'accountTest.button': 'Test et',

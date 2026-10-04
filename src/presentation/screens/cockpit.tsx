@@ -5,7 +5,6 @@
 // that says what it means. The screen renders the store's view and forwards clicks; ages render
 // from stamped times through the store's injected clock, and every string is a label key (U-1).
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import type { CommandResult } from '../../api/commands';
 import { t, type Locale } from '../labels/t';
 import { CockpitAttentionRow } from '../components/cockpit-attention';
 import { CockpitClosedList } from '../components/cockpit-closed';
@@ -28,6 +27,7 @@ import {
 } from '../stores/cockpit';
 import { commandResultKey } from '../stores/results';
 import type { ProviderMarksStore } from '../stores/provider-marks';
+import { toast } from '../stores/toasts';
 
 export interface CockpitScreenProps {
   readonly store: CockpitStore;
@@ -83,11 +83,12 @@ export function CockpitScreen({ store, marks, locale, onOpenWorkOrder, onOpenPro
     void store.load();
   }, [store]);
 
-  // The inline answer toasts through the same U-8 mapping every intent uses; the store owns the
+  // The answer toasts (U-50) through the same U-8 mapping every intent uses; the store owns the
   // re-query that must drop the answered row.
-  const [answerResult, setAnswerResult] = useState<CommandResult | null>(null);
   const answer = (ask: CockpitAsk, decision: 'allow' | 'deny'): void => {
-    void store.answerPermission({ runId: ask.runId, askId: ask.askId, decision }).then(setAnswerResult);
+    void store.answerPermission({ runId: ask.runId, askId: ask.askId, decision }).then((result) => {
+      toast({ type: result.ok ? 'success' : 'error', text: t(locale, commandResultKey('permission.answer', result)) });
+    });
   };
   const [expanded, setExpanded] = useState({ attention: false, running: false });
 
@@ -178,11 +179,6 @@ export function CockpitScreen({ store, marks, locale, onOpenWorkOrder, onOpenPro
                 ))}
               </ul>
             )}
-            {answerResult !== null ? (
-              <p role="status" className={`text-[13px] ${answerResult.ok ? 'text-proceed' : 'text-error'}`}>
-                {t(locale, commandResultKey('permission.answer', answerResult))}
-              </p>
-            ) : null}
           </section>
 
           <CockpitSection

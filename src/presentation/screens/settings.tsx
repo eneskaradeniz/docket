@@ -23,7 +23,6 @@ import { ActionButton } from '../components/action-button';
 import { AppearanceRows } from '../components/appearance-rows';
 import { KeyMoveCard } from '../components/key-move-card';
 import { MOTION, motionVars } from '../components/motion';
-import { OutcomeNotice } from '../components/outcome-notice';
 import { ProviderList } from '../components/provider-list';
 import { ProviderMark } from '../components/provider-mark';
 import { ChainSection, RoleRowView } from '../components/role-row';
@@ -55,6 +54,7 @@ import {
 } from '../stores/settings-panel';
 import { settingsAccountRows, settingsStanding, type SettingsAccountRow } from '../stores/settings-accounts';
 import type { ThemeStore } from '../stores/theme';
+import { toastOutcome } from '../stores/toasts';
 import type { SettingsStore } from '../stores/settings';
 import { failureKey } from '../stores/results';
 import type { ProviderMarksStore } from '../stores/provider-marks';
@@ -211,6 +211,20 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
   // The update standing is the shell's to load (the title bar reads it from startup); the panel
   // only subscribes.
   const updateState = useSyncExternalStore(update.subscribe, update.state);
+  // Every intent's report — the panel's own, the Eklenmemiş adoption's, the update apply's —
+  // leaves as the one toast (U-50), once per outcome so a reopened panel never repeats it.
+  const lastOutcome = state.lastOutcome;
+  const candidateOutcome = candidateState.lastOutcome;
+  const updateOutcome = updateState.lastOutcome;
+  useEffect(() => {
+    if (lastOutcome !== null) toastOutcome(locale, lastOutcome);
+  }, [lastOutcome, locale]);
+  useEffect(() => {
+    if (candidateOutcome !== null) toastOutcome(locale, candidateOutcome);
+  }, [candidateOutcome, locale]);
+  useEffect(() => {
+    if (updateOutcome !== null) toastOutcome(locale, updateOutcome);
+  }, [updateOutcome, locale]);
   useEffect(() => {
     void store.load();
   }, [store]);
@@ -490,11 +504,6 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
           />
         </div>
       ) : null}
-      {candidateState.lastOutcome !== null && !candidateState.lastOutcome.result.ok ? (
-        <div className="mt-3">
-          <OutcomeNotice ok={false} text={t(locale, candidateState.lastOutcome.labelKey)} code={candidateState.lastOutcome.result.code} />
-        </div>
-      ) : null}
     </div>
   );
 
@@ -564,15 +573,6 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
           </div>
         );
       })()}
-      {updateState.lastOutcome !== null ? (
-        <div className="mt-3">
-          <OutcomeNotice
-            ok={updateState.lastOutcome.result.ok}
-            text={t(locale, updateState.lastOutcome.labelKey)}
-            code={updateState.lastOutcome.result.ok ? undefined : updateState.lastOutcome.result.code}
-          />
-        </div>
-      ) : null}
     </div>
   );
 
@@ -621,12 +621,6 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
           {state.problem !== null ? (
             <div role="alert" className="mb-3 rounded-card border border-error/40 bg-surface px-3 py-2 text-[13px] text-error">
               {t(locale, failureKey(state.problem))}
-            </div>
-          ) : null}
-
-          {state.lastOutcome !== null && !state.lastOutcome.result.ok ? (
-            <div className="mb-3">
-              <OutcomeNotice ok={false} text={t(locale, state.lastOutcome.labelKey)} code={state.lastOutcome.result.code} />
             </div>
           ) : null}
 

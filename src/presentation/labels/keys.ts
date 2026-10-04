@@ -622,7 +622,7 @@ export const LABEL_KEYS = [
   'newProject.cancel',
   'newProject.attach',
   'newProject.created',
-  'newProject.toast.dismiss',
+  'toast.close',
   'success.account.test',
   'editor.status.modelError',
   'accountTest.button',
