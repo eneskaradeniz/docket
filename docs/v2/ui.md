@@ -491,6 +491,10 @@ being reset.
   section are hidden and not focusable. The toolbar label "Bulunanlar · n hesap · m asistan" becomes
   "Taranan · n hesap · m asistan" (EN "Scanned"; section names EN "Found" and "Failed or not found").
   Settings' "Eklenmemiş" list stays as it is. Out of scope: a row for an assistant that is not installed.
+- **U-45a** (amends U-45; 2026-10-04, review of #761) Only a needs-login or Doğrulanamadı row sits in
+  Hatalı ve bulunamayanlar. Every other visible row — ready, Rezervde (reserve reached), Veri yok (no meter
+  reading) and any later status that still works — stays in Bulunanlar, and an installed assistant's empty
+  card stays there too. The closed summary counts only the two failing standings.
 - **U-34** (discovered accounts) The candidates (`accounts.candidates`) and the discovered
   providers appear in the wizard's Hesaplar step and under Settings → Hesaplar → "Eklenmemiş":
   a row per candidate with mark, label, status and selection. `unreadable` disables the row with
