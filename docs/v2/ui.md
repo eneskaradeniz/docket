@@ -472,6 +472,13 @@ being reset.
   çalışmaya devam eder." No meter: "Bu asistan kullanım bilgisi vermiyor; limit dolunca hatadan
   anlarız." (needs login: "Giriş yapılınca limitler görünür."). The list re-renders on
   `accounts.changed`.
+- **U-44a** (amends U-42 and U-43, 2026-10-04, review of #757) A pay-per-use or unknown-billing row
+  in the wizard's Bütçe carries an explicit consent control ("İzin ver" / "İzinli") next to its cap —
+  U-35's gate (consent with a cap before "Kurulumu bitir") stays. The AccountEditor's Genel tab has no
+  Model choice until a contract stores an account's model; the wizard's editor has no Modeller tab (a
+  candidate's models are unknown before adoption). Anasayfa's "Var olan projeyi bağla" opens the U-40
+  page (its "Var olan klasör" card is the default). U-35's completion moment and inline attach form
+  and U-40's wizard entry are superseded by U-42: the wizard ends on Anasayfa.
 - **U-34** (discovered accounts) The candidates (`accounts.candidates`) and the discovered
   providers appear in the wizard's Hesaplar step and under Settings → Hesaplar → "Eklenmemiş":
   a row per candidate with mark, label, status and selection. `unreadable` disables the row with
