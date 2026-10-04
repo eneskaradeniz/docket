@@ -6,7 +6,7 @@ import type { Api } from '../../api/api';
 import type { Command, CommandResult } from '../../api/commands';
 import type { Query, SettingsAccountView } from '../../api/queries';
 import type { Actor } from '../../domain/index';
-import { createWizardStore, type WizardStore } from './wizard';
+import { createWizardStore, WIZARD_EDITOR_TABS, type WizardStore } from './wizard';
 
 const userActor: Actor = { kind: 'user', id: 'user-1' };
 
@@ -535,7 +535,7 @@ describe('wizard store (U-35, U-42)', () => {
     expect(row?.meterEmpty).toBe('meterList.needsLogin');
   });
 
-  it('U-42: a pay-per-use row stores its cap amount and period without granting consent; the gate waits for the consent', async () => {
+  it('U-44a: a pay-per-use row stores its cap amount and period without granting consent; the gate waits for the consent', async () => {
     const bundle = setup([endpoint]);
     await toAccounts(bundle);
     bundle.store.select(keyOf('.claude-zai'));
@@ -550,7 +550,7 @@ describe('wizard store (U-35, U-42)', () => {
     expect(bundle.store.state().nextEnabled).toBe(false);
   });
 
-  it('U-35: a pay-per-use account needs its spend consent with a cap before "Kurulumu bitir" is enabled', async () => {
+  it('U-44a: a pay-per-use account needs its spend consent with a cap before "Kurulumu bitir" is enabled', async () => {
     const bundle = setup([endpoint]);
     await toAccounts(bundle);
     bundle.store.select(keyOf('.claude-zai'));
@@ -605,7 +605,7 @@ describe('wizard store (U-35, U-42)', () => {
     expect(bundle.api.queries.filter((query) => query.type === 'accounts.candidateQuota').length).toBe(before + 1);
   });
 
-  it('U-42: finishing adopts every selected account with its draft, writes caps and consents, binds every role, then leaves for Anasayfa with the ready count', async () => {
+  it('U-44a: finishing adopts every selected account with its draft, writes caps and consents, binds every role, then leaves for Anasayfa with the ready count', async () => {
     const bundle = setup([claudeA, endpoint]);
     await toAccounts(bundle);
     bundle.store.select(keyOf('.claude-zai'));
@@ -681,6 +681,10 @@ describe('wizard store (U-35, U-42)', () => {
     bundle.api.emit({ type: 'workOrders.changed' });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(countOf('accounts.candidates')).toBe((before[0] ?? 0) + 1);
+  });
+
+  it('U-44a: the wizard editor offers Genel, Kullanım and Limitler — no Modeller tab', () => {
+    expect(WIZARD_EDITOR_TABS).toEqual(['general', 'usage', 'limits']);
   });
 
   it('U-35: the wizard does not reappear while a project exists', async () => {

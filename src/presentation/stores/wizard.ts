@@ -22,6 +22,7 @@ import {
   reserveSaveCommand,
   usageView,
   type EditorOutcome,
+  type EditorTab,
   type LimitPolicy,
 } from './account-editor';
 import { parseAmountUsd, type CapScope } from './account-models';
@@ -45,6 +46,10 @@ export type WizardStep = 'welcome' | 'accounts' | 'capabilities' | 'order' | 'bu
 
 /** The rail's steps in walking order. */
 export const WIZARD_STEPS: readonly WizardStep[] = ['welcome', 'accounts', 'capabilities', 'order', 'budget'];
+
+/** The tabs of the wizard's editor: a draft has no stored account to list models of, and Genel holds
+ *  no model choice — no contract stores one (U-44a). */
+export const WIZARD_EDITOR_TABS: readonly EditorTab[] = ['general', 'usage', 'limits'];
 
 export type RailStanding = 'done' | 'cur' | 'todo' | 'skipped';
 

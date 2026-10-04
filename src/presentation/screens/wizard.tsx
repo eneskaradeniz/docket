@@ -32,7 +32,7 @@ import type { ProviderMarksStore } from '../stores/provider-marks';
 import { RECOMMENDED } from '../stores/recommended';
 import type { ThemeStore } from '../stores/theme';
 import type { BudgetRow, WizardAccountRow, WizardState, WizardStep, WizardStore } from '../stores/wizard';
-import { WIZARD_STEPS } from '../stores/wizard';
+import { WIZARD_EDITOR_TABS, WIZARD_STEPS } from '../stores/wizard';
 
 export interface WizardScreenProps {
   readonly store: WizardStore;
@@ -63,10 +63,6 @@ const SCOPE_KEY: Readonly<Record<CapScope, LabelKey>> = {
   account_week: 'cap.scope.account_week',
   account_month: 'cap.scope.account_month',
 };
-
-/** The editor opens with Genel · Kullanım · Limitler: a draft has no stored account to list the
- *  models of, and the spend consent is asked on Bütçe. */
-const WIZARD_EDITOR_TABS = ['general', 'usage', 'limits'] as const;
 
 /** "Provider · account": the provider name carries the weight, the account label follows. */
 const accountName = (providerName: string | null, label: string): string => (providerName === null ? label : `${providerName} · ${label}`);
