@@ -86,6 +86,7 @@ const renderFrame = async (reply: SettingsAccountsView, open: boolean): Promise<
       now: 0,
       unaddedCount: 0,
       onOpenUnadded: () => undefined,
+      onOpenAccount: () => undefined,
     }),
   );
 };
@@ -202,6 +203,7 @@ describe('SidebarAccounts (U-51)', () => {
         now: NOW,
         left: 264,
         top: 120,
+        onOpen: () => undefined,
       }),
     );
     expect(html).toContain('role="dialog"');
@@ -231,27 +233,59 @@ describe('SidebarAccounts (U-51)', () => {
         now: 0,
         left: 0,
         top: 0,
+        onOpen: () => undefined,
       }),
     );
     expect(html).toContain('kullanım bilgisi vermiyor');
     expect(html).not.toContain('data-tightest-tag');
   });
 
-  it('U-51: the popover carries no control of its own — focus stays on the card, Esc only closes', () => {
-    const limits = [{ id: 'm', name: { text: '5 saatlik' }, remaining: 0.5, fraction: null, resetsAt: null }];
+  it('U-51a: the popover ends with the Hesabı aç button that opens that account view', () => {
+    const limits = [
+      { id: 'm-5h', name: { text: '5 saatlik' }, remaining: 0.59, fraction: null, resetsAt: null },
+      { id: 'm-w', name: { text: 'Haftalık' }, remaining: 0.12, fraction: null, resetsAt: null },
+    ];
+    const render = (locale: 'tr' | 'en'): string =>
+      renderToStaticMarkup(
+        createElement(AccountLimitsPopover, {
+          card: card('pro', 'Pro', limits, limits[1] ?? null),
+          provider: 'OpenCode',
+          mark: null,
+          locale,
+          now: 0,
+          left: 0,
+          top: 0,
+          onOpen: () => undefined,
+        }),
+      );
+    const html = render('tr');
+    expect(html).toContain('Hesabı aç');
+    expect(html).toContain('data-open-account="pro"');
+    // The button ends the popover: it rides below the last limit row.
+    expect(html.indexOf('Hesabı aç')).toBeGreaterThan(html.indexOf('data-limit-row="m-w"'));
+    // The bundle's own word, both locales.
+    expect(render('en')).toContain('Open account');
+    // U-51a keeps U-51's stance otherwise: the button is the popover's only control, nothing
+    // steals the focus from the card (no autofocus), and Esc stays the closer.
+    expect((html.match(/<button/g) ?? [])).toHaveLength(1);
+    expect(html).not.toContain('autofocus');
+  });
+
+  it('U-51a: the popover of an account without limits still ends with the Hesabı aç button', () => {
     const html = renderToStaticMarkup(
       createElement(AccountLimitsPopover, {
-        card: card('pro', 'Pro', limits, limits[0] ?? null),
-        provider: 'OpenCode',
+        card: card('bos', 'Bilinmeyen', [], null),
+        provider: null,
         mark: null,
         locale: 'tr',
         now: 0,
         left: 0,
         top: 0,
+        onOpen: () => undefined,
       }),
     );
-    expect(html).not.toContain('<button');
-    expect(html).not.toContain('autofocus');
+    expect(html).toContain('data-open-account="bos"');
+    expect(html).toContain('Hesabı aç');
   });
 
   it('U-51: helper text holds at least 12 px — the hint, the percent, the no-limit line, the fold button', async () => {

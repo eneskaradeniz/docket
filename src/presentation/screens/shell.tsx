@@ -468,6 +468,7 @@ export function ShellScreen({
             now={clockNow()}
             unaddedCount={unaddedCount}
             onOpenUnadded={() => openSettingsAt(unaddedRowTarget())}
+            onOpenAccount={openAccount}
           />
         </nav>
   

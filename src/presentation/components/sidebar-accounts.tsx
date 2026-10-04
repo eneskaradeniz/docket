@@ -98,9 +98,10 @@ const AccountCardSkeleton = () => (
   </div>
 );
 
-/** The limits popover (U-51): every limit with its name and reset time, the tightest one marked.
- *  It holds no control of its own — the focus stays on the card that opened it, and Esc or an
- *  outside click is what closes it (the parent's listeners). */
+/** The limits popover (U-51, its way into the account per U-51a): every limit with its name and
+ *  reset time, the tightest one marked, ending with the "Hesabı aç" button that opens the
+ *  account view. Beyond that one control the focus stays on the card that opened it, and Esc or
+ *  an outside click is what closes it (the parent's listeners). */
 export function AccountLimitsPopover({
   card,
   provider,
@@ -109,6 +110,7 @@ export function AccountLimitsPopover({
   now,
   left,
   top,
+  onOpen,
 }: {
   readonly card: AccountCard;
   /** The provider's display name (A-67), when discovery reports one. */
@@ -119,6 +121,8 @@ export function AccountLimitsPopover({
   readonly now: number;
   readonly left: number;
   readonly top: number;
+  /** Opens this account's view (U-51a) — the page the card's own click used to open (U-16). */
+  readonly onOpen: () => void;
 }) {
   const full = provider === null ? card.label : `${provider} · ${card.label}`;
   const style: CSSProperties = { left, top };
@@ -142,6 +146,14 @@ export function AccountLimitsPopover({
       ) : (
         card.limits.map((limit) => <LimitRow key={limit.id} limit={limit} tightest={card.tightest} locale={locale} now={now} />)
       )}
+      <button
+        type="button"
+        data-open-account={card.id}
+        onClick={onOpen}
+        className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-control border border-hairline px-2.5 py-1.5 text-[12.5px] font-semibold text-inkdim hover:bg-raised hover:text-ink focus-visible:bg-raised focus-visible:text-ink"
+      >
+        {t(locale, 'accounts.open')}
+      </button>
     </div>
   );
 }
@@ -279,6 +291,7 @@ export function SidebarAccounts({
   now,
   unaddedCount,
   onOpenUnadded,
+  onOpenAccount,
 }: {
   readonly store: AccountsFrameStore;
   readonly marks: ProviderMarksStore;
@@ -292,6 +305,8 @@ export function SidebarAccounts({
   readonly unaddedCount: number;
   /** The trailing row: Settings → Hesaplar. */
   readonly onOpenUnadded: () => void;
+  /** Opens an account's view — the popover's "Hesabı aç" button (U-51a). */
+  readonly onOpenAccount: (id: string) => void;
 }) {
   const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   // The marks land once, after the first paint; the subscription turns them into a re-render.
@@ -375,6 +390,7 @@ export function SidebarAccounts({
           onClick={() => store.toggle()}
           aria-expanded={state.open}
           aria-controls={listId}
+          aria-label={t(locale, 'accounts.toggle')}
           className="flex min-w-0 flex-1 items-center gap-1.5 rounded-control py-0.5 text-left text-inkdim hover:text-ink"
         >
           <Chevron open={state.open} />
@@ -396,6 +412,7 @@ export function SidebarAccounts({
         </button>
       </div>
       <div
+        data-accounts-body=""
         className={`grid transition-all duration-200 ${state.open ? 'min-h-0 flex-1 grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
       >
         <div className="flex min-h-0 flex-col overflow-hidden">
@@ -467,6 +484,10 @@ export function SidebarAccounts({
           now={now}
           left={popover.left}
           top={popover.top}
+          onOpen={() => {
+            onOpenAccount(popover.card.id);
+            setPopover(null);
+          }}
         />
       )}
     </section>

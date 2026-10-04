@@ -190,6 +190,8 @@ export const LABEL_KEYS = [
   'accounts.less',
   'accounts.tightest',
   'accounts.limits',
+  // U-51a: the popover's way into the account view — the one control it carries.
+  'accounts.open',
   // Account view (U-20): the windows' blocks, the active-work rows, the limit-behaviour band.
   'account.back',
   'account.loading',

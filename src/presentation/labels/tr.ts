@@ -160,6 +160,7 @@ export const TR: LabelBundle = {
   'accounts.less': "Daha az göster",
   'accounts.tightest': "En dar",
   'accounts.limits': "Limitler",
+  'accounts.open': "Hesabı aç",
   'account.back': '‹ Geri · kokpit',
   'account.loading': 'Yükleniyor…',
   'account.section.windows': 'Pencereler',

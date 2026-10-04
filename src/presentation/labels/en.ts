@@ -161,6 +161,7 @@ export const EN: LabelBundle = {
   'accounts.less': "Show fewer",
   'accounts.tightest': "Tightest",
   'accounts.limits': "Limits",
+  'accounts.open': "Open account",
   'account.back': '‹ Back · cockpit',
   'account.loading': 'Loading…',
   'account.section.windows': 'Windows',
