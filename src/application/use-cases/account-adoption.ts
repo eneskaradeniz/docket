@@ -1,12 +1,12 @@
 // use-cases/account-adoption.ts — turns a discovered candidate into an account (P-33). The command
-// names a source path and a label only; the candidate is re-found by a fresh scan so no client
-// claim about its kind is ever trusted. A token travels one way, from the importer into the vault,
-// and only for a compatible-endpoint candidate when the caller asked for the import.
-import { err, ok, type AccountId, type Actor, type Result } from '../../domain/index';
+// names a source path and a label only; the candidate is re-found in the remembered scan (A-85) so
+// no client claim about its kind is ever trusted. A token travels one way, from the importer into
+// the vault, and only for a compatible-endpoint candidate when the caller asked for the import.
+import { err, ok, type AccountId, type Actor, type EpochMs, type Result } from '../../domain/index';
 
-import type { AccountCandidate, AccountDiscovery, AccountRecord, AppDeps, CredentialImporter } from '../ports';
+import type { AccountCandidate, AccountDiscovery, AccountRecord, AppDeps, Clock, CredentialImporter } from '../ports';
 
-import { saveAccount } from './accounts';
+import { httpsUrlOf, saveAccount } from './accounts';
 
 export type AdoptError =
   | 'not_found'
@@ -18,45 +18,78 @@ export type AdoptError =
   | 'invalid_reserve';
 
 export type AdoptDeps = Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets' | 'capabilities' | 'accountTests'> & {
-  readonly discovery: AccountDiscovery;
+  readonly candidates: AccountCandidateList;
   readonly importer: CredentialImporter;
 };
 
-/** Session cache over the scan: the candidates list is read often and the scan touches the disk. */
+/** Cache over the scan: the candidates list is read often and the scan touches the disk. */
 export interface AccountCandidateList {
-  get(options?: { readonly refresh?: boolean }): Promise<readonly AccountCandidate[]>;
-  invalidate(): void;
+  get(options?: { readonly fresh?: boolean }): Promise<readonly AccountCandidate[]>;
 }
 
-export function createAccountCandidateList(discovery: AccountDiscovery): AccountCandidateList {
-  let cached: Promise<readonly AccountCandidate[]> | undefined;
+// A-85: a scan younger than this window answers every reader — the candidates query and the
+// adoptions — so adopting n accounts right after one scan adds no scan. Only `fresh` bypasses it.
+const REMEMBERED_SCAN_WINDOW_MS = 60_000;
+
+export function createAccountCandidateList(clock: Clock, discovery: AccountDiscovery): AccountCandidateList {
+  let remembered: Promise<readonly AccountCandidate[]> | undefined;
+  let rememberedAt: EpochMs | undefined;
   return {
     get: (options) => {
-      if (cached === undefined || options?.refresh === true) cached = discovery.scan();
-      const pending = cached;
-      // A failed scan must not stick for the whole session.
-      pending.catch(() => {
-        if (cached === pending) cached = undefined;
+      // A scan in flight is shared (`rememberedAt` is unset until it lands); a landed one answers
+      // every reader inside the window, so concurrent readers never start one scan each.
+      const young = rememberedAt !== undefined && clock.now() - rememberedAt < REMEMBERED_SCAN_WINDOW_MS;
+      if (options?.fresh !== true && remembered !== undefined && (rememberedAt === undefined || young)) {
+        return remembered;
+      }
+      const settled = discovery.scan().then((found): readonly AccountCandidate[] => {
+        if (remembered === settled) rememberedAt = clock.now();
+        return found;
       });
-      return pending;
-    },
-    invalidate: () => {
-      cached = undefined;
+      remembered = settled;
+      rememberedAt = undefined;
+      // A failed scan must not stick for the whole session.
+      settled.catch(() => {
+        if (remembered === settled) {
+          remembered = undefined;
+          rememberedAt = undefined;
+        }
+      });
+      return settled;
     },
   };
 }
+
+/** Whether an account already occupies a candidate's source: the identity directory, the
+ *  provider's machine login, or the route's endpoint — the scan's own alreadyAdded rule. A
+ *  remembered scan can predate the accounts adopted (or removed) inside its window, so every
+ *  reader decides against the accounts store, never against the scan-time flag. */
+export const isSourceTaken = (candidate: AccountCandidate, accounts: readonly AccountRecord[]): boolean =>
+  accounts.some(
+    (account) =>
+      account.identityDir === candidate.sourcePath ||
+      (candidate.kind === 'machine_login'
+        ? account.provider === candidate.provider && account.identityDir === undefined
+        : candidate.endpointHost !== undefined &&
+          account.routeKind === candidate.routeKind &&
+          httpsUrlOf(account.endpoint ?? '')?.host === candidate.endpointHost),
+  );
 
 export async function adoptAccountCandidate(
   deps: AdoptDeps,
   input: { readonly sourcePath: string; readonly label: string; readonly importToken?: boolean; readonly actor: Actor },
 ): Promise<Result<AccountId, AdoptError>> {
-  const candidate = (await deps.discovery.scan()).find((entry) => entry.sourcePath === input.sourcePath);
+  const candidate = (await deps.candidates.get()).find((entry) => entry.sourcePath === input.sourcePath);
   if (candidate === undefined) return err('not_found');
   if (candidate.alreadyAdded) return err('already_added');
 
   // A candidate names its provider; the route kind must still exist in the registry.
   if (deps.capabilities.routeKind(candidate.routeKind) === undefined) return err('not_found');
   const providerId = candidate.provider;
+
+  // The remembered scan can predate the accounts this window produced, so the store — not the
+  // scan-time flag — decides whether the source is already an account.
+  if (isSourceTaken(candidate, await deps.accounts.list())) return err('already_added');
 
   const id = deps.ids.next<'account'>();
   const isMachineLogin = candidate.kind === 'machine_login';

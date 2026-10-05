@@ -14,7 +14,7 @@ export interface BindingExists {
 
 // A-43: `URL` normalises the protocol and host, so a non-https or unparsable endpoint reads invalid
 // and a host mismatch compares against the lowercased form the registry data carries.
-const httpsUrlOf = (endpoint: string): URL | undefined => {
+export const httpsUrlOf = (endpoint: string): URL | undefined => {
   try {
     const url = new URL(endpoint);
     return url.protocol === 'https:' ? url : undefined;

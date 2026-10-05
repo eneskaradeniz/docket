@@ -637,7 +637,7 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
   const read = async (refresh: boolean): Promise<void> => {
     loading = true;
     publish();
-    const candidateQuery: Query = refresh ? { type: 'accounts.candidates', refresh: true } : { type: 'accounts.candidates' };
+    const candidateQuery: Query = refresh ? { type: 'accounts.candidates', fresh: true } : { type: 'accounts.candidates' };
     const [candidateReply, providerReply, accountsReply] = await Promise.all([
       api.query(candidateQuery),
       api.query({ type: 'providers.discovered' }),
