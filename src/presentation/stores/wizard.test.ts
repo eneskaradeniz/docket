@@ -93,6 +93,8 @@ interface Fake extends Pick<Api, 'query' | 'command'> {
   setAccounts(accounts: readonly SettingsAccountView[]): void;
   setQuota(reply: unknown): void;
   failOn(type: Command['type'], result: CommandResult): void;
+  /** Holds every command of a type until resolved — a finish's real step, made observable. */
+  holdOn(type: Command['type']): { readonly resolve: () => void };
 }
 
 const claudeProvider = { defId: 'claude', name: 'Claude Code', installUrl: null, binPath: '/usr/bin/claude', version: null, loggedIn: true, optionalFlags: [] };
@@ -107,7 +109,20 @@ const fakeApi = (): Fake => {
   let accounts: SettingsAccountView[] = [];
   let quota: unknown = { ok: false, code: 'not_found' };
   const failures = new Map<string, CommandResult>();
+  const holds = new Map<Command['type'], (() => void)[]>();
   let adopted = 0;
+  const settle = (command: Command): Promise<CommandResult> => {
+    const failure = failures.get(command.type);
+    if (failure !== undefined) return Promise.resolve(failure);
+    if (command.type === 'account.adopt') {
+      adopted += 1;
+      const id = `acc-${adopted}`;
+      const isEndpoint = command.sourcePath.includes('zai');
+      accounts.push(accountView(id, command.label, isEndpoint ? 'api_key' : 'subscription'));
+      return Promise.resolve({ ok: true, id });
+    }
+    return Promise.resolve({ ok: true });
+  };
   return {
     commands,
     queries,
@@ -134,6 +149,16 @@ const fakeApi = (): Fake => {
       quota = reply;
     },
     failOn: (type, result) => failures.set(type, result),
+    holdOn: (type) => {
+      holds.set(type, []);
+      return {
+        resolve: () => {
+          const waiting = holds.get(type) ?? [];
+          holds.delete(type);
+          for (const go of waiting) go();
+        },
+      };
+    },
     query: (query) => {
       queries.push(query);
       switch (query.type) {
@@ -155,16 +180,9 @@ const fakeApi = (): Fake => {
     },
     command: (_actor, command) => {
       commands.push(command);
-      const failure = failures.get(command.type);
-      if (failure !== undefined) return Promise.resolve(failure);
-      if (command.type === 'account.adopt') {
-        adopted += 1;
-        const id = `acc-${adopted}`;
-        const isEndpoint = command.sourcePath.includes('zai');
-        accounts.push(accountView(id, command.label, isEndpoint ? 'api_key' : 'subscription'));
-        return Promise.resolve({ ok: true, id });
-      }
-      return Promise.resolve({ ok: true });
+      const held = holds.get(command.type);
+      if (held !== undefined) return new Promise((resolve) => { held.push(() => { void settle(command).then(resolve); }); });
+      return settle(command);
     },
   };
 };
@@ -383,8 +401,11 @@ describe('wizard store (U-35, U-42)', () => {
     expect(bundle.store.state().step).toBe('budget');
     expect(bundle.store.state().canSkip).toBe(true);
     await bundle.store.skip();
-    expect(bundle.store.state().visible).toBe(false);
+    // The finish keeps the window up for its fade (U-49); the shell leaves via ackFinish.
+    expect(bundle.store.state().visible).toBe(true);
     expect(bundle.store.state().finished).toEqual({ accounts: 2 });
+    bundle.store.ackFinish();
+    expect(bundle.store.state().visible).toBe(false);
   });
 
   it('U-42: Asistan sırası starts with the ready subscriptions, then the others, each class keeping its order', async () => {
@@ -622,18 +643,20 @@ describe('wizard store (U-35, U-42)', () => {
     expect(bundle.api.commands).toEqual([
       { type: 'account.adopt', sourcePath: keyOf('.claude'), label: 'Kişisel' },
       { type: 'account.adopt', sourcePath: keyOf('.claude-zai'), label: 'claude-zai', importToken: true },
-      { type: 'account.save', id: 'acc-1', provider: 'claude', label: 'Kişisel', authMode: 'subscription', reserve: { short: 0.2, long: 0.2 } },
-      { type: 'account.cap.save', id: 'acc-2', scope: 'account_month', amountUsd: 40, warnPercent: 80 },
-      { type: 'account.consent.grant', id: 'acc-2', model: '*' },
       { type: 'binding.save', role: 'analyst', accounts: [{ accountId: 'acc-1' }, { accountId: 'acc-2' }], tier: 'fast', thinking: { level: 'fast' } },
       { type: 'binding.save', role: 'developer', accounts: [{ accountId: 'acc-1' }, { accountId: 'acc-2' }], tier: 'balanced', thinking: { level: 'balanced' } },
       { type: 'binding.save', role: 'planner', accounts: [{ accountId: 'acc-1' }, { accountId: 'acc-2' }], tier: 'strong', thinking: { level: 'deep' } },
+      { type: 'account.save', id: 'acc-1', provider: 'claude', label: 'Kişisel', authMode: 'subscription', reserve: { short: 0.2, long: 0.2 } },
+      { type: 'account.cap.save', id: 'acc-2', scope: 'account_month', amountUsd: 40, warnPercent: 80 },
+      { type: 'account.consent.grant', id: 'acc-2', model: '*' },
     ]);
-    // No completion moment: the wizard is gone and the shell is told once.
-    expect(bundle.store.state().visible).toBe(false);
+    // No completion moment: the finish is done and the shell is told once (U-49 keeps the window
+    // up for its fade; the ack is what leaves).
+    expect(bundle.store.state().visible).toBe(true);
     expect(bundle.store.state().finished).toEqual({ accounts: 2 });
     bundle.store.ackFinish();
     expect(bundle.store.state().finished).toBeNull();
+    expect(bundle.store.state().visible).toBe(false);
     // Opening again in the same session does not bring the wizard back.
     await bundle.store.open();
     expect(bundle.store.state().visible).toBe(false);
@@ -691,6 +714,135 @@ describe('wizard store (U-35, U-42)', () => {
     const bundle = setup();
     await bundle.store.open();
     bundle.api.setTree([{ project: 'atolye' }]);
+    await bundle.store.open();
+    expect(bundle.store.state().visible).toBe(false);
+  });
+
+  it('U-48: a budget row carries its reserve percent and the Ayrıntı reserve choice writes both windows through the finish', async () => {
+    const bundle = setup([claudeA]);
+    await toAccounts(bundle);
+    await bundle.store.next();
+    expect(bundle.store.state().step).toBe('budget');
+    expect(bundle.store.state().budget.subscriptions[0]?.reservePercent).toBe(0);
+    bundle.store.setReserve(keyOf('.claude'), 20);
+    expect(bundle.store.state().budget.subscriptions[0]?.reservePercent).toBe(20);
+    // "Yok" takes the whole reserve back off the draft.
+    bundle.store.setReserve(keyOf('.claude'), null);
+    expect(bundle.store.state().budget.subscriptions[0]?.reservePercent).toBe(0);
+    bundle.store.setReserve(keyOf('.claude'), 30);
+    await bundle.store.next();
+    const saves = bundle.api.commands.filter((command): command is Extract<Command, { readonly type: 'account.save' }> => command.type === 'account.save');
+    expect(saves).toHaveLength(1);
+    expect(saves[0]?.reserve).toEqual({ short: 0.3, long: 0.3 });
+  });
+
+  it('U-49: the finish walks its four lines in order — a line takes its check only when its real step completes, never on a fixed delay', async () => {
+    const bundle = setup([claudeA, claudeB]);
+    await toAccounts(bundle);
+    await bundle.store.next();
+    await bundle.store.next();
+    expect(bundle.store.state().step).toBe('budget');
+    const walk: string[] = [];
+    bundle.store.subscribe(() => {
+      const standing = bundle.store.state();
+      if (!standing.finishing && standing.finishError === null && standing.finished === null) return;
+      const mark = `${standing.finishPhase ?? '-'}${standing.finished !== null ? '+' : standing.finishError !== null ? '!' : ''}`;
+      if (walk[walk.length - 1] !== mark) walk.push(mark);
+    });
+    const held = bundle.api.holdOn('binding.save');
+    const finishing = bundle.store.next();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // Both adoptions answered but the first binding is still in flight: the list holds its
+    // spinner on "Sıra kaydediliyor" — the check waits for the real reply, not a timer.
+    const mid = bundle.store.state();
+    expect(mid.finishing).toBe(true);
+    expect(mid.finishPhase).toBe('order');
+    expect(mid.finished).toBeNull();
+    // Geri and the rail are dead while it runs.
+    bundle.store.back();
+    bundle.store.goTo('accounts');
+    expect(bundle.store.state().step).toBe('budget');
+    held.resolve();
+    await finishing;
+    const done = bundle.store.state();
+    expect(done.finished).toEqual({ accounts: 2 });
+    expect(done.finishPhase).toBe('home');
+    expect(walk).toEqual(['accounts', 'order', 'budget', 'home', 'home+']);
+  });
+
+  it('U-49: a failing step stops the list on its line with its reason, and a retry finishes without adopting twice', async () => {
+    const bundle = setup([claudeA, claudeB]);
+    await toAccounts(bundle);
+    await bundle.store.next();
+    await bundle.store.next();
+    bundle.store.setReserve(keyOf('.claude'), 20);
+    bundle.api.failOn('account.save', { ok: false, code: 'invalid_reserve' });
+    await bundle.store.next();
+    const failed = bundle.store.state();
+    expect(failed.finishing).toBe(false);
+    expect(failed.finishPhase).toBe('budget');
+    expect(failed.finishError?.phase).toBe('budget');
+    expect(failed.finishError?.reasonKey).toBe('error.invalid_reserve');
+    expect(failed.finished).toBeNull();
+    expect(failed.lastOutcome?.result.ok).toBe(false);
+    // The stop releases Geri again; leaving the step drops the stopped list.
+    expect(failed.canBack).toBe(true);
+    bundle.store.back();
+    expect(bundle.store.state().step).toBe('order');
+    expect(bundle.store.state().finishPhase).toBeNull();
+    expect(bundle.store.state().finishError).toBeNull();
+    // Walk forward to Bütçe again and finish from there.
+    await bundle.store.next();
+    expect(bundle.store.state().step).toBe('budget');
+    bundle.api.failOn('account.save', { ok: true });
+    await bundle.store.next();
+    expect(bundle.store.state().finished).toEqual({ accounts: 2 });
+    expect(bundle.api.commands.filter((command) => command.type === 'account.adopt')).toHaveLength(2);
+  });
+
+  it('U-49: retry resumes from the failed phase without adopting twice', async () => {
+    const bundle = setup([claudeA, claudeB]);
+    await toAccounts(bundle);
+    await bundle.store.next();
+    await bundle.store.next();
+    expect(bundle.store.state().step).toBe('budget');
+    bundle.api.failOn('binding.save', { ok: false, code: 'unknown_role' });
+    await bundle.store.next();
+    const stopped = bundle.store.state();
+    expect(stopped.finishError?.phase).toBe('order');
+    // The accounts phase completed before the order phase failed: both accounts exist by now.
+    const adopts = bundle.api.commands.filter((command) => command.type === 'account.adopt');
+    expect(adopts).toHaveLength(2);
+    const walk: string[] = [];
+    bundle.store.subscribe(() => {
+      const standing = bundle.store.state();
+      if (!standing.finishing && standing.finishError === null && standing.finished === null) return;
+      const mark = `${standing.finishPhase ?? '-'}${standing.finished !== null ? '+' : standing.finishError !== null ? '!' : ''}`;
+      if (walk[walk.length - 1] !== mark) walk.push(mark);
+    });
+    bundle.api.failOn('binding.save', { ok: true });
+    await bundle.store.next();
+    expect(bundle.store.state().finished).toEqual({ accounts: 2 });
+    // The retry picks the run up at the failed line: no second adoption, no re-walk of the
+    // accounts phase — a duplicate account can never come out of a retry.
+    expect(bundle.api.commands.filter((command) => command.type === 'account.adopt')).toHaveLength(2);
+    expect(walk).toEqual(['order', 'budget', 'home', 'home+']);
+  });
+
+  it('U-49: the finished wizard stays mounted for its fade and leaves only on ackFinish', async () => {
+    const bundle = setup([claudeA]);
+    await toAccounts(bundle);
+    await bundle.store.next();
+    await bundle.store.next();
+    const done = bundle.store.state();
+    expect(done.finished).toEqual({ accounts: 1 });
+    expect(done.visible).toBe(true);
+    // Nothing on the footer is clickable through the handoff.
+    expect(done.nextEnabled).toBe(false);
+    bundle.store.ackFinish();
+    const left = bundle.store.state();
+    expect(left.finished).toBeNull();
+    expect(left.visible).toBe(false);
     await bundle.store.open();
     expect(bundle.store.state().visible).toBe(false);
   });

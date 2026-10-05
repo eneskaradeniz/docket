@@ -99,7 +99,7 @@ export interface AccountEditorProps {
 
 // "Kaydedildi" beside a row for 1.5 s, and the row's failure copy.
 function useRowStatus(store: AccountEditorStore, row: string, locale: Locale): { saved: boolean; failure: string | undefined } {
-  const state = useSyncExternalStore(store.subscribe, store.state);
+  const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   const [, bump] = useState(0);
   const saved = store.isSaved(row);
   // The flag leaves by itself: one re-render when its 1.5 s are up.
@@ -624,7 +624,7 @@ export { TAB_KEY };
  *  from the recommendation and "Hepsini önerilene döndür"). */
 export function AccountEditorPanels(props: AccountEditorProps) {
   const { account, locale, store } = props;
-  const state = useSyncExternalStore(store.subscribe, store.state);
+  const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   const diffs = settingDiffs(account);
   return (
     <div className="grid gap-4" data-account-editor={account.id}>

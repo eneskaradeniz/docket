@@ -1,5 +1,6 @@
 // components/window-frame.tsx — the Window (U-41): the one frame of the setup wizard and of
-// Settings. 880×580, a 200px left column and a content column of head · scrolling body · an
+// Settings. 1040×680 at most, clamped to the viewport (U-46) so a narrow window keeps shrinking
+// it instead of cropping, a 200px left column and a content column of head · scrolling body · an
 // optional footer band. The footer never leaves the window — the body scrolls — and a footer that
 // is absent takes no space. The left column holds the brand and whatever the host puts there (the
 // wizard's steps, Settings' menu). Purely presentational; every string arrives resolved.
@@ -47,7 +48,7 @@ export function WindowFrame({ label, brand, rail, railNote, head, children, foot
       aria-modal="true"
       aria-label={label}
       data-window=""
-      className={`relative grid h-[580px] max-h-full w-[880px] max-w-full grid-cols-[200px_minmax(0,1fr)] overflow-hidden rounded-panel border border-bord bg-surface shadow-2xl outline-none ${className}`}
+      className={`relative grid h-[680px] max-h-[calc(100vh-96px)] w-[1040px] max-w-[calc(100vw-48px)] grid-cols-[200px_minmax(0,1fr)] overflow-hidden rounded-panel border border-bord bg-surface shadow-2xl outline-none ${className}`}
     >
       <nav aria-label={label} className="flex flex-col gap-[18px] overflow-y-auto border-r border-hairline bg-band px-3.5 pb-4 pt-[22px]">
         <BrandMark name={brand} />

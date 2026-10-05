@@ -42,9 +42,6 @@ const SECTIONS = [
 // when the phase closes.
 const PENDING = new Map([
   ['providers:P-38', '#672'],
-  ['ui:U-46', '#766'],
-  ['ui:U-48', '#766'],
-  ['ui:U-49', '#766'],
   ['ui:U-51', '#774'],
   ['ui:U-52', '#775'],
   ['ui:U-51a', '#774'],
