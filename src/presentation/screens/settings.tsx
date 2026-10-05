@@ -584,7 +584,11 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
           }
         }}
         className={[
-          'fixed inset-0 z-40 grid place-items-center bg-bg/60 p-8',
+          // Definite grid tracks, not auto ones: the window's `max-h-full` is a percentage, and a
+          // percentage against an auto track resolves to the content's own height — at the minimum
+          // window (1024×640) the 580px window would overflow the scrim's 576px content box by
+          // 4px and sit off-centre. A minmax(0,1fr) track is definite, so the clamp binds.
+          'fixed inset-0 z-40 grid grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] place-items-center bg-bg/60 p-8',
           'transition-[opacity,backdrop-filter] [transition-timing-function:var(--motion-ease)]',
           entered
             ? 'opacity-100 backdrop-blur-md duration-[var(--motion-open-backdrop)]'
@@ -600,6 +604,7 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
           rail={rail}
           head={head}
           onKeyDown={onKeyDown}
+          dataMark="data-settings-panel"
           className={[
             'transition-[opacity,translate,scale] [transition-timing-function:var(--motion-ease)]',
             entered
