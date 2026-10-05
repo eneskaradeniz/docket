@@ -42,6 +42,7 @@ const SECTIONS = [
 // when the phase closes.
 const PENDING = new Map([
   ['providers:P-38', '#672'],
+  ['application:A-86', '#787'],
 ]);
 
 function walk(dir, acc = []) {
