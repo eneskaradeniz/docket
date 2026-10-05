@@ -335,8 +335,9 @@ async function settingsPanelCheck(target) {
       if (!visible(el)) continue;
       const b = el.getBoundingClientRect();
       // A control inside the scrolling content pane may lie below the fold (Hesaplar is long);
-        // only sideways escape counts there.
-        const scrolls = el.closest('[data-settings-content]') !== null;
+        // only sideways escape counts there. The pane is the shared Window body — U-43's rework
+        // renamed the hook the old panel carried.
+        const scrolls = el.closest('[data-window-body]') !== null;
         if (b.left < r.left - 0.5 || b.right > r.right + 0.5 || (!scrolls && (b.top < r.top - 0.5 || b.bottom > r.bottom + 0.5))) {
         outside.push((el.getAttribute('aria-label') || el.textContent || el.tagName).trim().slice(0, 24));
       }
@@ -375,8 +376,9 @@ async function settingsPanelCheck(target) {
         if (!visible(el)) continue;
         const b = el.getBoundingClientRect();
         // A control inside the scrolling content pane may lie below the fold (Hesaplar is long);
-        // only sideways escape counts there.
-        const scrolls = el.closest('[data-settings-content]') !== null;
+        // only sideways escape counts there. The pane is the shared Window body — U-43's rework
+        // renamed the hook the old panel carried.
+        const scrolls = el.closest('[data-window-body]') !== null;
         if (b.left < r.left - 0.5 || b.right > r.right + 0.5 || (!scrolls && (b.top < r.top - 0.5 || b.bottom > r.bottom + 0.5))) {
           outside.push((el.getAttribute('aria-label') || el.textContent || el.tagName).trim().slice(0, 24));
         }
@@ -388,8 +390,18 @@ async function settingsPanelCheck(target) {
     page.locator(selectors.settingsPanel).getByRole('button', { name, exact: true }).first();
   await menuButton('Görünüm').click({ timeout: 4000 });
   await inPanel('Tema').waitFor({ state: 'visible', timeout: 4000 });
-  await menuButton('Açık').waitFor({ state: 'visible', timeout: 4000 });
+  // Görünüm's choices live in the Listbox's popup (U-41), not as standing buttons anymore:
+  // opening the theme list is how the section proves its controls — 'Açık' is an option there.
+  await page.locator(selectors.settingsPanel).getByRole('button', { name: /^Tema: / }).first().click({ timeout: 4000 });
+  await page
+    .locator(selectors.settingsPanel)
+    .getByRole('option', { name: 'Açık', exact: true })
+    .first()
+    .waitFor({ state: 'visible', timeout: 4000 });
   const appearanceOutside = await sectionOutside();
+  // The open popup keeps the panel's Esc for itself (the list stops the key), so this close
+  // leaves the panel standing.
+  await page.keyboard.press('Escape');
   await menuButton('Telefon').click({ timeout: 4000 });
   await inPanel('Telefon bağlı değil').waitFor({ state: 'visible', timeout: 4000 });
   const pairDisabled = await page
