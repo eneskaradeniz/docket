@@ -827,7 +827,7 @@ const runQuery = async (
       return repoList(registry);
 
     case 'settings.accounts':
-      return settingsAccountsView(deps);
+      return settingsAccountsView(deps, query.catalog);
 
     case 'roles.list':
       return rolesListView(deps, registry);
@@ -990,7 +990,10 @@ const CAP_SCOPE_RANK: Readonly<Record<AccountRecord['caps'][number]['scope'], nu
   account_month: 2,
 };
 
-const settingsAccountsView = async (deps: AppDeps): Promise<SettingsAccountsView> => {
+const settingsAccountsView = async (
+  deps: AppDeps,
+  catalogMode?: 'read' | 'skip',
+): Promise<SettingsAccountsView> => {
   const records = await deps.accounts.list();
   const pools = await deps.accounts.pools();
   const meters = await deps.accounts.meters();
@@ -1001,11 +1004,21 @@ const settingsAccountsView = async (deps: AppDeps): Promise<SettingsAccountsView
     if (stored !== undefined) tests.set(record.id, accountTestViewOf(stored));
   }
 
+  // A-86: 'skip' lists no catalog at all — every row bills by its route's own rule, the value a
+  // failing read already yields (P-51); a read lists every row's catalog at once, never one after
+  // another, so n slow listings cost the slowest one rather than their sum.
+  const catalogs = new Map<string, readonly CatalogModel[]>();
+  if (catalogMode !== 'skip' && records.length > 0) {
+    const listed = await Promise.all(
+      records.map((record) => catalogOrEmpty(() => deps.modelCatalog.list(record.id))),
+    );
+    records.forEach((record, index) => catalogs.set(record.id, listed[index] ?? []));
+  }
+
   const accounts: SettingsAccountView[] = [];
   for (const record of records) {
     const ownPools = pools.filter((pool) => pool.accountId === record.id);
-    // P-51: the billing view reads the catalog's default row; a failing read leaves the route's own rule.
-    const catalog = await catalogOrEmpty(() => deps.modelCatalog.list(record.id));
+    const catalog = catalogs.get(record.id) ?? [];
     const ownPoolIds = new Set(ownPools.map((pool) => pool.id));
     accounts.push({
       id: record.id,

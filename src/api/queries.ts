@@ -15,7 +15,7 @@ export type Query =
   | { readonly type: 'account.models'; readonly accountId: string; readonly refresh?: boolean }
   | { readonly type: 'project.spend'; readonly project: string }
   | { readonly type: 'repos.list' }
-  | { readonly type: 'settings.accounts' }
+  | { readonly type: 'settings.accounts'; readonly catalog?: 'read' | 'skip' }
   | { readonly type: 'roles.list' }
   | { readonly type: 'providers.discovered' }
   | { readonly type: 'accounts.candidates'; readonly fresh?: boolean }
