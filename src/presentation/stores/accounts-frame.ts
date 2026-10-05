@@ -133,7 +133,9 @@ export const createAccountsFrameStore = (deps: {
     const attempt = attempts + 1;
     attempts = attempt;
     set({ ...state, loading: true });
-    const reply: unknown = await api.query({ type: 'settings.accounts' } satisfies Query);
+    // A-87: the cards draw name, status and meters — never billing — so the read starts no live
+    // model listing behind the discovery chain; Settings, which shows the billing tag, keeps 'read'.
+    const reply: unknown = await api.query({ type: 'settings.accounts', catalog: 'skip' } satisfies Query);
     if (attempt !== attempts) return;
     if (isQueryFailure(reply)) {
       set({ ...state, loading: false, problem: reply.code });

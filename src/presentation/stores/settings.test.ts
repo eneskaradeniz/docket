@@ -345,6 +345,16 @@ describe('settings store', () => {
     expect(h.store.state().removeWarning).toEqual({ accountId: 'acc-1', roles: ['worker', 'reviewer'] });
   });
 
+  it("A-87: the settings store's accounts read keeps the billing catalog", async () => {
+    const h = createHarness('tr');
+    await h.store.load();
+    // Settings shows the billing tag, so its read may not skip the model catalog — U-52's
+    // skeleton covers the wait; only the sidebar's cards (A-87) can skip it.
+    expect(h.api.queries.filter((q) => q.type === 'settings.accounts')).toEqual([
+      { type: 'settings.accounts' },
+    ]);
+  });
+
   it('U-6: explicit confirmation issues account.remove once, maps through U-8 and refreshes the view', async () => {
     const h = createHarness('tr');
     await h.store.load();
