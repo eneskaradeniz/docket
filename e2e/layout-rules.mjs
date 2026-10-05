@@ -82,7 +82,7 @@ const l1 = async (page, ctx, sel) => {
     sel.sidebar,
   );
   if (!m) return result('L-1', false, 'sidebar element not found');
-  const want = m.iw >= 1000 ? 240 : 208;
+  const want = m.iw >= 1000 ? 264 : 208;
   const ok = Math.abs(m.left) <= 0.5 && Math.abs(m.width - want) <= 0.5;
   return result('L-1', ok, `left ${m.left.toFixed(1)} width ${m.width.toFixed(1)} want 0/${want}`);
 };

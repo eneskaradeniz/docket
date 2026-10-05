@@ -88,11 +88,12 @@ const GearIcon = () => (
 );
 
 /** One nav row's standing: the active-state language while current, a transparent border at rest
- *  (so nothing moves when the state flips), the raised ground on hover and keyboard focus. */
+ *  (so nothing moves when the state flips), the raised ground on hover and keyboard focus. The
+ *  rows sit in the sidebar's 13.5–14 px scale (U-51). */
 const rowClass = (current: boolean): string =>
   current
-    ? `flex h-8 items-center gap-2 rounded-control border px-2.5 text-left text-[13px] font-semibold text-ink ${ACTIVE_CLASS}`
-    : 'flex h-8 items-center gap-2 rounded-control border border-transparent px-2.5 text-left text-[13px] text-inkdim hover:bg-raised hover:text-ink focus-visible:bg-raised focus-visible:text-ink';
+    ? `flex h-8 items-center gap-2 rounded-control border px-2.5 text-left text-[13.5px] font-semibold text-ink ${ACTIVE_CLASS}`
+    : 'flex h-8 items-center gap-2 rounded-control border border-transparent px-2.5 text-left text-[13.5px] text-inkdim hover:bg-raised hover:text-ink focus-visible:bg-raised focus-visible:text-ink';
 
 /** The pill Anasayfa carries on its right edge when attention exists — the badge grammar of the
  *  tree's count pill, never a rendered zero (U-10); its accessible name is the attention
@@ -143,7 +144,7 @@ export function SidebarNav({
       >
         <SearchIcon />
         <span className="truncate">{t(locale, 'nav.search')}</span>
-        <span className="ml-auto flex-none font-mono text-[10.5px] text-inkdim">{t(locale, 'nav.search.kbd')}</span>
+        <span className="ml-auto flex-none font-mono text-[12px] text-inkdim">{t(locale, 'nav.search.kbd')}</span>
       </button>
 
       <button

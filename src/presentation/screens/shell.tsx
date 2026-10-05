@@ -22,6 +22,7 @@ import { SearchPalette } from '../components/search-palette';
 import { SidebarAccounts } from '../components/sidebar-accounts';
 import { SidebarNav } from '../components/sidebar-nav';
 import { SidebarTree } from '../components/sidebar-tree';
+import { SIDEBAR_GRID } from '../components/sidebar-geometry';
 import { TitleBar } from '../components/title-bar';
 import { ToastHost } from '../components/toast-host';
 import { t, type Locale } from '../labels/t';
@@ -207,6 +208,13 @@ export function ShellScreen({
     void candidateList.load();
   }, [shell, update, candidateList]);
   const unaddedCount = useSyncExternalStore(candidateList.subscribe, () => candidateList.state().rows.length);
+  // The provider display names (A-67) the sidebar's card titles and popovers read: discovery's
+  // own naming, resolved by id, null when it does not know the provider.
+  const providerRows = useSyncExternalStore(candidateList.subscribe, () => candidateList.state().providers);
+  const providerName = (id: string): string | null => providerRows.find((row) => row.id === id)?.name ?? null;
+  // The clock the accounts popover's reset spans read against — the shell re-renders as the
+  // stores publish, so the spans walk with them.
+  const clockNow = (): number => Date.now();
   useEffect(() => {
     if (route.name !== 'workOrder' && route.name !== 'account') placeRef.current = placeOf(route);
   }, [route]);
@@ -428,7 +436,7 @@ export function ShellScreen({
         onBack={goBack}
         onForward={goForward}
       />
-      <div className="grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)] overflow-hidden">
+      <div className={`grid min-h-0 flex-1 ${SIDEBAR_GRID} overflow-hidden`}>
         <nav
           aria-label={t(locale, 'shell.nav')}
           className="flex min-h-0 flex-col border-r border-hairline bg-surface px-2.5 pb-3 pt-3.5"
@@ -459,9 +467,11 @@ export function ShellScreen({
             marks={marks}
             locale={locale}
             activeAccountId={route.name === 'account' ? route.id : null}
-            onOpenAccount={openAccount}
+            providerName={providerName}
+            now={clockNow()}
             unaddedCount={unaddedCount}
             onOpenUnadded={() => openSettingsAt(unaddedRowTarget())}
+            onOpenAccount={openAccount}
           />
         </nav>
   

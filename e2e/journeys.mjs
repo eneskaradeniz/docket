@@ -149,9 +149,13 @@ for (const [sizeName, theme] of combos) {
     await shot('roadmap');
   });
 
-  await journey('J-6', "account card → account view → Ayarlar'da düzenle ↗ opens the settings panel; the nav's Telefon and Ayarlar rows open it on their own sections; Esc closes and the account view is still there", async () => {
+  await journey('J-6', "account card → limits popover → Hesabı aç → account view → Ayarlar'da düzenle ↗ opens the settings panel; the nav's Telefon and Ayarlar rows open it on their own sections; Esc closes and the account view is still there", async () => {
     await button('Hesapları gizle / göster'); // the frame starts collapsed; the cards need it open
+    // U-51: the card's click opens the limits popover; U-51a: its Hesabı aç button is the way
+    // into the account view (the card's own click no longer navigates).
     await click('Claude Max');
+    await see('En dar');
+    await button('Hesabı aç');
     await see('Ayarlar\'da düzenle');
     await shot('account');
     await click('Ayarlar\'da düzenle');
