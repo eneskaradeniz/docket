@@ -679,6 +679,20 @@ describe('wizard store (U-35, U-42)', () => {
     expect(bundle.api.commands.filter((command) => command.type === 'account.adopt')).toHaveLength(2);
   });
 
+  it("A-86: the finish's settings.accounts read skips the model catalog", async () => {
+    const bundle = setup([claudeA, claudeB]);
+    await toAccounts(bundle);
+    await bundle.store.next();
+    await bundle.store.next();
+    await bundle.store.next();
+    expect(bundle.store.state().finished).toEqual({ accounts: 2 });
+    // The budget phase reads the stored rows only to apply caps and consents: its query is the
+    // one skip read, and nothing after the finish began asks for the billing view.
+    const settings = bundle.api.queries.filter((query) => query.type === 'settings.accounts');
+    expect(settings.filter((query) => query.catalog === 'skip')).toEqual([{ type: 'settings.accounts', catalog: 'skip' }]);
+    expect(settings[settings.length - 1]).toEqual({ type: 'settings.accounts', catalog: 'skip' });
+  });
+
   it('U-35: an account row carries its provider name beside the label derived from the folder', async () => {
     const bundle = setup([claudeB]);
     await bundle.store.open();
