@@ -622,6 +622,77 @@ the main-repo ★ row opens the board, not the roadmap (U-15); a single-repo boa
 view shows the limit policy read-only with ⓘ (U-20); Son kapananlar lists five (U-21); copy says
 proje / repo, never çalışma alanı (the Workspace→Repo rename).
 
+## Width — proportional scale and full sections (U-53 … U-56)
+
+Visual source: the operator-approved width prototype `~/source/docket-tasarim/genislik/index.html`
+(2026-10-05), validated in twelve conditions — the four data screens (cockpit, account view,
+work-order detail, roadmap) at 1280, 1920 and 2560, in both themes — with every section at 100 %
+fill, a 0 px right gap and no console or page error; the fill was measured at the unscaled raw size.
+The wave exists because the measured app left the wide window empty (the 2026-10-05 responsive
+report): the account view and the roadmap filled 42.6 % of the main area at 2560, the cockpit
+53.6 % (74.8 % already at 1920), the detail 56.8 % — every route but the board sat under a fixed
+`max-w` pinned left, and the cockpit's one wide breakpoint bound the viewport, not the main
+container.
+
+- **U-53** (proportional scale; amends U-51's fixed 264 px; added 2026-10-05, #793; approved
+  prototype `docket-tasarim/genislik/index.html`) The interface grows proportionally with the
+  window. Every dimension on the data screens and the sidebar is expressed in rem — px survives
+  only where a hairline must stay a hairline (1px rules, icon hit areas) — and the scale is one
+  rule on the root, in CSS, never a JS measurement: `html { font-size: clamp(100%, calc(100% +
+  (100vw - 1440px) * 0.0223), 125%) }` (16 px base, breakpoint 1440, clamped 100–125 %; the
+  prototype computed the same formula in JS only because it frames one window inside a page). The
+  anchors the prototype measured: a 0.8125rem body text reads 13 px at 1280 and 16.25 px at 2560,
+  the page h1 (1.25rem) 20 → 25 px, the sidebar's 16.5rem 264 → 330 px. No screen or component
+  overrides the root font-size; a test pins the clamp expression and the no-override rule.
+- **U-54** (full sections; added 2026-10-05, #793) The four data screens fill the main area: no
+  `max-w-*` on their page wrappers or top-level sections, a fixed rem padding at the edges, the
+  content left-aligned (L-10 unchanged). Deliberately narrow surfaces stay narrow — the search
+  palette, the Settings/wizard window (U-46), the AccountEditor dialog (U-43), the centred Yeni
+  proje page (U-40), empty-state cards — and reading text inside a full-width card keeps its
+  measure at most 62ch. Moving any of those to full width is its own decision, never a rider on a
+  PR that lands this rule.
+- **U-55** (columnation on the main container; added 2026-10-05, #793) A width threshold binds to
+  the `main` element's container (`@container`), never to the viewport — the cockpit's
+  viewport-bound `min-[1500px]` column jump, and its skeleton's mirror, is the trap this replaces.
+  The thresholds, in CSS px against the main container: below 900 one column, at ≥900 two, at
+  ≥1500 three; the detail's live pane is the fixed 22.5rem second column from ≥900, and its
+  runs-and-audit third column (21.25rem) arrives at ≥1700. A card grid fills its row with
+  `repeat(auto-fill, minmax(min, 1fr))`, the minimum in rem (21.25rem row cards, 22rem project
+  cards, 23.75rem roadmap phases), so a full row spans edge to edge at every width.
+- **U-56** (sparse row → side panel; added 2026-10-05, #793) A row whose items all fit on one
+  line keeps its cards at their natural minimum on the left and gives the leftover width to a
+  `1fr` side panel: the cockpit's attention and runners rows take "Son kapananlar" and "Sırada" as
+  their panels, and the account view is the fixed three-column composition Kullanım |
+  Harcama+Bağlantı | Son koşular, which leaves no orphan column. The panel exists only while the
+  row's items fit on one line with room to spare — in the validated world the widest class;
+  narrower, the cards fill the row themselves. CSS cannot count elements, so the product binds
+  this decision structurally — one pure helper (item count, container width, minimum card →
+  column count and panel on/off) or, where the composition is fixed anyway, that width class's
+  fixed composition — never a per-screen hand-tuned grid.
+
+### Constraints and follow-ups (the prototype's known limits)
+
+- "Few items → side panel" cannot be expressed in CSS; the prototype computes it in JS on every
+  resize. The product must bind it structurally (U-56's helper or fixed composition) together
+  with the screens — a sparse row whose cards silently stretch wide is the failure mode the rule
+  exists to prevent.
+- The U-55 thresholds are CSS px against `main` while every size rides U-53's rem scale, so a
+  threshold's design-effective point drifts as the scale grows (a 1500 px container buys fewer rem
+  at 125 %). Validated at 1280/1920/2560 only; the audit's 1024/1152 windows sit at the clamped
+  low end. A threshold that proves wrong at an intermediate width is a follow-up that re-validates
+  all three widths, not a per-screen nudge inside a PR.
+- Fill is measured with animations disabled (`prefers-reduced-motion`): a moving element's
+  bounding box corrupts the reading — the prototype's first measurement round read the cockpit's
+  scan bar as %102 fill. L-5a's measurement takes the same precaution.
+- The prototype loads its type faces from Google's CDN and falls back to system faces offline; the
+  product already bundles them (`@fontsource` in `src/index.css`), so there is nothing to port —
+  do not add a CDN dependency for this wave.
+- The px-fixed surfaces inside the scaled app — U-46's wizard/Settings window (1040×680), U-43's
+  AccountEditor (820×600), U-40's card (880×580), the palette's 560 px, the title bar's 28 px
+  controls — do not grow with U-53's scale while their interiors do (at 125 % the interior grows
+  25 % inside the same frame). Whether each moves to rem is the architect's follow-up decision,
+  issue by issue; the width wave must not rewrite them silently.
+
 ## Verifying the shell — E2E layers (Phase 3.5)
 
 The shell is verified against the frozen prototype **rev 8** (`~/source/docket-tasarim/rev8/`:
@@ -650,7 +721,9 @@ belongs to the mobile app.
   the default window (the size the operator uses). `--full` — or `FULL=1` on the wrapping npm
   script — restores the complete 3 × 2 matrix, every size in both themes, for a release run or
   after a token/theme change; `journeys --quick` stays the default window in dark alone. The sidebar is
-  always open, never collapses. The harness resizes the `BrowserWindow`; it does not scale the page.
+  always open, never collapses. The harness resizes the `BrowserWindow`; it does not scale the page
+  itself — under U-53 the page scales with the window through its own root clamp, and the audit's
+  readings are the page's own CSS px.
 - **Journeys** (one `test` each, named `J-n: …`): J-1 cockpit → answer a permission ask inline →
   the item leaves Senden bekleyenler · J-2 tree → repo row → board; Kanban ⇄ Liste survives reload ·
   J-3 card → in-place detail → approve → ‹ Geri returns with view state intact · J-4 project row →
@@ -665,6 +738,9 @@ belongs to the mobile app.
   - **L-1** The sidebar's left edge is 0 and its width is 240px at every window size — it never
     narrows — identical (±0.5px) on every screen.
   - **L-1a** (amends L-1; 2026-10-05, U-51) the sidebar is 264 px wide, not 240.
+  - **L-1b** (amends L-1a; 2026-10-05, U-53) the sidebar is 16.5 rem at the live scale — 264 px
+    at 100 %, 330 px at 125 % — so its pixel width follows the root clamp instead of a fixed
+    number; the never-narrows and identical-on-every-screen readings of L-1 stay.
   - **L-2** No page-level horizontal scroll: `documentElement.scrollWidth <= innerWidth`.
   - **L-3** Every visible button, link and input lies fully inside the window and inside its nearest
     clipping ancestor, except inside the declared Kanban scroller; inside the Settings window's content
@@ -673,6 +749,12 @@ belongs to the mobile app.
     `text-overflow: ellipsis` and carries its full text in `title`.
   - **L-5** The main column's content width is at most 1200px (cockpit), 1280px (detail) or 960px
     (roadmap, account); the board uses the full main width.
+  - **L-5a** (amends L-5; 2026-10-05, U-54) the four data screens fill the main column instead:
+    every top-level section's right edge sits within 8 px of the main column's content-box right
+    edge at every audited size and theme, measured with animations disabled
+    (`prefers-reduced-motion` — a moving element's box corrupts the reading). L-5's caps are
+    superseded for these screens; a deliberately narrow surface (U-54's list) keeps its own cap
+    and is asserted against it.
   - **L-6** The accounts frame is never collapsed: at the 1024×640 minimum its body stays visible
     under its header.
   - **L-7** When the detail's main width is below 900 the live pane sits below the "bu aşamada
