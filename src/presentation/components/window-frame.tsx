@@ -24,6 +24,9 @@ export interface WindowFrameProps {
   readonly className?: string;
   readonly frameRef?: Ref<HTMLElement>;
   readonly onKeyDown?: (event: React.KeyboardEvent<HTMLElement>) => void;
+  /** A `data-*` name the frame is known by to the e2e walks — Settings marks its window so the
+   *  audit and the journeys can tell it from the wizard's, which shares this frame. */
+  readonly dataMark?: string;
 }
 
 export function BrandMark({ name }: { readonly name: string }) {
@@ -37,7 +40,7 @@ export function BrandMark({ name }: { readonly name: string }) {
   );
 }
 
-export function WindowFrame({ label, brand, rail, railNote, head, children, footer, className = '', frameRef, onKeyDown }: WindowFrameProps) {
+export function WindowFrame({ label, brand, rail, railNote, head, children, footer, className = '', frameRef, onKeyDown, dataMark }: WindowFrameProps) {
   return (
     <section
       ref={frameRef}
@@ -47,6 +50,7 @@ export function WindowFrame({ label, brand, rail, railNote, head, children, foot
       aria-modal="true"
       aria-label={label}
       data-window=""
+      {...(dataMark === undefined ? {} : { [dataMark]: '' })}
       className={`relative grid h-[580px] max-h-full w-[880px] max-w-full grid-cols-[200px_minmax(0,1fr)] overflow-hidden rounded-panel border border-bord bg-surface shadow-2xl outline-none ${className}`}
     >
       <nav aria-label={label} className="flex flex-col gap-[18px] overflow-y-auto border-r border-hairline bg-band px-3.5 pb-4 pt-[22px]">
