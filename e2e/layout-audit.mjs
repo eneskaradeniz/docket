@@ -50,6 +50,7 @@ import { _electron as electron, chromium } from 'playwright-core';
 import { ROOT, launchDesignApp, screenNavigator, seedDesign, setWindow } from './design-app.mjs';
 import { SLOW_API_DELAY_MS } from './design-run.mjs';
 import { acquireE2eLock } from './lock.mjs';
+import { appendCheck, beginReport, REPORT_PATH } from './report.mjs';
 import {
   comboPlan,
   measureSkeletonHolders,
@@ -750,6 +751,9 @@ if (args.slow && args.target === 'app') {
   process.env.DOCKET_API_DELAY_MS = String(SLOW_API_DELAY_MS);
 }
 const target = args.target === 'prototype' ? await openPrototype(args.path) : await openApp();
+// The report is one run's world: it starts here, fresh, and every result line lands in it as it
+// is printed — the JSON mirrors the console, never judges it.
+beginReport();
 
 // The plan's real numbers, printed once so every later label can be read against them.
 for (const { name, size } of target.sizes) console.log(`size: ${name} ${size[0]}x${size[1]}`);
@@ -786,6 +790,7 @@ for (const { size: entry, theme } of plan) {
       if (status === 'FAIL') failures += 1;
       lines += 1;
       console.log(`${r.id}: ${label} ${status} ${r.detail}`);
+      appendCheck({ id: r.id, screen, size: `${width}x${height}`, theme, status, detail: r.detail });
     }
     // The window's own containment is asserted once per size × theme, on the first screen of
     // the size: it must lie wholly inside the primary display's work area.
@@ -799,6 +804,7 @@ for (const { size: entry, theme } of plan) {
       if (!r.ok) failures += 1;
       lines += 1;
       console.log(`window: ${sizeName} ${width}x${height} ${theme} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
+      appendCheck({ id: 'window', screen: '', size: `${width}x${height}`, theme, status: r.ok ? 'ok' : 'FAIL', detail: r.detail });
     }
     // The palette is measured open once per size × theme, on the cockpit screen; the settings
     // panel is measured the same way, through the nav's Ayarlar row; the title bar's Update
@@ -813,6 +819,7 @@ for (const { size: entry, theme } of plan) {
       if (!r.ok) failures += 1;
       lines += 1;
       console.log(`palette: ${label} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
+      appendCheck({ id: 'palette', screen, size: `${width}x${height}`, theme, status: r.ok ? 'ok' : 'FAIL', detail: r.detail });
     }
     if (!args.slow && screen === 'kokpit' && target.selectors.settingsPanel) {
       let r;
@@ -824,6 +831,7 @@ for (const { size: entry, theme } of plan) {
       if (!r.ok) failures += 1;
       lines += 1;
       console.log(`settings: ${label} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
+      appendCheck({ id: 'settings', screen, size: `${width}x${height}`, theme, status: r.ok ? 'ok' : 'FAIL', detail: r.detail });
     }
     if (!args.slow && screen === 'kokpit' && args.target === 'app' && target.selectors.accountsFrame) {
       let r;
@@ -835,6 +843,7 @@ for (const { size: entry, theme } of plan) {
       if (!r.ok) failures += 1;
       lines += 1;
       console.log(`accounts-opacity: ${label} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
+      appendCheck({ id: 'accounts-opacity', screen, size: `${width}x${height}`, theme, status: r.ok ? 'ok' : 'FAIL', detail: r.detail });
     }
     if (!args.slow && screen === 'kokpit' && target.selectors.titleBar) {
       let r;
@@ -847,6 +856,7 @@ for (const { size: entry, theme } of plan) {
       if (!r.ok) failures += 1;
       lines += 1;
       console.log(`titlebar: ${label} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
+      appendCheck({ id: 'titlebar', screen, size: `${width}x${height}`, theme, status: r.ok ? 'ok' : 'FAIL', detail: r.detail });
     }
   }
 }
@@ -861,6 +871,7 @@ if (args.slow && target.selectors.skeleton) {
     if (!r.ok) failures += 1;
     lines += 1;
     console.log(`skeleton: ${screen} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
+    appendCheck({ id: 'skeleton', screen, size: '', theme: '', status: r.ok ? 'ok' : 'FAIL', detail: r.detail });
   }
 }
 // The without-standing runs once per run, on its own fake-free launch — the default run;
@@ -875,7 +886,9 @@ if (!args.slow && target.selectors.titleBar) {
   if (!r.ok) failures += 1;
   lines += 1;
   console.log(`titlebar-plain: ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
+  appendCheck({ id: 'titlebar-plain', screen: '', size: '', theme: '', status: r.ok ? 'ok' : 'FAIL', detail: r.detail });
 }
 await target.close();
 console.log(`${lines} checks, ${failures} FAIL`);
+console.log(`report: ${REPORT_PATH}`);
 process.exit(failures === 0 ? 0 : 1);
