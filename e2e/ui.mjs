@@ -31,6 +31,7 @@ import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { _electron as electron } from 'playwright-core';
 import { acquireE2eLock } from './lock.mjs';
+import { appendCheck, beginReport, REPORT_PATH } from './report.mjs';
 
 const ROOT = resolve(new URL('..', import.meta.url).pathname);
 // One Electron suite per machine, like the harness before it: parallel launches of this size
@@ -41,6 +42,9 @@ if (!existsSync(join(ROOT, 'dist-electron', 'main.js'))) {
   console.error('the built app is missing — run npm run test:ui (it builds first)');
   process.exit(1);
 }
+// The smoke's specs land in the same structured report the audits write, so a run of `test:ui`
+// leaves a machine-readable record too.
+beginReport();
 
 // --- the seed ----------------------------------------------------------------------------------------
 const seedOut = execFileSync('npx', ['tsx', 'e2e/seed-smoke.ts'], { cwd: ROOT, encoding: 'utf8' });
@@ -121,9 +125,18 @@ const spec = async (name, fn) => {
   try {
     await fn();
     console.log(`  ok ${specIndex}. ${name}`);
+    appendCheck({ id: `smoke-${specIndex}`, screen: name, size: '', theme: '', status: 'ok', detail: '' });
   } catch (error) {
     failures.push(name);
     console.log(`  FAIL ${specIndex}. ${name}\n    ${String(error).split('\n').slice(0, 4).join('\n    ')}`);
+    appendCheck({
+      id: `smoke-${specIndex}`,
+      screen: name,
+      size: '',
+      theme: '',
+      status: 'FAIL',
+      detail: String(error).split('\n').slice(0, 4).join('\n'),
+    });
     try {
       const shot = join(SEED.home, `smoke-fail-${specIndex}.png`);
       await page.screenshot({ path: shot });
@@ -285,5 +298,6 @@ console.log(
     ? '\nsmoke: all specs passed'
     : `\nsmoke: ${failures.length} failing spec(s): ${failures.join(' | ')}`,
 );
+console.log(`report: ${REPORT_PATH}`);
 await app.close().catch(() => undefined);
 process.exit(failures.length === 0 ? 0 : 1);
