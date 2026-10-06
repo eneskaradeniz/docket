@@ -65,6 +65,15 @@ ask; do not pick one yourself.
   `main` before the operator's verdict. The assistant never launches the app itself.
 - Batch mode (unattended, no UI): merges go into the `v2` integration branch only; the operator
   reviews the `v2 → main` PR in the morning. Full protocol: `docs/v2/roadmap.md` → "Batch mode".
+- **Verification before handoff (added 2026-10-05; supersedes "The assistant never launches the app
+  itself" for automated verification only).** Green commands are not evidence for UI work. Before a
+  UI change reaches the operator, an automated session launches the built app headless (Playwright
+  Electron as in `e2e/ui.mjs`) with `DOCKET_DATA_DIR` aimed at a fresh temporary directory — no
+  keychain writes, no model or agent runs, no real spend — walks the scenario, records page/console
+  errors, screenshots and timings, and fixes what it finds. The operator receives a candidate with
+  that evidence; the operator's verdict stays the gate for merging to `main`, and an operator is
+  never asked to find a crash or a wrong layout that a walk-through would have shown. Throwaway
+  walk scripts live outside the repo unless an issue adds them.
 
 ## CI
 - `npm run typecheck`, `npm test`, `npm run build`, `npm run check:boundaries` run on every PR and on
