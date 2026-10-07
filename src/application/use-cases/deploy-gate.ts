@@ -201,11 +201,18 @@ export async function approveAndDeploy(
 
   const current = findCurrentGate(flow, state, input.gate);
   if (current === undefined) return err('not_current_stage');
-  if (!state.pendingGates.includes(input.gate)) return err('not_pending');
   if (current.gate.kind !== 'deploy') return err('not_a_deploy_gate');
   // Bound to a name so the deploy variant's `environment` stays narrowed across the awaits below.
   const deployGate = current.gate;
   if (input.approver.kind !== 'user') return err('no_approval');
+
+  // A human decision lands only while the stage actually waits for one. In every other status
+  // the pending list is the fold's pre-fill (or residue) of the stage's gates, and a
+  // gate_evaluated event now would be a dead fact the fold ignores.
+  // Deploy gates keep the status at 'gating' until approved, so we accept both statuses.
+  if ((state.status !== 'awaiting_human' && state.status !== 'gating') || !state.pendingGates.includes(input.gate)) {
+    return err('not_pending');
+  }
 
   // The protected flag lives on the definition, so the environment must resolve before the
   // confirmation can be judged.
