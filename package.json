@@ -22,6 +22,7 @@
     "contract": "tsx scripts/emit-contract.mjs",
     "gen:provider-matrix": "tsx scripts/gen-provider-matrix.mjs",
     "test:ui": "npm run build && node e2e/ui.mjs",
+    "test:ui:report": "npm run build && { node e2e/layout-audit.mjs; a=$?; DOCKET_REPORT_APPEND=1 node e2e/journeys.mjs; b=$?; node e2e/a11y-snapshot.mjs; c=$?; exit $(( (a + b + c) > 0 )); }",
     "test:journeys": "npm run build && node e2e/journeys.mjs",
     "test:layout": "npm run build && node e2e/layout-audit.mjs",
     "test:gallery": "npm run build && node e2e/gallery.mjs",

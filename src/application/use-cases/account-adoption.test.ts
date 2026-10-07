@@ -1,6 +1,7 @@
 // account adoption — turning a discovered candidate into an account (P-33). The command carries a
-// source path and a label only; the candidate is re-found by a fresh scan, and a token reaches the
-// vault only through an explicit import that no record, audit entry, return value or error echoes.
+// source path and a label only; the candidate is re-found in the remembered scan (A-85), and a
+// token reaches the vault only through an explicit import that no record, audit entry, return
+// value or error echoes.
 import { describe, expect, it } from 'vitest';
 
 import type { Actor } from '../../domain/index';
@@ -12,10 +13,11 @@ import {
   createFakeDeps,
   createFakeEventLog,
   createFakeSecretVault,
+  type FakeClock,
   type FakeEventLog,
 } from '../ports/fakes';
 
-import { adoptAccountCandidate, createAccountCandidateList } from './account-adoption';
+import { adoptAccountCandidate, createAccountCandidateList, type AccountCandidateList } from './account-adoption';
 
 const USER: Actor = { kind: 'user', id: 'user-1', label: 'Operator' };
 const SENTINEL = 'sk-sentinel-token-9f8e7d6c';
@@ -57,7 +59,8 @@ const MACHINE: AccountCandidate = {
 };
 
 interface Harness {
-  readonly deps: AppDeps & { readonly discovery: AccountDiscovery; readonly importer: CredentialImporter };
+  readonly deps: AppDeps & { readonly candidates: AccountCandidateList; readonly importer: CredentialImporter };
+  readonly clock: FakeClock;
   readonly log: FakeEventLog;
   readonly scans: { count: number };
   readonly reads: string[];
@@ -71,6 +74,7 @@ const makeHarness = (
   const log = createFakeEventLog();
   const scans = { count: 0 };
   const reads: string[] = [];
+  const clock = createFakeClock(1_000);
   const discovery: AccountDiscovery = {
     scan: async () => {
       scans.count += 1;
@@ -85,7 +89,7 @@ const makeHarness = (
     },
   };
   const base = createFakeDeps({
-    clock: createFakeClock(1_000),
+    clock,
     log,
     secrets: createFakeSecretVault(),
     capabilities: createFakeCapabilityCatalog([
@@ -94,7 +98,9 @@ const makeHarness = (
       { id: 'machine-route', provider: 'prov-b', authMode: 'subscription' },
     ]),
   });
-  return { deps: { ...base, discovery, importer }, log, scans, reads };
+  // One remembered scan per harness, as the api owns one per instance: every adoption reads it.
+  const list = createAccountCandidateList(clock, discovery);
+  return { deps: { ...base, candidates: list, importer }, clock, log, scans, reads };
 };
 
 describe('adoptAccountCandidate', () => {
@@ -180,11 +186,47 @@ describe('adoptAccountCandidate', () => {
     expect(h.log.entries()).toEqual([]);
   });
 
-  it('re-scans on every adoption instead of trusting an earlier answer', async () => {
+  it('A-85: adopting three candidates after one scan runs no further scan', async () => {
+    const h = makeHarness([SUBSCRIPTION, ENDPOINT, MACHINE]);
+    await h.deps.candidates.get();
+    const first = await adoptAccountCandidate(h.deps, { sourcePath: SUBSCRIPTION.sourcePath, label: 'A', actor: USER });
+    const second = await adoptAccountCandidate(h.deps, { sourcePath: ENDPOINT.sourcePath, label: 'B', actor: USER });
+    const third = await adoptAccountCandidate(h.deps, { sourcePath: MACHINE.sourcePath, label: 'C', actor: USER });
+    expect([first.ok, second.ok, third.ok]).toEqual([true, true, true]);
+    expect(h.scans.count).toBe(1);
+  });
+
+  it('A-85: a scan older than 60 s is not reused — the adoption scans anew and remembers that scan', async () => {
     const h = makeHarness();
-    await adoptAccountCandidate(h.deps, { sourcePath: SUBSCRIPTION.sourcePath, label: 'A', actor: USER });
-    await adoptAccountCandidate(h.deps, { sourcePath: ENDPOINT.sourcePath, label: 'B', actor: USER });
+    await h.deps.candidates.get();
+    h.clock.advance(60_000);
+    const adopted = await adoptAccountCandidate(h.deps, { sourcePath: SUBSCRIPTION.sourcePath, label: 'A', actor: USER });
+    expect(adopted.ok).toBe(true);
     expect(h.scans.count).toBe(2);
+    // The new scan is remembered: the next adoption inside the window adds none.
+    const again = await adoptAccountCandidate(h.deps, { sourcePath: ENDPOINT.sourcePath, label: 'B', actor: USER });
+    expect(again.ok).toBe(true);
+    expect(h.scans.count).toBe(2);
+  });
+
+  it('A-85: a candidate absent from the remembered scan fails not_found without a hidden second scan', async () => {
+    const h = makeHarness([SUBSCRIPTION]);
+    await h.deps.candidates.get();
+    const result = await adoptAccountCandidate(h.deps, { sourcePath: ENDPOINT.sourcePath, label: 'X', actor: USER });
+    expect(result).toEqual({ ok: false, error: 'not_found' });
+    expect(h.scans.count).toBe(1);
+  });
+
+  it('A-85: re-adopting a source the remembered scan predates fails already_added — the store decides', async () => {
+    const h = makeHarness();
+    await h.deps.candidates.get();
+    const first = await adoptAccountCandidate(h.deps, { sourcePath: SUBSCRIPTION.sourcePath, label: 'A', actor: USER });
+    expect(first.ok).toBe(true);
+    // The remembered scan still lists the path as not added; the accounts store is the truth.
+    const second = await adoptAccountCandidate(h.deps, { sourcePath: SUBSCRIPTION.sourcePath, label: 'A2', actor: USER });
+    expect(second).toEqual({ ok: false, error: 'already_added' });
+    expect(await h.deps.accounts.list()).toHaveLength(1);
+    expect(h.scans.count).toBe(1);
   });
 
   it('importToken stores the token in the vault under the secretRef; it appears nowhere else', async () => {
@@ -281,22 +323,55 @@ describe('adoptAccountCandidate', () => {
 });
 
 describe('createAccountCandidateList', () => {
-  it('scans once per session and again only on refresh', async () => {
+  it('answers every reader from one scan and scans again only once the scan is 60 s old', async () => {
     const h = makeHarness();
-    const list = createAccountCandidateList(h.deps.discovery);
+    const list = h.deps.candidates;
     expect(await list.get()).toEqual([SUBSCRIPTION, ENDPOINT]);
     await list.get();
     expect(h.scans.count).toBe(1);
-    await list.get({ refresh: true });
+    h.clock.advance(59_999);
+    await list.get();
+    expect(h.scans.count).toBe(1);
+    h.clock.advance(1);
+    await list.get();
     expect(h.scans.count).toBe(2);
   });
 
-  it('invalidate drops the cache so the next read scans again', async () => {
+  it('shares one in-flight scan between concurrent readers', async () => {
     const h = makeHarness();
-    const list = createAccountCandidateList(h.deps.discovery);
+    const [first, second] = await Promise.all([h.deps.candidates.get(), h.deps.candidates.get()]);
+    expect(first).toEqual([SUBSCRIPTION, ENDPOINT]);
+    expect(second).toEqual([SUBSCRIPTION, ENDPOINT]);
+    expect(h.scans.count).toBe(1);
+  });
+
+  it('a failed scan does not stick: the next read scans again', async () => {
+    let fail = true;
+    const scans = { count: 0 };
+    const discovery: AccountDiscovery = {
+      scan: async () => {
+        scans.count += 1;
+        if (fail) throw new Error('scan broke');
+        return [SUBSCRIPTION];
+      },
+    };
+    const list = createAccountCandidateList(createFakeClock(1_000), discovery);
+    await expect(list.get()).rejects.toThrow('scan broke');
+    fail = false;
+    await expect(list.get()).resolves.toEqual([SUBSCRIPTION]);
+    expect(scans.count).toBe(2);
+  });
+
+  it('A-85: fresh: true always scans anew and replaces the remembered scan', async () => {
+    const h = makeHarness();
+    const list = h.deps.candidates;
     await list.get();
-    list.invalidate();
+    await list.get({ fresh: true });
+    expect(h.scans.count).toBe(2);
+    // The fresh result is the remembered one: a plain read and an adoption add no scan.
     await list.get();
+    const adopted = await adoptAccountCandidate(h.deps, { sourcePath: ENDPOINT.sourcePath, label: 'B', actor: USER });
+    expect(adopted.ok).toBe(true);
     expect(h.scans.count).toBe(2);
   });
 });

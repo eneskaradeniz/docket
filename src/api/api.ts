@@ -84,6 +84,7 @@ import {
   getUpdateState,
   getWorkOrder,
   grantSpendConsent,
+  isSourceTaken,
   openTaskWorkOrders,
   openWorkOrder,
   registerRepo,
@@ -248,9 +249,9 @@ export function createApi(
   adoption?: AccountAdoption,
   quota?: QuotaWiring,
 ): Api & RunEventFeed & { readonly quota: QuotaLifecycle } {
-  // One cache per api instance: the candidates query reads it, an adoption drops it.
+  // One remembered scan per api instance (A-85): the candidates query and every adoption read it.
   const adopting: Adopting | undefined =
-    adoption === undefined ? undefined : { ...adoption, candidates: createAccountCandidateList(adoption.discovery) };
+    adoption === undefined ? undefined : { ...adoption, candidates: createAccountCandidateList(deps.clock, adoption.discovery) };
   // The push channel (U-12): a Set keeps delivery to each listener once and makes unsubscribe a
   // plain delete.
   const listeners = new Set<(e: UiEvent) => void>();
@@ -601,7 +602,7 @@ const runCommand = async (
     case 'account.adopt': {
       // Without the discovery and importer ports no candidate can be found, so the command
       // answers not_found instead of inventing an account. The command carries no kind: the
-      // adoption re-scans and classifies by source path alone.
+      // adoption reads the remembered scan (A-85) and classifies by source path alone.
       if (adopting === undefined) return { ok: false, code: 'not_found' };
       const adopted = await adoptAccountCandidate(
         {
@@ -612,7 +613,7 @@ const runCommand = async (
           secrets: deps.secrets,
           capabilities: deps.capabilities,
           accountTests: deps.accountTests,
-          discovery: adopting.discovery,
+          candidates: adopting.candidates,
           importer: adopting.importer,
         },
         {
@@ -622,8 +623,6 @@ const runCommand = async (
           actor,
         },
       );
-      // The candidates' alreadyAdded flags are stale after any attempt that reached a record.
-      adopting.candidates.invalidate();
       if (adopted.ok) void quotaService?.refresh(adopted.value);
       return adopted.ok ? { ok: true, id: adopted.value } : { ok: false, code: adopted.error };
     }
@@ -839,14 +838,18 @@ const runQuery = async (
     case 'accounts.candidates': {
       if (adopting === undefined) return { ok: false, code: 'not_found' };
       const found: readonly AccountCandidate[] = await adopting.candidates.get(
-        query.refresh === true ? { refresh: true } : undefined,
+        query.fresh === true ? { fresh: true } : undefined,
       );
+      // The remembered scan's alreadyAdded flags can predate accounts adopted or removed inside
+      // its window, so each row is decided against the store — never by a hidden rescan.
+      const stored = await deps.accounts.list();
       // The provider is the def id the route kind belongs to, the lookup adoption makes too.
       return found.map((candidate) => {
         const route = deps.capabilities.routeKind(candidate.routeKind);
         return {
           ...candidate,
           provider: route?.providerId ?? null,
+          alreadyAdded: isSourceTaken(candidate, stored),
           // A-83a: the route kind's declared billing, else by kind: subscription and machine_login are
           // included, a compatible endpoint unknown.
           billing: route?.defaultBilling ?? (candidate.kind === 'compatible_endpoint' ? 'unknown' : 'included'),
