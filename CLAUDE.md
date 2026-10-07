@@ -74,6 +74,7 @@ ask; do not pick one yourself.
   that evidence; the operator's verdict stays the gate for merging to `main`, and an operator is
   never asked to find a crash or a wrong layout that a walk-through would have shown. Throwaway
   walk scripts live outside the repo unless an issue adds them.
+- **Live runs with GLM only (added 2026-10-07; narrows "no model or agent runs" above).** An automated session may start real agent runs inside Docket only through the `zai-glm` route of the claude-code provider, against a dedicated persistent test data directory (`~/.docket-test`, never `~/.docket`, never the operator's real projects) and a throw-away repository created for the run. No other provider route may be used or adopted in that directory, and machine-login (subscription) accounts must not be adopted there. The z.ai token is entered by the operator once, through the app's own account step; an assistant never reads, prints, logs, or writes a secret value. Everything else in the paragraph above stays: a temporary data directory is the default, and there is no real spend on any other provider.
 
 ## CI
 - `npm run typecheck`, `npm test`, `npm run build`, `npm run check:boundaries` run on every PR and on
