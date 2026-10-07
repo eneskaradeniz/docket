@@ -93,11 +93,19 @@ for (const [sizeName, theme] of combos) {
     }
   };
 
-  await journey('J-1', 'cockpit: answer a permission ask inline, the item leaves Senden bekleyenler', async () => {
+  await journey('J-1', 'cockpit: answer a permission ask inline, the permission_answered event closes the ask', async () => {
     await see('Senden bekleyenler');
-    await see('dotnet ef database update');
+    // The ask is raised by a REAL run: the seed queues İE-0029's stage and the launched app's
+    // dispatcher starts it on its own cadence (first tick 5 s in), the scripted design-agent asks
+    // over the real ACP transport and the executor parks the run on the in-process permission
+    // board. So this step waits the dispatcher out — the ask is answerable exactly because it
+    // arrived through that production entry, not through a seeded event.
+    await text('dotnet ef database update').waitFor({ state: 'visible', timeout: 30_000 });
     await shot('ask-visible');
     await button('İzin ver');
+    // The answer resolves the board entry; the executor appends permission_answered (R-44's
+    // closeness rule) and the cockpit's re-query drops the command band — the order stays listed
+    // under its next standing (the stage's human gate), which is the honest product behaviour.
     await gone('dotnet ef database update');
     await shot('ask-answered');
   });

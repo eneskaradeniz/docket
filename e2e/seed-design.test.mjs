@@ -133,3 +133,66 @@ test('six accounts with 5-hour, weekly and monthly windows and spend', () => {
   }
   assert.ok(dump.spend.length > 0, 'spend is recorded');
 });
+
+// The permission ask J-1 answers must be raisable by the app's own executor: a seeded ask that
+// lives only in the event store can never be answered (no run ever parked it on the in-process
+// board), which is exactly the #815 defect. This test pins the rigging, not the run: the queue
+// item the dispatcher starts, the scripted agent's ask, the route and consent that let the run
+// start, and the dispatch room the seeded world must leave for it.
+test('the permission ask is rigged for the executor: queued, consented, no dead ask, room to start', () => {
+  const [{ manifest, dump }] = seedTwice();
+  const asking = manifest.codes['İE-0029'];
+  assert.ok(asking, 'İE-0029 is seeded');
+  assert.equal(asking.state, 'ready', 'İE-0029 waits ready at its asking stage, nothing pre-run');
+
+  // One queue item: İE-0029's stage on the OpenCode account — the one provider whose binary the
+  // design harness overrides, so the launched app's dispatcher can actually start the run.
+  assert.equal(dump.queue_items.length, 1, 'exactly one queued stage');
+  const item = JSON.parse(JSON.parse(dump.queue_items[0]).data);
+  assert.equal(item.workOrderId, asking.id);
+  assert.equal(item.stage, 'gelistir');
+  assert.equal(item.route.accountId, manifest.accounts['OpenCode API']);
+
+  // No dead ask: the store holds no permission_ask event and no run at the asking stage — the
+  // ask must come from the live run, or the cockpit would list an answerless row forever (and a
+  // seeded stage run would hold the work order busy against the dispatcher).
+  for (const row of dump.run_events) {
+    assert.ok(!row.includes('permission_ask'), 'a seeded run still carries a permission ask');
+  }
+  for (const row of dump.runs) {
+    const run = JSON.parse(row);
+    assert.ok(
+      !(run.work_order_id === asking.id && JSON.parse(run.data).stage === 'gelistir'),
+      'İE-0029 must not carry a seeded run at its asking stage',
+    );
+  }
+
+  // The run must pass the spend-consent gate: an api-key route without consent is refused before
+  // any write, and the queue item would start and die without ever asking.
+  const openCodeRow = dump.accounts.map((row) => JSON.parse(JSON.parse(row).data)).find((record) => record.label === 'OpenCode API');
+  assert.ok(openCodeRow?.consentedModels?.includes('*'), 'the OpenCode account carries the default-model consent');
+
+  // The route: a work-order-level binding sends İE-0029's stage role to the OpenCode account,
+  // leaving every other order's routing on the world's usual accounts.
+  const scoped = dump.bindings
+    .map((row) => JSON.parse(row))
+    .filter((row) => row.level === 'workOrder' && row.scope_key === asking.id);
+  assert.equal(scoped.length, 1, 'one work-order-scoped binding for the asking order');
+  const binding = JSON.parse(scoped[0].data);
+  assert.equal(binding.role, 'gelistirici');
+  assert.deepEqual(binding.accounts.map((entry) => entry.accountId), [manifest.accounts['OpenCode API']]);
+
+  // Dispatch room: still-active seeded runs count against the dispatcher's limits (global 4,
+  // per-repo 3), so the world must leave the queued item a slot on both counts.
+  const repoOf = new Map(Object.values(manifest.codes).map((entry) => [entry.id, entry.repo]));
+  const active = dump.runs.map((row) => JSON.parse(row)).filter((row) => row.ended_at === null);
+  assert.ok(active.length <= 3, `${active.length} active runs leave no global slot for the queued stage`);
+  const onAskingRepo = active.filter((row) => repoOf.get(row.work_order_id) === asking.repo);
+  assert.ok(onAskingRepo.length <= 2, `${onAskingRepo.length} active runs on ${asking.repo} leave no repo slot`);
+
+  // The scripted agent asks the prototype's command with answerable options — the text J-1 reads
+  // in the cockpit's code band and the allow/deny pair its buttons answer.
+  const agent = readFileSync(manifest.agentBin, 'utf8');
+  assert.ok(agent.includes('dotnet ef database update'), 'the design agent asks İE-0029 command');
+  assert.ok(agent.includes('allow_once') && agent.includes('reject_once'), 'the ask offers allow and reject');
+});
