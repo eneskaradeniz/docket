@@ -170,6 +170,14 @@ describe('adoptAccountCandidate', () => {
     expect(h.reads).toEqual([]);
   });
 
+  it('stores the candidate endpointUrl verbatim, so a configured path survives adoption', async () => {
+    const h = makeHarness([{ ...ENDPOINT, endpointUrl: 'https://api.example.test/api/anthropic' }]);
+    const result = await adoptAccountCandidate(h.deps, { sourcePath: ENDPOINT.sourcePath, label: 'GLM', actor: USER });
+    if (!result.ok) throw new Error('adoption must succeed');
+    const record = await h.deps.accounts.get(result.value);
+    expect(record?.endpoint).toBe('https://api.example.test/api/anthropic');
+  });
+
   it('an unknown sourcePath fails with not_found and writes nothing', async () => {
     const h = makeHarness();
     const result = await adoptAccountCandidate(h.deps, { sourcePath: '/home/u/.claude-nope', label: 'X', actor: USER });

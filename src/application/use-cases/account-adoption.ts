@@ -114,7 +114,9 @@ export async function adoptAccountCandidate(
         limitPolicy: 'wait_resume',
         caps: [],
         routeKind: candidate.routeKind,
-        endpoint: `https://${candidate.endpointHost}`,
+        // The configured URL keeps its path; the bare-host fallback covers a candidate that
+        // carries only a host.
+        endpoint: candidate.endpointUrl ?? `https://${candidate.endpointHost}`,
         secretRef: `account/${id}/api-key`,
       }
     : {
