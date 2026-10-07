@@ -8,7 +8,7 @@
 // it and the focus never leaves the card. The body is one fixed height — two cards with the top
 // of a third peeking beneath — and the rest scroll inside it, never the sidebar. The refresh
 // intent re-polls usage through the store while the icon spins.
-import { useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, useLayoutEffect, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
 
 import { ACTIVE_CLASS } from './active-state';
 import { MARK_SIZE, ProviderMark } from './provider-mark';
@@ -100,6 +100,10 @@ const AccountCardSkeleton = () => (
  *  reset time, the tightest one marked, ending with the "Hesabı aç" button that opens the
  *  account view. Beyond that one control the focus stays on the card that opened it, and Esc or
  *  an outside click is what closes it (the parent's listeners). */
+export function clampPopoverTop(top: number, height: number, viewportHeight: number, margin: number): number {
+  return Math.max(margin, Math.min(top, viewportHeight - margin - height));
+}
+
 export function AccountLimitsPopover({
   card,
   provider,
@@ -123,9 +127,26 @@ export function AccountLimitsPopover({
   readonly onOpen: () => void;
 }) {
   const full = provider === null ? card.label : `${provider} · ${card.label}`;
-  const style: CSSProperties = { left, top };
+  const [adjustedTop, setAdjustedTop] = useState<number | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    if (ref.current !== null) {
+      const h = ref.current.getBoundingClientRect().height;
+      setAdjustedTop(clampPopoverTop(top, h, window.innerHeight, 8));
+    }
+  }, [top, card.limits]);
+
+  const style: CSSProperties = {
+    left,
+    top: adjustedTop ?? top,
+    maxHeight: 'calc(100vh - 16px)',
+    overflowY: 'auto',
+    visibility: adjustedTop === null ? 'hidden' : 'visible',
+  };
   return (
     <div
+      ref={ref}
       data-account-popover=""
       role="dialog"
       aria-label={`${full} — ${t(locale, 'accounts.limits')}`}

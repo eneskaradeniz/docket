@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Api } from '../../api/api';
 import type { SettingsAccountView, SettingsAccountsView, SettingsMeterView } from '../../api/queries';
-import { AccountLimitsPopover, SidebarAccounts } from './sidebar-accounts';
+import { AccountLimitsPopover, SidebarAccounts, clampPopoverTop } from './sidebar-accounts';
 import { ACCOUNTS_BODY_MAX_HEIGHT } from './sidebar-geometry';
 import { createAccountsFrameStore, type AccountCard } from '../stores/accounts-frame';
 import { createProviderMarksStore } from '../stores/provider-marks';
@@ -306,5 +306,22 @@ describe('SidebarAccounts (U-51)', () => {
     expect(html).not.toContain('text-[10.5px]');
     expect(html).not.toContain('text-[11px]');
     expect(html).not.toContain('text-[10px]');
+  });
+
+  it('U-51b: popover top clamp calculation bounds strictly within viewport', () => {
+    // viewport içinde kalma (fits completely)
+    expect(clampPopoverTop(100, 300, 800, 8)).toBe(100);
+    // alt kenar taşması (overflows bottom)
+    expect(clampPopoverTop(600, 300, 800, 8)).toBe(492); // 800 - 8 - 300 = 492
+    // üst kenar taşması (overflows top)
+    expect(clampPopoverTop(0, 300, 800, 8)).toBe(8);
+    // popover yüksekliği viewport'tan büyük (height > viewport)
+    expect(clampPopoverTop(100, 900, 800, 8)).toBe(8);
+  });
+
+  it('U-23: header button is 24x24 at rest', async () => {
+    const html = await renderFrame(view([]), true);
+    // Refresh button uses SIDEBAR_HEADER_BUTTON which is h-6 w-6
+    expect(html).toContain('h-6 w-6');
   });
 });
