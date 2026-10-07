@@ -414,6 +414,25 @@ describe('decideHumanGate', () => {
     expect(h.log.entries()).toHaveLength(0);
   });
 
+  it('A-8: a pending human gate while the stage merely waits to start (ready) is not_pending and appends nothing', async () => {
+    const h = makeHarness();
+    // The review stage has a role, so entry settles at ready with every exit gate pre-filled as
+    // pending — the exact standing a fresh work order's detail screen renders.
+    await createIn(h, 'verdict-flow');
+
+    const result = await decideHumanGate(h.deps, {
+      id: WORK_ORDER,
+      gate: slugOf('review-approval'),
+      decision: 'approved',
+      actor: USER,
+    });
+
+    expect(result).toEqual({ ok: false, error: 'not_pending' });
+    // Only `created` remains: a decision the fold cannot apply yet must not become a dead fact.
+    expect(await eventsOf(h)).toHaveLength(1);
+    expect(h.log.entries()).toHaveLength(0);
+  });
+
   it('A-8: a gate that is no longer pending is not_pending', async () => {
     const h = makeHarness();
     await createIn(h, 'two-gates');

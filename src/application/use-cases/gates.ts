@@ -130,9 +130,12 @@ export async function decideHumanGate(
   const { definitions, flow, events, state } = loaded.value;
   const current = findCurrentGate(flow, state, input.gate);
   if (current === undefined) return err('not_current_stage');
-  if (!state.pendingGates.includes(input.gate)) return err('not_pending');
   if (current.gate.kind !== 'human' && current.gate.kind !== 'page_approval') return err('not_a_human_gate');
   if (input.actor.kind === 'agent') return err('agent_cannot_decide');
+  // A human decision lands only while the stage actually waits for one. In every other status
+  // the pending list is the fold's pre-fill (or residue) of the stage's gates, and a
+  // gate_evaluated event now would be a dead fact the fold ignores.
+  if (state.status !== 'awaiting_human' || !state.pendingGates.includes(input.gate)) return err('not_pending');
 
   const evidence: GateEvidence =
     current.gate.kind === 'page_approval'
