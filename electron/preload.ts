@@ -34,3 +34,16 @@ const bridge: DocketBridge = {
 };
 
 contextBridge.exposeInMainWorld('docket', bridge);
+
+/** The dev bridge's thin window: one invoke and nothing else. It is exposed in every build on
+ *  purpose — with no gated handler behind it the invoke simply rejects, so a test session in a
+ *  real (non-test) launch learns the bridge is absent instead of finding a silent undefined. */
+export interface DocketDevBridge {
+  call(op: string, args?: unknown): Promise<{ readonly truncated: boolean; readonly payload: string }>;
+}
+
+const devBridge: DocketDevBridge = {
+  call: (op, args) => ipcRenderer.invoke('docket:dev', op, args),
+};
+
+contextBridge.exposeInMainWorld('docketDev', devBridge);
