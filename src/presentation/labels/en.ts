@@ -286,7 +286,8 @@ export const EN: LabelBundle = {
   'meter.unit.minutes': 'minutes',
   'settings.account.remove': 'Remove account',
   'settings.remove.warning': 'This account is still used by these role bindings:',
-  'settings.remove.confirm': 'Remove anyway',
+  'settings.remove.updateRoles': 'Update the binding in Roles',
+  'settings.remove.onlyAccount': 'This is the only account: give the roles another account first, then remove it.',
   'settings.remove.cancel': 'Cancel',
   // The account card's model list and the spend-consent flow (P-40). The unknown mark's text is
   // fixed by the design: no amount and no claim of a price, ever.
@@ -513,6 +514,7 @@ export const EN: LabelBundle = {
   'roles.chain.title': 'Assistant order',
   'roles.chain.purpose': 'The account order every role uses. The first account is tried first.',
   'roles.chain.empty': 'No accounts yet. Add one under Accounts first.',
+  'roles.chain.unbound': 'An account exists but the order is empty. Apply the recommended setup or pick an account in fine-tune.',
   'roles.chain.up': 'Move up: {name}',
   'roles.chain.down': 'Move down: {name}',
   'roles.empty': 'No roles yet.',

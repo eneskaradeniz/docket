@@ -8,7 +8,7 @@ import type { Api } from '../../api/api';
 import type { Command } from '../../api/commands';
 import type { AccountModelsView, Query, RoleListItem, SettingsAccountsView, SettingsBindingView } from '../../api/queries';
 
-import { createRolesStore, effortOptions, selectableModels, styleChoices, styleSettings, styleStanding, workStyle } from './roles';
+import { chainEmptyKey, createRolesStore, effortOptions, selectableModels, styleChoices, styleSettings, styleStanding, unboundRoleIds, workStyle } from './roles';
 
 type BindingSave = Extract<Command, { readonly type: 'binding.save' }>;
 
@@ -410,3 +410,25 @@ describe('U-43: the work-style Listbox and the drag order', () => {
     for (const saved of saves(api)) expect(saved.accounts.map((entry) => entry.accountId)).toEqual(['a2', 'a1']);
   });
 });
+
+describe('the empty-chain line', () => {
+  it('no account at all asks for one; accounts with an empty chain ask for the recommended setup or a pick', () => {
+    expect(chainEmptyKey(0)).toBe('roles.chain.empty');
+    expect(chainEmptyKey(1)).toBe('roles.chain.unbound');
+    expect(chainEmptyKey(3)).toBe('roles.chain.unbound');
+  });
+});
+
+describe('roles without a binding', () => {
+  it('the roles with no global binding are listed in role order; a bound role is left alone', () => {
+    const roles = [role('developer', 'Geliştirici'), role('planner', 'Planlayıcı'), role('reviewer', 'Gözden geçirici')];
+    const bindings: readonly SettingsBindingView[] = [
+      binding('reviewer', ['a1']),
+      { scope: { level: 'repo', repo: 'atolye' }, role: 'planner', thinking: null, tier: null, accounts: [{ accountId: 'a1', model: null }] },
+    ];
+    // A repo-scoped binding is not a chain: the role still has no global accounts to run on.
+    expect(unboundRoleIds(roles, bindings)).toEqual(['developer', 'planner']);
+    expect(unboundRoleIds(roles, BINDINGS)).toEqual([]);
+  });
+});
+
