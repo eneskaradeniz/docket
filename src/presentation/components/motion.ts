@@ -55,6 +55,14 @@ export const MOTION = {
     delayMs: 150,
     minShowMs: 300,
   },
+  // The Hesaplar scan's numbers (U-52): the skeleton shows at once and holds at least this long,
+  // then the groups enter in order, this far apart, each fading in over the fade with its rise.
+  scan: {
+    minShowMs: 400,
+    staggerMs: 40,
+    fadeMs: 160,
+    risePx: 8,
+  },
 } as const;
 
 /** The same numbers as CSS custom properties, computed once and set on the overlay's root:

@@ -17,6 +17,7 @@ import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
 import { AccountEditorDialog } from '../components/account-editor-dialog';
 import { AccountGroups, BillingTag, candidateRowView, EditButton } from '../components/account-groups';
+import { AccountsScanning } from '../components/accounts-scanning';
 import { ActionButton } from '../components/action-button';
 import { AppearanceRows } from '../components/appearance-rows';
 import { DragOrderList, type DragOrderItem } from '../components/drag-order-list';
@@ -134,40 +135,29 @@ function Accounts({ state, store, locale, marks }: { readonly state: WizardState
   const totals = groupTotals(groups);
   const nameOf = (group: AccountGroup<ReturnType<typeof candidateRowView<WizardAccountRow>>>): string =>
     group.name ?? group.rows[0]?.source.providerName ?? group.providerId ?? t(locale, 'accountGroups.unknownProvider');
+  // The scanning surface (U-52) is the one the Settings screen shares: while the scan runs it
+  // draws the skeleton; the body mounts only once it ends, told whether to stagger in.
   return (
-    <div>
-      <div className="mb-3 flex items-center gap-2.5">
-        <span className="font-bold text-ink">
-          {t(locale, 'accountGroups.scanned')}{' '}
-          <span className="font-medium text-inkdim">
-            · {t(locale, 'accountGroups.counts').replace('{accounts}', String(totals.accounts)).replace('{assistants}', String(totals.assistants))}
-          </span>
-        </span>
-        <span className="ml-auto">
-          <ActionButton disabled={state.loading} onClick={() => void store.rescan()}>
-            {t(locale, state.loading ? 'candidates.status.scanning' : 'candidates.rescan')}
-          </ActionButton>
-        </span>
-      </div>
-      {state.loading ? (
-        <div className="-mt-1.5 mb-2.5 h-0.5 overflow-hidden rounded-full bg-hairline" role="progressbar" aria-label={t(locale, 'candidates.status.scanning')}>
-          <i className="block h-full w-[30%] animate-[scan_1s_linear_infinite] bg-signal motion-reduce:animate-none" />
-        </div>
-      ) : null}
-      {groups.length === 0 && !state.loading ? <p className="text-[13px] text-inkdim">{t(locale, 'candidates.empty')}</p> : null}
-      <AccountGroups
-        locale={locale}
-        groups={groups}
-        markFor={marks.markFor}
-        nameOf={nameOf}
-        onToggle={(row) => store.select(row.id)}
-        onEdit={(row) => void store.openEditor(row.id)}
-        sections={{ open: sectionOpen, onToggle: (kind) => setSectionOpen(toggleSection(sectionOpen, kind)) }}
-        below={(row) =>
-          row.source.keyMoveCard ? <KeyMoveCard locale={locale} on={row.source.importToken} onChange={(on) => store.setImportToken(row.id, on)} /> : null
-        }
-      />
-    </div>
+    <AccountsScanning locale={locale} titleKey="accountGroups.scanned" scanning={state.loading} onRescan={() => void store.rescan()} totals={totals} now={Date.now}>
+      {(reveal) => (
+        <>
+          {groups.length === 0 ? <p className="text-[13px] text-inkdim">{t(locale, 'candidates.empty')}</p> : null}
+          <AccountGroups
+            locale={locale}
+            groups={groups}
+            markFor={marks.markFor}
+            nameOf={nameOf}
+            reveal={reveal}
+            onToggle={(row) => store.select(row.id)}
+            onEdit={(row) => void store.openEditor(row.id)}
+            sections={{ open: sectionOpen, onToggle: (kind) => setSectionOpen(toggleSection(sectionOpen, kind)) }}
+            below={(row) =>
+              row.source.keyMoveCard ? <KeyMoveCard locale={locale} on={row.source.importToken} onChange={(on) => store.setImportToken(row.id, on)} /> : null
+            }
+          />
+        </>
+      )}
+    </AccountsScanning>
   );
 }
 
