@@ -178,7 +178,11 @@ export const CAPABILITY_REGISTRY = {
       defaultBilling: 'included',
       familyBilling: [{ contains: 'glm', billing: 'included' }],
       models: [],
-      tierModels: { strong: 'glm-5.3', balanced: 'glm-5.3-flash', fast: 'glm-5.3-flash' },
+      // The ids ride the CLI's context-size spelling: the `[1m]` tag leaves the wire id as glm-5.3
+      // and turns into the CLI's 1M-context beta header, and the endpoint serves its coding-plan
+      // models on that route only — the bare spelling the endpoint rejects comes back as the CLI's
+      // model-not-found message, so the tag must survive into every run.
+      tierModels: { strong: 'glm-5.3[1m]', balanced: 'glm-5.3-flash[1m]', fast: 'glm-5.3-flash[1m]' },
     },
     {
       // The login's model list is the plan-scoped ACP session answer (initialize then
