@@ -13,6 +13,16 @@ import type { Api, CommandResult, UiEvent } from '../src/api/index';
  *  transport would serve. `CommandResult` is named here only because invoke's return is untyped. */
 export type DocketBridge = Pick<Api, 'command' | 'query' | 'subscribe'>;
 
+/** Every live subscriber, fanned out by the ONE channel listener below. The renderer's stores
+ *  subscribe for the whole session and never unsubscribe, so a listener per subscriber would grow
+ *  with the store count and trip the EventEmitter limit as a console warning. */
+const subscribers = new Set<(event: UiEvent) => void>();
+
+ipcRenderer.on('docket:event', (_event: IpcRendererEvent, event: UiEvent): void => {
+  // A copy: a subscriber may unsubscribe inside its own dispatch, and the rest still receive it.
+  for (const subscriber of [...subscribers]) subscriber(event);
+});
+
 const bridge: DocketBridge = {
   command: (actor: Actor, command: Parameters<Api['command']>[1]): Promise<CommandResult> =>
     ipcRenderer.invoke('docket:command', actor, command),
@@ -21,14 +31,11 @@ const bridge: DocketBridge = {
     ipcRenderer.invoke('docket:query', query),
 
   subscribe: (listener: (event: UiEvent) => void): (() => void) => {
-    const forward = (_event: IpcRendererEvent, event: UiEvent): void => {
-      listener(event);
-    };
-    ipcRenderer.on('docket:event', forward);
-    // The unsubscribe must actually drop the IPC listener — a leak here would deliver every
-    // future event to a store that no longer exists.
+    subscribers.add(listener);
+    // The unsubscribe must actually drop its subscriber — a leak here would deliver every future
+    // event to a store that no longer exists.
     return () => {
-      ipcRenderer.removeListener('docket:event', forward);
+      subscribers.delete(listener);
     };
   },
 };

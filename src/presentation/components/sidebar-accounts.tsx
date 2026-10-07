@@ -428,6 +428,10 @@ export function SidebarAccounts({
       </div>
       <div
         data-accounts-body=""
+        // The closed row hides the body from the eye only; inert is what also drops its cards
+        // from the tab order and the accessibility tree while they sit in the DOM for the
+        // reopening — a collapsed section can hold neither focus nor a click.
+        inert={!state.open}
         className={`grid transition-all duration-200 ${state.open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
       >
         <div className="flex min-h-0 flex-col overflow-hidden">
