@@ -43,7 +43,8 @@ export function foldRun(events: readonly AgentEvent[]): RunSummary {
   let toolCalls = 0;
   let failedToolCalls = 0;
   let lastLimit: Extract<AgentEvent, { readonly type: 'limit_hit' }> | undefined;
-  let outcome: RunOutcome | undefined;
+  let lastFinishedReason: FinishedEvent['reason'] | undefined;
+  let sawUsage = false;
   let sawCost = false;
   // Accumulator only — the input stream is never touched.
   const openAsks: string[] = [];
@@ -64,6 +65,7 @@ export function foldRun(events: readonly AgentEvent[]): RunSummary {
         if (!openAsks.includes(event.id)) openAsks.push(event.id);
         break;
       case 'usage':
+        sawUsage = true;
         inputTokens += event.inputTokens;
         outputTokens += event.outputTokens;
         cachedInputTokens += event.cachedInputTokens ?? 0;
@@ -80,12 +82,22 @@ export function foldRun(events: readonly AgentEvent[]): RunSummary {
         lastLimit = event;
         break;
       case 'finished':
-        outcome = OUTCOME_BY_REASON[event.reason];
+        lastFinishedReason = event.reason;
         break;
       default:
         break;
     }
   }
+
+  // A completed run that reported usage yet accumulated no tokens did no work — the CLI's
+  // model notices arrive as plain text, so only the token totals expose them. A stream that
+  // never reported usage keeps its completed outcome: a missing report proves nothing.
+  const outcome: RunOutcome | undefined =
+    lastFinishedReason === undefined
+      ? undefined
+      : lastFinishedReason === 'completed' && sawUsage && inputTokens === 0 && outputTokens === 0
+        ? 'failed'
+        : OUTCOME_BY_REASON[lastFinishedReason];
 
   return {
     sessionRef,

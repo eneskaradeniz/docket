@@ -194,6 +194,7 @@ const usage = (costUsd?: number): AgentEvent => ({
   cachedInputTokens: 20,
   ...(costUsd !== undefined ? { costUsd, costKind: 'reported' as const } : {}),
 });
+const emptyUsage = (): AgentEvent => ({ type: 'usage', at: at(4), inputTokens: 0, outputTokens: 0 });
 const quotaSignal = (durationMs: number, used = 40): AgentEvent => ({
   type: 'quota_signal',
   at: at(4),
@@ -885,6 +886,69 @@ describe('executeRun', () => {
         detail: { outcome: 'succeeded' },
       },
     ]);
+  });
+
+  it('A-18: an empty run (0/0 usage, finished completed) ends failed and the audit names empty_run', async () => {
+    const h = await harness({
+      script: [sessionStarted('sess-1'), text("There's an issue with the selected model."), emptyUsage(), finished('completed')],
+    });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'failed' });
+    const record = await theRun(h.runs);
+    expect(record.outcome).toBe('failed');
+    expect(await h.workOrders.events(WORK_ORDER)).toEqual([
+      { type: 'run_started', at: T0, runId: record.id, stage: STAGE, attempt: 1 },
+      { type: 'run_finished', at: T0, runId: record.id, outcome: 'failed' },
+    ]);
+    expect(auditShape(h.log.entries())).toEqual([
+      {
+        action: 'run.started',
+        subject: { kind: 'run', id: record.id },
+        actor: { kind: 'system', component: 'run-executor' },
+        detail: undefined,
+      },
+      {
+        action: 'run.finished',
+        subject: { kind: 'run', id: record.id },
+        actor: { kind: 'system', component: 'run-executor' },
+        detail: { outcome: 'failed', reason: 'empty_run' },
+      },
+    ]);
+  });
+
+  it('A-18: a run with non-zero usage ends succeeded and its audit detail stays { outcome }', async () => {
+    const h = await harness({ script: [usage(0.25), finished('completed')] });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    const record = await theRun(h.runs);
+    expect(record.outcome).toBe('succeeded');
+    expect(auditShape(h.log.entries())).toEqual([
+      {
+        action: 'run.started',
+        subject: { kind: 'run', id: record.id },
+        actor: { kind: 'system', component: 'run-executor' },
+        detail: undefined,
+      },
+      {
+        action: 'run.finished',
+        subject: { kind: 'run', id: record.id },
+        actor: { kind: 'system', component: 'run-executor' },
+        detail: { outcome: 'succeeded' },
+      },
+    ]);
+  });
+
+  it('A-18: a stream that never reported usage keeps completed → succeeded', async () => {
+    const h = await harness({ script: [sessionStarted('sess-1'), text('working'), finished('completed')] });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect((await theRun(h.runs)).outcome).toBe('succeeded');
   });
 
   it('A-18: a stream that ends without finished or limit_hit closes the run as failed', async () => {

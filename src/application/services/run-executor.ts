@@ -433,7 +433,11 @@ export async function executeRun(
   // A-60: the rolling note rides the persisted stream — extended and saved with every event batch,
   // so it exists the moment the account blocks.
   let note: RollingNote | undefined;
+  // The finished fold must see the whole streamed prefix — the empty-run rule reads the
+  // accumulated usage, so the executor keeps in memory what it already persists.
+  const streamed: AgentEvent[] = [];
   for await (const event of handle.events) {
+    streamed.push(event);
     await deps.runs.appendEvents(runId, [event]);
     note = extendRollingNote(note, [event]);
     await deps.runs.saveHandoffNote(runId, note);
@@ -498,12 +502,19 @@ export async function executeRun(
         return { kind: 'limit', decision };
       }
       case 'finished': {
-        const outcome = foldRun([event]).outcome;
+        const outcome = foldRun(streamed).outcome;
         if (outcome !== undefined) {
           // Terminal commit (A-57): the run's work is complete, the interval never gates it.
           await checkpoint();
           const endedAt = await endRun(deps, { runId, workOrderId: item.workOrderId, outcome }, board, workOrdersChanged);
-          await audit(deps, { at: endedAt, action: 'run.finished', runId, detail: { outcome } });
+          // The fold's empty-run rule is the only completed→failed flip, so it alone names a reason.
+          const emptyRun = event.reason === 'completed' && outcome === 'failed';
+          await audit(deps, {
+            at: endedAt,
+            action: 'run.finished',
+            runId,
+            detail: { outcome, ...(emptyRun ? { reason: 'empty_run' } : {}) },
+          });
           return { kind: 'finished', outcome };
         }
         break;

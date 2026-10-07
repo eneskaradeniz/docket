@@ -78,6 +78,75 @@ describe('foldRun', () => {
     expect(foldRun(events).outcome).toBe('cancelled');
   });
 
+  it('R-44: finished(completed) with 0/0 usage folds to failed — the empty run (acceptance)', () => {
+    const events: readonly AgentEvent[] = [
+      usage({ at: at(0), inputTokens: 0, outputTokens: 0 }),
+      { type: 'finished', at: at(1), reason: 'completed' },
+    ];
+    expect(foldRun(events).outcome).toBe('failed');
+  });
+
+  it('R-44: several zero usage events accumulate to the same empty run', () => {
+    const events: readonly AgentEvent[] = [
+      usage({ at: at(0), inputTokens: 0, outputTokens: 0 }),
+      usage({ at: at(1), inputTokens: 0, outputTokens: 0, cachedInputTokens: 0 }),
+      { type: 'finished', at: at(2), reason: 'completed' },
+    ];
+    expect(foldRun(events).outcome).toBe('failed');
+  });
+
+  it('R-44: text output does not rescue an empty run — the CLI notice is not work', () => {
+    const events: readonly AgentEvent[] = [
+      { type: 'text', at: at(0), delta: "There's an issue with the selected model. It may not exist." },
+      usage({ at: at(1), inputTokens: 0, outputTokens: 0 }),
+      { type: 'finished', at: at(2), reason: 'completed' },
+    ];
+    expect(foldRun(events).outcome).toBe('failed');
+  });
+
+  it('R-44: only input or only output tokens is not an empty run', () => {
+    const onlyInput: readonly AgentEvent[] = [
+      usage({ at: at(0), inputTokens: 5, outputTokens: 0 }),
+      { type: 'finished', at: at(1), reason: 'completed' },
+    ];
+    const onlyOutput: readonly AgentEvent[] = [
+      usage({ at: at(0), inputTokens: 0, outputTokens: 5 }),
+      { type: 'finished', at: at(1), reason: 'completed' },
+    ];
+    const accumulated: readonly AgentEvent[] = [
+      usage({ at: at(0), inputTokens: 5, outputTokens: 0 }),
+      usage({ at: at(1), inputTokens: 0, outputTokens: 0 }),
+      { type: 'finished', at: at(2), reason: 'completed' },
+    ];
+    expect(foldRun(onlyInput).outcome).toBe('succeeded');
+    expect(foldRun(onlyOutput).outcome).toBe('succeeded');
+    expect(foldRun(accumulated).outcome).toBe('succeeded');
+  });
+
+  it('R-44: a stream that never reported usage keeps completed → succeeded', () => {
+    const events: readonly AgentEvent[] = [
+      { type: 'session_started', at: at(0), sessionRef: 'sess-1' },
+      { type: 'text', at: at(1), delta: 'hello' },
+      { type: 'finished', at: at(2), reason: 'completed' },
+    ];
+    expect(foldRun(events).outcome).toBe('succeeded');
+  });
+
+  it('R-44: 0/0 usage does not touch finished reasons other than completed', () => {
+    const cases: readonly (readonly [Extract<AgentEvent, { readonly type: 'finished' }>['reason'], string])[] = [
+      ['failed', 'failed'],
+      ['cancelled', 'cancelled'],
+      ['limit', 'limit'],
+    ];
+    for (const [reason, outcome] of cases) {
+      const events: readonly AgentEvent[] = [
+        usage({ at: at(0), inputTokens: 0, outputTokens: 0 }),
+        { type: 'finished', at: at(1), reason },
+      ];
+      expect(foldRun(events).outcome).toBe(outcome);
+    }
+  });
+
   it('returns zeroed counts and no optionals for an empty stream', () => {
     expect(foldRun([])).toEqual({
       sessionRef: undefined,
