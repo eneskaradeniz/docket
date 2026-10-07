@@ -186,12 +186,16 @@ function GateRow({
   gate,
   current,
   locale,
+  awaitingHuman,
   onDecide,
   onApproveDeploy,
 }: {
   readonly gate: GateView;
   readonly current: boolean;
   readonly locale: Locale;
+  /** Whether the work order actually waits for a person — a pre-filled pending gate in `ready`
+   *  is listed, but its decision buttons stay hidden until the stage asks. */
+  readonly awaitingHuman: boolean;
   readonly onDecide: (gate: string, decision: 'approved' | 'rejected') => void;
   readonly onApproveDeploy: (input: DeployApproveInput) => void;
 }) {
@@ -207,7 +211,7 @@ function GateRow({
           <code className="truncate font-mono text-[11px] text-inkdim" title={gate.id}>{gate.id}</code>
         </div>
         <div className="flex items-center gap-2">
-          {actionable && isHumanDecision(gate) ? (
+          {actionable && awaitingHuman && isHumanDecision(gate) ? (
             <>
               <ActionButton variant="neutral" onClick={() => onDecide(gate.id, 'rejected')}>
                 {t(locale, 'action.reject')}
@@ -268,7 +272,7 @@ function FlowStrip({ stages, locale }: { readonly stages: readonly StageGates[];
 }
 
 export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onBack }: WorkOrderDetailScreenProps) {
-  const state = useSyncExternalStore(store.subscribe, store.state);
+  const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   useEffect(() => {
     void store.load(workOrderId);
   }, [store, workOrderId]);
@@ -296,9 +300,13 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
       environments.push(gate.deploy);
     }
   }
-  // What the expected-of-you card decides on: the current stage's pending human gate, or — while
-  // the stage merely waits to start — the enqueue intent (U-4).
-  const pendingHumanGate = currentStage?.gates.find((gate) => gate.status === 'pending' && isHumanDecision(gate));
+  // What the expected-of-you card decides on: the current stage's pending human gate, but only
+  // while the work order actually waits for a person — the fold pre-fills the stage's gates in
+  // `ready` too, and there the card must lose to the start action (U-4).
+  const awaitingHuman = view !== null && view.state.status === 'awaiting_human';
+  const pendingHumanGate = awaitingHuman
+    ? currentStage?.gates.find((gate) => gate.status === 'pending' && isHumanDecision(gate))
+    : undefined;
   const canStart = view !== null && view.next.kind === 'start_run';
 
   const decide = (gate: string, decision: 'approved' | 'rejected'): void => {
@@ -429,6 +437,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
                           gate={gate}
                           current={stage.current}
                           locale={locale}
+                          awaitingHuman={awaitingHuman}
                           onDecide={decide}
                           onApproveDeploy={approveDeploy}
                         />
