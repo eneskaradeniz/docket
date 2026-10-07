@@ -50,7 +50,6 @@ const PENDING = new Map([
   ['ui:U-54', '#793'],
   ['ui:U-55', '#793'],
   ['ui:U-56', '#793'],
-  ['application:A-85', '#782'],
   ['application:A-86', '#787'],
   ['application:A-87', '#790'],
 ]);
