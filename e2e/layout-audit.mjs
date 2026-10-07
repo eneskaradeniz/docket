@@ -424,8 +424,10 @@ async function settingsPanelCheck(target) {
   }
   const dx = Math.abs(m.cx - m.iw / 2);
   const dy = Math.abs(m.cy - m.ih / 2);
-  const wantW = Math.min(880, m.iw - 64);
-  const wantH = Math.min(580, m.ih - 64);
+  // The panel shares the wizard's window (U-46): 1040×680 at most, clamped to the viewport with
+  // 48px/96px margins (the frame's max-width/max-height clamps).
+  const wantW = Math.min(1040, m.iw - 48);
+  const wantH = Math.min(680, m.ih - 96);
   const inside = m.left >= -0.5 && m.top >= -0.5 && m.right <= m.iw + 0.5 && m.bottom <= m.ih + 0.5;
   const sized = Math.abs(m.w - wantW) <= 0.5 && Math.abs(m.h - wantH) <= 0.5;
   const ok =
