@@ -57,8 +57,15 @@ const realPathThroughAncestors = (p) => {
   }
 };
 
+// macOS and Windows filesystems match paths case-insensitively by default, so ~/.DOCKET names
+// the same directory as ~/.docket — the comparison folds case there. Only the comparison folds;
+// the path the app is given keeps the requested spelling.
+const FOLDS_CASE = process.platform === 'darwin' || process.platform === 'win32';
 const contains = (parent, child) => {
-  const rel = relative(parent, child);
+  const rel = relative(
+    FOLDS_CASE ? parent.toLowerCase() : parent,
+    FOLDS_CASE ? child.toLowerCase() : child,
+  );
   return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
 };
 
