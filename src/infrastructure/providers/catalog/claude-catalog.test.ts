@@ -416,7 +416,7 @@ describe('listClaudeRouteModels (P-29)', () => {
       expect(envs.catalog).toMatchObject({
         ANTHROPIC_BASE_URL: ZAI_ENDPOINT,
         ANTHROPIC_AUTH_TOKEN: ROUTE_TOKEN,
-        ANTHROPIC_DEFAULT_OPUS_MODEL: 'glm-5.3',
+        ANTHROPIC_DEFAULT_OPUS_MODEL: 'glm-5.3[1m]',
       });
     });
 

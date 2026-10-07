@@ -205,6 +205,23 @@ describe('model catalog data (P-29)', () => {
     expect(kind?.familyBilling).toEqual([{ contains: 'glm', billing: 'included' }]);
   });
 
+  it('P-52: the z.ai tier models carry the CLI context tag, and every tier resolves to a tagged id', () => {
+    // The endpoint serves its coding-plan models on the CLI's 1M-context route only: the `[1m]`
+    // tag is the CLI's context-size spelling — stripped from the wire id, carried as the 1M beta
+    // header — and the bare spelling the endpoint rejects comes back as the CLI's model-not-found
+    // message. Both bundled spellings must stay tagged, or a tier run cannot do real work.
+    const kind = findRouteKind('zai-glm');
+    expect(kind?.tierModels).toEqual({
+      strong: 'glm-5.3[1m]',
+      balanced: 'glm-5.3-flash[1m]',
+      fast: 'glm-5.3-flash[1m]',
+    });
+    const tierModels = kind?.tierModels;
+    expect(resolveTier('strong', [], tierModels)).toBe('glm-5.3[1m]');
+    expect(resolveTier('balanced', [], tierModels)).toBe('glm-5.3-flash[1m]');
+    expect(resolveTier('fast', [], tierModels)).toBe('glm-5.3-flash[1m]');
+  });
+
   it('P-40: the Codex subscription kind defaults its live models to included — the plan coverage is documented', () => {
     // The provider documents that Codex is included across ChatGPT plans, usage limits varying
     // by plan, so a listed model the row itself says nothing about reads as covered by the plan.
