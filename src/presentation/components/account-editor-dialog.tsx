@@ -43,7 +43,7 @@ const CloseIcon = () => (
 
 export function AccountEditorDialog(props: AccountEditorDialogProps) {
   const { locale, store, host, onClose, onSave, onOpenView } = props;
-  const state = useSyncExternalStore(store.subscribe, store.state);
+  const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   const tabs: readonly EditorTab[] = (props.tabs ?? EDITOR_TABS).filter((tab) => tab !== 'models' || props.models !== undefined);
   const dialog = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Partial<Record<EditorTab, HTMLButtonElement | null>>>({});

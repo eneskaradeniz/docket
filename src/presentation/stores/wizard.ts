@@ -2,13 +2,16 @@
 // Asistan sırası → Bütçe, then straight to Anasayfa. A step with nothing to decide is skipped and
 // reads "–" in the rail (Yetenekler while no capability source holds anything, Asistan sırası
 // under two selected accounts). Every choice is a draft held here: the selection and its key-move
-// switches (U-34), an account's editor draft (U-43) and the spend consents (U-32). Nothing is
-// written before the finish; the finish adopts or saves every selected account with its draft,
-// writes caps and consents, and binds every role with the chosen chain and the role's
-// recommended work style (complete bindings, A-49), then leaves with `finished` set — the shell
-// opens Anasayfa and shows the one toast. `back` never touches an entry and does not exist on
-// Hoş geldin. Discovery candidates carry their route's billing (A-83a) and, before they are
-// accounts, their quota is read with `accounts.candidateQuota` (A-82). Failures map through U-8.
+// switches (U-34), an account's editor draft (U-43), the spend consents (U-32) and the Bütçe
+// rows' reserve choice (U-48). Nothing is written before the finish; the finish adopts every
+// selected account, binds every role with the chosen chain and its recommended work style
+// (complete bindings, A-49), then lands the drafts — caps and consents among them — on the stored
+// accounts. Its four real phases (U-49) — accounts, order, budget, home — publish as they
+// complete, so the progress list's checks follow real replies, never a timer; the window stays
+// mounted while `finished` is set and leaves on `ackFinish`, after the shell's handoff and the
+// wizard's fade. `back` never touches an entry and does not exist on Hoş geldin. Discovery
+// candidates carry their route's billing (A-83a) and, before they are accounts, their quota is
+// read with `accounts.candidateQuota` (A-82). Failures map through U-8.
 import type { Api } from '../../api/api';
 import type { Command, CommandResult } from '../../api/commands';
 import type { CandidateQuotaView, Query, RoleListItem, SettingsAccountView, SettingsAccountsView, SettingsMeterView, SettingsPoolView } from '../../api/queries';
@@ -52,6 +55,18 @@ export const WIZARD_STEPS: readonly WizardStep[] = ['welcome', 'accounts', 'capa
 export const WIZARD_EDITOR_TABS: readonly EditorTab[] = ['general', 'usage', 'limits'];
 
 export type RailStanding = 'done' | 'cur' | 'todo' | 'skipped';
+
+/** The finish's real phases (U-49), in the progress list's walking order: each maps to one line
+ *  and to the work that makes it true — adoption, the chain's bindings, the drafts' writes, the
+ *  leave for Anasayfa. */
+export type FinishPhase = 'accounts' | 'order' | 'budget' | 'home';
+
+export interface FinishError {
+  /** The line the finish stopped on; the phases before it keep their checks. */
+  readonly phase: FinishPhase;
+  /** Why it stopped — the outcome's U-8 label. */
+  readonly reasonKey: LabelKey;
+}
 
 export interface RailEntry {
   readonly step: WizardStep;
@@ -120,6 +135,8 @@ export interface BudgetRow {
   readonly policyChoices: readonly LimitPolicy[];
   readonly reserveShort: number;
   readonly reserveLong: number;
+  /** The draft's held-back share as a whole percent (0 = none) — the summary line's "rezerv %n". */
+  readonly reservePercent: number;
   /** The MeterList rows; empty before a quota answer or when the provider reports none. */
   readonly meters: MeterListView;
   /** The line shown instead of rows; null while rows exist. */
@@ -169,6 +186,10 @@ export interface WizardState {
   /** Why the primary slot is disabled; null while it is enabled. */
   readonly reasonKey: LabelKey | null;
   readonly finishing: boolean;
+  /** The progress list's current line (U-49); null outside a finish. */
+  readonly finishPhase: FinishPhase | null;
+  /** The line a failed finish stopped on; null while it runs and after a clean leave. */
+  readonly finishError: FinishError | null;
   readonly lastOutcome: WizardOutcome | null;
   /** Non-null from the finish until the shell has taken it. */
   readonly finished: WizardFinished | null;
@@ -205,6 +226,8 @@ export interface WizardStore {
   cancelEditor(): void;
   /** The "Limit dolunca" Listbox of a subscription row. */
   setPolicy(key: string, policy: LimitPolicy): void;
+  /** The Ayrıntı reserve choice (U-48): one percent held back from both windows; null = Yok. */
+  setReserve(key: string, percent: number | null): void;
   /** The cap amount and period of a pay-per-use row; false while the amount does not parse. */
   setCap(key: string, input: SpendInput): boolean;
   /** The U-32 consent: grants with the cap; false while the amount does not parse. */
@@ -212,7 +235,7 @@ export interface WizardStore {
   revokeSpend(key: string): void;
   /** Reads a candidate's quota again (the editor's Yenile). */
   refreshQuota(key: string): Promise<void>;
-  /** The shell has opened Anasayfa and shown the toast. */
+  /** The shell has opened Anasayfa and the window's fade is over: the wizard leaves for good. */
   ackFinish(): void;
   subscribe(listener: () => void): () => void;
 }
@@ -371,6 +394,11 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
   let step: WizardStep = 'welcome';
   let loading = false;
   let finishing = false;
+  let finishPhase: FinishPhase | null = null;
+  let finishError: FinishError | null = null;
+  /** Where the next finish starts: a retry resumes at the phase the run stopped on, so a phase
+   *  that already completed is never walked or written again (U-49). */
+  let finishResume: FinishPhase = 'accounts';
   let facts: readonly CandidateFact[] = [];
   let providerFacts: readonly ProviderFact[] = [];
   let existing: readonly SettingsAccountView[] = [];
@@ -528,6 +556,8 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
       policyChoices: policyChoices(view),
       reserveShort: view.reserve.short ?? 0,
       reserveLong: view.reserve.long ?? 0,
+      // Either window's held-back share reads in the summary; the Ayrıntı choice always sets both.
+      reservePercent: Math.round((view.reserve.short ?? view.reserve.long ?? 0) * 100),
       meters,
       meterEmpty:
         meters.rows.length > 0
@@ -563,11 +593,13 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
       },
       editor:
         editorWork === null || editorEntry === undefined ? null : { key: editorWork.key, account: viewOf(editorEntry.base, editorWork.settings) },
-      canBack: visible && !finishing && stepBefore(step) !== null,
+      canBack: visible && stepBefore(step) !== null,
       canSkip: step === 'budget',
-      nextEnabled: !finishing && reason === null,
+      nextEnabled: !finishing && finished === null && reason === null,
       reasonKey: reason,
       finishing,
+      finishPhase,
+      finishError,
       lastOutcome,
       finished,
     };
@@ -654,9 +686,11 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
   };
 
   // `accounts.changed` — an adoption, a removal or a quota poll elsewhere: the lists the wizard
-  // shows are read again, and a candidate's quota with them.
+  // shows are read again, and a candidate's quota with them. A finish in flight, stopped on its
+  // failed line or handing off owns the window: a re-read there could drop an already-adopted
+  // candidate out of the selection under the retry that must resume from it (U-49).
   deps.changes?.((change) => {
-    if (change.type !== 'accounts.changed' || !visible || !loaded || loading || finishing) return;
+    if (change.type !== 'accounts.changed' || !visible || !loaded || loading || finishing || finishPhase !== null || finished !== null) return;
     void (async () => {
       await read(false);
       quotas.clear();
@@ -672,90 +706,118 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
     labelKey: commandResultKey(command.type, result),
   });
 
-  const failWith = (outcome: WizardOutcome): void => {
+  const failWith = (phase: FinishPhase, outcome: WizardOutcome): void => {
     lastOutcome = outcome;
+    // The list stops on the failing line — its phases before it keep their checks (U-49).
+    finishPhase = phase;
+    finishError = { phase, reasonKey: outcome.labelKey };
     finishing = false;
     publish();
   };
 
   const finish = async (): Promise<void> => {
+    if (!visible || completed || finished !== null) return;
     finishing = true;
     lastOutcome = null;
+    finishError = null;
+    // A fresh run walks from the accounts; a retry picks the run up where it stopped, so the
+    // lines before the failure keep their checks and their writes (U-49).
+    finishPhase = finishResume;
     publish();
     const readyCount = rowsOf().filter((row) => row.selected && row.statusKey === 'candidates.status.ready').length;
-    // Adopt in list order; a stored account keeps its id.
+    // Every chosen entry's account id, read without writing anything: a stored account is its
+    // own id, an adopted one comes from the run's memo. The accounts phase adopts only what is
+    // still missing — a retry can never produce a second copy of an account.
+    const chosen = entries().filter((candidate) => selection.includes(candidate.key));
     const ids = new Map<string, string>();
-    for (const entry of entries().filter((candidate) => selection.includes(candidate.key))) {
-      if (entry.fact === null) {
-        ids.set(entry.key, entry.key);
-        continue;
+    for (const entry of chosen) {
+      if (entry.fact === null) ids.set(entry.key, entry.key);
+      else {
+        const adopted = adoptedIds.get(entry.key);
+        if (adopted !== undefined) ids.set(entry.key, adopted);
       }
-      const adopted = adoptedIds.get(entry.key);
-      if (adopted !== undefined) {
-        ids.set(entry.key, adopted);
-        continue;
+    }
+    if (finishPhase === 'accounts') {
+      // Adopt in list order; a stored account keeps its id.
+      for (const entry of chosen) {
+        if (ids.has(entry.key)) continue;
+        const command: Command = {
+          type: 'account.adopt',
+          sourcePath: entry.fact?.sourcePath ?? entry.key,
+          label: entry.settings.label,
+          ...(importTokens.has(entry.key) ? { importToken: true } : {}),
+        };
+        const result = await api.command(actor, command);
+        if (!result.ok || result.id === undefined) {
+          failWith('accounts', outcomeOf(command, result.ok ? { ok: false, code: 'not_found' } : result));
+          return;
+        }
+        adoptedIds.set(entry.key, result.id);
+        ids.set(entry.key, result.id);
       }
-      const command: Command = {
-        type: 'account.adopt',
-        sourcePath: entry.fact.sourcePath,
-        label: entry.settings.label,
-        ...(importTokens.has(entry.key) ? { importToken: true } : {}),
-      };
-      const result = await api.command(actor, command);
-      if (!result.ok || result.id === undefined) {
-        failWith(outcomeOf(command, result.ok ? { ok: false, code: 'not_found' } : result));
-        return;
-      }
-      adoptedIds.set(entry.key, result.id);
-      ids.set(entry.key, result.id);
+      finishPhase = 'order';
+      finishResume = 'order';
+      publish();
     }
 
-    // The drafts land on the stored accounts: only what differs from what is stored.
-    const accountsReply: unknown = await api.query({ type: 'settings.accounts' });
-    if (isQueryFailure(accountsReply)) {
-      failWith({ command: 'account.save', result: accountsReply, labelKey: queryFailureKey(accountsReply) });
-      return;
-    }
-    const stored = isAccountsView(accountsReply) ? accountsReply.accounts.filter(isAccountView) : [];
-    for (const entry of selectedEntries()) {
-      const id = ids.get(entry.key);
-      const real = stored.find((view) => view.id === id);
-      if (real === undefined) {
-        failWith(outcomeOf({ type: 'account.save', provider: '', label: '', authMode: '' }, { ok: false, code: 'not_found' }));
+    if (finishPhase === 'order') {
+      // The chain is written before the budget: the progress lines check in their own order —
+      // the accounts exist, then the order binds every role (A-49), then the drafts land.
+      const rolesReply: unknown = await api.query({ type: 'roles.list' });
+      if (isQueryFailure(rolesReply)) {
+        failWith('order', { command: 'binding.save', result: rolesReply, labelKey: queryFailureKey(rolesReply) });
         return;
       }
-      for (const command of settingsCommands(real, entry.settings)) {
+      const roles = Array.isArray(rolesReply) ? rolesReply.filter(isRole) : [];
+      const chain = selection.flatMap((key) => {
+        const id = ids.get(key);
+        return id === undefined ? [] : [{ accountId: id, model: null }];
+      });
+      for (const role of roles) {
+        const { tier, thinking } = styleSettings(recommendedWorkStyle(role.id));
+        const command = bindingCommand(role.id, chain, tier, thinking);
         const result = await api.command(actor, command);
         if (!result.ok) {
-          failWith(outcomeOf(command, result));
+          failWith('order', outcomeOf(command, result));
           return;
         }
       }
+      finishPhase = 'budget';
+      finishResume = 'budget';
+      publish();
     }
 
-    // Every role is bound with the chosen chain and its recommended work style, complete (A-49).
-    const rolesReply: unknown = await api.query({ type: 'roles.list' });
-    if (isQueryFailure(rolesReply)) {
-      failWith({ command: 'binding.save', result: rolesReply, labelKey: queryFailureKey(rolesReply) });
-      return;
-    }
-    const roles = Array.isArray(rolesReply) ? rolesReply.filter(isRole) : [];
-    const chain = selection.flatMap((key) => {
-      const id = ids.get(key);
-      return id === undefined ? [] : [{ accountId: id, model: null }];
-    });
-    for (const role of roles) {
-      const { tier, thinking } = styleSettings(recommendedWorkStyle(role.id));
-      const command = bindingCommand(role.id, chain, tier, thinking);
-      const result = await api.command(actor, command);
-      if (!result.ok) {
-        failWith(outcomeOf(command, result));
+    if (finishPhase === 'budget') {
+      // The drafts land on the stored accounts: only what differs from what is stored.
+      const accountsReply: unknown = await api.query({ type: 'settings.accounts' });
+      if (isQueryFailure(accountsReply)) {
+        failWith('budget', { command: 'account.save', result: accountsReply, labelKey: queryFailureKey(accountsReply) });
         return;
       }
+      const stored = isAccountsView(accountsReply) ? accountsReply.accounts.filter(isAccountView) : [];
+      for (const entry of selectedEntries()) {
+        const id = ids.get(entry.key);
+        const real = stored.find((view) => view.id === id);
+        if (real === undefined) {
+          failWith('budget', outcomeOf({ type: 'account.save', provider: '', label: '', authMode: '' }, { ok: false, code: 'not_found' }));
+          return;
+        }
+        for (const command of settingsCommands(real, entry.settings)) {
+          const result = await api.command(actor, command);
+          if (!result.ok) {
+            failWith('budget', outcomeOf(command, result));
+            return;
+          }
+        }
+      }
+      // The leave itself is the last line: its spinner stands while the handoff is prepared,
+      // then the shell opens Anasayfa with the toast, the window fades over it and `ackFinish`
+      // takes it down — the line's check is the finished flag itself.
+      finishPhase = 'home';
+      publish();
     }
-    // Anasayfa opens directly: the wizard leaves and the shell takes `finished` once.
+
     finishing = false;
-    visible = false;
     completed = true;
     finished = { accounts: readyCount };
     publish();
@@ -802,24 +864,32 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
     open,
     state: () => state,
     next: async () => {
-      if (!visible || finishing || !state.nextEnabled) return;
+      if (!visible || finishing || finished !== null || !state.nextEnabled) return;
       await advance();
     },
     skip: async () => {
-      if (!visible || finishing || !state.canSkip) return;
+      if (!visible || finishing || finished !== null || !state.canSkip) return;
       await advance();
     },
     back: () => {
-      if (!visible || finishing) return;
+      if (!visible || finishing || finished !== null) return;
       const before = stepBefore(step);
       if (before === null) return;
       step = before;
+      // Leaving the step drops a stopped finish's list with it; the next finish is a fresh run
+      // (the adoption memo still holds, so it adopts nothing twice) (U-49).
+      finishPhase = null;
+      finishError = null;
+      finishResume = 'accounts';
       publish();
     },
     goTo: (target) => {
-      if (!visible || finishing) return;
+      if (!visible || finishing || finished !== null) return;
       if (WIZARD_STEPS.indexOf(target) >= WIZARD_STEPS.indexOf(step) || skipped(target)) return;
       step = target;
+      finishPhase = null;
+      finishError = null;
+      finishResume = 'accounts';
       publish();
     },
     select: (key) => {
@@ -887,6 +957,12 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
       patchDraft(key, (settings) => ({ ...settings, limitPolicy: policy }));
       publish();
     },
+    setReserve: (key, percent) => {
+      if (entryOf(key) === undefined) return;
+      const share = percent === null ? null : percent / 100;
+      patchDraft(key, (settings) => ({ ...settings, reserve: { short: share, long: share } }));
+      publish();
+    },
     setCap: (key, input) => {
       const amountUsd = parseAmountUsd(input.amount);
       if (amountUsd === null || entryOf(key) === undefined) return false;
@@ -921,6 +997,7 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
     ackFinish: () => {
       if (finished === null) return;
       finished = null;
+      visible = false;
       publish();
     },
     subscribe: (listener) => {

@@ -27,10 +27,12 @@ export interface ActionButtonProps {
   readonly title?: string;
   /** A row that folds content (the account card's model list) speaks its standing. */
   readonly ariaExpanded?: boolean;
+  /** The id of the region an expanded button folds (Ayrıntı's in-place detail, U-48). */
+  readonly ariaControls?: string;
   readonly children: ReactNode;
 }
 
-export function ActionButton({ variant = 'neutral', size = 'sm', disabled = false, onClick, title, ariaExpanded, children }: ActionButtonProps) {
+export function ActionButton({ variant = 'neutral', size = 'sm', disabled = false, onClick, title, ariaExpanded, ariaControls, children }: ActionButtonProps) {
   return (
     <button
       type="button"
@@ -38,6 +40,7 @@ export function ActionButton({ variant = 'neutral', size = 'sm', disabled = fals
       onClick={onClick}
       title={title}
       aria-expanded={ariaExpanded}
+      aria-controls={ariaControls}
       className={`inline-flex items-center justify-center gap-1.5 rounded-control border transition-[filter,background-color,color] duration-100 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-45 ${VARIANT_CLASS[variant]} ${SIZE_CLASS[size]}`}
     >
       {children}
