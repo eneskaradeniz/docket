@@ -1,6 +1,7 @@
 // e2e/journeys.mjs — `npm run test:journeys`. J-1 … J-8 of docs/v2/ui.md → "Verifying the shell",
 // driven through the BUILT app on the design seed (e2e/seed-design.ts). Every step asserts visible
-// text and saves a screenshot to e2e/.out/journeys/.
+// text and saves a screenshot to e2e/.out/journeys/, and every outcome lands in the structured
+// report (e2e/report.mjs) as it is printed.
 //
 // Each size × theme combination gets its own app launch on its own fresh seed: J-1 and J-3 change
 // what the seed holds (an answered ask, an approved gate), so a shared seed would make later
@@ -17,10 +18,14 @@ import { join } from 'node:path';
 import { ROOT, launchDesignApp, setWindow } from './design-app.mjs';
 import { acquireE2eLock } from './lock.mjs';
 import { SIZE_PLAN, comboPlan, resolveSizes } from './layout-rules.mjs';
+import { appendJourney, beginReport, REPORT_PATH } from './report.mjs';
 
 const OUT = join(ROOT, 'e2e', '.out', 'journeys');
 mkdirSync(OUT, { recursive: true });
 await acquireE2eLock(ROOT);
+// test:ui:report runs this behind the audit with DOCKET_REPORT_APPEND=1 so both land in one file;
+// alone, the journey run starts its own fresh report.
+beginReport();
 
 const quick = process.argv.includes('--quick');
 const full = process.argv.includes('--full') || process.env.FULL === '1';
@@ -53,9 +58,13 @@ for (const [sizeName, theme] of combos) {
 
   let jn = '';
   let stepNo = 0;
+  // The milestones the walk has passed — the shot labels, in order; a FAIL entry keeps the ones
+  // that landed before the error, which is the honest shape of a partial walk.
+  let steps = [];
   /** Save a screenshot for the step that just passed. */
   const shot = async (label) => {
     stepNo += 1;
+    steps.push(label);
     const slug = label.toLowerCase().replace(/[^a-z0-9ğüşıöç]+/g, '-').replace(/^-|-$/g, '');
     await page.screenshot({ path: join(OUT, `${jn}-${size[0]}x${size[1]}-${theme}-${stepNo}-${slug}.png`) });
   };
@@ -63,6 +72,7 @@ for (const [sizeName, theme] of combos) {
   const journey = async (id, name, fn) => {
     jn = id;
     stepNo = 0;
+    steps = [];
     total += 1;
     const title = `${id}: ${name} [${tag}]`;
     try {
@@ -74,9 +84,11 @@ for (const [sizeName, theme] of combos) {
         .catch(() => undefined); // every journey starts at the cockpit
       await fn();
       console.log(`  ok   ${title}`);
+      appendJourney({ id: title, status: 'ok', steps });
     } catch (error) {
       failures.push(title);
       console.log(`  FAIL ${title}\n       ${String(error).split('\n')[0]}`);
+      appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).split('\n')[0] });
       await page.screenshot({ path: join(OUT, `${id}-${size[0]}x${size[1]}-${theme}-FAIL.png`) }).catch(() => undefined);
     }
   };
@@ -423,4 +435,5 @@ for (const [sizeName, theme] of combos) {
 }
 
 console.log(`${total - failures.length}/${total} journeys ok; screenshots in ${OUT}`);
+console.log(`report: ${REPORT_PATH}`);
 process.exit(failures.length === 0 ? 0 : 1);

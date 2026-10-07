@@ -122,3 +122,15 @@
     transform: scaleX(0);
   }
 }
+
+/* A finishing step's check drawing itself (U-49): the stroke travels once, from nothing to the
+   full tick. The path carries a dasharray as its base state, so a reduced-motion page simply
+   shows the finished check — the animation is a motion-safe extra, never the information. */
+@keyframes check-draw {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}

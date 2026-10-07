@@ -1,23 +1,27 @@
-// components/drag-order-list.tsx — the DragOrderList (U-41): rows with a grip, the position number,
-// the provider mark, a label and a sub-line. A pointer drag moves a row and the others slide to
-// their slots; Alt+↑/↓ moves the focused row; every move is announced "n. sıraya taşındı" through
-// a live region. The geometry and the key rules are the pure functions of stores/drag-order.ts.
-// The list reports a finished move once (`onReorder`) — on drop, or at once for a key — so a host
-// that saves on every report saves once per move, not once per slot crossed.
-import { useRef, useState, type ReactNode } from 'react';
+// components/drag-order-list.tsx — the DragOrderList (U-41, U-47): rows with a grip, the position
+// number, the provider mark, a label and a sub-line. The grip is the only handle: it captures
+// the pointer, the held row lifts (shadow, amber outline, a hair of scale) and centres under the
+// pointer, the other rows slide open (160 ms ease-out) and the row settles on release (140 ms);
+// near the scroller's edge the list scrolls itself, and the row keeps its place while it does.
+// Alt+↑/↓ moves the focused row with the same slide; every move is announced "n. sıraya
+// taşındı" through a live region. The geometry is the pure functions of stores/drag-order.ts;
+// what renders during a drag is the session store of stores/drag-session.ts, read through one
+// cached snapshot per change. The list reports a finished move once (`onReorder`) — on drop, or
+// at once for a key — so a host that saves on every report saves once per move, not once per
+// slot crossed.
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 
 import { t, type Locale } from '../labels/t';
 import {
+  autoScrollStep,
   DRAG_ROW_HEIGHT,
-  DRAG_THRESHOLD,
-  dragTop,
   keyboardMove,
   listHeight,
   moveAnnouncement,
   moveItem,
-  slotAt,
   slotTop,
 } from '../stores/drag-order';
+import { createDragSession, type DragSessionStore } from '../stores/drag-session';
 import { ProviderMark, type ProviderMarkProps } from './provider-mark';
 
 export interface DragOrderItem {
@@ -39,6 +43,8 @@ export interface DragOrderListProps {
   readonly onReorder: (id: string, index: number) => void;
   /** The list's accessible name. */
   readonly label: string;
+  /** A drag session to render through; a list that passes none runs its own. */
+  readonly session?: DragSessionStore;
 }
 
 const Grip = () => (
@@ -52,56 +58,71 @@ const Grip = () => (
   </svg>
 );
 
-interface Drag {
-  readonly id: string;
-  readonly startY: number;
-  readonly startTop: number;
-  readonly moved: boolean;
-  readonly top: number;
-}
-
-export function DragOrderList({ locale, items, markFor, onReorder, label }: DragOrderListProps) {
+export function DragOrderList({ locale, items, markFor, onReorder, label, session }: DragOrderListProps) {
   const ids = items.map((item) => item.id);
+  const [ownSession] = useState(createDragSession);
+  const store = session ?? ownSession;
+  const live = useSyncExternalStore(store.subscribe, store.state, store.state);
   // While a row is dragged the list shows its own provisional order; the host hears of it on drop.
-  const [provisional, setProvisional] = useState<readonly string[] | null>(null);
-  const [drag, setDrag] = useState<Drag | null>(null);
-  const [announcement, setAnnouncement] = useState('');
-  const dragRef = useRef<Drag | null>(null);
-  const order = provisional ?? ids;
+  const order = live.order ?? ids;
   const byId = new Map(items.map((item) => [item.id, item]));
 
-  const announce = (index: number): void => {
-    setAnnouncement('');
-    window.setTimeout(() => setAnnouncement(moveAnnouncement(t(locale, 'dragOrder.moved'), index)), 30);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const heldRef = useRef<string | null>(null);
+  const pointerYRef = useRef(0);
+  const scrollRafRef = useRef(0);
+
+  const stopAutoScroll = (): void => {
+    if (scrollRafRef.current === 0) return;
+    cancelAnimationFrame(scrollRafRef.current);
+    scrollRafRef.current = 0;
   };
 
-  const setDragState = (next: Drag | null): void => {
-    dragRef.current = next;
-    setDrag(next);
+  // The list scrolls itself while the pointer sits near the scroller's edge — and keeps placing
+  // the held row, because the list moves under a still pointer too.
+  const autoScrollTick = (): void => {
+    scrollRafRef.current = 0;
+    const id = heldRef.current;
+    if (id === null) return;
+    const scroller = listRef.current?.closest('[data-window-body]');
+    const bounds = scroller?.getBoundingClientRect();
+    if (scroller === null || scroller === undefined || bounds === undefined) return;
+    const step = autoScrollStep(pointerYRef.current, bounds.top, bounds.bottom);
+    if (step === 0) return;
+    scroller.scrollTop += step;
+    const listTop = listRef.current?.getBoundingClientRect().top;
+    if (listTop !== undefined) store.track(id, pointerYRef.current, listTop);
+    scrollRafRef.current = requestAnimationFrame(autoScrollTick);
   };
 
-  const endDrag = (id: string): void => {
-    const current = dragRef.current;
-    if (current === null || current.id !== id) return;
-    setDragState(null);
-    if (provisional === null) return;
-    const from = ids.indexOf(id);
-    const to = provisional.indexOf(id);
-    setProvisional(null);
-    if (from !== to) {
-      onReorder(id, to);
-      announce(to);
-    }
+  // A list that unmounts mid-drag must not leave a frame loop pointing at dead nodes.
+  useEffect(() => () => stopAutoScroll(), []);
+
+  const release = (id: string): void => {
+    heldRef.current = null;
+    stopAutoScroll();
+    const result = store.end(id);
+    if (result === null || !result.moved) return;
+    onReorder(id, result.to);
+    store.announce(moveAnnouncement(t(locale, 'dragOrder.moved'), result.to));
   };
 
   return (
     <div>
-      <div role="list" aria-label={label} className="relative" style={{ height: listHeight(order.length) }} data-drag-order="">
+      <div
+        ref={listRef}
+        role="list"
+        aria-label={label}
+        className="relative"
+        style={{ height: listHeight(order.length) }}
+        data-drag-order=""
+      >
         {order.map((id, index) => {
           const item = byId.get(id);
           if (item === undefined) return null;
-          const dragging = drag !== null && drag.moved && drag.id === id;
-          const top = dragging && drag !== null ? drag.top : slotTop(index);
+          const held = live.heldId === id && live.lifted;
+          const settling = live.settlingId === id;
+          const top = held ? live.top : slotTop(index);
           return (
             <div
               key={id}
@@ -115,34 +136,44 @@ export function DragOrderList({ locale, items, markFor, onReorder, label }: Drag
                 event.preventDefault();
                 const next = moveItem(ids, ids.indexOf(id), ids.indexOf(id) + by);
                 if (next === null) return;
-                onReorder(id, next.indexOf(id));
-                announce(next.indexOf(id));
+                const to = next.indexOf(id);
+                onReorder(id, to);
+                store.announce(moveAnnouncement(t(locale, 'dragOrder.moved'), to));
               }}
-              onPointerDown={(event) => {
-                if (event.button !== 0) return;
-                event.currentTarget.setPointerCapture(event.pointerId);
-                setDragState({ id, startY: event.clientY, startTop: slotTop(order.indexOf(id)), moved: false, top: slotTop(order.indexOf(id)) });
-              }}
-              onPointerMove={(event) => {
-                const current = dragRef.current;
-                if (current === null || current.id !== id) return;
-                const travel = event.clientY - current.startY;
-                if (!current.moved && Math.abs(travel) < DRAG_THRESHOLD) return;
-                const nextTop = dragTop(current.startTop, travel, order.length);
-                setDragState({ ...current, moved: true, top: nextTop });
-                const moved = moveItem(order, order.indexOf(id), slotAt(nextTop, order.length));
-                if (moved !== null) setProvisional(moved);
-              }}
-              onPointerUp={() => endDrag(id)}
-              onPointerCancel={() => endDrag(id)}
-              style={{ top, height: DRAG_ROW_HEIGHT, touchAction: 'none' }}
-              className={`absolute inset-x-0 flex select-none items-center gap-3 rounded-card border bg-surface pl-2 pr-3.5 outline-none focus-visible:border-signal ${
-                dragging
-                  ? 'z-[5] border-signal shadow-2xl transition-[box-shadow,border-color]'
-                  : 'border-hairline transition-[top,box-shadow,border-color] duration-[180ms] hover:border-bord motion-reduce:transition-none'
-              }`}
+              style={{ top, height: DRAG_ROW_HEIGHT }}
+              className={
+                held
+                  ? 'absolute inset-x-0 z-[5] flex select-none items-center gap-3 rounded-card border border-signal bg-surface pl-2 pr-3.5 shadow-2xl scale-[1.01] outline-none transition-[transform,box-shadow,border-color] ease-out duration-[140ms] motion-reduce:transition-none'
+                  : settling
+                    ? 'absolute inset-x-0 flex select-none items-center gap-3 rounded-card border border-hairline bg-surface pl-2 pr-3.5 outline-none transition-[top,transform,box-shadow,border-color] ease-out duration-[140ms] motion-reduce:transition-none'
+                    : 'absolute inset-x-0 flex select-none items-center gap-3 rounded-card border border-hairline bg-surface pl-2 pr-3.5 outline-none transition-[top] ease-out duration-[160ms] hover:border-bord focus-visible:border-signal motion-reduce:transition-none'
+              }
             >
-              <span aria-hidden="true" className="grid h-[34px] w-[22px] flex-none place-items-center rounded-control text-inkdim hover:bg-raised hover:text-ink">
+              <span
+                aria-hidden="true"
+                data-drag-grip=""
+                className="grid h-[34px] w-[22px] flex-none touch-none place-items-center rounded-control text-inkdim hover:bg-raised hover:text-ink"
+                onPointerDown={(event) => {
+                  if (event.button !== 0) return;
+                  // The grip owns the pointer from the first press: capture keeps the moves coming
+                  // even after the pointer leaves the grip, the row or the window.
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  (event.currentTarget.closest('[role="listitem"]') as HTMLElement | null)?.focus({ preventScroll: true });
+                  heldRef.current = id;
+                  pointerYRef.current = event.clientY;
+                  store.begin(id, ids, event.clientY);
+                }}
+                onPointerMove={(event) => {
+                  if (heldRef.current !== id) return;
+                  event.preventDefault();
+                  pointerYRef.current = event.clientY;
+                  const listTop = listRef.current?.getBoundingClientRect().top;
+                  if (listTop !== undefined) store.track(id, event.clientY, listTop);
+                  if (scrollRafRef.current === 0) scrollRafRef.current = requestAnimationFrame(autoScrollTick);
+                }}
+                onPointerUp={() => release(id)}
+                onPointerCancel={() => release(id)}
+              >
                 <Grip />
               </span>
               <span className={`w-[18px] flex-none text-right font-mono text-[13px] ${index === 0 ? 'text-signal-soft' : 'text-inkdim'}`}>{index + 1}</span>
@@ -159,9 +190,8 @@ export function DragOrderList({ locale, items, markFor, onReorder, label }: Drag
         })}
       </div>
       <div role="status" aria-live="polite" className="absolute h-px w-px overflow-hidden [clip:rect(0,0,0,0)]">
-        {announcement}
+        {live.announcement}
       </div>
     </div>
   );
-
 }

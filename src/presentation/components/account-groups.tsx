@@ -21,6 +21,7 @@ import {
 } from '../stores/account-groups';
 import { candidateStanding, candidateStatusTone, type CandidateRow, type LampTone } from '../stores/candidates';
 import { InfoBubble } from './info-bubble';
+import { MOTION } from './motion';
 import { ProviderMark, type ProviderMarkProps } from './provider-mark';
 import { StatusLamp } from './status-lamp';
 
@@ -90,6 +91,9 @@ export interface AccountGroupsProps<R extends AccountRowView> {
     readonly open: SectionOpen;
     readonly onToggle: (kind: AccountSectionKind) => void;
   };
+  /** Present when a scan's skeleton preceded this list (U-52): each group enters with the scan
+   *  motion, staggered in list order by the delay set inline. */
+  readonly reveal?: boolean;
 }
 
 const Pencil = () => (
@@ -255,12 +259,20 @@ function Section<R extends SectionableRow>({
   );
 }
 
-export function AccountGroups<R extends AccountRowView>({ locale, groups, markFor, nameOf, onToggle, onEdit, trailing, below, sections }: AccountGroupsProps<R>) {
+export function AccountGroups<R extends AccountRowView>({ locale, groups, markFor, nameOf, onToggle, onEdit, trailing, below, sections, reveal = false }: AccountGroupsProps<R>) {
   const cards = (list: readonly AccountGroup<R>[]): readonly ReactNode[] =>
-    list.map((group) => {
+    list.map((group, index) => {
       const name = nameOf(group);
       return (
-        <section key={group.providerId ?? 'unknown'} role="group" aria-label={name} className="overflow-hidden rounded-card border border-hairline bg-surface" data-account-group={group.providerId ?? ''}>
+        <section
+          key={group.providerId ?? 'unknown'}
+          role="group"
+          aria-label={name}
+          data-account-group={group.providerId ?? ''}
+          data-scan-group-in={reveal ? '' : undefined}
+          style={reveal ? { animationDelay: `${index * MOTION.scan.staggerMs}ms` } : undefined}
+          className="overflow-hidden rounded-card border border-hairline bg-surface"
+        >
           <div className="flex items-center gap-2.5 border-b border-hairline bg-band px-3.5 py-2.5">
             <span className="grid h-[26px] w-[26px] flex-none place-items-center rounded-control border border-hairline bg-raised text-ink">
               <ProviderMark provider={group.providerId ?? ''} mark={group.providerId === null ? null : markFor(group.providerId)} size={15} />

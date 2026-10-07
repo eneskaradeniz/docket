@@ -159,4 +159,31 @@ describe('AccountGroups sections (U-45)', () => {
     expect(flat).not.toContain('data-account-section');
     expect(flat).not.toContain('aria-expanded');
   });
+
+  it('U-52: a reveal the scan hands down staggers the groups in order — 40 ms apart, entering with the scan motion', () => {
+    const out = renderToStaticMarkup(
+      createElement(AccountGroups, {
+        locale: 'tr',
+        groups: groupAccountRows(
+          [row('a', 'ready', 'claude'), row('b', 'ready', 'codex'), row('login-1', 'needsLogin', 'codex')],
+          PROVIDERS,
+        ),
+        markFor: () => null,
+        nameOf: (group) => group.name ?? 'Asistan',
+        sections: { open: SECTION_OPEN_INITIAL, onToggle: () => undefined },
+        reveal: true,
+      }),
+    );
+    const foundAt = out.indexOf('id="accounts-section-found-body"');
+    const failedAt = out.indexOf('id="accounts-section-failed-body"');
+    // In order, within each list the groups carry the scan entrance with their stagger's delay.
+    expect(out.slice(foundAt, failedAt)).toContain('animation-delay:0ms');
+    expect(out.slice(foundAt, failedAt)).toContain('animation-delay:40ms');
+    expect(out.slice(failedAt)).toContain('animation-delay:0ms');
+    expect(out).toContain('data-scan-group-in');
+    // Without the reveal the groups mount as they are — no entrance, no delay.
+    const plain = html();
+    expect(plain).not.toContain('data-scan-group-in');
+    expect(plain).not.toContain('animation-delay');
+  });
 });

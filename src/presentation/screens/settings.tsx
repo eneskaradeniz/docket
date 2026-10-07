@@ -18,6 +18,7 @@ import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
 import { AccountEditorDialog } from '../components/account-editor-dialog';
 import { AccountGroups, candidateRowView, type AccountRowView } from '../components/account-groups';
+import { AccountsScanning } from '../components/accounts-scanning';
 import { AccountTest } from '../components/account-test';
 import { ActionButton } from '../components/action-button';
 import { AppearanceRows } from '../components/appearance-rows';
@@ -434,77 +435,67 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
     </div>
   );
 
+  // The scanning surface (U-52) is the one the wizard's Hesaplar step shares: while the scan
+  // runs it draws the skeleton over both lists; the body mounts only once it ends.
   const accountsSection = (
-    <div>
-      <div className="mb-3 flex items-center gap-2.5">
-        <span className="font-bold text-ink">
-          {t(locale, 'accountGroups.added')}{' '}
-          <span className="font-medium text-inkdim">
-            · {t(locale, 'accountGroups.counts').replace('{accounts}', String(addedTotals.accounts)).replace('{assistants}', String(addedTotals.assistants))}
-          </span>
-        </span>
-        <span className="ml-auto">
-          <ActionButton disabled={candidateState.loading} onClick={() => void candidates.rescan()}>
-            {t(locale, candidateState.loading ? 'candidates.status.scanning' : 'candidates.rescan')}
-          </ActionButton>
-        </span>
-      </div>
-      {candidateState.loading ? (
-        <div className="-mt-1.5 mb-2.5 h-0.5 overflow-hidden rounded-full bg-hairline" role="progressbar" aria-label={t(locale, 'candidates.status.scanning')}>
-          <i className="block h-full w-[30%] animate-[scan_1s_linear_infinite] bg-signal motion-reduce:animate-none" />
-        </div>
-      ) : null}
-      {accounts.length === 0 ? <p className="text-[13px] text-inkdim">{t(locale, 'settings.accounts.empty')}</p> : null}
-      <AccountGroups
-        locale={locale}
-        groups={addedGroups}
-        markFor={marks.markFor}
-        nameOf={groupName}
-        onEdit={(row) => onEnterSubPage(row.id)}
-        sections={{ open: sectionOpen, onToggle: (kind) => setSectionOpen(toggleSection(sectionOpen, kind)) }}
-        below={(row) => {
-          const account = accounts.find((entry) => entry.id === row.id);
-          if (account === undefined) return null;
-          const testing = state.testing.includes(account.id) || account.detail.test?.state === 'running';
-          const refusal = state.testRefusals[account.id];
-          if (!row.source.unverified && account.detail.test === null && refusal === undefined) return null;
-          return (
-            <div className="px-3.5 pb-3">
-              <AccountTest
-                locale={locale}
-                test={account.detail.test}
-                showButton={row.source.unverified}
-                testing={testing}
-                refusal={refusal}
-                onTest={() => void store.testAccount(account.id)}
-                onOpenModels={() => onOpenTarget({ section: 'accounts', subPage: account.id, tab: 'models' })}
-              />
-            </div>
-          );
-        }}
-      />
-
-      {/* Eklenmemiş (U-34, U-43): the discovered accounts, a group of their own under the added ones. */}
-      {candidateState.rows.length > 0 ? (
-        <div data-unadded="">
-          <SubHeading title={t(locale, 'candidates.title')} note={t(locale, 'accountGroups.count').replace('{n}', String(candidateState.rows.length))} />
+    <AccountsScanning locale={locale} titleKey="accountGroups.added" scanning={candidateState.loading} onRescan={() => void candidates.rescan()} totals={addedTotals} now={Date.now}>
+      {(reveal) => (
+        <>
+          {accounts.length === 0 ? <p className="text-[13px] text-inkdim">{t(locale, 'settings.accounts.empty')}</p> : null}
           <AccountGroups
             locale={locale}
-            groups={unaddedGroups}
+            groups={addedGroups}
             markFor={marks.markFor}
             nameOf={groupName}
-            trailing={(row) => (
-              <ActionButton variant="neutral" disabled={candidateState.adopting || row.disabled === true} onClick={() => void candidates.add(row.id)}>
-                {t(locale, 'candidates.add')}
-              </ActionButton>
-            )}
-            below={(row) =>
-              row.source.keyMoveCard ? <KeyMoveCard locale={locale} on={candidateState.importToken} onChange={(on) => candidates.setImportToken(on)} /> : null
-            }
+            reveal={reveal}
+            onEdit={(row) => onEnterSubPage(row.id)}
+            sections={{ open: sectionOpen, onToggle: (kind) => setSectionOpen(toggleSection(sectionOpen, kind)) }}
+            below={(row) => {
+              const account = accounts.find((entry) => entry.id === row.id);
+              if (account === undefined) return null;
+              const testing = state.testing.includes(account.id) || account.detail.test?.state === 'running';
+              const refusal = state.testRefusals[account.id];
+              if (!row.source.unverified && account.detail.test === null && refusal === undefined) return null;
+              return (
+                <div className="px-3.5 pb-3">
+                  <AccountTest
+                    locale={locale}
+                    test={account.detail.test}
+                    showButton={row.source.unverified}
+                    testing={testing}
+                    refusal={refusal}
+                    onTest={() => void store.testAccount(account.id)}
+                    onOpenModels={() => onOpenTarget({ section: 'accounts', subPage: account.id, tab: 'models' })}
+                  />
+                </div>
+              );
+            }}
           />
-        </div>
-      ) : null}
-    </div>
+
+          {/* Eklenmemiş (U-34, U-43): the discovered accounts, a group of their own under the added ones. */}
+          {candidateState.rows.length > 0 ? (
+            <div data-unadded="">
+              <SubHeading title={t(locale, 'candidates.title')} note={t(locale, 'accountGroups.count').replace('{n}', String(candidateState.rows.length))} />
+              <AccountGroups
+                locale={locale}
+                groups={unaddedGroups}
+                markFor={marks.markFor}
+                nameOf={groupName}
+                reveal={reveal}
+                trailing={(row) => (
+                  <ActionButton variant="neutral" disabled={candidateState.adopting || row.disabled === true} onClick={() => void candidates.add(row.id)}>
+                    {t(locale, 'candidates.add')}
+                  </ActionButton>
+                )}
+                below={(row) =>
+                  row.source.keyMoveCard ? <KeyMoveCard locale={locale} on={candidateState.importToken} onChange={(on) => candidates.setImportToken(on)} /> : null
+                }
+              />
+            </div>
+          ) : null}
+        </>
+      )}
+    </AccountsScanning>
   );
 
   const rolesSection = (
@@ -593,7 +584,11 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
           }
         }}
         className={[
-          'fixed inset-0 z-40 grid place-items-center bg-bg/60 p-8',
+          // Definite grid tracks, not auto ones: the window's `max-h-full` is a percentage, and a
+          // percentage against an auto track resolves to the content's own height — at the minimum
+          // window (1024×640) the 580px window would overflow the scrim's 576px content box by
+          // 4px and sit off-centre. A minmax(0,1fr) track is definite, so the clamp binds.
+          'fixed inset-0 z-40 grid grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] place-items-center bg-bg/60 p-8',
           'transition-[opacity,backdrop-filter] [transition-timing-function:var(--motion-ease)]',
           entered
             ? 'opacity-100 backdrop-blur-md duration-[var(--motion-open-backdrop)]'
@@ -609,6 +604,7 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
           rail={rail}
           head={head}
           onKeyDown={onKeyDown}
+          dataMark="data-settings-panel"
           className={[
             'transition-[opacity,translate,scale] [transition-timing-function:var(--motion-ease)]',
             entered

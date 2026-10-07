@@ -64,7 +64,7 @@ import { toast, toastStore } from '../stores/toasts';
 import type { ThemeStore } from '../stores/theme';
 import type { UpdateStore } from '../stores/update';
 import type { NewProjectDone, NewProjectStore } from '../stores/new-project';
-import type { WizardStore } from '../stores/wizard';
+import type { WizardFinished, WizardStore } from '../stores/wizard';
 import type { WorkOrderDetailStore } from '../stores/work-order-detail';
 import { AccountViewScreen } from './account-view';
 import { BoardScreen } from './board';
@@ -339,14 +339,17 @@ export function ShellScreen({
   // The Yeni proje page's success (U-40): its machine starts fresh, the new project's view opens
   // and the one toast (U-50) shows; no target (the tree does not list it) lands on the cockpit.
   // The setup finished (U-42): Anasayfa opens directly and the one toast says how many accounts are
-  // ready. The wizard hands the result over once.
+  // ready. The wizard hands the result over once; its window fades over the Anasayfa now open
+  // beneath it and acks its own leave (U-49), so the shell never acks for it — the seen ref keeps
+  // the one handoff safe where the ack no longer clears the flag in this effect's own tick.
   const finished = wizardState.finished;
+  const finishSeenRef = useRef<WizardFinished | null>(null);
   useEffect(() => {
-    if (finished === null) return;
+    if (finished === null || finishSeenRef.current === finished) return;
+    finishSeenRef.current = finished;
     navigate({ name: 'cockpit' });
     toast({ type: 'success', text: t(locale, 'wizard.finished.toast').replace('{n}', String(finished.accounts)) });
-    wizard.ackFinish();
-  }, [finished, navigate, wizard, locale]);
+  }, [finished, navigate, locale]);
   const finishNewProject = useCallback(
     (done: NewProjectDone): void => {
       newProject.reset();
