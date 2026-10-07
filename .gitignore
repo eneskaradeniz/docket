@@ -1,4 +1,6 @@
-node_modules/
+# Worktrees symlink the main checkout's node_modules; a trailing slash would
+# match only directories and leave the symlink untracked.
+node_modules
 dist/
 dist-electron/
 out/
@@ -28,3 +30,6 @@ build/icon.iconset/
 
 # E2E screenshots and the gallery are local evidence, not committed artifacts.
 e2e/.out/
+
+# Playwright MCP console logs and snapshots written while the UI is walked.
+.playwright-mcp/
