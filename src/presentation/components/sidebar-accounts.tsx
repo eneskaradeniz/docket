@@ -8,7 +8,7 @@
 // it and the focus never leaves the card. The body is one fixed height — two cards with the top
 // of a third peeking beneath — and the rest scroll inside it, never the sidebar. The refresh
 // intent re-polls usage through the store while the icon spins.
-import { useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, useLayoutEffect, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
 
 import { ACTIVE_CLASS } from './active-state';
 import { MARK_SIZE, ProviderMark } from './provider-mark';
@@ -123,9 +123,20 @@ export function AccountLimitsPopover({
   readonly onOpen: () => void;
 }) {
   const full = provider === null ? card.label : `${provider} · ${card.label}`;
-  const style: CSSProperties = { left, top };
+  const [adjustedTop, setAdjustedTop] = useState(top);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    if (ref.current !== null) {
+      const h = ref.current.getBoundingClientRect().height;
+      setAdjustedTop(Math.max(8, Math.min(top, window.innerHeight - 8 - h)));
+    }
+  }, [top, card.limits]);
+
+  const style: CSSProperties = { left, top: adjustedTop, maxHeight: 'calc(100vh - 16px)', overflowY: 'auto' };
   return (
     <div
+      ref={ref}
       data-account-popover=""
       role="dialog"
       aria-label={`${full} — ${t(locale, 'accounts.limits')}`}
