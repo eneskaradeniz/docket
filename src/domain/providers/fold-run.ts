@@ -12,7 +12,7 @@ export interface RunSummary {
   readonly costKind?: CostKind; // the kind of the first costed event
   readonly toolCalls: number;
   readonly failedToolCalls: number;
-  readonly openPermissionAsks: readonly string[]; // ask ids without a later tool_result of the same id
+  readonly openPermissionAsks: readonly string[]; // ask ids without a later tool_result or permission_answered of the same id
   readonly lastLimit?: Extract<AgentEvent, { readonly type: 'limit_hit' }>;
   readonly outcome?: RunOutcome; // maps the last finished event: completed→succeeded, failed, cancelled, limit
 }
@@ -63,6 +63,9 @@ export function foldRun(events: readonly AgentEvent[]): RunSummary {
         break;
       case 'permission_ask':
         if (!openAsks.includes(event.id)) openAsks.push(event.id);
+        break;
+      case 'permission_answered':
+        closeAsk(openAsks, event.id);
         break;
       case 'usage':
         sawUsage = true;

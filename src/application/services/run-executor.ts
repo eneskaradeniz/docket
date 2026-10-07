@@ -448,6 +448,13 @@ export async function executeRun(
         break;
       case 'permission_ask': {
         const answer = await permissions.onAsk(runId, event);
+        // The decision is persisted as an event the moment it is known: the folds close the ask
+        // by it, so the pane can move on to the next ask while the agent still works on this
+        // answer. The transport never streams this event — only the executor can write it.
+        const answered: AgentEvent = { type: 'permission_answered', at: deps.clock.now(), id: event.id, decision: answer };
+        streamed.push(answered);
+        await deps.runs.appendEvents(runId, [answered]);
+        notify?.(runId);
         handle.answerPermission(event.id, answer);
         await audit(deps, {
           at: deps.clock.now(),

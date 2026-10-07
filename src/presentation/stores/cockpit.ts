@@ -108,10 +108,13 @@ export interface CockpitStore {
 export type OpenAskFacts = Omit<CockpitAsk, 'runId'>;
 
 /** The earliest permission ask of a stream still open — the same openness notion as the domain's
- *  run fold (R-44): an ask is open until a tool_result of its id arrives. Pure (U-21). */
+ *  run fold (R-44): an ask is open until a tool_result or a permission_answered of its id arrives.
+ *  Pure (U-21). */
 export const earliestOpenAsk = (events: readonly AgentEvent[]): OpenAskFacts | null => {
   const closed = new Set(
-    events.filter((event) => event.type === 'tool_result').map((event) => (event as { readonly id: string }).id),
+    events
+      .filter((event) => event.type === 'tool_result' || event.type === 'permission_answered')
+      .map((event) => (event as { readonly id: string }).id),
   );
   const ask = events.find(
     (event): event is Extract<AgentEvent, { readonly type: 'permission_ask' }> =>

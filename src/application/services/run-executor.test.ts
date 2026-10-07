@@ -637,7 +637,15 @@ describe('executeRun', () => {
 
     expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
     const record = await theRun(h.runs);
-    expect(await h.runs.events(record.id)).toEqual(script);
+    expect(await h.runs.events(record.id)).toEqual([
+      sessionStarted('sess-1'),
+      text('working'),
+      ask(),
+      { type: 'permission_answered', at: T0, id: 'ask-1', decision: 'allow' },
+      usage(0.75),
+      quotaSignal(3_600_000),
+      finished('completed'),
+    ]);
     expect(record.sessionRef).toBe('sess-1');
     expect(record.outcome).toBe('succeeded');
     expect(gateResult.asked.length).toBe(1);
@@ -657,6 +665,21 @@ describe('executeRun', () => {
     await executeRun(h.deps, permissionGate().permissions, INPUT);
 
     expect((await theRun(h.runs)).sessionRef).toBe('sess-42');
+  });
+
+  it('A-16: the answer is persisted as a permission_answered event next to the audit entry', async () => {
+    const h = await harness({ script: [ask(), finished('completed')] });
+    const gateResult = permissionGate('deny');
+
+    await executeRun(h.deps, gateResult.permissions, INPUT);
+
+    const record = await theRun(h.runs);
+    expect(await h.runs.events(record.id)).toEqual([
+      ask(),
+      { type: 'permission_answered', at: T0, id: 'ask-1', decision: 'deny' },
+      finished('completed'),
+    ]);
+    expect(actionsOf(h.log)).toEqual(['run.started', 'permission.answered', 'run.finished']);
   });
 
   it('A-16: permission_ask is asked through the gate and the answer is delivered to the transport', async () => {
@@ -1255,9 +1278,10 @@ describe('executeRun', () => {
 
     expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
     const record = await theRun(h.runs);
-    // Exactly one notification per appended event, the run's own id each time: the executor's
-    // run_started / run_finished appends to the work order log never reach this hook.
-    expect(notified).toEqual([record.id, record.id, record.id, record.id]);
+    // Exactly one notification per appended event, the run's own id each time — the persisted
+    // permission_answered counts like any other — while the executor's run_started /
+    // run_finished appends to the work order log never reach this hook.
+    expect(notified).toEqual([record.id, record.id, record.id, record.id, record.id]);
   });
 
   it('the run-finished path also notifies the workOrders.changed hook, after the append is visible', async () => {

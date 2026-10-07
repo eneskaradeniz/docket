@@ -280,6 +280,38 @@ describe('cockpit store — sections (U-21)', () => {
     expect(store.state().asks).toEqual({});
   });
 
+  it('U-21: an ask closed by a permission_answered leaves the map on the next load — the next ask shows', async () => {
+    const waiting = attentionItem('wo-1', 'permission_ask', 500);
+    const detail = {
+      record: { id: 'wo-1', repo: 'atolye', flow: 'bakim', title: 'title-wo-1' },
+      state: { status: 'running', stage: 'gelistir', pendingGates: [] },
+      next: { kind: 'none' },
+      runs: [{ id: 'run-9', stage: 'gelistir', startedAt: 100 }],
+    };
+    const withAsk: readonly AgentEvent[] = [
+      { type: 'permission_ask', at: 60, id: 'ask-1', tool: 'Bash', target: 'rm -rf', options: ['allow', 'deny'] },
+    ];
+    const answered: readonly AgentEvent[] = [
+      { type: 'permission_ask', at: 60, id: 'ask-1', tool: 'Bash', target: 'rm -rf', options: ['allow', 'deny'] },
+      { type: 'permission_answered', at: 70, id: 'ask-1', decision: 'allow' },
+      { type: 'permission_ask', at: 80, id: 'ask-2', tool: 'Bash', target: 'dotnet ef database update', options: ['allow', 'deny'] },
+    ];
+    const api = fakeSectionApi(cockpitView([waiting]), detail, withAsk);
+    const store = createCockpitStore({ api, changes: fakeSignal().signal, actor: userActor, now: () => 0 });
+    await store.load();
+    await flush();
+    expect(store.state().asks).toEqual({ 'wo-1': { runId: 'run-9', askId: 'ask-1', tool: 'Bash', target: 'rm -rf' } });
+
+    api.query = (query: Query): Promise<unknown> => {
+      if (query.type === 'workOrder.detail') return Promise.resolve(detail);
+      if (query.type === 'run.events') return Promise.resolve(answered);
+      return Promise.resolve(cockpitView([waiting]));
+    };
+    await store.load();
+    await flush();
+    expect(store.state().asks).toEqual({ 'wo-1': { runId: 'run-9', askId: 'ask-2', tool: 'Bash', target: 'dotnet ef database update' } });
+  });
+
   it('U-21: the answer intent issues permission.answer and re-queries the cockpit', async () => {
     const api = fakeSectionApi(cockpitView([]));
     const store = createCockpitStore({ api, changes: fakeSignal().signal, actor: userActor, now: () => 0 });
@@ -333,6 +365,16 @@ describe('earliestOpenAsk (U-21)', () => {
         { type: 'tool_result', at: 30, id: 'ask-1', ok: true },
       ]),
     ).toBeNull();
+  });
+
+  it('U-21: a permission_answered closes its ask — the earliest open ask moves to the next, then none (acceptance)', () => {
+    const events: readonly AgentEvent[] = [
+      { type: 'permission_ask', at: 10, id: 'ask-1', tool: 'Bash', target: 'bir', options: ['allow', 'deny'] },
+      { type: 'permission_ask', at: 20, id: 'ask-2', tool: 'Bash', target: 'iki', options: ['allow', 'deny'] },
+      { type: 'permission_answered', at: 30, id: 'ask-1', decision: 'allow' },
+    ];
+    expect(earliestOpenAsk(events)).toEqual({ askId: 'ask-2', tool: 'Bash', target: 'iki' });
+    expect(earliestOpenAsk([...events, { type: 'permission_answered', at: 40, id: 'ask-2', decision: 'deny' }])).toBeNull();
   });
 });
 
