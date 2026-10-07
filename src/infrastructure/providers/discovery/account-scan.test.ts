@@ -107,6 +107,34 @@ describe('account scan', () => {
     });
   });
 
+  it('keeps the configured endpoint path: endpointUrl is the origin plus pathname, nothing else', async () => {
+    const at = (url: string): Promise<readonly { readonly endpointUrl?: string; readonly endpointHost?: string }[]> =>
+      scan({
+        dirs: ['.claude-glm'],
+        contents: { [`${HOME}/.claude-glm/settings.json`]: settings({ ANTHROPIC_BASE_URL: url }) },
+      });
+    const withPath = await at('https://api.z.ai/api/anthropic');
+    expect(withPath[0]?.endpointUrl).toBe('https://api.z.ai/api/anthropic');
+    expect(withPath[0]?.endpointHost).toBe('api.z.ai');
+    expect(await at('https://api.z.ai/api/anthropic/')).toMatchObject([{ endpointUrl: 'https://api.z.ai/api/anthropic' }]);
+    expect(await at('https://api.z.ai/')).toMatchObject([{ endpointUrl: 'https://api.z.ai' }]);
+    expect(await at('https://api.z.ai/api/anthropic?key=abc#section')).toMatchObject([
+      { endpointUrl: 'https://api.z.ai/api/anthropic' },
+    ]);
+  });
+
+  it('treats an endpoint URL with userinfo as unparsed, so no candidate carries credentials', async () => {
+    const found = await scan({
+      dirs: ['.claude-glm'],
+      contents: {
+        [`${HOME}/.claude-glm/.claude.json`]: identity(true),
+        [`${HOME}/.claude-glm/settings.json`]: settings({ ANTHROPIC_BASE_URL: `https://user:${SENTINEL}@api.z.ai/api/anthropic` }),
+      },
+    });
+    expect(found).toEqual([]);
+    expect(JSON.stringify(found)).not.toContain(SENTINEL);
+  });
+
   it('classifies a mixed directory by its overrides and warns that they override the login', async () => {
     const found = await scan({
       dirs: ['.claude-mixed'],
@@ -224,11 +252,12 @@ describe('account scan', () => {
         [`${HOME}/.claude-w/settings.json`]: settings({ OTHER: SENTINEL, ANTHROPIC_MODEL: SENTINEL }),
       },
     });
-    expect(found).toHaveLength(3);
+    // The userinfo URL is unparsed, so its directory proposes nothing at all.
+    expect(found).toHaveLength(2);
     const json = JSON.stringify(found);
     expect(json).not.toContain(SENTINEL);
     expect(json).not.toContain('SENTINEL');
-    expect(found.find((c) => c.endpointHost !== undefined)?.endpointHost).toBe('api.z.ai');
+    expect(found.every((c) => c.endpointHost === undefined && c.endpointUrl === undefined)).toBe(true);
   });
 
   it('detects an already-added account by identity directory or by route kind and host', async () => {

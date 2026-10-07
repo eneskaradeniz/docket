@@ -1,7 +1,8 @@
 // Local account scan: finds Claude-style config directories in the home directory and proposes
 // them as candidates. Contract: docs/v2/provider-capabilities.md → "Local account discovery (P-33)".
-// Only key names, the endpoint host and an OAuth-present boolean survive parsing; every other
-// byte of the two files read is dropped at once, and nothing is logged.
+// Only key names, the endpoint host, the endpoint URL (origin plus pathname) and an OAuth-present
+// boolean survive parsing; every other byte of the two files read is dropped at once, and nothing
+// is logged.
 import { readdir, stat, open } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -61,6 +62,7 @@ interface Evidence {
   readonly hasOauthLogin: boolean;
   readonly envOverrides: readonly Override[];
   readonly endpointHost?: string;
+  readonly endpointUrl?: string;
   readonly endpointUnparsed: boolean; // an endpoint override whose host could not be taken
 }
 
@@ -90,6 +92,23 @@ function hostOf(value: unknown): string | undefined {
   }
 }
 
+/** Both facts a candidate may carry about the configured endpoint, taken in one parse: the host
+ *  classification matches on and the URL adoption stores. The URL is `origin + pathname` with one
+ *  trailing `/` removed — the query string and fragment never survive. A URL with userinfo
+ *  (`user:pass@`) yields nothing, so no part of a credential can reach a candidate. */
+function endpointOf(value: unknown): { readonly host: string; readonly url: string } | undefined {
+  if (typeof value !== 'string') return undefined;
+  try {
+    const parsed = new URL(value);
+    if (parsed.username !== '' || parsed.password !== '') return undefined;
+    const host = parsed.hostname.toLowerCase();
+    if (host === '') return undefined;
+    return { host, url: parsed.origin + parsed.pathname.replace(/\/$/, '') };
+  } catch {
+    return undefined;
+  }
+}
+
 function hostOfAccount(endpoint: string | undefined): string | undefined {
   return endpoint === undefined ? undefined : hostOf(endpoint);
 }
@@ -99,6 +118,7 @@ async function gather(fs: AccountScanFs, dir: string, withHomeIdentity: boolean,
   let hasOauthLogin = false;
   const overrides = new Set<Override>();
   let endpointHost: string | undefined;
+  let endpointUrl: string | undefined;
   let endpointUnparsed = false;
 
   const settings = await readJson(fs, join(dir, SETTINGS_FILE));
@@ -107,8 +127,10 @@ async function gather(fs: AccountScanFs, dir: string, withHomeIdentity: boolean,
     for (const [key, value] of Object.entries(settings.value.env)) {
       if (ENDPOINT_KEYS.has(key)) {
         overrides.add('endpoint');
-        endpointHost = hostOf(value);
-        if (endpointHost === undefined) endpointUnparsed = true;
+        const endpoint = endpointOf(value);
+        endpointHost = endpoint?.host;
+        endpointUrl = endpoint?.url;
+        if (endpoint === undefined) endpointUnparsed = true;
       } else if (TOKEN_KEYS.has(key)) overrides.add('token');
       else if (MODEL_KEYS.has(key)) overrides.add('model');
     }
@@ -129,6 +151,7 @@ async function gather(fs: AccountScanFs, dir: string, withHomeIdentity: boolean,
     hasOauthLogin,
     envOverrides: order.filter((o) => overrides.has(o)),
     ...(endpointHost !== undefined ? { endpointHost } : {}),
+    ...(endpointUrl !== undefined ? { endpointUrl } : {}),
     endpointUnparsed,
   };
 }
@@ -139,13 +162,21 @@ export function createAccountScan(options: AccountScanOptions): AccountDiscovery
   const routeKinds = allKinds.filter((k) => k.providerId === PROVIDER_ID);
   const subscriptionKind = routeKinds.find((k) => k.authMode === 'subscription' && k.endpointHost === undefined);
 
-  function classify(evidence: Evidence): Pick<AccountCandidate, 'kind' | 'routeKind' | 'endpointHost' | 'warnings'> | undefined {
+  function classify(
+    evidence: Evidence,
+  ): Pick<AccountCandidate, 'kind' | 'routeKind' | 'endpointHost' | 'endpointUrl' | 'warnings'> | undefined {
     const warnings: ('env_overrides_login' | 'unreadable')[] = [];
     if (evidence.endpointHost !== undefined) {
       const preset = routeKinds.find((k) => k.endpointHost === evidence.endpointHost);
       if (preset === undefined) return undefined; // an endpoint no preset knows is not proposed
       if (evidence.hasOauthLogin) warnings.push('env_overrides_login');
-      return { kind: 'compatible_endpoint', routeKind: preset.id, endpointHost: evidence.endpointHost, warnings };
+      return {
+        kind: 'compatible_endpoint',
+        routeKind: preset.id,
+        endpointHost: evidence.endpointHost,
+        ...(evidence.endpointUrl !== undefined ? { endpointUrl: evidence.endpointUrl } : {}),
+        warnings,
+      };
     }
     const overridesLogin = evidence.endpointUnparsed || evidence.envOverrides.includes('token');
     if (evidence.hasOauthLogin && !overridesLogin && subscriptionKind !== undefined) {
@@ -236,6 +267,7 @@ export function createAccountScan(options: AccountScanOptions): AccountDiscovery
           provider: PROVIDER_ID,
           routeKind: classified.routeKind,
           ...(classified.endpointHost !== undefined ? { endpointHost: classified.endpointHost } : {}),
+          ...(classified.endpointUrl !== undefined ? { endpointUrl: classified.endpointUrl } : {}),
           hasOauthLogin: evidence.hasOauthLogin,
           envOverrides: evidence.envOverrides,
           warnings: evidence.readable ? classified.warnings : [...classified.warnings, 'unreadable'],
