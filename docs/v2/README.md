@@ -21,6 +21,7 @@ until an architect change updates them.
 | [ui.md](ui.md) | Phase 4 presentation layer: labels, stores, API additions, the operator gate |
 | [pages.md](pages.md) | Visual pages produced by agents (artifacts), sandboxing |
 | [roadmap.md](roadmap.md) | Phases, milestones, issue contract, model routing, batch mode |
+| [layer-promotion.md](layer-promotion.md), [screen-contract-template.md](screen-contract-template.md) | Layer-by-layer v2 → main promotion (order, gates, dogfood ladder, sign-off); per-screen contract template (a11y + measurements, no screenshots) |
 
 ## Glossary
 
