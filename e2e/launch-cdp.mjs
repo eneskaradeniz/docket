@@ -2,17 +2,25 @@
 // Chromium's remote debugging port on 9222 (DOCKET_CDP_PORT overrides it) and DOCKET_DATA_DIR
 // aimed at a fresh temp directory, so another session can attach to the real running app —
 // playwright: chromium.connectOverCDP('http://localhost:9222') — and read a live screen. The port
-// and the temp path are printed once the port answers; Ctrl-C stops the app and removes the temp
+// and the data path are printed once the port answers; Ctrl-C stops the app and removes the temp
 // directory.
 //
-// The operator's ~/.docket is never written: the app's only storage seam is DOCKET_DATA_DIR, and
-// the launcher itself writes nothing there. That is also why this launcher does not take the host
-// e2e lock — the lock directory lives under ~/.docket, and moving it elsewhere would stop excluding
-// the suites this tool can collide with anyway.
+// DOCKET_CDP_DATA_DIR=<absolute path> swaps the temp directory for a dedicated test directory
+// that is KEPT between launches: provider accounts live in the data directory's encrypted SQLite
+// vault, so an account entered once (by the operator, through the app's own account step) is
+// still logged in on the next launch — a fresh temp dir is an empty vault and every token account
+// reads not_logged_in.
+//
+// The operator's ~/.docket is never written: the app's only storage seam is DOCKET_DATA_DIR, the
+// launcher itself writes nothing there, and a DOCKET_CDP_DATA_DIR that equals or lies inside
+// ~/.docket is refused — the real directory holds the operator's live accounts and records, which
+// a test run must not touch. That is also why this launcher does not take the host e2e lock —
+// the lock directory lives under ~/.docket, and moving it elsewhere would stop excluding the
+// suites this tool can collide with anyway.
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { createRequire } from 'node:module';
 
 const ROOT = resolve(new URL('..', import.meta.url).pathname);
@@ -28,12 +36,70 @@ if (!existsSync(join(ROOT, 'dist-electron', 'main.js'))) {
   process.exit(1);
 }
 
+// Resolves a path whose tail may not exist yet through its nearest existing ancestor. Parents are
+// followed rather than refused (/tmp on macOS is a symlink), but where they land is what the
+// ~/.docket check must compare against — the final component itself is refused as a symlink
+// separately, before this runs.
+const realPathThroughAncestors = (p) => {
+  let current = p;
+  const missingTail = [];
+  for (;;) {
+    try {
+      return join(realpathSync(current), ...missingTail);
+    } catch (error) {
+      // realpathSync has no throwIfNoEntry option — only a missing tail walks up; other
+      // failures (permissions, loops) stay errors.
+      if (error.code !== 'ENOENT') throw error;
+    }
+    if (dirname(current) === current) return undefined;
+    missingTail.unshift(basename(current));
+    current = dirname(current);
+  }
+};
+
+const contains = (parent, child) => {
+  const rel = relative(parent, child);
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+};
+
+const requestedDataDir = process.env.DOCKET_CDP_DATA_DIR;
+let dataDir;
+let keepDataDir = false;
+if (requestedDataDir === undefined) {
+  dataDir = mkdtempSync(join(tmpdir(), 'docket-cdp-'));
+} else {
+  if (!isAbsolute(requestedDataDir)) {
+    console.error(`DOCKET_CDP_DATA_DIR must be an absolute path: ${requestedDataDir}`);
+    process.exit(2);
+  }
+  if (lstatSync(requestedDataDir, { throwIfNoEntry: false })?.isSymbolicLink()) {
+    console.error(`DOCKET_CDP_DATA_DIR is a symbolic link: ${requestedDataDir}`);
+    process.exit(2);
+  }
+  // Both the plain and the resolved forms are compared, because a non-symlink path can still sit
+  // inside ~/.docket through a symlinked parent.
+  const plain = resolve(requestedDataDir);
+  const real = realPathThroughAncestors(plain);
+  const docketHome = resolve(homedir(), '.docket');
+  const realDocketHome = realPathThroughAncestors(docketHome);
+  const candidates = real === undefined ? [plain] : [plain, real];
+  const anchors = realDocketHome === undefined ? [docketHome] : [docketHome, realDocketHome];
+  if (candidates.some((candidate) => anchors.some((anchor) => contains(anchor, candidate)))) {
+    console.error(`DOCKET_CDP_DATA_DIR must not be ~/.docket or a path inside it: ${requestedDataDir}`);
+    process.exit(2);
+  }
+  // 0700: the kept directory holds the app's encrypted account vault, so no other user may read
+  // it even though it lives outside the per-user temp sandbox.
+  mkdirSync(requestedDataDir, { recursive: true, mode: 0o700 });
+  dataDir = requestedDataDir;
+  keepDataDir = true;
+}
+
 // Under plain node the electron module resolves to the path of its binary — the same resolution
 // playwright's own electron launcher builds on.
 const nodeRequire = createRequire(import.meta.url);
 const electronBinary = nodeRequire('electron');
 
-const dataDir = mkdtempSync(join(tmpdir(), 'docket-cdp-'));
 const child = spawn(
   electronBinary,
   // The debugging switch must precede the app path: arguments after it belong to the app.
@@ -52,7 +118,9 @@ const stop = () => {
 process.on('SIGINT', stop);
 process.on('SIGTERM', stop);
 child.on('exit', (code) => {
-  rmSync(dataDir, { recursive: true, force: true });
+  // A kept directory is the point of DOCKET_CDP_DATA_DIR: removing it would log every account
+  // out again, so only the launcher-created temp directory is cleaned up.
+  if (!keepDataDir) rmSync(dataDir, { recursive: true, force: true });
   if (!stopping) console.error(`cdp: the app exited on its own (code ${code ?? 'signal'})`);
   process.exit(stopping ? 0 : 1);
 });
@@ -75,5 +143,10 @@ for (;;) {
   await new Promise((r) => setTimeout(r, 250));
 }
 console.log(`cdp: port ${PORT} answering at http://localhost:${PORT}/json/version`);
-console.log(`cdp: data dir ${dataDir}`);
-console.log('cdp: Ctrl-C stops the app and removes the data dir');
+if (keepDataDir) {
+  console.log(`cdp: data dir ${dataDir} (kept)`);
+  console.log('cdp: Ctrl-C stops the app; the data dir is kept for the next launch');
+} else {
+  console.log(`cdp: data dir ${dataDir}`);
+  console.log('cdp: Ctrl-C stops the app and removes the data dir');
+}
