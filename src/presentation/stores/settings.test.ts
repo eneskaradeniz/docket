@@ -4,7 +4,8 @@
 // the refresh — the prior rows stay listed and a failed provider arrives as its null-fields row,
 // never a query failure. Save/remove intents map through results.ts (U-8); removing an account a
 // binding still references warns with the referencing roles BEFORE account.remove is issued and
-// issues only on explicit confirmation. Api and change signal are injected fakes.
+// never sends the command while a reference stands — the way forward is updating the binding in
+// Roller, not a confirmation. Api and change signal are injected fakes.
 import { describe, expect, it } from 'vitest';
 
 import type { Api } from '../../api/api';
@@ -335,33 +336,55 @@ describe('settings store', () => {
 
     const outcome = await h.store.removeAccount('acc-1');
 
-    // The warning surfaces first: no command travels until the user confirms.
+    // The warning is the outcome: no command travels while a reference stands.
     expect(h.api.commands).toEqual([]);
     expect(outcome).toEqual({
       command: 'account.remove',
       result: { ok: false, code: 'binding_exists', roles: ['worker', 'reviewer'] },
       labelKey: 'error.binding_exists',
     });
-    expect(h.store.state().removeWarning).toEqual({ accountId: 'acc-1', roles: ['worker', 'reviewer'] });
+    expect(h.store.state().removeWarning).toEqual({ accountId: 'acc-1', roles: ['worker', 'reviewer'], onlyAccount: false });
   });
 
-  it('U-6: explicit confirmation issues account.remove once, maps through U-8 and refreshes the view', async () => {
+  it('the store offers no confirm path — a referenced account can never be removed by insisting', async () => {
+    const h = createHarness('tr');
+    await h.store.load();
+
+    expect('confirmRemoveAccount' in h.store).toBe(false);
+    await h.store.removeAccount('acc-1');
+    await h.store.removeAccount('acc-1');
+
+    // Repeated removes keep refusing: the use case would refuse the same command again, so the
+    // store never sends it while the loaded view still shows a reference.
+    expect(h.api.commands).toEqual([]);
+    expect(h.store.state().removeWarning).toEqual({ accountId: 'acc-1', roles: ['worker', 'reviewer'], onlyAccount: false });
+  });
+
+  it('the warning of the only account says the roles need another account first', async () => {
+    const h = createHarness('tr');
+    h.api.setReply('settings.accounts', { accounts: [VIEW.accounts[0]], bindings: VIEW.bindings });
+    await h.store.load();
+
+    await h.store.removeAccount('acc-1');
+
+    expect(h.api.commands).toEqual([]);
+    expect(h.store.state().removeWarning).toEqual({ accountId: 'acc-1', roles: ['worker', 'reviewer'], onlyAccount: true });
+  });
+
+  it('a re-query drops the warning once no binding references the account any more', async () => {
     const h = createHarness('tr');
     await h.store.load();
     await h.store.removeAccount('acc-1');
-    expect(h.api.queries.filter((q) => q.type === 'settings.accounts').length).toBe(1);
+    expect(h.store.state().removeWarning).not.toBeNull();
 
-    const outcome = await h.store.confirmRemoveAccount('acc-1');
-
-    expect(h.api.commands).toEqual([{ type: 'account.remove', id: 'acc-1' }]);
-    expect(outcome).toEqual({
-      command: 'account.remove',
-      result: { ok: true },
-      labelKey: 'success.account.remove',
+    // The binding was updated in Roller meanwhile; the fresh view no longer routes acc-1.
+    h.api.setReply('settings.accounts', {
+      accounts: VIEW.accounts,
+      bindings: [{ scope: { level: 'global' }, role: 'worker', thinking: null, tier: null, accounts: [{ accountId: 'acc-2', model: null }] }],
     });
+    await h.store.load();
+
     expect(h.store.state().removeWarning).toBeNull();
-    // The store mirrors its own mutation: the accounts view is re-queried.
-    expect(h.api.queries.filter((q) => q.type === 'settings.accounts').length).toBe(2);
   });
 
   it('U-6: removing an unbound account issues account.remove directly, without a warning', async () => {

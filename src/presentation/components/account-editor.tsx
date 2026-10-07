@@ -89,10 +89,13 @@ export interface AccountEditorProps {
   };
   /** "Hesabı kaldır" at the bottom of Genel (a danger zone); absent = the host offers no removal. */
   readonly onRemove?: () => void;
-  /** The standing warning of a refused removal (the account is still bound to roles). */
+  /** The standing warning of a refused removal (the account is still bound to roles). Its only
+   *  way forward is updating the binding in Roller; when the account is the only one there is
+   *  nothing to rebind to yet, so the warning says that instead of offering the jump. */
   readonly removeWarning?: {
     readonly roles: readonly string[];
-    readonly onConfirm: () => void;
+    readonly onlyAccount: boolean;
+    readonly onOpenRoles: () => void;
     readonly onDismiss: () => void;
   };
 }
@@ -173,10 +176,15 @@ function DangerZone({ account, locale, onRemove, removeWarning }: Pick<AccountEd
           <p className="text-[13px] text-ink">
             {t(locale, 'settings.remove.warning')} <span className="font-mono text-[12.5px] text-signal-soft">{removeWarning.roles.join(', ')}</span>
           </p>
+          {removeWarning.onlyAccount ? (
+            <p className="text-[12.5px] text-inkdim">{t(locale, 'settings.remove.onlyAccount')}</p>
+          ) : null}
           <div className="flex items-center gap-2">
-            <ActionButton variant="primary" onClick={removeWarning.onConfirm}>
-              {t(locale, 'settings.remove.confirm')}
-            </ActionButton>
+            {removeWarning.onlyAccount ? null : (
+              <ActionButton variant="primary" onClick={removeWarning.onOpenRoles}>
+                {t(locale, 'settings.remove.updateRoles')}
+              </ActionButton>
+            )}
             <ActionButton variant="neutral" onClick={removeWarning.onDismiss}>
               {t(locale, 'settings.remove.cancel')}
             </ActionButton>

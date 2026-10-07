@@ -227,8 +227,10 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
     if (updateOutcome !== null) toastOutcome(locale, updateOutcome);
   }, [updateOutcome, locale]);
   useEffect(() => {
-    void store.load();
-  }, [store]);
+    // Every section arrival re-reads the view: a binding updated over in Roller must be what
+    // Hesaplar decides removal on when the user comes back, not the view from before the trip.
+    if (open) void store.load();
+  }, [store, open, section]);
   // The Eklenmemiş list reads (cached) whenever Hesaplar is on screen.
   useEffect(() => {
     if (open && section === 'accounts') void candidates.load();
@@ -324,9 +326,6 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
   const remove = (accountId: string): void => {
     setWarningDismissedFor(null);
     void store.removeAccount(accountId);
-  };
-  const confirmRemove = (accountId: string): void => {
-    void store.confirmRemoveAccount(accountId);
   };
   const closeEditor = (): void => {
     onBack();
@@ -677,7 +676,14 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
             ? {
                 removeWarning: {
                   roles: removeWarning.roles,
-                  onConfirm: () => confirmRemove(removeWarning.accountId),
+                  onlyAccount: removeWarning.onlyAccount,
+                  // The jump unmounts the dialog without its own focus return (that rides the
+                  // close paths), so the panel takes focus back itself — Esc and the Tab trap
+                  // stay alive instead of dying on a focused body.
+                  onOpenRoles: () => {
+                    onOpenTarget({ section: 'roles' });
+                    panelRef.current?.focus();
+                  },
                   onDismiss: () => setWarningDismissedFor(removeWarning.accountId),
                 },
               }

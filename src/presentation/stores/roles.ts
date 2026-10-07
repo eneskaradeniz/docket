@@ -149,6 +149,21 @@ export const globalChainOf = (bindings: readonly SettingsBindingView[]): readonl
   return best?.ids ?? [];
 };
 
+/** The empty-chain line's key: with no account at all the line asks for one; with accounts but an
+ *  empty chain it asks for the recommended setup or a pick — the same empty look is not the same
+ *  problem, and the copy must not send a user who has an account to add another. Pure. */
+export const chainEmptyKey = (accountCount: number): LabelKey => (accountCount === 0 ? 'roles.chain.empty' : 'roles.chain.unbound');
+
+/** The roles an adoption must bind: those with no global binding yet. A binding at a narrower
+ *  scope is not a chain — the role still has no global accounts to run on. Pure. */
+export const unboundRoleIds = (
+  roles: readonly { readonly id: string }[],
+  bindings: readonly SettingsBindingView[],
+): readonly string[] => {
+  const bound = new Set(bindings.filter((binding) => binding.scope.level === 'global').map((binding) => binding.role));
+  return roles.filter((entry) => !bound.has(entry.id)).map((entry) => entry.id);
+};
+
 /** The complete binding as `binding.save` takes it: every stored field, a null one left out. */
 export const bindingCommand = (
   role: string,

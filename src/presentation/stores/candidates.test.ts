@@ -1,5 +1,7 @@
 // candidates.test.ts — U-34: the discovered accounts and providers as one list; selection, the
-// key-move switch (starts off, never a value), and adoption results through U-8.
+// key-move switch (starts off, never a value), and adoption results through U-8. A successful
+// adoption also binds every role that has no binding yet to the new account — Settings is not
+// the wizard, but it must not leave roles unrunnable either.
 import { describe, expect, it } from 'vitest';
 
 import type { Command, CommandResult } from '../../api/commands';
@@ -35,7 +37,13 @@ interface Fake {
   readonly commands: Command[];
   candidates: unknown;
   discovered: unknown;
+  /** The `roles.list` reply the adoption's bind step reads. */
+  roles: unknown;
+  /** The `settings.accounts` reply the adoption's bind step reads. */
+  accountsView: unknown;
   result: CommandResult;
+  /** When set, commands answer from this queue in order; `result` answers the rest. */
+  results: CommandResult[];
   readonly api: { query(q: Query): Promise<unknown>; command(a: unknown, c: Command): Promise<CommandResult> };
 }
 const fake = (candidates: unknown, discovered: unknown = []): Fake => {
@@ -44,15 +52,21 @@ const fake = (candidates: unknown, discovered: unknown = []): Fake => {
     commands: [],
     candidates,
     discovered,
+    roles: [],
+    accountsView: { accounts: [], bindings: [] },
     result: { ok: true, id: 'acc-1' },
+    results: [],
     api: {
       query: (q) => {
         f.queries.push(q);
-        return Promise.resolve(q.type === 'accounts.candidates' ? f.candidates : f.discovered);
+        if (q.type === 'accounts.candidates') return Promise.resolve(f.candidates);
+        if (q.type === 'roles.list') return Promise.resolve(f.roles);
+        if (q.type === 'settings.accounts') return Promise.resolve(f.accountsView);
+        return Promise.resolve(f.discovered);
       },
       command: (_a, c) => {
         f.commands.push(c);
-        return Promise.resolve(f.result);
+        return Promise.resolve(f.results.length > 0 ? (f.results.shift() as CommandResult) : f.result);
       },
     },
   };
@@ -231,6 +245,48 @@ describe('createCandidatesStore', () => {
     expect(outcome?.labelKey).toBe('error.not_found');
     expect(store.state().selected).toBe(base.sourcePath);
     expect(f.queries.length).toBe(before);
+  });
+
+  it('a successful adopt binds every role with no binding yet to the new account, chain only', async () => {
+    const f = fake([base]);
+    f.roles = [{ id: 'worker', name: 'Worker', stages: [] }, { id: 'reviewer', name: 'Reviewer', stages: [] }];
+    f.accountsView = { accounts: [], bindings: [{ scope: { level: 'global' }, role: 'reviewer', thinking: null, tier: null, accounts: [{ accountId: 'old-1', model: null }] }] };
+    const store = make(f);
+    await store.load();
+    store.select(base.sourcePath);
+    await store.adopt();
+    expect(f.commands).toEqual([
+      { type: 'account.adopt', sourcePath: base.sourcePath, label: '.alpha' },
+      { type: 'binding.save', role: 'worker', accounts: [{ accountId: 'acc-1' }] },
+    ]);
+  });
+
+  it('a successful adopt with every role already bound issues no binding at all', async () => {
+    const f = fake([base]);
+    f.roles = [{ id: 'worker', name: 'Worker', stages: [] }];
+    f.accountsView = { accounts: [], bindings: [{ scope: { level: 'global' }, role: 'worker', thinking: null, tier: null, accounts: [{ accountId: 'old-1', model: null }] }] };
+    const store = make(f);
+    await store.load();
+    store.select(base.sourcePath);
+    await store.adopt();
+    expect(f.commands).toEqual([{ type: 'account.adopt', sourcePath: base.sourcePath, label: '.alpha' }]);
+  });
+
+  it('a binding the bind step cannot still save surfaces as the latest outcome; the adoption stands', async () => {
+    const f = fake([base]);
+    f.roles = [{ id: 'worker', name: 'Worker', stages: [] }];
+    f.results = [{ ok: true, id: 'acc-1' }, { ok: false, code: 'not_found' }];
+    const store = make(f);
+    await store.load();
+    store.select(base.sourcePath);
+    const outcome = await store.adopt();
+    expect(outcome?.result.ok).toBe(true);
+    expect(f.commands).toEqual([
+      { type: 'account.adopt', sourcePath: base.sourcePath, label: '.alpha' },
+      { type: 'binding.save', role: 'worker', accounts: [{ accountId: 'acc-1' }] },
+    ]);
+    expect(store.state().lastOutcome).toMatchObject({ command: 'binding.save', result: { ok: false, code: 'not_found' } });
+    expect(store.state().selected).toBeNull();
   });
 
   it('U-34: rescan queries candidates with fresh, and discovery again', async () => {

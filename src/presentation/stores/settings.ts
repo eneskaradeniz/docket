@@ -1,9 +1,9 @@
 // stores/settings.ts — the settings store (U-6): it mirrors the `settings.accounts` query as
 // rendering data (accounts with their pools/meters, per-role bindings). Removing an account that a
-// binding still references warns with the referencing roles BEFORE `account.remove` is issued;
-// only an explicit confirmation issues the command (the api stays the last boundary and may
-// still refuse `binding_exists` if the bindings moved since the view loaded). Every intent maps
-// its CommandResult through results.ts (U-8).
+// binding still references warns with the referencing roles and NEVER issues `account.remove`
+// while a reference stands — the use case would refuse the same command again, so the way forward
+// is updating the binding in Roller, not insisting (the api stays the last boundary all the same).
+// Every intent maps its CommandResult through results.ts (U-8).
 import type { Api } from '../../api/api';
 import type { Command, CommandResult } from '../../api/commands';
 import type {
@@ -80,6 +80,9 @@ export interface SettingsView {
 export interface RemoveWarning {
   readonly accountId: string;
   readonly roles: readonly string[];
+  /** The account is the only one: the roles cannot be given another account from what exists, so
+   *  the warning says that another account must be added first instead of offering the jump. */
+  readonly onlyAccount: boolean;
 }
 
 /** What every intent reports: the raw CommandResult plus its U-8 copy key — the screen toasts
@@ -140,10 +143,10 @@ export interface SettingsStore {
    *  re-read when the polls have ended. */
   refreshQuota(accountId?: string): Promise<SettingsIntentOutcome>;
   /** Remove an account; with bindings still referencing it, issues nothing and surfaces the
-   *  `binding_exists` warning with the referencing roles. */
+   *  `binding_exists` warning with the referencing roles (and whether the account is the only
+   *  one — then the roles need another account first). There is no force path: the warning's way
+   *  forward is updating the binding in Roller. */
   removeAccount(accountId: string): Promise<SettingsIntentOutcome>;
-  /** The explicit confirmation the warning asks for: issues `account.remove` regardless. */
-  confirmRemoveAccount(accountId: string): Promise<SettingsIntentOutcome>;
   subscribe(listener: () => void): () => void;
 }
 
@@ -183,6 +186,14 @@ const referencingRoles = (
     if (!roles.includes(binding.role)) roles.push(binding.role);
   }
   return roles;
+};
+
+/** A standing warning re-read against a fresh view: the roles it names refresh, and one whose
+ *  references are gone (the binding was updated in Roller) leaves with the re-query instead of
+ *  outliving its cause on a card that no longer describes anything. */
+const refreshWarning = (warning: RemoveWarning, view: SettingsAccountsView): RemoveWarning | null => {
+  const roles = referencingRoles(view.bindings, warning.accountId);
+  return roles.length === 0 ? null : { accountId: warning.accountId, roles, onlyAccount: view.accounts.length === 1 };
 };
 
 export const createSettingsStore = (deps: SettingsStoreDeps): SettingsStore => {
@@ -225,6 +236,7 @@ export const createSettingsStore = (deps: SettingsStoreDeps): SettingsStore => {
       loading: false,
       view: { accounts: view.accounts.map(accountDisplay), bindings: view.bindings },
       problem: null,
+      removeWarning: state.removeWarning === null ? null : refreshWarning(state.removeWarning, view),
     });
   };
 
@@ -309,22 +321,23 @@ export const createSettingsStore = (deps: SettingsStoreDeps): SettingsStore => {
       if (state.view === null) return notLoadedOutcome('account.remove');
       const roles = referencingRoles(state.view.bindings, accountId);
       if (roles.length > 0) {
-        // The warning is the outcome: the same shape the api would return, derived from the
-        // loaded bindings so it surfaces before the command instead of after the refusal.
+        // The warning is the outcome and the only outcome: the same shape the api would return,
+        // derived from the loaded bindings so it surfaces before the command instead of after
+        // the refusal. Sending the command anyway would just be refused again, so nothing is
+        // sent while a reference stands — the way forward is Roller.
         const result: CommandResult = { ok: false, code: 'binding_exists', roles };
         const outcome: SettingsIntentOutcome = {
           command: 'account.remove',
           result,
           labelKey: commandResultKey('account.remove', result),
         };
-        set({ ...state, lastOutcome: outcome, removeWarning: { accountId, roles } });
+        set({
+          ...state,
+          lastOutcome: outcome,
+          removeWarning: { accountId, roles, onlyAccount: state.view.accounts.length === 1 },
+        });
         return outcome;
       }
-      return runIntent({ type: 'account.remove', id: accountId });
-    },
-    confirmRemoveAccount: async (accountId) => {
-      set({ ...state, removeWarning: null });
-      if (state.view === null) return notLoadedOutcome('account.remove');
       return runIntent({ type: 'account.remove', id: accountId });
     },
     subscribe: (listener) => {

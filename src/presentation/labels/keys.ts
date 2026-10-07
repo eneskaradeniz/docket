@@ -315,7 +315,8 @@ export const LABEL_KEYS = [
   'meter.unit.minutes',
   'settings.account.remove',
   'settings.remove.warning',
-  'settings.remove.confirm',
+  'settings.remove.updateRoles',
+  'settings.remove.onlyAccount',
   'settings.remove.cancel',
   // Settings panel, accounts section — the per-account model list and the spend-consent flow
   // (P-40): billing marks, the stale note, the consent draft and its cap controls.
@@ -567,6 +568,7 @@ export const LABEL_KEYS = [
   'roles.chain.title',
   'roles.chain.purpose',
   'roles.chain.empty',
+  'roles.chain.unbound',
   'roles.chain.up',
   'roles.chain.down',
   'roles.empty',
