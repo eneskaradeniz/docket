@@ -66,7 +66,9 @@ export function screenNavigator(page) {
       if (collapsed) {
         await page.getByRole('button', { name: 'Hesapları gizle / göster' }).first().click({ timeout: 1500 });
       }
+      // U-51/U-51a: the card opens the limits popover; its button opens the account view.
       await click('Claude Max');
+      await page.getByRole('button', { name: 'Hesabı aç' }).first().click({ timeout: 1500 });
     },
   };
   return goto;

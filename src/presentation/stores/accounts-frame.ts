@@ -1,39 +1,46 @@
-// stores/accounts-frame.ts — the sidebar's accounts frame (U-16): it mirrors the
-// `settings.accounts` query into the compact cards the frame lists — one mini bar per window
-// with its normalized percent, spend meta where the account carries money — and owns the
-// frame's disclosure and the refresh intent, which re-queries usage. A failed query keeps the
-// cards on screen; a slow provider delays only the reply the api resolves (U-6's stance, met
-// by keeping the prior cards while `refreshing` runs).
+// stores/accounts-frame.ts — the sidebar's Hesaplar section (U-16, cards per U-51): it mirrors
+// the `settings.accounts` query into equal cards — every limit as a row, the tightest one
+// driving the card's single bar and dot — and owns the section's disclosure and the refresh
+// intent, which re-queries usage. A failed query keeps the cards on screen; a slow provider
+// delays only the reply the api resolves (U-6's stance, met by keeping the prior cards while
+// `refreshing` runs).
 import type { Api } from '../../api/api';
-import type { Query, SettingsAccountsView, SettingsMeterView } from '../../api/queries';
+import type { Query, SettingsAccountsView } from '../../api/queries';
 import { accountStatus } from './account-editor';
 import { isQueryFailure } from './results';
 import type { SettingsOpenTarget } from './settings-panel';
 import { t, type Locale } from '../labels/t';
+import { meterListView, type MeterName } from './meter-list';
 import type { ShellChangeSignal } from './shell';
 
-/** A bar at or above this share of its window renders warn (U-16's default). */
-export const WARN_PERCENT = 80;
+/** The tone of what remains (U-51): 40 % or more proceeds, 15–40 % amber, under 15 % red. */
+export type RemainingTone = 'proceed' | 'warn' | 'error';
 
-/** The window kinds the frame labels; derived from the meter cadence, not the label copy. */
-export type WindowKind = 'five_hour' | 'week' | 'month';
+export const remainingTone = (remaining: number): RemainingTone =>
+  remaining >= 0.4 ? 'proceed' : remaining >= 0.15 ? 'warn' : 'error';
 
-/** One card as the frame renders it. */
+/** One limit as the card's popover lists it: its own name, the remaining share, the counted
+ *  fraction and the reset time — everything the tightest reading is drawn from. */
+export interface AccountLimit {
+  readonly id: string;
+  readonly name: MeterName;
+  /** Remaining, 0..1; null when the meter cannot say. */
+  readonly remaining: number | null;
+  /** "used / limit" for a counted unit; null for shares and money. */
+  readonly fraction: string | null;
+  readonly resetsAt: number | null;
+}
+
+/** One card as the section renders it (U-51): one fixed height whatever its number of limits. */
 export interface AccountCard {
   readonly id: string;
   readonly label: string;
   /** The account's provider id — the card's badge resolves its mark from the marks store. */
   readonly provider: string;
-  /** One mini bar per window, in the query's order. */
-  readonly windows: readonly {
-    readonly kind: WindowKind | null;
-    /** The meter's own label, for the tooltip; null when the meter has none. */
-    readonly name: string | null;
-    readonly percent: number;
-    readonly warn: boolean;
-  }[];
-  /** The recorded spend against the cap, when a window carries money; null otherwise. */
-  readonly spend: { readonly used: number; readonly cap: number } | null;
+  /** Every limit, in the query's order — the popover's rows. */
+  readonly limits: readonly AccountLimit[];
+  /** The limit with the least remaining; null when no limit carries a reading. */
+  readonly tightest: AccountLimit | null;
   /** A share meter's remaining reached its reserve (U-31's reading): the card reads "rezervde". */
   readonly reserved: boolean;
   /** The account's reserve shares, for the account view's limit band (U-37). */
@@ -46,7 +53,7 @@ export interface AccountsFrameState {
   readonly cards: readonly AccountCard[] | null;
   /** The failure code of the latest failed query; null while healthy. */
   readonly problem: string | null;
-  /** The frame's disclosure; the only collapsible part of the sidebar. */
+  /** The section's disclosure; the only collapsible part of the sidebar. */
   readonly open: boolean;
   /** True while a refresh re-polls usage; the cards stay listed meanwhile. */
   readonly refreshing: boolean;
@@ -55,49 +62,45 @@ export interface AccountsFrameState {
 export interface AccountsFrameStore {
   load(): Promise<void>;
   toggle(): void;
-  /** Re-polls usage: one re-query for the frame, ended when the reply lands. */
+  /** Re-polls usage: one re-query for the section, ended when the reply lands. */
   refresh(): Promise<void>;
   state(): AccountsFrameState;
   subscribe(listener: () => void): () => void;
 }
 
-/** The window kind a cadence reads as; the frame labels only the kinds it knows, anything else
- *  falls back to the meter's own label. */
-export const windowKind = (cadence: string): WindowKind | null => {
-  if (cadence === 'rolling_from_first_use') return 'five_hour';
-  if (cadence === 'fixed') return 'week';
-  if (cadence === 'billing_cycle') return 'month';
-  return null;
+/** The tightest limit: the least remaining among the readable ones, the first on a tie — the
+ *  order the api reported. Null when nothing can be read. Pure. */
+export const tightestOf = (limits: readonly AccountLimit[]): AccountLimit | null => {
+  let best: number | null = null;
+  let tightest: AccountLimit | null = null;
+  for (const limit of limits) {
+    const remaining = limit.remaining;
+    if (remaining === null) continue;
+    if (best === null || remaining < best) {
+      best = remaining;
+      tightest = limit;
+    }
+  }
+  return tightest;
 };
 
-const cardWindow = (meter: SettingsMeterView) => {
-  const percent =
-    meter.used === null || meter.limit === null || meter.limit <= 0
-      ? 0
-      : Math.min(100, Math.round((meter.used / meter.limit) * 100));
-  return {
-    kind: windowKind(meter.cadence),
-    name: meter.label,
-    percent,
-    warn: percent >= WARN_PERCENT,
-  };
-};
-
-/** The accounts view as cards: label, one bar per window, spend meta from the first window that
- *  carries money. A window without readings renders an empty bar, never a guess. */
+/** The accounts view as cards: every limit a row (the popover's own list), the tightest one
+ *  marked for the card's single bar. A meter without readings stays a row that cannot win. */
 export const accountCards = (view: SettingsAccountsView): readonly AccountCard[] =>
   view.accounts.map((account) => {
-    const windows = account.meters.map(cardWindow);
-    const money = account.meters.find((meter) => meter.unit === 'usd');
+    const limits: readonly AccountLimit[] = meterListView(account.pools, account.meters).rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      remaining: row.remaining,
+      fraction: row.fraction,
+      resetsAt: row.resetsAt,
+    }));
     return {
       id: account.id,
       label: account.label,
       provider: account.provider,
-      windows,
-      spend:
-        money !== undefined && money.used !== null && money.limit !== null
-          ? { used: money.used, cap: money.limit }
-          : null,
+      limits,
+      tightest: tightestOf(limits),
       reserved: accountStatus(account) === 'reserve',
       reserve: account.reserve,
     };
@@ -113,7 +116,7 @@ export const createAccountsFrameStore = (deps: {
     loading: false,
     cards: null,
     problem: null,
-    // The frame starts collapsed for the session (U-16); the operator opens it when needed.
+    // The section starts collapsed for the session (U-16, kept by U-51); the operator opens it.
     open: false,
     refreshing: false,
   };
@@ -163,7 +166,7 @@ export const createAccountsFrameStore = (deps: {
   };
 };
 
-/** The frame's trailing row (U-37): "n hesap eklenmedi · Gör ›" while discovery holds `count`
+/** The section's trailing row (U-37): "n hesap eklenmedi · Gör ›" while discovery holds `count`
  *  accounts not yet added (the candidates store's own count); absent at zero. Pure. */
 export const unaddedRow = (
   locale: Locale,
