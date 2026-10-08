@@ -302,6 +302,31 @@ describe('live pane store', () => {
     expect(pane.state().ask).toBeNull();
   });
 
+  it('U-5: a permission_answered closes its ask — the pane shows the next open ask, then none (acceptance)', async () => {
+    const pane = await store(fakeApi());
+    pane.push(permissionAsk('a1', 'shell', ['allow', 'deny'], 'rm -rf build'));
+    pane.push(permissionAsk('a2', 'write_file', ['allow', 'deny']));
+
+    pane.push({ type: 'permission_answered', at: at(), id: 'a1', decision: 'allow' });
+    expect(pane.state().ask).toEqual({
+      askId: 'a2',
+      tool: 'write_file',
+      target: null,
+      options: ['allow', 'deny'],
+    });
+
+    pane.push({ type: 'permission_answered', at: at(), id: 'a2', decision: 'deny' });
+    expect(pane.state().ask).toBeNull();
+  });
+
+  it('U-5: a permission_answered whose id matches no open ask closes nothing', async () => {
+    const pane = await store(fakeApi());
+    pane.push(permissionAsk('a1', 'shell', ['allow', 'deny']));
+
+    pane.push({ type: 'permission_answered', at: at(), id: 'baska', decision: 'allow' });
+    expect(pane.state().ask?.askId).toBe('a1');
+  });
+
   it('U-5: answering with no open ask issues nothing and reports not_found', async () => {
     const api = fakeApi();
     const pane = await store(api);

@@ -241,6 +241,42 @@ describe('foldRun', () => {
     expect(foldRun(events).openPermissionAsks).toEqual(['p2']);
   });
 
+  it('R-44: a permission_answered closes exactly the ask with its id; asks without one stay open (acceptance)', () => {
+    const events: readonly AgentEvent[] = [
+      { type: 'permission_ask', at: at(0), id: 'p1', tool: 'shell', options: ['allow', 'deny'] },
+      { type: 'permission_ask', at: at(1), id: 'p2', tool: 'write', options: ['allow'] },
+      { type: 'permission_answered', at: at(2), id: 'p1', decision: 'allow' },
+    ];
+    expect(foldRun(events).openPermissionAsks).toEqual(['p2']);
+  });
+
+  it('R-44: a permission_answered before its ask matches nothing', () => {
+    const events: readonly AgentEvent[] = [
+      { type: 'permission_answered', at: at(0), id: 'p1', decision: 'deny' },
+      { type: 'permission_ask', at: at(1), id: 'p1', tool: 'shell', options: ['allow', 'deny'] },
+    ];
+    expect(foldRun(events).openPermissionAsks).toEqual(['p1']);
+  });
+
+  it('R-44: an answered ask asked again with the same id reopens', () => {
+    const events: readonly AgentEvent[] = [
+      { type: 'permission_ask', at: at(0), id: 'p1', tool: 'shell', options: ['allow', 'deny'] },
+      { type: 'permission_answered', at: at(1), id: 'p1', decision: 'allow' },
+      { type: 'permission_ask', at: at(2), id: 'p1', tool: 'shell', options: ['allow', 'deny'] },
+    ];
+    expect(foldRun(events).openPermissionAsks).toEqual(['p1']);
+  });
+
+  it('R-44: both decisions close their ask — allow and deny alike', () => {
+    for (const decision of ['allow', 'deny'] as const) {
+      const events: readonly AgentEvent[] = [
+        { type: 'permission_ask', at: at(0), id: 'p1', tool: 'shell', options: ['allow', 'deny'] },
+        { type: 'permission_answered', at: at(1), id: 'p1', decision },
+      ];
+      expect(foldRun(events).openPermissionAsks).toEqual([]);
+    }
+  });
+
   it('a tool_result before the ask does not close the ask', () => {
     const events: readonly AgentEvent[] = [
       { type: 'tool_result', at: at(0), id: 'p1', ok: true },

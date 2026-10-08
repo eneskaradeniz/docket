@@ -93,8 +93,8 @@ export const createLivePaneStore = (deps: LivePaneStoreDeps): LivePaneStore => {
 
   let runId: string | null = null;
   let items: readonly LivePaneItem[] = [];
-  // Ask ids in arrival order; an ask is open until a tool_result of its id — the same openness
-  // notion as the domain's run fold (R-44).
+  // Ask ids in arrival order; an ask is open until a tool_result or a permission_answered of its
+  // id — the same openness notion as the domain's run fold (R-44).
   let openAsks: readonly OpenPermissionAsk[] = [];
   let ended = false;
   const listeners = new Set<() => void>();
@@ -170,6 +170,9 @@ export const createLivePaneStore = (deps: LivePaneStoreDeps): LivePaneStore => {
             { askId: event.id, tool: event.tool, target: event.target ?? null, options: [...event.options] },
           ];
         }
+        break;
+      case 'permission_answered':
+        openAsks = openAsks.filter((ask) => ask.askId !== event.id);
         break;
       case 'usage':
         items = [

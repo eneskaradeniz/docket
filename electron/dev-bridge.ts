@@ -159,6 +159,8 @@ export const agentEventSummary = (event: AgentEvent): string => {
       return `tool result ${event.ok ? 'ok' : 'failed'} (${event.id})`;
     case 'permission_ask':
       return `permission ask ${event.tool}`;
+    case 'permission_answered':
+      return `permission_answered ${event.id} ${event.decision}`;
     case 'usage':
       return `usage in ${event.inputTokens} out ${event.outputTokens}`;
     case 'quota_signal':
