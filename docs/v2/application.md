@@ -1176,6 +1176,63 @@ Rules:
 - **A-73** A change that makes an old result meaningless clears it: `account.save` that changes `routeKind`, `endpoint`, `identityDir`, `tierModels` or the secret, and `account.remove`, call `AccountTestRepo.clear` for the account. The view carries `model`, so a surface whose selected model differs from it shows the account as untested; no stored state is needed for that.
 - **A-74** `account.test` maps to `testAccount`: `{ ok: true }` on a finished test (whatever its outcome — the outcome is read from `settings.accounts`), `{ ok: false, code }` on a refusal. An absent or empty `model` means the route's default model.
 
+### Stage files — what the approval decides on (#819)
+
+The decision card asks a person to approve a plan it never shows: the planner writes its plan into
+the worktree as a file, and the card offers the gate name and generic copy. This contract gives the
+card the files the stage's runs changed in the work order's worktree, and a read-only preview of
+one of them. No editing, no diff view, no Markdown rendering — the issue's out-of-scope list.
+
+```ts
+// ports/worktree-files.ts — read-only listing and preview inside one worktree; never writes
+export interface WorktreeFileEntry {
+  readonly path: string;                     // repo-relative, '/'-separated
+  readonly sizeBytes: number;
+}
+export interface WorktreeFilePreview {
+  readonly path: string;
+  readonly lines: readonly string[];
+  readonly truncated: boolean;
+}
+export type WorktreeFileError = 'outside_worktree' | 'not_found' | 'too_large' | 'not_text';
+export interface WorktreeFiles {
+  /** Changed vs HEAD plus untracked-but-not-ignored files, path order (I-39). */
+  listChanged(worktreePath: string): Promise<readonly WorktreeFileEntry[]>;
+  /** Guard order and error names are the contract (I-40): escape → 'outside_worktree', missing →
+   *  'not_found', over 256 KiB → 'too_large', NUL byte or invalid UTF-8 → 'not_text'; else the
+   *  first maxLines lines, truncated when the file had more. */
+  readText(worktreePath: string, relativePath: string, maxLines: number): Promise<Result<WorktreeFilePreview, WorktreeFileError>>;
+}
+
+// deps.ts — AppDeps gains (fakes follow A-1 … A-3; the fake keeps the adapter's contract, I-41)
+readonly worktreeFiles: WorktreeFiles;
+
+// use-cases/stage-files.ts
+export const PREVIEW_MAX_LINES = 200;        // fixed; line count is never caller-chosen
+export const STAGE_FILES_MAX = 50;           // the list the card shows
+export type StageFilesError = 'not_found';
+export interface StageFilesView {
+  readonly files: readonly WorktreeFileEntry[];   // at most STAGE_FILES_MAX, path order
+  readonly truncated: boolean;                    // the port listed more than STAGE_FILES_MAX
+}
+export function stageFiles(
+  deps: Pick<AppDeps, 'workOrders' | 'worktrees' | 'worktreeFiles'>,
+  id: WorkOrderId,
+): Promise<Result<StageFilesView, StageFilesError>>;
+export function readStageFile(
+  deps: Pick<AppDeps, 'workOrders' | 'worktrees' | 'worktreeFiles'>,
+  input: { readonly id: WorkOrderId; readonly path: string },
+): Promise<Result<WorktreeFilePreview, StageFilesError | WorktreeFileError>>;
+
+// queries.ts
+| { readonly type: 'workOrders.stageFiles'; readonly id: string }
+| { readonly type: 'workOrders.readStageFile'; readonly id: string; readonly path: string }
+```
+
+Rules:
+- **A-88** (added 2026-10-09, #819) The stage-file reads work only on the work order's own worktree, and only the use case says where that is: it loads the record (`not_found` before any port call) and resolves the path the way the gates do — `worktrees.ensure(record.repo, record.id)`; a `no_repo` resolution is `not_found` too (a record whose repo no longer registers has nothing to list). I-20's `ensure` creates a missing worktree as an empty one — it lists nothing; a read never fails on it. No query input carries a path root: `path` in `workOrders.readStageFile` is the repo-relative file name, passed to the port whose guards (I-40) decide. Both queries are reads — no `actor`, no audit entry (the A-81 stance).
+- **A-89** (added 2026-10-09, #819) `readStageFile` calls the port with `maxLines: PREVIEW_MAX_LINES` (200, fixed) and returns the port's result verbatim, error names included, never re-mapped. `stageFiles` returns the port's list capped at `STAGE_FILES_MAX` (50) entries with `truncated: true` when there were more: a card showing fifty of eighty files says so, because the approval decides on what the list claims to be. A `readStageFile` for a path the capped list does not carry is not refused — the list is a convenience, the port's guards are the access rule.
+
 ## 5. Phase 2a acceptance — headless end to end
 
 `src/api/scenarios/standard-flow.test.ts` (test-only folder in the API layer, which may import the
