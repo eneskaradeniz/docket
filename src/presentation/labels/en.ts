@@ -517,6 +517,7 @@ export const EN: LabelBundle = {
   'roles.chain.unbound': 'An account exists but the order is empty. Apply the recommended setup or pick an account in fine-tune.',
   'roles.chain.up': 'Move up: {name}',
   'roles.chain.down': 'Move down: {name}',
+  'roles.chain.add': 'Pick an account to add to the order.',
   'roles.empty': 'No roles yet.',
   'roles.style.title': 'Work style',
   'roles.unset.line': '{n} role(s) do not use the recommended work style',

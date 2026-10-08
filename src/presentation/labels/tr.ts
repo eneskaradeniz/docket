@@ -515,6 +515,7 @@ export const TR: LabelBundle = {
   'roles.chain.unbound': 'Hesap var ama sıra boş. Önerilen kurulumu uygula ya da ince ayardan bir hesap seç.',
   'roles.chain.up': 'Yukarı taşı: {name}',
   'roles.chain.down': 'Aşağı taşı: {name}',
+  'roles.chain.add': 'Sıraya eklemek için bir hesap seç.',
   'roles.empty': 'Henüz rol yok.',
   'roles.style.title': 'Çalışma biçimi',
   'roles.unset.line': '{n} rol önerilen çalışma biçimini kullanmıyor',
