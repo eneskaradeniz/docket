@@ -941,6 +941,58 @@ describe('executeRun', () => {
     ]);
   });
 
+  it('A-18: a run whose only tool call failed and which said nothing ends failed, the audit names all_tool_calls_failed', async () => {
+    const h = await harness({
+      script: [sessionStarted('sess-1'), toolCall(), toolResult(false), usage(), finished('completed')],
+    });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'failed' });
+    const record = await theRun(h.runs);
+    expect(record.outcome).toBe('failed');
+    expect(auditShape(h.log.entries())).toEqual([
+      {
+        action: 'run.started',
+        subject: { kind: 'run', id: record.id },
+        actor: { kind: 'system', component: 'run-executor' },
+        detail: undefined,
+      },
+      {
+        action: 'run.finished',
+        subject: { kind: 'run', id: record.id },
+        actor: { kind: 'system', component: 'run-executor' },
+        detail: { outcome: 'failed', reason: 'all_tool_calls_failed' },
+      },
+    ]);
+  });
+
+  it('A-18: an all-failed silent run with 0/0 usage keeps the empty_run audit reason', async () => {
+    const h = await harness({
+      script: [toolCall(), toolResult(false), emptyUsage(), finished('completed')],
+    });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'failed' });
+    const record = await theRun(h.runs);
+    expect(record.outcome).toBe('failed');
+    expect(auditShape(h.log.entries())).toEqual([
+      {
+        action: 'run.started',
+        subject: { kind: 'run', id: record.id },
+        actor: { kind: 'system', component: 'run-executor' },
+        detail: undefined,
+      },
+      {
+        action: 'run.finished',
+        subject: { kind: 'run', id: record.id },
+        actor: { kind: 'system', component: 'run-executor' },
+        detail: { outcome: 'failed', reason: 'empty_run' },
+      },
+    ]);
+  });
+
   it('A-18: a run with non-zero usage ends succeeded and its audit detail stays { outcome }', async () => {
     const h = await harness({ script: [usage(0.25), finished('completed')] });
 

@@ -46,6 +46,7 @@ export function foldRun(events: readonly AgentEvent[]): RunSummary {
   let lastFinishedReason: FinishedEvent['reason'] | undefined;
   let sawUsage = false;
   let sawCost = false;
+  let sawText = false;
   // Accumulator only — the input stream is never touched.
   const openAsks: string[] = [];
 
@@ -84,6 +85,10 @@ export function foldRun(events: readonly AgentEvent[]): RunSummary {
       case 'limit_hit':
         lastLimit = event;
         break;
+      case 'text':
+        // Whitespace-only deltas are framing noise; only spoken content is an answer.
+        if (event.delta.trim() !== '') sawText = true;
+        break;
       case 'finished':
         lastFinishedReason = event.reason;
         break;
@@ -95,12 +100,17 @@ export function foldRun(events: readonly AgentEvent[]): RunSummary {
   // A completed run that reported usage yet accumulated no tokens did no work — the CLI's
   // model notices arrive as plain text, so only the token totals expose them. A stream that
   // never reported usage keeps its completed outcome: a missing report proves nothing.
+  // A completed run that tried only tools, every one of which failed, and answered in no text
+  // did no work either — but a spoken answer (a plan, a refusal) is work, so text rescues it.
+  const allToolCallsFailed = toolCalls > 0 && failedToolCalls === toolCalls;
   const outcome: RunOutcome | undefined =
     lastFinishedReason === undefined
       ? undefined
       : lastFinishedReason === 'completed' && sawUsage && inputTokens === 0 && outputTokens === 0
         ? 'failed'
-        : OUTCOME_BY_REASON[lastFinishedReason];
+        : lastFinishedReason === 'completed' && allToolCallsFailed && !sawText
+          ? 'failed'
+          : OUTCOME_BY_REASON[lastFinishedReason];
 
   return {
     sessionRef,

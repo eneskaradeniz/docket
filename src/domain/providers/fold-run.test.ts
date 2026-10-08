@@ -147,6 +147,87 @@ describe('foldRun', () => {
     }
   });
 
+  it('R-60: a completed run whose every tool call failed and which said nothing folds to failed (acceptance)', () => {
+    const events: readonly AgentEvent[] = [
+      { type: 'tool_call', at: at(0), id: 't1', name: 'shell', target: 'git status --short' },
+      { type: 'tool_result', at: at(1), id: 't1', ok: false },
+      usage({ at: at(2), inputTokens: 5864, outputTokens: 265 }),
+      { type: 'finished', at: at(3), reason: 'completed' },
+    ];
+    expect(foldRun(events).outcome).toBe('failed');
+  });
+
+  it('R-60: zero tool calls keeps completed → succeeded', () => {
+    const events: readonly AgentEvent[] = [
+      usage({ at: at(0), inputTokens: 5, outputTokens: 5 }),
+      { type: 'finished', at: at(1), reason: 'completed' },
+    ];
+    expect(foldRun(events).outcome).toBe('succeeded');
+  });
+
+  it('R-60: one succeeded tool call keeps an otherwise failed run succeeded', () => {
+    const events: readonly AgentEvent[] = [
+      { type: 'tool_call', at: at(0), id: 't1', name: 'shell' },
+      { type: 'tool_result', at: at(1), id: 't1', ok: true },
+      { type: 'tool_call', at: at(2), id: 't2', name: 'shell' },
+      { type: 'tool_result', at: at(3), id: 't2', ok: false },
+      usage({ at: at(4), inputTokens: 5, outputTokens: 5 }),
+      { type: 'finished', at: at(5), reason: 'completed' },
+    ];
+    expect(foldRun(events).outcome).toBe('succeeded');
+  });
+
+  it('R-60: text output rescues an all-failed run — an answer in text stays succeeded', () => {
+    const events: readonly AgentEvent[] = [
+      { type: 'tool_call', at: at(0), id: 't1', name: 'shell' },
+      { type: 'tool_result', at: at(1), id: 't1', ok: false },
+      { type: 'text', at: at(2), delta: 'No plan file exists yet; the docs root is empty.' },
+      usage({ at: at(3), inputTokens: 5, outputTokens: 5 }),
+      { type: 'finished', at: at(4), reason: 'completed' },
+    ];
+    expect(foldRun(events).outcome).toBe('succeeded');
+  });
+
+  it('R-60: empty or whitespace-only text deltas do not rescue an all-failed run', () => {
+    const events: readonly AgentEvent[] = [
+      { type: 'text', at: at(0), delta: '' },
+      { type: 'text', at: at(1), delta: '   \n\t' },
+      { type: 'tool_call', at: at(2), id: 't1', name: 'shell' },
+      { type: 'tool_result', at: at(3), id: 't1', ok: false },
+      usage({ at: at(4), inputTokens: 5, outputTokens: 5 }),
+      { type: 'finished', at: at(5), reason: 'completed' },
+    ];
+    expect(foldRun(events).outcome).toBe('failed');
+  });
+
+  it('R-60: a tool call without a result is not a failure — only counted failures flip the outcome', () => {
+    const events: readonly AgentEvent[] = [
+      { type: 'tool_call', at: at(0), id: 't1', name: 'shell' },
+      { type: 'tool_result', at: at(1), id: 't1', ok: false },
+      { type: 'tool_call', at: at(2), id: 't2', name: 'shell' },
+      usage({ at: at(3), inputTokens: 5, outputTokens: 5 }),
+      { type: 'finished', at: at(4), reason: 'completed' },
+    ];
+    expect(foldRun(events).outcome).toBe('succeeded');
+  });
+
+  it('R-60: the all-failed rule does not touch finished reasons other than completed', () => {
+    const cases: readonly (readonly [Extract<AgentEvent, { readonly type: 'finished' }>['reason'], string])[] = [
+      ['failed', 'failed'],
+      ['cancelled', 'cancelled'],
+      ['limit', 'limit'],
+    ];
+    for (const [reason, outcome] of cases) {
+      const events: readonly AgentEvent[] = [
+        { type: 'tool_call', at: at(0), id: 't1', name: 'shell' },
+        { type: 'tool_result', at: at(1), id: 't1', ok: false },
+        usage({ at: at(2), inputTokens: 5, outputTokens: 5 }),
+        { type: 'finished', at: at(3), reason },
+      ];
+      expect(foldRun(events).outcome).toBe(outcome);
+    }
+  });
+
   it('returns zeroed counts and no optionals for an empty stream', () => {
     expect(foldRun([])).toEqual({
       sessionRef: undefined,
