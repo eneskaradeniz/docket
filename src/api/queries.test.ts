@@ -7,6 +7,7 @@ import type {
   AccountId,
   Actor,
   AgentEvent,
+  CatalogModel,
   FlowSlug,
   GateSlug,
   QueueItem,
@@ -913,6 +914,69 @@ describe('settings.accounts billing view', () => {
       { id: POOL, accountId: ACCOUNT, label: 'Atlas weekly', kind: 'allowance', appliesTo: [{ exact: 'atlas-max' }] },
     ]);
     expect((await view(withDefault)).accounts[0]?.billing).toBe('included');
+  });
+});
+
+describe('settings.accounts catalog (A-86)', () => {
+  // Three api-key accounts whose catalog's default row plus an allowance pool would upgrade the
+  // billing to included (A-83): a listing that ran shows in the row, one that did not does not.
+  const KEY_A = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FD1');
+  const KEY_B = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FD2');
+  const KEY_C = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FD3');
+  const DEFAULT_ROW: readonly CatalogModel[] = [
+    { id: 'atlas-max', source: 'live', thinking: { kind: 'none' }, billing: 'unknown', isDefault: true, contextWindow: null },
+  ];
+
+  const keyedHarness = async (): Promise<Harness> => {
+    const h = createHarness();
+    for (const [index, id] of [KEY_A, KEY_B, KEY_C].entries()) {
+      await h.deps.accounts.save({ id, provider: 'acme-prov', label: `Key ${index + 1}`, authMode: 'api_key', limitPolicy: 'wait_resume', caps: [] });
+      await h.deps.accounts.savePools(id, [
+        { id: ulidOf<'pool'>(`01ARZ3NDEKTSV4RRFFQ69G5FE${index + 1}`), accountId: id, label: 'Atlas weekly', kind: 'allowance', appliesTo: [{ exact: 'atlas-max' }] },
+      ]);
+    }
+    return h;
+  };
+  const billings = async (deps: AppDeps, catalog?: 'read' | 'skip'): Promise<readonly string[]> => {
+    const view = (await createApi(deps).query(
+      catalog === undefined ? { type: 'settings.accounts' } : { type: 'settings.accounts', catalog },
+    )) as SettingsAccountsView;
+    return view.accounts.map((account) => account.billing);
+  };
+
+  it("A-86: 'skip' reads no model catalog and bills by the route's own rule", async () => {
+    const h = await keyedHarness();
+    let calls = 0;
+    const deps: AppDeps = {
+      ...h.deps,
+      modelCatalog: { list: async () => { calls += 1; return DEFAULT_ROW; } },
+    };
+    expect(await billings(deps, 'skip')).toEqual(['unknown', 'unknown', 'unknown']);
+    expect(calls).toBe(0);
+  });
+
+  it("A-86: 'read' lists every account's catalog at once, never one after another", async () => {
+    const h = await keyedHarness();
+    const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    const deps: AppDeps = {
+      ...h.deps,
+      modelCatalog: { list: async () => { await wait(100); return DEFAULT_ROW; } },
+    };
+    const started = Date.now();
+    expect(await billings(deps, 'read')).toEqual(['included', 'included', 'included']);
+    // Three 100 ms listings in parallel land near 100 ms; one by one would pass 300.
+    expect(Date.now() - started).toBeLessThan(250);
+  });
+
+  it("A-86: the default is 'read'", async () => {
+    const h = await keyedHarness();
+    let calls = 0;
+    const deps: AppDeps = {
+      ...h.deps,
+      modelCatalog: { list: async () => { calls += 1; return DEFAULT_ROW; } },
+    };
+    expect(await billings(deps)).toEqual(['included', 'included', 'included']);
+    expect(calls).toBe(3);
   });
 });
 

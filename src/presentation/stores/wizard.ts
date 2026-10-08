@@ -788,8 +788,10 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
     }
 
     if (finishPhase === 'budget') {
-      // The drafts land on the stored accounts: only what differs from what is stored.
-      const accountsReply: unknown = await api.query({ type: 'settings.accounts' });
+      // The drafts land on the stored accounts: only what differs from what is stored. The read
+      // is a catalog skip (A-86): caps and consents need no billing view, so finishing n new
+      // accounts starts no live model listing.
+      const accountsReply: unknown = await api.query({ type: 'settings.accounts', catalog: 'skip' });
       if (isQueryFailure(accountsReply)) {
         failWith('budget', { command: 'account.save', result: accountsReply, labelKey: queryFailureKey(accountsReply) });
         return;
