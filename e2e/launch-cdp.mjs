@@ -14,14 +14,18 @@
 // The operator's ~/.docket is never written: the app's only storage seam is DOCKET_DATA_DIR, the
 // launcher itself writes nothing there, and a DOCKET_CDP_DATA_DIR that equals or lies inside
 // ~/.docket is refused — the real directory holds the operator's live accounts and records, which
-// a test run must not touch. That is also why this launcher does not take the host e2e lock —
-// the lock directory lives under ~/.docket, and moving it elsewhere would stop excluding the
-// suites this tool can collide with anyway.
+// a test run must not touch. The containment rule itself is the dev bridge's own gate check,
+// imported here so the launcher and the gate answer the same question with the same code. That is
+// also why this launcher does not take the host e2e lock — the lock directory lives under
+// ~/.docket, and moving it elsewhere would stop excluding the suites this tool can collide with
+// anyway.
 import { spawn } from 'node:child_process';
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
+
+import { dataDirOutsideDocketHome } from '../electron/dev-bridge.ts';
 
 const ROOT = resolve(new URL('..', import.meta.url).pathname);
 
@@ -35,39 +39,6 @@ if (!existsSync(join(ROOT, 'dist-electron', 'main.js'))) {
   console.error('the built app is missing — run npm run build first');
   process.exit(1);
 }
-
-// Resolves a path whose tail may not exist yet through its nearest existing ancestor. Parents are
-// followed rather than refused (/tmp on macOS is a symlink), but where they land is what the
-// ~/.docket check must compare against — the final component itself is refused as a symlink
-// separately, before this runs.
-const realPathThroughAncestors = (p) => {
-  let current = p;
-  const missingTail = [];
-  for (;;) {
-    try {
-      return join(realpathSync(current), ...missingTail);
-    } catch (error) {
-      // realpathSync has no throwIfNoEntry option — only a missing tail walks up; other
-      // failures (permissions, loops) stay errors.
-      if (error.code !== 'ENOENT') throw error;
-    }
-    if (dirname(current) === current) return undefined;
-    missingTail.unshift(basename(current));
-    current = dirname(current);
-  }
-};
-
-// macOS and Windows filesystems match paths case-insensitively by default, so ~/.DOCKET names
-// the same directory as ~/.docket — the comparison folds case there. Only the comparison folds;
-// the path the app is given keeps the requested spelling.
-const FOLDS_CASE = process.platform === 'darwin' || process.platform === 'win32';
-const contains = (parent, child) => {
-  const rel = relative(
-    FOLDS_CASE ? parent.toLowerCase() : parent,
-    FOLDS_CASE ? child.toLowerCase() : child,
-  );
-  return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
-};
 
 const requestedDataDir = process.env.DOCKET_CDP_DATA_DIR;
 let dataDir;
@@ -83,15 +54,10 @@ if (requestedDataDir === undefined) {
     console.error(`DOCKET_CDP_DATA_DIR is a symbolic link: ${requestedDataDir}`);
     process.exit(2);
   }
-  // Both the plain and the resolved forms are compared, because a non-symlink path can still sit
-  // inside ~/.docket through a symlinked parent.
-  const plain = resolve(requestedDataDir);
-  const real = realPathThroughAncestors(plain);
-  const docketHome = resolve(homedir(), '.docket');
-  const realDocketHome = realPathThroughAncestors(docketHome);
-  const candidates = real === undefined ? [plain] : [plain, real];
-  const anchors = realDocketHome === undefined ? [docketHome] : [docketHome, realDocketHome];
-  if (candidates.some((candidate) => anchors.some((anchor) => contains(anchor, candidate)))) {
+  // The shared check compares both the plain and the resolved forms, because a non-symlink path
+  // can still sit inside ~/.docket through a symlinked parent; the final component itself was
+  // refused as a symlink just above.
+  if (!dataDirOutsideDocketHome(requestedDataDir, resolve(homedir(), '.docket'))) {
     console.error(`DOCKET_CDP_DATA_DIR must not be ~/.docket or a path inside it: ${requestedDataDir}`);
     process.exit(2);
   }
@@ -111,7 +77,9 @@ const child = spawn(
   electronBinary,
   // The debugging switch must precede the app path: arguments after it belong to the app.
   [`--remote-debugging-port=${PORT}`, join(ROOT, 'dist-electron', 'main.js')],
-  { env: { ...process.env, DOCKET_DATA_DIR: dataDir }, stdio: 'inherit' },
+  // DOCKET_DEV_BRIDGE arms the docket:dev handler the CDP session drives; with this data dir
+  // outside ~/.docket the bridge's own gate passes too.
+  { env: { ...process.env, DOCKET_DATA_DIR: dataDir, DOCKET_DEV_BRIDGE: '1' }, stdio: 'inherit' },
 );
 
 let stopping = false;

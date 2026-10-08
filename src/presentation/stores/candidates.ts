@@ -2,15 +2,19 @@
 // (`providers.discovered`) as one list for Settings → Hesaplar → "Eklenmemiş" and the wizard.
 // The pure row mapping decides mark, label, status and selectability; the store holds the
 // selection and the key-move switch (always off on a fresh selection) and issues `account.adopt`
-// — with `importToken: true` only when the switch is on. No value ever travels through here:
-// a candidate carries only a path and an endpoint host. Results map through results.ts (U-8).
+// — with `importToken: true` only when the switch is on. A successful adoption then binds every
+// role that has no binding yet to the new account: the wizard is not the only door in, and an
+// account added from Settings must leave the roles runnable too. No value ever travels through
+// here: a candidate carries only a path and an endpoint host. Results map through results.ts
+// (U-8).
 import type { Api } from '../../api/api';
 import type { Command } from '../../api/commands';
-import type { Query } from '../../api/queries';
+import type { Query, RoleListItem, SettingsAccountsView } from '../../api/queries';
 import type { Actor } from '../../domain/index';
 import type { LabelKey } from '../labels/keys';
 import type { RowStanding } from './account-groups';
 import { commandResultKey, isQueryFailure } from './results';
+import { bindingCommand, unboundRoleIds } from './roles';
 import type { SettingsIntentOutcome } from './settings';
 
 /** The candidate fields this list reads, as `accounts.candidates` reports them. */
@@ -274,6 +278,12 @@ const isFact = (value: unknown): value is CandidateFact =>
 export const isProviderFact = (value: unknown): value is ProviderFact =>
   typeof value === 'object' && value !== null && 'defId' in value && typeof value.defId === 'string' && 'name' in value && typeof value.name === 'string' && 'binPath' in value;
 
+const isRole = (value: unknown): value is RoleListItem =>
+  typeof value === 'object' && value !== null && 'id' in value && typeof value.id === 'string' && 'name' in value;
+
+const isAccountsView = (value: unknown): value is SettingsAccountsView =>
+  typeof value === 'object' && value !== null && 'accounts' in value && Array.isArray(value.accounts) && 'bindings' in value && Array.isArray(value.bindings);
+
 /** The account's default label: the last segment of the candidate's display path. */
 const labelOf = (displayPath: string): string => displayPath.split('/').filter((part) => part !== '').pop() ?? displayPath;
 
@@ -330,6 +340,30 @@ export const createCandidatesStore = (deps: CandidatesStoreDeps): CandidatesStor
     if (change.type === 'accounts.changed' && loaded && !loading) void read(false);
   });
 
+  /** The step after a successful adoption: every role with no binding yet gets one whose chain
+   *  is exactly the new account; roles that already have a binding are left untouched — this
+   *  door never rewrites a chain the user or the wizard set. The chain is all it writes: a style
+   *  stays unset, so "Önerilenleri uygula" keeps its work. A save that fails surfaces as the
+   *  latest outcome (the toast tells the truth) but never undoes the adoption itself. */
+  const bindUnboundRoles = async (accountId: string): Promise<void> => {
+    const [rolesReply, settingsReply] = await Promise.all([
+      api.query({ type: 'roles.list' } satisfies Query),
+      api.query({ type: 'settings.accounts' } satisfies Query),
+    ]);
+    if (isQueryFailure(rolesReply) || isQueryFailure(settingsReply)) return;
+    const roles = Array.isArray(rolesReply) ? rolesReply.filter(isRole) : [];
+    const bindings = isAccountsView(settingsReply) ? settingsReply.bindings : [];
+    for (const roleId of unboundRoleIds(roles, bindings)) {
+      const bind: Command = bindingCommand(roleId, [{ accountId, model: null }], null, null);
+      const result = await api.command(actor, bind);
+      if (!result.ok) {
+        lastOutcome = { command: bind.type, result, labelKey: commandResultKey(bind.type, result) };
+        publish();
+        return;
+      }
+    }
+  };
+
   const adopt = async (): Promise<SettingsIntentOutcome | null> => {
     const row = candidateRows(facts, selected, importToken, providerFacts).find((entry) => entry.selected);
     const fact = facts.find((entry) => entry.sourcePath === row?.id);
@@ -354,6 +388,7 @@ export const createCandidatesStore = (deps: CandidatesStoreDeps): CandidatesStor
       selected = null;
       importToken = false;
       publish();
+      if (result.id !== undefined) await bindUnboundRoles(result.id);
       await read(true);
       onAdopted?.();
     } else {

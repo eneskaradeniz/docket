@@ -8,6 +8,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 import { t, type Locale } from '../labels/t';
 import type { LabelKey } from '../labels/keys';
 import {
+  chainEmptyKey,
   selectableModels,
   styleChoices,
   styleStanding,
@@ -123,7 +124,7 @@ export function ChainSection({ store, locale, markFor }: ChainSectionProps) {
         </span>
       ) : null}
       {chain.length === 0 ? (
-        <p className="text-[13px] text-inkdim">{t(locale, 'roles.chain.empty')}</p>
+        <p className="text-[13px] text-inkdim">{t(locale, chainEmptyKey(state.accounts.length))}</p>
       ) : (
         <DragOrderList
           locale={locale}

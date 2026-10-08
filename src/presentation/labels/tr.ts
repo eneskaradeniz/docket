@@ -285,7 +285,8 @@ export const TR: LabelBundle = {
   'meter.unit.minutes': 'dakika',
   'settings.account.remove': 'Hesabı kaldır',
   'settings.remove.warning': 'Bu hesap şu rol bağlantılarında kullanılıyor:',
-  'settings.remove.confirm': 'Yine de kaldır',
+  'settings.remove.updateRoles': "Roller'de bağlantıyı güncelle",
+  'settings.remove.onlyAccount': 'Bu tek hesap: önce rollere başka bir hesap bağla, sonra kaldır.',
   'settings.remove.cancel': 'Vazgeç',
   // Hesap kartının model listesi ve harcama onayı (P-40).
   'settings.models.default': 'Varsayılan model',
@@ -511,6 +512,7 @@ export const TR: LabelBundle = {
   'roles.chain.title': 'Asistan sırası',
   'roles.chain.purpose': 'Tüm rollerin kullandığı hesap sırası. İlk hesap önce denenir.',
   'roles.chain.empty': 'Henüz hesap yok. Önce Hesaplar bölümünden bir hesap ekle.',
+  'roles.chain.unbound': 'Hesap var ama sıra boş. Önerilen kurulumu uygula ya da ince ayardan bir hesap seç.',
   'roles.chain.up': 'Yukarı taşı: {name}',
   'roles.chain.down': 'Aşağı taşı: {name}',
   'roles.empty': 'Henüz rol yok.',

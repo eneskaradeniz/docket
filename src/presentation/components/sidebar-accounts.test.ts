@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Api } from '../../api/api';
 import type { SettingsAccountView, SettingsAccountsView, SettingsMeterView } from '../../api/queries';
-import { AccountLimitsPopover, SidebarAccounts } from './sidebar-accounts';
+import { AccountLimitsPopover, SidebarAccounts, clampPopoverTop } from './sidebar-accounts';
 import { ACCOUNTS_BODY_MAX_HEIGHT } from './sidebar-geometry';
 import { createAccountsFrameStore, type AccountCard } from '../stores/accounts-frame';
 import { createProviderMarksStore } from '../stores/provider-marks';
@@ -122,6 +122,17 @@ describe('SidebarAccounts (U-51)', () => {
     // The helper line sits once under the header, dim and 12 px.
     expect(open).toContain('Çubuk en dar limiti gösterir.');
     expect((open.match(/Çubuk en dar limiti gösterir\./g) ?? []).length).toBe(1);
+  });
+
+  it('the collapsed body is inert — its cards are neither focusable nor reachable while hidden', async () => {
+    const reply = view([account('a', 'Tek', [meterAt('a', 50)])]);
+    const closed = await renderFrame(reply, false);
+    // grid-rows-[0fr] hides the body from the eye only; inert is what also drops it from the tab
+    // order and the accessibility tree while its cards stay in the DOM for the reopening.
+    expect(closed).toMatch(/data-accounts-body="[^"]*"[^>]*\binert\b/);
+    // Open, the same body is plain content again — inert must not outlive the collapse.
+    const open = await renderFrame(reply, true);
+    expect(open).not.toMatch(/data-accounts-body="[^"]*"[^>]*\binert\b/);
   });
 
   it('U-51: every card is one fixed 56 px height — name only with the full Asistan · ad in title, dot, one bar', async () => {
@@ -306,5 +317,22 @@ describe('SidebarAccounts (U-51)', () => {
     expect(html).not.toContain('text-[10.5px]');
     expect(html).not.toContain('text-[11px]');
     expect(html).not.toContain('text-[10px]');
+  });
+
+  it('U-51b: popover top clamp calculation bounds strictly within viewport', () => {
+    // viewport içinde kalma (fits completely)
+    expect(clampPopoverTop(100, 300, 800, 8)).toBe(100);
+    // alt kenar taşması (overflows bottom)
+    expect(clampPopoverTop(600, 300, 800, 8)).toBe(492); // 800 - 8 - 300 = 492
+    // üst kenar taşması (overflows top)
+    expect(clampPopoverTop(0, 300, 800, 8)).toBe(8);
+    // popover yüksekliği viewport'tan büyük (height > viewport)
+    expect(clampPopoverTop(100, 900, 800, 8)).toBe(8);
+  });
+
+  it('U-23: header button is 24x24 at rest', async () => {
+    const html = await renderFrame(view([]), true);
+    // Refresh button uses SIDEBAR_HEADER_BUTTON which is h-6 w-6
+    expect(html).toContain('h-6 w-6');
   });
 });
