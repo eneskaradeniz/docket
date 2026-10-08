@@ -50,6 +50,7 @@ import { _electron as electron, chromium } from 'playwright-core';
 import { ROOT, launchDesignApp, screenNavigator, seedDesign, setWindow } from './design-app.mjs';
 import { SLOW_API_DELAY_MS } from './design-run.mjs';
 import { acquireE2eLock } from './lock.mjs';
+import { assertProfileIsolated, freshProfile } from './profile.mjs';
 import { appendCheck, beginReport, REPORT_PATH } from './report.mjs';
 import {
   comboPlan,
@@ -587,7 +588,11 @@ async function plainTitleBarCheck() {
   // environment would otherwise leak the scripted checker into the "without" measurement.
   const env = { ...process.env, DOCKET_DATA_DIR: seed.dataDir, DOCKET_OPENCODE_BIN: seed.agentBin };
   delete env.DOCKET_UPDATE_FAKE;
-  const app = await electron.launch({ args: [join(ROOT, 'dist-electron', 'main.js')], env });
+  // Its own throwaway profile too: this second launch must not see the main walk's persisted UI
+  // settings (the audit's Liste screen leaves the board's view choice behind).
+  const profile = freshProfile();
+  const app = await electron.launch({ args: [...profile.args, join(ROOT, 'dist-electron', 'main.js')], env });
+  await assertProfileIsolated(app, profile.dir);
   try {
     const page = await app.firstWindow();
     await page.waitForSelector('nav', { timeout: 30_000 });

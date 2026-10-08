@@ -6,7 +6,9 @@
 // How the launched instance is pointed at the seed: the app's one storage-location seam is the
 // DOCKET_DATA_DIR variable, so the harness launches Electron with it aimed at the temp data dir
 // the seed wrote the database into. The app then boots through its own, only override mechanism
-// — nothing patched, the operator's real ~/.docket untouched.
+// — nothing patched, the operator's real ~/.docket untouched. The renderer's own storage is
+// isolated the same way: every launch gets a throwaway Chromium profile (e2e/profile.mjs), so
+// no run can see another run's persisted UI settings.
 //
 // How the open ask is produced: the seed registers an account for the provider whose CLI the
 // smoke impersonates (an ACP transport), and the discovery override variable names the scripted
@@ -31,6 +33,7 @@ import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { _electron as electron } from 'playwright-core';
 import { acquireE2eLock } from './lock.mjs';
+import { assertProfileIsolated, freshProfile } from './profile.mjs';
 import { appendCheck, beginReport, REPORT_PATH } from './report.mjs';
 
 const ROOT = resolve(new URL('..', import.meta.url).pathname);
@@ -52,6 +55,8 @@ const seedLine = seedOut.trim().split('\n').find((line) => line.startsWith('SEED
 if (seedLine === undefined) throw new Error('the seed failed: no SEED= line');
 const SEED = JSON.parse(seedLine.slice(5));
 console.log(`seed home: ${SEED.home}`);
+const profile = freshProfile();
+console.log(`profile: ${profile.dir}`);
 
 // Turkish is the app's default locale and the seed ran with a fresh profile, so every label the
 // walk asserts is the default bundle's copy.
@@ -73,9 +78,10 @@ const TITLE = SEED.title;
 const OPERATOR = { kind: 'user', id: 'duman-operatoru', label: 'Duman operatörü' };
 
 const app = await electron.launch({
-  args: [join(ROOT, 'dist-electron', 'main.js')],
+  args: [...profile.args, join(ROOT, 'dist-electron', 'main.js')],
   env: { ...process.env, DOCKET_DATA_DIR: SEED.dataDir, DOCKET_OPENCODE_BIN: SEED.agentBin },
 });
+await assertProfileIsolated(app, profile.dir);
 const page = await app.firstWindow();
 
 const pageErrors = [];

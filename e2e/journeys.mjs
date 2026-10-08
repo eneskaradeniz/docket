@@ -112,8 +112,9 @@ for (const [sizeName, theme] of combos) {
 
   await journey('J-2', 'tree → repo row → board; Kanban ⇄ Liste survives reload', async () => {
     await click('antreo-api');
-    // The view choice persists per repo in the app profile, so the journey enters from Kanban
-    // whatever an earlier run left behind.
+    // The view choice persists per repo in the app profile; every launch starts from a throwaway
+    // profile (e2e/profile.mjs), so the board opens at Kanban — the click pins that standing
+    // whatever the app's default or the storage's history.
     await button('Kanban');
     await page.waitForSelector('[data-board-kanban]', { timeout: WAIT });
     await see('Rol matrisi');
