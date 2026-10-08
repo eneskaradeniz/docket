@@ -509,18 +509,33 @@ export async function executeRun(
         return { kind: 'limit', decision };
       }
       case 'finished': {
-        const outcome = foldRun(streamed).outcome;
+        const summary = foldRun(streamed);
+        const outcome = summary.outcome;
         if (outcome !== undefined) {
           // Terminal commit (A-57): the run's work is complete, the interval never gates it.
           await checkpoint();
           const endedAt = await endRun(deps, { runId, workOrderId: item.workOrderId, outcome }, board, workOrdersChanged);
-          // The fold's empty-run rule is the only completed→failed flip, so it alone names a reason.
-          const emptyRun = event.reason === 'completed' && outcome === 'failed';
+          // Two fold rules flip a completed finish to failed; the audit names the one that fired.
+          // 0/0 tokens with a usage report is the empty run (the more fundamental verdict), an
+          // all-failed tool stream that said nothing is the other.
+          const emptyRun =
+            event.reason === 'completed' &&
+            outcome === 'failed' &&
+            summary.inputTokens === 0 &&
+            summary.outputTokens === 0 &&
+            streamed.some((seen) => seen.type === 'usage');
+          const allToolsFailed =
+            event.reason === 'completed' &&
+            outcome === 'failed' &&
+            !emptyRun &&
+            summary.toolCalls > 0 &&
+            summary.failedToolCalls === summary.toolCalls;
+          const reason = emptyRun ? 'empty_run' : allToolsFailed ? 'all_tool_calls_failed' : undefined;
           await audit(deps, {
             at: endedAt,
             action: 'run.finished',
             runId,
-            detail: { outcome, ...(emptyRun ? { reason: 'empty_run' } : {}) },
+            detail: { outcome, ...(reason !== undefined ? { reason } : {}) },
           });
           return { kind: 'finished', outcome };
         }
