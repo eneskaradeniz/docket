@@ -35,7 +35,7 @@ type UnknownRecord = Readonly<Record<string, unknown>>;
 
 const SECRET_KEY_RE = /(KEY|TOKEN|SECRET|PASSWORD)/i;
 
-type GateKind = 'human' | 'command' | 'agent_verdict' | 'secret_scan' | 'page_approval' | 'deploy' | 'remote_checks';
+type GateKind = 'human' | 'command' | 'changes' | 'agent_verdict' | 'secret_scan' | 'page_approval' | 'deploy' | 'remote_checks';
 type CapabilityKind = 'mcp' | 'skill' | 'hook' | 'context';
 type SimpleWriteScopeKind = 'none' | 'docs' | 'tests' | 'repo';
 
@@ -110,7 +110,7 @@ const isRecord = (value: unknown): value is UnknownRecord =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const isGateKind = (value: unknown): value is GateKind =>
-  value === 'human' || value === 'command' || value === 'agent_verdict' || value === 'secret_scan' || value === 'page_approval' || value === 'deploy' || value === 'remote_checks';
+  value === 'human' || value === 'command' || value === 'changes' || value === 'agent_verdict' || value === 'secret_scan' || value === 'page_approval' || value === 'deploy' || value === 'remote_checks';
 
 const isCapabilityKind = (value: unknown): value is CapabilityKind =>
   value === 'mcp' || value === 'skill' || value === 'hook' || value === 'context';
@@ -350,7 +350,7 @@ const parseGate = (issues: DefinitionIssue[], container: UnknownRecord, path: st
     return undefined;
   }
   if (!isGateKind(kind)) {
-    addIssue(issues, `${path}.kind`, 'wrong_type', `${path}.kind must be one of human, command, agent_verdict, secret_scan, page_approval, deploy, remote_checks`);
+    addIssue(issues, `${path}.kind`, 'wrong_type', `${path}.kind must be one of human, command, changes, agent_verdict, secret_scan, page_approval, deploy, remote_checks`);
     return undefined;
   }
   const id = readSlugField<'gate'>(issues, container, 'id', `${path}.id`);
@@ -365,6 +365,10 @@ const parseGate = (issues: DefinitionIssue[], container: UnknownRecord, path: st
       const commandSet = readStringField(issues, container, 'commandSet', `${path}.commandSet`);
       if (id === undefined || commandSet === undefined) return undefined;
       return { kind, id, commandSet };
+    }
+    case 'changes': {
+      if (id === undefined) return undefined;
+      return { kind, id };
     }
     case 'agent_verdict': {
       const role = readSlugField<'role'>(issues, container, 'role', `${path}.role`);

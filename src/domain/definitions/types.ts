@@ -21,6 +21,7 @@ export interface RoleDef {
 export type GateDef =
   | { readonly kind: 'human'; readonly id: GateSlug; readonly label: string }
   | { readonly kind: 'command'; readonly id: GateSlug; readonly commandSet: string }
+  | { readonly kind: 'changes'; readonly id: GateSlug } // the stage's run must have changed something
   | { readonly kind: 'agent_verdict'; readonly id: GateSlug; readonly role: RoleSlug }
   | { readonly kind: 'secret_scan'; readonly id: GateSlug }
   | { readonly kind: 'page_approval'; readonly id: GateSlug; readonly label: string }
