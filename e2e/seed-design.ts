@@ -156,11 +156,12 @@ const ORDERS: readonly OrderPlan[] = [
   { code: 'İE-0014', repo: 'antreo-api', title: 'Fatura raporu', stage: 2, state: 'running', minutes: 6, account: 'zai-glm', usd: 0.31 },
   {
     // The ask's command keeps the prototype's `dotnet ef database update` head (J-1 waits on the
-    // text) and carries a ~200-character tail of unbroken paths — the shape of a real run's ask
-    // that the live pane must contain (#831).
+    // text) and carries a ~170-character tail with no break opportunity at all — the shape of a
+    // real run's ask that every surface showing an ask (the cockpit row, the live pane, the
+    // detail's ask column) must contain.
     code: 'İE-0029', repo: 'antreo-api', title: 'Hız sınırı', stage: 2, state: 'ready', minutes: 9, account: 'zai-glm',
     usd: 0.09,
-    ask: 'dotnet ef database update --project src/Antero.Api/Antero.Api.csproj --bundle /Users/eneskaradeniz/.docket-test/antreo-api/ef-bundles/20261008091800_InvoiceReconciliationIndexes.csproj',
+    ask: 'dotnet ef database update --bundle /Users/eneskaradeniz/.docket-test/antreo-api/ef-bundles/migrations/20261008091800_InvoiceReconciliationIndexes/InvoiceReconciliationBackgroundServiceIndexesBundle.csproj',
   },
   { code: 'İE-0033', repo: 'antreo-api', title: 'Log düzeni', stage: 2, state: 'ready', minutes: 25, account: 'zai-glm' },
   { code: 'İE-0015', repo: 'antreo-api', title: 'Stok uyarısı', stage: 3, state: 'ready', minutes: 3, account: 'claude-max', usd: 0.22 },

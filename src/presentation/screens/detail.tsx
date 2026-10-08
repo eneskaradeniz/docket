@@ -6,6 +6,11 @@
 // confirmation mirrors E-8 at the button itself. Every decision is a store intent; the screen
 // only renders state and forwards clicks, and every user-visible string arrives through a label
 // key (U-1).
+// An ask's texts carry no break opportunities to rely on (whole commands, long titles), so every
+// box between such text and the ask column must be allowed to shrink below its content
+// (`min-w-0`) — intrinsic min-content otherwise widens the column's grids past the track the
+// detail layout pins — and the text either wraps anywhere or truncates with the full value on
+// its title. The layout audit's L-15 measures the result on the real asking screen.
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { WorkOrderStatus } from '../../domain/index';
 import type { LabelKey } from '../labels/keys';
@@ -361,14 +366,18 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
         <div className="grid min-w-0 gap-5" data-detail-ask>
           {asks.length > 0 ? (
             <SectionCard title={t(locale, 'detail.section.asks')}>
-              <ul className="grid gap-2">
+              <ul className="grid min-w-0 gap-2">
                 {asks.map((ask) => (
-                  <li key={ask.askId} className="flex flex-wrap items-center justify-between gap-2 rounded-card border border-signal/40 bg-surface px-3 py-2">
+                  <li key={ask.askId} className="min-w-0 flex flex-wrap items-center justify-between gap-2 rounded-card border border-signal/40 bg-surface px-3 py-2">
                     <div className="flex min-w-0 items-center gap-3">
                       <span aria-hidden="true" className="h-2 w-2 flex-none rounded-full bg-signal motion-safe:animate-pulse" />
                       <div className="min-w-0">
-                        <span className="font-mono text-[13px] text-ink">{ask.tool}</span>
-                        {ask.target !== null ? <code className="block truncate font-mono text-[11px] text-inkdim">{ask.target}</code> : null}
+                        <span className="block truncate font-mono text-[13px] text-ink" title={ask.tool}>{ask.tool}</span>
+                        {ask.target !== null ? (
+                          <code className="block truncate font-mono text-[11px] text-inkdim" title={ask.target}>
+                            {ask.target}
+                          </code>
+                        ) : null}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">

@@ -99,10 +99,10 @@ test('the combination plan carries the concrete resolved sizes through', () => {
 
 // --- L-13's problem-text matching ---------------------------------------------------------------------
 
-test('L-14 closes the walk (L-13 thirteenth) and L-13’s known standings name only real screens', () => {
-  assert.equal(RULE_IDS.length, 14);
-  assert.equal(RULE_IDS.at(-1), 'L-14');
-  assert.equal(RULE_IDS.at(-2), 'L-13');
+test('L-15 closes the walk (L-14 fourteenth) and L-13’s known standings name only real screens', () => {
+  assert.equal(RULE_IDS.length, 15);
+  assert.equal(RULE_IDS.at(-1), 'L-15');
+  assert.equal(RULE_IDS.at(-2), 'L-14');
   for (const screen of Object.keys(L13_KNOWN_STANDINGS)) {
     assert.equal(['kokpit', 'pano', 'liste', 'detay', 'yol-haritasi', 'hesap'].includes(screen), true);
   }

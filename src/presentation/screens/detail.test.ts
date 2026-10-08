@@ -1,16 +1,17 @@
 // screens/detail.test.ts — the expected-of-you section follows the derived status (U-4): a
 // human gate the fold pre-fills while the stage merely waits to start is listed, but it is not
 // decidable — `ready` shows the start action, `awaiting_human` shows the decision card and the
-// gate list's approve/reject buttons. The screen is mounted over a real detail store (a scripted
-// api), drawn with the server renderer the way the layer's component tests draw, so every claim
-// reads the markup a user would see.
+// gate list's approve/reject buttons. The ask column's containment is pinned the same way: the
+// card must hold unbreakable text without widening the column. The screen is mounted over a real
+// detail store (a scripted api), drawn with the server renderer the way the layer's component
+// tests draw, so every claim reads the markup a user would see.
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import type { Api } from '../../api/api';
 import type { Command, CommandResult } from '../../api/commands';
-import type { Query } from '../../api/queries';
+import type { OpenAskView, Query } from '../../api/queries';
 import type { Actor, FlowDef, Slug } from '../../domain/index';
 import { parseSlug } from '../../domain/index';
 
@@ -72,10 +73,24 @@ const AWAITING_HUMAN: WorkOrderDetailView = {
   next: { kind: 'await_human', stage: STAGE_CHECK, gates: [GATE_SIGN_OFF] },
 };
 
+/** A view whose stage run is still going, so an open ask of that run is the column's to show and
+ * the live pane rides beside it — the standing a real asking run leaves on its own detail. */
+const ASKING: WorkOrderDetailView = {
+  ...READY,
+  runs: [{ id: 'run-1', stage: STAGE_PLAN, startedAt: 0 }],
+};
+
+// No break opportunity, ~170 characters — the ask card names the asking work order by its title,
+// and a title is free operator text; this is the shape of the one it must contain.
+const LONG_TITLE =
+  '/Users/eneskaradeniz/source/antreo/antreo-api/test/Antero.Api.ReconciliationTests/V2/Invoices/Reconciliation/InvoiceReconciliationBackgroundServiceTests/Antero.Api.ReconciliationBackgroundServiceTests.cs';
+
+const ASK_ROW: OpenAskView = { runId: 'run-1', askId: 'ask-1', since: 0, title: LONG_TITLE };
+
 /** The detail query and the open-asks query are answered separately, both from one scripted reply. */
-const fakeApi = (reply: unknown): Pick<Api, 'query' | 'command'> => ({
+const fakeApi = (reply: unknown, asks: readonly OpenAskView[] = []): Pick<Api, 'query' | 'command'> => ({
   query: (query: Query) =>
-    Promise.resolve(query.type === 'permissions.open' ? [] : reply),
+    Promise.resolve(query.type === 'permissions.open' ? asks : reply),
   command: (_actor: Actor, _command: Command): Promise<CommandResult> =>
     Promise.resolve({ ok: true }),
 });
@@ -90,9 +105,9 @@ const fakePane = (): LivePaneStore => ({
 });
 
 /** Loads the scripted view into a real store and draws the screen a user would see. */
-const draw = async (view: WorkOrderDetailView): Promise<string> => {
+const draw = async (view: WorkOrderDetailView, asks: readonly OpenAskView[] = []): Promise<string> => {
   const store = createWorkOrderDetailStore({
-    api: fakeApi(view),
+    api: fakeApi(view, asks),
     changes: () => () => {},
     actor: ACTOR,
     pane: fakePane(),
@@ -129,5 +144,22 @@ describe('work-order detail screen — expected of you', () => {
     expect(html).toContain('Sorun var');
     expect(html).toContain('Reddet');
     expect(html).not.toContain('Aşamayı başlat');
+  });
+});
+
+describe('work-order detail screen — the ask column contains unbreakable text', () => {
+  it('the ask list and every ask row may shrink below their content', async () => {
+    const html = await draw(ASKING, [ASK_ROW]);
+
+    expect(html).toContain('<ul class="grid min-w-0 gap-2">');
+    expect(html).toContain(
+      'min-w-0 flex flex-wrap items-center justify-between gap-2 rounded-card border border-signal/40 bg-surface px-3 py-2',
+    );
+  });
+
+  it('the ask row names its asking order on one truncated line, the full text on the title', async () => {
+    const html = await draw(ASKING, [ASK_ROW]);
+
+    expect(html).toContain(`block truncate font-mono text-[13px] text-ink" title="${LONG_TITLE}">`);
   });
 });
