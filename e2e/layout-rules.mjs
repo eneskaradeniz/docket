@@ -1,4 +1,4 @@
-// e2e/layout-rules.mjs — the L-1 … L-13 measurements of docs/v2/ui.md → "Verifying the shell".
+// e2e/layout-rules.mjs — the L-1 … L-14 measurements of docs/v2/ui.md → "Verifying the shell".
 // Pure DOM measurement, no pixel diff. Each rule takes a Playwright `page`, the run context
 // ({ screen, width, height, theme }) and the target's selector map, and returns
 // { id, ok, detail }. A selector the target does not have makes the rule report
@@ -7,7 +7,7 @@
 //
 // A selector is a CSS string, or { css, text } to pick the first match whose text contains `text`.
 
-export const RULE_IDS = ['L-1', 'L-2', 'L-3', 'L-4', 'L-5', 'L-6', 'L-7', 'L-8', 'L-9', 'L-10', 'L-11', 'L-12', 'L-13'];
+export const RULE_IDS = ['L-1', 'L-2', 'L-3', 'L-4', 'L-5', 'L-6', 'L-7', 'L-8', 'L-9', 'L-10', 'L-11', 'L-12', 'L-13', 'L-14'];
 
 /** The audit size plan: the window's minimum, its default, and full screen — nothing between.
  *  The first two are numbers; full screen is `'display'`, resolved to the primary display's work
@@ -496,6 +496,30 @@ const l13 = async (page, ctx) => {
   return result('L-13', true, `known standing: ${knownHits.map((hit) => hit.key).join(', ')}`);
 };
 
+// L-14: while the detail's live pane is showing, `main` never scrolls horizontally. A streaming
+// run's unbreakable text (long absolute paths, long commands) widens the pane's grids through
+// intrinsic min-content sizing, and `main` is itself the horizontal scroller (its overflow-y
+// forces overflow-x to auto) — so L-2, which reads the document, cannot see the spill; the scroll
+// must be read on `main` itself, and only while the pane's hook is present and visible.
+const l14 = async (page, ctx, sel) => {
+  const missing = ['main', 'livePane'].find((k) => !sel[k]);
+  if (missing) return skipped('L-14', missing);
+  const m = await inPage(
+    page,
+    `const main = resolve(arg.main), live = resolve(arg.live);
+    if (!main) return null;
+    if (!live) return { pane: false };
+    const r = live.getBoundingClientRect();
+    const cs = getComputedStyle(live);
+    const showing = r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none';
+    return showing ? { pane: true, sw: main.scrollWidth, cw: main.clientWidth } : { pane: false };`,
+    { main: sel.main, live: sel.livePane },
+  );
+  if (!m) return result('L-14', false, 'main element not found');
+  if (!m.pane) return result('L-14', true, 'no live pane showing');
+  return result('L-14', m.sw <= m.cw, `main scrollWidth ${m.sw} of clientWidth ${m.cw}`);
+};
+
 const RULES = [
   ['L-1', l1],
   ['L-2', l2],
@@ -510,6 +534,7 @@ const RULES = [
   ['L-11', l11],
   ['L-12', l12],
   ['L-13', l13],
+  ['L-14', l14],
 ];
 
 /** Run every rule for one screen/size/theme; a throwing rule is reported as FAIL, not a crash. */
