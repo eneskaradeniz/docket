@@ -333,6 +333,14 @@ describe('validateDefinitions', () => {
     expect(issues[0]?.path).toBe('flows[0].stages[0].exit[0].commandSet');
   });
 
+  it('a changes gate carries only kind and id', () => {
+    const input = doc({
+      flows: [flow({ stages: [stage({ exit: [{ kind: 'changes', id: 'changed' }] })] })],
+    });
+    const value = expectOk(validateDefinitions(input));
+    expect(value.flows[0]?.stages[0]?.exit[0]).toEqual({ kind: 'changes', id: 'changed' });
+  });
+
   it('R-7 edge: command gates pass when no repo is given', () => {
     const input = doc({
       flows: [flow({ stages: [stage({ exit: [gate({ kind: 'command', commandSet: 'test' })] })] })],

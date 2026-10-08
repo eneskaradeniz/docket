@@ -54,6 +54,8 @@ const criterionFor = (gate: GateDef, repo: RepoDef): string => {
     }
     case 'secret_scan':
       return 'Secret scan of the worktree reports no findings';
+    case 'changes':
+      return 'The run changed at least one file, or attests nothing needed changing';
     case 'agent_verdict':
       return `Agent verdict: role "${gate.role}" approves this stage`;
     case 'human':

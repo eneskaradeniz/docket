@@ -107,6 +107,7 @@ export const LABEL_KEYS = [
   // Gate kind names (the detail's gate rows).
   'gate.kind.human',
   'gate.kind.command',
+  'gate.kind.changes',
   'gate.kind.agent_verdict',
   'gate.kind.secret_scan',
   'gate.kind.page_approval',

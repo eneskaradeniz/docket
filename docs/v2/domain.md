@@ -144,6 +144,7 @@ export interface RoleDef {
 export type GateDef =
   | { readonly kind: 'human'; readonly id: GateSlug; readonly label: string }
   | { readonly kind: 'command'; readonly id: GateSlug; readonly commandSet: string }
+  | { readonly kind: 'changes'; readonly id: GateSlug }    // the stage's run must have changed something
   | { readonly kind: 'agent_verdict'; readonly id: GateSlug; readonly role: RoleSlug }
   | { readonly kind: 'secret_scan'; readonly id: GateSlug }
   | { readonly kind: 'page_approval'; readonly id: GateSlug; readonly label: string }
@@ -324,6 +325,7 @@ export type GateVerdict =
 
 export interface GateEvidence {
   readonly commands?: Readonly<Record<string, { readonly exitCode: number } | undefined>>; // per command in the set
+  readonly changes?: { readonly filesChanged: number; readonly noChangeNeeded?: boolean };
   readonly secretScan?: { readonly findings: number };
   readonly agentVerdict?: { readonly approve: boolean; readonly pointersResolved: boolean };
   readonly approval?: { readonly decision: 'approved' | 'rejected'; readonly by: Actor; readonly note?: string };
@@ -362,6 +364,7 @@ Rules:
 - **E-8** For a `protected` environment, `deployment.confirmedEnvironment` must equal the gate's `environment` (the user typed the environment id to confirm); absent or different → `pending`. (Docket is single-user: a rule requiring a *different* approver would make protected environments undeployable. A second-approver option arrives with team mode.)
 - **E-9** `remote_checks`: `status === 'all_passed'` → `passed`; `status === 'has_failure'` → `failed` naming the first failed check; `status === 'timeout'` → `failed` with reason `timeout`; `status === 'pending'` → `pending`.
 - **E-10** `deployment_attempted` event is appended exactly once per deploy-gate evaluation, carrying the redacted `outputTail` (same redaction as command gates: no env values, no secrets).
+- **R-61** (added 2026-10-09, #839) `changes`: evidence absent → `pending`; `filesChanged > 0` → `passed`; `filesChanged === 0 && noChangeNeeded === true` → `passed`; otherwise → `failed` with reason `no changes`. Rationale: a `command` gate reads only exit codes, so an implement stage that changed nothing passed while its tests stayed green (#839); this gate turns "the run changed something" into explicit evidence — or, with `noChangeNeeded`, an explicit attestation that nothing needed changing. The gate is opt-in per flow definition; the evidence itself (counting the run's changed files) is produced outside the domain. The built-in flows do not use this gate until the evidence source exists; wiring it into `standard` is a follow-up.
 
 ---
 

@@ -89,6 +89,7 @@ export const TR: LabelBundle = {
   'run.outcome.cancelled': 'İptal edildi',
   'gate.kind.human': 'İnsan onayı',
   'gate.kind.command': 'Komut takımı',
+  'gate.kind.changes': 'Değişiklik',
   'gate.kind.agent_verdict': 'Ajan kararı',
   'gate.kind.secret_scan': 'Sır taraması',
   'gate.kind.page_approval': 'Sayfa onayı',

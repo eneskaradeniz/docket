@@ -65,6 +65,7 @@ const STATUS_KEY: Readonly<Record<WorkOrderStatus, LabelKey>> = {
 const GATE_KIND_KEY: Readonly<Record<GateView['kind'], LabelKey>> = {
   human: 'gate.kind.human',
   command: 'gate.kind.command',
+  changes: 'gate.kind.changes',
   agent_verdict: 'gate.kind.agent_verdict',
   secret_scan: 'gate.kind.secret_scan',
   page_approval: 'gate.kind.page_approval',

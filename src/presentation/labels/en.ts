@@ -90,6 +90,7 @@ export const EN: LabelBundle = {
   'run.outcome.cancelled': 'Cancelled',
   'gate.kind.human': 'Human approval',
   'gate.kind.command': 'Command set',
+  'gate.kind.changes': 'Changes',
   'gate.kind.agent_verdict': 'Agent verdict',
   'gate.kind.secret_scan': 'Secret scan',
   'gate.kind.page_approval': 'Page approval',

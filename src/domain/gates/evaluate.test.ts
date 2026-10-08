@@ -10,6 +10,7 @@ const gate = (id: string): GateSlug => id as GateSlug;
 const HUMAN: GateDef = { kind: 'human', id: gate('plan-approval'), label: 'Plan onayı' };
 const PAGE: GateDef = { kind: 'page_approval', id: gate('findings'), label: 'Bulgular' };
 const COMMAND: GateDef = { kind: 'command', id: gate('tests'), commandSet: 'tests' };
+const CHANGES: GateDef = { kind: 'changes', id: gate('changes') };
 const SECRET_SCAN: GateDef = { kind: 'secret_scan', id: gate('secrets') };
 const AGENT_VERDICT: GateDef = { kind: 'agent_verdict', id: gate('review-verdict'), role: 'reviewer' as RoleSlug };
 const DEPLOY: GateDef = { kind: 'deploy', id: gate('deploy-stg'), environment: 'stg' as EnvSlug };
@@ -37,13 +38,13 @@ const viaRegistry = <K extends GateDef['kind']>(
 describe('GATE_EVALUATORS', () => {
   it('has exactly one entry per GateDef kind', () => {
     expect(Object.keys(GATE_EVALUATORS).sort()).toEqual(
-      ['agent_verdict', 'command', 'deploy', 'human', 'page_approval', 'remote_checks', 'secret_scan'],
+      ['agent_verdict', 'changes', 'command', 'deploy', 'human', 'page_approval', 'remote_checks', 'secret_scan'],
     );
   });
 
   it('R-12: every kind is reachable through the registry, matching evaluateGate', () => {
     const evidence: GateEvidence = { approval: approved() };
-    for (const gateDef of [HUMAN, PAGE, COMMAND, SECRET_SCAN, AGENT_VERDICT, DEPLOY, REMOTE_CHECKS] as const) {
+    for (const gateDef of [HUMAN, PAGE, COMMAND, CHANGES, SECRET_SCAN, AGENT_VERDICT, DEPLOY, REMOTE_CHECKS] as const) {
       expect(viaRegistry(gateDef, evidence)).toEqual(run(gateDef, evidence));
     }
   });
@@ -219,6 +220,39 @@ describe('evaluateGate — agent_verdict (R-15)', () => {
     });
     expect(run(AGENT_VERDICT, { agentVerdict: { approve: false, pointersResolved: false } })).toMatchObject({
       status: 'failed',
+    });
+  });
+});
+
+describe('evaluateGate — changes (R-61)', () => {
+  it('R-61: missing evidence is pending', () => {
+    expect(run(CHANGES, {})).toEqual({ status: 'pending' });
+  });
+
+  it('R-61: filesChanged > 0 passes', () => {
+    expect(run(CHANGES, { changes: { filesChanged: 1 } })).toEqual({ status: 'passed' });
+    expect(run(CHANGES, { changes: { filesChanged: 12 } })).toEqual({ status: 'passed' });
+  });
+
+  it('R-61: filesChanged 0 with noChangeNeeded passes', () => {
+    expect(run(CHANGES, { changes: { filesChanged: 0, noChangeNeeded: true } })).toEqual({ status: 'passed' });
+  });
+
+  it('R-61: filesChanged 0 without noChangeNeeded fails with "no changes"', () => {
+    expect(run(CHANGES, { changes: { filesChanged: 0 } })).toEqual({ status: 'failed', reason: 'no changes' });
+  });
+
+  it('R-61: noChangeNeeded false does not attest a zero', () => {
+    expect(run(CHANGES, { changes: { filesChanged: 0, noChangeNeeded: false } })).toEqual({
+      status: 'failed',
+      reason: 'no changes',
+    });
+  });
+
+  it('R-61: a negative filesChanged falls to the otherwise arm and fails, even with noChangeNeeded', () => {
+    expect(run(CHANGES, { changes: { filesChanged: -3, noChangeNeeded: true } })).toEqual({
+      status: 'failed',
+      reason: 'no changes',
     });
   });
 });

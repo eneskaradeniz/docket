@@ -11,6 +11,7 @@ export type GateVerdict =
 
 export interface GateEvidence {
   readonly commands?: Readonly<Record<string, { readonly exitCode: number } | undefined>>; // per command in the set
+  readonly changes?: { readonly filesChanged: number; readonly noChangeNeeded?: boolean };
   readonly secretScan?: { readonly findings: number };
   readonly agentVerdict?: { readonly approve: boolean; readonly pointersResolved: boolean };
   readonly approval?: {
@@ -95,6 +96,16 @@ const evaluateSecretScan: GateEvaluator<'secret_scan'> = (_gate, evidence) => {
   return { status: 'passed' };
 };
 
+const evaluateChanges: GateEvaluator<'changes'> = (_gate, evidence) => {
+  const changes = evidence.changes;
+  // The counter sits outside the domain, so absence is "not measured yet", never a pass.
+  if (changes === undefined) return { status: 'pending' };
+  if (changes.filesChanged > 0) return { status: 'passed' };
+  // A zero only advances on an explicit attestation that nothing needed changing.
+  if (changes.filesChanged === 0 && changes.noChangeNeeded === true) return { status: 'passed' };
+  return { status: 'failed', reason: 'no changes' };
+};
+
 const evaluateAgentVerdict: GateEvaluator<'agent_verdict'> = (_gate, evidence) => {
   const verdict = evidence.agentVerdict;
   if (verdict === undefined) return { status: 'pending' };
@@ -148,6 +159,7 @@ export const GATE_EVALUATORS: { readonly [K in GateDef['kind']]: GateEvaluator<K
   human: evaluateHuman,
   page_approval: evaluatePageApproval,
   command: evaluateCommand,
+  changes: evaluateChanges,
   secret_scan: evaluateSecretScan,
   agent_verdict: evaluateAgentVerdict,
   deploy: evaluateDeploy,
