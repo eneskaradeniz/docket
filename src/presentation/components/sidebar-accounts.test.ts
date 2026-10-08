@@ -124,6 +124,17 @@ describe('SidebarAccounts (U-51)', () => {
     expect((open.match(/Çubuk en dar limiti gösterir\./g) ?? []).length).toBe(1);
   });
 
+  it('the collapsed body is inert — its cards are neither focusable nor reachable while hidden', async () => {
+    const reply = view([account('a', 'Tek', [meterAt('a', 50)])]);
+    const closed = await renderFrame(reply, false);
+    // grid-rows-[0fr] hides the body from the eye only; inert is what also drops it from the tab
+    // order and the accessibility tree while its cards stay in the DOM for the reopening.
+    expect(closed).toMatch(/data-accounts-body="[^"]*"[^>]*\binert\b/);
+    // Open, the same body is plain content again — inert must not outlive the collapse.
+    const open = await renderFrame(reply, true);
+    expect(open).not.toMatch(/data-accounts-body="[^"]*"[^>]*\binert\b/);
+  });
+
   it('U-51: every card is one fixed 56 px height — name only with the full Asistan · ad in title, dot, one bar', async () => {
     const html = await renderFrame(
       view([
