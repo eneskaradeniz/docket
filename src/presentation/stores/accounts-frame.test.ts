@@ -141,7 +141,7 @@ describe('accounts frame store', () => {
 
     expect(store.state().cards).toBeNull();
     await store.load();
-    expect(api.queries).toEqual([{ type: 'settings.accounts' }]);
+    expect(api.queries).toEqual([{ type: 'settings.accounts', catalog: 'skip' }]);
 
     const cards = store.state().cards;
     expect(cards?.map((card) => card.label)).toEqual(['Claude Max', 'z.ai GLM', 'Codex Pro']);
@@ -157,6 +157,26 @@ describe('accounts frame store', () => {
     expect(cards?.[0]?.tightest?.id).toBe('m-1');
     // A counted unit carries its fraction; a money meter normalizes to its remaining share.
     expect(cards?.[1]?.limits[0]?.remaining).toBeCloseTo(0.752);
+  });
+
+  it("A-87: the frame's read skips the model catalog — its cards never show billing", async () => {
+    const api = fakeFrameApi(frameView());
+    const emitter = fakeSignal();
+    const store = createAccountsFrameStore({ api, changes: emitter.signal });
+
+    await store.load();
+    // The cards draw the name, the status dot and the limit bars only, so the read starts no
+    // live model listing behind the discovery chain (A-86's skip); billing stays Settings' read.
+    expect(api.queries).toEqual([{ type: 'settings.accounts', catalog: 'skip' }]);
+
+    // The account-change reload rides the same skip: the first card after the wizard's finish
+    // must not wait behind the catalogs.
+    emitter.emit({ type: 'accounts.changed' });
+    await flush();
+    expect(api.queries).toEqual([
+      { type: 'settings.accounts', catalog: 'skip' },
+      { type: 'settings.accounts', catalog: 'skip' },
+    ]);
   });
 
   it('U-51: the tightest limit is the least remaining among the readable ones, null without any', () => {
@@ -251,7 +271,10 @@ describe('accounts frame store', () => {
     gate.release();
     await pending;
     expect(store.state().refreshing).toBe(false);
-    expect(api.queries).toEqual([{ type: 'settings.accounts' }, { type: 'settings.accounts' }]);
+    expect(api.queries).toEqual([
+      { type: 'settings.accounts', catalog: 'skip' },
+      { type: 'settings.accounts', catalog: 'skip' },
+    ]);
     expect(store.state().cards).toHaveLength(3);
   });
 
