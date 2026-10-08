@@ -571,6 +571,7 @@ export const LABEL_KEYS = [
   'roles.chain.unbound',
   'roles.chain.up',
   'roles.chain.down',
+  'roles.chain.add',
   'roles.empty',
   'roles.style.title',
   'roles.unset.line',

@@ -353,6 +353,11 @@ being reset.
   effort list, and the role's stages that set their own tier or thinking (read-only, with the flow
   name). A stage with `sameProviderReview` puts an amber line on its role's row: the review will
   run on the provider that wrote the code; adding an account of another provider sends it there.
+- **U-33a** (amends U-33; 2026-10-09, #838) "Asistan sırası" also offers a "+" chip for every
+  account outside the chain (the same chip the fine-tune's own chain uses), with one dim hint line
+  above them; with accounts but an empty chain the chips sit beside the empty line. Clicking a chip
+  appends the account to the chain's end and saves every listed role with its complete binding
+  (A-49); a role with its own chain keeps it.
 - **U-38** (providers) Sağlayıcılar lists `providers.discovered` (A-67): one row per provider —
   mark, `name`, version (mono), status (Hazır · Giriş gerekli · Doğrulanamadı for `loggedIn: null`)
   and the binary path (mono, dim, full in `title`); "Yeniden tara" re-runs discovery and each row

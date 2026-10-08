@@ -234,6 +234,8 @@ export interface RolesStore {
   loadModels(accountId: string): Promise<void>;
   /** Asistan sırası: move the account at `from` by `delta` (±1); saves every listed role. */
   moveGlobal(from: number, delta: number): Promise<void>;
+  /** Asistan sırası: append an account the chain does not hold; saves every listed role. */
+  addGlobal(accountId: string): Promise<void>;
   setStyle(role: string, style: WorkStyle): Promise<void>;
   resetStyle(role: string): Promise<void>;
   /** "Önerilenleri uygula": the recommended style for exactly the roles with no style stored. */
@@ -342,6 +344,19 @@ export const createRolesStore = (deps: RolesStoreDeps): RolesStore => {
     return next;
   };
 
+  /** A new shared chain reaches every role: each saves its complete binding with the new order,
+   *  because `binding.save` replaces the whole binding (A-49) — a role with its own chain keeps
+   *  it, pin included. */
+  const saveGlobalChain = async (next: readonly string[]): Promise<void> => {
+    const commands = roles.map((entry) => {
+      const row = rowOf(entry.id);
+      const own = row !== undefined && row.chainMode === 'own' && bindings.some((b) => b.scope.level === 'global' && b.role === entry.id);
+      const chain: readonly ChainEntry[] = own && row !== undefined ? row.chain : next.map((accountId) => ({ accountId, model: null }));
+      return bindingCommand(entry.id, chain, row?.tier ?? null, row?.thinking ?? null);
+    });
+    await runAll('chain', commands);
+  };
+
   deps.changes((change) => {
     if (change.type === 'update.changed' || roles.length === 0) return;
     void load();
@@ -361,13 +376,11 @@ export const createRolesStore = (deps: RolesStoreDeps): RolesStore => {
     moveGlobal: async (from, delta) => {
       const next = move(state.globalChain, from, delta);
       if (next === null) return;
-      const commands = roles.map((role) => {
-        const row = rowOf(role.id);
-        const own = row !== undefined && row.chainMode === 'own' && bindings.some((b) => b.scope.level === 'global' && b.role === role.id);
-        const chain: readonly ChainEntry[] = own && row !== undefined ? row.chain : next.map((accountId) => ({ accountId, model: null }));
-        return bindingCommand(role.id, chain, row?.tier ?? null, row?.thinking ?? null);
-      });
-      await runAll('chain', commands);
+      await saveGlobalChain(next);
+    },
+    addGlobal: async (accountId) => {
+      if (state.globalChain.includes(accountId)) return;
+      await saveGlobalChain([...state.globalChain, accountId]);
     },
     setStyle: (role, style) => {
       const pair = styleSettings(style);

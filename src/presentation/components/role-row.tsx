@@ -99,14 +99,17 @@ export interface ChainSectionProps {
 }
 
 /** Asistan sırası: the chain every role without its own uses, as the same DragOrderList the wizard
- *  uses. A drop saves every listed role once (U-33). */
+ *  uses. A drop saves every listed role once (U-33). An account the stored bindings never mention
+ *  joins through a "+" chip — without it, an account added after setup could never be placed
+ *  (U-33a); a click appends it to the chain's end, the same save a drop makes. */
 export function ChainSection({ store, locale, markFor }: ChainSectionProps) {
-  const state = useSyncExternalStore(store.subscribe, store.state);
+  const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   const saved = useSavedFlag(store, 'chain');
   const failure = state.failure?.row === 'chain' ? state.failure.labelKey : undefined;
   const chain = state.globalChain
     .map((id) => state.accounts.find((account) => account.id === id))
     .filter((account): account is RoleAccount => account !== undefined);
+  const outside = state.accounts.filter((account) => !state.globalChain.includes(account.id));
   const items: readonly DragOrderItem[] = chain.map((account, index) => {
     const tag = t(locale, billingTagKey(account.billing, account.viaKey));
     return {
@@ -137,6 +140,18 @@ export function ChainSection({ store, locale, markFor }: ChainSectionProps) {
           }}
         />
       )}
+      {outside.length > 0 ? (
+        <div className="grid gap-1.5" data-roles-chain-add>
+          <p className="text-[11.5px] text-inkdim">{t(locale, 'roles.chain.add')}</p>
+          <div className="flex flex-wrap gap-1.5">
+            {outside.map((account) => (
+              <ActionButton key={account.id} variant="neutral" onClick={() => void store.addGlobal(account.id)}>
+                + {account.label}
+              </ActionButton>
+            ))}
+          </div>
+        </div>
+      ) : null}
       {failure !== undefined ? (
         <p role="alert" className="text-[12px] text-error">
           {t(locale, failure)}

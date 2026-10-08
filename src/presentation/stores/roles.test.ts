@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Api } from '../../api/api';
 import type { Command } from '../../api/commands';
-import type { AccountModelsView, Query, RoleListItem, SettingsAccountsView, SettingsBindingView } from '../../api/queries';
+import type { AccountModelsView, Query, RoleListItem, SettingsAccountView, SettingsAccountsView, SettingsBindingView } from '../../api/queries';
 
 import { chainEmptyKey, createRolesStore, effortOptions, selectableModels, styleChoices, styleSettings, styleStanding, unboundRoleIds, workStyle } from './roles';
 
@@ -85,7 +85,10 @@ interface Fake extends Pick<Api, 'query' | 'command'> {
   setCommandResult(code: string | null): void;
 }
 
-const fake = (bindings: readonly SettingsBindingView[] = BINDINGS): Fake => {
+const fake = (
+  bindings: readonly SettingsBindingView[] = BINDINGS,
+  accounts: readonly SettingsAccountView[] = [account('a1', 'atlas'), account('a2', 'borea')],
+): Fake => {
   const commands: Command[] = [];
   let current = bindings;
   let failure: string | null = null;
@@ -100,7 +103,7 @@ const fake = (bindings: readonly SettingsBindingView[] = BINDINGS): Fake => {
     query: (query: Query) => {
       if (query.type === 'roles.list') return Promise.resolve(ROLES);
       if (query.type === 'settings.accounts') {
-        const view: SettingsAccountsView = { accounts: [account('a1', 'atlas'), account('a2', 'borea')], bindings: current };
+        const view: SettingsAccountsView = { accounts, bindings: current };
         return Promise.resolve(view);
       }
       if (query.type === 'account.models') return Promise.resolve(MODELS[query.accountId]);
@@ -223,6 +226,39 @@ describe('U-33: Asistan sırası', () => {
     expect(store.isSaved('chain')).toBe(true);
     clock.now = 2501;
     expect(store.isSaved('chain')).toBe(false);
+  });
+
+  it('U-33a: an outside account joins the end of Asistan sırası and every listed role saves its complete binding', async () => {
+    const api = fake(BINDINGS, [account('a1', 'atlas'), account('a2', 'borea'), account('a3', 'cinis')]);
+    const store = makeStore(api);
+    await store.load();
+    await store.addGlobal('a3');
+    expect(saves(api)).toEqual([
+      { type: 'binding.save', role: 'developer', accounts: [{ accountId: 'a1' }, { accountId: 'a2' }, { accountId: 'a3' }], tier: 'balanced', thinking: { level: 'balanced' } },
+      { type: 'binding.save', role: 'planner', accounts: [{ accountId: 'a1' }, { accountId: 'a2' }, { accountId: 'a3' }], tier: 'strong', thinking: { level: 'deep' } },
+      { type: 'binding.save', role: 'reviewer', accounts: [{ accountId: 'a1' }, { accountId: 'a2' }, { accountId: 'a3' }], tier: 'fast', thinking: { effort: 'high' } },
+    ]);
+  });
+
+  it('U-33a: a role with its own chain keeps it while the others take the added account', async () => {
+    const own = binding('planner', ['a2'], { tier: 'strong', thinking: { level: 'deep' }, accounts: [{ accountId: 'a2', model: 'atlas-x' }] });
+    const api = fake(
+      [BINDINGS[0] as SettingsBindingView, own, BINDINGS[2] as SettingsBindingView],
+      [account('a1', 'atlas'), account('a2', 'borea'), account('a3', 'cinis')],
+    );
+    const store = makeStore(api);
+    await store.load();
+    await store.addGlobal('a3');
+    expect(saves(api).find((c) => c.role === 'planner')?.accounts).toEqual([{ accountId: 'a2', model: 'atlas-x' }]);
+    expect(saves(api).find((c) => c.role === 'developer')?.accounts).toEqual([{ accountId: 'a1' }, { accountId: 'a2' }, { accountId: 'a3' }]);
+  });
+
+  it('U-33a: adding an account already in the chain issues nothing', async () => {
+    const api = fake();
+    const store = makeStore(api);
+    await store.load();
+    await store.addGlobal('a1');
+    expect(api.commands).toEqual([]);
   });
 });
 
