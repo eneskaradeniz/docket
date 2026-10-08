@@ -1,10 +1,14 @@
 // e2e/design-app.mjs — launches the BUILT app against a fresh design seed (e2e/seed-design.ts) and
 // resizes / themes its window. Shared by the journeys, the layout audit and the gallery so the
-// three drive the app identically. The caller holds the host lock (acquireE2eLock) once per run.
+// three drive the app identically. Every launch also gets its own throwaway Chromium profile
+// (e2e/profile.mjs), so no run sees another run's persisted UI settings. The caller holds the
+// host lock (acquireE2eLock) once per run.
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { _electron as electron } from 'playwright-core';
+
+import { assertProfileIsolated, freshProfile } from './profile.mjs';
 
 export const ROOT = resolve(new URL('..', import.meta.url).pathname);
 
@@ -23,10 +27,13 @@ export async function launchDesignApp() {
     throw new Error('the built app is missing — run the npm script (it builds first)');
   }
   const seed = seedDesign();
+  const profile = freshProfile();
+  console.log(`profile: ${profile.dir}`);
   const app = await electron.launch({
-    args: [join(ROOT, 'dist-electron', 'main.js')],
+    args: [...profile.args, join(ROOT, 'dist-electron', 'main.js')],
     env: { ...process.env, DOCKET_DATA_DIR: seed.dataDir, DOCKET_OPENCODE_BIN: seed.agentBin, DOCKET_UPDATE_FAKE: '0.9.0' },
   });
+  await assertProfileIsolated(app, profile.dir);
   const page = await app.firstWindow();
   await page.waitForSelector('nav', { timeout: 30_000 });
   return { app, page, seed };
