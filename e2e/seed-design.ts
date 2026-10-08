@@ -155,8 +155,12 @@ const ORDERS: readonly OrderPlan[] = [
   { code: 'İE-0038', repo: 'antreo-api', title: 'Önbellek', stage: 1, state: 'running', minutes: 4, account: 'codex-pro', usd: 0.42 },
   { code: 'İE-0014', repo: 'antreo-api', title: 'Fatura raporu', stage: 2, state: 'running', minutes: 6, account: 'zai-glm', usd: 0.31 },
   {
+    // The ask's command keeps the prototype's `dotnet ef database update` head (J-1 waits on the
+    // text) and carries a ~200-character tail of unbroken paths — the shape of a real run's ask
+    // that the live pane must contain (#831).
     code: 'İE-0029', repo: 'antreo-api', title: 'Hız sınırı', stage: 2, state: 'ready', minutes: 9, account: 'zai-glm',
-    usd: 0.09, ask: 'dotnet ef database update',
+    usd: 0.09,
+    ask: 'dotnet ef database update --project src/Antero.Api/Antero.Api.csproj --bundle /Users/eneskaradeniz/.docket-test/antreo-api/ef-bundles/20261008091800_InvoiceReconciliationIndexes.csproj',
   },
   { code: 'İE-0033', repo: 'antreo-api', title: 'Log düzeni', stage: 2, state: 'ready', minutes: 25, account: 'zai-glm' },
   { code: 'İE-0015', repo: 'antreo-api', title: 'Stok uyarısı', stage: 3, state: 'ready', minutes: 3, account: 'claude-max', usd: 0.22 },
@@ -554,12 +558,20 @@ const approve = async (workOrderId: WorkOrderId, stage: number, at: EpochMs): Pr
   assert(decided.ok, `gate ${gate.id} did not pass: ${decided.ok ? '' : decided.error}`);
 };
 
+// The live stream's unbreakable witness (#831): a real run's tool targets are long absolute
+// paths with no break opportunities — exactly the text that widened `main` during live runs, and
+// the one the layout audit's L-14 must see on the detail screen it walks.
+const LONG_TARGET =
+  '/Users/eneskaradeniz/source/antreo/antreo-api/test/Antero.Api.ReconciliationTests/V2/Invoices/Reconciliation/InvoiceReconciliationBackgroundServiceTests/Antero.Api.ReconciliationBackgroundServiceTests.cs';
+
 const liveEvents = (plan: OrderPlan, startedAt: EpochMs): readonly AgentEvent[] => {
   const events: AgentEvent[] = [
     { type: 'session_started', at: startedAt, sessionRef: `oturum-${plan.code.toLowerCase()}` },
     { type: 'text', at: startedAt + MINUTE, delta: `${plan.title}: dosyalar okunuyor.` },
     { type: 'tool_call', at: startedAt + 2 * MINUTE, id: 'okuma-1', name: 'Read', target: 'src/service.ts' },
     { type: 'tool_result', at: startedAt + 2 * MINUTE + 5_000, id: 'okuma-1', ok: true },
+    { type: 'tool_call', at: startedAt + 2 * MINUTE + 10_000, id: 'komut-1', name: 'Bash', target: LONG_TARGET },
+    { type: 'tool_result', at: startedAt + 2 * MINUTE + 20_000, id: 'komut-1', ok: true },
     { type: 'text', at: startedAt + 3 * MINUTE, delta: 'Plan hazır, değişiklikler yazılıyor.' },
   ];
   if (plan.usd !== undefined) {
