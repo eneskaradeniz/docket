@@ -83,6 +83,7 @@ const child = spawn(
 );
 
 let stopping = false;
+let timedOut = false;
 const stop = () => {
   if (stopping) return;
   stopping = true;
@@ -97,7 +98,7 @@ child.on('exit', (code) => {
   // out again, so only the launcher-created temp directory is cleaned up.
   if (!keepDataDir) rmSync(dataDir, { recursive: true, force: true });
   if (!stopping) console.error(`cdp: the app exited on its own (code ${code ?? 'signal'})`);
-  process.exit(stopping ? 0 : 1);
+  process.exit(timedOut ? 1 : stopping ? 0 : 1);
 });
 
 // Attaching too early is a connection refused; the poll prints the port only once it truly
@@ -112,16 +113,21 @@ for (;;) {
   }
   if (Date.now() - startedAt > 30_000) {
     console.error('cdp: the debugging port never answered — stopping the app');
+    timedOut = true;
     stop();
     break;
   }
   await new Promise((r) => setTimeout(r, 250));
 }
-console.log(`cdp: port ${PORT} answering at http://localhost:${PORT}/json/version`);
-if (keepDataDir) {
-  console.log(`cdp: data dir ${dataDir} (kept)`);
-  console.log('cdp: Ctrl-C stops the app; the data dir is kept for the next launch');
-} else {
-  console.log(`cdp: data dir ${dataDir}`);
-  console.log('cdp: Ctrl-C stops the app and removes the data dir');
+// The timeout path breaks out of the poll as well, and these lines would report a success that
+// never happened; that run ends in the exit handler, which removes the temp dir, then exits 1.
+if (!timedOut) {
+  console.log(`cdp: port ${PORT} answering at http://localhost:${PORT}/json/version`);
+  if (keepDataDir) {
+    console.log(`cdp: data dir ${dataDir} (kept)`);
+    console.log('cdp: Ctrl-C stops the app; the data dir is kept for the next launch');
+  } else {
+    console.log(`cdp: data dir ${dataDir}`);
+    console.log('cdp: Ctrl-C stops the app and removes the data dir');
+  }
 }
