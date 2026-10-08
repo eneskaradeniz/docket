@@ -35,6 +35,7 @@ import {
   DEV_BRIDGE_MAX_BYTES,
   DEV_OPS,
   DEV_RING_LIMIT,
+  SUMMARY_MAX,
   createDevBridge,
   dataDirOutsideDocketHome,
   devBridgeEnabled,
@@ -371,6 +372,35 @@ describe('events.since', () => {
       after = body.after as number;
     }
     expect(uiRows).toBe(DEV_RING_LIMIT);
+  });
+
+  it('E-7: an answered permission ask is summarized and closed without a tool_result', async () => {
+    const world = seededWorld();
+    world.runEvents = [
+      {
+        runId: RUN_ID,
+        events: [
+          ...seededRunEvents.filter((event) => event.type !== 'tool_result'),
+          { type: 'permission_answered', at: 45, id: 'ask-1', decision: 'allow' },
+        ],
+      },
+    ];
+    const bridge = makeBridge(world);
+    const body = await callJson(bridge, 'events.since', {});
+    const row = (body.events as { readonly type: string; readonly summary?: string }[]).find(
+      (candidate) => candidate.type === 'permission_answered',
+    );
+    // A headline only: the event's own fields, no payload.
+    expect(row?.summary).toBe('permission_answered ask-1 allow');
+    expect((row?.summary ?? '').length).toBeLessThanOrEqual(SUMMARY_MAX);
+    // The bridge rides the injected fold for open asks, so the answer alone closes ask-1: the
+    // ended run holds no open ask and INV-3 stays green.
+    const store = await callJson(bridge, 'store.read', { name: 'open_asks' });
+    expect(store.rows).toEqual([]);
+    const invariants = await callJson(bridge, 'invariants', {});
+    expect(
+      (invariants.results as readonly { readonly id: string; readonly ok: boolean }[]).find((result) => result.id === 'INV-3')?.ok,
+    ).toBe(true);
   });
 });
 
