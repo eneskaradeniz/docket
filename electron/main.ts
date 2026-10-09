@@ -19,7 +19,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type { Actor, DispatchLimits, QueueItem } from '../src/domain/index';
+import type { Actor, QueueItem } from '../src/domain/index';
 import { deriveWorkOrderState, foldRun } from '../src/domain/index';
 import { COMMAND_REGISTRY, QUERY_REGISTRY, createApi } from '../src/api/index';
 import type { Api, RunEventFeed, UiEvent } from '../src/api/index';
@@ -31,6 +31,7 @@ import {
   dispatcherTick,
   evaluateMachineGates,
   executeRun,
+  getDispatchLimits,
 } from '../src/application/index';
 import type { CipherFns, NodeDeps } from '../src/infrastructure/index';
 import {
@@ -52,10 +53,6 @@ import {
 } from './window-options';
 
 const here = dirname(fileURLToPath(import.meta.url));
-
-/** The domain contract's documented defaults: enough concurrency for one operator's work orders
- *  without dogpiling a single account; per-account caps arrive with account settings later. */
-const DISPATCH_LIMITS: DispatchLimits = { global: 4, perRepo: 3, perAccount: {} };
 
 /** The dispatcher polls: queue items arrive from commands and scheduled resumes, and neither can
  *  push into this process, so a short cadence is the whole scheduler. */
@@ -400,6 +397,7 @@ const startApp = async (): Promise<void> => {
   // defs' marks ride the same way (P-25): the api reads them for `providers.marks`, the query
   // every account badge resolves its mark through.
   const api = createApi(nodeDeps, board, discovery, node.repos, updates, builtinProviderMarks, node.adoption, node.quota);
+  const quotaProbes = node.quota.probes; // read here: `node` is not narrowed inside the tick closure
 
   // The dev bridge (test launches only): it exists when the flag is set, the app is not packaged
   // and DOCKET_DATA_DIR points outside the operator's real data directory — the same rule the CDP
@@ -442,10 +440,18 @@ const startApp = async (): Promise<void> => {
 
   // The dispatcher loop: each tick may start queued items; each started item then runs to
   // completion on its own, so one slow agent never delays the next tick.
+  // Non-reentrant: an overlapping tick would list the queue before the first removed its item and
+  // start the same queue item twice.
+  let dispatching = false;
   dispatchTimer = setInterval(() => {
-    void dispatcherTick(nodeDeps, { limits: DISPATCH_LIMITS }, (item) => {
+    if (dispatching) return;
+    dispatching = true;
+    // The limits are read per tick so a settings change applies without a restart.
+    void getDispatchLimits(nodeDeps).then((limits) => dispatcherTick(nodeDeps, { limits, probes: quotaProbes }, (item) => {
       void runStartedItem(api, board, item);
-    }).catch((error) => console.error('dispatcher tick failed', error));
+    })).catch((error) => console.error('dispatcher tick failed', error)).finally(() => {
+      dispatching = false;
+    });
   }, DISPATCH_INTERVAL_MS);
 
   createWindow();

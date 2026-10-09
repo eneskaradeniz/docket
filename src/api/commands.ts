@@ -3,6 +3,7 @@
 export type Command =
   | { readonly type: 'workOrder.open'; readonly project: string; readonly repo: string; readonly title: string; readonly flow?: string; readonly task?: string }
   | { readonly type: 'task.open'; readonly project: string; readonly task: string }
+  | { readonly type: 'roadmap.runPhase'; readonly project: string; readonly phase: string } // ok → { ok: true, phaseRun } (A-98)
   | { readonly type: 'project.attach'; readonly path: string; readonly repos?: readonly { readonly repo: string; readonly path: string }[] }
   | { readonly type: 'project.create'; readonly mode: 'existing'; readonly path: string; readonly name: string }
   | { readonly type: 'project.create'; readonly mode: 'blank'; readonly parent: string; readonly name: string } // ok → { ok: true, id: <project slug> }
@@ -26,6 +27,7 @@ export type Command =
   | { readonly type: 'account.consent.grant'; readonly id: string; readonly model: string; readonly cap?: { readonly scope: string; readonly amountUsd: number; readonly warnPercent: number } }
   | { readonly type: 'account.consent.revoke'; readonly id: string; readonly model: string }
   | { readonly type: 'binding.save'; readonly role: string; readonly accounts: { readonly accountId: string; readonly model?: string }[]; readonly thinking?: { readonly level?: string; readonly effort?: string }; readonly tier?: string }
+  | { readonly type: 'settings.setDispatch'; readonly global: number; readonly perRepo: number; readonly perAccount: Readonly<Record<string, number>> } // errors: invalid_limits, unknown_account
   | { readonly type: 'quota.refresh'; readonly id?: string } // answers { ok: true } after the polls end (A-81)
   | { readonly type: 'capabilities.import'; readonly identities: readonly string[] }
   | { readonly type: 'app.update.check' }
@@ -40,8 +42,16 @@ export interface CapabilityImportResultView {
   readonly reason: string | null;
 }
 
+/** What `roadmap.runPhase` answers (A-98): per task the work orders it opened, and the failures
+ *  collected without stopping the other tasks (A-99). */
+export interface PhaseRunView {
+  readonly opened: readonly { readonly task: string; readonly workOrders: readonly string[] }[];
+  readonly failed: readonly { readonly task: string; readonly workOrder?: string; readonly error: string }[];
+}
+
 export type CommandResult =
-  /** `results` rides only `capabilities.import`: one row per requested identity, in input order. */
-  | { readonly ok: true; readonly id?: string; readonly results?: readonly CapabilityImportResultView[] }
+  /** `results` rides only `capabilities.import`: one row per requested identity, in input order.
+   *  `phaseRun` rides only `roadmap.runPhase`. */
+  | { readonly ok: true; readonly id?: string; readonly results?: readonly CapabilityImportResultView[]; readonly phaseRun?: PhaseRunView }
   /** `roles` rides only `binding_exists`: the roles whose bindings still reference the account. */
   | { readonly ok: false; readonly code: string; readonly roles?: readonly string[] };

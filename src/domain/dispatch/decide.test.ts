@@ -406,4 +406,13 @@ describe('decideDispatch', () => {
 
     expect(decideDispatch([continuation], snapshotOf())).toEqual([startFor(continuation)]);
   });
+
+  it('requeryFirst rides the item but changes no decision — the application re-reads quota before it asks', () => {
+    const resume: QueueItem = {
+      ...itemOf({ id: qid(1), workOrderId: woid('10') }),
+      requeryFirst: true,
+    };
+
+    expect(decideDispatch([resume], snapshotOf())).toEqual([startFor(resume)]);
+  });
 });

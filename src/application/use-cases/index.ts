@@ -20,4 +20,5 @@ export * from './candidate-quota';
 export * from './stage-files';
 export * from './capability-candidates';
 export * from './capability-import';
+export * from './settings';
 

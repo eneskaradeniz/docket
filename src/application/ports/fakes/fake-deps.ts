@@ -3,6 +3,7 @@ import type { AppDeps } from '../deps';
 
 import { createFakeAccountRepo } from './fake-account-repo';
 import { createFakeAccountTestRepo } from './fake-account-test-repo';
+import { createFakeAppSettingsRepo } from './fake-app-settings-repo';
 import { createFakeBindingRepo } from './fake-binding-repo';
 import { createFakeCapabilityCatalog } from './fake-capability-catalog';
 import { createFakeCapabilityDiscovery } from './fake-capability-discovery';
@@ -59,6 +60,7 @@ export const createFakeDeps = (overrides: Partial<AppDeps> = {}): AppDeps => ({
   instructionFiles: createFakeInstructionFiles(),
   checkpoints: createFakeCheckpointCommitter(),
   accountTests: createFakeAccountTestRepo(),
+  settings: createFakeAppSettingsRepo(),
   scratch: createFakeScratchDirs(),
   repoFolders: createFakeRepoFolders(),
   worktreeFiles: createFakeWorktreeFiles(),

@@ -79,6 +79,8 @@ const SUCCESS_KEYS: Readonly<Record<Command['type'], LabelKey>> = {
   'workOrder.close': 'success.workOrder.close',
   'workOrder.enqueue': 'success.workOrder.enqueue',
   'task.open': 'success.task.open',
+  // No surface issues it yet (the roadmap-page button is a UI issue); it borrows the task-open copy.
+  'roadmap.runPhase': 'success.task.open',
   'project.attach': 'success.project.attach',
   'project.create': 'newProject.created',
   'repo.register': 'success.repo.register',
@@ -98,6 +100,8 @@ const SUCCESS_KEYS: Readonly<Record<Command['type'], LabelKey>> = {
   'account.consent.grant': 'success.account.consent.grant',
   'account.consent.revoke': 'success.account.consent.revoke',
   'binding.save': 'success.binding.save',
+  // The limits panel is a later issue; until it brings its own copy the write borrows the neutral one.
+  'settings.setDispatch': 'success.account.save',
   // No surface issues a refresh yet; it is a read, so it borrows the neutral account copy.
   'quota.refresh': 'success.account.save',
   // The import surface is part 3; the per-identity outcomes ride `results`, the toast is neutral.

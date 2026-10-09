@@ -26,7 +26,7 @@ import type {
 } from '../../domain/index';
 import { deriveWorkOrderState, isUlid, parseSlug, parseUlid } from '../../domain/index';
 
-import type { AccountRecord, AppDeps } from '../ports';
+import type { AccountRecord, AppDeps, MeterReading, QuotaProbe, QuotaProbeError, QuotaProbeResolver } from '../ports';
 import {
   createFakeClock,
   createFakeDefinitionStore,
@@ -603,6 +603,7 @@ describe('applyLimitDecision', () => {
       priority: 0,
       enqueuedAt: 1_000,
       notBefore: 9_500,
+      requeryFirst: true,
     });
     const run = await h.deps.runs.get(RUN1);
     expect(run?.autoResumesUsed).toBe(2);
@@ -1226,5 +1227,200 @@ describe('dispatcherTick', () => {
 
     expect(result).toStrictEqual({ decisions: [], started: [] });
     expect(recorder.items).toStrictEqual([]);
+  });
+});
+
+// --- dispatcherTick: re-query before a scheduled resume (A-101..A-104) ---------------------------------
+
+/** One poll answer: readings for an allowance pool, or a probe failure. */
+type ProbeAnswer = Result<readonly MeterReading[], QuotaProbeError>;
+
+const allowanceReading = (remaining: number, resetsAt: EpochMs): MeterReading => ({
+  pool: { label: 'allowance', kind: 'allowance', appliesTo: 'all' },
+  meter: {
+    label: 'weekly',
+    cadence: 'rolling_from_first_use',
+    unit: 'fraction',
+    remaining,
+    resetsAt,
+    resetPrecision: 'exact',
+    observedAt: 10_000,
+    source: 'polled',
+  },
+});
+
+/** A probe that answers from a script (the last answer repeats) and records which account asked. */
+const scriptedResolver = (
+  answers: readonly ProbeAnswer[],
+): { readonly resolver: QuotaProbeResolver; readonly asked: AccountId[] } => {
+  const asked: AccountId[] = [];
+  let next = 0;
+  const probe: QuotaProbe = {
+    poll: async (_defId, _binPath, context) => {
+      if (context.accountId !== null) asked.push(context.accountId);
+      const answer = answers[Math.min(next, answers.length - 1)];
+      next += 1;
+      if (answer === undefined) throw new Error('script needs at least one answer');
+      return answer;
+    },
+  };
+  return {
+    resolver: { forProvider: (defId, routeKind) => (routeKind === undefined && defId === 'provider-x' ? probe : undefined) },
+    asked,
+  };
+};
+
+const BLOCKED: ProbeAnswer = { ok: true, value: [allowanceReading(0, 50_000)] };
+const RESET: ProbeAnswer = { ok: true, value: [allowanceReading(1, 90_000)] };
+const PROBE_DOWN: ProbeAnswer = { ok: false, error: 'probe_failed' };
+
+/** A scheduled-resume item whose time has passed at the harness clock (10 000). */
+const resumeItem = (
+  id: QueueItemId,
+  workOrderId: WorkOrderId,
+  accountId: AccountId,
+  over: { readonly requeryFirst?: boolean } = {},
+): QueueItem => ({
+  ...queueItem(id, workOrderId, route(accountId), { notBefore: 9_500 }),
+  ...(over.requeryFirst === false ? {} : { requeryFirst: true as const }),
+});
+
+const requeryHarness = async (): Promise<Harness> => {
+  const h = makeHarness(10_000);
+  await h.deps.accounts.save(account(A1));
+  await h.deps.accounts.save(account(A2));
+  return h;
+};
+
+describe('dispatcherTick re-query first', () => {
+  it('A-101: schedule_resume queues the item with requeryFirst; the other decisions do not', async () => {
+    const h = makeHarness();
+    await createWorkOrder(h, WO1);
+    await createRun(h, RUN1, WO1, route(A1, 'model-x'));
+
+    const scheduled = await applyLimitDecision(h.deps, {
+      runId: RUN1,
+      decision: { kind: 'schedule_resume', at: 9_500, requeryFirst: true },
+    });
+    const switched = await applyLimitDecision(h.deps, { runId: RUN1, decision: { kind: 'switch_pool', poolId: POOL1 } });
+
+    expect(scheduled.ok && switched.ok).toBe(true);
+    const items = await queueAfter(h);
+    expect(items.find((item) => item.notBefore !== undefined)?.requeryFirst).toBe(true);
+    expect(items.filter((item) => item.notBefore === undefined).map((item) => item.requeryFirst)).toStrictEqual([undefined]);
+  });
+
+  it('A-102: a due requeryFirst item is not started; one poll per account per tick, then the flag is cleared on the stored item', async () => {
+    const h = await requeryHarness();
+    await createWorkOrder(h, WO1);
+    await createWorkOrder(h, WO2);
+    await createWorkOrder(h, WO3);
+    await h.deps.queue.put(resumeItem(Q1, WO1, A1));
+    await h.deps.queue.put(resumeItem(Q2, WO2, A1));
+    await h.deps.queue.put(resumeItem(Q3, WO3, A2));
+    const { resolver, asked } = scriptedResolver([BLOCKED]);
+    const recorder = startRecorder();
+
+    const result = await dispatcherTick(h.deps, { limits: LIMITS(), probes: resolver }, recorder.callback);
+
+    expect(result).toStrictEqual({ decisions: [], started: [] });
+    expect(recorder.items).toStrictEqual([]);
+    expect([...asked].sort()).toStrictEqual([A1, A2]);
+    const stored = await queueAfter(h);
+    expect(stored.map((item) => item.id)).toStrictEqual([Q1, Q2, Q3]);
+    for (const item of stored) {
+      expect(item.requeryFirst).toBeUndefined();
+      expect(item.notBefore).toBe(9_500);
+    }
+  });
+
+  it('A-102: items without requeryFirst, or whose notBefore has not passed, behave exactly as before', async () => {
+    const h = await requeryHarness();
+    await createWorkOrder(h, WO1);
+    await createWorkOrder(h, WO2);
+    await createWorkOrder(h, WO3);
+    await h.deps.queue.put(resumeItem(Q1, WO1, A1, { requeryFirst: false }));
+    const early: QueueItem = { ...resumeItem(Q2, WO2, A1), notBefore: 20_000 };
+    await h.deps.queue.put(early);
+    await h.deps.queue.put(queueItem(Q3, WO3, route(A2)));
+    const { resolver, asked } = scriptedResolver([BLOCKED]);
+    const recorder = startRecorder();
+
+    const result = await dispatcherTick(h.deps, { limits: LIMITS(), probes: resolver }, recorder.callback);
+
+    expect(asked).toStrictEqual([]);
+    expect(result.started).toStrictEqual([Q1, Q3]);
+    expect(result.decisions).toContainEqual({ item: Q2, kind: 'wait', reason: 'not_before', until: 20_000 });
+    expect(await queueAfter(h)).toStrictEqual([early]);
+  });
+
+  it('A-102: without a probe resolver a requeryFirst item starts as it did before the re-query existed', async () => {
+    const h = await requeryHarness();
+    await createWorkOrder(h, WO1);
+    await h.deps.queue.put(resumeItem(Q1, WO1, A1));
+
+    const result = await dispatcherTick(h.deps, { limits: LIMITS() }, startRecorder().callback);
+
+    expect(result.started).toStrictEqual([Q1]);
+  });
+
+  it('A-103: the tick after the re-query decides on the fresh meters — still blocked keeps the item queued with its reason', async () => {
+    const h = await requeryHarness();
+    await createWorkOrder(h, WO1);
+    await h.deps.queue.put(resumeItem(Q1, WO1, A1));
+    const { resolver, asked } = scriptedResolver([BLOCKED]);
+    const recorder = startRecorder();
+    const config = { limits: LIMITS(), probes: resolver };
+
+    await dispatcherTick(h.deps, config, recorder.callback);
+    const second = await dispatcherTick(h.deps, config, recorder.callback);
+
+    expect(second.decisions).toStrictEqual([{ item: Q1, kind: 'wait', reason: 'quota', until: 50_000 }]);
+    expect(recorder.items).toStrictEqual([]);
+    expect((await queueAfter(h)).map((item) => item.id)).toStrictEqual([Q1]);
+    expect(asked).toStrictEqual([A1]); // the flag is gone, so the second tick polls nothing
+  });
+
+  it('A-103: when the poll shows the reset, the next tick starts the run', async () => {
+    const h = await requeryHarness();
+    await createWorkOrder(h, WO1);
+    await h.deps.queue.put(resumeItem(Q1, WO1, A1));
+    const { resolver } = scriptedResolver([RESET]);
+    const recorder = startRecorder();
+    const config = { limits: LIMITS(), probes: resolver };
+
+    const first = await dispatcherTick(h.deps, config, recorder.callback);
+    expect(first.started).toStrictEqual([]);
+    const second = await dispatcherTick(h.deps, config, recorder.callback);
+
+    expect(second.started).toStrictEqual([Q1]);
+    expect(recorder.items.map((item) => item.id)).toStrictEqual([Q1]);
+    expect(await queueAfter(h)).toStrictEqual([]);
+  });
+
+  it('A-104: a failing poll clears nothing and starts nothing; the third consecutive failure releases the item', async () => {
+    const h = await requeryHarness();
+    await createWorkOrder(h, WO1);
+    await h.deps.queue.put(resumeItem(Q1, WO1, A1));
+    const { resolver, asked } = scriptedResolver([PROBE_DOWN]);
+    const recorder = startRecorder();
+    const config = { limits: LIMITS(), probes: resolver };
+
+    for (const failures of [1, 2]) {
+      const tick = await dispatcherTick(h.deps, config, recorder.callback);
+      expect(tick).toStrictEqual({ decisions: [], started: [] });
+      expect(asked).toHaveLength(failures);
+      expect((await queueAfter(h))[0]?.requeryFirst).toBe(true);
+    }
+
+    // The third failure releases the flag but still does not start in that tick.
+    const third = await dispatcherTick(h.deps, config, recorder.callback);
+    expect(third.started).toStrictEqual([]);
+    expect((await queueAfter(h))[0]?.requeryFirst).toBeUndefined();
+
+    // Released: the headroom rule alone decides, and no meter is stored as blocked, so it starts.
+    const fourth = await dispatcherTick(h.deps, config, recorder.callback);
+    expect(fourth.started).toStrictEqual([Q1]);
+    expect(asked).toHaveLength(3);
   });
 });
