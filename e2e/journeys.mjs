@@ -13,12 +13,13 @@
 // except the work-order codes: the prototype's sparse İE-nnnn exist nowhere as numbers, so the
 // assertions use the seed's derived codes (A-29 number, U-22 format; the seed manifest maps them).
 import { strict as assert } from 'node:assert';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ROOT, launchDesignApp, setWindow } from './design-app.mjs';
 import { acquireE2eLock } from './lock.mjs';
 import { SIZE_PLAN, comboPlan, resolveSizes } from './layout-rules.mjs';
 import { appendJourney, beginReport, REPORT_PATH } from './report.mjs';
+import { launchWizardApp } from './wizard-app.mjs';
 
 const OUT = join(ROOT, 'e2e', '.out', 'journeys');
 mkdirSync(OUT, { recursive: true });
@@ -440,6 +441,98 @@ for (const [sizeName, theme] of combos) {
     await shot('back-from-detail');
   });
 
+  await handle.app.close();
+}
+
+// J-9 walks the wizard on its own world (U-58 … U-60): a fresh data dir holding two adopted
+// accounts whose fixture config directories share one capability, and no project — the wizard's
+// own precondition. It runs once per run, not per size × theme combination: the wizard is a
+// first-run surface with its own launch, and its walk asserts the step machine, not the layout.
+{
+  const handle = await launchWizardApp();
+  const { page } = handle;
+  const text = (t) => page.getByText(t, { exact: false }).first();
+  const see = async (t) => text(t).waitFor({ state: 'visible', timeout: WAIT });
+  // The wizard's own open read includes the accounts' catalog probes (A-86's default read), so
+  // the first Hesaplar rows can land behind them — that one wait breathes slower than the rest.
+  const seeSlow = async (t) => text(t).waitFor({ state: 'visible', timeout: 20_000 });
+  const click = async (t) => text(t).click({ timeout: WAIT });
+  const button = async (name) => page.getByRole('button', { name }).first().click({ timeout: WAIT });
+
+  let jn = 'J-9';
+  let stepNo = 0;
+  let steps = [];
+  const shot = async (label) => {
+    stepNo += 1;
+    steps.push(label);
+    const slug = label.toLowerCase().replace(/[^a-z0-9ğüşıöç]+/g, '-').replace(/^-|-$/g, '');
+    await page.screenshot({ path: join(OUT, `${jn}-${stepNo}-${slug}.png`) });
+  };
+  const title = 'J-9: wizard: Yetenekler reads both accounts, syncs the shared row and imports it at the finish';
+  total += 1;
+  try {
+    // Hoş geldin → Hesaplar: the two seeded accounts, both already selected.
+    await see('Hoş geldin');
+    await shot('welcome');
+    await button('Devam');
+    await seeSlow('Claude Code · Kişisel');
+    await seeSlow('Claude Code · İş');
+    await shot('accounts');
+    await button('Devam');
+    // Yetenekler: one group per account; the shared capability is one row in both groups.
+    await page.locator('[data-cap-group]').first().waitFor({ state: 'visible', timeout: WAIT });
+    const groupCount = await page.locator('[data-cap-group]').count();
+    assert(groupCount === 2, `expected 2 capability groups, saw ${groupCount}`);
+    await page.locator('[data-cap-row="mcp:db|docker"]').waitFor({ state: 'visible', timeout: WAIT });
+    const sharedRows = page.locator('[data-cap-row="mcp:fetch|npx"]');
+    assert((await sharedRows.count()) === 2, `the shared capability should list in both groups, saw ${await sharedRows.count()}`);
+    await shot('capabilities');
+    // Toggling one row syncs the other by identity (U-59).
+    const [accA, accB] = handle.seed.accounts.map((account) => account.id);
+    await page.locator(`[data-cap-group="${accA}"] [data-cap-row="mcp:fetch|npx"] button`).click({ timeout: WAIT });
+    await page.waitForFunction(
+      ([a, b]) =>
+        document.querySelector(`[data-cap-group="${a}"] [data-cap-row="mcp:fetch|npx"] button`)?.getAttribute('aria-checked') === 'true' &&
+        document.querySelector(`[data-cap-group="${b}"] [data-cap-row="mcp:fetch|npx"] button`)?.getAttribute('aria-checked') === 'true',
+      [accA, accB],
+      { timeout: WAIT },
+    );
+    await shot('row-synced');
+    // The ⓘ popover lists the Kaynaklar — one "Asistan · Hesap" per source.
+    await page.getByRole('button', { name: 'Bilgi: fetch' }).first().click({ timeout: WAIT });
+    await see('Kaynaklar');
+    await see('Claude Code · Kişisel');
+    await see('Claude Code · İş');
+    await shot('info-kaynaklar');
+    await page.keyboard.press('Escape');
+    // The summary counts the one picked identity, then the walk goes on to the finish.
+    await see('1 yetenek');
+    await button('Devam');
+    await see('İşleri önce birinci sıradaki hesap yapar');
+    await button('Devam');
+    await see('Önerilen ayarlar uygulandı');
+    await button('Kurulumu bitir');
+    // The finish's capability line takes its check only when the import really ran (U-60).
+    await page.locator('[data-finish-line="capabilities"][data-ps="done"]').waitFor({ state: 'visible', timeout: WAIT });
+    await shot('finish-capability-line');
+    await page.locator('[data-wizard]').waitFor({ state: 'detached', timeout: WAIT });
+    await see('Kurulum tamamlandı');
+    await shot('done');
+    // The import's own evidence: the definition file exists in the data dir. The yaml stores the
+    // candidate's own fields — kind, name, command — the identity is derived from (R-62), so the
+    // assertion reads those, not a literal identity string.
+    const capsDir = join(handle.seed.dataDir, 'capabilities');
+    const files = readdirSync(capsDir);
+    const wrote = files.includes('fetch.yaml') && readFileSync(join(capsDir, 'fetch.yaml'), 'utf8').includes('command: npx');
+    assert(wrote, `capabilities.import left no definition for the shared capability (${files.join(', ')})`);
+    console.log(`  ok   ${title}`);
+    appendJourney({ id: title, status: 'ok', steps });
+  } catch (error) {
+    failures.push(title);
+    console.log(`  FAIL ${title}\n       ${String(error).split('\n')[0]}`);
+    appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).split('\n')[0] });
+    await page.screenshot({ path: join(OUT, 'J-9-FAIL.png') }).catch(() => undefined);
+  }
   await handle.app.close();
 }
 

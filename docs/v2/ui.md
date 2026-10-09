@@ -605,6 +605,10 @@ being reset.
   selected account with its draft, writes caps and consents, and issues `binding.save` for every
   `roles.list` role with the chain and the role's recommended work style; the wizard does not
   reappear while a project exists. `back` keeps every entry.
+- **U-35a** (amends U-35; 2026-10-09, #860) Yetenekler's data source and skip rule moved to U-58:
+  the step reads `capabilities.candidates` — no composed source is wired into the store — and is
+  skipped while that read has not finished with at least one candidate (an empty answer or a
+  failed query), which is also the standing on a machine with no adopted account.
 - **U-36** (theme) Tema is Sistem · Koyu · Açık, persisted per viewer in local storage
   (`docket.theme.v1`, a corrupt value reads as Sistem); Sistem follows `prefers-color-scheme` live;
   the choice sets `data-theme` on the root, which the tokens already read.
@@ -714,6 +718,40 @@ container.
   list heading, the truncated-list note, the truncated-preview note — and a failed read shows the
   failure code's label, never the raw code.
 
+## Wizard Yetenekler — the capability step (U-58 … U-60)
+
+- **U-58** (setup wizard; amends U-35 through U-35a; added 2026-10-09, #860) Yetenekler reads
+  `capabilities.candidates` (A-94 — the query scans on every call, nothing is cached) when the
+  Hesaplar step completes, and again whenever the set of adopted accounts changes (the
+  `accounts.changed` event). It is never read before an account exists: the scan walks the
+  account store's own identity directories (A-90), so the answer would be empty by construction.
+  While the query runs the step shows the Hesaplar skeleton pattern (placeholder groups with
+  single-line rows) and the primary footer slot stays disabled until the one query resolves. The
+  step is skipped — "–" in the rail — when the read has finished with no candidate: an empty
+  answer or a failed query alike, and a query error surfaces nowhere: not in the rail, not at the
+  end of the walk. A read that resolves into that skip while the user stands on the step moves
+  the walk on by itself.
+- **U-59** (setup wizard; added 2026-10-09, #860) One group per account the candidates name in
+  their `sources`, titled the way Hesaplar reads that account — "Asistan · Hesap" (the provider's
+  name · the account's label); the group count equals the number of distinct accounts across the
+  sources. A candidate found in several accounts is one capability: it appears in every group
+  that found it, and its checkbox state is synced by `identity`. The row is the Hesaplar card's
+  single-line form (52px): no icon, the kind in mono, the name; the description, the command or
+  path and the ⓘ **Kaynaklar** list (one "Asistan · Hesap" per source) live in the row's ⓘ
+  popover — information only. A candidate with `imported: true` is shown checked and disabled
+  with the label "Eklendi"; it is never sent to the import and never counts in the summary
+  line's "n yetenek" — the number of distinct selected identities. `truncated: true` draws one
+  muted note line ("Liste kısaltıldı") under the groups; there is no pagination.
+- **U-60** (setup wizard; added 2026-10-09, #860) The finish walks a capability phase after the
+  accounts phase and before the leave: one `capabilities.import { identities }` call with the
+  distinct selected, not-yet-imported identities — no call at all when nothing is selected, and
+  no progress line for the phase in that case either. A `rejected` result row or a failure of the
+  whole call never blocks the finish: the rejected rows are listed (name and the rejection
+  reason's label, never the raw code) as a note under the finish list, and they ride the handoff
+  as the wizard's one warn toast — the window's fade would hide the in-window note before it
+  could be read. `already_present` counts as success. The picks stay a draft in the store until
+  the finish, like every wizard choice.
+
 ## Verifying the shell — E2E layers (Phase 3.5)
 
 The shell is verified against the frozen prototype **rev 8** (`~/source/docket-tasarim/rev8/`:
@@ -753,7 +791,12 @@ belongs to the mobile app.
   Settings, and the nav's Telefon and Ayarlar rows open it on their own sections · J-7 ⌘K (or the
   sidebar's Ara row) opens the search palette and focuses its input · J-8 cockpit → open a project →
   back → forward (the bar's chevrons, ⌘[/⌘], dimmed at the ends; the palette owns its keys), and the
-  detail's ‹ Geri rides the same history. Each step asserts visible text and saves a screenshot.
+  detail's ‹ Geri rides the same history · J-9 the setup wizard, on its own fresh `DOCKET_DATA_DIR`
+  seeded with two accounts whose fixture config directories share one capability: Hoş geldin →
+  Hesaplar → Yetenekler shows one group per account and the shared capability as one row in both;
+  toggling one syncs the other, the ⓘ lists the Kaynaklar, the finish walks its capability line,
+  and the imported definition file exists in the data dir. Each step asserts visible text and saves
+  a screenshot.
 - **Layout audit** (pure DOM measurement, no pixel diff; each assertion named `L-n: …`, for every
   screen × size × theme):
   - **L-1** The sidebar's left edge is 0 and its width is 240px at every window size — it never
