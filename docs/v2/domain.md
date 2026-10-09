@@ -249,6 +249,23 @@ export type DefinitionIssueCode =
 export function validateDefinitions(input: unknown): Result<Definitions, readonly DefinitionIssue[]>;
 ```
 
+```ts
+// definitions/candidates.ts (added 2026-10-09, #850) — capability candidates found in an account's
+// config before the user imports them (#715 part 1). 'hook' is deferred (executable code).
+export type CapabilityCandidateKind = 'mcp' | 'skill' | 'context';
+export interface CapabilityCandidate {
+  readonly identity: string;                      // see rule R-62
+  readonly kind: CapabilityCandidateKind;
+  readonly name: string;
+  readonly sources: readonly AccountId[];         // sorted, unique
+  readonly command?: string;                      // mcp
+  readonly path?: string;                         // skill / context
+  readonly description?: string;
+}
+export function mergeCandidates(found: readonly CapabilityCandidate[]): readonly CapabilityCandidate[];
+export function candidateToDefinition(c: CapabilityCandidate, id: CapabilitySlug): Result<CapabilityDef, 'unsupported_kind' | 'missing_command' | 'missing_path'>;
+```
+
 Rules:
 - **R-3** All issues are collected; validation never stops at the first issue.
 - **R-4** Ids are unique per kind (roles, flows, capabilities); stage ids unique within a flow; gate ids unique within a stage.
@@ -257,6 +274,10 @@ Rules:
 - **R-7** `command` gates must name a `commandSet` present in `repo.commandSets` when a repo definition is given.
 - **R-8** A `CapabilityDef` env value that is a bare string (not `{literal}` / `{secretRef}`) is `wrong_type`; a `{literal}` whose key matches `/(KEY|TOKEN|SECRET|PASSWORD)/i` is `secret_literal`.
 - **R-9** `repo.defaultFlow` must be listed in `repo.flows`, and every listed flow must exist.
+- **R-62** (added 2026-10-09, #850) `CapabilityCandidate.identity` = `kind + ':' + name` for skill/context (case-sensitive) and `'mcp:' + name + '|' + command` for mcp (a missing command joins as the empty string; the gap surfaces at import as `missing_command`, never as a merge error); two candidates with equal identity are one capability. `mergeCandidates` derives the merge key from the candidate's own fields by this formula — an input's `identity` string is not the key — and writes the canonical identity into its output, so a scanner cannot drift the merge.
+- **R-63** (added 2026-10-09, #850) `mergeCandidates`: equal identity → one candidate whose `sources` is the sorted unique union; first-seen order of identities otherwise; never mutates inputs; a conflicting `command`/`path`/`description` keeps the lexicographically smallest account's value (every source of a candidate backs its values; a value with no backing account loses to any account-backed one, and a tie keeps the first-seen value, so merging a merged output changes nothing).
+- **R-64** (added 2026-10-09, #850) a candidate never carries an env value or a secret: the type has no field for one, and `candidateToDefinition` for `mcp` copies only the command string, never environment (`args` and `env` start empty; `description` is dropped — a `CapabilityDef` has no field for it).
+- **R-65** (added 2026-10-09, #850) `candidateToDefinition` output passes `validateDefinitions`; `mcp` without command → `missing_command`; skill/context without path → `missing_path`; a kind outside `CapabilityCandidateKind` (the deferred `hook`, or a plain-JS caller's stray value) → `unsupported_kind`.
 - **R-51** `stage.reviewOf` must name a stage of the same flow with a lower index and a non-null role (`bad_review_of` otherwise; a stage cannot review itself or a human-only stage). `stage.tier` must be a `Tier` and `stage.thinking` a `ThinkingChoice` (`wrong_type` otherwise).
 - **R-46** `ProjectDef`: `repos` is non-empty (`empty_repos`), has no duplicates (`duplicate_id`), and
   contains `mainRepo` (`main_repo_not_listed`); a `budget`, when present, must be a valid `SpendCap`
