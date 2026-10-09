@@ -475,7 +475,7 @@ export function ShellScreen({
           />
         </nav>
   
-        <main ref={mainRef} className="@container min-w-0 overflow-y-auto px-[22px] py-[18px]">
+        <main ref={mainRef} className="@container min-w-0 overflow-y-auto px-[1.375rem] py-[1.125rem]">
           {route.name === 'cockpit' ? (
             <CockpitScreen
               store={cockpit}

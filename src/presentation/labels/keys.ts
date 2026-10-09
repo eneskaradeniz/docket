@@ -227,6 +227,7 @@ export const LABEL_KEYS = [
   'cockpit.section.running',
   'cockpit.section.projects',
   'cockpit.section.closed',
+  'cockpit.section.queued',
   'cockpit.attention.empty',
   'cockpit.running.empty',
   'cockpit.projects.empty',

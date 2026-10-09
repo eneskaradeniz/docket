@@ -160,6 +160,6 @@ describe('work-order detail screen — the ask column contains unbreakable text'
   it('the ask row names its asking order on one truncated line, the full text on the title', async () => {
     const html = await draw(ASKING, [ASK_ROW]);
 
-    expect(html).toContain(`block truncate font-mono text-[13px] text-ink" title="${LONG_TITLE}">`);
+    expect(html).toContain(`block truncate font-mono text-[0.8125rem] text-ink" title="${LONG_TITLE}">`);
   });
 });

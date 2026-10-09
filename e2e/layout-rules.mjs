@@ -48,8 +48,12 @@ export const comboPlan = (sizes, { full = false } = {}) =>
     ? THEMES.flatMap((theme) => sizes.map((size) => ({ size, theme })))
     : sizes.flatMap((size) => (size.name === 'default' ? THEMES : ['dark']).map((theme) => ({ size, theme })));
 
-/** Per-screen main-column cap in px; `null` means "the board uses the full main width". */
-const MAIN_CAP = { kokpit: 1200, detay: 1280, 'yol-haritasi': 960, hesap: 960, pano: null, liste: null };
+/** The screens whose sections fill the main column (U-54): every top-level section's right edge
+ *  must sit within FILL_TOLERANCE_PX of the main column's content-box right edge. The board is
+ *  not among them — it keeps its own reading, the full main width. */
+const FILL_SCREENS = new Set(['kokpit', 'detay', 'yol-haritasi', 'hesap']);
+/** How far short of the main column's right edge a filling section may end (U-54's letter: 8 px). */
+const FILL_TOLERANCE_PX = 8;
 
 const skipped = (id, name) => ({ id, ok: true, skipped: true, detail: `skipped: no hook ${name}` });
 const result = (id, ok, detail) => ({ id, ok, detail });
@@ -73,18 +77,24 @@ const RESOLVE = `
 const inPage = (page, body, arg) =>
   page.evaluate(`(() => { const arg = ${JSON.stringify(arg ?? null)}; ${RESOLVE} ${body} })()`);
 
+// L-1 reads the sidebar against the live scale (L-1b amends L-1a, 2026-10-05, U-53): the sidebar
+// is 16.5 rem, so its pixel width follows the root clamp — 264 px at the clamp's 100 % floor,
+// 330 px at 125 % — instead of a fixed number. L-1's own readings stay: the left edge is 0, the
+// width is the same on every screen, and it never narrows (the clamp only grows it).
 const l1 = async (page, ctx, sel) => {
   if (!sel.sidebar) return skipped('L-1', 'sidebar');
   const m = await inPage(
     page,
     `const el = resolve(arg); if (!el) return null;
-    const r = el.getBoundingClientRect(); return { left: r.left, width: r.width, iw: innerWidth };`,
+    const r = el.getBoundingClientRect();
+    return { left: r.left, width: r.width, fs: getComputedStyle(document.documentElement).fontSize };`,
     sel.sidebar,
   );
   if (!m) return result('L-1', false, 'sidebar element not found');
-  const want = m.iw >= 1000 ? 264 : 208;
-  const ok = Math.abs(m.left) <= 0.5 && Math.abs(m.width - want) <= 0.5;
-  return result('L-1', ok, `left ${m.left.toFixed(1)} width ${m.width.toFixed(1)} want 0/${want}`);
+  const rem = parseFloat(m.fs);
+  const want = 16.5 * rem;
+  const ok = rem > 0 && Math.abs(m.left) <= 0.5 && Math.abs(m.width - want) <= 0.5;
+  return result('L-1', ok, `left ${m.left.toFixed(1)} width ${m.width.toFixed(1)} want 16.5rem × ${rem.toFixed(3)} = ${want.toFixed(1)}`);
 };
 
 const l2 = async (page) => {
@@ -142,21 +152,68 @@ const l4 = async (page) => {
   return result('L-4', bad.length === 0, bad.length === 0 ? 'no unmarked truncation' : `${bad.length} truncated: ${bad.slice(0, 3).join('; ')}`);
 };
 
+// L-5's fill half (L-5a amends L-5, 2026-10-05, U-54): on the four data screens every top-level
+// section reaches the main column's content-box right edge, measured with animations disabled —
+// a moving element's bounding box corrupts the reading (the width prototype's first round read
+// the cockpit's scan bar as %102 fill). A deliberately narrow surface (U-54's list) keeps its own
+// cap and is asserted against it instead of the edge. The board keeps L-5's own reading: the
+// full main width.
 const l5 = async (page, ctx, sel) => {
   if (!sel.main) return skipped('L-5', 'main');
-  const cap = MAIN_CAP[ctx.screen];
+  if (!FILL_SCREENS.has(ctx.screen)) {
+    const m = await inPage(
+      page,
+      `const main = resolve(arg); if (!main) return null;
+      const widths = [...main.children].map((c) => c.getBoundingClientRect().width).filter((w) => w > 0);
+      return { widest: Math.max(0, ...widths), avail: content(main) };`,
+      sel.main,
+    );
+    if (!m) return result('L-5', false, 'main element not found');
+    return result('L-5', m.widest >= m.avail - 1, `board width ${m.widest.toFixed(0)} of main ${m.avail.toFixed(0)}`);
+  }
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   const m = await inPage(
     page,
     `const main = resolve(arg); if (!main) return null;
-    const widths = [...main.children].map((c) => c.getBoundingClientRect().width).filter((w) => w > 0);
-    return { widest: Math.max(0, ...widths), avail: content(main) };`,
+    const cs = getComputedStyle(main);
+    const right = main.getBoundingClientRect().right - parseFloat(cs.paddingRight);
+    // Top-level sections: the screen wrapper inside main, then its own visible children.
+    const kids = [...main.children].flatMap((wrapper) => [...wrapper.children]);
+    const out = [];
+    for (const el of kids) {
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) continue;
+      const cs2 = getComputedStyle(el);
+      out.push({
+        name: (el.querySelector('h1,h2')?.textContent || el.tagName.toLowerCase()).trim().slice(0, 24),
+        right: r.right,
+        width: r.width,
+        cap: cs2.maxWidth,
+      });
+    }
+    return { right, out };`,
     sel.main,
   );
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
   if (!m) return result('L-5', false, 'main element not found');
-  if (cap === null) {
-    return result('L-5', m.widest >= m.avail - 1, `board width ${m.widest.toFixed(0)} of main ${m.avail.toFixed(0)}`);
+  const bad = [];
+  for (const kid of m.out) {
+    if (kid.cap !== 'none') {
+      // A deliberately narrow surface keeps its own cap (U-54's list) — assert against the cap.
+      const capPx = parseFloat(kid.cap);
+      if (!(kid.width <= capPx + 0.5)) bad.push(`"${kid.name}" exceeds its narrow cap ${kid.cap}`);
+      continue;
+    }
+    const short = m.right - kid.right;
+    if (short > FILL_TOLERANCE_PX) bad.push(`"${kid.name}" ends ${short.toFixed(1)}px short of the main column's edge`);
   }
-  return result('L-5', m.widest <= cap + 0.5, `content ${m.widest.toFixed(0)} cap ${cap}`);
+  return result(
+    'L-5',
+    bad.length === 0,
+    bad.length === 0
+      ? `${m.out.length} sections fill to the main column's right edge (±${FILL_TOLERANCE_PX}px, reduced motion)`
+      : bad.slice(0, 3).join('; '),
+  );
 };
 
 // L-6 reads the accounts frame's geometry (U-16): on a short window the body must be collapsed,

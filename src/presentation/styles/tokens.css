@@ -49,6 +49,15 @@
   --write: #8250df;
 }
 
+/* The proportional scale (U-53): the interface grows with the window — one rule on the root, in
+   CSS, never a JS measurement. 1440 px anchors 100 %; every px past it adds 0.0223 % until the
+   125 % clamp (a 2560-class window), so a 0.8125 rem line reads 13 px at 1280 and 16.25 px at
+   2560, and the sidebar's 16.5 rem walks 264 → 330 px. No other rule may touch the root
+   font-size; px survives only where a hairline must stay a hairline. */
+html {
+  font-size: clamp(100%, calc(100% + (100vw - 1440px) * 0.0223), 125%);
+}
+
 /* The Tailwind bridge: every book variable becomes a theme token, so utilities (bg-surface,
    text-dim through the legacy inkdim alias, border-bord, text-signal-ink, …) are generated from
    this layer alone. The alias keeps the historical utility names usable while the book's own
