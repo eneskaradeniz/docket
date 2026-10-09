@@ -397,6 +397,7 @@ const startApp = async (): Promise<void> => {
   // defs' marks ride the same way (P-25): the api reads them for `providers.marks`, the query
   // every account badge resolves its mark through.
   const api = createApi(nodeDeps, board, discovery, node.repos, updates, builtinProviderMarks, node.adoption, node.quota);
+  const quotaProbes = node.quota.probes; // read here: `node` is not narrowed inside the tick closure
 
   // The dev bridge (test launches only): it exists when the flag is set, the app is not packaged
   // and DOCKET_DATA_DIR points outside the operator's real data directory — the same rule the CDP
@@ -441,7 +442,7 @@ const startApp = async (): Promise<void> => {
   // completion on its own, so one slow agent never delays the next tick.
   dispatchTimer = setInterval(() => {
     // The limits are read per tick so a settings change applies without a restart.
-    void getDispatchLimits(nodeDeps).then((limits) => dispatcherTick(nodeDeps, { limits }, (item) => {
+    void getDispatchLimits(nodeDeps).then((limits) => dispatcherTick(nodeDeps, { limits, probes: quotaProbes }, (item) => {
       void runStartedItem(api, board, item);
     })).catch((error) => console.error('dispatcher tick failed', error));
   }, DISPATCH_INTERVAL_MS);

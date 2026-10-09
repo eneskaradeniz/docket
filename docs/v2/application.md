@@ -1444,3 +1444,10 @@ never conflict.
 Provider context-window data (per adapter, optional) is deliberately outside the six issues: which
 providers can actually fill `CatalogModel.contextWindow`, and from which channel, is follow-up
 issue work per adapter; the contract is specified to work with `null` everywhere (A-63).
+
+## 8. Re-query before a scheduled resume (added 2026-10-10, #872)
+
+- **A-101** `applyLimitDecision` writes the queue item of a `schedule_resume` decision with `requeryFirst: true` next to `notBefore` (the limit policy emits `requeryFirst: true` on every such decision). `switch_pool`, `fallback` and `ask` never set it; `autoResumesUsed` is incremented exactly as in A-17a, and the cap of 3 stays in `decideOnLimit`.
+- **A-102** `dispatcherTick`, given `DispatcherConfig.probes`: an item with `requeryFirst === true` whose `notBefore <= now` is not started in that tick and takes no part in its `decideDispatch` call (no decision is reported for it). The tick calls `pollQuota` once per account for all such items of the account — never once per item — and on success clears `requeryFirst` on each stored item with `queue.put` (every other field unchanged, `notBefore` kept). Items without `requeryFirst`, and items whose `notBefore` is still in the future, are treated exactly as before. Without `probes` nothing is re-queried and a `requeryFirst` item starts like any other (the field is inert).
+- **A-103** The tick after the re-query decides as A-20 says, on the meters the poll saved: still blocked → the item stays queued with the headroom rule's wait reason; free → it starts. The tick never polls an item whose flag is cleared.
+- **A-104** A failing `pollQuota` (any error) clears nothing, starts nothing (the item waits one more tick) and does not count as an auto-resume. The dispatcher counts consecutive failed re-queries per queue item in memory; at the third the item's `requeryFirst` is cleared (still not started in that tick), so it is never stuck and the headroom rule alone protects the start. A successful poll clears the flag and the count.
