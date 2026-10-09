@@ -503,19 +503,22 @@ for (const [sizeName, theme] of combos) {
     const sharedRows = page.locator('[data-cap-row="mcp:fetch|npx"]');
     assert((await sharedRows.count()) === 2, `the shared capability should list in both groups, saw ${await sharedRows.count()}`);
     await shot('capabilities');
-    // Toggling one row syncs the other by identity (U-59).
+    // Toggling one row syncs the other by identity (U-59). The row carries two buttons — the
+    // checkbox toggle and the ⓘ trigger — so both are reached by their own role, never `button`.
     const [accA, accB] = handle.seed.accounts.map((account) => account.id);
-    await page.locator(`[data-cap-group="${accA}"] [data-cap-row="mcp:fetch|npx"] button`).click({ timeout: WAIT });
+    const rowIn = (group) => `[data-cap-group="${group}"] [data-cap-row="mcp:fetch|npx"]`;
+    await page.locator(`${rowIn(accA)} [role="checkbox"]`).click({ timeout: WAIT });
     await page.waitForFunction(
-      ([a, b]) =>
-        document.querySelector(`[data-cap-group="${a}"] [data-cap-row="mcp:fetch|npx"] button`)?.getAttribute('aria-checked') === 'true' &&
-        document.querySelector(`[data-cap-group="${b}"] [data-cap-row="mcp:fetch|npx"] button`)?.getAttribute('aria-checked') === 'true',
-      [accA, accB],
+      ([selA, selB]) =>
+        document.querySelector(`${selA} [role="checkbox"]`)?.getAttribute('aria-checked') === 'true' &&
+        document.querySelector(`${selB} [role="checkbox"]`)?.getAttribute('aria-checked') === 'true',
+      [rowIn(accA), rowIn(accB)],
       { timeout: WAIT },
     );
     await shot('row-synced');
-    // The ⓘ popover lists the Kaynaklar — one "Asistan · Hesap" per source.
-    await page.getByRole('button', { name: 'Bilgi: fetch' }).first().click({ timeout: WAIT });
+    // The ⓘ popover lists the Kaynaklar — one "Asistan · Hesap" per source. Scoped to the row:
+    // exactly one ⓘ carries this accessible name inside it.
+    await page.locator(rowIn(accA)).getByRole('button', { name: 'Bilgi: fetch' }).click({ timeout: WAIT });
     await see('Kaynaklar');
     await see('Claude Code · Kişisel');
     await see('Claude Code · İş');
