@@ -705,6 +705,7 @@ to use cases; Phase 4 binds it to Electron IPC.
 export type Command =
   | { readonly type: 'workOrder.open'; readonly project: string; readonly repo: string; readonly title: string; readonly flow?: string; readonly task?: string }
   | { readonly type: 'task.open'; readonly project: string; readonly task: string }
+  | { readonly type: 'roadmap.runPhase'; readonly project: string; readonly phase: string } // A-98
   | { readonly type: 'project.attach'; readonly path: string; readonly repos?: readonly { readonly repo: string; readonly path: string }[] }
   | { readonly type: 'repo.register'; readonly project: string; readonly repo: string; readonly path: string }
   | { readonly type: 'repo.unregister'; readonly project: string; readonly repo: string }
@@ -1328,6 +1329,19 @@ Rules:
 - **A-106** (added 2026-10-10, #873) `setDispatchLimits(deps, { limits, actor })` validates before it writes: `global` an integer 1–16; `perRepo` an integer 1–`global`; every `perAccount` entry an integer 1–`global`; otherwise `err('invalid_limits')`. Every `perAccount` key must be an account the repo knows, otherwise `err('unknown_account')` (checked after the numbers). A rejection writes nothing and appends no audit entry.
 - **A-107** (added 2026-10-10, #873) A successful `setDispatchLimits` appends one audit entry after the write: `action: 'settings.dispatch_changed'`, `subject: { kind: 'settings', id: 'dispatch' }`, `detail` = the new numbers only (`global`, `perRepo`, and `account:<AccountId>` per entry) — no secrets, no old values.
 - **A-108** (added 2026-10-10, #873) The boundary: query `settings.dispatch` (no input) answers `getDispatchLimits`; command `settings.setDispatch { global, perRepo, perAccount: Record<AccountId, number> }` answers `{ ok: true }` or `{ ok: false, code }` with `invalid_limits`, `unknown_account`, or `invalid_id` for a `perAccount` key that is not an account id. The composition root reads the limits again at the start of every dispatcher tick (`getDispatchLimits` → `dispatcherTick`), so a saved change applies to the next tick without re-creating the dispatcher; the `DISPATCH_LIMITS` constant in `electron/main.ts` is gone.
+
+### Run phase — open and queue a phase's runnable tasks (#871)
+
+`runPhase(deps, { project, phase, actor })` (`services/run-phase.ts`) composes `openTaskWorkOrders` (A-25)
+and `enqueueStage` (A-19) over one roadmap phase. Result `{ opened: { task, workOrders }[], failed: { task, workOrder?, error }[] }`;
+refusals `unknown_project | no_roadmap | definitions_invalid | unknown_phase | phase_not_runnable`.
+API command `roadmap.runPhase { project, phase }` answers `{ ok: true, phaseRun }` (ids as strings) or `{ ok: false, code }`.
+`AuditAction` gains `phase.run`.
+
+- **A-97** (added 2026-10-10, #871) Gating. The roadmap loads as in A-25 (`no_roadmap` when absent, `definitions_invalid` when invalid), then an unknown phase is `unknown_phase`. The view is `deriveRoadmap` over the project's work orders that carry a `task` (one whose flow no longer loads has no derivable status and is left out, as on the roadmap page). A phase whose derived status is `waiting` or `done` answers `phase_not_runnable`. Every refusal writes nothing: no work order, no queue item, no audit entry.
+- **A-98** (added 2026-10-10, #871) Opening and queueing. Candidates are the phase's tasks listed in the view's `runnable` (R-42), in roadmap order. For each, `openTaskWorkOrders` opens one work order per target repo (A-25, all-or-nothing per task), then `enqueueStage({ id })` runs for every returned id. A task listed in `opened` carries all the ids it opened, in the order A-25 returned them. A phase with no runnable task — empty, or every task already running or waiting — answers both arrays empty. The api command maps the result to strings without reshaping it.
+- **A-99** (added 2026-10-10, #871) Failure and repeat. One task's failure never stops the others: a task that cannot open is collected as `{ task, error }` with the A-25 code; a work order that opened but whose `enqueueStage` failed stays (the operator sees it on the board), stays in `opened`, and is also collected as `{ task, workOrder, error }` with the enqueue code. Running the phase twice opens nothing the second time, because the first run made those tasks `running` (R-40) — the second call answers `ok` with both arrays empty.
+- **A-100** (added 2026-10-10, #871) Audit. Every call that passes A-97's gates appends exactly one `phase.run` entry, subject `{ kind: 'project', id: project }`, actor the command's actor, detail `{ project, phase, opened: n, failed: n }` where the counts are the lengths of the two result arrays. No titles, no work-order ids, no values. A refused call appends nothing.
 
 ## 5. Phase 2a acceptance — headless end to end
 

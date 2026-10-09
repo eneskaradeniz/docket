@@ -89,6 +89,7 @@ import {
   importCapabilities,
   isSourceTaken,
   openTaskWorkOrders,
+  runPhase,
   openWorkOrder,
   readStageFile,
   registerRepo,
@@ -360,6 +361,15 @@ const runCommand = async (
         { project, task, actor },
       );
       return opened.ok ? { ok: true } : { ok: false, code: opened.error };
+    }
+
+    case 'roadmap.runPhase': {
+      const project = slugValue<'project'>(command.project);
+      if (project === undefined) return invalidId();
+      const phase = slugValue<'phase'>(command.phase);
+      if (phase === undefined) return invalidId();
+      const ran = await runPhase(deps, { project, phase, actor });
+      return ran.ok ? { ok: true, phaseRun: ran.value } : { ok: false, code: ran.error };
     }
 
     case 'project.attach': {
