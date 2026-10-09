@@ -25,6 +25,7 @@ import { COMMAND_REGISTRY, QUERY_REGISTRY, createApi } from '../src/api/index';
 import type { Api, RunEventFeed, UiEvent } from '../src/api/index';
 import type { AppDeps, Notifier, PermissionBoard, TransportResolver } from '../src/application/index';
 import {
+  advancePhases,
   applyLimitDecision,
   composeRunPrompt,
   createPermissionBoard,
@@ -446,8 +447,10 @@ const startApp = async (): Promise<void> => {
   dispatchTimer = setInterval(() => {
     if (dispatching) return;
     dispatching = true;
+    // Phases the operator started advance first, so tasks that just became runnable are queued
+    // before this tick's start decision; a failure is logged and never blocks the dispatcher.
     // The limits are read per tick so a settings change applies without a restart.
-    void getDispatchLimits(nodeDeps).then((limits) => dispatcherTick(nodeDeps, { limits, probes: quotaProbes }, (item) => {
+    void advancePhases(nodeDeps).catch((error) => console.error('phase advance failed', error)).then(() => getDispatchLimits(nodeDeps)).then((limits) => dispatcherTick(nodeDeps, { limits, probes: quotaProbes }, (item) => {
       void runStartedItem(api, board, item);
     })).catch((error) => console.error('dispatcher tick failed', error)).finally(() => {
       dispatching = false;

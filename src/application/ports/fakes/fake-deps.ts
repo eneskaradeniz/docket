@@ -17,6 +17,7 @@ import { createFakeIdGen } from './fake-id-gen';
 import { createFakeInstructionFiles } from './fake-instruction-files';
 import { createFakeModelCatalog } from './fake-model-catalog';
 import { createFakeNotifier } from './fake-notifier';
+import { createFakePhaseAutoRunRepo } from './fake-phase-auto-run-repo';
 import { createFakeProjectRepo } from './fake-project-repo';
 import { createFakeProposalRepo } from './fake-proposal-repo';
 import { createFakeQueueRepo } from './fake-queue-repo';
@@ -61,6 +62,7 @@ export const createFakeDeps = (overrides: Partial<AppDeps> = {}): AppDeps => ({
   checkpoints: createFakeCheckpointCommitter(),
   accountTests: createFakeAccountTestRepo(),
   settings: createFakeAppSettingsRepo(),
+  phaseAutoRuns: createFakePhaseAutoRunRepo(),
   scratch: createFakeScratchDirs(),
   repoFolders: createFakeRepoFolders(),
   worktreeFiles: createFakeWorktreeFiles(),

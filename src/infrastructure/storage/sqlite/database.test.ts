@@ -82,6 +82,7 @@ const MIGRATED_TABLES = [
   'project_repos',
   'run_handoff',
   'app_settings',
+  'phase_auto_runs',
 ];
 
 const MIGRATION_1_INDEXES = [

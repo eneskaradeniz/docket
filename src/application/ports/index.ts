@@ -20,6 +20,7 @@ export * from './instruction-files';
 export * from './issue-tracker';
 export * from './model-catalog';
 export * from './notifier';
+export * from './phase-auto-run-repo';
 export * from './project-repo';
 export * from './proposal-repo';
 export * from './provider-discovery';

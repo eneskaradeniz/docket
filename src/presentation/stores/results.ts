@@ -81,6 +81,8 @@ const SUCCESS_KEYS: Readonly<Record<Command['type'], LabelKey>> = {
   'task.open': 'success.task.open',
   // No surface issues it yet (the roadmap-page button is a UI issue); it borrows the task-open copy.
   'roadmap.runPhase': 'success.task.open',
+  'roadmap.pausePhase': 'success.task.open',
+  'roadmap.resumePhase': 'success.task.open',
   'project.attach': 'success.project.attach',
   'project.create': 'newProject.created',
   'repo.register': 'success.repo.register',
