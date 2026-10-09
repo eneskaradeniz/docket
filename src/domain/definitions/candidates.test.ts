@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { AccountId, CapabilitySlug } from '../shared';
 import { parseSlug } from '../shared';
-import { candidateToDefinition, mergeCandidates, type CapabilityCandidate, type CapabilityCandidateKind } from './candidates';
+import {
+  candidateToDefinition,
+  capabilitySlugOf,
+  identityOfDefinition,
+  mergeCandidates,
+  type CapabilityCandidate,
+  type CapabilityCandidateKind,
+} from './candidates';
 import { validateDefinitions } from './validate';
 
 // ULIDs, Crockford base32 — plain string order is the account order used by the merge rules
@@ -147,5 +154,61 @@ describe('candidateToDefinition', () => {
   it("R-65: a runtime 'hook' kind is unsupported (deferred)", () => {
     const hook = { kind: 'hook', name: 'fmt', command: 'fmt', sources: [ACCT_A] } as unknown as CapabilityCandidate;
     expect(candidateToDefinition(hook, capId('fmt'))).toEqual({ ok: false, error: 'unsupported_kind' });
+  });
+});
+
+describe('identityOfDefinition', () => {
+  it('R-66: an imported mcp def and the candidate it came from yield the same string', () => {
+    const source = cand({ kind: 'mcp', name: 'db', command: 'npx db' });
+    const imported = candidateToDefinition(source, capId('db'));
+    if (!imported.ok) throw new Error('expected ok');
+    // The canonical form the merge writes is what the def reads back as — import's "already
+    // imported" check and the merge can never disagree about what a capability is.
+    expect(identityOfDefinition(imported.value)).toBe(mergeCandidates([source])[0].identity);
+    expect(identityOfDefinition(imported.value)).toBe('mcp:db|npx db');
+  });
+
+  it('R-66: skill and context read kind:name; a def always has its command, so mcp never joins empty', () => {
+    const skill = candidateToDefinition(cand({ kind: 'skill', name: 'fetch', path: 'skills/fetch.md' }), capId('fetch'));
+    const context = candidateToDefinition(cand({ kind: 'context', name: 'AGENTS.md', path: 'AGENTS.md' }), capId('agents-md'));
+    if (!skill.ok || !context.ok) throw new Error('expected ok');
+    expect(identityOfDefinition(skill.value)).toBe('skill:fetch');
+    expect(identityOfDefinition(context.value)).toBe('context:AGENTS.md');
+  });
+});
+
+describe('capabilitySlugOf', () => {
+  it('R-67: maps the issue\'s named cases', () => {
+    expect(capabilitySlugOf('Context7')).toEqual({ ok: true, value: 'context7' });
+    expect(capabilitySlugOf('GitHub Tools')).toEqual({ ok: true, value: 'github-tools' });
+    expect(capabilitySlugOf('a.b_c')).toEqual({ ok: true, value: 'a-b-c' });
+    expect(capabilitySlugOf('...')).toEqual({ ok: false, error: 'invalid_name' });
+    expect(capabilitySlugOf('a'.repeat(70))).toEqual({ ok: true, value: 'a'.repeat(63) });
+  });
+
+  it('R-67: every ok result is a slug the store accepts', () => {
+    for (const name of ['Context7', 'GitHub Tools', 'a.b_c', 'a'.repeat(70), 'X--Y', '  spaced  name  ']) {
+      const result = capabilitySlugOf(name);
+      if (!result.ok) throw new Error(`expected ok for ${name}`);
+      expect(parseSlug<'capability'>(result.value)).toEqual({ ok: true, value: result.value });
+    }
+  });
+
+  it('R-67: runs of non-ASCII fold into one hyphen, not one per character', () => {
+    // Turkish letters are not ASCII: a run of them collapses into a single '-'.
+    expect(capabilitySlugOf('İstanbul Tools')).toEqual({ ok: true, value: 'stanbul-tools' });
+    expect(capabilitySlugOf('ölçüm---test')).toEqual({ ok: true, value: 'l-m-test' });
+  });
+
+  it('R-67: a name whose mapped form trims to empty is invalid_name, never a thrown error', () => {
+    expect(capabilitySlugOf('...')).toEqual({ ok: false, error: 'invalid_name' });
+    expect(capabilitySlugOf('---')).toEqual({ ok: false, error: 'invalid_name' });
+    expect(capabilitySlugOf('')).toEqual({ ok: false, error: 'invalid_name' });
+  });
+
+  it('R-67: the 63-cut happens before the trim, so a cut into a hyphen tail keeps part of it', () => {
+    // 60 letters + "-ab" is 62 — under the law. 61 letters + "-ab" is 64: cut at 63 keeps "-a".
+    expect(capabilitySlugOf(`${'a'.repeat(60)}-ab`)).toEqual({ ok: true, value: `${'a'.repeat(60)}-ab` });
+    expect(capabilitySlugOf(`${'a'.repeat(61)}-ab`)).toEqual({ ok: true, value: `${'a'.repeat(61)}-a` });
   });
 });

@@ -540,6 +540,23 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
       return { written };
     },
 
+    // I-44: one capability per file, the shape `load` parses back; an existing target is skipped
+    // untouched whatever its content. Through the per-path write queue, like every other write.
+    installCapabilities: async (capabilities) => {
+      const written: string[] = [];
+      const skipped: string[] = [];
+      const install = async (id: string, value: unknown): Promise<void> => {
+        const target = `capabilities/${id}${EXTENSION}`;
+        const file = join(config.globalRoot, target);
+        await mkdir(dirname(file), { recursive: true });
+        const created = await enqueue(file, () => createExclusive(file, stringifyYaml(value)));
+        if (created) written.push(target);
+        else skipped.push(target);
+      };
+      for (const capability of capabilities) await install(capability.id, capability);
+      return { written, skipped };
+    },
+
     scaffoldProject: async (path, project, repo) => {
       const folder = join(path, DOCKET_DIR);
       const projectFile = join(folder, PROJECT_FILE);

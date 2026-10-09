@@ -21,6 +21,11 @@ export interface CapabilityCandidate {
 const identityOf = (c: CapabilityCandidate): string =>
   c.kind === 'mcp' ? `mcp:${c.name}|${c.command ?? ''}` : `${c.kind}:${c.name}`;
 
+/** R-62's form of a find's own fields, for the scanner that must fill a candidate's `identity`
+ *  with exactly the string the merge derives — one source of the formula, no drift. */
+export const identityOfCandidate = (kind: CapabilityCandidateKind, name: string, command?: string): string =>
+  kind === 'mcp' ? `mcp:${name}|${command ?? ''}` : `${kind}:${name}`;
+
 type ConflictField = 'command' | 'path' | 'description';
 
 /** R-63: merge candidates with equal identity into one. The merge key is the identity derived from
@@ -97,4 +102,35 @@ export function candidateToDefinition(
       // plain-JS caller can still pass one, so the switch keeps a runtime way out.
       return err('unsupported_kind');
   }
+}
+
+/** R-66: a stored definition's identity, R-62's form read off the def. Import's idempotence
+ *  compares a candidate's identity with this, so "already imported" (the query's flag) and the
+ *  merge's notion of same capability can never disagree about what a capability is. */
+export function identityOfDefinition(def: CapabilityDef): string {
+  return def.kind === 'mcp' ? `mcp:${def.name}|${def.command}` : `${def.kind}:${def.name}`;
+}
+
+/** The slug law's length bound, shared by the cut and the collision suffix. */
+const SLUG_MAX = 63;
+
+const trimHyphens = (text: string): string => text.replace(/^-+/, '').replace(/-+$/, '');
+
+/** R-67: the target id an imported candidate takes — `^[a-z0-9][a-z0-9-]{0,62}$`. Runs of ASCII
+ *  letters/digits keep (lower-cased); every other run collapses into one '-'; leading/trailing
+ *  '-' trimmed; over 63 cuts at 63 then trims again; an empty result is `invalid_name`, a Result,
+ *  never a thrown error. The `-2`/`-3` collision suffixes live at the import use case, which is
+ *  the only place that knows the ids already claimed in one call. */
+export function capabilitySlugOf(name: string): Result<CapabilitySlug, 'invalid_name'> {
+  const mapped = trimHyphens(name.replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase());
+  const base = trimHyphens(mapped.slice(0, SLUG_MAX));
+  if (base === '') return err('invalid_name');
+  return ok(base as CapabilitySlug);
+}
+
+/** R-67, collision arm: the suffixed id when a later candidate of the same call derives the same
+ *  base — `-2`, `-3`, … in candidate order, the base cut so the whole id stays within the law. */
+export function suffixedSlug(base: CapabilitySlug, suffix: number): CapabilitySlug {
+  const tail = `-${suffix}`;
+  return (base.slice(0, SLUG_MAX - tail.length) + tail) as CapabilitySlug;
 }

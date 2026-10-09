@@ -5,6 +5,7 @@ export * from './account-test-repo';
 export * from './agent-transport';
 export * from './binding-repo';
 export * from './capability-catalog';
+export * from './capability-discovery';
 export * from './checkpoints';
 export * from './clock';
 export * from './credential-importer';

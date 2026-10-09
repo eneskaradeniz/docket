@@ -98,6 +98,8 @@ const SUCCESS_KEYS: Readonly<Record<Command['type'], LabelKey>> = {
   'binding.save': 'success.binding.save',
   // No surface issues a refresh yet; it is a read, so it borrows the neutral account copy.
   'quota.refresh': 'success.account.save',
+  // The import surface is part 3; the per-identity outcomes ride `results`, the toast is neutral.
+  'capabilities.import': 'success.capabilities.import',
   'app.update.check': 'success.app.update.check',
   'app.update.apply': 'success.app.update.apply',
 };

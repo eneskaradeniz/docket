@@ -70,6 +70,7 @@ import {
   applyUpdate,
   attachProject,
   blockWorkOrder,
+  capabilityCandidates,
   checkForUpdates,
   closeWorkOrder,
   createAccountCandidateList,
@@ -84,6 +85,7 @@ import {
   getUpdateState,
   getWorkOrder,
   grantSpendConsent,
+  importCapabilities,
   isSourceTaken,
   openTaskWorkOrders,
   openWorkOrder,
@@ -104,7 +106,7 @@ import {
   matchIdFor,
 } from '../application';
 
-import type { Command, CommandResult } from './commands';
+import type { CapabilityImportResultView, Command, CommandResult } from './commands';
 import type {
   AccountDetailView,
   AccountModelsView,
@@ -601,6 +603,21 @@ const runCommand = async (
       return { ok: true };
     }
 
+    case 'capabilities.import': {
+      // Per identity (A-93): one row per requested identity, in input order — a rejected identity
+      // never blocks the others, and the surface re-queries candidates for what landed.
+      const results = await importCapabilities(deps, { identities: command.identities, actor });
+      return {
+        ok: true,
+        results: results.map((result): CapabilityImportResultView => ({
+          identity: result.identity,
+          status: result.status,
+          id: result.status === 'rejected' ? null : result.id,
+          reason: result.status === 'rejected' ? result.reason : null,
+        })),
+      };
+    }
+
     case 'account.adopt': {
       // Without the discovery and importer ports no candidate can be found, so the command
       // answers not_found instead of inventing an account. The command carries no kind: the
@@ -783,6 +800,10 @@ const runQuery = async (
       const res = await readStageFile(deps, { id, path: query.path });
       return res.ok ? res.value : { ok: false, code: res.error };
     }
+    case 'capabilities.candidates':
+      // The scan runs on every call — no remembered window (A-94): the query runs when a surface
+      // opens, not on a poll, and the account store is small.
+      return capabilityCandidates(deps);
     case 'workOrder.detail': {
       const id = ulidValue<'work-order'>(query.id);
       if (id === undefined) return invalidId();

@@ -39,7 +39,7 @@ import { createCheckpoints, createEvidenceChecker, createGitProbe, createRepoFol
 import { createCapabilityCatalog } from '../providers/registry/index';
 import { createModelCatalog } from '../providers/catalog/index';
 import { createQuotaProbeResolver } from '../providers/quota/index';
-import { createNodeAccountScan, createNodeCredentialImporter, type LoginStates } from '../providers/discovery/index';
+import { createNodeAccountScan, createNodeCapabilityScan, createNodeCredentialImporter, type LoginStates } from '../providers/discovery/index';
 import { createNodeInstructionFiles } from './instruction-files';
 
 export interface NodeDepsConfig {
@@ -92,6 +92,7 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     runs: createSqliteRunRepo(db),
     accounts,
     capabilities: createCapabilityCatalog(),
+    capabilityDiscovery: createNodeCapabilityScan(),
     // The catalog call builds its environment from the same allowlist the transports do, so a
     // listing never sees a different child than a run of the same account would.
     modelCatalog: createModelCatalog({

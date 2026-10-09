@@ -20,6 +20,7 @@ import type {
 import type { AccountTestRepo } from './account-test-repo';
 import type { BindingRepo, BindingScope } from './binding-repo';
 import type { CapabilityCatalog } from './capability-catalog';
+import type { CapabilityDiscovery } from './capability-discovery';
 import type { CheckpointCommitter, CheckpointDiff, CheckpointError, CheckpointRef } from './checkpoints';
 import type { Clock } from './clock';
 import type { DefinitionFile, DefinitionScope, DefinitionStore } from './definition-store';
@@ -57,6 +58,7 @@ describe('AppDeps', () => {
     expectTypeOf<AppDeps['runs']>().toEqualTypeOf<RunRepo>();
     expectTypeOf<AppDeps['accounts']>().toEqualTypeOf<AccountRepo>();
     expectTypeOf<AppDeps['capabilities']>().toEqualTypeOf<CapabilityCatalog>();
+    expectTypeOf<AppDeps['capabilityDiscovery']>().toEqualTypeOf<CapabilityDiscovery>();
     expectTypeOf<AppDeps['modelCatalog']>().toEqualTypeOf<ModelCatalog>();
     expectTypeOf<AppDeps['projects']>().toEqualTypeOf<ProjectRepo>();
     expectTypeOf<AppDeps['repos']>().toEqualTypeOf<RepoRegistry>();
@@ -89,6 +91,7 @@ describe('AppDeps', () => {
       | 'runs'
       | 'accounts'
       | 'capabilities'
+      | 'capabilityDiscovery'
       | 'modelCatalog'
       | 'projects'
       | 'repos'
@@ -128,6 +131,7 @@ describe('AppDeps', () => {
     expectTypeOf<Application.AccountRecord>().toEqualTypeOf<AccountRecord>();
     expectTypeOf<Application.AccountRepo>().toEqualTypeOf<AccountRepo>();
     expectTypeOf<Application.CapabilityCatalog>().toEqualTypeOf<CapabilityCatalog>();
+    expectTypeOf<Application.CapabilityDiscovery>().toEqualTypeOf<CapabilityDiscovery>();
     expectTypeOf<Application.ModelCatalog>().toEqualTypeOf<ModelCatalog>();
     expectTypeOf<Application.ProjectRepo>().toEqualTypeOf<ProjectRepo>();
     expectTypeOf<Application.RepoRegistry>().toEqualTypeOf<RepoRegistry>();

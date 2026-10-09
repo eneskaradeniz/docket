@@ -26,10 +26,21 @@ export type Command =
   | { readonly type: 'account.consent.revoke'; readonly id: string; readonly model: string }
   | { readonly type: 'binding.save'; readonly role: string; readonly accounts: { readonly accountId: string; readonly model?: string }[]; readonly thinking?: { readonly level?: string; readonly effort?: string }; readonly tier?: string }
   | { readonly type: 'quota.refresh'; readonly id?: string } // answers { ok: true } after the polls end (A-81)
+  | { readonly type: 'capabilities.import'; readonly identities: readonly string[] }
   | { readonly type: 'app.update.check' }
   | { readonly type: 'app.update.apply' };
 
+/** One identity's import outcome on the wire (A-93): `id` is the target it took or would have
+ *  taken, `reason` the rejection code — each null exactly when the other field is set. */
+export interface CapabilityImportResultView {
+  readonly identity: string;
+  readonly status: 'imported' | 'already_present' | 'rejected';
+  readonly id: string | null;
+  readonly reason: string | null;
+}
+
 export type CommandResult =
-  | { readonly ok: true; readonly id?: string }
+  /** `results` rides only `capabilities.import`: one row per requested identity, in input order. */
+  | { readonly ok: true; readonly id?: string; readonly results?: readonly CapabilityImportResultView[] }
   /** `roles` rides only `binding_exists`: the roles whose bindings still reference the account. */
   | { readonly ok: false; readonly code: string; readonly roles?: readonly string[] };

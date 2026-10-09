@@ -4,6 +4,7 @@ import type { AccountTestRepo } from './account-test-repo';
 import type { TransportResolver } from './agent-transport';
 import type { BindingRepo } from './binding-repo';
 import type { CapabilityCatalog } from './capability-catalog';
+import type { CapabilityDiscovery } from './capability-discovery';
 import type { CheckpointCommitter } from './checkpoints';
 import type { Clock } from './clock';
 import type { DefinitionStore } from './definition-store';
@@ -33,6 +34,7 @@ export interface AppDeps {
   readonly runs: RunRepo;
   readonly accounts: AccountRepo;
   readonly capabilities: CapabilityCatalog;
+  readonly capabilityDiscovery: CapabilityDiscovery;
   readonly modelCatalog: ModelCatalog;
   readonly projects: ProjectRepo;
   readonly repos: RepoRegistry;

@@ -30,6 +30,7 @@ import { createPermissionBoard } from '../application';
 import type { FakeDefinitionStore } from '../application/ports/fakes';
 import {
   createFakeCapabilityCatalog,
+  createFakeCapabilityDiscovery,
   createFakeDefinitionStore,
   createFakeDeps,
   createFakeModelCatalog,
@@ -2111,5 +2112,68 @@ describe('workOrders.stageFiles / workOrders.readStageFile — the wire shape', 
       ok: false,
       code: 'not_found',
     });
+  });
+});
+
+// --- capabilities.candidates (A-90 … A-94) -------------------------------------------------------
+
+describe('capabilities.candidates — the wire shape', () => {
+  const ACCT_A = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FAV');
+  const ACCT_B = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FAW');
+  const DIR_A = '/users/op/.claude-work';
+  const DIR_B = '/users/op/.claude-lab';
+
+  const seededDeps = async () => {
+    const discovery = createFakeCapabilityDiscovery();
+    const deps = createFakeDeps({ capabilityDiscovery: discovery });
+    await deps.accounts.save({
+      id: ACCT_A, provider: 'claude-code', label: 'Work', authMode: 'subscription', limitPolicy: 'wait_resume', caps: [], identityDir: DIR_A,
+    });
+    await deps.accounts.save({
+      id: ACCT_B, provider: 'claude-code', label: 'Lab', authMode: 'subscription', limitPolicy: 'wait_resume', caps: [], identityDir: DIR_B,
+    });
+    discovery.seed(DIR_A, [
+      { identity: 'context:CLAUDE.md', kind: 'context', name: 'CLAUDE.md', sources: [ACCT_A], path: `${DIR_A}/CLAUDE.md`, description: 'Work rules' },
+    ]);
+    discovery.seed(DIR_B, [
+      { identity: 'context:CLAUDE.md', kind: 'context', name: 'CLAUDE.md', sources: [ACCT_B], path: `${DIR_B}/CLAUDE.md`, description: 'Lab rules' },
+      { identity: 'mcp:db|npx db', kind: 'mcp', name: 'db', sources: [ACCT_B], command: 'npx db' },
+    ]);
+    return { deps, discovery };
+  };
+
+  it('A-94: answers the bare CapabilityCandidatesView, always — the same identity in two accounts is one row with both ids as plain strings', async () => {
+    const { deps } = await seededDeps();
+    const api = createApi(deps);
+    const view: unknown = await api.query({ type: 'capabilities.candidates' });
+    expect(view).toEqual({
+      candidates: [
+        {
+          identity: 'context:CLAUDE.md',
+          kind: 'context',
+          name: 'CLAUDE.md',
+          sources: [ACCT_A, ACCT_B],
+          path: `${DIR_A}/CLAUDE.md`,
+          description: 'Work rules',
+          imported: false,
+        },
+        { identity: 'mcp:db|npx db', kind: 'mcp', name: 'db', sources: [ACCT_B], command: 'npx db', imported: false },
+      ],
+      truncated: false,
+    });
+  });
+
+  it('A-94: an empty account store answers empty — the query always answers, it never fails', async () => {
+    const api = createApi(createFakeDeps());
+    expect(await api.query({ type: 'capabilities.candidates' })).toEqual({ candidates: [], truncated: false });
+  });
+
+  it('A-94: after an import the same query answers imported: true — the surface re-queries, no payload rides the command', async () => {
+    const { deps } = await seededDeps();
+    const api = createApi(deps);
+    await api.command(ACTOR, { type: 'capabilities.import', identities: ['context:CLAUDE.md'] });
+    const view = (await api.query({ type: 'capabilities.candidates' })) as { candidates: { identity: string; imported: boolean }[] };
+    expect(view.candidates.find((c) => c.identity === 'context:CLAUDE.md')?.imported).toBe(true);
+    expect(view.candidates.find((c) => c.identity === 'mcp:db|npx db')?.imported).toBe(false);
   });
 });
