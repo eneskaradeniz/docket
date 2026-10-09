@@ -1,12 +1,12 @@
-// use-cases/roadmap.ts — "run phase" (docs/v2/application.md rules A-97..A-100). Composes the
+// services/run-phase.ts — "run phase" (docs/v2/application.md rules A-97..A-100). Composes the
 // existing task opening (A-25) and stage queueing (A-19) over one roadmap phase; it decides nothing
 // the roadmap derivation (R-40, R-42) has not already decided.
 import type { Actor, FlowDef, LinkedWorkOrder, PhaseSlug, ProjectSlug, RepoSlug, Result, TaskSlug, WorkOrderId } from '../../domain/index';
 import { deriveRoadmap, deriveWorkOrderState, err, ok } from '../../domain/index';
 
 import type { AppDeps } from '../ports/index';
-import { enqueueStage } from '../services/dispatcher';
-import { openTaskWorkOrders } from './projects';
+import { enqueueStage } from './dispatcher';
+import { openTaskWorkOrders } from '../use-cases/index';
 
 export type RunPhaseError = 'unknown_project' | 'no_roadmap' | 'definitions_invalid' | 'unknown_phase' | 'phase_not_runnable';
 

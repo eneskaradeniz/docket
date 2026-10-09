@@ -19,8 +19,7 @@ import {
 
 import type { AccountRecord } from '../ports/index';
 import { createFakeDefinitionStore, createFakeDeps } from '../ports/fakes/index';
-import { dispatcherTick } from '../services/index';
-import { runPhase } from '../use-cases/index';
+import { dispatcherTick, runPhase } from '../services/index';
 
 const ACTOR: Actor = { kind: 'user', id: 'u-1', label: 'Operator' };
 const LIMITS: DispatchLimits = { global: 4, perRepo: 3, perAccount: {} };

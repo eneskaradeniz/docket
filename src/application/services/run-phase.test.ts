@@ -1,4 +1,4 @@
-// use-cases/roadmap.test.ts — rules A-97 … A-100 from docs/v2/application.md: runPhase turns a
+// services/run-phase.test.ts — rules A-97 … A-100 from docs/v2/application.md: runPhase turns a
 // phase's runnable tasks into opened, queued work orders.
 import { describe, expect, it } from 'vitest';
 
@@ -20,8 +20,8 @@ import {
 import type { AccountRecord, AppDeps } from '../ports/index';
 import { createFakeDefinitionStore, createFakeDeps, createFakeEventLog, type FakeEventLog } from '../ports/fakes/index';
 
-import { closeWorkOrder } from './work-orders';
-import { runPhase } from './roadmap';
+import { closeWorkOrder } from '../use-cases/index';
+import { runPhase } from './run-phase';
 
 const ACTOR: Actor = { kind: 'user', id: 'u-1', label: 'Operator' };
 

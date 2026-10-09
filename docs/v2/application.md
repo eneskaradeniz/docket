@@ -1327,7 +1327,7 @@ Rules:
 
 ### Run phase — open and queue a phase's runnable tasks (#871)
 
-`runPhase(deps, { project, phase, actor })` (`use-cases/roadmap.ts`) composes `openTaskWorkOrders` (A-25)
+`runPhase(deps, { project, phase, actor })` (`services/run-phase.ts`) composes `openTaskWorkOrders` (A-25)
 and `enqueueStage` (A-19) over one roadmap phase. Result `{ opened: { task, workOrders }[], failed: { task, workOrder?, error }[] }`;
 refusals `unknown_project | no_roadmap | definitions_invalid | unknown_phase | phase_not_runnable`.
 API command `roadmap.runPhase { project, phase }` answers `{ ok: true, phaseRun }` (ids as strings) or `{ ok: false, code }`.
