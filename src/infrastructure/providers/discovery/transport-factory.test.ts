@@ -218,9 +218,6 @@ function asQuery(generator: AsyncGenerator<SDKMessage, void>): Query {
     streamInput: (): Promise<void> => Promise.resolve(),
     stopTask: (): Promise<void> => Promise.resolve(),
     backgroundTasks: (): Promise<boolean> => Promise.resolve(false),
-    // Required by a module augmentation active in this program, not by the SDK's own declarations;
-    // an extra member is harmless here because Object.assign's intersection is never fresh.
-    cancelAsyncMessage: (): Promise<boolean> => Promise.resolve(false),
     close: (): void => {},
   });
   return query;
