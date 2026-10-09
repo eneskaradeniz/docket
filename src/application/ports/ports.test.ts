@@ -18,6 +18,7 @@ import type {
   TransportResolver,
 } from './agent-transport';
 import type { AccountTestRepo } from './account-test-repo';
+import type { AppSettingsRepo } from './app-settings-repo';
 import type { BindingRepo, BindingScope } from './binding-repo';
 import type { CapabilityCatalog } from './capability-catalog';
 import type { CapabilityDiscovery } from './capability-discovery';
@@ -78,6 +79,7 @@ describe('AppDeps', () => {
     expectTypeOf<AppDeps['instructionFiles']>().toEqualTypeOf<InstructionFiles>();
     expectTypeOf<AppDeps['checkpoints']>().toEqualTypeOf<CheckpointCommitter>();
     expectTypeOf<AppDeps['accountTests']>().toEqualTypeOf<AccountTestRepo>();
+    expectTypeOf<AppDeps['settings']>().toEqualTypeOf<AppSettingsRepo>();
     expectTypeOf<AppDeps['scratch']>().toEqualTypeOf<ScratchDirs>();
     expectTypeOf<AppDeps['repoFolders']>().toEqualTypeOf<RepoFolders>();
   });
@@ -111,6 +113,7 @@ describe('AppDeps', () => {
       | 'instructionFiles'
       | 'checkpoints'
       | 'accountTests'
+      | 'settings'
       | 'scratch'
       | 'repoFolders'
     >();
@@ -175,7 +178,7 @@ describe('port shapes', () => {
     expectTypeOf<ProposalRecord['scope']>().toEqualTypeOf<DefinitionScope>();
     expectTypeOf<AuditEntry['action']>().toEqualTypeOf<AuditAction>();
     expectTypeOf<AuditSubject['kind']>().toEqualTypeOf<
-      'work_order' | 'run' | 'proposal' | 'account' | 'binding' | 'project' | 'repo' | 'capability'
+      'work_order' | 'run' | 'proposal' | 'account' | 'binding' | 'project' | 'repo' | 'capability' | 'settings'
     >();
     expectTypeOf<BindingScope['level']>().toEqualTypeOf<'global' | 'project' | 'repo' | 'workOrder'>();
     expectTypeOf<DefinitionScope['kind']>().toEqualTypeOf<'global' | 'project' | 'repo'>();

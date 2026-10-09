@@ -22,6 +22,7 @@ import { createKeychainVault, type CipherFns } from '../storage/keychain/index';
 import { createYamlDefinitionStore } from '../storage/definitions-yaml/index';
 import {
   createSqliteAccountRepo,
+  createSqliteAppSettingsRepo,
   createSqliteBindingRepo,
   createSqliteEventLog,
   createSqliteProjectPaths,
@@ -105,6 +106,7 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     projects,
     repos,
     bindings: createSqliteBindingRepo(db),
+    settings: createSqliteAppSettingsRepo(db),
     queue: createSqliteQueueRepo(db),
     definitions: createYamlDefinitionStore({ globalRoot: config.dataDir, repos, projects: projectPaths }),
     proposals: createSqliteProposalRepo(db),

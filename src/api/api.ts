@@ -100,6 +100,8 @@ import {
   saveAccount,
   saveAccountCap,
   saveBinding,
+  getDispatchLimits,
+  setDispatchLimits,
   stageFiles,
   unblockWorkOrder,
   unregisterRepo,
@@ -775,6 +777,21 @@ const runCommand = async (
       );
     }
 
+    case 'settings.setDispatch': {
+      const perAccount: Record<AccountId, number> = {};
+      for (const [id, limit] of Object.entries(command.perAccount)) {
+        const accountId = ulidValue<'account'>(id);
+        if (accountId === undefined) return invalidId();
+        perAccount[accountId] = limit;
+      }
+      return commandOf(
+        await setDispatchLimits(
+          { clock: deps.clock, ids: deps.ids, log: deps.log, settings: deps.settings, accounts: deps.accounts },
+          { limits: { global: command.global, perRepo: command.perRepo, perAccount }, actor },
+        ),
+      );
+    }
+
     case 'app.update.check': {
       if (updates === undefined) return { ok: false, code: 'not_found' };
       // The re-check runs for its side effect on the checker's state; the answer itself travels
@@ -877,6 +894,10 @@ const runQuery = async (
 
     case 'settings.accounts':
       return settingsAccountsView(deps, query.catalog);
+
+    // The stored limits are already the view: plain JSON, defaults when nothing valid is saved.
+    case 'settings.dispatch':
+      return getDispatchLimits(deps);
 
     case 'roles.list':
       return rolesListView(deps, registry);

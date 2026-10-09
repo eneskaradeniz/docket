@@ -44,6 +44,7 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
     input:
       'role: RoleSlug, accounts: { accountId: AccountId, model?: string }[], thinking?: { level? | effort? }, tier?: Tier',
   },
+  'settings.setDispatch': { input: 'global: 1-16, perRepo: 1-global, perAccount: Record<AccountId, 1-global>' },
   'quota.refresh': { input: 'id?: AccountId' },
   'capabilities.import': { input: 'identities: string[]' },
   'app.update.check': { input: 'no input' },
@@ -61,6 +62,7 @@ export const QUERY_REGISTRY: Record<Query['type'], RegistryEntry> = {
   'project.spend': { input: 'project: ProjectSlug' },
   'repos.list': { input: 'no input' },
   'settings.accounts': { input: "catalog?: 'read' | 'skip'" },
+  'settings.dispatch': { input: 'no input' },
   'roles.list': { input: 'no input' },
   'providers.discovered': { input: 'no input' },
   'accounts.candidates': { input: 'fresh?: boolean' },

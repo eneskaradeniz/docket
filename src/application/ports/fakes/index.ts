@@ -2,6 +2,7 @@
 // Contract: docs/v2/application.md (rules for fakes A-1 … A-4).
 export * from './fake-account-repo';
 export * from './fake-account-test-repo';
+export * from './fake-app-settings-repo';
 export * from './fake-binding-repo';
 export * from './fake-capability-catalog';
 export * from './fake-capability-discovery';
