@@ -88,9 +88,12 @@ const LONG_TITLE =
 const ASK_ROW: OpenAskView = { runId: 'run-1', askId: 'ask-1', since: 0, title: LONG_TITLE };
 
 /** The detail query and the open-asks query are answered separately, both from one scripted reply. */
-const fakeApi = (reply: unknown, asks: readonly OpenAskView[] = []): Pick<Api, 'query' | 'command'> => ({
-  query: (query: Query) =>
-    Promise.resolve(query.type === 'permissions.open' ? asks : reply),
+const fakeApi = (reply: unknown, asks: readonly OpenAskView[] = [], stageFiles: unknown = null): Pick<Api, 'query' | 'command'> => ({
+  query: (query: Query) => {
+    if (query.type === 'permissions.open') return Promise.resolve(asks);
+    if (query.type === 'workOrders.stageFiles') return Promise.resolve(stageFiles);
+    return Promise.resolve(reply);
+  },
   command: (_actor: Actor, _command: Command): Promise<CommandResult> =>
     Promise.resolve({ ok: true }),
 });
@@ -105,9 +108,9 @@ const fakePane = (): LivePaneStore => ({
 });
 
 /** Loads the scripted view into a real store and draws the screen a user would see. */
-const draw = async (view: WorkOrderDetailView, asks: readonly OpenAskView[] = []): Promise<string> => {
+const draw = async (view: WorkOrderDetailView, asks: readonly OpenAskView[] = [], stageFiles: unknown = null): Promise<string> => {
   const store = createWorkOrderDetailStore({
-    api: fakeApi(view, asks),
+    api: fakeApi(view, asks, stageFiles),
     changes: () => () => {},
     actor: ACTOR,
     pane: fakePane(),
@@ -144,6 +147,19 @@ describe('work-order detail screen — expected of you', () => {
     expect(html).toContain('Sorun var');
     expect(html).toContain('Reddet');
     expect(html).not.toContain('Aşamayı başlat');
+  });
+
+  it('U-57: decision card shows the stage files and the plan approval', async () => {
+    const stageFiles = {
+      files: [{ path: 'docs/architecture.md', sizeBytes: 1024 }],
+      truncated: false,
+    };
+    const html = await draw(AWAITING_HUMAN, [], stageFiles);
+
+    expect(html).toContain('docs/architecture.md');
+    // Ensure size is somewhat formatted or at least present if the UI formats it
+    // Wait, the UI might show '1.0 KB' or just render the file name. Let's just check the file name.
+    expect(html).toContain('Onayla ve ilerle');
   });
 });
 

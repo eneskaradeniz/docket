@@ -16,6 +16,7 @@
 // everything stacks. The screen fills the main column at every width (U-54).
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { WorkOrderStatus } from '../../domain/index';
+import type { StageFilesView, WorktreeFilePreview } from '../../api/queries';
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
 import { ActionButton } from '../components/action-button';
@@ -280,6 +281,92 @@ function FlowStrip({ stages, locale }: { readonly stages: readonly StageGates[];
   );
 }
 
+function StageFilesPreview({
+  store,
+  stageFiles,
+  locale,
+}: {
+  readonly store: WorkOrderDetailStore;
+  readonly stageFiles: StageFilesView;
+  readonly locale: Locale;
+}) {
+  const [selectedFile, setSelectedFile] = useState<string | null>(
+    stageFiles.files.length > 0 ? stageFiles.files[0].path : null,
+  );
+  const [preview, setPreview] = useState<WorktreeFilePreview | 'loading' | 'error' | null>(null);
+
+  useEffect(() => {
+    if (selectedFile === null) {
+      setPreview(null);
+      return;
+    }
+    setPreview('loading');
+    let active = true;
+    void store.readStageFile(selectedFile).then((res) => {
+      if (!active) return;
+      if (res === null) {
+        setPreview('error');
+      } else {
+        setPreview(res);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [store, selectedFile]);
+
+  if (stageFiles.files.length === 0) return null;
+
+  return (
+    <div className="grid gap-2">
+      <h3 className="text-[0.78125rem] font-semibold text-inkdim">{t(locale, 'detail.expected.files')}</h3>
+      <div className="flex overflow-hidden rounded-control border border-hairline bg-surface">
+        <div className="flex w-[12.5rem] flex-none flex-col border-r border-hairline bg-subtle">
+          <ul className="flex-1 overflow-y-auto">
+            {stageFiles.files.map((file) => {
+              const isSelected = selectedFile === file.path;
+              return (
+                <li key={file.path}>
+                  <button
+                    className={`block w-full truncate px-3 py-1.5 text-left font-mono text-[0.71875rem] hover:bg-raised ${isSelected ? 'bg-raised font-semibold text-ink' : 'text-inkdim'}`}
+                    onClick={() => setSelectedFile(file.path)}
+                    title={file.path}
+                  >
+                    {file.path.split('/').pop() || file.path}
+                  </button>
+                </li>
+              );
+            })}
+            {stageFiles.truncated ? (
+              <li className="px-3 py-1.5 text-[0.6875rem] text-inkdim italic">
+                {t(locale, 'detail.expected.files.truncated')}
+              </li>
+            ) : null}
+          </ul>
+        </div>
+        <div className="flex-1 min-w-0 bg-surface">
+          {preview === 'loading' ? (
+            <div className="p-3 text-[0.75rem] text-inkdim">{t(locale, 'detail.expected.file.loading')}</div>
+          ) : preview === 'error' ? (
+            <div className="p-3 text-[0.75rem] text-signal">{t(locale, 'detail.expected.file.error')}</div>
+          ) : preview !== null ? (
+            <div className="h-[12.5rem] overflow-y-auto p-3">
+              <pre className="font-mono text-[0.71875rem] leading-[1.4] text-ink">
+                {preview.lines.join('\n')}
+              </pre>
+              {preview.truncated ? (
+                <div className="mt-2 text-[0.6875rem] text-inkdim italic">
+                  {t(locale, 'detail.expected.file.truncated')}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onBack }: WorkOrderDetailScreenProps) {
   const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   useEffect(() => {
@@ -404,6 +491,11 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
               <div className="rounded-card border border-hairline bg-surface p-4">
                 <p className="text-[0.875rem] font-semibold text-ink">{pendingHumanGate.label ?? pendingHumanGate.id}</p>
                 <p className="mt-1.5 text-[0.8125rem] text-inkdim">{t(locale, 'detail.expected.body')}</p>
+                {state.stageFiles !== null && state.stageFiles.files.length > 0 ? (
+                  <div className="mt-4 border-t border-hairline pt-4">
+                    <StageFilesPreview store={store} stageFiles={state.stageFiles} locale={locale} />
+                  </div>
+                ) : null}
                 <div className="mt-3.5 flex gap-2">
                   <ActionButton variant="neutral" size="md" onClick={() => decide(pendingHumanGate.id, 'rejected')}>
                     {t(locale, 'detail.expected.refuse')}

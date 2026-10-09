@@ -17,3 +17,5 @@ export * from './instructions';
 export * from './checkpoints';
 export * from './handoff';
 export * from './candidate-quota';
+export * from './stage-files';
+

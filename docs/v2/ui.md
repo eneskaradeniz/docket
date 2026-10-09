@@ -701,6 +701,19 @@ container.
   25 % inside the same frame). Whether each moves to rem is the architect's follow-up decision,
   issue by issue; the width wave must not rewrite them silently.
 
+## Decision card — the approval sees the files it decides on (U-57)
+
+- **U-57** (detail screen; added 2026-10-09, #819) The expected-of-you card lists the stage's
+  files only while the work order is `awaiting_human`, and in no other state:
+  `workOrders.stageFiles` fills the list (at most 50 entries, with the "showing the first 50" note
+  when `truncated`) and the preview of the first listed file loads from
+  `workOrders.readStageFile` — plain read-only text, no Markdown rendering, no diff, no edit; picking
+  another entry of the list previews that file instead. Both the list and the preview disappear the
+  moment the state is not `awaiting_human`. The detail store's existing refresh (U-4) re-reads the
+  list with the detail. Every line of copy lives in the bundles (`labels/{tr,en}.ts`, U-1) — the
+  list heading, the truncated-list note, the truncated-preview note — and a failed read shows the
+  failure code's label, never the raw code.
+
 ## Verifying the shell — E2E layers (Phase 3.5)
 
 The shell is verified against the frozen prototype **rev 8** (`~/source/docket-tasarim/rev8/`:

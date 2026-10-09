@@ -393,6 +393,17 @@ Rules:
 
 - **I-35** The account-test adapters: `createMemoryAccountTestRepo()` keeps records in memory for the process lifetime and, on `save`, passes `detail` through the secret redaction the gates use (`redactSecrets`) and then cuts it to 300 code points, so a stored detail never carries a token-shaped value. `createScratchDirs()` creates each dir with `mkdtemp` under the OS temp dir, named `docket-account-test-*`, outside every repo and every `identityDir`; `dispose` removes exactly that directory recursively and never fails the caller (a removal error is logged by name only). The SQLite `recordSpend` stores an `account_test` entry with empty strings in the project/repo and work-order columns (no schema change); the repo/project/work-order filters therefore never match it, while an `accountId` filter does.
 
+### Worktree files adapter (#819)
+
+```ts
+// vcs/worktree-files.ts — behind ports/worktree-files.ts (application.md → #819)
+export function createWorktreeFiles(): WorktreeFiles;
+```
+
+- **I-39** (added 2026-10-09, #819) `listChanged(worktreePath)` runs through `runGit` (I-19) in the worktree: `git diff --name-only --diff-filter=ACMR HEAD` (staged and unstaged alike; deleted files are excluded — nothing to read, nothing to decide on) plus `git ls-files --others --exclude-standard` (untracked but not ignored — the scanner I-23's set). Entries are the union, paths '/'-separated as git prints them, sorted by path in Unicode code-point order; `sizeBytes` is each file's stat. Not a git work tree → throws (the scanner's stance); a git failure throws and the api boundary answers with its failure envelope. Nothing is written and no file's content is read — the stat is the only touch.
+- **I-40** (added 2026-10-09, #819) `readText` guards in this fixed order and answers with exactly the contract's names: (1) `relativePath` contains a `..` segment, or the symlink-resolved real path of `worktreePath/relativePath` does not lie under the symlink-resolved `worktreePath` (the resolved root plus a separator — never a string-coincidence prefix) → `outside_worktree`; (2) no regular file there → `not_found`; (3) its size is over 256 KiB (262 144 bytes) → `too_large`; (4) its bytes contain a NUL byte or do not decode as UTF-8 → `not_text`. Otherwise: the first `maxLines` lines, split on `'\n'` (a trailing newline ends the last line, it does not start an empty one), `truncated: true` when the file had more lines. The order is the contract — an escaping path answers `outside_worktree` even when nothing exists there; the size is checked before a byte of content is read.
+- **I-41** (added 2026-10-09, #819) The fake `createFakeWorktreeFiles()` (ports/fakes, A-1) carries this same contract, not a loose stand-in: it rejects `..`, a resolved escape, an oversize and a binary entry with I-40's own names and order, keeps I-39's path ordering, and truncates at `maxLines` — a use-case test against the fake exercises the adapter's semantics. Its files live in memory only and it returns copies (A-2).
+
 ## 9. Phase 2b acceptance — headless end to end on real storage
 
 `src/infrastructure/scenarios/standard-flow-node.test.ts` repeats the Phase 2a scenario

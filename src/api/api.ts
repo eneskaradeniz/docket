@@ -87,6 +87,7 @@ import {
   isSourceTaken,
   openTaskWorkOrders,
   openWorkOrder,
+  readStageFile,
   registerRepo,
   removeAccount,
   removeAccountCap,
@@ -96,6 +97,7 @@ import {
   saveAccount,
   saveAccountCap,
   saveBinding,
+  stageFiles,
   unblockWorkOrder,
   unregisterRepo,
   catalogOrEmpty,
@@ -769,6 +771,18 @@ const runQuery = async (
   candidateQuota: CandidateQuotaPreview | undefined,
 ): Promise<unknown> => {
   switch (query.type) {
+    case 'workOrders.stageFiles': {
+      const id = ulidValue<'work-order'>(query.id);
+      if (id === undefined) return invalidId();
+      const res = await stageFiles(deps, id);
+      return res.ok ? res.value : { ok: false, code: res.error };
+    }
+    case 'workOrders.readStageFile': {
+      const id = ulidValue<'work-order'>(query.id);
+      if (id === undefined) return invalidId();
+      const res = await readStageFile(deps, { id, path: query.path });
+      return res.ok ? res.value : { ok: false, code: res.error };
+    }
     case 'workOrder.detail': {
       const id = ulidValue<'work-order'>(query.id);
       if (id === undefined) return invalidId();

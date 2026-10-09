@@ -1,9 +1,9 @@
 // api/queries.ts — the read side of the boundary. Exact contract: docs/v2/application.md § 4.
 // Plain JSON-serialisable shapes only; ids travel as strings and are parsed in api.ts.
 import type { ModelMatcher } from '../domain/index';
-import type { AccountTestView, ProviderMark, QuotaProbeError } from '../application';
+import type { AccountTestView, ProviderMark, QuotaProbeError, StageFilesView, WorktreeFilePreview } from '../application';
 
-export type { AccountTestView };
+export type { AccountTestView, StageFilesView, WorktreeFilePreview };
 
 export type Query =
   | { readonly type: 'workOrder.detail'; readonly id: string }
@@ -23,7 +23,9 @@ export type Query =
   | { readonly type: 'providers.marks' }
   | { readonly type: 'run.events'; readonly runId: string }
   | { readonly type: 'permissions.open' }
-  | { readonly type: 'app.update' };
+  | { readonly type: 'app.update' }
+  | { readonly type: 'workOrders.stageFiles'; readonly id: string }
+  | { readonly type: 'workOrders.readStageFile'; readonly id: string; readonly path: string };
 
 export interface AttentionItem {
   readonly workOrderId: string;

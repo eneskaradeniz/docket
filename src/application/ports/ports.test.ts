@@ -45,6 +45,7 @@ import type {
   SecretScanner,
   Worktrees,
 } from './repo-tools';
+import type { WorktreeFiles } from './worktree-files';
 import type { WorkOrderRecord, WorkOrderRepo } from './work-order-repo';
 
 describe('AppDeps', () => {
@@ -68,6 +69,7 @@ describe('AppDeps', () => {
     expectTypeOf<AppDeps['commands']>().toEqualTypeOf<CommandRunner>();
     expectTypeOf<AppDeps['secretScanner']>().toEqualTypeOf<SecretScanner>();
     expectTypeOf<AppDeps['worktrees']>().toEqualTypeOf<Worktrees>();
+    expectTypeOf<AppDeps['worktreeFiles']>().toEqualTypeOf<WorktreeFiles>();
     expectTypeOf<AppDeps['evidence']>().toEqualTypeOf<EvidenceChecker>();
     expectTypeOf<AppDeps['git']>().toEqualTypeOf<GitProbe>();
     expectTypeOf<AppDeps['notifier']>().toEqualTypeOf<Notifier>();
@@ -99,6 +101,7 @@ describe('AppDeps', () => {
       | 'commands'
       | 'secretScanner'
       | 'worktrees'
+      | 'worktreeFiles'
       | 'evidence'
       | 'git'
       | 'notifier'
@@ -153,6 +156,7 @@ describe('AppDeps', () => {
     expectTypeOf<Application.SecretScanner>().toEqualTypeOf<SecretScanner>();
     expectTypeOf<Application.EvidenceChecker>().toEqualTypeOf<EvidenceChecker>();
     expectTypeOf<Application.Worktrees>().toEqualTypeOf<Worktrees>();
+    expectTypeOf<Application.WorktreeFiles>().toEqualTypeOf<WorktreeFiles>();
     expectTypeOf<Application.Notifier>().toEqualTypeOf<Notifier>();
     expectTypeOf<Application.AppDeps>().toEqualTypeOf<AppDeps>();
   });

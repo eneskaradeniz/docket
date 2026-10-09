@@ -35,7 +35,7 @@ import {
   type OpenDbError,
 } from '../storage/sqlite/index';
 import { createSystemClock, createUlidGen, type ProjectPaths, type RandomBytes } from '../system/index';
-import { createCheckpoints, createEvidenceChecker, createGitProbe, createRepoFolders, createWorktrees } from '../vcs/index';
+import { createCheckpoints, createEvidenceChecker, createGitProbe, createRepoFolders, createWorktrees, createWorktreeFiles } from '../vcs/index';
 import { createCapabilityCatalog } from '../providers/registry/index';
 import { createModelCatalog } from '../providers/catalog/index';
 import { createQuotaProbeResolver } from '../providers/quota/index';
@@ -112,6 +112,7 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     commands: createCommandRunner({ env: config.commandEnv }),
     secretScanner: createSecretScanner(),
     worktrees: createWorktrees({ root: join(config.dataDir, 'worktrees'), repos }),
+    worktreeFiles: createWorktreeFiles(),
     evidence: createEvidenceChecker(),
     git: createGitProbe(),
     notifier: config.notifier,
