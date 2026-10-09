@@ -440,11 +440,18 @@ const startApp = async (): Promise<void> => {
 
   // The dispatcher loop: each tick may start queued items; each started item then runs to
   // completion on its own, so one slow agent never delays the next tick.
+  // Non-reentrant: an overlapping tick would list the queue before the first removed its item and
+  // start the same queue item twice.
+  let dispatching = false;
   dispatchTimer = setInterval(() => {
+    if (dispatching) return;
+    dispatching = true;
     // The limits are read per tick so a settings change applies without a restart.
     void getDispatchLimits(nodeDeps).then((limits) => dispatcherTick(nodeDeps, { limits, probes: quotaProbes }, (item) => {
       void runStartedItem(api, board, item);
-    })).catch((error) => console.error('dispatcher tick failed', error));
+    })).catch((error) => console.error('dispatcher tick failed', error)).finally(() => {
+      dispatching = false;
+    });
   }, DISPATCH_INTERVAL_MS);
 
   createWindow();
