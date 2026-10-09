@@ -319,16 +319,16 @@ function StageFilesPreview({
 
   return (
     <div className="grid gap-2">
-      <h3 className="text-[12.5px] font-semibold text-inkdim">{t(locale, 'detail.expected.files')}</h3>
+      <h3 className="text-[0.78125rem] font-semibold text-inkdim">{t(locale, 'detail.expected.files')}</h3>
       <div className="flex overflow-hidden rounded-control border border-hairline bg-surface">
-        <div className="flex w-[200px] flex-none flex-col border-r border-hairline bg-subtle">
+        <div className="flex w-[12.5rem] flex-none flex-col border-r border-hairline bg-subtle">
           <ul className="flex-1 overflow-y-auto">
             {stageFiles.files.map((file) => {
               const isSelected = selectedFile === file.path;
               return (
                 <li key={file.path}>
                   <button
-                    className={`block w-full truncate px-3 py-1.5 text-left font-mono text-[11.5px] hover:bg-raised ${isSelected ? 'bg-raised font-semibold text-ink' : 'text-inkdim'}`}
+                    className={`block w-full truncate px-3 py-1.5 text-left font-mono text-[0.71875rem] hover:bg-raised ${isSelected ? 'bg-raised font-semibold text-ink' : 'text-inkdim'}`}
                     onClick={() => setSelectedFile(file.path)}
                     title={file.path}
                   >
@@ -338,7 +338,7 @@ function StageFilesPreview({
               );
             })}
             {stageFiles.truncated ? (
-              <li className="px-3 py-1.5 text-[11px] text-inkdim italic">
+              <li className="px-3 py-1.5 text-[0.6875rem] text-inkdim italic">
                 {t(locale, 'detail.expected.files.truncated')}
               </li>
             ) : null}
@@ -346,16 +346,16 @@ function StageFilesPreview({
         </div>
         <div className="flex-1 min-w-0 bg-surface">
           {preview === 'loading' ? (
-            <div className="p-3 text-[12px] text-inkdim">{t(locale, 'detail.expected.file.loading')}</div>
+            <div className="p-3 text-[0.75rem] text-inkdim">{t(locale, 'detail.expected.file.loading')}</div>
           ) : preview === 'error' ? (
-            <div className="p-3 text-[12px] text-signal">{t(locale, 'detail.expected.file.error')}</div>
+            <div className="p-3 text-[0.75rem] text-signal">{t(locale, 'detail.expected.file.error')}</div>
           ) : preview !== null ? (
-            <div className="h-[200px] overflow-y-auto p-3">
-              <pre className="font-mono text-[11.5px] leading-[1.4] text-ink">
+            <div className="h-[12.5rem] overflow-y-auto p-3">
+              <pre className="font-mono text-[0.71875rem] leading-[1.4] text-ink">
                 {preview.lines.join('\n')}
               </pre>
               {preview.truncated ? (
-                <div className="mt-2 text-[11px] text-inkdim italic">
+                <div className="mt-2 text-[0.6875rem] text-inkdim italic">
                   {t(locale, 'detail.expected.file.truncated')}
                 </div>
               ) : null}
