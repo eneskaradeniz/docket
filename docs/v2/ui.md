@@ -717,9 +717,11 @@ container.
   line again: it wraps anywhere (`overflow-wrap: anywhere`) and clamps at two lines
   (`line-clamp-2`), and the full line stays reachable through the span's `title`, the fallback
   for the clamped case only. The card reserves the second line's space — a `min-height` of two
-  of the mono line's own boxes (1.86875rem) — so a one-line and a two-line name render the same
-  card height, and the skeleton's mirrored meta block stands on the same reservation, leaving
-  the holder swap nothing to move. The work-order title on the card's first line keeps its own
+  of the line's own boxes as the card renders them, the preflight's inherited 1.5 leading × the
+  0.71875rem mono size × 2 (2.15625rem, exact at every root scale) — so a one-line and a
+  two-line name render the same card height, and the skeleton's mirrored meta block stands on
+  the same reservation, leaving the holder swap nothing to move. The work-order title on the
+  card's first line keeps its own
   single-line truncate. The layout audit walks the cards at 1024, 1280 and 1512 (`attention:`
   lines): every project line clamps at two, no card overflows its box or the main column, and
   the cards of one grid row keep one height (the ask band's card excepted — taller by its own

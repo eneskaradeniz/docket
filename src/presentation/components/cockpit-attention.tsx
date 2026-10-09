@@ -60,12 +60,14 @@ export function CockpitAttentionRow({ item, ask, locale, ageMs, onOpen, onAnswer
       </span>
       <span
         data-attention-line=""
-        className="col-start-2 line-clamp-2 [overflow-wrap:anywhere] min-h-[1.86875rem] font-mono text-[0.71875rem] text-inkdim"
+        className="col-start-2 line-clamp-2 [overflow-wrap:anywhere] min-h-[2.15625rem] font-mono text-[0.71875rem] text-inkdim"
         // The whole line rides the title, not only "project / repo" (U-62): in U-55's fill
         // columns the card can be narrower than the line, and the text past the two-line clamp
-        // must stay reachable in full. The min-height reserves the wrap's second line, so a
-        // one-line and a two-line name render the same card height — the skeleton's mirrored
-        // block stands on the same reservation.
+        // must stay reachable in full. The min-height reserves the wrap's second line — two of
+        // the line's own boxes as the card renders them (the preflight's inherited 1.5 leading
+        // × the 0.71875rem size × 2), so a one-line and a two-line name render the same card
+        // height at every root scale, and the skeleton's mirrored block stands on the same
+        // reservation.
         title={`${formatWorkOrderCode(item.number, locale)} · ${item.project} / ${item.repo}${
           item.stage !== null ? ` · ${item.stage}` : ''
         }`}

@@ -54,8 +54,9 @@ describe('CockpitAttentionRow (U-62, U-53)', () => {
 
   it('U-62: the second line’s space is reserved — a one-line and a two-line name render one card height', () => {
     const line = projectLine(markup());
-    // Two of the mono line’s own boxes: 2 × 11.5px × 1.3 = 29.9px = 1.86875rem.
-    expect(line).toContain('min-h-[1.86875rem]');
+    // Two of the line's own boxes as the card renders them: the preflight's inherited 1.5
+    // leading × the 0.71875rem mono size × 2 = 34.5px = 2.15625rem, exact at every root scale.
+    expect(line).toContain('min-h-[2.15625rem]');
   });
 
   it('U-53: the card’s interiors speak rem — no px type rides the row', () => {

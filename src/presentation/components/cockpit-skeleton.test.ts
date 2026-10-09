@@ -52,9 +52,10 @@ describe('CockpitSkeleton (U-26)', () => {
     expect((html.match(/height:16\.39px/g) ?? []).length).toBe(6);
     // The ask band's 12.5 px mono command line: 12.5 × 1.3.
     expect((html.match(/height:16\.25px/g) ?? []).length).toBe(1);
-    // 11.5 px mono meta lines (attention): 11.5 × 1.3 × 2 — U-62 reserves the wrap's second
-    // line, so the block stands two lines tall even where the name fits on one.
-    expect((html.match(/height:29\.9px/g) ?? []).length).toBe(4);
+    // 11.5 px mono meta lines (attention): 11.5 × 1.5 (the preflight's inherited leading) × 2 —
+    // U-62 reserves the wrap's second line as the card renders it, so the block stands two
+    // lines tall even where the name fits on one.
+    expect((html.match(/height:34\.5px/g) ?? []).length).toBe(4);
     // The project card's leading-none 22 px number line, and the 18 px count pills.
     expect((html.match(/height:22px/g) ?? []).length).toBe(5);
     expect(html).toContain('height:18px');
