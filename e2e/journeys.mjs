@@ -453,9 +453,6 @@ for (const [sizeName, theme] of combos) {
   const { page } = handle;
   const text = (t) => page.getByText(t, { exact: false }).first();
   const see = async (t) => text(t).waitFor({ state: 'visible', timeout: WAIT });
-  // The wizard's own open read includes the accounts' catalog probes (A-86's default read), so
-  // the first Hesaplar rows can land behind them — that one wait breathes slower than the rest.
-  const seeSlow = async (t) => text(t).waitFor({ state: 'visible', timeout: 20_000 });
   const click = async (t) => text(t).click({ timeout: WAIT });
   const button = async (name) => page.getByRole('button', { name }).first().click({ timeout: WAIT });
 
@@ -471,15 +468,21 @@ for (const [sizeName, theme] of combos) {
   const title = 'J-9: wizard: Yetenekler reads both accounts, syncs the shared row and imports it at the finish';
   total += 1;
   try {
-    // Hoş geldin → Hesaplar: the two seeded accounts, both already selected.
+    // Hoş geldin → Hesaplar: the two seeded accounts, both already selected. The fixture home
+    // holds no `.claude*` directory and no installable CLI, so exactly these two rows can ever
+    // list — the count is the world's hermeticity assertion, not just readiness.
     await see('Hoş geldin');
     await shot('welcome');
     await button('Devam');
-    await seeSlow('Claude Code · Kişisel');
-    await seeSlow('Claude Code · İş');
+    await page.locator('[data-account-row]').first().waitFor({ state: 'visible', timeout: WAIT });
+    const rowCount = await page.locator('[data-account-row]').count();
+    assert(rowCount === 2, `the wizard world must list exactly the two fixture accounts, saw ${rowCount}`);
+    await see('Kişisel');
+    await see('İş');
     await shot('accounts');
     await button('Devam');
-    // Yetenekler: one group per account; the shared capability is one row in both groups.
+    // Yetenekler: one group per account; the shared capability is one row in both groups. The
+    // group titles read "Asistan · Hesap" — the provider's name · the account's label (U-59).
     await page.locator('[data-cap-group]').first().waitFor({ state: 'visible', timeout: WAIT });
     const groupCount = await page.locator('[data-cap-group]').count();
     assert(groupCount === 2, `expected 2 capability groups, saw ${groupCount}`);
