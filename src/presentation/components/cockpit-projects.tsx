@@ -23,29 +23,29 @@ export function CockpitProjectCard({ card, locale, sinceMs, onOpen }: CockpitPro
       title={card.name}
       className="grid min-w-0 gap-2 rounded-card border border-hairline bg-surface px-3.5 py-2.5 text-left transition-colors hover:border-bord hover:bg-raised"
     >
-      <span className={`flex min-w-0 items-center gap-2 text-[14px] font-semibold ${card.active === 0 ? 'text-inkdim' : 'text-ink'}`}>
+      <span className={`flex min-w-0 items-center gap-2 text-[0.875rem] font-semibold ${card.active === 0 ? 'text-inkdim' : 'text-ink'}`}>
         <span aria-hidden="true" className={`h-2 w-2 flex-none rounded-full ${lamp}`} />
         <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{card.name}</span>
       </span>
       <span className="flex items-baseline gap-3.5">
-        <span className={`font-mono text-[22px] font-semibold leading-none tracking-[-0.02em] ${card.active === 0 ? 'text-bord' : 'text-ink'}`}>
+        <span className={`font-mono text-[1.375rem] font-semibold leading-none tracking-[-0.02em] ${card.active === 0 ? 'text-bord' : 'text-ink'}`}>
           {card.active}
         </span>
-        <span className="text-[12px] text-inkdim">{t(locale, 'cockpit.card.active')}</span>
+        <span className="text-[0.75rem] text-inkdim">{t(locale, 'cockpit.card.active')}</span>
         {card.waiting > 0 ? (
-          <span className="inline-flex items-center gap-[5px] text-[12px] font-semibold text-signal-soft">
+          <span className="inline-flex items-center gap-[0.3125rem] text-[0.75rem] font-semibold text-signal-soft">
             <span aria-hidden="true" className="h-2 w-2 rounded-full bg-signal" />
             {card.waiting} {t(locale, 'cockpit.card.waiting')}
           </span>
         ) : null}
       </span>
-      <span className="flex items-center gap-2.5 text-[12px] text-inkdim">
+      <span className="flex items-center gap-2.5 text-[0.75rem] text-inkdim">
         {showsLastActivity(card) && card.lastActivityAt != null
           ? `${t(locale, 'cockpit.card.lastActivity')} ${formatAge(locale, sinceMs(card.lastActivityAt))}`
           : multi
             ? `${card.repoCount} ${t(locale, 'cockpit.card.repos')}`
             : t(locale, 'cockpit.card.singleRepo')}
-        <span className="ml-auto font-mono text-[11.5px]">
+        <span className="ml-auto font-mono text-[0.71875rem]">
           {t(locale, multi ? 'cockpit.card.toRoadmap' : 'cockpit.card.toBoard')} ›
         </span>
       </span>

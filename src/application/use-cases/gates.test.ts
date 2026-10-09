@@ -1,6 +1,7 @@
 // gates use cases — rules A-8 (decideHumanGate), A-9 (evaluateMachineGates), A-9a
-// (submitAgentVerdict) and E-18 (evaluateMachineGates polling remote_checks gates; the GateContext
-// environments invariant) from docs/v2/application.md, driven over the in-memory port fakes.
+// (submitAgentVerdict), A-96 (the changes gate's evidence and its human attestation) and E-18
+// (evaluateMachineGates polling remote_checks gates; the GateContext environments invariant) from
+// docs/v2/application.md, driven over the in-memory port fakes.
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -21,6 +22,7 @@ import {
 
 import type { AppDeps, CheckRun, Forge, ForgeResolver } from '../ports';
 import {
+  createFakeCheckpointCommitter,
   createFakeClock,
   createFakeCommandRunner,
   createFakeDefinitionStore,
@@ -30,6 +32,7 @@ import {
   createFakeForge,
   createFakeSecretScanner,
   createFakeWorktrees,
+  type FakeCheckpointCommitter,
   type FakeCommandRunner,
   type FakeDefinitionStore,
   type FakeEventLog,
@@ -39,7 +42,7 @@ import {
 } from '../ports/fakes';
 
 import { approveAndDeploy } from './deploy-gate';
-import { decideHumanGate, evaluateMachineGates, submitAgentVerdict } from './gates';
+import { attestNoChanges, decideHumanGate, evaluateMachineGates, submitAgentVerdict } from './gates';
 
 // --- fixtures ---------------------------------------------------------------------------------------
 
@@ -194,6 +197,39 @@ const DEFINITIONS_BODY = {
       name: 'Deploy',
       stages: [{ id: 'ship', name: 'Ship', role: 'worker', exit: [{ kind: 'deploy', id: 'ship-stg', environment: 'stg' }] }],
     },
+    {
+      id: 'changes-flow',
+      name: 'Changes only',
+      stages: [{ id: 'build', name: 'Build', role: 'worker', exit: [{ kind: 'changes', id: 'changes' }] }],
+    },
+    {
+      id: 'changes-mixed-flow',
+      name: 'Changes then commands then scan',
+      stages: [{
+        id: 'build',
+        name: 'Build',
+        role: 'worker',
+        exit: [
+          { kind: 'changes', id: 'changes' },
+          { kind: 'command', id: 'run-checks', commandSet: 'checks' },
+          { kind: 'secret_scan', id: 'secrets' },
+        ],
+        onFail: { goto: 'build', maxAttempts: 3 },
+      }],
+    },
+    {
+      id: 'changes-then-deploy',
+      name: 'Changes then deploy',
+      stages: [{
+        id: 'build',
+        name: 'Build',
+        role: 'worker',
+        exit: [
+          { kind: 'changes', id: 'changes' },
+          { kind: 'deploy', id: 'deploy-stg', environment: 'stg' },
+        ],
+      }],
+    },
   ],
   capabilities: [],
   repo: {
@@ -203,6 +239,7 @@ const DEFINITIONS_BODY = {
     flows: [
       'human-flow', 'two-gates', 'later-stage', 'page-flow', 'cmd-flow', 'scan-flow', 'both-flow',
       'verdict-flow', 'remote-flow', 'remote-after-commands', 'two-remote-flow', 'deploy-mixed-flow', 'deploy-flow',
+      'changes-flow', 'changes-mixed-flow', 'changes-then-deploy',
     ],
     defaultFlow: 'human-flow',
     commandSets: { checks: [...CHECK_COMMANDS], 'deploy-stg': ['docket-deploy stg'] },
@@ -224,6 +261,7 @@ interface Harness {
   readonly evidence: FakeEvidenceChecker;
   readonly definitions: FakeDefinitionStore;
   readonly log: FakeEventLog;
+  readonly checkpoints: FakeCheckpointCommitter;
 }
 
 const makeHarness = (): Harness => {
@@ -234,9 +272,10 @@ const makeHarness = (): Harness => {
   const evidence = createFakeEvidenceChecker();
   const definitions = createFakeDefinitionStore();
   const log = createFakeEventLog();
+  const checkpoints = createFakeCheckpointCommitter();
   definitions.seed({ kind: 'global' }, 'definitions.json', JSON.stringify(DEFINITIONS_BODY));
-  const deps = createFakeDeps({ clock, commands, secretScanner: scanner, worktrees, evidence, definitions, log });
-  return { deps, clock, commands, scanner, worktrees, evidence, definitions, log };
+  const deps = createFakeDeps({ clock, commands, secretScanner: scanner, worktrees, evidence, definitions, log, checkpoints });
+  return { deps, clock, commands, scanner, worktrees, evidence, definitions, log, checkpoints };
 };
 
 /** Creates the work order with its `created` event, the way openWorkOrder would have. */
@@ -865,6 +904,264 @@ describe('evaluateMachineGates', () => {
     expect(result.value.status).toBe('blocked');
     expect(result.value.blockedReason).toBe('gate "ci" failed: remote check failed: lint');
   });
+
+  // --- A-96: the changes gate's machine-measured evidence -------------------------------------------
+
+  it('A-96: a changes gate passes on a diff that counts files, reading the base by the work order id', async () => {
+    const h = makeHarness();
+    const BASE = 'base-sha-1';
+    h.checkpoints.setBase(WORK_ORDER, BASE);
+    h.checkpoints.setDiff(BASE, { files: ['src/a.ts', 'src/b.ts'], patch: 'diff' });
+    await createIn(h, 'changes-flow');
+    await runSucceededIn(h, slugOf('build'));
+
+    const result = await evaluateMachineGates(h.deps, { id: WORK_ORDER });
+
+    expect(result).toEqual({
+      ok: true,
+      value: { status: 'done', stage: null, attempt: 1, pendingGates: [] },
+    });
+    const events = await eventsOf(h);
+    expect(events).toHaveLength(4);
+    expect(events[3]).toEqual({
+      type: 'gate_evaluated',
+      at: 1_000,
+      stage: slugOf('build'),
+      gate: slugOf('changes'),
+      verdict: { status: 'passed' },
+    });
+  });
+
+  it('A-96: a zero-file diff writes no event — the gate stays pending and the pass ends before the command set runs', async () => {
+    const h = makeHarness();
+    const BASE = 'base-sha-1';
+    h.checkpoints.setBase(WORK_ORDER, BASE);
+    h.checkpoints.setDiff(BASE, { files: [], patch: '' });
+    await createIn(h, 'changes-mixed-flow');
+    await runSucceededIn(h, slugOf('build'));
+
+    const result = await evaluateMachineGates(h.deps, { id: WORK_ORDER });
+
+    expect(result).toEqual({
+      ok: true,
+      value: { status: 'gating', stage: slugOf('build'), attempt: 1, pendingGates: ['changes', 'run-checks', 'secrets'] },
+    });
+    // Only created + run_started + run_finished: a zero is not a verdict (R-61), and the long
+    // test run waits behind the operator's attestation.
+    expect(await eventsOf(h)).toHaveLength(3);
+    expect(h.commands.calls()).toHaveLength(0);
+    expect(h.scanner.calls()).toHaveLength(0);
+  });
+
+  it('A-96: a changes gate that passes lets the same pass continue into the command set and the scan', async () => {
+    const h = makeHarness();
+    const BASE = 'base-sha-1';
+    h.checkpoints.setBase(WORK_ORDER, BASE);
+    h.checkpoints.setDiff(BASE, { files: ['src/a.ts'], patch: 'diff' });
+    await createIn(h, 'changes-mixed-flow');
+    await runSucceededIn(h, slugOf('build'));
+
+    const result = await evaluateMachineGates(h.deps, { id: WORK_ORDER });
+
+    expect(result).toEqual({
+      ok: true,
+      value: { status: 'done', stage: null, attempt: 1, pendingGates: [] },
+    });
+    expect(h.commands.calls()).toHaveLength(CHECK_COMMANDS.length);
+    const events = await eventsOf(h);
+    expect(events.slice(3)).toEqual([
+      expect.objectContaining({ gate: 'changes', verdict: { status: 'passed' } }),
+      expect.objectContaining({ gate: 'run-checks', verdict: { status: 'passed' } }),
+      expect.objectContaining({ gate: 'secrets', verdict: { status: 'passed' } }),
+    ]);
+  });
+
+  it('A-96: a git failure resolving the base is git_failed — the gate stays pending and never counts as zero', async () => {
+    const h = makeHarness();
+    h.checkpoints.failNext();
+    await createIn(h, 'changes-flow');
+    await runSucceededIn(h, slugOf('build'));
+
+    const result = await evaluateMachineGates(h.deps, { id: WORK_ORDER });
+
+    expect(result).toEqual({ ok: false, error: 'git_failed' });
+    expect(await eventsOf(h)).toHaveLength(3);
+  });
+
+  it('A-96: a git failure reading the diff is git_failed too', async () => {
+    const h = makeHarness();
+    h.checkpoints.setBase(WORK_ORDER, 'base-sha-1');
+    h.checkpoints.failNext();
+    await createIn(h, 'changes-flow');
+    await runSucceededIn(h, slugOf('build'));
+
+    const result = await evaluateMachineGates(h.deps, { id: WORK_ORDER });
+
+    expect(result).toEqual({ ok: false, error: 'git_failed' });
+    expect(await eventsOf(h)).toHaveLength(3);
+  });
+});
+
+// --- attestNoChanges (A-96) -------------------------------------------------------------------------
+
+describe('attestNoChanges', () => {
+  it('A-96: a user attesting a pending zero-changes gate passes it through R-61 and audits an approved decision', async () => {
+    const h = makeHarness();
+    await createIn(h, 'changes-flow');
+    await runSucceededIn(h, slugOf('build'));
+    h.clock.advance(40);
+
+    const result = await attestNoChanges(h.deps, {
+      id: WORK_ORDER,
+      gate: slugOf('changes'),
+      noChangeNeeded: true,
+      actor: USER,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: { status: 'done', stage: null, attempt: 1, pendingGates: [] },
+    });
+    const events = await eventsOf(h);
+    expect(events[3]).toEqual({
+      type: 'gate_evaluated',
+      at: 1_040,
+      stage: slugOf('build'),
+      gate: slugOf('changes'),
+      verdict: { status: 'passed' },
+    });
+    const [audit] = h.log.entries();
+    expect(audit).toMatchObject({
+      at: 1_040,
+      actor: USER,
+      action: 'gate.decided',
+      subject: { kind: 'work_order', id: WORK_ORDER },
+      detail: { gate: 'changes', decision: 'approved' },
+    });
+  });
+
+  it('A-96: attesting that changes were needed fails the gate and sends the stage through its onFail', async () => {
+    const h = makeHarness();
+    await createIn(h, 'changes-mixed-flow');
+    await runSucceededIn(h, slugOf('build'));
+
+    const result = await attestNoChanges(h.deps, {
+      id: WORK_ORDER,
+      gate: slugOf('changes'),
+      noChangeNeeded: false,
+      actor: USER,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: { status: 'ready', stage: slugOf('build'), attempt: 2, pendingGates: ['changes', 'run-checks', 'secrets'] },
+    });
+    const events = await eventsOf(h);
+    expect(events[3]).toMatchObject({ gate: 'changes', verdict: { status: 'failed', reason: 'no changes' } });
+    const [audit] = h.log.entries();
+    expect(audit).toMatchObject({ action: 'gate.decided', detail: { gate: 'changes', decision: 'rejected' } });
+  });
+
+  it('A-96: an agent actor can never attest — agent_cannot_decide, nothing appended', async () => {
+    const h = makeHarness();
+    await createIn(h, 'changes-flow');
+    await runSucceededIn(h, slugOf('build'));
+
+    const result = await attestNoChanges(h.deps, {
+      id: WORK_ORDER,
+      gate: slugOf('changes'),
+      noChangeNeeded: true,
+      actor: WORKER_AGENT,
+    });
+
+    expect(result).toEqual({ ok: false, error: 'agent_cannot_decide' });
+    expect(await eventsOf(h)).toHaveLength(3);
+    expect(h.log.entries()).toHaveLength(0);
+  });
+
+  it('A-96: a gate that is not a changes gate is not_a_changes_gate', async () => {
+    const h = makeHarness();
+    await createIn(h, 'cmd-flow');
+    await runSucceededIn(h, slugOf('build'));
+
+    const result = await attestNoChanges(h.deps, {
+      id: WORK_ORDER,
+      gate: slugOf('run-checks'),
+      noChangeNeeded: true,
+      actor: USER,
+    });
+
+    expect(result).toEqual({ ok: false, error: 'not_a_changes_gate' });
+    expect(h.log.entries()).toHaveLength(0);
+  });
+
+  it('A-96: a changes gate the stage merely pre-fills (ready, no run yet) is not_pending', async () => {
+    const h = makeHarness();
+    await createIn(h, 'changes-flow');
+
+    const result = await attestNoChanges(h.deps, {
+      id: WORK_ORDER,
+      gate: slugOf('changes'),
+      noChangeNeeded: true,
+      actor: USER,
+    });
+
+    expect(result).toEqual({ ok: false, error: 'not_pending' });
+    expect(await eventsOf(h)).toHaveLength(1);
+    expect(h.log.entries()).toHaveLength(0);
+  });
+
+  it('A-96: a changes gate that already passed is not_pending', async () => {
+    const h = makeHarness();
+    const BASE = 'base-sha-1';
+    h.checkpoints.setBase(WORK_ORDER, BASE);
+    h.checkpoints.setDiff(BASE, { files: ['src/a.ts'], patch: 'diff' });
+    // The deploy gate behind changes is never machine-evaluated, so the stage stays current and
+    // gating with changes already passed — the exact standing a second attestation must refuse.
+    await createIn(h, 'changes-then-deploy');
+    await runSucceededIn(h, slugOf('build'));
+    const gated = await evaluateMachineGates(h.deps, { id: WORK_ORDER });
+    expect(gated).toEqual({
+      ok: true,
+      value: { status: 'gating', stage: slugOf('build'), attempt: 1, pendingGates: ['deploy-stg'] },
+    });
+
+    const result = await attestNoChanges(h.deps, {
+      id: WORK_ORDER,
+      gate: slugOf('changes'),
+      noChangeNeeded: true,
+      actor: USER,
+    });
+
+    expect(result).toEqual({ ok: false, error: 'not_pending' });
+  });
+
+  it('A-96: a gate that does not belong to the current stage is not_current_stage', async () => {
+    const h = makeHarness();
+    await createIn(h, 'later-stage');
+
+    const result = await attestNoChanges(h.deps, {
+      id: WORK_ORDER,
+      gate: slugOf('second-approval'),
+      noChangeNeeded: true,
+      actor: USER,
+    });
+
+    expect(result).toEqual({ ok: false, error: 'not_current_stage' });
+  });
+
+  it('A-96: an unknown work order is not_found', async () => {
+    const h = makeHarness();
+
+    const result = await attestNoChanges(h.deps, {
+      id: WORK_ORDER,
+      gate: slugOf('changes'),
+      noChangeNeeded: true,
+      actor: USER,
+    });
+
+    expect(result).toEqual({ ok: false, error: 'not_found' });
+  });
 });
 
 // --- GateContext environments (E-18) ----------------------------------------------------------------
@@ -1136,6 +1433,7 @@ describe('gate use case results', () => {
       await decideHumanGate(h.deps, { id: WORK_ORDER, gate: slugOf('approve-me'), decision: 'approved', actor: USER }),
       await evaluateMachineGates(h.deps, { id: WORK_ORDER }),
       await submitAgentVerdict(h.deps, { id: WORK_ORDER, gate: slugOf('approve-me'), approve: true, pointers: [], actor: USER }),
+      await attestNoChanges(h.deps, { id: WORK_ORDER, gate: slugOf('changes'), noChangeNeeded: true, actor: USER }),
     ];
     for (const result of results) {
       expect(result.ok).toBeTypeOf('boolean');

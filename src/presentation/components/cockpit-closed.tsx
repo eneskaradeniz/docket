@@ -20,27 +20,27 @@ export function CockpitClosedList({ entries, locale, sinceMs, onOpen }: CockpitC
           <button
             type="button"
             onClick={() => onOpen(entry.workOrderId)}
-            className="grid min-h-9 w-full grid-cols-[auto_minmax(0,1fr)_auto_auto_auto] items-center gap-3 px-3.5 text-left text-[13px] transition-colors hover:bg-raised"
+            className="grid min-h-9 w-full grid-cols-[auto_minmax(0,1fr)_auto_auto_auto] items-center gap-3 px-3.5 text-left text-[0.8125rem] transition-colors hover:bg-raised"
           >
-          <span aria-hidden="true" className="text-[12px] text-proceed">✓</span>
+          <span aria-hidden="true" className="text-[0.75rem] text-proceed">✓</span>
           <span className="flex min-w-0 items-center gap-2.5">
-            <span className="flex-none font-mono text-[11.5px] text-inkdim">{formatWorkOrderCode(entry.number, locale)}</span>
+            <span className="flex-none font-mono text-[0.71875rem] text-inkdim">{formatWorkOrderCode(entry.number, locale)}</span>
             <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-ink" title={entry.title}>
               {entry.title}
             </span>
           </span>
           <span
-            className="max-w-[240px] overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[11.5px] text-inkdim"
+            className="max-w-[15rem] overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[0.71875rem] text-inkdim"
             title={`${entry.project} / ${entry.repo}`}
           >
             {entry.project} / {entry.repo}
           </span>
           {entry.outcome !== undefined ? (
-            <span className={`whitespace-nowrap text-[11.5px] ${entry.outcome === 'merged' ? 'text-proceed' : 'text-inkdim'}`}>
+            <span className={`whitespace-nowrap text-[0.71875rem] ${entry.outcome === 'merged' ? 'text-proceed' : 'text-inkdim'}`}>
               {t(locale, entry.outcome === 'merged' ? 'cockpit.closed.merged' : 'cockpit.closed.cancelled')}
             </span>
           ) : null}
-          <span className="whitespace-nowrap font-mono text-[11.5px] text-inkdim">{formatAge(locale, sinceMs(entry.closedAt))}</span>
+          <span className="whitespace-nowrap font-mono text-[0.71875rem] text-inkdim">{formatAge(locale, sinceMs(entry.closedAt))}</span>
           </button>
         </li>
       ))}

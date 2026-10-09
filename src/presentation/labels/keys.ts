@@ -21,6 +21,7 @@ export const LABEL_KEYS = [
   'error.not_current_stage',
   'error.not_pending',
   'error.not_a_human_gate',
+  'error.not_a_changes_gate',
   'error.agent_cannot_decide',
   'error.stale',
   'error.self_approval',
@@ -105,6 +106,8 @@ export const LABEL_KEYS = [
   'detail.expected.file.truncated',
   'success.gate.approved',
   'success.gate.rejected',
+  'success.gate.attestNoChange',
+  'success.gate.attestRerun',
   'run.outcome.succeeded',
   'run.outcome.failed',
   'run.outcome.limit',
@@ -131,6 +134,8 @@ export const LABEL_KEYS = [
   'detail.deploy.approve',
   // Secret-scan evidence copy (what the scan did / will do).
   'detail.secretScan.pending',
+  'detail.changes.attestNoChange',
+  'detail.changes.attestRerun',
   'detail.secretScan.passed',
   // Live pane (U-5): title, states, item kinds, tool statuses, usage and meter fields.
   'live.title',

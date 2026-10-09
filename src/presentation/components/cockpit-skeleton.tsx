@@ -36,16 +36,19 @@ const PlainHeadSkeleton = () => (
 
 /** One attention row: the loud section's card wrapper with its lamp, title line, action button
  *  block and meta line — the ready row's own grid and paddings. The lamp and the button block
- *  span both rows as the ready row's do, so the rows keep the text lines' own heights. The ask
- *  variant carries the permission row's command band as a third grid row, because the ask is
- *  already up in the standing the composition loads into — without the band's row the holder
- *  stands shorter than the content that replaces it, and the swap moves the page under it. */
+ *  span both rows as the ready row's do, so the rows keep the text lines' own heights; the meta
+ *  block stands two lines tall because the ready line reserves its wrap's second line (U-62) —
+ *  a one-line name must swap for the block without moving the holder (11.5px at the preflight's
+ *  inherited 1.5 leading: 34.5px). The ask variant carries
+ *  the permission row's command band as a third grid row, because the ask is already up in the
+ *  standing the composition loads into — without the band's row the holder stands shorter than
+ *  the content that replaces it, and the swap moves the page under it. */
 const AttentionRowSkeleton = ({ ask = false }: { readonly ask?: boolean }) => (
   <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 rounded-card border border-hairline bg-surface px-3.5 py-2.5">
     <Skeleton radius="full" width="8px" height="8px" className="row-span-2 mt-2 self-start" />
     <Skeleton radius="control" width="42%" height="19.12px" />
     <Skeleton radius="control" width="152px" height="21px" className="row-span-2" />
-    <Skeleton radius="control" width="68%" height="14.95px" />
+    <Skeleton radius="control" width="68%" height="34.5px" />
     {ask ? (
       <div className="col-span-2 col-start-2 mt-1.5 flex min-w-0 items-center gap-2.5 rounded-control border border-hairline bg-band px-2.5 py-1.5">
         <Skeleton radius="control" width="120px" height="16.39px" className="flex-none" />

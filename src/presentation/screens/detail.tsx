@@ -191,13 +191,15 @@ function DeployApprovalForm({
 
 /** One gate row: kind name, slug, state badge — plus, in the current stage, the decision the
  *  gate's kind actually accepts: human gates take approve/reject, deploy gates take the typed
- *  approval form, secret-scan gates show their evidence standing. */
+ *  approval form, a pending changes gate takes the attestation pair (U-58), and secret-scan
+ *  gates show their evidence standing. */
 function GateRow({
   gate,
   current,
   locale,
   awaitingHuman,
   onDecide,
+  onAttest,
   onApproveDeploy,
 }: {
   readonly gate: GateView;
@@ -207,12 +209,17 @@ function GateRow({
    *  is listed, but its decision buttons stay hidden until the stage asks. */
   readonly awaitingHuman: boolean;
   readonly onDecide: (gate: string, decision: 'approved' | 'rejected') => void;
+  readonly onAttest: (gate: string, noChangeNeeded: boolean) => void;
   readonly onApproveDeploy: (input: DeployApproveInput) => void;
 }) {
   const actionable = current && gate.status === 'pending';
   // A gate that waits on the operator tints its edge amber — the same attention edge the
-  // cockpit's rows carry; machine gates keep the plain hairline.
-  const edge = actionable && (isHumanDecision(gate) || gate.kind === 'deploy') ? 'border-signal/40' : 'border-hairline';
+  // cockpit's rows carry; machine gates keep the plain hairline. A pending changes gate waits
+  // on one the moment the machine has measured zero, so it carries the edge too.
+  const edge =
+    actionable && (isHumanDecision(gate) || gate.kind === 'deploy' || gate.kind === 'changes')
+      ? 'border-signal/40'
+      : 'border-hairline';
   return (
     <li className={`rounded-card border bg-surface px-3 py-2 ${edge}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -228,6 +235,16 @@ function GateRow({
               </ActionButton>
               <ActionButton variant="primary" onClick={() => onDecide(gate.id, 'approved')}>
                 {t(locale, 'action.approve')}
+              </ActionButton>
+            </>
+          ) : null}
+          {actionable && gate.kind === 'changes' ? (
+            <>
+              <ActionButton variant="neutral" onClick={() => onAttest(gate.id, false)}>
+                {t(locale, 'detail.changes.attestRerun')}
+              </ActionButton>
+              <ActionButton variant="primary" onClick={() => onAttest(gate.id, true)}>
+                {t(locale, 'detail.changes.attestNoChange')}
               </ActionButton>
             </>
           ) : null}
@@ -408,6 +425,9 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
   const decide = (gate: string, decision: 'approved' | 'rejected'): void => {
     void store.decideGate({ gate, decision });
   };
+  const attest = (gate: string, noChangeNeeded: boolean): void => {
+    void store.attestNoChanges({ gate, noChangeNeeded });
+  };
   const approveDeploy = (input: DeployApproveInput): void => {
     void store.approveDeploy(input);
   };
@@ -544,6 +564,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
                           locale={locale}
                           awaitingHuman={awaitingHuman}
                           onDecide={decide}
+                          onAttest={attest}
                           onApproveDeploy={approveDeploy}
                         />
                       ))}

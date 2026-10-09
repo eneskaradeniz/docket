@@ -175,7 +175,7 @@ describe('port shapes', () => {
     expectTypeOf<ProposalRecord['scope']>().toEqualTypeOf<DefinitionScope>();
     expectTypeOf<AuditEntry['action']>().toEqualTypeOf<AuditAction>();
     expectTypeOf<AuditSubject['kind']>().toEqualTypeOf<
-      'work_order' | 'run' | 'proposal' | 'account' | 'binding' | 'project' | 'repo'
+      'work_order' | 'run' | 'proposal' | 'account' | 'binding' | 'project' | 'repo' | 'capability'
     >();
     expectTypeOf<BindingScope['level']>().toEqualTypeOf<'global' | 'project' | 'repo' | 'workOrder'>();
     expectTypeOf<DefinitionScope['kind']>().toEqualTypeOf<'global' | 'project' | 'repo'>();

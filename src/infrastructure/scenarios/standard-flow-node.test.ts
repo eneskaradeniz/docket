@@ -319,7 +319,7 @@ describe('standard flow, headless end to end on real Node storage', () => {
       expectState(view, {
         status: 'ready',
         stage: IMPLEMENT,
-        pendingGates: [slugOf<'gate'>('tests'), slugOf<'gate'>('secrets')],
+        pendingGates: [slugOf<'gate'>('changes'), slugOf<'gate'>('tests'), slugOf<'gate'>('secrets')],
       });
       expect(view.state.attempt).toBe(1);
 
@@ -329,12 +329,15 @@ describe('standard flow, headless end to end on real Node storage', () => {
       const worktreePath = join(dataDir, 'worktrees', 'ws', id);
       expect(implementRun.worktreePath).toBe(worktreePath);
       expect((await stat(worktreePath)).isDirectory()).toBe(true);
+      // The run's edit, standing in the worktree the way a real agent's edit would: one changed
+      // file since the worktree base — what the changes gate counts through the real git adapter.
+      await writeFile(join(worktreePath, 'src', 'main.ts'), 'export const version = 2;\n', 'utf8');
 
       view = await viewOf(deps, id);
       expectState(view, {
         status: 'gating',
         stage: IMPLEMENT,
-        pendingGates: [slugOf<'gate'>('tests'), slugOf<'gate'>('secrets')],
+        pendingGates: [slugOf<'gate'>('changes'), slugOf<'gate'>('tests'), slugOf<'gate'>('secrets')],
       });
 
       const gated = await evaluateMachineGates(deps, { id });

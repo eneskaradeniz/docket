@@ -76,24 +76,24 @@ function LiveItemRow({ item, locale }: { readonly item: LivePaneItem; readonly l
     case 'thought':
       return (
         <div className="grid gap-0.5">
-          <span className="font-mono text-[10.5px] uppercase tracking-[0.06em] text-inkdim">{t(locale, 'live.kind.thought')}</span>
-          <p className="whitespace-pre-wrap [overflow-wrap:anywhere] text-[13px] text-inkdim">{item.text}</p>
+          <span className="font-mono text-[0.65625rem] uppercase tracking-[0.06em] text-inkdim">{t(locale, 'live.kind.thought')}</span>
+          <p className="whitespace-pre-wrap [overflow-wrap:anywhere] text-[0.8125rem] text-inkdim">{item.text}</p>
         </div>
       );
     case 'message':
       return (
         <div className="grid gap-0.5">
-          <span className="font-mono text-[10.5px] uppercase tracking-[0.06em] text-inkdim">{t(locale, 'live.kind.message')}</span>
-          <p className="whitespace-pre-wrap [overflow-wrap:anywhere] text-[13.5px] text-ink">{item.text}</p>
+          <span className="font-mono text-[0.65625rem] uppercase tracking-[0.06em] text-inkdim">{t(locale, 'live.kind.message')}</span>
+          <p className="whitespace-pre-wrap [overflow-wrap:anywhere] text-[0.84375rem] text-ink">{item.text}</p>
         </div>
       );
     case 'toolCall':
       return (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 items-baseline gap-2">
-            <span className="font-mono text-[12.5px] text-ink">{item.name}</span>
+            <span className="font-mono text-[0.78125rem] text-ink">{item.name}</span>
             {item.target !== null ? (
-              <code className="truncate font-mono text-[11px] text-inkdim" title={item.target}>
+              <code className="truncate font-mono text-[0.6875rem] text-inkdim" title={item.target}>
                 {item.target}
               </code>
             ) : null}
@@ -105,7 +105,7 @@ function LiveItemRow({ item, locale }: { readonly item: LivePaneItem; readonly l
     case 'quotaSignal':
       return (
         <div className="grid gap-0.5">
-          <span className="font-mono text-[10.5px] uppercase tracking-[0.06em] text-inkdim">
+          <span className="font-mono text-[0.65625rem] uppercase tracking-[0.06em] text-inkdim">
             {t(locale, item.kind === 'usage' ? 'live.kind.usage' : 'live.kind.quotaSignal')}
           </span>
           {item.kind === 'usage' ? <UsageLine item={item} locale={locale} /> : <MeterLine item={item} locale={locale} />}
@@ -129,16 +129,16 @@ export function LivePaneScreen({ store, locale }: LivePaneScreenProps) {
     <aside className="grid content-start gap-3">
       <header className="flex items-center gap-2.5">
         <span aria-hidden="true" className={`h-2 w-2 flex-none rounded-full ${state.ended ? 'bg-hairline' : 'bg-proceed motion-safe:animate-pulse'}`} />
-        <h2 className="text-[15px] font-semibold tracking-tight text-ink">{t(locale, 'live.title')}</h2>
+        <h2 className="text-[0.9375rem] font-semibold tracking-tight text-ink">{t(locale, 'live.title')}</h2>
       </header>
 
       {state.ask !== null ? (
         <div className="grid min-w-0 gap-2 rounded-card border border-signal/45 bg-surface p-3">
-          <span className="font-mono text-[10.5px] uppercase tracking-[0.06em] text-signal">{t(locale, 'live.ask.title')}</span>
+          <span className="font-mono text-[0.65625rem] uppercase tracking-[0.06em] text-signal">{t(locale, 'live.ask.title')}</span>
           <div className="min-w-0">
-            <span className="font-mono text-[13px] text-ink">{state.ask.tool}</span>
+            <span className="font-mono text-[0.8125rem] text-ink">{state.ask.tool}</span>
             {state.ask.target !== null ? (
-              <code className="block truncate font-mono text-[11px] text-inkdim" title={state.ask.target}>
+              <code className="block truncate font-mono text-[0.6875rem] text-inkdim" title={state.ask.target}>
                 {state.ask.target}
               </code>
             ) : null}
@@ -155,7 +155,7 @@ export function LivePaneScreen({ store, locale }: LivePaneScreenProps) {
       ) : null}
 
       {state.items.length === 0 ? (
-        <p className="flex items-center gap-2.5 font-mono text-[11px] text-inkdim">
+        <p className="flex items-center gap-2.5 font-mono text-[0.6875rem] text-inkdim">
           <span aria-hidden="true" className="h-2 w-2 flex-none rounded-full bg-info motion-safe:animate-pulse" />
           {t(locale, 'live.empty')}
         </p>
@@ -170,7 +170,7 @@ export function LivePaneScreen({ store, locale }: LivePaneScreenProps) {
       )}
 
       {state.ended ? (
-        <p className="rounded-card border border-hairline bg-surface px-3 py-2 text-[13px] text-inkdim">{t(locale, 'live.ended')}</p>
+        <p className="rounded-card border border-hairline bg-surface px-3 py-2 text-[0.8125rem] text-inkdim">{t(locale, 'live.ended')}</p>
       ) : null}
     </aside>
   );

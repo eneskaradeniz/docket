@@ -1,8 +1,8 @@
 // capability-import.ts — the command side of capability discovery (A-93): copy selected
 // candidates into Docket's own global definitions. Results are per identity — one rejected
 // identity never blocks the others. Docket never touches the user's files: the import writes
-// <globalRoot>/capabilities/<id>.yaml and nothing else. Imports are not audited yet; the actor
-// rides the input for the follow-up issue that adds the audit entry.
+// <globalRoot>/capabilities/<id>.yaml and nothing else. Every import is audited (A-95): one
+// capability.imported entry per imported capability, after the write it reports on.
 import type { Actor, CapabilityCandidate, CapabilityDef, CapabilitySlug } from '../../domain/index';
 import { candidateToDefinition, capabilitySlugOf, mergeCandidates, suffixedSlug } from '../../domain/index';
 import type { AppDeps } from '../ports/deps';
@@ -23,7 +23,7 @@ export type CapabilityImportResult =
   | { readonly identity: string; readonly status: 'rejected'; readonly reason: CapabilityImportError };
 
 export async function importCapabilities(
-  deps: Pick<AppDeps, 'accounts' | 'capabilityDiscovery' | 'definitions'>,
+  deps: Pick<AppDeps, 'accounts' | 'capabilityDiscovery' | 'definitions' | 'clock' | 'ids' | 'log'>,
   input: { readonly identities: readonly string[]; readonly actor: Actor },
 ): Promise<readonly CapabilityImportResult[]> {
   const byIdentity = new Map<string, CapabilityCandidate>(
@@ -35,6 +35,7 @@ export async function importCapabilities(
   const assigned = new Set<CapabilitySlug>();
   const decided = new Map<string, CapabilityImportResult>();
   const toWrite: CapabilityDef[] = [];
+  const toAudit: { readonly id: CapabilitySlug; readonly kind: CapabilityCandidate['kind']; readonly identity: string }[] = [];
 
   const settle = (identity: string, result: CapabilityImportResult, def?: CapabilityDef): void => {
     decided.set(identity, result);
@@ -87,6 +88,7 @@ export async function importCapabilities(
               settle(identity, { identity, status: 'rejected', reason: 'invalid_definition' });
             } else {
               settle(identity, { identity, status: 'imported', id }, mapped.value);
+              toAudit.push({ id, kind: candidate.kind, identity });
             }
           }
         }
@@ -97,5 +99,23 @@ export async function importCapabilities(
   }
 
   if (toWrite.length > 0) await deps.definitions.installCapabilities(toWrite);
+  // A-95: one entry per imported capability, subject the stored slug (the id the import
+  // returned, so EventLog.list finds the entry from the definition) and a detail that names
+  // targets only — the capability's kind and the identity's path/command form. The write the
+  // entry reports on is already durable, so an append that fails must not fail or roll it back.
+  for (const { id, kind, identity } of toAudit) {
+    try {
+      await deps.log.append({
+        id: deps.ids.next<'audit'>(),
+        at: deps.clock.now(),
+        actor: input.actor,
+        action: 'capability.imported',
+        subject: { kind: 'capability', id },
+        detail: { kind, identity },
+      });
+    } catch {
+      // The import stands; the audit trail misses this entry, nothing more.
+    }
+  }
   return results;
 }

@@ -397,6 +397,29 @@ describe('work-order detail store', () => {
     expect(refused).toEqual({ command: 'gate.decide', result: { ok: true }, labelKey: 'success.gate.rejected' });
   });
 
+  it('U-61: the pending changes gate attests through gate.attest and each answer names its own success', async () => {
+    const GATE_CHANGES = slugOf<'gate'>('changes');
+    const flow: FlowDef = {
+      ...FLOW,
+      stages: [
+        { id: STAGE_BUILD, name: 'Build', role: slugOf<'role'>('builder'), exit: [{ kind: 'changes', id: GATE_CHANGES }] },
+      ],
+    };
+    const api = fakeApi({ ...detailReply(stateAt(STAGE_BUILD, [GATE_CHANGES])), flow });
+    const store = createStore(api);
+    await store.load(WO_ID);
+
+    // "Değişiklik gerekmiyordu": the attestation fires gate.attest verbatim and refreshes.
+    const noChange = await store.attestNoChanges({ gate: 'changes', noChangeNeeded: true });
+    expect(api.commands).toEqual([{ type: 'gate.attest', workOrderId: WO_ID, gate: 'changes', noChangeNeeded: true }]);
+    expect(api.queries.filter((query) => query.type === 'workOrder.detail')).toHaveLength(2);
+    expect(noChange).toEqual({ command: 'gate.attest', result: { ok: true }, labelKey: 'success.gate.attestNoChange' });
+
+    // "Eksik, yeniden çalıştır": the same command, the other answer, its own copy.
+    const rerun = await store.attestNoChanges({ gate: 'changes', noChangeNeeded: false });
+    expect(rerun).toEqual({ command: 'gate.attest', result: { ok: true }, labelKey: 'success.gate.attestRerun' });
+  });
+
   it('U-4: a stage enqueue is an intent mapped through U-8 that refreshes the detail query', async () => {
     const api = fakeApi(detailReply(AT_BUILD));
     const store = createStore(api);

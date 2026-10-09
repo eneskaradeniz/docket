@@ -656,6 +656,12 @@ container.
   anchors the prototype measured: a 0.8125rem body text reads 13 px at 1280 and 16.25 px at 2560,
   the page h1 (1.25rem) 20 → 25 px, the sidebar's 16.5rem 264 → 330 px. No screen or component
   overrides the root font-size; a test pins the clamp expression and the no-override rule.
+  Amended 2026-10-09, #856: the shared row components the wave left px ride the scale with the
+  same ÷16 walk — the action button, the cockpit's row interiors (attention, running, closed,
+  project cards, section heads, states and the skeleton that mirrors them) and the live panel —
+  same visual result at the reference width, no layout redesign. Hairlines keep their px (the
+  1.5px edges), and so do the badges the modal surfaces share (the state pill, the provider
+  mark): the wizard and Settings still pass px sizes, so those wait for their own decision.
 - **U-54** (full sections; added 2026-10-05, #793) The four data screens fill the main area: no
   `max-w-*` on their page wrappers or top-level sections, a fixed rem padding at the edges, the
   content left-aligned (L-10 unchanged). Deliberately narrow surfaces stay narrow — the search
@@ -671,6 +677,9 @@ container.
   runs-and-audit third column (21.25rem) arrives at ≥1700. A card grid fills its row with
   `repeat(auto-fill, minmax(min, 1fr))`, the minimum in rem (21.25rem row cards, 22rem project
   cards, 23.75rem roadmap phases), so a full row spans edge to edge at every width.
+  Amended 2026-10-09, #856: the row cards' 21.25rem minimum stands at every width — what the
+  narrower card did to the attention card's project line is fixed in the card, never in the
+  grid; that fix is U-62's own rule.
 - **U-56** (sparse row → side panel; added 2026-10-05, #793) A row whose items all fit on one
   line keeps its cards at their natural minimum on the left and gives the leftover width to a
   `1fr` side panel: the cockpit's attention and runners rows take "Son kapananlar" and "Sırada" as
@@ -704,6 +713,23 @@ container.
   controls — do not grow with U-53's scale while their interiors do (at 125 % the interior grows
   25 % inside the same frame). Whether each moves to rem is the architect's follow-up decision,
   issue by issue; the width wave must not rewrite them silently.
+
+## Attention card names — two wrapped lines, one height (U-62)
+
+- **U-62** (cockpit attention cards; added 2026-10-09, #856; amends U-55's narrow-card outcome)
+  The attention card's project line — `kod · proje/repo · aşama · yaş` — never truncates on one
+  line again: it wraps anywhere (`overflow-wrap: anywhere`) and clamps at two lines
+  (`line-clamp-2`), and the full line stays reachable through the span's `title`, the fallback
+  for the clamped case only. The card reserves the second line's space — a `min-height` of two
+  of the line's own boxes as the card renders them, the preflight's inherited 1.5 leading × the
+  0.71875rem mono size × 2 (2.15625rem, exact at every root scale) — so a one-line and a
+  two-line name render the same card height, and the skeleton's mirrored meta block stands on
+  the same reservation, leaving the holder swap nothing to move. The work-order title on the
+  card's first line keeps its own
+  single-line truncate. The layout audit walks the cards at 1024, 1280 and 1512 (`attention:`
+  lines): every project line clamps at two, no card overflows its box or the main column, and
+  the cards of one grid row keep one height (the ask band's card excepted — taller by its own
+  band, not by its name).
 
 ## Decision card — the approval sees the files it decides on (U-57)
 
@@ -751,6 +777,19 @@ container.
   as the wizard's one warn toast — the window's fade would hide the in-window note before it
   could be read. `already_present` counts as success. The picks stay a draft in the store until
   the finish, like every wizard choice.
+
+## The changes gate's attestation pair (U-61)
+
+- **U-61** (detail screen; added 2026-10-09, #855) A pending `changes` gate of the current stage
+  carries a two-button answer pair in its gate row — "Değişiklik gerekmiyordu" (primary) and
+  "Eksik, yeniden çalıştır" (neutral) — regardless of the amber `awaiting_human` flag, because a
+  pending changes gate holds the work order in `gating`, never `awaiting_human` (A-96). The row
+  carries the same amber attention edge the deploy row does: it waits on a person. Each button
+  fires the store's `attestNoChanges` intent (`gate.attest`, `noChangeNeeded: true` / `false`);
+  the two outcomes map to their own success copy ("Beyan kaydedildi: değişiklik gerekmiyordu." /
+  "Beyan kaydedildi: aşama yeniden çalışacak.") and the refusals map through U-8 like any
+  command's (`not_a_changes_gate` included). A changes gate that is upcoming or already passed
+  renders no pair, and no `changes` gate ever takes approve/reject buttons.
 
 ## Verifying the shell — E2E layers (Phase 3.5)
 
