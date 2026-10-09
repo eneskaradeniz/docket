@@ -470,15 +470,28 @@ for (const [sizeName, theme] of combos) {
   try {
     // Hoş geldin → Hesaplar: the two seeded accounts, both already selected. The fixture home
     // holds no `.claude*` directory and no installable CLI, so exactly these two rows can ever
-    // list — the count is the world's hermeticity assertion, not just readiness.
+    // stand under Bulunanlar — the count is the world's hermeticity assertion, not just readiness.
     await see('Hoş geldin');
     await shot('welcome');
     await button('Devam');
-    await page.locator('[data-account-row]').first().waitFor({ state: 'visible', timeout: WAIT });
-    const rowCount = await page.locator('[data-account-row]').count();
-    assert(rowCount === 2, `the wizard world must list exactly the two fixture accounts, saw ${rowCount}`);
+    await page.locator('[data-account-section="found"] [data-account-row]').first().waitFor({ state: 'visible', timeout: WAIT });
+    const foundRows = page.locator('[data-account-section="found"] [data-account-row]');
+    const rowCount = await foundRows.count();
+    assert(rowCount === 2, `the wizard world must list exactly the two fixture accounts under Bulunanlar, saw ${rowCount}`);
     await see('Kişisel');
     await see('İş');
+    // "Hatalı ve bulunamayanlar" folds the builtin defs' own candidates — nothing was scanned to
+    // produce them, so no row there may name an absolute path: neither the fixture home nor the
+    // operator's real one (the harness env keeps the real HOME; the app env does not).
+    const failedRows = page.locator('[data-account-section="failed"] [data-account-row]');
+    const failedCount = await failedRows.count();
+    for (let at = 0; at < failedCount; at += 1) {
+      const rowText = (await failedRows.nth(at).textContent()) ?? '';
+      assert(
+        !rowText.includes(handle.dirs.home) && !rowText.includes(process.env.HOME ?? '\u0000'),
+        `a failed-section row names a real path: ${rowText.slice(0, 120)}`,
+      );
+    }
     await shot('accounts');
     await button('Devam');
     // Yetenekler: one group per account; the shared capability is one row in both groups. The

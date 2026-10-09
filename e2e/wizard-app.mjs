@@ -107,5 +107,5 @@ export async function launchWizardApp() {
   await assertProfileIsolated(app, profile.dir);
   const page = await app.firstWindow();
   await page.waitForSelector('[data-wizard]', { timeout: 30_000 });
-  return { app, page, seed };
+  return { app, page, seed, dirs };
 }
