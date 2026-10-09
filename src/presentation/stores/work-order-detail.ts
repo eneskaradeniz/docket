@@ -8,7 +8,7 @@
 // newest active run — composition creates that pane and hands it in.
 import type { Api } from '../../api/api';
 import type { Command, CommandResult } from '../../api/commands';
-import type { OpenAskView, Query } from '../../api/queries';
+import type { OpenAskView, Query, StageFilesView, WorktreeFilePreview } from '../../api/queries';
 import type {
   Actor,
   EnvSlug,
@@ -22,7 +22,6 @@ import type {
   WorkOrderState,
 } from '../../domain/index';
 import type { LabelKey } from '../labels/keys';
-import type { StageFilesView, WorktreeFilePreview } from '../../application/index';
 import type { LivePaneStore } from './live-pane';
 import { commandResultKey, isQueryFailure } from './results';
 

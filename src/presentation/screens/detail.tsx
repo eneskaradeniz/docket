@@ -16,6 +16,7 @@
 // everything stacks. The screen fills the main column at every width (U-54).
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { WorkOrderStatus } from '../../domain/index';
+import type { StageFilesView, WorktreeFilePreview } from '../../api/queries';
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
 import { ActionButton } from '../components/action-button';
@@ -286,13 +287,13 @@ function StageFilesPreview({
   locale,
 }: {
   readonly store: WorkOrderDetailStore;
-  readonly stageFiles: import('../../application/index').StageFilesView;
+  readonly stageFiles: StageFilesView;
   readonly locale: Locale;
 }) {
   const [selectedFile, setSelectedFile] = useState<string | null>(
     stageFiles.files.length > 0 ? stageFiles.files[0].path : null,
   );
-  const [preview, setPreview] = useState<import('../../application/index').WorktreeFilePreview | 'loading' | 'error' | null>(null);
+  const [preview, setPreview] = useState<WorktreeFilePreview | 'loading' | 'error' | null>(null);
 
   useEffect(() => {
     if (selectedFile === null) {
