@@ -644,8 +644,11 @@ container.
   window. Every dimension on the data screens and the sidebar is expressed in rem — px survives
   only where a hairline must stay a hairline (1px rules, icon hit areas) — and the scale is one
   rule on the root, in CSS, never a JS measurement: `html { font-size: clamp(100%, calc(100% +
-  (100vw - 1440px) * 0.0223), 125%) }` (16 px base, breakpoint 1440, clamped 100–125 %; the
-  prototype computed the same formula in JS only because it frames one window inside a page). The
+  (100vw - 1440px) * 0.003571), 125%) }` (16 px base, breakpoint 1440, clamped 100–125 %; the
+  prototype computed the same formula in JS only because it frames one window inside a page).
+  Amended 2026-10-09, #793: the multiplier is unitless, so it adds px not percent; corrected to
+  0.003571 so 1440→2560 grows 16→20 px (the prototype's 0.0223 was a percent-per-px figure that
+  saturated the CSS clamp near 1620 px). The
   anchors the prototype measured: a 0.8125rem body text reads 13 px at 1280 and 16.25 px at 2560,
   the page h1 (1.25rem) 20 → 25 px, the sidebar's 16.5rem 264 → 330 px. No screen or component
   overrides the root font-size; a test pins the clamp expression and the no-override rule.

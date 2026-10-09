@@ -25,8 +25,19 @@ const DATA_SCREENS = ['cockpit.tsx', 'roadmap.tsx', 'account-view.tsx', 'detail.
 describe('proportional scale (U-53)', () => {
   it('U-53: the scale is one CSS rule on the root — the clamp the prototype measured', () => {
     expect(src('tokens.css')).toContain(
-      'html {\n  font-size: clamp(100%, calc(100% + (100vw - 1440px) * 0.0223), 125%);\n}',
+      'html {\n  font-size: clamp(100%, calc(100% + (100vw - 1440px) * 0.003571), 125%);\n}',
     );
+  });
+
+  it('U-53: the unitless multiplier is a length factor — 16 px at 1440, ~17.7 px at 1920, 20 px at 2560', () => {
+    const clamp = src('tokens.css').match(/calc\(100% \+ \(100vw - 1440px\) \* (\d+(?:\.\d+)?)\)/);
+    if (clamp === null) throw new Error('root clamp not found in tokens.css');
+    // 100 % resolves against the 16 px default, so the factor adds px: 0.003571 = 4 px / 1120 px.
+    const rootAt = (viewport: number): number =>
+      Math.min(20, Math.max(16, 16 + (viewport - 1440) * Number(clamp[1])));
+    expect(rootAt(1440)).toBe(16);
+    expect(rootAt(1920)).toBeCloseTo(17.7, 1);
+    expect(rootAt(2560)).toBeCloseTo(20, 2);
   });
 
   it('U-53: no screen or component overrides the root font-size', () => {
