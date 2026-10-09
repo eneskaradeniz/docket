@@ -1,11 +1,13 @@
 // components/cockpit-skeleton.tsx — the cockpit's loading composition (U-26): grey shapes in
 // the four sections' own layout, mirroring the standing the audit's slow walk loads — the seed's
-// three open gates, three runs (two stages and the queued one), five project cards, five closes —
-// at the default window, where the fill grids (U-55's auto-fill minimums) take two columns: three
-// rows of attention cards make two lines, three running rows two, five project cards three. Every
-// wrapper, padding and line-box height mirrors the ready screen's rows, so the content's arrival
-// moves nothing: the block heights are the text lines' own boxes (the sans face's 1.366 and the
-// mono face's 1.3 normal line-height factors — 14 px → 19.12, 13 → 17.76, 12 → 16.39,
+// three open gates beside the permission ask its scripted run raises (the ask waits unanswered,
+// so it is part of the standing the content lands into), three runs (two stages and the queued
+// one), five project cards, five closes — at the default window, where the fill grids (U-55's
+// auto-fill minimums) take two columns: four attention cards make two lines with the ask's row
+// the taller one, three running rows two, five project cards three. Every wrapper, padding and
+// line-box height mirrors the ready screen's rows, so the content's arrival moves nothing: the
+// block heights are the text lines' own boxes (the sans face's 1.366 and the mono face's 1.3
+// normal line-height factors — 14 px → 19.12, 13 → 17.76, 12 → 16.39, 12.5 mono → 16.25,
 // 11.5 mono → 14.95). The sparse panel (U-56) is a standing the content itself decides, so the
 // composition draws the fill world it loads into.
 import { t, type Locale } from '../labels/t';
@@ -34,14 +36,22 @@ const PlainHeadSkeleton = () => (
 
 /** One attention row: the loud section's card wrapper with its lamp, title line, action button
  *  block and meta line — the ready row's own grid and paddings. The lamp and the button block
- *  span both rows as the ready row's do, so the rows keep the text lines' own heights; the
- *  permission row grows its command band only once the ask resolves, after the swap. */
-const AttentionRowSkeleton = () => (
+ *  span both rows as the ready row's do, so the rows keep the text lines' own heights. The ask
+ *  variant carries the permission row's command band as a third grid row, because the ask is
+ *  already up in the standing the composition loads into — without the band's row the holder
+ *  stands shorter than the content that replaces it, and the swap moves the page under it. */
+const AttentionRowSkeleton = ({ ask = false }: { readonly ask?: boolean }) => (
   <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 rounded-card border border-hairline bg-surface px-3.5 py-2.5">
     <Skeleton radius="full" width="8px" height="8px" className="row-span-2 mt-2 self-start" />
     <Skeleton radius="control" width="42%" height="19.12px" />
     <Skeleton radius="control" width="152px" height="21px" className="row-span-2" />
     <Skeleton radius="control" width="68%" height="14.95px" />
+    {ask ? (
+      <div className="col-span-2 col-start-2 mt-1.5 flex min-w-0 items-center gap-2.5 rounded-control border border-hairline bg-band px-2.5 py-1.5">
+        <Skeleton radius="control" width="120px" height="16.39px" className="flex-none" />
+        <Skeleton radius="control" width="70%" height="16.25px" />
+      </div>
+    ) : null}
   </div>
 );
 
@@ -84,8 +94,8 @@ export function CockpitSkeleton({ locale }: { readonly locale: Locale }) {
       <section className="grid gap-2">
         <PlainHeadSkeleton />
         <ul className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(21.25rem,1fr))]">
-          {[0, 1, 2].map((row) => (
-            <li key={row}><AttentionRowSkeleton /></li>
+          {[0, 1, 2, 3].map((row) => (
+            <li key={row}><AttentionRowSkeleton ask={row === 0} /></li>
           ))}
         </ul>
       </section>
