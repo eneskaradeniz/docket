@@ -19,7 +19,7 @@ export function CockpitSection({ title, count, open, onToggle, action, children 
   return (
     <section className="grid">
       <div className="flex min-w-0 items-center gap-2">
-        <h2 className="text-[13px] font-semibold text-ink">
+        <h2 className="text-[0.8125rem] font-semibold text-ink">
           <button
             type="button"
             aria-expanded={open}
@@ -37,7 +37,7 @@ export function CockpitSection({ title, count, open, onToggle, action, children 
             {title}
           </button>
         </h2>
-        <span className="min-w-5 rounded-full bg-raised px-1.5 text-center font-mono text-[11px] leading-[18px] text-inkdim">{count}</span>
+        <span className="min-w-5 rounded-full bg-raised px-1.5 text-center font-mono text-[0.6875rem] leading-[1.125rem] text-inkdim">{count}</span>
         {open && action !== undefined ? <span className="ml-auto">{action}</span> : null}
       </div>
       <div

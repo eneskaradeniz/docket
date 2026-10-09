@@ -17,8 +17,10 @@ import type {
   TransportError,
   TransportResolver,
 } from './agent-transport';
+import type { AccountTestRepo } from './account-test-repo';
 import type { BindingRepo, BindingScope } from './binding-repo';
 import type { CapabilityCatalog } from './capability-catalog';
+import type { CapabilityDiscovery } from './capability-discovery';
 import type { CheckpointCommitter, CheckpointDiff, CheckpointError, CheckpointRef } from './checkpoints';
 import type { Clock } from './clock';
 import type { DefinitionFile, DefinitionScope, DefinitionStore } from './definition-store';
@@ -34,6 +36,8 @@ import type { RepoRegistry } from './repo-registry';
 import type { ProposalRecord, ProposalRepo } from './proposal-repo';
 import type { QueueRepo } from './queue-repo';
 import type { RunPatch, RunRecord, RunRepo } from './run-repo';
+import type { RepoFolders } from './repo-folders';
+import type { ScratchDirs } from './scratch-dirs';
 import type { SecretVault } from './secret-vault';
 import type {
   CommandResult,
@@ -42,6 +46,7 @@ import type {
   SecretScanner,
   Worktrees,
 } from './repo-tools';
+import type { WorktreeFiles } from './worktree-files';
 import type { WorkOrderRecord, WorkOrderRepo } from './work-order-repo';
 
 describe('AppDeps', () => {
@@ -53,6 +58,7 @@ describe('AppDeps', () => {
     expectTypeOf<AppDeps['runs']>().toEqualTypeOf<RunRepo>();
     expectTypeOf<AppDeps['accounts']>().toEqualTypeOf<AccountRepo>();
     expectTypeOf<AppDeps['capabilities']>().toEqualTypeOf<CapabilityCatalog>();
+    expectTypeOf<AppDeps['capabilityDiscovery']>().toEqualTypeOf<CapabilityDiscovery>();
     expectTypeOf<AppDeps['modelCatalog']>().toEqualTypeOf<ModelCatalog>();
     expectTypeOf<AppDeps['projects']>().toEqualTypeOf<ProjectRepo>();
     expectTypeOf<AppDeps['repos']>().toEqualTypeOf<RepoRegistry>();
@@ -65,11 +71,15 @@ describe('AppDeps', () => {
     expectTypeOf<AppDeps['commands']>().toEqualTypeOf<CommandRunner>();
     expectTypeOf<AppDeps['secretScanner']>().toEqualTypeOf<SecretScanner>();
     expectTypeOf<AppDeps['worktrees']>().toEqualTypeOf<Worktrees>();
+    expectTypeOf<AppDeps['worktreeFiles']>().toEqualTypeOf<WorktreeFiles>();
     expectTypeOf<AppDeps['evidence']>().toEqualTypeOf<EvidenceChecker>();
     expectTypeOf<AppDeps['git']>().toEqualTypeOf<GitProbe>();
     expectTypeOf<AppDeps['notifier']>().toEqualTypeOf<Notifier>();
     expectTypeOf<AppDeps['instructionFiles']>().toEqualTypeOf<InstructionFiles>();
     expectTypeOf<AppDeps['checkpoints']>().toEqualTypeOf<CheckpointCommitter>();
+    expectTypeOf<AppDeps['accountTests']>().toEqualTypeOf<AccountTestRepo>();
+    expectTypeOf<AppDeps['scratch']>().toEqualTypeOf<ScratchDirs>();
+    expectTypeOf<AppDeps['repoFolders']>().toEqualTypeOf<RepoFolders>();
   });
 
   it('exposes exactly the contract keys', () => {
@@ -81,6 +91,7 @@ describe('AppDeps', () => {
       | 'runs'
       | 'accounts'
       | 'capabilities'
+      | 'capabilityDiscovery'
       | 'modelCatalog'
       | 'projects'
       | 'repos'
@@ -93,11 +104,15 @@ describe('AppDeps', () => {
       | 'commands'
       | 'secretScanner'
       | 'worktrees'
+      | 'worktreeFiles'
       | 'evidence'
       | 'git'
       | 'notifier'
       | 'instructionFiles'
       | 'checkpoints'
+      | 'accountTests'
+      | 'scratch'
+      | 'repoFolders'
     >();
   });
 
@@ -116,6 +131,7 @@ describe('AppDeps', () => {
     expectTypeOf<Application.AccountRecord>().toEqualTypeOf<AccountRecord>();
     expectTypeOf<Application.AccountRepo>().toEqualTypeOf<AccountRepo>();
     expectTypeOf<Application.CapabilityCatalog>().toEqualTypeOf<CapabilityCatalog>();
+    expectTypeOf<Application.CapabilityDiscovery>().toEqualTypeOf<CapabilityDiscovery>();
     expectTypeOf<Application.ModelCatalog>().toEqualTypeOf<ModelCatalog>();
     expectTypeOf<Application.ProjectRepo>().toEqualTypeOf<ProjectRepo>();
     expectTypeOf<Application.RepoRegistry>().toEqualTypeOf<RepoRegistry>();
@@ -144,6 +160,7 @@ describe('AppDeps', () => {
     expectTypeOf<Application.SecretScanner>().toEqualTypeOf<SecretScanner>();
     expectTypeOf<Application.EvidenceChecker>().toEqualTypeOf<EvidenceChecker>();
     expectTypeOf<Application.Worktrees>().toEqualTypeOf<Worktrees>();
+    expectTypeOf<Application.WorktreeFiles>().toEqualTypeOf<WorktreeFiles>();
     expectTypeOf<Application.Notifier>().toEqualTypeOf<Notifier>();
     expectTypeOf<Application.AppDeps>().toEqualTypeOf<AppDeps>();
   });
@@ -158,7 +175,7 @@ describe('port shapes', () => {
     expectTypeOf<ProposalRecord['scope']>().toEqualTypeOf<DefinitionScope>();
     expectTypeOf<AuditEntry['action']>().toEqualTypeOf<AuditAction>();
     expectTypeOf<AuditSubject['kind']>().toEqualTypeOf<
-      'work_order' | 'run' | 'proposal' | 'account' | 'binding' | 'project' | 'repo'
+      'work_order' | 'run' | 'proposal' | 'account' | 'binding' | 'project' | 'repo' | 'capability'
     >();
     expectTypeOf<BindingScope['level']>().toEqualTypeOf<'global' | 'project' | 'repo' | 'workOrder'>();
     expectTypeOf<DefinitionScope['kind']>().toEqualTypeOf<'global' | 'project' | 'repo'>();

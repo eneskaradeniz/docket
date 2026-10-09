@@ -32,6 +32,7 @@ const ACCOUNT: SettingsAccountView = {
   provider: 'claude',
   label: 'Work',
   authMode: 'subscription',
+  billing: 'included',
   plan: 'pro',
   limitPolicy: 'wait_resume',
   reserve: { short: null, long: null },
@@ -41,6 +42,7 @@ const ACCOUNT: SettingsAccountView = {
   identityDir: '/home/u/.claude-work',
   endpointHost: null,
   hasSecret: false,
+  test: null,
   pools: [],
   meters: [],
 };
@@ -142,11 +144,17 @@ describe('account editor', () => {
     const paid = usageView({
       ...ACCOUNT,
       authMode: 'api_key',
+      billing: 'metered',
       meters: [usd],
       caps: [{ scope: 'account_month', amountUsd: 50, warnPercent: 80 }],
     });
     expect(paid).toEqual({ kind: 'spend', spentUsd: 12.5, cap: { scope: 'account_month', amountUsd: 50 } });
-    expect(usageView({ ...ACCOUNT, authMode: 'api_key' })).toEqual({ kind: 'spend', spentUsd: null, cap: null });
+    expect(usageView({ ...ACCOUNT, authMode: 'api_key', billing: 'unknown' })).toEqual({ kind: 'spend', spentUsd: null, cap: null });
+  });
+
+  it('U-43: Kullanım reads the billing view, not the connection — a coding plan on a key still shows bars', () => {
+    expect(usageView({ ...ACCOUNT, authMode: 'api_key', billing: 'included', meters: [METER] })).toEqual({ kind: 'meters', meters: [METER] });
+    expect(usageView({ ...ACCOUNT, authMode: 'subscription', billing: 'unknown' }).kind).toBe('spend');
   });
 
   it('U-30: saving the label ignores an unchanged or empty value and issues nothing', async () => {
@@ -239,7 +247,8 @@ describe('account editor', () => {
   });
 
   it('U-29: diff values read in the active locale', () => {
-    expect(diffValueLabel('tr', 'limitPolicy', 'ask')).toBe('Sor');
+    // U-43 renames the options ("Durdur ve bana sor"); the difference line speaks the same words.
+    expect(diffValueLabel('tr', 'limitPolicy', 'ask')).toBe('Durdur ve bana sor');
     expect(diffValueLabel('tr', 'reserve', '0.1/0.2')).toBe('%10 · %20');
     expect(diffValueLabel('en', 'reserve', '0/0')).toBe('0% · 0%');
     expect(diffValueLabel('tr', 'cap', 'account_month:50')).toBe('$50 · Aylık');

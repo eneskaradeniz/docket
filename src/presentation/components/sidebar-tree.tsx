@@ -27,6 +27,8 @@ export interface SidebarTreeProps {
   readonly onOpenProject: (project: string) => void;
   /** A repo row's target — the ★ row included: that repo's board. */
   readonly onOpenRepo: (project: string, repo: string) => void;
+  /** The header's "+": the Yeni proje page (U-40). */
+  readonly onNewProject: () => void;
 }
 
 const DOT_CLASS: Readonly<Record<RepoNode['status'], string>> = {
@@ -84,6 +86,23 @@ const PlusIcon = () => (
   </svg>
 );
 
+/** The empty projects box's folder (U-51): a quiet outline glyph, the box's one ornament. */
+const FolderIcon = () => (
+  <svg
+    data-folder-icon=""
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+    className="block h-5 w-5 text-inkdim"
+  >
+    <path d="M3 7v12a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V9a1 1 0 0 0-1-1h-9l-2-2.5H4a1 1 0 0 0-1 1Z" />
+  </svg>
+);
+
 const ProjectRow = ({
   item,
   state,
@@ -96,7 +115,7 @@ const ProjectRow = ({
   <button
     type="button"
     onClick={onOpen}
-    className={`flex h-8 min-w-0 flex-1 items-center gap-2 rounded-control px-2.5 text-left text-[13px] text-ink hover:bg-raised ${rowState(state)}`}
+    className={`flex h-8 min-w-0 flex-1 items-center gap-2 rounded-control px-2.5 text-left text-[13.5px] text-ink hover:bg-raised ${rowState(state)}`}
   >
     <span aria-hidden="true" className={dot(item.status)} />
     <span title={item.name} className="min-w-0 flex-1 truncate">
@@ -121,7 +140,7 @@ const RepoRow = ({
     type="button"
     onClick={onOpen}
     aria-current={selected ? 'true' : undefined}
-    className={`flex h-7 min-w-0 w-full items-center gap-2 rounded-control px-2.5 text-left text-xs text-ink hover:bg-raised ${rowState(selected ? 'sel' : null)}`}
+    className={`flex h-7 min-w-0 w-full items-center gap-2 rounded-control px-2.5 text-left text-[13.5px] text-ink hover:bg-raised ${rowState(selected ? 'sel' : null)}`}
   >
     <span aria-hidden="true" className={dot(node.status)} />
     <span title={node.name} className="min-w-0 flex-1 truncate">
@@ -150,8 +169,8 @@ const TreeRowSkeleton = () => (
   </div>
 );
 
-export function SidebarTree({ store, selection, locale, onOpenProject, onOpenRepo }: SidebarTreeProps) {
-  const state = useSyncExternalStore(store.subscribe, store.state);
+export function SidebarTree({ store, selection, locale, onOpenProject, onOpenRepo, onNewProject }: SidebarTreeProps) {
+  const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   const rows = projectRows(orderTree(state.tree, state.sort, state.usedAt));
   // Only a tree with nothing to show can carry a skeleton (U-26); a re-query over the standing
   // rows never replaces them.
@@ -160,9 +179,10 @@ export function SidebarTree({ store, selection, locale, onOpenProject, onOpenRep
   return (
     <>
       {/* Like the Hesaplar header, the row's height is its 22px buttons plus the symmetric py-1 —
-          no fixed height, so the label stays centred on the buttons' own geometry. */}
+          no fixed height, so the label stays centred on the buttons' own geometry. The header
+          itself holds the section's 14 px/700 scale (U-51). */}
       <div className="mb-1.5 mt-3.5 flex flex-none items-center gap-1 py-1 pl-2 pr-1.5">
-        <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] font-medium text-inkdim">
+        <span className="min-w-0 flex-1 truncate text-[14px] font-bold text-inkdim">
           {t(locale, 'nav.projects')}
         </span>
         <button
@@ -176,6 +196,7 @@ export function SidebarTree({ store, selection, locale, onOpenProject, onOpenRep
         </button>
         <button
           type="button"
+          onClick={onNewProject}
           aria-label={t(locale, 'nav.projects.new')}
           title={t(locale, 'nav.projects.new')}
           className={SIDEBAR_HEADER_BUTTON}
@@ -193,7 +214,20 @@ export function SidebarTree({ store, selection, locale, onOpenProject, onOpenRep
             ))}
           </div>
         ) : state.tree.length === 0 ? (
-          <p className="px-2.5 py-1.5 text-xs text-inkdim">{t(locale, 'nav.projects.empty')}</p>
+          /* No project yet: the centred dashed box (U-51) — folder, the standing line, and the
+             secondary button that opens the U-40 page. */
+          <div className="my-1 grid justify-items-center gap-1.5 rounded-card border-[1.5px] border-dashed border-bord px-2 pb-2 pt-2.5 text-center">
+            <FolderIcon />
+            <p className="text-[12.5px] leading-snug text-inkdim">{t(locale, 'nav.projects.empty')}</p>
+            <button
+              type="button"
+              onClick={onNewProject}
+              className="flex items-center gap-1.5 rounded-control border border-hairline px-2.5 py-1 text-[12.5px] font-semibold text-inkdim hover:bg-raised hover:text-ink focus-visible:bg-raised focus-visible:text-ink"
+            >
+              <PlusIcon />
+              {t(locale, 'nav.projects.new')}
+            </button>
+          </div>
         ) : (
           <SkeletonReveal active={reveal}>
             {rows.map((row) =>

@@ -5,6 +5,7 @@ export * from './routing';
 export * from './projects';
 export * from './proposals';
 export * from './accounts';
+export * from './account-test';
 export * from './account-adoption';
 export * from './spend-consent';
 export * from './account-caps';
@@ -15,3 +16,8 @@ export * from './remote-checks-gate';
 export * from './instructions';
 export * from './checkpoints';
 export * from './handoff';
+export * from './candidate-quota';
+export * from './stage-files';
+export * from './capability-candidates';
+export * from './capability-import';
+

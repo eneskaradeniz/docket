@@ -106,6 +106,12 @@ const stateAt = (stage: StageSlug, pending: readonly GateSlug[]): WorkOrderState
 const AT_BUILD = stateAt(STAGE_BUILD, [GATE_SECRET_SCAN]);
 const AT_SHIP = stateAt(STAGE_SHIP, [GATE_SHIP_APPROVAL, GATE_DEPLOY_PROD, GATE_DEPLOY_STAGING]);
 const DONE: WorkOrderState = { status: 'done', stage: null, attempt: 1, pendingGates: [] };
+const AWAITING_PLAN: WorkOrderState = {
+  status: 'awaiting_human',
+  stage: STAGE_PLAN,
+  attempt: 1,
+  pendingGates: [GATE_PLAN_APPROVAL],
+};
 
 const detailReply = (state: WorkOrderState): WorkOrderDetailView => ({
   record: { id: WO_ID, repo: 'atolye', flow: 'release-flow', title: 'Ship the thing' },
@@ -137,15 +143,20 @@ interface FakeApi extends Pick<Api, 'query' | 'command'> {
   readonly commands: Command[];
   setReply(reply: unknown): void;
   setAsks(reply: unknown): void;
+  setStageFiles(reply: unknown): void;
+  setFilePreview(reply: unknown): void;
   setCommandResult(result: CommandResult): void;
 }
 
-/** The detail query and the open-asks query are answered separately; both calls are recorded. */
+/** The detail query, the open-asks query and the stage-file reads are answered separately; every
+ *  call is recorded. */
 const fakeApi = (initialReply: unknown): FakeApi => {
   const queries: Query[] = [];
   const commands: Command[] = [];
   let reply: unknown = initialReply;
   let asksReply: unknown = [];
+  let stageFilesReply: unknown = null;
+  let filePreviewReply: unknown = null;
   let commandResult: CommandResult = { ok: true };
   return {
     queries,
@@ -156,12 +167,21 @@ const fakeApi = (initialReply: unknown): FakeApi => {
     setAsks: (next) => {
       asksReply = next;
     },
+    setStageFiles: (next) => {
+      stageFilesReply = next;
+    },
+    setFilePreview: (next) => {
+      filePreviewReply = next;
+    },
     setCommandResult: (next) => {
       commandResult = next;
     },
     query: (query) => {
       queries.push(query);
-      return Promise.resolve(query.type === 'permissions.open' ? asksReply : reply);
+      if (query.type === 'permissions.open') return Promise.resolve(asksReply);
+      if (query.type === 'workOrders.stageFiles') return Promise.resolve(stageFilesReply);
+      if (query.type === 'workOrders.readStageFile') return Promise.resolve(filePreviewReply);
+      return Promise.resolve(reply);
     },
     command: (_actor, command) => {
       commands.push(command);
@@ -238,6 +258,7 @@ describe('work-order detail store', () => {
       asks: [],
       problem: null,
       lastOutcome: null,
+      stageFiles: null,
     });
     const loading = store.load(WO_ID);
     expect(store.state().loading).toBe(true);
@@ -374,6 +395,29 @@ describe('work-order detail store', () => {
     api.setCommandResult({ ok: true });
     const refused = await store.decideGate({ gate: 'ship-approval', decision: 'rejected' });
     expect(refused).toEqual({ command: 'gate.decide', result: { ok: true }, labelKey: 'success.gate.rejected' });
+  });
+
+  it('U-61: the pending changes gate attests through gate.attest and each answer names its own success', async () => {
+    const GATE_CHANGES = slugOf<'gate'>('changes');
+    const flow: FlowDef = {
+      ...FLOW,
+      stages: [
+        { id: STAGE_BUILD, name: 'Build', role: slugOf<'role'>('builder'), exit: [{ kind: 'changes', id: GATE_CHANGES }] },
+      ],
+    };
+    const api = fakeApi({ ...detailReply(stateAt(STAGE_BUILD, [GATE_CHANGES])), flow });
+    const store = createStore(api);
+    await store.load(WO_ID);
+
+    // "Değişiklik gerekmiyordu": the attestation fires gate.attest verbatim and refreshes.
+    const noChange = await store.attestNoChanges({ gate: 'changes', noChangeNeeded: true });
+    expect(api.commands).toEqual([{ type: 'gate.attest', workOrderId: WO_ID, gate: 'changes', noChangeNeeded: true }]);
+    expect(api.queries.filter((query) => query.type === 'workOrder.detail')).toHaveLength(2);
+    expect(noChange).toEqual({ command: 'gate.attest', result: { ok: true }, labelKey: 'success.gate.attestNoChange' });
+
+    // "Eksik, yeniden çalıştır": the same command, the other answer, its own copy.
+    const rerun = await store.attestNoChanges({ gate: 'changes', noChangeNeeded: false });
+    expect(rerun).toEqual({ command: 'gate.attest', result: { ok: true }, labelKey: 'success.gate.attestRerun' });
   });
 
   it('U-4: a stage enqueue is an intent mapped through U-8 that refreshes the detail query', async () => {
@@ -593,5 +637,66 @@ describe('flow strip (U-19)', () => {
       { kind: 'stage', name: 'Build', standing: 'upcoming' },
       { kind: 'stage', name: 'Ship', standing: 'upcoming' },
     ]);
+  });
+});
+
+// --- U-57: the stage-files card rides the awaiting_human detail --------------------------------------
+
+describe('stage files (U-57)', () => {
+  it('U-57: an awaiting_human detail carries the stage files exactly as the query resolved them', async () => {
+    // The exact shape the api resolves `workOrders.stageFiles` to: the bare view, no envelope.
+    const stageFiles = { files: [{ path: 'docs/plan.md', sizeBytes: 1024 }], truncated: false };
+    const api = fakeApi(detailReply(AWAITING_PLAN));
+    api.setStageFiles(stageFiles);
+    const store = createStore(api);
+    await store.load(WO_ID);
+
+    expect(api.queries).toContainEqual({ type: 'workOrders.stageFiles', id: WO_ID });
+    expect(store.state().stageFiles).toEqual(stageFiles);
+
+    // The preview read resolves to the bare preview the same way.
+    api.setFilePreview({ path: 'docs/plan.md', lines: ['# Plan'], truncated: false });
+    await expect(store.readStageFile('docs/plan.md')).resolves.toEqual({
+      path: 'docs/plan.md',
+      lines: ['# Plan'],
+      truncated: false,
+    });
+  });
+
+  it('U-57: a detail outside awaiting_human never asks for stage files', async () => {
+    const api = fakeApi(detailReply(AT_SHIP));
+    const store = createStore(api);
+    await store.load(WO_ID);
+
+    expect(api.queries).not.toContainEqual({ type: 'workOrders.stageFiles', id: WO_ID });
+    expect(store.state().stageFiles).toBe(null);
+  });
+
+  it('U-57: a stage-files reply that is not the view shows no card instead of crashing the detail', async () => {
+    const broken: readonly unknown[] = [
+      { ok: false, code: 'not_found' },
+      // The envelope a bridge may answer with — the shape that took the detail screen down.
+      { ok: true, data: { files: [{ path: 'docs/plan.md', sizeBytes: 1024 }], truncated: false } },
+      undefined,
+      { files: 'docs/plan.md', truncated: false },
+      { files: [{ sizeBytes: 1024 }], truncated: false },
+      { files: [], truncated: 'no' },
+    ];
+    for (const reply of broken) {
+      const api = fakeApi(detailReply(AWAITING_PLAN));
+      api.setStageFiles(reply);
+      const store = createStore(api);
+      await expect(store.load(WO_ID)).resolves.toBeUndefined();
+      expect(store.state().stageFiles).toBe(null);
+      // The detail itself still loaded: the card is absent, the screen is not.
+      expect(store.state().view?.state.status).toBe('awaiting_human');
+    }
+
+    // The preview read takes the same stance: anything but a preview is the failure copy's null.
+    const api = fakeApi(detailReply(AWAITING_PLAN));
+    api.setFilePreview({ ok: true, data: { path: 'docs/plan.md', lines: ['# Plan'], truncated: false } });
+    const store = createStore(api);
+    await store.load(WO_ID);
+    await expect(store.readStageFile('docs/plan.md')).resolves.toBe(null);
   });
 });

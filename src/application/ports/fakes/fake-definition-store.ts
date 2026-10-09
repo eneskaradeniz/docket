@@ -9,6 +9,7 @@ import type {
   Definitions,
   ProjectDef,
   ProjectSlug,
+  RepoDef,
   Roadmap,
   RoadmapIssue,
   Result,
@@ -33,6 +34,12 @@ export interface FakeDefinitionStore extends DefinitionStore {
   setProject(def: ProjectDef): void;
   /** Seeds the project.yaml content `readProjectAt` finds at a checkout path. */
   seedProjectAt(path: string, content: string): void;
+  /** Seeds the repo.yaml content a checkout path already holds (scaffoldProject refuses it). */
+  seedRepoAt(path: string, content: string): void;
+  /** The repo.yaml content scaffoldProject wrote at a checkout path. */
+  repoAt(path: string): string | undefined;
+  /** Makes the next scaffoldProject answer `io_failed`, writing nothing. */
+  failNextScaffold(): void;
 }
 
 interface StoredFile extends DefinitionFile {
@@ -112,6 +119,10 @@ const mergeBodies = (bodies: readonly UnknownRecord[]): unknown => {
     if (Array.isArray(body.roles)) roles.push(...body.roles);
     if (Array.isArray(body.flows)) flows.push(...body.flows);
     if (Array.isArray(body.capabilities)) capabilities.push(...body.capabilities);
+    // A capability file holds one definition per file — the real store's grammar. The bare
+    // mapping (top-level kind and id, no wrapper list) is what installCapabilities writes and
+    // what the import use case hands validateCandidate, so both stay honest against the fake.
+    if (typeof body.kind === 'string' && typeof body.id === 'string') capabilities.push(body);
     if (body.repo !== undefined) repo = body.repo;
     if (body.project !== undefined) project = body.project;
   }
@@ -130,6 +141,8 @@ export const createFakeDefinitionStore = (): FakeDefinitionStore => {
   const pathsByRepo = new Map<RepoSlug, string | undefined>();
   const projects: ProjectDef[] = [];
   const projectAt = new Map<string, string>();
+  const repoFileAt = new Map<string, string>();
+  let failScaffold = false;
 
   const keyOf = (scope: DefinitionScope, target: string): string => `${scopeKey(scope)}\n${target}`;
 
@@ -248,6 +261,68 @@ export const createFakeDefinitionStore = (): FakeDefinitionStore => {
 
     seedProjectAt: (path: string, content: string): void => {
       projectAt.set(path, content);
+    },
+
+    seedRepoAt: (path: string, content: string): void => {
+      repoFileAt.set(path, content);
+    },
+
+    repoAt: (path: string): string | undefined => repoFileAt.get(path),
+
+    failNextScaffold: (): void => {
+      failScaffold = true;
+    },
+
+    // Library copies land as global files keyed by kind and id; an existing id is never touched.
+    installBuiltins: async (library): Promise<{ readonly written: readonly string[] }> => {
+      const written: string[] = [];
+      const install = (kind: 'roles' | 'flows', id: string, value: unknown): void => {
+        const target = `${kind}/${id}.json`;
+        const key = keyOf({ kind: 'global' }, target);
+        if (files.has(key)) return;
+        const content = JSON.stringify({ [kind]: [value] });
+        files.set(key, { target, content, hash: contentHash(content), scope: { kind: 'global' } });
+        written.push(target);
+      };
+      for (const role of library.roles) install('roles', role.id, role);
+      for (const flow of library.flows) install('flows', flow.id, flow);
+      return { written };
+    },
+
+    // One capability per file, bare — the real store's capabilities/<id>.yaml grammar, JSON here.
+    // An existing target is skipped untouched whatever its content (I-44).
+    installCapabilities: async (capabilities): Promise<{ readonly written: readonly string[]; readonly skipped: readonly string[] }> => {
+      const written: string[] = [];
+      const skipped: string[] = [];
+      for (const capability of capabilities) {
+        const target = `capabilities/${capability.id}.yaml`;
+        const key = keyOf({ kind: 'global' }, target);
+        if (files.has(key)) {
+          skipped.push(target);
+          continue;
+        }
+        const content = JSON.stringify(capability);
+        files.set(key, { target, content, hash: contentHash(content), scope: { kind: 'global' } });
+        written.push(target);
+      }
+      return { written, skipped };
+    },
+
+    // Both files are checked before either is written, like the real store.
+    scaffoldProject: async (
+      path: string,
+      project: ProjectDef,
+      repo: RepoDef,
+    ): Promise<Result<void, 'project_yaml_exists' | 'repo_yaml_exists' | 'io_failed'>> => {
+      if (projectAt.has(path)) return err('project_yaml_exists');
+      if (repoFileAt.has(path)) return err('repo_yaml_exists');
+      if (failScaffold) {
+        failScaffold = false;
+        return err('io_failed');
+      }
+      projectAt.set(path, JSON.stringify(project));
+      repoFileAt.set(path, JSON.stringify(repo));
+      return ok(undefined);
     },
 
     load: async (repo: RepoSlug): Promise<Result<Definitions, readonly DefinitionIssue[]>> => {

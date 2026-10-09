@@ -2,8 +2,10 @@
 import type { AppDeps } from '../deps';
 
 import { createFakeAccountRepo } from './fake-account-repo';
+import { createFakeAccountTestRepo } from './fake-account-test-repo';
 import { createFakeBindingRepo } from './fake-binding-repo';
 import { createFakeCapabilityCatalog } from './fake-capability-catalog';
+import { createFakeCapabilityDiscovery } from './fake-capability-discovery';
 import { createFakeCheckpointCommitter } from './fake-checkpoints';
 import { createFakeClock } from './fake-clock';
 import { createFakeCommandRunner, createFakeEvidenceChecker, createFakeSecretScanner, createFakeWorktrees } from './fake-repo-tools';
@@ -17,11 +19,14 @@ import { createFakeNotifier } from './fake-notifier';
 import { createFakeProjectRepo } from './fake-project-repo';
 import { createFakeProposalRepo } from './fake-proposal-repo';
 import { createFakeQueueRepo } from './fake-queue-repo';
+import { createFakeRepoFolders } from './fake-repo-folders';
 import { createFakeRepoRegistry } from './fake-repo-registry';
 import { createFakeRunRepo } from './fake-run-repo';
+import { createFakeScratchDirs } from './fake-scratch-dirs';
 import { createFakeSecretVault } from './fake-secret-vault';
 import { createFakeTransportResolver } from './fake-transport';
 import { createFakeWorkOrderRepo } from './fake-work-order-repo';
+import { createFakeWorktreeFiles } from './fake-worktree-files';
 
 /**
  * Builds a fresh bundle of every fake; `overrides` replaces exactly the ports it names, so a test
@@ -35,6 +40,7 @@ export const createFakeDeps = (overrides: Partial<AppDeps> = {}): AppDeps => ({
   runs: createFakeRunRepo(),
   accounts: createFakeAccountRepo(),
   capabilities: createFakeCapabilityCatalog(),
+  capabilityDiscovery: createFakeCapabilityDiscovery(),
   modelCatalog: createFakeModelCatalog(),
   projects: createFakeProjectRepo(),
   repos: createFakeRepoRegistry(),
@@ -52,5 +58,9 @@ export const createFakeDeps = (overrides: Partial<AppDeps> = {}): AppDeps => ({
   notifier: createFakeNotifier(),
   instructionFiles: createFakeInstructionFiles(),
   checkpoints: createFakeCheckpointCommitter(),
+  accountTests: createFakeAccountTestRepo(),
+  scratch: createFakeScratchDirs(),
+  repoFolders: createFakeRepoFolders(),
+  worktreeFiles: createFakeWorktreeFiles(),
   ...overrides,
 });

@@ -1,5 +1,6 @@
 // api/queries.test.ts — the read models behind createApi: the cockpit (A-22) and the repo
-// board (A-23, A-30, A-31), plus the workOrder.detail pass-through. Scenarios are seeded straight
+// board (A-23, A-30, A-31), the workOrder.detail pass-through, and the stage-file reads' wire
+// shape (A-88, A-89). Scenarios are seeded straight
 // into the fakes; only the query under test goes through the api.
 import { describe, expect, it } from 'vitest';
 
@@ -7,6 +8,7 @@ import type {
   AccountId,
   Actor,
   AgentEvent,
+  CatalogModel,
   FlowSlug,
   GateSlug,
   QueueItem,
@@ -28,9 +30,11 @@ import { createPermissionBoard } from '../application';
 import type { FakeDefinitionStore } from '../application/ports/fakes';
 import {
   createFakeCapabilityCatalog,
+  createFakeCapabilityDiscovery,
   createFakeDefinitionStore,
   createFakeDeps,
   createFakeModelCatalog,
+  createFakeWorktreeFiles,
   FAKE_ROADMAP_TARGET,
 } from '../application/ports/fakes';
 
@@ -878,7 +882,106 @@ const SETTINGS_DEFAULTS = {
   identityDir: null,
   endpointHost: null,
   hasSecret: false,
+  test: null,
 } as const;
+
+describe('settings.accounts billing view', () => {
+  const view = async (deps: AppDeps): Promise<SettingsAccountsView> =>
+    (await createApi(deps).query({ type: 'settings.accounts' })) as SettingsAccountsView;
+
+  it('A-83: billing is the route default billing — subscription included, other auth modes unknown, a fixed kind wins', async () => {
+    const h = createHarness();
+    await h.deps.accounts.save({ id: ACCOUNT, provider: 'acme-prov', label: 'Plan', authMode: 'subscription', limitPolicy: 'wait_resume', caps: [] });
+    await h.deps.accounts.save({ id: ACCOUNT_SPARE, provider: 'acme-prov', label: 'Key', authMode: 'api_key', limitPolicy: 'wait_resume', caps: [] });
+    expect((await view(h.deps)).accounts.map((account) => account.billing)).toEqual(['included', 'unknown']);
+
+    const fixed: AppDeps = {
+      ...h.deps,
+      capabilities: createFakeCapabilityCatalog([{ id: 'acme-key', provider: 'acme-prov', authMode: 'api_key', defaultBilling: 'included' }]),
+    };
+    expect((await view(fixed)).accounts.map((account) => account.billing)).toEqual(['included', 'included']);
+  });
+
+  it('A-83: an allowance pool covering the default model upgrades an unknown billing to included', async () => {
+    const h = createHarness();
+    await h.deps.accounts.save({ id: ACCOUNT, provider: 'acme-prov', label: 'Key', authMode: 'api_key', limitPolicy: 'wait_resume', caps: [] });
+    const withDefault: AppDeps = {
+      ...h.deps,
+      modelCatalog: createFakeModelCatalog({
+        [ACCOUNT]: [{ id: 'atlas-max', source: 'live', thinking: { kind: 'none' }, billing: 'unknown', isDefault: true, contextWindow: null }],
+      }),
+    };
+    expect((await view(withDefault)).accounts[0]?.billing).toBe('unknown');
+
+    await h.deps.accounts.savePools(ACCOUNT, [
+      { id: POOL, accountId: ACCOUNT, label: 'Atlas weekly', kind: 'allowance', appliesTo: [{ exact: 'atlas-max' }] },
+    ]);
+    expect((await view(withDefault)).accounts[0]?.billing).toBe('included');
+  });
+});
+
+describe('settings.accounts catalog (A-86)', () => {
+  // Three api-key accounts whose catalog's default row plus an allowance pool would upgrade the
+  // billing to included (A-83): a listing that ran shows in the row, one that did not does not.
+  const KEY_A = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FD1');
+  const KEY_B = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FD2');
+  const KEY_C = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FD3');
+  const DEFAULT_ROW: readonly CatalogModel[] = [
+    { id: 'atlas-max', source: 'live', thinking: { kind: 'none' }, billing: 'unknown', isDefault: true, contextWindow: null },
+  ];
+
+  const keyedHarness = async (): Promise<Harness> => {
+    const h = createHarness();
+    for (const [index, id] of [KEY_A, KEY_B, KEY_C].entries()) {
+      await h.deps.accounts.save({ id, provider: 'acme-prov', label: `Key ${index + 1}`, authMode: 'api_key', limitPolicy: 'wait_resume', caps: [] });
+      await h.deps.accounts.savePools(id, [
+        { id: ulidOf<'pool'>(`01ARZ3NDEKTSV4RRFFQ69G5FE${index + 1}`), accountId: id, label: 'Atlas weekly', kind: 'allowance', appliesTo: [{ exact: 'atlas-max' }] },
+      ]);
+    }
+    return h;
+  };
+  const billings = async (deps: AppDeps, catalog?: 'read' | 'skip'): Promise<readonly string[]> => {
+    const view = (await createApi(deps).query(
+      catalog === undefined ? { type: 'settings.accounts' } : { type: 'settings.accounts', catalog },
+    )) as SettingsAccountsView;
+    return view.accounts.map((account) => account.billing);
+  };
+
+  it("A-86: 'skip' reads no model catalog and bills by the route's own rule", async () => {
+    const h = await keyedHarness();
+    let calls = 0;
+    const deps: AppDeps = {
+      ...h.deps,
+      modelCatalog: { list: async () => { calls += 1; return DEFAULT_ROW; } },
+    };
+    expect(await billings(deps, 'skip')).toEqual(['unknown', 'unknown', 'unknown']);
+    expect(calls).toBe(0);
+  });
+
+  it("A-86: 'read' lists every account's catalog at once, never one after another", async () => {
+    const h = await keyedHarness();
+    const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    const deps: AppDeps = {
+      ...h.deps,
+      modelCatalog: { list: async () => { await wait(100); return DEFAULT_ROW; } },
+    };
+    const started = Date.now();
+    expect(await billings(deps, 'read')).toEqual(['included', 'included', 'included']);
+    // Three 100 ms listings in parallel land near 100 ms; one by one would pass 300.
+    expect(Date.now() - started).toBeLessThan(250);
+  });
+
+  it("A-86: the default is 'read'", async () => {
+    const h = await keyedHarness();
+    let calls = 0;
+    const deps: AppDeps = {
+      ...h.deps,
+      modelCatalog: { list: async () => { calls += 1; return DEFAULT_ROW; } },
+    };
+    expect(await billings(deps)).toEqual(['included', 'included', 'included']);
+    expect(calls).toBe(3);
+  });
+});
 
 describe('settings.accounts', () => {
   it('U-13: returns every account with its pools and meters plus the per-role binding chains', async () => {
@@ -893,6 +996,7 @@ describe('settings.accounts', () => {
         provider: 'acme-prov',
         label: 'Main',
         authMode: 'subscription',
+        billing: 'included',
         plan: 'pro',
         ...SETTINGS_DEFAULTS,
         pools: [{ id: POOL, label: 'Weekly allowance', kind: 'allowance', appliesTo: 'all' }],
@@ -940,6 +1044,7 @@ describe('settings.accounts', () => {
         provider: 'beta-prov',
         label: 'Spare',
         authMode: 'api_key',
+        billing: 'unknown',
         plan: null,
         ...SETTINGS_DEFAULTS,
         limitPolicy: 'ask',
@@ -983,7 +1088,27 @@ describe('settings.accounts', () => {
     const view = (await createApi(h.deps).query({ type: 'settings.accounts' })) as SettingsAccountsView;
 
     expect(view.accounts).toEqual([
-      { id: ACCOUNT, provider: 'gemini', label: 'Leftover', authMode: 'subscription', plan: null, ...SETTINGS_DEFAULTS, pools: [], meters: [] },
+      { id: ACCOUNT, provider: 'gemini', label: 'Leftover', authMode: 'subscription', billing: 'included', plan: null, ...SETTINGS_DEFAULTS, pools: [], meters: [] },
+    ]);
+  });
+
+  it('P-47: an account whose provider id has no definition still loads in the account views — a removed provider never breaks the surface', async () => {
+    // A stored account adopted before a provider's removal (P-47 step 4): no migration rewrites
+    // it, so the id stays as the stale value and every account view still answers it.
+    const h = createHarness();
+    await h.deps.accounts.save({
+      id: ACCOUNT,
+      provider: 'kimi', // a removed provider id (P-47): no definition, no registry row
+      label: 'Adopted before the launch set',
+      authMode: 'subscription',
+      limitPolicy: 'wait_resume',
+      caps: [],
+    });
+
+    const view = (await createApi(h.deps).query({ type: 'settings.accounts' })) as SettingsAccountsView;
+
+    expect(view.accounts).toEqual([
+      { id: ACCOUNT, provider: 'kimi', label: 'Adopted before the launch set', authMode: 'subscription', billing: 'included', plan: null, ...SETTINGS_DEFAULTS, pools: [], meters: [] },
     ]);
   });
 
@@ -1311,7 +1436,7 @@ describe('account.models', () => {
     expect(view.models.map((model) => [model.id, model.billing])).toEqual([['fable', 'included']]);
   });
 
-  it('P-40: defaultBilling is what an unpinned run would take — the route kind’s fixed value, else subscription included and the rest metered', async () => {
+  it('P-51: defaultBilling is what an unpinned run would take — the route kind’s fixed value, else subscription included and the rest unknown', async () => {
     const h = createHarness();
     await h.deps.accounts.save({ id: ACCOUNT, provider: 'acme-prov', label: 'Main', authMode: 'subscription', limitPolicy: 'wait_resume', caps: [] });
     await h.deps.accounts.save({ id: ACCOUNT_SPARE, provider: 'acme-prov', label: 'Key', authMode: 'api_key', limitPolicy: 'wait_resume', caps: [] });
@@ -1325,9 +1450,9 @@ describe('account.models', () => {
       createApi(deps).query({ type: 'account.models', accountId });
     expect(((await answer(fixed, ACCOUNT)) as AccountModelsView).defaultBilling).toBe('metered');
 
-    // Without a fixed kind, only a subscription rides a plan; every other auth mode pays per use.
+    // Without a fixed kind, only a subscription rides a plan; every other auth mode is unknown, never metered.
     expect(((await answer(h.deps, ACCOUNT)) as AccountModelsView).defaultBilling).toBe('included');
-    expect(((await answer(h.deps, ACCOUNT_SPARE)) as AccountModelsView).defaultBilling).toBe('metered');
+    expect(((await answer(h.deps, ACCOUNT_SPARE)) as AccountModelsView).defaultBilling).toBe('unknown');
   });
 
   it('P-42: defaultBilling takes the merged default entry’s billing; without one the route rule answers', async () => {
@@ -1933,5 +2058,122 @@ describe('roadmap.byProject', () => {
       [4, 'done'],
     ]);
     expect(done?.workOrders[0]).toMatchObject({ repo: REPO, id: WO_DONE_FIRST, title: 'Bitti görev' });
+  });
+});
+
+// --- the stage-file reads resolve like every other query: the bare view on the wire ---------------
+
+describe('workOrders.stageFiles / workOrders.readStageFile — the wire shape', () => {
+  const WO_STAGE_FILES = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FC6');
+
+  /** A work order whose repo registers and whose worktree carries two changed files. */
+  const seedStageFilesOrder = async () => {
+    const worktreeFiles = createFakeWorktreeFiles();
+    const deps = createFakeDeps({ worktreeFiles });
+    await deps.workOrders.create({
+      id: WO_STAGE_FILES,
+      project: slugOf<'project'>('proj'),
+      repo: REPO,
+      flow: BOARD_FLOW,
+      title: 'Stage the thing',
+      createdAt: 1,
+      createdBy: ACTOR,
+    });
+    await deps.repos.register(REPO, '/repo');
+    await deps.worktrees.ensure(REPO, WO_STAGE_FILES);
+    worktreeFiles.written('docs/plan.md', '# Plan');
+    worktreeFiles.written('src/main.ts', 'const x = 1;\n');
+    return { deps, worktreeFiles };
+  };
+
+  it('resolves to the bare StageFilesView / WorktreeFilePreview, failures stay { ok: false, code }', async () => {
+    const { deps } = await seedStageFilesOrder();
+    const api = createApi(deps);
+
+    // The bare view — an envelope here is what the detail screen crashed on.
+    const list: unknown = await api.query({ type: 'workOrders.stageFiles', id: WO_STAGE_FILES });
+    expect(list).toEqual({
+      files: [
+        { path: 'docs/plan.md', sizeBytes: 6 },
+        { path: 'src/main.ts', sizeBytes: 13 },
+      ],
+      truncated: false,
+    });
+
+    const preview: unknown = await api.query({ type: 'workOrders.readStageFile', id: WO_STAGE_FILES, path: 'docs/plan.md' });
+    expect(preview).toEqual({ path: 'docs/plan.md', lines: ['# Plan'], truncated: false });
+
+    // The failure side of the same convention.
+    expect(await api.query({ type: 'workOrders.stageFiles', id: ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FC7') })).toEqual({
+      ok: false,
+      code: 'not_found',
+    });
+    expect(await api.query({ type: 'workOrders.readStageFile', id: ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FC7'), path: 'gone.md' })).toEqual({
+      ok: false,
+      code: 'not_found',
+    });
+  });
+});
+
+// --- capabilities.candidates (A-90 … A-94) -------------------------------------------------------
+
+describe('capabilities.candidates — the wire shape', () => {
+  const ACCT_A = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FAV');
+  const ACCT_B = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FAW');
+  const DIR_A = '/users/op/.claude-work';
+  const DIR_B = '/users/op/.claude-lab';
+
+  const seededDeps = async () => {
+    const discovery = createFakeCapabilityDiscovery();
+    const deps = createFakeDeps({ capabilityDiscovery: discovery });
+    await deps.accounts.save({
+      id: ACCT_A, provider: 'claude-code', label: 'Work', authMode: 'subscription', limitPolicy: 'wait_resume', caps: [], identityDir: DIR_A,
+    });
+    await deps.accounts.save({
+      id: ACCT_B, provider: 'claude-code', label: 'Lab', authMode: 'subscription', limitPolicy: 'wait_resume', caps: [], identityDir: DIR_B,
+    });
+    discovery.seed(DIR_A, [
+      { identity: 'context:CLAUDE.md', kind: 'context', name: 'CLAUDE.md', sources: [ACCT_A], path: `${DIR_A}/CLAUDE.md`, description: 'Work rules' },
+    ]);
+    discovery.seed(DIR_B, [
+      { identity: 'context:CLAUDE.md', kind: 'context', name: 'CLAUDE.md', sources: [ACCT_B], path: `${DIR_B}/CLAUDE.md`, description: 'Lab rules' },
+      { identity: 'mcp:db|npx db', kind: 'mcp', name: 'db', sources: [ACCT_B], command: 'npx db' },
+    ]);
+    return { deps, discovery };
+  };
+
+  it('A-94: answers the bare CapabilityCandidatesView, always — the same identity in two accounts is one row with both ids as plain strings', async () => {
+    const { deps } = await seededDeps();
+    const api = createApi(deps);
+    const view: unknown = await api.query({ type: 'capabilities.candidates' });
+    expect(view).toEqual({
+      candidates: [
+        {
+          identity: 'context:CLAUDE.md',
+          kind: 'context',
+          name: 'CLAUDE.md',
+          sources: [ACCT_A, ACCT_B],
+          path: `${DIR_A}/CLAUDE.md`,
+          description: 'Work rules',
+          imported: false,
+        },
+        { identity: 'mcp:db|npx db', kind: 'mcp', name: 'db', sources: [ACCT_B], command: 'npx db', imported: false },
+      ],
+      truncated: false,
+    });
+  });
+
+  it('A-94: an empty account store answers empty — the query always answers, it never fails', async () => {
+    const api = createApi(createFakeDeps());
+    expect(await api.query({ type: 'capabilities.candidates' })).toEqual({ candidates: [], truncated: false });
+  });
+
+  it('A-94: after an import the same query answers imported: true — the surface re-queries, no payload rides the command', async () => {
+    const { deps } = await seededDeps();
+    const api = createApi(deps);
+    await api.command(ACTOR, { type: 'capabilities.import', identities: ['context:CLAUDE.md'] });
+    const view = (await api.query({ type: 'capabilities.candidates' })) as { candidates: { identity: string; imported: boolean }[] };
+    expect(view.candidates.find((c) => c.identity === 'context:CLAUDE.md')?.imported).toBe(true);
+    expect(view.candidates.find((c) => c.identity === 'mcp:db|npx db')?.imported).toBe(false);
   });
 });

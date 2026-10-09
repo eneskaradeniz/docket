@@ -33,6 +33,7 @@ export const KNOWN_FAILURE_CODES: readonly string[] = [
   'not_current_stage',
   'not_pending',
   'not_a_human_gate',
+  'not_a_changes_gate',
   'agent_cannot_decide',
   'stale',
   'self_approval',
@@ -55,6 +56,13 @@ export const KNOWN_FAILURE_CODES: readonly string[] = [
   'not_a_repo',
   'no_project_yaml',
   'repo_not_in_project',
+  // project.create refusals (A-75 … A-77).
+  'invalid_name',
+  'not_a_folder',
+  'folder_exists',
+  'docket_folder_exists',
+  'io_failed',
+  'project_exists',
   // saveBinding: a role's account chain cannot be empty (A-14).
   'empty_chain',
 ];
@@ -72,9 +80,11 @@ const SUCCESS_KEYS: Readonly<Record<Command['type'], LabelKey>> = {
   'workOrder.enqueue': 'success.workOrder.enqueue',
   'task.open': 'success.task.open',
   'project.attach': 'success.project.attach',
+  'project.create': 'newProject.created',
   'repo.register': 'success.repo.register',
   'repo.unregister': 'success.repo.unregister',
   'gate.decide': 'success.gate.decide',
+  'gate.attest': 'success.gate.attestNoChange',
   'proposal.decide': 'success.proposal.decide',
   'permission.answer': 'success.permission.answer',
   'deploy.approve': 'success.deploy.approve',
@@ -84,9 +94,14 @@ const SUCCESS_KEYS: Readonly<Record<Command['type'], LabelKey>> = {
   // A cap write is an account edit: it reads back as the account being saved.
   'account.cap.save': 'success.account.save',
   'account.cap.remove': 'success.account.save',
+  'account.test': 'success.account.test',
   'account.consent.grant': 'success.account.consent.grant',
   'account.consent.revoke': 'success.account.consent.revoke',
   'binding.save': 'success.binding.save',
+  // No surface issues a refresh yet; it is a read, so it borrows the neutral account copy.
+  'quota.refresh': 'success.account.save',
+  // The import surface is part 3; the per-identity outcomes ride `results`, the toast is neutral.
+  'capabilities.import': 'success.capabilities.import',
   'app.update.check': 'success.app.update.check',
   'app.update.apply': 'success.app.update.apply',
 };

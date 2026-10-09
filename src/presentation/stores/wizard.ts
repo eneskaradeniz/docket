@@ -1,27 +1,48 @@
-// stores/wizard.ts — the setup wizard's machine (U-35): Hoş geldin → Hesaplar → Yetenekler →
-// Asistan sırası → Bütçe → the "Kurulum tamam" moment. A step with nothing to decide is skipped
-// and reads "–" in the rail (Yetenekler while no capability source holds anything, Asistan sırası
-// under two accounts). Every choice is a draft held here: the selection and its key-move
-// switches (U-34), an account's editor draft (U-30) and the spend consents (U-32). Nothing is
-// written before the finish; the finish adopts or saves every selected account with its draft,
-// writes caps and consents, and binds every role with the chosen chain and the role's
-// recommended work style (complete bindings, A-49). `back` never touches an entry. The wizard
-// shows only while no project exists. Failures map through U-8.
+// stores/wizard.ts — the setup wizard's machine (U-42): Hoş geldin → Hesaplar → Yetenekler →
+// Asistan sırası → Bütçe, then straight to Anasayfa. A step with nothing to decide is skipped and
+// reads "–" in the rail (Yetenekler while its read has not finished with a candidate, U-58;
+// Asistan sırası under two selected accounts). Every choice is a draft held here: the selection
+// and its key-move switches (U-34), an account's editor draft (U-43), the spend consents (U-32),
+// the Bütçe rows' reserve choice (U-48) and the capability picks (U-59, identities until the
+// finish). Nothing is written before the finish; the finish adopts every selected account, binds
+// every role with the chosen chain and its recommended work style (complete bindings, A-49),
+// imports the picked capabilities in one call that never blocks the walk (U-60), then lands the
+// drafts — caps and consents among them — on the stored accounts. Its real phases (U-49) —
+// accounts, capabilities, order, budget, home — publish as they complete, so the progress list's
+// checks follow real replies, never a timer; the window stays mounted while `finished` is set and
+// leaves on `ackFinish`, after the shell's handoff and the wizard's fade. `back` never touches an
+// entry and does not exist on Hoş geldin. Discovery candidates carry their route's billing
+// (A-83a) and, before they are accounts, their quota is read with `accounts.candidateQuota`
+// (A-82). Failures map through U-8.
 import type { Api } from '../../api/api';
 import type { Command, CommandResult } from '../../api/commands';
-import type { ProjectTreeItem, Query, RoleListItem, SettingsAccountView, SettingsAccountsView } from '../../api/queries';
+import type {
+  CapabilityCandidateView,
+  CapabilityCandidatesView,
+  CandidateQuotaView,
+  Query,
+  RoleListItem,
+  SettingsAccountView,
+  SettingsAccountsView,
+  SettingsMeterView,
+  SettingsPoolView,
+} from '../../api/queries';
 import type { Actor } from '../../domain/index';
 import type { LabelKey } from '../labels/keys';
 import {
   labelSaveCommand,
-  meterBar,
+  policyChoices,
   policyLabelKey,
   policySaveCommand,
   reserveSaveCommand,
   usageView,
   type EditorOutcome,
+  type EditorTab,
+  type LimitPolicy,
 } from './account-editor';
 import { parseAmountUsd, type CapScope } from './account-models';
+import { spendsMoney, type Billing } from './account-groups';
+import { meterListEmpty, meterListView, type MeterListEmpty, type MeterListView } from './meter-list';
 import {
   candidateRows,
   isProviderFact,
@@ -33,35 +54,75 @@ import {
 } from './candidates';
 import { RECOMMENDED, isPayPerUse, recommendedWorkStyle, settingDiffs } from './recommended';
 import { commandResultKey, isQueryFailure, queryFailureKey } from './results';
+import { moveItem } from './drag-order';
 import { bindingCommand, styleSettings } from './roles';
 
-export type WizardStep = 'welcome' | 'accounts' | 'capabilities' | 'order' | 'budget' | 'done';
+export type WizardStep = 'welcome' | 'accounts' | 'capabilities' | 'order' | 'budget';
 
-/** The rail's steps in walking order; the "Kurulum tamam" moment is not a step. */
+/** The rail's steps in walking order. */
 export const WIZARD_STEPS: readonly WizardStep[] = ['welcome', 'accounts', 'capabilities', 'order', 'budget'];
 
+/** The tabs of the wizard's editor: a draft has no stored account to list models of, and Genel holds
+ *  no model choice — no contract stores one (U-44a). */
+export const WIZARD_EDITOR_TABS: readonly EditorTab[] = ['general', 'usage', 'limits'];
+
 export type RailStanding = 'done' | 'cur' | 'todo' | 'skipped';
+
+/** The finish's real phases (U-49), in the progress list's walking order: each maps to one line
+ *  and to the work that makes it true — adoption, the capability import (U-60), the chain's
+ *  bindings, the drafts' writes, the leave for Anasayfa. */
+export type FinishPhase = 'accounts' | 'capabilities' | 'order' | 'budget' | 'home';
+
+export interface FinishError {
+  /** The line the finish stopped on; the phases before it keep their checks. */
+  readonly phase: FinishPhase;
+  /** Why it stopped — the outcome's U-8 label. */
+  readonly reasonKey: LabelKey;
+}
 
 export interface RailEntry {
   readonly step: WizardStep;
   readonly standing: RailStanding;
 }
 
-/** A capability a composed source offers (MCP · Skill · Hook · Context); none is composed today. */
-export interface WizardCapability {
-  readonly id: string;
+/** One Yetenekler row: the merged candidate (R-63) with its pick standing (U-59). A candidate
+ *  found in several accounts is one row — `sources` holds every account that found it. */
+export interface WizardCapabilityRow {
+  readonly identity: string;
+  readonly kind: 'mcp' | 'skill' | 'context';
   readonly name: string;
-  readonly kind: string;
+  readonly sources: readonly string[];
+  readonly command: string | null;
+  readonly path: string | null;
+  readonly description: string | null;
+  readonly imported: boolean;
+  readonly selected: boolean;
 }
+
+/** One Yetenekler group: the account whose config directory held the rows, titled the way
+ *  Hesaplar reads that account — "Asistan · Hesap" (U-59). */
+export interface WizardCapabilityGroup {
+  readonly id: string;
+  readonly title: string;
+  readonly rows: readonly WizardCapabilityRow[];
+}
+
+/** A rejected import row, as the end note lists it: the candidate's name and the rejection
+ *  code's own label key is decided by the screen (U-60). */
+export interface WizardCapabilityReject {
+  readonly name: string;
+  readonly reason: string;
+}
+
+/** The change events the wizard reads: an `accounts.changed` re-reads what it shows (U-44). */
+export type WizardChangeSignal = (listener: (change: { readonly type: string }) => void) => () => void;
 
 export interface WizardStoreDeps {
   readonly api: Pick<Api, 'query' | 'command'>;
   /** Every issued command travels as this actor — the wizard acts as the user. */
   readonly actor: Actor;
-  /** What the composed capability source found; absent or empty skips Yetenekler. */
-  readonly capabilities?: readonly WizardCapability[];
-  /** Re-queries the sidebar tree: an attach appends no work-order event, so nothing else would. */
-  readonly reloadTree?: () => Promise<void>;
+  /** The api's change events; absent in tests that do not need them. */
+  readonly changes?: WizardChangeSignal;
 }
 
 /** One line of Hesaplar: a candidate not yet added, or an account added earlier. */
@@ -77,21 +138,44 @@ export interface OrderEntry {
   readonly providerName: string | null;
   readonly label: string;
   readonly markKey: string | null;
+  readonly billing: Billing;
+  readonly viaKey: boolean;
+  /** An account that may spend money: automatic switching skips it, only the user picks it. */
+  readonly autoSkipped: boolean;
 }
+
+/** What a candidate's quota read stands at: still loading, answered, or an error (A-82). */
+export type QuotaStanding =
+  | { readonly state: 'loading' }
+  | { readonly state: 'ok'; readonly pools: readonly SettingsPoolView[]; readonly meters: readonly SettingsMeterView[] }
+  | { readonly state: 'error' };
 
 export interface BudgetRow {
   readonly id: string;
   readonly providerName: string | null;
   readonly label: string;
   readonly markKey: string | null;
+  readonly billing: Billing;
+  readonly viaKey: boolean;
+  readonly displayPath: string;
+  readonly host: string | null;
   /** The U-29 count of settings that differ from the recommendation. */
   readonly diffCount: number;
+  readonly policy: LimitPolicy;
   readonly policyKey: LabelKey;
+  /** The "Limit dolunca" options, in display order; the pool switch only with a model-scoped pool. */
+  readonly policyChoices: readonly LimitPolicy[];
   readonly reserveShort: number;
   readonly reserveLong: number;
-  /** Each meter's remaining share, 0..1, null when unreadable; empty before the account exists. */
-  readonly bars: readonly (number | null)[];
+  /** The draft's held-back share as a whole percent (0 = none) — the summary line's "rezerv %n". */
+  readonly reservePercent: number;
+  /** The MeterList rows; empty before a quota answer or when the provider reports none. */
+  readonly meters: MeterListView;
+  /** The line shown instead of rows; null while rows exist. */
+  readonly meterEmpty: MeterListEmpty | null;
   readonly cap: { readonly scope: string; readonly amountUsd: number; readonly warnPercent: number } | null;
+  /** The cap the row shows: the stored one, else the recommendation. */
+  readonly capShown: { readonly scope: CapScope; readonly amountUsd: number };
   readonly spentUsd: number | null;
   readonly needsConsent: boolean;
   readonly consented: boolean;
@@ -103,24 +187,10 @@ export interface WizardOutcome {
   readonly labelKey: LabelKey;
 }
 
-export interface WizardSummary {
+/** Set once the finish has written everything: the shell opens Anasayfa with the one toast. */
+export interface WizardFinished {
+  /** Ready accounts the setup leaves behind ("Kurulum tamamlandı · n hesap hazır"). */
   readonly accounts: number;
-  readonly capabilities: number;
-  readonly firstLabel: string;
-}
-
-/** Where the project's default view is: a multi-repo project opens its roadmap, a single-repo one
- *  its board (as the cockpit's project cards do). */
-export type WizardOpenTarget =
-  | { readonly kind: 'roadmap'; readonly project: string }
-  | { readonly kind: 'board'; readonly repo: string };
-
-export interface WizardAttach {
-  readonly open: boolean;
-  readonly path: string;
-  readonly busy: boolean;
-  /** The U-8 label of a failed attach, shown under the field. */
-  readonly failureKey: LabelKey | null;
 }
 
 export interface WizardState {
@@ -131,25 +201,42 @@ export interface WizardState {
   readonly rail: readonly RailEntry[];
   readonly rows: readonly WizardAccountRow[];
   readonly providers: readonly ProviderRow[];
+  /** The providers that are installed, for the account groups (an installed one always has a card). */
+  readonly installed: readonly { readonly id: string; readonly name: string }[];
   readonly loading: boolean;
-  readonly capabilities: readonly (WizardCapability & { readonly selected: boolean })[];
+  /** Yetenekler (U-58): the query runs while the step is walked through; the skeleton holds it. */
+  readonly capabilitiesLoading: boolean;
+  /** One group per account the candidates name in `sources` (U-59). */
+  readonly capabilityGroups: readonly WizardCapabilityGroup[];
+  /** The scan found more than the cap (U-59): one note line, no pagination. */
+  readonly capabilityTruncated: boolean;
+  /** The summary line's "n yetenek": distinct selected, not-yet-imported identities (U-59). */
+  readonly capabilityPicked: number;
+  /** Whether Yetenekler stands with something to walk through — the finish list draws its
+   *  capability line only then (U-60). */
+  readonly capabilitiesLive: boolean;
+  /** The import's rejected rows, listed as the end note (U-60); empty while none. */
+  readonly capabilityRejects: readonly WizardCapabilityReject[];
   readonly order: readonly OrderEntry[];
   readonly budget: { readonly subscriptions: readonly BudgetRow[]; readonly payPerUse: readonly BudgetRow[] };
   /** The open editor window: its working copy of one account. */
   readonly editor: { readonly key: string; readonly account: SettingsAccountView } | null;
+  /** Geri does not exist on Hoş geldin. */
+  readonly canBack: boolean;
+  /** "Bu adımı atla" is offered on Bütçe only (it finishes with the recommended values). */
   readonly canSkip: boolean;
   /** Whether the primary footer slot is enabled — on Bütçe it is "Kurulumu bitir". */
   readonly nextEnabled: boolean;
   /** Why the primary slot is disabled; null while it is enabled. */
   readonly reasonKey: LabelKey | null;
   readonly finishing: boolean;
+  /** The progress list's current line (U-49); null outside a finish. */
+  readonly finishPhase: FinishPhase | null;
+  /** The line a failed finish stopped on; null while it runs and after a clean leave. */
+  readonly finishError: FinishError | null;
   readonly lastOutcome: WizardOutcome | null;
-  /** The one line of the "Kurulum tamam" moment; null before it. */
-  readonly summary: WizardSummary | null;
-  /** The inline attach form of "Proje bağla". */
-  readonly attach: WizardAttach;
-  /** Set once a project is attached: the view to open; the wizard has left by then. */
-  readonly opened: WizardOpenTarget | null;
+  /** Non-null from the finish until the shell has taken it. */
+  readonly finished: WizardFinished | null;
 }
 
 export interface SpendInput {
@@ -164,13 +251,15 @@ export interface WizardStore {
   next(): Promise<void>;
   skip(): Promise<void>;
   back(): void;
+  /** A done step in the rail: goes back to it, keeping every entry. Later and skipped steps do nothing. */
+  goTo(target: WizardStep): void;
   select(key: string): void;
   setImportToken(key: string, on: boolean): void;
   /** "Yeniden tara": a fresh scan of candidates and providers. */
   rescan(): Promise<void>;
   toggleCapability(id: string): void;
-  moveUp(key: string): void;
-  moveDown(key: string): void;
+  /** Drag and drop or Alt+↑/↓ on Asistan sırası: the account takes the slot (clamped). */
+  moveTo(key: string, index: number): void;
   /** Opens the editor window on a working copy of the account's draft. */
   openEditor(key: string): Promise<void>;
   /** The editor's command runner: applied to the working copy, issued to nothing. */
@@ -179,16 +268,19 @@ export interface WizardStore {
   saveEditor(): void;
   /** Vazgeç: the working copy is dropped. */
   cancelEditor(): void;
-  /** The U-32 card's İzin ver: false while the amount does not parse. */
+  /** The "Limit dolunca" Listbox of a subscription row. */
+  setPolicy(key: string, policy: LimitPolicy): void;
+  /** The Ayrıntı reserve choice (U-48): one percent held back from both windows; null = Yok. */
+  setReserve(key: string, percent: number | null): void;
+  /** The cap amount and period of a pay-per-use row; false while the amount does not parse. */
+  setCap(key: string, input: SpendInput): boolean;
+  /** The U-32 consent: grants with the cap; false while the amount does not parse. */
   allowSpend(key: string, input: SpendInput): boolean;
   revokeSpend(key: string): void;
-  /** "Proje bağla": opens the inline attach form. */
-  attachProject(): void;
-  setAttachPath(path: string): void;
-  /** Leaves the form for the summary. */
-  cancelAttach(): void;
-  /** "Bağla": `project.attach`; on success the wizard leaves and `opened` names the view. */
-  submitAttach(): Promise<void>;
+  /** Reads a candidate's quota again (the editor's Yenile). */
+  refreshQuota(key: string): Promise<void>;
+  /** The shell has opened Anasayfa and the window's fade is over: the wizard leaves for good. */
+  ackFinish(): void;
   subscribe(listener: () => void): () => void;
 }
 
@@ -259,11 +351,13 @@ const viewOf = (base: SettingsAccountView, settings: DraftSettings): SettingsAcc
 
 /** A candidate before it exists: `account.adopt` stores subscription routes as subscriptions and
  *  compatible endpoints as key-based accounts. */
-const syntheticView = (fact: CandidateFact, importToken: boolean): SettingsAccountView => ({
+const syntheticView = (fact: CandidateFact, importToken: boolean, quota: QuotaStanding | undefined): SettingsAccountView => ({
   id: fact.sourcePath,
   provider: fact.provider ?? '',
   label: labelOf(fact.displayPath),
   authMode: fact.kind === 'compatible_endpoint' && fact.endpointHost !== undefined ? 'api_key' : 'subscription',
+  // The candidate row carries its route's billing (A-83a); the stored account's own view replaces it.
+  billing: fact.billing,
   plan: null,
   limitPolicy: RECOMMENDED.limitPolicy,
   reserve: { short: null, long: null },
@@ -273,8 +367,10 @@ const syntheticView = (fact: CandidateFact, importToken: boolean): SettingsAccou
   identityDir: fact.displayPath,
   endpointHost: fact.endpointHost ?? null,
   hasSecret: importToken,
-  pools: [],
-  meters: [],
+  test: null,
+  // The candidate's own quota preview (A-82): ids exist only in that answer.
+  pools: quota?.state === 'ok' ? quota.pools : [],
+  meters: quota?.state === 'ok' ? quota.meters : [],
 });
 
 /** One editor command laid over a draft. Only the fields the editor writes are read; a command
@@ -331,6 +427,26 @@ export const settingsCommands = (real: SettingsAccountView, draft: DraftSettings
   return commands;
 };
 
+const isQuotaView = (value: unknown): value is CandidateQuotaView =>
+  typeof value === 'object' && value !== null && 'ok' in value && typeof value.ok === 'boolean';
+
+const isCapabilityCandidate = (value: unknown): value is CapabilityCandidateView =>
+  typeof value === 'object' &&
+  value !== null &&
+  'identity' in value &&
+  typeof value.identity === 'string' &&
+  'kind' in value &&
+  typeof value.kind === 'string' &&
+  'name' in value &&
+  typeof value.name === 'string' &&
+  'sources' in value &&
+  Array.isArray(value.sources) &&
+  'imported' in value &&
+  typeof value.imported === 'boolean';
+
+const isCandidatesView = (value: unknown): value is CapabilityCandidatesView =>
+  typeof value === 'object' && value !== null && 'candidates' in value && Array.isArray(value.candidates) && 'truncated' in value && typeof value.truncated === 'boolean';
+
 export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
   const { api, actor } = deps;
 
@@ -339,6 +455,11 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
   let step: WizardStep = 'welcome';
   let loading = false;
   let finishing = false;
+  let finishPhase: FinishPhase | null = null;
+  let finishError: FinishError | null = null;
+  /** Where the next finish starts: a retry resumes at the phase the run stopped on, so a phase
+   *  that already completed is never walked or written again (U-49). */
+  let finishResume: FinishPhase = 'accounts';
   let facts: readonly CandidateFact[] = [];
   let providerFacts: readonly ProviderFact[] = [];
   let existing: readonly SettingsAccountView[] = [];
@@ -348,15 +469,27 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
   const drafts = new Map<string, DraftSettings>();
   /** Candidates the finish has already adopted (key → account id): a retry never adopts twice. */
   const adoptedIds = new Map<string, string>();
-  let capabilityPicks: ReadonlySet<string> = new Set((deps.capabilities ?? []).map((capability) => capability.id));
+  /** The quota preview of each candidate not yet adopted (A-82), by source path. */
+  const quotas = new Map<string, QuotaStanding>();
+  /** The picked capability identities — a draft until the finish, like every wizard choice. */
+  let capabilityPicks: ReadonlySet<string> = new Set();
+  /** Yetenekler's read (U-58): never read before an account exists (A-90's scan would find
+   *  nothing), read when Hesaplar completes and again whenever the adopted set changes. */
+  let capsLoading = false;
+  let capsRead = false;
+  let capsError = false;
+  let capsFacts: readonly CapabilityCandidateView[] = [];
+  let capsTruncated = false;
+  /** The import's rejected rows (U-60); set by the finish, kept for the end note. */
+  let importRejects: readonly WizardCapabilityReject[] = [];
   let editorWork: { readonly key: string; readonly settings: DraftSettings } | null = null;
   let lastOutcome: WizardOutcome | null = null;
   let loaded = false;
-  let attach: WizardAttach = { open: false, path: '', busy: false, failureKey: null };
-  let opened: WizardOpenTarget | null = null;
+  let finished: WizardFinished | null = null;
+  /** The finish has run: the wizard never comes back in this session. */
+  let completed = false;
   let openAttempts = 0;
 
-  const capabilities = deps.capabilities ?? [];
   const listeners = new Set<() => void>();
 
   const nameOf = (provider: string): string | null =>
@@ -369,7 +502,7 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
     ...facts
       .filter((fact) => !fact.alreadyAdded)
       .map((fact): Entry => {
-        const base = syntheticView(fact, importTokens.has(fact.sourcePath));
+        const base = syntheticView(fact, importTokens.has(fact.sourcePath), quotas.get(fact.sourcePath));
         return { key: fact.sourcePath, base, fact, settings: drafts.get(fact.sourcePath) ?? settingsOf(base) };
       }),
   ];
@@ -391,11 +524,16 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
           disabledReasonKey: null,
           warnKeys: [],
           keyMoveCard: false,
+          provider: entry.base.provider === '' ? null : entry.base.provider,
+          displayPath: entry.base.identityDir ?? '',
+          billing: entry.base.billing,
+          viaKey: entry.base.authMode === 'api_key',
+          hintKey: null,
           existing: true,
           importToken: false,
         };
       }
-      const [row] = candidateRows([entry.fact], selection.includes(entry.key) ? entry.key : null, importTokens.has(entry.key));
+      const [row] = candidateRows([entry.fact], selection.includes(entry.key) ? entry.key : null, importTokens.has(entry.key), providerFacts);
       if (row === undefined) throw new Error('a listed candidate has no row');
       return { ...row, label: entry.settings.label, providerName: nameOf(entry.base.provider), existing: false, importToken: importTokens.has(entry.key) };
     });
@@ -405,12 +543,101 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
   const viewOfEntry = (entry: Entry): SettingsAccountView => viewOf(entry.base, entry.settings);
 
   const orderEntries = (): readonly OrderEntry[] =>
-    selectedEntries().map((entry) => ({ id: entry.key, providerName: nameOf(entry.base.provider), label: entry.settings.label, markKey: entry.base.provider === '' ? null : entry.base.provider }));
+    selectedEntries().map((entry) => ({
+      id: entry.key,
+      providerName: nameOf(entry.base.provider),
+      label: entry.settings.label,
+      markKey: entry.base.provider === '' ? null : entry.base.provider,
+      billing: entry.base.billing,
+      viaKey: entry.base.authMode === 'api_key',
+      autoSkipped: spendsMoney(entry.base.billing),
+    }));
+
+  // --- Yetenekler (U-58 … U-60) -----------------------------------------------------------------
+
+  /** Whether Yetenekler stands with something to walk through: a read in flight (the step holds
+   *  its skeleton) or a finished read with at least one candidate. An empty answer or a failed
+   *  query skips the step (U-58). */
+  const capsLive = (): boolean => capsLoading || (capsRead && !capsError && capsFacts.length > 0);
+
+  /** One row per merged candidate: the pick is the identity, so a candidate found in several
+   *  accounts toggles once for all of its groups (U-59). An imported row never reads selected. */
+  const capabilityRows = (): readonly WizardCapabilityRow[] =>
+    capsFacts.map((fact) => ({
+      identity: fact.identity,
+      kind: fact.kind,
+      name: fact.name,
+      sources: fact.sources.filter((id): id is string => typeof id === 'string'),
+      command: fact.command ?? null,
+      path: fact.path ?? null,
+      description: fact.description ?? null,
+      imported: fact.imported,
+      selected: !fact.imported && capabilityPicks.has(fact.identity),
+    }));
+
+  /** One group per account the candidates name in `sources`, titled "Asistan · Hesap" the way
+   *  Hesaplar reads that account; the group count equals the number of distinct accounts (U-59). */
+  const capabilityGroups = (): readonly WizardCapabilityGroup[] => {
+    const rows = capabilityRows();
+    return existing
+      .filter((view) => rows.some((row) => row.sources.includes(view.id)))
+      .map((view) => {
+        const providerName = nameOf(view.provider);
+        return {
+          id: view.id,
+          title: providerName === null ? view.label : `${providerName} · ${view.label}`,
+          rows: rows.filter((row) => row.sources.includes(view.id)),
+        };
+      });
+  };
+
+  /** The read itself (A-94 — the query scans on every call). A failure is the skip standing:
+   *  empty facts, no error surface anywhere (U-58). */
+  const readCapabilities = async (): Promise<void> => {
+    // Never read before an account exists: the scan walks the account store's own identity
+    // directories (A-90), so the answer would be empty by construction — and a world whose last
+    // account left keeps no stale candidates either.
+    if (existing.length === 0) {
+      capsFacts = [];
+      capsTruncated = false;
+      capabilityPicks = new Set();
+      publish();
+      return;
+    }
+    capsLoading = true;
+    publish();
+    const reply: unknown = await api.query({ type: 'capabilities.candidates' });
+    if (isQueryFailure(reply) || !isCandidatesView(reply)) {
+      capsError = true;
+      capsFacts = [];
+      capsTruncated = false;
+    } else {
+      capsError = false;
+      capsFacts = reply.candidates.filter(isCapabilityCandidate);
+      capsTruncated = reply.truncated;
+    }
+    capsRead = true;
+    capsLoading = false;
+    // A pick that the fresh read no longer lists falls away, like an account choice.
+    const listed = new Set(capsFacts.map((fact) => fact.identity));
+    capabilityPicks = new Set([...capabilityPicks].filter((identity) => listed.has(identity)));
+    publish();
+    // The read resolved into a skip while the user stands on the step: the walk moves on by
+    // itself, exactly as it does when the step was skipped before landing on it (U-58).
+    if (step === 'capabilities' && !capsLive()) {
+      const next = stepAfter('capabilities');
+      if (next !== null) {
+        step = next;
+        publish();
+        if (step === 'budget') await ensureQuotas();
+      }
+    }
+  };
 
   // --- the machine -------------------------------------------------------------------------------
 
   const skipped = (target: WizardStep): boolean => {
-    if (target === 'capabilities') return capabilities.length === 0;
+    if (target === 'capabilities') return !capsLive();
     if (target === 'order') return selection.length < 2;
     return false;
   };
@@ -418,22 +645,21 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
   const railOf = (): readonly RailEntry[] =>
     WIZARD_STEPS.map((entry, index): RailEntry => {
       if (skipped(entry)) return { step: entry, standing: 'skipped' };
-      if (step === 'done') return { step: entry, standing: 'done' };
       const current = WIZARD_STEPS.indexOf(step);
       return { step: entry, standing: index < current ? 'done' : index === current ? 'cur' : 'todo' };
     });
 
-  const stepAfter = (from: WizardStep): WizardStep => {
+  const stepAfter = (from: WizardStep): WizardStep | null => {
     const start = WIZARD_STEPS.indexOf(from);
     for (let at = start + 1; at < WIZARD_STEPS.length; at += 1) {
       const candidate = WIZARD_STEPS[at];
       if (candidate !== undefined && !skipped(candidate)) return candidate;
     }
-    return 'done';
+    return null;
   };
 
   const stepBefore = (from: WizardStep): WizardStep | null => {
-    const start = from === 'done' ? WIZARD_STEPS.length : WIZARD_STEPS.indexOf(from);
+    const start = WIZARD_STEPS.indexOf(from);
     for (let at = start - 1; at >= 0; at -= 1) {
       const candidate = WIZARD_STEPS[at];
       if (candidate !== undefined && !skipped(candidate)) return candidate;
@@ -441,33 +667,57 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
     return null;
   };
 
-  const readySelected = (): boolean =>
-    rowsOf().some((row) => row.selected && row.statusKey === 'candidates.status.ready');
+  const readySelected = (): boolean => rowsOf().some((row) => row.selected && row.statusKey === 'candidates.status.ready');
 
   const consentMissing = (): boolean =>
     selectedEntries().some((entry) => isPayPerUse(viewOfEntry(entry)) && !(entry.settings.consent && entry.settings.caps.length > 0));
 
   const gate = (): LabelKey | null => {
     if (step === 'accounts') return readySelected() ? null : 'wizard.reason.accounts';
+    // The one query runs on the step itself; the primary slot waits it out (U-58).
+    if (step === 'capabilities') return capsLoading ? 'wizard.reason.capabilities' : null;
     if (step === 'budget') return consentMissing() ? 'wizard.reason.budget' : null;
     return null;
+  };
+
+  const capShown = (view: SettingsAccountView): { readonly scope: CapScope; readonly amountUsd: number } => {
+    const stored = view.caps[0];
+    return stored === undefined
+      ? { scope: RECOMMENDED.cap.scope, amountUsd: RECOMMENDED.cap.amountUsd }
+      : { scope: stored.scope, amountUsd: stored.amountUsd };
   };
 
   const budgetRow = (entry: Entry): BudgetRow => {
     const view = viewOfEntry(entry);
     const usage = usageView(view);
     const cap = view.caps[0] ?? null;
+    const meters = meterListView(view.pools, view.meters);
+    const standing = entry.fact === null ? undefined : quotas.get(entry.fact.sourcePath);
+    const needsLogin = rowsOf().find((row) => row.id === entry.key)?.statusKey === 'candidates.status.needs_login';
     return {
       id: entry.key,
       providerName: nameOf(view.provider),
       label: view.label,
       markKey: view.provider === '' ? null : view.provider,
+      billing: view.billing,
+      viaKey: view.authMode === 'api_key',
+      displayPath: view.identityDir ?? '',
+      host: view.endpointHost,
       diffCount: settingDiffs(view).length,
+      policy: view.limitPolicy,
       policyKey: policyLabelKey(view.limitPolicy),
+      policyChoices: policyChoices(view),
       reserveShort: view.reserve.short ?? 0,
       reserveLong: view.reserve.long ?? 0,
-      bars: view.meters.map((meter) => meterBar(meter).fill),
+      // Either window's held-back share reads in the summary; the Ayrıntı choice always sets both.
+      reservePercent: Math.round((view.reserve.short ?? view.reserve.long ?? 0) * 100),
+      meters,
+      meterEmpty:
+        meters.rows.length > 0
+          ? null
+          : meterListEmpty({ loading: standing?.state === 'loading', failed: standing?.state === 'error', needsLogin }),
       cap: cap === null ? null : { scope: cap.scope, amountUsd: cap.amountUsd, warnPercent: cap.warnPercent },
+      capShown: capShown(view),
       spentUsd: usage.kind === 'spend' ? usage.spentUsd : null,
       needsConsent: isPayPerUse(view),
       consented: view.consentedModels.includes('*'),
@@ -479,7 +729,6 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
     const budgetRows = selected.map(budgetRow);
     const reason = visible ? gate() : null;
     const editorEntry = editorWork === null ? undefined : entryOf(editorWork.key);
-    const first = selected[0];
     return {
       visible,
       checking,
@@ -487,8 +736,14 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
       rail: railOf(),
       rows: rowsOf(),
       providers: providerRows(providerFacts),
+      installed: providerFacts.filter((fact) => fact.binPath !== null).map((fact) => ({ id: fact.defId, name: fact.name })),
       loading,
-      capabilities: capabilities.map((capability) => ({ ...capability, selected: capabilityPicks.has(capability.id) })),
+      capabilitiesLoading: capsLoading,
+      capabilityGroups: capabilityGroups(),
+      capabilityTruncated: capsTruncated,
+      capabilityPicked: capsFacts.filter((fact) => !fact.imported && capabilityPicks.has(fact.identity)).length,
+      capabilitiesLive: capsLive(),
+      capabilityRejects: importRejects,
       order: orderEntries(),
       budget: {
         subscriptions: budgetRows.filter((row) => !row.needsConsent),
@@ -496,17 +751,15 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
       },
       editor:
         editorWork === null || editorEntry === undefined ? null : { key: editorWork.key, account: viewOf(editorEntry.base, editorWork.settings) },
-      canSkip: step === 'welcome' || step === 'capabilities' || step === 'order',
-      nextEnabled: step !== 'done' && !finishing && reason === null,
+      canBack: visible && stepBefore(step) !== null,
+      canSkip: step === 'budget',
+      nextEnabled: !finishing && finished === null && reason === null,
       reasonKey: reason,
       finishing,
+      finishPhase,
+      finishError,
       lastOutcome,
-      summary:
-        step === 'done' && first !== undefined
-          ? { accounts: selected.length, capabilities: capabilities.filter((c) => capabilityPicks.has(c.id)).length, firstLabel: first.settings.label }
-          : null,
-      attach,
-      opened,
+      finished,
     };
   };
 
@@ -518,10 +771,31 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
 
   // --- reads -----------------------------------------------------------------------------------
 
+  /** Reads one candidate's quota preview; a compatible endpoint has no provider to ask (A-82). */
+  const readQuota = async (fact: CandidateFact): Promise<void> => {
+    if (fact.kind === 'compatible_endpoint') {
+      quotas.set(fact.sourcePath, { state: 'error' });
+      publish();
+      return;
+    }
+    if (!quotas.has(fact.sourcePath)) quotas.set(fact.sourcePath, { state: 'loading' });
+    publish();
+    const reply: unknown = await api.query({ type: 'accounts.candidateQuota', sourcePath: fact.sourcePath });
+    const view = isQuotaView(reply) ? reply : null;
+    quotas.set(fact.sourcePath, view !== null && view.ok ? { state: 'ok', pools: view.pools, meters: view.meters } : { state: 'error' });
+    publish();
+  };
+
+  /** The quota of every selected candidate that has none yet — the budget step and the editor need it. */
+  const ensureQuotas = async (): Promise<void> => {
+    const wanted = selectedEntries().flatMap((entry) => (entry.fact !== null && !quotas.has(entry.fact.sourcePath) ? [entry.fact] : []));
+    await Promise.all(wanted.map(readQuota));
+  };
+
   const read = async (refresh: boolean): Promise<void> => {
     loading = true;
     publish();
-    const candidateQuery: Query = refresh ? { type: 'accounts.candidates', refresh: true } : { type: 'accounts.candidates' };
+    const candidateQuery: Query = refresh ? { type: 'accounts.candidates', fresh: true } : { type: 'accounts.candidates' };
     const [candidateReply, providerReply, accountsReply] = await Promise.all([
       api.query(candidateQuery),
       api.query({ type: 'providers.discovered' }),
@@ -531,14 +805,20 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
     providerFacts = !isQueryFailure(providerReply) && Array.isArray(providerReply) ? providerReply.filter(isProviderFact) : [];
     existing = isAccountsView(accountsReply) ? accountsReply.accounts.filter(isAccountView) : [];
     if (!loaded) {
-      // Accounts added earlier start chosen: a re-run of the wizard is never stuck behind an
-      // empty candidate list.
-      selection = [...selection, ...existing.map((view) => view.id).filter((id) => !selection.includes(id))];
+      // Accounts added earlier start chosen, and so does every ready candidate (U-42): a re-run of
+      // the wizard is never stuck behind an empty selection. A candidate whose token overrides its
+      // login waits for the user's key-move decision, so it is not chosen for them.
+      const ready = candidateRows(facts, null, false, providerFacts)
+        .filter((row) => row.statusKey === 'candidates.status.ready' && row.selectable)
+        .filter((row) => facts.find((fact) => fact.sourcePath === row.id)?.envOverrides.includes('token') !== true)
+        .map((row) => row.id);
+      selection = [...selection, ...[...existing.map((view) => view.id), ...ready].filter((id) => !selection.includes(id))];
       loaded = true;
     }
     // A choice that is no longer listed (added elsewhere, vanished on rescan) falls away.
     const listed = new Set(entries().map((entry) => entry.key));
     selection = selection.filter((key) => listed.has(key));
+    for (const key of [...quotas.keys()]) if (!listed.has(key)) quotas.delete(key);
     loading = false;
     publish();
   };
@@ -557,11 +837,26 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
       publish();
       return;
     }
-    visible = true;
-    if (step === 'done') step = 'welcome';
+    // A wizard already finished in this session does not come back (the shell opened Anasayfa).
+    visible = !completed;
     publish();
     if (!loaded) await read(false);
   };
+
+  // `accounts.changed` — an adoption, a removal or a quota poll elsewhere: the lists the wizard
+  // shows are read again, and a candidate's quota with them. A finish in flight, stopped on its
+  // failed line or handing off owns the window: a re-read there could drop an already-adopted
+  // candidate out of the selection under the retry that must resume from it (U-49).
+  deps.changes?.((change) => {
+    if (change.type !== 'accounts.changed' || !visible || !loaded || loading || finishing || finishPhase !== null || finished !== null) return;
+    void (async () => {
+      await read(false);
+      quotas.clear();
+      if (step === 'budget' || editorWork !== null) await ensureQuotas();
+      // The adopted set changed: Yetenekler's answer changes with it (U-58).
+      await readCapabilities();
+    })();
+  });
 
   // --- the finish -------------------------------------------------------------------------------
 
@@ -571,99 +866,183 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
     labelKey: commandResultKey(command.type, result),
   });
 
-  const failWith = (outcome: WizardOutcome): void => {
+  const failWith = (phase: FinishPhase, outcome: WizardOutcome): void => {
     lastOutcome = outcome;
+    // The list stops on the failing line — its phases before it keep their checks (U-49).
+    finishPhase = phase;
+    finishError = { phase, reasonKey: outcome.labelKey };
     finishing = false;
     publish();
   };
 
   const finish = async (): Promise<void> => {
+    if (!visible || completed || finished !== null) return;
     finishing = true;
     lastOutcome = null;
+    finishError = null;
+    // A fresh run walks from the accounts; a retry picks the run up where it stopped, so the
+    // lines before the failure keep their checks and their writes (U-49).
+    finishPhase = finishResume;
     publish();
-    // Adopt in list order; a stored account keeps its id.
+    const readyCount = rowsOf().filter((row) => row.selected && row.statusKey === 'candidates.status.ready').length;
+    // The distinct picked, not-yet-imported identities (U-60): imported rows are never sent, and
+    // a shared candidate is one identity however many groups list it.
+    const capChosen = capsFacts.filter((fact) => !fact.imported && capabilityPicks.has(fact.identity)).map((fact) => fact.identity);
+    // Every chosen entry's account id, read without writing anything: a stored account is its
+    // own id, an adopted one comes from the run's memo. The accounts phase adopts only what is
+    // still missing — a retry can never produce a second copy of an account.
+    const chosen = entries().filter((candidate) => selection.includes(candidate.key));
     const ids = new Map<string, string>();
-    for (const entry of entries().filter((candidate) => selection.includes(candidate.key))) {
-      if (entry.fact === null) {
-        ids.set(entry.key, entry.key);
-        continue;
+    for (const entry of chosen) {
+      if (entry.fact === null) ids.set(entry.key, entry.key);
+      else {
+        const adopted = adoptedIds.get(entry.key);
+        if (adopted !== undefined) ids.set(entry.key, adopted);
       }
-      const adopted = adoptedIds.get(entry.key);
-      if (adopted !== undefined) {
-        ids.set(entry.key, adopted);
-        continue;
+    }
+    if (finishPhase === 'accounts') {
+      // Adopt in list order; a stored account keeps its id.
+      for (const entry of chosen) {
+        if (ids.has(entry.key)) continue;
+        const command: Command = {
+          type: 'account.adopt',
+          sourcePath: entry.fact?.sourcePath ?? entry.key,
+          label: entry.settings.label,
+          ...(importTokens.has(entry.key) ? { importToken: true } : {}),
+        };
+        const result = await api.command(actor, command);
+        if (!result.ok || result.id === undefined) {
+          failWith('accounts', outcomeOf(command, result.ok ? { ok: false, code: 'not_found' } : result));
+          return;
+        }
+        adoptedIds.set(entry.key, result.id);
+        ids.set(entry.key, result.id);
       }
-      const command: Command = {
-        type: 'account.adopt',
-        sourcePath: entry.fact.sourcePath,
-        label: entry.settings.label,
-        ...(importTokens.has(entry.key) ? { importToken: true } : {}),
-      };
-      const result = await api.command(actor, command);
-      if (!result.ok || result.id === undefined) {
-        failWith(outcomeOf(command, result.ok ? { ok: false, code: 'not_found' } : result));
-        return;
-      }
-      adoptedIds.set(entry.key, result.id);
-      ids.set(entry.key, result.id);
+      finishPhase = 'capabilities';
+      finishResume = 'capabilities';
+      // The phase owns a progress line only while an import really runs: a wizard with nothing
+      // picked flips through without a publish, so its list keeps its own lines (U-49).
+      if (capChosen.length > 0) publish();
     }
 
-    // The drafts land on the stored accounts: only what differs from what is stored.
-    const accountsReply: unknown = await api.query({ type: 'settings.accounts' });
-    if (isQueryFailure(accountsReply)) {
-      failWith({ command: 'account.save', result: accountsReply, labelKey: queryFailureKey(accountsReply) });
-      return;
+    if (finishPhase === 'capabilities') {
+      // One call for every picked identity (U-60). A rejected row or a failed call never blocks
+      // the finish: the rows become the end note and the walk goes on.
+      if (capChosen.length > 0) {
+        const command: Command = { type: 'capabilities.import', identities: capChosen };
+        try {
+          const result = await api.command(actor, command);
+          if (result.ok && result.results !== undefined) {
+            importRejects = result.results
+              .filter((row) => row.status === 'rejected')
+              .map((row) => ({
+                name: capsFacts.find((fact) => fact.identity === row.identity)?.name ?? row.identity,
+                reason: row.reason ?? 'not_found',
+              }));
+          }
+        } catch {
+          // A thrown failure leaves nothing to list; the finish goes on (U-60).
+        }
+      }
+      finishPhase = 'order';
+      finishResume = 'order';
+      publish();
     }
-    const stored = isAccountsView(accountsReply) ? accountsReply.accounts.filter(isAccountView) : [];
-    for (const entry of selectedEntries()) {
-      const id = ids.get(entry.key);
-      const real = stored.find((view) => view.id === id);
-      if (real === undefined) {
-        failWith(outcomeOf({ type: 'account.save', provider: '', label: '', authMode: '' }, { ok: false, code: 'not_found' }));
+
+    if (finishPhase === 'order') {
+      // The chain is written before the budget: the progress lines check in their own order —
+      // the accounts exist, then the order binds every role (A-49), then the drafts land.
+      const rolesReply: unknown = await api.query({ type: 'roles.list' });
+      if (isQueryFailure(rolesReply)) {
+        failWith('order', { command: 'binding.save', result: rolesReply, labelKey: queryFailureKey(rolesReply) });
         return;
       }
-      for (const command of settingsCommands(real, entry.settings)) {
+      const roles = Array.isArray(rolesReply) ? rolesReply.filter(isRole) : [];
+      const chain = selection.flatMap((key) => {
+        const id = ids.get(key);
+        return id === undefined ? [] : [{ accountId: id, model: null }];
+      });
+      for (const role of roles) {
+        const { tier, thinking } = styleSettings(recommendedWorkStyle(role.id));
+        const command = bindingCommand(role.id, chain, tier, thinking);
         const result = await api.command(actor, command);
         if (!result.ok) {
-          failWith(outcomeOf(command, result));
+          failWith('order', outcomeOf(command, result));
           return;
         }
       }
+      finishPhase = 'budget';
+      finishResume = 'budget';
+      publish();
     }
 
-    // Every role is bound with the chosen chain and its recommended work style, complete (A-49).
-    const rolesReply: unknown = await api.query({ type: 'roles.list' });
-    if (isQueryFailure(rolesReply)) {
-      failWith({ command: 'binding.save', result: rolesReply, labelKey: queryFailureKey(rolesReply) });
-      return;
-    }
-    const roles = Array.isArray(rolesReply) ? rolesReply.filter(isRole) : [];
-    const chain = selection.flatMap((key) => {
-      const id = ids.get(key);
-      return id === undefined ? [] : [{ accountId: id, model: null }];
-    });
-    for (const role of roles) {
-      const { tier, thinking } = styleSettings(recommendedWorkStyle(role.id));
-      const command = bindingCommand(role.id, chain, tier, thinking);
-      const result = await api.command(actor, command);
-      if (!result.ok) {
-        failWith(outcomeOf(command, result));
+    if (finishPhase === 'budget') {
+      // The drafts land on the stored accounts: only what differs from what is stored. The read
+      // is a catalog skip (A-86): caps and consents need no billing view, so finishing n new
+      // accounts starts no live model listing.
+      const accountsReply: unknown = await api.query({ type: 'settings.accounts', catalog: 'skip' });
+      if (isQueryFailure(accountsReply)) {
+        failWith('budget', { command: 'account.save', result: accountsReply, labelKey: queryFailureKey(accountsReply) });
         return;
       }
+      const stored = isAccountsView(accountsReply) ? accountsReply.accounts.filter(isAccountView) : [];
+      for (const entry of selectedEntries()) {
+        const id = ids.get(entry.key);
+        const real = stored.find((view) => view.id === id);
+        if (real === undefined) {
+          failWith('budget', outcomeOf({ type: 'account.save', provider: '', label: '', authMode: '' }, { ok: false, code: 'not_found' }));
+          return;
+        }
+        for (const command of settingsCommands(real, entry.settings)) {
+          const result = await api.command(actor, command);
+          if (!result.ok) {
+            failWith('budget', outcomeOf(command, result));
+            return;
+          }
+        }
+      }
+      // The leave itself is the last line: its spinner stands while the handoff is prepared,
+      // then the shell opens Anasayfa with the toast, the window fades over it and `ackFinish`
+      // takes it down — the line's check is the finished flag itself.
+      finishPhase = 'home';
+      publish();
     }
+
     finishing = false;
-    step = 'done';
+    completed = true;
+    finished = { accounts: readyCount };
     publish();
   };
 
+  /** Ready subscriptions first, then the rest; each class keeps its order (U-42). */
+  const rankSelection = (): void => {
+    const statusOf = new Map(rowsOf().map((row) => [row.id, row.statusKey]));
+    const rank = (key: string, at: number): number => {
+      const entry = entryOf(key);
+      return (entry !== undefined && spendsMoney(entry.base.billing) ? 1000 : 0) + (statusOf.get(key) === 'candidates.status.ready' ? 0 : 500) + at;
+    };
+    selection = selection
+      .map((key, at) => ({ key, rank: rank(key, at) }))
+      .sort((a, b) => a.rank - b.rank)
+      .map((item) => item.key);
+  };
+
   const advance = async (): Promise<void> => {
-    if (step === 'done') return;
     if (step === 'budget') {
       await finish();
       return;
     }
-    step = stepAfter(step);
+    // Leaving Hesaplar fixes the starting order of the chosen accounts and starts Yetenekler's
+    // one read (U-58) — the step it lands on holds the skeleton while the query runs.
+    if (step === 'accounts') {
+      rankSelection();
+      void readCapabilities();
+    }
+    const next = stepAfter(step);
+    if (next === null) return;
+    step = next;
     publish();
+    if (step === 'budget') await ensureQuotas();
   };
 
   // --- the store ---------------------------------------------------------------------------------
@@ -674,34 +1053,38 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
     drafts.set(key, patch(entry.settings));
   };
 
-  const move = (key: string, by: -1 | 1): void => {
-    const at = selection.indexOf(key);
-    const to = at + by;
-    if (at < 0 || to < 0 || to >= selection.length) return;
-    const next = [...selection];
-    const [moved] = next.splice(at, 1);
-    if (moved === undefined) return;
-    next.splice(to, 0, moved);
-    selection = next;
-    publish();
-  };
+  const capEntry = (scope: CapScope, amountUsd: number): Caps[number] => ({ scope, amountUsd, warnPercent: RECOMMENDED.warnPercent });
 
   return {
     open,
     state: () => state,
     next: async () => {
-      if (!visible || finishing || !state.nextEnabled) return;
+      if (!visible || finishing || finished !== null || !state.nextEnabled) return;
       await advance();
     },
     skip: async () => {
-      if (!visible || finishing || !state.canSkip) return;
+      if (!visible || finishing || finished !== null || !state.canSkip) return;
       await advance();
     },
     back: () => {
-      if (!visible || finishing || step === 'done') return;
+      if (!visible || finishing || finished !== null) return;
       const before = stepBefore(step);
       if (before === null) return;
       step = before;
+      // Leaving the step drops a stopped finish's list with it; the next finish is a fresh run
+      // (the adoption memo still holds, so it adopts nothing twice) (U-49).
+      finishPhase = null;
+      finishError = null;
+      finishResume = 'accounts';
+      publish();
+    },
+    goTo: (target) => {
+      if (!visible || finishing || finished !== null) return;
+      if (WIZARD_STEPS.indexOf(target) >= WIZARD_STEPS.indexOf(step) || skipped(target)) return;
+      step = target;
+      finishPhase = null;
+      finishError = null;
+      finishResume = 'accounts';
       publish();
     },
     select: (key) => {
@@ -721,23 +1104,33 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
       else importTokens.delete(key);
       publish();
     },
-    rescan: () => read(true),
+    rescan: async () => {
+      await read(true);
+      quotas.clear();
+      if (step === 'budget') await ensureQuotas();
+    },
     toggleCapability: (id) => {
+      // An imported row is already there: it is shown checked and disabled, never picked (U-59).
+      const fact = capsFacts.find((entry) => entry.identity === id);
+      if (fact === undefined || fact.imported) return;
       const next = new Set(capabilityPicks);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       capabilityPicks = next;
       publish();
     },
-    moveUp: (key) => move(key, -1),
-    moveDown: (key) => move(key, 1),
-    openEditor: (key) => {
+    moveTo: (key, index) => {
+      const moved = moveItem(selection, selection.indexOf(key), index);
+      if (moved === null) return;
+      selection = moved;
+      publish();
+    },
+    openEditor: async (key) => {
       const entry = entryOf(key);
-      if (entry !== undefined) {
-        editorWork = { key, settings: entry.settings };
-        publish();
-      }
-      return Promise.resolve();
+      if (entry === undefined) return;
+      editorWork = { key, settings: entry.settings };
+      publish();
+      await ensureQuotas();
     },
     editorRun: (command) => {
       if (editorWork !== null) {
@@ -758,16 +1151,33 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
       editorWork = null;
       publish();
     },
+    setPolicy: (key, policy) => {
+      patchDraft(key, (settings) => ({ ...settings, limitPolicy: policy }));
+      publish();
+    },
+    setReserve: (key, percent) => {
+      if (entryOf(key) === undefined) return;
+      const share = percent === null ? null : percent / 100;
+      patchDraft(key, (settings) => ({ ...settings, reserve: { short: share, long: share } }));
+      publish();
+    },
+    setCap: (key, input) => {
+      const amountUsd = parseAmountUsd(input.amount);
+      if (amountUsd === null || entryOf(key) === undefined) return false;
+      patchDraft(key, (settings) => ({
+        ...settings,
+        caps: [...settings.caps.filter((cap) => cap.scope !== input.scope), capEntry(input.scope, amountUsd)],
+      }));
+      publish();
+      return true;
+    },
     allowSpend: (key, input) => {
       const amountUsd = parseAmountUsd(input.amount);
       if (amountUsd === null || entryOf(key) === undefined) return false;
       patchDraft(key, (settings) => ({
         ...settings,
         consent: true,
-        caps: [
-          ...settings.caps.filter((cap) => cap.scope !== input.scope),
-          { scope: input.scope, amountUsd, warnPercent: RECOMMENDED.warnPercent },
-        ],
+        caps: [...settings.caps.filter((cap) => cap.scope !== input.scope), capEntry(input.scope, amountUsd)],
       }));
       publish();
       return true;
@@ -776,41 +1186,15 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
       patchDraft(key, (settings) => ({ ...settings, consent: false }));
       publish();
     },
-    attachProject: () => {
-      attach = { ...attach, open: true, failureKey: null };
-      publish();
+    refreshQuota: async (key) => {
+      const fact = entryOf(key)?.fact ?? null;
+      if (fact === null) return;
+      quotas.delete(fact.sourcePath);
+      await readQuota(fact);
     },
-    setAttachPath: (path) => {
-      attach = { ...attach, path, failureKey: null };
-      publish();
-    },
-    cancelAttach: () => {
-      attach = { ...attach, open: false, failureKey: null };
-      publish();
-    },
-    submitAttach: async () => {
-      const path = attach.path.trim();
-      if (!attach.open || attach.busy || path === '') return;
-      attach = { ...attach, busy: true, failureKey: null };
-      publish();
-      const command: Command = { type: 'project.attach', path };
-      const result = await api.command(actor, command);
-      if (!result.ok) {
-        attach = { ...attach, busy: false, failureKey: commandResultKey(command.type, result) };
-        publish();
-        return;
-      }
-      await deps.reloadTree?.();
-      const tree: unknown = await api.query({ type: 'project.tree' });
-      const projects = !isQueryFailure(tree) && Array.isArray(tree) ? (tree as readonly ProjectTreeItem[]) : [];
-      const project = projects.find((item) => item.project === result.id) ?? projects[projects.length - 1];
-      opened =
-        project === undefined
-          ? null
-          : project.repos.length > 1
-            ? { kind: 'roadmap', project: project.project }
-            : { kind: 'board', repo: project.mainRepo };
-      attach = { ...attach, busy: false };
+    ackFinish: () => {
+      if (finished === null) return;
+      finished = null;
       visible = false;
       publish();
     },

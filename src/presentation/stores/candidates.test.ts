@@ -1,10 +1,12 @@
 // candidates.test.ts — U-34: the discovered accounts and providers as one list; selection, the
-// key-move switch (starts off, never a value), and adoption results through U-8.
+// key-move switch (starts off, never a value), and adoption results through U-8. A successful
+// adoption also binds every role that has no binding yet to the new account — Settings is not
+// the wizard, but it must not leave roles unrunnable either.
 import { describe, expect, it } from 'vitest';
 
 import type { Command, CommandResult } from '../../api/commands';
 import type { Query } from '../../api/queries';
-import { createCandidatesStore, candidateRows, candidateDot, candidateStatusTone, listedCandidateCount, listBody, providerRows, type CandidateFact } from './candidates';
+import { createCandidatesStore, candidateRows, candidateDot, candidateStanding, candidateStatusTone, listedCandidateCount, listBody, providerRows, type CandidateFact } from './candidates';
 
 const base: CandidateFact = {
   sourcePath: '/home/u/.alpha',
@@ -12,6 +14,7 @@ const base: CandidateFact = {
   kind: 'subscription',
   routeKind: 'route-a',
   provider: 'prov-a',
+  billing: 'included',
   hasOauthLogin: true,
   envOverrides: [],
   warnings: [],
@@ -34,7 +37,13 @@ interface Fake {
   readonly commands: Command[];
   candidates: unknown;
   discovered: unknown;
+  /** The `roles.list` reply the adoption's bind step reads. */
+  roles: unknown;
+  /** The `settings.accounts` reply the adoption's bind step reads. */
+  accountsView: unknown;
   result: CommandResult;
+  /** When set, commands answer from this queue in order; `result` answers the rest. */
+  results: CommandResult[];
   readonly api: { query(q: Query): Promise<unknown>; command(a: unknown, c: Command): Promise<CommandResult> };
 }
 const fake = (candidates: unknown, discovered: unknown = []): Fake => {
@@ -43,15 +52,21 @@ const fake = (candidates: unknown, discovered: unknown = []): Fake => {
     commands: [],
     candidates,
     discovered,
+    roles: [],
+    accountsView: { accounts: [], bindings: [] },
     result: { ok: true, id: 'acc-1' },
+    results: [],
     api: {
       query: (q) => {
         f.queries.push(q);
-        return Promise.resolve(q.type === 'accounts.candidates' ? f.candidates : f.discovered);
+        if (q.type === 'accounts.candidates') return Promise.resolve(f.candidates);
+        if (q.type === 'roles.list') return Promise.resolve(f.roles);
+        if (q.type === 'settings.accounts') return Promise.resolve(f.accountsView);
+        return Promise.resolve(f.discovered);
       },
       command: (_a, c) => {
         f.commands.push(c);
-        return Promise.resolve(f.result);
+        return Promise.resolve(f.results.length > 0 ? (f.results.shift() as CommandResult) : f.result);
       },
     },
   };
@@ -107,6 +122,16 @@ describe('candidateRows', () => {
   it('U-34: a candidate without a token override never shows the key-move card', () => {
     const [row] = candidateRows([base], base.sourcePath, false);
     expect(row?.keyMoveCard).toBe(false);
+  });
+});
+
+describe('candidate section standing (U-45)', () => {
+  it('U-45: a candidate row carries its section standing — ready is found; needs-login and the probe that proved nothing feed the failed summary', () => {
+    expect(candidateStanding('candidates.status.ready')).toBe('ready');
+    expect(candidateStanding('candidates.status.needs_login')).toBe('needsLogin');
+    expect(candidateStanding('candidates.status.unknown')).toBe('unverified');
+    expect(candidateStanding('candidates.status.key_needed')).toBe('other');
+    expect(candidateStanding('candidates.status.unreadable')).toBe('other');
   });
 });
 
@@ -205,7 +230,7 @@ describe('createCandidatesStore', () => {
     expect(outcome?.labelKey).toBe('success.account.adopt');
     expect(store.state().selected).toBeNull();
     expect(store.state().rows).toHaveLength(0);
-    expect(f.queries).toContainEqual({ type: 'accounts.candidates', refresh: true });
+    expect(f.queries).toContainEqual({ type: 'accounts.candidates', fresh: true });
     expect(told).toBe(1);
   });
 
@@ -222,11 +247,53 @@ describe('createCandidatesStore', () => {
     expect(f.queries.length).toBe(before);
   });
 
-  it('U-34: rescan queries candidates with refresh, and discovery again', async () => {
+  it('a successful adopt binds every role with no binding yet to the new account, chain only', async () => {
+    const f = fake([base]);
+    f.roles = [{ id: 'worker', name: 'Worker', stages: [] }, { id: 'reviewer', name: 'Reviewer', stages: [] }];
+    f.accountsView = { accounts: [], bindings: [{ scope: { level: 'global' }, role: 'reviewer', thinking: null, tier: null, accounts: [{ accountId: 'old-1', model: null }] }] };
+    const store = make(f);
+    await store.load();
+    store.select(base.sourcePath);
+    await store.adopt();
+    expect(f.commands).toEqual([
+      { type: 'account.adopt', sourcePath: base.sourcePath, label: '.alpha' },
+      { type: 'binding.save', role: 'worker', accounts: [{ accountId: 'acc-1' }] },
+    ]);
+  });
+
+  it('a successful adopt with every role already bound issues no binding at all', async () => {
+    const f = fake([base]);
+    f.roles = [{ id: 'worker', name: 'Worker', stages: [] }];
+    f.accountsView = { accounts: [], bindings: [{ scope: { level: 'global' }, role: 'worker', thinking: null, tier: null, accounts: [{ accountId: 'old-1', model: null }] }] };
+    const store = make(f);
+    await store.load();
+    store.select(base.sourcePath);
+    await store.adopt();
+    expect(f.commands).toEqual([{ type: 'account.adopt', sourcePath: base.sourcePath, label: '.alpha' }]);
+  });
+
+  it('a binding the bind step cannot still save surfaces as the latest outcome; the adoption stands', async () => {
+    const f = fake([base]);
+    f.roles = [{ id: 'worker', name: 'Worker', stages: [] }];
+    f.results = [{ ok: true, id: 'acc-1' }, { ok: false, code: 'not_found' }];
+    const store = make(f);
+    await store.load();
+    store.select(base.sourcePath);
+    const outcome = await store.adopt();
+    expect(outcome?.result.ok).toBe(true);
+    expect(f.commands).toEqual([
+      { type: 'account.adopt', sourcePath: base.sourcePath, label: '.alpha' },
+      { type: 'binding.save', role: 'worker', accounts: [{ accountId: 'acc-1' }] },
+    ]);
+    expect(store.state().lastOutcome).toMatchObject({ command: 'binding.save', result: { ok: false, code: 'not_found' } });
+    expect(store.state().selected).toBeNull();
+  });
+
+  it('U-34: rescan queries candidates with fresh, and discovery again', async () => {
     const f = fake([base]);
     const store = make(f);
     await store.rescan();
-    expect(f.queries).toContainEqual({ type: 'accounts.candidates', refresh: true });
+    expect(f.queries).toContainEqual({ type: 'accounts.candidates', fresh: true });
     expect(f.queries).toContainEqual({ type: 'providers.discovered' });
   });
 });
@@ -280,5 +347,85 @@ describe('list body', () => {
     expect(listBody({ loading: false, loaded: true, rows: [], providers: [] })).toBe('empty');
     expect(listBody({ loading: false, loaded: true, rows: candidateRows([base], null, false), providers: [] })).toBe('list');
     expect(candidateStatusTone('candidates.status.scanning')).toBe('info');
+  });
+});
+
+describe('machine-login candidates and the row\'s Ekle (U-42, U-43)', () => {
+  const login: CandidateFact = {
+    ...base,
+    sourcePath: 'machine-login:prov-m',
+    displayPath: '~/.prov-m',
+    kind: 'machine_login',
+    routeKind: 'route-m',
+    provider: 'prov-m',
+    hasOauthLogin: false,
+  };
+  const provider = (loggedIn: boolean | null) => ({ defId: 'prov-m', name: 'M', installUrl: null, binPath: '/bin/m', version: '1', loggedIn, optionalFlags: [] });
+
+  it('U-42: a machine-login candidate reads its provider\'s login probe — signed in is ready, signed out needs a login, unproven is Doğrulanamadı', () => {
+    const status = (loggedIn: boolean | null) => candidateRows([login], null, false, [provider(loggedIn)])[0];
+    expect(status(true)?.statusKey).toBe('candidates.status.ready');
+    expect(status(true)?.hintKey).toBeNull();
+    expect(status(false)?.statusKey).toBe('candidates.status.needs_login');
+    expect(status(false)?.hintKey).toBe('candidates.hint.login');
+    expect(status(null)?.statusKey).toBe('candidates.status.unknown');
+    expect(status(null)?.hintKey).toBe('candidates.hint.testLater');
+    // No probe answer yet proves nothing either.
+    expect(candidateRows([login], null, false, [])[0]?.statusKey).toBe('candidates.status.unknown');
+  });
+
+  it('U-42: a row carries the billing of its route and whether it rides a key', () => {
+    const [plain, keyedRow] = candidateRows([base, { ...keyed, billing: 'included' }], null, false);
+    expect(plain).toMatchObject({ billing: 'included', viaKey: false, provider: 'prov-a', displayPath: '~/.alpha', hintKey: null });
+    expect(keyedRow).toMatchObject({ billing: 'included', viaKey: true });
+  });
+
+  it('U-43: a row\'s Ekle selects the candidate and adopts it at once', async () => {
+    const f = fake([base]);
+    const store = make(f);
+    await store.load();
+    const outcome = await store.add(base.sourcePath);
+    expect(outcome?.result.ok).toBe(true);
+    expect(f.commands).toEqual([{ type: 'account.adopt', sourcePath: base.sourcePath, label: '.alpha' }]);
+  });
+
+  it('U-43: a candidate whose token overrides the login opens its key-move card first; a second Ekle adopts', async () => {
+    const f = fake([keyed]);
+    const store = make(f);
+    await store.load();
+    expect(await store.add(keyed.sourcePath)).toBeNull();
+    expect(f.commands).toHaveLength(0);
+    expect(store.state().rows[0]?.keyMoveCard).toBe(true);
+    await store.add(keyed.sourcePath);
+    expect(f.commands).toHaveLength(1);
+  });
+
+  it('U-43: an unreadable candidate cannot be added', async () => {
+    const f = fake([{ ...base, warnings: ['unreadable'] }]);
+    const store = make(f);
+    await store.load();
+    expect(await store.add(base.sourcePath)).toBeNull();
+    expect(f.commands).toHaveLength(0);
+  });
+
+  it('U-44: an accounts.changed event re-reads a list that has been read', async () => {
+    const f = fake([base]);
+    let emit: (change: { readonly type: string }) => void = () => undefined;
+    const store = createCandidatesStore({
+      api: f.api,
+      actor: ACTOR,
+      changes: (listener) => {
+        emit = listener;
+        return () => undefined;
+      },
+    });
+    emit({ type: 'accounts.changed' });
+    await Promise.resolve();
+    expect(f.queries).toHaveLength(0);
+    await store.load();
+    const before = f.queries.length;
+    emit({ type: 'accounts.changed' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(f.queries.length).toBeGreaterThan(before);
   });
 });

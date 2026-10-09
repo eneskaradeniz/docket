@@ -51,7 +51,8 @@ export type AuditAction =
   | 'work_order.opened' | 'work_order.blocked' | 'work_order.unblocked' | 'work_order.closed'
   | 'run.started' | 'run.finished' | 'gate.decided' | 'permission.answered'
   | 'proposal.created' | 'proposal.decided' | 'account.saved' | 'account.removed' | 'account.adopted' | 'binding.saved'
-  | 'project.attached' | 'repo.registered' | 'repo.unregistered';
+  | 'project.attached' | 'repo.registered' | 'repo.unregistered'
+  | 'capability.imported';
 export type AuditSubject =
   | { readonly kind: 'work_order'; readonly id: WorkOrderId }
   | { readonly kind: 'run'; readonly id: RunId }
@@ -59,7 +60,8 @@ export type AuditSubject =
   | { readonly kind: 'account'; readonly id: AccountId }
   | { readonly kind: 'binding'; readonly role: RoleSlug }
   | { readonly kind: 'project'; readonly id: ProjectSlug }
-  | { readonly kind: 'repo'; readonly id: RepoSlug };
+  | { readonly kind: 'repo'; readonly id: RepoSlug }
+  | { readonly kind: 'capability'; readonly id: CapabilitySlug };
 export interface AuditEntry {
   readonly id: Ulid<'audit'>;
   readonly at: EpochMs;
@@ -475,11 +477,18 @@ export function decideHumanGate(
   input: { readonly id: WorkOrderId; readonly gate: GateSlug; readonly decision: 'approved' | 'rejected'; readonly note?: string; readonly actor: Actor },
 ): Promise<Result<WorkOrderState, DecideGateError>>;
 
-/** Evaluates every pending machine gate of the current stage (command, secret_scan, agent_verdict). */
+/** Evaluates every pending machine gate of the current stage (changes, command, secret_scan, agent_verdict). */
 export function evaluateMachineGates(
-  deps: Pick<AppDeps, 'clock' | 'workOrders' | 'definitions' | 'commands' | 'secretScanner' | 'worktrees' | 'runs'>,
+  deps: Pick<AppDeps, 'clock' | 'workOrders' | 'definitions' | 'commands' | 'secretScanner' | 'worktrees' | 'runs' | 'checkpoints'>,
   input: { readonly id: WorkOrderId },
-): Promise<Result<WorkOrderState, 'not_found' | 'not_gating' | 'definitions_invalid' | 'no_repo'>>;
+): Promise<Result<WorkOrderState, 'not_found' | 'not_gating' | 'definitions_invalid' | 'no_repo' | 'git_failed'>>;
+
+/** The human answer to a changes gate the machine measured at zero (A-96). */
+export type AttestError = 'not_found' | 'not_current_stage' | 'not_pending' | 'not_a_changes_gate' | 'agent_cannot_decide';
+export function attestNoChanges(
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'definitions'>,
+  input: { readonly id: WorkOrderId; readonly gate: GateSlug; readonly noChangeNeeded: boolean; readonly actor: Actor },
+): Promise<Result<WorkOrderState, AttestError>>;
 
 /** An agent_verdict gate's evidence: the reviewer role reports approve/reject with evidence pointers. */
 export type VerdictError = 'not_found' | 'not_current_stage' | 'not_pending' | 'not_an_agent_gate' | 'wrong_role' | 'no_repo';
@@ -668,6 +677,7 @@ Rules:
 - **A-17** On `limit_hit`: build a `LimitHit` for the run's account, ask the domain `decideOnLimit` with the account's policy and `autoResumesUsed`, end the run with outcome `limit`, append `run_finished: limit`, and return `{ kind: 'limit', decision }`. Scheduling the resume is the caller's job.
 - **A-17a** `applyLimitDecision`: `schedule_resume` → put a queue item for the run's work order and stage with the same route, `notBefore = decision.at`, and increment the run's `autoResumesUsed` on the record; `switch_pool` → a queue item routed to the same account (pool choice is re-evaluated at dispatch); `fallback` → a queue item with `route = decision.route`; `ask` → no queue item (the work order stays `limit_waiting` and shows in the cockpit).
 - **A-18** On `finished`: set `endedAt`/`outcome` (mapping as in `foldRun`), append `run_finished`, audit `run.finished` with `detail: { outcome }`.
+- Addendum 2026-10-07: the executor folds the whole streamed event list, not the single `finished` event, so the R-44 empty-run mapping applies. When the folded outcome differs from the event's own mapping, the `run.finished` audit detail is `{ outcome, reason: 'empty_run' }`; otherwise it stays `{ outcome }`.
 - **A-19** `enqueueStage`: only when `nextAction` is `start_run`; the route is the first account of `resolveRoute`'s chain; one queue item per work order (an existing item for the same work order is replaced). The queue item carries `stageRouting(stage, binding)`'s `tier` and `thinking` (each absent when neither sets it). For a stage with `reviewOf`, the chain is ordered with `orderForReview`, where `reviewedProvider` is the provider of the account of the last `succeeded` run of the `reviewOf` stage in this work order (undefined when there is none); the route is the first entry of the ordered chain, and `sameProviderReview` is set when the result says so.
 - **A-20** `dispatcherTick`: builds the `DispatchSnapshot` — `running` from `RunRepo.listActive` joined with `WorkOrderRepo` for the repo and project, `headroom` per item from `headroom(pools, meters, accountId, matchId, now, account.reserve)`, where `matchId` is the account catalog entry's `resolvedId` for the item's model when the catalog knows one (an alias such as `opus` checks as the id it stands for), else the model, else `''`, `spend` per item from `combinedSpendStatus` over the account's own caps (`account_day` = UTC day of `now`, `account_week` = the UTC ISO week of `now`, Monday 00:00 to the next Monday, `account_month` = UTC calendar month of `now`), the repo cap (`repo_month`) and the project ceiling (`project_month`, observed spend summed over all repos of the project — R-48; work-order caps arrive in Phase 5) — calls `decideDispatch`, removes started items from the queue, calls `start` for each started item, and returns the decisions unchanged.
 
@@ -703,6 +713,7 @@ export type Command =
   | { readonly type: 'workOrder.close'; readonly id: string }
   | { readonly type: 'workOrder.enqueue'; readonly id: string }
   | { readonly type: 'gate.decide'; readonly workOrderId: string; readonly gate: string; readonly decision: 'approved' | 'rejected'; readonly note?: string }
+  | { readonly type: 'gate.attest'; readonly workOrderId: string; readonly gate: string; readonly noChangeNeeded: boolean }
   | { readonly type: 'proposal.decide'; readonly id: string; readonly decision: 'approved' | 'rejected' };
 export type CommandResult = { readonly ok: true; readonly id?: string } | { readonly ok: false; readonly code: string };
 
@@ -1000,6 +1011,319 @@ Rules:
 
 ---
 
+### Quota wiring, billing view, machine-login candidates (P-48 … P-53)
+
+```ts
+// services/quota-service.ts — owns P-49's schedule; the composition root starts it
+export const QUOTA_POLL_INTERVAL_MS: number;   // 300_000
+export interface QuotaService {
+  start(): void;                                // first pass for every account, then the interval
+  stop(): void;
+  refresh(accountId?: AccountId): Promise<void>; // one account or all; resolves when the polls end
+}
+export function createQuotaService(
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'capabilities'>,
+  probes: QuotaProbeResolver,
+  timers: { setInterval(fn: () => void, ms: number): unknown; clearInterval(handle: unknown): void },
+  onChanged: () => void,                        // the api emits `accounts.changed`
+): QuotaService;
+
+// api.ts — UiEvent gains
+| { readonly type: 'accounts.changed' }
+// commands.ts
+| { type: 'quota.refresh'; id?: string }        // answers { ok: true } after the polls end
+// queries.ts
+| { type: 'accounts.candidateQuota'; sourcePath: string } → CandidateQuotaView
+export type CandidateQuotaView =
+  | { readonly ok: true; readonly pools: readonly SettingsPoolView[]; readonly meters: readonly SettingsMeterView[] }
+  | { readonly ok: false; readonly code: QuotaProbeError | 'needs_account' | 'not_found' };
+// SettingsAccountView gains
+readonly billing: 'included' | 'metered' | 'unknown';   // P-51 billing view
+// ports/account-discovery.ts — AccountCandidate.kind gains 'machine_login'; the candidate gains
+readonly provider: string;                               // the def id (A-67 resolved it from the route kind)
+```
+
+Rules:
+- **A-80** `createQuotaService`: `start` polls every account once (in `AccountRepo.list` order, one at a time), then every `QUOTA_POLL_INTERVAL_MS`; an account whose route kind's `quotaProbe` is `none` is skipped. A poll for an account already in flight is not started twice (the second call awaits the first). After `account.adopt` and after an `account.save` that changes the route (the A-73 field set), the api calls `refresh(id)` without awaiting it. Each finished poll — ok or error — calls `onChanged` once. A probe error never throws out of the service.
+- **A-80a** (amends A-80, 2026-10-04, review of #755) The schedule also skips a route kind whose `quotaProbe` is `rate_limit_events`: its quota arrives only as pushed run events, and polling it would read the machine's subscription login for an account that rides an API key. Such an account's meters still come from its runs (A-16).
+- **A-81** `quota.refresh` maps to `refresh(id)` (unknown id → `not_found`); without `id` it refreshes every account. It audits nothing (a read, not a change).
+- **A-82** `accounts.candidateQuota` finds the candidate by `sourcePath` (`not_found`); a `compatible_endpoint` candidate → `needs_account`; otherwise it polls the candidate's provider with `{ accountId: null, identityDir }` (`identityDir` = `sourcePath` for a Claude-style directory, `null` for `machine_login`) and returns pools and meters with synthetic ids, without saving anything. A result is cached per `sourcePath` for 60 s.
+- **A-83** `settings.accounts` fills `billing` with the P-51 billing view; the presentation's pay-per-use and cap predicates (`isPayPerUse`, `mayHaveCap`) read `billing !== 'included'`, never `authMode`. `spend-consent.ts`'s `defaultBillingOf` returns `unknown` (not `metered`) for a non-subscription route kind without `defaultBilling`; `executeRun`'s and `testAccount`'s refusals are unchanged for `metered` and `unknown` alike.
+- **A-83a** (amends A-83, 2026-10-04, review of #753) Each `accounts.candidates` row gains `billing: 'included' | 'metered' | 'unknown'`: the candidate's route kind's `defaultBilling` when it declares one, else P-51's fallback by the candidate's kind (`subscription` and `machine_login` → `included`, `compatible_endpoint` → `unknown`). The wizard's Bütçe grouping and gate read this field for a candidate not yet adopted, so a z.ai coding-plan candidate is grouped under Abonelikler before adoption too. No candidate is ever read for billing beyond its route kind.
+- **A-84** `account.adopt` accepts a `machine_login` candidate (P-53): the record is `{ provider, label, authMode: 'subscription', routeKind, limitPolicy: 'wait_resume', caps: [] }` with no `identityDir`, `endpoint` or `secretRef`; `importToken` is ignored for it. `accounts.candidates` lists machine-login candidates after the directory candidates, provider order as `providers.discovered`.
+- **A-85** (amends A-84; 2026-10-05, #782) `account.adopt` looks its candidate up in the discovery service's last scan when that scan is younger than 60 s and scans anew only when there is none or it is older, so adopting n accounts right after one scan runs no further scan. `accounts.candidates` carries an optional `fresh: true` that always scans anew and replaces the remembered scan ("Yeniden tara" sends it). A candidate absent from the remembered scan fails as before (not found) — it never triggers a hidden second scan in the same call.
+- **A-86** (amends U-13 and P-51; 2026-10-05, #787) `settings.accounts` takes an optional `catalog: 'read' | 'skip'` (default `'read'`). With `'skip'` no model catalog is read and every row's `billing` is the route's own rule — what a failing catalog read already yields (P-51). With `'read'` the catalogs of all rows are read concurrently, not one after another. The wizard's finish sends `'skip'`: it reads the stored accounts only to apply caps and consents and needs no billing view, so setting up n new accounts starts no live model listing.
+- **A-87** (amends U-51 and U-52; 2026-10-05, #790) The sidebar's accounts reader — the accounts frame, U-51 — sends `catalog: 'skip'` (A-86): its cards show the account's name, the status dot and the limit bar, never billing, so the `settings.accounts` read that `accounts.changed` triggers starts no live model listing and the first card after the wizard's finish does not wait behind the discovery chain. Settings → Hesaplar, which shows the billing tag, keeps `'read'` and shows U-52's scanning skeleton while the catalogs load.
+
+### Create a project from the built-in library (#370)
+
+A first run from an empty data dir reaches a working board without hand-written files. Operator
+decision of 2026-10-03 (option A on #370): Docket writes the project's `.docket/project.yaml` and
+`.docket/repo.yaml` into the chosen work tree — only when neither exists, and only on the user's
+explicit "Oluştur" — so membership stays versioned truth in the repo (A-26), then attaches it
+through the existing `attachProject`. Two sources, as the approved "Yeni proje" screen names them:
+an existing folder ("Var olan klasör") and a new folder ("Boş proje"). Cloning and "Birlikte sıfırdan
+başla" are not part of this contract.
+
+```ts
+// definition-store.ts — DefinitionStore gains
+/** Writes each built-in role and flow as a global-root file unless a file with that id exists; never overwrites. */
+installBuiltins(library: { readonly roles: readonly RoleDef[]; readonly flows: readonly FlowDef[] }): Promise<{ readonly written: readonly string[] }>;
+/** Writes <path>/.docket/project.yaml and <path>/.docket/repo.yaml; writes nothing when either exists. */
+scaffoldProject(path: string, project: ProjectDef, repo: RepoDef): Promise<Result<void, 'project_yaml_exists' | 'repo_yaml_exists' | 'io_failed'>>;
+
+// repo-folders.ts — the one write the create flow needs outside .docket
+export interface RepoFolders {
+  /** Creates <parent>/<folder> and initialises a git repository in it with initial branch `main`. */
+  createRepo(parent: string, folder: string): Promise<Result<{ readonly path: string }, 'not_a_folder' | 'folder_exists' | 'io_failed'>>;
+}
+// AppDeps gains
+readonly repoFolders: RepoFolders;
+
+// event-log.ts — AuditAction gains
+| 'project.created'
+
+// projects.ts
+export type CreateProjectSource =
+  | { readonly kind: 'existing'; readonly path: string }
+  | { readonly kind: 'blank'; readonly parent: string };
+export type CreateProjectError =
+  | 'invalid_name' | 'not_a_repo' | 'project_exists' | 'docket_folder_exists'
+  | 'not_a_folder' | 'folder_exists' | 'io_failed' | 'definitions_invalid' | AttachError;
+export function createProject(
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'projects' | 'repos' | 'definitions' | 'git' | 'repoFolders'>,
+  input: { readonly source: CreateProjectSource; readonly name: string; readonly actor: Actor },
+): Promise<Result<ProjectDef, CreateProjectError>>;
+
+// commands.ts
+| { type: 'project.create'; mode: 'existing'; path: string; name: string }
+| { type: 'project.create'; mode: 'blank'; parent: string; name: string }   // ok → { ok: true, id: <project slug> }
+```
+
+Rules:
+- **A-75** `createProject` validates before any write: the trimmed `name` is empty or longer than 80 characters → `invalid_name`; the slug is `slugFromName(name, taken)` (R-59) with `taken` = every `ProjectRepo.list()` id and every `RepoRegistry.list()` slug; source `existing` whose `path` is not a git work tree (`git.isWorkTree`) → `not_a_repo`. The definitions it will write are built and checked with `validateDefinitions({ roles: BUILTIN_ROLES, flows: BUILTIN_FLOWS, capabilities: [], project, repo })`; issues → `definitions_invalid` (a library bug, nothing written).
+- **A-76** The written definitions: `project` = `{ id: slug, name, mainRepo: slug, repos: [slug] }` (project ≡ repo); `repo` = `{ id: slug, name, flows: <every BUILTIN_FLOWS id in library order>, defaultFlow: 'standard', commandSets: <every BUILTIN_COMMAND_SET_NAMES name → []>, roleOverrides: [], docsRoot: 'docs', testGlobs: [] }`. The command sets are empty on purpose: a `command` gate on an empty set reads `unknown` and never passes (R-13, R-16), so the work order waits at the tests gate until the user writes the commands into `repo.yaml`; Docket never guesses a test command.
+- **A-77** Writes, in this order: source `blank` → `repoFolders.createRepo(parent, slug)` (its errors returned as they are; the path it returns is the project path); `definitions.installBuiltins({ roles: BUILTIN_ROLES, flows: BUILTIN_FLOWS })`; `definitions.scaffoldProject(path, project, repo)` — `project_yaml_exists` → `project_exists` (the folder is already a Docket project: attach it instead), `repo_yaml_exists` → `docket_folder_exists`, `io_failed` as is; then `attachProject({ path, actor })` and its result is returned. A failure after `createRepo` leaves the new folder in place (Docket never deletes a folder it showed the user); a failure after `installBuiltins` leaves the global files (they are idempotent library copies).
+- **A-78** On success audit `project.created` with subject the project and `detail: { source: 'existing' | 'blank', builtinsWritten: <count> }`, before the `project.attached` entry `attachProject` writes. A refusal writes no audit entry.
+- **A-79** `project.create` maps to `createProject` with the actor of the call; ok → `{ ok: true, id: <project slug> }`, an error → `{ ok: false, code }`. An unknown `mode` is rejected at the edge like an unknown `authMode`.
+
+### Account test — "Test et" (#716)
+
+An account whose login cannot be probed (`loggedIn: null`, "Doğrulanamadı") gets a **Test et**
+action: one small real request on the account's route, with a classified result (R-58). It is not a
+work-order run: no `RunRecord`, no queue item, no worktree, no events persisted. It is a real request,
+so P-40 holds exactly as for a run and its spend counts against the account's caps.
+
+```ts
+// ports/account-test-repo.ts — machine-local state for the app's lifetime (in memory, I-35)
+export interface AccountTestRecord {
+  readonly accountId: AccountId;
+  readonly model: string | null;            // the model tested; null = the route's default model
+  readonly state: 'running' | 'ok' | 'failed';
+  readonly class?: AccountTestClass;        // failed only
+  readonly detail?: string;                 // failed only; redacted by the adapter (I-35)
+  readonly startedAt: EpochMs;
+  readonly endedAt?: EpochMs;
+}
+export interface AccountTestRepo {
+  get(accountId: AccountId): Promise<AccountTestRecord | undefined>;
+  save(record: AccountTestRecord): Promise<void>;   // upsert by accountId
+  clear(accountId: AccountId): Promise<void>;
+}
+
+// ports/scratch-dirs.ts — an empty directory outside every repo, for runs that need a cwd but no checkout
+export interface ScratchDir { readonly path: string; dispose(): Promise<void> }
+export interface ScratchDirs { create(purpose: 'account-test'): Promise<ScratchDir> }
+
+// AppDeps gains
+readonly accountTests: AccountTestRepo; readonly scratch: ScratchDirs;
+
+// account-repo.ts — recordSpend takes either entry
+export type RunSpendEntry = { readonly accountId: AccountId; readonly project: ProjectSlug; readonly repo: RepoSlug; readonly workOrderId: WorkOrderId; readonly at: EpochMs; readonly usd: number };
+export type AccountTestSpendEntry = { readonly kind: 'account_test'; readonly accountId: AccountId; readonly at: EpochMs; readonly usd: number };
+recordSpend(entry: RunSpendEntry | AccountTestSpendEntry): Promise<void>;
+
+// event-log.ts — AuditAction gains
+| 'account.tested'
+
+// services/spend-consent.ts — moved out of run-executor.ts unchanged, shared by executeRun and testAccount
+export function spendConsentSatisfied(
+  deps: Pick<AppDeps, 'accounts' | 'modelCatalog' | 'capabilities'>,
+  accountId: AccountId,
+  model: string | undefined,
+): Promise<boolean>;
+
+// use-cases/account-test.ts
+export const ACCOUNT_TEST_TIMEOUT_MS: number;   // 90_000, from the transport start to the deadline
+export const ACCOUNT_TEST_ROLE: RoleDef;        // id 'account-test', name 'Account test', instructions = ACCOUNT_TEST_PROMPT, writeScope { kind: 'none' }, capabilities [], active true
+export type AccountTestError = 'not_found' | 'busy' | 'unsupported' | 'needs_spend_consent' | 'spend_cap_reached';
+export function testAccount(
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'transports' | 'modelCatalog' | 'capabilities' | 'accountTests' | 'scratch'>,
+  input: { readonly id: AccountId; readonly model?: string },
+): Promise<Result<AccountTestView, AccountTestError>>;
+
+// commands.ts
+| { type: 'account.test'; id: string; model?: string }   // answers when the test has ended: { ok: true } or { ok: false, code: AccountTestError }
+
+// queries.ts — SettingsAccountView gains
+readonly test: AccountTestView | null;          // null = never tested since the app started or since the last reset (A-73)
+export interface AccountTestView {
+  readonly state: 'running' | 'ok' | 'failed';
+  readonly class: AccountTestClass | null;      // failed only
+  readonly model: string | null;                // null = the route's default model
+  readonly at: EpochMs;                         // endedAt, or startedAt while running
+  readonly detail: string | null;               // failed only; redacted, at most 300 code points
+}
+```
+
+Rules:
+- **A-68** `testAccount` checks, in this order, before anything is written: unknown account → `not_found`; a stored record in state `running` → `busy`; no transport for the account (`TransportResolver.forAccount` → `undefined`) → `unsupported`; `spendConsentSatisfied(account, model)` false → `needs_spend_consent` (P-40; the same helper as `executeRun`, whose behaviour and tests stay unchanged by the move); `combinedSpendStatus` over the account's own caps (the A-20 windows for `account_day`, `account_week`, `account_month`) blocked → `spend_cap_reached`. A refusal leaves every store unchanged and writes no audit entry.
+- **A-69** Then: save a `running` record (`model` = `input.model ?? null`, `startedAt` = now); create a scratch dir; start the transport with `{ runId: ids.next<'run'>(), cwd: scratch.path, role: ACCOUNT_TEST_ROLE, route: { accountId, model: input.model }, prompt: ACCOUNT_TEST_PROMPT, capabilities: [] }` and no `effort`. Every `permission_ask` is answered `deny`. Events are collected in memory only (never `RunRepo`, never the work-order stream). At `ACCOUNT_TEST_TIMEOUT_MS` after the start the use case calls `stop()` and sets `timedOut`. The scratch dir is disposed on every path, including a start failure and a thrown error; a thrown error saves the record as `failed` with class `unknown` before it propagates.
+- **A-70** The outcome is `classifyAccountTest` (R-58) over the start failure or the collected events. The record is saved as `ok` or `failed` (with `class`, `detail`) and `endedAt`; audit `account.tested` with subject the account and `detail: { model: model ?? '*', result: 'ok' | <class> }` — never the detail text. The returned view is the saved record's view.
+- **A-70a** (amends A-70 and A-74, 2026-10-03, #735) `testAccount`'s input gains `actor: Actor`; `account.tested` is audited with that actor, and `account.test` passes the actor of the call (as `project.create` does, A-79). The signature becomes `testAccount(deps, input: { readonly id: AccountId; readonly model?: string; readonly actor: Actor })`.
+- **A-71** Each `usage` event that carries a cost is recorded with `recordSpend({ kind: 'account_test', accountId, at, usd })`. `spend` with an `accountId` filter counts these entries; a filter by `project`, `repo` or `workOrderId` never matches them — a test spends from the account's caps, never from a repo or project budget.
+- **A-72** `settings.accounts` fills each row's `test` from `AccountTestRepo.get` (`null` without a record); `class` and `detail` are `null` unless the state is `failed`.
+- **A-73** A change that makes an old result meaningless clears it: `account.save` that changes `routeKind`, `endpoint`, `identityDir`, `tierModels` or the secret, and `account.remove`, call `AccountTestRepo.clear` for the account. The view carries `model`, so a surface whose selected model differs from it shows the account as untested; no stored state is needed for that.
+- **A-74** `account.test` maps to `testAccount`: `{ ok: true }` on a finished test (whatever its outcome — the outcome is read from `settings.accounts`), `{ ok: false, code }` on a refusal. An absent or empty `model` means the route's default model.
+
+### Stage files — what the approval decides on (#819)
+
+The decision card asks a person to approve a plan it never shows: the planner writes its plan into
+the worktree as a file, and the card offers the gate name and generic copy. This contract gives the
+card the files the stage's runs changed in the work order's worktree, and a read-only preview of
+one of them. No editing, no diff view, no Markdown rendering — the issue's out-of-scope list.
+
+```ts
+// ports/worktree-files.ts — read-only listing and preview inside one worktree; never writes
+export interface WorktreeFileEntry {
+  readonly path: string;                     // repo-relative, '/'-separated
+  readonly sizeBytes: number;
+}
+export interface WorktreeFilePreview {
+  readonly path: string;
+  readonly lines: readonly string[];
+  readonly truncated: boolean;
+}
+export type WorktreeFileError = 'outside_worktree' | 'not_found' | 'too_large' | 'not_text';
+export interface WorktreeFiles {
+  /** Changed vs HEAD plus untracked-but-not-ignored files, path order (I-39). */
+  listChanged(worktreePath: string): Promise<readonly WorktreeFileEntry[]>;
+  /** Guard order and error names are the contract (I-40): escape → 'outside_worktree', missing →
+   *  'not_found', over 256 KiB → 'too_large', NUL byte or invalid UTF-8 → 'not_text'; else the
+   *  first maxLines lines, truncated when the file had more. */
+  readText(worktreePath: string, relativePath: string, maxLines: number): Promise<Result<WorktreeFilePreview, WorktreeFileError>>;
+}
+
+// deps.ts — AppDeps gains (fakes follow A-1 … A-3; the fake keeps the adapter's contract, I-41)
+readonly worktreeFiles: WorktreeFiles;
+
+// use-cases/stage-files.ts
+export const PREVIEW_MAX_LINES = 200;        // fixed; line count is never caller-chosen
+export const STAGE_FILES_MAX = 50;           // the list the card shows
+export type StageFilesError = 'not_found';
+export interface StageFilesView {
+  readonly files: readonly WorktreeFileEntry[];   // at most STAGE_FILES_MAX, path order
+  readonly truncated: boolean;                    // the port listed more than STAGE_FILES_MAX
+}
+export function stageFiles(
+  deps: Pick<AppDeps, 'workOrders' | 'worktrees' | 'worktreeFiles'>,
+  id: WorkOrderId,
+): Promise<Result<StageFilesView, StageFilesError>>;
+export function readStageFile(
+  deps: Pick<AppDeps, 'workOrders' | 'worktrees' | 'worktreeFiles'>,
+  input: { readonly id: WorkOrderId; readonly path: string },
+): Promise<Result<WorktreeFilePreview, StageFilesError | WorktreeFileError>>;
+
+// queries.ts
+| { readonly type: 'workOrders.stageFiles'; readonly id: string }
+| { readonly type: 'workOrders.readStageFile'; readonly id: string; readonly path: string }
+```
+
+Rules:
+- **A-88** (added 2026-10-09, #819) The stage-file reads work only on the work order's own worktree, and only the use case says where that is: it loads the record (`not_found` before any port call) and resolves the path the way the gates do — `worktrees.ensure(record.repo, record.id)`; a `no_repo` resolution is `not_found` too (a record whose repo no longer registers has nothing to list). I-20's `ensure` creates a missing worktree as an empty one — it lists nothing; a read never fails on it. No query input carries a path root: `path` in `workOrders.readStageFile` is the repo-relative file name, passed to the port whose guards (I-40) decide. Both queries are reads — no `actor`, no audit entry (the A-81 stance).
+- **A-89** (added 2026-10-09, #819) `readStageFile` calls the port with `maxLines: PREVIEW_MAX_LINES` (200, fixed) and returns the port's result verbatim, error names included, never re-mapped. `stageFiles` returns the port's list capped at `STAGE_FILES_MAX` (50) entries with `truncated: true` when there were more: a card showing fifty of eighty files says so, because the approval decides on what the list claims to be. A `readStageFile` for a path the capped list does not carry is not refused — the list is a convenience, the port's guards are the access rule.
+
+### Capability discovery — candidates and import (#853)
+
+Part 2 of the #715 split: a port that reads capability sources inside the config directory of
+accounts the user adopted (read-only, path-confined), the query the Yetenekler surfaces will
+render, and the command that copies selected candidates into Docket's own global definitions.
+Docket copies; it never touches the user's files. The UI is part 3; `hook` stays deferred.
+
+```ts
+// ports/capability-discovery.ts — new port; reads only
+export interface CapabilityScanAccount {
+  readonly id: AccountId;
+  readonly provider: string;  // provider def id (data); decides the scan map row
+  readonly identityDir?: string; // absolute; absent = nothing to scan (machine login, endpoint)
+}
+export interface CapabilityDiscovery {
+  /** Raw per-account finds — sources is exactly the one account each was found in; unmerged
+   *  (the use case merges, R-63); identity carries the R-62 form of the find's own fields. */
+  scan(accounts: readonly CapabilityScanAccount[]): Promise<readonly CapabilityCandidate[]>;
+}
+
+// deps.ts — AppDeps gains (ports.test.ts key set follows; fakes follow A-1 … A-3)
+readonly capabilityDiscovery: CapabilityDiscovery;
+
+// ports/definition-store.ts — gains the installBuiltins shape for capabilities
+/** Writes each capability as <globalRoot>/capabilities/<id>.yaml unless a file with that id
+ *  exists; never overwrites. written/skipped list the targets actually written / found. */
+installCapabilities(capabilities: readonly CapabilityDef[]): Promise<{
+  readonly written: readonly string[];
+  readonly skipped: readonly string[];
+}>;
+
+// use-cases/capability-candidates.ts — the query side
+export const CAPABILITY_CANDIDATES_MAX = 200;  // the merged list the query answers
+export const CAPABILITY_DESCRIPTION_MAX = 300; // code points, the view's description cut
+export interface CapabilityCandidateView {
+  readonly identity: string;                 // mergeCandidates' canonical form (R-63)
+  readonly kind: 'mcp' | 'skill' | 'context';
+  readonly name: string;
+  readonly sources: readonly string[];       // account ids, sorted, unique — plain strings on the wire
+  readonly command?: string;                 // mcp only
+  readonly path?: string;                    // skill / context; the source file's absolute path
+  readonly description?: string;             // ≤ CAPABILITY_DESCRIPTION_MAX code points
+  readonly imported: boolean;
+}
+export interface CapabilityCandidatesView {
+  readonly candidates: readonly CapabilityCandidateView[]; // identity, code-point order
+  readonly truncated: boolean;                              // the port found more than the cap
+}
+export function capabilityCandidates(
+  deps: Pick<AppDeps, 'accounts' | 'capabilityDiscovery' | 'definitions'>,
+): Promise<CapabilityCandidatesView>;
+
+// use-cases/capability-import.ts — the command side
+export type CapabilityImportError =
+  | 'not_found' | 'invalid_name' | 'missing_command' | 'missing_path' | 'id_taken' | 'invalid_definition';
+export type CapabilityImportResult =
+  | { readonly identity: string; readonly status: 'imported'; readonly id: CapabilitySlug }
+  | { readonly identity: string; readonly status: 'already_present'; readonly id: CapabilitySlug }
+  | { readonly identity: string; readonly status: 'rejected'; readonly reason: CapabilityImportError };
+export function importCapabilities(
+  deps: Pick<AppDeps, 'accounts' | 'capabilityDiscovery' | 'definitions' | 'clock' | 'ids' | 'log'>,
+  input: { readonly identities: readonly string[]; readonly actor: Actor },
+): Promise<readonly CapabilityImportResult[]>;
+
+// api/queries.ts + api/commands.ts
+| { readonly type: 'capabilities.candidates' }   // no fresh: no cache in this issue (A-94)
+| { readonly type: 'capabilities.import'; readonly identities: readonly string[] }
+// commands.ts — the ok result gains the per-identity side channel (roles-style):
+{ readonly ok: true; readonly id?: string; readonly results?: readonly CapabilityImportResultView[] }
+```
+
+Rules:
+- **A-90** (added 2026-10-09, #853) `capabilityCandidates` scans the accounts the store holds: `deps.accounts.list()` mapped to `CapabilityScanAccount`; an account without `identityDir` (machine login, compatible endpoint) yields nothing — its capabilities are not on this disk in a Docket-known layout. The scan's failure is empty, never an error surface: a broken config directory produces no candidates and does not stop the rest (the account scan's stance). No query input can name a path — the port's own confinement is the only path authority (A-88's stance).
+- **A-91** (added 2026-10-09, #853) The raw finds go through `mergeCandidates` (R-63 — same identity across accounts is one candidate with every source), the merged list is sorted by identity in Unicode code-point order, capped at `CAPABILITY_CANDIDATES_MAX` (200) with `truncated: true` when there were more, and each `description` is cut to `CAPABILITY_DESCRIPTION_MAX` (300) code points. The query is a read: no actor, no audit entry (the A-81 stance).
+- **A-92** (added 2026-10-09, #853) `imported` is decided per candidate against the global store, target-wise: the id R-67 derives from the candidate's own name, `definitions.readFile({ kind: 'global' }, 'capabilities/<id>.yaml')`; a file that exists, parses and whose `identityOfDefinition` equals the candidate's identity → `true`. Missing, unparseable or a different identity → `false`. The stored file's parse reads only the identity fields (kind, name, command) — a stored env block is never touched. The check reads one target per candidate — it never enumerates the store and never rescans.
+- **A-93** (added 2026-10-09, #853; amended by the architect's open-question decisions the same day — results are per identity, not all-or-nothing) `importCapabilities` answers one result per requested identity, in input order; one rejected identity never blocks the others. Order per identity: find it in the candidates of A-90's scan (`not_found`); derive the id — R-67 with its in-call collision suffix (`invalid_name`); at that id, a stored file with an equal identity → `already_present` (idempotent skip), a different identity → `rejected id_taken` (an existing target is never overwritten); map with `candidateToDefinition` (`missing_command`/`missing_path` verbatim, R-65); then the to-write target goes through `definitions.validateCandidate({ kind: 'global' }, target, content)` — the content is the definition's JSON form, which the real store parses as YAML flow syntax and the fake as JSON — issues → `rejected invalid_definition`; otherwise the definition joins the single `installCapabilities` call. A repeated identity echoes its first outcome. A no-op call (everything already imported) answers ok with no writes. Imports are not audited yet (decision 5): `AuditSubject` is unchanged this wave and the actor rides the input for the follow-up issue that adds the audit entry.
+- Addendum 2026-10-09 (#858): decision 5's gap is closed — the `imported` arm of this command appends the audit entry A-95 defines, and the actor that rode the input for it is the command's actor.
+- **A-94** (added 2026-10-09, #853) The boundary mapping: `capabilities.candidates` → `capabilityCandidates(deps)`; the query always answers, an empty account store answers `{ candidates: [], truncated: false }`. `capabilities.import` → `importCapabilities(deps, { identities, actor })` with the api layer's own actor; the answer is `{ ok: true, results }` with one row per identity in input order — `id` set for `imported`/`already_present`, `reason` for `rejected`, each `null` otherwise. There is no remembered-scan window in this issue (decision 2): every query scans — the query runs when a surface opens, not on a poll, and the account store is small; a cache follows the A-85 pattern only when a surface needs it.
+- **A-95** (added 2026-10-09, #858) Only a result with `status: 'imported'` is audited: one `capability.imported` entry per imported capability, appended after the single `installCapabilities` call, actor the command's actor. The subject is `{ kind: 'capability', id }` with the stored slug — the id the import returned, so `EventLog.list` finds the entry from the definition. The detail is `{ kind, identity }`: the capability's kind and the identity's path/command target — targets only, never an env value (the AuditEntry detail law). `already_present` and `rejected` write nothing, and a repeated identity that echoes an `imported` outcome audits once. An audit append failure must not fail or roll back the import: the write it reports on is already durable, so the failure is swallowed and the results answer unchanged.
+- **A-96** (added 2026-10-09, #855) The changes gate's evidence and its attestation. `evaluateMachineGates` also picks up pending `changes` gates of the current stage, in stage order with the other machine gates: `filesChanged = CheckpointCommitter.diffSince(CheckpointCommitter.base({ cwd: worktree, workOrderId })).files.length` — `> 0` → evidence `{ changes: { filesChanged } }` (R-61 passes it) and the pass continues; `=== 0` → **no event** — the gate stays pending and the whole machine pass (the command sets behind it and the remote polls after it) halts for the operator's attestation, so a zero-file run surfaces before the long test run (R-68 puts the gate first for exactly this). A `git_failed` base or diff also leaves the gate pending but surfaces as the call's `git_failed` error — a broken git state never folds into a count, and never counts as zero. The attestation itself is `attestNoChanges` (same deps shape as `decideHumanGate`, no port calls): the gate must be a pending `changes` gate of the current stage while the status is `gating` (`not_a_changes_gate` / `not_pending` otherwise, `not_current_stage` for another stage's gate, `agent_cannot_decide` for an agent actor); it evaluates `{ changes: { filesChanged: 0, noChangeNeeded } }` through R-61 and appends one `gate_evaluated` plus an audit `gate.decided` with `decision: noChangeNeeded ? 'approved' : 'rejected'`. The api command is `gate.attest`.
+
 ## 5. Phase 2a acceptance — headless end to end
 
 `src/api/scenarios/standard-flow.test.ts` (test-only folder in the API layer, which may import the
@@ -1010,8 +1334,12 @@ directly:
 1. open → `plan`/`ready`; enqueue + tick → started; `executeRun` with a fake transport that
    finishes `completed` → `plan`/`awaiting_human`.
 2. `gate.decide plan-approval approved` → `implement`/`ready`.
-3. enqueue + tick + run (completed) → `gating`; `evaluateMachineGates` with commands exiting 0 and
-   0 scan findings → `review`/`ready`.
+3. enqueue + tick + run (completed) → `gating`; `evaluateMachineGates` with a worktree diff that
+   counts files (the changes gate passes, A-96), commands exiting 0 and 0 scan findings →
+   `review`/`ready`. A second scenario drives the zero-file path the same way to `gating`, halts at
+   the pending changes gate (no command runs), attests rerun (`gate.attest` `noChangeNeeded: false`
+   → `implement` attempt 2), then attests no-change on the rerun and lets the next machine pass
+   finish the stage.
 4. run the reviewer (completed) → `gating`; `submitAgentVerdict` (reviewer actor, approve,
    pointers resolve) → `awaiting_human`; `gate.decide review-approval approved` → `close`.
 5. `gate.decide closure approved` → `done`.

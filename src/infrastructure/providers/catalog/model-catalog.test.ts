@@ -398,7 +398,7 @@ describe('createModelCatalog (P-29)', () => {
         source: 'live',
         contextWindow: null,
         thinking: { kind: 'levels', levels: ['low', 'medium', 'high'] },
-        billing: 'unknown',
+        billing: 'included',
       },
     ]);
   });
@@ -539,60 +539,6 @@ describe('createModelCatalog (P-29)', () => {
     expect(calls).toBe(0);
   });
 
-  it('P-29: the static amp route kind answers with exactly its four modes, every row billing-unknown and level-free', async () => {
-    const accounts = createFakeAccountRepo();
-    await accounts.save(account(ACCOUNT_A, { provider: 'amp' }));
-    const { query } = scriptedQuery([[PRO_ROW]]);
-    // The static source has no adapter (the modes are registry data, not a live list), so no
-    // query leg ever runs and the four modes are the whole answer — a mode is a fixed
-    // model-plus-effort bundle, so a row offers no thinking level and bills unknown (P-40).
-    const catalog = createModelCatalog({
-      ...baseConfig(query),
-      accounts,
-      capabilities: createFakeCapabilityCatalog([{ id: 'amp-login', authMode: 'subscription', provider: 'amp' }]),
-    });
-
-    expect(await catalog.list(ACCOUNT_A)).toEqual([
-      { id: 'low', source: 'bundled', tier: 'fast', thinking: { kind: 'none' }, billing: 'unknown', contextWindow: null },
-      { id: 'medium', source: 'bundled', tier: 'balanced', thinking: { kind: 'none' }, billing: 'unknown', contextWindow: null },
-      { id: 'high', source: 'bundled', tier: 'strong', thinking: { kind: 'none' }, billing: 'unknown', contextWindow: null },
-      { id: 'ultra', source: 'bundled', tier: 'strong', thinking: { kind: 'none' }, billing: 'unknown', contextWindow: null },
-    ]);
-    // A refresh of source-less data changes nothing: the registry is still the whole answer.
-    expect(await catalog.list(ACCOUNT_A, { refresh: true })).toEqual(await catalog.list(ACCOUNT_A));
-  });
-
-  it('P-29: the static codebuddy route kind answers with exactly its registry rows, every one billing-unknown with the effort vocabulary', async () => {
-    const accounts = createFakeAccountRepo();
-    await accounts.save(account(ACCOUNT_A, { provider: 'codebuddy' }));
-    const { query } = scriptedQuery([[PRO_ROW]]);
-    // The static source has no adapter (the help-text list is registry data, not a live fetch),
-    // so no query leg ever runs and the twenty-one rows are the whole answer — each carries the
-    // effort flag's documented vocabulary and bills unknown (P-40).
-    const catalog = createModelCatalog({
-      ...baseConfig(query),
-      accounts,
-      capabilities: createFakeCapabilityCatalog([{ id: 'codebuddy-login', authMode: 'subscription', provider: 'codebuddy' }]),
-    });
-
-    const rows = await catalog.list(ACCOUNT_A);
-    expect(rows).toHaveLength(21);
-    expect(rows[0]).toEqual({
-      id: 'default-model',
-      source: 'bundled',
-      contextWindow: null,
-      tier: 'balanced',
-      thinking: { kind: 'levels', levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] },
-      billing: 'unknown',
-    });
-    for (const row of rows) {
-      expect(row.billing, row.id).toBe('unknown');
-      expect(row.thinking).toEqual({ kind: 'levels', levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] });
-    }
-    // A refresh of source-less data changes nothing: the registry is still the whole answer.
-    expect(await catalog.list(ACCOUNT_A, { refresh: true })).toEqual(rows);
-  });
-
   it('P-29: a cli-command route kind dispatches to the CLI adapter — a live list with no billing claim', async () => {
     // The fake binary prints the recorded shape of the CLI's own models table; the spawn rides
     // the real node machinery, so the dispatch itself is what is under test here.
@@ -636,6 +582,82 @@ describe('createModelCatalog (P-29)', () => {
       autoClassified: true,
       billing: 'unknown',
     });
+  });
+
+  // A-63/P-29a per adapter: a window the provider's own channel reports rides the merged entry —
+  // a session row's own `_meta.contextLimit`, the initialize answer's `totalContextTokens`, and
+  // the window embedded in a cursor id's `context=` parameter. The answers come from the neutral
+  // fixtures; the values are the recorded ones.
+  describe('A-63: windows the providers themselves report reach the merged entries', () => {
+    const acpFixture = join(dirname(fileURLToPath(import.meta.url)), '..', 'transports', 'acp', 'fake-agent.cjs');
+    const acpSpawnOf = (scenario: string) => {
+      const dir = mkdtempSync(join(tmpdir(), `docket-model-catalog-${scenario}-`));
+      return (_command: string, _args: readonly string[], _options: unknown) =>
+        nodeSpawn(process.execPath, [acpFixture, scenario, join(dir, 'agent-log.jsonl')]);
+    };
+
+    it("A-63: a listing whose model list rides the initialize answer carries each row's own total-context tokens onto the merged entries", async () => {
+      const accounts = createFakeAccountRepo();
+      await accounts.save(account(ACCOUNT_A, { provider: 'cursor', routeKind: 'cursor-subscription' }));
+      const catalog = createModelCatalog({
+        ...baseConfig(scriptedQuery([[]]).query),
+        accounts,
+        acp: { spawn: acpSpawnOf('models-init-state') },
+      });
+
+      const listed = await catalog.list(ACCOUNT_A);
+
+      expect(listed.find((model) => model.id === 'grok-4.6')).toMatchObject({ contextWindow: 256000, isDefault: true });
+      expect(listed.find((model) => model.id === 'grok-4.5')).toMatchObject({ contextWindow: 256000 });
+      // The row whose value is a string reports no window the merge may trust: null, the honest answer.
+      expect(listed.find((model) => model.id === 'grok-code-fast')).toMatchObject({ contextWindow: null });
+    });
+
+    it("A-63: a session listing carries each row's own context limit onto the merged entries", async () => {
+      const accounts = createFakeAccountRepo();
+      await accounts.save(account(ACCOUNT_A, { provider: 'cursor', routeKind: 'cursor-subscription' }));
+      const catalog = createModelCatalog({
+        ...baseConfig(scriptedQuery([[]]).query),
+        accounts,
+        acp: { spawn: acpSpawnOf('models-session-models') },
+      });
+
+      const listed = await catalog.list(ACCOUNT_A);
+
+      expect(listed.find((model) => model.id === 'big-1-plus')).toMatchObject({ contextWindow: 131072 });
+      expect(listed.find((model) => model.id === 'coder-plus')).toMatchObject({ contextWindow: 262144 });
+      expect(listed.find((model) => model.id === 'flash-lite')).toMatchObject({ contextWindow: null });
+    });
+
+    it('A-63: a cursor listing carries the window each parameterized id embeds onto the merged entries', async () => {
+      const accounts = createFakeAccountRepo();
+      await accounts.save(account(ACCOUNT_A, { provider: 'cursor' }));
+      const catalog = createModelCatalog({
+        ...baseConfig(scriptedQuery([[]]).query),
+        accounts,
+        capabilities: createFakeCapabilityCatalog([{ id: 'cursor-subscription', authMode: 'subscription', provider: 'cursor' }]),
+        acp: { spawn: acpSpawnOf('models-cursor') },
+      });
+
+      const listed = await catalog.list(ACCOUNT_A);
+
+      // The id stays whole — it is the value the session expects — and the window its `context=`
+      // parameter states rides the entry; a parameter that names no magnitude leaves null.
+      expect(listed.find((model) => model.id === 'grok-4.7[context=256k,reasoning_effort=high,fast=true]')).toMatchObject({
+        contextWindow: 256000,
+      });
+      expect(listed.find((model) => model.id === 'claude-opus-5-5[context=300k,effort=medium,fast=false]')).toMatchObject({
+        contextWindow: 300000,
+      });
+      expect(listed.find((model) => model.id === 'claude-opus-4-8[context=1m,effort=high,fast=false]')).toMatchObject({
+        contextWindow: 1000000,
+      });
+      expect(listed.find((model) => model.id === 'grok-4.6[context=vast,reasoning_effort=high,fast=false]')).toMatchObject({
+        contextWindow: null,
+      });
+      expect(listed.find((model) => model.id === 'default[]')).toMatchObject({ contextWindow: null });
+    });
+
   });
 
   describe('P-45: the account\'s latest discovery login state reaches a needsLogin listing', () => {

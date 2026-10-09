@@ -8,6 +8,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { parseSlug, parseUlid, type Actor, type RunId, type WorkOrderId, type RepoSlug } from '../../domain/index';
+import type { DiscoveredProvider } from '../../application/index';
 import {
   createFakeClock,
   createFakeNotifier,
@@ -169,6 +170,21 @@ describe('createNodeDeps', () => {
     const main = await readFile(join(process.cwd(), 'electron', 'main.ts'), 'utf8');
     const call = /createApi\(([^;]*)\);/.exec(main)?.[1] ?? '';
     expect(call).toContain('node.adoption');
+  });
+
+  it('I-35: wires the account-test adapters — a redacting in-memory repo and real scratch directories', async () => {
+    const node = makeNode();
+    const account = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FA4');
+    await node.deps.accountTests.save({
+      accountId: account, model: null, state: 'failed', class: 'auth', startedAt: 1, endedAt: 2,
+      detail: 'rejected sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789 today',
+    });
+    expect((await node.deps.accountTests.get(account))?.detail).not.toContain('sk-ant');
+
+    const dir = await node.deps.scratch.create('account-test');
+    expect((await stat(dir.path)).isDirectory()).toBe(true);
+    await dir.dispose();
+    await expect(stat(dir.path)).rejects.toThrow();
   });
 
   it('I-31: opens <dataDir>/docket.db, exposes the registry, and close() closes the database', async () => {
@@ -398,5 +414,28 @@ describe('createNodeDeps', () => {
       expect(diff.value.patch).toContain('[redacted]');
       expect(diff.value.patch).not.toContain('ghp_');
     }
+  });
+
+  it('P-53: with a discovery reporting codex installed, the account discovery lists a codex machine-login candidate and reads nothing under its home', async () => {
+    const sentinel = 'sk-codex-home-sentinel-123456';
+    await mkdir(join(homeDir, '.codex'), { recursive: true });
+    await writeFile(join(homeDir, '.codex', 'auth.json'), sentinel);
+    const providerDiscovery = {
+      discover: async (onResult: (r: DiscoveredProvider) => void): Promise<void> => {
+        onResult({ defId: 'codex', name: 'Codex', installUrl: null, binPath: '/usr/local/bin/codex', version: '1', loggedIn: true, optionalFlags: [] });
+      },
+    };
+    const node = makeNode({ providerDiscovery });
+    const candidates = await node.accountDiscovery.scan();
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({
+      kind: 'machine_login',
+      provider: 'codex',
+      sourcePath: 'machine-login:codex',
+      routeKind: 'codex-subscription',
+      hasOauthLogin: true,
+    });
+    expect(JSON.stringify(candidates)).not.toContain(sentinel);
+    node.close();
   });
 });

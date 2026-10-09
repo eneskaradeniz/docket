@@ -24,18 +24,23 @@
 // A second, fake-free launch closes the loop once per run: with the noop checker the button
 // must be absent from the bar and the Güncelleme section must read "Docket güncel.":
 //   titlebar-plain: ok|FAIL <detail>
+// The attention cards walk once per run after the combos (U-62), at the three fixed widths
+// 1024/1280/1512 clamped to the work area: every project line clamps at two lines, no card
+// overflows, the cards of one row keep one height:
+//   attention: kokpit <WxH> ok|FAIL <detail>
 // Exit code is 1 when any line is FAIL.
 //
 // The run walks four combinations by default — dark at every size plus light at the default
 // window, the size the operator uses — and prints the count before the first result line;
 // `--full` (FULL=1 for the npm script) restores all six, for a release run or after a
-// token/theme change. `--slow` hands the app DOCKET_API_DELAY_MS (the design harness's own
-// slow mode): every API reply waits, so the L rules would read mid-load placeholders — that run
-// walks no combos and measures the loading skeletons themselves instead —
+// token/theme change. Every default run closes with the loading skeletons' own measurement
+// (U-26): a pass on its own launch, handing the app DOCKET_API_DELAY_MS (the design harness's
+// own slow mode) so every reply waits and the loading standings stand long enough to measure —
 //   skeleton: <screen> ok|FAIL <detail>
 // one line per composed screen (kokpit carries the sidebar's tree and account compositions
-// with it), with the overlay extras (palette, settings panel, title bar) left to the default
-// run that already covers them.
+// with it). The pass cannot share the main launch: under the delay the L rules would read
+// mid-load placeholders. `--slow` stays accepted as a no-op alias so older commands keep
+// working — the pass it used to switch on is part of every run now.
 //
 // Two targets share the same rules and differ only in their selector map:
 //   --target=prototype <path/to/index.html>  the frozen rev-8 prototype in Chromium (file://)
@@ -50,6 +55,8 @@ import { _electron as electron, chromium } from 'playwright-core';
 import { ROOT, launchDesignApp, screenNavigator, seedDesign, setWindow } from './design-app.mjs';
 import { SLOW_API_DELAY_MS } from './design-run.mjs';
 import { acquireE2eLock } from './lock.mjs';
+import { assertProfileIsolated, freshProfile } from './profile.mjs';
+import { appendCheck, beginReport, REPORT_PATH } from './report.mjs';
 import {
   comboPlan,
   measureSkeletonHolders,
@@ -103,6 +110,8 @@ const APP_SELECTORS = {
   settingsScrim: '[data-settings-scrim]',
   accountMark: '[data-provider-mark]',
   skeleton: '[data-skeleton]',
+  attentionCard: '[data-attention-card]',
+  attentionLine: '[data-attention-line]',
 };
 
 const parseArgs = (argv) => {
@@ -112,6 +121,7 @@ const parseArgs = (argv) => {
     target,
     path: rest[0],
     full: argv.includes('--full') || process.env.FULL === '1',
+    // Accepted as a no-op alias (the header says why): parsed so the flag stays known, read by nothing.
     slow: argv.includes('--slow'),
   };
 };
@@ -335,8 +345,9 @@ async function settingsPanelCheck(target) {
       if (!visible(el)) continue;
       const b = el.getBoundingClientRect();
       // A control inside the scrolling content pane may lie below the fold (Hesaplar is long);
-        // only sideways escape counts there.
-        const scrolls = el.closest('[data-settings-content]') !== null;
+        // only sideways escape counts there. The pane is the shared Window body — U-43's rework
+        // renamed the hook the old panel carried.
+        const scrolls = el.closest('[data-window-body]') !== null;
         if (b.left < r.left - 0.5 || b.right > r.right + 0.5 || (!scrolls && (b.top < r.top - 0.5 || b.bottom > r.bottom + 0.5))) {
         outside.push((el.getAttribute('aria-label') || el.textContent || el.tagName).trim().slice(0, 24));
       }
@@ -375,8 +386,9 @@ async function settingsPanelCheck(target) {
         if (!visible(el)) continue;
         const b = el.getBoundingClientRect();
         // A control inside the scrolling content pane may lie below the fold (Hesaplar is long);
-        // only sideways escape counts there.
-        const scrolls = el.closest('[data-settings-content]') !== null;
+        // only sideways escape counts there. The pane is the shared Window body — U-43's rework
+        // renamed the hook the old panel carried.
+        const scrolls = el.closest('[data-window-body]') !== null;
         if (b.left < r.left - 0.5 || b.right > r.right + 0.5 || (!scrolls && (b.top < r.top - 0.5 || b.bottom > r.bottom + 0.5))) {
           outside.push((el.getAttribute('aria-label') || el.textContent || el.tagName).trim().slice(0, 24));
         }
@@ -388,8 +400,18 @@ async function settingsPanelCheck(target) {
     page.locator(selectors.settingsPanel).getByRole('button', { name, exact: true }).first();
   await menuButton('Görünüm').click({ timeout: 4000 });
   await inPanel('Tema').waitFor({ state: 'visible', timeout: 4000 });
-  await menuButton('Açık').waitFor({ state: 'visible', timeout: 4000 });
+  // Görünüm's choices live in the Listbox's popup (U-41), not as standing buttons anymore:
+  // opening the theme list is how the section proves its controls — 'Açık' is an option there.
+  await page.locator(selectors.settingsPanel).getByRole('button', { name: /^Tema: / }).first().click({ timeout: 4000 });
+  await page
+    .locator(selectors.settingsPanel)
+    .getByRole('option', { name: 'Açık', exact: true })
+    .first()
+    .waitFor({ state: 'visible', timeout: 4000 });
   const appearanceOutside = await sectionOutside();
+  // The open popup keeps the panel's Esc for itself (the list stops the key), so this close
+  // leaves the panel standing.
+  await page.keyboard.press('Escape');
   await menuButton('Telefon').click({ timeout: 4000 });
   await inPanel('Telefon bağlı değil').waitFor({ state: 'visible', timeout: 4000 });
   const pairDisabled = await page
@@ -411,8 +433,10 @@ async function settingsPanelCheck(target) {
   }
   const dx = Math.abs(m.cx - m.iw / 2);
   const dy = Math.abs(m.cy - m.ih / 2);
-  const wantW = Math.min(880, m.iw - 64);
-  const wantH = Math.min(580, m.ih - 64);
+  // The panel shares the wizard's window (U-46): 1040×680 at most, clamped to the viewport with
+  // 48px/96px margins (the frame's max-width/max-height clamps).
+  const wantW = Math.min(1040, m.iw - 48);
+  const wantH = Math.min(680, m.ih - 96);
   const inside = m.left >= -0.5 && m.top >= -0.5 && m.right <= m.iw + 0.5 && m.bottom <= m.ih + 0.5;
   const sized = Math.abs(m.w - wantW) <= 0.5 && Math.abs(m.h - wantH) <= 0.5;
   const ok =
@@ -572,7 +596,11 @@ async function plainTitleBarCheck() {
   // environment would otherwise leak the scripted checker into the "without" measurement.
   const env = { ...process.env, DOCKET_DATA_DIR: seed.dataDir, DOCKET_OPENCODE_BIN: seed.agentBin };
   delete env.DOCKET_UPDATE_FAKE;
-  const app = await electron.launch({ args: [join(ROOT, 'dist-electron', 'main.js')], env });
+  // Its own throwaway profile too: this second launch must not see the main walk's persisted UI
+  // settings (the audit's Liste screen leaves the board's view choice behind).
+  const profile = freshProfile();
+  const app = await electron.launch({ args: [...profile.args, join(ROOT, 'dist-electron', 'main.js')], env });
+  await assertProfileIsolated(app, profile.dir);
   try {
     const page = await app.firstWindow();
     await page.waitForSelector('nav', { timeout: 30_000 });
@@ -609,30 +637,34 @@ async function plainTitleBarCheck() {
 }
 
 // --- app target --------------------------------------------------------------------------------------
+/** The screen walk both launches share: resize, theme, navigate, settle. The board's view choice
+ *  persists per repo (U-18), so an earlier `liste` measurement would otherwise leave the Kanban
+ *  hidden for a later `pano` — every screen enters from its own standing. */
+function makeShow(handle) {
+  const { page } = handle;
+  const goto = screenNavigator(page);
+  return async (screen, theme, { size }) => {
+    await setWindow(handle, size, theme);
+    await goto[screen]();
+    if (screen === 'pano') {
+      await page.getByRole('button', { name: 'Kanban' }).first().click({ timeout: 1500 });
+    }
+    await page.waitForTimeout(450);
+  };
+}
+
 async function openApp() {
   await acquireE2eLock(ROOT);
   const handle = await launchDesignApp();
-  const { page } = handle;
-  const goto = screenNavigator(page);
   // The plan resolves once per run, against the app's own primary display — the real numbers the
   // labels then carry.
   const sizes = await resolveSizes(handle.app);
   return {
     selectors: APP_SELECTORS,
-    page,
+    page: handle.page,
     sizes,
     close: () => handle.app.close(),
-    async show(screen, theme, { size }) {
-      await setWindow(handle, size, theme);
-      await goto[screen]();
-      // The board's view choice persists per repo (U-18), so an earlier `liste` measurement
-      // would otherwise leave the Kanban hidden for this run's `pano` — every screen enters
-      // from its own standing.
-      if (screen === 'pano') {
-        await page.getByRole('button', { name: 'Kanban' }).first().click({ timeout: 1500 });
-      }
-      await page.waitForTimeout(450);
-    },
+    show: makeShow(handle),
     /** The guarantee behind every combination: the window's bounds lie wholly inside the primary
      *  display's work area. Both rectangles are read in the main process, where they live. */
     async windowCheck() {
@@ -651,13 +683,18 @@ async function openApp() {
         detail: `window ${m.bw}x${m.bh} at ${m.bx},${m.by} ${inside ? '⊆' : '⊄'} workArea ${m.aw}x${m.ah} at ${m.ax},${m.ay}`,
       };
     },
+    /** The primary display's work area, for the checks that pick their own sizes. */
+    async workArea() {
+      return handle.app.evaluate(({ screen }) => screen.getPrimaryDisplay().workArea);
+    },
   };
 }
 
-/** The loading skeletons' own measurement (U-26), one screen at a time under --slow: the screen
- *  is reached once (so the window is sized and the board's Kanban/Liste standing is the one to
- *  replay), then the page reloads so the boot loads replay under the delay (the cockpit with the
- *  sidebar's tree and account compositions beside it), and a board screen navigates after the
+/** The loading skeletons' own measurement (U-26), one screen at a time in the run's skeleton
+ *  pass: the screen is reached once (so the window is sized and the board's Kanban/Liste
+ *  standing is the one to replay), then the page reloads so the boot loads replay under the
+ *  delay (the cockpit with the sidebar's tree and account compositions beside it), and a board
+ *  screen navigates after the
  *  boot content has landed so its own load replays. Each pass measures the compositions while
  *  they are up, waits the delayed replies out, and measures the holders again — the verdict
  *  compares the two. The cockpit's fold memory is cleared first: the ready sections must stand
@@ -703,6 +740,41 @@ async function skeletonCheck(target, screen, combo) {
   return skeletonVerdict(before, after);
 }
 
+/** The skeleton pass's own launch: the delay must sit in the environment before the app inherits
+ *  it, and the main run's fast launch would leave no loading standing to measure. The host lock
+ *  is the run's, taken once for the main launch — no second acquisition here. */
+async function skeletonPass() {
+  const priorDelay = process.env.DOCKET_API_DELAY_MS;
+  process.env.DOCKET_API_DELAY_MS = String(SLOW_API_DELAY_MS);
+  let handle;
+  try {
+    handle = await launchDesignApp();
+  } finally {
+    if (priorDelay === undefined) delete process.env.DOCKET_API_DELAY_MS;
+    else process.env.DOCKET_API_DELAY_MS = priorDelay;
+  }
+  const sizes = await resolveSizes(handle.app);
+  const target = { page: handle.page, selectors: APP_SELECTORS, show: makeShow(handle) };
+  const combo = comboPlan(sizes).find((c) => c.size.name === 'default' && c.theme === 'dark');
+  const rows = [];
+  try {
+    for (const screen of ['kokpit', 'pano', 'liste']) {
+      try {
+        rows.push({ screen, ...(await skeletonCheck(target, screen, combo)) });
+      } catch (error) {
+        rows.push({
+          screen,
+          ok: false,
+          detail: `skeleton pass unreachable: ${String(error).split('\n').slice(0, 4).join(' | ')}`,
+        });
+      }
+    }
+  } finally {
+    await handle.app.close();
+  }
+  return rows;
+}
+
 /** The accounts frame's opened cards must be seen, not merely mounted (U-26): a card's computed
  *  opacity, multiplied up its ancestors to the frame body, must be 1 — a content wrapper left at
  *  opacity 0 keeps the cards in the DOM, clickable and unseen, which no geometry rule notices. */
@@ -738,29 +810,107 @@ async function accountsOpacityCheck(target) {
   return { ok: seen === 1, detail: seen === 1 ? 'account cards are fully visible' : `account card opacity ${seen}, not 1` };
 }
 
+/** The attention cards' own measurement (U-62, with U-55's dated amendment), once per run on the
+ *  app target after the combos: at three fixed widths — the 1024 minimum, 1280, and the 1512
+ *  reference — every cockpit attention card's project line wraps and clamps at two lines (never
+ *  a single-line truncate), no card overflows its own box or the main column's right edge, and
+ *  the cards of one grid row keep one height whether their names wrap or not (the ask band's
+ *  card is exempt — taller by its own band, not by its name). The widths are clamped to the work
+ *  area and deduped, so a display that cannot hold 1280 or 1512 walks the widths it can. */
+const ATTENTION_WIDTHS = [1024, 1280, 1512];
+
+async function attentionCardsCheck(target) {
+  const { page, selectors } = target;
+  const area = await target.workArea();
+  const widths = [...new Set(ATTENTION_WIDTHS.map((w) => Math.min(w, area.width)))];
+  const rows = [];
+  for (const width of widths) {
+    const height = Math.min(720, area.height);
+    await target.show('kokpit', 'dark', { size: [width, height] });
+    await page.waitForSelector(selectors.attentionCard, { timeout: 10_000 });
+    const m = await page.evaluate(
+      ([cardSel, lineSel, mainSel]) => {
+        const visible = (el) => {
+          const r = el.getBoundingClientRect();
+          const cs = getComputedStyle(el);
+          return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none';
+        };
+        const main = document.querySelector(mainSel);
+        const mainRight = main === null ? null : main.getBoundingClientRect().right;
+        const cards = [...document.querySelectorAll(cardSel)].filter(visible);
+        return {
+          n: cards.length,
+          mainRight,
+          cards: cards.map((card) => {
+            const line = card.querySelector(lineSel);
+            const cs = line === null ? null : getComputedStyle(line);
+            const r = card.getBoundingClientRect();
+            return {
+              line: line !== null,
+              clamp: cs === null ? '' : cs.webkitLineClamp,
+              wraps: cs !== null && cs.whiteSpace === 'normal',
+              // Horizontal clip only: the clamp's own vertical cut is the mechanism, not a defect.
+              lineClips: line !== null && line.scrollWidth > line.clientWidth + 1,
+              cardClips: card.scrollWidth > card.clientWidth + 1 || card.scrollHeight > card.clientHeight + 1,
+              pastMain: mainRight !== null && r.right > mainRight + 0.5,
+              hasAsk: card.querySelector('code') !== null,
+              top: Math.round(r.top),
+              h: r.height,
+            };
+          }),
+        };
+      },
+      [selectors.attentionCard, selectors.attentionLine, selectors.main],
+    );
+    const failures = [];
+    if (m.n === 0) failures.push('no attention cards rendered');
+    for (const [i, c] of m.cards.entries()) {
+      if (!c.line) failures.push(`card ${i + 1} has no project line`);
+      if (c.clamp !== '2') failures.push(`card ${i + 1} clamps at ${c.clamp || 'nothing'}, not 2`);
+      if (!c.wraps) failures.push(`card ${i + 1} does not wrap`);
+      if (c.lineClips) failures.push(`card ${i + 1} project line clips sideways`);
+      if (c.cardClips) failures.push(`card ${i + 1} overflows its box`);
+      if (c.pastMain) failures.push(`card ${i + 1} passes the main column`);
+    }
+    // One height per grid row: the non-ask cards whose tops align must also align their bottoms.
+    const level = new Map();
+    for (const c of m.cards) {
+      if (c.hasAsk) continue;
+      const bucket = [...level.keys()].find((t) => Math.abs(t - c.top) <= 1) ?? c.top;
+      level.set(bucket, { min: Math.min(level.get(bucket)?.min ?? Infinity, c.h), max: Math.max(level.get(bucket)?.max ?? -Infinity, c.h) });
+    }
+    for (const [top, { min, max }] of level) {
+      if (max - min > 1) failures.push(`the row at y=${top} spans ${min.toFixed(1)}–${max.toFixed(1)}px of card heights`);
+    }
+    const wrapped = m.cards.filter((c) => c.line).length;
+    rows.push({
+      ok: failures.length === 0,
+      size: `${width}x${height}`,
+      detail:
+        failures.length === 0
+          ? `${m.n} cards, ${wrapped} project lines clamp at 2, no overflow, rows level`
+          : failures.slice(0, 3).join('; '),
+    });
+  }
+  return rows;
+}
+
 // --- run ---------------------------------------------------------------------------------------------
 const args = parseArgs(process.argv.slice(2));
 if (args.target === 'prototype' && !args.path) {
   console.error('usage: layout-audit.mjs --target=prototype <path/to/index.html>');
   process.exit(2);
 }
-// Slow mode rides the same env var the design harness sets, before the app launches and
-// inherits this process's environment; only the app target has API replies to delay.
-if (args.slow && args.target === 'app') {
-  process.env.DOCKET_API_DELAY_MS = String(SLOW_API_DELAY_MS);
-}
 const target = args.target === 'prototype' ? await openPrototype(args.path) : await openApp();
+// The report is one run's world: it starts here, fresh, and every result line lands in it as it
+// is printed — the JSON mirrors the console, never judges it.
+beginReport();
 
 // The plan's real numbers, printed once so every later label can be read against them.
 for (const { name, size } of target.sizes) console.log(`size: ${name} ${size[0]}x${size[1]}`);
 let plan = comboPlan(target.sizes, { full: args.full });
-// The slow walk measures the skeletons, not the breadth: with every reply delayed the screens
-// stand mid-load by design, so the L rules would read the placeholder, not the content — the
-// default run already walked them. Only the skeleton pass runs, on the default dark combo.
-const slowCombo = args.slow ? plan.find((combo) => combo.size.name === 'default' && combo.theme === 'dark') : undefined;
-if (args.slow) plan = [];
 // The count names the run's breadth before any result lands: four by default, six with --full.
-console.log(`combos: ${plan.length}${args.full ? ' (--full)' : ''}${args.slow ? ' (--slow)' : ''}`);
+console.log(`combos: ${plan.length}${args.full ? ' (--full)' : ''}`);
 
 let failures = 0;
 let lines = 0;
@@ -786,6 +936,7 @@ for (const { size: entry, theme } of plan) {
       if (status === 'FAIL') failures += 1;
       lines += 1;
       console.log(`${r.id}: ${label} ${status} ${r.detail}`);
+      appendCheck({ id: r.id, screen, size: `${width}x${height}`, theme, status, detail: r.detail });
     }
     // The window's own containment is asserted once per size × theme, on the first screen of
     // the size: it must lie wholly inside the primary display's work area.
@@ -799,11 +950,12 @@ for (const { size: entry, theme } of plan) {
       if (!r.ok) failures += 1;
       lines += 1;
       console.log(`window: ${sizeName} ${width}x${height} ${theme} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
+      appendCheck({ id: 'window', screen: '', size: `${width}x${height}`, theme, status: r.ok ? 'ok' : 'FAIL', detail: r.detail });
     }
     // The palette is measured open once per size × theme, on the cockpit screen; the settings
     // panel is measured the same way, through the nav's Ayarlar row; the title bar's Update
     // button is measured the same way, and the first combo of the run also walks its states.
-    if (!args.slow && screen === 'kokpit' && target.selectors.palette) {
+    if (screen === 'kokpit' && target.selectors.palette) {
       let r;
       try {
         r = await paletteCheck(target, theme);
@@ -813,8 +965,9 @@ for (const { size: entry, theme } of plan) {
       if (!r.ok) failures += 1;
       lines += 1;
       console.log(`palette: ${label} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
+      appendCheck({ id: 'palette', screen, size: `${width}x${height}`, theme, status: r.ok ? 'ok' : 'FAIL', detail: r.detail });
     }
-    if (!args.slow && screen === 'kokpit' && target.selectors.settingsPanel) {
+    if (screen === 'kokpit' && target.selectors.settingsPanel) {
       let r;
       try {
         r = await settingsPanelCheck(target);
@@ -824,8 +977,9 @@ for (const { size: entry, theme } of plan) {
       if (!r.ok) failures += 1;
       lines += 1;
       console.log(`settings: ${label} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
+      appendCheck({ id: 'settings', screen, size: `${width}x${height}`, theme, status: r.ok ? 'ok' : 'FAIL', detail: r.detail });
     }
-    if (!args.slow && screen === 'kokpit' && args.target === 'app' && target.selectors.accountsFrame) {
+    if (screen === 'kokpit' && args.target === 'app' && target.selectors.accountsFrame) {
       let r;
       try {
         r = await accountsOpacityCheck(target);
@@ -835,8 +989,9 @@ for (const { size: entry, theme } of plan) {
       if (!r.ok) failures += 1;
       lines += 1;
       console.log(`accounts-opacity: ${label} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
+      appendCheck({ id: 'accounts-opacity', screen, size: `${width}x${height}`, theme, status: r.ok ? 'ok' : 'FAIL', detail: r.detail });
     }
-    if (!args.slow && screen === 'kokpit' && target.selectors.titleBar) {
+    if (screen === 'kokpit' && target.selectors.titleBar) {
       let r;
       try {
         r = await titleBarCheck(target, !walkedUpdate);
@@ -847,25 +1002,28 @@ for (const { size: entry, theme } of plan) {
       if (!r.ok) failures += 1;
       lines += 1;
       console.log(`titlebar: ${label} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
+      appendCheck({ id: 'titlebar', screen, size: `${width}x${height}`, theme, status: r.ok ? 'ok' : 'FAIL', detail: r.detail });
     }
   }
 }
-if (args.slow && target.selectors.skeleton) {
-  for (const screen of ['kokpit', 'pano', 'liste']) {
-    let r;
-    try {
-      r = await skeletonCheck(target, screen, slowCombo);
-    } catch (error) {
-      r = { ok: false, detail: `skeleton pass unreachable: ${String(error).split('\n').slice(0, 4).join(' | ')}` };
-    }
+// The attention cards' width walk runs once per run, after the combos — the app target only,
+// never the frozen prototype.
+if (args.target === 'app' && target.selectors.attentionCard) {
+  let rows;
+  try {
+    rows = await attentionCardsCheck(target);
+  } catch (error) {
+    rows = [{ ok: false, size: '', detail: `attention cards unreachable: ${String(error).split('\n')[0]}` }];
+  }
+  for (const r of rows) {
     if (!r.ok) failures += 1;
     lines += 1;
-    console.log(`skeleton: ${screen} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
+    console.log(`attention: kokpit ${r.size} dark ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
+    appendCheck({ id: 'attention', screen: 'kokpit', size: r.size, theme: 'dark', status: r.ok ? 'ok' : 'FAIL', detail: r.detail });
   }
 }
-// The without-standing runs once per run, on its own fake-free launch — the default run;
-// the slow walk has its own launch and its own subject.
-if (!args.slow && target.selectors.titleBar) {
+// The without-standing runs once per run, on its own fake-free launch.
+if (target.selectors.titleBar) {
   let r;
   try {
     r = await plainTitleBarCheck();
@@ -875,7 +1033,19 @@ if (!args.slow && target.selectors.titleBar) {
   if (!r.ok) failures += 1;
   lines += 1;
   console.log(`titlebar-plain: ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
+  appendCheck({ id: 'titlebar-plain', screen: '', size: '', theme: '', status: r.ok ? 'ok' : 'FAIL', detail: r.detail });
 }
 await target.close();
+// The skeleton pass closes the run on the app target (U-26), after the main app is down: three
+// lines on their own delayed launch, sized and walked by makeShow like the main run's screens.
+if (args.target === 'app' && target.selectors.skeleton) {
+  for (const r of await skeletonPass()) {
+    if (!r.ok) failures += 1;
+    lines += 1;
+    console.log(`skeleton: ${r.screen} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
+    appendCheck({ id: 'skeleton', screen: r.screen, size: '', theme: '', status: r.ok ? 'ok' : 'FAIL', detail: r.detail });
+  }
+}
 console.log(`${lines} checks, ${failures} FAIL`);
+console.log(`report: ${REPORT_PATH}`);
 process.exit(failures === 0 ? 0 : 1);

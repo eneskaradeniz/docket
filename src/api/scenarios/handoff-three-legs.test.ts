@@ -101,7 +101,7 @@ const ACCOUNT_B: AccountId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FCW');
 // included, so the continuation rides the P-46 consent the fixture records instead of a billing
 // the fake invented.
 const PROVIDER_X = 'claude-code';
-const PROVIDER_Y = 'vibe';
+const PROVIDER_Y = 'p-y';
 const ROUTE_KINDS: readonly FakeRouteKind[] = [
   {
     id: 'anthropic-subscription',
@@ -109,7 +109,7 @@ const ROUTE_KINDS: readonly FakeRouteKind[] = [
     authMode: 'subscription',
     instructionFiles: ['CLAUDE.md', 'CLAUDE.local.md', '~/.claude/projects/<project>/memory/'],
   },
-  { id: 'vibe-login', provider: PROVIDER_Y, authMode: 'subscription', defaultBilling: 'unknown', instructionFiles: ['AGENTS.md'] },
+  { id: 'p-y-login', provider: PROVIDER_Y, authMode: 'subscription', defaultBilling: 'unknown', instructionFiles: ['AGENTS.md'] },
 ];
 
 const USER: Actor = { kind: 'user', id: 'user-1', label: 'Operator' };
@@ -172,6 +172,9 @@ const bindRole = async (deps: AppDeps, role: RoleSlug, accounts: readonly Accoun
 };
 
 const editedFile = 'src/main.ts';
+
+/** The worktree base sha the changes gate's diff starts from (A-96). */
+const WORKTREE_BASE = 'wo-base-0001';
 /** A token-shaped string planted in the fixture diff — the pack must never carry it unredacted. */
 const PLANTED_TOKEN = 'sk-live-9f14c2ab67de40519b3f7b8ea2d60c41';
 const REDACTED = '[REDACTED]';
@@ -406,6 +409,10 @@ describe('limit handoff, three legs over fakes', () => {
     const id = await openViaApi(h.deps, 'Hand off across the window limit');
     expect(id).toBeDefined();
     if (id === undefined) return;
+    // The implement run's edit also stands in the worktree-base diff the changes gate counts
+    // (A-96): one changed file since the base, same file the handoff pack carries.
+    h.checkpoints.setBase(id, WORKTREE_BASE);
+    h.checkpoints.setDiff(WORKTREE_BASE, { files: [editedFile], patch: RAW_PATCH });
     h.clock.advance(1_000);
     let view = await viewOf(h.deps, id);
     expectState(view, { status: 'ready', stage: PLAN, pendingGates: [PLAN_APPROVAL] });

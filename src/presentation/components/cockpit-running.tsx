@@ -24,11 +24,11 @@ export interface CockpitRunningRowProps {
 
 function StageStrip({ index, count }: { readonly index: number; readonly count: number }) {
   return (
-    <span aria-hidden="true" title={`${index}/${count}`} className="ml-2 inline-flex items-center gap-[3px] align-middle">
+    <span aria-hidden="true" title={`${index}/${count}`} className="ml-2 inline-flex items-center gap-[0.1875rem] align-middle">
       {Array.from({ length: count }, (_, at) => (
         <i
           key={at}
-          className={`h-[3px] w-3.5 rounded-full ${at + 1 < index ? 'bg-proceed' : at + 1 === index ? 'bg-signal' : 'bg-hairline'}`}
+          className={`h-[0.1875rem] w-3.5 rounded-full ${at + 1 < index ? 'bg-proceed' : at + 1 === index ? 'bg-signal' : 'bg-hairline'}`}
         />
       ))}
     </span>
@@ -47,6 +47,7 @@ export function CockpitRunningRow({ run, locale, accountLabel, accountProvider, 
   const queued = isQueued(run);
   const strip = queued ? null : stageStrip(run);
   const title = run.title !== undefined && run.title !== '' ? run.title : null;
+  const stageLine = queued ? `${run.stage} · ${queuedNote(run, locale)}` : run.stage;
   return (
     <button
       type="button"
@@ -56,27 +57,28 @@ export function CockpitRunningRow({ run, locale, accountLabel, accountProvider, 
       } ${queued ? 'border-dashed border-hairline bg-transparent opacity-60' : 'border-hairline bg-surface'}`}
     >
       <ProviderMark provider={accountProvider} mark={mark} />
-      <span className="font-mono text-[11.5px] text-inkdim">{formatWorkOrderCode(run.number, locale)}</span>
+      <span className="font-mono text-[0.71875rem] text-inkdim">{formatWorkOrderCode(run.number, locale)}</span>
       <span className="grid min-w-0">
         {title !== null ? (
-          <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-semibold text-ink" title={title}>
+          <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[0.8125rem] font-semibold text-ink" title={title}>
             {title}
           </span>
         ) : null}
         <span
-          className={`min-w-0 overflow-hidden text-ellipsis whitespace-nowrap ${title !== null ? 'text-[11.5px] text-inkdim' : 'text-[13px] font-semibold text-ink'}`}
-          title={run.stage}
+          className={`min-w-0 overflow-hidden text-ellipsis whitespace-nowrap ${title !== null ? 'text-[0.71875rem] text-inkdim' : 'text-[0.8125rem] font-semibold text-ink'}`}
+          // The whole line rides the title, not only the stage: in the narrow queued column the
+          // waiting note after it gets clipped, and clipped text must stay reachable in full.
+          title={stageLine}
         >
-          {run.stage}
-          {queued ? ` · ${queuedNote(run, locale)}` : null}
+          {stageLine}
           {strip !== null ? <StageStrip index={strip.index} count={strip.count} /> : null}
         </span>
       </span>
-      <span className="whitespace-nowrap text-[12px] text-inkdim">{accountLabel}</span>
-      <span className="whitespace-nowrap font-mono text-[11.5px] text-inkdim">{formatAge(locale, sinceMs)}</span>
+      <span className="whitespace-nowrap text-[0.75rem] text-inkdim">{accountLabel}</span>
+      <span className="whitespace-nowrap font-mono text-[0.71875rem] text-inkdim">{formatAge(locale, sinceMs)}</span>
       <span
         aria-hidden="true"
-        className={`h-[11px] w-[11px] rounded-full border-[1.5px] border-inkdim ${queued ? 'border-dotted' : 'border-t-transparent motion-safe:animate-spin'}`}
+        className={`h-[0.6875rem] w-[0.6875rem] rounded-full border-[1.5px] border-inkdim ${queued ? 'border-dotted' : 'border-t-transparent motion-safe:animate-spin'}`}
       />
     </button>
   );

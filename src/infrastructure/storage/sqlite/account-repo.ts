@@ -84,7 +84,16 @@ export function createSqliteAccountRepo(db: DocketDb): AccountRepo {
     recordSpend: async (entry): Promise<void> => {
       db.raw
         .prepare('INSERT INTO spend (account_id, project, repo, work_order_id, at, usd) VALUES (?, ?, ?, ?, ?, ?)')
-        .run(entry.accountId, entry.project, entry.repo, entry.workOrderId, entry.at, entry.usd);
+        .run(
+          entry.accountId,
+          // An account test belongs to no project, repo or work order: empty strings keep every
+          // such filter from matching it while an accountId filter still counts it.
+          'kind' in entry ? '' : entry.project,
+          'kind' in entry ? '' : entry.repo,
+          'kind' in entry ? '' : entry.workOrderId,
+          entry.at,
+          entry.usd,
+        );
     },
 
     spend: async (filter): Promise<number> => {

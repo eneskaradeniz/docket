@@ -15,17 +15,6 @@ const DEFAULT_ROUTE_KINDS: Readonly<Record<string, Readonly<Partial<Record<AuthM
   agy: { subscription: 'agy-subscription' },
   cursor: { subscription: 'cursor-subscription' },
   opencode: { subscription: 'opencode-subscription' },
-  hermes: { subscription: 'hermes-subscription' },
-  kilo: { subscription: 'kilo-login' },
-  'grok-build': { subscription: 'grok-build-login' },
-  atomcode: { subscription: 'atomcode-login' },
-  reasonix: { subscription: 'reasonix-login' },
-  vibe: { subscription: 'vibe-login' },
-  mimo: { subscription: 'mimo-login' },
-  qwen: { subscription: 'qwen-login' },
-  qoder: { subscription: 'qoder-login' },
-  kiro: { subscription: 'kiro-login' },
-  kimi: { subscription: 'kimi-login' },
 };
 
 export const createCapabilityCatalog = (): CapabilityCatalog => ({

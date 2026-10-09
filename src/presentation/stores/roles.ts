@@ -67,6 +67,20 @@ export const effortOptions = (models: readonly ModelView[]): readonly string[] =
   return seen;
 };
 
+export interface StyleChoice {
+  readonly style: WorkStyle;
+  /** The role's recommended style carries the "Önerilen" tag in the Listbox (U-33). */
+  readonly recommended: boolean;
+}
+
+/** The work-style Listbox of a role row (U-43): Hızlı · Dengeli · Özenli, the recommended one tagged. */
+export const styleChoices = (row: Pick<RoleRow, 'recommended'>): readonly StyleChoice[] =>
+  WORK_STYLES.map((style) => ({ style, recommended: style === row.recommended }));
+
+/** What the Listbox button reads for a role: a preset's own name; "Özel" for any other pair; and a
+ *  role with neither tier nor thinking set shows no selection. */
+export const styleStanding = (style: RoleWorkStyle): WorkStyle | 'custom' | null => (style === 'unset' ? null : style);
+
 export interface ChainEntry {
   readonly accountId: string;
   readonly model: string | null;
@@ -99,6 +113,10 @@ export interface RoleAccount {
   readonly id: string;
   readonly label: string;
   readonly provider: string;
+  /** The account's billing view: automatic switching skips one that is not included (U-42). */
+  readonly billing: 'included' | 'metered' | 'unknown';
+  /** The account rides a key: an included one reads "Abonelik · anahtarla". */
+  readonly viaKey: boolean;
 }
 
 export interface RolesState {
@@ -129,6 +147,21 @@ export const globalChainOf = (bindings: readonly SettingsBindingView[]): readonl
   let best: { ids: readonly string[]; count: number } | undefined;
   for (const entry of counts.values()) if (best === undefined || entry.count > best.count) best = entry;
   return best?.ids ?? [];
+};
+
+/** The empty-chain line's key: with no account at all the line asks for one; with accounts but an
+ *  empty chain it asks for the recommended setup or a pick — the same empty look is not the same
+ *  problem, and the copy must not send a user who has an account to add another. Pure. */
+export const chainEmptyKey = (accountCount: number): LabelKey => (accountCount === 0 ? 'roles.chain.empty' : 'roles.chain.unbound');
+
+/** The roles an adoption must bind: those with no global binding yet. A binding at a narrower
+ *  scope is not a chain — the role still has no global accounts to run on. Pure. */
+export const unboundRoleIds = (
+  roles: readonly { readonly id: string }[],
+  bindings: readonly SettingsBindingView[],
+): readonly string[] => {
+  const bound = new Set(bindings.filter((binding) => binding.scope.level === 'global').map((binding) => binding.role));
+  return roles.filter((entry) => !bound.has(entry.id)).map((entry) => entry.id);
 };
 
 /** The complete binding as `binding.save` takes it: every stored field, a null one left out. */
@@ -201,6 +234,8 @@ export interface RolesStore {
   loadModels(accountId: string): Promise<void>;
   /** Asistan sırası: move the account at `from` by `delta` (±1); saves every listed role. */
   moveGlobal(from: number, delta: number): Promise<void>;
+  /** Asistan sırası: append an account the chain does not hold; saves every listed role. */
+  addGlobal(accountId: string): Promise<void>;
   setStyle(role: string, style: WorkStyle): Promise<void>;
   resetStyle(role: string): Promise<void>;
   /** "Önerilenleri uygula": the recommended style for exactly the roles with no style stored. */
@@ -255,7 +290,13 @@ export const createRolesStore = (deps: RolesStoreDeps): RolesStore => {
     bindings = view.bindings;
     rebuild({
       loading: false,
-      accounts: view.accounts.map((account) => ({ id: account.id, label: account.label, provider: account.provider })),
+      accounts: view.accounts.map((account) => ({
+        id: account.id,
+        label: account.label,
+        provider: account.provider,
+        billing: account.billing,
+        viaKey: account.authMode === 'api_key',
+      })),
     });
   };
 
@@ -303,6 +344,19 @@ export const createRolesStore = (deps: RolesStoreDeps): RolesStore => {
     return next;
   };
 
+  /** A new shared chain reaches every role: each saves its complete binding with the new order,
+   *  because `binding.save` replaces the whole binding (A-49) — a role with its own chain keeps
+   *  it, pin included. */
+  const saveGlobalChain = async (next: readonly string[]): Promise<void> => {
+    const commands = roles.map((entry) => {
+      const row = rowOf(entry.id);
+      const own = row !== undefined && row.chainMode === 'own' && bindings.some((b) => b.scope.level === 'global' && b.role === entry.id);
+      const chain: readonly ChainEntry[] = own && row !== undefined ? row.chain : next.map((accountId) => ({ accountId, model: null }));
+      return bindingCommand(entry.id, chain, row?.tier ?? null, row?.thinking ?? null);
+    });
+    await runAll('chain', commands);
+  };
+
   deps.changes((change) => {
     if (change.type === 'update.changed' || roles.length === 0) return;
     void load();
@@ -322,13 +376,11 @@ export const createRolesStore = (deps: RolesStoreDeps): RolesStore => {
     moveGlobal: async (from, delta) => {
       const next = move(state.globalChain, from, delta);
       if (next === null) return;
-      const commands = roles.map((role) => {
-        const row = rowOf(role.id);
-        const own = row !== undefined && row.chainMode === 'own' && bindings.some((b) => b.scope.level === 'global' && b.role === role.id);
-        const chain: readonly ChainEntry[] = own && row !== undefined ? row.chain : next.map((accountId) => ({ accountId, model: null }));
-        return bindingCommand(role.id, chain, row?.tier ?? null, row?.thinking ?? null);
-      });
-      await runAll('chain', commands);
+      await saveGlobalChain(next);
+    },
+    addGlobal: async (accountId) => {
+      if (state.globalChain.includes(accountId)) return;
+      await saveGlobalChain([...state.globalChain, accountId]);
     },
     setStyle: (role, style) => {
       const pair = styleSettings(style);

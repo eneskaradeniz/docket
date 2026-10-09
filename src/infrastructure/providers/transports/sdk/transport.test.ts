@@ -821,10 +821,38 @@ describe('createSdkTransport', () => {
           CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
           ANTHROPIC_BASE_URL: ZAI_ENDPOINT,
           ANTHROPIC_AUTH_TOKEN: ROUTE_TOKEN,
-          ANTHROPIC_DEFAULT_OPUS_MODEL: 'glm-5.3',
-          ANTHROPIC_DEFAULT_SONNET_MODEL: 'glm-5.3-flash',
-          ANTHROPIC_DEFAULT_HAIKU_MODEL: 'glm-5.3-flash',
+          ANTHROPIC_DEFAULT_OPUS_MODEL: 'glm-5.3[1m]',
+          ANTHROPIC_DEFAULT_SONNET_MODEL: 'glm-5.3-flash[1m]',
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: 'glm-5.3-flash[1m]',
         });
+      });
+
+      it('I-34: a compatible-endpoint run hands the CLI the tier model id with its [1m] context tag, verbatim', async () => {
+        // The tag is the CLI's context-size spelling: the CLI strips it from the wire id and turns
+        // it into the 1M-context beta header, and the endpoint rejects the bare spelling. The id
+        // the registry fixes must reach the CLI exactly as written, tag included, for both bundled
+        // models.
+        const accounts = createFakeAccountRepo();
+        await accounts.save(account('api_key', 'ref-zai', { routeKind: 'zai-glm', endpoint: ZAI_ENDPOINT }));
+        const secrets = createFakeSecretVault();
+        await secrets.put('ref-zai', ROUTE_TOKEN);
+        for (const model of ['glm-5.3[1m]', 'glm-5.3-flash[1m]']) {
+          const { query, calls } = scriptedQuery(async function* () {
+            yield successResult(0);
+          });
+          const transport = createSdkTransport({
+            clock: createFakeClock(START_AT),
+            accounts,
+            secrets,
+            capabilities: routeCatalog,
+            baseEnv: {},
+            query,
+          });
+
+          await collect(unwrap(await transport.start(request({ route: { accountId: ACCOUNT, model } }))).events);
+
+          expect(calls[0]?.options.model).toBe(model);
+        }
       });
 
       it('I-34: the account tierModels override the route kind defaults per tier', async () => {
@@ -833,7 +861,7 @@ describe('createSdkTransport', () => {
           account('api_key', 'ref-zai', {
             routeKind: 'zai-glm',
             endpoint: ZAI_ENDPOINT,
-            tierModels: { strong: 'glm-5.3', balanced: 'glm-5.3', fast: 'glm-5.3-flash' },
+            tierModels: { strong: 'glm-5.3[1m]', balanced: 'glm-5.3', fast: 'glm-5.3-flash[1m]' },
           }),
         );
         const secrets = createFakeSecretVault();
@@ -855,9 +883,9 @@ describe('createSdkTransport', () => {
         // Only balanced is overridden away from the kind default; strong and fast stay as the
         // registry fixes them.
         expect(calls[0]?.options.env).toMatchObject({
-          ANTHROPIC_DEFAULT_OPUS_MODEL: 'glm-5.3',
+          ANTHROPIC_DEFAULT_OPUS_MODEL: 'glm-5.3[1m]',
           ANTHROPIC_DEFAULT_SONNET_MODEL: 'glm-5.3',
-          ANTHROPIC_DEFAULT_HAIKU_MODEL: 'glm-5.3-flash',
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: 'glm-5.3-flash[1m]',
         });
       });
 

@@ -49,6 +49,16 @@
   --write: #8250df;
 }
 
+/* The proportional scale (U-53): the interface grows with the window — one rule on the root, in
+   CSS, never a JS measurement. 1440 px anchors 100 %; every px past it adds 0.003571 px (the
+   multiplier is unitless, so it adds px, not percent — 0.003571 = 4 px / 1120 px, the 16 → 20 px
+   walk from 1440 to 2560) until the 125 % clamp, so a 0.8125 rem line reads 13 px at 1280 and
+   16.25 px at 2560, and the sidebar's 16.5 rem walks 264 → 330 px. No other rule may touch the
+   root font-size; px survives only where a hairline must stay a hairline. */
+html {
+  font-size: clamp(100%, calc(100% + (100vw - 1440px) * 0.003571), 125%);
+}
+
 /* The Tailwind bridge: every book variable becomes a theme token, so utilities (bg-surface,
    text-dim through the legacy inkdim alias, border-bord, text-signal-ink, …) are generated from
    this layer alone. The alias keeps the historical utility names usable while the book's own
@@ -89,4 +99,48 @@
   --color-exec: var(--exec);
   --font-sans: var(--sans);
   --font-mono: var(--mono);
+}
+
+/* The thin progress line under a toolbar while a scan runs (U-42): a bar sliding across its track. */
+@keyframes scan {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+
+/* The toast's two legs (U-50): the card slides in from the right; its progress line drains from
+   full to empty over the toast's own duration (set inline per toast), holding still under a
+   hover or a focus through the play-state the host pauses with. */
+@keyframes toast-in {
+  from {
+    transform: translateX(28px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+@keyframes toast-drain {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+/* A finishing step's check drawing itself (U-49): the stroke travels once, from nothing to the
+   full tick. The path carries a dasharray as its base state, so a reduced-motion page simply
+   shows the finished check — the animation is a motion-safe extra, never the information. */
+@keyframes check-draw {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
 }

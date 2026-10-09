@@ -16,6 +16,7 @@ const ENDPOINT: AccountCandidate = {
   sourcePath: '/home/u/.claude-glm',
   displayPath: '~/.claude-glm',
   kind: 'compatible_endpoint',
+  provider: 'prov-a',
   routeKind: 'endpoint-route',
   endpointHost: 'api.example.test',
   hasOauthLogin: false,
@@ -45,13 +46,13 @@ const setup = () => {
 };
 
 describe('accounts.candidates', () => {
-  it('returns the scan result, cached for the session, and rescans on refresh', async () => {
+  it('A-85: returns the remembered scan to every reader; fresh: true scans anew and replaces it', async () => {
     const h = setup();
     const api = createApi(h.deps, undefined, undefined, undefined, undefined, undefined, h);
-    expect(await api.query({ type: 'accounts.candidates' })).toEqual([{ ...ENDPOINT, provider: 'prov-a' }]);
+    expect(await api.query({ type: 'accounts.candidates' })).toEqual([{ ...ENDPOINT, provider: 'prov-a', billing: 'unknown' }]);
     await api.query({ type: 'accounts.candidates' });
     expect(h.scans.count).toBe(1);
-    await api.query({ type: 'accounts.candidates', refresh: true });
+    await api.query({ type: 'accounts.candidates', fresh: true });
     expect(h.scans.count).toBe(2);
   });
 
@@ -64,14 +65,103 @@ describe('accounts.candidates', () => {
     });
     const rows = await api.query({ type: 'accounts.candidates' });
     expect(rows).toEqual([
-      { ...ENDPOINT, provider: 'prov-a' },
-      { ...stranger, provider: null },
+      { ...ENDPOINT, provider: 'prov-a', billing: 'unknown' },
+      { ...stranger, provider: null, billing: 'unknown' },
     ]);
+  });
+
+  it('A-83a: a candidate carries its route kind’s declared billing, else the fallback by kind', async () => {
+    const h = setup();
+    const zai: AccountCandidate = { ...ENDPOINT, sourcePath: '/home/u/.zai', routeKind: 'zai-route' };
+    const metered: AccountCandidate = { ...ENDPOINT, sourcePath: '/home/u/.api', routeKind: 'api-route' };
+    const subscription: AccountCandidate = {
+      ...ENDPOINT,
+      sourcePath: '/home/u/.sub',
+      kind: 'subscription',
+      routeKind: 'sub-route',
+      hasOauthLogin: true,
+      envOverrides: [],
+    };
+    const deps = createFakeDeps({
+      clock: createFakeClock(1_000),
+      capabilities: createFakeCapabilityCatalog([
+        { id: 'endpoint-route', provider: 'prov-a', authMode: 'api_key' },
+        { id: 'zai-route', provider: 'prov-a', authMode: 'api_key', defaultBilling: 'included' },
+        { id: 'api-route', provider: 'prov-a', authMode: 'api_key', defaultBilling: 'metered' },
+        { id: 'sub-route', provider: 'prov-a', authMode: 'subscription' },
+      ]),
+    });
+    const api = createApi(deps, undefined, undefined, undefined, undefined, undefined, {
+      ...h,
+      discovery: { scan: async () => [ENDPOINT, zai, metered, subscription] },
+    });
+    const rows = (await api.query({ type: 'accounts.candidates' })) as readonly { readonly billing: string }[];
+    expect(rows.map((row) => row.billing)).toEqual(['unknown', 'included', 'metered', 'included']);
   });
 
   it('answers not_found when no discovery is composed', async () => {
     const api = createApi(setup().deps);
     expect(await api.query({ type: 'accounts.candidates' })).toEqual({ ok: false, code: 'not_found' });
+  });
+
+  it('A-85: a just-adopted source reads alreadyAdded without a new scan', async () => {
+    const SUBSCRIPTION: AccountCandidate = {
+      sourcePath: '/home/u/.claude-work',
+      displayPath: '~/.claude-work',
+      kind: 'subscription',
+      provider: 'prov-a',
+      routeKind: 'sub-route',
+      hasOauthLogin: true,
+      envOverrides: [],
+      warnings: [],
+      alreadyAdded: false,
+    };
+    const UNTOUCHED: AccountCandidate = { ...SUBSCRIPTION, sourcePath: '/home/u/.claude-other', displayPath: '~/.claude-other' };
+    const MACHINE: AccountCandidate = {
+      sourcePath: 'machine-login:prov-b',
+      displayPath: '~/.prov-b',
+      kind: 'machine_login',
+      provider: 'prov-b',
+      routeKind: 'machine-route',
+      hasOauthLogin: true,
+      envOverrides: [],
+      warnings: [],
+      alreadyAdded: false,
+    };
+    const scans = { count: 0 };
+    const discovery: AccountDiscovery = {
+      scan: async () => {
+        scans.count += 1;
+        return [SUBSCRIPTION, ENDPOINT, MACHINE, UNTOUCHED];
+      },
+    };
+    const deps = createFakeDeps({
+      clock: createFakeClock(1_000),
+      capabilities: createFakeCapabilityCatalog([
+        { id: 'sub-route', provider: 'prov-a', authMode: 'subscription' },
+        { id: 'endpoint-route', provider: 'prov-a', authMode: 'api_key', endpointHost: 'api.example.test' },
+        { id: 'machine-route', provider: 'prov-b', authMode: 'subscription' },
+      ]),
+    });
+    const api = createApi(deps, undefined, undefined, undefined, undefined, undefined, { discovery, importer: setup().importer });
+
+    await api.query({ type: 'accounts.candidates' });
+    expect(scans.count).toBe(1);
+    for (const candidate of [SUBSCRIPTION, ENDPOINT, MACHINE]) {
+      const adopted = await api.command(ACTOR, { type: 'account.adopt', sourcePath: candidate.sourcePath, label: 'L' });
+      expect(adopted.ok).toBe(true);
+    }
+    // The remembered scan still answers, but its alreadyAdded flags are decided against the store.
+    const rows = (await api.query({ type: 'accounts.candidates' })) as readonly {
+      readonly sourcePath: string;
+      readonly alreadyAdded: boolean;
+    }[];
+    expect(scans.count).toBe(1);
+    const byPath = new Map(rows.map((row) => [row.sourcePath, row.alreadyAdded]));
+    expect(byPath.get(SUBSCRIPTION.sourcePath)).toBe(true);
+    expect(byPath.get(ENDPOINT.sourcePath)).toBe(true);
+    expect(byPath.get(MACHINE.sourcePath)).toBe(true);
+    expect(byPath.get(UNTOUCHED.sourcePath)).toBe(false);
   });
 });
 
@@ -93,7 +183,7 @@ describe('account.adopt', () => {
     expect(h.log.entries().map((entry) => entry.action)).toContain('account.adopted');
   });
 
-  it('maps the use case errors onto codes and drops the stale candidate cache', async () => {
+  it('A-85: an adoption after the candidates query adds no scan; the remembered scan serves both', async () => {
     const h = setup();
     const api = createApi(h.deps, undefined, undefined, undefined, undefined, undefined, h);
     expect(await api.command(ACTOR, { type: 'account.adopt', sourcePath: '/nowhere', label: 'X' })).toEqual({
@@ -102,10 +192,15 @@ describe('account.adopt', () => {
     });
     await api.query({ type: 'accounts.candidates' });
     const before = h.scans.count;
-    await api.command(ACTOR, { type: 'account.adopt', sourcePath: ENDPOINT.sourcePath, label: 'GLM' });
+    const adopted = await api.command(ACTOR, { type: 'account.adopt', sourcePath: ENDPOINT.sourcePath, label: 'GLM' });
+    expect(adopted.ok).toBe(true);
     await api.query({ type: 'accounts.candidates' });
-    // The adoption scanned once itself and the cache was dropped, so the query scanned again.
-    expect(h.scans.count).toBe(before + 2);
+    expect(h.scans.count).toBe(before);
+    // The scan predates the stored account, so a second adoption of the same path is refused.
+    expect(await api.command(ACTOR, { type: 'account.adopt', sourcePath: ENDPOINT.sourcePath, label: 'Again' })).toEqual({
+      ok: false,
+      code: 'already_added',
+    });
   });
 
   it('answers not_found when no discovery is composed', async () => {

@@ -14,6 +14,14 @@
 // decideHumanGate. The only direct port writes are the facts no use-case produces at seed time:
 // finished agent runs, quota windows and recorded spend.
 //
+// The one LIVE piece is İE-0029's permission ask. A seeded ask — an event written straight to
+// the store — can never be answered: only the run executor parks an ask on the in-process
+// permission board, so `permission.answer` would answer not_found and the cockpit row would
+// never close. The seed therefore queues the stage (enqueueStage) on the account whose provider
+// the harness overrides, and the scripted design-agent asks the prototype's command over the
+// real ACP transport once the launched app's dispatcher starts the run. Answering in the UI then
+// resolves the board entry and the permission_answered event closes the row (#815).
+//
 // Determinism: a fixed clock and a zero random source. The ULID generator stays monotonic when the
 // clock moves backwards, so ids follow creation order and repeat exactly run over run.
 //
@@ -25,10 +33,9 @@
 // the manifest's `codes` map stays keyed by the prototype code and each entry carries its real
 // `number` under that rule.
 import { execFileSync } from 'node:child_process';
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 
 import assert from 'node:assert';
 import { stringify } from 'yaml';
@@ -55,10 +62,11 @@ import type { AccountRecord } from '../src/application/index';
 import { saveAccount, saveBinding } from '../src/application/use-cases/accounts';
 import { decideHumanGate } from '../src/application/use-cases/gates';
 import { attachProject } from '../src/application/use-cases/projects';
+import { grantSpendConsent } from '../src/application/use-cases/spend-consent';
 import { openWorkOrder } from '../src/application/use-cases/work-orders';
+import { DEFAULT_MODEL_CONSENT } from '../src/application/services/spend-consent';
+import { enqueueStage } from '../src/application/services/dispatcher';
 import { createNodeDeps } from '../src/infrastructure/compose/create-node-deps';
-
-const here = dirname(fileURLToPath(import.meta.url));
 
 if (process.platform === 'win32') {
   throw new Error('the design seed relies on POSIX paths and script shebangs');
@@ -114,7 +122,7 @@ const STAGES = [
 ] as const;
 const FLOW_ID = 'standart-akis';
 
-type AccountKey = 'claude-max' | 'zai-glm' | 'codex-pro' | 'antigravity' | 'copilot' | 'kimi';
+type AccountKey = 'claude-max' | 'zai-glm' | 'codex-pro' | 'antigravity' | 'copilot' | 'opencode-key';
 
 /** running: an unfinished run in `stage`; awaiting: the stage's run finished and its human gate
  *  is open; ready: the stage is entered, nothing started; done: the whole flow finished. */
@@ -131,24 +139,36 @@ interface OrderPlan {
   readonly account: AccountKey;
   readonly usd?: number;
   readonly task?: string;
-  readonly ask?: string; // an open permission ask on the running run: the command asked about
+  /** The command the order's LIVE stage run asks the operator about: the seed queues the stage
+   *  (the ask rigging below the orders loop) and the scripted design-agent raises the ask when
+   *  the launched app's executor starts the run. No seeded event carries it. */
+  readonly ask?: string;
 }
 
+// Two antero-api orders the prototype shows running sit `ready` here, beside İE-0029's queued
+// stage: still-active seeded runs count against the dispatcher's limits (global 4, per-repo 3),
+// and the live ask's queue item needs a free slot on both counts or the launched app would hold
+// it waiting forever. İE-0014 stays running — its detail is the one the audits walk.
 const ORDERS: readonly OrderPlan[] = [
   // antreo-api — the board every screen lands on
   { code: 'İE-0034', repo: 'antreo-api', title: 'Rol matrisi', stage: 0, state: 'ready', minutes: 30, account: 'claude-max' },
   { code: 'İE-0038', repo: 'antreo-api', title: 'Önbellek', stage: 1, state: 'running', minutes: 4, account: 'codex-pro', usd: 0.42 },
   { code: 'İE-0014', repo: 'antreo-api', title: 'Fatura raporu', stage: 2, state: 'running', minutes: 6, account: 'zai-glm', usd: 0.31 },
   {
-    code: 'İE-0029', repo: 'antreo-api', title: 'Hız sınırı', stage: 2, state: 'running', minutes: 9, account: 'zai-glm',
-    usd: 0.09, ask: 'dotnet ef database update',
+    // The ask's command keeps the prototype's `dotnet ef database update` head (J-1 waits on the
+    // text) and carries a ~170-character tail with no break opportunity at all — the shape of a
+    // real run's ask that every surface showing an ask (the cockpit row, the live pane, the
+    // detail's ask column) must contain.
+    code: 'İE-0029', repo: 'antreo-api', title: 'Hız sınırı', stage: 2, state: 'ready', minutes: 9, account: 'zai-glm',
+    usd: 0.09,
+    ask: 'dotnet ef database update --bundle /Users/eneskaradeniz/.docket-test/antreo-api/ef-bundles/migrations/20261008091800_InvoiceReconciliationIndexes/InvoiceReconciliationBackgroundServiceIndexesBundle.csproj',
   },
   { code: 'İE-0033', repo: 'antreo-api', title: 'Log düzeni', stage: 2, state: 'ready', minutes: 25, account: 'zai-glm' },
-  { code: 'İE-0015', repo: 'antreo-api', title: 'Stok uyarısı', stage: 3, state: 'running', minutes: 3, account: 'claude-max', usd: 0.22 },
-  { code: 'İE-0032', repo: 'antreo-api', title: 'Swagger belgeleri', stage: 4, state: 'running', minutes: 14, account: 'antigravity', usd: 0.18 },
+  { code: 'İE-0015', repo: 'antreo-api', title: 'Stok uyarısı', stage: 3, state: 'ready', minutes: 3, account: 'claude-max', usd: 0.22 },
+  { code: 'İE-0032', repo: 'antreo-api', title: 'Swagger belgeleri', stage: 4, state: 'ready', minutes: 14, account: 'antigravity', usd: 0.18 },
   { code: 'İE-0046', repo: 'antreo-api', title: 'Swagger staging testi', stage: 4, state: 'awaiting', minutes: 12, account: 'antigravity', usd: 0.27 },
   { code: 'İE-0009', repo: 'antreo-api', title: 'Müşteri etiketi', stage: 5, state: 'done', minutes: 1300, account: 'claude-max', usd: 0.6 },
-  { code: 'İE-0036', repo: 'antreo-api', title: 'Webhook doğrulaması', stage: 5, state: 'done', minutes: 1500, account: 'kimi', usd: 0.4 },
+  { code: 'İE-0036', repo: 'antreo-api', title: 'Webhook doğrulaması', stage: 5, state: 'done', minutes: 1500, account: 'opencode-key', usd: 0.4 },
   { code: 'İE-0007', repo: 'antreo-api', title: 'Sipariş e-postası', stage: 5, state: 'done', minutes: 4300, account: 'claude-max', usd: 0.7 },
   // the cross-repo "Mobil login" task: İE-0044 (api) finished, İE-0045 (mobile) waits in Test
   { code: 'İE-0044', repo: 'antreo-api', title: 'Mobil login', stage: 5, state: 'done', minutes: 13_000, account: 'claude-max', usd: 1.1, task: 'mobil-login' },
@@ -295,7 +315,7 @@ const ACCOUNTS: readonly AccountPlan[] = [
     windows: [{ label: 'Haftalık pencere', kind: 'week', percent: 91, resetsAt: WEEK_RESET }],
   },
   {
-    key: 'kimi', label: 'Kimi', provider: 'opencode', authMode: 'api_key',
+    key: 'opencode-key', label: 'OpenCode API', provider: 'opencode', authMode: 'api_key',
     windows: [{ label: 'Aylık pencere', kind: 'month', percent: 99, resetsAt: MONTH_RESET }],
     monthUsd: 8.9, capUsd: 9,
   },
@@ -539,21 +559,27 @@ const approve = async (workOrderId: WorkOrderId, stage: number, at: EpochMs): Pr
   assert(decided.ok, `gate ${gate.id} did not pass: ${decided.ok ? '' : decided.error}`);
 };
 
+// The live stream's unbreakable witness (#831): a real run's tool targets are long absolute
+// paths with no break opportunities — exactly the text that widened `main` during live runs, and
+// the one the layout audit's L-14 must see on the detail screen it walks.
+const LONG_TARGET =
+  '/Users/eneskaradeniz/source/antreo/antreo-api/test/Antero.Api.ReconciliationTests/V2/Invoices/Reconciliation/InvoiceReconciliationBackgroundServiceTests/Antero.Api.ReconciliationBackgroundServiceTests.cs';
+
 const liveEvents = (plan: OrderPlan, startedAt: EpochMs): readonly AgentEvent[] => {
   const events: AgentEvent[] = [
     { type: 'session_started', at: startedAt, sessionRef: `oturum-${plan.code.toLowerCase()}` },
     { type: 'text', at: startedAt + MINUTE, delta: `${plan.title}: dosyalar okunuyor.` },
     { type: 'tool_call', at: startedAt + 2 * MINUTE, id: 'okuma-1', name: 'Read', target: 'src/service.ts' },
     { type: 'tool_result', at: startedAt + 2 * MINUTE + 5_000, id: 'okuma-1', ok: true },
+    { type: 'tool_call', at: startedAt + 2 * MINUTE + 10_000, id: 'komut-1', name: 'Bash', target: LONG_TARGET },
+    { type: 'tool_result', at: startedAt + 2 * MINUTE + 20_000, id: 'komut-1', ok: true },
     { type: 'text', at: startedAt + 3 * MINUTE, delta: 'Plan hazır, değişiklikler yazılıyor.' },
   ];
   if (plan.usd !== undefined) {
     events.push({ type: 'usage', at: startedAt + 4 * MINUTE, inputTokens: 18_200, outputTokens: 2_400, costUsd: plan.usd, costKind: 'reported' });
   }
-  if (plan.ask !== undefined) {
-    events.push({ type: 'tool_call', at: NOW - 30_000, id: 'komut-1', name: 'Bash', target: plan.ask });
-    events.push({ type: 'permission_ask', at: NOW, id: `izin-${plan.code.toLowerCase()}`, tool: 'Bash', target: plan.ask, options: ['allow', 'deny'] });
-  }
+  // No seeded permission_ask: only the executor's board can answer one, so an ask written here
+  // would strand the cockpit row. The one ask of this world rides the live queued run instead.
   return events;
 };
 
@@ -643,7 +669,7 @@ for (const plan of ORDERS_BY_CODE) {
 
 // The API-key accounts show this month's spend against their cap; one earlier order carries the
 // remainder so the totals read exactly 12,40 $ and 8,90 $.
-const carriers: Readonly<Partial<Record<AccountKey, string>>> = { 'zai-glm': 'İE-0021', kimi: 'İE-0036' };
+const carriers: Readonly<Partial<Record<AccountKey, string>>> = { 'zai-glm': 'İE-0021', 'opencode-key': 'İE-0036' };
 for (const plan of ACCOUNTS) {
   const carrier = carriers[plan.key];
   if (plan.monthUsd === undefined || carrier === undefined) continue;
@@ -660,6 +686,40 @@ for (const plan of ACCOUNTS) {
     usd: remainder,
   });
 }
+
+// --- the live permission ask -----------------------------------------------------------------------
+// İE-0029's stage is queued, never pre-run: the launched app's dispatcher starts it on its own
+// cadence, the scripted design-agent asks the plan's command over the real ACP transport, and the
+// executor parks the ask on the in-process permission board — the same production entry every
+// run uses. The UI's answer then resolves the board entry and the permission_answered event
+// closes the cockpit row (#815). Three facts make the start possible at all:
+//   - the route: a work-order-scoped binding hands this one order's stage role to the OpenCode
+//     account, the only provider whose binary the design harness overrides — every other order
+//     keeps the world's usual accounts;
+//   - the consent: an api-key route without recorded consent is refused before any write, so the
+//     account carries the default-model marker its cap already backs;
+//   - the queue item itself, written by the production use-case the UI's own enqueue command uses.
+const askingPlan = ORDERS.find((plan) => plan.ask !== undefined);
+assert(askingPlan !== undefined, 'no order carries the live ask');
+const askCommand = askingPlan.ask;
+assert(askCommand !== undefined, 'the asking plan carries its command');
+assert(askingPlan.code === 'İE-0029' && askingPlan.state === 'ready', 'the asking order must be İE-0029, ready at its stage');
+const askingOrder = codes[askingPlan.code];
+assert(askingOrder !== undefined, `${askingPlan.code} is seeded`);
+setClock(ago(askingPlan.minutes)); // queued the moment the stage stood ready
+const scopedBinding = await saveBinding(
+  deps,
+  {
+    scope: { level: 'workOrder', workOrderId: askingOrder.id },
+    binding: { role: ROLE_OF(askingPlan.stage), accounts: [{ accountId: accountOf('opencode-key') }] },
+    actor: OPERATOR,
+  },
+);
+assert(scopedBinding.ok, `the asking order's route did not bind: ${scopedBinding.ok ? '' : scopedBinding.error}`);
+const consented = await grantSpendConsent(deps, { accountId: accountOf('opencode-key'), model: DEFAULT_MODEL_CONSENT, actor: OPERATOR });
+assert(consented.ok, `the OpenCode account's consent did not record: ${consented.ok ? '' : consented.error}`);
+const queuedAsk = await enqueueStage(deps, { id: askingOrder.id });
+assert(queuedAsk.ok, `the asking stage did not enqueue: ${queuedAsk.ok ? '' : queuedAsk.error}`);
 
 // --- self-checks: the seed refuses to hand out a world that differs from the plan -----------------------
 const EXPECTED_STATUS: Readonly<Record<PlanState, string>> = {
@@ -696,11 +756,38 @@ const cockpit = (await api.query({ type: 'cockpit' })) as {
   readonly recentlyClosed: readonly { readonly workOrderId: string }[];
 };
 const attentionIds = new Set(cockpit.attention.map((item) => item.workOrderId));
-for (const code of ['İE-0029', 'İE-0012', 'İE-0031']) {
+for (const code of ['İE-0012', 'İE-0031']) {
   const seeded = codes[code];
   assert(seeded !== undefined && attentionIds.has(seeded.id), `${code} must wait on the operator in the cockpit`);
 }
-assert.equal(cockpit.attention.find((item) => item.workOrderId === codes['İE-0029']?.id)?.kind, 'permission_ask');
+// Nothing asks at seed time: the ask belongs to the live run the launched app starts. A
+// permission_ask row here would be the #815 defect again — listed forever, never answerable.
+assert.equal(cockpit.attention.filter((item) => item.kind === 'permission_ask').length, 0, 'no ask may exist before the app runs');
+assert(!attentionIds.has(askingOrder.id), 'the asking order must not sit in attention before its run asks');
+
+// The live rig, read back through the ports: one queued stage on the OpenCode account, no run
+// for the asking order, and dispatch room on both limit counts (global 4, per-repo 3) — the
+// world the launched app's dispatcher needs to start the item on its first tick.
+const queueItems = await deps.queue.list();
+assert.equal(queueItems.length, 1, 'exactly one queued stage');
+const [askItem] = queueItems;
+assert.equal(askItem.workOrderId, askingOrder.id, 'the queued stage belongs to the asking order');
+assert.equal(askItem.stage, stageSlug(askingPlan.stage), 'the queued stage is the asking one');
+assert.equal(askItem.route.accountId, accountOf('opencode-key'), 'the queued stage rides the OpenCode account');
+// Earlier stages may carry their finished runs; the ASKING stage must carry none — a seeded run
+// there would hold the work order busy and race the live attempt the dispatcher starts.
+const askingStageRuns = (await deps.runs.listForWorkOrder(askingOrder.id)).filter(
+  (run) => run.stage === stageSlug(askingPlan.stage),
+);
+assert.equal(askingStageRuns.length, 0, 'the asking stage carries no seeded run');
+const activeRuns = await deps.runs.listActive();
+assert.ok(activeRuns.length <= 3, `${activeRuns.length} active runs leave the dispatcher no global slot for the queued stage`);
+const repoOfOrder = new Map(Object.values(codes).map((entry) => [entry.id as string, entry.repo] as const));
+let activeOnAskingRepo = 0;
+for (const run of activeRuns) {
+  if (repoOfOrder.get(run.workOrderId) === askingPlan.repo) activeOnAskingRepo += 1;
+}
+assert.ok(activeOnAskingRepo <= 2, `${activeOnAskingRepo} active runs on ${askingPlan.repo} leave the dispatcher no repo slot`);
 assert.deepEqual(
   cockpit.recentlyClosed.map((item) => item.workOrderId),
   ['İE-0009', 'İE-0036', 'İE-0007', 'İE-0003', 'İE-0002'].map((code) => codes[code]?.id),
@@ -715,9 +802,87 @@ assert.deepEqual(
 node.value.close();
 
 // --- the scripted agent binary -----------------------------------------------------------------------
+// Generated, not copied: the smoke's agent belongs to the smoke, and this world's ask must name
+// İE-0029's command so the cockpit's code band reads the prototype's. Same ACP contract as the
+// smoke's (initialize → session/new → one request_permission → the answer ends the turn), so the
+// live run parks with an open, answerable ask and no timeout races anywhere.
+const designAgentScript = (command: string): string => `#!/usr/bin/env node
+// design-agent — generated by e2e/seed-design.ts. Speaks the Agent Client Protocol over stdio
+// (newline-delimited JSON-RPC 2.0) exactly as the app's ACP transport expects:
+//   --version              → print one line, exit 0 (discovery's probe)
+//   initialize             → protocolVersion 1, no optional capabilities
+//   session/new            → a fixed session id
+//   session/prompt         → emit ONE session/request_permission for the seeded command, then wait
+//   answer to that request → answer the prompt turn with stopReason end_turn, exit 0
+const PERMISSION_RPC_ID = 1001;
+
+if (process.argv.includes('--version')) {
+  process.stdout.write('docket-design-agent 1.0.0\\n');
+  process.exit(0);
+}
+
+const send = (message) => {
+  process.stdout.write(JSON.stringify(message) + '\\n');
+};
+
+import { createInterface } from 'node:readline';
+
+let promptRpcId = null;
+
+const lines = createInterface({ input: process.stdin });
+lines.on('line', (line) => {
+  const text = line.trim();
+  if (text === '') return;
+  let message;
+  try {
+    message = JSON.parse(text);
+  } catch {
+    return; // not JSON-RPC; ignored like any agent would
+  }
+
+  if (typeof message.id === 'number' && typeof message.method === 'string') {
+    if (message.method === 'initialize') {
+      send({ jsonrpc: '2.0', id: message.id, result: { protocolVersion: 1, agentCapabilities: {} } });
+      return;
+    }
+    if (message.method === 'session/new') {
+      send({ jsonrpc: '2.0', id: message.id, result: { sessionId: 'tasarim-session-1' } });
+      return;
+    }
+    if (message.method === 'session/prompt') {
+      promptRpcId = message.id;
+      send({
+        jsonrpc: '2.0',
+        id: PERMISSION_RPC_ID,
+        method: 'session/request_permission',
+        params: {
+          toolCall: {
+            name: 'Bash',
+            title: 'Hız sınırı: ${command}',
+            toolCallId: 'komut-1',
+            locations: [{ path: '${command}' }],
+          },
+          options: [
+            { optionId: 'allow-once', kind: 'allow_once' },
+            { optionId: 'reject-once', kind: 'reject_once' },
+          ],
+        },
+      });
+      return;
+    }
+    send({ jsonrpc: '2.0', id: message.id, error: { code: -32601, message: 'unknown method ' + message.method } });
+    return;
+  }
+
+  if (message.id === PERMISSION_RPC_ID && message.result !== undefined && promptRpcId !== null) {
+    send({ jsonrpc: '2.0', id: promptRpcId, result: { stopReason: 'end_turn' } });
+    process.exit(0);
+  }
+});
+`;
 const agentBin = join(home, 'bin', 'design-agent');
 mkdirSync(dirname(agentBin), { recursive: true });
-copyFileSync(resolve(here, 'smoke-agent.mjs'), agentBin);
+writeFileSync(agentBin, designAgentScript(askCommand));
 chmodSync(agentBin, 0o755);
 
 const manifest = {

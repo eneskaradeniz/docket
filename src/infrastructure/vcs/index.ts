@@ -2,4 +2,7 @@
 export * from './checkpoints';
 export * from './evidence';
 export * from './git';
+export * from './repo-folders';
 export * from './worktrees';
+export * from './worktree-files';
+

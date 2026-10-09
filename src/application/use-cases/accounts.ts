@@ -14,7 +14,7 @@ export interface BindingExists {
 
 // A-43: `URL` normalises the protocol and host, so a non-https or unparsable endpoint reads invalid
 // and a host mismatch compares against the lowercased form the registry data carries.
-const httpsUrlOf = (endpoint: string): URL | undefined => {
+export const httpsUrlOf = (endpoint: string): URL | undefined => {
   try {
     const url = new URL(endpoint);
     return url.protocol === 'https:' ? url : undefined;
@@ -37,8 +37,16 @@ const isReserveShare = (value: number | undefined): boolean =>
 const isValidReserve = (reserve: QuotaReserve | undefined): boolean =>
   reserve === undefined || (isReserveShare(reserve.short) && isReserveShare(reserve.long));
 
+// A-73: the fields a test result depends on. Tier models compare as stored JSON because the
+// record is plain data.
+export const routeChanged = (before: AccountRecord, after: AccountRecord): boolean =>
+  before.routeKind !== after.routeKind ||
+  before.endpoint !== after.endpoint ||
+  before.identityDir !== after.identityDir ||
+  JSON.stringify(before.tierModels ?? null) !== JSON.stringify(after.tierModels ?? null);
+
 export async function saveAccount(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets' | 'capabilities'>,
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets' | 'capabilities' | 'accountTests'>,
   input: { readonly record: AccountRecord; readonly secret?: string; readonly actor: Actor },
 ): Promise<
   Result<void, 'secret_without_ref' | 'invalid_endpoint' | 'endpoint_mismatch' | 'identity_dir_not_allowed' | 'invalid_reserve'>
@@ -73,8 +81,13 @@ export async function saveAccount(
   if (secret !== undefined && secretRef !== undefined) {
     await deps.secrets.put(secretRef, secret);
   }
+  // A-73: a change that makes an old test result meaningless clears it.
+  const before = await deps.accounts.get(input.record.id);
   // The record is stored verbatim — the secret itself lives only behind the ref in the vault.
   await deps.accounts.save(input.record);
+  if (before !== undefined && (secret !== undefined || routeChanged(before, input.record))) {
+    await deps.accountTests.clear(input.record.id);
+  }
   await deps.log.append({
     id: deps.ids.next<'audit'>(),
     at: deps.clock.now(),
@@ -86,7 +99,7 @@ export async function saveAccount(
 }
 
 export async function removeAccount(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets' | 'bindings'>,
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets' | 'bindings' | 'accountTests'>,
   input: { readonly id: AccountId; readonly actor: Actor },
 ): Promise<Result<void, 'not_found' | BindingExists>> {
   const record = await deps.accounts.get(input.id);
@@ -103,6 +116,7 @@ export async function removeAccount(
 
   if (record.secretRef !== undefined) await deps.secrets.remove(record.secretRef);
   await deps.accounts.remove(input.id);
+  await deps.accountTests.clear(input.id);
   await deps.log.append({
     id: deps.ids.next<'audit'>(),
     at: deps.clock.now(),

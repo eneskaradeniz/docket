@@ -6,12 +6,20 @@
 // confirmation mirrors E-8 at the button itself. Every decision is a store intent; the screen
 // only renders state and forwards clicks, and every user-visible string arrives through a label
 // key (U-1).
+// An ask's texts carry no break opportunities to rely on (whole commands, long titles), so every
+// box between such text and the ask column must be allowed to shrink below its content
+// (`min-w-0`) — intrinsic min-content otherwise widens the column's grids past the track the
+// detail layout pins — and the text either wraps anywhere or truncates with the full value on
+// its title. The layout audit's L-15 measures the result on the real asking screen.
+// The body columnates on main's container (U-55): the live pane is the fixed 22.5 rem second
+// column from ≥900, the runs list joins it as the 21.25 rem third column at ≥1700, and below 900
+// everything stacks. The screen fills the main column at every width (U-54).
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { WorkOrderStatus } from '../../domain/index';
+import type { StageFilesView, WorktreeFilePreview } from '../../api/queries';
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
 import { ActionButton } from '../components/action-button';
-import { OutcomeNotice } from '../components/outcome-notice';
 import { SectionCard } from '../components/section-card';
 import { StateBadge, type BadgeTone } from '../components/state-badge';
 import { formatWorkOrderCode } from '../stores/work-order-code';
@@ -25,6 +33,7 @@ import type {
 } from '../stores/work-order-detail';
 import { flowChips } from '../stores/work-order-detail';
 import { failureKey } from '../stores/results';
+import { toastOutcome } from '../stores/toasts';
 import { LivePaneScreen } from './live';
 
 export interface WorkOrderDetailScreenProps {
@@ -60,6 +69,7 @@ const STATUS_KEY: Readonly<Record<WorkOrderStatus, LabelKey>> = {
 const GATE_KIND_KEY: Readonly<Record<GateView['kind'], LabelKey>> = {
   human: 'gate.kind.human',
   command: 'gate.kind.command',
+  changes: 'gate.kind.changes',
   agent_verdict: 'gate.kind.agent_verdict',
   secret_scan: 'gate.kind.secret_scan',
   page_approval: 'gate.kind.page_approval',
@@ -106,8 +116,8 @@ const RUN_OUTCOME_LAMP: Readonly<Record<'running' | 'succeeded' | 'failed' | 'li
 };
 
 const INPUT_CLASS =
-  'rounded-control border border-bord bg-raised px-2 py-[5px] font-mono text-[13px] text-ink outline-none placeholder:text-inkdim focus:border-signal';
-const LABEL_CLASS = 'font-mono text-[11px] uppercase tracking-[0.06em] text-inkdim';
+  'rounded-control border border-bord bg-raised px-2 py-[0.3125rem] font-mono text-[0.8125rem] text-ink outline-none placeholder:text-inkdim focus:border-signal';
+const LABEL_CLASS = 'font-mono text-[0.6875rem] uppercase tracking-[0.06em] text-inkdim';
 
 /** Only a person opens these two kinds; every other gate is machine-evaluated, so only these
  *  carry approve/reject buttons. */
@@ -142,10 +152,10 @@ function DeployApprovalForm({
   return (
     <div className="mt-2 grid gap-2 rounded-card border border-hairline bg-band p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <code className="font-mono text-[13px] text-ink">{deploy.environment}</code>
+        <code className="font-mono text-[0.8125rem] text-ink">{deploy.environment}</code>
         {deploy.protectedEnvironment ? <StateBadge tone="signal">{t(locale, 'gate.deploy.protected')}</StateBadge> : null}
         {deploy.promoteFromChain.length > 0 ? (
-          <span className="font-mono text-[11px] text-inkdim">
+          <span className="font-mono text-[0.6875rem] text-inkdim">
             {t(locale, 'gate.deploy.prerequisite')}: {deploy.promoteFromChain.join(' → ')}
           </span>
         ) : null}
@@ -161,7 +171,7 @@ function DeployApprovalForm({
       </label>
       {deploy.protectedEnvironment ? (
         <div className="grid gap-1">
-          <p className="text-[13px] text-ink">{t(locale, 'detail.deploy.confirmPrompt')}</p>
+          <p className="text-[0.8125rem] text-ink">{t(locale, 'detail.deploy.confirmPrompt')}</p>
           <input
             value={confirmation}
             onChange={(event) => setConfirmation(event.target.value)}
@@ -181,39 +191,60 @@ function DeployApprovalForm({
 
 /** One gate row: kind name, slug, state badge — plus, in the current stage, the decision the
  *  gate's kind actually accepts: human gates take approve/reject, deploy gates take the typed
- *  approval form, secret-scan gates show their evidence standing. */
+ *  approval form, a pending changes gate takes the attestation pair (U-58), and secret-scan
+ *  gates show their evidence standing. */
 function GateRow({
   gate,
   current,
   locale,
+  awaitingHuman,
   onDecide,
+  onAttest,
   onApproveDeploy,
 }: {
   readonly gate: GateView;
   readonly current: boolean;
   readonly locale: Locale;
+  /** Whether the work order actually waits for a person — a pre-filled pending gate in `ready`
+   *  is listed, but its decision buttons stay hidden until the stage asks. */
+  readonly awaitingHuman: boolean;
   readonly onDecide: (gate: string, decision: 'approved' | 'rejected') => void;
+  readonly onAttest: (gate: string, noChangeNeeded: boolean) => void;
   readonly onApproveDeploy: (input: DeployApproveInput) => void;
 }) {
   const actionable = current && gate.status === 'pending';
   // A gate that waits on the operator tints its edge amber — the same attention edge the
-  // cockpit's rows carry; machine gates keep the plain hairline.
-  const edge = actionable && (isHumanDecision(gate) || gate.kind === 'deploy') ? 'border-signal/40' : 'border-hairline';
+  // cockpit's rows carry; machine gates keep the plain hairline. A pending changes gate waits
+  // on one the moment the machine has measured zero, so it carries the edge too.
+  const edge =
+    actionable && (isHumanDecision(gate) || gate.kind === 'deploy' || gate.kind === 'changes')
+      ? 'border-signal/40'
+      : 'border-hairline';
   return (
     <li className={`rounded-card border bg-surface px-3 py-2 ${edge}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 items-baseline gap-2">
-          <span className="text-[13.5px] font-semibold text-ink">{t(locale, GATE_KIND_KEY[gate.kind])}</span>
-          <code className="truncate font-mono text-[11px] text-inkdim" title={gate.id}>{gate.id}</code>
+          <span className="text-[0.84375rem] font-semibold text-ink">{t(locale, GATE_KIND_KEY[gate.kind])}</span>
+          <code className="truncate font-mono text-[0.6875rem] text-inkdim" title={gate.id}>{gate.id}</code>
         </div>
         <div className="flex items-center gap-2">
-          {actionable && isHumanDecision(gate) ? (
+          {actionable && awaitingHuman && isHumanDecision(gate) ? (
             <>
               <ActionButton variant="neutral" onClick={() => onDecide(gate.id, 'rejected')}>
                 {t(locale, 'action.reject')}
               </ActionButton>
               <ActionButton variant="primary" onClick={() => onDecide(gate.id, 'approved')}>
                 {t(locale, 'action.approve')}
+              </ActionButton>
+            </>
+          ) : null}
+          {actionable && gate.kind === 'changes' ? (
+            <>
+              <ActionButton variant="neutral" onClick={() => onAttest(gate.id, false)}>
+                {t(locale, 'detail.changes.attestRerun')}
+              </ActionButton>
+              <ActionButton variant="primary" onClick={() => onAttest(gate.id, true)}>
+                {t(locale, 'detail.changes.attestNoChange')}
               </ActionButton>
             </>
           ) : null}
@@ -224,7 +255,7 @@ function GateRow({
         <DeployApprovalForm gateId={gate.id} deploy={gate.deploy} locale={locale} onApprove={onApproveDeploy} />
       ) : null}
       {current && gate.kind === 'secret_scan' && gate.status !== 'upcoming' ? (
-        <p className="mt-1.5 border-l-2 border-hairline pl-2.5 text-[12.5px] text-inkdim">
+        <p className="mt-1.5 border-l-2 border-hairline pl-2.5 text-[0.78125rem] text-inkdim">
           {t(locale, gate.status === 'pending' ? 'detail.secretScan.pending' : 'detail.secretScan.passed')}
         </p>
       ) : null}
@@ -241,14 +272,14 @@ function FlowStrip({ stages, locale }: { readonly stages: readonly StageGates[];
         chip.kind === 'stage' ? (
           <span
             key={`${chip.name}:${index}`}
-            className={`inline-flex h-[26px] flex-none items-center gap-[5px] rounded-control px-2.5 text-[12.5px] ${
+            className={`inline-flex h-[1.625rem] flex-none items-center gap-[0.3125rem] rounded-control px-2.5 text-[0.78125rem] ${
               chip.standing === 'done' ? 'bg-raised text-ink' : chip.standing === 'current'
               ? 'bg-raised text-ink shadow-[0_0_0_1.5px_var(--signal)]'
               : 'bg-raised text-inkdim'
             }`}
           >
             {chip.standing === 'done' ? (
-              <span aria-hidden="true" className="grid h-4 w-4 place-items-center rounded-full bg-proceed font-mono text-[9px] font-bold leading-4 text-black">
+              <span aria-hidden="true" className="grid h-4 w-4 place-items-center rounded-full bg-proceed font-mono text-[0.5625rem] font-bold leading-4 text-black">
                 ✓
               </span>
             ) : null}
@@ -257,7 +288,7 @@ function FlowStrip({ stages, locale }: { readonly stages: readonly StageGates[];
         ) : (
           <span
             key={`gate:${chip.name}:${index}`}
-            className="inline-flex h-[26px] flex-none items-center rounded-control border border-dashed border-signal px-2.5 text-[11.5px] text-signal"
+            className="inline-flex h-[1.625rem] flex-none items-center rounded-control border border-dashed border-signal px-2.5 text-[0.71875rem] text-signal"
           >
             {t(locale, 'detail.flow.gate')} · {chip.name}
           </span>
@@ -267,11 +298,103 @@ function FlowStrip({ stages, locale }: { readonly stages: readonly StageGates[];
   );
 }
 
+function StageFilesPreview({
+  store,
+  stageFiles,
+  locale,
+}: {
+  readonly store: WorkOrderDetailStore;
+  readonly stageFiles: StageFilesView;
+  readonly locale: Locale;
+}) {
+  const [selectedFile, setSelectedFile] = useState<string | null>(
+    stageFiles.files.length > 0 ? stageFiles.files[0].path : null,
+  );
+  const [preview, setPreview] = useState<WorktreeFilePreview | 'loading' | 'error' | null>(null);
+
+  useEffect(() => {
+    if (selectedFile === null) {
+      setPreview(null);
+      return;
+    }
+    setPreview('loading');
+    let active = true;
+    void store.readStageFile(selectedFile).then((res) => {
+      if (!active) return;
+      if (res === null) {
+        setPreview('error');
+      } else {
+        setPreview(res);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [store, selectedFile]);
+
+  if (stageFiles.files.length === 0) return null;
+
+  return (
+    <div className="grid gap-2">
+      <h3 className="text-[0.78125rem] font-semibold text-inkdim">{t(locale, 'detail.expected.files')}</h3>
+      <div className="flex overflow-hidden rounded-control border border-hairline bg-surface">
+        <div className="flex w-[12.5rem] flex-none flex-col border-r border-hairline bg-subtle">
+          <ul className="flex-1 overflow-y-auto">
+            {stageFiles.files.map((file) => {
+              const isSelected = selectedFile === file.path;
+              return (
+                <li key={file.path}>
+                  <button
+                    className={`block w-full truncate px-3 py-1.5 text-left font-mono text-[0.71875rem] hover:bg-raised ${isSelected ? 'bg-raised font-semibold text-ink' : 'text-inkdim'}`}
+                    onClick={() => setSelectedFile(file.path)}
+                    title={file.path}
+                  >
+                    {file.path.split('/').pop() || file.path}
+                  </button>
+                </li>
+              );
+            })}
+            {stageFiles.truncated ? (
+              <li className="px-3 py-1.5 text-[0.6875rem] text-inkdim italic">
+                {t(locale, 'detail.expected.files.truncated')}
+              </li>
+            ) : null}
+          </ul>
+        </div>
+        <div className="flex-1 min-w-0 bg-surface">
+          {preview === 'loading' ? (
+            <div className="p-3 text-[0.75rem] text-inkdim">{t(locale, 'detail.expected.file.loading')}</div>
+          ) : preview === 'error' ? (
+            <div className="p-3 text-[0.75rem] text-signal">{t(locale, 'detail.expected.file.error')}</div>
+          ) : preview !== null ? (
+            <div className="h-[12.5rem] overflow-y-auto p-3">
+              <pre className="font-mono text-[0.71875rem] leading-[1.4] text-ink">
+                {preview.lines.join('\n')}
+              </pre>
+              {preview.truncated ? (
+                <div className="mt-2 text-[0.6875rem] text-inkdim italic">
+                  {t(locale, 'detail.expected.file.truncated')}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onBack }: WorkOrderDetailScreenProps) {
-  const state = useSyncExternalStore(store.subscribe, store.state);
+  const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   useEffect(() => {
     void store.load(workOrderId);
   }, [store, workOrderId]);
+  // Every intent's report leaves as the one toast (U-50) — once per outcome, so a re-render or
+  // a reload of the same standing never repeats it.
+  const lastOutcome = state.lastOutcome;
+  useEffect(() => {
+    if (lastOutcome !== null) toastOutcome(locale, lastOutcome);
+  }, [lastOutcome, locale]);
 
   const view = state.view;
   const asks = state.asks;
@@ -290,13 +413,20 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
       environments.push(gate.deploy);
     }
   }
-  // What the expected-of-you card decides on: the current stage's pending human gate, or — while
-  // the stage merely waits to start — the enqueue intent (U-4).
-  const pendingHumanGate = currentStage?.gates.find((gate) => gate.status === 'pending' && isHumanDecision(gate));
+  // What the expected-of-you card decides on: the current stage's pending human gate, but only
+  // while the work order actually waits for a person — the fold pre-fills the stage's gates in
+  // `ready` too, and there the card must lose to the start action (U-4).
+  const awaitingHuman = view !== null && view.state.status === 'awaiting_human';
+  const pendingHumanGate = awaitingHuman
+    ? currentStage?.gates.find((gate) => gate.status === 'pending' && isHumanDecision(gate))
+    : undefined;
   const canStart = view !== null && view.next.kind === 'start_run';
 
   const decide = (gate: string, decision: 'approved' | 'rejected'): void => {
     void store.decideGate({ gate, decision });
+  };
+  const attest = (gate: string, noChangeNeeded: boolean): void => {
+    void store.attestNoChanges({ gate, noChangeNeeded });
   };
   const approveDeploy = (input: DeployApproveInput): void => {
     void store.approveDeploy(input);
@@ -306,7 +436,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
   };
 
   return (
-    <div className="grid max-w-[1280px] gap-5">
+    <div className="grid gap-5">
       {backKey !== null ? (
         <div className="-mb-2">
           <ActionButton variant="ghost" onClick={onBack}>
@@ -318,16 +448,16 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
       <header className="grid gap-1">
         {view === null ? (
           state.loading ? (
-            <p className="font-mono text-[11px] uppercase tracking-[0.04em] text-inkdim">{t(locale, 'detail.loading')}</p>
+            <p className="font-mono text-[0.6875rem] uppercase tracking-[0.04em] text-inkdim">{t(locale, 'detail.loading')}</p>
           ) : null
         ) : (
           <>
             <div className="flex flex-wrap items-center gap-2.5">
-              <span className="font-mono text-[11px] text-inkdim">{formatWorkOrderCode(view.number, locale)}</span>
-              <h1 className="text-[20px] font-bold tracking-[-0.01em] text-ink">{view.record.title}</h1>
+              <span className="font-mono text-[0.6875rem] text-inkdim">{formatWorkOrderCode(view.number, locale)}</span>
+              <h1 className="text-[1.25rem] font-bold tracking-[-0.01em] text-ink">{view.record.title}</h1>
               <StateBadge tone={STATUS_TONE[view.state.status]}>{t(locale, STATUS_KEY[view.state.status])}</StateBadge>
             </div>
-            <p className="font-mono text-[11.5px] text-inkdim">
+            <p className="font-mono text-[0.71875rem] text-inkdim">
               {view.record.repo} · {view.record.flow}
               {currentStage !== undefined ? ` · ${currentStage.name}` : ''}
             </p>
@@ -336,33 +466,29 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
       </header>
 
       {state.problem !== null ? (
-        <div role="alert" className="rounded-card border border-error/40 bg-surface px-3 py-2 text-[13px] text-error">
+        <div role="alert" className="rounded-card border border-error/40 bg-surface px-3 py-2 text-[0.8125rem] text-error">
           {t(locale, failureKey(state.problem))}
         </div>
       ) : null}
 
-      {state.lastOutcome !== null ? (
-        <OutcomeNotice
-          ok={state.lastOutcome.result.ok}
-          text={t(locale, state.lastOutcome.labelKey)}
-          code={state.lastOutcome.result.ok ? undefined : state.lastOutcome.result.code}
-        />
-      ) : null}
-
       {view !== null ? <FlowStrip stages={state.stages} locale={locale} /> : null}
 
-      <div className="grid items-start gap-5 @[900px]:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid items-start gap-5 @[900px]:grid-cols-[minmax(0,1fr)_22.5rem] @[1700px]:grid-cols-[minmax(0,1fr)_22.5rem_21.25rem]">
         <div className="grid min-w-0 gap-5" data-detail-ask>
           {asks.length > 0 ? (
             <SectionCard title={t(locale, 'detail.section.asks')}>
-              <ul className="grid gap-2">
+              <ul className="grid min-w-0 gap-2">
                 {asks.map((ask) => (
-                  <li key={ask.askId} className="flex flex-wrap items-center justify-between gap-2 rounded-card border border-signal/40 bg-surface px-3 py-2">
+                  <li key={ask.askId} className="min-w-0 flex flex-wrap items-center justify-between gap-2 rounded-card border border-signal/40 bg-surface px-3 py-2">
                     <div className="flex min-w-0 items-center gap-3">
                       <span aria-hidden="true" className="h-2 w-2 flex-none rounded-full bg-signal motion-safe:animate-pulse" />
                       <div className="min-w-0">
-                        <span className="font-mono text-[13px] text-ink">{ask.tool}</span>
-                        {ask.target !== null ? <code className="block truncate font-mono text-[11px] text-inkdim">{ask.target}</code> : null}
+                        <span className="block truncate font-mono text-[0.8125rem] text-ink" title={ask.tool}>{ask.tool}</span>
+                        {ask.target !== null ? (
+                          <code className="block truncate font-mono text-[0.6875rem] text-inkdim" title={ask.target}>
+                            {ask.target}
+                          </code>
+                        ) : null}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -380,11 +506,16 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
           ) : null}
 
           <section className="grid gap-2.5">
-            <h2 className="text-[12.5px] font-semibold text-inkdim">{t(locale, 'detail.section.expected')}</h2>
+            <h2 className="text-[0.78125rem] font-semibold text-inkdim">{t(locale, 'detail.section.expected')}</h2>
             {view === null ? null : pendingHumanGate !== undefined ? (
               <div className="rounded-card border border-hairline bg-surface p-4">
-                <p className="text-[14px] font-semibold text-ink">{pendingHumanGate.label ?? pendingHumanGate.id}</p>
-                <p className="mt-1.5 text-[13px] text-inkdim">{t(locale, 'detail.expected.body')}</p>
+                <p className="text-[0.875rem] font-semibold text-ink">{pendingHumanGate.label ?? pendingHumanGate.id}</p>
+                <p className="mt-1.5 text-[0.8125rem] text-inkdim">{t(locale, 'detail.expected.body')}</p>
+                {state.stageFiles !== null && state.stageFiles.files.length > 0 ? (
+                  <div className="mt-4 border-t border-hairline pt-4">
+                    <StageFilesPreview store={store} stageFiles={state.stageFiles} locale={locale} />
+                  </div>
+                ) : null}
                 <div className="mt-3.5 flex gap-2">
                   <ActionButton variant="neutral" size="md" onClick={() => decide(pendingHumanGate.id, 'rejected')}>
                     {t(locale, 'detail.expected.refuse')}
@@ -396,7 +527,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
               </div>
             ) : canStart ? (
               <div className="rounded-card border border-hairline bg-surface p-4">
-                <p className="mt-1.5 text-[13px] text-inkdim">{t(locale, 'detail.expected.empty')}</p>
+                <p className="mt-1.5 text-[0.8125rem] text-inkdim">{t(locale, 'detail.expected.empty')}</p>
                 <div className="mt-3.5">
                   <ActionButton variant="primary" size="md" onClick={() => void store.enqueue()}>
                     {t(locale, 'detail.action.startStage')}
@@ -405,7 +536,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
               </div>
             ) : (
               <div className="rounded-card border border-hairline bg-surface p-4">
-                <p className="mt-1.5 text-[13px] text-inkdim">
+                <p className="mt-1.5 text-[0.8125rem] text-inkdim">
                   {t(locale, view.state.status === 'done' ? 'detail.expected.done' : 'detail.expected.empty')}
                 </p>
               </div>
@@ -417,10 +548,10 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
               {state.stages.map((stage: StageGates, index: number) => (
                 <li key={stage.stage} className="grid gap-1.5">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className={`font-mono text-[13px] ${stage.current ? 'text-signal' : 'text-inkdim'}`}>
+                    <span className={`font-mono text-[0.8125rem] ${stage.current ? 'text-signal' : 'text-inkdim'}`}>
                       {String(index + 1).padStart(2, '0')}
                     </span>
-                    <span className={`text-[14px] font-semibold ${stage.current ? 'text-ink' : 'text-inkdim'}`}>{stage.name}</span>
+                    <span className={`text-[0.875rem] font-semibold ${stage.current ? 'text-ink' : 'text-inkdim'}`}>{stage.name}</span>
                     {stage.current ? <StateBadge tone="signal">{t(locale, 'detail.stage.current')}</StateBadge> : null}
                   </div>
                   {stage.gates.length > 0 ? (
@@ -431,7 +562,9 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
                           gate={gate}
                           current={stage.current}
                           locale={locale}
+                          awaitingHuman={awaitingHuman}
                           onDecide={decide}
+                          onAttest={attest}
                           onApproveDeploy={approveDeploy}
                         />
                       ))}
@@ -442,28 +575,6 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
             </ol>
           </SectionCard>
 
-          <SectionCard title={t(locale, 'detail.section.runs')}>
-            {view === null || view.runs.length === 0 ? (
-              <p className="text-[13px] text-inkdim">{t(locale, 'detail.run.empty')}</p>
-            ) : (
-              <ul className="grid gap-1.5">
-                {view.runs.map((run) => {
-                  const outcome = run.endedAt === undefined ? 'running' : (run.outcome ?? 'running');
-                  return (
-                    <li key={run.id} className="grid grid-cols-[10px_minmax(0,1fr)_auto] items-center gap-3 rounded-card border border-hairline bg-surface px-3 py-2">
-                      <span aria-hidden="true" className={`h-2 w-2 flex-none rounded-full ${RUN_OUTCOME_LAMP[outcome]}`} />
-                      <div className="flex min-w-0 items-baseline gap-2">
-                        <code className="truncate font-mono text-[12px] text-ink">{run.id}</code>
-                        <code className="truncate font-mono text-[11px] text-inkdim">{run.stage}</code>
-                      </div>
-                      <StateBadge tone={RUN_OUTCOME_TONE[outcome]}>{t(locale, RUN_OUTCOME_KEY[outcome])}</StateBadge>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </SectionCard>
-
           {environments.length > 0 ? (
             <SectionCard title={t(locale, 'detail.section.environments')}>
               <ul className="grid gap-1.5">
@@ -471,11 +582,11 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
                   <li key={deploy.environment} className="flex flex-wrap items-center justify-between gap-2 rounded-card border border-hairline bg-surface px-3 py-2">
                     <div className="flex min-w-0 items-center gap-3">
                       <span aria-hidden="true" className="h-2 w-2 flex-none rounded-full bg-info" />
-                      <code className="font-mono text-[13px] text-ink">{deploy.environment}</code>
+                      <code className="font-mono text-[0.8125rem] text-ink">{deploy.environment}</code>
                       {deploy.protectedEnvironment ? <StateBadge tone="signal">{t(locale, 'gate.deploy.protected')}</StateBadge> : null}
                     </div>
                     {deploy.promoteFromChain.length > 0 ? (
-                      <span className="font-mono text-[11px] text-inkdim">
+                      <span className="font-mono text-[0.6875rem] text-inkdim">
                         {t(locale, 'gate.deploy.prerequisite')}: {deploy.promoteFromChain.join(' → ')}
                       </span>
                     ) : null}
@@ -487,10 +598,37 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
         </div>
 
         {livePaneVisible ? (
-          <div className="sticky top-0" data-detail-live>
+          <div className="sticky top-0 min-w-0" data-detail-live>
             <LivePaneScreen store={store.pane} locale={locale} />
           </div>
         ) : null}
+
+        {/* U-55: the runs list spans the two columns below 1700 and takes the third column's
+            place beside the live pane from ≥1700 — auto placement lands it there through the
+            explicit start, with or without a live pane showing. */}
+        <div className="grid min-w-0 gap-5 self-start @[900px]:col-span-2 @[1700px]:col-span-1 @[1700px]:col-start-3">
+          <SectionCard title={t(locale, 'detail.section.runs')}>
+            {view === null || view.runs.length === 0 ? (
+              <p className="text-[0.8125rem] text-inkdim">{t(locale, 'detail.run.empty')}</p>
+            ) : (
+              <ul className="grid gap-1.5">
+                {view.runs.map((run) => {
+                  const outcome = run.endedAt === undefined ? 'running' : (run.outcome ?? 'running');
+                  return (
+                    <li key={run.id} className="grid grid-cols-[0.625rem_minmax(0,1fr)_auto] items-center gap-3 rounded-card border border-hairline bg-surface px-3 py-2">
+                      <span aria-hidden="true" className={`h-2 w-2 flex-none rounded-full ${RUN_OUTCOME_LAMP[outcome]}`} />
+                      <div className="flex min-w-0 items-baseline gap-2">
+                        <code className="truncate font-mono text-[0.75rem] text-ink">{run.id}</code>
+                        <code className="truncate font-mono text-[0.6875rem] text-inkdim">{run.stage}</code>
+                      </div>
+                      <StateBadge tone={RUN_OUTCOME_TONE[outcome]}>{t(locale, RUN_OUTCOME_KEY[outcome])}</StateBadge>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </SectionCard>
+        </div>
       </div>
     </div>
   );

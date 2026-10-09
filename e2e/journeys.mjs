@@ -1,6 +1,7 @@
 // e2e/journeys.mjs — `npm run test:journeys`. J-1 … J-8 of docs/v2/ui.md → "Verifying the shell",
 // driven through the BUILT app on the design seed (e2e/seed-design.ts). Every step asserts visible
-// text and saves a screenshot to e2e/.out/journeys/.
+// text and saves a screenshot to e2e/.out/journeys/, and every outcome lands in the structured
+// report (e2e/report.mjs) as it is printed.
 //
 // Each size × theme combination gets its own app launch on its own fresh seed: J-1 and J-3 change
 // what the seed holds (an answered ask, an approved gate), so a shared seed would make later
@@ -12,15 +13,20 @@
 // except the work-order codes: the prototype's sparse İE-nnnn exist nowhere as numbers, so the
 // assertions use the seed's derived codes (A-29 number, U-22 format; the seed manifest maps them).
 import { strict as assert } from 'node:assert';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ROOT, launchDesignApp, setWindow } from './design-app.mjs';
 import { acquireE2eLock } from './lock.mjs';
 import { SIZE_PLAN, comboPlan, resolveSizes } from './layout-rules.mjs';
+import { appendJourney, beginReport, REPORT_PATH } from './report.mjs';
+import { launchWizardApp } from './wizard-app.mjs';
 
 const OUT = join(ROOT, 'e2e', '.out', 'journeys');
 mkdirSync(OUT, { recursive: true });
 await acquireE2eLock(ROOT);
+// test:ui:report runs this behind the audit with DOCKET_REPORT_APPEND=1 so both land in one file;
+// alone, the journey run starts its own fresh report.
+beginReport();
 
 const quick = process.argv.includes('--quick');
 const full = process.argv.includes('--full') || process.env.FULL === '1';
@@ -53,9 +59,13 @@ for (const [sizeName, theme] of combos) {
 
   let jn = '';
   let stepNo = 0;
+  // The milestones the walk has passed — the shot labels, in order; a FAIL entry keeps the ones
+  // that landed before the error, which is the honest shape of a partial walk.
+  let steps = [];
   /** Save a screenshot for the step that just passed. */
   const shot = async (label) => {
     stepNo += 1;
+    steps.push(label);
     const slug = label.toLowerCase().replace(/[^a-z0-9ğüşıöç]+/g, '-').replace(/^-|-$/g, '');
     await page.screenshot({ path: join(OUT, `${jn}-${size[0]}x${size[1]}-${theme}-${stepNo}-${slug}.png`) });
   };
@@ -63,6 +73,7 @@ for (const [sizeName, theme] of combos) {
   const journey = async (id, name, fn) => {
     jn = id;
     stepNo = 0;
+    steps = [];
     total += 1;
     const title = `${id}: ${name} [${tag}]`;
     try {
@@ -74,26 +85,37 @@ for (const [sizeName, theme] of combos) {
         .catch(() => undefined); // every journey starts at the cockpit
       await fn();
       console.log(`  ok   ${title}`);
+      appendJourney({ id: title, status: 'ok', steps });
     } catch (error) {
       failures.push(title);
       console.log(`  FAIL ${title}\n       ${String(error).split('\n')[0]}`);
+      appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).split('\n')[0] });
       await page.screenshot({ path: join(OUT, `${id}-${size[0]}x${size[1]}-${theme}-FAIL.png`) }).catch(() => undefined);
     }
   };
 
-  await journey('J-1', 'cockpit: answer a permission ask inline, the item leaves Senden bekleyenler', async () => {
+  await journey('J-1', 'cockpit: answer a permission ask inline, the permission_answered event closes the ask', async () => {
     await see('Senden bekleyenler');
-    await see('dotnet ef database update');
+    // The ask is raised by a REAL run: the seed queues İE-0029's stage and the launched app's
+    // dispatcher starts it on its own cadence (first tick 5 s in), the scripted design-agent asks
+    // over the real ACP transport and the executor parks the run on the in-process permission
+    // board. So this step waits the dispatcher out — the ask is answerable exactly because it
+    // arrived through that production entry, not through a seeded event.
+    await text('dotnet ef database update').waitFor({ state: 'visible', timeout: 30_000 });
     await shot('ask-visible');
     await button('İzin ver');
+    // The answer resolves the board entry; the executor appends permission_answered (R-44's
+    // closeness rule) and the cockpit's re-query drops the command band — the order stays listed
+    // under its next standing (the stage's human gate), which is the honest product behaviour.
     await gone('dotnet ef database update');
     await shot('ask-answered');
   });
 
   await journey('J-2', 'tree → repo row → board; Kanban ⇄ Liste survives reload', async () => {
     await click('antreo-api');
-    // The view choice persists per repo in the app profile, so the journey enters from Kanban
-    // whatever an earlier run left behind.
+    // The view choice persists per repo in the app profile; every launch starts from a throwaway
+    // profile (e2e/profile.mjs), so the board opens at Kanban — the click pins that standing
+    // whatever the app's default or the storage's history.
     await button('Kanban');
     await page.waitForSelector('[data-board-kanban]', { timeout: WAIT });
     await see('Rol matrisi');
@@ -149,9 +171,13 @@ for (const [sizeName, theme] of combos) {
     await shot('roadmap');
   });
 
-  await journey('J-6', "account card → account view → Ayarlar'da düzenle ↗ opens the settings panel; the nav's Telefon and Ayarlar rows open it on their own sections; Esc closes and the account view is still there", async () => {
+  await journey('J-6', "account card → limits popover → Hesabı aç → account view → Ayarlar'da düzenle ↗ opens the settings panel; the nav's Telefon and Ayarlar rows open it on their own sections; Esc closes and the account view is still there", async () => {
     await button('Hesapları gizle / göster'); // the frame starts collapsed; the cards need it open
+    // U-51: the card's click opens the limits popover; U-51a: its Hesabı aç button is the way
+    // into the account view (the card's own click no longer navigates).
     await click('Claude Max');
+    await see('En dar');
+    await button('Hesabı aç');
     await see('Ayarlar\'da düzenle');
     await shot('account');
     await click('Ayarlar\'da düzenle');
@@ -418,5 +444,117 @@ for (const [sizeName, theme] of combos) {
   await handle.app.close();
 }
 
+// J-9 walks the wizard on its own world (U-58 … U-60): a fresh data dir holding two adopted
+// accounts whose fixture config directories share one capability, and no project — the wizard's
+// own precondition. It runs once per run, not per size × theme combination: the wizard is a
+// first-run surface with its own launch, and its walk asserts the step machine, not the layout.
+{
+  const handle = await launchWizardApp();
+  const { page } = handle;
+  const text = (t) => page.getByText(t, { exact: false }).first();
+  const see = async (t) => text(t).waitFor({ state: 'visible', timeout: WAIT });
+  const click = async (t) => text(t).click({ timeout: WAIT });
+  const button = async (name) => page.getByRole('button', { name }).first().click({ timeout: WAIT });
+
+  let jn = 'J-9';
+  let stepNo = 0;
+  let steps = [];
+  const shot = async (label) => {
+    stepNo += 1;
+    steps.push(label);
+    const slug = label.toLowerCase().replace(/[^a-z0-9ğüşıöç]+/g, '-').replace(/^-|-$/g, '');
+    await page.screenshot({ path: join(OUT, `${jn}-${stepNo}-${slug}.png`) });
+  };
+  const title = 'J-9: wizard: Yetenekler reads both accounts, syncs the shared row and imports it at the finish';
+  total += 1;
+  try {
+    // Hoş geldin → Hesaplar: the two seeded accounts, both already selected. The fixture home
+    // holds no `.claude*` directory and no installable CLI, so exactly these two rows can ever
+    // stand under Bulunanlar — the count is the world's hermeticity assertion, not just readiness.
+    await see('Hoş geldin');
+    await shot('welcome');
+    await button('Devam');
+    await page.locator('[data-account-section="found"] [data-account-row]').first().waitFor({ state: 'visible', timeout: WAIT });
+    const foundRows = page.locator('[data-account-section="found"] [data-account-row]');
+    const rowCount = await foundRows.count();
+    assert(rowCount === 2, `the wizard world must list exactly the two fixture accounts under Bulunanlar, saw ${rowCount}`);
+    await see('Kişisel');
+    await see('İş');
+    // "Hatalı ve bulunamayanlar" folds the builtin defs' own candidates — nothing was scanned to
+    // produce them, so no row there may name an absolute path: neither the fixture home nor the
+    // operator's real one (the harness env keeps the real HOME; the app env does not).
+    const failedRows = page.locator('[data-account-section="failed"] [data-account-row]');
+    const failedCount = await failedRows.count();
+    for (let at = 0; at < failedCount; at += 1) {
+      const rowText = (await failedRows.nth(at).textContent()) ?? '';
+      assert(
+        !rowText.includes(handle.dirs.home) && !rowText.includes(process.env.HOME ?? '\u0000'),
+        `a failed-section row names a real path: ${rowText.slice(0, 120)}`,
+      );
+    }
+    await shot('accounts');
+    await button('Devam');
+    // Yetenekler: one group per account; the shared capability is one row in both groups. The
+    // group titles read "Asistan · Hesap" — the provider's name · the account's label (U-59).
+    await page.locator('[data-cap-group]').first().waitFor({ state: 'visible', timeout: WAIT });
+    const groupCount = await page.locator('[data-cap-group]').count();
+    assert(groupCount === 2, `expected 2 capability groups, saw ${groupCount}`);
+    await page.locator('[data-cap-row="mcp:db|docker"]').waitFor({ state: 'visible', timeout: WAIT });
+    const sharedRows = page.locator('[data-cap-row="mcp:fetch|npx"]');
+    assert((await sharedRows.count()) === 2, `the shared capability should list in both groups, saw ${await sharedRows.count()}`);
+    await shot('capabilities');
+    // Toggling one row syncs the other by identity (U-59). The row carries two buttons — the
+    // checkbox toggle and the ⓘ trigger — so both are reached by their own role, never `button`.
+    const [accA, accB] = handle.seed.accounts.map((account) => account.id);
+    const rowIn = (group) => `[data-cap-group="${group}"] [data-cap-row="mcp:fetch|npx"]`;
+    await page.locator(`${rowIn(accA)} [role="checkbox"]`).click({ timeout: WAIT });
+    await page.waitForFunction(
+      ([selA, selB]) =>
+        document.querySelector(`${selA} [role="checkbox"]`)?.getAttribute('aria-checked') === 'true' &&
+        document.querySelector(`${selB} [role="checkbox"]`)?.getAttribute('aria-checked') === 'true',
+      [rowIn(accA), rowIn(accB)],
+      { timeout: WAIT },
+    );
+    await shot('row-synced');
+    // The ⓘ popover lists the Kaynaklar — one "Asistan · Hesap" per source. Scoped to the row:
+    // exactly one ⓘ carries this accessible name inside it.
+    await page.locator(rowIn(accA)).getByRole('button', { name: 'Bilgi: fetch' }).click({ timeout: WAIT });
+    await see('Kaynaklar');
+    await see('Claude Code · Kişisel');
+    await see('Claude Code · İş');
+    await shot('info-kaynaklar');
+    await page.keyboard.press('Escape');
+    // The summary counts the one picked identity, then the walk goes on to the finish.
+    await see('1 yetenek');
+    await button('Devam');
+    await see('İşleri önce birinci sıradaki hesap yapar');
+    await button('Devam');
+    await see('Önerilen ayarlar uygulandı');
+    await button('Kurulumu bitir');
+    // The finish's capability line takes its check only when the import really ran (U-60).
+    await page.locator('[data-finish-line="capabilities"][data-ps="done"]').waitFor({ state: 'visible', timeout: WAIT });
+    await shot('finish-capability-line');
+    await page.locator('[data-wizard]').waitFor({ state: 'detached', timeout: WAIT });
+    await see('Kurulum tamamlandı');
+    await shot('done');
+    // The import's own evidence: the definition file exists in the data dir. The yaml stores the
+    // candidate's own fields — kind, name, command — the identity is derived from (R-62), so the
+    // assertion reads those, not a literal identity string.
+    const capsDir = join(handle.seed.dataDir, 'capabilities');
+    const files = readdirSync(capsDir);
+    const wrote = files.includes('fetch.yaml') && readFileSync(join(capsDir, 'fetch.yaml'), 'utf8').includes('command: npx');
+    assert(wrote, `capabilities.import left no definition for the shared capability (${files.join(', ')})`);
+    console.log(`  ok   ${title}`);
+    appendJourney({ id: title, status: 'ok', steps });
+  } catch (error) {
+    failures.push(title);
+    console.log(`  FAIL ${title}\n       ${String(error).split('\n')[0]}`);
+    appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).split('\n')[0] });
+    await page.screenshot({ path: join(OUT, 'J-9-FAIL.png') }).catch(() => undefined);
+  }
+  await handle.app.close();
+}
+
 console.log(`${total - failures.length}/${total} journeys ok; screenshots in ${OUT}`);
+console.log(`report: ${REPORT_PATH}`);
 process.exit(failures.length === 0 ? 0 : 1);

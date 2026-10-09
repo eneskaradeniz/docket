@@ -3,7 +3,9 @@
 // title and one mono tag per target repo. A task that spans repos expands — per repo, its work
 // orders with their codes (U-22), each row a path into that repo's board or the work order's
 // detail. A task turns ✓ only when every linked work order is done; that judgement is the
-// query's (R-40), the page only renders it. Nothing here edits the roadmap (Phase 5).
+// query's (R-40), the page only renders it. The phases fill the main column as U-55's card grid
+// — repeat(auto-fill, minmax(23.75rem, 1fr)) — so a full row spans edge to edge at every width;
+// nothing here edits the roadmap (Phase 5).
 import { useEffect, useSyncExternalStore } from 'react';
 
 import type { RoadmapPageView } from '../../api/queries';
@@ -39,23 +41,23 @@ const TaskGlyph = ({ status, locale }: { readonly status: string; readonly local
     return (
       <span
         aria-label={t(locale, 'roadmap.task.done')}
-        className="grid h-[18px] w-[18px] flex-none place-items-center rounded-full bg-proceed font-mono text-[10px] font-bold leading-none text-black"
+        className="grid h-[1.125rem] w-[1.125rem] flex-none place-items-center rounded-full bg-proceed font-mono text-[0.625rem] font-bold leading-none text-black"
       >
         ✓
       </span>
     );
   }
   if (status === 'running') {
-    return <span aria-label={t(locale, 'roadmap.task.current')} className="h-[18px] w-[18px] flex-none rounded-full border-[1.5px] border-signal" />;
+    return <span aria-label={t(locale, 'roadmap.task.current')} className="h-[1.125rem] w-[1.125rem] flex-none rounded-full border-[1.5px] border-signal" />;
   }
-  return <span aria-label={t(locale, 'roadmap.task.remaining')} className="h-[18px] w-[18px] flex-none rounded-full border border-bord" />;
+  return <span aria-label={t(locale, 'roadmap.task.remaining')} className="h-[1.125rem] w-[1.125rem] flex-none rounded-full border border-bord" />;
 };
 
 /** A linked order's mini glyph: the ✓ chip when finished, otherwise the row lamp's hue. */
 const OrderGlyph = ({ status }: { readonly status: string }) => {
   if (status === 'done') {
     return (
-      <span aria-hidden="true" className="grid h-[14px] w-[14px] flex-none place-items-center rounded-full bg-proceed font-mono text-[9px] font-bold leading-none text-black">
+      <span aria-hidden="true" className="grid h-[0.875rem] w-[0.875rem] flex-none place-items-center rounded-full bg-proceed font-mono text-[0.5625rem] font-bold leading-none text-black">
         ✓
       </span>
     );
@@ -115,10 +117,10 @@ const PhaseCard = ({
         className="flex w-full items-center gap-2.5 px-4 py-3 text-left transition-colors hover:bg-raised"
       >
         <Chevron open={open} />
-        <span className="min-w-0 flex-1 truncate text-[14px] font-bold text-ink" title={phase.name}>
+        <span className="min-w-0 flex-1 truncate text-[0.875rem] font-bold text-ink" title={phase.name}>
           {phase.name}
         </span>
-        <span className="flex-none font-mono text-[11px] text-inkdim">
+        <span className="flex-none font-mono text-[0.6875rem] text-inkdim">
           {done}/{phase.tasks.length}
         </span>
       </button>
@@ -169,11 +171,11 @@ const TaskRow = ({
   // plain row with its repo tag at the edge.
   if (task.targets.length <= 1) {
     return (
-      <div className="flex h-10 items-center gap-3 rounded-control px-2.5 text-[13.5px] transition-colors hover:bg-raised">
+      <div className="flex h-10 items-center gap-3 rounded-control px-2.5 text-[0.84375rem] transition-colors hover:bg-raised">
         <TaskGlyph status={task.status} locale={locale} />
         {title}
         {task.targets.map((repo) => (
-          <span key={repo} className="flex-none font-mono text-[11px] text-inkdim" title={repo}>
+          <span key={repo} className="flex-none font-mono text-[0.6875rem] text-inkdim" title={repo}>
             {repo}
           </span>
         ))}
@@ -187,12 +189,12 @@ const TaskRow = ({
         type="button"
         onClick={() => store.toggleTask(task.id)}
         aria-expanded={expanded}
-        className="flex h-10 w-full items-center gap-2.5 rounded-control px-2.5 text-left text-[13.5px] transition-colors hover:bg-raised"
+        className="flex h-10 w-full items-center gap-2.5 rounded-control px-2.5 text-left text-[0.84375rem] transition-colors hover:bg-raised"
       >
         <Chevron open={expanded} small />
         <TaskGlyph status={task.status} locale={locale} />
         {title}
-        <span className="flex-none font-mono text-[11px] text-inkdim">
+        <span className="flex-none font-mono text-[0.6875rem] text-inkdim">
           {task.targets.length} {t(locale, 'roadmap.task.repoMany')}
         </span>
       </button>
@@ -204,12 +206,12 @@ const TaskRow = ({
             task.workOrders.map((order) => {
               const code = formatWorkOrderCode(order.number, locale);
               return (
-                <div key={order.id} className="flex h-[34px] items-center gap-2.5 rounded-control px-1.5 text-[12.5px] transition-colors hover:bg-raised">
+                <div key={order.id} className="flex h-[2.125rem] items-center gap-2.5 rounded-control px-1.5 text-[0.78125rem] transition-colors hover:bg-raised">
                   <button
                     type="button"
                     onClick={() => onOpenRepo(order.repo)}
                     title={t(locale, 'roadmap.task.openRepoBoard')}
-                    className="flex-none rounded-control border border-hairline bg-raised px-[5px] py-px font-mono text-[10px] text-ink transition-colors hover:border-bord"
+                    className="flex-none rounded-control border border-hairline bg-raised px-[0.3125rem] py-px font-mono text-[0.625rem] text-ink transition-colors hover:border-bord"
                   >
                     {order.repo}
                   </button>
@@ -217,7 +219,7 @@ const TaskRow = ({
                     type="button"
                     onClick={() => onOpenWorkOrder(order.id)}
                     title={code}
-                    className="min-w-0 truncate font-mono text-[10px] text-inkdim transition-colors hover:text-ink"
+                    className="min-w-0 truncate font-mono text-[0.625rem] text-inkdim transition-colors hover:text-ink"
                   >
                     {code}
                   </button>
@@ -242,29 +244,30 @@ export function RoadmapScreen({ store, project, name, locale, onOpenRepo, onOpen
   const view = state.view;
 
   return (
-    <div className="grid max-w-[960px] gap-4">
+    <div className="grid gap-4">
       <header className="grid gap-1">
         <div className="flex items-center gap-3">
-          <h1 className="min-w-0 truncate text-[20px] font-bold tracking-[-0.01em] text-ink" title={name}>
+          <h1 className="min-w-0 truncate text-[1.25rem] font-bold tracking-[-0.01em] text-ink" title={name}>
             {name}
           </h1>
-          <span className="flex-none whitespace-nowrap text-[12.5px] text-inkdim">{t(locale, 'roadmap.title')}</span>
+          <span className="flex-none whitespace-nowrap text-[0.78125rem] text-inkdim">{t(locale, 'roadmap.title')}</span>
         </div>
         <p className="text-xs text-inkdim">{t(locale, 'roadmap.caption')}</p>
       </header>
 
       {state.loading && view === null && state.problem === null ? (
-        <p className="font-mono text-[11px] uppercase tracking-[0.04em] text-inkdim">{t(locale, 'roadmap.loading')}</p>
+        <p className="font-mono text-[0.6875rem] uppercase tracking-[0.04em] text-inkdim">{t(locale, 'roadmap.loading')}</p>
       ) : null}
 
       {state.problem !== null ? (
-        <div role="alert" className="rounded-card border border-error/40 bg-surface px-3 py-2 text-[13px] text-error">
+        <div role="alert" className="rounded-card border border-error/40 bg-surface px-3 py-2 text-[0.8125rem] text-error">
           {t(locale, failureKey(state.problem))}
         </div>
       ) : null}
 
-      {view !== null
-        ? view.phases.map((phase) => (
+      {view !== null ? (
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(23.75rem,1fr))] gap-4">
+          {view.phases.map((phase) => (
             <PhaseCard
               key={phase.id}
               phase={phase}
@@ -275,8 +278,9 @@ export function RoadmapScreen({ store, project, name, locale, onOpenRepo, onOpen
               onOpenRepo={onOpenRepo}
               onOpenWorkOrder={onOpenWorkOrder}
             />
-          ))
-        : null}
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -28,6 +28,7 @@ const ACCOUNT: SettingsAccountView = {
   provider: 'claude',
   label: 'Work',
   authMode: 'subscription',
+  billing: 'included',
   plan: 'pro',
   limitPolicy: 'wait_resume',
   reserve: { short: null, long: null },
@@ -37,6 +38,7 @@ const ACCOUNT: SettingsAccountView = {
   identityDir: null,
   endpointHost: null,
   hasSecret: false,
+  test: null,
   pools: [],
   meters: [],
 };
@@ -62,7 +64,7 @@ const meter = (id: string, reserveClass: SettingsMeterView['reserveClass'], labe
   reserveShare: 0,
 });
 
-const PAID: SettingsAccountView = { ...ACCOUNT, authMode: 'api_key', plan: null };
+const PAID: SettingsAccountView = { ...ACCOUNT, authMode: 'api_key', billing: 'unknown', plan: null };
 
 const harness = (result: CommandResult = { ok: true }) => {
   const issued: Command[] = [];
@@ -77,20 +79,18 @@ const harness = (result: CommandResult = { ok: true }) => {
 };
 
 describe('Limit dolunca', () => {
-  it('U-30: four policies each with a purpose, wait_resume marked recommended', () => {
-    const options = policyOptions({ ...ACCOUNT, pools: [POOL, { ...POOL, id: 'p-2' }] });
-    expect(options.map((option) => option.policy)).toEqual(['wait_resume', 'switch_pool', 'fallback_account', 'ask']);
+  it('U-43: the options are resume, next account, pool switch and ask, each with a purpose, wait_resume recommended', () => {
+    const options = policyOptions({ ...ACCOUNT, pools: [POOL, { ...POOL, id: 'p-2', appliesTo: [{ prefix: 'm-' }] }] });
+    expect(options.map((option) => option.policy)).toEqual(['wait_resume', 'fallback_account', 'switch_pool', 'ask']);
     expect(options.filter((option) => option.recommended).map((option) => option.policy)).toEqual(['wait_resume']);
     expect(options.every((option) => option.purposeKey.startsWith('editor.policy.purpose.'))).toBe(true);
-    expect(options.every((option) => option.disabledReasonKey === undefined)).toBe(true);
   });
 
-  it('U-30: switch_pool is disabled with a reason when the account has a single pool', () => {
-    for (const pools of [[], [POOL]]) {
-      const options = policyOptions({ ...ACCOUNT, pools });
-      expect(options.find((option) => option.policy === 'switch_pool')?.disabledReasonKey).toBe('editor.limits.policy.singlePool');
-      expect(options.filter((option) => option.disabledReasonKey !== undefined)).toHaveLength(1);
+  it('U-43: the pool switch is offered only on an account with a model-scoped pool — or while it is the stored choice', () => {
+    for (const pools of [[], [POOL], [POOL, { ...POOL, id: 'p-2' }]]) {
+      expect(policyOptions({ ...ACCOUNT, pools }).map((option) => option.policy)).toEqual(['wait_resume', 'fallback_account', 'ask']);
     }
+    expect(policyOptions({ ...ACCOUNT, pools: [], limitPolicy: 'switch_pool' }).map((option) => option.policy)).toContain('switch_pool');
   });
 
   it('U-30: a policy saves through account.save with limitPolicy and the stored fields, reserve absent', async () => {

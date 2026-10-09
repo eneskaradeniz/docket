@@ -7,6 +7,8 @@ import type {
   AccountRoute,
   Actor,
   AuthMode,
+  Billing,
+  CatalogModel,
   EpochMs,
   FlowDef,
   LimitPolicy,
@@ -48,23 +50,34 @@ import type {
   AccountDiscovery,
   AccountRecord,
   AppDeps,
+  CandidateQuotaPreview,
+  CreateProjectSource,
   CredentialImporter,
   BindingScope,
   DiscoveredProvider,
   PermissionBoard,
   ProviderDiscovery,
+  QuotaProbeResolver,
+  QuotaService,
+  QuotaTimers,
   ProviderMarks,
   UpdateChecker,
 } from '../application';
 import {
+  accountTestViewOf,
   adoptAccountCandidate,
   approveAndDeploy,
   applyUpdate,
   attachProject,
+  attestNoChanges,
   blockWorkOrder,
+  capabilityCandidates,
   checkForUpdates,
   closeWorkOrder,
   createAccountCandidateList,
+  createCandidateQuotaPreview,
+  createQuotaService,
+  createProject,
   decideHumanGate,
   decideProposalUseCase,
   DEFAULT_MODEL_CONSENT,
@@ -73,27 +86,34 @@ import {
   getUpdateState,
   getWorkOrder,
   grantSpendConsent,
+  importCapabilities,
+  isSourceTaken,
   openTaskWorkOrders,
   openWorkOrder,
+  readStageFile,
   registerRepo,
   removeAccount,
   removeAccountCap,
+  routeChanged,
+  testAccount,
   revokeSpendConsent,
   saveAccount,
   saveAccountCap,
   saveBinding,
+  stageFiles,
   unblockWorkOrder,
   unregisterRepo,
   catalogOrEmpty,
   matchIdFor,
 } from '../application';
 
-import type { Command, CommandResult } from './commands';
+import type { CapabilityImportResultView, Command, CommandResult } from './commands';
 import type {
   AccountDetailView,
   AccountModelsView,
   AttentionItem,
   BoardView,
+  CandidateQuotaView,
   CockpitView,
   OpenAskView,
   ProjectSpendView,
@@ -103,8 +123,10 @@ import type {
   RepoNode,
   RoadmapPageView,
   RoleListItem,
+  AccountTestView,
   SettingsAccountsView,
   SettingsBindingScope,
+  SettingsAccountView,
   SettingsBindingView,
   SettingsMeterView,
   SettingsPoolView,
@@ -117,7 +139,9 @@ import { RUN_EVENTS_TAIL_LIMIT } from './queries';
 export type UiEvent =
   | { readonly type: 'workOrders.changed' }
   | { readonly type: 'run.updated'; readonly runId: string }
-  | { readonly type: 'update.changed' };
+  | { readonly type: 'update.changed' }
+  /** A quota poll finished (P-49): meters and pools may have changed. */
+  | { readonly type: 'accounts.changed' };
 
 export interface Api {
   command(actor: Actor, command: Command): Promise<CommandResult>;
@@ -186,6 +210,15 @@ const ulidValue = <B extends string>(input: string): Ulid<B> | undefined => {
   return parsed.ok ? parsed.value : undefined;
 };
 
+/** What the api needs to own the quota schedule (A-80): the probes and the injected timers. */
+export interface QuotaWiring {
+  readonly probes: QuotaProbeResolver;
+  readonly timers: QuotaTimers;
+}
+
+/** The schedule's lifecycle, handed to the composition root: start on app ready, stop on quit. */
+export type QuotaLifecycle = Pick<QuotaService, 'start' | 'stop'>;
+
 /** The ports account adoption needs, composed beside AppDeps at the root like the discovery port. */
 export interface AccountAdoption {
   readonly discovery: AccountDiscovery;
@@ -219,10 +252,11 @@ export function createApi(
   updates?: UpdateChecker,
   marks?: ProviderMarks,
   adoption?: AccountAdoption,
-): Api & RunEventFeed {
-  // One cache per api instance: the candidates query reads it, an adoption drops it.
+  quota?: QuotaWiring,
+): Api & RunEventFeed & { readonly quota: QuotaLifecycle } {
+  // One remembered scan per api instance (A-85): the candidates query and every adoption read it.
   const adopting: Adopting | undefined =
-    adoption === undefined ? undefined : { ...adoption, candidates: createAccountCandidateList(adoption.discovery) };
+    adoption === undefined ? undefined : { ...adoption, candidates: createAccountCandidateList(deps.clock, adoption.discovery) };
   // The push channel (U-12): a Set keeps delivery to each listener once and makes unsubscribe a
   // plain delete.
   const listeners = new Set<(e: UiEvent) => void>();
@@ -236,7 +270,19 @@ export function createApi(
     }
   };
 
+  // The service reports every finished poll through the api's own push channel; without wiring
+  // there is no schedule and the quota commands answer not_found.
+  const quotaService: QuotaService | undefined =
+    quota === undefined
+      ? undefined
+      : createQuotaService(deps, quota.probes, quota.timers, () => emit({ type: 'accounts.changed' }));
+  const candidateQuota: CandidateQuotaPreview | undefined =
+    quota === undefined || adopting === undefined
+      ? undefined
+      : createCandidateQuotaPreview(deps, adopting.candidates, quota.probes);
+
   return {
+    quota: { start: () => quotaService?.start(), stop: () => quotaService?.stop() },
     command: async (actor, command) => {
       // workOrders.changed fires for a command that appended to the work order event log — the log
       // the board, cockpit and detail views derive from. The append is observed through a
@@ -253,7 +299,7 @@ export function createApi(
           },
         },
       };
-      const result = await runCommand(tracked, actor, command, board, updates, adopting);
+      const result = await runCommand(tracked, actor, command, board, updates, adopting, quotaService);
       if (appended) emit({ type: 'workOrders.changed' });
       // update.changed rides the same coarse pattern as workOrders.changed: the command answers
       // ok, the event tells every store to re-query — CommandResult carries no state payload. A
@@ -263,7 +309,7 @@ export function createApi(
       }
       return result;
     },
-    query: (query) => runQuery(deps, query, discovery, registry, board, updates, marks, adopting),
+    query: (query) => runQuery(deps, query, discovery, registry, board, updates, marks, adopting, candidateQuota),
     subscribe: (listener) => {
       listeners.add(listener);
       return () => {
@@ -282,6 +328,7 @@ const runCommand = async (
   board: Pick<PermissionBoard, 'answer'> | undefined,
   updates: UpdateChecker | undefined,
   adopting: Adopting | undefined,
+  quotaService: QuotaService | undefined,
 ): Promise<CommandResult> => {
   switch (command.type) {
     case 'workOrder.open': {
@@ -327,6 +374,23 @@ const runCommand = async (
         { path: command.path, repos: repos.length === 0 ? undefined : repos, actor },
       );
       return attached.ok ? { ok: true, id: attached.value.id } : { ok: false, code: attached.error };
+    }
+
+    case 'project.create': {
+      // The mode is a closed set in the record but a plain string on the wire; an unknown value
+      // is rejected before any port is touched (A-79).
+      const source: CreateProjectSource | undefined =
+        command.mode === 'existing'
+          ? { kind: 'existing', path: command.path }
+          : command.mode === 'blank'
+            ? { kind: 'blank', parent: command.parent }
+            : undefined;
+      if (source === undefined) return invalidId();
+      const created = await createProject(
+        { clock: deps.clock, ids: deps.ids, log: deps.log, projects: deps.projects, repos: deps.repos, definitions: deps.definitions, git: deps.git, repoFolders: deps.repoFolders },
+        { source, name: command.name, actor },
+      );
+      return created.ok ? { ok: true, id: created.value.id } : { ok: false, code: created.error };
     }
 
     case 'repo.register': {
@@ -421,6 +485,19 @@ const runCommand = async (
       );
     }
 
+    case 'gate.attest': {
+      const id = ulidValue<'work-order'>(command.workOrderId);
+      if (id === undefined) return invalidId();
+      const gate = slugValue<'gate'>(command.gate);
+      if (gate === undefined) return invalidId();
+      return commandOf(
+        await attestNoChanges(
+          { clock: deps.clock, ids: deps.ids, log: deps.log, workOrders: deps.workOrders, definitions: deps.definitions },
+          { id, gate, noChangeNeeded: command.noChangeNeeded, actor },
+        ),
+      );
+    }
+
     case 'proposal.decide': {
       const id = ulidValue<'proposal'>(command.id);
       if (id === undefined) return invalidId();
@@ -510,16 +587,55 @@ const runCommand = async (
           accounts: deps.accounts,
           secrets: deps.secrets,
           capabilities: deps.capabilities,
+          accountTests: deps.accountTests,
         },
         { record, actor },
       );
+      // A new account, or one whose route changed, has no trustworthy meters: read them now (A-80).
+      if (
+        saved.ok &&
+        (existing === undefined ||
+          routeChanged(existing, record) ||
+          existing.provider !== record.provider ||
+          existing.authMode !== record.authMode)
+      ) {
+        void quotaService?.refresh(record.id);
+      }
       return saved.ok ? { ok: true, id: record.id } : { ok: false, code: saved.error };
+    }
+
+    case 'quota.refresh': {
+      if (quotaService === undefined) return { ok: false, code: 'not_found' };
+      if (command.id === undefined) {
+        await quotaService.refresh();
+        return { ok: true };
+      }
+      const id = ulidValue<'account'>(command.id);
+      if (id === undefined) return invalidId();
+      if ((await deps.accounts.get(id)) === undefined) return { ok: false, code: 'not_found' };
+      await quotaService.refresh(id);
+      return { ok: true };
+    }
+
+    case 'capabilities.import': {
+      // Per identity (A-93): one row per requested identity, in input order — a rejected identity
+      // never blocks the others, and the surface re-queries candidates for what landed.
+      const results = await importCapabilities(deps, { identities: command.identities, actor });
+      return {
+        ok: true,
+        results: results.map((result): CapabilityImportResultView => ({
+          identity: result.identity,
+          status: result.status,
+          id: result.status === 'rejected' ? null : result.id,
+          reason: result.status === 'rejected' ? result.reason : null,
+        })),
+      };
     }
 
     case 'account.adopt': {
       // Without the discovery and importer ports no candidate can be found, so the command
       // answers not_found instead of inventing an account. The command carries no kind: the
-      // adoption re-scans and classifies by source path alone.
+      // adoption reads the remembered scan (A-85) and classifies by source path alone.
       if (adopting === undefined) return { ok: false, code: 'not_found' };
       const adopted = await adoptAccountCandidate(
         {
@@ -529,7 +645,8 @@ const runCommand = async (
           accounts: deps.accounts,
           secrets: deps.secrets,
           capabilities: deps.capabilities,
-          discovery: adopting.discovery,
+          accountTests: deps.accountTests,
+          candidates: adopting.candidates,
           importer: adopting.importer,
         },
         {
@@ -539,8 +656,7 @@ const runCommand = async (
           actor,
         },
       );
-      // The candidates' alreadyAdded flags are stale after any attempt that reached a record.
-      adopting.candidates.invalidate();
+      if (adopted.ok) void quotaService?.refresh(adopted.value);
       return adopted.ok ? { ok: true, id: adopted.value } : { ok: false, code: adopted.error };
     }
 
@@ -555,6 +671,7 @@ const runCommand = async (
           accounts: deps.accounts,
           secrets: deps.secrets,
           bindings: deps.bindings,
+          accountTests: deps.accountTests,
         },
         { id, actor },
       );
@@ -563,6 +680,16 @@ const runCommand = async (
       return typeof removed.error === 'string'
         ? { ok: false, code: removed.error }
         : { ok: false, code: removed.error.code, roles: removed.error.roles };
+    }
+
+    case 'account.test': {
+      const id = ulidValue<'account'>(command.id);
+      if (id === undefined) return invalidId();
+      // An absent or empty model means the route's default model (A-74).
+      const model = command.model === undefined || command.model === '' ? undefined : command.model;
+      const tested = await testAccount(deps, model === undefined ? { id, actor } : { id, model, actor });
+      // A finished test answers ok whatever its outcome; the outcome rides settings.accounts.
+      return tested.ok ? { ok: true } : { ok: false, code: tested.error };
     }
 
     case 'account.cap.save': {
@@ -672,8 +799,25 @@ const runQuery = async (
   updates: UpdateChecker | undefined,
   marks: ProviderMarks | undefined,
   adopting: Adopting | undefined,
+  candidateQuota: CandidateQuotaPreview | undefined,
 ): Promise<unknown> => {
   switch (query.type) {
+    case 'workOrders.stageFiles': {
+      const id = ulidValue<'work-order'>(query.id);
+      if (id === undefined) return invalidId();
+      const res = await stageFiles(deps, id);
+      return res.ok ? res.value : { ok: false, code: res.error };
+    }
+    case 'workOrders.readStageFile': {
+      const id = ulidValue<'work-order'>(query.id);
+      if (id === undefined) return invalidId();
+      const res = await readStageFile(deps, { id, path: query.path });
+      return res.ok ? res.value : { ok: false, code: res.error };
+    }
+    case 'capabilities.candidates':
+      // The scan runs on every call — no remembered window (A-94): the query runs when a surface
+      // opens, not on a poll, and the account store is small.
+      return capabilityCandidates(deps);
     case 'workOrder.detail': {
       const id = ulidValue<'work-order'>(query.id);
       if (id === undefined) return invalidId();
@@ -732,7 +876,7 @@ const runQuery = async (
       return repoList(registry);
 
     case 'settings.accounts':
-      return settingsAccountsView(deps);
+      return settingsAccountsView(deps, query.catalog);
 
     case 'roles.list':
       return rolesListView(deps, registry);
@@ -743,13 +887,35 @@ const runQuery = async (
     case 'accounts.candidates': {
       if (adopting === undefined) return { ok: false, code: 'not_found' };
       const found: readonly AccountCandidate[] = await adopting.candidates.get(
-        query.refresh === true ? { refresh: true } : undefined,
+        query.fresh === true ? { fresh: true } : undefined,
       );
+      // The remembered scan's alreadyAdded flags can predate accounts adopted or removed inside
+      // its window, so each row is decided against the store — never by a hidden rescan.
+      const stored = await deps.accounts.list();
       // The provider is the def id the route kind belongs to, the lookup adoption makes too.
-      return found.map((candidate) => ({
-        ...candidate,
-        provider: deps.capabilities.routeKind(candidate.routeKind)?.providerId ?? null,
-      }));
+      return found.map((candidate) => {
+        const route = deps.capabilities.routeKind(candidate.routeKind);
+        return {
+          ...candidate,
+          provider: route?.providerId ?? null,
+          alreadyAdded: isSourceTaken(candidate, stored),
+          // A-83a: the route kind's declared billing, else by kind: subscription and machine_login are
+          // included, a compatible endpoint unknown.
+          billing: route?.defaultBilling ?? (candidate.kind === 'compatible_endpoint' ? 'unknown' : 'included'),
+        };
+      });
+    }
+
+    case 'accounts.candidateQuota': {
+      // Nothing is stored: the readings become views with ids that exist only in this answer.
+      if (candidateQuota === undefined) return { ok: false, code: 'not_found' };
+      const previewed = await candidateQuota.preview(query.sourcePath);
+      if (!previewed.ok) return { ok: false, code: previewed.error };
+      return {
+        ok: true,
+        pools: previewed.value.pools.map(poolView),
+        meters: previewed.value.meters.map((meter) => meterView(meter, undefined)),
+      } satisfies CandidateQuotaView;
     }
 
     case 'providers.marks': {
@@ -873,19 +1039,42 @@ const CAP_SCOPE_RANK: Readonly<Record<AccountRecord['caps'][number]['scope'], nu
   account_month: 2,
 };
 
-const settingsAccountsView = async (deps: AppDeps): Promise<SettingsAccountsView> => {
+const settingsAccountsView = async (
+  deps: AppDeps,
+  catalogMode?: 'read' | 'skip',
+): Promise<SettingsAccountsView> => {
   const records = await deps.accounts.list();
   const pools = await deps.accounts.pools();
   const meters = await deps.accounts.meters();
+  // A-72: each row's `test` reads the stored record; null without one.
+  const tests = new Map<string, AccountTestView>();
+  for (const record of records) {
+    const stored = await deps.accountTests.get(record.id);
+    if (stored !== undefined) tests.set(record.id, accountTestViewOf(stored));
+  }
 
-  const accounts = records.map((record) => {
+  // A-86: 'skip' lists no catalog at all — every row bills by its route's own rule, the value a
+  // failing read already yields (P-51); a read lists every row's catalog at once, never one after
+  // another, so n slow listings cost the slowest one rather than their sum.
+  const catalogs = new Map<string, readonly CatalogModel[]>();
+  if (catalogMode !== 'skip' && records.length > 0) {
+    const listed = await Promise.all(
+      records.map((record) => catalogOrEmpty(() => deps.modelCatalog.list(record.id))),
+    );
+    records.forEach((record, index) => catalogs.set(record.id, listed[index] ?? []));
+  }
+
+  const accounts: SettingsAccountView[] = [];
+  for (const record of records) {
     const ownPools = pools.filter((pool) => pool.accountId === record.id);
+    const catalog = catalogs.get(record.id) ?? [];
     const ownPoolIds = new Set(ownPools.map((pool) => pool.id));
-    return {
+    accounts.push({
       id: record.id,
       provider: record.provider,
       label: record.label,
       authMode: record.authMode,
+      billing: unpinnedBilling(deps, record, catalog, ownPools),
       plan: record.plan ?? null,
       limitPolicy: record.limitPolicy,
       reserve: { short: record.reserve?.short ?? null, long: record.reserve?.long ?? null },
@@ -897,10 +1086,11 @@ const settingsAccountsView = async (deps: AppDeps): Promise<SettingsAccountsView
       identityDir: record.identityDir ?? null,
       endpointHost: hostOf(record.endpoint),
       hasSecret: record.secretRef !== undefined,
+      test: tests.get(record.id) ?? null,
       pools: ownPools.map(poolView),
       meters: meters.filter((meter) => ownPoolIds.has(meter.poolId)).map((meter) => meterView(meter, record.reserve)),
-    };
-  });
+    });
+  }
 
   const bindings: readonly SettingsBindingView[] = (await deps.bindings.listAll()).map(({ scope, binding }) => ({
     scope: bindingScopeView(scope),
@@ -1441,6 +1631,20 @@ const accountDetailView = async (
   };
 };
 
+/** The billing an unpinned run on the account takes (P-40, P-51): the row the provider names as its
+ *  default, settled by the account's pools; without such a row the route's own rule answers. */
+const unpinnedBilling = (
+  deps: Pick<AppDeps, 'capabilities'>,
+  record: AccountRecord,
+  models: readonly CatalogModel[],
+  pools: readonly Pool[],
+): Billing => {
+  const defaultModel = models.find((model) => model.isDefault === true);
+  return defaultModel === undefined
+    ? defaultBillingOf(deps.capabilities, record)
+    : billingFromPools(defaultModel.billing, defaultModel.resolvedId ?? defaultModel.id, pools);
+};
+
 /** The account's model catalog as the surface sees it (P-29): the merged list read through the
  *  port, joined with the account's recorded consents (P-40). A billing the catalog leaves
  *  `unknown` is settled by the account's own quota reading (`billingFromPools`) — the same
@@ -1461,7 +1665,7 @@ const accountModelsView = async (
   ]);
   // The provider names the row an unpinned run uses; its billing, settled the same way as any
   // row's, is the unpinned run's billing. Without such a row the route's own rule answers.
-  const defaultModel = models.find((model) => model.isDefault === true);
+  const defaultBilling = unpinnedBilling(deps, record, models, pools);
   return {
     models: models.map((model) => ({
       id: model.id,
@@ -1476,10 +1680,7 @@ const accountModelsView = async (
     })),
     // The marker names the route's own default model, never a catalog row.
     defaultConsented: consented.includes(DEFAULT_MODEL_CONSENT),
-    defaultBilling:
-      defaultModel === undefined
-        ? defaultBillingOf(deps.capabilities, record)
-        : billingFromPools(defaultModel.billing, defaultModel.resolvedId ?? defaultModel.id, pools),
+    defaultBilling,
   };
 };
 

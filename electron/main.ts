@@ -20,7 +20,8 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { Actor, DispatchLimits, QueueItem } from '../src/domain/index';
-import { createApi } from '../src/api/index';
+import { deriveWorkOrderState, foldRun } from '../src/domain/index';
+import { COMMAND_REGISTRY, QUERY_REGISTRY, createApi } from '../src/api/index';
 import type { Api, RunEventFeed, UiEvent } from '../src/api/index';
 import type { AppDeps, Notifier, PermissionBoard, TransportResolver } from '../src/application/index';
 import {
@@ -42,6 +43,7 @@ import {
   createPathDiscovery,
   createProviderTransportFactory,
 } from '../src/infrastructure/index';
+import { createDevBridge, devBridgeEnabled } from './dev-bridge';
 import {
   WINDOW_MIN_HEIGHT,
   WINDOW_MIN_WIDTH,
@@ -119,6 +121,7 @@ const loginStates = createLoginStates();
 
 let node: NodeDeps | undefined;
 let dispatchTimer: NodeJS.Timeout | undefined;
+let quotaLifecycle: { stop(): void } | undefined;
 
 /** One discovery pass produces the binPaths the transport factory routes by. */
 const buildTransportFactory = (
@@ -370,6 +373,9 @@ const startApp = async (): Promise<void> => {
     notifier: electronNotifier(),
     commandEnv: baseEnv,
     loginStates,
+    // The same discovery the settings query runs: an installed provider without a directory
+    // scanner must still be listed as a machine-login candidate (P-53).
+    providerDiscovery: discovery,
   });
   if (!opened.ok) {
     dialog.showErrorBox('Docket', `Storage could not be opened: ${JSON.stringify(opened.error)}`);
@@ -393,17 +399,46 @@ const startApp = async (): Promise<void> => {
   // `repos.list`, the enumeration the switcher and the wizard's re-appear guard live on. The
   // defs' marks ride the same way (P-25): the api reads them for `providers.marks`, the query
   // every account badge resolves its mark through.
-  const api = createApi(nodeDeps, board, discovery, node.repos, updates, builtinProviderMarks, node.adoption);
+  const api = createApi(nodeDeps, board, discovery, node.repos, updates, builtinProviderMarks, node.adoption, node.quota);
+
+  // The dev bridge (test launches only): it exists when the flag is set, the app is not packaged
+  // and DOCKET_DATA_DIR points outside the operator's real data directory — the same rule the CDP
+  // launcher enforces, shared code. Any condition missing means no docket:dev handler at all.
+  const devBridge = devBridgeEnabled({
+    flag: process.env.DOCKET_DEV_BRIDGE,
+    isPackaged: app.isPackaged,
+    dataDir: process.env.DOCKET_DATA_DIR,
+    docketHome: join(homedir(), '.docket'),
+  })
+    ? createDevBridge({
+        workOrders: nodeDeps.workOrders,
+        runs: nodeDeps.runs,
+        accounts: nodeDeps.accounts,
+        bindings: nodeDeps.bindings,
+        log: nodeDeps.log,
+        definitions: nodeDeps.definitions,
+        now: nodeDeps.clock.now,
+        fold: foldRun,
+        deriveStatus: deriveWorkOrderState,
+        commandRegistry: COMMAND_REGISTRY,
+        queryRegistry: QUERY_REGISTRY,
+      })
+    : undefined;
 
   // The push channel: every UiEvent goes to every live window over one channel, verbatim — a
-  // store re-queries on receipt, which is the whole protocol (U-12).
+  // store re-queries on receipt, which is the whole protocol (U-12). The dev bridge taps the same
+  // fan-out point, so its event timeline is the stream the windows actually receive.
   api.subscribe((event: UiEvent) => {
+    if (devBridge !== undefined) devBridge.pushUiEvent(event, nodeDeps.clock.now());
     for (const win of windows) {
       if (!win.isDestroyed()) win.webContents.send('docket:event', event);
     }
   });
 
   registerIpc(api);
+  if (devBridge !== undefined) {
+    ipcMain.handle('docket:dev', (_event, op: unknown, args: unknown) => devBridge.call(op, args));
+  }
 
   // The dispatcher loop: each tick may start queued items; each started item then runs to
   // completion on its own, so one slow agent never delays the next tick.
@@ -414,6 +449,9 @@ const startApp = async (): Promise<void> => {
   }, DISPATCH_INTERVAL_MS);
 
   createWindow();
+  // Quota is read without a run: once now for every account, then on the interval (P-49).
+  quotaLifecycle = api.quota;
+  api.quota.start();
 };
 
 void app.whenReady().then(() => {
@@ -430,6 +468,7 @@ app.on('activate', () => {
 });
 
 app.on('will-quit', () => {
+  quotaLifecycle?.stop();
   if (dispatchTimer !== undefined) clearInterval(dispatchTimer);
   node?.close();
 });

@@ -117,6 +117,7 @@ export type Actor =
 Rules:
 - **R-1** `parseSlug` accepts `^[a-z0-9][a-z0-9-]{0,62}$` only (lowercase, max 63 chars, no leading hyphen).
 - **R-2** `parseUlid` accepts exactly 26 chars of Crockford base32, uppercase; rejects `I L O U` and lowercase.
+- **R-59** `slugFromName(name, taken)` (shared/ids, used when a project is created from a name): first the fixed Turkish map `İ I ı → i`, `Ğ ğ → g`, `Ü ü → u`, `Ş ş → s`, `Ö ö → o`, `Ç ç → c`; then Unicode NFKD with combining marks removed; then lower case; every run of characters outside `[a-z0-9]` becomes one `-`; leading and trailing `-` are trimmed; the result is cut to 63 characters and trimmed again; an empty result is `project`. When the result is in `taken`, the first of `<base>-2`, `<base>-3`, … not in `taken` is returned, with `<base>` cut so the whole stays within 63 characters. The result always passes `parseSlug` (R-1). Signature: `export function slugFromName<B extends string>(name: string, taken: ReadonlySet<string>): Slug<B>;`
 
 ---
 
@@ -143,6 +144,7 @@ export interface RoleDef {
 export type GateDef =
   | { readonly kind: 'human'; readonly id: GateSlug; readonly label: string }
   | { readonly kind: 'command'; readonly id: GateSlug; readonly commandSet: string }
+  | { readonly kind: 'changes'; readonly id: GateSlug }    // the stage's run must have changed something
   | { readonly kind: 'agent_verdict'; readonly id: GateSlug; readonly role: RoleSlug }
   | { readonly kind: 'secret_scan'; readonly id: GateSlug }
   | { readonly kind: 'page_approval'; readonly id: GateSlug; readonly label: string }
@@ -247,6 +249,23 @@ export type DefinitionIssueCode =
 export function validateDefinitions(input: unknown): Result<Definitions, readonly DefinitionIssue[]>;
 ```
 
+```ts
+// definitions/candidates.ts (added 2026-10-09, #850) — capability candidates found in an account's
+// config before the user imports them (#715 part 1). 'hook' is deferred (executable code).
+export type CapabilityCandidateKind = 'mcp' | 'skill' | 'context';
+export interface CapabilityCandidate {
+  readonly identity: string;                      // see rule R-62
+  readonly kind: CapabilityCandidateKind;
+  readonly name: string;
+  readonly sources: readonly AccountId[];         // sorted, unique
+  readonly command?: string;                      // mcp
+  readonly path?: string;                         // skill / context
+  readonly description?: string;
+}
+export function mergeCandidates(found: readonly CapabilityCandidate[]): readonly CapabilityCandidate[];
+export function candidateToDefinition(c: CapabilityCandidate, id: CapabilitySlug): Result<CapabilityDef, 'unsupported_kind' | 'missing_command' | 'missing_path'>;
+```
+
 Rules:
 - **R-3** All issues are collected; validation never stops at the first issue.
 - **R-4** Ids are unique per kind (roles, flows, capabilities); stage ids unique within a flow; gate ids unique within a stage.
@@ -255,6 +274,12 @@ Rules:
 - **R-7** `command` gates must name a `commandSet` present in `repo.commandSets` when a repo definition is given.
 - **R-8** A `CapabilityDef` env value that is a bare string (not `{literal}` / `{secretRef}`) is `wrong_type`; a `{literal}` whose key matches `/(KEY|TOKEN|SECRET|PASSWORD)/i` is `secret_literal`.
 - **R-9** `repo.defaultFlow` must be listed in `repo.flows`, and every listed flow must exist.
+- **R-62** (added 2026-10-09, #850) `CapabilityCandidate.identity` = `kind + ':' + name` for skill/context (case-sensitive) and `'mcp:' + name + '|' + command` for mcp (a missing command joins as the empty string; the gap surfaces at import as `missing_command`, never as a merge error); two candidates with equal identity are one capability. `mergeCandidates` derives the merge key from the candidate's own fields by this formula — an input's `identity` string is not the key — and writes the canonical identity into its output, so a scanner cannot drift the merge.
+- **R-63** (added 2026-10-09, #850) `mergeCandidates`: equal identity → one candidate whose `sources` is the sorted unique union; first-seen order of identities otherwise; never mutates inputs; a conflicting `command`/`path`/`description` keeps the lexicographically smallest account's value (every source of a candidate backs its values; a value with no backing account loses to any account-backed one, and a tie keeps the first-seen value, so merging a merged output changes nothing).
+- **R-64** (added 2026-10-09, #850) a candidate never carries an env value or a secret: the type has no field for one, and `candidateToDefinition` for `mcp` copies only the command string, never environment (`args` and `env` start empty; `description` is dropped — a `CapabilityDef` has no field for it).
+- **R-65** (added 2026-10-09, #850) `candidateToDefinition` output passes `validateDefinitions`; `mcp` without command → `missing_command`; skill/context without path → `missing_path`; a kind outside `CapabilityCandidateKind` (the deferred `hook`, or a plain-JS caller's stray value) → `unsupported_kind`.
+- **R-66** (added 2026-10-09, #853) `identityOfDefinition(def)` is R-62's form read off a stored definition: `'mcp:' + name + '|' + command` for mcp (a stored def always has its command, so there is no empty-join case), `kind + ':' + name` for skill/context/hook. Import's idempotence and the candidates query's `imported` flag compare a candidate's identity with this function's answer, so "already imported" and the merge (R-63) can never disagree about what a capability is.
+- **R-67** (added 2026-10-09, #853) `capabilitySlugOf(name)` maps a candidate name to the target id an import takes — a `CapabilitySlug`, `^[a-z0-9][a-z0-9-]{0,62}$`: runs of ASCII letters/digits keep, lower-cased; every other run collapses into one `'-'`; leading/trailing `'-'` trimmed; a result over 63 cuts at 63 then trims again; an empty result (the name was all punctuation) is the `Result` error `invalid_name`, never a thrown error. Collision arm (architect decision, 2026-10-09): inside one import call ids are assigned in the order the identities are carried — an identity whose derived slug is already assigned in the same call takes `-2`, `-3`, … (the base cut so the whole id stays within the law); the assignment happens at derivation, before any store read, so it is deterministic.
 - **R-51** `stage.reviewOf` must name a stage of the same flow with a lower index and a non-null role (`bad_review_of` otherwise; a stage cannot review itself or a human-only stage). `stage.tier` must be a `Tier` and `stage.thinking` a `ThinkingChoice` (`wrong_type` otherwise).
 - **R-46** `ProjectDef`: `repos` is non-empty (`empty_repos`), has no duplicates (`duplicate_id`), and
   contains `mainRepo` (`main_repo_not_listed`); a `budget`, when present, must be a valid `SpendCap`
@@ -323,6 +348,7 @@ export type GateVerdict =
 
 export interface GateEvidence {
   readonly commands?: Readonly<Record<string, { readonly exitCode: number } | undefined>>; // per command in the set
+  readonly changes?: { readonly filesChanged: number; readonly noChangeNeeded?: boolean };
   readonly secretScan?: { readonly findings: number };
   readonly agentVerdict?: { readonly approve: boolean; readonly pointersResolved: boolean };
   readonly approval?: { readonly decision: 'approved' | 'rejected'; readonly by: Actor; readonly note?: string };
@@ -361,6 +387,8 @@ Rules:
 - **E-8** For a `protected` environment, `deployment.confirmedEnvironment` must equal the gate's `environment` (the user typed the environment id to confirm); absent or different → `pending`. (Docket is single-user: a rule requiring a *different* approver would make protected environments undeployable. A second-approver option arrives with team mode.)
 - **E-9** `remote_checks`: `status === 'all_passed'` → `passed`; `status === 'has_failure'` → `failed` naming the first failed check; `status === 'timeout'` → `failed` with reason `timeout`; `status === 'pending'` → `pending`.
 - **E-10** `deployment_attempted` event is appended exactly once per deploy-gate evaluation, carrying the redacted `outputTail` (same redaction as command gates: no env values, no secrets).
+- **R-61** (added 2026-10-09, #839) `changes`: evidence absent → `pending`; `filesChanged > 0` → `passed`; `filesChanged === 0 && noChangeNeeded === true` → `passed`; otherwise → `failed` with reason `no changes`. Rationale: a `command` gate reads only exit codes, so an implement stage that changed nothing passed while its tests stayed green (#839); this gate turns "the run changed something" into explicit evidence — or, with `noChangeNeeded`, an explicit attestation that nothing needed changing. The gate is opt-in per flow definition; the evidence itself (counting the run's changed files) is produced outside the domain. The built-in flows do not use this gate until the evidence source exists; wiring it into `standard` is a follow-up.
+- **R-61a** (amends R-61, 2026-10-09, #855) The evidence source now exists (application rule A-96) and the built-in `standard` flow wires the gate (R-68), so R-61's closing sentence no longer describes reality: the follow-up it names has landed. The evaluator itself is unchanged.
 
 ---
 
@@ -862,12 +890,41 @@ export function definitionsDigest(text: string): string;
 Rules:
 - R-43 (retired): `supportTier` is replaced by `supportLevel` from the capability record (P-28); the function and its type are removed.
 - **R-44** `foldRun` sums token counts across all `usage` events (`reasoningTokens` absent counts as 0); `sessionRef` is the last `session_started`; `outcome` maps from the last `finished` event.
+- Addendum 2026-10-07: a `finished` event whose reason is `completed` maps to `failed` when at least one `usage` event was seen and the summed input and output tokens are both zero (an empty run). A stream with no `usage` event keeps the `completed` mapping. The decision never reads the text of any event.
+- Addendum 2026-10-08: an `AgentEvent` `permission_answered { at, id, decision }` closes the open permission ask with the same `id`. `openPermissionAsks` lists asks in event order that have no later `permission_answered` of the same `id`; surfaces show the oldest open ask. The run executor persists the event as soon as the decision is known, next to the existing `permission.answered` audit entry, which stays.
 - **R-50** `effortForChoice`: absent choice → `{ level: 'balanced' }`; a `level` maps through `thinkingFor`; an `effort` is sent as is when the model lists it, otherwise clamped down to the highest listed level below it, and undefined when none is below; `thinking` `unknown` or `{ kind: 'none' }` → undefined for every choice. A level the model does not list is never returned.
 - **R-53** `stageBrief`/`acceptanceCriteria` are pure functions of the definitions — the same inputs render the same bytes; no timestamps, no account data, no provider ids. The acceptance criteria are rendered from the stage's exit gates because `StageDef` carries no authored brief; a `brief` field is added only if the rendered criteria prove too thin.
 - **R-54** `planInstructions`: native files never inline; a file both native and absent is not an error; truncation markers name the file and the kept char count; the plan is a pure function of (`native`, `present`, budget).
 - **R-55** `deriveTaskState` reads only `tool_call`/`tool_result`/`permission_ask` events; `extendRollingNote` reads only `text`/`thinking` deltas; neither sees the raw transcript. P-38 item 3's plan/done/remaining lists are not derivable from today's events: the deterministic core ships first, a plan-like structure arrives later as registry data (plan-tool names per provider), and the model-written summary stays open decision O-8.
 - **R-56** `sizeHandoffPack` never drops `stagePrompt`, `acceptance` or the Docket layers, and never empties the pack: a budget below the untouchable core is a caller bug, not a smaller pack.
 - **R-57** `renderHandoffPrompt` places "first run the stage's checks, then continue" as the first line (P-38: the new agent first runs the stage's checks) and never embeds a session ref, an account id, or environment values. With `definitionsChanged` set, the note "definition changed since the first leg" sits directly after the preamble — the change is surfaced to the continuation, never silently absorbed. `definitionsDigest` is deterministic: the same text always yields the same 8 lower-case hex chars, and different text yields a different digest (A-62's rev marker stands on this).
+- **R-60** (added 2026-10-09) `foldRun` maps a `finished` event whose reason is `completed` to `failed` when the stream holds at least one `tool_call`, every counted tool result is a failure (`failedToolCalls === toolCalls`), and no `text` delta carried non-whitespace content — a run that tried only tools, all of which failed, and said nothing is not a success. Zero tool calls, a succeeded tool result, or a spoken answer in text keeps `succeeded`; the empty-run addendum under R-44 is unchanged. The run executor's `run.finished` audit names this flip `all_tool_calls_failed`, beside `empty_run` for the empty run.
+
+### Account test classification (#716)
+
+The account test ("Test et", [application.md](application.md) → "Account test") sends one small
+real request and shows a classified result, never the model's output. The classification is pure.
+
+```ts
+// providers/account-test.ts
+export type AccountTestClass = 'auth' | 'limit' | 'model' | 'network' | 'install' | 'unknown';
+export type AccountTestStartFailure = 'not_installed' | 'not_logged_in' | 'spawn_failed' | 'unsupported';
+export type AccountTestOutcome =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly class: AccountTestClass; readonly detail: string };
+export interface AccountTestInput {
+  readonly startFailure?: { readonly code: AccountTestStartFailure; readonly message: string };
+  readonly events: readonly AgentEvent[];   // the test run's events in arrival order; empty after a start failure
+  readonly timedOut: boolean;               // the use case stopped the run at its deadline
+}
+/** The fixed request. English, no tools, one word back. */
+export const ACCOUNT_TEST_PROMPT: string;          // 'Reply with the single word OK. Do not use any tools.'
+export const ACCOUNT_TEST_DETAIL_MAX_CHARS: number; // 300
+export function classifyAccountTest(input: AccountTestInput): AccountTestOutcome;
+```
+
+- **R-58** `classifyAccountTest` — the first matching line wins: (1) `startFailure` → `not_logged_in` is `auth`, `not_installed` and `spawn_failed` are `install`, `unsupported` is `unknown`, detail = its `message`; (2) any `limit_hit` event → `limit`, detail `''`; (3) `timedOut` → `network`, detail `'timeout'`; (4) the first `error` event: class `auth` → `auth`; `network` or `timeout` → `network`; `protocol`, `crash` or `unknown` → `model` when the message matches `/\bmodel\b[\s\S]*\b(not found|not available|unavailable|not supported|unsupported|invalid|does not exist|no access|not allowed)\b/i`, otherwise `unknown`; detail = that event's `message`; (5) a `finished` event with reason `completed` → `{ ok: true }`; reason `limit` → `limit`; any other reason, or no `finished` event → `unknown`, detail `''`. A detail is cut to `ACCOUNT_TEST_DETAIL_MAX_CHARS` code points. `text` and `thinking` deltas never reach a detail — the model's output is never shown. The function reads nothing but its input (same input → same outcome).
+- **R-58a** (amends R-58, 2026-10-03, #735) `classifyAccountTest` returns the source message verbatim as `detail`, with no cut: cutting before redaction could split a token so its first part no longer matches a secret pattern. The 300-code-point cut belongs to the adapter, after redaction (I-35); `ACCOUNT_TEST_DETAIL_MAX_CHARS` stays exported from the domain as the shared bound.
 
 ---
 
@@ -885,8 +942,9 @@ Roles (`RoleSlug` → name, write scope):
 Every built-in stage whose role is `reviewer` or `security-auditor` sets `tier: 'strong'` and `reviewOf` the flow's `implement` stage; no other built-in stage sets a tier or thinking.
 
 Flows:
-- `standard` Standart: `plan` (planner; human gate `plan-approval`) → `implement` (developer; command
-  gate `tests` on set `tests`, `secret_scan` gate `secrets`; `onFail: implement ×3`) → `review`
+- `standard` Standart: `plan` (planner; human gate `plan-approval`) → `implement` (developer;
+  `changes` gate `changes` first, then command gate `tests` on set `tests`, `secret_scan` gate
+  `secrets`; `onFail: implement ×3`) → `review`
   (reviewer; `agent_verdict` gate `review-verdict` role reviewer, human gate `review-approval`;
   `onFail: implement ×3`) → `close` (role null; human gate `closure`).
 - `quick-fix` Hızlı düzeltme: `implement` (developer; `tests`, `secrets`; onFail implement ×3) → `close`.
@@ -902,8 +960,14 @@ export const BUILTIN_FLOWS: readonly FlowDef[];
 export const BUILTIN_COMMAND_SET_NAMES: readonly string[];   // ['tests']
 ```
 
-Rule:
+Rules:
 - **R-45** `validateDefinitions({ roles: BUILTIN_ROLES, flows: BUILTIN_FLOWS, capabilities: [], repo: <fixture with commandSets.tests> })` is `ok`.
+- **R-68** (added 2026-10-09, #855) The built-in `standard` flow's `implement` exit is
+  `[changes, tests, secrets]` — the `changes` gate (R-61) sits first, so a run that changed
+  nothing surfaces before the long test run (A-96 halts the machine pass at a measured zero).
+  `quick-fix` and `security-reviewed` keep `[tests, secrets]`: the gate is opt-in per flow
+  definition (R-61), and only `standard` — the flow whose empty-implement failure #839 exposed —
+  wires it in this wave.
 
 ---
 
@@ -917,10 +981,18 @@ The `standard` flow must reproduce v1's work-order lifecycle. A scenario test
 | created | `plan`, `ready` |
 | plan run succeeded, plan-approval pending | `plan`, `awaiting_human` |
 | plan approved | `implement`, `ready` |
-| implement succeeded, tests pass, secrets 0 | `review`, `ready` |
+| implement succeeded, changes > 0, tests pass, secrets 0 | `review`, `ready` |
+| implement succeeded, changes 0, tests pass, secrets 0 | `implement`, `gating`, only `changes` pending |
+| changes 0, attested no change needed | `review`, `ready` |
+| changes 0, attested changes were needed | `implement`, attempt 2, `ready` |
 | implement succeeded, tests fail (1st) | `implement`, attempt 2, `ready` |
 | tests fail three times | `blocked` |
 | review verdict approve but pointers unresolved | `blocked` (unknown) |
 | review verdict + approval pass | `close`, `awaiting_human` |
 | closure approved | `done` |
 | run ended by limit | `limit_waiting` |
+
+The changes rows (added 2026-10-09, #855) name the gate R-61 defines: a zero the machine
+measures but cannot judge holds the stage in `gating` until a person attests one way or the
+other (A-96); a `noChangeNeeded` attestation passes and its refusal sends the stage through
+`onFail`.

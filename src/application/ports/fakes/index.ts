@@ -1,8 +1,10 @@
 // Fakes barrel — one in-memory fake per port, plus the ready-made AppDeps bundle.
 // Contract: docs/v2/application.md (rules for fakes A-1 … A-4).
 export * from './fake-account-repo';
+export * from './fake-account-test-repo';
 export * from './fake-binding-repo';
 export * from './fake-capability-catalog';
+export * from './fake-capability-discovery';
 export * from './fake-checkpoints';
 export * from './fake-clock';
 export * from './fake-definition-store';
@@ -18,10 +20,13 @@ export * from './fake-notifier';
 export * from './fake-project-repo';
 export * from './fake-proposal-repo';
 export * from './fake-queue-repo';
+export * from './fake-repo-folders';
 export * from './fake-repo-registry';
 export * from './fake-repo-tools';
 export * from './fake-run-repo';
+export * from './fake-scratch-dirs';
 export * from './fake-secret-vault';
 export * from './fake-transport';
 export * from './fake-update-checker';
 export * from './fake-work-order-repo';
+export * from './fake-worktree-files';

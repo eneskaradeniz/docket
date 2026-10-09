@@ -353,12 +353,229 @@ being reset.
   effort list, and the role's stages that set their own tier or thinking (read-only, with the flow
   name). A stage with `sameProviderReview` puts an amber line on its role's row: the review will
   run on the provider that wrote the code; adding an account of another provider sends it there.
+- **U-33a** (amends U-33; 2026-10-09, #838) "Asistan sırası" also offers a "+" chip for every
+  account outside the chain (the same chip the fine-tune's own chain uses), with one dim hint line
+  above them; with accounts but an empty chain the chips sit beside the empty line. Clicking a chip
+  appends the account to the chain's end and saves every listed role with its complete binding
+  (A-49); a role with its own chain keeps it.
 - **U-38** (providers) Sağlayıcılar lists `providers.discovered` (A-67): one row per provider —
   mark, `name`, version (mono), status (Hazır · Giriş gerekli · Doğrulanamadı for `loggedIn: null`)
   and the binary path (mono, dim, full in `title`); "Yeniden tara" re-runs discovery and each row
   updates as its provider answers (U-6); providers not found on the machine fold into one closed
   group "Kurulu değil · n" whose rows show `installUrl` as copyable text. No row invents a version,
   a status or a command.
+- **U-39** (account test, A-68 … A-74; added 2026-10-03) "Test et" sends `account.test` for a
+  **saved** account (it needs an account id): inline on a Settings → Hesaplar account row whose
+  provider reads Doğrulanamadı (`loggedIn: null`, U-38), and on every account's editor Genel tab
+  (U-30). It tests the route's default model (no `model` is sent; the line names it "asistanın
+  varsayılanı"). While the command is open the button reads "Test ediliyor…" and is disabled; on its
+  answer the store re-queries `settings.accounts` and renders the row's `test` view as one result
+  line: `null` → "Test edilmedi"; `ok` → "Çalışıyor" with the relative time of `at`; `failed` → the
+  class sentence — `auth` "Giriş gerekli ya da anahtar geçersiz", `limit` "Bu model şu an
+  kullanılamıyor — plan limiti", `model` "Bu model bu hesapta kullanılamıyor", `network` "Bağlantı
+  kurulamadı ya da yanıt gelmedi", `install` "Asistan bu makinede çalıştırılamadı", `unknown` "Test
+  başarısız oldu" — with a closed "Ayrıntı" disclosure showing `detail` (mono) only when it is not
+  empty. A `failed` view of class `model` sets the account row's status to "Model hatası" (error
+  tone) until the next test or reset. Refusals are U-8 labels under the button:
+  `needs_spend_consent` "Bu model ücretli ya da doğrulanmadı — önce Modeller'de izin ve tavan ver"
+  with a link to the Modeller tab, `spend_cap_reached` "Harcama tavanı doldu", `busy` "Test zaten
+  sürüyor", `unsupported` "Bu hesap test edilemiyor", `not_found` the generic not-found label. The
+  model's output is never shown anywhere. The wizard's Hesaplar rows are discovery candidates, not
+  accounts yet, so they carry no "Test et": a Doğrulanamadı candidate's status line adds "Kurulumdan
+  sonra Ayarlar'da test edebilirsin".
+- **U-40** (Yeni proje, A-75 … A-79; added 2026-10-03; approved prototype
+  `docket-tasarim/rev8/index.html` → calismaAlan*) A page at route `#/yeni-proje` in the wizard's
+  page language: a centred 880×580 card, title "Yeni proje", one line "Docket'in çalışacağı projeyi
+  seç ya da yenisini birlikte kuralım.", and a fixed bottom band (Vazgeç · reason line · primary).
+  Cards, in the prototype's order: the featured "Birlikte sıfırdan başla" card is shown **disabled**
+  with a "Yakında" tag (Phase 7, #658) and is never selected; under the divider "ya da var olan bir
+  yoldan başla": "Var olan klasör" (selected by default), "Git'ten klonla" disabled with "Yakında",
+  "Boş proje". Var olan klasör: "Klasör" path field and "Proje adı" (pre-filled with the folder's
+  last path segment once a path is typed, editable); primary "Oluştur" sends `project.create`
+  `mode: 'existing'`. Boş proje: "Proje adı" and "Konum" (parent folder path) with the note
+  "Konum içinde yeni bir klasör oluşturulacak."; primary "Oluştur" sends `mode: 'blank'`. The reason
+  line names the missing input ("Bir klasör seç." / "Projeye bir ad ver.") and the primary stays
+  disabled until it is satisfied. Errors are U-8 labels under the field they concern:
+  `invalid_name`, `not_a_repo` ("Bu klasör bir git deposu değil"), `not_a_folder`, `folder_exists`,
+  `docket_folder_exists` ("Bu klasörde yarım bir .docket var; elle düzelt"), `io_failed`,
+  `definitions_invalid`; `project_exists` shows "Bu klasör zaten bir Docket projesi" with a "Bağla"
+  action that sends `project.attach` for the same path. Success closes the page, refreshes the tree
+  (U-15) and opens the new project's board, with one toast: "Proje oluşturuldu. Test komutlarını
+  .docket/repo.yaml'a yaz; yazılana kadar test kapısı bekler." Entries: the wizard's "Kurulum tamam"
+  moment keeps its inline "Proje bağla" form (U-35) and adds a "Yeni proje oluştur" link under it
+  that opens this page; the sidebar's "Projeler" header gets a "+" icon button (title "Yeni proje")
+  opening it. No folder picker exists yet: paths are typed (mono fields).
+- **U-41** (shared components; added 2026-10-04, #750) The setup wizard and Settings are built from
+  one set of components — never a wizard copy and a Settings copy. The approved design is the
+  prototype `docket-tasarim/kurulum-v3/index.html`; where a rule and the prototype differ, ask.
+  Components: **Window** (880×580, 200px left column + content column of head · scrolling body ·
+  optional footer band; the footer never leaves the window — the body scrolls); **SettingRow**
+  (U-29's row: title, one sentence, one control on the right); **Listbox** (a button showing the
+  current value and a chevron; click or ↓/↑ opens a list of options with a ✓ on the selected one and
+  an "Önerilen" tag on the recommended one; Enter picks, Esc/Tab closes, outside click closes);
+  **AccountGroups** (one card per assistant: mark, name, account count; one row per account: label,
+  billing tag — "Abonelik", "Abonelik · anahtarla", "Kullandıkça öde", "Ücret bilinmiyor" from the
+  P-51 billing view — `displayPath · host` in mono, status, ✎, and the selection circle where the
+  host selects); **MeterList** (U-44); **DragOrderList** (rows with a grip, position number, mark,
+  label and sub-line; pointer drag moves a row and the others slide to their slots; Alt+↑/↓ moves the
+  focused row; each move is announced "n. sıraya taşındı"); **AccountEditor** (U-43). A footer button
+  that does not apply to a step is not rendered (no reserved space).
+- **U-42** (setup wizard v3; supersedes U-35 where they differ; added 2026-10-04, #750) Steps: Hoş
+  geldin → Hesaplar → Yetenekler (skipped "–" until #715) → Asistan sırası (skipped with fewer than
+  two ready selected accounts) → Bütçe. **Hoş geldin**: two SettingRows — Dil (Listbox Türkçe ·
+  English) and Tema (Listbox Sistem · Koyu · Açık with a small swatch, Sistem recommended) — applied at
+  once; no Geri on this step. **Hesaplar**: a toolbar on top ("Bulunanlar · n hesap · m asistan" left,
+  "Yeniden tara" right with a thin progress line while scanning) and AccountGroups over
+  `accounts.candidates` (directory and machine-login candidates, P-53); every installed provider has a
+  group; a needs-login account says "Terminalde <asistan> ile giriş yap, sonra Yeniden tara"; a
+  Doğrulanamadı account says "Giriş durumu okunamıyor. Kurulumdan sonra Ayarlar'da test
+  edebilirsin." (no Test et in the wizard, U-39); ready accounts start selected; the gate is U-35's.
+  **Asistan sırası**: DragOrderList of the selected accounts, ready subscriptions first, then the
+  others; a non-included account's sub-line reads "<billing tag> · otomatik geçişte atlanır"; the
+  first row's sub-line reads "İlk tercih"; a note says every role uses this order and that a
+  role-specific order lives in Settings. **Bütçe**: two groups by the P-51 billing view — "Abonelikler ·
+  Planına dahil kullanım; para harcamaz" and "Kullandıkça öde ya da ücreti bilinmeyen · Para
+  harcayabilir; tavan ve iznin olmadan çalışmaz"; a subscription row has "Limit dolunca" (Listbox:
+  Sıfırlanınca sürdür (recommended) · Sıradakine geç · Aynı hesapta başka modele geç — only when the
+  account has a model-scoped pool · Durdur ve bana sor), ✎, and a MeterList from
+  `accounts.candidateQuota` (before adoption) — while it loads or when it answers an error, one line
+  "Limitler hesap eklenince okunur." (or the U-44 no-meter line); a pay-per-use row has the cap amount,
+  the period Listbox (Aylık recommended) and ✎, with "Tavanın %80'ine gelince haber veririm; tavana
+  ulaşınca yeni işleri durdururum, çalışanı kesmem." **Kurulumu bitir** adopts and saves as U-35 says,
+  then closes the wizard and opens **Anasayfa** directly (no completion moment, no attach form) with
+  one toast "Kurulum tamamlandı · n hesap hazır"; with no project yet, Anasayfa shows a dashed start
+  card "İlk projeni ekle" with "Yeni proje" (U-40's page) and "Var olan projeyi bağla". "Bu adımı
+  atla" appears only on Bütçe (finishes with the recommended values).
+- **U-43** (Settings in the wizard's language; amends U-28, U-30, U-33, U-34; added 2026-10-04,
+  #750) Settings is the same Window with a menu instead of steps — Çalışma: Hesaplar · Roller ·
+  Yetenekler · Sağlayıcılar; Uygulama: Görünüm · Telefon · Güncelleme — and a × in the head.
+  **Hesaplar**: the same AccountGroups over `settings.accounts` (no selection circle), "Yeniden tara",
+  Test et per U-39, ✎, and below a "Eklenmemiş · n hesap" group of candidates with an "Ekle" button
+  (`account.adopt`); the menu row keeps its amber dot while it is non-empty. **Roller**: "Asistan
+  sırası" as the same DragOrderList (replaces U-33's ↑/↓ buttons), then one SettingRow per role with a
+  Listbox Hızlı · Dengeli · Özenli (recommended per U-33). **Görünüm**: the same two SettingRows as Hoş
+  geldin (replaces U-28's segment controls). **Sağlayıcılar**: U-38's rows inside the same card style.
+  **Yetenekler**: one dashed empty state "Yetenek keşfi hazırlanıyor" until #715. **AccountEditor**
+  (replaces U-30's sizes): a centred dialog 820×600 (max 100% of the window) with a head (mark,
+  "Asistan · hesap", `displayPath · host` mono, billing tag, status, ×), vertical tabs on the left —
+  Genel (Ad field; Model Listbox, "Asistanın varsayılanı" recommended; the account facts as a
+  definition list), Kullanım (MeterList, "Son okuma … · Yenile" issuing `quota.refresh`), Limitler
+  ("Limit dolunca" as radio cards with one sentence each — the same options as the wizard Listbox;
+  "Kendi kullanımın için ayır" Listbox Yok · %10 · %20 · %30; the spend cap only on an account whose
+  billing view is not `included` or that has consents), Modeller (U-32's three groups — Plana dahil,
+  Kullanım başına ücretli with an "İzin ver" switch, Doğrulanamadı — each model in exactly the group
+  its resolved billing says; a model made `included` by an allowance pool says why, e.g. "haftalık
+  limiti olduğu için planda") — and a footer (in the wizard "Değişiklikler kurulum bitince
+  kaydedilir." · Vazgeç · Kaydet; in Settings saving per U-29). Esc or a click outside closes it.
+- **U-44** (meter list; amends U-31; added 2026-10-04, #750) A MeterList shows one row per meter:
+  the meter's label (the provider's own window name: "5 saatlik", "Haftalık", …) with a scope tag —
+  "tüm modeller" for a pool that applies to all while another pool of the same account is
+  model-scoped, "yalnız <model>" (info tone) for a model-scoped pool —, the bar (remaining from the
+  left; amber under 40 %; the U-31 reserve zone when set), "%r kalan", and "<reset> sonra
+  sıfırlanır" (or the unit fraction first, e.g. "120 / 300 ·"). When the account has a model-scoped
+  pool, one note follows: "<model> limiti dolarsa bu hesapta yalnız <model> durur; diğer modeller
+  çalışmaya devam eder." No meter: "Bu asistan kullanım bilgisi vermiyor; limit dolunca hatadan
+  anlarız." (needs login: "Giriş yapılınca limitler görünür."). The list re-renders on
+  `accounts.changed`.
+- **U-44a** (amends U-42 and U-43, 2026-10-04, review of #757) A pay-per-use or unknown-billing row
+  in the wizard's Bütçe carries an explicit consent control ("İzin ver" / "İzinli") next to its cap —
+  U-35's gate (consent with a cap before "Kurulumu bitir") stays. The AccountEditor's Genel tab has no
+  Model choice until a contract stores an account's model; the wizard's editor has no Modeller tab (a
+  candidate's models are unknown before adoption). Anasayfa's "Var olan projeyi bağla" opens the U-40
+  page (its "Var olan klasör" card is the default). U-35's completion moment and inline attach form
+  and U-40's wizard entry are superseded by U-42: the wizard ends on Anasayfa.
+- **U-45** (amends U-42 and U-43; 2026-10-04, #759; approved prototype `docket-tasarim/kurulum-v3/index.html` →
+  accounts()) AccountGroups splits the visible accounts into two collapsible sections, in the wizard's Hesaplar
+  step and in Settings → Hesaplar alike: **Bulunanlar** (status ready) and **Hatalı ve bulunamayanlar** (needs
+  login or Doğrulanamadı). Each header is a button with `aria-expanded` and `aria-controls`, a turning chevron,
+  the name and "n hesap"; Enter and Space toggle it. Bulunanlar starts open, Hatalı ve bulunamayanlar starts
+  closed and, while closed, shows a summary after its count ("n giriş gerekli · m doğrulanamadı", each part
+  omitted at zero, with the status lamp colours). The open state lives in the screen's state: it survives
+  "Yeniden tara" and re-renders, not a reload. An empty section is not drawn. Inside a section the
+  per-assistant groups, rows, selection, ✎ and Test et are unchanged (U-42, U-43); the rows of a closed
+  section are hidden and not focusable. The toolbar label "Bulunanlar · n hesap · m asistan" becomes
+  "Taranan · n hesap · m asistan" (EN "Scanned"; section names EN "Found" and "Failed or not found").
+  Settings' "Eklenmemiş" list stays as it is. Out of scope: a row for an assistant that is not installed.
+- **U-45a** (amends U-45; 2026-10-04, review of #761) Only a needs-login or Doğrulanamadı row sits in
+  Hatalı ve bulunamayanlar. Every other visible row — ready, Rezervde (reserve reached), Veri yok (no meter
+  reading) and any later status that still works — stays in Bulunanlar, and an installed assistant's empty
+  card stays there too. The closed summary counts only the two failing standings.
+- **U-46** (window sizes; amends U-42, U-43; 2026-10-04, #766; approved prototype
+  `docket-tasarim/kurulum-v3/index.html`) The setup wizard and Settings share one window: 1040×680 at most,
+  `max-width: calc(100vw - 48px)`, `max-height: calc(100vh - 96px)`; on a narrow window the existing
+  single-column layout applies. The AccountEditor dialog (U-43) stays 820×600 at most, so an editor is
+  always visibly smaller than the window it opens over.
+- **U-47** (DragOrderList motion; amends U-41, U-42; 2026-10-04, #767; approved prototype
+  `docket-tasarim/kurulum-v3/index.html`) DragOrderList (wizard Asistan sırası and Settings → Roller) uses
+  pointer events with pointer capture, not the HTML5 drag API. The held row lifts (shadow, scale 1.01,
+  amber outline) and follows the pointer; the other rows slide to open the gap (FLIP, 160 ms ease-out); on
+  release the row settles (140 ms); the list scrolls itself near its edge; text is not selected during a
+  drag; touch works (`touch-action: none` only on the grip). Alt+↑/Alt+↓ moves a row with the same slide
+  and the "n. sıraya taşındı" announcement (U-41). Under `prefers-reduced-motion` there is no motion: the
+  order changes at once.
+- **U-48** (compact Bütçe; amends U-42, U-44a; 2026-10-04, #766; approved prototype
+  `docket-tasarim/kurulum-v3/index.html`) Each account is one compact row in the wizard's Bütçe: mark, name,
+  billing tag, one summary line ("Limit dolunca bekler · rezerv yok", "Tavan $50 · izinli") and an "Ayrıntı"
+  button (`aria-expanded`) that opens the row's controls in place — limit-full choice, reserve, cap, ✎ and a
+  Max account's three limit lines — one row open at a time; all rows start closed. A pay-per-use or
+  unknown-billing row always shows its consent control and cap field in the row (U-44a; U-35's gate stays).
+  A line above the groups says "Önerilen ayarlar uygulandı — değiştirmek istersen satırı aç.". The two
+  billing groups (Abonelikler, Kullandıkça öde ya da ücreti bilinmeyen) keep their headers.
+- **U-49** (finishing progress; amends U-42, U-44a; 2026-10-04, #766; approved prototype
+  `docket-tasarim/kurulum-v3/index.html`) "Kurulumu bitir" turns into a spinner button "Kuruluyor…" and the
+  window body into a four-line progress list — "Hesaplar kaydediliyor", "Sıra kaydediliyor", "Bütçe
+  uygulanıyor", "Anasayfa hazırlanıyor" — each line going from a spinner to a drawn check as its real step
+  completes (never a fixed delay); Geri and the step buttons are disabled meanwhile; on completion the
+  window fades to Anasayfa and the U-50 toast reads "Kurulum tamamlandı · n hesap hazır". A failing step
+  stops the list on that line with its reason and a "Tekrar dene" button. Under `prefers-reduced-motion`
+  the lines change without animation, in the same order.
+- **U-50** (ToastHost; amends U-8; 2026-10-04, #768; approved prototype
+  `docket-tasarim/kurulum-v3/index.html`) Every toast in the app — command results (U-8), wizard completion,
+  new project and any other — goes through one component and one call, `toast({ type, text })` with `type`
+  one of success, info, warn, error, rendered by one ToastHost at the top right (16 px from the edges),
+  stacked, at most three visible. A toast slides in from the right, dismisses itself after 5 s (warn and
+  error 8 s) with a thin progress line, pauses while hovered or focused, and has a close button. `aria-live`
+  is polite, assertive for error. Only existing colour tokens. No screen draws its own toast.
+- **U-50a** (amends U-50 and U-8; 2026-10-04, review of #771) `ToastInput` has an optional `copy` text. A
+  toast that carries it shows a "Kodu kopyala" button (it copies that text and says so by changing to
+  "Kopyalandı" for two seconds) so U-8's "the code itself is available for copying" holds: a command result
+  with `ok: false` toasts as `error` with the code's label as its text and the code as `copy`; an unknown
+  code shows the generic failure text with the raw code only behind "Kodu kopyala", never in the text. A
+  toast with a copy button does not dismiss itself while the pointer or focus is on it (U-50) and, being
+  an error, stays 8 s.
+- **U-51** (sidebar; amends U-16 and U-44; 2026-10-04, #774; approved prototype
+  `docket-tasarim/kurulum-v3/index.html`) The sidebar is 264 px wide; section headers (Projeler, Hesaplar) are 14
+  px/700, rows 13.5–14 px, helper text at least 12 px. The Hesaplar section has a collapsible header (chevron,
+  count) and, once under it, one dim line "Çubuk en dar limiti gösterir.". Every account card has the same fixed
+  height (56 px) whatever its number of limits: row one is the provider mark, the account's name only (ellipsis
+  when long; the full "Asistan · ad" in the `title` and the popover) and a status dot; row two is one bar for the
+  account's tightest limit with its percent on the right, no per-card limit label; an account without limit data
+  shows a dim "Limit bilgisi yok" in that row instead. The bar and dot colour by what remains: 40 % or more
+  proceed (green), 15–40 % amber, under 15 % red. Click or Enter opens a popover listing every limit with its name
+  and reset time and marking the tightest; Esc closes it and the focus stays on the card. Five accounts show at
+  first; the rest sit behind a "+n hesap daha" button (`aria-expanded`, "Daha az göster" when open) and the open
+  list scrolls inside the section. With no project, Projeler shows a centred dashed box (`rounded-card`) with a
+  folder icon, the line "Projelerin burada görünecek." and a secondary "Yeni proje" button that opens the U-40
+  page — the text "Henüz proje yok." is gone.
+- **U-52** (scanning state; amends U-42 and U-43; 2026-10-04, #775; approved prototype
+  `docket-tasarim/kurulum-v3/index.html`) Arriving on the wizard's Hesaplar step, and pressing "Yeniden tara",
+  shows six skeleton assistant groups (mark, dimmed name, one or two shimmering placeholder rows, about the size
+  of the real groups) under the toolbar line "Asistanlar ve hesaplar taranıyor…" with a thin indeterminate
+  progress line — never a percentage or a counter, because discovery reports none. The toolbar count reads
+  "Taranan · —" and the button "Taranıyor…" (spinning icon, disabled) until the scan ends. The skeleton stays at
+  least 400 ms; the groups then appear in order, 40 ms apart, each fading in over 160 ms with an 8 px rise. The
+  container has `aria-busy` while scanning and the end announces "n hesap bulundu" politely. Settings → Hesaplar
+  uses the same component. Under `prefers-reduced-motion` there is no shimmer or rise: a static dim skeleton and
+  an immediate swap.
+- **U-51a** (amends U-51 and U-16; 2026-10-05, review of #779) The popover a sidebar account card opens ends with
+  a "Hesabı aç" button that opens that account's view (the page U-16's card click used to open), so the sidebar
+  keeps a one-step way into the account; the card itself opens only the popover. Esc closes the popover and
+  the focus stays on the card.
+- **U-51b** (amends U-51; restores U-16's visible count; 2026-10-05, review of #779) The Hesaplar section shows two
+  account cards at a time with the top of a third peeking beneath them, and the rest scroll inside the section:
+  there is no "+n hesap daha" or "Daha az göster" button. U-51's "five accounts show at first … sit behind a button"
+  is superseded. The section starts collapsed (U-16) and its body keeps the cards' height equal (U-51); the scroll
+  area has no horizontal overflow.
 - **U-34** (discovered accounts) The candidates (`accounts.candidates`) and the discovered
   providers appear in the wizard's Hesaplar step and under Settings → Hesaplar → "Eklenmemiş":
   a row per candidate with mark, label, status and selection. `unreadable` disables the row with
@@ -388,6 +605,10 @@ being reset.
   selected account with its draft, writes caps and consents, and issues `binding.save` for every
   `roles.list` role with the chain and the role's recommended work style; the wizard does not
   reappear while a project exists. `back` keeps every entry.
+- **U-35a** (amends U-35; 2026-10-09, #860) Yetenekler's data source and skip rule moved to U-58:
+  the step reads `capabilities.candidates` — no composed source is wired into the store — and is
+  skipped while that read has not finished with at least one candidate (an empty answer or a
+  failed query), which is also the standing on a machine with no adopted account.
 - **U-36** (theme) Tema is Sistem · Koyu · Açık, persisted per viewer in local storage
   (`docket.theme.v1`, a corrupt value reads as Sistem); Sistem follows `prefers-color-scheme` live;
   the choice sets `data-theme` on the root, which the tokens already read.
@@ -400,7 +621,7 @@ being reset.
 
 Deferred: a "Docket AI'a sor" entry in the editor and in Roller, answering with a Proposal card
 (eski → yeni, Vazgeç / Uygula; invariant 5), lands with the chat surface (Phase 6); account test
-("Test et") and capability import land with their own contracts.
+("Test et") and capability import land with their own contracts. (2026-10-03: account test → U-39.)
 
 ### Prototype vs rules (2026-09-29)
 
@@ -409,6 +630,166 @@ the main-repo ★ row opens the board, not the roadmap (U-15); a single-repo boa
 "Yol haritası ↗" (U-15); a cross-repo task expands to its per-repo work orders (U-17); the account
 view shows the limit policy read-only with ⓘ (U-20); Son kapananlar lists five (U-21); copy says
 proje / repo, never çalışma alanı (the Workspace→Repo rename).
+
+## Width — proportional scale and full sections (U-53 … U-56)
+
+Visual source: the operator-approved width prototype `~/source/docket-tasarim/genislik/index.html`
+(2026-10-05), validated in twelve conditions — the four data screens (cockpit, account view,
+work-order detail, roadmap) at 1280, 1920 and 2560, in both themes — with every section at 100 %
+fill, a 0 px right gap and no console or page error; the fill was measured at the unscaled raw size.
+The wave exists because the measured app left the wide window empty (the 2026-10-05 responsive
+report): the account view and the roadmap filled 42.6 % of the main area at 2560, the cockpit
+53.6 % (74.8 % already at 1920), the detail 56.8 % — every route but the board sat under a fixed
+`max-w` pinned left, and the cockpit's one wide breakpoint bound the viewport, not the main
+container.
+
+- **U-53** (proportional scale; amends U-51's fixed 264 px; added 2026-10-05, #793; approved
+  prototype `docket-tasarim/genislik/index.html`) The interface grows proportionally with the
+  window. Every dimension on the data screens and the sidebar is expressed in rem — px survives
+  only where a hairline must stay a hairline (1px rules, icon hit areas) — and the scale is one
+  rule on the root, in CSS, never a JS measurement: `html { font-size: clamp(100%, calc(100% +
+  (100vw - 1440px) * 0.003571), 125%) }` (16 px base, breakpoint 1440, clamped 100–125 %; the
+  prototype computed the same formula in JS only because it frames one window inside a page).
+  Amended 2026-10-09, #793: the multiplier is unitless, so it adds px not percent; corrected to
+  0.003571 so 1440→2560 grows 16→20 px (the prototype's 0.0223 was a percent-per-px figure that
+  saturated the CSS clamp near 1620 px). The
+  anchors the prototype measured: a 0.8125rem body text reads 13 px at 1280 and 16.25 px at 2560,
+  the page h1 (1.25rem) 20 → 25 px, the sidebar's 16.5rem 264 → 330 px. No screen or component
+  overrides the root font-size; a test pins the clamp expression and the no-override rule.
+  Amended 2026-10-09, #856: the shared row components the wave left px ride the scale with the
+  same ÷16 walk — the action button, the cockpit's row interiors (attention, running, closed,
+  project cards, section heads, states and the skeleton that mirrors them) and the live panel —
+  same visual result at the reference width, no layout redesign. Hairlines keep their px (the
+  1.5px edges), and so do the badges the modal surfaces share (the state pill, the provider
+  mark): the wizard and Settings still pass px sizes, so those wait for their own decision.
+- **U-54** (full sections; added 2026-10-05, #793) The four data screens fill the main area: no
+  `max-w-*` on their page wrappers or top-level sections, a fixed rem padding at the edges, the
+  content left-aligned (L-10 unchanged). Deliberately narrow surfaces stay narrow — the search
+  palette, the Settings/wizard window (U-46), the AccountEditor dialog (U-43), the centred Yeni
+  proje page (U-40), empty-state cards — and reading text inside a full-width card keeps its
+  measure at most 62ch. Moving any of those to full width is its own decision, never a rider on a
+  PR that lands this rule.
+- **U-55** (columnation on the main container; added 2026-10-05, #793) A width threshold binds to
+  the `main` element's container (`@container`), never to the viewport — the cockpit's
+  viewport-bound `min-[1500px]` column jump, and its skeleton's mirror, is the trap this replaces.
+  The thresholds, in CSS px against the main container: below 900 one column, at ≥900 two, at
+  ≥1500 three; the detail's live pane is the fixed 22.5rem second column from ≥900, and its
+  runs-and-audit third column (21.25rem) arrives at ≥1700. A card grid fills its row with
+  `repeat(auto-fill, minmax(min, 1fr))`, the minimum in rem (21.25rem row cards, 22rem project
+  cards, 23.75rem roadmap phases), so a full row spans edge to edge at every width.
+  Amended 2026-10-09, #856: the row cards' 21.25rem minimum stands at every width — what the
+  narrower card did to the attention card's project line is fixed in the card, never in the
+  grid; that fix is U-62's own rule.
+- **U-56** (sparse row → side panel; added 2026-10-05, #793) A row whose items all fit on one
+  line keeps its cards at their natural minimum on the left and gives the leftover width to a
+  `1fr` side panel: the cockpit's attention and runners rows take "Son kapananlar" and "Sırada" as
+  their panels, and the account view is the fixed three-column composition Kullanım |
+  Harcama+Bağlantı | Son koşular, which leaves no orphan column. The panel exists only while the
+  row's items fit on one line with room to spare — in the validated world the widest class;
+  narrower, the cards fill the row themselves. CSS cannot count elements, so the product binds
+  this decision structurally — one pure helper (item count, container width, minimum card →
+  column count and panel on/off) or, where the composition is fixed anyway, that width class's
+  fixed composition — never a per-screen hand-tuned grid.
+
+### Constraints and follow-ups (the prototype's known limits)
+
+- "Few items → side panel" cannot be expressed in CSS; the prototype computes it in JS on every
+  resize. The product must bind it structurally (U-56's helper or fixed composition) together
+  with the screens — a sparse row whose cards silently stretch wide is the failure mode the rule
+  exists to prevent.
+- The U-55 thresholds are CSS px against `main` while every size rides U-53's rem scale, so a
+  threshold's design-effective point drifts as the scale grows (a 1500 px container buys fewer rem
+  at 125 %). Validated at 1280/1920/2560 only; the audit's 1024/1152 windows sit at the clamped
+  low end. A threshold that proves wrong at an intermediate width is a follow-up that re-validates
+  all three widths, not a per-screen nudge inside a PR.
+- Fill is measured with animations disabled (`prefers-reduced-motion`): a moving element's
+  bounding box corrupts the reading — the prototype's first measurement round read the cockpit's
+  scan bar as %102 fill. L-5a's measurement takes the same precaution.
+- The prototype loads its type faces from Google's CDN and falls back to system faces offline; the
+  product already bundles them (`@fontsource` in `src/index.css`), so there is nothing to port —
+  do not add a CDN dependency for this wave.
+- The px-fixed surfaces inside the scaled app — U-46's wizard/Settings window (1040×680), U-43's
+  AccountEditor (820×600), U-40's card (880×580), the palette's 560 px, the title bar's 28 px
+  controls — do not grow with U-53's scale while their interiors do (at 125 % the interior grows
+  25 % inside the same frame). Whether each moves to rem is the architect's follow-up decision,
+  issue by issue; the width wave must not rewrite them silently.
+
+## Attention card names — two wrapped lines, one height (U-62)
+
+- **U-62** (cockpit attention cards; added 2026-10-09, #856; amends U-55's narrow-card outcome)
+  The attention card's project line — `kod · proje/repo · aşama · yaş` — never truncates on one
+  line again: it wraps anywhere (`overflow-wrap: anywhere`) and clamps at two lines
+  (`line-clamp-2`), and the full line stays reachable through the span's `title`, the fallback
+  for the clamped case only. The card reserves the second line's space — a `min-height` of two
+  of the line's own boxes as the card renders them, the preflight's inherited 1.5 leading × the
+  0.71875rem mono size × 2 (2.15625rem, exact at every root scale) — so a one-line and a
+  two-line name render the same card height, and the skeleton's mirrored meta block stands on
+  the same reservation, leaving the holder swap nothing to move. The work-order title on the
+  card's first line keeps its own
+  single-line truncate. The layout audit walks the cards at 1024, 1280 and 1512 (`attention:`
+  lines): every project line clamps at two, no card overflows its box or the main column, and
+  the cards of one grid row keep one height (the ask band's card excepted — taller by its own
+  band, not by its name).
+
+## Decision card — the approval sees the files it decides on (U-57)
+
+- **U-57** (detail screen; added 2026-10-09, #819) The expected-of-you card lists the stage's
+  files only while the work order is `awaiting_human`, and in no other state:
+  `workOrders.stageFiles` fills the list (at most 50 entries, with the "showing the first 50" note
+  when `truncated`) and the preview of the first listed file loads from
+  `workOrders.readStageFile` — plain read-only text, no Markdown rendering, no diff, no edit; picking
+  another entry of the list previews that file instead. Both the list and the preview disappear the
+  moment the state is not `awaiting_human`. The detail store's existing refresh (U-4) re-reads the
+  list with the detail. Every line of copy lives in the bundles (`labels/{tr,en}.ts`, U-1) — the
+  list heading, the truncated-list note, the truncated-preview note — and a failed read shows the
+  failure code's label, never the raw code.
+
+## Wizard Yetenekler — the capability step (U-58 … U-60)
+
+- **U-58** (setup wizard; amends U-35 through U-35a; added 2026-10-09, #860) Yetenekler reads
+  `capabilities.candidates` (A-94 — the query scans on every call, nothing is cached) when the
+  Hesaplar step completes, and again whenever the set of adopted accounts changes (the
+  `accounts.changed` event). It is never read before an account exists: the scan walks the
+  account store's own identity directories (A-90), so the answer would be empty by construction.
+  While the query runs the step shows the Hesaplar skeleton pattern (placeholder groups with
+  single-line rows) and the primary footer slot stays disabled until the one query resolves. The
+  step is skipped — "–" in the rail — when the read has finished with no candidate: an empty
+  answer or a failed query alike, and a query error surfaces nowhere: not in the rail, not at the
+  end of the walk. A read that resolves into that skip while the user stands on the step moves
+  the walk on by itself.
+- **U-59** (setup wizard; added 2026-10-09, #860) One group per account the candidates name in
+  their `sources`, titled the way Hesaplar reads that account — "Asistan · Hesap" (the provider's
+  name · the account's label); the group count equals the number of distinct accounts across the
+  sources. A candidate found in several accounts is one capability: it appears in every group
+  that found it, and its checkbox state is synced by `identity`. The row is the Hesaplar card's
+  single-line form (52px): no icon, the kind in mono, the name; the description, the command or
+  path and the ⓘ **Kaynaklar** list (one "Asistan · Hesap" per source) live in the row's ⓘ
+  popover — information only. A candidate with `imported: true` is shown checked and disabled
+  with the label "Eklendi"; it is never sent to the import and never counts in the summary
+  line's "n yetenek" — the number of distinct selected identities. `truncated: true` draws one
+  muted note line ("Liste kısaltıldı") under the groups; there is no pagination.
+- **U-60** (setup wizard; added 2026-10-09, #860) The finish walks a capability phase after the
+  accounts phase and before the leave: one `capabilities.import { identities }` call with the
+  distinct selected, not-yet-imported identities — no call at all when nothing is selected, and
+  no progress line for the phase in that case either. A `rejected` result row or a failure of the
+  whole call never blocks the finish: the rejected rows are listed (name and the rejection
+  reason's label, never the raw code) as a note under the finish list, and they ride the handoff
+  as the wizard's one warn toast — the window's fade would hide the in-window note before it
+  could be read. `already_present` counts as success. The picks stay a draft in the store until
+  the finish, like every wizard choice.
+
+## The changes gate's attestation pair (U-61)
+
+- **U-61** (detail screen; added 2026-10-09, #855) A pending `changes` gate of the current stage
+  carries a two-button answer pair in its gate row — "Değişiklik gerekmiyordu" (primary) and
+  "Eksik, yeniden çalıştır" (neutral) — regardless of the amber `awaiting_human` flag, because a
+  pending changes gate holds the work order in `gating`, never `awaiting_human` (A-96). The row
+  carries the same amber attention edge the deploy row does: it waits on a person. Each button
+  fires the store's `attestNoChanges` intent (`gate.attest`, `noChangeNeeded: true` / `false`);
+  the two outcomes map to their own success copy ("Beyan kaydedildi: değişiklik gerekmiyordu." /
+  "Beyan kaydedildi: aşama yeniden çalışacak.") and the refusals map through U-8 like any
+  command's (`not_a_changes_gate` included). A changes gate that is upcoming or already passed
+  renders no pair, and no `changes` gate ever takes approve/reject buttons.
 
 ## Verifying the shell — E2E layers (Phase 3.5)
 
@@ -438,7 +819,9 @@ belongs to the mobile app.
   the default window (the size the operator uses). `--full` — or `FULL=1` on the wrapping npm
   script — restores the complete 3 × 2 matrix, every size in both themes, for a release run or
   after a token/theme change; `journeys --quick` stays the default window in dark alone. The sidebar is
-  always open, never collapses. The harness resizes the `BrowserWindow`; it does not scale the page.
+  always open, never collapses. The harness resizes the `BrowserWindow`; it does not scale the page
+  itself — under U-53 the page scales with the window through its own root clamp, and the audit's
+  readings are the page's own CSS px.
 - **Journeys** (one `test` each, named `J-n: …`): J-1 cockpit → answer a permission ask inline →
   the item leaves Senden bekleyenler · J-2 tree → repo row → board; Kanban ⇄ Liste survives reload ·
   J-3 card → in-place detail → approve → ‹ Geri returns with view state intact · J-4 project row →
@@ -447,11 +830,20 @@ belongs to the mobile app.
   Settings, and the nav's Telefon and Ayarlar rows open it on their own sections · J-7 ⌘K (or the
   sidebar's Ara row) opens the search palette and focuses its input · J-8 cockpit → open a project →
   back → forward (the bar's chevrons, ⌘[/⌘], dimmed at the ends; the palette owns its keys), and the
-  detail's ‹ Geri rides the same history. Each step asserts visible text and saves a screenshot.
+  detail's ‹ Geri rides the same history · J-9 the setup wizard, on its own fresh `DOCKET_DATA_DIR`
+  seeded with two accounts whose fixture config directories share one capability: Hoş geldin →
+  Hesaplar → Yetenekler shows one group per account and the shared capability as one row in both;
+  toggling one syncs the other, the ⓘ lists the Kaynaklar, the finish walks its capability line,
+  and the imported definition file exists in the data dir. Each step asserts visible text and saves
+  a screenshot.
 - **Layout audit** (pure DOM measurement, no pixel diff; each assertion named `L-n: …`, for every
   screen × size × theme):
   - **L-1** The sidebar's left edge is 0 and its width is 240px at every window size — it never
     narrows — identical (±0.5px) on every screen.
+  - **L-1a** (amends L-1; 2026-10-05, U-51) the sidebar is 264 px wide, not 240.
+  - **L-1b** (amends L-1a; 2026-10-05, U-53) the sidebar is 16.5 rem at the live scale — 264 px
+    at 100 %, 330 px at 125 % — so its pixel width follows the root clamp instead of a fixed
+    number; the never-narrows and identical-on-every-screen readings of L-1 stay.
   - **L-2** No page-level horizontal scroll: `documentElement.scrollWidth <= innerWidth`.
   - **L-3** Every visible button, link and input lies fully inside the window and inside its nearest
     clipping ancestor, except inside the declared Kanban scroller; inside the Settings window's content
@@ -460,6 +852,12 @@ belongs to the mobile app.
     `text-overflow: ellipsis` and carries its full text in `title`.
   - **L-5** The main column's content width is at most 1200px (cockpit), 1280px (detail) or 960px
     (roadmap, account); the board uses the full main width.
+  - **L-5a** (amends L-5; 2026-10-05, U-54) the four data screens fill the main column instead:
+    every top-level section's right edge sits within 8 px of the main column's content-box right
+    edge at every audited size and theme, measured with animations disabled
+    (`prefers-reduced-motion` — a moving element's box corrupts the reading). L-5's caps are
+    superseded for these screens; a deliberately narrow surface (U-54's list) keeps its own cap
+    and is asserted against it.
   - **L-6** The accounts frame is never collapsed: at the 1024×640 minimum its body stays visible
     under its header.
   - **L-7** When the detail's main width is below 900 the live pane sits below the "bu aşamada

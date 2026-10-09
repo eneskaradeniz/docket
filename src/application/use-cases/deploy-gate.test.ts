@@ -339,6 +339,33 @@ describe('approveAndDeploy', () => {
     expect(h.commands.calls()).toHaveLength(0);
   });
 
+  it('E-11: approving while status is not awaiting_human returns not_pending and appends no event', async () => {
+    const h = makeHarness();
+    await createIn(h, 'mixed-flow');
+    // Fail the signoff gate to push the status to 'blocked' (no longer 'awaiting_human').
+    // The ship-stg gate is technically still in pendingGates because the fold ignores it
+    // after the stage fails, but approveAndDeploy should still reject it as not_pending.
+    await h.deps.workOrders.appendEvent(WORK_ORDER, {
+      type: 'gate_evaluated',
+      at: h.clock.now(),
+      stage: slugOf('ship'),
+      gate: slugOf('signoff'),
+      verdict: { status: 'failed', reason: 'nope' },
+    });
+
+    const result = await approveAndDeploy(h.deps, {
+      id: WORK_ORDER,
+      gate: slugOf('ship-stg'),
+      approver: USER,
+      commit: COMMIT,
+    });
+
+    expect(result).toEqual({ ok: false, error: 'not_pending' });
+    expect(h.commands.calls()).toHaveLength(0);
+    const events = await eventsOf(h);
+    expect(events).toHaveLength(2);
+  });
+
   it('E-11: a gate that is not a deploy gate is not_a_deploy_gate', async () => {
     const h = makeHarness();
     await createIn(h, 'mixed-flow');

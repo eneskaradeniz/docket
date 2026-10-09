@@ -99,8 +99,10 @@ test('the combination plan carries the concrete resolved sizes through', () => {
 
 // --- L-13's problem-text matching ---------------------------------------------------------------------
 
-test('L-13 is the walk’s thirteenth rule and its known standings name only real screens', () => {
-  assert.equal(RULE_IDS.at(-1), 'L-13');
+test('L-15 closes the walk (L-14 fourteenth) and L-13’s known standings name only real screens', () => {
+  assert.equal(RULE_IDS.length, 15);
+  assert.equal(RULE_IDS.at(-1), 'L-15');
+  assert.equal(RULE_IDS.at(-2), 'L-14');
   for (const screen of Object.keys(L13_KNOWN_STANDINGS)) {
     assert.equal(['kokpit', 'pano', 'liste', 'detay', 'yol-haritasi', 'hesap'].includes(screen), true);
   }
@@ -195,19 +197,23 @@ test("L-12: a marked provider's badge drawing no path at all fails", () => {
 });
 
 test("L-12: a markless provider's badge drawing the neutral glyph passes", () => {
+  // No built-in is markless today (P-47), so the markless standings ride a fixture set: the
+  // verdict logic must keep reading them for the next provider added without a mark file.
+  const fixtureSets = { marked: new Set(['codex']), nullMark: new Set(['p-x']) };
   const verdict = l12BadgeFailures(
-    { provider: 'kimi', path: '', neutral: true, outsideRow: false },
-    L12_MARK_SETS,
+    { provider: 'p-x', path: '', neutral: true, outsideRow: false },
+    fixtureSets,
   );
   assert.deepEqual(verdict, []);
 });
 
 test("L-12: a markless provider's badge drawing a path fails", () => {
+  const fixtureSets = { marked: new Set(['codex']), nullMark: new Set(['p-x']) };
   const verdict = l12BadgeFailures(
-    { provider: 'amp', path: 'M0 0', neutral: true, outsideRow: false },
-    L12_MARK_SETS,
+    { provider: 'p-x', path: 'M0 0', neutral: true, outsideRow: false },
+    fixtureSets,
   );
-  assert.deepEqual(verdict, ['markless provider amp drew a path it does not own']);
+  assert.deepEqual(verdict, ['markless provider p-x drew a path it does not own']);
 });
 
 test('L-12: a badge outside its row fails', () => {

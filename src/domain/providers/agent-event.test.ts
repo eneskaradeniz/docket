@@ -14,6 +14,7 @@ describe('AgentEvent', () => {
       | 'tool_call'
       | 'tool_result'
       | 'permission_ask'
+      | 'permission_answered'
       | 'usage'
       | 'quota_signal'
       | 'limit_hit'
@@ -44,6 +45,8 @@ describe('AgentEvent', () => {
     expectTypeOf<Extract<AgentEvent, { type: 'permission_ask' }>['tool']>().toEqualTypeOf<string>();
     expectTypeOf<Extract<AgentEvent, { type: 'permission_ask' }>['options']>().toEqualTypeOf<readonly string[]>();
     expectTypeOf<Extract<AgentEvent, { type: 'permission_ask' }>['target']>().toEqualTypeOf<string | undefined>();
+    expectTypeOf<Extract<AgentEvent, { type: 'permission_answered' }>['id']>().toEqualTypeOf<string>();
+    expectTypeOf<Extract<AgentEvent, { type: 'permission_answered' }>['decision']>().toEqualTypeOf<'allow' | 'deny'>();
   });
 
   it('usage carries token counts and optional cost provenance', () => {
@@ -105,6 +108,8 @@ describe('AgentEvent', () => {
       { type: 'tool_result', at: AT, id: 't1', ok: true },
       { type: 'permission_ask', at: AT, id: 'p1', tool: 'shell', target: 'rm -rf build', options: ['allow', 'deny'] },
       { type: 'permission_ask', at: AT, id: 'p2', tool: 'write', options: [] },
+      { type: 'permission_answered', at: AT, id: 'p1', decision: 'allow' },
+      { type: 'permission_answered', at: AT, id: 'p2', decision: 'deny' },
       { type: 'usage', at: AT, inputTokens: 10, outputTokens: 5, cachedInputTokens: 2, costUsd: 0.01, costKind: 'reported' },
       { type: 'usage', at: AT, inputTokens: 1, outputTokens: 1 },
       { type: 'quota_signal', at: AT, meter },
@@ -114,6 +119,6 @@ describe('AgentEvent', () => {
       { type: 'finished', at: AT, reason: 'completed' },
       { type: 'raw', at: AT, line: '{"x":1}' },
     ];
-    expect(events).toHaveLength(16);
+    expect(events).toHaveLength(18);
   });
 });

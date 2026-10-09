@@ -4,7 +4,8 @@
 // the refresh — the prior rows stay listed and a failed provider arrives as its null-fields row,
 // never a query failure. Save/remove intents map through results.ts (U-8); removing an account a
 // binding still references warns with the referencing roles BEFORE account.remove is issued and
-// issues only on explicit confirmation. Api and change signal are injected fakes.
+// never sends the command while a reference stands — the way forward is updating the binding in
+// Roller, not a confirmation. Api and change signal are injected fakes.
 import { describe, expect, it } from 'vitest';
 
 import type { Api } from '../../api/api';
@@ -26,6 +27,7 @@ const ACCOUNT_SETTINGS = {
   identityDir: null,
   endpointHost: null,
   hasSecret: false,
+  test: null,
 } as const;
 
 const METER_WINDOW = {
@@ -74,6 +76,7 @@ const VIEW: SettingsAccountsView = {
       provider: 'acme-prov',
       label: 'Main',
       authMode: 'subscription',
+      billing: 'included',
       plan: 'pro',
       ...ACCOUNT_SETTINGS,
       pools: [{ id: 'pool-1', label: 'Weekly allowance', kind: 'allowance', appliesTo: 'all' }],
@@ -84,6 +87,7 @@ const VIEW: SettingsAccountsView = {
       provider: 'beta-prov',
       label: 'Spare',
       authMode: 'api_key',
+      billing: 'unknown',
       plan: null,
       ...ACCOUNT_SETTINGS,
       pools: [],
@@ -94,6 +98,7 @@ const VIEW: SettingsAccountsView = {
       provider: 'gamma-prov',
       label: 'Unbound',
       authMode: 'cloud',
+      billing: 'unknown',
       plan: null,
       ...ACCOUNT_SETTINGS,
       pools: [],
@@ -238,6 +243,8 @@ describe('settings store', () => {
       problem: null,
       lastOutcome: null,
       removeWarning: null,
+      testing: [],
+      testRefusals: {},
     });
 
     await h.store.load();
@@ -329,33 +336,65 @@ describe('settings store', () => {
 
     const outcome = await h.store.removeAccount('acc-1');
 
-    // The warning surfaces first: no command travels until the user confirms.
+    // The warning is the outcome: no command travels while a reference stands.
     expect(h.api.commands).toEqual([]);
     expect(outcome).toEqual({
       command: 'account.remove',
       result: { ok: false, code: 'binding_exists', roles: ['worker', 'reviewer'] },
       labelKey: 'error.binding_exists',
     });
-    expect(h.store.state().removeWarning).toEqual({ accountId: 'acc-1', roles: ['worker', 'reviewer'] });
+    expect(h.store.state().removeWarning).toEqual({ accountId: 'acc-1', roles: ['worker', 'reviewer'], onlyAccount: false });
   });
 
-  it('U-6: explicit confirmation issues account.remove once, maps through U-8 and refreshes the view', async () => {
+  it("A-87: the settings store's accounts read keeps the billing catalog", async () => {
+    const h = createHarness('tr');
+    await h.store.load();
+    // Settings shows the billing tag, so its read may not skip the model catalog — U-52's
+    // skeleton covers the wait; only the sidebar's cards (A-87) can skip it.
+    expect(h.api.queries.filter((q) => q.type === 'settings.accounts')).toEqual([
+      { type: 'settings.accounts' },
+    ]);
+  });
+
+  it('the store offers no confirm path — a referenced account can never be removed by insisting', async () => {
+    const h = createHarness('tr');
+    await h.store.load();
+
+    expect('confirmRemoveAccount' in h.store).toBe(false);
+    await h.store.removeAccount('acc-1');
+    await h.store.removeAccount('acc-1');
+
+    // Repeated removes keep refusing: the use case would refuse the same command again, so the
+    // store never sends it while the loaded view still shows a reference.
+    expect(h.api.commands).toEqual([]);
+    expect(h.store.state().removeWarning).toEqual({ accountId: 'acc-1', roles: ['worker', 'reviewer'], onlyAccount: false });
+  });
+
+  it('the warning of the only account says the roles need another account first', async () => {
+    const h = createHarness('tr');
+    h.api.setReply('settings.accounts', { accounts: [VIEW.accounts[0]], bindings: VIEW.bindings });
+    await h.store.load();
+
+    await h.store.removeAccount('acc-1');
+
+    expect(h.api.commands).toEqual([]);
+    expect(h.store.state().removeWarning).toEqual({ accountId: 'acc-1', roles: ['worker', 'reviewer'], onlyAccount: true });
+  });
+
+  it('a re-query drops the warning once no binding references the account any more', async () => {
     const h = createHarness('tr');
     await h.store.load();
     await h.store.removeAccount('acc-1');
-    expect(h.api.queries.filter((q) => q.type === 'settings.accounts').length).toBe(1);
+    expect(h.store.state().removeWarning).not.toBeNull();
 
-    const outcome = await h.store.confirmRemoveAccount('acc-1');
-
-    expect(h.api.commands).toEqual([{ type: 'account.remove', id: 'acc-1' }]);
-    expect(outcome).toEqual({
-      command: 'account.remove',
-      result: { ok: true },
-      labelKey: 'success.account.remove',
+    // The binding was updated in Roller meanwhile; the fresh view no longer routes acc-1.
+    h.api.setReply('settings.accounts', {
+      accounts: VIEW.accounts,
+      bindings: [{ scope: { level: 'global' }, role: 'worker', thinking: null, tier: null, accounts: [{ accountId: 'acc-2', model: null }] }],
     });
+    await h.store.load();
+
     expect(h.store.state().removeWarning).toBeNull();
-    // The store mirrors its own mutation: the accounts view is re-queried.
-    expect(h.api.queries.filter((q) => q.type === 'settings.accounts').length).toBe(2);
   });
 
   it('U-6: removing an unbound account issues account.remove directly, without a warning', async () => {
@@ -425,5 +464,23 @@ describe('settings store', () => {
     // discovery pass spawns probes, so change events never pay for one.
     expect(accountsQueries()).toBe(3);
     expect(h.api.queries.some((q) => q.type === 'providers.discovered')).toBe(false);
+  });
+
+  it('U-43: "Yenile" issues quota.refresh for one account, or for every account without an id, and re-reads the view', async () => {
+    const h = createHarness('tr');
+    await h.store.load();
+    const outcome = await h.store.refreshQuota('acc-1');
+    expect(outcome.result.ok).toBe(true);
+    await h.store.refreshQuota();
+    expect(h.api.commands).toEqual([{ type: 'quota.refresh', id: 'acc-1' }, { type: 'quota.refresh' }]);
+    expect(h.api.queries.filter((q) => q.type === 'settings.accounts').length).toBe(3);
+  });
+
+  it('U-44: an accounts.changed event re-queries the accounts view', async () => {
+    const h = createHarness('tr');
+    await h.store.load();
+    h.emitter.emit({ type: 'accounts.changed' });
+    await flush();
+    expect(h.api.queries.filter((q) => q.type === 'settings.accounts').length).toBe(2);
   });
 });

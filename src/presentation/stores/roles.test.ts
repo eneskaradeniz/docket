@@ -6,9 +6,9 @@ import { describe, expect, it } from 'vitest';
 
 import type { Api } from '../../api/api';
 import type { Command } from '../../api/commands';
-import type { AccountModelsView, Query, RoleListItem, SettingsAccountsView, SettingsBindingView } from '../../api/queries';
+import type { AccountModelsView, Query, RoleListItem, SettingsAccountView, SettingsAccountsView, SettingsBindingView } from '../../api/queries';
 
-import { createRolesStore, effortOptions, selectableModels, styleSettings, workStyle } from './roles';
+import { chainEmptyKey, createRolesStore, effortOptions, selectableModels, styleChoices, styleSettings, styleStanding, unboundRoleIds, workStyle } from './roles';
 
 type BindingSave = Extract<Command, { readonly type: 'binding.save' }>;
 
@@ -17,6 +17,7 @@ const account = (id: string, provider: string): SettingsAccountsView['accounts']
   provider,
   label: id,
   authMode: 'subscription',
+  billing: 'included',
   plan: null,
   limitPolicy: 'wait_resume',
   reserve: { short: null, long: null },
@@ -26,6 +27,7 @@ const account = (id: string, provider: string): SettingsAccountsView['accounts']
   identityDir: null,
   endpointHost: null,
   hasSecret: false,
+  test: null,
   pools: [],
   meters: [],
 });
@@ -83,7 +85,10 @@ interface Fake extends Pick<Api, 'query' | 'command'> {
   setCommandResult(code: string | null): void;
 }
 
-const fake = (bindings: readonly SettingsBindingView[] = BINDINGS): Fake => {
+const fake = (
+  bindings: readonly SettingsBindingView[] = BINDINGS,
+  accounts: readonly SettingsAccountView[] = [account('a1', 'atlas'), account('a2', 'borea')],
+): Fake => {
   const commands: Command[] = [];
   let current = bindings;
   let failure: string | null = null;
@@ -98,7 +103,7 @@ const fake = (bindings: readonly SettingsBindingView[] = BINDINGS): Fake => {
     query: (query: Query) => {
       if (query.type === 'roles.list') return Promise.resolve(ROLES);
       if (query.type === 'settings.accounts') {
-        const view: SettingsAccountsView = { accounts: [account('a1', 'atlas'), account('a2', 'borea')], bindings: current };
+        const view: SettingsAccountsView = { accounts, bindings: current };
         return Promise.resolve(view);
       }
       if (query.type === 'account.models') return Promise.resolve(MODELS[query.accountId]);
@@ -221,6 +226,39 @@ describe('U-33: Asistan sırası', () => {
     expect(store.isSaved('chain')).toBe(true);
     clock.now = 2501;
     expect(store.isSaved('chain')).toBe(false);
+  });
+
+  it('U-33a: an outside account joins the end of Asistan sırası and every listed role saves its complete binding', async () => {
+    const api = fake(BINDINGS, [account('a1', 'atlas'), account('a2', 'borea'), account('a3', 'cinis')]);
+    const store = makeStore(api);
+    await store.load();
+    await store.addGlobal('a3');
+    expect(saves(api)).toEqual([
+      { type: 'binding.save', role: 'developer', accounts: [{ accountId: 'a1' }, { accountId: 'a2' }, { accountId: 'a3' }], tier: 'balanced', thinking: { level: 'balanced' } },
+      { type: 'binding.save', role: 'planner', accounts: [{ accountId: 'a1' }, { accountId: 'a2' }, { accountId: 'a3' }], tier: 'strong', thinking: { level: 'deep' } },
+      { type: 'binding.save', role: 'reviewer', accounts: [{ accountId: 'a1' }, { accountId: 'a2' }, { accountId: 'a3' }], tier: 'fast', thinking: { effort: 'high' } },
+    ]);
+  });
+
+  it('U-33a: a role with its own chain keeps it while the others take the added account', async () => {
+    const own = binding('planner', ['a2'], { tier: 'strong', thinking: { level: 'deep' }, accounts: [{ accountId: 'a2', model: 'atlas-x' }] });
+    const api = fake(
+      [BINDINGS[0] as SettingsBindingView, own, BINDINGS[2] as SettingsBindingView],
+      [account('a1', 'atlas'), account('a2', 'borea'), account('a3', 'cinis')],
+    );
+    const store = makeStore(api);
+    await store.load();
+    await store.addGlobal('a3');
+    expect(saves(api).find((c) => c.role === 'planner')?.accounts).toEqual([{ accountId: 'a2', model: 'atlas-x' }]);
+    expect(saves(api).find((c) => c.role === 'developer')?.accounts).toEqual([{ accountId: 'a1' }, { accountId: 'a2' }, { accountId: 'a3' }]);
+  });
+
+  it('U-33a: adding an account already in the chain issues nothing', async () => {
+    const api = fake();
+    const store = makeStore(api);
+    await store.load();
+    await store.addGlobal('a1');
+    expect(api.commands).toEqual([]);
   });
 });
 
@@ -382,3 +420,51 @@ describe('U-33: unset styles and the apply-all line', () => {
     ]);
   });
 });
+
+describe('U-43: the work-style Listbox and the drag order', () => {
+  it('U-43: a role row offers Hızlı · Dengeli · Özenli with its recommended style tagged', () => {
+    expect(styleChoices({ recommended: 'careful' })).toEqual([
+      { style: 'fast', recommended: false },
+      { style: 'balanced', recommended: false },
+      { style: 'careful', recommended: true },
+    ]);
+  });
+
+  it('U-43: the button reads a preset by name, "Özel" for any other pair, and no selection for an unset role', () => {
+    expect(styleStanding('balanced')).toBe('balanced');
+    expect(styleStanding('custom')).toBe('custom');
+    expect(styleStanding('unset')).toBeNull();
+  });
+
+  it('U-43: dropping an account on another slot saves every role once, with the chain in the new order', async () => {
+    const api = fake();
+    const store = makeStore(api);
+    await store.load();
+    // A drop reports (from, to − from): one call per drop, however many slots it crossed.
+    await store.moveGlobal(1, -1);
+    expect(saves(api)).toHaveLength(3);
+    for (const saved of saves(api)) expect(saved.accounts.map((entry) => entry.accountId)).toEqual(['a2', 'a1']);
+  });
+});
+
+describe('the empty-chain line', () => {
+  it('no account at all asks for one; accounts with an empty chain ask for the recommended setup or a pick', () => {
+    expect(chainEmptyKey(0)).toBe('roles.chain.empty');
+    expect(chainEmptyKey(1)).toBe('roles.chain.unbound');
+    expect(chainEmptyKey(3)).toBe('roles.chain.unbound');
+  });
+});
+
+describe('roles without a binding', () => {
+  it('the roles with no global binding are listed in role order; a bound role is left alone', () => {
+    const roles = [role('developer', 'Geliştirici'), role('planner', 'Planlayıcı'), role('reviewer', 'Gözden geçirici')];
+    const bindings: readonly SettingsBindingView[] = [
+      binding('reviewer', ['a1']),
+      { scope: { level: 'repo', repo: 'atolye' }, role: 'planner', thinking: null, tier: null, accounts: [{ accountId: 'a1', model: null }] },
+    ];
+    // A repo-scoped binding is not a chain: the role still has no global accounts to run on.
+    expect(unboundRoleIds(roles, bindings)).toEqual(['developer', 'planner']);
+    expect(unboundRoleIds(roles, BINDINGS)).toEqual([]);
+  });
+});
+

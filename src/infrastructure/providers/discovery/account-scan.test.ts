@@ -1,8 +1,9 @@
 // Account scan tests: an in-memory file-system reader only — the real home directory is never touched.
 import { describe, expect, it } from 'vitest';
 
-import type { AccountRecord } from '../../../application/index';
+import type { AccountRecord, DiscoveredProvider, ProviderDiscovery } from '../../../application/index';
 import { parseUlid, type AccountId } from '../../../domain/index';
+import { BUILTIN_PROVIDER_DEFS } from '../defs/index';
 import { createAccountScan, MAX_READ_BYTES, type AccountScanFs } from './account-scan';
 
 const HOME = '/home/tester';
@@ -75,6 +76,7 @@ describe('account scan', () => {
         sourcePath: `${HOME}/.claude-work`,
         displayPath: '~/.claude-work',
         kind: 'subscription',
+        provider: 'claude-code',
         routeKind: 'anthropic-subscription',
         hasOauthLogin: true,
         envOverrides: [],
@@ -103,6 +105,34 @@ describe('account scan', () => {
       envOverrides: ['endpoint', 'token'],
       warnings: [],
     });
+  });
+
+  it('keeps the configured endpoint path: endpointUrl is the origin plus pathname, nothing else', async () => {
+    const at = (url: string): Promise<readonly { readonly endpointUrl?: string; readonly endpointHost?: string }[]> =>
+      scan({
+        dirs: ['.claude-glm'],
+        contents: { [`${HOME}/.claude-glm/settings.json`]: settings({ ANTHROPIC_BASE_URL: url }) },
+      });
+    const withPath = await at('https://api.z.ai/api/anthropic');
+    expect(withPath[0]?.endpointUrl).toBe('https://api.z.ai/api/anthropic');
+    expect(withPath[0]?.endpointHost).toBe('api.z.ai');
+    expect(await at('https://api.z.ai/api/anthropic/')).toMatchObject([{ endpointUrl: 'https://api.z.ai/api/anthropic' }]);
+    expect(await at('https://api.z.ai/')).toMatchObject([{ endpointUrl: 'https://api.z.ai' }]);
+    expect(await at('https://api.z.ai/api/anthropic?key=abc#section')).toMatchObject([
+      { endpointUrl: 'https://api.z.ai/api/anthropic' },
+    ]);
+  });
+
+  it('treats an endpoint URL with userinfo as unparsed, so no candidate carries credentials', async () => {
+    const found = await scan({
+      dirs: ['.claude-glm'],
+      contents: {
+        [`${HOME}/.claude-glm/.claude.json`]: identity(true),
+        [`${HOME}/.claude-glm/settings.json`]: settings({ ANTHROPIC_BASE_URL: `https://user:${SENTINEL}@api.z.ai/api/anthropic` }),
+      },
+    });
+    expect(found).toEqual([]);
+    expect(JSON.stringify(found)).not.toContain(SENTINEL);
   });
 
   it('classifies a mixed directory by its overrides and warns that they override the login', async () => {
@@ -222,11 +252,12 @@ describe('account scan', () => {
         [`${HOME}/.claude-w/settings.json`]: settings({ OTHER: SENTINEL, ANTHROPIC_MODEL: SENTINEL }),
       },
     });
-    expect(found).toHaveLength(3);
+    // The userinfo URL is unparsed, so its directory proposes nothing at all.
+    expect(found).toHaveLength(2);
     const json = JSON.stringify(found);
     expect(json).not.toContain(SENTINEL);
     expect(json).not.toContain('SENTINEL');
-    expect(found.find((c) => c.endpointHost !== undefined)?.endpointHost).toBe('api.z.ai');
+    expect(found.every((c) => c.endpointHost === undefined && c.endpointUrl === undefined)).toBe(true);
   });
 
   it('detects an already-added account by identity directory or by route kind and host', async () => {
@@ -281,5 +312,108 @@ describe('account scan', () => {
     }).scan();
     expect(found).toHaveLength(1);
     expect(found[0]?.alreadyAdded).toBe(false);
+  });
+});
+
+const found = (defId: string, patch: Partial<DiscoveredProvider> = {}): DiscoveredProvider => ({
+  defId,
+  name: defId,
+  installUrl: null,
+  binPath: `/usr/local/bin/${defId}`,
+  version: '1.0.0',
+  loggedIn: true,
+  optionalFlags: [],
+  ...patch,
+});
+
+const discoveryOf = (results: readonly DiscoveredProvider[]): ProviderDiscovery => ({
+  discover: async (onResult) => {
+    for (const result of results) onResult(result);
+  },
+});
+
+const machineScan = (
+  results: readonly DiscoveredProvider[],
+  options: { readonly accounts?: readonly AccountRecord[]; readonly env?: Record<string, string>; readonly fs?: AccountScanFs } = {},
+) => {
+  const fs = options.fs ?? memoryFs({ dirs: [], contents: {} });
+  return createAccountScan({
+    fs,
+    homeDir: HOME,
+    accounts: { list: async () => options.accounts ?? [] },
+    providers: discoveryOf(results),
+    ...(options.env === undefined ? {} : { env: options.env }),
+  }).scan();
+};
+
+describe('machine-login candidates', () => {
+  it('P-53: an installed provider without a scanner yields exactly one machine-login candidate', async () => {
+    const candidates = await machineScan([found('codex')]);
+    expect(candidates).toEqual([
+      {
+        sourcePath: 'machine-login:codex',
+        displayPath: '~/.codex',
+        kind: 'machine_login',
+        provider: 'codex',
+        routeKind: 'codex-subscription',
+        hasOauthLogin: true,
+        envOverrides: [],
+        warnings: [],
+        alreadyAdded: false,
+      },
+    ]);
+  });
+
+  it('P-53: claude-code yields no machine-login candidate; a provider that is not installed yields none', async () => {
+    const candidates = await machineScan([found('claude-code'), found('codex', { binPath: null, loggedIn: null })]);
+    expect(candidates).toEqual([]);
+  });
+
+  it('P-53: hasOauthLogin is true only for loggedIn === true', async () => {
+    const candidates = await machineScan([found('codex', { loggedIn: null }), found('copilot', { loggedIn: false })]);
+    expect(candidates.map((c) => c.hasOauthLogin)).toEqual([false, false]);
+  });
+
+  it('P-53: alreadyAdded exactly when an account of that provider has no identityDir', async () => {
+    const same = await machineScan([found('codex')], { accounts: [record({ provider: 'codex' })] });
+    expect(same[0]?.alreadyAdded).toBe(true);
+    const withDir = await machineScan([found('codex')], { accounts: [record({ provider: 'codex', identityDir: '/x' })] });
+    expect(withDir[0]?.alreadyAdded).toBe(false);
+    const other = await machineScan([found('codex')], { accounts: [record({ provider: 'copilot' })] });
+    expect(other[0]?.alreadyAdded).toBe(false);
+  });
+
+  it('A-84: machine-login candidates follow the directory candidates', async () => {
+    const fs = memoryFs({
+      dirs: ['.claude-work'],
+      contents: { [`${HOME}/.claude-work/.claude.json`]: identity(true) },
+    });
+    const candidates = await machineScan([found('codex'), found('copilot')], { fs });
+    expect(candidates.map((c) => c.kind)).toEqual(['subscription', 'machine_login', 'machine_login']);
+    expect(candidates.map((c) => c.provider)).toEqual(['claude-code', 'codex', 'copilot']);
+  });
+
+  it('I-38: displayPath is the override variable when set, then the documented path, then the provider name', async () => {
+    const withEnv = await machineScan([found('codex')], { env: { CODEX_HOME: '/secret/place' } });
+    expect(withEnv[0]?.displayPath).toBe('$CODEX_HOME');
+    expect(JSON.stringify(withEnv)).not.toContain('/secret/place');
+    const withoutEnv = await machineScan([found('copilot')], { env: {} });
+    expect(withoutEnv[0]?.displayPath).toBe('~/.copilot');
+    const noHome = await machineScan([found('agy', { name: 'Antigravity' })]);
+    expect(noHome[0]?.displayPath).toBe('Antigravity');
+  });
+
+  it('I-38: nothing is read from disk for a machine-login candidate', async () => {
+    const fs = memoryFs({ dirs: [], contents: {} });
+    await machineScan([found('codex'), found('copilot')], { fs });
+    expect(fs.reads).toEqual([]);
+  });
+
+  it('I-38: only codex and copilot carry an accountHome hint', () => {
+    const homes = BUILTIN_PROVIDER_DEFS.filter((def) => def.accountHome !== undefined).map((def) => [def.id, def.accountHome]);
+    expect(homes).toEqual([
+      ['codex', { path: '~/.codex', env: 'CODEX_HOME' }],
+      ['copilot', { path: '~/.copilot', env: 'COPILOT_HOME' }],
+    ]);
   });
 });

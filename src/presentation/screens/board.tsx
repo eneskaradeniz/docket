@@ -14,11 +14,11 @@ import { BoardList } from '../components/board-list';
 import { KanbanIcon, ListIcon, PencilIcon } from '../components/board-icons';
 import { boardMotionVars } from '../components/motion';
 import { BoardSkeleton } from '../components/board-skeleton';
-import { OutcomeNotice } from '../components/outcome-notice';
 import { SkeletonReveal, useSkeleton } from '../components/skeleton';
 import type { BoardStore, CreateOutcome, CreateValidation } from '../stores/board';
 import { kanbanColumns, listGroups } from '../stores/board';
 import { failureKey } from '../stores/results';
+import { toast } from '../stores/toasts';
 
 export interface BoardScreenProps {
   readonly store: BoardStore;
@@ -41,12 +41,59 @@ const INPUT_CLASS =
   'rounded-control border border-bord bg-raised px-2 py-[5px] text-[13px] text-ink outline-none placeholder:text-inkdim focus:border-signal';
 const LABEL_CLASS = 'font-mono text-[11px] uppercase tracking-[0.06em] text-inkdim';
 
+/** The create form (U-18's "+ Yeni iş emri" intent): title and flow, each input named by its
+ *  wrapping label from the bundle — the accessible name a keyboard or screen reader reads. */
+export function BoardCreateForm({
+  locale,
+  title,
+  onTitleChange,
+  flow,
+  onFlowChange,
+  onSubmit,
+}: {
+  readonly locale: Locale;
+  readonly title: string;
+  readonly onTitleChange: (value: string) => void;
+  readonly flow: string;
+  readonly onFlowChange: (value: string) => void;
+  readonly onSubmit: () => void;
+}) {
+  return (
+    <section className="rounded-card border border-hairline bg-band p-3">
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end">
+        <label className="grid gap-1">
+          <span className={LABEL_CLASS}>{t(locale, 'board.create.titleLabel')}</span>
+          <input
+            value={title}
+            onChange={(event) => onTitleChange(event.target.value)}
+            placeholder={t(locale, 'board.create.titlePlaceholder')}
+            className={INPUT_CLASS}
+          />
+        </label>
+        <label className="grid gap-1">
+          <span className={LABEL_CLASS}>{t(locale, 'board.create.flowLabel')}</span>
+          <input
+            value={flow}
+            onChange={(event) => onFlowChange(event.target.value)}
+            placeholder={t(locale, 'board.create.flowPlaceholder')}
+            className={`${INPUT_CLASS} font-mono`}
+          />
+        </label>
+        <ActionButton variant="primary" size="md" onClick={onSubmit}>
+          {t(locale, 'board.create.submit')}
+        </ActionButton>
+      </div>
+    </section>
+  );
+}
+
 /** What the create intent reports, mapped through U-8's discipline: validation refusals show
- *  their own copy, a command failure its code, a success its confirmation. */
-const createNotice = (locale: Locale, outcome: CreateOutcome): { readonly ok: boolean; readonly text: string; readonly code?: string } => {
-  if (outcome.ok) return { ok: true, text: t(locale, 'success.workOrder.open') };
-  if ('validation' in outcome) return { ok: false, text: t(locale, VALIDATION_KEY[outcome.validation]) };
-  return { ok: false, text: t(locale, failureKey(outcome.code)), code: outcome.code };
+ *  their own copy, a command failure its code's label with the code itself behind the copy
+ *  button (U-50a), a success its confirmation — the whole report leaves as the one toast. */
+const createToast = (locale: Locale, outcome: CreateOutcome): { readonly type: 'success' | 'error'; readonly text: string; readonly copy?: string } => {
+  if (outcome.ok) return { type: 'success', text: t(locale, 'success.workOrder.open') };
+  if ('validation' in outcome) return { type: 'error', text: t(locale, VALIDATION_KEY[outcome.validation]) };
+  return { type: 'error', text: t(locale, failureKey(outcome.code)), copy: outcome.code };
 };
 
 export function BoardScreen({ store, repo, locale, onOpenWorkOrder, roadmapProject, onOpenRoadmap, onOpenSettings }: BoardScreenProps) {
@@ -63,13 +110,12 @@ export function BoardScreen({ store, repo, locale, onOpenWorkOrder, roadmapProje
   const [title, setTitle] = useState('');
   const [flow, setFlow] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
-  const [notice, setNotice] = useState<ReturnType<typeof createNotice> | null>(null);
   const view = state.view;
   const flowValue = flow.trim() !== '' ? flow : (view?.flow ?? '');
 
   const submit = (): void => {
     void store.create({ repo, title, flow: flowValue }).then((outcome) => {
-      setNotice(createNotice(locale, outcome));
+      toast(createToast(locale, outcome));
       if (outcome.ok) setTitle('');
     });
   };
@@ -129,36 +175,15 @@ export function BoardScreen({ store, repo, locale, onOpenWorkOrder, roadmapProje
         </div>
       ) : null}
 
-      {notice !== null ? (
-        <OutcomeNotice ok={notice.ok} text={notice.text} code={notice.code} />
-      ) : null}
-
       {view !== null && createOpen ? (
-        <section className="rounded-card border border-hairline bg-band p-3">
-          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end">
-            <label className="grid gap-1">
-              <span className={LABEL_CLASS}>{t(locale, 'board.create.titleLabel')}</span>
-              <input
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-                placeholder={t(locale, 'board.create.titlePlaceholder')}
-                className={INPUT_CLASS}
-              />
-            </label>
-            <label className="grid gap-1">
-              <span className={LABEL_CLASS}>{t(locale, 'board.create.flowLabel')}</span>
-              <input
-                value={flowValue}
-                onChange={(event) => setFlow(event.target.value)}
-                placeholder={t(locale, 'board.create.flowPlaceholder')}
-                className={`${INPUT_CLASS} font-mono`}
-              />
-            </label>
-            <ActionButton variant="primary" size="md" onClick={submit}>
-              {t(locale, 'board.create.submit')}
-            </ActionButton>
-          </div>
-        </section>
+        <BoardCreateForm
+          locale={locale}
+          title={title}
+          onTitleChange={setTitle}
+          flow={flowValue}
+          onFlowChange={setFlow}
+          onSubmit={submit}
+        />
       ) : null}
 
       {!skeleton && view !== null && state.viewMode === 'kanban' ? (

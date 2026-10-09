@@ -45,20 +45,6 @@ from the capability registry; regenerate with `npm run gen:provider-matrix`.
 | Copilot CLI (`copilot`) | `copilot-subscription` | — | — | — | credits | experimental |
 | Cursor Agent (`cursor`) | `cursor-subscription` | — | — | — | equivalent | experimental |
 | opencode (`opencode`) | `opencode-subscription` | — | — | — | equivalent | experimental |
-| Hermes Agent (`hermes`) | `hermes-subscription` | — | — | — | none | experimental |
-| Grok Build (`grok-build`) | `grok-build-login` | — | — | — | none | experimental |
-| Kilo Code (`kilo`) | `kilo-login` | — | — | — | equivalent | experimental |
-| AtomCode (`atomcode`) | `atomcode-login` | — | — | — | none | experimental |
-| Mistral Vibe (`vibe`) | `vibe-login` | — | — | — | none | experimental |
-| devin | — | — | — | — | — | planned |
-| Reasonix (`reasonix`) | `reasonix-login` | — | — | — | none | experimental |
-| MiMo Code (`mimo`) | `mimo-login` | — | — | — | none | experimental |
-| Qwen Code (`qwen`) | `qwen-login` | — | — | — | none | experimental |
-| Qoder (`qoder`) | `qoder-login` | `auto` (balanced), `ultimate` (strong), `performance` (balanced), `efficient` (fast) | `low`, `medium`, `high`, `xhigh`, `max` | — | none | experimental |
-| Kiro (`kiro`) | `kiro-login` | — | — | — | none | experimental |
-| Amp (`amp`) | `amp-login` | `low` (fast), `medium` (balanced), `high` (strong), `ultra` (strong) | — | — | none | experimental |
-| Kimi Code (`kimi`) | `kimi-login` | — | — | — | none | experimental |
-| CodeBuddy Code (`codebuddy`) | `codebuddy-login` | `default-model` (balanced), `fast-model` (fast), `balanced-model` (balanced), `primary-model` (strong), `deep-model` (strong), `hy4-preview` (strong), `hy3` (balanced), `deepseek-v4.1-flash` (fast), `gpt-6-astra` (strong), `gpt-5.6-sol` (strong), `gpt-5.6-terra` (balanced), `gpt-5.6-luna` (fast), `gpt-5.5` (balanced), `gpt-5.4` (balanced), `gemini-3.5-flash` (fast), `glm-5.3-flash` (fast), `glm-5.3` (strong), `glm-5.2` (balanced), `kimi-k3` (strong), `kimi-k2.6` (balanced), `kimi-k2.8-preview` (strong) | `minimal`, `low`, `medium`, `high`, `xhigh`, `max` | — | reported | experimental |
 <!-- provider-matrix:end -->
 
 ## License

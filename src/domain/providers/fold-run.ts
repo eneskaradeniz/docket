@@ -12,7 +12,7 @@ export interface RunSummary {
   readonly costKind?: CostKind; // the kind of the first costed event
   readonly toolCalls: number;
   readonly failedToolCalls: number;
-  readonly openPermissionAsks: readonly string[]; // ask ids without a later tool_result of the same id
+  readonly openPermissionAsks: readonly string[]; // ask ids without a later tool_result or permission_answered of the same id
   readonly lastLimit?: Extract<AgentEvent, { readonly type: 'limit_hit' }>;
   readonly outcome?: RunOutcome; // maps the last finished event: completed→succeeded, failed, cancelled, limit
 }
@@ -43,8 +43,10 @@ export function foldRun(events: readonly AgentEvent[]): RunSummary {
   let toolCalls = 0;
   let failedToolCalls = 0;
   let lastLimit: Extract<AgentEvent, { readonly type: 'limit_hit' }> | undefined;
-  let outcome: RunOutcome | undefined;
+  let lastFinishedReason: FinishedEvent['reason'] | undefined;
+  let sawUsage = false;
   let sawCost = false;
+  let sawText = false;
   // Accumulator only — the input stream is never touched.
   const openAsks: string[] = [];
 
@@ -63,7 +65,11 @@ export function foldRun(events: readonly AgentEvent[]): RunSummary {
       case 'permission_ask':
         if (!openAsks.includes(event.id)) openAsks.push(event.id);
         break;
+      case 'permission_answered':
+        closeAsk(openAsks, event.id);
+        break;
       case 'usage':
+        sawUsage = true;
         inputTokens += event.inputTokens;
         outputTokens += event.outputTokens;
         cachedInputTokens += event.cachedInputTokens ?? 0;
@@ -79,13 +85,32 @@ export function foldRun(events: readonly AgentEvent[]): RunSummary {
       case 'limit_hit':
         lastLimit = event;
         break;
+      case 'text':
+        // Whitespace-only deltas are framing noise; only spoken content is an answer.
+        if (event.delta.trim() !== '') sawText = true;
+        break;
       case 'finished':
-        outcome = OUTCOME_BY_REASON[event.reason];
+        lastFinishedReason = event.reason;
         break;
       default:
         break;
     }
   }
+
+  // A completed run that reported usage yet accumulated no tokens did no work — the CLI's
+  // model notices arrive as plain text, so only the token totals expose them. A stream that
+  // never reported usage keeps its completed outcome: a missing report proves nothing.
+  // A completed run that tried only tools, every one of which failed, and answered in no text
+  // did no work either — but a spoken answer (a plan, a refusal) is work, so text rescues it.
+  const allToolCallsFailed = toolCalls > 0 && failedToolCalls === toolCalls;
+  const outcome: RunOutcome | undefined =
+    lastFinishedReason === undefined
+      ? undefined
+      : lastFinishedReason === 'completed' && sawUsage && inputTokens === 0 && outputTokens === 0
+        ? 'failed'
+        : lastFinishedReason === 'completed' && allToolCallsFailed && !sawText
+          ? 'failed'
+          : OUTCOME_BY_REASON[lastFinishedReason];
 
   return {
     sessionRef,

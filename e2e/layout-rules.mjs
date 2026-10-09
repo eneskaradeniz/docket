@@ -1,4 +1,4 @@
-// e2e/layout-rules.mjs — the L-1 … L-13 measurements of docs/v2/ui.md → "Verifying the shell".
+// e2e/layout-rules.mjs — the L-1 … L-15 measurements of docs/v2/ui.md → "Verifying the shell".
 // Pure DOM measurement, no pixel diff. Each rule takes a Playwright `page`, the run context
 // ({ screen, width, height, theme }) and the target's selector map, and returns
 // { id, ok, detail }. A selector the target does not have makes the rule report
@@ -7,7 +7,7 @@
 //
 // A selector is a CSS string, or { css, text } to pick the first match whose text contains `text`.
 
-export const RULE_IDS = ['L-1', 'L-2', 'L-3', 'L-4', 'L-5', 'L-6', 'L-7', 'L-8', 'L-9', 'L-10', 'L-11', 'L-12', 'L-13'];
+export const RULE_IDS = ['L-1', 'L-2', 'L-3', 'L-4', 'L-5', 'L-6', 'L-7', 'L-8', 'L-9', 'L-10', 'L-11', 'L-12', 'L-13', 'L-14', 'L-15'];
 
 /** The audit size plan: the window's minimum, its default, and full screen — nothing between.
  *  The first two are numbers; full screen is `'display'`, resolved to the primary display's work
@@ -48,8 +48,12 @@ export const comboPlan = (sizes, { full = false } = {}) =>
     ? THEMES.flatMap((theme) => sizes.map((size) => ({ size, theme })))
     : sizes.flatMap((size) => (size.name === 'default' ? THEMES : ['dark']).map((theme) => ({ size, theme })));
 
-/** Per-screen main-column cap in px; `null` means "the board uses the full main width". */
-const MAIN_CAP = { kokpit: 1200, detay: 1280, 'yol-haritasi': 960, hesap: 960, pano: null, liste: null };
+/** The screens whose sections fill the main column (U-54): every top-level section's right edge
+ *  must sit within FILL_TOLERANCE_PX of the main column's content-box right edge. The board is
+ *  not among them — it keeps its own reading, the full main width. */
+const FILL_SCREENS = new Set(['kokpit', 'detay', 'yol-haritasi', 'hesap']);
+/** How far short of the main column's right edge a filling section may end (U-54's letter: 8 px). */
+const FILL_TOLERANCE_PX = 8;
 
 const skipped = (id, name) => ({ id, ok: true, skipped: true, detail: `skipped: no hook ${name}` });
 const result = (id, ok, detail) => ({ id, ok, detail });
@@ -73,18 +77,24 @@ const RESOLVE = `
 const inPage = (page, body, arg) =>
   page.evaluate(`(() => { const arg = ${JSON.stringify(arg ?? null)}; ${RESOLVE} ${body} })()`);
 
+// L-1 reads the sidebar against the live scale (L-1b amends L-1a, 2026-10-05, U-53): the sidebar
+// is 16.5 rem, so its pixel width follows the root clamp — 264 px at the clamp's 100 % floor,
+// 330 px at 125 % — instead of a fixed number. L-1's own readings stay: the left edge is 0, the
+// width is the same on every screen, and it never narrows (the clamp only grows it).
 const l1 = async (page, ctx, sel) => {
   if (!sel.sidebar) return skipped('L-1', 'sidebar');
   const m = await inPage(
     page,
     `const el = resolve(arg); if (!el) return null;
-    const r = el.getBoundingClientRect(); return { left: r.left, width: r.width, iw: innerWidth };`,
+    const r = el.getBoundingClientRect();
+    return { left: r.left, width: r.width, fs: getComputedStyle(document.documentElement).fontSize };`,
     sel.sidebar,
   );
   if (!m) return result('L-1', false, 'sidebar element not found');
-  const want = m.iw >= 1000 ? 240 : 208;
-  const ok = Math.abs(m.left) <= 0.5 && Math.abs(m.width - want) <= 0.5;
-  return result('L-1', ok, `left ${m.left.toFixed(1)} width ${m.width.toFixed(1)} want 0/${want}`);
+  const rem = parseFloat(m.fs);
+  const want = 16.5 * rem;
+  const ok = rem > 0 && Math.abs(m.left) <= 0.5 && Math.abs(m.width - want) <= 0.5;
+  return result('L-1', ok, `left ${m.left.toFixed(1)} width ${m.width.toFixed(1)} want 16.5rem × ${rem.toFixed(3)} = ${want.toFixed(1)}`);
 };
 
 const l2 = async (page) => {
@@ -142,21 +152,72 @@ const l4 = async (page) => {
   return result('L-4', bad.length === 0, bad.length === 0 ? 'no unmarked truncation' : `${bad.length} truncated: ${bad.slice(0, 3).join('; ')}`);
 };
 
+// L-5's fill half (L-5a amends L-5, 2026-10-05, U-54): on the four data screens every top-level
+// section reaches the main column's content-box right edge, measured with animations disabled —
+// a moving element's bounding box corrupts the reading (the width prototype's first round read
+// the cockpit's scan bar as %102 fill). A deliberately narrow surface (U-54's list) keeps its own
+// cap and is asserted against it instead of the edge. The board keeps L-5's own reading: the
+// full main width.
 const l5 = async (page, ctx, sel) => {
   if (!sel.main) return skipped('L-5', 'main');
-  const cap = MAIN_CAP[ctx.screen];
+  if (!FILL_SCREENS.has(ctx.screen)) {
+    const m = await inPage(
+      page,
+      `const main = resolve(arg); if (!main) return null;
+      const widths = [...main.children].map((c) => c.getBoundingClientRect().width).filter((w) => w > 0);
+      return { widest: Math.max(0, ...widths), avail: content(main) };`,
+      sel.main,
+    );
+    if (!m) return result('L-5', false, 'main element not found');
+    return result('L-5', m.widest >= m.avail - 1, `board width ${m.widest.toFixed(0)} of main ${m.avail.toFixed(0)}`);
+  }
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   const m = await inPage(
     page,
     `const main = resolve(arg); if (!main) return null;
-    const widths = [...main.children].map((c) => c.getBoundingClientRect().width).filter((w) => w > 0);
-    return { widest: Math.max(0, ...widths), avail: content(main) };`,
+    const cs = getComputedStyle(main);
+    // The content-box right edge a filling section must reach: clientWidth already excludes the
+    // classic scrollbar (the app's own 10px themed one, which rides the two screens that scroll —
+    // the cockpit and the detail), while the border box's right does not, so reading rect.right
+    // alone made every section end exactly the scrollbar's width short.
+    const right = main.getBoundingClientRect().left + main.clientLeft + main.clientWidth - parseFloat(cs.paddingRight);
+    // Top-level sections: the screen wrapper inside main, then its own visible children.
+    const kids = [...main.children].flatMap((wrapper) => [...wrapper.children]);
+    const out = [];
+    for (const el of kids) {
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) continue;
+      const cs2 = getComputedStyle(el);
+      out.push({
+        name: (el.querySelector('h1,h2')?.textContent || el.tagName.toLowerCase()).trim().slice(0, 24),
+        right: r.right,
+        width: r.width,
+        cap: cs2.maxWidth,
+      });
+    }
+    return { right, out };`,
     sel.main,
   );
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
   if (!m) return result('L-5', false, 'main element not found');
-  if (cap === null) {
-    return result('L-5', m.widest >= m.avail - 1, `board width ${m.widest.toFixed(0)} of main ${m.avail.toFixed(0)}`);
+  const bad = [];
+  for (const kid of m.out) {
+    if (kid.cap !== 'none') {
+      // A deliberately narrow surface keeps its own cap (U-54's list) — assert against the cap.
+      const capPx = parseFloat(kid.cap);
+      if (!(kid.width <= capPx + 0.5)) bad.push(`"${kid.name}" exceeds its narrow cap ${kid.cap}`);
+      continue;
+    }
+    const short = m.right - kid.right;
+    if (short > FILL_TOLERANCE_PX) bad.push(`"${kid.name}" ends ${short.toFixed(1)}px short of the main column's edge`);
   }
-  return result('L-5', m.widest <= cap + 0.5, `content ${m.widest.toFixed(0)} cap ${cap}`);
+  return result(
+    'L-5',
+    bad.length === 0,
+    bad.length === 0
+      ? `${m.out.length} sections fill to the main column's right edge (±${FILL_TOLERANCE_PX}px, reduced motion)`
+      : bad.slice(0, 3).join('; '),
+  );
 };
 
 // L-6 reads the accounts frame's geometry (U-16): on a short window the body must be collapsed,
@@ -496,6 +557,127 @@ const l13 = async (page, ctx) => {
   return result('L-13', true, `known standing: ${knownHits.map((hit) => hit.key).join(', ')}`);
 };
 
+// L-14: while the detail's live pane is showing, `main` never scrolls horizontally. A streaming
+// run's unbreakable text (long absolute paths, long commands) widens the pane's grids through
+// intrinsic min-content sizing, and `main` is itself the horizontal scroller (its overflow-y
+// forces overflow-x to auto) — so L-2, which reads the document, cannot see the spill; the scroll
+// must be read on `main` itself, and only while the pane's hook is present and visible.
+const l14 = async (page, ctx, sel) => {
+  const missing = ['main', 'livePane'].find((k) => !sel[k]);
+  if (missing) return skipped('L-14', missing);
+  const m = await inPage(
+    page,
+    `const main = resolve(arg.main), live = resolve(arg.live);
+    if (!main) return null;
+    if (!live) return { pane: false };
+    const r = live.getBoundingClientRect();
+    const cs = getComputedStyle(live);
+    const showing = r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none';
+    return showing ? { pane: true, sw: main.scrollWidth, cw: main.clientWidth } : { pane: false };`,
+    { main: sel.main, live: sel.livePane },
+  );
+  if (!m) return result('L-14', false, 'main element not found');
+  if (!m.pane) return result('L-14', true, 'no live pane showing');
+  return result('L-14', m.sw <= m.cw, `main scrollWidth ${m.sw} of clientWidth ${m.cw}`);
+};
+
+// L-15: an ask's unbreakable command never widens the surfaces that carry it. The seed's one ask
+// rides a real queued run — the dispatcher raises it on its own cadence, first tick 5 s in — and
+// it lands on two surfaces: the cockpit's attention row and the asking order's own detail, where
+// the ask column ([data-detail-ask]) stands beside the live pane whose ask card carries the same
+// command. The walk's own detay (İE-0006) never shows an ask, so the rule — measured on the
+// cockpit, where the ask row lands first — waits the ask out, reads `main`'s scroll there, then
+// follows the ask row's own title into the asking order's detail and reads `main` again, ending
+// home so the walk's cockpit labels stay honest for the checks that follow. Geometry alone cannot
+// tell the ask column's containment from luck — its texts stay short until a real run asks with a
+// long one — so the rule also pins the shrink hooks the boxes between an ask's text and the
+// column must carry: the ask list and every ask row may shrink below their content, the live
+// pane's own lesson measured where an ask actually lives. A target whose ask command carries no
+// unbroken run (the frozen prototype's short one) is not this rule's subject.
+const ASK_HEAD = 'dotnet ef database update';
+const ASK_WITNESS_MIN = 150;
+
+const l15 = async (page, ctx, sel) => {
+  if (ctx.screen !== 'kokpit') return result('L-15', true, 'only checked on the cockpit');
+  const missing = ['main', 'detailAsk'].find((k) => !sel[k]);
+  if (missing) return skipped('L-15', missing);
+  // The wait is J-1's budget: the ask is the rule's subject, so its absence is a FAIL, not a skip.
+  const up = await page
+    .waitForFunction(
+      (head) => [...document.querySelectorAll('main code')].some((el) => (el.textContent ?? '').includes(head)),
+      ASK_HEAD,
+      { timeout: 30_000 },
+    )
+    .then(() => true)
+    .catch(() => false);
+  if (!up) return result('L-15', false, `the seeded ask ("${ASK_HEAD}…") did not appear on the cockpit within 30 s`);
+  const cockpit = await inPage(
+    page,
+    `const main = resolve(arg); if (!main) return null;
+    const code = [...document.querySelectorAll('main code')].find((el) => (el.textContent || '').includes(${JSON.stringify(ASK_HEAD)}));
+    return code ? { sw: main.scrollWidth, cw: main.clientWidth, len: code.textContent.trim().length } : null;`,
+    sel.main,
+  );
+  if (!cockpit) return result('L-15', false, 'the ask row vanished before it could be measured');
+  if (cockpit.len < ASK_WITNESS_MIN) {
+    return result('L-15', true, `this target's ask carries no unbroken command (${cockpit.len} chars)`);
+  }
+  // The asking order's title button is the ask row's own door into its detail.
+  const button = await page
+    .evaluateHandle(
+      (head) => {
+        const code = [...document.querySelectorAll('main code')].find((el) => (el.textContent ?? '').includes(head));
+        const row = code?.closest('div[class*="rounded-card"]');
+        return row?.querySelector('button') ?? null;
+      },
+      ASK_HEAD,
+    )
+    .then((handle) => handle.asElement());
+  if (button === null) return result('L-15', false, 'the ask row carries no title button to open its work order');
+  await button.click({ timeout: 4000 });
+  // The asks card is the ask column's first child once an ask of this work order is open on it.
+  await page.waitForFunction(
+    (colSel) => {
+      const col = document.querySelector(colSel);
+      if (col === null) return false;
+      const card = col.firstElementChild;
+      return card !== null && card.querySelector('ul li') !== null;
+    },
+    sel.detailAsk,
+    { timeout: 5000 },
+  );
+  const detail = await inPage(
+    page,
+    `const main = resolve(arg.main), col = resolve(arg.col);
+    if (!main || !col) return null;
+    const card = col.firstElementChild;
+    const ul = card?.querySelector('ul') ?? null;
+    const rows = ul === null ? [] : [...ul.children];
+    return {
+      sw: main.scrollWidth, cw: main.clientWidth,
+      listShrinks: ul !== null && ul.classList.contains('min-w-0'),
+      rowsShrink: rows.length > 0 && rows.every((li) => li.classList.contains('min-w-0')),
+      rows: rows.length,
+    };`,
+    { main: sel.main, col: sel.detailAsk },
+  );
+  // Home again, so the walk's cockpit labels stay honest for the checks that follow the rules.
+  await page.getByRole('button', { name: 'Anasayfa' }).first().click({ timeout: 4000 });
+  if (!detail) return result('L-15', false, "the asking detail's ask column did not measure");
+  const bad = [];
+  if (cockpit.sw > cockpit.cw) bad.push(`cockpit main scrollWidth ${cockpit.sw} of ${cockpit.cw}`);
+  if (detail.sw > detail.cw) bad.push(`detail main scrollWidth ${detail.sw} of ${detail.cw}`);
+  if (!detail.listShrinks) bad.push('the ask list cannot shrink below its content');
+  if (!detail.rowsShrink) bad.push(`${detail.rows} ask row(s) cannot shrink below their content`);
+  return result(
+    'L-15',
+    bad.length === 0,
+    bad.length === 0
+      ? `cockpit and the asking detail contained; ${detail.rows} ask row(s) shrinkable`
+      : bad.join('; '),
+  );
+};
+
 const RULES = [
   ['L-1', l1],
   ['L-2', l2],
@@ -510,6 +692,8 @@ const RULES = [
   ['L-11', l11],
   ['L-12', l12],
   ['L-13', l13],
+  ['L-14', l14],
+  ['L-15', l15],
 ];
 
 /** Run every rule for one screen/size/theme; a throwing rule is reported as FAIL, not a crash. */

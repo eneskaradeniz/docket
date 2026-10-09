@@ -2,10 +2,13 @@
 // loud: its rows carry the amber/red edge and the inline answer; Koşanlar, Proje kartları and Son
 // kapananlar stay quiet. Long lists fold (COCKPIT_LIMITS) so the project cards and the closed list
 // stay near the first screen; every empty, loading and failed standing speaks through a component
-// that says what it means. The screen renders the store's view and forwards clicks; ages render
-// from stamped times through the store's injected clock, and every string is a label key (U-1).
+// that says what it means. The screen fills the main column at every width (U-54): the attention
+// and running cards ride U-56's sparse rows — while they fit on one line with room to spare they
+// keep their natural minimum and carry Son kapananlar / Sırada as their 1fr side panels, narrower
+// they fill the row and those lists stand as their own sections. The screen renders the store's
+// view and forwards clicks; ages render from stamped times through the store's injected clock,
+// and every string is a label key (U-1).
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import type { CommandResult } from '../../api/commands';
 import { t, type Locale } from '../labels/t';
 import { CockpitAttentionRow } from '../components/cockpit-attention';
 import { CockpitClosedList } from '../components/cockpit-closed';
@@ -21,6 +24,7 @@ import {
   COCKPIT_LIMITS,
   cockpitPhase,
   cockpitSummary,
+  isQueued,
   limitRows,
   recentClosed,
   type CockpitAsk,
@@ -28,6 +32,8 @@ import {
 } from '../stores/cockpit';
 import { commandResultKey } from '../stores/results';
 import type { ProviderMarksStore } from '../stores/provider-marks';
+import { toastOutcome } from '../stores/toasts';
+import { sparseRowClass, sparseRowStyle, useSparseRow } from './sparse-row';
 
 export interface CockpitScreenProps {
   readonly store: CockpitStore;
@@ -39,6 +45,8 @@ export interface CockpitScreenProps {
    *  project the main repo's board. */
   readonly onOpenProject: (project: string) => void;
   readonly onOpenBoard: (repo: string) => void;
+  /** The start card's two buttons: both open the Yeni proje page (U-40). */
+  readonly onNewProject: () => void;
   /** The sidebar frame's account cards — the running rows' account names join onto them by id. */
   readonly accounts: readonly AccountCard[] | null;
 }
@@ -66,14 +74,14 @@ function FoldButton({ label, onClick }: { readonly label: string; readonly onCli
     <button
       type="button"
       onClick={onClick}
-      className="rounded-control px-1.5 py-0.5 text-[12.5px] text-inkdim transition-colors hover:bg-raised hover:text-ink"
+      className="rounded-control px-1.5 py-0.5 text-[0.78125rem] text-inkdim transition-colors hover:bg-raised hover:text-ink"
     >
       {label}
     </button>
   );
 }
 
-export function CockpitScreen({ store, marks, locale, onOpenWorkOrder, onOpenProject, onOpenBoard, accounts }: CockpitScreenProps) {
+export function CockpitScreen({ store, marks, locale, onOpenWorkOrder, onOpenProject, onOpenBoard, onNewProject, accounts }: CockpitScreenProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
   // The marks land once, after the first paint; the subscription turns them into a re-render.
   useSyncExternalStore(marks.subscribe, marks.state);
@@ -81,11 +89,13 @@ export function CockpitScreen({ store, marks, locale, onOpenWorkOrder, onOpenPro
     void store.load();
   }, [store]);
 
-  // The inline answer toasts through the same U-8 mapping every intent uses; the store owns the
-  // re-query that must drop the answered row.
-  const [answerResult, setAnswerResult] = useState<CommandResult | null>(null);
+  // The answer toasts (U-50) through the same U-8 mapping every intent uses; the store owns the
+  // re-query that must drop the answered row. A refusal carries its code behind the copy
+  // button (U-50a).
   const answer = (ask: CockpitAsk, decision: 'allow' | 'deny'): void => {
-    void store.answerPermission({ runId: ask.runId, askId: ask.askId, decision }).then(setAnswerResult);
+    void store.answerPermission({ runId: ask.runId, askId: ask.askId, decision }).then((result) => {
+      toastOutcome(locale, { result, labelKey: commandResultKey('permission.answer', result) });
+    });
   };
   const [expanded, setExpanded] = useState({ attention: false, running: false });
 
@@ -102,6 +112,17 @@ export function CockpitScreen({ store, marks, locale, onOpenWorkOrder, onOpenPro
   const running = view === null ? null : limitRows(view.running, COCKPIT_LIMITS.running, expanded.running);
   const closed = view === null ? [] : recentClosed(view.recentlyClosed);
 
+  // U-56's sparse rows, decided per standing: while the attention cards fit on one line with
+  // room to spare, Son kapananlar rides beside them as the 1fr panel and its own section waits;
+  // while the running cards do, the queued rows ("Sırada") take the panel and rejoin the list
+  // inline when the row fills. Both rows keep the fold's shown counts as their item counts.
+  const attentionRow = useSparseRow(attention === null ? 0 : attention.shown.length);
+  const closedPanel = attentionRow.plan.panel && closed.length > 0;
+  const runningActive = running === null ? [] : running.shown.filter((run) => !isQueued(run));
+  const runningQueued = running === null ? [] : running.shown.filter(isQueued);
+  const runningRow = useSparseRow(runningActive.length);
+  const queuedPanel = runningRow.plan.panel && runningQueued.length > 0;
+
   const fold = (key: 'attention' | 'running', total: number, limit: number) =>
     total > limit ? (
       <FoldButton
@@ -116,11 +137,11 @@ export function CockpitScreen({ store, marks, locale, onOpenWorkOrder, onOpenPro
       : `${t(locale, 'cockpit.error.stale')} ${formatAge(locale, store.sinceMs(state.loadedAt))}`;
 
   return (
-    <div className="grid max-w-[1200px] gap-4">
-      <header className="flex flex-wrap items-baseline gap-x-[18px] gap-y-1.5">
-        <h1 className="text-[20px] font-bold tracking-[-0.01em] text-ink">{t(locale, 'nav.cockpit')}</h1>
+    <div className="grid gap-4">
+      <header className="flex flex-wrap items-baseline gap-x-[1.125rem] gap-y-1.5">
+        <h1 className="text-[1.25rem] font-bold tracking-[-0.01em] text-ink">{t(locale, 'nav.cockpit')}</h1>
         {phase === 'ready' && summary !== null ? (
-          <p className="flex flex-wrap items-center gap-x-3.5 gap-y-1 text-[13px] text-inkdim">
+          <p className="flex flex-wrap items-center gap-x-3.5 gap-y-1 text-[0.8125rem] text-inkdim">
             {summary.attention === 0 && summary.running === 0 && summary.queued === 0 ? <Pulse tone="hollow">{t(locale, 'cockpit.head.idle')}</Pulse> : null}
             {summary.attention === 0 && (summary.running > 0 || summary.queued > 0) ? <Pulse tone="proceed">{t(locale, 'cockpit.head.ok')}</Pulse> : null}
             {summary.waiting > 0 ? <Pulse tone="signal">{`${summary.waiting} ${t(locale, 'cockpit.head.waiting')}`}</Pulse> : null}
@@ -135,7 +156,7 @@ export function CockpitScreen({ store, marks, locale, onOpenWorkOrder, onOpenPro
 
       {skeleton ? <CockpitSkeleton locale={locale} /> : null}
 
-      {!skeleton && phase === 'first-run' ? <FirstRunCard locale={locale} /> : null}
+      {!skeleton && phase === 'first-run' ? <FirstRunCard locale={locale} onNewProject={onNewProject} onAttach={onNewProject} /> : null}
 
       {!skeleton && phase === 'failed-empty' ? (
         <>
@@ -161,26 +182,29 @@ export function CockpitScreen({ store, marks, locale, onOpenWorkOrder, onOpenPro
             {view.attention.length === 0 ? (
               <QuietRow tone="good" title={t(locale, 'cockpit.attention.empty')} hint={t(locale, 'cockpit.attention.hint')} />
             ) : (
-              <ul className="grid gap-2">
-                {attention.shown.map((item) => (
-                  <li key={item.workOrderId}>
-                    <CockpitAttentionRow
-                      item={item}
-                      ask={state.asks[item.workOrderId]}
-                      locale={locale}
-                      ageMs={store.ageMs(item)}
-                      onOpen={() => onOpenWorkOrder(item.workOrderId)}
-                      onAnswer={answer}
-                    />
-                  </li>
-                ))}
-              </ul>
+              <div ref={attentionRow.ref} className={sparseRowClass(attentionRow.plan)} style={sparseRowStyle(attentionRow.plan)}>
+                <ul className="contents">
+                  {attention.shown.map((item) => (
+                    <li key={item.workOrderId}>
+                      <CockpitAttentionRow
+                        item={item}
+                        ask={state.asks[item.workOrderId]}
+                        locale={locale}
+                        ageMs={store.ageMs(item)}
+                        onOpen={() => onOpenWorkOrder(item.workOrderId)}
+                        onAnswer={answer}
+                      />
+                    </li>
+                  ))}
+                </ul>
+                {closedPanel ? (
+                  <aside className="grid min-w-0 content-start gap-2">
+                    <SectionHead title={t(locale, 'cockpit.section.closed')} count={closed.length} />
+                    <CockpitClosedList entries={closed} locale={locale} sinceMs={store.sinceMs} onOpen={onOpenWorkOrder} />
+                  </aside>
+                ) : null}
+              </div>
             )}
-            {answerResult !== null ? (
-              <p role="status" className={`text-[13px] ${answerResult.ok ? 'text-proceed' : 'text-error'}`}>
-                {t(locale, commandResultKey('permission.answer', answerResult))}
-              </p>
-            ) : null}
           </section>
 
           <CockpitSection
@@ -193,21 +217,43 @@ export function CockpitScreen({ store, marks, locale, onOpenWorkOrder, onOpenPro
             {view.running.length === 0 ? (
               <QuietRow tone="idle" title={t(locale, 'cockpit.running.empty')} hint={t(locale, 'cockpit.running.hint')} />
             ) : (
-              <ul className="grid gap-1.5 min-[1500px]:grid-cols-2">
-                {running.shown.map((run) => (
-                  <li key={`${run.workOrderId}:${run.stage}`}>
-                    <CockpitRunningRow
-                      run={run}
-                      locale={locale}
-                      accountLabel={accountLabel(run.accountId)}
-                      accountProvider={run.provider ?? ''}
-                      mark={marks.markFor(run.provider ?? '')}
-                      sinceMs={store.sinceMs(run.startedAt)}
-                      onOpen={() => onOpenWorkOrder(run.workOrderId)}
-                    />
-                  </li>
-                ))}
-              </ul>
+              <div ref={runningRow.ref} className={sparseRowClass(runningRow.plan)} style={sparseRowStyle(runningRow.plan)}>
+                <ul className="contents">
+                  {(queuedPanel ? runningActive : running.shown).map((run) => (
+                    <li key={`${run.workOrderId}:${run.stage}`}>
+                      <CockpitRunningRow
+                        run={run}
+                        locale={locale}
+                        accountLabel={accountLabel(run.accountId)}
+                        accountProvider={run.provider ?? ''}
+                        mark={marks.markFor(run.provider ?? '')}
+                        sinceMs={store.sinceMs(run.startedAt)}
+                        onOpen={() => onOpenWorkOrder(run.workOrderId)}
+                      />
+                    </li>
+                  ))}
+                </ul>
+                {queuedPanel ? (
+                  <aside className="grid min-w-0 content-start gap-2">
+                    <SectionHead title={t(locale, 'cockpit.section.queued')} count={runningQueued.length} />
+                    <ul className="grid gap-1.5">
+                      {runningQueued.map((run) => (
+                        <li key={`${run.workOrderId}:${run.stage}`}>
+                          <CockpitRunningRow
+                            run={run}
+                            locale={locale}
+                            accountLabel={accountLabel(run.accountId)}
+                            accountProvider={run.provider ?? ''}
+                            mark={marks.markFor(run.provider ?? '')}
+                            sinceMs={store.sinceMs(run.startedAt)}
+                            onOpen={() => onOpenWorkOrder(run.workOrderId)}
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                  </aside>
+                ) : null}
+              </div>
             )}
           </CockpitSection>
 
@@ -220,7 +266,7 @@ export function CockpitScreen({ store, marks, locale, onOpenWorkOrder, onOpenPro
             {view.projects.length === 0 ? (
               <QuietRow tone="idle" title={t(locale, 'cockpit.projects.empty')} />
             ) : (
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-2.5">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(22rem,1fr))] gap-2.5">
                 {view.projects.map((card) => (
                   <CockpitProjectCard
                     key={card.project}
@@ -234,18 +280,20 @@ export function CockpitScreen({ store, marks, locale, onOpenWorkOrder, onOpenPro
             )}
           </CockpitSection>
 
-          <CockpitSection
-            title={t(locale, 'cockpit.section.closed')}
-            count={closed.length}
-            open={!state.collapsed.includes('closed')}
-            onToggle={() => store.toggleSection('closed')}
-          >
-            {closed.length === 0 ? (
-              <QuietRow tone="idle" title={t(locale, 'cockpit.closed.empty')} hint={t(locale, 'cockpit.closed.hint')} />
-            ) : (
-              <CockpitClosedList entries={closed} locale={locale} sinceMs={store.sinceMs} onOpen={onOpenWorkOrder} />
-            )}
-          </CockpitSection>
+          {closedPanel ? null : (
+            <CockpitSection
+              title={t(locale, 'cockpit.section.closed')}
+              count={closed.length}
+              open={!state.collapsed.includes('closed')}
+              onToggle={() => store.toggleSection('closed')}
+            >
+              {closed.length === 0 ? (
+                <QuietRow tone="idle" title={t(locale, 'cockpit.closed.empty')} hint={t(locale, 'cockpit.closed.hint')} />
+              ) : (
+                <CockpitClosedList entries={closed} locale={locale} sinceMs={store.sinceMs} onOpen={onOpenWorkOrder} />
+              )}
+            </CockpitSection>
+          )}
         </div>
         </SkeletonReveal>
       ) : null}

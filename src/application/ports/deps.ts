@@ -1,8 +1,10 @@
 // The dependency bundle every use case and service takes a Pick of.
 import type { AccountRepo } from './account-repo';
+import type { AccountTestRepo } from './account-test-repo';
 import type { TransportResolver } from './agent-transport';
 import type { BindingRepo } from './binding-repo';
 import type { CapabilityCatalog } from './capability-catalog';
+import type { CapabilityDiscovery } from './capability-discovery';
 import type { CheckpointCommitter } from './checkpoints';
 import type { Clock } from './clock';
 import type { DefinitionStore } from './definition-store';
@@ -15,11 +17,14 @@ import type { Notifier } from './notifier';
 import type { ProjectRepo } from './project-repo';
 import type { ProposalRepo } from './proposal-repo';
 import type { QueueRepo } from './queue-repo';
+import type { RepoFolders } from './repo-folders';
 import type { RepoRegistry } from './repo-registry';
 import type { RunRepo } from './run-repo';
+import type { ScratchDirs } from './scratch-dirs';
 import type { SecretVault } from './secret-vault';
 import type { CommandRunner, EvidenceChecker, SecretScanner, Worktrees } from './repo-tools';
 import type { WorkOrderRepo } from './work-order-repo';
+import type { WorktreeFiles } from './worktree-files';
 
 export interface AppDeps {
   readonly clock: Clock;
@@ -29,6 +34,7 @@ export interface AppDeps {
   readonly runs: RunRepo;
   readonly accounts: AccountRepo;
   readonly capabilities: CapabilityCatalog;
+  readonly capabilityDiscovery: CapabilityDiscovery;
   readonly modelCatalog: ModelCatalog;
   readonly projects: ProjectRepo;
   readonly repos: RepoRegistry;
@@ -46,4 +52,8 @@ export interface AppDeps {
   readonly notifier: Notifier;
   readonly instructionFiles: InstructionFiles;
   readonly checkpoints: CheckpointCommitter;
+  readonly accountTests: AccountTestRepo;
+  readonly scratch: ScratchDirs;
+  readonly repoFolders: RepoFolders;
+  readonly worktreeFiles: WorktreeFiles;
 }

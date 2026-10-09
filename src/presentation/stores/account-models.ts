@@ -9,7 +9,7 @@
 // the account's own rows and never another account's.
 import type { Api } from '../../api/api';
 import type { Command, CommandResult } from '../../api/commands';
-import type { AccountModelsView, ModelView, Query } from '../../api/queries';
+import type { AccountModelsView, ModelView, Query, SettingsMeterView, SettingsPoolView } from '../../api/queries';
 import type { Actor } from '../../domain/index';
 import type { LabelKey } from '../labels/keys';
 import { RECOMMENDED } from './recommended';
@@ -20,7 +20,8 @@ import { commandResultKey, isQueryFailure } from './results';
 export type AccountModelsChange =
   | { readonly type: 'workOrders.changed' }
   | { readonly type: 'run.updated'; readonly runId: string }
-  | { readonly type: 'update.changed' };
+  | { readonly type: 'update.changed' }
+  | { readonly type: 'accounts.changed' };
 
 export type AccountModelsChangeSignal = (listener: (change: AccountModelsChange) => void) => () => void;
 
@@ -97,6 +98,26 @@ export const groupModels = (rows: readonly ModelRowDisplay[]): readonly ModelGro
   GROUP_ORDER.map((billing) => ({ billing, rows: rows.filter((row) => row.billing === billing) })).filter(
     (group) => group.rows.length > 0,
   );
+
+const WEEK_MS = 7 * 24 * 3_600_000;
+
+/** Why an included model is in the plan (U-43): a model that has a pool of its own — an allowance
+ *  with its own window — rides the plan because of that limit, and the row says so ("haftalık
+ *  limiti olduğu için planda"). A model no model-scoped pool names has nothing to say. Pure. */
+export const includedReason = (
+  modelId: string,
+  pools: readonly SettingsPoolView[],
+  meters: readonly Pick<SettingsMeterView, 'poolId' | 'label' | 'durationMs'>[],
+): 'settings.models.includedWeekly' | 'settings.models.includedOwn' | null => {
+  const pool = pools.find(
+    (candidate) =>
+      Array.isArray(candidate.appliesTo) &&
+      candidate.appliesTo.some((matcher) => ('exact' in matcher ? matcher.exact === modelId : modelId.startsWith(matcher.prefix))),
+  );
+  if (pool === undefined) return null;
+  const weekly = meters.some((meter) => meter.poolId === pool.id && (meter.label === 'seven_day' || meter.durationMs === WEEK_MS));
+  return weekly ? 'settings.models.includedWeekly' : 'settings.models.includedOwn';
+};
 
 /** A cap amount as the form parses it: a finite number above zero, with the Turkish bundle's
  *  decimal comma accepted. Null when the text does not parse — the allow action needs a cap, and a

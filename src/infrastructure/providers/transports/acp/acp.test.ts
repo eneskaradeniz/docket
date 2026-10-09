@@ -324,7 +324,7 @@ describe('acp transport', () => {
   it('P-16: a single allow selects the one-time option and a deny the rejection, never a session-wide or permanent grant', async () => {
     for (const decision of ['allow', 'deny'] as const) {
       const cwd = runCwd();
-      const run = await startRun('permission-hermes', requestOf(cwd));
+      const run = await startRun('permission-standing', requestOf(cwd));
       const iterator = run.handle.events[Symbol.asyncIterator]();
       await iterator.next(); // session_started
       await iterator.next(); // tool_call
@@ -344,7 +344,7 @@ describe('acp transport', () => {
   it('P-16: an allow with only session-wide or permanent grants on offer is answered cancelled, a deny still rejects', async () => {
     for (const decision of ['allow', 'deny'] as const) {
       const cwd = runCwd();
-      const run = await startRun('permission-hermes-standing', requestOf(cwd));
+      const run = await startRun('permission-standing-only', requestOf(cwd));
       const iterator = run.handle.events[Symbol.asyncIterator]();
       await iterator.next(); // session_started
       await iterator.next(); // tool_call
@@ -531,12 +531,12 @@ describe('acp transport', () => {
     });
   });
 
-  describe('model then effort (kilo shape)', () => {
+  describe('model then effort (levels recomputed on a model change)', () => {
     const EFFORT_ID: EffortArg = { kind: 'session-option', configId: 'effort' };
-    const OPUS = 'kilo/anthropic/claude-opus-5';
+    const OPUS = 'p-x/anthropic/claude-opus-5';
 
     it('P-41: the pinned model is set first, then the effort the model offers, then the prompt', async () => {
-      const run = await startRun('models-kilo', requestOf(runCwd(), { model: OPUS, effort: 'xhigh' }), EFFORT_ID);
+      const run = await startRun('models-levels', requestOf(runCwd(), { model: OPUS, effort: 'xhigh' }), EFFORT_ID);
       await collect(run.handle.events);
 
       const messages = clientMessages(run.logPath);
@@ -557,31 +557,31 @@ describe('acp transport', () => {
     it('P-41: a level only the new model offers is sent, which the session-new answer alone would have refused', async () => {
       // `max` is absent from the default model's levels, so reading them before the model change
       // would send nothing.
-      const run = await startRun('models-kilo', requestOf(runCwd(), { model: OPUS, effort: 'max' }), EFFORT_ID);
+      const run = await startRun('models-levels', requestOf(runCwd(), { model: OPUS, effort: 'max' }), EFFORT_ID);
       await collect(run.handle.events);
       expect(clientMessages(run.logPath).map(paramsOf).filter((params) => params['configId'] === 'effort')).toHaveLength(1);
     });
 
     it('P-43: a level the selected model does not advertise (thinking, instant) is never sent', async () => {
-      const unnamed = await startRun('models-kilo', requestOf(runCwd(), { model: 'kilo/z-ai/glm-5.1', effort: 'low' }), EFFORT_ID);
+      const unnamed = await startRun('models-levels', requestOf(runCwd(), { model: 'p-x/z-ai/glm-5.1', effort: 'low' }), EFFORT_ID);
       await collect(unnamed.handle.events);
       const sets = clientMessages(unnamed.logPath)
         .filter((message) => message['method'] === 'session/set_config_option')
         .map(paramsOf);
-      expect(sets).toEqual([{ sessionId: 'sess_fake_1', configId: 'model', value: 'kilo/z-ai/glm-5.1' }]);
+      expect(sets).toEqual([{ sessionId: 'sess_fake_1', configId: 'model', value: 'p-x/z-ai/glm-5.1' }]);
     });
 
     it('P-41: a model the session does not list is not sent, and without a model nothing is set', async () => {
-      const unknown = await startRun('models-kilo', requestOf(runCwd(), { model: 'kilo/not-listed' }), EFFORT_ID);
+      const unknown = await startRun('models-levels', requestOf(runCwd(), { model: 'p-x/not-listed' }), EFFORT_ID);
       await collect(unknown.handle.events);
       expect(clientMethodSequence(clientMessages(unknown.logPath))).not.toContain('session/set_config_option');
 
-      const bare = await startRun('models-kilo', requestOf(runCwd()), EFFORT_ID);
+      const bare = await startRun('models-levels', requestOf(runCwd()), EFFORT_ID);
       await collect(bare.handle.events);
       expect(clientMethodSequence(clientMessages(bare.logPath))).not.toContain('session/set_config_option');
     });
   });
-  describe('model then effort (reasonix shape)', () => {
+  describe('model then effort (selects named by id only)', () => {
     const EFFORT_ID: EffortArg = { kind: 'session-option', configId: 'effort' };
     const PRO = 'deepseek-pro/deepseek-v4-pro';
     const setsOf = (logPath: string): readonly Record<string, unknown>[] =>
@@ -590,7 +590,7 @@ describe('acp transport', () => {
         .map(paramsOf);
 
     it('P-41: the model (a select named only by its id) is set first, then effort by its id, then the prompt; tool_approval is never touched', async () => {
-      const run = await startRun('models-reasonix', requestOf(runCwd(), { model: PRO, effort: 'high' }), EFFORT_ID);
+      const run = await startRun('models-by-id', requestOf(runCwd(), { model: PRO, effort: 'high' }), EFFORT_ID);
       await collect(run.handle.events);
       expect(clientMethodSequence(clientMessages(run.logPath))).toEqual([
         'initialize',
@@ -606,20 +606,20 @@ describe('acp transport', () => {
     });
 
     it('P-43: a level only the new model offers is sent, and one it lacks (low) or the provider-only auto is not', async () => {
-      const low = await startRun('models-reasonix', requestOf(runCwd(), { model: PRO, effort: 'low' }), EFFORT_ID);
+      const low = await startRun('models-by-id', requestOf(runCwd(), { model: PRO, effort: 'low' }), EFFORT_ID);
       await collect(low.handle.events);
       expect(setsOf(low.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'model', value: PRO }]);
     });
 
     it('P-41: an absent effort sends nothing, and an absent model sends no model', async () => {
-      const bare = await startRun('models-reasonix', requestOf(runCwd()), EFFORT_ID);
+      const bare = await startRun('models-by-id', requestOf(runCwd()), EFFORT_ID);
       await collect(bare.handle.events);
       expect(setsOf(bare.logPath)).toEqual([]);
     });
   });
 
-  describe('model then effort (atomcode shape)', () => {
-    const EFFORT_ID: EffortArg = { kind: 'session-option', configId: 'reasoning_effort' };
+  describe('model then effort (an option absent from the session)', () => {
+    const EFFORT_ID: EffortArg = { kind: 'session-option', configId: 'effort' };
     const NAMES = { none: 'off', high: 'high', max: 'max' } as const;
     const setsOf = (logPath: string): readonly Record<string, unknown>[] =>
       clientMessages(logPath)
@@ -627,35 +627,35 @@ describe('acp transport', () => {
         .map(paramsOf);
 
     it('P-41: the model is selected first, then reasoning_effort by its own id, then the prompt; no mode is ever set', async () => {
-      const run = await startRun('models-atomcode-configured', requestOf(runCwd(), { model: 'glm-5.2', effort: 'max' }), EFFORT_ID, NAMES);
+      const run = await startRun('models-optional-configured', requestOf(runCwd(), { model: 'glm-5.2', effort: 'max' }), EFFORT_ID, NAMES);
       await collect(run.handle.events);
       const sequence = clientMethodSequence(clientMessages(run.logPath));
       expect(sequence).toEqual(['initialize', 'session/new', 'session/set_config_option', 'session/set_config_option', 'session/prompt']);
       expect(sequence).not.toContain('session/set_mode');
       expect(setsOf(run.logPath)).toEqual([
         { sessionId: 'sess_fake_1', configId: 'model', value: 'glm-5.2' },
-        { sessionId: 'sess_fake_1', configId: 'reasoning_effort', value: 'max' },
+        { sessionId: 'sess_fake_1', configId: 'effort', value: 'max' },
       ]);
     });
 
     it('P-43: none is sent as the CLI name off, and a level the CLI does not list (low) is never sent', async () => {
-      const off = await startRun('models-atomcode-configured', requestOf(runCwd(), { effort: 'none' }), EFFORT_ID, NAMES);
+      const off = await startRun('models-optional-configured', requestOf(runCwd(), { effort: 'none' }), EFFORT_ID, NAMES);
       await collect(off.handle.events);
-      expect(setsOf(off.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'reasoning_effort', value: 'off' }]);
+      expect(setsOf(off.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'effort', value: 'off' }]);
 
-      const low = await startRun('models-atomcode-configured', requestOf(runCwd(), { model: 'deepseek-chat', effort: 'low' }), EFFORT_ID, NAMES);
+      const low = await startRun('models-optional-configured', requestOf(runCwd(), { model: 'deepseek-chat', effort: 'low' }), EFFORT_ID, NAMES);
       await collect(low.handle.events);
       expect(setsOf(low.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'model', value: 'deepseek-chat' }]);
     });
 
     it('P-41: without a model option the pinned model is not sent, and the effort still is', async () => {
-      const run = await startRun('models-atomcode', requestOf(runCwd(), { model: 'glm-5.2', effort: 'high' }), EFFORT_ID, NAMES);
+      const run = await startRun('models-optional', requestOf(runCwd(), { model: 'glm-5.2', effort: 'high' }), EFFORT_ID, NAMES);
       await collect(run.handle.events);
-      expect(setsOf(run.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'reasoning_effort', value: 'high' }]);
+      expect(setsOf(run.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'effort', value: 'high' }]);
     });
   });
 
-  describe('model then thinking (vibe shape)', () => {
+  describe('model then thinking (a category of its own)', () => {
     const EFFORT_BY_CATEGORY: EffortArg = { kind: 'session-option', category: 'thinking' };
     const NAMES = { none: 'off', low: 'low', medium: 'medium', high: 'high', max: 'max' } as const;
     const setsOf = (logPath: string): readonly Record<string, unknown>[] =>
@@ -664,7 +664,7 @@ describe('acp transport', () => {
         .map(paramsOf);
 
     it('P-41: the model alias is selected first, then the thinking option found by its category, then the prompt; no mode is ever set', async () => {
-      const run = await startRun('models-vibe', requestOf(runCwd(), { model: 'local', effort: 'max' }), EFFORT_BY_CATEGORY, NAMES);
+      const run = await startRun('models-thinking', requestOf(runCwd(), { model: 'local', effort: 'max' }), EFFORT_BY_CATEGORY, NAMES);
       await collect(run.handle.events);
       const sequence = clientMethodSequence(clientMessages(run.logPath));
       expect(sequence).toEqual(['initialize', 'session/new', 'session/set_config_option', 'session/set_config_option', 'session/prompt']);
@@ -675,27 +675,27 @@ describe('acp transport', () => {
     });
 
     it('P-43: none is sent as the CLI name off, and a level the CLI does not name (xhigh) is never sent', async () => {
-      const off = await startRun('models-vibe', requestOf(runCwd(), { effort: 'none' }), EFFORT_BY_CATEGORY, NAMES);
+      const off = await startRun('models-thinking', requestOf(runCwd(), { effort: 'none' }), EFFORT_BY_CATEGORY, NAMES);
       await collect(off.handle.events);
       expect(setsOf(off.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'thinking', value: 'off' }]);
 
-      const xhigh = await startRun('models-vibe', requestOf(runCwd(), { effort: 'xhigh' }), EFFORT_BY_CATEGORY, NAMES);
+      const xhigh = await startRun('models-thinking', requestOf(runCwd(), { effort: 'xhigh' }), EFFORT_BY_CATEGORY, NAMES);
       await collect(xhigh.handle.events);
       expect(setsOf(xhigh.logPath)).toEqual([]);
     });
   });
 
-  describe('model-suffix effort (mimo shape)', () => {
+  describe('model-suffix effort', () => {
     const SUFFIX: EffortArg = { kind: 'model-suffix', separator: '/' };
     const NAMES = { low: 'low', medium: 'medium', high: 'high' } as const;
-    const PRO = 'xiaomi/mimo-v2.6-pro';
+    const PRO = 'p-x/pro-v2.6';
     const setsOf = (logPath: string): readonly Record<string, unknown>[] =>
       clientMessages(logPath)
         .filter((message) => message['method'] === 'session/set_config_option')
         .map(paramsOf);
 
     it('P-43: a pinned model with an effort selects `<model>/<level>` as the model, sets no other option and then prompts', async () => {
-      const run = await startRun('models-mimo', requestOf(runCwd(), { model: PRO, effort: 'high' }), SUFFIX, NAMES);
+      const run = await startRun('models-suffix', requestOf(runCwd(), { model: PRO, effort: 'high' }), SUFFIX, NAMES);
       await collect(run.handle.events);
       expect(clientMethodSequence(clientMessages(run.logPath))).toEqual([
         'initialize',
@@ -707,208 +707,48 @@ describe('acp transport', () => {
     });
 
     it('P-43: the separator is not a model boundary — a model id that itself contains slashes gets exactly one suffix', async () => {
-      const run = await startRun('models-mimo', requestOf(runCwd(), { model: 'mimo/mimo-auto', effort: 'low' }), SUFFIX, NAMES);
+      const run = await startRun('models-suffix', requestOf(runCwd(), { model: 'p-x/auto', effort: 'low' }), SUFFIX, NAMES);
       await collect(run.handle.events);
-      expect(setsOf(run.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'model', value: 'mimo/mimo-auto/low' }]);
+      expect(setsOf(run.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'model', value: 'p-x/auto/low' }]);
     });
 
     it('P-43: an unpinned route sends no effort and no model change', async () => {
-      const run = await startRun('models-mimo', requestOf(runCwd(), { effort: 'high' }), SUFFIX, NAMES);
+      const run = await startRun('models-suffix', requestOf(runCwd(), { effort: 'high' }), SUFFIX, NAMES);
       await collect(run.handle.events);
       expect(setsOf(run.logPath)).toEqual([]);
     });
 
     it('P-43: no effort selects the plain model id, and a level the CLI does not name (xhigh) is never suffixed', async () => {
-      const plain = await startRun('models-mimo', requestOf(runCwd(), { model: PRO }), SUFFIX, NAMES);
+      const plain = await startRun('models-suffix', requestOf(runCwd(), { model: PRO }), SUFFIX, NAMES);
       await collect(plain.handle.events);
       expect(setsOf(plain.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'model', value: PRO }]);
 
-      const xhigh = await startRun('models-mimo', requestOf(runCwd(), { model: PRO, effort: 'xhigh' }), SUFFIX, NAMES);
+      const xhigh = await startRun('models-suffix', requestOf(runCwd(), { model: PRO, effort: 'xhigh' }), SUFFIX, NAMES);
       await collect(xhigh.handle.events);
       expect(setsOf(xhigh.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'model', value: PRO }]);
     });
 
     it('P-43: a suffixed id the session does not offer falls back to the plain model, and an unlisted model sets nothing', async () => {
-      const fallback = await startRun('models-mimo', requestOf(runCwd(), { model: PRO, effort: 'minimal' }), SUFFIX, { minimal: 'minimal' });
+      const fallback = await startRun('models-suffix', requestOf(runCwd(), { model: PRO, effort: 'minimal' }), SUFFIX, { minimal: 'minimal' });
       await collect(fallback.handle.events);
       expect(setsOf(fallback.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'model', value: PRO }]);
 
-      const unlisted = await startRun('models-mimo', requestOf(runCwd(), { model: 'xiaomi/not-listed', effort: 'high' }), SUFFIX, NAMES);
+      const unlisted = await startRun('models-suffix', requestOf(runCwd(), { model: 'p-x/not-listed', effort: 'high' }), SUFFIX, NAMES);
       await collect(unlisted.handle.events);
       expect(setsOf(unlisted.logPath)).toEqual([]);
     });
-  });
 
-  describe('model only (qwen shape)', () => {
-    const setsOf = (logPath: string): readonly Record<string, unknown>[] =>
-      clientMessages(logPath)
-        .filter((message) => message['method'] === 'session/set_config_option')
-        .map(paramsOf);
-
-    it('P-43: a pinned model is selected through the model select and the reasoning-effort option is never set, whatever the request carries', async () => {
-      // The definition sends no effort: setting the CLI's reasoning_effort may persist into the
-      // user's settings file, so the run selects the model and stops there.
-      const run = await startRun('models-qwen', requestOf(runCwd(), { model: 'qwen3-coder-plus', effort: 'high' }));
+    it('P-47: the model-suffix effort kind works with a neutral fixture provider — the suffixed id is selected and the plain one falls back', async () => {
+      // No built-in definition rides this EffortArg kind today (P-47); the fake def above does,
+      // so the next definition that needs it lands as data, with no transport change.
+      const run = await startRun('models-suffix', requestOf(runCwd(), { model: PRO, effort: 'high' }), SUFFIX, NAMES);
       await collect(run.handle.events);
+      expect(setsOf(run.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'model', value: `${PRO}/high` }]);
 
-      expect(clientMethodSequence(clientMessages(run.logPath))).toEqual([
-        'initialize',
-        'session/new',
-        'session/set_config_option',
-        'session/prompt',
-      ]);
-      expect(setsOf(run.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'model', value: 'qwen3-coder-plus' }]);
-      expect(setsOf(run.logPath).some((params) => params['configId'] === 'reasoning_effort')).toBe(false);
-    });
-
-    it('P-43: without a pinned model nothing is set, and a model the session does not list sets nothing', async () => {
-      const bare = await startRun('models-qwen', requestOf(runCwd(), { effort: 'max' }));
-      await collect(bare.handle.events);
-      expect(setsOf(bare.logPath)).toEqual([]);
-
-      const unlisted = await startRun('models-qwen', requestOf(runCwd(), { model: 'qwen-not-listed' }));
-      await collect(unlisted.handle.events);
-      expect(setsOf(unlisted.logPath)).toEqual([]);
+      const plain = await startRun('models-suffix', requestOf(runCwd(), { model: PRO }), SUFFIX, NAMES);
+      await collect(plain.handle.events);
+      expect(setsOf(plain.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'model', value: PRO }]);
     });
   });
 
-  describe('model and thought_level (qoder shape)', () => {
-    const setsOf = (logPath: string): readonly Record<string, unknown>[] =>
-      clientMessages(logPath)
-        .filter((message) => message['method'] === 'session/set_config_option')
-        .map(paramsOf);
-
-    it('P-43: a pinned tier alias is selected first and the effort joins through the thought_level option after it', async () => {
-      const run = await startRun(
-        'models-qoder',
-        requestOf(runCwd(), { model: 'ultimate', effort: 'xhigh' }),
-        { kind: 'session-option', category: 'thought_level' },
-      );
-      await collect(run.handle.events);
-
-      expect(clientMethodSequence(clientMessages(run.logPath))).toEqual([
-        'initialize',
-        'session/new',
-        'session/set_config_option',
-        'session/set_config_option',
-        'session/prompt',
-      ]);
-      expect(setsOf(run.logPath)).toEqual([
-        { sessionId: 'sess_fake_1', configId: 'model', value: 'ultimate' },
-        { sessionId: 'sess_fake_1', configId: 'thought_level', value: 'xhigh' },
-      ]);
-    });
-
-    it('P-43: a level the thought_level option does not list is never sent, and the session-level option needs no pinned model', async () => {
-      // `none` names no value the option offers, so the run selects the alias and stops there.
-      const off = await startRun(
-        'models-qoder',
-        requestOf(runCwd(), { model: 'ultimate', effort: 'none' }),
-        { kind: 'session-option', category: 'thought_level' },
-      );
-      await collect(off.handle.events);
-      expect(setsOf(off.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'model', value: 'ultimate' }]);
-
-      // Without a pinned model the session stays on its own default alias, and the effort still
-      // travels: the option belongs to the session, not to a model choice.
-      const bare = await startRun('models-qoder', requestOf(runCwd(), { effort: 'max' }), {
-        kind: 'session-option',
-        category: 'thought_level',
-      });
-      await collect(bare.handle.events);
-      expect(setsOf(bare.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'thought_level', value: 'max' }]);
-    });
-  });
-
-  describe('model then thinking by category (kimi shape)', () => {
-    const setsOf = (logPath: string): readonly Record<string, unknown>[] =>
-      clientMessages(logPath)
-        .filter((message) => message['method'] === 'session/set_config_option')
-        .map(paramsOf);
-
-    it('P-15: the kimi session shape — model select plus a thinking thought_level select recomputed on a model change — opens a session, maps its turn and never sends a level the model does not list', async () => {
-      // The level list belongs to the selected model, so the effort is found in the answer to the
-      // model change: k3 lists no `xhigh`, and the run must not send what the model does not offer.
-      const run = await startRun(
-        'models-kimi',
-        requestOf(runCwd(), { model: 'kimi-code/k3', effort: 'xhigh' }),
-        { kind: 'session-option', category: 'thought_level' },
-      );
-      const events = await collect(run.handle.events);
-
-      expect(events.some((event) => event.type === 'session_started')).toBe(true);
-      expect(events.filter((event) => event.type === 'finished')).toHaveLength(1);
-      expect(clientMethodSequence(clientMessages(run.logPath))).toEqual([
-        'initialize',
-        'session/new',
-        'session/set_config_option',
-        'session/prompt',
-      ]);
-      expect(setsOf(run.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'model', value: 'kimi-code/k3' }]);
-    });
-
-    it('P-43: a level the selected model lists joins after the model selection, and the option is found by its category, never by its id', async () => {
-      const run = await startRun(
-        'models-kimi',
-        requestOf(runCwd(), { model: 'kimi-code/k3', effort: 'high' }),
-        { kind: 'session-option', category: 'thought_level' },
-      );
-      await collect(run.handle.events);
-
-      expect(clientMethodSequence(clientMessages(run.logPath))).toEqual([
-        'initialize',
-        'session/new',
-        'session/set_config_option',
-        'session/set_config_option',
-        'session/prompt',
-      ]);
-      expect(setsOf(run.logPath)).toEqual([
-        { sessionId: 'sess_fake_1', configId: 'model', value: 'kimi-code/k3' },
-        { sessionId: 'sess_fake_1', configId: 'thinking', value: 'high' },
-      ]);
-    });
-
-    it('P-43: `off` is never sent — the `none` level names no value the option offers, and the mode option is never touched', async () => {
-      const off = await startRun(
-        'models-kimi',
-        requestOf(runCwd(), { model: 'kimi-code/kimi-for-coding', effort: 'none' }),
-        { kind: 'session-option', category: 'thought_level' },
-      );
-      await collect(off.handle.events);
-      expect(setsOf(off.logPath)).toEqual([
-        { sessionId: 'sess_fake_1', configId: 'model', value: 'kimi-code/kimi-for-coding' },
-      ]);
-      // The asking `default` mode stays: no launch ever moves the session to `auto` or `yolo`.
-      expect(setsOf(off.logPath).some((params) => params['configId'] === 'mode')).toBe(false);
-    });
-  });
-
-  describe('modes only (kiro shape)', () => {
-    it('P-15: the kiro session shape — modes without configOptions, custom _kiro.dev notifications — opens a session and maps its turn without an error', async () => {
-      // The live agent answers session/new with modes and nothing else, then floods its own
-      // `_kiro.dev/*` notifications; the client must read the session id, ignore what it does not
-      // know and run the turn. No configOptions exist, so nothing is ever selected in-session.
-      const run = await startRun('models-kiro', requestOf(runCwd(), { model: 'auto', effort: 'high' }));
-      const events = await collect(run.handle.events);
-
-      expect(clientMethodSequence(clientMessages(run.logPath))).toEqual(['initialize', 'session/new', 'session/prompt']);
-      expect(events.map((event) => event.type)).toEqual([
-        'session_started',
-        'thinking',
-        'tool_call',
-        'tool_result',
-        'text',
-        'usage',
-        'raw',
-        'finished',
-      ]);
-      expect(events[events.length - 1]).toMatchObject({ type: 'finished', reason: 'completed' });
-      // The custom notifications are not session/update bodies: none becomes a raw event, and
-      // the one raw event above is the turn's own unknown update kind, as in every happy run.
-      const rawOfKiroNotification = events.some(
-        (event) => event.type === 'raw' && event.line.includes('_kiro.dev/'),
-      );
-      expect(rawOfKiroNotification).toBe(false);
-    });
-  });
 });

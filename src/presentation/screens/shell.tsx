@@ -22,7 +22,9 @@ import { SearchPalette } from '../components/search-palette';
 import { SidebarAccounts } from '../components/sidebar-accounts';
 import { SidebarNav } from '../components/sidebar-nav';
 import { SidebarTree } from '../components/sidebar-tree';
+import { SIDEBAR_GRID } from '../components/sidebar-geometry';
 import { TitleBar } from '../components/title-bar';
+import { ToastHost } from '../components/toast-host';
 import { t, type Locale } from '../labels/t';
 import { unaddedRowTarget, type AccountsFrameStore } from '../stores/accounts-frame';
 import { editInSettingsTarget, type AccountViewStore } from '../stores/account-view';
@@ -58,14 +60,17 @@ import {
 import type { CandidatesStore } from '../stores/candidates';
 import type { ProvidersStore } from '../stores/providers';
 import type { ShellStore } from '../stores/shell';
+import { toast, toastStore } from '../stores/toasts';
 import type { ThemeStore } from '../stores/theme';
 import type { UpdateStore } from '../stores/update';
-import type { WizardStore } from '../stores/wizard';
+import type { NewProjectDone, NewProjectStore } from '../stores/new-project';
+import type { WizardFinished, WizardStore } from '../stores/wizard';
 import type { WorkOrderDetailStore } from '../stores/work-order-detail';
 import { AccountViewScreen } from './account-view';
 import { BoardScreen } from './board';
 import { CockpitScreen } from './cockpit';
 import { WorkOrderDetailScreen } from './detail';
+import { NewProjectScreen } from './new-project';
 import { RoadmapScreen } from './roadmap';
 import { SettingsPanel, type SettingsSection } from './settings';
 import { WizardScreen } from './wizard';
@@ -89,6 +94,8 @@ export interface ShellScreenProps {
   /** The app-update standing the title bar's button and the panel's Güncelleme section read. */
   readonly update: UpdateStore;
   readonly wizard: WizardStore;
+  /** The Yeni proje page's machine (U-40). */
+  readonly newProject: NewProjectStore;
   /** The locale store's handle for the settings screen's language control (U-9); the active
    *  bundle itself travels as `locale`, refreshed by the root's subscription. */
   readonly localeStore: LocaleStore;
@@ -127,6 +134,7 @@ const placeOf = (route: ShellRoute): TreePlace => {
       return { kind: 'repo', repo: route.repo };
     case 'account':
     case 'workOrder':
+    case 'newProject':
       return { kind: 'cockpit' };
   }
 };
@@ -160,6 +168,7 @@ export function ShellScreen({
   marks,
   update,
   wizard,
+  newProject,
   localeStore,
   themeStore,
   candidates,
@@ -199,6 +208,13 @@ export function ShellScreen({
     void candidateList.load();
   }, [shell, update, candidateList]);
   const unaddedCount = useSyncExternalStore(candidateList.subscribe, () => candidateList.state().rows.length);
+  // The provider display names (A-67) the sidebar's card titles and popovers read: discovery's
+  // own naming, resolved by id, null when it does not know the provider.
+  const providerRows = useSyncExternalStore(candidateList.subscribe, () => candidateList.state().providers);
+  const providerName = (id: string): string | null => providerRows.find((row) => row.id === id)?.name ?? null;
+  // The clock the accounts popover's reset spans read against — the shell re-renders as the
+  // stores publish, so the spans walk with them.
+  const clockNow = (): number => Date.now();
   useEffect(() => {
     if (route.name !== 'workOrder' && route.name !== 'account') placeRef.current = placeOf(route);
   }, [route]);
@@ -298,6 +314,7 @@ export function ShellScreen({
         case 'account':
           return accountsState.cards?.some((card) => card.id === candidate.id) ?? false;
         case 'workOrder':
+        case 'newProject':
           return true;
       }
     },
@@ -319,12 +336,38 @@ export function ShellScreen({
     lastMoveRef.current = 'back';
     dispatchNav({ type: 'push', route: next, scroll: mainRef.current?.scrollTop ?? 0 });
   }, []);
-  // A project the wizard attached opens in its default view: roadmap for several repos, board for one.
-  const openWizardTarget = useCallback(
-    (target: { readonly kind: 'roadmap'; readonly project: string } | { readonly kind: 'board'; readonly repo: string }): void =>
-      navigate(target.kind === 'roadmap' ? { name: 'roadmap', project: target.project } : { name: 'board', repo: target.repo }),
-    [navigate],
+  // The Yeni proje page's success (U-40): its machine starts fresh, the new project's view opens
+  // and the one toast (U-50) shows; no target (the tree does not list it) lands on the cockpit.
+  // The setup finished (U-42): Anasayfa opens directly and the one toast says how many accounts are
+  // ready. The wizard hands the result over once; its window fades over the Anasayfa now open
+  // beneath it and acks its own leave (U-49), so the shell never acks for it — the seen ref keeps
+  // the one handoff safe where the ack no longer clears the flag in this effect's own tick.
+  const finished = wizardState.finished;
+  const finishSeenRef = useRef<WizardFinished | null>(null);
+  useEffect(() => {
+    if (finished === null || finishSeenRef.current === finished) return;
+    finishSeenRef.current = finished;
+    navigate({ name: 'cockpit' });
+    toast({ type: 'success', text: t(locale, 'wizard.finished.toast').replace('{n}', String(finished.accounts)) });
+  }, [finished, navigate, locale]);
+  const finishNewProject = useCallback(
+    (done: NewProjectDone): void => {
+      newProject.reset();
+      const target = done.target;
+      navigate(target === null ? { name: 'cockpit' } : target.kind === 'roadmap' ? { name: 'roadmap', project: target.project } : { name: 'board', repo: target.repo });
+      toast({ type: 'success', text: t(locale, done.toastKey) });
+    },
+    [newProject, navigate, locale],
   );
+  /** Vazgeç: back where the page was opened from. */
+  const cancelNewProject = useCallback((): void => {
+    goBack();
+  }, [goBack]);
+  /** Opens the Yeni proje page with a fresh form. */
+  const openNewProject = useCallback((): void => {
+    newProject.reset();
+    navigate({ name: 'newProject' });
+  }, [newProject, navigate]);
   // ⌘[ and ⌘] ride the history (U-25) — ignored while an input, a textarea or something editable
   // holds focus, and while the palette, the settings panel or the wizard owns the screen: the
   // route underneath an overlay stays put. No other shortcut or menu claims these two keys.
@@ -393,7 +436,7 @@ export function ShellScreen({
         onBack={goBack}
         onForward={goForward}
       />
-      <div className="grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)] overflow-hidden">
+      <div className={`grid min-h-0 flex-1 ${SIDEBAR_GRID} overflow-hidden`}>
         <nav
           aria-label={t(locale, 'shell.nav')}
           className="flex min-h-0 flex-col border-r border-hairline bg-surface px-2.5 pb-3 pt-3.5"
@@ -416,6 +459,7 @@ export function ShellScreen({
             locale={locale}
             onOpenProject={(project) => navigate({ name: 'roadmap', project })}
             onOpenRepo={(_project, repo) => navigate({ name: 'board', repo })}
+            onNewProject={openNewProject}
           />
 
           <SidebarAccounts
@@ -423,13 +467,15 @@ export function ShellScreen({
             marks={marks}
             locale={locale}
             activeAccountId={route.name === 'account' ? route.id : null}
-            onOpenAccount={openAccount}
+            providerName={providerName}
+            now={clockNow()}
             unaddedCount={unaddedCount}
             onOpenUnadded={() => openSettingsAt(unaddedRowTarget())}
+            onOpenAccount={openAccount}
           />
         </nav>
   
-        <main ref={mainRef} className="@container min-w-0 overflow-y-auto px-[22px] py-[18px]">
+        <main ref={mainRef} className="@container min-w-0 overflow-y-auto px-[1.375rem] py-[1.125rem]">
           {route.name === 'cockpit' ? (
             <CockpitScreen
               store={cockpit}
@@ -438,6 +484,7 @@ export function ShellScreen({
               onOpenWorkOrder={openWorkOrder}
               onOpenProject={(project) => navigate({ name: 'roadmap', project })}
               onOpenBoard={(repo) => navigate({ name: 'board', repo })}
+              onNewProject={openNewProject}
               accounts={accountsState.cards}
             />
           ) : null}
@@ -474,6 +521,9 @@ export function ShellScreen({
               onOpenSettings={() => openSettingsAt(editInSettingsTarget(route.id))}
               onBack={goBack}
             />
+          ) : null}
+          {route.name === 'newProject' ? (
+            <NewProjectScreen store={newProject} locale={locale} onCancel={cancelNewProject} onDone={finishNewProject} />
           ) : null}
           {route.name === 'workOrder' ? (
             <WorkOrderDetailScreen
@@ -526,7 +576,10 @@ export function ShellScreen({
         }}
       />
 
-      <WizardScreen store={wizard} locale={locale} localeStore={localeStore} themeStore={themeStore} marks={marks} onOpenTarget={openWizardTarget} />
+      <WizardScreen store={wizard} locale={locale} localeStore={localeStore} themeStore={themeStore} marks={marks} />
+
+      {/* The one toast surface (U-50), above every overlay the shell mounts. */}
+      <ToastHost store={toastStore} locale={locale} />
     </div>
   );
 }

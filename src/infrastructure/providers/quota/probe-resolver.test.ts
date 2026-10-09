@@ -81,7 +81,7 @@ describe('createQuotaProbeResolver', () => {
     const probe = resolver.forProvider('agy');
     if (probe === undefined) throw new Error('agy probe not registered');
 
-    const result = await probe.poll('agy', writeAgyBin());
+    const result = await probe.poll('agy', writeAgyBin(), { accountId: null, identityDir: null });
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error('unreachable');
@@ -93,7 +93,7 @@ describe('createQuotaProbeResolver', () => {
     const probe = resolver.forProvider('codex');
     if (probe === undefined) throw new Error('codex probe not registered');
 
-    const result = await probe.poll('codex', join(root, 'codex-happy', 'codex'));
+    const result = await probe.poll('codex', join(root, 'codex-happy', 'codex'), { accountId: null, identityDir: null });
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error('unreachable');
@@ -106,7 +106,7 @@ describe('createQuotaProbeResolver', () => {
     const probe = resolver.forProvider('claude-code');
     if (probe === undefined) throw new Error('claude probe not registered');
 
-    const result = await probe.poll('codex', '/fake/claude-bin');
+    const result = await probe.poll('codex', '/fake/claude-bin', { accountId: null, identityDir: null });
 
     expect(result).toEqual({ ok: false, error: 'unknown_provider' });
   });
@@ -149,7 +149,7 @@ describe('createQuotaProbeResolver', () => {
     const probe = resolver.forProvider('zai-glm');
     if (probe === undefined) throw new Error('zai-glm probe not registered');
 
-    const result = await probe.poll('zai-glm', null);
+    const result = await probe.poll('zai-glm', null, { accountId: null, identityDir: null });
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error('unreachable');
@@ -199,7 +199,7 @@ describe('createQuotaProbeResolver', () => {
     const probe = resolver.forProvider('claude-code', 'zai-glm');
     if (probe === undefined) throw new Error('zai-glm probe not registered');
 
-    const result = await probe.poll('zai-glm', null);
+    const result = await probe.poll('zai-glm', null, { accountId: null, identityDir: null });
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error('unreachable');

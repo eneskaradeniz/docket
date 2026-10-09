@@ -113,11 +113,15 @@ export interface ProviderAuthProbe {
    * `logged-in-json`: the command prints JSON whose `loggedIn` (or `logged_in`) boolean is the
    * answer on either exit code; an output without that boolean = unknown. Only the boolean is
    * read, never another field of the object, so no account value can reach a log.
+   * `is-authenticated-json`: the command prints JSON whose `isAuthenticated` boolean is the
+   * answer with exit 0; a missing key, a non-boolean, an unparseable output or a failed run
+   * (any non-zero exit) = unknown. Only the boolean is read — the object also carries account
+   * data, which never reaches a log.
    * `account-null-json`: the command prints JSON whose `account` is null when logged out and an
    * object when logged in (both with exit 0); an unparseable answer, a missing key or a value
    * that is neither null nor an object = unknown. Only that one key's null-ness is read, never a
    * field of the account, so no account value can reach a log. */
-  readonly parse?: 'credential-count' | 'logged-out-text' | 'provider-key-present' | 'logged-in-json' | 'account-null-json';
+  readonly parse?: 'credential-count' | 'logged-out-text' | 'provider-key-present' | 'logged-in-json' | 'is-authenticated-json' | 'account-null-json';
   /** `logged-out-text`: exit 0 with this text in the output = logged out; any other answer =
    * unknown, never logged in (a user may run with an own key and never log in).
    * `provider-key-present`: the command prints JSON whose `providers[]` carry a boolean
@@ -130,13 +134,30 @@ export interface ProviderAuthProbe {
   readonly acpSession?: {
     readonly notLoggedIn: { readonly rpcCode: number; readonly textContains: string };
   };
+  /** For a CLI whose login state lives in one JSON file under its home: the file is parsed for
+   * the emptiness of one top-level key — or, without `key`, for whether the top-level object has
+   * any entry at all. Only that emptiness is read, never a name or a value inside the file, so
+   * no credential can reach a log. A missing file is the logged-out answer; an unparseable file
+   * or a wrong shape is unknown. `args` is unused (empty). */
+  readonly jsonKey?: {
+    readonly homeEnv: string;
+    readonly homeDir: string;
+    readonly file: string;
+    readonly key?: string;
+  };
   /** For a CLI with no status command: logged in exactly when `<homeEnv's value, else
    * <user home>/<homeDir>>/<file>` exists. Only the file's presence is read, never its content,
    * and presence does not prove the credential is still valid. `args` is unused (empty). */
   readonly presenceFile?: {
-    readonly homeEnv: string;
+    /** The CLI's documented home override; a CLI that documents none omits this and the user
+     * home is the only location the probe looks at. */
+    readonly homeEnv?: string;
     readonly homeDir: string;
     readonly file: string;
+    /** `unknown`: a missing file answers unknown, never logged out — for a CLI whose credentials
+     * may live only in the OS keyring, so absence of the file decides nothing. Without it a
+     * missing file stays the logged-out answer. */
+    readonly absent?: 'unknown';
   };
   /** For a CLI with no status command and no single documented credential file: logged in
    * exactly when at least one file exists under `<homeEnv's value, else <user home>/<homeDir>>/<dir>`.
@@ -181,6 +202,10 @@ export const DEFAULT_INACTIVITY_TIMEOUT_MS = 600_000;
 
 export interface ProviderDef {
   readonly id: string;
+  /** The documented home directory of the CLI's own login, as display data for a machine-login
+   * candidate — never read or opened. `env` names the variable the CLI documents as its override.
+   * Set only for a CLI that documents one. */
+  readonly accountHome?: { readonly path: string; readonly env?: string };
   readonly displayName: string;
   /** Candidate executable names; discovery takes the first one found. */
   readonly bins: readonly string[];

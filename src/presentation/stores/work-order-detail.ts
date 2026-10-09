@@ -8,7 +8,7 @@
 // newest active run — composition creates that pane and hands it in.
 import type { Api } from '../../api/api';
 import type { Command, CommandResult } from '../../api/commands';
-import type { OpenAskView, Query } from '../../api/queries';
+import type { OpenAskView, Query, StageFilesView, WorktreeFilePreview } from '../../api/queries';
 import type {
   Actor,
   EnvSlug,
@@ -31,7 +31,8 @@ import { commandResultKey, isQueryFailure } from './results';
 export type DetailChange =
   | { readonly type: 'workOrders.changed' }
   | { readonly type: 'run.updated'; readonly runId: string }
-  | { readonly type: 'update.changed' };
+  | { readonly type: 'update.changed' }
+  | { readonly type: 'accounts.changed' };
 
 /** Subscription to the change events; the api's `subscribe` (U-12) satisfies it as-is. */
 export type DetailChangeSignal = (listener: (change: DetailChange) => void) => () => void;
@@ -140,12 +141,21 @@ export interface WorkOrderDetailState {
   readonly problem: string | null;
   /** The latest intent's U-8 mapping; null before the first intent. */
   readonly lastOutcome: IntentOutcome | null;
+  /** The stage files if the work order is currently awaiting_human. null otherwise. */
+  readonly stageFiles: StageFilesView | null;
 }
 
 export interface GateDecideInput {
   readonly gate: string;
   readonly decision: 'approved' | 'rejected';
   readonly note?: string;
+}
+
+/** The pending changes gate's attestation (U-61): true — nothing needed changing; false — the
+ *  run fell short and the stage goes again. */
+export interface GateAttestInput {
+  readonly gate: string;
+  readonly noChangeNeeded: boolean;
 }
 
 export interface PermissionAnswerInput {
@@ -167,9 +177,11 @@ export interface WorkOrderDetailStore {
   load(id: string): Promise<void>;
   state(): WorkOrderDetailState;
   decideGate(input: GateDecideInput): Promise<IntentOutcome>;
+  attestNoChanges(input: GateAttestInput): Promise<IntentOutcome>;
   enqueue(): Promise<IntentOutcome>;
   answerPermission(input: PermissionAnswerInput): Promise<IntentOutcome>;
   approveDeploy(input: DeployApproveInput): Promise<IntentOutcome>;
+  readStageFile(path: string): Promise<WorktreeFilePreview | null>;
   subscribe(listener: () => void): () => void;
 }
 
@@ -272,6 +284,33 @@ const toAskView = (row: OpenAskView): WorkOrderAskView => ({
   target: null,
 });
 
+/** The stage-files card is a convenience read riding the detail (U-57): a reply that is not
+ *  exactly the view the api resolves to — a failure, an envelope, a list that is not a list —
+ *  renders no card, never a crashed detail screen. */
+const isStageFilesView = (value: unknown): value is StageFilesView => {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as { readonly files?: unknown; readonly truncated?: unknown };
+  if (!Array.isArray(candidate.files) || typeof candidate.truncated !== 'boolean') return false;
+  return candidate.files.every(
+    (file) =>
+      typeof file === 'object' &&
+      file !== null &&
+      typeof (file as { readonly path?: unknown }).path === 'string',
+  );
+};
+
+/** The preview pane is a convenience read too (U-57): the same stance — anything but the preview
+ *  shape shows the read's failure copy, never a crash. */
+const isWorktreeFilePreview = (value: unknown): value is WorktreeFilePreview => {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as { readonly lines?: unknown; readonly truncated?: unknown };
+  return (
+    Array.isArray(candidate.lines) &&
+    candidate.lines.every((line) => typeof line === 'string') &&
+    typeof candidate.truncated === 'boolean'
+  );
+};
+
 /** The asks section shows only the loaded work order's own asks — a run id the view knows is
  *  the one honest link the open-asks read carries. */
 const asksFor = (
@@ -303,6 +342,7 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     asks: [],
     problem: null,
     lastOutcome: null,
+    stageFiles: null,
   };
   // The work order the store is bound to: change events re-query it, intents act on it.
   let workOrderId: string | null = null;
@@ -340,19 +380,26 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     if (attempt !== attempts) return;
     if (isQueryFailure(reply)) {
       // The previous view and gate list stay exactly as they were; only the problem appears.
-      set({ ...state, loading: false, problem: reply.code });
+      set({ ...state, loading: false, problem: reply.code, stageFiles: null });
       return;
     }
     // The contract of the detail query: a reply that is not a failure is the detail view, and
     // the query has already resolved the definitions server-side — the flow and the environments
     // ride the reply, so the stage list derives without a second read.
     const view = reply as WorkOrderDetailView;
+    let stageFiles: StageFilesView | null = null;
+    if (view.state.status === 'awaiting_human') {
+      const stageFilesReply: unknown = await api.query({ type: 'workOrders.stageFiles', id } satisfies Query);
+      if (isStageFilesView(stageFilesReply)) stageFiles = stageFilesReply;
+    }
+    if (attempt !== attempts) return;
     set({
       ...state,
       loading: false,
       view,
       stages: stageGates(view.flow, view.environments, view.state),
       problem: null,
+      stageFiles,
     });
     // A run still going is mounted into the live pane; the pane itself ignores a repeat attach.
     const active = newestActiveRun(view);
@@ -412,6 +459,14 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
         input.decision === 'approved' ? 'success.gate.approved' : 'success.gate.rejected',
       );
     },
+    attestNoChanges: (input) => {
+      if (workOrderId === null) return Promise.resolve(notLoadedOutcome('gate.attest'));
+      return runIntent(
+        { type: 'gate.attest', workOrderId, gate: input.gate, noChangeNeeded: input.noChangeNeeded },
+        // The attestation's two answers carry different news, so each names itself (U-61).
+        input.noChangeNeeded ? 'success.gate.attestNoChange' : 'success.gate.attestRerun',
+      );
+    },
     enqueue: () => {
       if (workOrderId === null) return Promise.resolve(notLoadedOutcome('workOrder.enqueue'));
       return runIntent({ type: 'workOrder.enqueue', id: workOrderId });
@@ -454,6 +509,11 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
         commit: input.commit,
         ...(input.confirmedEnvironment !== undefined ? { confirmedEnvironment: input.confirmedEnvironment } : {}),
       });
+    },
+    readStageFile: async (path: string) => {
+      if (workOrderId === null) return null;
+      const reply: unknown = await api.query({ type: 'workOrders.readStageFile', id: workOrderId, path } satisfies Query);
+      return isWorktreeFilePreview(reply) ? reply : null;
     },
   };
 };

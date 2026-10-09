@@ -11,7 +11,9 @@
 // rule, and a title like `R-4 edge:` does not satisfy the `R-n:` convention. Each layer's results
 // are reported separately. The E rules span two docs, so each half carries its own search scope:
 // domain.md's E rules are tested under src/domain, application.md's under src/application and
-// src/api (the acceptance scenario lives there). The P rules are defined in providers.md and
+// src/api (the acceptance scenario lives there). The A rules are tested under src/application
+// and src/api, and a caller-side contract — which query shape a screen's reader sends — lives
+// with its store under src/presentation. The P rules are defined in providers.md and
 // tested wherever the provider contract they name lives — the domain (the pure catalog merge and
 // effort mapping), infrastructure (defs, transports, forge, quota, scenarios), application
 // (executor behaviour) and api. The U rules are defined in
@@ -27,7 +29,7 @@ const ROOT = fileURLToPath(new URL('../', import.meta.url));
 // One entry per rule namespace: where the ids are defined and which folders carry its tests.
 const SECTIONS = [
   { name: 'domain', prefix: 'R', doc: join(ROOT, 'docs', 'v2', 'domain.md'), dirs: [join(ROOT, 'src', 'domain')] },
-  { name: 'application', prefix: 'A', doc: join(ROOT, 'docs', 'v2', 'application.md'), dirs: [join(ROOT, 'src', 'application'), join(ROOT, 'src', 'api')] },
+  { name: 'application', prefix: 'A', doc: join(ROOT, 'docs', 'v2', 'application.md'), dirs: [join(ROOT, 'src', 'application'), join(ROOT, 'src', 'api'), join(ROOT, 'src', 'presentation')] },
   { name: 'infrastructure', prefix: 'I', doc: join(ROOT, 'docs', 'v2', 'infrastructure.md'), dirs: [join(ROOT, 'src', 'infrastructure')] },
   { name: 'providers', prefix: 'P', doc: join(ROOT, 'docs', 'v2', 'providers.md'), dirs: [join(ROOT, 'src', 'domain'), join(ROOT, 'src', 'infrastructure'), join(ROOT, 'src', 'application'), join(ROOT, 'src', 'api')] },
   { name: 'domain environments', prefix: 'E', doc: join(ROOT, 'docs', 'v2', 'domain.md'), dirs: [join(ROOT, 'src', 'domain')] },

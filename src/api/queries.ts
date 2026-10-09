@@ -1,7 +1,9 @@
 // api/queries.ts — the read side of the boundary. Exact contract: docs/v2/application.md § 4.
 // Plain JSON-serialisable shapes only; ids travel as strings and are parsed in api.ts.
 import type { ModelMatcher } from '../domain/index';
-import type { ProviderMark } from '../application';
+import type { AccountTestView, ProviderMark, QuotaProbeError, StageFilesView, WorktreeFilePreview } from '../application';
+
+export type { AccountTestView, StageFilesView, WorktreeFilePreview };
 
 export type Query =
   | { readonly type: 'workOrder.detail'; readonly id: string }
@@ -13,14 +15,18 @@ export type Query =
   | { readonly type: 'account.models'; readonly accountId: string; readonly refresh?: boolean }
   | { readonly type: 'project.spend'; readonly project: string }
   | { readonly type: 'repos.list' }
-  | { readonly type: 'settings.accounts' }
+  | { readonly type: 'settings.accounts'; readonly catalog?: 'read' | 'skip' }
   | { readonly type: 'roles.list' }
   | { readonly type: 'providers.discovered' }
-  | { readonly type: 'accounts.candidates'; readonly refresh?: boolean }
+  | { readonly type: 'accounts.candidates'; readonly fresh?: boolean }
+  | { readonly type: 'accounts.candidateQuota'; readonly sourcePath: string }
   | { readonly type: 'providers.marks' }
   | { readonly type: 'run.events'; readonly runId: string }
   | { readonly type: 'permissions.open' }
-  | { readonly type: 'app.update' };
+  | { readonly type: 'app.update' }
+  | { readonly type: 'workOrders.stageFiles'; readonly id: string }
+  | { readonly type: 'workOrders.readStageFile'; readonly id: string; readonly path: string }
+  | { readonly type: 'capabilities.candidates' }; // no fresh: no cache (A-94)
 
 export interface AttentionItem {
   readonly workOrderId: string;
@@ -184,11 +190,18 @@ export interface SettingsPoolView {
   readonly appliesTo: readonly ModelMatcher[] | 'all' | 'unknown';
 }
 
+/** The quota a discovered account would show, read before adoption (A-82); ids are synthetic. */
+export type CandidateQuotaView =
+  | { readonly ok: true; readonly pools: readonly SettingsPoolView[]; readonly meters: readonly SettingsMeterView[] }
+  | { readonly ok: false; readonly code: QuotaProbeError | 'needs_account' | 'not_found' };
+
 export interface SettingsAccountView {
   readonly id: string;
   readonly provider: string;
   readonly label: string;
   readonly authMode: string;
+  /** The account's billing view (P-51): default billing, settled by the account's own pools. */
+  readonly billing: 'included' | 'metered' | 'unknown';
   readonly plan: string | null;
   readonly limitPolicy: 'wait_resume' | 'switch_pool' | 'fallback_account' | 'ask';
   readonly reserve: { readonly short: number | null; readonly long: number | null };
@@ -202,6 +215,8 @@ export interface SettingsAccountView {
   readonly endpointHost: string | null;
   /** `secretRef` is present; never the value. */
   readonly hasSecret: boolean;
+  /** null = never tested since the app started or since the last reset (A-73). */
+  readonly test: AccountTestView | null;
   readonly pools: readonly SettingsPoolView[];
   readonly meters: readonly SettingsMeterView[];
 }
@@ -294,3 +309,21 @@ export interface OpenAskView {
 
 /** The marks of every composed provider def (A-41): def id → its mark, `null` when it has none. */
 export type ProviderMarksView = Record<string, ProviderMark | null>;
+
+// --- capabilities.candidates (A-90 … A-92) -------------------------------------------------------------
+
+export interface CapabilityCandidateView {
+  readonly identity: string; // mergeCandidates' canonical form (R-63)
+  readonly kind: 'mcp' | 'skill' | 'context';
+  readonly name: string;
+  readonly sources: readonly string[]; // account ids, sorted, unique — plain strings on the wire
+  readonly command?: string; // mcp only
+  readonly path?: string; // skill / context; the source file's absolute path
+  readonly description?: string; // ≤ 300 code points (CAPABILITY_DESCRIPTION_MAX)
+  readonly imported: boolean;
+}
+
+export interface CapabilityCandidatesView {
+  readonly candidates: readonly CapabilityCandidateView[]; // identity, code-point order
+  readonly truncated: boolean; // the scan found more than the cap
+}

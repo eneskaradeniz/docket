@@ -7,8 +7,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { stringify } from 'yaml';
 
 import type { DefinitionScope, DefinitionStore } from '../../../application/index';
-import type { ProjectSlug, RepoSlug } from '../../../domain/index';
-import { BUILTIN_FLOWS, BUILTIN_ROLES } from '../../../domain/index';
+import type { CapabilityDef, CapabilitySlug, ProjectSlug, RepoSlug } from '../../../domain/index';
+import { BUILTIN_FLOWS, BUILTIN_ROLES, parseSlug } from '../../../domain/index';
 import type { ProjectPaths, RepoPaths } from '../../system/index';
 
 import { createYamlDefinitionStore } from './store';
@@ -877,5 +877,49 @@ describe('repoPath', () => {
 
     expect(await store.repoPath(REPO)).toBe(repoPath);
     expect(await store.repoPath(UNKNOWN_REPO)).toBeUndefined();
+  });
+});
+
+// --- installCapabilities (I-44) -----------------------------------------------------------------
+
+describe('installCapabilities', () => {
+  const capSlug = (raw: string): CapabilitySlug => {
+    const parsed = parseSlug<'capability'>(raw);
+    if (!parsed.ok) throw new Error(`bad test slug: ${raw}`);
+    return parsed.value;
+  };
+  const mcp: CapabilityDef = { kind: 'mcp', id: capSlug('db-tools'), name: 'Db Tools', command: 'npx db', args: [], env: {} };
+  const context: CapabilityDef = { kind: 'context', id: capSlug('claude-md'), name: 'CLAUDE.md', path: '/users/op/.claude/CLAUDE.md' };
+
+  it('I-44: writes <globalRoot>/capabilities/<id>.yaml in the shape load parses back — the file round-trips to the equal definition', async () => {
+    const store = makeStore();
+    const installed = await store.installCapabilities([mcp, context]);
+    expect(installed).toEqual({
+      written: ['capabilities/db-tools.yaml', 'capabilities/claude-md.yaml'],
+      skipped: [],
+    });
+
+    // `load` needs the library and the repo's own repo.yaml (I-12's harness rule).
+    await seedLibrary(globalRoot);
+    await writeYaml(repoRoot, 'repo.yaml', repoDef());
+    const loaded = await store.load(REPO);
+    expect(loaded.ok).toBe(true);
+    if (loaded.ok) {
+      expect(loaded.value.capabilities).toContainEqual(mcp);
+      expect(loaded.value.capabilities).toContainEqual(context);
+    }
+    // The file is flat YAML, one definition per file, its id the file stem.
+    const text = await readFile(join(globalRoot, 'capabilities', 'db-tools.yaml'), 'utf8');
+    expect(text).toBe(`${stringify({ ...mcp })}`);
+  });
+
+  it('I-44: an existing target is skipped untouched whatever its content, and lands in skipped', async () => {
+    const store = makeStore();
+    await mkdir(join(globalRoot, 'capabilities'), { recursive: true });
+    await writeFile(join(globalRoot, 'capabilities', 'db-tools.yaml'), 'the user wrote this by hand\n', 'utf8');
+
+    const installed = await store.installCapabilities([mcp]);
+    expect(installed).toEqual({ written: [], skipped: ['capabilities/db-tools.yaml'] });
+    expect(await readFile(join(globalRoot, 'capabilities', 'db-tools.yaml'), 'utf8')).toBe('the user wrote this by hand\n');
   });
 });

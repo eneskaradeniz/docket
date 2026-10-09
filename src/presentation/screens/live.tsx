@@ -2,16 +2,20 @@
 // earliest still-open permission ask with its answer actions, and the ended state. The screen
 // renders the store's fold and forwards clicks; number formatting is the only thing computed
 // here, and every user-visible string arrives through a label key (U-1).
-import { useState, useSyncExternalStore } from 'react';
-import type { CommandResult } from '../../api/commands';
+// A run's text has no break opportunities to rely on (absolute paths, whole commands), so every
+// box between such text and the pane must be allowed to shrink below its content (`min-w-0`) —
+// intrinsic min-content otherwise widens the pane's grids past the column the detail layout
+// pins — and the text either wraps anywhere or truncates with the full value on its title. The
+// layout audit's L-14 measures the result on the real screen.
+import { useSyncExternalStore } from 'react';
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
 import { formatMeterValue, meterUnitLabel } from '../components/meter-value';
 import { ActionButton } from '../components/action-button';
-import { OutcomeNotice } from '../components/outcome-notice';
 import { StateBadge, type BadgeTone } from '../components/state-badge';
 import type { LivePaneItem, LivePaneStore, LivePaneState, QuotaSignalMeter, ToolCallStatus } from '../stores/live-pane';
 import { commandResultKey } from '../stores/results';
+import { toastOutcome } from '../stores/toasts';
 
 export interface LivePaneScreenProps {
   readonly store: LivePaneStore;
@@ -72,23 +76,27 @@ function LiveItemRow({ item, locale }: { readonly item: LivePaneItem; readonly l
     case 'thought':
       return (
         <div className="grid gap-0.5">
-          <span className="font-mono text-[10.5px] uppercase tracking-[0.06em] text-inkdim">{t(locale, 'live.kind.thought')}</span>
-          <p className="whitespace-pre-wrap text-[13px] text-inkdim">{item.text}</p>
+          <span className="font-mono text-[0.65625rem] uppercase tracking-[0.06em] text-inkdim">{t(locale, 'live.kind.thought')}</span>
+          <p className="whitespace-pre-wrap [overflow-wrap:anywhere] text-[0.8125rem] text-inkdim">{item.text}</p>
         </div>
       );
     case 'message':
       return (
         <div className="grid gap-0.5">
-          <span className="font-mono text-[10.5px] uppercase tracking-[0.06em] text-inkdim">{t(locale, 'live.kind.message')}</span>
-          <p className="whitespace-pre-wrap text-[13.5px] text-ink">{item.text}</p>
+          <span className="font-mono text-[0.65625rem] uppercase tracking-[0.06em] text-inkdim">{t(locale, 'live.kind.message')}</span>
+          <p className="whitespace-pre-wrap [overflow-wrap:anywhere] text-[0.84375rem] text-ink">{item.text}</p>
         </div>
       );
     case 'toolCall':
       return (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 items-baseline gap-2">
-            <span className="font-mono text-[12.5px] text-ink">{item.name}</span>
-            {item.target !== null ? <code className="truncate font-mono text-[11px] text-inkdim">{item.target}</code> : null}
+            <span className="font-mono text-[0.78125rem] text-ink">{item.name}</span>
+            {item.target !== null ? (
+              <code className="truncate font-mono text-[0.6875rem] text-inkdim" title={item.target}>
+                {item.target}
+              </code>
+            ) : null}
           </div>
           <StateBadge tone={TOOL_STATUS_TONE[item.status]}>{t(locale, TOOL_STATUS_KEY[item.status])}</StateBadge>
         </div>
@@ -97,7 +105,7 @@ function LiveItemRow({ item, locale }: { readonly item: LivePaneItem; readonly l
     case 'quotaSignal':
       return (
         <div className="grid gap-0.5">
-          <span className="font-mono text-[10.5px] uppercase tracking-[0.06em] text-inkdim">
+          <span className="font-mono text-[0.65625rem] uppercase tracking-[0.06em] text-inkdim">
             {t(locale, item.kind === 'usage' ? 'live.kind.usage' : 'live.kind.quotaSignal')}
           </span>
           {item.kind === 'usage' ? <UsageLine item={item} locale={locale} /> : <MeterLine item={item} locale={locale} />}
@@ -107,28 +115,33 @@ function LiveItemRow({ item, locale }: { readonly item: LivePaneItem; readonly l
 }
 
 export function LivePaneScreen({ store, locale }: LivePaneScreenProps) {
-  const state: LivePaneState = useSyncExternalStore(store.subscribe, store.state);
-  // The pane store keeps no outcome state (U-5's fold is display items only), so the screen holds
-  // the latest answer's result to toast through the same U-8 mapping every intent uses.
-  const [answerResult, setAnswerResult] = useState<CommandResult | null>(null);
-
+  const state: LivePaneState = useSyncExternalStore(store.subscribe, store.state, store.state);
+  // The pane store keeps no outcome state (U-5's fold is display items only), so the screen
+  // toasts the latest answer itself through the same U-8 mapping every intent uses (U-50); a
+  // refusal carries its code behind the copy button (U-50a).
   const answer = (decision: 'allow' | 'deny'): void => {
-    void store.answer(decision).then(setAnswerResult);
+    void store.answer(decision).then((result) => {
+      toastOutcome(locale, { result, labelKey: commandResultKey('permission.answer', result) });
+    });
   };
 
   return (
     <aside className="grid content-start gap-3">
       <header className="flex items-center gap-2.5">
         <span aria-hidden="true" className={`h-2 w-2 flex-none rounded-full ${state.ended ? 'bg-hairline' : 'bg-proceed motion-safe:animate-pulse'}`} />
-        <h2 className="text-[15px] font-semibold tracking-tight text-ink">{t(locale, 'live.title')}</h2>
+        <h2 className="text-[0.9375rem] font-semibold tracking-tight text-ink">{t(locale, 'live.title')}</h2>
       </header>
 
       {state.ask !== null ? (
-        <div className="grid gap-2 rounded-card border border-signal/45 bg-surface p-3">
-          <span className="font-mono text-[10.5px] uppercase tracking-[0.06em] text-signal">{t(locale, 'live.ask.title')}</span>
-          <div>
-            <span className="font-mono text-[13px] text-ink">{state.ask.tool}</span>
-            {state.ask.target !== null ? <code className="block truncate font-mono text-[11px] text-inkdim">{state.ask.target}</code> : null}
+        <div className="grid min-w-0 gap-2 rounded-card border border-signal/45 bg-surface p-3">
+          <span className="font-mono text-[0.65625rem] uppercase tracking-[0.06em] text-signal">{t(locale, 'live.ask.title')}</span>
+          <div className="min-w-0">
+            <span className="font-mono text-[0.8125rem] text-ink">{state.ask.tool}</span>
+            {state.ask.target !== null ? (
+              <code className="block truncate font-mono text-[0.6875rem] text-inkdim" title={state.ask.target}>
+                {state.ask.target}
+              </code>
+            ) : null}
           </div>
           <div className="flex items-center gap-2">
             <ActionButton variant="neutral" onClick={() => answer('deny')}>
@@ -141,23 +154,15 @@ export function LivePaneScreen({ store, locale }: LivePaneScreenProps) {
         </div>
       ) : null}
 
-      {answerResult !== null ? (
-        <OutcomeNotice
-          ok={answerResult.ok}
-          text={t(locale, commandResultKey('permission.answer', answerResult))}
-          code={answerResult.ok ? undefined : answerResult.code}
-        />
-      ) : null}
-
       {state.items.length === 0 ? (
-        <p className="flex items-center gap-2.5 font-mono text-[11px] text-inkdim">
+        <p className="flex items-center gap-2.5 font-mono text-[0.6875rem] text-inkdim">
           <span aria-hidden="true" className="h-2 w-2 flex-none rounded-full bg-info motion-safe:animate-pulse" />
           {t(locale, 'live.empty')}
         </p>
       ) : (
-        <ol className="grid gap-1.5">
+        <ol className="grid min-w-0 gap-1.5">
           {state.items.map((item, index) => (
-            <li key={index} className="rounded-card border border-hairline bg-surface px-3 py-2">
+            <li key={index} className="min-w-0 rounded-card border border-hairline bg-surface px-3 py-2">
               <LiveItemRow item={item} locale={locale} />
             </li>
           ))}
@@ -165,7 +170,7 @@ export function LivePaneScreen({ store, locale }: LivePaneScreenProps) {
       )}
 
       {state.ended ? (
-        <p className="rounded-card border border-hairline bg-surface px-3 py-2 text-[13px] text-inkdim">{t(locale, 'live.ended')}</p>
+        <p className="rounded-card border border-hairline bg-surface px-3 py-2 text-[0.8125rem] text-inkdim">{t(locale, 'live.ended')}</p>
       ) : null}
     </aside>
   );

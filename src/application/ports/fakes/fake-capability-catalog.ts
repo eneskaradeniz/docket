@@ -15,6 +15,7 @@ export interface FakeRouteKind {
   readonly tierModels?: Readonly<Record<Tier, string>>;
   /** The instruction-file names this provider reads natively (P-37). */
   readonly instructionFiles?: readonly string[];
+  readonly quotaProbe?: 'sdk_usage' | 'rate_limit_events' | 'http_monitor' | 'provider_query' | 'none';
 }
 
 export const createFakeCapabilityCatalog = (routeKinds: readonly FakeRouteKind[] = []): CapabilityCatalog => ({
@@ -32,6 +33,7 @@ export const createFakeCapabilityCatalog = (routeKinds: readonly FakeRouteKind[]
           ...(kind.endpointHost !== undefined ? { endpointHost: kind.endpointHost } : {}),
           ...(kind.defaultBilling !== undefined ? { defaultBilling: kind.defaultBilling } : {}),
           ...(kind.tierModels !== undefined ? { tierModels: kind.tierModels } : {}),
+          ...(kind.quotaProbe !== undefined ? { quotaProbe: kind.quotaProbe } : {}),
         };
   },
   // Registry order: the scripted kind order is the registry order, first appearance wins the union.

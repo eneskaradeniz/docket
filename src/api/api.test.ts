@@ -9,10 +9,13 @@ import { ok, parseSlug, parseUlid } from '../domain/index';
 import type { AppDeps, UpdateChecker, UpdateState } from '../application';
 import { createPermissionBoard, executeRun } from '../application';
 import {
+  createFakeCapabilityDiscovery,
   createFakeCommandRunner,
   createFakeDefinitionStore,
   createFakeDeps,
   createFakeEventLog,
+  createFakeGitProbe,
+  createFakeRepoFolders,
   createFakeTransport,
   createFakeTransportResolver,
   createFakeUpdateChecker,
@@ -20,6 +23,8 @@ import {
   type FakeCommandRunner,
   type FakeDefinitionStore,
   type FakeEventLog,
+  type FakeGitProbe,
+  type FakeRepoFolders,
   type FakeWorktrees,
 } from '../application/ports/fakes';
 
@@ -113,15 +118,33 @@ const SHIP_PRD_FLOW_JSON = {
   stages: [{ id: 'ship', name: 'Ship', role: null, exit: [{ kind: 'deploy', id: 'ship-prd', environment: 'prd' }] }],
 };
 
+/** A build stage whose changes gate a run leaves measured-but-pending — the standing gate.attest
+ *  answers. The signoff behind it keeps the work order alive after the attestation passes. */
+const CHANGES_FLOW_JSON = {
+  id: 'changes-flow',
+  name: 'Changes',
+  stages: [
+    {
+      id: 'build',
+      name: 'Build',
+      role: 'worker',
+      exit: [
+        { kind: 'changes', id: 'changes' },
+        { kind: 'human', id: 'signoff', label: 'Signoff' },
+      ],
+    },
+  ],
+};
+
 const DEFINITIONS_JSON = JSON.stringify({
   roles: [ROLE_JSON],
-  flows: [FLOW_JSON, SHIP_FLOW_JSON, SHIP_PRD_FLOW_JSON],
+  flows: [FLOW_JSON, SHIP_FLOW_JSON, SHIP_PRD_FLOW_JSON, CHANGES_FLOW_JSON],
   capabilities: [],
   repo: {
     id: REPO,
     name: 'Acme',
     repos: [],
-    flows: ['board-flow', 'ship-flow', 'ship-prd-flow'],
+    flows: ['board-flow', 'ship-flow', 'ship-prd-flow', 'changes-flow'],
     defaultFlow: 'board-flow',
     commandSets: {
       'deploy-stg': ['docket-deploy stg'],
@@ -210,6 +233,14 @@ const driveToAwaitingHuman = async (h: Harness, id: string): Promise<void> => {
   await h.deps.workOrders.appendEvent(workOrderId, { type: 'run_finished', at: 1_200, runId: RUN, outcome: 'succeeded' });
 };
 
+/** Drives a changes-flow work order to `gating` on build — the state gate.attest answers. */
+const driveToGating = async (h: Harness, id: string): Promise<void> => {
+  const workOrderId = ulidOf<'work-order'>(id);
+  const stage = slugOf<'stage'>('build');
+  await h.deps.workOrders.appendEvent(workOrderId, { type: 'run_started', at: 1_100, runId: RUN, stage, attempt: 1 });
+  await h.deps.workOrders.appendEvent(workOrderId, { type: 'run_finished', at: 1_200, runId: RUN, outcome: 'succeeded' });
+};
+
 /** A prior successful staging deploy of the exact commit — the promotion prerequisite for prd. */
 const deployOnStg = async (h: Harness, id: string): Promise<void> => {
   await h.deps.workOrders.appendEvent(ulidOf<'work-order'>(id), {
@@ -273,6 +304,7 @@ describe('createApi', () => {
         { type: 'workOrder.close', id: 'not-a-ulid' },
         { type: 'workOrder.enqueue', id: 'not-a-ulid' },
         { type: 'gate.decide', workOrderId: 'not-a-ulid', gate: 'plan-approval', decision: 'approved' },
+        { type: 'gate.attest', workOrderId: 'not-a-ulid', gate: 'changes', noChangeNeeded: true },
         { type: 'proposal.decide', id: 'not-a-ulid', decision: 'approved' },
         { type: 'deploy.approve', workOrderId: 'not-a-ulid', gate: 'ship-stg', commit: COMMIT },
       ];
@@ -405,6 +437,38 @@ describe('createApi', () => {
       expect(result).toEqual({ ok: true });
       const events = await h.deps.workOrders.events(ulidOf<'work-order'>(id));
       expect(events[events.length - 1]?.type).toBe('gate_evaluated');
+    });
+
+    it('maps gate.attest onto attestNoChanges and records the attested verdict', async () => {
+      const h = await createHarness();
+      const api = createApi(h.deps);
+      const id = await openViaApi(h, 'Nothing needed changing', 'changes-flow');
+      await driveToGating(h, id);
+
+      // An agent never attests a changes gate, and nothing is recorded for the refusal.
+      expect(await api.command(AGENT, { type: 'gate.attest', workOrderId: id, gate: 'changes', noChangeNeeded: true })).toEqual({
+        ok: false,
+        code: 'agent_cannot_decide',
+      });
+
+      const result = await api.command(ACTOR, {
+        type: 'gate.attest',
+        workOrderId: id,
+        gate: 'changes',
+        noChangeNeeded: true,
+      });
+
+      expect(result).toEqual({ ok: true });
+      const events = await h.deps.workOrders.events(ulidOf<'work-order'>(id));
+      expect(events[events.length - 1]).toMatchObject({
+        type: 'gate_evaluated',
+        gate: 'changes',
+        verdict: { status: 'passed' },
+      });
+      // The attestation is a gate decision in the audit trail, decided like any other.
+      const decided = h.log.entries().filter((entry) => entry.action === 'gate.decided');
+      expect(decided).toHaveLength(1);
+      expect(decided[0]).toMatchObject({ detail: { gate: 'changes', decision: 'approved' } });
     });
 
     it('maps proposal.decide onto decideProposalUseCase', async () => {
@@ -870,6 +934,69 @@ describe('createApi', () => {
         endpoint: 'https://api.compatible.example/v1',
         identityDir: '/Users/op/.config/agent-a',
         tierModels,
+      });
+    });
+
+    describe('project.create', () => {
+      const create = (): { readonly deps: AppDeps; readonly git: FakeGitProbe; readonly folders: FakeRepoFolders; readonly log: FakeEventLog } => {
+        const git = createFakeGitProbe();
+        const folders = createFakeRepoFolders();
+        const log = createFakeEventLog();
+        return { deps: createFakeDeps({ git, repoFolders: folders, log }), git, folders, log };
+      };
+
+      it('A-79: mode existing maps to createProject with the actor of the call; ok answers the project slug', async () => {
+        const h = create();
+        h.git.markWorkTree('/work/atolye');
+
+        const result = await createApi(h.deps).command(ACTOR, { type: 'project.create', mode: 'existing', path: '/work/atolye', name: 'Atölye' });
+
+        expect(result).toEqual({ ok: true, id: 'atolye' });
+        expect(h.log.entries().map((entry) => [entry.action, entry.actor])).toEqual([
+          ['project.created', ACTOR],
+          ['project.attached', ACTOR],
+        ]);
+        expect(await h.deps.repos.path(slugOf<'repo'>('atolye'))).toBe('/work/atolye');
+      });
+
+      it('A-79: mode blank creates the folder under parent', async () => {
+        const h = create();
+        h.folders.markFolder('/work');
+        h.git.markWorkTree('/work/atolye');
+
+        const result = await createApi(h.deps).command(ACTOR, { type: 'project.create', mode: 'blank', parent: '/work', name: 'Atölye' });
+
+        expect(result).toEqual({ ok: true, id: 'atolye' });
+        expect(h.folders.created()).toEqual(['/work/atolye']);
+      });
+
+      it('A-79: an error is { ok: false, code } with the use case error as the code', async () => {
+        const h = create();
+
+        expect(await createApi(h.deps).command(ACTOR, { type: 'project.create', mode: 'existing', path: '/nope', name: 'Atölye' })).toEqual({
+          ok: false,
+          code: 'not_a_repo',
+        });
+        expect(await createApi(h.deps).command(ACTOR, { type: 'project.create', mode: 'blank', parent: '/nope', name: 'Atölye' })).toEqual({
+          ok: false,
+          code: 'not_a_folder',
+        });
+        expect(await createApi(h.deps).command(ACTOR, { type: 'project.create', mode: 'existing', path: '/nope', name: ' ' })).toEqual({
+          ok: false,
+          code: 'invalid_name',
+        });
+      });
+
+      it('A-79: an unknown mode is rejected at the edge and no port is called', async () => {
+        const h = create();
+        const spies = [vi.spyOn(h.deps.definitions, 'installBuiltins'), vi.spyOn(h.deps.definitions, 'scaffoldProject'), vi.spyOn(h.deps.repoFolders, 'createRepo'), vi.spyOn(h.deps.log, 'append')];
+
+        // The wire carries a plain string; the cast stands in for a hostile payload.
+        const hostile = { type: 'project.create', mode: 'clone', path: '/work/atolye', name: 'Atölye' } as unknown as Command;
+        const result = await createApi(h.deps).command(ACTOR, hostile);
+
+        expect(result).toEqual({ ok: false, code: 'invalid_id' });
+        for (const spy of spies) expect(spy).not.toHaveBeenCalled();
       });
     });
 
@@ -1607,5 +1734,70 @@ describe('createApi', () => {
       expect(await api.command(ACTOR, { type: 'app.update.check' })).toEqual({ ok: false, code: 'not_found' });
       expect(await api.command(ACTOR, { type: 'app.update.apply' })).toEqual({ ok: false, code: 'not_found' });
     });
+  });
+});
+
+// --- capabilities.import (A-93, A-94) -------------------------------------------------------------
+
+describe('capabilities.import', () => {
+  const ACCT = '01ARZ3NDEKTSV4RRFFQ69G5FAV' as Ulid<'account'>;
+  const DIR = '/users/op/.claude-work';
+
+  const seededApi = async () => {
+    const discovery = createFakeCapabilityDiscovery();
+    const deps = createFakeDeps({ capabilityDiscovery: discovery });
+    await deps.accounts.save({
+      id: ACCT, provider: 'claude-code', label: 'Work', authMode: 'subscription', limitPolicy: 'wait_resume', caps: [], identityDir: DIR,
+    });
+    discovery.seed(DIR, [
+      { identity: 'context:CLAUDE.md', kind: 'context', name: 'CLAUDE.md', sources: [ACCT], path: `${DIR}/CLAUDE.md` },
+      { identity: 'mcp:db|npx db', kind: 'mcp', name: 'db', sources: [ACCT], command: 'npx db' },
+    ]);
+    return { api: createApi(deps), deps };
+  };
+
+  it('A-94: answers ok with one result row per identity — imported rows carry the id, rejections the reason', async () => {
+    const { api } = await seededApi();
+    const result = await api.command(ACTOR, {
+      type: 'capabilities.import',
+      identities: ['context:absent', 'context:CLAUDE.md', 'mcp:db|npx db'],
+    });
+    expect(result).toEqual({
+      ok: true,
+      results: [
+        { identity: 'context:absent', status: 'rejected', id: null, reason: 'not_found' },
+        { identity: 'context:CLAUDE.md', status: 'imported', id: 'claude-md', reason: null },
+        { identity: 'mcp:db|npx db', status: 'imported', id: 'db', reason: null },
+      ],
+    });
+  });
+
+  it('A-94: an unknown identity writes nothing — a { ok: true } call with only rejections leaves the store empty', async () => {
+    const { api, deps } = await seededApi();
+    const result = await api.command(ACTOR, { type: 'capabilities.import', identities: ['context:absent'] });
+    expect(result).toEqual({
+      ok: true,
+      results: [{ identity: 'context:absent', status: 'rejected', id: null, reason: 'not_found' }],
+    });
+    expect(await deps.definitions.readFile({ kind: 'global' }, 'capabilities/claude-md.yaml')).toBeUndefined();
+  });
+
+  it('A-94: the second import of the same identity is already_present and writes no new file', async () => {
+    const { api, deps } = await seededApi();
+    await api.command(ACTOR, { type: 'capabilities.import', identities: ['context:CLAUDE.md'] });
+    const second = await api.command(ACTOR, { type: 'capabilities.import', identities: ['context:CLAUDE.md'] });
+    expect(second).toEqual({
+      ok: true,
+      results: [{ identity: 'context:CLAUDE.md', status: 'already_present', id: 'claude-md', reason: null }],
+    });
+    const file = await deps.definitions.readFile({ kind: 'global' }, 'capabilities/claude-md.yaml');
+    expect(JSON.parse(file?.content ?? 'null')).toEqual({
+      kind: 'context', id: 'claude-md', name: 'CLAUDE.md', path: `${DIR}/CLAUDE.md`,
+    });
+  });
+
+  it('A-94: an empty identities call is ok with no rows and no writes', async () => {
+    const { api } = await seededApi();
+    expect(await api.command(ACTOR, { type: 'capabilities.import', identities: [] })).toEqual({ ok: true, results: [] });
   });
 });

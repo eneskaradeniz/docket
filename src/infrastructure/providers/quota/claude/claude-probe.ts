@@ -5,14 +5,14 @@
 // call.
 import type { EpochMs } from '../../../../domain/index';
 import { err, ok } from '../../../../domain/index';
-import type { QuotaProbe } from '../../../../application/index';
+import type { QuotaProbe, QuotaProbeContext } from '../../../../application/index';
 
 import { mapClaudeGetUsage } from './usage-mapper';
 
 const CLAUDE_DEF_ID = 'claude-code';
 
 /** Where the probe gets its get_usage payload; the SDK-backed source is the real one. */
-export type GetUsage = (binPath: string | null) => Promise<unknown>;
+export type GetUsage = (binPath: string | null, context: QuotaProbeContext) => Promise<unknown>;
 
 /** Diagnostic sink for the mapper's notes; field names and counts only, never values. Default:
  * silent, like the compatible-endpoint monitor's sink. */
@@ -28,11 +28,11 @@ export interface ClaudeUsageProbeDeps {
 export function createClaudeUsageProbe(deps: ClaudeUsageProbeDeps): QuotaProbe {
   const note: ProbeNote = deps.note ?? (() => {});
   return {
-    poll: async (defId, binPath) => {
+    poll: async (defId, binPath, context) => {
       if (defId !== CLAUDE_DEF_ID) return err('unknown_provider');
       let payload: unknown;
       try {
-        payload = await deps.getUsage(binPath);
+        payload = await deps.getUsage(binPath, context);
       } catch {
         return err('probe_failed');
       }

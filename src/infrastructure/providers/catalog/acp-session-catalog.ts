@@ -6,7 +6,10 @@
 // select option of reserved category `model`; a bracketed variant suffix in an id is part of the
 // id — it is the value the session expects and is never split. Thought levels come from the
 // option of reserved category `thought_level` (or `thinking`, the name one provider uses for the
-// same selector) when the provider reports one.
+// same selector) when the provider reports one. A model's window rides whatever channel reports
+// it (A-63): the session row's own `_meta.contextLimit`, the initialize row's
+// `_meta.totalContextTokens`, or — for the one provider whose ids carry it — the `context=`
+// parameter inside the bracketed suffix.
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -30,82 +33,34 @@ import {
 } from '../transports/acp/index';
 import type { CatalogError } from './model-catalog';
 
-/** The ACP-mode launch of each provider whose live list rides a session — the same subcommand the
- * provider's own definition runs, stated here because the catalog receives an account, not a
- * definition. */
-const ACP_SESSION_LAUNCHES: Readonly<
-  Record<
-    string,
-    {
-      readonly command: string;
-      readonly args: readonly string[];
-      readonly env?: Readonly<Record<string, string>>;
-      /** A cold start of this CLI can take several seconds, so no caller's ceiling may sit below it. */
-      readonly minTimeoutMs?: number;
-      /** The model select exists only once the user configured an inference provider, so a session
-       * without one is an empty list, not a malformed answer. */
-      readonly modelOptionOptional?: true;
-      /** The refusal a logged-out session answers, pinned here for a CLI whose login is probed
-       * nowhere else: discovery reads no login state for it, so only this catalog path maps the
-       * refusal to the not-logged-in answer. */
-      readonly notLoggedIn?: NotLoggedInRule;
-    }
-  >
-> = {
-  cursor: { command: 'cursor-agent', args: ['acp'] },
+/** One provider's ACP-mode launch — the same subcommand the provider's own definition runs. */
+export interface AcpSessionLaunch {
+  readonly command: string;
+  readonly args: readonly string[];
+  readonly env?: Readonly<Record<string, string>>;
+  /** A cold start of this CLI can take several seconds, so no caller's ceiling may sit below it. */
+  readonly minTimeoutMs?: number;
+  /** The model select exists only once the user configured an inference provider, so a session
+   * without one is an empty list, not a malformed answer. */
+  readonly modelOptionOptional?: true;
+  /** The refusal a logged-out session answers, pinned here for a CLI whose login is probed
+   * nowhere else: discovery reads no login state for it, so only this catalog path maps the
+   * refusal to the not-logged-in answer. */
+  readonly notLoggedIn?: NotLoggedInRule;
+  /** The provider reports each model's window inside the id itself — a bracketed `context=`
+   * parameter — so the listing reads it out of the ids it keeps whole. */
+  readonly contextFromModelId?: true;
+}
+
+/** The ACP-mode launch of each provider whose live list rides a session, stated here because the
+ * catalog receives an account, not a definition. Production rows only (P-47a): a table-driven
+ * option no real provider exercises is driven through the `launches` factory option with a test
+ * table, never through a fixture row here. */
+export const ACP_SESSION_LAUNCHES: Readonly<Record<string, AcpSessionLaunch>> = {
+  cursor: { command: 'cursor-agent', args: ['acp'], contextFromModelId: true },
   // The documented switch keeps the listing from reading the user's own global instruction and
   // skill files, the same isolation the provider's run launch pins.
   opencode: { command: 'opencode', args: ['acp'], env: { OPENCODE_DISABLE_CLAUDE_CODE: '1' } },
-  // The CLI reads its own home; no run-scoped redirection exists for it.
-  hermes: { command: 'hermes', args: ['acp'] },
-  // `--no-leader` keeps the listing off the shared leader socket; the model list comes from the
-  // initialize answer, so no session is ever opened for it.
-  'grok-build': { command: 'grok', args: ['agent', '--no-leader', 'stdio'], env: { GROK_TELEMETRY_ENABLED: '0' } },
-  // The model select exists only once a provider key is configured, so a session without one lists no models.
-  reasonix: { command: 'reasonix', args: ['acp'], modelOptionOptional: true },
-  // Telemetry is on by default and the flag is documented for this subcommand.
-  atomcode: { command: 'atomcode', args: ['acp', '--no-telemetry'], modelOptionOptional: true },
-  // The ACP entry is a separate binary from the interactive CLI and takes no arguments; the CLI
-  // reads its own home, which also holds its key, so no run-scoped redirection exists for it.
-  vibe: { command: 'vibe-acp', args: [] },
-  // The switches are unverified (see the definition) but harmless; the cold start needs a longer wait.
-  // The ACP server needs no login to open a session; its model select carries every model plain
-  // and once per level (`<model>/<level>`), which the listing folds back into one row.
-  mimo: { command: 'mimo', args: ['acp'], minTimeoutMs: 30_000 },
-  kilo: {
-    command: 'kilo',
-    args: ['acp'],
-    env: { KILO_DISABLE_CLAUDE_CODE: '1', KILO_DISABLE_CLAUDE_CODE_SKILLS: '1' },
-    minTimeoutMs: 30_000,
-  },
-  // The catalog is the user's own configured providers, so a machine without one refuses the
-  // session with the live refusal below; a session that opens but carries no model select and no
-  // models object also means no provider is configured, not a malformed answer.
-  qwen: {
-    command: 'qwen',
-    args: ['--acp'],
-    notLoggedIn: { rpcCode: -32000, textContains: 'Authentication required' },
-    modelOptionOptional: true,
-  },
-  // The docs name `qoder` and the npm package installs both bins, so the documented name is the
-  // command here. A logged-out machine refuses the session with the live refusal below; the
-  // refusal maps to the not-logged-in answer in this catalog path alone, because discovery reads
-  // the login from the CLI's own status command, never from a session.
-  qoder: {
-    command: 'qoder',
-    args: ['--acp'],
-    notLoggedIn: { rpcCode: -32000, textContains: 'Authentication required' },
-  },
-  // The ACP entry is the subcommand `acp`. A machine without a login refuses the session with the
-  // live refusal below; the refusal maps to the not-logged-in answer in this catalog path alone,
-  // because discovery reads the login from the credentials directory, never from a session. The
-  // same telemetry and auto-update variables a run pins keep the listing from phoning home.
-  kimi: {
-    command: 'kimi',
-    args: ['acp'],
-    env: { KIMI_DISABLE_TELEMETRY: '1', KIMI_CODE_NO_AUTO_UPDATE: '1' },
-    notLoggedIn: { rpcCode: -32000, textContains: 'Authentication required' },
-  },
 };
 
 /** The refusal a logged-out session answers, as the provider's own definition declares it — the
@@ -128,6 +83,10 @@ export interface AcpSessionCatalogConfig {
   /** The provider's own names for levels (its definition's `levelNames`); the advertised levels
    * are read back through them. */
   readonly levelNames?: LevelNames;
+  /** The launch table to read (P-47a); the default is the built-in one. A production table never
+   * carries a fixture row, so the options no built-in row exercises today are driven by tests
+   * passing a test table here. */
+  readonly launches?: Readonly<Record<string, AcpSessionLaunch>>;
   /** Ceiling per request; the default leaves a slow CLI an order of magnitude more than a
    * control round-trip needs. */
   readonly timeoutMs?: number;
@@ -145,6 +104,11 @@ interface ConfigOptionEntry {
   readonly value: string;
   readonly name?: string;
 }
+
+/** A window a session's own answer states: only a positive integer is one — a negative,
+ * fractional, zero or string value is absent, the same rule the merge applies. */
+const windowOfTokens = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined;
 
 /** One select entry of a config option: a plain value, or the values a group wraps (the protocol
  * forbids mixing values and groups in one array, so both shapes are read). */
@@ -194,6 +158,16 @@ const foldSuffixedModels = (
   });
 };
 
+/** The window a parameterized model id embeds — the one observed provider's own grammar: a
+ * bracketed parameter group whose `context` entry is `<digits>k` or `<digits>m`, the two
+ * magnitudes its ids use. The id is never rewritten; the session expects it back verbatim. A
+ * value that names no magnitude leaves the row without a window. */
+const contextWindowOfId = (id: string): number | undefined => {
+  const match = /(?:^|[[,])context=(\d+)([km])(?=[[,\]])/.exec(id);
+  if (match === null) return undefined;
+  return Number(match[1]) * (match[2] === 'k' ? 1_000 : 1_000_000);
+};
+
 interface ParsedSession {
   readonly models: readonly LiveModel[];
   readonly efforts?: readonly EffortLevel[];
@@ -207,13 +181,15 @@ const parseSessionAnswer = (
   levelNames: LevelNames | undefined,
   modelOptionOptional: boolean,
   effortArg: EffortArg | undefined,
+  contextFromModelId: boolean,
 ): ParsedSession | undefined => {
   if (!isRecord(result)) return undefined;
   const rows: LiveModel[] = [];
   const seen = new Set<string>();
 
   // The provider's own extension: a models object with the ids the session accepts, parameterized
-  // ids bracketed exactly as the provider expects them back.
+  // ids bracketed exactly as the provider expects them back. A row may state its own window in
+  // `_meta` (A-63); the id's embedded parameter answers only when the row itself is silent.
   const models = isRecord(result['models']) ? result['models']['availableModels'] : undefined;
   if (Array.isArray(models)) {
     for (const raw of models) {
@@ -222,7 +198,14 @@ const parseSessionAnswer = (
       if (typeof id !== 'string' || id === '' || seen.has(id)) continue;
       seen.add(id);
       const name = raw['name'];
-      rows.push({ id, ...(typeof name === 'string' && name !== '' ? { displayName: name } : {}) });
+      const meta = isRecord(raw['_meta']) ? raw['_meta'] : undefined;
+      const window = (meta === undefined ? undefined : windowOfTokens(meta['contextLimit'])) ??
+        (contextFromModelId ? contextWindowOfId(id) : undefined);
+      rows.push({
+        id,
+        ...(typeof name === 'string' && name !== '' ? { displayName: name } : {}),
+        ...(window === undefined ? {} : { contextWindow: window }),
+      });
     }
   }
 
@@ -252,7 +235,14 @@ const parseSessionAnswer = (
       for (const entry of configOptionEntries(options)) {
         if (entry.value === '' || seen.has(entry.value)) continue;
         seen.add(entry.value);
-        rows.push({ id: entry.value, ...(entry.name === undefined ? {} : { displayName: entry.name }) });
+        // The select repeats the ids the models object already listed, so the same embedded
+        // window applies where the provider reports it in the id.
+        const window = contextFromModelId ? contextWindowOfId(entry.value) : undefined;
+        rows.push({
+          id: entry.value,
+          ...(entry.name === undefined ? {} : { displayName: entry.name }),
+          ...(window === undefined ? {} : { contextWindow: window }),
+        });
       }
     }
   }
@@ -263,8 +253,9 @@ const parseSessionAnswer = (
 };
 
 /** A provider that lists its models in the initialize answer itself (`_meta.modelState`), before
- * any session and so without a login: each row carries the levels of its own model, and the row
- * named by `currentModelId` is the default. Undefined when the answer has no such list. */
+ * any session and so without a login: each row carries the levels of its own model and the window
+ * its own `_meta.totalContextTokens` states (A-63), and the row named by `currentModelId` is the
+ * default. Undefined when the answer has no such list. */
 const parseInitializeModels = (initialized: unknown, levelNames: LevelNames | undefined): readonly LiveModel[] | undefined => {
   if (!isRecord(initialized)) return undefined;
   const meta = initialized['_meta'];
@@ -281,6 +272,7 @@ const parseInitializeModels = (initialized: unknown, levelNames: LevelNames | un
     seen.add(id);
     const name = raw['name'];
     const rowMeta = isRecord(raw['_meta']) ? raw['_meta'] : undefined;
+    const window = rowMeta === undefined ? undefined : windowOfTokens(rowMeta['totalContextTokens']);
     const advertised = rowMeta !== undefined && Array.isArray(rowMeta['reasoningEfforts']) ? rowMeta['reasoningEfforts'] : [];
     const efforts: EffortLevel[] = [];
     for (const entry of advertised) {
@@ -292,6 +284,7 @@ const parseInitializeModels = (initialized: unknown, levelNames: LevelNames | un
       id,
       ...(typeof name === 'string' && name !== '' ? { displayName: name } : {}),
       ...(efforts.length === 0 ? {} : { efforts }),
+      ...(window === undefined ? {} : { contextWindow: window }),
       ...(id === current ? { isDefault: true as const } : {}),
     });
   }
@@ -302,7 +295,7 @@ export async function listAcpSessionModels(
   account: AccountRecord,
   config: AcpSessionCatalogConfig,
 ): Promise<Result<readonly LiveModel[], CatalogError>> {
-  const launch = ACP_SESSION_LAUNCHES[account.provider];
+  const launch = (config.launches ?? ACP_SESSION_LAUNCHES)[account.provider];
   if (launch === undefined) {
     return err({ code: 'unsupported', message: 'the provider has no ACP session model list' });
   }
@@ -348,7 +341,13 @@ export async function listAcpSessionModels(
       }
       return err(toCatalogError(created.error));
     }
-    const parsed = parseSessionAnswer(created.value, config.levelNames, launch.modelOptionOptional === true, effortArgOf(account.provider));
+    const parsed = parseSessionAnswer(
+      created.value,
+      config.levelNames,
+      launch.modelOptionOptional === true,
+      effortArgOf(account.provider),
+      launch.contextFromModelId === true,
+    );
     if (parsed === undefined) {
       return err({ code: 'malformed', message: 'the session answer carries no model list' });
     }
