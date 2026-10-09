@@ -477,11 +477,18 @@ export function decideHumanGate(
   input: { readonly id: WorkOrderId; readonly gate: GateSlug; readonly decision: 'approved' | 'rejected'; readonly note?: string; readonly actor: Actor },
 ): Promise<Result<WorkOrderState, DecideGateError>>;
 
-/** Evaluates every pending machine gate of the current stage (command, secret_scan, agent_verdict). */
+/** Evaluates every pending machine gate of the current stage (changes, command, secret_scan, agent_verdict). */
 export function evaluateMachineGates(
-  deps: Pick<AppDeps, 'clock' | 'workOrders' | 'definitions' | 'commands' | 'secretScanner' | 'worktrees' | 'runs'>,
+  deps: Pick<AppDeps, 'clock' | 'workOrders' | 'definitions' | 'commands' | 'secretScanner' | 'worktrees' | 'runs' | 'checkpoints'>,
   input: { readonly id: WorkOrderId },
-): Promise<Result<WorkOrderState, 'not_found' | 'not_gating' | 'definitions_invalid' | 'no_repo'>>;
+): Promise<Result<WorkOrderState, 'not_found' | 'not_gating' | 'definitions_invalid' | 'no_repo' | 'git_failed'>>;
+
+/** The human answer to a changes gate the machine measured at zero (A-96). */
+export type AttestError = 'not_found' | 'not_current_stage' | 'not_pending' | 'not_a_changes_gate' | 'agent_cannot_decide';
+export function attestNoChanges(
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'definitions'>,
+  input: { readonly id: WorkOrderId; readonly gate: GateSlug; readonly noChangeNeeded: boolean; readonly actor: Actor },
+): Promise<Result<WorkOrderState, AttestError>>;
 
 /** An agent_verdict gate's evidence: the reviewer role reports approve/reject with evidence pointers. */
 export type VerdictError = 'not_found' | 'not_current_stage' | 'not_pending' | 'not_an_agent_gate' | 'wrong_role' | 'no_repo';
@@ -706,6 +713,7 @@ export type Command =
   | { readonly type: 'workOrder.close'; readonly id: string }
   | { readonly type: 'workOrder.enqueue'; readonly id: string }
   | { readonly type: 'gate.decide'; readonly workOrderId: string; readonly gate: string; readonly decision: 'approved' | 'rejected'; readonly note?: string }
+  | { readonly type: 'gate.attest'; readonly workOrderId: string; readonly gate: string; readonly noChangeNeeded: boolean }
   | { readonly type: 'proposal.decide'; readonly id: string; readonly decision: 'approved' | 'rejected' };
 export type CommandResult = { readonly ok: true; readonly id?: string } | { readonly ok: false; readonly code: string };
 
@@ -1314,6 +1322,7 @@ Rules:
 - Addendum 2026-10-09 (#858): decision 5's gap is closed — the `imported` arm of this command appends the audit entry A-95 defines, and the actor that rode the input for it is the command's actor.
 - **A-94** (added 2026-10-09, #853) The boundary mapping: `capabilities.candidates` → `capabilityCandidates(deps)`; the query always answers, an empty account store answers `{ candidates: [], truncated: false }`. `capabilities.import` → `importCapabilities(deps, { identities, actor })` with the api layer's own actor; the answer is `{ ok: true, results }` with one row per identity in input order — `id` set for `imported`/`already_present`, `reason` for `rejected`, each `null` otherwise. There is no remembered-scan window in this issue (decision 2): every query scans — the query runs when a surface opens, not on a poll, and the account store is small; a cache follows the A-85 pattern only when a surface needs it.
 - **A-95** (added 2026-10-09, #858) Only a result with `status: 'imported'` is audited: one `capability.imported` entry per imported capability, appended after the single `installCapabilities` call, actor the command's actor. The subject is `{ kind: 'capability', id }` with the stored slug — the id the import returned, so `EventLog.list` finds the entry from the definition. The detail is `{ kind, identity }`: the capability's kind and the identity's path/command target — targets only, never an env value (the AuditEntry detail law). `already_present` and `rejected` write nothing, and a repeated identity that echoes an `imported` outcome audits once. An audit append failure must not fail or roll back the import: the write it reports on is already durable, so the failure is swallowed and the results answer unchanged.
+- **A-96** (added 2026-10-09, #855) The changes gate's evidence and its attestation. `evaluateMachineGates` also picks up pending `changes` gates of the current stage, in stage order with the other machine gates: `filesChanged = CheckpointCommitter.diffSince(CheckpointCommitter.base({ cwd: worktree, workOrderId })).files.length` — `> 0` → evidence `{ changes: { filesChanged } }` (R-61 passes it) and the pass continues; `=== 0` → **no event** — the gate stays pending and the whole machine pass (the command sets behind it and the remote polls after it) halts for the operator's attestation, so a zero-file run surfaces before the long test run (R-68 puts the gate first for exactly this). A `git_failed` base or diff also leaves the gate pending but surfaces as the call's `git_failed` error — a broken git state never folds into a count, and never counts as zero. The attestation itself is `attestNoChanges` (same deps shape as `decideHumanGate`, no port calls): the gate must be a pending `changes` gate of the current stage while the status is `gating` (`not_a_changes_gate` / `not_pending` otherwise, `not_current_stage` for another stage's gate, `agent_cannot_decide` for an agent actor); it evaluates `{ changes: { filesChanged: 0, noChangeNeeded } }` through R-61 and appends one `gate_evaluated` plus an audit `gate.decided` with `decision: noChangeNeeded ? 'approved' : 'rejected'`. The api command is `gate.attest`.
 
 ## 5. Phase 2a acceptance — headless end to end
 
@@ -1325,8 +1334,12 @@ directly:
 1. open → `plan`/`ready`; enqueue + tick → started; `executeRun` with a fake transport that
    finishes `completed` → `plan`/`awaiting_human`.
 2. `gate.decide plan-approval approved` → `implement`/`ready`.
-3. enqueue + tick + run (completed) → `gating`; `evaluateMachineGates` with commands exiting 0 and
-   0 scan findings → `review`/`ready`.
+3. enqueue + tick + run (completed) → `gating`; `evaluateMachineGates` with a worktree diff that
+   counts files (the changes gate passes, A-96), commands exiting 0 and 0 scan findings →
+   `review`/`ready`. A second scenario drives the zero-file path the same way to `gating`, halts at
+   the pending changes gate (no command runs), attests rerun (`gate.attest` `noChangeNeeded: false`
+   → `implement` attempt 2), then attests no-change on the rerun and lets the next machine pass
+   finish the stage.
 4. run the reviewer (completed) → `gating`; `submitAgentVerdict` (reviewer actor, approve,
    pointers resolve) → `awaiting_human`; `gate.decide review-approval approved` → `close`.
 5. `gate.decide closure approved` → `done`.

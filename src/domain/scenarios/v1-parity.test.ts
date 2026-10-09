@@ -35,10 +35,14 @@ const gateOfStage = (stageId: string, gateId: string): GateDef => {
 };
 
 // Evidence shapes the parity rows name: a green command set, a clean scan, a human approval,
-// and the reviewer's verdict with and without resolvable evidence pointers.
+// the reviewer's verdict with and without resolvable evidence pointers, and the changes gate's
+// three standings — files changed, a zero attested as needed, a zero attested as not.
 const TESTS_PASS: GateEvidence = { commands: { 'npm test': { exitCode: 0 } } };
 const TESTS_FAIL: GateEvidence = { commands: { 'npm test': { exitCode: 1 } } };
 const SECRETS_CLEAN: GateEvidence = { secretScan: { findings: 0 } };
+const CHANGED: GateEvidence = { changes: { filesChanged: 2 } };
+const CHANGES_ATTESTED: GateEvidence = { changes: { filesChanged: 0, noChangeNeeded: true } };
+const CHANGES_REFUSED: GateEvidence = { changes: { filesChanged: 0, noChangeNeeded: false } };
 const APPROVED: GateEvidence = { approval: { decision: 'approved', by: USER } };
 const VERDICT_RESOLVED: GateEvidence = { agentVerdict: { approve: true, pointersResolved: true } };
 const VERDICT_UNRESOLVED: GateEvidence = { agentVerdict: { approve: true, pointersResolved: false } };
@@ -75,6 +79,7 @@ const IMPLEMENT_READY: readonly WorkOrderEvent[] = [...PLAN_RUN_SUCCEEDED, gateO
 const IMPLEMENT_GATING: readonly WorkOrderEvent[] = [...IMPLEMENT_READY, runStarted('implement'), runFinished('succeeded')];
 const REVIEW_GATING: readonly WorkOrderEvent[] = [
   ...IMPLEMENT_GATING,
+  gateOn('implement', 'changes', CHANGED),
   gateOn('implement', 'tests', TESTS_PASS),
   gateOn('implement', 'secrets', SECRETS_CLEAN),
   runStarted('review'),
@@ -110,13 +115,18 @@ describe('v1 parity — the built-in standard flow reproduces v1\'s work-order l
       status: 'ready',
       stage: 'implement',
       attempt: 1,
-      pendingGates: ['tests', 'secrets'],
+      pendingGates: ['changes', 'tests', 'secrets'],
     });
   });
 
-  it('implement succeeded, tests pass, secrets 0: review, ready', () => {
+  it('implement succeeded, changes > 0, tests pass, secrets 0: review, ready', () => {
     expect(
-      derive([...IMPLEMENT_GATING, gateOn('implement', 'tests', TESTS_PASS), gateOn('implement', 'secrets', SECRETS_CLEAN)]),
+      derive([
+        ...IMPLEMENT_GATING,
+        gateOn('implement', 'changes', CHANGED),
+        gateOn('implement', 'tests', TESTS_PASS),
+        gateOn('implement', 'secrets', SECRETS_CLEAN),
+      ]),
     ).toEqual({
       status: 'ready',
       stage: 'review',
@@ -125,12 +135,57 @@ describe('v1 parity — the built-in standard flow reproduces v1\'s work-order l
     });
   });
 
-  it('implement succeeded, tests fail (1st): implement, attempt 2, ready', () => {
-    expect(derive([...IMPLEMENT_GATING, gateOn('implement', 'tests', TESTS_FAIL)])).toEqual({
+  it('implement succeeded, changes 0, tests pass, secrets 0: implement, gating, only changes pending', () => {
+    // The zero the machine measures but cannot judge: tests and secrets passed, the changes gate
+    // stays pending (R-61) and — being non-human — holds the stage in `gating` until a person
+    // attests one way or the other.
+    expect(
+      derive([...IMPLEMENT_GATING, gateOn('implement', 'tests', TESTS_PASS), gateOn('implement', 'secrets', SECRETS_CLEAN)]),
+    ).toEqual({
+      status: 'gating',
+      stage: 'implement',
+      attempt: 1,
+      pendingGates: ['changes'],
+    });
+  });
+
+  it('R-61a: changes 0 attested as needed — the wiring R-61 announced — review, ready', () => {
+    expect(
+      derive([
+        ...IMPLEMENT_GATING,
+        gateOn('implement', 'changes', CHANGES_ATTESTED),
+        gateOn('implement', 'tests', TESTS_PASS),
+        gateOn('implement', 'secrets', SECRETS_CLEAN),
+      ]),
+    ).toEqual({
+      status: 'ready',
+      stage: 'review',
+      attempt: 1,
+      pendingGates: ['review-verdict', 'review-approval'],
+    });
+  });
+
+  it('changes 0 attested as not needed: implement, attempt 2, ready', () => {
+    expect(derive([...IMPLEMENT_GATING, gateOn('implement', 'changes', CHANGES_REFUSED)])).toEqual({
       status: 'ready',
       stage: 'implement',
       attempt: 2,
-      pendingGates: ['tests', 'secrets'],
+      pendingGates: ['changes', 'tests', 'secrets'],
+    });
+  });
+
+  it('implement succeeded, tests fail (1st): implement, attempt 2, ready', () => {
+    expect(
+      derive([
+        ...IMPLEMENT_GATING,
+        gateOn('implement', 'changes', CHANGED),
+        gateOn('implement', 'tests', TESTS_FAIL),
+      ]),
+    ).toEqual({
+      status: 'ready',
+      stage: 'implement',
+      attempt: 2,
+      pendingGates: ['changes', 'tests', 'secrets'],
     });
   });
 
@@ -179,7 +234,7 @@ describe('v1 parity — the built-in standard flow reproduces v1\'s work-order l
       status: 'limit_waiting',
       stage: 'implement',
       attempt: 1,
-      pendingGates: ['tests', 'secrets'],
+      pendingGates: ['changes', 'tests', 'secrets'],
     });
   });
 });

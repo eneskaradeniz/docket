@@ -170,12 +170,26 @@ const runCommandSet = async (
   return results;
 };
 
+/** The changes gate's measured evidence: files changed since the work order's worktree base. A
+ *  git failure surfaces as itself and never folds into a count — only the port's own file list
+ *  decides the number. */
+const countChangedFiles = async (
+  deps: Pick<AppDeps, 'checkpoints'>,
+  input: { readonly cwd: string; readonly workOrderId: WorkOrderId },
+): Promise<Result<number, 'git_failed'>> => {
+  const base = await deps.checkpoints.base(input);
+  if (!base.ok) return err(base.error);
+  const diff = await deps.checkpoints.diffSince({ cwd: input.cwd, since: base.value });
+  if (!diff.ok) return err(diff.error);
+  return ok(diff.value.files.length);
+};
+
 /** Evaluates every pending machine gate of the current stage that a machine can conclude:
- *  command and secret_scan gates, then remote_checks gates when the caller brought a forge.
- *  agent_verdict gates wait for their reviewer (submitAgentVerdict); deploy gates wait for a
- *  human (approveAndDeploy) — a deploy is never decided by a machine pass. */
+ *  changes, command and secret_scan gates, then remote_checks gates when the caller brought a
+ *  forge. agent_verdict gates wait for their reviewer (submitAgentVerdict); deploy gates wait for
+ *  a human (approveAndDeploy) — a deploy is never decided by a machine pass. */
 export async function evaluateMachineGates(
-  deps: Pick<AppDeps, 'clock' | 'workOrders' | 'definitions' | 'commands' | 'secretScanner' | 'worktrees' | 'runs'>,
+  deps: Pick<AppDeps, 'clock' | 'workOrders' | 'definitions' | 'commands' | 'secretScanner' | 'worktrees' | 'runs' | 'checkpoints'>,
   input: {
     readonly id: WorkOrderId;
     /** Without this the stage's remote_checks gates are left pending — there is no forge to ask. */
@@ -185,7 +199,7 @@ export async function evaluateMachineGates(
       readonly branchRef: string;
     };
   },
-): Promise<Result<WorkOrderState, 'not_found' | 'not_gating' | 'definitions_invalid' | 'no_repo'>> {
+): Promise<Result<WorkOrderState, 'not_found' | 'not_gating' | 'definitions_invalid' | 'no_repo' | 'git_failed'>> {
   const loaded = await loadWorkOrder(deps, input.id);
   if (!loaded.ok) return err(loaded.error);
   const { record, definitions, flow, events, state } = loaded.value;
@@ -195,6 +209,9 @@ export async function evaluateMachineGates(
   const ctx = gateContext(definitions);
 
   let history = events;
+  // Whether a zero-measured changes gate halted the pass: the gates behind it — and the remote
+  // polls after the loop — belong to the same machine pass, so they wait with it.
+  let haltedForAttestation = false;
   // One gate at a time, re-deriving in between: a verdict can advance, retry or block the stage,
   // and a gate that is no longer pending must not be evaluated — its event would be a dead fact.
   for (;;) {
@@ -205,9 +222,31 @@ export async function evaluateMachineGates(
     const gate = stage.exit.find(
       (candidate) =>
         current.pendingGates.includes(candidate.id) &&
-        (candidate.kind === 'command' || candidate.kind === 'secret_scan'),
+        (candidate.kind === 'command' || candidate.kind === 'secret_scan' || candidate.kind === 'changes'),
     );
     if (gate === undefined) break;
+
+    // A changes gate the diff measures at zero has no machine verdict (R-61): no event, and the
+    // pass ends there — the operator's attestation decides, and the gates behind it (a long test
+    // run, a forge poll) wait for that decision instead of running against a nothing-changed tree.
+    if (gate.kind === 'changes') {
+      const filesChanged = await countChangedFiles(deps, { cwd: worktree.value.path, workOrderId: record.id });
+      if (!filesChanged.ok) return err(filesChanged.error);
+      if (filesChanged.value === 0) {
+        haltedForAttestation = true;
+        break;
+      }
+      const measured: WorkOrderEvent = {
+        type: 'gate_evaluated',
+        at: deps.clock.now(),
+        stage: current.stage,
+        gate: gate.id,
+        verdict: evaluateGate(gate, { changes: { filesChanged: filesChanged.value } }, ctx),
+      };
+      history = [...history, measured];
+      await deps.workOrders.appendEvent(input.id, measured);
+      continue;
+    }
 
     const evidence: GateEvidence =
       gate.kind === 'command'
@@ -227,7 +266,8 @@ export async function evaluateMachineGates(
 
   // remote_checks gates come after the local ones. Each poll is delegated whole — it reloads,
   // judges and records its own event — so this loop re-reads history instead of extending it.
-  if (input.remote !== undefined) {
+  // A pass halted for an attestation polls nothing (A-96): the polls are part of that pass.
+  if (input.remote !== undefined && !haltedForAttestation) {
     const polled = new Set<GateSlug>();
     for (;;) {
       const current = deriveWorkOrderState(flow, await deps.workOrders.events(input.id));
@@ -296,6 +336,53 @@ export async function submitAgentVerdict(
       gate: input.gate,
       verdict,
       decision: input.approve ? 'approved' : 'rejected',
+      actor: input.actor,
+    },
+    flow,
+    events,
+  );
+  return ok(stateAfter);
+}
+
+/** The human answer to a changes gate the machine measured at zero (A-96): the operator attests
+ *  that nothing needed changing — or that the run fell short and the stage should go again. */
+export type AttestError = 'not_found' | 'not_current_stage' | 'not_pending' | 'not_a_changes_gate' | 'agent_cannot_decide';
+
+export async function attestNoChanges(
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'definitions'>,
+  input: {
+    readonly id: WorkOrderId;
+    readonly gate: GateSlug;
+    readonly noChangeNeeded: boolean;
+    readonly actor: Actor;
+  },
+): Promise<Result<WorkOrderState, AttestError>> {
+  const loaded = await loadWorkOrder(deps, input.id);
+  // Same reading as decideHumanGate: without loadable definitions there is no gate to find.
+  if (!loaded.ok) return err('not_found');
+  const { definitions, flow, events, state } = loaded.value;
+  const current = findCurrentGate(flow, state, input.gate);
+  if (current === undefined) return err('not_current_stage');
+  if (current.gate.kind !== 'changes') return err('not_a_changes_gate');
+  if (input.actor.kind === 'agent') return err('agent_cannot_decide');
+  // The attestation answers a gate the machine left measured-but-pending: a `changes` gate is not
+  // a human gate, so that standing is `gating`, never `awaiting_human` — and in every other
+  // status the pending list is the fold's pre-fill, where a verdict would be a dead fact.
+  if (state.status !== 'gating' || !state.pendingGates.includes(input.gate)) return err('not_pending');
+
+  const verdict = evaluateGate(
+    current.gate,
+    { changes: { filesChanged: 0, noChangeNeeded: input.noChangeNeeded } },
+    gateContext(definitions),
+  );
+  const stateAfter = await recordGateDecision(
+    deps,
+    {
+      id: input.id,
+      stage: current.stage,
+      gate: input.gate,
+      verdict,
+      decision: input.noChangeNeeded ? 'approved' : 'rejected',
       actor: input.actor,
     },
     flow,

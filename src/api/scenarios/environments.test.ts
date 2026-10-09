@@ -48,6 +48,7 @@ import {
   type PermissionGate,
 } from '../../application/index';
 import {
+  createFakeCheckpointCommitter,
   createFakeClock,
   createFakeCommandRunner,
   createFakeDefinitionStore,
@@ -57,6 +58,7 @@ import {
   createFakeForge,
   createFakeTransport,
   createFakeTransportResolver,
+  type FakeCheckpointCommitter,
   type FakeClock,
   type FakeCommandRunner,
   type FakeDefinitionStore,
@@ -105,6 +107,7 @@ const REVIEW: StageSlug = slugOf<'stage'>('review');
 const DEPLOY: StageSlug = slugOf<'stage'>('deploy');
 const CLOSE: StageSlug = slugOf<'stage'>('close');
 const PLAN_APPROVAL: GateSlug = slugOf<'gate'>('plan-approval');
+const CHANGES: GateSlug = slugOf<'gate'>('changes');
 const REVIEW_VERDICT: GateSlug = slugOf<'gate'>('review-verdict');
 const REVIEW_APPROVAL: GateSlug = slugOf<'gate'>('review-approval');
 const CLOSURE: GateSlug = slugOf<'gate'>('closure');
@@ -116,6 +119,9 @@ const STG: EnvSlug = slugOf<'env'>('stg');
 const PRD: EnvSlug = slugOf<'env'>('prd');
 
 const LIMITS: DispatchLimits = { global: 4, perRepo: 3, perAccount: {} };
+
+/** The worktree base sha the implement run's changes gate counts from (A-96). */
+const WORKTREE_BASE = 'wo-base-0001';
 
 const TEST_COMMAND = 'npm test';
 const DEPLOY_STG_COMMAND = 'docket-deploy stg';
@@ -243,6 +249,7 @@ interface Harness {
   readonly commands: FakeCommandRunner;
   readonly evidence: FakeEvidenceChecker;
   readonly transports: FakeTransportResolver;
+  readonly checkpoints: FakeCheckpointCommitter;
   readonly forges: ForgeResolver;
 }
 
@@ -254,12 +261,13 @@ const makeHarness = (): Harness => {
   const commands = createFakeCommandRunner();
   const evidence = createFakeEvidenceChecker();
   const transports = createFakeTransportResolver();
+  const checkpoints = createFakeCheckpointCommitter();
   const forge = createFakeForge({ checks: ALL_GREEN });
   const forges: ForgeResolver = { forRepo: async () => forge };
   definitions.setProject({ id: slugOf<'project'>('ws-proj'), name: 'Project', mainRepo: slugOf<'repo'>('ws'), repos: [slugOf<'repo'>('ws')] });
-  const deps = createFakeDeps({ clock, log, definitions, commands, evidence, transports });
+  const deps = createFakeDeps({ clock, log, definitions, commands, evidence, transports, checkpoints });
   deps.projects.save({ id: slugOf<'project'>('ws-proj'), name: 'Project', mainRepo: slugOf<'repo'>('ws'), repos: [slugOf<'repo'>('ws')] });
-  return { deps, clock, log, definitions, commands, evidence, transports, forges };
+  return { deps, clock, log, definitions, commands, evidence, transports, checkpoints, forges };
 };
 
 const allowAll: PermissionGate = { onAsk: async () => 'allow' };
@@ -341,6 +349,8 @@ describe('standard flow with environments, headless end to end', () => {
     const id = await openViaApi(h.deps, 'Ship through the environments');
     expect(id).toBeDefined();
     if (id === undefined) return;
+    h.checkpoints.setBase(id, WORKTREE_BASE);
+    h.checkpoints.setDiff(WORKTREE_BASE, { files: ['src/main.ts'], patch: 'diff --git a/src/main.ts' });
     h.clock.advance(1_000);
     let view = await viewOf(h.deps, id);
     expectState(view, { status: 'ready', stage: PLAN, pendingGates: [PLAN_APPROVAL] });
@@ -349,11 +359,11 @@ describe('standard flow with environments, headless end to end', () => {
     expect((await approveViaApi(h.deps, id, PLAN_APPROVAL)).ok).toBe(true);
     h.clock.advance(1_000);
     view = await viewOf(h.deps, id);
-    expectState(view, { status: 'ready', stage: IMPLEMENT, pendingGates: [slugOf<'gate'>('tests'), slugOf<'gate'>('secrets')] });
+    expectState(view, { status: 'ready', stage: IMPLEMENT, pendingGates: [CHANGES, slugOf<'gate'>('tests'), slugOf<'gate'>('secrets')] });
 
     expect((await runCurrentStage(h, id)).kind).toBe('finished');
     view = await viewOf(h.deps, id);
-    expectState(view, { status: 'gating', stage: IMPLEMENT, pendingGates: [slugOf<'gate'>('tests'), slugOf<'gate'>('secrets')] });
+    expectState(view, { status: 'gating', stage: IMPLEMENT, pendingGates: [CHANGES, slugOf<'gate'>('tests'), slugOf<'gate'>('secrets')] });
     expect((await evaluateMachineGates(h.deps, { id })).ok).toBe(true);
     view = await viewOf(h.deps, id);
     expectState(view, { status: 'ready', stage: REVIEW, pendingGates: [REVIEW_VERDICT, REVIEW_APPROVAL] });
@@ -501,6 +511,8 @@ describe('standard flow with environments, headless end to end', () => {
     const id = await openViaApi(h.deps, 'Promotion guards');
     expect(id).toBeDefined();
     if (id === undefined) return;
+    h.checkpoints.setBase(id, WORKTREE_BASE);
+    h.checkpoints.setDiff(WORKTREE_BASE, { files: ['src/main.ts'], patch: 'diff --git a/src/main.ts' });
     expect((await runCurrentStage(h, id)).kind).toBe('finished');
     expect((await approveViaApi(h.deps, id, PLAN_APPROVAL)).ok).toBe(true);
     expect((await runCurrentStage(h, id)).kind).toBe('finished');

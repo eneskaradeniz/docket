@@ -45,6 +45,7 @@ import {
   type PermissionGate,
 } from '../../application/index';
 import {
+  createFakeCheckpointCommitter,
   createFakeClock,
   createFakeCommandRunner,
   createFakeDefinitionStore,
@@ -53,6 +54,7 @@ import {
   createFakeEvidenceChecker,
   createFakeTransport,
   createFakeTransportResolver,
+  type FakeCheckpointCommitter,
   type FakeClock,
   type FakeCommandRunner,
   type FakeDefinitionStore,
@@ -96,15 +98,23 @@ const openViaApi = async (deps: AppDeps, title: string): Promise<WorkOrderId | u
 const approveViaApi = (deps: AppDeps, id: WorkOrderId, gate: GateSlug) =>
   createApi(deps).command(USER, { type: 'gate.decide', workOrderId: id, gate, decision: 'approved' });
 
+/** Attests the pending changes gate through the api boundary, the way the detail screen will. */
+const attestViaApi = (deps: AppDeps, id: WorkOrderId, noChangeNeeded: boolean) =>
+  createApi(deps).command(USER, { type: 'gate.attest', workOrderId: id, gate: 'changes', noChangeNeeded });
+
 /** The standard flow's stages and gates, as slugs the inputs below are typed with. */
 const PLAN: StageSlug = slugOf<'stage'>('plan');
 const IMPLEMENT: StageSlug = slugOf<'stage'>('implement');
 const REVIEW: StageSlug = slugOf<'stage'>('review');
 const CLOSE: StageSlug = slugOf<'stage'>('close');
 const PLAN_APPROVAL: GateSlug = slugOf<'gate'>('plan-approval');
+const CHANGES: GateSlug = slugOf<'gate'>('changes');
 const REVIEW_VERDICT: GateSlug = slugOf<'gate'>('review-verdict');
 const REVIEW_APPROVAL: GateSlug = slugOf<'gate'>('review-approval');
 const CLOSURE: GateSlug = slugOf<'gate'>('closure');
+
+/** The worktree base sha the changes gate's diff starts from (A-96). */
+const WORKTREE_BASE = 'wo-base-0001';
 
 const LIMITS: DispatchLimits = { global: 4, perRepo: 3, perAccount: {} };
 
@@ -167,6 +177,7 @@ interface Harness {
   readonly commands: FakeCommandRunner;
   readonly evidence: FakeEvidenceChecker;
   readonly transports: FakeTransportResolver;
+  readonly checkpoints: FakeCheckpointCommitter;
 }
 
 const makeHarness = (): Harness => {
@@ -177,10 +188,11 @@ const makeHarness = (): Harness => {
   const commands = createFakeCommandRunner();
   const evidence = createFakeEvidenceChecker();
   const transports = createFakeTransportResolver();
+  const checkpoints = createFakeCheckpointCommitter();
   definitions.setProject({ id: slugOf<'project'>('ws-proj'), name: 'Project', mainRepo: slugOf<'repo'>('ws'), repos: [slugOf<'repo'>('ws')] });
-  const deps = createFakeDeps({ clock, log, definitions, commands, evidence, transports });
+  const deps = createFakeDeps({ clock, log, definitions, commands, evidence, transports, checkpoints });
   deps.projects.save({ id: slugOf<'project'>('ws-proj'), name: 'Project', mainRepo: slugOf<'repo'>('ws'), repos: [slugOf<'repo'>('ws')] });
-  return { deps, clock, log, definitions, commands, evidence, transports };
+  return { deps, clock, log, definitions, commands, evidence, transports, checkpoints };
 };
 
 const allowAll: PermissionGate = { onAsk: async () => 'allow' };
@@ -260,6 +272,10 @@ describe('standard flow, headless end to end', () => {
     const id = await openViaApi(h.deps, '  Ship the standard flow  ');
     expect(id).toBeDefined();
     if (id === undefined) return;
+    // The implement run's edit: one changed file since the worktree base — the changes gate's
+    // measured evidence (A-96).
+    h.checkpoints.setBase(id, WORKTREE_BASE);
+    h.checkpoints.setDiff(WORKTREE_BASE, { files: ['src/main.ts'], patch: 'diff --git a/src/main.ts' });
     h.clock.advance(1_000);
     let view = await viewOf(h.deps, id);
     expectState(view, { status: 'ready', stage: PLAN, pendingGates: [PLAN_APPROVAL] });
@@ -277,14 +293,14 @@ describe('standard flow, headless end to end', () => {
     expect((await approveViaApi(h.deps, id, PLAN_APPROVAL)).ok).toBe(true);
     h.clock.advance(1_000);
     view = await viewOf(h.deps, id);
-    expectState(view, { status: 'ready', stage: IMPLEMENT, pendingGates: [slugOf<'gate'>('tests'), slugOf<'gate'>('secrets')] });
+    expectState(view, { status: 'ready', stage: IMPLEMENT, pendingGates: [CHANGES, slugOf<'gate'>('tests'), slugOf<'gate'>('secrets')] });
     expect(view.state.attempt).toBe(1);
 
     // 3. the implement run completes → gating; the machine gates pass → review/ready.
     const implementRun = await runCurrentStage(h, id);
     expect(implementRun).toEqual({ kind: 'finished', outcome: 'succeeded' });
     view = await viewOf(h.deps, id);
-    expectState(view, { status: 'gating', stage: IMPLEMENT, pendingGates: [slugOf<'gate'>('tests'), slugOf<'gate'>('secrets')] });
+    expectState(view, { status: 'gating', stage: IMPLEMENT, pendingGates: [CHANGES, slugOf<'gate'>('tests'), slugOf<'gate'>('secrets')] });
 
     const gated = await evaluateMachineGates(h.deps, { id });
     expect(gated.ok).toBe(true);
@@ -355,6 +371,63 @@ describe('standard flow, headless end to end', () => {
       { gate: REVIEW_VERDICT, decision: 'approved' },
       { gate: REVIEW_APPROVAL, decision: 'approved' },
       { gate: CLOSURE, decision: 'approved' },
+    ]);
+  });
+
+  it('section 5: a zero-file implement run leaves the changes gate to the operator — attest rerun, then attest no-change', async () => {
+    const h = makeHarness();
+    await h.deps.accounts.save(account(MAIN));
+    h.transports.register(MAIN, createFakeTransport(completedScript()));
+    await bindRole(h.deps, slugOf<'role'>('planner'), MAIN);
+    await bindRole(h.deps, slugOf<'role'>('developer'), MAIN);
+    h.commands.script(TEST_COMMAND, { exitCode: 0, durationMs: 12, outputTail: 'ok' });
+
+    const id = await openViaApi(h.deps, 'Ship nothing');
+    expect(id).toBeDefined();
+    if (id === undefined) return;
+    h.checkpoints.setBase(id, WORKTREE_BASE);
+    h.checkpoints.setDiff(WORKTREE_BASE, { files: [], patch: '' });
+
+    // Walk to implement/gating with a zero-file diff behind the run.
+    expect((await runCurrentStage(h, id)).kind).toBe('finished');
+    expect((await approveViaApi(h.deps, id, PLAN_APPROVAL)).ok).toBe(true);
+    expect((await runCurrentStage(h, id)).kind).toBe('finished');
+    let view = await viewOf(h.deps, id);
+    expectState(view, { status: 'gating', stage: IMPLEMENT, pendingGates: [CHANGES, slugOf<'gate'>('tests'), slugOf<'gate'>('secrets')] });
+
+    // The machine pass measures zero: no verdict, no event, and the command set never runs —
+    // the pass halts for the operator's attestation (A-96).
+    const halted = await evaluateMachineGates(h.deps, { id });
+    expect(halted.ok).toBe(true);
+    view = await viewOf(h.deps, id);
+    expectState(view, { status: 'gating', stage: IMPLEMENT, pendingGates: [CHANGES, slugOf<'gate'>('tests'), slugOf<'gate'>('secrets')] });
+    expect(h.commands.calls()).toHaveLength(0);
+
+    // "Eksik, yeniden çalıştır": the attestation fails the gate (R-61) and implement goes again.
+    expect((await attestViaApi(h.deps, id, false)).ok).toBe(true);
+    view = await viewOf(h.deps, id);
+    expectState(view, { status: 'ready', stage: IMPLEMENT, pendingGates: [CHANGES, slugOf<'gate'>('tests'), slugOf<'gate'>('secrets')] });
+    expect(view.state.attempt).toBe(2);
+
+    // The rerun still changes nothing; this time the operator attests nothing needed changing.
+    expect((await runCurrentStage(h, id)).kind).toBe('finished');
+    expect((await attestViaApi(h.deps, id, true)).ok).toBe(true);
+    view = await viewOf(h.deps, id);
+    expectState(view, { status: 'gating', stage: IMPLEMENT, pendingGates: [slugOf<'gate'>('tests'), slugOf<'gate'>('secrets')] });
+
+    // With the attestation standing, the next machine pass runs the command set and the scan.
+    const resumed = await evaluateMachineGates(h.deps, { id });
+    expect(resumed.ok).toBe(true);
+    view = await viewOf(h.deps, id);
+    expectState(view, { status: 'ready', stage: REVIEW, pendingGates: [REVIEW_VERDICT, REVIEW_APPROVAL] });
+    expect(h.commands.calls()).toHaveLength(1);
+
+    // Both attestations read as gate decisions in the audit trail, in the order they were made.
+    const decided = h.log.entries().filter((entry) => entry.action === 'gate.decided');
+    expect(decided.map((entry) => entry.detail)).toEqual([
+      { gate: PLAN_APPROVAL, decision: 'approved' },
+      { gate: CHANGES, decision: 'rejected' },
+      { gate: CHANGES, decision: 'approved' },
     ]);
   });
 

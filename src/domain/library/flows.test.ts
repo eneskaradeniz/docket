@@ -42,6 +42,7 @@ describe('BUILTIN_FLOWS', () => {
         name: 'Uygulama',
         role: 'developer',
         exit: [
+          { kind: 'changes', id: 'changes' },
           { kind: 'command', id: 'tests', commandSet: 'tests' },
           { kind: 'secret_scan', id: 'secrets' },
         ],
@@ -66,6 +67,16 @@ describe('BUILTIN_FLOWS', () => {
         exit: [{ kind: 'human', id: 'closure', label: 'Kapanış onayı' }],
       },
     ]);
+  });
+
+  it('R-68: only standard wires the changes gate, and it sits first in the implement exit', () => {
+    const implementExit = flowById('standard').stages.find((stage) => stage.id === 'implement')?.exit;
+    expect(implementExit?.[0]).toEqual({ kind: 'changes', id: 'changes' });
+    expect(implementExit?.map((gate) => gate.kind)).toEqual(['changes', 'command', 'secret_scan']);
+    for (const id of ['quick-fix', 'security-reviewed'] as const) {
+      const exit = flowById(id).stages.find((stage) => stage.id === 'implement')?.exit;
+      expect(exit?.map((gate) => gate.kind), `${id} implement exit`).toEqual(['command', 'secret_scan']);
+    }
   });
 
   it('quick-fix: runs implement then close with the same exit gates', () => {

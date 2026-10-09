@@ -45,6 +45,7 @@ import {
   type PermissionGate,
 } from '../../application/index';
 import {
+  createFakeCheckpointCommitter,
   createFakeClock,
   createFakeCommandRunner,
   createFakeDefinitionStore,
@@ -52,6 +53,7 @@ import {
   createFakeEventLog,
   createFakeEvidenceChecker,
   createFakeTransportResolver,
+  type FakeCheckpointCommitter,
   type FakeClock,
   type FakeCommandRunner,
   type FakeDefinitionStore,
@@ -425,6 +427,7 @@ interface Harness {
   readonly commands: FakeCommandRunner;
   readonly evidence: FakeEvidenceChecker;
   readonly transports: FakeTransportResolver;
+  readonly checkpoints: FakeCheckpointCommitter;
 }
 
 const makeHarness = (): Harness => {
@@ -435,10 +438,11 @@ const makeHarness = (): Harness => {
   const commands = createFakeCommandRunner();
   const evidence = createFakeEvidenceChecker();
   const transports = createFakeTransportResolver();
+  const checkpoints = createFakeCheckpointCommitter();
   definitions.setProject({ id: slugOf<'project'>('ws-proj'), name: 'Project', mainRepo: slugOf<'repo'>('ws'), repos: [slugOf<'repo'>('ws')] });
-  const deps = createFakeDeps({ clock, log, definitions, commands, evidence, transports });
+  const deps = createFakeDeps({ clock, log, definitions, commands, evidence, transports, checkpoints });
   deps.projects.save({ id: slugOf<'project'>('ws-proj'), name: 'Project', mainRepo: slugOf<'repo'>('ws'), repos: [slugOf<'repo'>('ws')] });
-  return { deps, clock, log, definitions, commands, evidence, transports };
+  return { deps, clock, log, definitions, commands, evidence, transports, checkpoints };
 };
 
 const allowAll: PermissionGate = { onAsk: async () => 'allow' };
@@ -514,6 +518,10 @@ const runLeg = async (wiring: LegWiring): Promise<LegResult> => {
   const id = await openViaApi(h.deps, 'One work order, three transports');
   expect(id).toBeDefined();
   if (id === undefined) throw new Error('the work order must open');
+  // The implement run's edit: one changed file since the worktree base — the changes gate's
+  // measured evidence (A-96).
+  h.checkpoints.setBase(id, 'wo-base-0001');
+  h.checkpoints.setDiff('wo-base-0001', { files: ['src/main.ts'], patch: 'diff --git a/src/main.ts' });
   h.clock.advance(1_000);
 
   const planRun = await runCurrentStage(h, id, wiring.runCwd);
