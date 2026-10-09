@@ -51,7 +51,8 @@ export type AuditAction =
   | 'work_order.opened' | 'work_order.blocked' | 'work_order.unblocked' | 'work_order.closed'
   | 'run.started' | 'run.finished' | 'gate.decided' | 'permission.answered'
   | 'proposal.created' | 'proposal.decided' | 'account.saved' | 'account.removed' | 'account.adopted' | 'binding.saved'
-  | 'project.attached' | 'repo.registered' | 'repo.unregistered';
+  | 'project.attached' | 'repo.registered' | 'repo.unregistered'
+  | 'capability.imported';
 export type AuditSubject =
   | { readonly kind: 'work_order'; readonly id: WorkOrderId }
   | { readonly kind: 'run'; readonly id: RunId }
@@ -59,7 +60,8 @@ export type AuditSubject =
   | { readonly kind: 'account'; readonly id: AccountId }
   | { readonly kind: 'binding'; readonly role: RoleSlug }
   | { readonly kind: 'project'; readonly id: ProjectSlug }
-  | { readonly kind: 'repo'; readonly id: RepoSlug };
+  | { readonly kind: 'repo'; readonly id: RepoSlug }
+  | { readonly kind: 'capability'; readonly id: CapabilitySlug };
 export interface AuditEntry {
   readonly id: Ulid<'audit'>;
   readonly at: EpochMs;
@@ -1293,7 +1295,7 @@ export type CapabilityImportResult =
   | { readonly identity: string; readonly status: 'already_present'; readonly id: CapabilitySlug }
   | { readonly identity: string; readonly status: 'rejected'; readonly reason: CapabilityImportError };
 export function importCapabilities(
-  deps: Pick<AppDeps, 'accounts' | 'capabilityDiscovery' | 'definitions'>,
+  deps: Pick<AppDeps, 'accounts' | 'capabilityDiscovery' | 'definitions' | 'clock' | 'ids' | 'log'>,
   input: { readonly identities: readonly string[]; readonly actor: Actor },
 ): Promise<readonly CapabilityImportResult[]>;
 
@@ -1309,7 +1311,9 @@ Rules:
 - **A-91** (added 2026-10-09, #853) The raw finds go through `mergeCandidates` (R-63 — same identity across accounts is one candidate with every source), the merged list is sorted by identity in Unicode code-point order, capped at `CAPABILITY_CANDIDATES_MAX` (200) with `truncated: true` when there were more, and each `description` is cut to `CAPABILITY_DESCRIPTION_MAX` (300) code points. The query is a read: no actor, no audit entry (the A-81 stance).
 - **A-92** (added 2026-10-09, #853) `imported` is decided per candidate against the global store, target-wise: the id R-67 derives from the candidate's own name, `definitions.readFile({ kind: 'global' }, 'capabilities/<id>.yaml')`; a file that exists, parses and whose `identityOfDefinition` equals the candidate's identity → `true`. Missing, unparseable or a different identity → `false`. The stored file's parse reads only the identity fields (kind, name, command) — a stored env block is never touched. The check reads one target per candidate — it never enumerates the store and never rescans.
 - **A-93** (added 2026-10-09, #853; amended by the architect's open-question decisions the same day — results are per identity, not all-or-nothing) `importCapabilities` answers one result per requested identity, in input order; one rejected identity never blocks the others. Order per identity: find it in the candidates of A-90's scan (`not_found`); derive the id — R-67 with its in-call collision suffix (`invalid_name`); at that id, a stored file with an equal identity → `already_present` (idempotent skip), a different identity → `rejected id_taken` (an existing target is never overwritten); map with `candidateToDefinition` (`missing_command`/`missing_path` verbatim, R-65); then the to-write target goes through `definitions.validateCandidate({ kind: 'global' }, target, content)` — the content is the definition's JSON form, which the real store parses as YAML flow syntax and the fake as JSON — issues → `rejected invalid_definition`; otherwise the definition joins the single `installCapabilities` call. A repeated identity echoes its first outcome. A no-op call (everything already imported) answers ok with no writes. Imports are not audited yet (decision 5): `AuditSubject` is unchanged this wave and the actor rides the input for the follow-up issue that adds the audit entry.
+- Addendum 2026-10-09 (#858): decision 5's gap is closed — the `imported` arm of this command appends the audit entry A-95 defines, and the actor that rode the input for it is the command's actor.
 - **A-94** (added 2026-10-09, #853) The boundary mapping: `capabilities.candidates` → `capabilityCandidates(deps)`; the query always answers, an empty account store answers `{ candidates: [], truncated: false }`. `capabilities.import` → `importCapabilities(deps, { identities, actor })` with the api layer's own actor; the answer is `{ ok: true, results }` with one row per identity in input order — `id` set for `imported`/`already_present`, `reason` for `rejected`, each `null` otherwise. There is no remembered-scan window in this issue (decision 2): every query scans — the query runs when a surface opens, not on a poll, and the account store is small; a cache follows the A-85 pattern only when a surface needs it.
+- **A-95** (added 2026-10-09, #858) Only a result with `status: 'imported'` is audited: one `capability.imported` entry per imported capability, appended after the single `installCapabilities` call, actor the command's actor. The subject is `{ kind: 'capability', id }` with the stored slug — the id the import returned, so `EventLog.list` finds the entry from the definition. The detail is `{ kind, identity }`: the capability's kind and the identity's path/command target — targets only, never an env value (the AuditEntry detail law). `already_present` and `rejected` write nothing, and a repeated identity that echoes an `imported` outcome audits once. An audit append failure must not fail or roll back the import: the write it reports on is already durable, so the failure is swallowed and the results answer unchanged.
 
 ## 5. Phase 2a acceptance — headless end to end
 
