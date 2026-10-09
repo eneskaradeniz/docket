@@ -101,7 +101,6 @@ function scriptedQuery(answers: readonly (readonly ModelInfo[] | Error)[]): { re
       streamInput: (): Promise<void> => Promise.resolve(),
       stopTask: (): Promise<void> => Promise.resolve(),
       backgroundTasks: (): Promise<boolean> => Promise.resolve(false),
-      cancelAsyncMessage: (): Promise<boolean> => Promise.resolve(false),
       close: (): void => undefined,
     });
   };

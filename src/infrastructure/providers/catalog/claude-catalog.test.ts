@@ -169,8 +169,6 @@ function scriptedQuery(answer: () => Promise<ModelInfo[]>): ScriptedQuery {
       streamInput: (): Promise<void> => Promise.resolve(),
       stopTask: (): Promise<void> => Promise.resolve(),
       backgroundTasks: (): Promise<boolean> => Promise.resolve(false),
-      // Required by a module augmentation active in this program, not by the SDK's own declarations.
-      cancelAsyncMessage: (): Promise<boolean> => Promise.resolve(false),
       close: (): void => {
         closed = true;
       },
