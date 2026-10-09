@@ -54,4 +54,10 @@ CREATE INDEX project_repos_by_repo ON project_repos (repo);`,
     version: 3,
     sql: `CREATE TABLE run_handoff (run_id TEXT PRIMARY KEY REFERENCES runs (id), note TEXT, stage_base TEXT);`,
   },
+  {
+    // Operator settings as key → JSON text (I-46); one generic table, so a new setting is a new
+    // key, never a new migration.
+    version: 4,
+    sql: `CREATE TABLE app_settings (key TEXT PRIMARY KEY, value_json TEXT);`,
+  },
 ];

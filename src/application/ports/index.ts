@@ -2,6 +2,7 @@
 export * from './account-discovery';
 export * from './account-repo';
 export * from './account-test-repo';
+export * from './app-settings-repo';
 export * from './agent-transport';
 export * from './binding-repo';
 export * from './capability-catalog';

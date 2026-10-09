@@ -34,6 +34,7 @@ const PORT_KEYS: readonly (keyof AppDeps)[] = [
   'instructionFiles',
   'checkpoints',
   'accountTests',
+  'settings',
   'scratch',
   'repoFolders',
   'worktreeFiles',
