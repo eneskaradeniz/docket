@@ -11,8 +11,12 @@ import type { CapabilityDiscovery, CapabilityScanAccount } from '../../../applic
 import type { CapabilityCandidate } from '../../../domain/index';
 import { identityOfCandidate } from '../../../domain/index';
 
-/** A file over this size is skipped silently — never an error, never logged with content (I-42). */
-export const CAPABILITY_SCAN_MAX_BYTES = 256 * 1024;
+/** Row caps (I-42): a file over its row's cap is skipped silently — never an error, never logged
+ *  with content. The memory file is hand-written instructions, never machine-grown, so it keeps
+ *  the small cap; the state file grows with the user's project history (active users commonly
+ *  pass 256 KiB) and only its top-level mcpServers is read, so it carries its own larger cap. */
+export const CAPABILITY_SCAN_MEMORY_MAX_BYTES = 256 * 1024;
+export const CAPABILITY_SCAN_STATE_MAX_BYTES = 4 * 1024 * 1024;
 
 const PROVIDER_ID = 'claude-code';
 const MEMORY_FILE_NAME = 'CLAUDE.md';
@@ -88,6 +92,7 @@ const parseStateFile = (
 
 interface ScanRow {
   readonly file: string;
+  readonly maxBytes: number;
   readonly parse: (text: string, account: CapabilityScanAccount, path: string) => readonly CapabilityCandidate[];
 }
 
@@ -96,8 +101,8 @@ interface ScanRow {
  *  other provider has no row — no finds — until a row is evidenced (the PR's table). */
 const SCAN_ROWS: Readonly<Record<string, readonly ScanRow[]>> = {
   [PROVIDER_ID]: [
-    { file: MEMORY_FILE_NAME, parse: parseMemoryFile },
-    { file: STATE_FILE_NAME, parse: parseStateFile },
+    { file: MEMORY_FILE_NAME, maxBytes: CAPABILITY_SCAN_MEMORY_MAX_BYTES, parse: parseMemoryFile },
+    { file: STATE_FILE_NAME, maxBytes: CAPABILITY_SCAN_STATE_MAX_BYTES, parse: parseStateFile },
   ],
 };
 
@@ -120,7 +125,7 @@ export function createCapabilityScan(options: { readonly fs: CapabilityScanFs })
           const path = join(account.identityDir, row.file);
           let text: string | undefined;
           try {
-            text = await fs.readText(path, CAPABILITY_SCAN_MAX_BYTES);
+            text = await fs.readText(path, row.maxBytes);
           } catch {
             continue; // one unreadable file never stops the scan
           }

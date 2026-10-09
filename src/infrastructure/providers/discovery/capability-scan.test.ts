@@ -13,7 +13,7 @@ import type { CapabilityScanAccount } from '../../../application/index';
 import { createFakeCapabilityDiscovery } from '../../../application/ports/fakes/fake-capability-discovery';
 
 import {
-  CAPABILITY_SCAN_MAX_BYTES,
+  CAPABILITY_SCAN_STATE_MAX_BYTES,
   createCapabilityScan,
   createNodeCapabilityScanFs,
   createNodeCapabilityScan,
@@ -38,11 +38,11 @@ const memoryFs = (files: Readonly<Record<string, string>>, broken: readonly stri
   async isDirectory(path) {
     return path === DIR && !broken.includes(path);
   },
-  async readText(path) {
+  async readText(path, maxBytes) {
     if (broken.includes(path)) throw new Error('boom');
     const content = files[path];
     if (content === undefined) return undefined;
-    if (content.length > CAPABILITY_SCAN_MAX_BYTES) return undefined;
+    if (content.length > maxBytes) return undefined;
     return content;
   },
 });
@@ -144,9 +144,27 @@ describe('createNodeCapabilityScanFs (the real reader)', () => {
     expect(found).toEqual([]);
   });
 
-  it('I-42: a file over 256 KiB is skipped silently', async () => {
+  it('I-42: a state file over 256 KiB but under its own 4 MiB cap is read — its mcp candidate survives', async () => {
     const dir = await prepare();
-    await writeFile(join(dir, '.claude.json'), JSON.stringify({ mcpServers: { db: { command: 'x'.repeat(CAPABILITY_SCAN_MAX_BYTES) } } }), 'utf8');
+    const pad = 'x'.repeat(300 * 1024);
+    await writeFile(join(dir, '.claude.json'), JSON.stringify({ mcpServers: { db: { command: 'npx db' } }, pad }), 'utf8');
+    const found = await createNodeCapabilityScan().scan([{ id: ACCT, provider: 'claude-code', identityDir: dir }]);
+    expect(found).toEqual([
+      { identity: 'mcp:db|npx db', kind: 'mcp', name: 'db', sources: [ACCT], command: 'npx db' },
+    ]);
+  });
+
+  it('I-42: a state file over its 4 MiB cap is skipped silently', async () => {
+    const dir = await prepare();
+    const pad = 'x'.repeat(CAPABILITY_SCAN_STATE_MAX_BYTES);
+    await writeFile(join(dir, '.claude.json'), JSON.stringify({ mcpServers: { db: { command: 'npx db' } }, pad }), 'utf8');
+    const found = await createNodeCapabilityScan().scan([{ id: ACCT, provider: 'claude-code', identityDir: dir }]);
+    expect(found).toEqual([]);
+  });
+
+  it('I-42: a memory file over 256 KiB is still skipped — its cap did not move', async () => {
+    const dir = await prepare();
+    await writeFile(join(dir, 'CLAUDE.md'), '# Rules\n' + 'x'.repeat(300 * 1024), 'utf8');
     const found = await createNodeCapabilityScan().scan([{ id: ACCT, provider: 'claude-code', identityDir: dir }]);
     expect(found).toEqual([]);
   });
