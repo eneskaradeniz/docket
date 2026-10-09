@@ -388,6 +388,7 @@ Rules:
 - **E-9** `remote_checks`: `status === 'all_passed'` → `passed`; `status === 'has_failure'` → `failed` naming the first failed check; `status === 'timeout'` → `failed` with reason `timeout`; `status === 'pending'` → `pending`.
 - **E-10** `deployment_attempted` event is appended exactly once per deploy-gate evaluation, carrying the redacted `outputTail` (same redaction as command gates: no env values, no secrets).
 - **R-61** (added 2026-10-09, #839) `changes`: evidence absent → `pending`; `filesChanged > 0` → `passed`; `filesChanged === 0 && noChangeNeeded === true` → `passed`; otherwise → `failed` with reason `no changes`. Rationale: a `command` gate reads only exit codes, so an implement stage that changed nothing passed while its tests stayed green (#839); this gate turns "the run changed something" into explicit evidence — or, with `noChangeNeeded`, an explicit attestation that nothing needed changing. The gate is opt-in per flow definition; the evidence itself (counting the run's changed files) is produced outside the domain. The built-in flows do not use this gate until the evidence source exists; wiring it into `standard` is a follow-up.
+- **R-61a** (amends R-61, 2026-10-09, #855) The evidence source now exists (application rule A-96) and the built-in `standard` flow wires the gate (R-68), so R-61's closing sentence no longer describes reality: the follow-up it names has landed. The evaluator itself is unchanged.
 
 ---
 
@@ -941,8 +942,9 @@ Roles (`RoleSlug` → name, write scope):
 Every built-in stage whose role is `reviewer` or `security-auditor` sets `tier: 'strong'` and `reviewOf` the flow's `implement` stage; no other built-in stage sets a tier or thinking.
 
 Flows:
-- `standard` Standart: `plan` (planner; human gate `plan-approval`) → `implement` (developer; command
-  gate `tests` on set `tests`, `secret_scan` gate `secrets`; `onFail: implement ×3`) → `review`
+- `standard` Standart: `plan` (planner; human gate `plan-approval`) → `implement` (developer;
+  `changes` gate `changes` first, then command gate `tests` on set `tests`, `secret_scan` gate
+  `secrets`; `onFail: implement ×3`) → `review`
   (reviewer; `agent_verdict` gate `review-verdict` role reviewer, human gate `review-approval`;
   `onFail: implement ×3`) → `close` (role null; human gate `closure`).
 - `quick-fix` Hızlı düzeltme: `implement` (developer; `tests`, `secrets`; onFail implement ×3) → `close`.
@@ -958,8 +960,14 @@ export const BUILTIN_FLOWS: readonly FlowDef[];
 export const BUILTIN_COMMAND_SET_NAMES: readonly string[];   // ['tests']
 ```
 
-Rule:
+Rules:
 - **R-45** `validateDefinitions({ roles: BUILTIN_ROLES, flows: BUILTIN_FLOWS, capabilities: [], repo: <fixture with commandSets.tests> })` is `ok`.
+- **R-68** (added 2026-10-09, #855) The built-in `standard` flow's `implement` exit is
+  `[changes, tests, secrets]` — the `changes` gate (R-61) sits first, so a run that changed
+  nothing surfaces before the long test run (A-96 halts the machine pass at a measured zero).
+  `quick-fix` and `security-reviewed` keep `[tests, secrets]`: the gate is opt-in per flow
+  definition (R-61), and only `standard` — the flow whose empty-implement failure #839 exposed —
+  wires it in this wave.
 
 ---
 
@@ -973,10 +981,18 @@ The `standard` flow must reproduce v1's work-order lifecycle. A scenario test
 | created | `plan`, `ready` |
 | plan run succeeded, plan-approval pending | `plan`, `awaiting_human` |
 | plan approved | `implement`, `ready` |
-| implement succeeded, tests pass, secrets 0 | `review`, `ready` |
+| implement succeeded, changes > 0, tests pass, secrets 0 | `review`, `ready` |
+| implement succeeded, changes 0, tests pass, secrets 0 | `implement`, `gating`, only `changes` pending |
+| changes 0, attested no change needed | `review`, `ready` |
+| changes 0, attested changes were needed | `implement`, attempt 2, `ready` |
 | implement succeeded, tests fail (1st) | `implement`, attempt 2, `ready` |
 | tests fail three times | `blocked` |
 | review verdict approve but pointers unresolved | `blocked` (unknown) |
 | review verdict + approval pass | `close`, `awaiting_human` |
 | closure approved | `done` |
 | run ended by limit | `limit_waiting` |
+
+The changes rows (added 2026-10-09, #855) name the gate R-61 defines: a zero the machine
+measures but cannot judge holds the stage in `gating` until a person attests one way or the
+other (A-96); a `noChangeNeeded` attestation passes and its refusal sends the stage through
+`onFail`.

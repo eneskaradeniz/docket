@@ -25,6 +25,7 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
   'workOrder.close': { input: 'id: WorkOrderId' },
   'workOrder.enqueue': { input: 'id: WorkOrderId' },
   'gate.decide': { input: 'workOrderId: WorkOrderId, gate: GateSlug, decision: approved|rejected, note?: string' },
+  'gate.attest': { input: 'workOrderId: WorkOrderId, gate: GateSlug, noChangeNeeded: boolean' },
   'proposal.decide': { input: 'id: ProposalId, decision: approved|rejected' },
   'permission.answer': { input: 'runId: RunId, askId: string, decision: allow|deny' },
   'deploy.approve': { input: 'workOrderId: WorkOrderId, gate: GateSlug, commit: string, confirmedEnvironment?: EnvSlug' },

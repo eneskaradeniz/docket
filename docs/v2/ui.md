@@ -714,6 +714,19 @@ container.
   list heading, the truncated-list note, the truncated-preview note — and a failed read shows the
   failure code's label, never the raw code.
 
+## The changes gate's attestation pair (U-58)
+
+- **U-58** (detail screen; added 2026-10-09, #855) A pending `changes` gate of the current stage
+  carries a two-button answer pair in its gate row — "Değişiklik gerekmiyordu" (primary) and
+  "Eksik, yeniden çalıştır" (neutral) — regardless of the amber `awaiting_human` flag, because a
+  pending changes gate holds the work order in `gating`, never `awaiting_human` (A-96). The row
+  carries the same amber attention edge the deploy row does: it waits on a person. Each button
+  fires the store's `attestNoChanges` intent (`gate.attest`, `noChangeNeeded: true` / `false`);
+  the two outcomes map to their own success copy ("Beyan kaydedildi: değişiklik gerekmiyordu." /
+  "Beyan kaydedildi: aşama yeniden çalışacak.") and the refusals map through U-8 like any
+  command's (`not_a_changes_gate` included). A changes gate that is upcoming or already passed
+  renders no pair, and no `changes` gate ever takes approve/reject buttons.
+
 ## Verifying the shell — E2E layers (Phase 3.5)
 
 The shell is verified against the frozen prototype **rev 8** (`~/source/docket-tasarim/rev8/`:

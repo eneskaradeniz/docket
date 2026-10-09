@@ -151,6 +151,13 @@ export interface GateDecideInput {
   readonly note?: string;
 }
 
+/** The pending changes gate's attestation (U-58): true — nothing needed changing; false — the
+ *  run fell short and the stage goes again. */
+export interface GateAttestInput {
+  readonly gate: string;
+  readonly noChangeNeeded: boolean;
+}
+
 export interface PermissionAnswerInput {
   readonly runId: string;
   readonly askId: string;
@@ -170,6 +177,7 @@ export interface WorkOrderDetailStore {
   load(id: string): Promise<void>;
   state(): WorkOrderDetailState;
   decideGate(input: GateDecideInput): Promise<IntentOutcome>;
+  attestNoChanges(input: GateAttestInput): Promise<IntentOutcome>;
   enqueue(): Promise<IntentOutcome>;
   answerPermission(input: PermissionAnswerInput): Promise<IntentOutcome>;
   approveDeploy(input: DeployApproveInput): Promise<IntentOutcome>;
@@ -449,6 +457,14 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
         // The decision's success names itself (U-19: 'Onaylandı.' / 'Reddedildi.'), where every
         // other intent's copy stays the command's own.
         input.decision === 'approved' ? 'success.gate.approved' : 'success.gate.rejected',
+      );
+    },
+    attestNoChanges: (input) => {
+      if (workOrderId === null) return Promise.resolve(notLoadedOutcome('gate.attest'));
+      return runIntent(
+        { type: 'gate.attest', workOrderId, gate: input.gate, noChangeNeeded: input.noChangeNeeded },
+        // The attestation's two answers carry different news, so each names itself (U-58).
+        input.noChangeNeeded ? 'success.gate.attestNoChange' : 'success.gate.attestRerun',
       );
     },
     enqueue: () => {

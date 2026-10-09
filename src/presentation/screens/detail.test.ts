@@ -161,6 +161,60 @@ describe('work-order detail screen — expected of you', () => {
     // Wait, the UI might show '1.0 KB' or just render the file name. Let's just check the file name.
     expect(html).toContain('Onayla ve ilerle');
   });
+
+  it('U-58: a pending changes gate of the current stage carries the attestation pair', async () => {
+    const flow: FlowDef = {
+      id: slugOf<'flow'>('implement-flow'),
+      name: 'Implement Flow',
+      stages: [
+        { id: STAGE_PLAN, name: 'Plan', role: slugOf<'role'>('planner'), exit: [{ kind: 'human', id: GATE_PLAN_APPROVAL, label: 'Plan onayı' }] },
+        {
+          id: slugOf<'stage'>('implement'),
+          name: 'Uygulama',
+          role: slugOf<'role'>('builder'),
+          exit: [{ kind: 'changes', id: slugOf<'gate'>('changes') }],
+        },
+      ],
+    };
+    const html = await draw({
+      ...READY,
+      record: { ...READY.record, flow: 'implement-flow' },
+      state: { status: 'gating', stage: slugOf<'stage'>('implement'), attempt: 1, pendingGates: [slugOf<'gate'>('changes')] },
+      next: { kind: 'evaluate_gates', stage: slugOf<'stage'>('implement'), gates: [slugOf<'gate'>('changes')] },
+      flow,
+    });
+
+    // The pair the operator answers a measured zero with — and no approve/reject, which a
+    // changes gate never takes.
+    expect(html).toContain('Değişiklik gerekmiyordu');
+    expect(html).toContain('Eksik, yeniden çalıştır');
+    expect(html).not.toContain('>Onayla<');
+  });
+
+  it('U-58: an upcoming changes gate carries no attestation pair', async () => {
+    const flow: FlowDef = {
+      id: slugOf<'flow'>('implement-flow'),
+      name: 'Implement Flow',
+      stages: [
+        { id: STAGE_PLAN, name: 'Plan', role: slugOf<'role'>('planner'), exit: [{ kind: 'human', id: GATE_PLAN_APPROVAL, label: 'Plan onayı' }] },
+        {
+          id: slugOf<'stage'>('implement'),
+          name: 'Uygulama',
+          role: slugOf<'role'>('builder'),
+          exit: [{ kind: 'changes', id: slugOf<'gate'>('changes') }],
+        },
+      ],
+    };
+    // The work order still sits on plan: the changes gate behind it is upcoming, not decidable.
+    const html = await draw({
+      ...READY,
+      record: { ...READY.record, flow: 'implement-flow' },
+      flow,
+    });
+
+    expect(html).not.toContain('Değişiklik gerekmiyordu');
+    expect(html).not.toContain('Eksik, yeniden çalıştır');
+  });
 });
 
 describe('work-order detail screen — the ask column contains unbreakable text', () => {

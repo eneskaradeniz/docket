@@ -69,6 +69,7 @@ import {
   approveAndDeploy,
   applyUpdate,
   attachProject,
+  attestNoChanges,
   blockWorkOrder,
   capabilityCandidates,
   checkForUpdates,
@@ -480,6 +481,19 @@ const runCommand = async (
         await decideHumanGate(
           { clock: deps.clock, ids: deps.ids, log: deps.log, workOrders: deps.workOrders, definitions: deps.definitions },
           { id, gate, decision: command.decision, note: command.note, actor },
+        ),
+      );
+    }
+
+    case 'gate.attest': {
+      const id = ulidValue<'work-order'>(command.workOrderId);
+      if (id === undefined) return invalidId();
+      const gate = slugValue<'gate'>(command.gate);
+      if (gate === undefined) return invalidId();
+      return commandOf(
+        await attestNoChanges(
+          { clock: deps.clock, ids: deps.ids, log: deps.log, workOrders: deps.workOrders, definitions: deps.definitions },
+          { id, gate, noChangeNeeded: command.noChangeNeeded, actor },
         ),
       );
     }

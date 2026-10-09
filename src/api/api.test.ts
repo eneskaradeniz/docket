@@ -118,15 +118,33 @@ const SHIP_PRD_FLOW_JSON = {
   stages: [{ id: 'ship', name: 'Ship', role: null, exit: [{ kind: 'deploy', id: 'ship-prd', environment: 'prd' }] }],
 };
 
+/** A build stage whose changes gate a run leaves measured-but-pending — the standing gate.attest
+ *  answers. The signoff behind it keeps the work order alive after the attestation passes. */
+const CHANGES_FLOW_JSON = {
+  id: 'changes-flow',
+  name: 'Changes',
+  stages: [
+    {
+      id: 'build',
+      name: 'Build',
+      role: 'worker',
+      exit: [
+        { kind: 'changes', id: 'changes' },
+        { kind: 'human', id: 'signoff', label: 'Signoff' },
+      ],
+    },
+  ],
+};
+
 const DEFINITIONS_JSON = JSON.stringify({
   roles: [ROLE_JSON],
-  flows: [FLOW_JSON, SHIP_FLOW_JSON, SHIP_PRD_FLOW_JSON],
+  flows: [FLOW_JSON, SHIP_FLOW_JSON, SHIP_PRD_FLOW_JSON, CHANGES_FLOW_JSON],
   capabilities: [],
   repo: {
     id: REPO,
     name: 'Acme',
     repos: [],
-    flows: ['board-flow', 'ship-flow', 'ship-prd-flow'],
+    flows: ['board-flow', 'ship-flow', 'ship-prd-flow', 'changes-flow'],
     defaultFlow: 'board-flow',
     commandSets: {
       'deploy-stg': ['docket-deploy stg'],
@@ -215,6 +233,14 @@ const driveToAwaitingHuman = async (h: Harness, id: string): Promise<void> => {
   await h.deps.workOrders.appendEvent(workOrderId, { type: 'run_finished', at: 1_200, runId: RUN, outcome: 'succeeded' });
 };
 
+/** Drives a changes-flow work order to `gating` on build — the state gate.attest answers. */
+const driveToGating = async (h: Harness, id: string): Promise<void> => {
+  const workOrderId = ulidOf<'work-order'>(id);
+  const stage = slugOf<'stage'>('build');
+  await h.deps.workOrders.appendEvent(workOrderId, { type: 'run_started', at: 1_100, runId: RUN, stage, attempt: 1 });
+  await h.deps.workOrders.appendEvent(workOrderId, { type: 'run_finished', at: 1_200, runId: RUN, outcome: 'succeeded' });
+};
+
 /** A prior successful staging deploy of the exact commit — the promotion prerequisite for prd. */
 const deployOnStg = async (h: Harness, id: string): Promise<void> => {
   await h.deps.workOrders.appendEvent(ulidOf<'work-order'>(id), {
@@ -278,6 +304,7 @@ describe('createApi', () => {
         { type: 'workOrder.close', id: 'not-a-ulid' },
         { type: 'workOrder.enqueue', id: 'not-a-ulid' },
         { type: 'gate.decide', workOrderId: 'not-a-ulid', gate: 'plan-approval', decision: 'approved' },
+        { type: 'gate.attest', workOrderId: 'not-a-ulid', gate: 'changes', noChangeNeeded: true },
         { type: 'proposal.decide', id: 'not-a-ulid', decision: 'approved' },
         { type: 'deploy.approve', workOrderId: 'not-a-ulid', gate: 'ship-stg', commit: COMMIT },
       ];
@@ -410,6 +437,38 @@ describe('createApi', () => {
       expect(result).toEqual({ ok: true });
       const events = await h.deps.workOrders.events(ulidOf<'work-order'>(id));
       expect(events[events.length - 1]?.type).toBe('gate_evaluated');
+    });
+
+    it('maps gate.attest onto attestNoChanges and records the attested verdict', async () => {
+      const h = await createHarness();
+      const api = createApi(h.deps);
+      const id = await openViaApi(h, 'Nothing needed changing', 'changes-flow');
+      await driveToGating(h, id);
+
+      // An agent never attests a changes gate, and nothing is recorded for the refusal.
+      expect(await api.command(AGENT, { type: 'gate.attest', workOrderId: id, gate: 'changes', noChangeNeeded: true })).toEqual({
+        ok: false,
+        code: 'agent_cannot_decide',
+      });
+
+      const result = await api.command(ACTOR, {
+        type: 'gate.attest',
+        workOrderId: id,
+        gate: 'changes',
+        noChangeNeeded: true,
+      });
+
+      expect(result).toEqual({ ok: true });
+      const events = await h.deps.workOrders.events(ulidOf<'work-order'>(id));
+      expect(events[events.length - 1]).toMatchObject({
+        type: 'gate_evaluated',
+        gate: 'changes',
+        verdict: { status: 'passed' },
+      });
+      // The attestation is a gate decision in the audit trail, decided like any other.
+      const decided = h.log.entries().filter((entry) => entry.action === 'gate.decided');
+      expect(decided).toHaveLength(1);
+      expect(decided[0]).toMatchObject({ detail: { gate: 'changes', decision: 'approved' } });
     });
 
     it('maps proposal.decide onto decideProposalUseCase', async () => {

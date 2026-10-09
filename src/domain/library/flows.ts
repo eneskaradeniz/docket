@@ -29,6 +29,7 @@ export const BUILTIN_FLOWS: readonly FlowDef[] = [
         name: 'Uygulama',
         role: asRole('developer'),
         exit: [
+          { kind: 'changes', id: asGate('changes') },
           { kind: 'command', id: asGate('tests'), commandSet: 'tests' },
           { kind: 'secret_scan', id: asGate('secrets') },
         ],
