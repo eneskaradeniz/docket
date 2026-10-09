@@ -1,5 +1,6 @@
 // api/queries.test.ts — the read models behind createApi: the cockpit (A-22) and the repo
-// board (A-23, A-30, A-31), plus the workOrder.detail pass-through. Scenarios are seeded straight
+// board (A-23, A-30, A-31), the workOrder.detail pass-through, and the stage-file reads' wire
+// shape (A-88, A-89). Scenarios are seeded straight
 // into the fakes; only the query under test goes through the api.
 import { describe, expect, it } from 'vitest';
 
@@ -32,6 +33,7 @@ import {
   createFakeDefinitionStore,
   createFakeDeps,
   createFakeModelCatalog,
+  createFakeWorktreeFiles,
   FAKE_ROADMAP_TARGET,
 } from '../application/ports/fakes';
 
@@ -2055,5 +2057,59 @@ describe('roadmap.byProject', () => {
       [4, 'done'],
     ]);
     expect(done?.workOrders[0]).toMatchObject({ repo: REPO, id: WO_DONE_FIRST, title: 'Bitti görev' });
+  });
+});
+
+// --- the stage-file reads resolve like every other query: the bare view on the wire ---------------
+
+describe('workOrders.stageFiles / workOrders.readStageFile — the wire shape', () => {
+  const WO_STAGE_FILES = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FC6');
+
+  /** A work order whose repo registers and whose worktree carries two changed files. */
+  const seedStageFilesOrder = async () => {
+    const worktreeFiles = createFakeWorktreeFiles();
+    const deps = createFakeDeps({ worktreeFiles });
+    await deps.workOrders.create({
+      id: WO_STAGE_FILES,
+      project: slugOf<'project'>('proj'),
+      repo: REPO,
+      flow: BOARD_FLOW,
+      title: 'Stage the thing',
+      createdAt: 1,
+      createdBy: ACTOR,
+    });
+    await deps.repos.register(REPO, '/repo');
+    await deps.worktrees.ensure(REPO, WO_STAGE_FILES);
+    worktreeFiles.written('docs/plan.md', '# Plan');
+    worktreeFiles.written('src/main.ts', 'const x = 1;\n');
+    return { deps, worktreeFiles };
+  };
+
+  it('resolves to the bare StageFilesView / WorktreeFilePreview, failures stay { ok: false, code }', async () => {
+    const { deps } = await seedStageFilesOrder();
+    const api = createApi(deps);
+
+    // The bare view — an envelope here is what the detail screen crashed on.
+    const list: unknown = await api.query({ type: 'workOrders.stageFiles', id: WO_STAGE_FILES });
+    expect(list).toEqual({
+      files: [
+        { path: 'docs/plan.md', sizeBytes: 6 },
+        { path: 'src/main.ts', sizeBytes: 13 },
+      ],
+      truncated: false,
+    });
+
+    const preview: unknown = await api.query({ type: 'workOrders.readStageFile', id: WO_STAGE_FILES, path: 'docs/plan.md' });
+    expect(preview).toEqual({ path: 'docs/plan.md', lines: ['# Plan'], truncated: false });
+
+    // The failure side of the same convention.
+    expect(await api.query({ type: 'workOrders.stageFiles', id: ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FC7') })).toEqual({
+      ok: false,
+      code: 'not_found',
+    });
+    expect(await api.query({ type: 'workOrders.readStageFile', id: ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FC7'), path: 'gone.md' })).toEqual({
+      ok: false,
+      code: 'not_found',
+    });
   });
 });

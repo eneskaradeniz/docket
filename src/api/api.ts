@@ -775,15 +775,13 @@ const runQuery = async (
       const id = ulidValue<'work-order'>(query.id);
       if (id === undefined) return invalidId();
       const res = await stageFiles(deps, id);
-      if (!res.ok) return { ok: false, code: res.error };
-      return { ok: true, data: res.value };
+      return res.ok ? res.value : { ok: false, code: res.error };
     }
     case 'workOrders.readStageFile': {
       const id = ulidValue<'work-order'>(query.id);
       if (id === undefined) return invalidId();
       const res = await readStageFile(deps, { id, path: query.path });
-      if (!res.ok) return { ok: false, code: res.error };
-      return { ok: true, data: res.value };
+      return res.ok ? res.value : { ok: false, code: res.error };
     }
     case 'workOrder.detail': {
       const id = ulidValue<'work-order'>(query.id);

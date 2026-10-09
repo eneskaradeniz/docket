@@ -276,6 +276,33 @@ const toAskView = (row: OpenAskView): WorkOrderAskView => ({
   target: null,
 });
 
+/** The stage-files card is a convenience read riding the detail (U-57): a reply that is not
+ *  exactly the view the api resolves to — a failure, an envelope, a list that is not a list —
+ *  renders no card, never a crashed detail screen. */
+const isStageFilesView = (value: unknown): value is StageFilesView => {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as { readonly files?: unknown; readonly truncated?: unknown };
+  if (!Array.isArray(candidate.files) || typeof candidate.truncated !== 'boolean') return false;
+  return candidate.files.every(
+    (file) =>
+      typeof file === 'object' &&
+      file !== null &&
+      typeof (file as { readonly path?: unknown }).path === 'string',
+  );
+};
+
+/** The preview pane is a convenience read too (U-57): the same stance — anything but the preview
+ *  shape shows the read's failure copy, never a crash. */
+const isWorktreeFilePreview = (value: unknown): value is WorktreeFilePreview => {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as { readonly lines?: unknown; readonly truncated?: unknown };
+  return (
+    Array.isArray(candidate.lines) &&
+    candidate.lines.every((line) => typeof line === 'string') &&
+    typeof candidate.truncated === 'boolean'
+  );
+};
+
 /** The asks section shows only the loaded work order's own asks — a run id the view knows is
  *  the one honest link the open-asks read carries. */
 const asksFor = (
@@ -354,10 +381,8 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     const view = reply as WorkOrderDetailView;
     let stageFiles: StageFilesView | null = null;
     if (view.state.status === 'awaiting_human') {
-      const stageFilesReply = await api.query({ type: 'workOrders.stageFiles', id } satisfies Query);
-      if (!isQueryFailure(stageFilesReply)) {
-        stageFiles = stageFilesReply as StageFilesView;
-      }
+      const stageFilesReply: unknown = await api.query({ type: 'workOrders.stageFiles', id } satisfies Query);
+      if (isStageFilesView(stageFilesReply)) stageFiles = stageFilesReply;
     }
     if (attempt !== attempts) return;
     set({
@@ -471,9 +496,8 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     },
     readStageFile: async (path: string) => {
       if (workOrderId === null) return null;
-      const reply = await api.query({ type: 'workOrders.readStageFile', id: workOrderId, path } satisfies Query);
-      if (isQueryFailure(reply)) return null;
-      return reply as WorktreeFilePreview;
+      const reply: unknown = await api.query({ type: 'workOrders.readStageFile', id: workOrderId, path } satisfies Query);
+      return isWorktreeFilePreview(reply) ? reply : null;
     },
   };
 };
