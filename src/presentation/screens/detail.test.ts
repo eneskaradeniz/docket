@@ -162,7 +162,7 @@ describe('work-order detail screen — expected of you', () => {
     expect(html).toContain('Onayla ve ilerle');
   });
 
-  it('U-58: a pending changes gate of the current stage carries the attestation pair', async () => {
+  it('U-61: a pending changes gate of the current stage carries the attestation pair', async () => {
     const flow: FlowDef = {
       id: slugOf<'flow'>('implement-flow'),
       name: 'Implement Flow',
@@ -191,7 +191,7 @@ describe('work-order detail screen — expected of you', () => {
     expect(html).not.toContain('>Onayla<');
   });
 
-  it('U-58: an upcoming changes gate carries no attestation pair', async () => {
+  it('U-61: an upcoming changes gate carries no attestation pair', async () => {
     const flow: FlowDef = {
       id: slugOf<'flow'>('implement-flow'),
       name: 'Implement Flow',

@@ -151,7 +151,7 @@ export interface GateDecideInput {
   readonly note?: string;
 }
 
-/** The pending changes gate's attestation (U-58): true — nothing needed changing; false — the
+/** The pending changes gate's attestation (U-61): true — nothing needed changing; false — the
  *  run fell short and the stage goes again. */
 export interface GateAttestInput {
   readonly gate: string;
@@ -463,7 +463,7 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
       if (workOrderId === null) return Promise.resolve(notLoadedOutcome('gate.attest'));
       return runIntent(
         { type: 'gate.attest', workOrderId, gate: input.gate, noChangeNeeded: input.noChangeNeeded },
-        // The attestation's two answers carry different news, so each names itself (U-58).
+        // The attestation's two answers carry different news, so each names itself (U-61).
         input.noChangeNeeded ? 'success.gate.attestNoChange' : 'success.gate.attestRerun',
       );
     },

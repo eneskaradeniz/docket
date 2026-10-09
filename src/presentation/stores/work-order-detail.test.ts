@@ -397,7 +397,7 @@ describe('work-order detail store', () => {
     expect(refused).toEqual({ command: 'gate.decide', result: { ok: true }, labelKey: 'success.gate.rejected' });
   });
 
-  it('U-58: the pending changes gate attests through gate.attest and each answer names its own success', async () => {
+  it('U-61: the pending changes gate attests through gate.attest and each answer names its own success', async () => {
     const GATE_CHANGES = slugOf<'gate'>('changes');
     const flow: FlowDef = {
       ...FLOW,

@@ -714,9 +714,9 @@ container.
   list heading, the truncated-list note, the truncated-preview note — and a failed read shows the
   failure code's label, never the raw code.
 
-## The changes gate's attestation pair (U-58)
+## The changes gate's attestation pair (U-61)
 
-- **U-58** (detail screen; added 2026-10-09, #855) A pending `changes` gate of the current stage
+- **U-61** (detail screen; added 2026-10-09, #855) A pending `changes` gate of the current stage
   carries a two-button answer pair in its gate row — "Değişiklik gerekmiyordu" (primary) and
   "Eksik, yeniden çalıştır" (neutral) — regardless of the amber `awaiting_human` flag, because a
   pending changes gate holds the work order in `gating`, never `awaiting_human` (A-96). The row
