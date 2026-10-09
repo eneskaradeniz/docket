@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Api } from '../../api/api';
 import type { SettingsAccountView, SettingsAccountsView, SettingsMeterView } from '../../api/queries';
-import { AccountLimitsPopover, SidebarAccounts, clampPopoverTop } from './sidebar-accounts';
+import { AccountLimitsPopover, AccountsSkeletonBody, SidebarAccounts, clampPopoverTop } from './sidebar-accounts';
 import { ACCOUNTS_BODY_MAX_HEIGHT } from './sidebar-geometry';
 import { createAccountsFrameStore, type AccountCard } from '../stores/accounts-frame';
 import { createProviderMarksStore } from '../stores/provider-marks';
@@ -334,5 +334,21 @@ describe('SidebarAccounts (U-51)', () => {
     const html = await renderFrame(view([]), true);
     // Refresh button uses SIDEBAR_HEADER_BUTTON which is h-6 w-6
     expect(html).toContain('h-6 w-6');
+  });
+});
+
+describe('SidebarAccounts skeleton (U-26)', () => {
+  it('U-26: the composition fits the body\'s cap exactly — two whole cards, the list\'s own gaps, a 1.25 rem peek', () => {
+    const html = renderToStaticMarkup(createElement(AccountsSkeletonBody));
+    expect(html).toContain('data-skeleton=""');
+    // Two whole cards at the body's fixed 56 px stance — never three, which would stand past the cap.
+    expect((html.match(/h-14 /g) ?? []).length).toBe(2);
+    // The cards ride the list's own 0.5 rem gaps, and the third shows only its 1.25 rem peek.
+    expect(html).toContain('gap-2');
+    expect(html).toContain('h-5 ');
+    // 2 × 3.5 rem + 2 × 0.5 rem + 1.25 rem = 9.25 rem — the body's cap (U-51b), never over it.
+    const cap = /max-h-\[([\d.]+)rem\]/.exec(ACCOUNTS_BODY_MAX_HEIGHT)?.[1];
+    expect(cap).toBe('9.25');
+    expect(2 * 3.5 + 2 * 0.5 + 1.25).toBe(Number(cap));
   });
 });
