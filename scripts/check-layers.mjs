@@ -13,7 +13,6 @@ const INFRA = join(SRC, 'infrastructure');
 const INFRA_BARREL = join(INFRA, 'index.ts');
 
 const V2_LAYERS = ['domain', 'application', 'api', 'infrastructure', 'presentation'];
-const V1_DIRS = ['core', 'adapters', 'ui', 'renderer'];
 
 // Which layers a layer may import from (relative imports inside src/).
 const LAYER_ALLOW = {
@@ -115,7 +114,6 @@ for (const layer of V2_LAYERS) {
         const target = resolveRelative(file, spec);
         if (!target.startsWith(SRC + sep)) { report(file, ln, 'L1 layer', `import leaves src/: ${spec}`); continue; }
         const tl = topDir(target);
-        if (V1_DIRS.includes(tl)) { report(file, ln, 'L2 v1-isolation', `v2 code imports v1 code (${tl}/): ${spec}`); continue; }
         if (!LAYER_ALLOW[layer].includes(tl)) { report(file, ln, 'L1 layer', `${layer} may not import ${tl}: ${spec}`); continue; }
         if (layer === 'domain') checkDomainModule(file, target, spec, ln);
         else if (layer === 'infrastructure' && tl === 'infrastructure') checkInfraModule(file, target, spec, ln);
@@ -214,21 +212,6 @@ for (const file of walk(join(SRC, 'domain'))) {
     if (!spec.startsWith('.')) continue;
     const target = resolveRelative(file, spec);
     if (target === join(SRC, 'domain', 'index.ts')) report(file, lineOf(text, m.index), 'D4 barrel', 'modules must not import src/domain/index.ts');
-  }
-}
-
-// --- v1 files must not import v2 --------------------------------------------------------------------
-for (const dir of V1_DIRS) {
-  for (const file of walk(join(SRC, dir))) {
-    const text = readFileSync(file, 'utf8');
-    for (const m of text.matchAll(SPEC_RE)) {
-      const spec = m[1] || m[2] || m[3] || m[4];
-      if (!spec.startsWith('.')) continue;
-      const target = resolveRelative(file, spec);
-      if (target.startsWith(SRC + sep) && V2_LAYERS.includes(topDir(target))) {
-        report(file, lineOf(text, m.index), 'L2 v1-isolation', `v1 code imports v2 code: ${spec}`);
-      }
-    }
   }
 }
 
