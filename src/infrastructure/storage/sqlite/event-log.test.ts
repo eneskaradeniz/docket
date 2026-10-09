@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { AuditEntry, AuditSubject, EventLog } from '../../../application/index';
 import { createFakeEventLog } from '../../../application/ports/fakes/index';
-import type { AccountId, Actor, RoleSlug, RunId, WorkOrderId } from '../../../domain/index';
+import type { AccountId, Actor, CapabilitySlug, RoleSlug, RunId, WorkOrderId } from '../../../domain/index';
 import { parseSlug, parseUlid } from '../../../domain/index';
 
 import { openDatabase, type DocketDb } from './database';
@@ -45,6 +45,12 @@ const accountSubject = (s: string): AccountId => {
 
 const roleOf = (s: string): RoleSlug => {
   const parsed = parseSlug<'role'>(s);
+  if (!parsed.ok) throw new Error('fixture slug must parse');
+  return parsed.value;
+};
+
+const capabilityOf = (s: string): CapabilitySlug => {
+  const parsed = parseSlug<'capability'>(s);
   if (!parsed.ok) throw new Error('fixture slug must parse');
   return parsed.value;
 };
@@ -145,6 +151,18 @@ describe.each(suites)('createSqliteEventLog (%s)', (_kind, make) => {
     const listed = await log.list({ kind: 'binding', role: reviewer }, 10);
     expect(listed).toHaveLength(1);
     expect(listed[0]?.id).toBe(auditId(U1));
+  });
+
+  it('I-5: capability subjects match by the stored slug — list finds the import from its definition id', async () => {
+    const { log } = make();
+    const slug = capabilityOf('db-tools');
+    await log.append({ ...entry(U1, 1, { kind: 'capability', id: slug }), action: 'capability.imported' });
+    await log.append(entry(U2, 2, SUBJECT_WO));
+
+    const listed = await log.list({ kind: 'capability', id: slug }, 10);
+    expect(listed).toHaveLength(1);
+    expect(listed[0]?.action).toBe('capability.imported');
+    expect(listed[0]?.subject).toEqual({ kind: 'capability', id: slug });
   });
 
   it('I-5: list returns copies, never internal arrays', async () => {

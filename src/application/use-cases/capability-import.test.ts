@@ -1,14 +1,19 @@
 // capability-import.test.ts — A-93: per-identity import outcomes (imported / already_present /
 // rejected with a reason); one rejected identity never blocks the others. R-67's collision arm
-// lives here too: the `-2`/`-3` suffixes in the order the identities are carried.
+// lives here too: the `-2`/`-3` suffixes in the order the identities are carried. A-95: every
+// imported capability appends one `capability.imported` audit entry; nothing else writes one.
 import { describe, expect, it } from 'vitest';
 
-import type { AccountId, Actor, CapabilityCandidate } from '../../domain/index';
+import type { AccountId, Actor, CapabilityCandidate, CapabilitySlug } from '../../domain/index';
 import type { AccountRecord } from '../ports/account-repo';
 import type { AppDeps } from '../ports/deps';
+import type { EventLog } from '../ports/event-log';
 import { createFakeAccountRepo } from '../ports/fakes/fake-account-repo';
 import { createFakeCapabilityDiscovery } from '../ports/fakes/fake-capability-discovery';
+import { createFakeClock } from '../ports/fakes/fake-clock';
 import { createFakeDefinitionStore } from '../ports/fakes/fake-definition-store';
+import { createFakeEventLog } from '../ports/fakes/fake-event-log';
+import { createFakeIdGen } from '../ports/fakes/fake-id-gen';
 
 import { importCapabilities } from './capability-import';
 
@@ -38,6 +43,7 @@ interface Harness {
   readonly deps: AppDeps;
   readonly discovery: ReturnType<typeof createFakeCapabilityDiscovery>;
   readonly definitions: ReturnType<typeof createFakeDefinitionStore>;
+  readonly log: ReturnType<typeof createFakeEventLog>;
 }
 
 const harnessOf = (accounts: readonly AccountRecord[], finds: readonly CapabilityCandidate[]): Harness => {
@@ -46,10 +52,19 @@ const harnessOf = (accounts: readonly AccountRecord[], finds: readonly Capabilit
   const definitions = createFakeDefinitionStore();
   for (const r of accounts) void accountRepo.save(r);
   discovery.seed(DIR_A, finds);
+  const log = createFakeEventLog();
   return {
-    deps: { accounts: accountRepo, capabilityDiscovery: discovery, definitions } as unknown as AppDeps,
+    deps: {
+      accounts: accountRepo,
+      capabilityDiscovery: discovery,
+      definitions,
+      clock: createFakeClock(),
+      ids: createFakeIdGen('capability-import-test'),
+      log,
+    } as unknown as AppDeps,
     discovery,
     definitions,
+    log,
   };
 };
 
@@ -187,10 +202,80 @@ describe('importCapabilities', () => {
     void accountRepo.save(record({ id: ACCT_B, label: 'Lab', identityDir: DIR_B }));
     discovery.seed(DIR_A, [find({ name: 'CLAUDE.md', path: `${DIR_A}/CLAUDE.md` })]);
     discovery.seed(DIR_B, [find({ name: 'CLAUDE.md', path: `${DIR_B}/CLAUDE.md` })]);
-    const deps = { accounts: accountRepo, capabilityDiscovery: discovery, definitions } as unknown as AppDeps;
+    const deps = {
+      accounts: accountRepo,
+      capabilityDiscovery: discovery,
+      definitions,
+      clock: createFakeClock(),
+      ids: createFakeIdGen('capability-import-test'),
+      log: createFakeEventLog(),
+    } as unknown as AppDeps;
 
     const results = await importCapabilities(deps, { identities: ['context:CLAUDE.md'], actor: USER });
     expect(results).toEqual([{ identity: 'context:CLAUDE.md', status: 'imported', id: 'claude-md' }]);
     expect(await definitions.readFile({ kind: 'global' }, 'capabilities/claude-md.yaml')).toBeDefined();
+  });
+
+  it('A-95: an imported capability appends one capability.imported entry — subject the stored slug, detail kind and identity', async () => {
+    const h = harnessOf([record()], [
+      find({ name: 'CLAUDE.md', path: `${DIR_A}/CLAUDE.md` }),
+      find({ kind: 'mcp', name: 'Db Tools', command: 'npx db', identity: 'mcp:Db Tools|npx db' }),
+    ]);
+    const results = await importCapabilities(h.deps, {
+      identities: ['context:CLAUDE.md', 'mcp:Db Tools|npx db'],
+      actor: USER,
+    });
+    expect(results.map((r) => r.status)).toEqual(['imported', 'imported']);
+
+    const entries = h.log.entries();
+    expect(entries).toHaveLength(2);
+    expect(entries[0]).toMatchObject({
+      actor: USER,
+      action: 'capability.imported',
+      subject: { kind: 'capability', id: 'claude-md' },
+      detail: { kind: 'context', identity: 'context:CLAUDE.md' },
+    });
+    expect(entries[1]).toMatchObject({
+      actor: USER,
+      action: 'capability.imported',
+      subject: { kind: 'capability', id: 'db-tools' },
+      detail: { kind: 'mcp', identity: 'mcp:Db Tools|npx db' },
+    });
+    // The stored slug is the subject, so a listing from the definition finds the entry.
+    const listed = await h.deps.log.list({ kind: 'capability', id: 'db-tools' as CapabilitySlug }, 10);
+    expect(listed).toHaveLength(1);
+    expect(listed[0].subject).toEqual({ kind: 'capability', id: 'db-tools' });
+  });
+
+  it('A-95: already_present and rejected write no audit entry, and a repeated identity audits once', async () => {
+    const h = harnessOf([record()], [
+      find({ name: 'CLAUDE.md', path: `${DIR_A}/CLAUDE.md` }),
+      find({ kind: 'mcp', name: 'no-command-server', identity: 'mcp:no-command-server|' }), // missing_command
+    ]);
+    const first = await importCapabilities(h.deps, {
+      identities: ['context:CLAUDE.md', 'context:CLAUDE.md', 'mcp:no-command-server|'],
+      actor: USER,
+    });
+    expect(first.map((r) => r.status)).toEqual(['imported', 'imported', 'rejected']);
+    expect(h.log.entries()).toHaveLength(1); // the echo and the rejection append nothing
+
+    const second = await importCapabilities(h.deps, { identities: ['context:CLAUDE.md'], actor: USER });
+    expect(second).toEqual([{ identity: 'context:CLAUDE.md', status: 'already_present', id: 'claude-md' }]);
+    expect(h.log.entries()).toHaveLength(1); // already_present appends nothing either
+  });
+
+  it('A-95: an audit append failure does not fail or roll back the import', async () => {
+    const h = harnessOf([record()], [find({ name: 'CLAUDE.md', path: `${DIR_A}/CLAUDE.md` })]);
+    const failing: EventLog = {
+      append: async () => {
+        throw new Error('audit store gone');
+      },
+      list: async () => [],
+    };
+    const deps = { ...h.deps, log: failing } as AppDeps;
+
+    const results = await importCapabilities(deps, { identities: ['context:CLAUDE.md'], actor: USER });
+    expect(results).toEqual([{ identity: 'context:CLAUDE.md', status: 'imported', id: 'claude-md' }]);
+    expect(h.definitions.readFile({ kind: 'global' }, 'capabilities/claude-md.yaml')).toBeDefined();
   });
 });
