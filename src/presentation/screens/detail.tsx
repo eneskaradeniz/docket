@@ -11,6 +11,9 @@
 // (`min-w-0`) — intrinsic min-content otherwise widens the column's grids past the track the
 // detail layout pins — and the text either wraps anywhere or truncates with the full value on
 // its title. The layout audit's L-15 measures the result on the real asking screen.
+// The body columnates on main's container (U-55): the live pane is the fixed 22.5 rem second
+// column from ≥900, the runs list joins it as the 21.25 rem third column at ≥1700, and below 900
+// everything stacks. The screen fills the main column at every width (U-54).
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { WorkOrderStatus } from '../../domain/index';
 import type { LabelKey } from '../labels/keys';
@@ -112,8 +115,8 @@ const RUN_OUTCOME_LAMP: Readonly<Record<'running' | 'succeeded' | 'failed' | 'li
 };
 
 const INPUT_CLASS =
-  'rounded-control border border-bord bg-raised px-2 py-[5px] font-mono text-[13px] text-ink outline-none placeholder:text-inkdim focus:border-signal';
-const LABEL_CLASS = 'font-mono text-[11px] uppercase tracking-[0.06em] text-inkdim';
+  'rounded-control border border-bord bg-raised px-2 py-[0.3125rem] font-mono text-[0.8125rem] text-ink outline-none placeholder:text-inkdim focus:border-signal';
+const LABEL_CLASS = 'font-mono text-[0.6875rem] uppercase tracking-[0.06em] text-inkdim';
 
 /** Only a person opens these two kinds; every other gate is machine-evaluated, so only these
  *  carry approve/reject buttons. */
@@ -148,10 +151,10 @@ function DeployApprovalForm({
   return (
     <div className="mt-2 grid gap-2 rounded-card border border-hairline bg-band p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <code className="font-mono text-[13px] text-ink">{deploy.environment}</code>
+        <code className="font-mono text-[0.8125rem] text-ink">{deploy.environment}</code>
         {deploy.protectedEnvironment ? <StateBadge tone="signal">{t(locale, 'gate.deploy.protected')}</StateBadge> : null}
         {deploy.promoteFromChain.length > 0 ? (
-          <span className="font-mono text-[11px] text-inkdim">
+          <span className="font-mono text-[0.6875rem] text-inkdim">
             {t(locale, 'gate.deploy.prerequisite')}: {deploy.promoteFromChain.join(' → ')}
           </span>
         ) : null}
@@ -167,7 +170,7 @@ function DeployApprovalForm({
       </label>
       {deploy.protectedEnvironment ? (
         <div className="grid gap-1">
-          <p className="text-[13px] text-ink">{t(locale, 'detail.deploy.confirmPrompt')}</p>
+          <p className="text-[0.8125rem] text-ink">{t(locale, 'detail.deploy.confirmPrompt')}</p>
           <input
             value={confirmation}
             onChange={(event) => setConfirmation(event.target.value)}
@@ -213,8 +216,8 @@ function GateRow({
     <li className={`rounded-card border bg-surface px-3 py-2 ${edge}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 items-baseline gap-2">
-          <span className="text-[13.5px] font-semibold text-ink">{t(locale, GATE_KIND_KEY[gate.kind])}</span>
-          <code className="truncate font-mono text-[11px] text-inkdim" title={gate.id}>{gate.id}</code>
+          <span className="text-[0.84375rem] font-semibold text-ink">{t(locale, GATE_KIND_KEY[gate.kind])}</span>
+          <code className="truncate font-mono text-[0.6875rem] text-inkdim" title={gate.id}>{gate.id}</code>
         </div>
         <div className="flex items-center gap-2">
           {actionable && awaitingHuman && isHumanDecision(gate) ? (
@@ -234,7 +237,7 @@ function GateRow({
         <DeployApprovalForm gateId={gate.id} deploy={gate.deploy} locale={locale} onApprove={onApproveDeploy} />
       ) : null}
       {current && gate.kind === 'secret_scan' && gate.status !== 'upcoming' ? (
-        <p className="mt-1.5 border-l-2 border-hairline pl-2.5 text-[12.5px] text-inkdim">
+        <p className="mt-1.5 border-l-2 border-hairline pl-2.5 text-[0.78125rem] text-inkdim">
           {t(locale, gate.status === 'pending' ? 'detail.secretScan.pending' : 'detail.secretScan.passed')}
         </p>
       ) : null}
@@ -251,14 +254,14 @@ function FlowStrip({ stages, locale }: { readonly stages: readonly StageGates[];
         chip.kind === 'stage' ? (
           <span
             key={`${chip.name}:${index}`}
-            className={`inline-flex h-[26px] flex-none items-center gap-[5px] rounded-control px-2.5 text-[12.5px] ${
+            className={`inline-flex h-[1.625rem] flex-none items-center gap-[0.3125rem] rounded-control px-2.5 text-[0.78125rem] ${
               chip.standing === 'done' ? 'bg-raised text-ink' : chip.standing === 'current'
               ? 'bg-raised text-ink shadow-[0_0_0_1.5px_var(--signal)]'
               : 'bg-raised text-inkdim'
             }`}
           >
             {chip.standing === 'done' ? (
-              <span aria-hidden="true" className="grid h-4 w-4 place-items-center rounded-full bg-proceed font-mono text-[9px] font-bold leading-4 text-black">
+              <span aria-hidden="true" className="grid h-4 w-4 place-items-center rounded-full bg-proceed font-mono text-[0.5625rem] font-bold leading-4 text-black">
                 ✓
               </span>
             ) : null}
@@ -267,7 +270,7 @@ function FlowStrip({ stages, locale }: { readonly stages: readonly StageGates[];
         ) : (
           <span
             key={`gate:${chip.name}:${index}`}
-            className="inline-flex h-[26px] flex-none items-center rounded-control border border-dashed border-signal px-2.5 text-[11.5px] text-signal"
+            className="inline-flex h-[1.625rem] flex-none items-center rounded-control border border-dashed border-signal px-2.5 text-[0.71875rem] text-signal"
           >
             {t(locale, 'detail.flow.gate')} · {chip.name}
           </span>
@@ -326,7 +329,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
   };
 
   return (
-    <div className="grid max-w-[1280px] gap-5">
+    <div className="grid gap-5">
       {backKey !== null ? (
         <div className="-mb-2">
           <ActionButton variant="ghost" onClick={onBack}>
@@ -338,16 +341,16 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
       <header className="grid gap-1">
         {view === null ? (
           state.loading ? (
-            <p className="font-mono text-[11px] uppercase tracking-[0.04em] text-inkdim">{t(locale, 'detail.loading')}</p>
+            <p className="font-mono text-[0.6875rem] uppercase tracking-[0.04em] text-inkdim">{t(locale, 'detail.loading')}</p>
           ) : null
         ) : (
           <>
             <div className="flex flex-wrap items-center gap-2.5">
-              <span className="font-mono text-[11px] text-inkdim">{formatWorkOrderCode(view.number, locale)}</span>
-              <h1 className="text-[20px] font-bold tracking-[-0.01em] text-ink">{view.record.title}</h1>
+              <span className="font-mono text-[0.6875rem] text-inkdim">{formatWorkOrderCode(view.number, locale)}</span>
+              <h1 className="text-[1.25rem] font-bold tracking-[-0.01em] text-ink">{view.record.title}</h1>
               <StateBadge tone={STATUS_TONE[view.state.status]}>{t(locale, STATUS_KEY[view.state.status])}</StateBadge>
             </div>
-            <p className="font-mono text-[11.5px] text-inkdim">
+            <p className="font-mono text-[0.71875rem] text-inkdim">
               {view.record.repo} · {view.record.flow}
               {currentStage !== undefined ? ` · ${currentStage.name}` : ''}
             </p>
@@ -356,14 +359,14 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
       </header>
 
       {state.problem !== null ? (
-        <div role="alert" className="rounded-card border border-error/40 bg-surface px-3 py-2 text-[13px] text-error">
+        <div role="alert" className="rounded-card border border-error/40 bg-surface px-3 py-2 text-[0.8125rem] text-error">
           {t(locale, failureKey(state.problem))}
         </div>
       ) : null}
 
       {view !== null ? <FlowStrip stages={state.stages} locale={locale} /> : null}
 
-      <div className="grid items-start gap-5 @[900px]:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid items-start gap-5 @[900px]:grid-cols-[minmax(0,1fr)_22.5rem] @[1700px]:grid-cols-[minmax(0,1fr)_22.5rem_21.25rem]">
         <div className="grid min-w-0 gap-5" data-detail-ask>
           {asks.length > 0 ? (
             <SectionCard title={t(locale, 'detail.section.asks')}>
@@ -373,9 +376,9 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
                     <div className="flex min-w-0 items-center gap-3">
                       <span aria-hidden="true" className="h-2 w-2 flex-none rounded-full bg-signal motion-safe:animate-pulse" />
                       <div className="min-w-0">
-                        <span className="block truncate font-mono text-[13px] text-ink" title={ask.tool}>{ask.tool}</span>
+                        <span className="block truncate font-mono text-[0.8125rem] text-ink" title={ask.tool}>{ask.tool}</span>
                         {ask.target !== null ? (
-                          <code className="block truncate font-mono text-[11px] text-inkdim" title={ask.target}>
+                          <code className="block truncate font-mono text-[0.6875rem] text-inkdim" title={ask.target}>
                             {ask.target}
                           </code>
                         ) : null}
@@ -396,11 +399,11 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
           ) : null}
 
           <section className="grid gap-2.5">
-            <h2 className="text-[12.5px] font-semibold text-inkdim">{t(locale, 'detail.section.expected')}</h2>
+            <h2 className="text-[0.78125rem] font-semibold text-inkdim">{t(locale, 'detail.section.expected')}</h2>
             {view === null ? null : pendingHumanGate !== undefined ? (
               <div className="rounded-card border border-hairline bg-surface p-4">
-                <p className="text-[14px] font-semibold text-ink">{pendingHumanGate.label ?? pendingHumanGate.id}</p>
-                <p className="mt-1.5 text-[13px] text-inkdim">{t(locale, 'detail.expected.body')}</p>
+                <p className="text-[0.875rem] font-semibold text-ink">{pendingHumanGate.label ?? pendingHumanGate.id}</p>
+                <p className="mt-1.5 text-[0.8125rem] text-inkdim">{t(locale, 'detail.expected.body')}</p>
                 <div className="mt-3.5 flex gap-2">
                   <ActionButton variant="neutral" size="md" onClick={() => decide(pendingHumanGate.id, 'rejected')}>
                     {t(locale, 'detail.expected.refuse')}
@@ -412,7 +415,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
               </div>
             ) : canStart ? (
               <div className="rounded-card border border-hairline bg-surface p-4">
-                <p className="mt-1.5 text-[13px] text-inkdim">{t(locale, 'detail.expected.empty')}</p>
+                <p className="mt-1.5 text-[0.8125rem] text-inkdim">{t(locale, 'detail.expected.empty')}</p>
                 <div className="mt-3.5">
                   <ActionButton variant="primary" size="md" onClick={() => void store.enqueue()}>
                     {t(locale, 'detail.action.startStage')}
@@ -421,7 +424,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
               </div>
             ) : (
               <div className="rounded-card border border-hairline bg-surface p-4">
-                <p className="mt-1.5 text-[13px] text-inkdim">
+                <p className="mt-1.5 text-[0.8125rem] text-inkdim">
                   {t(locale, view.state.status === 'done' ? 'detail.expected.done' : 'detail.expected.empty')}
                 </p>
               </div>
@@ -433,10 +436,10 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
               {state.stages.map((stage: StageGates, index: number) => (
                 <li key={stage.stage} className="grid gap-1.5">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className={`font-mono text-[13px] ${stage.current ? 'text-signal' : 'text-inkdim'}`}>
+                    <span className={`font-mono text-[0.8125rem] ${stage.current ? 'text-signal' : 'text-inkdim'}`}>
                       {String(index + 1).padStart(2, '0')}
                     </span>
-                    <span className={`text-[14px] font-semibold ${stage.current ? 'text-ink' : 'text-inkdim'}`}>{stage.name}</span>
+                    <span className={`text-[0.875rem] font-semibold ${stage.current ? 'text-ink' : 'text-inkdim'}`}>{stage.name}</span>
                     {stage.current ? <StateBadge tone="signal">{t(locale, 'detail.stage.current')}</StateBadge> : null}
                   </div>
                   {stage.gates.length > 0 ? (
@@ -459,28 +462,6 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
             </ol>
           </SectionCard>
 
-          <SectionCard title={t(locale, 'detail.section.runs')}>
-            {view === null || view.runs.length === 0 ? (
-              <p className="text-[13px] text-inkdim">{t(locale, 'detail.run.empty')}</p>
-            ) : (
-              <ul className="grid gap-1.5">
-                {view.runs.map((run) => {
-                  const outcome = run.endedAt === undefined ? 'running' : (run.outcome ?? 'running');
-                  return (
-                    <li key={run.id} className="grid grid-cols-[10px_minmax(0,1fr)_auto] items-center gap-3 rounded-card border border-hairline bg-surface px-3 py-2">
-                      <span aria-hidden="true" className={`h-2 w-2 flex-none rounded-full ${RUN_OUTCOME_LAMP[outcome]}`} />
-                      <div className="flex min-w-0 items-baseline gap-2">
-                        <code className="truncate font-mono text-[12px] text-ink">{run.id}</code>
-                        <code className="truncate font-mono text-[11px] text-inkdim">{run.stage}</code>
-                      </div>
-                      <StateBadge tone={RUN_OUTCOME_TONE[outcome]}>{t(locale, RUN_OUTCOME_KEY[outcome])}</StateBadge>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </SectionCard>
-
           {environments.length > 0 ? (
             <SectionCard title={t(locale, 'detail.section.environments')}>
               <ul className="grid gap-1.5">
@@ -488,11 +469,11 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
                   <li key={deploy.environment} className="flex flex-wrap items-center justify-between gap-2 rounded-card border border-hairline bg-surface px-3 py-2">
                     <div className="flex min-w-0 items-center gap-3">
                       <span aria-hidden="true" className="h-2 w-2 flex-none rounded-full bg-info" />
-                      <code className="font-mono text-[13px] text-ink">{deploy.environment}</code>
+                      <code className="font-mono text-[0.8125rem] text-ink">{deploy.environment}</code>
                       {deploy.protectedEnvironment ? <StateBadge tone="signal">{t(locale, 'gate.deploy.protected')}</StateBadge> : null}
                     </div>
                     {deploy.promoteFromChain.length > 0 ? (
-                      <span className="font-mono text-[11px] text-inkdim">
+                      <span className="font-mono text-[0.6875rem] text-inkdim">
                         {t(locale, 'gate.deploy.prerequisite')}: {deploy.promoteFromChain.join(' → ')}
                       </span>
                     ) : null}
@@ -508,6 +489,33 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
             <LivePaneScreen store={store.pane} locale={locale} />
           </div>
         ) : null}
+
+        {/* U-55: the runs list spans the two columns below 1700 and takes the third column's
+            place beside the live pane from ≥1700 — auto placement lands it there through the
+            explicit start, with or without a live pane showing. */}
+        <div className="grid min-w-0 gap-5 self-start @[900px]:col-span-2 @[1700px]:col-span-1 @[1700px]:col-start-3">
+          <SectionCard title={t(locale, 'detail.section.runs')}>
+            {view === null || view.runs.length === 0 ? (
+              <p className="text-[0.8125rem] text-inkdim">{t(locale, 'detail.run.empty')}</p>
+            ) : (
+              <ul className="grid gap-1.5">
+                {view.runs.map((run) => {
+                  const outcome = run.endedAt === undefined ? 'running' : (run.outcome ?? 'running');
+                  return (
+                    <li key={run.id} className="grid grid-cols-[0.625rem_minmax(0,1fr)_auto] items-center gap-3 rounded-card border border-hairline bg-surface px-3 py-2">
+                      <span aria-hidden="true" className={`h-2 w-2 flex-none rounded-full ${RUN_OUTCOME_LAMP[outcome]}`} />
+                      <div className="flex min-w-0 items-baseline gap-2">
+                        <code className="truncate font-mono text-[0.75rem] text-ink">{run.id}</code>
+                        <code className="truncate font-mono text-[0.6875rem] text-inkdim">{run.stage}</code>
+                      </div>
+                      <StateBadge tone={RUN_OUTCOME_TONE[outcome]}>{t(locale, RUN_OUTCOME_KEY[outcome])}</StateBadge>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </SectionCard>
+        </div>
       </div>
     </div>
   );

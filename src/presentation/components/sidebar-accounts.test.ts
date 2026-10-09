@@ -201,7 +201,7 @@ describe('SidebarAccounts (U-51)', () => {
   });
 
   it('U-51b: the section body is the fixed two-cards-plus-peek measure, not the leftover height', async () => {
-    expect(ACCOUNTS_BODY_MAX_HEIGHT).toBe('max-h-[148px]');
+    expect(ACCOUNTS_BODY_MAX_HEIGHT).toBe('max-h-[9.25rem]');
     const accounts = Array.from({ length: 9 }, (_, index) => account(`a${index}`, `Hesap ${index}`, [meterAt(`a${index}`, 50)]));
     const html = await renderFrame(view(accounts), true);
     expect(html).toContain(ACCOUNTS_BODY_MAX_HEIGHT);

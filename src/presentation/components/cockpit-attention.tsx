@@ -54,7 +54,11 @@ export function CockpitAttentionRow({ item, ask, locale, ageMs, onOpen, onAnswer
       </span>
       <span
         className="col-start-2 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[11.5px] text-inkdim"
-        title={`${item.project} / ${item.repo}`}
+        // The whole line rides the title, not only "project / repo": in U-55's fill columns the
+        // card can be narrower than the line, and the clipped text must stay reachable in full.
+        title={`${formatWorkOrderCode(item.number, locale)} · ${item.project} / ${item.repo}${
+          item.stage !== null ? ` · ${item.stage}` : ''
+        }`}
       >
         {formatWorkOrderCode(item.number, locale)} · {item.project} / {item.repo}
         {item.stage !== null ? ` · ${item.stage}` : ''} ·{' '}

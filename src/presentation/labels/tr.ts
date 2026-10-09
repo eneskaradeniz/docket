@@ -192,6 +192,7 @@ export const TR: LabelBundle = {
   'cockpit.section.running': 'Koşanlar',
   'cockpit.section.projects': 'Projeler',
   'cockpit.section.closed': 'Son kapananlar',
+  'cockpit.section.queued': 'Sırada',
   'cockpit.attention.empty': 'Senden bekleyen yok',
   'cockpit.running.empty': 'Şu an koşan yok',
   'cockpit.projects.empty': 'Henüz proje yok.',

@@ -193,6 +193,7 @@ export const EN: LabelBundle = {
   'cockpit.section.running': 'Running',
   'cockpit.section.projects': 'Projects',
   'cockpit.section.closed': 'Recently closed',
+  'cockpit.section.queued': 'Queued',
   'cockpit.attention.empty': 'Nothing is waiting on you',
   'cockpit.running.empty': 'Nothing is running right now',
   'cockpit.projects.empty': 'No projects yet.',

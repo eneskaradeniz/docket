@@ -47,6 +47,7 @@ export function CockpitRunningRow({ run, locale, accountLabel, accountProvider, 
   const queued = isQueued(run);
   const strip = queued ? null : stageStrip(run);
   const title = run.title !== undefined && run.title !== '' ? run.title : null;
+  const stageLine = queued ? `${run.stage} · ${queuedNote(run, locale)}` : run.stage;
   return (
     <button
       type="button"
@@ -65,10 +66,11 @@ export function CockpitRunningRow({ run, locale, accountLabel, accountProvider, 
         ) : null}
         <span
           className={`min-w-0 overflow-hidden text-ellipsis whitespace-nowrap ${title !== null ? 'text-[11.5px] text-inkdim' : 'text-[13px] font-semibold text-ink'}`}
-          title={run.stage}
+          // The whole line rides the title, not only the stage: in the narrow queued column the
+          // waiting note after it gets clipped, and clipped text must stay reachable in full.
+          title={stageLine}
         >
-          {run.stage}
-          {queued ? ` · ${queuedNote(run, locale)}` : null}
+          {stageLine}
           {strip !== null ? <StageStrip index={strip.index} count={strip.count} /> : null}
         </span>
       </span>
