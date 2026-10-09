@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
-import type { Definitions, ProjectSlug } from '../../../domain/index';
-import { parseSlug, type RepoSlug } from '../../../domain/index';
+import type { CapabilityDef, Definitions, ProjectSlug } from '../../../domain/index';
+import { parseSlug, type CapabilitySlug, type RepoSlug } from '../../../domain/index';
 
 import type { DefinitionScope } from '../definition-store';
 
 import { createFakeDefinitionStore, FAKE_ROADMAP_TARGET } from './fake-definition-store';
+
+const toCapSlug = (s: string): CapabilitySlug => {
+  const parsed = parseSlug<'capability'>(s);
+  if (!parsed.ok) throw new Error('fixture slug must parse');
+  return parsed.value;
+};
 
 const toSlug = (s: string): RepoSlug => {
   const parsed = parseSlug<'repo'>(s);
@@ -322,5 +328,42 @@ describe('createFakeDefinitionStore', () => {
     expect(await store.repoPath(REPO_SLUG)).toBe('/custom/checkout');
     store.setRepoPath(REPO_SLUG, undefined);
     expect(await store.repoPath(REPO_SLUG)).toBeUndefined();
+  });
+});
+
+// --- installCapabilities (the I-44 grammar, fake side) -------------------------------------------
+
+describe('installCapabilities (fake)', () => {
+  const GLOBAL: DefinitionScope = { kind: 'global' };
+  const MCP: CapabilityDef = { kind: 'mcp', id: toCapSlug('db-tools'), name: 'Db Tools', command: 'npx db', args: [], env: {} };
+
+  it('writes one bare definition per capabilities/<id>.yaml target and never overwrites an existing one', async () => {
+    const store = createFakeDefinitionStore();
+    expect(await store.installCapabilities([MCP])).toEqual({
+      written: ['capabilities/db-tools.yaml'],
+      skipped: [],
+    });
+    expect(await store.installCapabilities([MCP])).toEqual({
+      written: [],
+      skipped: ['capabilities/db-tools.yaml'],
+    });
+    const file = await store.readFile(GLOBAL, 'capabilities/db-tools.yaml');
+    expect(JSON.parse(file?.content ?? 'null')).toEqual(MCP);
+  });
+
+  it('the bare file joins load and validateCandidate like any other capability body', async () => {
+    const store = createFakeDefinitionStore();
+    await store.installCapabilities([{ kind: 'mcp', id: toCapSlug('db'), name: 'Db', command: 'x', args: [], env: {} }]);
+    const loaded = await store.load(REPO_SLUG);
+    expect(loaded.ok).toBe(true);
+    if (loaded.ok) expect(loaded.value.capabilities).toHaveLength(1);
+
+    // The same grammar the import use case hands validateCandidate merges beside the installed file.
+    const validated = await store.validateCandidate(
+      GLOBAL,
+      'capabilities/other.yaml',
+      JSON.stringify({ kind: 'context', id: 'other', name: 'Other', path: '/x/other.md' }),
+    );
+    expect(validated.ok).toBe(true);
   });
 });

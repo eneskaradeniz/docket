@@ -1,6 +1,7 @@
 // Read/write port for definition files (global store merged with per-project and per-repo
 // overrides — the repo's .docket wins over the project's, the project's over the global).
 import type {
+  CapabilityDef,
   Definitions,
   FlowDef,
   DefinitionIssue,
@@ -47,6 +48,12 @@ export interface DefinitionStore {
     readonly roles: readonly RoleDef[];
     readonly flows: readonly FlowDef[];
   }): Promise<{ readonly written: readonly string[] }>;
+  /** Writes each capability as <globalRoot>/capabilities/<id>.yaml unless a file with that id
+   *  exists; never overwrites. `written`/`skipped` list the targets actually written / found. */
+  installCapabilities(capabilities: readonly CapabilityDef[]): Promise<{
+    readonly written: readonly string[];
+    readonly skipped: readonly string[];
+  }>;
   /** Writes <path>/.docket/project.yaml and <path>/.docket/repo.yaml; writes nothing when either exists. */
   scaffoldProject(
     path: string,

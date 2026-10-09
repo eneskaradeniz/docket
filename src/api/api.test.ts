@@ -9,6 +9,7 @@ import { ok, parseSlug, parseUlid } from '../domain/index';
 import type { AppDeps, UpdateChecker, UpdateState } from '../application';
 import { createPermissionBoard, executeRun } from '../application';
 import {
+  createFakeCapabilityDiscovery,
   createFakeCommandRunner,
   createFakeDefinitionStore,
   createFakeDeps,
@@ -1674,5 +1675,70 @@ describe('createApi', () => {
       expect(await api.command(ACTOR, { type: 'app.update.check' })).toEqual({ ok: false, code: 'not_found' });
       expect(await api.command(ACTOR, { type: 'app.update.apply' })).toEqual({ ok: false, code: 'not_found' });
     });
+  });
+});
+
+// --- capabilities.import (A-93, A-94) -------------------------------------------------------------
+
+describe('capabilities.import', () => {
+  const ACCT = '01ARZ3NDEKTSV4RRFFQ69G5FAV' as Ulid<'account'>;
+  const DIR = '/users/op/.claude-work';
+
+  const seededApi = async () => {
+    const discovery = createFakeCapabilityDiscovery();
+    const deps = createFakeDeps({ capabilityDiscovery: discovery });
+    await deps.accounts.save({
+      id: ACCT, provider: 'claude-code', label: 'Work', authMode: 'subscription', limitPolicy: 'wait_resume', caps: [], identityDir: DIR,
+    });
+    discovery.seed(DIR, [
+      { identity: 'context:CLAUDE.md', kind: 'context', name: 'CLAUDE.md', sources: [ACCT], path: `${DIR}/CLAUDE.md` },
+      { identity: 'mcp:db|npx db', kind: 'mcp', name: 'db', sources: [ACCT], command: 'npx db' },
+    ]);
+    return { api: createApi(deps), deps };
+  };
+
+  it('A-94: answers ok with one result row per identity — imported rows carry the id, rejections the reason', async () => {
+    const { api } = await seededApi();
+    const result = await api.command(ACTOR, {
+      type: 'capabilities.import',
+      identities: ['context:absent', 'context:CLAUDE.md', 'mcp:db|npx db'],
+    });
+    expect(result).toEqual({
+      ok: true,
+      results: [
+        { identity: 'context:absent', status: 'rejected', id: null, reason: 'not_found' },
+        { identity: 'context:CLAUDE.md', status: 'imported', id: 'claude-md', reason: null },
+        { identity: 'mcp:db|npx db', status: 'imported', id: 'db', reason: null },
+      ],
+    });
+  });
+
+  it('A-94: an unknown identity writes nothing — a { ok: true } call with only rejections leaves the store empty', async () => {
+    const { api, deps } = await seededApi();
+    const result = await api.command(ACTOR, { type: 'capabilities.import', identities: ['context:absent'] });
+    expect(result).toEqual({
+      ok: true,
+      results: [{ identity: 'context:absent', status: 'rejected', id: null, reason: 'not_found' }],
+    });
+    expect(await deps.definitions.readFile({ kind: 'global' }, 'capabilities/claude-md.yaml')).toBeUndefined();
+  });
+
+  it('A-94: the second import of the same identity is already_present and writes no new file', async () => {
+    const { api, deps } = await seededApi();
+    await api.command(ACTOR, { type: 'capabilities.import', identities: ['context:CLAUDE.md'] });
+    const second = await api.command(ACTOR, { type: 'capabilities.import', identities: ['context:CLAUDE.md'] });
+    expect(second).toEqual({
+      ok: true,
+      results: [{ identity: 'context:CLAUDE.md', status: 'already_present', id: 'claude-md', reason: null }],
+    });
+    const file = await deps.definitions.readFile({ kind: 'global' }, 'capabilities/claude-md.yaml');
+    expect(JSON.parse(file?.content ?? 'null')).toEqual({
+      kind: 'context', id: 'claude-md', name: 'CLAUDE.md', path: `${DIR}/CLAUDE.md`,
+    });
+  });
+
+  it('A-94: an empty identities call is ok with no rows and no writes', async () => {
+    const { api } = await seededApi();
+    expect(await api.command(ACTOR, { type: 'capabilities.import', identities: [] })).toEqual({ ok: true, results: [] });
   });
 });

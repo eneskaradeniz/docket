@@ -25,7 +25,8 @@ export type Query =
   | { readonly type: 'permissions.open' }
   | { readonly type: 'app.update' }
   | { readonly type: 'workOrders.stageFiles'; readonly id: string }
-  | { readonly type: 'workOrders.readStageFile'; readonly id: string; readonly path: string };
+  | { readonly type: 'workOrders.readStageFile'; readonly id: string; readonly path: string }
+  | { readonly type: 'capabilities.candidates' }; // no fresh: no cache (A-94)
 
 export interface AttentionItem {
   readonly workOrderId: string;
@@ -308,3 +309,21 @@ export interface OpenAskView {
 
 /** The marks of every composed provider def (A-41): def id → its mark, `null` when it has none. */
 export type ProviderMarksView = Record<string, ProviderMark | null>;
+
+// --- capabilities.candidates (A-90 … A-92) -------------------------------------------------------------
+
+export interface CapabilityCandidateView {
+  readonly identity: string; // mergeCandidates' canonical form (R-63)
+  readonly kind: 'mcp' | 'skill' | 'context';
+  readonly name: string;
+  readonly sources: readonly string[]; // account ids, sorted, unique — plain strings on the wire
+  readonly command?: string; // mcp only
+  readonly path?: string; // skill / context; the source file's absolute path
+  readonly description?: string; // ≤ 300 code points (CAPABILITY_DESCRIPTION_MAX)
+  readonly imported: boolean;
+}
+
+export interface CapabilityCandidatesView {
+  readonly candidates: readonly CapabilityCandidateView[]; // identity, code-point order
+  readonly truncated: boolean; // the scan found more than the cap
+}

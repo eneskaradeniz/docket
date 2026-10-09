@@ -15,6 +15,7 @@ const PORT_KEYS: readonly (keyof AppDeps)[] = [
   'runs',
   'accounts',
   'capabilities',
+  'capabilityDiscovery',
   'modelCatalog',
   'projects',
   'repos',

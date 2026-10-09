@@ -119,6 +119,10 @@ const mergeBodies = (bodies: readonly UnknownRecord[]): unknown => {
     if (Array.isArray(body.roles)) roles.push(...body.roles);
     if (Array.isArray(body.flows)) flows.push(...body.flows);
     if (Array.isArray(body.capabilities)) capabilities.push(...body.capabilities);
+    // A capability file holds one definition per file — the real store's grammar. The bare
+    // mapping (top-level kind and id, no wrapper list) is what installCapabilities writes and
+    // what the import use case hands validateCandidate, so both stay honest against the fake.
+    if (typeof body.kind === 'string' && typeof body.id === 'string') capabilities.push(body);
     if (body.repo !== undefined) repo = body.repo;
     if (body.project !== undefined) project = body.project;
   }
@@ -283,6 +287,25 @@ export const createFakeDefinitionStore = (): FakeDefinitionStore => {
       for (const role of library.roles) install('roles', role.id, role);
       for (const flow of library.flows) install('flows', flow.id, flow);
       return { written };
+    },
+
+    // One capability per file, bare — the real store's capabilities/<id>.yaml grammar, JSON here.
+    // An existing target is skipped untouched whatever its content (I-44).
+    installCapabilities: async (capabilities): Promise<{ readonly written: readonly string[]; readonly skipped: readonly string[] }> => {
+      const written: string[] = [];
+      const skipped: string[] = [];
+      for (const capability of capabilities) {
+        const target = `capabilities/${capability.id}.yaml`;
+        const key = keyOf({ kind: 'global' }, target);
+        if (files.has(key)) {
+          skipped.push(target);
+          continue;
+        }
+        const content = JSON.stringify(capability);
+        files.set(key, { target, content, hash: contentHash(content), scope: { kind: 'global' } });
+        written.push(target);
+      }
+      return { written, skipped };
     },
 
     // Both files are checked before either is written, like the real store.

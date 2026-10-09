@@ -44,6 +44,7 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
       'role: RoleSlug, accounts: { accountId: AccountId, model?: string }[], thinking?: { level? | effort? }, tier?: Tier',
   },
   'quota.refresh': { input: 'id?: AccountId' },
+  'capabilities.import': { input: 'identities: string[]' },
   'app.update.check': { input: 'no input' },
   'app.update.apply': { input: 'no input' },
 };
@@ -69,4 +70,5 @@ export const QUERY_REGISTRY: Record<Query['type'], RegistryEntry> = {
   'app.update': { input: 'no input' },
   'workOrders.stageFiles': { input: 'id: WorkOrderId' },
   'workOrders.readStageFile': { input: 'id: WorkOrderId, path: string' },
+  'capabilities.candidates': { input: 'no input' },
 };

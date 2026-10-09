@@ -4,6 +4,7 @@ export * from './fake-account-repo';
 export * from './fake-account-test-repo';
 export * from './fake-binding-repo';
 export * from './fake-capability-catalog';
+export * from './fake-capability-discovery';
 export * from './fake-checkpoints';
 export * from './fake-clock';
 export * from './fake-definition-store';

@@ -565,6 +565,7 @@ export const LABEL_KEYS = [
   'success.deploy.approve',
   'success.account.save',
   'success.account.adopt',
+  'success.capabilities.import',
   'success.account.remove',
   'success.account.consent.grant',
   'success.account.consent.revoke',
