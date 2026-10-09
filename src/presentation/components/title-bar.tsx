@@ -118,7 +118,7 @@ const HistoryButton = ({
     onClick={() => {
       if (enabled) onClick();
     }}
-    className={`inline-flex h-7 w-7 flex-none items-center justify-center rounded-control bg-transparent text-ink transition-[filter,background-color] duration-100 hover:bg-raised focus-visible:bg-raised active:scale-[0.97] aria-disabled:pointer-events-none aria-disabled:opacity-45 [-webkit-app-region:no-drag] ${extraClass}`}
+    className={`inline-flex h-[28px] w-[28px] flex-none items-center justify-center rounded-control bg-transparent text-ink transition-[filter,background-color] duration-100 hover:bg-raised focus-visible:bg-raised active:scale-[0.97] aria-disabled:pointer-events-none aria-disabled:opacity-45 [-webkit-app-region:no-drag] ${extraClass}`}
   >
     <ChevronIcon forward={forward} />
   </button>
@@ -142,13 +142,15 @@ export function TitleBar({
   return (
     // The lane width is platform data, not a design constant, so it travels as a style rather
     // than a class; the right inset is the bar's own constant, kept here so the controls carry
-    // no margin of their own; every colour stays on the theme tokens.
+    // no margin of their own; every colour stays on the theme tokens. The bar's every measure is
+    // px, never a rem utility: it is a px-fixed surface (ui.md's Width constraints — U-24's 28px
+    // controls), so U-53's root scale must leave it at its frozen size.
     <div
       data-title-bar
-      className="flex h-10 w-full flex-none items-center gap-2 border-b border-hairline bg-bg text-ink [-webkit-app-region:drag]"
+      className="flex h-[40px] w-full flex-none items-center gap-[8px] border-b border-hairline bg-bg text-ink [-webkit-app-region:drag]"
       style={{ paddingInlineStart: `${plan.leftInsetPx}px`, paddingInlineEnd: `${BAR_RIGHT_INSET_PX}px` }}
     >
-      <span aria-hidden="true" className="h-4 w-[3px] flex-none bg-signal" />
+      <span aria-hidden="true" className="h-[16px] w-[3px] flex-none bg-signal" />
       <span className="text-[13px] font-semibold">{t(locale, 'shell.wordmark')}</span>
 
       {/* The bar's own gap is 8px; the history pair starts 12px after the wordmark (U-25). */}
@@ -157,7 +159,7 @@ export function TitleBar({
         enabled={canBack}
         onClick={onBack}
         dataHook="data-nav-back"
-        extraClass="ml-1"
+        extraClass="ml-[4px]"
         forward={false}
       />
       <HistoryButton
@@ -176,7 +178,7 @@ export function TitleBar({
           disabled={button.disabled}
           onClick={onApply}
           title={button.percent !== null ? t(locale, 'settings.update.status.downloading') : undefined}
-          className="ml-auto inline-flex h-7 flex-none items-center gap-1.5 rounded-control border border-signal bg-transparent px-2.5 text-[12.5px] font-semibold text-ink transition-[filter,background-color] duration-100 hover:bg-raised focus-visible:bg-raised active:scale-[0.97] disabled:pointer-events-none disabled:opacity-45 [-webkit-app-region:no-drag]"
+          className="ml-auto inline-flex h-[28px] flex-none items-center gap-[6px] rounded-control border border-signal bg-transparent px-[10px] text-[12.5px] font-semibold text-ink transition-[filter,background-color] duration-100 hover:bg-raised focus-visible:bg-raised active:scale-[0.97] disabled:pointer-events-none disabled:opacity-45 [-webkit-app-region:no-drag]"
         >
           <DownloadIcon />
           {button.percent !== null ? `%${button.percent}` : t(locale, button.labelKey)}

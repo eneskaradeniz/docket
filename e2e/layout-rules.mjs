@@ -176,7 +176,11 @@ const l5 = async (page, ctx, sel) => {
     page,
     `const main = resolve(arg); if (!main) return null;
     const cs = getComputedStyle(main);
-    const right = main.getBoundingClientRect().right - parseFloat(cs.paddingRight);
+    // The content-box right edge a filling section must reach: clientWidth already excludes the
+    // classic scrollbar (the app's own 10px themed one, which rides the two screens that scroll —
+    // the cockpit and the detail), while the border box's right does not, so reading rect.right
+    // alone made every section end exactly the scrollbar's width short.
+    const right = main.getBoundingClientRect().left + main.clientLeft + main.clientWidth - parseFloat(cs.paddingRight);
     // Top-level sections: the screen wrapper inside main, then its own visible children.
     const kids = [...main.children].flatMap((wrapper) => [...wrapper.children]);
     const out = [];
