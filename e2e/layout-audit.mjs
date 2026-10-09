@@ -24,6 +24,10 @@
 // A second, fake-free launch closes the loop once per run: with the noop checker the button
 // must be absent from the bar and the Güncelleme section must read "Docket güncel.":
 //   titlebar-plain: ok|FAIL <detail>
+// The attention cards walk once per run after the combos (U-62), at the three fixed widths
+// 1024/1280/1512 clamped to the work area: every project line clamps at two lines, no card
+// overflows, the cards of one row keep one height:
+//   attention: kokpit <WxH> ok|FAIL <detail>
 // Exit code is 1 when any line is FAIL.
 //
 // The run walks four combinations by default — dark at every size plus light at the default
@@ -105,6 +109,8 @@ const APP_SELECTORS = {
   settingsScrim: '[data-settings-scrim]',
   accountMark: '[data-provider-mark]',
   skeleton: '[data-skeleton]',
+  attentionCard: '[data-attention-card]',
+  attentionLine: '[data-attention-line]',
 };
 
 const parseArgs = (argv) => {
@@ -671,6 +677,10 @@ async function openApp() {
         detail: `window ${m.bw}x${m.bh} at ${m.bx},${m.by} ${inside ? '⊆' : '⊄'} workArea ${m.aw}x${m.ah} at ${m.ax},${m.ay}`,
       };
     },
+    /** The primary display's work area, for the checks that pick their own sizes. */
+    async workArea() {
+      return handle.app.evaluate(({ screen }) => screen.getPrimaryDisplay().workArea);
+    },
   };
 }
 
@@ -756,6 +766,91 @@ async function accountsOpacityCheck(target) {
   });
   if (seen === null) return { ok: true, detail: 'no account cards to see' };
   return { ok: seen === 1, detail: seen === 1 ? 'account cards are fully visible' : `account card opacity ${seen}, not 1` };
+}
+
+/** The attention cards' own measurement (U-62, with U-55's dated amendment), once per run on the
+ *  app target after the combos: at three fixed widths — the 1024 minimum, 1280, and the 1512
+ *  reference — every cockpit attention card's project line wraps and clamps at two lines (never
+ *  a single-line truncate), no card overflows its own box or the main column's right edge, and
+ *  the cards of one grid row keep one height whether their names wrap or not (the ask band's
+ *  card is exempt — taller by its own band, not by its name). The widths are clamped to the work
+ *  area and deduped, so a display that cannot hold 1280 or 1512 walks the widths it can. */
+const ATTENTION_WIDTHS = [1024, 1280, 1512];
+
+async function attentionCardsCheck(target) {
+  const { page, selectors } = target;
+  const area = await target.workArea();
+  const widths = [...new Set(ATTENTION_WIDTHS.map((w) => Math.min(w, area.width)))];
+  const rows = [];
+  for (const width of widths) {
+    const height = Math.min(720, area.height);
+    await target.show('kokpit', 'dark', { size: [width, height] });
+    await page.waitForSelector(selectors.attentionCard, { timeout: 10_000 });
+    const m = await page.evaluate(
+      ([cardSel, lineSel, mainSel]) => {
+        const visible = (el) => {
+          const r = el.getBoundingClientRect();
+          const cs = getComputedStyle(el);
+          return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none';
+        };
+        const main = document.querySelector(mainSel);
+        const mainRight = main === null ? null : main.getBoundingClientRect().right;
+        const cards = [...document.querySelectorAll(cardSel)].filter(visible);
+        return {
+          n: cards.length,
+          mainRight,
+          cards: cards.map((card) => {
+            const line = card.querySelector(lineSel);
+            const cs = line === null ? null : getComputedStyle(line);
+            const r = card.getBoundingClientRect();
+            return {
+              line: line !== null,
+              clamp: cs === null ? '' : cs.webkitLineClamp,
+              wraps: cs !== null && cs.whiteSpace === 'normal',
+              // Horizontal clip only: the clamp's own vertical cut is the mechanism, not a defect.
+              lineClips: line !== null && line.scrollWidth > line.clientWidth + 1,
+              cardClips: card.scrollWidth > card.clientWidth + 1 || card.scrollHeight > card.clientHeight + 1,
+              pastMain: mainRight !== null && r.right > mainRight + 0.5,
+              hasAsk: card.querySelector('code') !== null,
+              top: Math.round(r.top),
+              h: r.height,
+            };
+          }),
+        };
+      },
+      [selectors.attentionCard, selectors.attentionLine, selectors.main],
+    );
+    const failures = [];
+    if (m.n === 0) failures.push('no attention cards rendered');
+    for (const [i, c] of m.cards.entries()) {
+      if (!c.line) failures.push(`card ${i + 1} has no project line`);
+      if (c.clamp !== '2') failures.push(`card ${i + 1} clamps at ${c.clamp || 'nothing'}, not 2`);
+      if (!c.wraps) failures.push(`card ${i + 1} does not wrap`);
+      if (c.lineClips) failures.push(`card ${i + 1} project line clips sideways`);
+      if (c.cardClips) failures.push(`card ${i + 1} overflows its box`);
+      if (c.pastMain) failures.push(`card ${i + 1} passes the main column`);
+    }
+    // One height per grid row: the non-ask cards whose tops align must also align their bottoms.
+    const level = new Map();
+    for (const c of m.cards) {
+      if (c.hasAsk) continue;
+      const bucket = [...level.keys()].find((t) => Math.abs(t - c.top) <= 1) ?? c.top;
+      level.set(bucket, { min: Math.min(level.get(bucket)?.min ?? Infinity, c.h), max: Math.max(level.get(bucket)?.max ?? -Infinity, c.h) });
+    }
+    for (const [top, { min, max }] of level) {
+      if (max - min > 1) failures.push(`the row at y=${top} spans ${min.toFixed(1)}–${max.toFixed(1)}px of card heights`);
+    }
+    const wrapped = m.cards.filter((c) => c.line).length;
+    rows.push({
+      ok: failures.length === 0,
+      size: `${width}x${height}`,
+      detail:
+        failures.length === 0
+          ? `${m.n} cards, ${wrapped} project lines clamp at 2, no overflow, rows level`
+          : failures.slice(0, 3).join('; '),
+    });
+  }
+  return rows;
 }
 
 // --- run ---------------------------------------------------------------------------------------------
@@ -891,6 +986,22 @@ if (args.slow && target.selectors.skeleton) {
     lines += 1;
     console.log(`skeleton: ${screen} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
     appendCheck({ id: 'skeleton', screen, size: '', theme: '', status: r.ok ? 'ok' : 'FAIL', detail: r.detail });
+  }
+}
+// The attention cards' width walk runs once per run, after the combos — the app target only,
+// never the slow walk (its standing has no cards to measure) and never the frozen prototype.
+if (!args.slow && args.target === 'app' && target.selectors.attentionCard) {
+  let rows;
+  try {
+    rows = await attentionCardsCheck(target);
+  } catch (error) {
+    rows = [{ ok: false, size: '', detail: `attention cards unreachable: ${String(error).split('\n')[0]}` }];
+  }
+  for (const r of rows) {
+    if (!r.ok) failures += 1;
+    lines += 1;
+    console.log(`attention: kokpit ${r.size} dark ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
+    appendCheck({ id: 'attention', screen: 'kokpit', size: r.size, theme: 'dark', status: r.ok ? 'ok' : 'FAIL', detail: r.detail });
   }
 }
 // The without-standing runs once per run, on its own fake-free launch — the default run;

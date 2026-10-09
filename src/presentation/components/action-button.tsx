@@ -14,8 +14,8 @@ const VARIANT_CLASS: Readonly<Record<ButtonVariant, string>> = {
 };
 
 const SIZE_CLASS: Readonly<Record<ButtonSize, string>> = {
-  sm: 'px-2.5 py-1 text-[12.5px]',
-  md: 'px-3.5 py-[7px] text-[13.5px] font-semibold',
+  sm: 'px-2.5 py-1 text-[0.78125rem]',
+  md: 'px-3.5 py-[0.4375rem] text-[0.84375rem] font-semibold',
 };
 
 export interface ActionButtonProps {

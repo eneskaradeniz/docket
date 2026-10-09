@@ -60,6 +60,30 @@ describe('proportional scale (U-53)', () => {
       expect(src(name), name).not.toMatch(/text-\[\d*\.?\d+px\]/);
     }
   });
+
+  it('U-53: the shared row interiors the width wave left px speak rem — buttons, cockpit rows, live panel', () => {
+    // The dated amendment of #856: the action button, the cockpit's row interiors and the live
+    // panel ride the scale. The badges the modals share (state pill, provider mark) keep px until
+    // their own decision — the wizard and Settings still pass px sizes.
+    const converted = [
+      'action-button.tsx',
+      'cockpit-attention.tsx',
+      'cockpit-closed.tsx',
+      'cockpit-projects.tsx',
+      'cockpit-running.tsx',
+      'cockpit-section.tsx',
+      'cockpit-states.tsx',
+      'live.tsx',
+    ];
+    for (const name of converted) {
+      expect(src(name), name).not.toMatch(/text-\[\d*\.?\d+px\]/);
+    }
+    // The paddings and gaps those rows hand-type in px are gone too; Tailwind's own spacing
+    // scale (px-3.5, gap-2 …) is rem already and may stay.
+    for (const name of ['action-button.tsx', 'cockpit-closed.tsx', 'cockpit-projects.tsx', 'cockpit-running.tsx', 'live.tsx']) {
+      expect(src(name), name).not.toMatch(/(?:p|m|gap|leading|max-w)-(?:x|y)?-\[\d*\.?\d+px\]/);
+    }
+  });
 });
 
 describe('full sections (U-54)', () => {
