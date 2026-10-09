@@ -1,20 +1,26 @@
 // components/cockpit-skeleton.tsx — the cockpit's loading composition (U-26): grey shapes in
-// the four sections' own layout. Every wrapper, padding and line-box height mirrors the ready
-// screen's rows (the seed's standings: four attention rows, five running, five project cards,
-// five closed), so the content's arrival moves nothing — the heights are the row containers'
-// own, and the bars sit at the text line heights they stand in for. The rows mirror the ready
-// screen's fill grids (U-55's auto-fill minimums); the sparse panel (U-56) is a standing the
-// content itself decides, so the composition draws the fill world it loads into.
+// the four sections' own layout, mirroring the standing the audit's slow walk loads — the seed's
+// three open gates beside the permission ask its scripted run raises (the ask waits unanswered,
+// so it is part of the standing the content lands into), three runs (two stages and the queued
+// one), five project cards, five closes — at the default window, where the fill grids (U-55's
+// auto-fill minimums) take two columns: four attention cards make two lines with the ask's row
+// the taller one, three running rows two, five project cards three. Every wrapper, padding and
+// line-box height mirrors the ready screen's rows, so the content's arrival moves nothing: the
+// block heights are the text lines' own boxes (the sans face's 1.366 and the mono face's 1.3
+// normal line-height factors — 14 px → 19.12, 13 → 17.76, 12 → 16.39, 12.5 mono → 16.25,
+// 11.5 mono → 14.95). The sparse panel (U-56) is a standing the content itself decides, so the
+// composition draws the fill world it loads into.
 import { t, type Locale } from '../labels/t';
 import { Skeleton, SkeletonStyle } from './skeleton';
 
 /** A foldable section head as the ready screen renders it: the disclosure button's own padding
- *  around a chevron-sized and a title-sized block, then the count pill's round badge. */
+ *  around a chevron-sized and a title-sized block (the 13 px line's own 17.76 px box), then the
+ *  count pill's round badge. */
 const FoldHeadSkeleton = () => (
   <div className="flex min-w-0 items-center gap-2">
     <div className="-ml-1.5 flex items-center gap-1.5 px-1.5 py-0.5">
       <Skeleton radius="control" width="12px" height="12px" />
-      <Skeleton radius="control" width="88px" height="20px" />
+      <Skeleton radius="control" width="88px" height="17.76px" />
     </div>
     <Skeleton radius="full" width="20px" height="18px" />
   </div>
@@ -23,20 +29,29 @@ const FoldHeadSkeleton = () => (
 /** Senden bekleyenler's head is the one that never folds: a plain heading line and its pill. */
 const PlainHeadSkeleton = () => (
   <div className="flex items-center gap-2">
-    <Skeleton radius="control" width="104px" height="19px" />
+    <Skeleton radius="control" width="104px" height="18px" />
     <Skeleton radius="full" width="20px" height="18px" />
   </div>
 );
 
 /** One attention row: the loud section's card wrapper with its lamp, title line, action button
- *  block and meta line — the ready row's own grid and paddings, sized to its 62px stance (the
- *  permission row grows its command band only once the ask resolves, after the swap). */
-const AttentionRowSkeleton = () => (
+ *  block and meta line — the ready row's own grid and paddings. The lamp and the button block
+ *  span both rows as the ready row's do, so the rows keep the text lines' own heights. The ask
+ *  variant carries the permission row's command band as a third grid row, because the ask is
+ *  already up in the standing the composition loads into — without the band's row the holder
+ *  stands shorter than the content that replaces it, and the swap moves the page under it. */
+const AttentionRowSkeleton = ({ ask = false }: { readonly ask?: boolean }) => (
   <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 rounded-card border border-hairline bg-surface px-3.5 py-2.5">
-    <Skeleton radius="full" width="8px" height="8px" className="mt-2 self-start" />
-    <Skeleton radius="control" width="42%" height="19px" />
-    <Skeleton radius="control" width="152px" height="21px" />
-    <Skeleton radius="control" width="68%" height="17px" />
+    <Skeleton radius="full" width="8px" height="8px" className="row-span-2 mt-2 self-start" />
+    <Skeleton radius="control" width="42%" height="19.12px" />
+    <Skeleton radius="control" width="152px" height="21px" className="row-span-2" />
+    <Skeleton radius="control" width="68%" height="14.95px" />
+    {ask ? (
+      <div className="col-span-2 col-start-2 mt-1.5 flex min-w-0 items-center gap-2.5 rounded-control border border-hairline bg-band px-2.5 py-1.5">
+        <Skeleton radius="control" width="120px" height="16.39px" className="flex-none" />
+        <Skeleton radius="control" width="70%" height="16.25px" />
+      </div>
+    ) : null}
   </div>
 );
 
@@ -51,18 +66,20 @@ const RunningRowSkeleton = () => (
   </div>
 );
 
-/** One project card: the card's own grid, gaps and paddings around its three lines. */
+/** One project card: the card's own grid, gaps and paddings around its three lines — the 14 px
+ *  title line, the leading-none 22 px number line, the 12 px foot line. */
 const ProjectCardSkeleton = () => (
   <div className="grid min-w-0 gap-2 rounded-card border border-hairline bg-surface px-3.5 py-2.5">
-    <Skeleton radius="control" width="46%" height="23px" />
-    <Skeleton radius="control" width="64px" height="24px" />
-    <Skeleton radius="control" width="72%" height="18px" />
+    <Skeleton radius="control" width="46%" height="19.12px" />
+    <Skeleton radius="control" width="64px" height="22px" />
+    <Skeleton radius="control" width="72%" height="16.39px" />
   </div>
 );
 
-/** One closed row inside the bordered list the ready screen shows. */
+/** One closed row inside the bordered list the ready screen shows — the list's own 2.25 rem row
+ *  stance. */
 const ClosedRowSkeleton = () => (
-  <div className="grid min-h-[2.3125rem] w-full items-center gap-3 px-3.5 [grid-template-columns:auto_minmax(0,1fr)_auto_auto_auto]">
+  <div className="grid min-h-9 w-full items-center gap-3 px-3.5 [grid-template-columns:auto_minmax(0,1fr)_auto_auto_auto]">
     <Skeleton radius="control" width="52px" height="14px" />
     <Skeleton radius="control" width="30%" height="19px" />
     <Skeleton radius="control" width="120px" height="14px" className="ml-auto" />
@@ -78,7 +95,7 @@ export function CockpitSkeleton({ locale }: { readonly locale: Locale }) {
         <PlainHeadSkeleton />
         <ul className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(21.25rem,1fr))]">
           {[0, 1, 2, 3].map((row) => (
-            <li key={row}><AttentionRowSkeleton /></li>
+            <li key={row}><AttentionRowSkeleton ask={row === 0} /></li>
           ))}
         </ul>
       </section>
@@ -86,7 +103,7 @@ export function CockpitSkeleton({ locale }: { readonly locale: Locale }) {
         <FoldHeadSkeleton />
         <div className="mt-2">
           <ul className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(21.25rem,1fr))]">
-            {[0, 1, 2, 3, 4].map((row) => (
+            {[0, 1, 2].map((row) => (
               <li key={row}><RunningRowSkeleton /></li>
             ))}
           </ul>

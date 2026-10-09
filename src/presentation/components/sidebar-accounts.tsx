@@ -79,7 +79,7 @@ const InfoIcon = () => (
 );
 
 /** One account card's shape as a placeholder (U-26): the card's own fixed 56 px wrapper — a mark
- *  box, a name line, the tightest bar's row — three of them fill the body's fixed standing. */
+ *  box, a name line, the tightest bar's row. */
 const AccountCardSkeleton = () => (
   <div className="flex h-14 w-full gap-2 rounded-card border border-hairline p-2.5 px-3">
     <Skeleton radius="control" width="16px" height="16px" className="mt-0.5" />
@@ -95,6 +95,26 @@ const AccountCardSkeleton = () => (
     </span>
   </div>
 );
+
+/** The section body's loading composition (U-26), drawn inside the body's own fixed standing
+ *  (U-51b): two whole cards with the list's own 0.5 rem gaps and the 1.25 rem peek of a third —
+ *  2 × 3.5 rem + 2 × 0.5 rem + 1.25 rem = the 9.25 rem cap exactly, so the cards' arrival moves
+ *  nothing and the peek is what says it scrolls, exactly as the ready body's does. */
+export function AccountsSkeletonBody() {
+  return (
+    <div data-skeleton="" className="grid gap-2">
+      <SkeletonStyle />
+      {[0, 1].map((index) => (
+        <AccountCardSkeleton key={index} />
+      ))}
+      {/* The peek: the third card's top edge — its border and padding, the mark's first pixels,
+          and no bottom edge, the way a clipped card's top reads. */}
+      <div className="flex h-5 rounded-card border border-b-0 border-hairline bg-surface px-3">
+        <Skeleton radius="control" width="16px" height="7px" className="mt-3" />
+      </div>
+    </div>
+  );
+}
 
 /** The limits popover (U-51, its way into the account per U-51a): every limit with its name and
  *  reset time, the tightest one marked, ending with the "Hesabı aç" button that opens the
@@ -445,12 +465,7 @@ export function SidebarAccounts({
             aria-busy={skeleton ? 'true' : undefined}
           >
             {skeleton ? (
-              <div data-skeleton="" className="grid">
-                <SkeletonStyle />
-                {[0, 1, 2].map((index) => (
-                  <AccountCardSkeleton key={index} />
-                ))}
-              </div>
+              <AccountsSkeletonBody />
             ) : cards.length === 0 ? (
               <p className="px-1 pb-1 text-xs text-inkdim">{t(locale, 'accounts.empty')}</p>
             ) : (
