@@ -17,6 +17,7 @@ export interface QueueItem {
   readonly tier?: Tier; // from stageRouting; the executor resolves it to a model for an unpinned route
   readonly sameProviderReview?: true; // a review stage found no other provider in the chain
   readonly handoffOf?: RunId; // the failed run this item continues from through the handoff pack (A-65)
+  readonly requeryFirst?: true; // a scheduled resume: the account's quota is re-read before the item may start (A-101)
 }
 
 export interface RunningRun {

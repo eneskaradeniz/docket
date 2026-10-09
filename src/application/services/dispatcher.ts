@@ -27,11 +27,54 @@ import type {
 import { combinedSpendStatus, decideDispatch, deriveWorkOrderState, err, headroom, nextAction, ok, orderForReview, stageRouting } from '../../domain/index';
 
 import { catalogOrEmpty, matchIdFor } from './match-id';
-import type { AccountRecord, AppDeps, RunRecord } from '../ports/index';
-import { resolveRoute, type RouteError } from '../use-cases/index';
+import type { AccountRecord, AppDeps, QuotaProbeResolver, RunRecord } from '../ports/index';
+import { pollQuota, resolveRoute, type RouteError } from '../use-cases/index';
 
 export interface DispatcherConfig {
   readonly limits: DispatchLimits;
+  /** Without it a `requeryFirst` item is not re-queried and starts like any other (A-102). */
+  readonly probes?: QuotaProbeResolver;
+}
+
+/** A failed poll for one item is counted; this many in a row release it so it is never stuck (A-104). */
+const REQUERY_FAILURES_MAX = 3;
+
+// Consecutive failed re-queries per queue item. It lives beside the queue port it describes rather
+// than on the item: the item's shape is fixed by the domain, and a restart losing the count only
+// grants the item a few more polls before the release.
+const requeryFailures = new WeakMap<object, Map<QueueItemId, number>>();
+
+/**
+ * A-102/A-104: one poll per account for the due `requeryFirst` items. Returns the ids held back
+ * this tick; the next tick decides with the polled meters.
+ */
+async function requeryDue(
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'queue' | 'accounts' | 'capabilities'>,
+  probes: QuotaProbeResolver,
+  queue: readonly QueueItem[],
+  now: EpochMs,
+): Promise<ReadonlySet<QueueItemId>> {
+  const due = queue.filter((item) => item.requeryFirst === true && item.notBefore !== undefined && item.notBefore <= now);
+  const failures = requeryFailures.get(deps.queue) ?? new Map<QueueItemId, number>();
+  requeryFailures.set(deps.queue, failures);
+
+  const byAccount = new Map<AccountId, QueueItem[]>();
+  for (const item of due) byAccount.set(item.route.accountId, [...(byAccount.get(item.route.accountId) ?? []), item]);
+
+  for (const [accountId, items] of byAccount) {
+    const polled = await pollQuota(deps, probes, { accountId });
+    for (const item of items) {
+      const failed = (failures.get(item.id) ?? 0) + (polled.ok ? 0 : 1);
+      if (polled.ok || failed >= REQUERY_FAILURES_MAX) {
+        const { requeryFirst: _cleared, ...released } = item;
+        await deps.queue.put(released);
+        failures.delete(item.id);
+      } else {
+        failures.set(item.id, failed);
+      }
+    }
+  }
+  return new Set(due.map((item) => item.id));
 }
 
 export interface TickResult {
@@ -99,12 +142,19 @@ export const spendWindow = (
 };
 
 export async function dispatcherTick(
-  deps: Pick<AppDeps, 'clock' | 'queue' | 'runs' | 'accounts' | 'workOrders' | 'definitions' | 'projects' | 'modelCatalog'>,
+  deps: Pick<
+    AppDeps,
+    'clock' | 'ids' | 'log' | 'capabilities' | 'queue' | 'runs' | 'accounts' | 'workOrders' | 'definitions' | 'projects' | 'modelCatalog'
+  >,
   config: DispatcherConfig,
   start: (item: QueueItem) => void,
 ): Promise<TickResult> {
   const now = deps.clock.now();
-  const queue = await deps.queue.list();
+  const listed = await deps.queue.list();
+  // Held-back items take no part in this tick's decisions: the poll that releases them is this
+  // tick's whole work for them (A-102).
+  const heldBack = config.probes === undefined ? new Set<QueueItemId>() : await requeryDue(deps, config.probes, listed, now);
+  const queue = listed.filter((item) => !heldBack.has(item.id));
 
   // The join with the work orders names each run's repo; a run whose work order is gone
   // cannot be attributed and therefore takes part in no limit.
@@ -232,7 +282,9 @@ export async function applyLimitDecision(
     route,
     priority: 0,
     enqueuedAt: deps.clock.now(),
-    ...(input.decision.kind === 'schedule_resume' ? { notBefore: input.decision.at } : {}),
+    ...(input.decision.kind === 'schedule_resume'
+      ? { notBefore: input.decision.at, ...(input.decision.requeryFirst ? { requeryFirst: true as const } : {}) }
+      : {}),
     // A-65: the pack rule keys on the ACCOUNT, not the provider — a second account of the same
     // provider is a different identity directory, so native resume cannot be assumed to see the
     // earlier history and the handoff pack is the one continuation mechanism.

@@ -996,3 +996,8 @@ The changes rows (added 2026-10-09, #855) name the gate R-61 defines: a zero the
 measures but cannot judge holds the stage in `gating` until a person attests one way or the
 other (A-96); a `noChangeNeeded` attestation passes and its refusal sends the stage through
 `onFail`.
+
+Addendum 2026-10-10 (#872): `QueueItem` gains one optional field, `readonly requeryFirst?: true` — a
+scheduled resume whose account quota is re-read before the item may start. The domain only carries
+it: `decideDispatch` ignores it and its decisions are unchanged. The application owns the re-query
+(A-101..A-104).
