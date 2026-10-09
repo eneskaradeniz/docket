@@ -238,6 +238,7 @@ describe('work-order detail store', () => {
       asks: [],
       problem: null,
       lastOutcome: null,
+      stageFiles: null,
     });
     const loading = store.load(WO_ID);
     expect(store.state().loading).toBe(true);

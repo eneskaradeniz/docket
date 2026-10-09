@@ -23,7 +23,9 @@ export type Query =
   | { readonly type: 'providers.marks' }
   | { readonly type: 'run.events'; readonly runId: string }
   | { readonly type: 'permissions.open' }
-  | { readonly type: 'app.update' };
+  | { readonly type: 'app.update' }
+  | { readonly type: 'workOrders.stageFiles'; readonly id: string }
+  | { readonly type: 'workOrders.readStageFile'; readonly id: string; readonly path: string };
 
 export interface AttentionItem {
   readonly workOrderId: string;

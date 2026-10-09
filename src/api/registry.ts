@@ -67,4 +67,6 @@ export const QUERY_REGISTRY: Record<Query['type'], RegistryEntry> = {
   'run.events': { input: 'runId: RunId' },
   'permissions.open': { input: 'no input' },
   'app.update': { input: 'no input' },
+  'workOrders.stageFiles': { input: 'id: WorkOrderId' },
+  'workOrders.readStageFile': { input: 'id: WorkOrderId, path: string' },
 };

@@ -22,6 +22,7 @@ import type {
   WorkOrderState,
 } from '../../domain/index';
 import type { LabelKey } from '../labels/keys';
+import type { StageFilesView, WorktreeFilePreview } from '../../application/index';
 import type { LivePaneStore } from './live-pane';
 import { commandResultKey, isQueryFailure } from './results';
 
@@ -141,6 +142,8 @@ export interface WorkOrderDetailState {
   readonly problem: string | null;
   /** The latest intent's U-8 mapping; null before the first intent. */
   readonly lastOutcome: IntentOutcome | null;
+  /** The stage files if the work order is currently awaiting_human. null otherwise. */
+  readonly stageFiles: StageFilesView | null;
 }
 
 export interface GateDecideInput {
@@ -171,6 +174,7 @@ export interface WorkOrderDetailStore {
   enqueue(): Promise<IntentOutcome>;
   answerPermission(input: PermissionAnswerInput): Promise<IntentOutcome>;
   approveDeploy(input: DeployApproveInput): Promise<IntentOutcome>;
+  readStageFile(path: string): Promise<WorktreeFilePreview | null>;
   subscribe(listener: () => void): () => void;
 }
 
@@ -304,6 +308,7 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     asks: [],
     problem: null,
     lastOutcome: null,
+    stageFiles: null,
   };
   // The work order the store is bound to: change events re-query it, intents act on it.
   let workOrderId: string | null = null;
@@ -341,19 +346,28 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     if (attempt !== attempts) return;
     if (isQueryFailure(reply)) {
       // The previous view and gate list stay exactly as they were; only the problem appears.
-      set({ ...state, loading: false, problem: reply.code });
+      set({ ...state, loading: false, problem: reply.code, stageFiles: null });
       return;
     }
     // The contract of the detail query: a reply that is not a failure is the detail view, and
     // the query has already resolved the definitions server-side — the flow and the environments
     // ride the reply, so the stage list derives without a second read.
     const view = reply as WorkOrderDetailView;
+    let stageFiles: StageFilesView | null = null;
+    if (view.state.status === 'awaiting_human') {
+      const stageFilesReply = await api.query({ type: 'workOrders.stageFiles', id } satisfies Query);
+      if (!isQueryFailure(stageFilesReply)) {
+        stageFiles = stageFilesReply as StageFilesView;
+      }
+    }
+    if (attempt !== attempts) return;
     set({
       ...state,
       loading: false,
       view,
       stages: stageGates(view.flow, view.environments, view.state),
       problem: null,
+      stageFiles,
     });
     // A run still going is mounted into the live pane; the pane itself ignores a repeat attach.
     const active = newestActiveRun(view);
@@ -455,6 +469,12 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
         commit: input.commit,
         ...(input.confirmedEnvironment !== undefined ? { confirmedEnvironment: input.confirmedEnvironment } : {}),
       });
+    },
+    readStageFile: async (path: string) => {
+      if (workOrderId === null) return null;
+      const reply = await api.query({ type: 'workOrders.readStageFile', id: workOrderId, path } satisfies Query);
+      if (isQueryFailure(reply)) return null;
+      return reply as WorktreeFilePreview;
     },
   };
 };

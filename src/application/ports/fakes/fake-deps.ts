@@ -25,6 +25,7 @@ import { createFakeScratchDirs } from './fake-scratch-dirs';
 import { createFakeSecretVault } from './fake-secret-vault';
 import { createFakeTransportResolver } from './fake-transport';
 import { createFakeWorkOrderRepo } from './fake-work-order-repo';
+import { createFakeWorktreeFiles } from './fake-worktree-files';
 
 /**
  * Builds a fresh bundle of every fake; `overrides` replaces exactly the ports it names, so a test
@@ -58,5 +59,6 @@ export const createFakeDeps = (overrides: Partial<AppDeps> = {}): AppDeps => ({
   accountTests: createFakeAccountTestRepo(),
   scratch: createFakeScratchDirs(),
   repoFolders: createFakeRepoFolders(),
+  worktreeFiles: createFakeWorktreeFiles(),
   ...overrides,
 });

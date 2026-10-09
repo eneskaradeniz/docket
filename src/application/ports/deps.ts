@@ -23,6 +23,7 @@ import type { ScratchDirs } from './scratch-dirs';
 import type { SecretVault } from './secret-vault';
 import type { CommandRunner, EvidenceChecker, SecretScanner, Worktrees } from './repo-tools';
 import type { WorkOrderRepo } from './work-order-repo';
+import type { WorktreeFiles } from './worktree-files';
 
 export interface AppDeps {
   readonly clock: Clock;
@@ -52,4 +53,5 @@ export interface AppDeps {
   readonly accountTests: AccountTestRepo;
   readonly scratch: ScratchDirs;
   readonly repoFolders: RepoFolders;
+  readonly worktreeFiles: WorktreeFiles;
 }

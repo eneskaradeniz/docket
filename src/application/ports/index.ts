@@ -32,3 +32,4 @@ export * from './scratch-dirs';
 export * from './secret-vault';
 export * from './update-checker';
 export * from './work-order-repo';
+export * from './worktree-files';
