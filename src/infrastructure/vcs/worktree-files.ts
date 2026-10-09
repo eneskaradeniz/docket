@@ -1,4 +1,4 @@
-import { open, realpath, stat } from 'node:fs/promises';
+import { lstat, open, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, resolve, sep } from 'node:path';
 
 import { err, ok, type Result } from '../../domain/index';
@@ -6,6 +6,11 @@ import type { WorktreeFileEntry, WorktreeFileError, WorktreeFilePreview, Worktre
 import { runGit } from './git';
 
 const MAX_SIZE = 256 * 1024;
+
+// fs rejections are plain objects carrying a string errno `code`; narrow instead of assuming a type.
+function hasErrnoCode(e: unknown, code: string): boolean {
+  return typeof e === 'object' && e !== null && 'code' in e && e.code === code;
+}
 
 export function createWorktreeFiles(): WorktreeFiles {
   return {
@@ -15,9 +20,10 @@ export function createWorktreeFiles(): WorktreeFiles {
         throw new Error('not a git work tree');
       }
 
-      const changed = await runGit(worktreePath, ['diff', '--name-only', '--diff-filter=ACMR', 'HEAD']);
+      // core.quotepath=off: non-ASCII paths must come back verbatim, not as quoted octal escapes.
+      const changed = await runGit(worktreePath, ['-c', 'core.quotepath=off', 'diff', '--name-only', '--diff-filter=ACMR', 'HEAD']);
       if (changed.exitCode !== 0) throw new Error(`git diff failed: ${changed.stderr}`);
-      const untracked = await runGit(worktreePath, ['ls-files', '--others', '--exclude-standard']);
+      const untracked = await runGit(worktreePath, ['-c', 'core.quotepath=off', 'ls-files', '--others', '--exclude-standard']);
       if (untracked.exitCode !== 0) throw new Error(`git ls-files failed: ${untracked.stderr}`);
 
       const paths = new Set<string>();
@@ -33,12 +39,14 @@ export function createWorktreeFiles(): WorktreeFiles {
       const entries: WorktreeFileEntry[] = [];
       for (const p of sortedPaths) {
         try {
-          const s = await stat(resolve(worktreePath, p));
+          // lstat, not stat: a symlink is not a regular file, so it never enters the list —
+          // a link pointing outside the worktree must not surface as a readable entry.
+          const s = await lstat(resolve(worktreePath, p));
           if (s.isFile()) {
             entries.push({ path: p, sizeBytes: s.size });
           }
         } catch {
-          // ignore stat errors
+          // The path can vanish between git's listing and this stat; skip it.
         }
       }
       return entries;
@@ -61,8 +69,8 @@ export function createWorktreeFiles(): WorktreeFiles {
       let realTarget: string;
       try {
         realTarget = await realpath(target);
-      } catch (e: any) {
-        if (e.code === 'ENOENT') return err('not_found');
+      } catch (e: unknown) {
+        if (hasErrnoCode(e, 'ENOENT')) return err('not_found');
         throw e;
       }
 
@@ -103,9 +111,7 @@ export function createWorktreeFiles(): WorktreeFiles {
       }
 
       const linesToSplit = text.endsWith('\n') ? text.slice(0, -1) : text;
-      // if file is empty string, split returns [''] which is 1 line. Wait:
-      // "a trailing newline ends the last line, it does not start an empty one"
-      // So if text is empty, it returns ['']. Is that correct? Let's check text === ''
+      // An empty file has no lines: `split('\n')` on '' would answer [''], one phantom line.
       const allLines = linesToSplit === '' ? [] : linesToSplit.split('\n');
       const truncated = allLines.length > maxLines;
       const lines = truncated ? allLines.slice(0, maxLines) : allLines;

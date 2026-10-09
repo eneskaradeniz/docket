@@ -54,6 +54,30 @@ describe('WorktreeFiles', () => {
       ]);
     });
 
+    it('I-39: listChanged skips symlinks — a link pointing outside never enters the list', async () => {
+      if (type === 'sqlite') {
+        await writeFile(join(cwd, 'plain.txt'), 'plain');
+        await writeFile(join(cwd, 'target.txt'), 'target');
+        const outDir = await mkdtemp(join(tmpdir(), 'docket-out-'));
+        await writeFile(join(outDir, 'outside.txt'), 'outside');
+        await symlink(join(outDir, 'outside.txt'), join(cwd, 'link-out.txt'));
+        await symlink('target.txt', join(cwd, 'link-in.txt'));
+
+        const list = await adapter.listChanged(cwd);
+        expect(list.map((entry) => entry.path)).toEqual(['plain.txt', 'target.txt']);
+        await rm(outDir, { recursive: true, force: true });
+      }
+    });
+
+    it('I-39: listChanged returns non-ASCII paths verbatim (core.quotepath=off)', async () => {
+      if (type === 'sqlite') {
+        const path = 'şahıs-öge.md';
+        await writeFile(join(cwd, path), 'öge');
+        const list = await adapter.listChanged(cwd);
+        expect(list).toEqual([{ path, sizeBytes: 4 }]);
+      }
+    });
+
     it('I-40: readText guard 1: .. or outside symlink returns outside_worktree', async () => {
       const res = await adapter.readText(cwd, '../foo', 10);
       expect(res.ok).toBe(false);
