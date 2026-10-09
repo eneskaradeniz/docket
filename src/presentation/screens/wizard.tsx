@@ -21,10 +21,12 @@ import { AccountsScanning } from '../components/accounts-scanning';
 import { ActionButton } from '../components/action-button';
 import { AppearanceRows } from '../components/appearance-rows';
 import { DragOrderList, type DragOrderItem } from '../components/drag-order-list';
+import { InfoBubble } from '../components/info-bubble';
 import { KeyMoveCard } from '../components/key-move-card';
 import { Listbox } from '../components/listbox';
 import { MeterList } from '../components/meter-list';
 import { ProviderMark } from '../components/provider-mark';
+import { Skeleton, SkeletonStyle } from '../components/skeleton';
 import { StatusLamp } from '../components/status-lamp';
 import { WindowFrame, WindowTitle } from '../components/window-frame';
 import { policyLabelKey, createAccountEditorStore, RESERVE_PRESETS, type LimitPolicy } from '../stores/account-editor';
@@ -35,8 +37,8 @@ import type { LocaleStore } from '../stores/locale';
 import type { ProviderMarksStore } from '../stores/provider-marks';
 import { RECOMMENDED } from '../stores/recommended';
 import type { ThemeStore } from '../stores/theme';
-import { toastOutcome } from '../stores/toasts';
-import type { BudgetRow, FinishPhase, WizardAccountRow, WizardState, WizardStep, WizardStore } from '../stores/wizard';
+import { toast, toastOutcome } from '../stores/toasts';
+import type { BudgetRow, FinishPhase, WizardAccountRow, WizardCapabilityRow, WizardState, WizardStep, WizardStore } from '../stores/wizard';
 import { WIZARD_EDITOR_TABS, WIZARD_STEPS } from '../stores/wizard';
 
 export interface WizardScreenProps {
@@ -161,32 +163,114 @@ function Accounts({ state, store, locale, marks }: { readonly state: WizardState
   );
 }
 
-function Capabilities({ state, store, locale }: { readonly state: WizardState; readonly store: WizardStore; readonly locale: Locale }) {
+/** One Yetenekler row (U-59): the Hesaplar card's single-line form — the kind in mono, the name,
+ *  no icon. The ⓘ sits outside the toggle so reading a row never picks it; an imported row is
+ *  checked and disabled with "Eklendi" and its toggle is dead. */
+function CapabilityRow({ row, state, store, locale }: {
+  readonly row: WizardCapabilityRow;
+  readonly state: WizardState;
+  readonly store: WizardStore;
+  readonly locale: Locale;
+}) {
+  // The ⓘ popover's one body: the description, the command or path, then the Kaynaklar list —
+  // one "Asistan · Hesap" per source, the group titles themselves.
+  const sources = row.sources.map((id) => state.capabilityGroups.find((entry) => entry.id === id)?.title ?? id);
+  const info = [
+    row.description,
+    row.command !== null ? `${t(locale, 'wizard.capabilities.command')}: ${row.command}` : null,
+    row.path !== null ? `${t(locale, 'wizard.capabilities.path')}: ${row.path}` : null,
+    `${t(locale, 'wizard.capabilities.sources')}: ${sources.join(' · ')}`,
+  ]
+    .filter((part): part is string => part !== null)
+    .join(' · ');
+  const checked = row.imported || row.selected;
   return (
-    <ul className="m-0 grid list-none gap-2 p-0">
-      {state.capabilities.map((capability) => (
-        <li key={capability.id}>
-          <button
-            type="button"
-            role="checkbox"
-            aria-checked={capability.selected}
-            onClick={() => store.toggleCapability(capability.id)}
-            className={`flex w-full items-center gap-3 rounded-card border px-3.5 py-3 text-left hover:border-bord ${capability.selected ? 'border-bord bg-raised' : 'border-hairline bg-surface'}`}
-          >
-            {/* Technical terms (MCP, Skill, Hook, Context) are never translated. */}
-            <span className="flex-none font-mono text-[11px] text-inkdim">{capability.kind}</span>
-            <span className="min-w-0 flex-1 truncate text-ink">{capability.name}</span>
-            <span
-              aria-hidden="true"
-              className={`grid h-5 w-5 flex-none place-items-center rounded-full border-[1.5px] text-[11px] ${capability.selected ? 'border-signal bg-signal text-signal-ink' : 'border-bord text-transparent'}`}
-            >
-              ✓
-            </span>
-          </button>
-        </li>
+    <li className="border-t border-hairline first:border-t-0" data-cap-row={row.identity}>
+      <div className={`flex min-h-[52px] items-center gap-3 px-3.5 py-2 ${row.imported ? '' : 'hover:bg-raised'}`}>
+        <button
+          type="button"
+          role="checkbox"
+          aria-checked={checked}
+          disabled={row.imported}
+          onClick={() => store.toggleCapability(row.identity)}
+          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+        >
+          {/* Technical terms (MCP, Skill, Context) are never translated. */}
+          <span className="flex-none font-mono text-[11px] text-inkdim">{row.kind}</span>
+          <span className="min-w-0 flex-1 truncate text-[13.5px] text-ink">{row.name}</span>
+          {row.imported ? (
+            <span className="flex-none rounded-full bg-raised px-2 py-0.5 text-[11px] font-semibold text-inkdim">{t(locale, 'wizard.capabilities.added')}</span>
+          ) : null}
+        </button>
+        <InfoBubble locale={locale} subject={row.name} body={info} />
+        <span
+          aria-hidden="true"
+          className={`grid h-5 w-5 flex-none place-items-center rounded-full border-[1.5px] text-[11px] ${checked ? 'border-signal bg-signal text-signal-ink' : 'border-bord text-transparent'}`}
+        >
+          ✓
+        </span>
+      </div>
+    </li>
+  );
+}
+
+/** Yetenekler's skeleton while its one query runs (U-58): the Hesaplar pattern — placeholder
+ *  groups about the size of the real ones, each row a single line. */
+const CapabilitiesSkeleton = () => (
+  <div aria-hidden="true" className="grid gap-2.5" data-cap-skeleton="">
+    {[0, 1].map((group) => (
+      <section key={group} className="overflow-hidden rounded-card border border-hairline bg-surface">
+        <div className="flex items-center gap-2.5 border-b border-hairline bg-band px-3.5 py-2.5">
+          <Skeleton width="110px" height="14px" radius="control" />
+        </div>
+        <ul className="m-0 list-none p-0">
+          {[0, 1].map((row) => (
+            <li key={row} className="border-t border-hairline first:border-t-0">
+              <div className="flex min-h-[52px] items-center gap-3 px-3.5 py-2">
+                <Skeleton width="42px" height="11px" radius="control" className="flex-none" />
+                <Skeleton width="36%" height="13px" radius="control" />
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
+    ))}
+  </div>
+);
+
+function Capabilities({ state, store, locale }: { readonly state: WizardState; readonly store: WizardStore; readonly locale: Locale }) {
+  if (state.capabilitiesLoading) {
+    return (
+      <div aria-busy="true">
+        <SkeletonStyle />
+        <CapabilitiesSkeleton />
+        <span className="sr-only">{t(locale, 'wizard.reason.capabilities')}</span>
+      </div>
+    );
+  }
+  return (
+    <div className="grid gap-3">
+      {state.capabilityGroups.map((group) => (
+        <section key={group.id} data-cap-group={group.id} className="overflow-hidden rounded-card border border-hairline bg-surface">
+          <h2 className="m-0 flex items-center gap-2 border-b border-hairline bg-band px-3.5 py-2.5 text-[13px] font-bold text-ink">
+            {group.title}
+          </h2>
+          <ul className="m-0 list-none p-0">
+            {group.rows.map((row) => (
+              <CapabilityRow key={row.identity} row={row} state={state} store={store} locale={locale} />
+            ))}
+          </ul>
+        </section>
       ))}
-      <li className="sr-only">{t(locale, 'wizard.step.capabilities')}</li>
-    </ul>
+      {state.capabilityTruncated ? (
+        <p data-cap-truncated="" className="m-0 text-[12.5px] text-inkdim">
+          {t(locale, 'wizard.capabilities.truncated')}
+        </p>
+      ) : null}
+      <p data-cap-count="" className="m-0 text-[13px] font-semibold text-inkdim">
+        {t(locale, 'wizard.capabilities.count').replace('{n}', String(state.capabilityPicked))}
+      </p>
+    </div>
   );
 }
 
@@ -441,23 +525,38 @@ export function Budget({ state, store, locale, marks }: { readonly state: Wizard
   );
 }
 
-/** The finish's four lines (U-49), in the walking order the store's phases publish in. */
-const FINISH_PHASES: readonly FinishPhase[] = ['accounts', 'order', 'budget', 'home'];
+/** The finish's lines (U-49), in the walking order the store's phases publish in. The capability
+ *  line (U-60) is drawn only when Yetenekler stood with something to walk through — a wizard that
+ *  skipped the step never sees its import line. */
+const FINISH_PHASES_ALL: readonly FinishPhase[] = ['accounts', 'capabilities', 'order', 'budget', 'home'];
 const FINISH_LINE_KEY: Readonly<Record<FinishPhase, LabelKey>> = {
   accounts: 'wizard.finish.line.accounts',
+  capabilities: 'wizard.finish.line.capabilities',
   order: 'wizard.finish.line.order',
   budget: 'wizard.finish.line.budget',
   home: 'wizard.finish.line.home',
 };
 
-/** The window body while "Kurulumu bitir" runs (U-49): four lines, each a spinner until its real
+/** The rejection codes the import can answer (A-93), each with its own label — never a raw code. */
+const REJECT_KEY: Readonly<Record<string, LabelKey>> = {
+  not_found: 'wizard.capabilities.reject.not_found',
+  invalid_name: 'wizard.capabilities.reject.invalid_name',
+  id_taken: 'wizard.capabilities.reject.id_taken',
+  missing_command: 'wizard.capabilities.reject.missing_command',
+  missing_path: 'wizard.capabilities.reject.missing_path',
+  invalid_definition: 'wizard.capabilities.reject.invalid_definition',
+};
+
+/** The window body while "Kurulumu bitir" runs (U-49): the lines, each a spinner until its real
  *  step answers and a drawn check from then on. A failing line keeps its place with its reason
- *  and the one way on. */
+ *  and the one way on. Under the list, the import's rejected rows are named with their reason
+ *  (U-60) — the walk never stops for them. */
 function FinishProgress({ state, store, locale }: { readonly state: WizardState; readonly store: WizardStore; readonly locale: Locale }) {
-  const at = state.finishPhase === null ? -1 : FINISH_PHASES.indexOf(state.finishPhase);
+  const phases = state.capabilitiesLive ? FINISH_PHASES_ALL : FINISH_PHASES_ALL.filter((phase) => phase !== 'capabilities');
+  const at = state.finishPhase === null ? -1 : phases.indexOf(state.finishPhase);
   return (
     <div className="grid max-w-[440px] gap-3 pt-1" data-finish-list="">
-      {FINISH_PHASES.map((phase, index) => {
+      {phases.map((phase, index) => {
         const standing = index < at ? 'done' : index > at ? 'wait' : state.finished !== null ? 'done' : state.finishError !== null ? 'error' : 'busy';
         return (
           <div
@@ -497,6 +596,12 @@ function FinishProgress({ state, store, locale }: { readonly state: WizardState;
           </div>
         );
       })}
+      {state.capabilityRejects.length > 0 ? (
+        <p data-cap-rejects="" className="m-0 max-w-[440px] text-[12.5px] text-inkdim">
+          {t(locale, 'wizard.capabilities.rejected.note')}{' '}
+          {state.capabilityRejects.map((reject) => `${reject.name} (${t(locale, REJECT_KEY[reject.reason] ?? 'wizard.capabilities.reject.other')})`).join(', ')}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -543,6 +648,14 @@ export function WizardScreen({ store, locale, localeStore, themeStore, marks }: 
   useEffect(() => {
     if (lastOutcome !== null && !lastOutcome.result.ok) toastOutcome(locale, lastOutcome);
   }, [lastOutcome, locale]);
+  // The import's rejected rows (U-60) ride the handoff as the one warn toast: the window's fade
+  // would hide the in-window note before it could be read.
+  const finishedState = state.finished;
+  const rejects = state.capabilityRejects;
+  useEffect(() => {
+    if (finishedState === null || rejects.length === 0) return;
+    toast({ type: 'warn', text: t(locale, 'wizard.capabilities.rejected.toast').replace('{list}', rejects.map((reject) => reject.name).join(', ')) });
+  }, [finishedState, rejects, locale]);
   // The finished handoff: Anasayfa is already open behind the overlay; the fade is the window's
   // own last step, and ackFinish takes it down only then.
   const leaving = state.finished !== null;

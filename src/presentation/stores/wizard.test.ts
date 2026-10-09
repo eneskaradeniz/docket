@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Api } from '../../api/api';
-import type { Command, CommandResult } from '../../api/commands';
+import type { CapabilityImportResultView, Command, CommandResult } from '../../api/commands';
 import type { Query, SettingsAccountView } from '../../api/queries';
 import type { Actor } from '../../domain/index';
 import { createWizardStore, WIZARD_EDITOR_TABS, type WizardStore } from './wizard';
@@ -92,9 +92,15 @@ interface Fake extends Pick<Api, 'query' | 'command'> {
   setProviders(providers: readonly Record<string, unknown>[]): void;
   setAccounts(accounts: readonly SettingsAccountView[]): void;
   setQuota(reply: unknown): void;
+  setCapabilities(view: unknown): void;
+  failCapabilities(): void;
+  /** The rows `capabilities.import` answers with; absent means every identity imports. */
+  setImportResults(rows: readonly CapabilityImportResultView[]): void;
   failOn(type: Command['type'], result: CommandResult): void;
   /** Holds every command of a type until resolved — a finish's real step, made observable. */
   holdOn(type: Command['type']): { readonly resolve: () => void };
+  /** Holds every query of a type until resolved — Yetenekler's read, made observable. */
+  holdQuery(type: Query['type']): { readonly resolve: () => void };
 }
 
 const claudeProvider = { defId: 'claude', name: 'Claude Code', installUrl: null, binPath: '/usr/bin/claude', version: null, loggedIn: true, optionalFlags: [] };
@@ -108,8 +114,12 @@ const fakeApi = (): Fake => {
   let providers: readonly Record<string, unknown>[] = [claudeProvider];
   let accounts: SettingsAccountView[] = [];
   let quota: unknown = { ok: false, code: 'not_found' };
+  let caps: unknown = { candidates: [], truncated: false };
+  let capsFail = false;
+  let importResults: readonly CapabilityImportResultView[] | null = null;
   const failures = new Map<string, CommandResult>();
   const holds = new Map<Command['type'], (() => void)[]>();
+  const queryHolds = new Map<Query['type'], (() => void)[]>();
   let adopted = 0;
   const settle = (command: Command): Promise<CommandResult> => {
     const failure = failures.get(command.type);
@@ -120,6 +130,12 @@ const fakeApi = (): Fake => {
       const isEndpoint = command.sourcePath.includes('zai');
       accounts.push(accountView(id, command.label, isEndpoint ? 'api_key' : 'subscription'));
       return Promise.resolve({ ok: true, id });
+    }
+    if (command.type === 'capabilities.import') {
+      return Promise.resolve({
+        ok: true,
+        results: importResults ?? command.identities.map((identity) => ({ identity, status: 'imported', id: `cap-${identity.length}`, reason: null })),
+      });
     }
     return Promise.resolve({ ok: true });
   };
@@ -148,6 +164,15 @@ const fakeApi = (): Fake => {
     setQuota: (reply) => {
       quota = reply;
     },
+    setCapabilities: (view) => {
+      caps = view;
+    },
+    failCapabilities: () => {
+      capsFail = true;
+    },
+    setImportResults: (rows) => {
+      importResults = rows;
+    },
     failOn: (type, result) => failures.set(type, result),
     holdOn: (type) => {
       holds.set(type, []);
@@ -159,24 +184,41 @@ const fakeApi = (): Fake => {
         },
       };
     },
+    holdQuery: (type) => {
+      queryHolds.set(type, []);
+      return {
+        resolve: () => {
+          const waiting = queryHolds.get(type) ?? [];
+          queryHolds.delete(type);
+          for (const go of waiting) go();
+        },
+      };
+    },
     query: (query) => {
       queries.push(query);
-      switch (query.type) {
-        case 'project.tree':
-          return Promise.resolve(tree);
-        case 'accounts.candidates':
-          return Promise.resolve(facts);
-        case 'providers.discovered':
-          return Promise.resolve(providers);
-        case 'settings.accounts':
-          return Promise.resolve({ accounts, bindings: [] });
-        case 'roles.list':
-          return Promise.resolve(roles);
-        case 'accounts.candidateQuota':
-          return Promise.resolve(quota);
-        default:
-          return Promise.resolve([]);
-      }
+      const answer = (): unknown => {
+        switch (query.type) {
+          case 'project.tree':
+            return tree;
+          case 'accounts.candidates':
+            return facts;
+          case 'providers.discovered':
+            return providers;
+          case 'settings.accounts':
+            return { accounts, bindings: [] };
+          case 'roles.list':
+            return roles;
+          case 'accounts.candidateQuota':
+            return quota;
+          case 'capabilities.candidates':
+            return capsFail ? { ok: false, code: 'internal' } : caps;
+          default:
+            return [];
+        }
+      };
+      const held = queryHolds.get(query.type);
+      if (held !== undefined) return new Promise((resolve) => { held.push(() => resolve(answer())); });
+      return Promise.resolve(answer());
     },
     command: (_actor, command) => {
       commands.push(command);
@@ -210,6 +252,25 @@ const toAccounts = async (bundle: Setup): Promise<void> => {
 const selectedIds = (store: WizardStore): readonly string[] => store.state().rows.filter((row) => row.selected).map((row) => row.id);
 
 const railOf = (store: WizardStore): readonly string[] => store.state().rail.map((entry) => `${entry.step}:${entry.standing}`);
+
+/** One capability candidate on the wire; the name derives from the identity unless given. */
+const capOf = (identity: string, patch: Record<string, unknown> = {}): Record<string, unknown> => ({
+  identity,
+  kind: 'mcp',
+  name: identity.replace(/^mcp:/, '').split('|')[0],
+  sources: ['acc-a'],
+  imported: false,
+  ...patch,
+});
+
+/** A wizard whose Hesaplar holds two stored accounts and whose Yetenekler read answers `caps`. */
+const toCapabilities = async (bundle: Setup, caps: readonly Record<string, unknown>[]): Promise<void> => {
+  bundle.api.setAccounts([accountView('acc-a', 'Kişisel', 'subscription'), accountView('acc-b', 'İş', 'subscription')]);
+  bundle.api.setCapabilities({ candidates: caps, truncated: false });
+  await bundle.store.open();
+  await bundle.store.next();
+  await bundle.store.next();
+};
 
 describe('wizard store (U-35, U-42)', () => {
   it('U-35: open with a project keeps the wizard hidden; no project shows it on Hoş geldin; an unreadable project read never suppresses it', async () => {
@@ -273,24 +334,193 @@ describe('wizard store (U-35, U-42)', () => {
     expect(selectedIds(bundle.store)).toEqual([keyOf('.claude'), keyOf('.claude-b')]);
   });
 
-  it('U-35: Yetenekler shows when a source holds capabilities and its picks are kept', async () => {
-    const api = fakeApi();
-    const store = createWizardStore({
-      api,
-      actor: userActor,
-      capabilities: [
-        { id: 'mcp:fs', name: 'fs', kind: 'MCP' },
-        { id: 'skill:lint', name: 'lint', kind: 'Skill' },
-      ],
+  it('U-35: Yetenekler shows when the read holds candidates and its picks are kept as identities, a draft until the finish', async () => {
+    const bundle = setup([claudeA]);
+    await toCapabilities(bundle, [capOf('mcp:fs|fs-server'), capOf('context:CLAUDE.md', { kind: 'context' })]);
+    expect(bundle.store.state().step).toBe('capabilities');
+    bundle.store.toggleCapability('context:CLAUDE.md');
+    expect(bundle.store.state().capabilityPicked).toBe(1);
+    // The pick survives the trip through the later steps — nothing is written before the finish.
+    await bundle.store.next();
+    await bundle.store.next();
+    expect(bundle.store.state().step).toBe('budget');
+    expect(bundle.store.state().capabilityPicked).toBe(1);
+    expect(bundle.api.commands).toEqual([]);
+  });
+
+  it('U-58: the read runs when Hesaplar completes and again on accounts.changed — never before an account exists', async () => {
+    // No stored account: the scan has nothing to walk (A-90), so the step is skipped and the
+    // query is never sent.
+    const none = setup([claudeA]);
+    none.api.setCapabilities({ candidates: [capOf('mcp:fs|fs')], truncated: false });
+    await none.store.open();
+    await none.store.next();
+    await none.store.next();
+    expect(none.store.state().step).toBe('budget');
+    expect(none.api.queries.filter((query) => query.type === 'capabilities.candidates')).toHaveLength(0);
+
+    const bundle = setup([claudeA]);
+    await toCapabilities(bundle, [capOf('mcp:fetch|npx')]);
+    expect(bundle.store.state().step).toBe('capabilities');
+    expect(bundle.api.queries.filter((query) => query.type === 'capabilities.candidates')).toHaveLength(1);
+    bundle.api.emit({ type: 'accounts.changed' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(bundle.api.queries.filter((query) => query.type === 'capabilities.candidates')).toHaveLength(2);
+  });
+
+  it('U-58: while the query runs the step holds its loading standing and the primary slot stays disabled until it resolves', async () => {
+    const bundle = setup([claudeA]);
+    bundle.api.setAccounts([accountView('acc-a', 'Kişisel', 'subscription')]);
+    bundle.api.setCapabilities({ candidates: [capOf('mcp:fetch|npx')], truncated: false });
+    const held = bundle.api.holdQuery('capabilities.candidates');
+    await bundle.store.open();
+    await bundle.store.next();
+    await bundle.store.next();
+    expect(bundle.store.state().step).toBe('capabilities');
+    expect(bundle.store.state().capabilitiesLoading).toBe(true);
+    expect(bundle.store.state().nextEnabled).toBe(false);
+    expect(bundle.store.state().reasonKey).toBe('wizard.reason.capabilities');
+    held.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(bundle.store.state().capabilitiesLoading).toBe(false);
+    expect(bundle.store.state().nextEnabled).toBe(true);
+  });
+
+  it('U-35a: an empty answer or a failed query skips Yetenekler — "–" in the rail and no error anywhere', async () => {
+    const empty = setup([]);
+    empty.api.setAccounts([accountView('acc-a', 'Kişisel', 'subscription')]);
+    empty.api.setCapabilities({ candidates: [], truncated: false });
+    await empty.store.open();
+    await empty.store.next();
+    await empty.store.next();
+    expect(empty.store.state().step).toBe('budget');
+    expect(empty.store.state().rail.find((entry) => entry.step === 'capabilities')?.standing).toBe('skipped');
+    expect(empty.store.state().lastOutcome).toBeNull();
+
+    const failed = setup([]);
+    failed.api.setAccounts([accountView('acc-a', 'Kişisel', 'subscription')]);
+    failed.api.failCapabilities();
+    await failed.store.open();
+    await failed.store.next();
+    await failed.store.next();
+    expect(failed.store.state().step).toBe('budget');
+    expect(failed.store.state().rail.find((entry) => entry.step === 'capabilities')?.standing).toBe('skipped');
+    // The error is non-blocking: the rail shows no error and neither does the end of the walk.
+    expect(failed.store.state().reasonKey).toBeNull();
+    expect(failed.store.state().lastOutcome).toBeNull();
+  });
+
+  it('U-59: one group per source account titled the way Hesaplar reads it; a shared identity is one capability whose checkbox is synced across its groups', async () => {
+    const bundle = setup([claudeA]);
+    await toCapabilities(bundle, [
+      capOf('mcp:fetch|npx', { sources: ['acc-a', 'acc-b'], command: 'npx', description: "Web'den içerik çeker" }),
+      capOf('mcp:db|db-server', { sources: ['acc-b'] }),
+    ]);
+    const state = bundle.store.state();
+    expect(state.capabilityGroups.map((group) => [group.id, group.title])).toEqual([
+      ['acc-a', 'Claude Code · Kişisel'],
+      ['acc-b', 'Claude Code · İş'],
+    ]);
+    expect(state.capabilityGroups[0]?.rows.map((row) => row.identity)).toEqual(['mcp:fetch|npx']);
+    expect(state.capabilityGroups[1]?.rows.map((row) => row.identity)).toEqual(['mcp:fetch|npx', 'mcp:db|db-server']);
+    // Toggling in one group syncs the other by identity; the summary counts the identity once.
+    bundle.store.toggleCapability('mcp:fetch|npx');
+    const synced = bundle.store.state();
+    expect(synced.capabilityGroups[0]?.rows[0]?.selected).toBe(true);
+    expect(synced.capabilityGroups[1]?.rows[0]?.selected).toBe(true);
+    expect(synced.capabilityPicked).toBe(1);
+    // The row carries what its ⓘ popover lists: the description, the command and the sources.
+    expect(synced.capabilityGroups[0]?.rows[0]?.command).toBe('npx');
+    expect(synced.capabilityGroups[0]?.rows[0]?.description).toBe("Web'den içerik çeker");
+    expect(synced.capabilityGroups[0]?.rows[0]?.sources).toEqual(['acc-a', 'acc-b']);
+  });
+
+  it('U-59: an imported row is checked and disabled with "Eklendi", is never sent to import and never counts in the summary; a truncated read notes it', async () => {
+    const bundle = setup([claudeA]);
+    await toCapabilities(bundle, [capOf('mcp:fs|fs', { imported: true }), capOf('mcp:fetch|npx')]);
+    bundle.api.setCapabilities({ candidates: [capOf('mcp:fs|fs', { imported: true }), capOf('mcp:fetch|npx')], truncated: true });
+    bundle.store.back();
+    bundle.store.back();
+    await bundle.store.next();
+    await bundle.store.next();
+    const row = bundle.store.state().capabilityGroups[0]?.rows.find((entry) => entry.identity === 'mcp:fs|fs');
+    expect(row?.imported).toBe(true);
+    expect(row?.selected).toBe(false);
+    expect(bundle.store.state().capabilityTruncated).toBe(true);
+    // The toggle is dead on an imported row and the summary counts nothing.
+    bundle.store.toggleCapability('mcp:fs|fs');
+    expect(bundle.store.state().capabilityPicked).toBe(0);
+  });
+
+  it('U-60: the finish walks a capability phase after the accounts phase — one import call with the distinct picked identities, none when nothing is picked', async () => {
+    const bundle = setup([]);
+    await toCapabilities(bundle, [capOf('mcp:fetch|npx', { sources: ['acc-a', 'acc-b'] }), capOf('mcp:db|db-server', { sources: ['acc-b'] })]);
+    bundle.store.toggleCapability('mcp:fetch|npx');
+    bundle.store.toggleCapability('mcp:db|db-server');
+    await bundle.store.next();
+    await bundle.store.next();
+    expect(bundle.store.state().step).toBe('budget');
+    const walk: string[] = [];
+    bundle.store.subscribe(() => {
+      const standing = bundle.store.state();
+      if (!standing.finishing && standing.finishError === null && standing.finished === null) return;
+      const mark = `${standing.finishPhase ?? '-'}${standing.finished !== null ? '+' : standing.finishError !== null ? '!' : ''}`;
+      if (walk[walk.length - 1] !== mark) walk.push(mark);
     });
-    await store.open();
-    await store.next();
-    await store.next();
-    expect(store.state().step).toBe('capabilities');
-    store.toggleCapability('skill:lint');
-    expect(store.state().capabilities.filter((entry) => entry.selected)).toHaveLength(1);
-    await store.next();
-    expect(store.state().step).toBe('budget');
+    await bundle.store.next();
+    // One call, both distinct identities, already-imported rows never in it.
+    expect(bundle.api.commands.filter((command) => command.type === 'capabilities.import')).toEqual([
+      { type: 'capabilities.import', identities: ['mcp:fetch|npx', 'mcp:db|db-server'] },
+    ]);
+    expect(walk).toEqual(['accounts', 'capabilities', 'order', 'budget', 'home', 'home+']);
+    expect(bundle.store.state().finished).toEqual({ accounts: 2 });
+    expect(bundle.store.state().capabilityRejects).toEqual([]);
+
+    // Nothing picked: no import call at all, and the finish keeps its four own lines (U-49).
+    const quiet = setup([]);
+    await toCapabilities(quiet, [capOf('mcp:fetch|npx')]);
+    await quiet.store.next();
+    await quiet.store.next();
+    const quietWalk: string[] = [];
+    quiet.store.subscribe(() => {
+      const standing = quiet.store.state();
+      if (!standing.finishing && standing.finishError === null && standing.finished === null) return;
+      const mark = `${standing.finishPhase ?? '-'}${standing.finished !== null ? '+' : ''}`;
+      if (quietWalk[quietWalk.length - 1] !== mark) quietWalk.push(mark);
+    });
+    await quiet.store.next();
+    expect(quiet.api.commands.filter((command) => command.type === 'capabilities.import')).toHaveLength(0);
+    expect(quietWalk).toEqual(['accounts', 'order', 'budget', 'home', 'home+']);
+    expect(quiet.store.state().finished).toEqual({ accounts: 2 });
+  });
+
+  it('U-60: a rejected row never blocks the finish and is listed with its name and reason; already_present counts as success', async () => {
+    const bundle = setup([]);
+    await toCapabilities(bundle, [capOf('mcp:fetch|npx'), capOf('mcp:db|db')]);
+    bundle.store.toggleCapability('mcp:fetch|npx');
+    bundle.store.toggleCapability('mcp:db|db');
+    bundle.api.setImportResults([
+      { identity: 'mcp:fetch|npx', status: 'already_present', id: 'cap-fetch', reason: null },
+      { identity: 'mcp:db|db', status: 'rejected', id: null, reason: 'id_taken' },
+    ]);
+    await bundle.store.next();
+    await bundle.store.next();
+    await bundle.store.next();
+    expect(bundle.store.state().finished).toEqual({ accounts: 2 });
+    expect(bundle.store.state().capabilityRejects).toEqual([{ name: 'db', reason: 'id_taken' }]);
+  });
+
+  it('U-60: a failed import call never blocks the finish — nothing is listed and the walk completes', async () => {
+    const bundle = setup([]);
+    await toCapabilities(bundle, [capOf('mcp:fetch|npx')]);
+    bundle.store.toggleCapability('mcp:fetch|npx');
+    bundle.api.failOn('capabilities.import', { ok: false, code: 'internal' });
+    await bundle.store.next();
+    await bundle.store.next();
+    await bundle.store.next();
+    expect(bundle.store.state().finished).toEqual({ accounts: 2 });
+    expect(bundle.store.state().finishError).toBeNull();
+    expect(bundle.store.state().capabilityRejects).toEqual([]);
   });
 
   it('U-35: Hesaplar is gated on one ready selected account; a token candidate stays "Anahtar gerekli" until the key-move switch is on; unreadable rows cannot be selected', async () => {

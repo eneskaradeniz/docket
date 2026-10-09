@@ -1,20 +1,32 @@
 // stores/wizard.ts — the setup wizard's machine (U-42): Hoş geldin → Hesaplar → Yetenekler →
 // Asistan sırası → Bütçe, then straight to Anasayfa. A step with nothing to decide is skipped and
-// reads "–" in the rail (Yetenekler while no capability source holds anything, Asistan sırası
-// under two selected accounts). Every choice is a draft held here: the selection and its key-move
-// switches (U-34), an account's editor draft (U-43), the spend consents (U-32) and the Bütçe
-// rows' reserve choice (U-48). Nothing is written before the finish; the finish adopts every
-// selected account, binds every role with the chosen chain and its recommended work style
-// (complete bindings, A-49), then lands the drafts — caps and consents among them — on the stored
-// accounts. Its four real phases (U-49) — accounts, order, budget, home — publish as they
-// complete, so the progress list's checks follow real replies, never a timer; the window stays
-// mounted while `finished` is set and leaves on `ackFinish`, after the shell's handoff and the
-// wizard's fade. `back` never touches an entry and does not exist on Hoş geldin. Discovery
-// candidates carry their route's billing (A-83a) and, before they are accounts, their quota is
-// read with `accounts.candidateQuota` (A-82). Failures map through U-8.
+// reads "–" in the rail (Yetenekler while its read has not finished with a candidate, U-58;
+// Asistan sırası under two selected accounts). Every choice is a draft held here: the selection
+// and its key-move switches (U-34), an account's editor draft (U-43), the spend consents (U-32),
+// the Bütçe rows' reserve choice (U-48) and the capability picks (U-59, identities until the
+// finish). Nothing is written before the finish; the finish adopts every selected account, binds
+// every role with the chosen chain and its recommended work style (complete bindings, A-49),
+// imports the picked capabilities in one call that never blocks the walk (U-60), then lands the
+// drafts — caps and consents among them — on the stored accounts. Its real phases (U-49) —
+// accounts, capabilities, order, budget, home — publish as they complete, so the progress list's
+// checks follow real replies, never a timer; the window stays mounted while `finished` is set and
+// leaves on `ackFinish`, after the shell's handoff and the wizard's fade. `back` never touches an
+// entry and does not exist on Hoş geldin. Discovery candidates carry their route's billing
+// (A-83a) and, before they are accounts, their quota is read with `accounts.candidateQuota`
+// (A-82). Failures map through U-8.
 import type { Api } from '../../api/api';
 import type { Command, CommandResult } from '../../api/commands';
-import type { CandidateQuotaView, Query, RoleListItem, SettingsAccountView, SettingsAccountsView, SettingsMeterView, SettingsPoolView } from '../../api/queries';
+import type {
+  CapabilityCandidateView,
+  CapabilityCandidatesView,
+  CandidateQuotaView,
+  Query,
+  RoleListItem,
+  SettingsAccountView,
+  SettingsAccountsView,
+  SettingsMeterView,
+  SettingsPoolView,
+} from '../../api/queries';
 import type { Actor } from '../../domain/index';
 import type { LabelKey } from '../labels/keys';
 import {
@@ -57,9 +69,9 @@ export const WIZARD_EDITOR_TABS: readonly EditorTab[] = ['general', 'usage', 'li
 export type RailStanding = 'done' | 'cur' | 'todo' | 'skipped';
 
 /** The finish's real phases (U-49), in the progress list's walking order: each maps to one line
- *  and to the work that makes it true — adoption, the chain's bindings, the drafts' writes, the
- *  leave for Anasayfa. */
-export type FinishPhase = 'accounts' | 'order' | 'budget' | 'home';
+ *  and to the work that makes it true — adoption, the capability import (U-60), the chain's
+ *  bindings, the drafts' writes, the leave for Anasayfa. */
+export type FinishPhase = 'accounts' | 'capabilities' | 'order' | 'budget' | 'home';
 
 export interface FinishError {
   /** The line the finish stopped on; the phases before it keep their checks. */
@@ -73,11 +85,33 @@ export interface RailEntry {
   readonly standing: RailStanding;
 }
 
-/** A capability a composed source offers (MCP · Skill · Hook · Context); none is composed today. */
-export interface WizardCapability {
-  readonly id: string;
+/** One Yetenekler row: the merged candidate (R-63) with its pick standing (U-59). A candidate
+ *  found in several accounts is one row — `sources` holds every account that found it. */
+export interface WizardCapabilityRow {
+  readonly identity: string;
+  readonly kind: 'mcp' | 'skill' | 'context';
   readonly name: string;
-  readonly kind: string;
+  readonly sources: readonly string[];
+  readonly command: string | null;
+  readonly path: string | null;
+  readonly description: string | null;
+  readonly imported: boolean;
+  readonly selected: boolean;
+}
+
+/** One Yetenekler group: the account whose config directory held the rows, titled the way
+ *  Hesaplar reads that account — "Asistan · Hesap" (U-59). */
+export interface WizardCapabilityGroup {
+  readonly id: string;
+  readonly title: string;
+  readonly rows: readonly WizardCapabilityRow[];
+}
+
+/** A rejected import row, as the end note lists it: the candidate's name and the rejection
+ *  code's own label key is decided by the screen (U-60). */
+export interface WizardCapabilityReject {
+  readonly name: string;
+  readonly reason: string;
 }
 
 /** The change events the wizard reads: an `accounts.changed` re-reads what it shows (U-44). */
@@ -87,8 +121,6 @@ export interface WizardStoreDeps {
   readonly api: Pick<Api, 'query' | 'command'>;
   /** Every issued command travels as this actor — the wizard acts as the user. */
   readonly actor: Actor;
-  /** What the composed capability source found; absent or empty skips Yetenekler. */
-  readonly capabilities?: readonly WizardCapability[];
   /** The api's change events; absent in tests that do not need them. */
   readonly changes?: WizardChangeSignal;
 }
@@ -172,7 +204,19 @@ export interface WizardState {
   /** The providers that are installed, for the account groups (an installed one always has a card). */
   readonly installed: readonly { readonly id: string; readonly name: string }[];
   readonly loading: boolean;
-  readonly capabilities: readonly (WizardCapability & { readonly selected: boolean })[];
+  /** Yetenekler (U-58): the query runs while the step is walked through; the skeleton holds it. */
+  readonly capabilitiesLoading: boolean;
+  /** One group per account the candidates name in `sources` (U-59). */
+  readonly capabilityGroups: readonly WizardCapabilityGroup[];
+  /** The scan found more than the cap (U-59): one note line, no pagination. */
+  readonly capabilityTruncated: boolean;
+  /** The summary line's "n yetenek": distinct selected, not-yet-imported identities (U-59). */
+  readonly capabilityPicked: number;
+  /** Whether Yetenekler stands with something to walk through — the finish list draws its
+   *  capability line only then (U-60). */
+  readonly capabilitiesLive: boolean;
+  /** The import's rejected rows, listed as the end note (U-60); empty while none. */
+  readonly capabilityRejects: readonly WizardCapabilityReject[];
   readonly order: readonly OrderEntry[];
   readonly budget: { readonly subscriptions: readonly BudgetRow[]; readonly payPerUse: readonly BudgetRow[] };
   /** The open editor window: its working copy of one account. */
@@ -386,6 +430,23 @@ export const settingsCommands = (real: SettingsAccountView, draft: DraftSettings
 const isQuotaView = (value: unknown): value is CandidateQuotaView =>
   typeof value === 'object' && value !== null && 'ok' in value && typeof value.ok === 'boolean';
 
+const isCapabilityCandidate = (value: unknown): value is CapabilityCandidateView =>
+  typeof value === 'object' &&
+  value !== null &&
+  'identity' in value &&
+  typeof value.identity === 'string' &&
+  'kind' in value &&
+  typeof value.kind === 'string' &&
+  'name' in value &&
+  typeof value.name === 'string' &&
+  'sources' in value &&
+  Array.isArray(value.sources) &&
+  'imported' in value &&
+  typeof value.imported === 'boolean';
+
+const isCandidatesView = (value: unknown): value is CapabilityCandidatesView =>
+  typeof value === 'object' && value !== null && 'candidates' in value && Array.isArray(value.candidates) && 'truncated' in value && typeof value.truncated === 'boolean';
+
 export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
   const { api, actor } = deps;
 
@@ -410,7 +471,17 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
   const adoptedIds = new Map<string, string>();
   /** The quota preview of each candidate not yet adopted (A-82), by source path. */
   const quotas = new Map<string, QuotaStanding>();
-  let capabilityPicks: ReadonlySet<string> = new Set((deps.capabilities ?? []).map((capability) => capability.id));
+  /** The picked capability identities — a draft until the finish, like every wizard choice. */
+  let capabilityPicks: ReadonlySet<string> = new Set();
+  /** Yetenekler's read (U-58): never read before an account exists (A-90's scan would find
+   *  nothing), read when Hesaplar completes and again whenever the adopted set changes. */
+  let capsLoading = false;
+  let capsRead = false;
+  let capsError = false;
+  let capsFacts: readonly CapabilityCandidateView[] = [];
+  let capsTruncated = false;
+  /** The import's rejected rows (U-60); set by the finish, kept for the end note. */
+  let importRejects: readonly WizardCapabilityReject[] = [];
   let editorWork: { readonly key: string; readonly settings: DraftSettings } | null = null;
   let lastOutcome: WizardOutcome | null = null;
   let loaded = false;
@@ -419,7 +490,6 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
   let completed = false;
   let openAttempts = 0;
 
-  const capabilities = deps.capabilities ?? [];
   const listeners = new Set<() => void>();
 
   const nameOf = (provider: string): string | null =>
@@ -483,10 +553,91 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
       autoSkipped: spendsMoney(entry.base.billing),
     }));
 
+  // --- Yetenekler (U-58 … U-60) -----------------------------------------------------------------
+
+  /** Whether Yetenekler stands with something to walk through: a read in flight (the step holds
+   *  its skeleton) or a finished read with at least one candidate. An empty answer or a failed
+   *  query skips the step (U-58). */
+  const capsLive = (): boolean => capsLoading || (capsRead && !capsError && capsFacts.length > 0);
+
+  /** One row per merged candidate: the pick is the identity, so a candidate found in several
+   *  accounts toggles once for all of its groups (U-59). An imported row never reads selected. */
+  const capabilityRows = (): readonly WizardCapabilityRow[] =>
+    capsFacts.map((fact) => ({
+      identity: fact.identity,
+      kind: fact.kind,
+      name: fact.name,
+      sources: fact.sources.filter((id): id is string => typeof id === 'string'),
+      command: fact.command ?? null,
+      path: fact.path ?? null,
+      description: fact.description ?? null,
+      imported: fact.imported,
+      selected: !fact.imported && capabilityPicks.has(fact.identity),
+    }));
+
+  /** One group per account the candidates name in `sources`, titled "Asistan · Hesap" the way
+   *  Hesaplar reads that account; the group count equals the number of distinct accounts (U-59). */
+  const capabilityGroups = (): readonly WizardCapabilityGroup[] => {
+    const rows = capabilityRows();
+    return existing
+      .filter((view) => rows.some((row) => row.sources.includes(view.id)))
+      .map((view) => {
+        const providerName = nameOf(view.provider);
+        return {
+          id: view.id,
+          title: providerName === null ? view.label : `${providerName} · ${view.label}`,
+          rows: rows.filter((row) => row.sources.includes(view.id)),
+        };
+      });
+  };
+
+  /** The read itself (A-94 — the query scans on every call). A failure is the skip standing:
+   *  empty facts, no error surface anywhere (U-58). */
+  const readCapabilities = async (): Promise<void> => {
+    // Never read before an account exists: the scan walks the account store's own identity
+    // directories (A-90), so the answer would be empty by construction — and a world whose last
+    // account left keeps no stale candidates either.
+    if (existing.length === 0) {
+      capsFacts = [];
+      capsTruncated = false;
+      capabilityPicks = new Set();
+      publish();
+      return;
+    }
+    capsLoading = true;
+    publish();
+    const reply: unknown = await api.query({ type: 'capabilities.candidates' });
+    if (isQueryFailure(reply) || !isCandidatesView(reply)) {
+      capsError = true;
+      capsFacts = [];
+      capsTruncated = false;
+    } else {
+      capsError = false;
+      capsFacts = reply.candidates.filter(isCapabilityCandidate);
+      capsTruncated = reply.truncated;
+    }
+    capsRead = true;
+    capsLoading = false;
+    // A pick that the fresh read no longer lists falls away, like an account choice.
+    const listed = new Set(capsFacts.map((fact) => fact.identity));
+    capabilityPicks = new Set([...capabilityPicks].filter((identity) => listed.has(identity)));
+    publish();
+    // The read resolved into a skip while the user stands on the step: the walk moves on by
+    // itself, exactly as it does when the step was skipped before landing on it (U-58).
+    if (step === 'capabilities' && !capsLive()) {
+      const next = stepAfter('capabilities');
+      if (next !== null) {
+        step = next;
+        publish();
+        if (step === 'budget') await ensureQuotas();
+      }
+    }
+  };
+
   // --- the machine -------------------------------------------------------------------------------
 
   const skipped = (target: WizardStep): boolean => {
-    if (target === 'capabilities') return capabilities.length === 0;
+    if (target === 'capabilities') return !capsLive();
     if (target === 'order') return selection.length < 2;
     return false;
   };
@@ -523,6 +674,8 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
 
   const gate = (): LabelKey | null => {
     if (step === 'accounts') return readySelected() ? null : 'wizard.reason.accounts';
+    // The one query runs on the step itself; the primary slot waits it out (U-58).
+    if (step === 'capabilities') return capsLoading ? 'wizard.reason.capabilities' : null;
     if (step === 'budget') return consentMissing() ? 'wizard.reason.budget' : null;
     return null;
   };
@@ -585,7 +738,12 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
       providers: providerRows(providerFacts),
       installed: providerFacts.filter((fact) => fact.binPath !== null).map((fact) => ({ id: fact.defId, name: fact.name })),
       loading,
-      capabilities: capabilities.map((capability) => ({ ...capability, selected: capabilityPicks.has(capability.id) })),
+      capabilitiesLoading: capsLoading,
+      capabilityGroups: capabilityGroups(),
+      capabilityTruncated: capsTruncated,
+      capabilityPicked: capsFacts.filter((fact) => !fact.imported && capabilityPicks.has(fact.identity)).length,
+      capabilitiesLive: capsLive(),
+      capabilityRejects: importRejects,
       order: orderEntries(),
       budget: {
         subscriptions: budgetRows.filter((row) => !row.needsConsent),
@@ -695,6 +853,8 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
       await read(false);
       quotas.clear();
       if (step === 'budget' || editorWork !== null) await ensureQuotas();
+      // The adopted set changed: Yetenekler's answer changes with it (U-58).
+      await readCapabilities();
     })();
   });
 
@@ -725,6 +885,9 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
     finishPhase = finishResume;
     publish();
     const readyCount = rowsOf().filter((row) => row.selected && row.statusKey === 'candidates.status.ready').length;
+    // The distinct picked, not-yet-imported identities (U-60): imported rows are never sent, and
+    // a shared candidate is one identity however many groups list it.
+    const capChosen = capsFacts.filter((fact) => !fact.imported && capabilityPicks.has(fact.identity)).map((fact) => fact.identity);
     // Every chosen entry's account id, read without writing anything: a stored account is its
     // own id, an adopted one comes from the run's memo. The accounts phase adopts only what is
     // still missing — a retry can never produce a second copy of an account.
@@ -754,6 +917,32 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
         }
         adoptedIds.set(entry.key, result.id);
         ids.set(entry.key, result.id);
+      }
+      finishPhase = 'capabilities';
+      finishResume = 'capabilities';
+      // The phase owns a progress line only while an import really runs: a wizard with nothing
+      // picked flips through without a publish, so its list keeps its own lines (U-49).
+      if (capChosen.length > 0) publish();
+    }
+
+    if (finishPhase === 'capabilities') {
+      // One call for every picked identity (U-60). A rejected row or a failed call never blocks
+      // the finish: the rows become the end note and the walk goes on.
+      if (capChosen.length > 0) {
+        const command: Command = { type: 'capabilities.import', identities: capChosen };
+        try {
+          const result = await api.command(actor, command);
+          if (result.ok && result.results !== undefined) {
+            importRejects = result.results
+              .filter((row) => row.status === 'rejected')
+              .map((row) => ({
+                name: capsFacts.find((fact) => fact.identity === row.identity)?.name ?? row.identity,
+                reason: row.reason ?? 'not_found',
+              }));
+          }
+        } catch {
+          // A thrown failure leaves nothing to list; the finish goes on (U-60).
+        }
       }
       finishPhase = 'order';
       finishResume = 'order';
@@ -843,8 +1032,12 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
       await finish();
       return;
     }
-    // Leaving Hesaplar fixes the starting order of the chosen accounts.
-    if (step === 'accounts') rankSelection();
+    // Leaving Hesaplar fixes the starting order of the chosen accounts and starts Yetenekler's
+    // one read (U-58) — the step it lands on holds the skeleton while the query runs.
+    if (step === 'accounts') {
+      rankSelection();
+      void readCapabilities();
+    }
     const next = stepAfter(step);
     if (next === null) return;
     step = next;
@@ -917,6 +1110,9 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
       if (step === 'budget') await ensureQuotas();
     },
     toggleCapability: (id) => {
+      // An imported row is already there: it is shown checked and disabled, never picked (U-59).
+      const fact = capsFacts.find((entry) => entry.identity === id);
+      if (fact === undefined || fact.imported) return;
       const next = new Set(capabilityPicks);
       if (next.has(id)) next.delete(id);
       else next.add(id);
