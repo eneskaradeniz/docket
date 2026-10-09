@@ -2,6 +2,7 @@
 import type { AccountRepo } from './account-repo';
 import type { AccountTestRepo } from './account-test-repo';
 import type { TransportResolver } from './agent-transport';
+import type { AppSettingsRepo } from './app-settings-repo';
 import type { BindingRepo } from './binding-repo';
 import type { CapabilityCatalog } from './capability-catalog';
 import type { CapabilityDiscovery } from './capability-discovery';
@@ -53,6 +54,7 @@ export interface AppDeps {
   readonly instructionFiles: InstructionFiles;
   readonly checkpoints: CheckpointCommitter;
   readonly accountTests: AccountTestRepo;
+  readonly settings: AppSettingsRepo;
   readonly scratch: ScratchDirs;
   readonly repoFolders: RepoFolders;
   readonly worktreeFiles: WorktreeFiles;

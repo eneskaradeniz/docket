@@ -81,6 +81,7 @@ const MIGRATED_TABLES = [
   'projects',
   'project_repos',
   'run_handoff',
+  'app_settings',
 ];
 
 const MIGRATION_1_INDEXES = [
@@ -481,7 +482,7 @@ describe('Migration 3', () => {
     makeVersion2Database(path);
 
     const migrated = openOk(path);
-    expect(pragmaValue(migrated, 'user_version')).toBe(3);
+    expect(pragmaValue(migrated, 'user_version')).toBe(SUPPORTED_VERSION);
     const table = migrated.raw
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'run_handoff'")
       .get();
@@ -500,7 +501,7 @@ describe('Migration 3', () => {
 
     // Opening again is a no-op: migration 3 does not re-run.
     const again = openOk(path);
-    expect(pragmaValue(again, 'user_version')).toBe(3);
+    expect(pragmaValue(again, 'user_version')).toBe(SUPPORTED_VERSION);
     expect(await createSqliteRunRepo(again).stageBase(runId)).toBe('sha-base-1');
     closeDb(again);
   });
