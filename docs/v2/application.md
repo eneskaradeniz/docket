@@ -1485,3 +1485,7 @@ persisted record is `PhaseAutoRun { project, phase, state: 'running' | 'paused' 
 - **A-116** (added 2026-10-10, #879) Audit: a successful pause appends one `phase.paused` and a successful resume one `phase.resumed` entry, subject `{ kind: 'project', id: project }`, actor the command's actor, detail `{ project, phase }` and nothing else. A refused call appends nothing. `advancePhases` itself appends no entry of its own: the work orders it opens are audited by A-25.
 
 Trigger: the dispatcher tick in `electron/main.ts` calls `advancePhases` once, before `dispatcherTick`, inside the existing non-reentrant guard; a failure is logged and never blocks the tick. No new timer.
+
+## 10. Blocked-by on the roadmap page (added 2026-10-10, #882)
+
+- **A-127** (added 2026-10-10, #882) Each phase entry of `roadmap.byProject` carries `blockedBy: readonly string[]`: the ids of the roadmap's blocking phases for that phase whose derived status is not `done`, in the order the roadmap lists them; empty when nothing blocks it or every blocker is done. It is a read-only projection of `PhaseDef.blockedBy` and the derived phase statuses; no other field of the query or any command changes.

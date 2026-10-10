@@ -110,6 +110,8 @@ export interface RoadmapPageView {
     readonly id: string;
     readonly name: string;
     readonly status: string;
+    /** The ids of the phases that block this one and are not done; empty otherwise (A-127). */
+    readonly blockedBy: readonly string[];
     /** Present once the operator started the phase (A-109); `attention` lists work-order ids. */
     readonly autoRun?: { readonly state: string; readonly attention: readonly string[] };
     readonly tasks: readonly {

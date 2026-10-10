@@ -168,7 +168,9 @@ The commands (`workOrder.open` with `project`+`repo`, `task.open`, `project.atta
   the rest closed. A task row shows its status glyph (✓ done · ● running, amber outline · ○
   remaining), the title, and one mono tag per target repo; expanding a cross-repo task lists its
   work orders per repo with navigation to the board and detail; a task turns ✓ only when every
-  linked work order is done (R-40). No editing on this page (Phase 5).
+  linked work order is done (R-40). No editing on this page (Phase 5). *(Addendum 2026-10-10, #882:
+  the page now carries run controls — U-63 … U-68. They start, pause and resume phases; they do not
+  edit the roadmap, so "no editing" stays true.)*
 - **U-18** (board) Columns are the flow's stages (A-23) and the done work is the last column, shut
   by default. A Kanban ⇄ Liste segmented control (icon-only) switches views; the choice persists per
   repo in local storage and survives reload. Cards are not draggable — a work order advances only
@@ -791,6 +793,57 @@ container.
   command's (`not_a_changes_gate` included). A changes gate that is upcoming or already passed
   renders no pair, and no `changes` gate ever takes approve/reject buttons.
 
+## Roadmap run controls (U-63 … U-68)
+
+The roadmap page's phase cards carry the run controls of the operator-approved prototype
+(`docket-tasarim/roadmap-calistir`, 2026-10-10): they start, pause and resume phases through
+`roadmap.runPhase` / `roadmap.pausePhase` / `roadmap.resumePhase` and read `autoRun` and `blockedBy`
+(A-109, A-110, A-127) from `roadmap.byProject`. U-17's "no editing on this page" stays true.
+
+- **U-63** (roadmap page; added 2026-10-10, #882) State mapping, per phase, from its `status` and
+  optional `autoRun`: `done` → green "✓ Bitti" chip, no button; an `autoRun` of `paused` →
+  "Duraklatıldı" chip, the hint "Yeni iş başlamaz" and **Sürdür**; an `autoRun` of `running` →
+  "Çalışıyor" chip and **Duraklat**; `waiting` → a disabled **Fazı çalıştır** and the blocked hint
+  (U-68); `running` without an `autoRun` record (work orders opened by hand) → "Çalışıyor" chip, no
+  button; `planned` with at least one of the view's `runnable` tasks inside the phase → enabled
+  **Fazı çalıştır**, with none → no button. A non-empty `autoRun.attention` adds the amber
+  "N dikkat" chip in every case.
+- **U-64** (roadmap page; added 2026-10-10, #882) No one-click start. **Fazı çalıştır** opens an
+  inline panel inside the card (and opens the card): "**N görev** başlayacak, **M iş emri** açılıp
+  sıraya girecek." (N = the phase's runnable tasks in the view, M = the sum of their `targets`
+  lengths), the note "Ücretli bir model gerekirse izin ayrıca sorulur. Sonraki faz başlamaz.", the
+  primary **Başlat** (the only primary button on the page) and the ghost **Vazgeç**. One panel is
+  open at a time on the whole page: opening the confirmation closes an attention list and the
+  reverse. Only **Başlat** sends a command; **Vazgeç** closes the panel and changes nothing.
+- **U-65** (roadmap page; added 2026-10-10, #882) The attention chip toggles a panel listing each
+  flagged work order as its code (U-22, `formatWorkOrderCode`), its task's title and "başarısız.
+  Faz sürüyor, bağımsız görevler devam ediyor."; the code opens the work order's detail. Ids are
+  resolved from the page's own task `workOrders` rows; an id with no row there is not listed.
+- **U-66** (roadmap page; added 2026-10-10, #882) Feedback: `roadmap.runPhase` ok → success toast
+  "Faz çalışıyor: <phase name>" with the counts of `phaseRun.opened` ("N görev · M iş emri sıraya
+  girdi"; no counts are shown when the result carries no `phaseRun`), plus a warn toast "K görev
+  açılamadı" when `phaseRun.failed` is non-empty — details stay in the audit log, no raw error
+  code appears. `roadmap.pausePhase` ok → "Faz duraklatıldı" with the sub-line "Çalışan işler
+  bitene kadar sürer; yeni iş başlamaz"; `roadmap.resumePhase` ok → "Faz sürüyor". Each refusal
+  code (`unknown_project`, `no_roadmap`, `definitions_invalid`, `unknown_phase`,
+  `phase_not_runnable`, `not_running`, `not_paused`, `invalid_id`) has its own sentence through
+  `failureKey`; the raw code rides only the toast's copy button (U-50a). The toast service carries
+  one text per toast (U-50), so a sub-line follows the headline after a dash. The page refetches
+  after every command, refusals included; a command in flight blocks a second one.
+- **U-67** (roadmap page; added 2026-10-10, #882) Header geometry. The header is one grid —
+  chevron · name · count + button — with the status row under the name; the status row is always
+  rendered, so every card header is the same height, a card without a button included. The button
+  is `h-7` (1.75 rem) with 0.75 rem side padding, status chips are `h-5` (1.25 rem), the header
+  toggle is a real button (`aria-expanded`) whose overlay makes the whole header clickable, controls
+  show a visible focus ring, and the grid-rows and chevron animations stop under reduced motion.
+  All new lengths are rem (U-53/U-62) — the only px left on the page is the task glyph's existing
+  ring — spacing sits on the 4·8·12·16·20·24·32 scale, and radii come from the three tokens plus
+  `rounded-full` (U-23).
+- **U-68** (roadmap page; added 2026-10-10, #882) The blocked reason reads "Önce “<name>” bitmeli",
+  the names being those of the phases in `blockedBy` (A-127), in the roadmap's order and joined
+  with ", "; an id without a phase falls back to the id. The dot beside it is amber, as in the
+  prototype.
+
 ## Verifying the shell — E2E layers (Phase 3.5)
 
 The shell is verified against the frozen prototype **rev 8** (`~/source/docket-tasarim/rev8/`:
@@ -834,8 +887,13 @@ belongs to the mobile app.
   seeded with two accounts whose fixture config directories share one capability: Hoş geldin →
   Hesaplar → Yetenekler shows one group per account and the shared capability as one row in both;
   toggling one syncs the other, the ⓘ lists the Kaynaklar, the finish walks its capability line,
-  and the imported definition file exists in the data dir. Each step asserts visible text and saves
-  a screenshot.
+  and the imported definition file exists in the data dir · J-10 (added 2026-10-10, #882) the
+  roadmap run controls, on their own fresh home (`e2e/seed-roadmap.ts`, launched by
+  `e2e/roadmap-app.mjs`; one project, no account, so nothing can run or spend): a done phase, a
+  blocked phase whose button is disabled with its reason, a runnable phase whose confirmation shows
+  the counts and whose Vazgeç starts nothing and Başlat toasts, Duraklat → Sürdür, and a paused
+  phase whose attention chip opens its panel and whose code opens the detail. Each step asserts
+  visible text and saves a screenshot.
 - **Layout audit** (pure DOM measurement, no pixel diff; each assertion named `L-n: …`, for every
   screen × size × theme):
   - **L-1** The sidebar's left edge is 0 and its width is 240px at every window size — it never

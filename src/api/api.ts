@@ -1602,6 +1602,7 @@ const roadmapView = async (
       id: phase.id,
       name: phase.name,
       status: view.phases[phase.id] ?? 'planned',
+      blockedBy: phase.blockedBy.filter((blocker) => (view.phases[blocker] ?? 'planned') !== 'done'),
       ...(autoRuns.has(phase.id) ? { autoRun: autoRuns.get(phase.id) } : {}),
       tasks: phase.tasks.map((task) => ({
         id: task.id,

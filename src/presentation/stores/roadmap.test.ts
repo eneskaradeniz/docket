@@ -14,6 +14,7 @@ const view: RoadmapPageView = {
       id: 'faz-1',
       name: 'Faz 1: Kullanıcı yönetimi',
       status: 'running',
+      blockedBy: [],
       tasks: [
         {
           id: 'mobil-login',
@@ -38,6 +39,7 @@ const view: RoadmapPageView = {
       id: 'faz-2',
       name: 'Faz 2: Bildirimler',
       status: 'planned',
+      blockedBy: [],
       tasks: [
         { id: 'mobil-bildirim', title: 'Mobil bildirim', status: 'planned', targets: ['docket', 'docket-mobile'], workOrders: [] },
       ],
@@ -46,7 +48,7 @@ const view: RoadmapPageView = {
   runnable: ['mobil-bildirim'],
 };
 
-interface FakeRoadmapApi extends Pick<Api, 'query'> {
+interface FakeRoadmapApi extends Pick<Api, 'query' | 'command'> {
   readonly queries: Query[];
   setReply(reply: unknown): void;
 }
@@ -64,6 +66,8 @@ const fakeRoadmapApi = (initial: unknown): FakeRoadmapApi => {
       queries.push(query);
       return Promise.resolve(reply);
     },
+    // The U-17 cases never issue a command.
+    command: () => Promise.resolve({ ok: true }),
   };
 };
 
