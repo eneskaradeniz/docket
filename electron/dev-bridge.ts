@@ -1,9 +1,10 @@
 // electron/dev-bridge.ts — the docket:dev IPC bridge, stage 1: a session that drives the app over
 // CDP sees both sides, the UI and the API/store, and finds contradictions between them without
-// guessing. Four ops, all JSON in / JSON out: `describe` (the boundary's names from the api
+// guessing. Five ops, all JSON in / JSON out: `describe` (the boundary's names from the api
 // layer's own registry), `events.since` (the ui push channel merged with the stored run,
 // work-order and audit timelines), `store.read` (five whitelisted views) and `invariants`
-// (INV-1…INV-4 over the store's own rows).
+// (INV-1…INV-4 over the store's own rows) — and `page_view.trace`, the isolated page view's
+// requests as the main process saw them.
 //
 // The module imports no runtime dependency beyond node builtins: e2e/launch-cdp.mjs imports the
 // data-dir safety check from here under plain node, so the launcher and the gate answer the same
@@ -128,7 +129,7 @@ export const devReply = (result: unknown): DevBridgeReply => {
 
 // --- the ops and the ports ----------------------------------------------------------------------------
 
-export const DEV_OPS = ['describe', 'events.since', 'store.read', 'invariants'] as const;
+export const DEV_OPS = ['describe', 'events.since', 'store.read', 'invariants', 'page_view.trace'] as const;
 
 /** The merged log and the ui ring share this bound: the recent past a session replays, not an
  *  unbounded archive. */
@@ -304,6 +305,10 @@ export interface DevBridgePorts {
   readonly deriveStatus: (flow: FlowDef, events: readonly WorkOrderEvent[]) => WorkOrderState;
   readonly commandRegistry: Readonly<Record<string, RegistryEntry>>;
   readonly queryRegistry: Readonly<Record<string, RegistryEntry>>;
+  /** What the isolated page view did, for `page_view.trace`: its current page and URL, how many
+   *  windows exist, and the bounded trace of answered and cancelled page requests. A JSON-safe
+   *  value; absent when the page view is not wired. */
+  readonly pageView?: () => unknown;
 }
 
 export interface DevBridge {
@@ -679,6 +684,11 @@ export const createDevBridge = (ports: DevBridgePorts): DevBridge => {
           }
           if (!isStoreName(argsValue.name)) return devReply({ ok: false, code: 'unknown_store' });
           return devReply(await storeView(argsValue.name));
+        }
+        case 'page_view.trace': {
+          if (ports.pageView === undefined) return devReply({ ok: false, code: 'unavailable' });
+          const reading = ports.pageView();
+          return devReply({ ok: true, ...(isRecord(reading) ? reading : {}) });
         }
         case 'invariants': {
           const snapshot = await readSnapshot();

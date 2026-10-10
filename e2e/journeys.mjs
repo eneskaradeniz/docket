@@ -1,4 +1,4 @@
-// e2e/journeys.mjs — `npm run test:journeys`. J-1 … J-11 of docs/v2/ui.md → "Verifying the shell",
+// e2e/journeys.mjs — `npm run test:journeys`. J-1 … J-12 of docs/v2/ui.md → "Verifying the shell",
 // driven through the BUILT app on the design seed (e2e/seed-design.ts). Every step asserts visible
 // text and saves a screenshot to e2e/.out/journeys/, and every outcome lands in the structured
 // report (e2e/report.mjs) as it is printed.
@@ -19,6 +19,7 @@ import { ROOT, launchDesignApp, setWindow } from './design-app.mjs';
 import { acquireE2eLock } from './lock.mjs';
 import { SIZE_PLAN, comboPlan, resolveSizes } from './layout-rules.mjs';
 import { appendJourney, beginReport, REPORT_PATH } from './report.mjs';
+import { launchPageViewApp } from './page-view-app.mjs';
 import { launchRoadmapApp } from './roadmap-app.mjs';
 import { launchWizardApp } from './wizard-app.mjs';
 
@@ -806,6 +807,160 @@ for (const [sizeName, theme] of combos) {
     await page.screenshot({ path: join(OUT, 'J-11-FAIL.png') }).catch(() => undefined);
   }
   await handle.app.close();
+}
+
+// J-12 walks the isolated page view against a hostile page on its own world (I-63 … I-70): a
+// throwaway home holding one published page whose script attacks everything outside its own
+// origin — network (fetch, XHR, image, beacon, form POST, dynamic import of a file URL, a popup, a
+// location change), storage written and read back across a view re-open, the host's own objects
+// (window.docket, require, process) and path traversal to an unrecorded file that exists on disk.
+// A local probe server counts any request that escapes; the page reports each outcome by loading
+// images from its own origin, which the main process records and the dev bridge hands back
+// (`page_view.trace`). No account, no keychain, no agent run: nothing can spend. Once per run.
+{
+  const handle = await launchPageViewApp();
+  const { page, seed, probe } = handle;
+  const pageId = seed.pageId;
+  const lowerId = pageId.toLowerCase();
+  const pageUrl = `docket-page://${lowerId}/v1/`;
+  const BOUNDS = { x: 200, y: 100, width: 500, height: 400 };
+  const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+  const sendPageView = (op, request) => page.evaluate(([name, payload]) => window.docket.pageView[name](payload), [op, request]);
+  const readTrace = async () => {
+    const reply = await page.evaluate(() => window.docketDev.call('page_view.trace'));
+    const body = JSON.parse(reply.payload);
+    assert(body.ok === true, `page_view.trace failed: ${reply.payload.slice(0, 200)}`);
+    return body;
+  };
+  /** The first `key=value` pair of every recorded report request from index `from` on. */
+  const reportsOf = (trace, from) => {
+    const found = new Map();
+    for (const entry of trace.trace.served.slice(from)) {
+      if (entry.report === undefined) continue;
+      const [key, value] = [...new URLSearchParams(entry.report)][0] ?? [];
+      if (key !== undefined && !found.has(key)) found.set(key, value);
+    }
+    return found;
+  };
+  const EXPECTED = [
+    'docket', 'docketDev', 'require', 'process', 'Buffer', 'fetch', 'fetchProbe', 'xhr', 'img', 'beacon', 'import', 'open',
+    'lsPrev', 'lsRead', 'cookiePrev', 'idbPrev', 'pixel', 'protocol', 'done',
+    ...Array.from({ length: 9 }, (_, index) => `trav${index}`),
+  ];
+  /** Waits until the page has reported every expected key (load-dependent: SCAN_WAIT), then answers the trace. */
+  const awaitReports = async (from) => {
+    const deadline = Date.now() + SCAN_WAIT;
+    for (;;) {
+      const trace = await readTrace();
+      const reports = reportsOf(trace, from);
+      const missing = EXPECTED.filter((key) => !reports.has(key));
+      if (missing.length === 0) return { trace, reports };
+      if (Date.now() > deadline) throw new Error(`the page never reported: ${missing.join(', ')}`);
+      await sleep(250);
+    }
+  };
+
+  let stepNo = 0;
+  const steps = [];
+  const shot = async (label) => {
+    stepNo += 1;
+    steps.push(label);
+    const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    await page.screenshot({ path: join(OUT, `J-12-${stepNo}-${slug}.png`) });
+  };
+  const title = 'J-12: page view: a hostile page reaches nothing — network, popups, navigation, storage, host objects, traversal';
+  total += 1;
+  try {
+    const appUrl = page.url();
+
+    // The bridge carries three calls and nothing else; bad input and missing targets are refused.
+    assert.deepEqual(await page.evaluate(() => Object.keys(window.docket.pageView).sort()), ['close', 'open', 'setBounds']);
+    assert.deepEqual(await sendPageView('open', { pageId: 'nope', version: 1, bounds: BOUNDS }), { ok: false, code: 'invalid' });
+    assert.deepEqual(await sendPageView('open', { pageId, version: 0, bounds: BOUNDS }), { ok: false, code: 'invalid' });
+    assert.deepEqual(await sendPageView('open', { pageId, version: 1, bounds: { ...BOUNDS, width: -5 } }), { ok: false, code: 'invalid' });
+    assert.deepEqual(await sendPageView('open', { pageId: '01JZ8K3M4N5P6Q7R8S9T0V1W2X', version: 1, bounds: BOUNDS }), { ok: false, code: 'not_found' });
+    assert.deepEqual(await sendPageView('open', { pageId, version: 9, bounds: BOUNDS }), { ok: false, code: 'not_found' });
+    assert.deepEqual(await sendPageView('setBounds', { bounds: BOUNDS }), { ok: false, code: 'not_found' });
+    assert.equal((await readTrace()).view.open, false, 'a refused open must leave no view');
+
+    // The app's own window cannot load a page by URL: the scheme handler lives on the page partition only.
+    const fromApp = await page.evaluate(async (url) => {
+      try {
+        return (await fetch(url)).status;
+      } catch {
+        return 'blocked';
+      }
+    }, pageUrl);
+    assert.notEqual(fromApp, 200, 'the app window must not be able to load a page by URL');
+
+    // First load: the hostile page runs.
+    assert.deepEqual(await sendPageView('open', { pageId, version: 1, bounds: BOUNDS }), { ok: true });
+    const first = await awaitReports(0);
+    await sleep(2000); // late navigations, workers and ICE gathering get their chance to escape
+    const afterFirst = await readTrace();
+    await shot('hostile-page-open');
+
+    assert.deepEqual(probe.hits, [], `the probe saw requests: ${probe.hits.join(' | ')}`);
+    assert.equal(probe.connections, 0, 'the probe saw TCP connections');
+    assert.equal(probe.datagrams, 0, 'the probe saw UDP datagrams (WebRTC)');
+    assert.equal(page.url(), appUrl, 'the app window must not have navigated');
+    assert.equal(afterFirst.windowCount, 1, 'no extra window may exist');
+    assert.equal(afterFirst.view.open, true);
+    assert(afterFirst.view.url.startsWith(pageUrl), `the view must still show the page, not ${afterFirst.view.url}`);
+    assert.equal(first.reports.get('protocol'), 'docket-page:', 'the page must still be on its own scheme');
+
+    for (const key of ['docket', 'docketDev', 'require', 'process', 'Buffer']) {
+      assert.equal(first.reports.get(key), 'undefined', `typeof ${key} must be undefined inside the page`);
+    }
+    for (const key of ['fetch', 'fetchProbe', 'xhr', 'img', 'import', 'open']) {
+      assert.equal(first.reports.get(key), 'blocked', `${key} must be blocked, saw ${first.reports.get(key)}`);
+    }
+    assert.equal(first.reports.get('lsPrev'), 'none');
+    assert.equal(first.reports.get('cookiePrev'), 'none');
+    assert.equal(first.reports.get('idbPrev'), 'none');
+
+    // Traversal and unrecorded files: never a 200; the recorded pixel is the control that is.
+    const served = afterFirst.trace.served;
+    const secrets = served.filter((entry) => entry.url.includes('secret') || entry.url.includes('%73ecret'));
+    assert(secrets.length >= 1, 'the traversal probes never reached the handler');
+    for (const entry of secrets) assert([400, 404].includes(entry.status), `a secret request was answered ${entry.status}`);
+    assert(served.some((entry) => entry.url.endsWith('/v1/pixel.png') && entry.status === 200), 'the recorded pixel must be served');
+    assert(served.some((entry) => entry.url === pageUrl && entry.status === 200), 'the entry must be served');
+    for (const entry of served.filter((candidate) => candidate.report !== undefined)) assert.equal(entry.status, 204);
+    assert.equal(first.reports.get('pixel'), 'loaded');
+
+    // Re-open: nothing the page stored survived the view.
+    assert.deepEqual(await sendPageView('close', {}), { ok: true });
+    assert.equal((await readTrace()).view.open, false);
+    const from = afterFirst.trace.served.length;
+    assert.deepEqual(await sendPageView('open', { pageId, version: 1, bounds: BOUNDS }), { ok: true });
+    const second = await awaitReports(from);
+    await sleep(2000);
+    for (const key of ['lsPrev', 'cookiePrev', 'idbPrev']) {
+      assert.equal(second.reports.get(key), 'none', `${key} must not carry the first view's storage, saw ${second.reports.get(key)}`);
+    }
+    assert.deepEqual(probe.hits, [], `the probe saw requests after the re-open: ${probe.hits.join(' | ')}`);
+    assert.equal(probe.connections, 0, 'the probe saw TCP connections after the re-open');
+    assert.equal(probe.datagrams, 0, 'the probe saw UDP datagrams after the re-open');
+    assert.equal(page.url(), appUrl);
+    assert.equal((await readTrace()).windowCount, 1);
+    await shot('reopened');
+
+    // Moving and closing: bounds are accepted, close leaves nothing.
+    assert.deepEqual(await sendPageView('setBounds', { bounds: { x: 0, y: 0, width: 99999, height: 99999 } }), { ok: true });
+    assert.deepEqual(await sendPageView('close', {}), { ok: true });
+    assert.equal((await readTrace()).view.open, false);
+
+    console.log(`  ok   ${title}`);
+    appendJourney({ id: title, status: 'ok', steps });
+  } catch (error) {
+    failures.push(title);
+    console.log(`  FAIL ${title}\n       ${String(error).split('\n')[0]}`);
+    appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).split('\n')[0] });
+    await page.screenshot({ path: join(OUT, 'J-12-FAIL.png') }).catch(() => undefined);
+  }
+  await handle.app.close();
+  await probe.close();
 }
 
 console.log(`${total - failures.length}/${total} journeys ok; screenshots in ${OUT}`);

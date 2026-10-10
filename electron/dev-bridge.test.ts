@@ -44,6 +44,7 @@ import {
   inv3EndedRunsHoldNoOpenAsk,
   inv4RunningOrdersHaveAnActiveRun,
 } from './dev-bridge';
+import type { DevBridgePorts } from './dev-bridge';
 
 // --- the fake world ----------------------------------------------------------------------------------
 
@@ -142,8 +143,9 @@ const FLOW: FlowDef = {
   stages: [{ id: 'work' as StageSlug, name: 'Work', role: 'worker' as RoleSlug, exit: [] }],
 };
 
-const makeBridge = (world: World) =>
+const makeBridge = (world: World, pageView?: DevBridgePorts['pageView']) =>
   createDevBridge({
+    ...(pageView === undefined ? {} : { pageView }),
     workOrders: {
       list: async () => world.orders,
       number: async (id) => {
@@ -605,5 +607,38 @@ describe('the reply envelope', () => {
       expect(keys, `${op} keys`).not.toContain('secrets');
       expect(keys, `${op} keys`).not.toContain('secretRef');
     }
+  });
+});
+
+// --- page_view.trace -----------------------------------------------------------------------------------
+
+describe('page_view.trace', () => {
+  const READING = {
+    view: { open: true, pageId: 'PAGE', url: 'docket-page://page/v1/' },
+    windowCount: 1,
+    trace: { served: [{ url: 'docket-page://page/v1/__report?a=1', status: 204, report: 'a=1' }], servedCount: 1, blocked: ['http://127.0.0.1:1/x'], blockedCount: 1 },
+  } as const;
+
+  it('PV-1: is one of the listed ops', () => {
+    expect(DEV_OPS).toContain('page_view.trace');
+  });
+
+  it('PV-2: answers the injected reading, verbatim, and only when the page view is wired', async () => {
+    const body = await callJson(makeBridge(emptyWorld(), () => READING), 'page_view.trace');
+    expect(body).toEqual({ ok: true, ...READING });
+  });
+
+  it('PV-3: without the page view port it answers unavailable instead of guessing', async () => {
+    const body = await callJson(makeBridge(emptyWorld()), 'page_view.trace');
+    expect(body).toEqual({ ok: false, code: 'unavailable' });
+  });
+
+  it('PV-4: a reading that throws becomes op_failed data, never a thrown error', async () => {
+    const bridge = makeBridge(emptyWorld(), () => {
+      throw new Error('boom');
+    });
+    const body = await callJson(bridge, 'page_view.trace');
+    expect(body.ok).toBe(false);
+    expect(body.code).toBe('op_failed');
   });
 });

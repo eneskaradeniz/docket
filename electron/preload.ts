@@ -1,7 +1,7 @@
 // preload.ts — the renderer's only bridge to the core. Exactly one surface crosses the context
-// bridge (`window.docket`) with the api's three members: commands and queries ride ipcRenderer
-// .invoke; events ride one channel and are forwarded to the listener, so no ipcRenderer or Node
-// object ever reaches the renderer. Built as CommonJS: a sandboxed preload runs without an ESM
+// bridge (`window.docket`) with the api's three members plus the page view's three calls:
+// commands, queries and page-view calls ride ipcRenderer.invoke; events ride one channel and are
+// forwarded to the listener, so no ipcRenderer or Node object ever reaches the renderer. Built as CommonJS: a sandboxed preload runs without an ESM
 // context, so the bundler emits a .cjs file.
 import { contextBridge, ipcRenderer } from 'electron';
 import type { IpcRendererEvent } from 'electron';
@@ -11,7 +11,26 @@ import type { Api, CommandResult, UiEvent } from '../src/api/index';
 
 /** `Pick<Api>` keeps the bridge exactly the transport-free contract — the same shape a later HTTP
  *  transport would serve. `CommandResult` is named here only because invoke's return is untyped. */
-export type DocketBridge = Pick<Api, 'command' | 'query' | 'subscribe'>;
+export type DocketBridge = Pick<Api, 'command' | 'query' | 'subscribe'> & { readonly pageView: PageViewBridge };
+
+export interface PageViewBounds {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+export type PageViewReply =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly code: 'invalid' | 'not_found' | 'forbidden' };
+
+/** The page view's whole surface: place one isolated view over the window, move it, remove it. The
+ *  main process validates every field again; each call here carries only its own named fields. */
+export interface PageViewBridge {
+  open(request: { readonly pageId: string; readonly version: number; readonly bounds: PageViewBounds }): Promise<PageViewReply>;
+  setBounds(request: { readonly bounds: PageViewBounds }): Promise<PageViewReply>;
+  close(): Promise<PageViewReply>;
+}
 
 /** Every live subscriber, fanned out by the ONE channel listener below. The renderer's stores
  *  subscribe for the whole session and never unsubscribe, so a listener per subscriber would grow
@@ -29,6 +48,12 @@ const bridge: DocketBridge = {
 
   query: (query: Parameters<Api['query']>[0]): Promise<unknown> =>
     ipcRenderer.invoke('docket:query', query),
+
+  pageView: {
+    open: ({ pageId, version, bounds }) => ipcRenderer.invoke('docket:page-view', { op: 'open', pageId, version, bounds }),
+    setBounds: ({ bounds }) => ipcRenderer.invoke('docket:page-view', { op: 'setBounds', bounds }),
+    close: () => ipcRenderer.invoke('docket:page-view', { op: 'close' }),
+  },
 
   subscribe: (listener: (event: UiEvent) => void): (() => void) => {
     subscribers.add(listener);

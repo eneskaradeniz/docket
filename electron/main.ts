@@ -13,6 +13,9 @@
 //   4. The dispatcher/executor loop: tick → start → executeRun → limit/gate follow-ups.
 //   4b. Docket's own MCP socket: the listener the run-scoped MCP child talks to. It only starts
 //      and stops here; every decision lives in the tool dispatch behind it.
+//   4c. The isolated page view: the docket-page scheme handler and its hardening live on the pages
+//      partition's own session only; the renderer reaches it through one IPC channel that only the
+//      main window's top frame may call.
 //   5. IPC handlers and the window last — the renderer boots only once every surface it can
 //      call already exists.
 import { app, BrowserWindow, Notification, dialog, ipcMain, safeStorage, screen } from 'electron';
@@ -52,7 +55,14 @@ import {
   startMcpListener,
 } from '../src/infrastructure/index';
 import type { McpListener } from '../src/infrastructure/index';
+import { createPageViewTrace } from '../src/infrastructure/index';
 import { createDevBridge, devBridgeEnabled } from './dev-bridge';
+import {
+  PAGE_VIEW_CHANNEL,
+  PAGE_VIEW_CLOSED_CHANNEL,
+  createElectronPageView,
+  registerPageSchemeWithElectron,
+} from './page-view';
 import {
   WINDOW_MIN_HEIGHT,
   WINDOW_MIN_WIDTH,
@@ -61,6 +71,9 @@ import {
 } from './window-options';
 
 const here = dirname(fileURLToPath(import.meta.url));
+
+// A privileged scheme can only be declared before the app is ready, so this is top level.
+registerPageSchemeWithElectron();
 
 /** The dispatcher polls: queue items arrive from commands and scheduled resumes, and neither can
  *  push into this process, so a short cadence is the whole scheduler. */
@@ -289,6 +302,8 @@ const withDesignDelay = async <T>(reply: Promise<T>): Promise<T> => {
 };
 
 const windows = new Set<BrowserWindow>();
+/** The window the page view is placed over; the one the app opens first (or reopens on activate). */
+let mainWindow: BrowserWindow | undefined;
 
 /** The api validates ids and shapes on its own side (A-21); these guards only keep malformed
  *  renderer payloads from reaching it as something they are not. An unknown code renders as the
@@ -348,7 +363,11 @@ function createWindow(): BrowserWindow {
     },
   });
   windows.add(win);
-  win.on('closed', () => windows.delete(win));
+  mainWindow = win;
+  win.on('closed', () => {
+    windows.delete(win);
+    if (mainWindow === win) mainWindow = undefined;
+  });
   // The dev wiring exports the Vite server URL; the built app serves the renderer from dist/.
   const devUrl = process.env.VITE_DEV_SERVER_URL;
   if (devUrl !== undefined) void win.loadURL(devUrl);
@@ -435,13 +454,34 @@ const startApp = async (): Promise<void> => {
   // The dev bridge (test launches only): it exists when the flag is set, the app is not packaged
   // and DOCKET_DATA_DIR points outside the operator's real data directory — the same rule the CDP
   // launcher enforces, shared code. Any condition missing means no docket:dev handler at all.
-  const devBridge = devBridgeEnabled({
+  const devBridgeOn = devBridgeEnabled({
     flag: process.env.DOCKET_DEV_BRIDGE,
     isPackaged: app.isPackaged,
     dataDir: process.env.DOCKET_DATA_DIR,
     docketHome: join(homedir(), '.docket'),
-  })
+  });
+
+  // The page view's request trace exists only where the dev bridge does: it is what the hostile
+  // page journey reads to prove nothing left the view.
+  const pageViewTrace = devBridgeOn ? createPageViewTrace() : undefined;
+  const pageView = createElectronPageView({
+    getWindow: () => (mainWindow !== undefined && !mainWindow.isDestroyed() ? mainWindow : undefined),
+    pages: nodeDeps.pages,
+    files: nodeDeps.pageFiles,
+    onClosed: (reason) => {
+      if (mainWindow !== undefined && !mainWindow.isDestroyed()) mainWindow.webContents.send(PAGE_VIEW_CLOSED_CHANNEL, { reason });
+    },
+    ...(pageViewTrace === undefined ? {} : { trace: pageViewTrace }),
+  });
+  ipcMain.handle(PAGE_VIEW_CHANNEL, (event, payload: unknown) => pageView.handleIpc(event, payload));
+
+  const devBridge = devBridgeOn
     ? createDevBridge({
+        pageView: () => ({
+          view: pageView.host.state(),
+          windowCount: BrowserWindow.getAllWindows().length,
+          trace: pageViewTrace?.snapshot(),
+        }),
         workOrders: nodeDeps.workOrders,
         runs: nodeDeps.runs,
         accounts: nodeDeps.accounts,
