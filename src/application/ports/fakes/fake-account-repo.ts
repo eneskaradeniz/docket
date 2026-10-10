@@ -11,7 +11,7 @@ import type {
   RepoSlug,
 } from '../../../domain/index';
 
-import type { AccountRecord, AccountRepo, AccountTestSpendEntry, RunSpendEntry } from '../account-repo';
+import type { AccountRecord, AccountRepo, AccountTestSpendEntry, ChatSpendEntry, RunSpendEntry } from '../account-repo';
 
 interface SpendEntry {
   readonly accountId: AccountId;
@@ -75,12 +75,15 @@ export const createFakeAccountRepo = (): FakeAccountRepo => {
       return all.filter((meter) => owned.has(meter.poolId));
     },
 
-    // An account-test entry carries no project, repo or work order, so those filters never match it.
-    recordSpend: async (entry: RunSpendEntry | AccountTestSpendEntry): Promise<void> => {
+    // An account-test entry carries no project, repo or work order, and a chat entry carries its
+    // conversation's project only, so the filters never match what the entry does not name.
+    recordSpend: async (entry: RunSpendEntry | AccountTestSpendEntry | ChatSpendEntry): Promise<void> => {
       spendings.push(
-        'kind' in entry
-          ? { accountId: entry.accountId, project: undefined, repo: undefined, workOrderId: undefined, at: entry.at, usd: entry.usd }
-          : { ...entry },
+        'kind' in entry && entry.kind === 'chat'
+          ? { accountId: entry.accountId, project: entry.project, repo: undefined, workOrderId: undefined, at: entry.at, usd: entry.usd }
+          : 'kind' in entry
+            ? { accountId: entry.accountId, project: undefined, repo: undefined, workOrderId: undefined, at: entry.at, usd: entry.usd }
+            : { ...entry },
       );
     },
 

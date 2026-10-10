@@ -100,4 +100,10 @@ CREATE INDEX actions_by_conversation ON actions (conversation, status);`,
     version: 9,
     sql: `ALTER TABLE pages ADD COLUMN conversation TEXT;`,
   },
+  {
+    // Chat spend provenance (I-85): the conversation a chat turn's cost belongs to, nullable so a
+    // run or account-test entry — and every row written before this migration — reads as absent.
+    version: 10,
+    sql: `ALTER TABLE spend ADD COLUMN conversation TEXT;`,
+  },
 ];
