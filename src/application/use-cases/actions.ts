@@ -41,8 +41,19 @@ import {
 import type { AppDeps, AuditAction } from '../ports';
 
 /** The one place an action's effect happens. Injected: the concrete appliers live elsewhere. */
-export type ActionApplier = (a: AssistantAction, authority: ActionAuthority) => Promise<Result<{ readonly undo?: UndoInfo }, { readonly code: string }>>;
-export type ActionUndoer = (r: ActionRecord) => Promise<Result<void, { readonly code: string }>>;
+export interface ActionContext {
+  readonly conversation: ConversationId;
+  readonly action: ActionId;
+}
+/** `ctx` is how an applier checks that a draft or proposal the action names really belongs to this
+ *  conversation's action. */
+export type ActionApplier = (
+  a: AssistantAction,
+  authority: ActionAuthority,
+  ctx: ActionContext,
+) => Promise<Result<{ readonly undo?: UndoInfo }, { readonly code: string }>>;
+/** `by` is the operator who asked; the use case has already refused every other actor. */
+export type ActionUndoer = (r: ActionRecord, by: Actor) => Promise<Result<void, { readonly code: string }>>;
 export type UndoActionError = ActionError | { readonly code: 'undo_failed' };
 
 const MINUTE_MS = 60_000;
@@ -78,9 +89,9 @@ type Outcome = { readonly ok: true; readonly undo: UndoInfo | undefined } | { re
 
 const STABLE_CODE = /^[a-z_]{1,64}$/;
 
-const runApplier = async (apply: ActionApplier, action: AssistantAction, authority: ActionAuthority): Promise<Outcome> => {
+const runApplier = async (apply: ActionApplier, action: AssistantAction, authority: ActionAuthority, ctx: ActionContext): Promise<Outcome> => {
   try {
-    const answer = await apply(action, authority);
+    const answer = await apply(action, authority, ctx);
     if (answer.ok) return { ok: true, undo: answer.value.undo };
     // The applier's message never reaches the record: only a code that is already a stable code does.
     return { ok: false, code: STABLE_CODE.test(answer.error.code) ? answer.error.code : FALLBACK_FAILURE };
@@ -150,7 +161,7 @@ export async function proposeAction(
   if (decision.kind === 'needs_approval') return ok({ record: pending, decision });
 
   const authority: ActionAuthority = { kind: 'grant', grant: decision.grant };
-  const outcome = await runApplier(apply, valid.value, authority);
+  const outcome = await runApplier(apply, valid.value, authority, { conversation: input.conversation, action: pending.id });
   const record = await settle(deps, pending, outcome, authority, input.by);
   // A failed application is not spent: only work that happened counts against the grant. The grant
   // is read again so a count written while the applier ran is not overwritten.
@@ -185,7 +196,7 @@ export async function decideActionUseCase(
   const valid = validateAction(found.action);
   if (!valid.ok) return err(valid.error);
   const authority: ActionAuthority = { kind: 'user', id: input.by.id };
-  const outcome = await runApplier(apply, valid.value, authority);
+  const outcome = await runApplier(apply, valid.value, authority, { conversation: found.conversation, action: found.id });
   return ok(await settle(deps, found, outcome, authority, input.by));
 }
 
@@ -255,7 +266,7 @@ export async function undoAction(
 
   let reverted: Result<void, { readonly code: string }>;
   try {
-    reverted = await undo(found);
+    reverted = await undo(found, input.by);
   } catch {
     return err({ code: 'undo_failed' });
   }
