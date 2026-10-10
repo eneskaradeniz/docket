@@ -14,10 +14,10 @@ architecture of its own.
 
 ## Preconditions
 
-- Phase 4 is complete on `v2` and v1 code is removed there (roadmap: "v1 parity → v1 code
-  removed"); `npm run typecheck && npm test && npm run build && npm run check:boundaries` is
+- `main` is the only integration branch and v1 code is already removed from the tree;
+  `npm run typecheck && npm test && npm run build && npm run check:boundaries` is
   green on the head being sliced. That head is tagged once (e.g. `v2-promote-0`) so every slice
-  stays re-derivable. A fix found during promotion lands on `v2` as its own issue and rides
+  stays re-derivable. A fix found during promotion lands on `main` as its own issue and rides
   with the next promotion PR.
 - #802, #803, and #804 are closed on `v2` before the head to be sliced is tagged — no slice is
   cut from a head that still carries any of them (#802 changes `src/domain/providers/fold-run.ts`,

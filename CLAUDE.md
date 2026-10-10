@@ -6,8 +6,8 @@ ask; do not pick one yourself.
 
 ## Status
 - Docket is being rebuilt from the ground up (v2). v1 is frozen at git tag **`v1-final`**; its code
-  still sits in `src/core/`, `src/adapters/`, `src/ui/`, `src/renderer/` until Phase 4 and must not
-  be extended, imported by v2 code, or treated as the design.
+  was removed from the tree in Phase 4 (#331); it is reference only through
+  `git show v1-final:<path>`.
 - The product is local, single-user, free and open source (Apache-2.0), built team-ready
   (`docs/v2/architecture.md` → "Team-ready rules").
 - Product name: "Docket" — final. (A rename was considered and cancelled on 2026-09-27; no rename work
@@ -81,4 +81,5 @@ ask; do not pick one yourself.
 
 ## CI
 - `npm run typecheck`, `npm test`, `npm run build`, `npm run check:boundaries` run on every PR and on
-  pushes to `main`. `check:boundaries` runs the v1 checks and the v2 layer checks.
+  pushes to `main`. `check:boundaries` runs the agent-vendor check on `electron/`, the layer checks
+  (`scripts/check-layers.mjs`) and the rule-coverage check (`scripts/check-rule-coverage.mjs`).
