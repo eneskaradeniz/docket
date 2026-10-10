@@ -79,7 +79,10 @@ import {
   createQuotaService,
   createProject,
   decideHumanGate,
+  commentOnPage,
+  decidePageApproval,
   decideProposalUseCase,
+  requestPageApproval,
   DEFAULT_MODEL_CONSENT,
   defaultBillingOf,
   enqueueStage,
@@ -115,6 +118,7 @@ import {
 } from '../application';
 
 import type { CapabilityImportResultView, Command, CommandResult } from './commands';
+import { pageDetailView, pageListView } from './page-views';
 import type {
   AccountDetailView,
   AccountModelsView,
@@ -235,6 +239,10 @@ export interface AccountAdoption {
 interface Adopting extends AccountAdoption {
   readonly candidates: AccountCandidateList;
 }
+
+/** Page use cases fail with `{ code }` records; the code goes through unchanged (A-158). */
+const pageCommandOf = (outcome: Result<unknown, { readonly code: string }>): CommandResult =>
+  outcome.ok ? { ok: true } : { ok: false, code: outcome.error.code };
 
 const commandOf = <E extends string>(outcome: Result<unknown, E>): CommandResult =>
   outcome.ok ? { ok: true } : { ok: false, code: outcome.error };
@@ -533,6 +541,36 @@ const runCommand = async (
         { id, decision: command.decision, actor },
       );
       return decided.ok ? { ok: true, id: decided.value.id } : { ok: false, code: decided.error };
+    }
+
+    case 'page.comment': {
+      const page = ulidValue<'page'>(command.page);
+      if (page === undefined) return invalidId();
+      return pageCommandOf(
+        await commentOnPage(deps, {
+          page,
+          version: command.version,
+          by: actor,
+          text: command.text,
+          ...(command.anchor === undefined ? {} : { anchor: command.anchor }),
+        }),
+      );
+    }
+
+    case 'page.requestApproval': {
+      const page = ulidValue<'page'>(command.page);
+      if (page === undefined) return invalidId();
+      return pageCommandOf(await requestPageApproval(deps, { page, by: actor }));
+    }
+
+    // The work order's gate decision runs on the per-command deps, so the workOrders.changed
+    // tracking sees its append — and only a decision that really advanced the gate appends.
+    case 'page.decide': {
+      const page = ulidValue<'page'>(command.page);
+      if (page === undefined) return invalidId();
+      return pageCommandOf(
+        await decidePageApproval(deps, { page, decision: command.decision, by: actor, version: command.version }),
+      );
     }
 
     case 'permission.answer': {
@@ -862,6 +900,17 @@ const runQuery = async (
       const id = ulidValue<'proposal'>(query.id);
       if (id === undefined) return invalidId();
       return (await proposalDetail(deps, id)) ?? { ok: false, code: 'not_found' };
+    }
+    case 'pages.list': {
+      const workOrder = ulidValue<'work-order'>(query.workOrder);
+      if (workOrder === undefined) return invalidId();
+      return pageListView(deps, workOrder);
+    }
+    case 'page.detail': {
+      const id = ulidValue<'page'>(query.id);
+      if (id === undefined) return invalidId();
+      const view = await pageDetailView(deps, { page: id, ...(query.version === undefined ? {} : { version: query.version }) });
+      return view === undefined ? { ok: false, code: 'not_found' } : view === 'unknown_version' ? { ok: false, code: 'unknown_version' } : view;
     }
     case 'capabilities.candidates':
       // The scan runs on every call — no remembered window (A-94): the query runs when a surface

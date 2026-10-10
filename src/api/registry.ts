@@ -50,6 +50,9 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
   'settings.setDispatch': { input: 'global: 1-16, perRepo: 1-global, perAccount: Record<AccountId, 1-global>, mode?: fixed | auto' },
   'quota.refresh': { input: 'id?: AccountId' },
   'capabilities.import': { input: 'identities: string[]' },
+  'page.comment': { input: 'page: PageId, version: number, text: string, anchor?: string' },
+  'page.requestApproval': { input: 'page: PageId' },
+  'page.decide': { input: 'page: PageId, decision: approved|rejected, version: number' },
   'app.update.check': { input: 'no input' },
   'app.update.apply': { input: 'no input' },
 };
@@ -79,4 +82,6 @@ export const QUERY_REGISTRY: Record<Query['type'], RegistryEntry> = {
   'capabilities.candidates': { input: 'no input' },
   'proposals.list': { input: "status?: 'pending' | 'approved' | 'rejected' | 'stale'" },
   'proposal.detail': { input: 'id: ProposalId' },
+  'pages.list': { input: 'workOrder: WorkOrderId' },
+  'page.detail': { input: 'id: PageId, version?: number' },
 };

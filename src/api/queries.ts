@@ -11,6 +11,7 @@ import type {
   WorktreeFilePreview,
 } from '../application';
 
+export type { PageCommentView, PageDetailView, PageListItem, PageVersionView } from './page-views';
 export type { AccountTestView, ProposalDetailView, ProposalListItem, StageFilesView, WorktreeFilePreview };
 
 export type Query =
@@ -37,7 +38,9 @@ export type Query =
   | { readonly type: 'workOrders.readStageFile'; readonly id: string; readonly path: string }
   | { readonly type: 'capabilities.candidates' } // no fresh: no cache (A-94)
   | { readonly type: 'proposals.list'; readonly status?: ProposalStatus } // → readonly ProposalListItem[] (A-128, A-129)
-  | { readonly type: 'proposal.detail'; readonly id: string }; // → ProposalDetailView | not_found (A-130, A-131)
+  | { readonly type: 'proposal.detail'; readonly id: string } // → ProposalDetailView | not_found (A-130, A-131)
+  | { readonly type: 'pages.list'; readonly workOrder: string } // → readonly PageListItem[] (A-154)
+  | { readonly type: 'page.detail'; readonly id: string; readonly version?: number }; // → PageDetailView | not_found | unknown_version (A-155 … A-157, A-160)
 
 export interface AttentionItem {
   readonly workOrderId: string;
