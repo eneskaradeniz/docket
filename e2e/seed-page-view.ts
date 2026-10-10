@@ -298,10 +298,25 @@ const second = await publishVersion(deps, {
 });
 assert(second.ok, `version 2 did not publish: ${second.ok ? '' : second.error.code}`);
 
+// The library journey's second page (J-14): the operator's own markdown note on the project, no work
+// order, a title with Turkish letters — the ASCII search "giris ekrani" must still find it, and the
+// "taslak" search (the html kind's Turkish name) must not.
+const NOTE_TITLE = 'Giriş ekranı notları';
+const note = await publishPageUseCase(deps, {
+  title: NOTE_TITLE,
+  kind: 'markdown',
+  by: OPERATOR,
+  entry: 'notlar.md',
+  project: PROJECT.id as ProjectSlug,
+  files: [{ path: 'notlar.md', bytes: new TextEncoder().encode('# Notlar\n\nGiriş ekranı için notlar.\n') }],
+});
+assert(note.ok, `the note page did not publish: ${note.ok ? '' : note.error.code}`);
+const notePageId = note.value.id;
+
 // On disk in the version directory, but not a recorded file of the version.
 writeFileSync(join(dataDir, 'pages', pageId, 'v1', 'secret'), 'TOP SECRET');
 
 node.value.close();
 console.log(
-  `SEED=${JSON.stringify({ home, dataDir, pageId, project: PROJECT.name, workOrderTitle: WORK_ORDER_TITLE, removedLine: OLD_LINE, addedLine: NEW_LINE })}`,
+  `SEED=${JSON.stringify({ home, dataDir, pageId, project: PROJECT.name, workOrderTitle: WORK_ORDER_TITLE, notePageId, noteTitle: NOTE_TITLE, removedLine: OLD_LINE, addedLine: NEW_LINE })}`,
 );

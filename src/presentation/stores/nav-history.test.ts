@@ -37,6 +37,26 @@ describe('navHistoryReducer', () => {
     expect(current(back(opened))).toStrictEqual(cockpit);
   });
 
+  it('U-84: the library is a route of its own — pushed once, never doubled, left by back, and it always exists', () => {
+    const library: NavRoute = { name: 'library' };
+    const opened = push(START_NAV_HISTORY, library);
+    expect(current(opened)).toStrictEqual(library);
+    expect(push(opened, library)).toBe(opened);
+    expect(current(back(opened))).toStrictEqual(cockpit);
+  });
+
+  it('U-84: opening a card from the library and going back returns to the library with its scroll', () => {
+    const library: NavRoute = { name: 'library' };
+    const onLibrary = push(START_NAV_HISTORY, library);
+    const onPage = push(onLibrary, { name: 'page', id: 'p1' }, 420);
+    const returned = back(onPage, (route) => route.name !== 'workOrder');
+    expect(current(returned)).toStrictEqual(library);
+    expect(returned.entries[returned.index]?.scroll).toBe(420);
+    // A library entry has no subject to vanish: it survives an exists() that denies everything else.
+    const walked = back(push(push(onLibrary, board('antreo-api')), roadmap('antero')), (route) => route.name === 'library' || route.name === 'cockpit', 0);
+    expect(current(walked)).toStrictEqual(library);
+  });
+
   it('U-25: push appends an entry and truncates the forward part', () => {
     const opened = push(push(START_NAV_HISTORY, board('antreo-api')), roadmap('antero'));
     const wentBack = back(opened);
