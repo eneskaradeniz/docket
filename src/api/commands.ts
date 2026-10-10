@@ -4,6 +4,8 @@ export type Command =
   | { readonly type: 'workOrder.open'; readonly project: string; readonly repo: string; readonly title: string; readonly flow?: string; readonly task?: string }
   | { readonly type: 'task.open'; readonly project: string; readonly task: string }
   | { readonly type: 'roadmap.runPhase'; readonly project: string; readonly phase: string } // ok → { ok: true, phaseRun } (A-98)
+  | { readonly type: 'roadmap.pausePhase'; readonly project: string; readonly phase: string } // errors: not_running (A-110)
+  | { readonly type: 'roadmap.resumePhase'; readonly project: string; readonly phase: string } // errors: not_paused (A-110)
   | { readonly type: 'project.attach'; readonly path: string; readonly repos?: readonly { readonly repo: string; readonly path: string }[] }
   | { readonly type: 'project.create'; readonly mode: 'existing'; readonly path: string; readonly name: string }
   | { readonly type: 'project.create'; readonly mode: 'blank'; readonly parent: string; readonly name: string } // ok → { ok: true, id: <project slug> }
@@ -27,7 +29,7 @@ export type Command =
   | { readonly type: 'account.consent.grant'; readonly id: string; readonly model: string; readonly cap?: { readonly scope: string; readonly amountUsd: number; readonly warnPercent: number } }
   | { readonly type: 'account.consent.revoke'; readonly id: string; readonly model: string }
   | { readonly type: 'binding.save'; readonly role: string; readonly accounts: { readonly accountId: string; readonly model?: string }[]; readonly thinking?: { readonly level?: string; readonly effort?: string }; readonly tier?: string }
-  | { readonly type: 'settings.setDispatch'; readonly global: number; readonly perRepo: number; readonly perAccount: Readonly<Record<string, number>> } // errors: invalid_limits, unknown_account
+  | { readonly type: 'settings.setDispatch'; readonly global: number; readonly perRepo: number; readonly perAccount: Readonly<Record<string, number>>; readonly mode?: 'fixed' | 'auto' } // errors: invalid_limits, unknown_account
   | { readonly type: 'quota.refresh'; readonly id?: string } // answers { ok: true } after the polls end (A-81)
   | { readonly type: 'capabilities.import'; readonly identities: readonly string[] }
   | { readonly type: 'app.update.check' }

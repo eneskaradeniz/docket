@@ -20,7 +20,7 @@ export type Query =
   | { readonly type: 'providers.discovered' }
   | { readonly type: 'accounts.candidates'; readonly fresh?: boolean }
   | { readonly type: 'accounts.candidateQuota'; readonly sourcePath: string }
-  | { readonly type: 'settings.dispatch' } // → DispatchLimits: { global, perRepo, perAccount }
+  | { readonly type: 'settings.dispatch' } // → DispatchSettingsView: { global, perRepo, perAccount, mode, suggested?, machine?, status? }
   | { readonly type: 'providers.marks' }
   | { readonly type: 'run.events'; readonly runId: string }
   | { readonly type: 'permissions.open' }
@@ -110,6 +110,10 @@ export interface RoadmapPageView {
     readonly id: string;
     readonly name: string;
     readonly status: string;
+    /** The ids of the phases that block this one and are not done; empty otherwise (A-127). */
+    readonly blockedBy: readonly string[];
+    /** Present once the operator started the phase (A-109); `attention` lists work-order ids. */
+    readonly autoRun?: { readonly state: string; readonly attention: readonly string[] };
     readonly tasks: readonly {
       readonly id: string;
       readonly title: string;

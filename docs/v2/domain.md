@@ -1001,3 +1001,17 @@ Addendum 2026-10-10 (#872): `QueueItem` gains one optional field, `readonly requ
 scheduled resume whose account quota is re-read before the item may start. The domain only carries
 it: `decideDispatch` ignores it and its decisions are unchanged. The application owns the re-query
 (A-101..A-104).
+
+Addendum 2026-10-10 (#879): the `roadmap` module gains `PhaseAutoRun { project, phase, state:
+'running' | 'paused' | 'done', startedAt, attention: readonly WorkOrderId[] }` and
+`PhaseAutoRunState`. They are plain data the application persists (A-109 … A-116); the roadmap
+derivation (R-40 … R-42) is unchanged and no new R-number is added.
+
+Addendum 2026-10-10 (#881): the `dispatch` module gains `machine.ts` — `MachineSample { cores,
+load1, freeMemRatio?, totalMemBytes }` (`freeMemRatio` absent = unknown), `LoadBand = 'free' |
+'reduced' | 'busy'` and three pure functions. `decideDispatch` and R-33 … R-35 are unchanged.
+
+- **R-69** (added 2026-10-10, #881) `loadBand(sample, previous)` enters a band on the per-core load `l = load1 / max(1, cores)`: `busy` when `l >= 1.0` or `freeMemRatio < 0.15`, from any previous band; otherwise `reduced` from `free` when `l >= 0.6`. Unknown free memory never forces a band.
+- **R-70** (added 2026-10-10, #881) Hysteresis: the leave thresholds are lower than the enter ones and a band leaves one step per sample. From `reduced`, the band returns to `free` only when `l < 0.5`, so 0.55 after crossing 0.6 stays `reduced` and 0.45 returns to `free`. From `busy`, the band returns to `reduced` (never straight to `free`) only when `l < 0.85` and free memory is unknown or `>= 0.20`.
+- **R-71** (added 2026-10-10, #881) `effectiveGlobal(cap, band, running)`: `free` answers `cap`; `reduced` answers `max(1, floor(cap / 2))`; `busy` answers `max(1, running)` — no new start while anything runs, but a machine with nothing running still makes progress. The answer is never above `cap`.
+- **R-72** (added 2026-10-10, #881) `suggestDispatchCap({ cores, totalMemBytes })` is `min(floor(cores / 2), floor(totalMemGB / 4))` clamped to 1 … 16, with `totalMemGB = totalMemBytes / 2^30` and each term floored first: (10 cores, 16 GB) → 4, (4, 8) → 2, (2, 4) → 1, (32, 128) → 16.

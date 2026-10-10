@@ -1,4 +1,4 @@
-// e2e/journeys.mjs — `npm run test:journeys`. J-1 … J-8 of docs/v2/ui.md → "Verifying the shell",
+// e2e/journeys.mjs — `npm run test:journeys`. J-1 … J-10 of docs/v2/ui.md → "Verifying the shell",
 // driven through the BUILT app on the design seed (e2e/seed-design.ts). Every step asserts visible
 // text and saves a screenshot to e2e/.out/journeys/, and every outcome lands in the structured
 // report (e2e/report.mjs) as it is printed.
@@ -19,6 +19,7 @@ import { ROOT, launchDesignApp, setWindow } from './design-app.mjs';
 import { acquireE2eLock } from './lock.mjs';
 import { SIZE_PLAN, comboPlan, resolveSizes } from './layout-rules.mjs';
 import { appendJourney, beginReport, REPORT_PATH } from './report.mjs';
+import { launchRoadmapApp } from './roadmap-app.mjs';
 import { launchWizardApp } from './wizard-app.mjs';
 
 const OUT = join(ROOT, 'e2e', '.out', 'journeys');
@@ -34,6 +35,9 @@ const full = process.argv.includes('--full') || process.env.FULL === '1';
 // resolved plan inside the loop, read from the first launch's primary display.
 const combos = quick ? [['default', 'dark']] : comboPlan(SIZE_PLAN, { full }).map(({ size, theme }) => [size.name, theme]);
 const WAIT = 4000; // a step that is going to pass does so in well under a second
+// Waits that depend on an account scan, an import or a data load are bounded by machine speed, not
+// by product behaviour: on a busy machine they run far past WAIT while the product is fine.
+const SCAN_WAIT = 20_000;
 
 const failures = [];
 let total = 0;
@@ -52,9 +56,9 @@ for (const [sizeName, theme] of combos) {
 
   const text = (t) => page.getByText(t, { exact: false }).first();
   /** Assert the text is visible. */
-  const see = async (t) => text(t).waitFor({ state: 'visible', timeout: WAIT });
+  const see = async (t, timeout = WAIT) => text(t).waitFor({ state: 'visible', timeout });
   const gone = async (t) => text(t).waitFor({ state: 'hidden', timeout: WAIT });
-  const click = async (t) => text(t).click({ timeout: WAIT });
+  const click = async (t, timeout = WAIT) => text(t).click({ timeout });
   const button = async (name) => page.getByRole('button', { name }).first().click({ timeout: WAIT });
 
   let jn = '';
@@ -117,17 +121,17 @@ for (const [sizeName, theme] of combos) {
     // profile (e2e/profile.mjs), so the board opens at Kanban — the click pins that standing
     // whatever the app's default or the storage's history.
     await button('Kanban');
-    await page.waitForSelector('[data-board-kanban]', { timeout: WAIT });
-    await see('Rol matrisi');
+    await page.waitForSelector('[data-board-kanban]', { timeout: SCAN_WAIT });
+    await see('Rol matrisi', SCAN_WAIT);
     await see('Bitti');
     await shot('board-kanban');
     await button('Liste');
-    await see('İE-0016');
+    await see('İE-0016', SCAN_WAIT);
     await shot('board-liste');
     await page.reload();
     await page.waitForSelector('nav');
-    await click('antreo-api');
-    await see('İE-0016');
+    await click('antreo-api', SCAN_WAIT);
+    await see('İE-0016', SCAN_WAIT);
     assert.equal(await page.locator('[data-board-kanban]').count(), 0, 'the Kanban columns must stay hidden after reload');
     await shot('board-liste-after-reload');
   });
@@ -452,8 +456,8 @@ for (const [sizeName, theme] of combos) {
   const handle = await launchWizardApp();
   const { page } = handle;
   const text = (t) => page.getByText(t, { exact: false }).first();
-  const see = async (t) => text(t).waitFor({ state: 'visible', timeout: WAIT });
-  const click = async (t) => text(t).click({ timeout: WAIT });
+  const see = async (t, timeout = WAIT) => text(t).waitFor({ state: 'visible', timeout });
+  const click = async (t, timeout = WAIT) => text(t).click({ timeout });
   const button = async (name) => page.getByRole('button', { name }).first().click({ timeout: WAIT });
 
   let jn = 'J-9';
@@ -474,7 +478,7 @@ for (const [sizeName, theme] of combos) {
     await see('Hoş geldin');
     await shot('welcome');
     await button('Devam');
-    await page.locator('[data-account-section="found"] [data-account-row]').first().waitFor({ state: 'visible', timeout: WAIT });
+    await page.locator('[data-account-section="found"] [data-account-row]').first().waitFor({ state: 'visible', timeout: SCAN_WAIT });
     const foundRows = page.locator('[data-account-section="found"] [data-account-row]');
     const rowCount = await foundRows.count();
     assert(rowCount === 2, `the wizard world must list exactly the two fixture accounts under Bulunanlar, saw ${rowCount}`);
@@ -496,10 +500,10 @@ for (const [sizeName, theme] of combos) {
     await button('Devam');
     // Yetenekler: one group per account; the shared capability is one row in both groups. The
     // group titles read "Asistan · Hesap" — the provider's name · the account's label (U-59).
-    await page.locator('[data-cap-group]').first().waitFor({ state: 'visible', timeout: WAIT });
+    await page.locator('[data-cap-group]').first().waitFor({ state: 'visible', timeout: SCAN_WAIT });
     const groupCount = await page.locator('[data-cap-group]').count();
     assert(groupCount === 2, `expected 2 capability groups, saw ${groupCount}`);
-    await page.locator('[data-cap-row="mcp:db|docker"]').waitFor({ state: 'visible', timeout: WAIT });
+    await page.locator('[data-cap-row="mcp:db|docker"]').waitFor({ state: 'visible', timeout: SCAN_WAIT });
     const sharedRows = page.locator('[data-cap-row="mcp:fetch|npx"]');
     assert((await sharedRows.count()) === 2, `the shared capability should list in both groups, saw ${await sharedRows.count()}`);
     await shot('capabilities');
@@ -532,9 +536,9 @@ for (const [sizeName, theme] of combos) {
     await see('Önerilen ayarlar uygulandı');
     await button('Kurulumu bitir');
     // The finish's capability line takes its check only when the import really ran (U-60).
-    await page.locator('[data-finish-line="capabilities"][data-ps="done"]').waitFor({ state: 'visible', timeout: WAIT });
+    await page.locator('[data-finish-line="capabilities"][data-ps="done"]').waitFor({ state: 'visible', timeout: SCAN_WAIT });
     await shot('finish-capability-line');
-    await page.locator('[data-wizard]').waitFor({ state: 'detached', timeout: WAIT });
+    await page.locator('[data-wizard]').waitFor({ state: 'detached', timeout: SCAN_WAIT });
     await see('Kurulum tamamlandı');
     await shot('done');
     // The import's own evidence: the definition file exists in the data dir. The yaml stores the
@@ -551,6 +555,117 @@ for (const [sizeName, theme] of combos) {
     console.log(`  FAIL ${title}\n       ${String(error).split('\n')[0]}`);
     appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).split('\n')[0] });
     await page.screenshot({ path: join(OUT, 'J-9-FAIL.png') }).catch(() => undefined);
+  }
+  await handle.app.close();
+}
+
+// J-10 walks the roadmap page's run controls on its own world (U-63 … U-68): a fresh home holding
+// one project whose roadmap has a done phase, a paused phase with an attention work order, a phase
+// blocked by it and a planned phase with two runnable tasks — and no account, so nothing can run
+// or spend. It runs once per run, not per size × theme combination: it asserts the control
+// machine, not the layout (the layout audit covers the roadmap page at the fixed widths).
+{
+  const handle = await launchRoadmapApp();
+  const { page, seed } = handle;
+  const see = async (t) => page.getByText(t, { exact: false }).first().waitFor({ state: 'visible', timeout: WAIT });
+  const phase = (id) => page.locator(`[data-phase="${id}"]`);
+  const inCard = (id, name) => phase(id).getByRole('button', { name }).first();
+  const toastWith = (t) => page.locator('[data-toast]').filter({ hasText: t }).first();
+  // The toast stack sits top-right over the cards: it is closed (its own close button) before any
+  // step reaches an element it could cover, and the step waits until none is left.
+  const dismissToasts = async () => {
+    const toasts = page.locator('[data-toast]');
+    for (let left = await toasts.count(); left > 0; left = await toasts.count()) {
+      await toasts.first().getByRole('button', { name: 'Kapat' }).click({ timeout: WAIT });
+      await page.waitForFunction((n) => document.querySelectorAll('[data-toast]').length < n, left, { timeout: WAIT });
+    }
+  };
+
+  let jn = 'J-10';
+  let stepNo = 0;
+  let steps = [];
+  const shot = async (label) => {
+    stepNo += 1;
+    steps.push(label);
+    const slug = label.toLowerCase().replace(/[^a-z0-9ğüşıöç]+/g, '-').replace(/^-|-$/g, '');
+    await page.screenshot({ path: join(OUT, `${jn}-${stepNo}-${slug}.png`) });
+  };
+  const title = 'J-10: roadmap: run controls — blocked reason, confirmation, start, pause, attention panel';
+  total += 1;
+  try {
+    await page.locator('nav button, nav a').filter({ hasText: seed.project }).first().click({ timeout: WAIT });
+    await phase('temel').waitFor({ state: 'visible', timeout: WAIT });
+    await shot('roadmap');
+
+    // Done phase: the green chip, no run button.
+    await phase('temel').getByText('✓ Bitti').waitFor({ state: 'visible', timeout: WAIT });
+    assert((await phase('temel').getByRole('button', { name: 'Fazı çalıştır' }).count()) === 0, 'a done phase must not offer Fazı çalıştır');
+
+    // Blocked phase: the button is disabled and the reason names the blocking phase.
+    const blocked = inCard('bildirim', 'Fazı çalıştır');
+    await blocked.waitFor({ state: 'visible', timeout: WAIT });
+    assert(await blocked.isDisabled(), 'the blocked phase’s Fazı çalıştır must be disabled');
+    await phase('bildirim').getByText('Önce “Ödeme akışı” bitmeli').waitFor({ state: 'visible', timeout: WAIT });
+    await shot('blocked-reason');
+
+    // Paused phase with an attention work order: Sürdür, the hint and the attention chip.
+    await phase('odeme').getByText('Duraklatıldı').waitFor({ state: 'visible', timeout: WAIT });
+    await phase('odeme').getByText('Yeni iş başlamaz').waitFor({ state: 'visible', timeout: WAIT });
+    await inCard('odeme', 'Sürdür').waitFor({ state: 'visible', timeout: WAIT });
+    await inCard('odeme', '1 dikkat').waitFor({ state: 'visible', timeout: WAIT });
+
+    // Runnable phase: the confirmation carries the counts; Vazgeç closes it and starts nothing.
+    await inCard('yayin', 'Fazı çalıştır').click({ timeout: WAIT });
+    await phase('yayin').getByText('2 görev').waitFor({ state: 'visible', timeout: WAIT });
+    await phase('yayin').getByText('3 iş emri').waitFor({ state: 'visible', timeout: WAIT });
+    await phase('yayin').getByText('Ücretli bir model gerekirse izin ayrıca sorulur').waitFor({ state: 'visible', timeout: WAIT });
+    await shot('confirmation');
+    await inCard('yayin', 'Vazgeç').click({ timeout: WAIT });
+    await inCard('yayin', 'Başlat').waitFor({ state: 'detached', timeout: WAIT });
+    assert((await phase('yayin').getByRole('button', { name: 'Duraklat' }).count()) === 0, 'Vazgeç must not start the phase');
+
+    // Başlat sends the command. The world has no account, so the work orders open but none can
+    // queue: the warn toast counts the DISTINCT tasks that failed (yuk-testi with two work orders
+    // and surum-notlari with one → 2), and nothing may claim a work order queued.
+    await inCard('yayin', 'Fazı çalıştır').click({ timeout: WAIT });
+    await inCard('yayin', 'Başlat').click({ timeout: WAIT });
+    await toastWith('2 görev açılamadı').waitFor({ state: 'visible', timeout: WAIT });
+    assert((await page.getByText('sıraya girdi').count()) === 0, 'nothing queued, so no toast may say work orders queued');
+    await shot('started');
+    await dismissToasts();
+    await inCard('yayin', 'Duraklat').waitFor({ state: 'visible', timeout: WAIT });
+    await phase('yayin').getByText('Çalışıyor').first().waitFor({ state: 'visible', timeout: WAIT });
+
+    // Duraklat flips the card to Sürdür.
+    await inCard('yayin', 'Duraklat').click({ timeout: WAIT });
+    await toastWith('Faz duraklatıldı').waitFor({ state: 'visible', timeout: WAIT });
+    await inCard('yayin', 'Sürdür').waitFor({ state: 'visible', timeout: WAIT });
+    await shot('paused');
+    await dismissToasts();
+
+    // The attention chip opens the panel: the work order's code, its task and the sentence; the
+    // code opens the work order's detail.
+    await inCard('odeme', '1 dikkat').click({ timeout: WAIT });
+    const panel = phase('odeme').getByRole('group', { name: 'Dikkat isteyen iş emirleri' });
+    await panel.waitFor({ state: 'visible', timeout: WAIT });
+    await panel.getByText(seed.flaggedTask).waitFor({ state: 'visible', timeout: WAIT });
+    await panel.getByText('başarısız. Faz sürüyor, bağımsız görevler devam ediyor.').waitFor({ state: 'visible', timeout: WAIT });
+    await shot('attention');
+    // The panel lists exactly one flagged order; its number is not pinned, because the work orders
+    // Başlat opened since may rank anywhere.
+    const codeButton = panel.getByRole('button').first();
+    assert(/^İE-\d{4}$/.test(((await codeButton.textContent()) ?? '').trim()), 'the attention row must show a work-order code');
+    await codeButton.click({ timeout: WAIT });
+    await phase('odeme').waitFor({ state: 'detached', timeout: WAIT });
+    await shot('detail');
+
+    console.log(`  ok   ${title}`);
+    appendJourney({ id: title, status: 'ok', steps });
+  } catch (error) {
+    failures.push(title);
+    console.log(`  FAIL ${title}\n       ${String(error).split('\n')[0]}`);
+    appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).split('\n')[0] });
+    await page.screenshot({ path: join(OUT, 'J-10-FAIL.png') }).catch(() => undefined);
   }
   await handle.app.close();
 }

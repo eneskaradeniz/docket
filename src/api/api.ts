@@ -90,6 +90,8 @@ import {
   isSourceTaken,
   openTaskWorkOrders,
   runPhase,
+  pausePhase,
+  resumePhase,
   openWorkOrder,
   readStageFile,
   registerRepo,
@@ -101,7 +103,7 @@ import {
   saveAccount,
   saveAccountCap,
   saveBinding,
-  getDispatchLimits,
+  dispatchSettingsView,
   setDispatchLimits,
   stageFiles,
   unblockWorkOrder,
@@ -370,6 +372,17 @@ const runCommand = async (
       if (phase === undefined) return invalidId();
       const ran = await runPhase(deps, { project, phase, actor });
       return ran.ok ? { ok: true, phaseRun: ran.value } : { ok: false, code: ran.error };
+    }
+
+    case 'roadmap.pausePhase':
+    case 'roadmap.resumePhase': {
+      const project = slugValue<'project'>(command.project);
+      if (project === undefined) return invalidId();
+      const phase = slugValue<'phase'>(command.phase);
+      if (phase === undefined) return invalidId();
+      const control = command.type === 'roadmap.pausePhase' ? pausePhase : resumePhase;
+      const changed = await control(deps, { project, phase, actor });
+      return changed.ok ? { ok: true } : { ok: false, code: changed.error };
     }
 
     case 'project.attach': {
@@ -797,7 +810,7 @@ const runCommand = async (
       return commandOf(
         await setDispatchLimits(
           { clock: deps.clock, ids: deps.ids, log: deps.log, settings: deps.settings, accounts: deps.accounts },
-          { limits: { global: command.global, perRepo: command.perRepo, perAccount }, actor },
+          { limits: { global: command.global, perRepo: command.perRepo, perAccount }, ...(command.mode === undefined ? {} : { mode: command.mode }), actor },
         ),
       );
     }
@@ -907,7 +920,7 @@ const runQuery = async (
 
     // The stored limits are already the view: plain JSON, defaults when nothing valid is saved.
     case 'settings.dispatch':
-      return getDispatchLimits(deps);
+      return dispatchSettingsView(deps);
 
     case 'roles.list':
       return rolesListView(deps, registry);
@@ -1578,11 +1591,19 @@ const roadmapView = async (
     }
   }
 
+  const autoRuns = new Map<string, { readonly state: string; readonly attention: readonly string[] }>();
+  for (const phase of roadmap.value.phases) {
+    const found = await deps.phaseAutoRuns.get(project, phase.id);
+    if (found !== undefined) autoRuns.set(phase.id, { state: found.state, attention: [...found.attention] });
+  }
+
   return {
     phases: roadmap.value.phases.map((phase) => ({
       id: phase.id,
       name: phase.name,
       status: view.phases[phase.id] ?? 'planned',
+      blockedBy: phase.blockedBy.filter((blocker) => (view.phases[blocker] ?? 'planned') !== 'done'),
+      ...(autoRuns.has(phase.id) ? { autoRun: autoRuns.get(phase.id) } : {}),
       tasks: phase.tasks.map((task) => ({
         id: task.id,
         title: task.title,

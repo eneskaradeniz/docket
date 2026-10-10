@@ -17,6 +17,8 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
   'workOrder.open': { input: 'project: ProjectSlug, repo: RepoSlug, title: string, flow?: FlowSlug, task?: TaskSlug' },
   'task.open': { input: 'project: ProjectSlug, task: TaskSlug' },
   'roadmap.runPhase': { input: 'project: ProjectSlug, phase: PhaseSlug' },
+  'roadmap.pausePhase': { input: 'project: ProjectSlug, phase: PhaseSlug' },
+  'roadmap.resumePhase': { input: 'project: ProjectSlug, phase: PhaseSlug' },
   'project.attach': { input: 'path: string, repos?: { repo: RepoSlug, path: string }[]' },
   'project.create': { input: "mode: 'existing' (path, name) | 'blank' (parent, name)" },
   'repo.register': { input: 'project: ProjectSlug, repo: RepoSlug, path: string' },
@@ -45,7 +47,7 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
     input:
       'role: RoleSlug, accounts: { accountId: AccountId, model?: string }[], thinking?: { level? | effort? }, tier?: Tier',
   },
-  'settings.setDispatch': { input: 'global: 1-16, perRepo: 1-global, perAccount: Record<AccountId, 1-global>' },
+  'settings.setDispatch': { input: 'global: 1-16, perRepo: 1-global, perAccount: Record<AccountId, 1-global>, mode?: fixed | auto' },
   'quota.refresh': { input: 'id?: AccountId' },
   'capabilities.import': { input: 'identities: string[]' },
   'app.update.check': { input: 'no input' },

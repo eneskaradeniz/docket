@@ -25,6 +25,7 @@ import {
   createSqliteAppSettingsRepo,
   createSqliteBindingRepo,
   createSqliteEventLog,
+  createSqlitePhaseAutoRunRepo,
   createSqliteProjectPaths,
   createSqliteProjectRepo,
   createSqliteProposalRepo,
@@ -35,7 +36,7 @@ import {
   openDatabase,
   type OpenDbError,
 } from '../storage/sqlite/index';
-import { createSystemClock, createUlidGen, type ProjectPaths, type RandomBytes } from '../system/index';
+import { createMemoryDispatchStatus, createNodeMachineProbe, createSystemClock, createUlidGen,type ProjectPaths, type RandomBytes } from '../system/index';
 import { createCheckpoints, createEvidenceChecker, createGitProbe, createRepoFolders, createWorktrees, createWorktreeFiles } from '../vcs/index';
 import { createCapabilityCatalog } from '../providers/registry/index';
 import { createModelCatalog } from '../providers/catalog/index';
@@ -107,6 +108,7 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     repos,
     bindings: createSqliteBindingRepo(db),
     settings: createSqliteAppSettingsRepo(db),
+    phaseAutoRuns: createSqlitePhaseAutoRunRepo(db),
     queue: createSqliteQueueRepo(db),
     definitions: createYamlDefinitionStore({ globalRoot: config.dataDir, repos, projects: projectPaths }),
     proposals: createSqliteProposalRepo(db),
@@ -125,6 +127,8 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     accountTests: createMemoryAccountTestRepo(),
     scratch: createScratchDirs(),
     repoFolders: createRepoFolders(),
+    machine: createNodeMachineProbe(),
+    dispatchStatus: createMemoryDispatchStatus(),
   };
 
   const accountDiscovery = createNodeAccountScan(

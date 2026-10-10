@@ -419,6 +419,9 @@ table); anything unproven stays out and is listed as `unknown` — never a guess
 - **I-46** (added 2026-10-10, #873) The settings store: migration 4 creates `app_settings (key TEXT PRIMARY KEY, value_json TEXT)`; `createSqliteAppSettingsRepo(db)` implements `AppSettingsRepo` (A-105) over it — `set` upserts the key with the value as JSON text, `get` parses it back (`undefined` for an unset key). The fake `createFakeAppSettingsRepo()` runs the same behaviour cases (I-5): values round-trip structurally, a stored value is a copy (later mutation of the input never reaches the store), a re-`set` replaces, and a value that is not JSON-serialisable (`undefined`) rejects without touching the stored value.
 - **I-47** (added 2026-10-10, #873) The table is generic on purpose: a new setting is a new key, never a new migration. A set value survives closing and reopening the database file (I-8's stance), and migration 4's SQL is pinned exactly in `database`'s migration list.
 
+- **I-48** (added 2026-10-10, #879) The phase auto-run store: `createSqlitePhaseAutoRunRepo(db)` implements `PhaseAutoRunRepo` (A-109) over migration 5's `phase_auto_runs`, and the fake and the SQLite repository run the same cases (I-5 style): an unknown (project, phase) reads `undefined` and an empty store lists nothing; `put` round-trips every field, the attention ids included, and replaces the record of the same (project, phase) without touching others; `list` is ordered by project then phase; the store keeps copies, so mutating the input afterwards never reaches it.
+- **I-49** (added 2026-10-10, #879) Migration 5 creates `phase_auto_runs (project TEXT NOT NULL, phase TEXT NOT NULL, state TEXT NOT NULL, started_at INTEGER NOT NULL, attention_json TEXT NOT NULL, PRIMARY KEY (project, phase))`, pinned exactly in the sqlite tests; a stored record survives closing and reopening the database file (I-8's stance).
+
 ## 9. Phase 2b acceptance — headless end to end on real storage
 
 `src/infrastructure/scenarios/standard-flow-node.test.ts` repeats the Phase 2a scenario
@@ -431,3 +434,8 @@ the real command runner, secret scanner and worktrees, a fake transport and a te
 the same states as 2a, that the worktree exists at `<dataDir>/worktrees/<repo>/<id>`, and — after
 `close()` and a fresh `createNodeDeps` on the same folder — that `workOrder.detail` returns the same
 state and runs.
+
+Addendum 2026-10-10 (#881) — the machine probe. `system/machine-probe.ts` holds both pieces; the OS calls are injected through `MachineOs` so the tests are hermetic.
+
+- **I-50** (added 2026-10-10, #881) `createNodeMachineProbe` implements `MachineProbe` (A-117 …) over `node:os`: `cpus().length`, `loadavg()[0]`, `totalmem()`, read fresh on every call. The free-memory ratio is, on `darwin`, the percentage `sysctl -n kern.memorystatus_level` prints divided by 100 (`os.freemem()` under-reports there), and elsewhere `os.freemem() / os.totalmem()`. Any failure of that reading — a failed or timed-out `sysctl`, unparsable text, a value outside 0 … 100, zero total memory — leaves `freeMemRatio` absent; a failure of cores, load or total memory rejects. The single `execFile` call lives in this one file.
+- **I-51** (added 2026-10-10, #881) `createMemoryDispatchStatus()` implements `DispatchStatusHolder` in memory only: `get` is `undefined` before the first `set`, the last `set` wins, and it keeps copies. The fake `createFakeDispatchStatus()` runs the same cases.

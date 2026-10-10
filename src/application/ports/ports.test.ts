@@ -19,6 +19,7 @@ import type {
 } from './agent-transport';
 import type { AccountTestRepo } from './account-test-repo';
 import type { AppSettingsRepo } from './app-settings-repo';
+import type { PhaseAutoRunRepo } from './phase-auto-run-repo';
 import type { BindingRepo, BindingScope } from './binding-repo';
 import type { CapabilityCatalog } from './capability-catalog';
 import type { CapabilityDiscovery } from './capability-discovery';
@@ -28,6 +29,7 @@ import type { DefinitionFile, DefinitionScope, DefinitionStore } from './definit
 import type { AppDeps } from './deps';
 import type { AuditAction, AuditEntry, AuditSubject, EventLog } from './event-log';
 import type { GitProbe } from './git-probe';
+import type { DispatchStatusHolder, MachineProbe } from './machine-probe';
 import type { IdGen } from './id-gen';
 import type { InstructionFiles } from './instruction-files';
 import type { ModelCatalog } from './model-catalog';
@@ -80,8 +82,11 @@ describe('AppDeps', () => {
     expectTypeOf<AppDeps['checkpoints']>().toEqualTypeOf<CheckpointCommitter>();
     expectTypeOf<AppDeps['accountTests']>().toEqualTypeOf<AccountTestRepo>();
     expectTypeOf<AppDeps['settings']>().toEqualTypeOf<AppSettingsRepo>();
+    expectTypeOf<AppDeps['phaseAutoRuns']>().toEqualTypeOf<PhaseAutoRunRepo>();
     expectTypeOf<AppDeps['scratch']>().toEqualTypeOf<ScratchDirs>();
     expectTypeOf<AppDeps['repoFolders']>().toEqualTypeOf<RepoFolders>();
+    expectTypeOf<AppDeps['machine']>().toEqualTypeOf<MachineProbe>();
+    expectTypeOf<AppDeps['dispatchStatus']>().toEqualTypeOf<DispatchStatusHolder>();
   });
 
   it('exposes exactly the contract keys', () => {
@@ -114,8 +119,11 @@ describe('AppDeps', () => {
       | 'checkpoints'
       | 'accountTests'
       | 'settings'
+      | 'phaseAutoRuns'
       | 'scratch'
       | 'repoFolders'
+      | 'machine'
+      | 'dispatchStatus'
     >();
   });
 
