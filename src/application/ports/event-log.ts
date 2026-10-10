@@ -3,6 +3,7 @@ import type {
   AccountId,
   Actor,
   CapabilitySlug,
+  ConversationId,
   EpochMs,
   PageId,
   ProjectSlug,
@@ -21,13 +22,15 @@ export type AuditAction =
   | 'account.consent.granted' | 'account.consent.revoked' | 'account.tested'
   | 'project.created' | 'project.attached' | 'repo.registered' | 'repo.unregistered'
   | 'capability.imported' | 'phase.run' | 'phase.paused' | 'phase.resumed' | 'settings.dispatch_changed'
-  | 'page.published' | 'page.versioned' | 'page.commented' | 'page.approval_requested' | 'page.approval_decided';
+  | 'page.published' | 'page.versioned' | 'page.commented' | 'page.approval_requested' | 'page.approval_decided'
+  | 'conversation.started' | 'conversation.deleted' | 'conversation.pinned' | 'conversation.draft_confirmed' | 'conversation.draft_dropped';
 
 export type AuditSubject =
   | { readonly kind: 'work_order'; readonly id: WorkOrderId }
   | { readonly kind: 'run'; readonly id: RunId }
   | { readonly kind: 'proposal'; readonly id: ProposalId }
   | { readonly kind: 'page'; readonly id: PageId }
+  | { readonly kind: 'conversation'; readonly id: ConversationId }
   | { readonly kind: 'account'; readonly id: AccountId }
   | { readonly kind: 'binding'; readonly role: RoleSlug }
   | { readonly kind: 'project'; readonly id: ProjectSlug }

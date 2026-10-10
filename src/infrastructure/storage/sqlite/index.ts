@@ -5,6 +5,7 @@ export * from './page-repo';
 export * from './phase-auto-run-repo';
 export * from './binding-repo';
 export * from './database';
+export * from './conversation-repo';
 export * from './event-log';
 export * from './project-repo';
 export * from './proposal-repo';

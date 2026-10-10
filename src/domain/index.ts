@@ -5,6 +5,7 @@ export * from './quota/index';
 export * from './budget/index';
 export * from './proposal/index';
 export * from './pages/index';
+export * from './conversations/index';
 export * from './resolver/index';
 export * from './gates/index';
 export * from './providers/index';

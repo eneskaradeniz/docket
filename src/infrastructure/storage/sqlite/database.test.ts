@@ -85,6 +85,8 @@ const MIGRATED_TABLES = [
   'phase_auto_runs',
   'pages',
   'page_comments',
+  'conversations',
+  'drafts',
 ];
 
 const MIGRATION_1_INDEXES = [
@@ -104,6 +106,9 @@ const MIGRATED_INDEXES = [
   'pages_by_work_order',
   'pages_by_project',
   'page_comments_by_page',
+  'conversations_by_scope',
+  'conversations_by_updated',
+  'drafts_by_conversation',
 ];
 
 let tmp: string;
