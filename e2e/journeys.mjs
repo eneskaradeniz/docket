@@ -1,4 +1,4 @@
-// e2e/journeys.mjs — `npm run test:journeys`. J-1 … J-15 of docs/v2/ui.md → "Verifying the shell",
+// e2e/journeys.mjs — `npm run test:journeys`. J-1 … J-17 of docs/v2/ui.md → "Verifying the shell",
 // driven through the BUILT app on the design seed (e2e/seed-design.ts). Every step asserts visible
 // text and saves a screenshot to e2e/.out/journeys/, and every outcome lands in the structured
 // report (e2e/report.mjs) as it is printed.
@@ -1315,20 +1315,6 @@ for (const [sizeName, theme] of combos) {
       await sleep(200);
     }
   };
-// J-17 walks the Öneriler screen (U-136 … U-150) on the page world's launch: three proposals on the
-// repo's own definition files — one pending (the assistant adds a line to the developer role), one
-// whose target file moved since (stale) and one already rejected. It runs on its own launch, so
-// what J-12 … J-14 did cannot leak in. No account, no keychain, no agent run: the only command is
-// the screen's own proposal.decide. Once per run, like J-10 … J-14.
-{
-  const handle = await launchPageViewApp();
-  const { page, seed, probe } = handle;
-  const proposals = seed.proposals;
-  const toastWith = (t) => page.locator('[data-toast]').filter({ hasText: t }).first();
-  const screen = page.locator('[data-proposals-screen]');
-  const item = (id) => screen.locator(`[data-proposals-item="${id}"]`);
-  const tab = (name) => screen.locator(`[data-proposals-tab="${name}"]`);
-  const detail = screen.locator('[data-proposals-detail]');
 
   let stepNo = 0;
   const steps = [];
@@ -1530,6 +1516,41 @@ for (const [sizeName, theme] of combos) {
     await shot('esc-merdiveni');
 
     assert.deepEqual(errors, [], `the page reported errors: ${errors.join(' | ').slice(0, 600)}`);
+    assert.deepEqual(probe.hits, [], `the probe saw requests: ${probe.hits.join(' | ')}`);
+
+    console.log(`  ok   ${title}`);
+    appendJourney({ id: title, status: 'ok', steps });
+  } catch (error) {
+    failures.push(title);
+    console.log(`  FAIL ${title}\n       ${String(error).slice(0, 600)}`);
+    appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).slice(0, 600) });
+    await page.screenshot({ path: join(OUT, 'J-15-FAIL.png') }).catch(() => undefined);
+  }
+  await handle.app.close();
+  await probe.close();
+}
+
+// J-17 walks the Öneriler screen (U-136 … U-150) on the page world's launch: three proposals on the
+// repo's own definition files — one pending (the assistant adds a line to the developer role), one
+// whose target file moved since (stale) and one already rejected. It runs on its own launch, so
+// what J-12 … J-14 did cannot leak in. No account, no keychain, no agent run: the only command is
+// the screen's own proposal.decide. Once per run, like J-10 … J-14.
+{
+  const handle = await launchPageViewApp();
+  const { page, seed, probe } = handle;
+  const proposals = seed.proposals;
+  const toastWith = (t) => page.locator('[data-toast]').filter({ hasText: t }).first();
+  const screen = page.locator('[data-proposals-screen]');
+  const item = (id) => screen.locator(`[data-proposals-item="${id}"]`);
+  const tab = (name) => screen.locator(`[data-proposals-tab="${name}"]`);
+  const detail = screen.locator('[data-proposals-detail]');
+
+  let stepNo = 0;
+  const steps = [];
+  const shot = async (label) => {
+    stepNo += 1;
+    steps.push(label);
+    const slug = label.toLowerCase().replace(/[^a-z0-9ğüşıöç]+/g, '-').replace(/^-|-$/g, '');
     await page.screenshot({ path: join(OUT, `J-17-${stepNo}-${slug}.png`) });
   };
   const title = 'J-17: Öneriler: rozet, fark, bayat öneride Onayla pasif, onayla, Karar verilen';
@@ -1593,7 +1614,6 @@ for (const [sizeName, theme] of combos) {
     failures.push(title);
     console.log(`  FAIL ${title}\n       ${String(error).slice(0, 600)}`);
     appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).slice(0, 600) });
-    await page.screenshot({ path: join(OUT, 'J-15-FAIL.png') }).catch(() => undefined);
     await page.screenshot({ path: join(OUT, 'J-17-FAIL.png') }).catch(() => undefined);
   }
   await handle.app.close();
