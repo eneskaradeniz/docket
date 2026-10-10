@@ -77,4 +77,6 @@ export const QUERY_REGISTRY: Record<Query['type'], RegistryEntry> = {
   'workOrders.stageFiles': { input: 'id: WorkOrderId' },
   'workOrders.readStageFile': { input: 'id: WorkOrderId, path: string' },
   'capabilities.candidates': { input: 'no input' },
+  'proposals.list': { input: "status?: 'pending' | 'approved' | 'rejected' | 'stale'" },
+  'proposal.detail': { input: 'id: ProposalId' },
 };

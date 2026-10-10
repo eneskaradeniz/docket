@@ -88,6 +88,8 @@ import {
   grantSpendConsent,
   importCapabilities,
   isSourceTaken,
+  listProposals,
+  proposalDetail,
   openTaskWorkOrders,
   runPhase,
   pausePhase,
@@ -853,6 +855,13 @@ const runQuery = async (
       if (id === undefined) return invalidId();
       const res = await readStageFile(deps, { id, path: query.path });
       return res.ok ? res.value : { ok: false, code: res.error };
+    }
+    case 'proposals.list':
+      return listProposals(deps, query.status === undefined ? {} : { status: query.status });
+    case 'proposal.detail': {
+      const id = ulidValue<'proposal'>(query.id);
+      if (id === undefined) return invalidId();
+      return (await proposalDetail(deps, id)) ?? { ok: false, code: 'not_found' };
     }
     case 'capabilities.candidates':
       // The scan runs on every call — no remembered window (A-94): the query runs when a surface
