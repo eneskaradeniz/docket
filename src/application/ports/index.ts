@@ -1,5 +1,6 @@
 // Ports barrel — see docs/v2/application.md § 1.
 export * from './account-discovery';
+export * from './action-repo';
 export * from './account-repo';
 export * from './account-test-repo';
 export * from './app-settings-repo';

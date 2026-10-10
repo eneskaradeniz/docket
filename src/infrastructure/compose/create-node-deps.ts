@@ -26,6 +26,7 @@ import {
   createSqliteAppSettingsRepo,
   createSqliteBindingRepo,
   createSqliteEventLog,
+  createSqliteActionRepo,
   createSqliteConversationRepo,
   createSqlitePageRepo,
   createSqlitePhaseAutoRunRepo,
@@ -48,6 +49,7 @@ import { createNodeAccountScan, createNodeCapabilityScan, createNodeCredentialIm
 import { createNodeRunTokens } from '../mcp/index';
 import { createNodeInstructionFiles } from './instruction-files';
 import { createFsAttachmentFiles } from './attachment-files';
+import { createMemoryGrantRepo } from './grant-repo';
 import { createFsPageFiles } from './page-files';
 import { createRunDirs } from './run-dirs';
 
@@ -126,6 +128,8 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     pageFiles: createFsPageFiles(config.dataDir),
     conversations: createSqliteConversationRepo(db),
     attachmentFiles: createFsAttachmentFiles(config.dataDir),
+    actions: createSqliteActionRepo(db),
+    grants: createMemoryGrantRepo(),
     secrets,
     transports: config.transports,
     commands: createCommandRunner({ env: config.commandEnv }),

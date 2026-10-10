@@ -23,7 +23,8 @@ export type AuditAction =
   | 'project.created' | 'project.attached' | 'repo.registered' | 'repo.unregistered'
   | 'capability.imported' | 'phase.run' | 'phase.paused' | 'phase.resumed' | 'settings.dispatch_changed'
   | 'page.published' | 'page.versioned' | 'page.commented' | 'page.approval_requested' | 'page.approval_decided'
-  | 'conversation.started' | 'conversation.deleted' | 'conversation.pinned' | 'conversation.draft_confirmed' | 'conversation.draft_dropped';
+  | 'conversation.started' | 'conversation.deleted' | 'conversation.pinned' | 'conversation.draft_confirmed' | 'conversation.draft_dropped'
+  | 'action.proposed' | 'action.applied' | 'action.rejected' | 'action.failed' | 'action.undone' | 'grant.created' | 'grant.revoked';
 
 export type AuditSubject =
   | { readonly kind: 'work_order'; readonly id: WorkOrderId }

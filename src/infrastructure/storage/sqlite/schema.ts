@@ -87,4 +87,11 @@ CREATE INDEX conversations_by_updated ON conversations (updated_at);
 CREATE TABLE drafts (id TEXT PRIMARY KEY, conversation TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
 CREATE INDEX drafts_by_conversation ON drafts (conversation, id);`,
   },
+  {
+    // Assistant actions (I-77): the record as JSON `data`, with the columns one conversation's list,
+    // pending filter and count read beside it. Grants are deliberately not here: they live in memory.
+    version: 8,
+    sql: `CREATE TABLE actions (id TEXT PRIMARY KEY, conversation TEXT NOT NULL, status TEXT NOT NULL, proposed_at INTEGER NOT NULL, data TEXT NOT NULL);
+CREATE INDEX actions_by_conversation ON actions (conversation, status);`,
+  },
 ];

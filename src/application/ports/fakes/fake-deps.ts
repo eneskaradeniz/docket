@@ -3,6 +3,7 @@ import type { AppDeps } from '../deps';
 
 import { createFakeAccountRepo } from './fake-account-repo';
 import { createFakeAccountTestRepo } from './fake-account-test-repo';
+import { createFakeActionRepo, createFakeGrantRepo } from './fake-action-repo';
 import { createFakeAppSettingsRepo } from './fake-app-settings-repo';
 import { createFakeAttachmentFiles } from './fake-attachment-files';
 import { createFakeBindingRepo } from './fake-binding-repo';
@@ -61,6 +62,8 @@ export const createFakeDeps = (overrides: Partial<AppDeps> = {}): AppDeps => ({
   pageFiles: createFakePageFiles(),
   conversations: createFakeConversationRepo(),
   attachmentFiles: createFakeAttachmentFiles(),
+  actions: createFakeActionRepo(),
+  grants: createFakeGrantRepo(),
   secrets: createFakeSecretVault(),
   transports: createFakeTransportResolver(),
   commands: createFakeCommandRunner(),

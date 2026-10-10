@@ -2,5 +2,6 @@
 export * from './create-node-deps';
 export * from './instruction-files';
 export * from './attachment-files';
+export * from './grant-repo';
 export * from './page-files';
 export * from './run-dirs';
