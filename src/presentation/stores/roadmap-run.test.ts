@@ -175,7 +175,7 @@ describe('roadmap run controls — confirmation (U-64)', () => {
 });
 
 describe('roadmap run controls — result feedback (U-66)', () => {
-  it('U-66: a run answers the success notice with the sub-line counts from phaseRun.opened', async () => {
+  it('U-66: all queued — the success notice counts the tasks and work orders that really queued', async () => {
     const h = harness(RUN_VIEW);
     await h.store.load('antero');
     h.reply({
@@ -188,24 +188,60 @@ describe('roadmap run controls — result feedback (U-66)', () => {
     ]);
   });
 
-  it('U-66: a non-empty phaseRun.failed adds the warn notice with the count and no raw error code', async () => {
+  it('U-66: some failed — a work order listed in opened and in failed is not claimed as queued; the warn counts distinct tasks', async () => {
     const h = harness(RUN_VIEW);
     await h.store.load('antero');
     h.reply({
       ok: true,
-      phaseRun: { opened: [{ task: 't1', workOrders: ['a'] }], failed: [{ task: 't2', error: 'no_account' }, { task: 't3', error: 'stale' }] },
+      phaseRun: {
+        opened: [{ task: 't1', workOrders: ['a', 'b'] }, { task: 't2', workOrders: ['c'] }],
+        failed: [{ task: 't1', workOrder: 'b', error: 'no_account' }, { task: 't2', workOrder: 'c', error: 'stale' }],
+      },
+    });
+    const notices = await h.store.runPhase('faz-2');
+    expect(notices).toEqual([
+      { type: 'success', key: 'roadmap.toast.running', vars: { phase: 'Faz 2' }, subKey: 'roadmap.toast.queued', subVars: { n: '1', m: '1' } },
+      { type: 'warn', key: 'roadmap.toast.failed', vars: { k: '2' } },
+    ]);
+    expect(JSON.stringify(notices)).not.toContain('no_account');
+  });
+
+  it('U-66: none queued — only the warn toast, counting distinct tasks, never the work orders', async () => {
+    const h = harness(RUN_VIEW);
+    await h.store.load('antero');
+    h.reply({
+      ok: true,
+      phaseRun: {
+        opened: [{ task: 't1', workOrders: ['a', 'b'] }, { task: 't2', workOrders: ['c'] }],
+        failed: [
+          { task: 't1', workOrder: 'a', error: 'no_account' },
+          { task: 't1', workOrder: 'b', error: 'no_account' },
+          { task: 't2', workOrder: 'c', error: 'no_account' },
+        ],
+      },
+    });
+    const notices = await h.store.runPhase('faz-2');
+    expect(notices).toEqual([{ type: 'warn', key: 'roadmap.toast.failed', vars: { k: '2' } }]);
+  });
+
+  it('U-66: a failure entry without a work order id counts its task', async () => {
+    const h = harness(RUN_VIEW);
+    await h.store.load('antero');
+    h.reply({
+      ok: true,
+      phaseRun: { opened: [{ task: 't1', workOrders: ['a'] }], failed: [{ task: 't2', error: 'definitions_invalid' }, { task: 't3', error: 'stale' }] },
     });
     const notices = await h.store.runPhase('faz-2');
     expect(notices.map((notice) => notice.type)).toEqual(['success', 'warn']);
     expect(notices[1]).toEqual({ type: 'warn', key: 'roadmap.toast.failed', vars: { k: '2' } });
-    expect(JSON.stringify(notices)).not.toContain('no_account');
   });
 
-  it('U-66: a result without phaseRun claims no counts', async () => {
+  it('U-66: a result with nothing opened and nothing failed, or no phaseRun, claims nothing', async () => {
     const h = harness(RUN_VIEW);
     await h.store.load('antero');
-    const notices = await h.store.runPhase('faz-2');
-    expect(notices).toEqual([{ type: 'success', key: 'roadmap.toast.running', vars: { phase: 'Faz 2' } }]);
+    expect(await h.store.runPhase('faz-2')).toEqual([]);
+    h.reply({ ok: true, phaseRun: { opened: [], failed: [] } });
+    expect(await h.store.runPhase('faz-2')).toEqual([]);
   });
 
   it('U-66: pause and resume answer their own success notices', async () => {

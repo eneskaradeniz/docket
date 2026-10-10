@@ -830,6 +830,15 @@ The roadmap page's phase cards carry the run controls of the operator-approved p
   `failureKey`; the raw code rides only the toast's copy button (U-50a). The toast service carries
   one text per toast (U-50), so a sub-line follows the headline after a dash. The page refetches
   after every command, refusals included; a command in flight blocks a second one.
+  *(Addendum 2026-10-10, #882: the counts claim only what queued. A work order that opened but
+  failed to enqueue is listed in both `phaseRun.opened` and `phaseRun.failed` (A-99), so queued work
+  orders are the `opened` ids that no `failed` entry names, and queued tasks are the opened tasks
+  with at least one of them. The success toast with its sub-line "<queued tasks> görev · <queued
+  work orders> iş emri sıraya girdi" appears only when at least one work order queued. The warn
+  toast "K görev açılamadı" counts the DISTINCT tasks in `failed` — a failure entry without a work
+  order id counts its task — and appears whenever `failed` is non-empty. With nothing queued and
+  nothing failed no toast is shown. This replaces the earlier wording of the paragraph above where
+  they differ.)*
 - **U-67** (roadmap page; added 2026-10-10, #882) Header geometry. The header is one grid —
   chevron · name · count + button — with the status row under the name; the status row is always
   rendered, so every card header is the same height, a card without a button included. The button

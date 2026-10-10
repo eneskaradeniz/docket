@@ -568,6 +568,15 @@ for (const [sizeName, theme] of combos) {
   const phase = (id) => page.locator(`[data-phase="${id}"]`);
   const inCard = (id, name) => phase(id).getByRole('button', { name }).first();
   const toastWith = (t) => page.locator('[data-toast]').filter({ hasText: t }).first();
+  // The toast stack sits top-right over the cards: it is closed (its own close button) before any
+  // step reaches an element it could cover, and the step waits until none is left.
+  const dismissToasts = async () => {
+    const toasts = page.locator('[data-toast]');
+    for (let left = await toasts.count(); left > 0; left = await toasts.count()) {
+      await toasts.first().getByRole('button', { name: 'Kapat' }).click({ timeout: WAIT });
+      await page.waitForFunction((n) => document.querySelectorAll('[data-toast]').length < n, left, { timeout: WAIT });
+    }
+  };
 
   let jn = 'J-10';
   let stepNo = 0;
@@ -612,12 +621,15 @@ for (const [sizeName, theme] of combos) {
     await inCard('yayin', 'Başlat').waitFor({ state: 'detached', timeout: WAIT });
     assert((await phase('yayin').getByRole('button', { name: 'Duraklat' }).count()) === 0, 'Vazgeç must not start the phase');
 
-    // Başlat starts it: the success toast names the phase. The world has no account, so the
-    // work orders open but cannot queue — the warn toast may stand beside it, never instead of it.
+    // Başlat sends the command. The world has no account, so the work orders open but none can
+    // queue: the warn toast counts the DISTINCT tasks that failed (yuk-testi with two work orders
+    // and surum-notlari with one → 2), and nothing may claim a work order queued.
     await inCard('yayin', 'Fazı çalıştır').click({ timeout: WAIT });
     await inCard('yayin', 'Başlat').click({ timeout: WAIT });
-    await toastWith('Faz çalışıyor: Yayın hazırlığı').waitFor({ state: 'visible', timeout: WAIT });
+    await toastWith('2 görev açılamadı').waitFor({ state: 'visible', timeout: WAIT });
+    assert((await page.getByText('sıraya girdi').count()) === 0, 'nothing queued, so no toast may say work orders queued');
     await shot('started');
+    await dismissToasts();
     await inCard('yayin', 'Duraklat').waitFor({ state: 'visible', timeout: WAIT });
     await phase('yayin').getByText('Çalışıyor').first().waitFor({ state: 'visible', timeout: WAIT });
 
@@ -626,6 +638,7 @@ for (const [sizeName, theme] of combos) {
     await toastWith('Faz duraklatıldı').waitFor({ state: 'visible', timeout: WAIT });
     await inCard('yayin', 'Sürdür').waitFor({ state: 'visible', timeout: WAIT });
     await shot('paused');
+    await dismissToasts();
 
     // The attention chip opens the panel: the work order's code, its task and the sentence; the
     // code opens the work order's detail.

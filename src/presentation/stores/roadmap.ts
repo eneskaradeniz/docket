@@ -192,17 +192,26 @@ export const createRoadmapStore = (deps: RoadmapStoreDeps): RoadmapStore => {
     if (!result.ok) {
       notices.push({ type: 'error', key: failureKey(result.code), copy: result.code });
     } else if (type === 'roadmap.runPhase') {
-      // The counts are the command's own `phaseRun`; without one the sub-line claims nothing.
-      const opened = result.phaseRun?.opened;
-      const orders = opened?.reduce((sum, entry) => sum + entry.workOrders.length, 0) ?? 0;
-      notices.push({
-        type: 'success',
-        key: 'roadmap.toast.running',
-        vars: { phase: phaseName(phase) },
-        ...(opened === undefined ? {} : { subKey: 'roadmap.toast.queued' as const, subVars: { n: String(opened.length), m: String(orders) } }),
-      });
-      const failed = result.phaseRun?.failed.length ?? 0;
-      if (failed > 0) notices.push({ type: 'warn', key: 'roadmap.toast.failed', vars: { k: String(failed) } });
+      // The counts are the command's own `phaseRun`, and only what really queued is claimed: a
+      // work order that opened but failed to enqueue is listed in `opened` AND in `failed`
+      // (A-99), so it is subtracted; failures are counted as distinct tasks, not work orders.
+      const opened = result.phaseRun?.opened ?? [];
+      const failed = result.phaseRun?.failed ?? [];
+      const failedOrders = new Set(failed.flatMap((entry) => (entry.workOrder === undefined ? [] : [entry.workOrder])));
+      const queued = opened.map((entry) => entry.workOrders.filter((id) => !failedOrders.has(id)).length);
+      const queuedOrders = queued.reduce((sum, count) => sum + count, 0);
+      const queuedTasks = queued.filter((count) => count > 0).length;
+      if (queuedOrders > 0) {
+        notices.push({
+          type: 'success',
+          key: 'roadmap.toast.running',
+          vars: { phase: phaseName(phase) },
+          subKey: 'roadmap.toast.queued',
+          subVars: { n: String(queuedTasks), m: String(queuedOrders) },
+        });
+      }
+      const failedTasks = new Set(failed.map((entry) => entry.task)).size;
+      if (failedTasks > 0) notices.push({ type: 'warn', key: 'roadmap.toast.failed', vars: { k: String(failedTasks) } });
     } else if (type === 'roadmap.pausePhase') {
       notices.push({ type: 'success', key: 'roadmap.toast.paused', subKey: 'roadmap.toast.pausedSub' });
     } else {
