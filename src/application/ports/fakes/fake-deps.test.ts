@@ -43,6 +43,9 @@ const PORT_KEYS: readonly (keyof AppDeps)[] = [
   'worktreeFiles',
   'machine',
   'dispatchStatus',
+  'runTokens',
+  'runDirs',
+  'mcpEndpoint',
 ];
 
 describe('createFakeDeps', () => {
@@ -51,6 +54,8 @@ describe('createFakeDeps', () => {
 
     expect(Object.keys(deps).sort()).toEqual([...PORT_KEYS].sort());
     for (const key of PORT_KEYS) {
+      // The MCP endpoint is launch data, not a port: absent by default, so no run attaches a child.
+      if (key === 'mcpEndpoint') continue;
       expect(deps[key]).toBeDefined();
     }
   });

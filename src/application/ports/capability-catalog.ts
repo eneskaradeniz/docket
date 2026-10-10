@@ -20,6 +20,9 @@ export interface CapabilityCatalog {
     /** The model the kind fixes for each tier; an account's own table wins over it. */
     readonly tierModels?: Readonly<Record<Tier, string>>;
   } | undefined;
+  /** Whether the provider's CLI can attach an MCP server (its capability record's `mcp`);
+   *  `'unknown'` for a provider the registry does not describe. */
+  mcpSupport(providerId: string): boolean | 'unknown';
   /** The instruction-file names one provider reads natively, registry order (P-37). */
   nativeInstructionFiles(providerId: string): readonly string[];
   /** The union of known instruction-file names across providers — the candidate list to look for. */

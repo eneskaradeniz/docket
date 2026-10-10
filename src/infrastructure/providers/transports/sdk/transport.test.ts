@@ -89,6 +89,7 @@ function request(overrides?: Partial<RunRequest>): RunRequest {
   return {
     runId: RUN_ID,
     cwd: '/tmp/docket-sdk-transport',
+    runDir: '/tmp/docket-sdk-transport',
     role: ROLE_DEF,
     route: { accountId: ACCOUNT },
     prompt: 'do the work',

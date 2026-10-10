@@ -40,6 +40,7 @@ const ROLE: RoleDef = {
 const request: RunRequest = {
   runId: runIdOf(U1),
   cwd: '/fake/worktrees/acme/wo',
+  runDir: '/fake/worktrees/acme/wo',
   role: ROLE,
   route: { accountId: accountIdOf(U2) },
   prompt: 'implement the task',

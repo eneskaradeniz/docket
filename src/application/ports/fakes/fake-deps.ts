@@ -26,7 +26,9 @@ import { createFakeProposalRepo } from './fake-proposal-repo';
 import { createFakeQueueRepo } from './fake-queue-repo';
 import { createFakeRepoFolders } from './fake-repo-folders';
 import { createFakeRepoRegistry } from './fake-repo-registry';
+import { createFakeRunDirs } from './fake-run-dirs';
 import { createFakeRunRepo } from './fake-run-repo';
+import { createFakeRunTokens } from './fake-run-tokens';
 import { createFakeScratchDirs } from './fake-scratch-dirs';
 import { createFakeSecretVault } from './fake-secret-vault';
 import { createFakeTransportResolver } from './fake-transport';
@@ -73,5 +75,8 @@ export const createFakeDeps = (overrides: Partial<AppDeps> = {}): AppDeps => ({
   worktreeFiles: createFakeWorktreeFiles(),
   machine: createFakeMachineProbe(),
   dispatchStatus: createFakeDispatchStatus(),
+  runTokens: createFakeRunTokens(),
+  runDirs: createFakeRunDirs(),
+  mcpEndpoint: undefined,
   ...overrides,
 });

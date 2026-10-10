@@ -105,6 +105,7 @@ const ROLE: RoleDef = {
 const request = (cwd: string): RunRequest => ({
   runId: RUN_ID,
   cwd,
+  runDir: cwd,
   role: ROLE,
   route: { accountId: ACCOUNT },
   prompt: 'do the work',
@@ -411,6 +412,23 @@ describe('createStreamJsonTransport', () => {
       expect(existsSync(join(cwd, 'config', 'mcp.json'))).toBe(true);
       expect(existsSync(join(cwd, 'config', 'skills.json'))).toBe(true);
       expect(existsSync(join(cwd, 'config', 'hooks.json'))).toBe(true);
+    });
+  });
+
+  describe('run directory (I-62)', () => {
+    it('I-62: the config files are written under the request runDir and nothing is written into the working directory', async () => {
+      const bin = writeBin('echo-config-env-2', [
+        'process.stdout.write(JSON.stringify({ say: process.env.FAKE_CLI_HOME }) + \'\\n{"end":"completed"}\\n\');',
+      ].join('\n'));
+      const cwd = runDir();
+      const separate = runDir();
+
+      const handle = unwrap(await createStreamJsonTransport(defOf(bin), fakeDialect).start({ ...request(cwd), runDir: separate }));
+      const events = await collect(handle.events);
+
+      expect(events.find((event) => event.type === 'text')).toMatchObject({ delta: join(separate, 'config') });
+      expect(existsSync(join(separate, 'config', 'mcp.json'))).toBe(true);
+      expect(existsSync(join(cwd, 'config'))).toBe(false);
     });
   });
 

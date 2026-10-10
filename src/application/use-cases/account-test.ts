@@ -124,6 +124,7 @@ export async function testAccount(
     const started = await transport.start({
       runId: deps.ids.next<'run'>(),
       cwd: scratch.path,
+      runDir: scratch.path, // an empty directory outside every repo already
       role: ACCOUNT_TEST_ROLE,
       route: input.model === undefined ? { accountId: id } : { accountId: id, model: input.model },
       prompt: ACCOUNT_TEST_PROMPT,

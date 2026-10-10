@@ -13,6 +13,8 @@ import type {
 export interface RunRequest {
   readonly runId: RunId;
   readonly cwd: string;
+  /** Outside every repo and worktree; holds the run-scoped provider config; removed when the run ends. */
+  readonly runDir: string;
   readonly role: RoleDef;
   readonly route: AccountRoute;
   readonly prompt: string;

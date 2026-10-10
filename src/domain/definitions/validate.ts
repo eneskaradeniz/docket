@@ -50,6 +50,7 @@ interface RoleDraft {
   readonly writeScope: WriteScope | undefined;
   readonly capabilitySlots: readonly (CapabilitySlug | undefined)[] | undefined;
   readonly active: boolean | undefined;
+  readonly docketTools: boolean | undefined;
 }
 
 interface OnFailDraft {
@@ -547,7 +548,9 @@ const parseRole = (issues: DefinitionIssue[], container: UnknownRecord, path: st
   const capabilitySlots = readSlugSlots<'capability'>(issues, container['capabilities'], `${path}.capabilities`);
   const active = readBooleanField(issues, container, 'active', `${path}.active`);
 
-  return { id, name, instructions, writeScope, capabilitySlots, active };
+  const docketTools = readOptionalBooleanField(issues, container, 'docketTools', `${path}.docketTools`);
+
+  return { id, name, instructions, writeScope, capabilitySlots, active, docketTools };
 };
 
 const parseRoleOverride = (issues: DefinitionIssue[], container: UnknownRecord, path: string): RoleOverride | undefined => {
@@ -560,6 +563,7 @@ const parseRoleOverride = (issues: DefinitionIssue[], container: UnknownRecord, 
     writeScope?: WriteScope;
     capabilities?: readonly CapabilitySlug[];
     active?: boolean;
+    docketTools?: boolean;
   } = {};
   const name = readOptionalStringField(issues, container, 'name', `${path}.name`);
   if (name !== undefined) parts.name = name;
@@ -579,6 +583,8 @@ const parseRoleOverride = (issues: DefinitionIssue[], container: UnknownRecord, 
   }
   const active = readOptionalBooleanField(issues, container, 'active', `${path}.active`);
   if (active !== undefined) parts.active = active;
+  const docketTools = readOptionalBooleanField(issues, container, 'docketTools', `${path}.docketTools`);
+  if (docketTools !== undefined) parts.docketTools = docketTools;
 
   return { id, ...parts };
 };
@@ -1177,6 +1183,7 @@ export function validateDefinitions(input: unknown): Result<Definitions, readonl
       writeScope: draft.writeScope,
       capabilities: draft.capabilitySlots.filter((slot): slot is CapabilitySlug => slot !== undefined),
       active: draft.active,
+      ...(draft.docketTools === undefined ? {} : { docketTools: draft.docketTools }),
     });
   }
 

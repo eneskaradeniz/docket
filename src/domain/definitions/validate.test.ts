@@ -438,6 +438,30 @@ describe('validateDefinitions', () => {
     expect(issues[0]?.path).toBe('project.repos[2]');
   });
 
+  it('R-81: docketTools is an optional boolean on a role, kept as written; absent stays absent', () => {
+    const defs = expectOk(
+      validateDefinitions(
+        doc({ roles: [role({ id: 'dev', docketTools: false }), role({ id: 'loud', docketTools: true }), role({ id: 'plain' })] }),
+      ),
+    );
+    expect(defs.roles.map((r) => r.docketTools)).toEqual([false, true, undefined]);
+    expect('docketTools' in (defs.roles[2] ?? {})).toBe(false);
+  });
+
+  it('R-81: a non-boolean docketTools is wrong_type at its path, in a role and in a role override', () => {
+    const inRole = expectErr(validateDefinitions(doc({ roles: [role({ docketTools: 'no' })] })));
+    expect(inRole).toEqual([issue('roles[0].docketTools', 'wrong_type')]);
+    const inOverride = expectErr(
+      validateDefinitions(doc({ repo: repo({ roleOverrides: [{ id: 'dev', docketTools: 0 }] }) })),
+    );
+    expect(inOverride).toEqual([issue('repo.roleOverrides[0].docketTools', 'wrong_type')]);
+  });
+
+  it('R-81: a role override may switch the tools off', () => {
+    const defs = expectOk(validateDefinitions(doc({ repo: repo({ roleOverrides: [{ id: 'dev', docketTools: false }] }) })));
+    expect(defs.repo?.roleOverrides[0]?.docketTools).toBe(false);
+  });
+
   it('R-46: mainRepo must be listed in repos (main_repo_not_listed)', () => {
     const issues = expectErr(validateDefinitions(doc({ project: project({ mainRepo: 'ghost', repos: ['docket', 'docs'] }) })));
     expect(codesOf(issues)).toEqual(['main_repo_not_listed']);

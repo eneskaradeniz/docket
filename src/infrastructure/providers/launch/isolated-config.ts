@@ -88,7 +88,7 @@ export async function writeRunConfig(
 ): Promise<RunConfig> {
   const configDir = resolve(runDir, CONFIG_DIR_NAME);
   // The run's own directory is the only writable surface; recursive keeps a re-used run dir working.
-  await mkdir(configDir, { recursive: true });
+  await mkdir(configDir, { recursive: true, mode: 0o700 });
 
   const mcpCapabilities = capabilities
     .filter((capability): capability is RunMcpServer => capability.kind === 'mcp')
@@ -110,9 +110,9 @@ export async function writeRunConfig(
 
   // All three files are always written, even when empty: the transports get one predictable file
   // set per mechanism instead of format probes.
-  await writeFile(join(configDir, MCP_FILE), jsonFile({ mcpServers }), 'utf8');
-  await writeFile(join(configDir, SKILLS_FILE), jsonFile({ skills }), 'utf8');
-  await writeFile(join(configDir, HOOKS_FILE), jsonFile({ hooks }), 'utf8');
+  await writeFile(join(configDir, MCP_FILE), jsonFile({ mcpServers }), { encoding: 'utf8', mode: 0o600 });
+  await writeFile(join(configDir, SKILLS_FILE), jsonFile({ skills }), { encoding: 'utf8', mode: 0o600 });
+  await writeFile(join(configDir, HOOKS_FILE), jsonFile({ hooks }), { encoding: 'utf8', mode: 0o600 });
 
   return {
     configDir,

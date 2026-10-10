@@ -130,6 +130,9 @@ describe('AppDeps', () => {
       | 'repoFolders'
       | 'machine'
       | 'dispatchStatus'
+      | 'runTokens'
+      | 'runDirs'
+      | 'mcpEndpoint'
     >();
   });
 
