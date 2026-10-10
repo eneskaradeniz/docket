@@ -12,6 +12,7 @@
 // into the page's HTML. The probe's hit list stays in this process; the journey reads it directly.
 import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { createSocket } from 'node:dgram';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -32,23 +33,48 @@ const REAL_MACHINE_VARS = [
   'CLAUDE_CONFIG_DIR',
 ];
 
-/** A local HTTP server on a free port that answers 204 and remembers every request line. */
+/** A local counting probe on ONE free port, at three levels: HTTP requests (`hits`, request
+ *  lines), raw TCP connections (`connections`, which also catches a preconnect or a WebSocket
+ *  handshake that never became an HTTP request) and UDP datagrams (`datagrams`, e.g. WebRTC STUN
+ *  — CSP does not govern those). Anything above zero is an escape from the view. */
 export async function startProbe() {
   const hits = [];
+  const counts = { connections: 0, datagrams: 0 };
   const server = createServer((request, response) => {
     hits.push(`${request.method} ${request.url}`);
     response.statusCode = 204;
     response.end();
+  });
+  server.on('connection', () => {
+    counts.connections += 1;
   });
   await new Promise((done, fail) => {
     server.once('error', fail);
     server.listen(0, '127.0.0.1', done);
   });
   const { port } = server.address();
+  // UDP and TCP port spaces are separate: the datagram socket binds the same number.
+  const udp = createSocket('udp4');
+  udp.on('message', () => {
+    counts.datagrams += 1;
+  });
+  await new Promise((done, fail) => {
+    udp.once('error', fail);
+    udp.bind(port, '127.0.0.1', done);
+  });
   return {
     port,
     hits,
-    close: () => new Promise((done) => server.close(() => done())),
+    get connections() {
+      return counts.connections;
+    },
+    get datagrams() {
+      return counts.datagrams;
+    },
+    close: async () => {
+      udp.close();
+      await new Promise((done) => server.close(() => done()));
+    },
   };
 }
 

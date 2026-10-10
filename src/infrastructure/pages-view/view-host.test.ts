@@ -8,6 +8,7 @@ import type { Page, PageId } from '../../domain/index';
 
 import {
   PAGE_PARTITION,
+  PAGE_WEBRTC_POLICY,
   PAGE_SCHEME_PRIVILEGES,
   PAGE_VIEW_WEB_PREFERENCES,
   createPageViewHost,
@@ -39,13 +40,16 @@ type Listener = (...args: never[]) => void;
 
 const fakeContents = () => {
   const listeners = new Map<string, Listener[]>();
-  const state = { openHandler: undefined as undefined | (() => { action: string }), muted: undefined as undefined | boolean, loaded: [] as string[], closed: 0, url: '' };
+  const state = { openHandler: undefined as undefined | (() => { action: string }), muted: undefined as undefined | boolean, webrtc: undefined as undefined | string, loaded: [] as string[], closed: 0, url: '' };
   const contents: PageContentsLike = {
     on: (event: string, listener: Listener) => {
       listeners.set(event, [...(listeners.get(event) ?? []), listener]);
     },
     setWindowOpenHandler: (handler) => {
       state.openHandler = handler;
+    },
+    setWebRTCIPHandlingPolicy: (policy) => {
+      state.webrtc = policy;
     },
     setAudioMuted: (muted) => {
       state.muted = muted;
@@ -424,5 +428,21 @@ describe('I-68: the test trace', () => {
     expect(snapshot.blocked).toEqual(['b2', 'b3', 'b4']);
     expect(snapshot.servedCount).toBe(5);
     expect(snapshot.blockedCount).toBe(5);
+  });
+});
+
+describe('I-71: WebRTC cannot carry data or addresses out of the view', () => {
+  it('I-71: hardenPageContents sets the disable_non_proxied_udp policy', () => {
+    const { contents, state } = fakeContents();
+    hardenPageContents(contents, ID, () => undefined);
+    expect(state.webrtc).toBe('disable_non_proxied_udp');
+    expect(PAGE_WEBRTC_POLICY).toBe('disable_non_proxied_udp');
+  });
+
+  it('I-71: every view the host opens carries the policy before its page loads', async () => {
+    const { host, views } = hostSetup();
+    await host.handle(MAIN, OPEN);
+    expect(views[0]?.fake.state.webrtc).toBe('disable_non_proxied_udp');
+    expect(views[0]?.fake.state.loaded).toHaveLength(1);
   });
 });

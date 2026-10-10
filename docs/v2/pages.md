@@ -64,3 +64,5 @@ The security list above is implemented as follows (rules `I-63` … `I-70` in `d
 - Popups, downloads, permission requests and every navigation away from the same page (will-navigate,
   will-frame-navigate, will-redirect) are refused; audio is muted.
 - Only the main window's top frame may open, move or close the view; at most one view exists.
+
+WebRTC is a wall of its own (added 2026-10-10, #901): the view's IP handling policy is `disable_non_proxied_udp`, because CSP does not govern ICE/STUN traffic and a page could otherwise send UDP to any host and learn the machine's addresses.

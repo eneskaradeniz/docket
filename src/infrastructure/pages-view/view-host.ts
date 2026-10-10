@@ -67,6 +67,7 @@ export interface PageContentsLike {
   on(event: string, listener: (...args: never[]) => void): unknown;
   setWindowOpenHandler(handler: () => { action: 'deny' }): void;
   setAudioMuted(muted: boolean): void;
+  setWebRTCIPHandlingPolicy(policy: 'disable_non_proxied_udp'): void;
   loadURL(url: string): Promise<void>;
   getURL(): string;
   close(): void;
@@ -146,6 +147,10 @@ export type PageViewClosedReason = 'crashed' | 'unresponsive';
 
 type NavigationEvent = { readonly url?: unknown; preventDefault(): void };
 
+/** CSP does not cover WebRTC: an ICE server URL makes the renderer send UDP to any host and
+ *  exposes the machine's addresses. This policy allows UDP only through a proxy, so none leaves. */
+export const PAGE_WEBRTC_POLICY = 'disable_non_proxied_udp';
+
 export const hardenPageContents = (contents: PageContentsLike, pageId: string, onGone: (reason: PageViewClosedReason) => void): void => {
   contents.setWindowOpenHandler(() => ({ action: 'deny' }));
   const guard = (event: NavigationEvent): void => {
@@ -153,6 +158,7 @@ export const hardenPageContents = (contents: PageContentsLike, pageId: string, o
   };
   for (const name of ['will-navigate', 'will-frame-navigate', 'will-redirect']) contents.on(name, guard as never);
   contents.setAudioMuted(true);
+  contents.setWebRTCIPHandlingPolicy(PAGE_WEBRTC_POLICY);
   contents.on('render-process-gone', (() => onGone('crashed')) as never);
   contents.on('unresponsive', (() => onGone('unresponsive')) as never);
 };

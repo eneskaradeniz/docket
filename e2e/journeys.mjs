@@ -896,11 +896,13 @@ for (const [sizeName, theme] of combos) {
     // First load: the hostile page runs.
     assert.deepEqual(await sendPageView('open', { pageId, version: 1, bounds: BOUNDS }), { ok: true });
     const first = await awaitReports(0);
-    await sleep(1000); // late navigations and loads get their chance to escape
+    await sleep(2000); // late navigations, workers and ICE gathering get their chance to escape
     const afterFirst = await readTrace();
     await shot('hostile-page-open');
 
     assert.deepEqual(probe.hits, [], `the probe saw requests: ${probe.hits.join(' | ')}`);
+    assert.equal(probe.connections, 0, 'the probe saw TCP connections');
+    assert.equal(probe.datagrams, 0, 'the probe saw UDP datagrams (WebRTC)');
     assert.equal(page.url(), appUrl, 'the app window must not have navigated');
     assert.equal(afterFirst.windowCount, 1, 'no extra window may exist');
     assert.equal(afterFirst.view.open, true);
@@ -933,11 +935,13 @@ for (const [sizeName, theme] of combos) {
     const from = afterFirst.trace.served.length;
     assert.deepEqual(await sendPageView('open', { pageId, version: 1, bounds: BOUNDS }), { ok: true });
     const second = await awaitReports(from);
-    await sleep(1000);
+    await sleep(2000);
     for (const key of ['lsPrev', 'cookiePrev', 'idbPrev']) {
       assert.equal(second.reports.get(key), 'none', `${key} must not carry the first view's storage, saw ${second.reports.get(key)}`);
     }
     assert.deepEqual(probe.hits, [], `the probe saw requests after the re-open: ${probe.hits.join(' | ')}`);
+    assert.equal(probe.connections, 0, 'the probe saw TCP connections after the re-open');
+    assert.equal(probe.datagrams, 0, 'the probe saw UDP datagrams after the re-open');
     assert.equal(page.url(), appUrl);
     assert.equal((await readTrace()).windowCount, 1);
     await shot('reopened');

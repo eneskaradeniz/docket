@@ -41,8 +41,28 @@ const PIXEL = Buffer.from(
 // (`/v1/__report?<key>=<value>`), the one channel the policy leaves open. Nothing in here is
 // expected to succeed; a key that says "reached" or "opened" is a failure of the view.
 const HTML = `<!doctype html>
-<html><head><meta charset="utf-8"><title>hostile</title></head>
-<body>
+<html><head><meta charset="utf-8"><title>hostile</title>
+<meta http-equiv="refresh" content="1;url=http://127.0.0.1:${probePort}/meta-refresh">
+<link rel="preconnect" href="http://127.0.0.1:${probePort}">
+<link rel="dns-prefetch" href="http://127.0.0.1:${probePort}">
+<link rel="prefetch" href="http://127.0.0.1:${probePort}/prefetch">
+<link rel="prerender" href="http://127.0.0.1:${probePort}/prerender">
+<link rel="stylesheet" href="http://127.0.0.1:${probePort}/link.css">
+<style>@import url("http://127.0.0.1:${probePort}/import.css"); body{background:url("http://127.0.0.1:${probePort}/bg.png")} @font-face{font-family:x;src:url("http://127.0.0.1:${probePort}/font.woff2")} .f{font-family:x}</style>
+<script src="http://127.0.0.1:${probePort}/script.js"></script>
+</head>
+<body class="f">
+<a id="p" href="#" ping="http://127.0.0.1:${probePort}/ping">ping</a>
+<a id="t" href="http://127.0.0.1:${probePort}/blank" target="_blank">blank</a>
+<a id="d" href="http://127.0.0.1:${probePort}/download" download>dl</a>
+<iframe src="http://127.0.0.1:${probePort}/iframe"></iframe>
+<object data="http://127.0.0.1:${probePort}/object"></object>
+<embed src="http://127.0.0.1:${probePort}/embed">
+<video src="http://127.0.0.1:${probePort}/video.mp4" preload="auto"></video>
+<audio src="http://127.0.0.1:${probePort}/audio.mp3" preload="auto"></audio>
+<img src="http://127.0.0.1:${probePort}/img-plain">
+<img srcset="http://127.0.0.1:${probePort}/img-srcset 2x" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==">
+<form id="g" action="http://127.0.0.1:${probePort}/form-get" method="get" target="_blank"><input name="a"></form>
 <form id="f" method="post" action="http://127.0.0.1:${probePort}/form"><input name="a" value="1"></form>
 <script>
 (function () {
@@ -134,8 +154,33 @@ const HTML = `<!doctype html>
     i.src = '/v1/pixel.png';
   });
 
+  // The wider attack list: every vector is fire-and-forget; the probe's three counters are the evidence.
+  var t = function (f) { try { f(); } catch (e) {} };
+  var H = PROBE;
+  t(function () { new WebSocket('ws://127.0.0.1:${probePort}/ws'); });
+  t(function () { new EventSource(H + '/sse'); });
+  t(function () { var pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:127.0.0.1:${probePort}' }] }); pc.createDataChannel('x'); pc.createOffer().then(function (o) { pc.setLocalDescription(o); }); });
+  t(function () { navigator.serviceWorker && navigator.serviceWorker.register(H + '/sw.js'); });
+  t(function () { new Worker(H + '/worker.js'); });
+  t(function () { new SharedWorker(H + '/shared.js'); });
+  t(function () { document.getElementById('t').click(); });
+  t(function () { document.getElementById('p').click(); });
+  t(function () { document.getElementById('d').click(); });
+  t(function () { document.getElementById('g').submit(); });
+  t(function () { document.domain = 'x'; });
+  t(function () { fetch(H + '/fetch-no-cors', { mode: 'no-cors' }); });
+  t(function () { var l = document.createElement('link'); l.rel = 'preload'; l.as = 'fetch'; l.href = H + '/preload'; document.head.appendChild(l); });
+  t(function () { top.location.href = H + '/top'; });
+  t(function () { parent.postMessage('x', '*'); });
+  t(function () { navigator.clipboard.readText(); });
+  t(function () { navigator.mediaDevices.getUserMedia({ video: true }); });
+  t(function () { navigator.geolocation.getCurrentPosition(function () {}); });
+  t(function () { Notification.requestPermission(); });
+  t(function () { document.documentElement.requestFullscreen(); });
+  t(function () { var a = document.createElement('a'); a.href = H + '/created'; a.click(); });
+
   // The last word, after the navigations and loads above had time to be refused.
-  setTimeout(function () { report('protocol', location.protocol); report('done', 1); }, 800);
+  setTimeout(function () { report('protocol', location.protocol); report('done', 1); }, 3500);
 })();
 </script>
 </body></html>
