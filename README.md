@@ -3,8 +3,8 @@
 A desktop app that runs AI coding-agent CLIs (Claude Code, Codex, Copilot, and others) through a flow
 you define — roles, stages, gates, budgets — and keeps every step visible and approved.
 
-**Status: v2 redesign in progress (2026-09-26).** The design is being written and approved before any
-v2 code lands. The previous version is preserved at tag [`v1-final`](../../tree/v1-final).
+**Status: v2 under active development.** The design lives in [`docs/v2/`](docs/v2/README.md). The
+previous version is preserved at tag [`v1-final`](../../tree/v1-final).
 
 ## What v2 is
 
@@ -21,7 +21,7 @@ v2 code lands. The previous version is preserved at tag [`v1-final`](../../tree/
 
 ```bash
 npm install
-npm run dev          # launch the app (still v1 until v2 replaces it)
+npm run dev          # launch the app
 npm test
 npm run typecheck
 npm run check:boundaries

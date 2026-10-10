@@ -14,8 +14,8 @@ file, network, process, or clock. Every contact with the outside world sits behi
 | Presentation | `src/presentation/` | `src/api/`, `src/domain/` (types only), React | application, infrastructure, Node builtins |
 | Composition root | `electron/main.ts` | everything | — |
 
-v1 code (`src/core/`, `src/adapters/`, `src/ui/`, `src/renderer/`) is frozen legacy that stays until
-Phase 4 reaches parity. v2 code never imports v1 code, and v1 code never imports v2 code.
+v1 code is no longer in the tree; v1 is available only as the tag `v1-final`, and v2 code never
+imports v1 code.
 
 Additional rules, enforced by `scripts/check-layers.mjs` (added in Phase 0):
 
