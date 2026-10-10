@@ -52,6 +52,8 @@ const BAD_PATHS: readonly string[] = [
   '\uFF0E\uFF0E/x',
   '\uFF0F\uFF0Fetc',
   '',
+  '%2e%2e/x',
+  '\u202Ex.html',
   `${'a/'.repeat(101)}b`,
   'a'.repeat(5000),
 ];

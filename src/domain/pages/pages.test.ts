@@ -88,6 +88,13 @@ const BAD_PATHS: readonly string[] = [
   'a/\u2025/x', // two-dot leader folds to ".."
   '\uFF0F\uFF0Fetc', // fullwidth solidus folds to "/"
   'a\uFF3Cb', // fullwidth reverse solidus folds to a backslash
+  '%2e%2e/x', // a URL decoder would turn it into ".."
+  'a/%2e%2e/b',
+  '100%.png',
+  '\u202Ex.html', // right-to-left override spoofs the name
+  'a\u200Bb.html', // zero-width space
+  '\uFEFFindex.html', // BOM
+  'a\u2066b/c', // isolate
   'a'.repeat(201),
   `${'a/'.repeat(100)}b`,
 ];

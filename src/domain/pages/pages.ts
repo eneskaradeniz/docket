@@ -99,6 +99,10 @@ const isPlainPath = (path: string): boolean => {
   if (hasControlCharacter(path)) return false; // NUL, newlines and the like
   if (path.includes('\\')) return false; // a Windows separator
   if (path.includes(':')) return false; // a drive prefix, or an alternate data stream
+  // A URL decoder would turn "%2e%2e" into "..", so no percent sign survives in a name.
+  if (path.includes('%')) return false;
+  // Format characters (right-to-left override, zero-width space, BOM, isolates) spoof names in lists.
+  if (/\p{Cf}/u.test(path)) return false;
   if (path.startsWith('/')) return false;
   for (const segment of path.split('/')) {
     if (segment === '' || segment === '.' || segment === '..') return false;
