@@ -126,9 +126,19 @@ describe('createMcpServer by token kind', () => {
     return JSON.parse(line ?? '{}') as { result: { tools?: { name: string }[]; instructions?: string } };
   };
 
-  it('I-80: a chat-kind server lists the three read tools with the chat instructions, a run-kind one the three page tools', async () => {
+  it('I-80: a chat-kind server lists the chat tools (the read tools first) with the chat instructions, a run-kind one the three page tools', async () => {
     const chat = await asKind('chat', { jsonrpc: '2.0', id: 1, method: 'tools/list' });
-    expect(chat.result.tools?.map((tool) => tool.name)).toEqual(['docket_get', 'docket_search', 'docket_read_file']);
+    expect(chat.result.tools?.map((tool) => tool.name)).toEqual([
+      'docket_get',
+      'docket_search',
+      'docket_read_file',
+      'page_publish',
+      'page_update',
+      'page_comments_read',
+      'draft_work_order',
+      'propose_change',
+      'propose_setting',
+    ]);
     expect(chat.result.tools).toEqual(
       DOCKET_TOOL_DEFINITIONS_BY_KIND.chat.map((tool) => ({ name: tool.name, description: tool.description, inputSchema: tool.inputSchema })),
     );

@@ -418,7 +418,7 @@ const startApp = async (): Promise<void> => {
   // and removed at shutdown. A failure to listen is loud but not fatal: runs go on without
   // working page tools, and their child reports `app_unreachable`.
   if (nodeDeps.mcpEndpoint !== undefined) {
-    const tools = createDocketTools(nodeDeps);
+    const tools = createDocketTools(nodeDeps, node.docketToolExtras);
     const listening = await startMcpListener({
       socketPath: nodeDeps.mcpEndpoint.socketPath,
       handler: (request) => tools.call(request),

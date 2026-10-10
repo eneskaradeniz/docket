@@ -18,6 +18,8 @@ import {
 } from '../ports/fakes/index';
 import { commentOnPage } from '../use-cases/index';
 
+import { createActionApplier } from './action-appliers';
+import { createChatTurnLedger } from './chat-turn-ledger';
 import { createDocketTools, DOCKET_TOOL_LIMITS, type DocketToolResponse } from './docket-tools';
 
 const ulidOf = <B extends string>(input: string): Ulid<B> => {
@@ -60,7 +62,7 @@ const harness = (overrides: Partial<Parameters<typeof createFakeDeps>[0]> = {}):
   const files = createFakePageFiles();
   const tokens = createFakeRunTokens();
   const deps = createFakeDeps({ clock, log, pageFiles: files, runTokens: tokens, ...overrides });
-  const tools = createDocketTools(deps);
+  const tools = createDocketTools(deps, { applyAction: createActionApplier(deps), turnLedger: createChatTurnLedger() });
   const token = tokens.mint({ kind: 'run', runId: RUN, workOrderId: WORK_ORDER, project: PROJECT, role: ROLE });
   return {
     deps,

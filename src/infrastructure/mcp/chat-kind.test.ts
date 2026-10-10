@@ -1,12 +1,12 @@
-// mcp/chat-kind.test.ts — rule I-83 (with A-204): the token's kind is enforced by the APP over the
-// real socket path, whatever the child lists or claims; a chat turn's MCP child lists and serves the
-// three read tools end to end. Real sockets in a temporary directory, the in-memory fakes behind.
+// mcp/chat-kind.test.ts — rule I-83 (with A-204 and A-213): the token's kind is enforced by the APP
+// over the real socket path, whatever the child lists or claims; a chat turn's MCP child lists and
+// serves the chat tools end to end. Real sockets in a temporary directory, the in-memory fakes behind.
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { createDocketTools } from '../../application/index';
+import { createActionApplier, createChatTurnLedger, createDocketTools } from '../../application/index';
 import { createFakeDeps } from '../../application/ports/fakes/index';
 import { parseSlug, parseUlid, type ConversationId, type EpochMs, type RoleSlug, type RunId, type WorkOrderId } from '../../domain/index';
 
@@ -56,7 +56,7 @@ const setup = async (): Promise<{ readonly runToken: string; readonly chatToken:
     pinned: false,
     messages: [],
   });
-  const tools = createDocketTools(deps);
+  const tools = createDocketTools(deps, { applyAction: createActionApplier(deps), turnLedger: createChatTurnLedger() });
   const socketPath = mcpSocketPath(dir, process.platform);
   const started = await startMcpListener({ socketPath, handler: (request) => tools.call(request) });
   if (!started.ok) throw new Error(`listener must start: ${started.error}`);
@@ -77,19 +77,27 @@ maybe('the token kind over the real socket', () => {
       ['docket_get', { kind: 'project', id: PROJECT }],
       ['docket_search', { query: 'alpha' }],
       ['docket_read_file', { repo: 'alpha-app', path: 'a.txt' }],
+      ['page_comments_read', { pageId: '01ARZ3NDEKTSV4RRFFQ69G5FP1' }],
+      ['draft_work_order', { project: PROJECT, repo: 'alpha-app', title: 'T' }],
+      ['propose_change', { target: 'roadmap', scope: { kind: 'project', project: PROJECT }, file: 'roadmap.yaml', after: '{}', summary: 's', source: 'operator request' }],
+      ['propose_setting', { key: 'dispatch.mode', value: 'fixed' }],
     ] as const) {
       expect(await call(tool, args), tool).toEqual({ ok: false, code: 'forbidden' });
     }
   });
 
-  it('I-83: a chat token calling the page tools is forbidden by the app', async () => {
+  it('I-83: a chat token calling the run-only page_comments is forbidden by the app; the shared page tools serve its chat semantics', async () => {
     const { chatToken, socketPath } = await setup();
     const call = createSocketCaller({ socketPath, token: chatToken });
-    expect(await call('page_publish', { title: 'x', kind: 'markdown', content: '# x' })).toEqual({ ok: false, code: 'forbidden' });
-    expect(await call('page_update', { pageId: '01ARZ3NDEKTSV4RRFFQ69G5FP1', content: 'x' })).toEqual({ ok: false, code: 'forbidden' });
+    expect(await call('page_comments', { pageId: '01ARZ3NDEKTSV4RRFFQ69G5FP1' })).toEqual({ ok: false, code: 'forbidden' });
+    const published = await call('page_publish', { title: 'Soalık', kind: 'markdown', content: '# x' });
+    expect(published.ok).toBe(true);
+    const pageId = published.ok ? (published.result as { pageId: string }).pageId : '';
+    const updated = await call('page_update', { pageId, content: '# y' });
+    expect(updated.ok && (updated.result as { version: number }).version).toBe(2);
   });
 
-  it('I-83: a chat-kind MCP child lists the read tools and serves them end to end with a chat token', async () => {
+  it('I-83: a chat-kind MCP child lists the chat tools and serves them end to end with a chat token', async () => {
     const { chatToken, socketPath } = await setup();
     const server = createMcpServer({ kind: 'chat', call: createSocketCaller({ socketPath, token: chatToken }) });
     const [listed] = await server.handle(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }));
@@ -97,6 +105,12 @@ maybe('the token kind over the real socket', () => {
       'docket_get',
       'docket_search',
       'docket_read_file',
+      'page_publish',
+      'page_update',
+      'page_comments_read',
+      'draft_work_order',
+      'propose_change',
+      'propose_setting',
     ]);
     const [called] = await server.handle(
       JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'docket_get', arguments: { kind: 'project', id: PROJECT } } }),
@@ -106,13 +120,34 @@ maybe('the token kind over the real socket', () => {
     expect(JSON.parse(content.content[0]?.text ?? '{}')).toMatchObject({ kind: 'data', name: 'Alpha', mainRepo: 'alpha-app' });
   });
 
-  it('I-83: a child that lists chat tools but holds a run token (a forged DOCKET_MCP_KIND) is refused on every call', async () => {
+  it('A-213: a child that lists chat tools but holds a run token (a forged DOCKET_MCP_KIND) is refused on every chat-only call', async () => {
     const { runToken, socketPath } = await setup();
     const forged = createMcpServer({ kind: 'chat', call: createSocketCaller({ socketPath, token: runToken }) });
-    const [reply] = await forged.handle(
-      JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'docket_get', arguments: { kind: 'project', id: PROJECT } } }),
-    );
-    expect(JSON.parse(reply ?? '{}')).toMatchObject({ result: { isError: true, content: [{ text: JSON.stringify({ code: 'forbidden' }) }] } });
+    for (const [tool, args] of [
+      ['docket_get', { kind: 'project', id: PROJECT }],
+      ['docket_search', { query: 'alpha' }],
+      ['page_comments_read', { pageId: '01ARZ3NDEKTSV4RRFFQ69G5FP1' }],
+      ['draft_work_order', { project: PROJECT, repo: 'alpha-app', title: 'T' }],
+      ['propose_setting', { key: 'dispatch.mode', value: 'fixed' }],
+    ] as const) {
+      const [reply] = await forged.handle(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: tool, arguments: args } }));
+      expect(JSON.parse(reply ?? '{}'), tool).toMatchObject({ result: { isError: true, content: [{ text: JSON.stringify({ code: 'forbidden' }) }] } });
+    }
+  });
+
+  it('A-213: a chat-kind child creates a pending proposal through the real socket, and the page round trip works', async () => {
+    const { chatToken, socketPath } = await setup();
+    const server = createMcpServer({ kind: 'chat', call: createSocketCaller({ socketPath, token: chatToken }) });
+    // The content text is the tool outcome's own payload: the result object, or { code } on isError.
+    const call = async (tool: string, args: unknown): Promise<Record<string, unknown>> => {
+      const [reply] = await server.handle(JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: tool, arguments: args } }));
+      const parsed = JSON.parse(reply ?? '{}') as { result: { isError?: boolean; content: { text: string }[] } };
+      return JSON.parse(parsed.result.content[0]?.text ?? '{}') as Record<string, unknown>;
+    };
+    expect(await call('propose_setting', { key: 'dispatch.mode', value: 'fixed' })).toMatchObject({ kind: 'receipt', status: 'pending_approval' });
+    const page = await call('page_publish', { title: 'Tablo', kind: 'markdown', content: 'x' });
+    expect(page).toMatchObject({ version: 1 });
+    expect(await call('page_update', { pageId: page['pageId'], content: 'y' })).toMatchObject({ version: 2 });
   });
 
   it('I-83: a chat token is unauthorized once its turn is revoked', async () => {

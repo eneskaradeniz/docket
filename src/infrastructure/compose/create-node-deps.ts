@@ -8,6 +8,7 @@ import type {
   AppDeps,
   Clock,
   CredentialImporter,
+  DocketToolExtras,
   McpEndpoint,
   Notifier,
   ProviderDiscovery,
@@ -16,6 +17,7 @@ import type {
   RepoRegistry,
   TransportResolver,
 } from '../../application/index';
+import { createActionApplier, createChatTurnLedger } from '../../application/index';
 import { createMemoryAccountTestRepo } from './account-test-repo';
 import { createScratchDirs } from './scratch-dirs';
 import { createCommandRunner, createSecretScanner, redactSecrets } from '../gates/index';
@@ -85,6 +87,9 @@ export interface NodeDeps {
    * root starts the service. */
   readonly quota: { readonly probes: QuotaProbeResolver; readonly timers: QuotaTimers };
   readonly credentialImporter: CredentialImporter; // reads a token only when an adoption asks for the import
+  /** What Docket's own tool dispatch needs: the ONE action applier of this composition and the
+   *  chat turn ledger it fills. A second applier must not exist anywhere. */
+  readonly docketToolExtras: DocketToolExtras;
   close(): void;
 }
 
@@ -174,6 +179,9 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
       clearInterval: (handle: unknown): void => clearInterval(handle as ReturnType<typeof setInterval>),
     },
   };
+  // The one applier of the composition (A-214): the tool dispatch, and later the action surfaces,
+  // all apply through this instance, never through one of their own.
+  const docketToolExtras: DocketToolExtras = { applyAction: createActionApplier(deps), turnLedger: createChatTurnLedger() };
   return ok({
     deps,
     quota,
@@ -181,6 +189,7 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     projects,
     accountDiscovery,
     credentialImporter,
+    docketToolExtras,
     adoption: { discovery: accountDiscovery, importer: credentialImporter },
     close: (): void => db.close(),
   });

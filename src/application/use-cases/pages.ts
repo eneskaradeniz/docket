@@ -4,6 +4,7 @@
 // and counts only — never a title, comment text, path or file content.
 import type {
   Actor,
+  ConversationId,
   Page,
   PageComment,
   PageError,
@@ -91,6 +92,7 @@ export async function publishPageUseCase(
     readonly files: readonly PageFileInput[];
     readonly workOrder?: WorkOrderId;
     readonly project?: ProjectSlug;
+    readonly conversation?: ConversationId;
   },
 ): Promise<Result<Page, PageError>> {
   const refs = refsOf(input.files);
@@ -103,6 +105,7 @@ export async function publishPageUseCase(
       files: refs,
       ...(input.workOrder === undefined ? {} : { workOrder: input.workOrder }),
       ...(input.project === undefined ? {} : { project: input.project }),
+      ...(input.conversation === undefined ? {} : { conversation: input.conversation }),
     },
     deps.clock.now(),
     deps.ids.next<'page'>(),

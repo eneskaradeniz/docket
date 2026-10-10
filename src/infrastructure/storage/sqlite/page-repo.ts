@@ -20,10 +20,11 @@ export function createSqlitePageRepo(db: DocketDb): PageRepo {
     save: async (page: Page): Promise<void> => {
       db.raw
         .prepare(
-          'INSERT INTO pages (id, work_order, project, data) VALUES (?, ?, ?, ?) ' +
-            'ON CONFLICT (id) DO UPDATE SET work_order = excluded.work_order, project = excluded.project, data = excluded.data',
+          'INSERT INTO pages (id, work_order, project, conversation, data) VALUES (?, ?, ?, ?, ?) ' +
+            'ON CONFLICT (id) DO UPDATE SET work_order = excluded.work_order, project = excluded.project, ' +
+            'conversation = excluded.conversation, data = excluded.data',
         )
-        .run(page.id, page.workOrder ?? null, page.project ?? null, JSON.stringify(page));
+        .run(page.id, page.workOrder ?? null, page.project ?? null, page.conversation ?? null, JSON.stringify(page));
     },
 
     get: async (id): Promise<Page | undefined> => {

@@ -26,7 +26,7 @@ import {
   createFakeTransportResolver,
   createFakeWorkOrderRepo,
 } from '../ports/fakes/index';
-import { createDocketTools, executeRun, type DocketToolResponse } from '../services/index';
+import { createActionApplier, createChatTurnLedger, createDocketTools, executeRun, type DocketToolResponse } from '../services/index';
 import { commentOnPage } from '../use-cases/index';
 
 const ulidOf = <B extends string>(input: string): Ulid<B> => {
@@ -91,7 +91,7 @@ describe('docket MCP scenario', () => {
       createdBy: OPERATOR,
     });
     await accounts.save({ id: ACCOUNT, provider: 'provider-x', label: 'Main', authMode: 'subscription', limitPolicy: 'wait_resume', caps: [] });
-    const tools = createDocketTools(deps);
+    const tools = createDocketTools(deps, { applyAction: createActionApplier(deps), turnLedger: createChatTurnLedger() });
 
     // The scripted agent: reads DOCKET_MCP_TOKEN from the capability it was launched with and
     // talks to the tools the way the stdio child does — one request per call.
@@ -194,7 +194,7 @@ describe('docket MCP scenario', () => {
     });
     await workOrders.create({ id: WORK_ORDER, project: slugOf('proj'), repo: slugOf('ws'), flow: slugOf('standard'), title: 'T', createdAt: T0, createdBy: OPERATOR });
     await accounts.save({ id: ACCOUNT, provider: 'provider-x', label: 'Main', authMode: 'subscription', limitPolicy: 'wait_resume', caps: [] });
-    const tools = createDocketTools(deps);
+    const tools = createDocketTools(deps, { applyAction: createActionApplier(deps), turnLedger: createChatTurnLedger() });
     let token = '';
     transports.register(ACCOUNT, {
       start: async (request: RunRequest) => {

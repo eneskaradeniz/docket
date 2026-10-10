@@ -1,7 +1,7 @@
 // Pages: visual artifacts an agent publishes, the user comments on and approves. A page is
 // untrusted content, so every rule here exists to keep what an agent hands over inside a version
 // directory and tied to one specific, immutable version.
-import { err, ok, type Actor, type EpochMs, type PageId, type ProjectSlug, type Result, type Ulid, type WorkOrderId } from '../shared';
+import { err, ok, type Actor, type ConversationId, type EpochMs, type PageId, type ProjectSlug, type Result, type Ulid, type WorkOrderId } from '../shared';
 
 export type PageKind = 'html' | 'diagram' | 'markdown' | 'table' | 'image' | 'report';
 export type PageApproval = 'none' | 'pending' | 'approved' | 'rejected';
@@ -38,6 +38,9 @@ export interface Page {
   readonly kind: PageKind;
   readonly workOrder?: WorkOrderId;
   readonly project?: ProjectSlug;
+  /** The conversation whose chat turn made this page; absent on run-made and operator pages. Set
+   *  once at creation and never rewritten — the only ownership proof for chat page updates. */
+  readonly conversation?: ConversationId;
   readonly createdBy: Actor;
   readonly createdAt: EpochMs;
   readonly versions: readonly PageVersion[];
@@ -201,6 +204,7 @@ export interface PublishInput extends VersionInput {
   readonly kind: PageKind;
   readonly workOrder?: WorkOrderId;
   readonly project?: ProjectSlug;
+  readonly conversation?: ConversationId;
 }
 
 const makeVersion = (n: number, input: VersionInput, now: EpochMs): PageVersion => ({
@@ -223,6 +227,7 @@ export function publishPage(input: PublishInput, now: EpochMs, id: PageId): Resu
     kind: input.kind,
     ...(input.workOrder === undefined ? {} : { workOrder: input.workOrder }),
     ...(input.project === undefined ? {} : { project: input.project }),
+    ...(input.conversation === undefined ? {} : { conversation: input.conversation }),
     createdBy: input.by,
     createdAt: now,
     versions: [makeVersion(1, input, now)],

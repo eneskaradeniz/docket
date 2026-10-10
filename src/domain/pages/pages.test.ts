@@ -412,3 +412,43 @@ describe('R-105: kind display names', () => {
     expect(Object.keys(PAGE_KIND_NAMES_TR).sort()).toEqual([...kinds].sort());
   });
 });
+
+describe('R-106: the conversation field of a page', () => {
+  const CONVERSATION = ulid<'conversation'>('01ARZ3NDEKTSV4RRFFQ69G5FC9');
+
+  it('R-106: publishPage sets conversation exactly once when given and leaves it absent when not', () => {
+    const withConversation = publishPage({ ...base(), conversation: CONVERSATION }, 100, PAGE_ID);
+    expect(withConversation.ok && withConversation.value.conversation).toBe(CONVERSATION);
+    const without = publishPage(base(), 100, PAGE_ID);
+    expect(without.ok && 'conversation' in without.value).toBe(false);
+    // A version input cannot set or change it: addVersion reads no conversation from its input.
+    const page = withConversation.ok ? withConversation.value : published();
+    const smuggled = addVersion(page, {
+      by: AGENT,
+      entry: 'index.html',
+      files: [file('index.html', 20)],
+      ...({ conversation: ulid('01ARZ3NDEKTSV4RRFFQ69G5FC8') } as Record<string, unknown>),
+    } as Parameters<typeof addVersion>[1], 200);
+    expect(smuggled.ok && smuggled.value.conversation).toBe(CONVERSATION);
+  });
+});
+
+describe('R-107: conversation is kept across versions and stays absent on old pages', () => {
+  const CONVERSATION = ulid<'conversation'>('01ARZ3NDEKTSV4RRFFQ69G5FC9');
+
+  it('R-107: addVersion keeps the page\'s conversation untouched, and a page without one gains none', () => {
+    const chat = publishPage({ ...base(), conversation: CONVERSATION }, 100, PAGE_ID);
+    if (!chat.ok) throw new Error('fixture page must publish');
+    const v2 = versioned(chat.value);
+    const v3 = versioned(v2);
+    expect(v2.conversation).toBe(CONVERSATION);
+    expect(v3.conversation).toBe(CONVERSATION);
+
+    const runMade = published(); // a page of the run era: no conversation field at all
+    expect('conversation' in runMade).toBe(false);
+    expect('conversation' in versioned(runMade)).toBe(false);
+    // An approval round-trip keeps it too: the field is never dropped with the approval reset.
+    const pending = requestApproval(v2);
+    expect(pending.ok && pending.value.conversation).toBe(CONVERSATION);
+  });
+});
