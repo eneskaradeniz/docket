@@ -1315,6 +1315,20 @@ for (const [sizeName, theme] of combos) {
       await sleep(200);
     }
   };
+// J-17 walks the Öneriler screen (U-136 … U-150) on the page world's launch: three proposals on the
+// repo's own definition files — one pending (the assistant adds a line to the developer role), one
+// whose target file moved since (stale) and one already rejected. It runs on its own launch, so
+// what J-12 … J-14 did cannot leak in. No account, no keychain, no agent run: the only command is
+// the screen's own proposal.decide. Once per run, like J-10 … J-14.
+{
+  const handle = await launchPageViewApp();
+  const { page, seed, probe } = handle;
+  const proposals = seed.proposals;
+  const toastWith = (t) => page.locator('[data-toast]').filter({ hasText: t }).first();
+  const screen = page.locator('[data-proposals-screen]');
+  const item = (id) => screen.locator(`[data-proposals-item="${id}"]`);
+  const tab = (name) => screen.locator(`[data-proposals-tab="${name}"]`);
+  const detail = screen.locator('[data-proposals-detail]');
 
   let stepNo = 0;
   const steps = [];
@@ -1516,6 +1530,61 @@ for (const [sizeName, theme] of combos) {
     await shot('esc-merdiveni');
 
     assert.deepEqual(errors, [], `the page reported errors: ${errors.join(' | ').slice(0, 600)}`);
+    await page.screenshot({ path: join(OUT, `J-17-${stepNo}-${slug}.png`) });
+  };
+  const title = 'J-17: Öneriler: rozet, fark, bayat öneride Onayla pasif, onayla, Karar verilen';
+  total += 1;
+  try {
+    // The sidebar row carries the pending, non-stale count: one (the stale proposal is not counted).
+    const row = page.locator('[data-nav-proposals]');
+    await row.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await row.locator('[data-proposals-badge]').filter({ hasText: '1' }).waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await row.click({ timeout: WAIT });
+    await screen.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    assert.equal(await row.getAttribute('aria-current'), 'page', 'the Öneriler row is current on the screen');
+
+    // Bekleyen holds the pending proposal alone, selected, with its diff and its bar.
+    await item(proposals.pending).waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    assert.equal(await screen.locator('[data-proposals-item]').count(), 1, 'Bekleyen must hold exactly the pending proposal');
+    assert.equal(await item(proposals.pending).getAttribute('aria-current'), 'true', 'the first item is selected');
+    const diff = screen.locator('[data-proposals-diff]');
+    await diff.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    assert.equal(await diff.getAttribute('role'), 'region', 'the diff is a region');
+    const diffText = (await diff.textContent()) ?? '';
+    for (const part of [proposals.removedLine, proposals.addedLine]) assert(diffText.includes(part), `the diff must show "${part}", saw "${diffText}"`);
+    assert.equal(await diff.locator('[data-proposals-line="remove"]').count(), 1, 'one removed line');
+    assert.equal(await diff.locator('[data-proposals-line="add"]').count(), 1, 'one added line');
+    assert.equal(await screen.locator('[data-proposals-approve]').isDisabled(), false, 'Onayla is enabled on a current proposal');
+    await shot('bekleyen');
+
+    // Bayat: the stale proposal's Onayla is disabled, Reddet stays open, the note says why.
+    await tab('stale').click({ timeout: WAIT });
+    await item(proposals.stale).waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await screen.locator('[data-proposals-approve]').waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    assert.equal(await screen.locator('[data-proposals-approve]').isDisabled(), true, 'Onayla is disabled on a stale proposal');
+    assert.equal(await screen.locator('[data-proposals-reject]').isDisabled(), false, 'Reddet stays open on a stale proposal');
+    assert(((await detail.textContent()) ?? '').includes('Dosya değişti; öneri geçersiz.'), 'the stale note shows');
+    await shot('bayat');
+
+    // Karar verilen: the rejected proposal has no bar.
+    await tab('decided').click({ timeout: WAIT });
+    await item(proposals.rejected).waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    assert.equal(await screen.locator('[data-proposals-bar]').count(), 0, 'a decided proposal has no bar');
+    await shot('karar-verilen');
+
+    // Onayla on the pending proposal: the toast, and the item moves to Karar verilen, selected.
+    await tab('pending').click({ timeout: WAIT });
+    await item(proposals.pending).waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await screen.locator('[data-proposals-approve]').click({ timeout: WAIT });
+    await toastWith('Onaylandı').waitFor({ state: 'visible', timeout: WAIT });
+    await screen.locator('[data-proposals-tab="decided"][aria-pressed="true"]').waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await item(proposals.pending).waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    assert.equal(await item(proposals.pending).getAttribute('aria-current'), 'true', 'the approved proposal is selected');
+    assert((await item(proposals.pending).textContent())?.includes('✓ Onaylandı'), 'the approved proposal reads ✓ Onaylandı');
+    assert.equal(await screen.locator('[data-proposals-bar]').count(), 0, 'the approved proposal has no bar');
+    assert.equal(await screen.locator('[data-proposals-item]').count(), 2, 'Karar verilen holds the approved and the rejected proposal');
+    await row.locator('[data-proposals-badge]').waitFor({ state: 'detached', timeout: SCAN_WAIT });
+    await shot('onaylandi');
     assert.deepEqual(probe.hits, [], `the probe saw requests: ${probe.hits.join(' | ')}`);
 
     console.log(`  ok   ${title}`);
@@ -1525,6 +1594,7 @@ for (const [sizeName, theme] of combos) {
     console.log(`  FAIL ${title}\n       ${String(error).slice(0, 600)}`);
     appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).slice(0, 600) });
     await page.screenshot({ path: join(OUT, 'J-15-FAIL.png') }).catch(() => undefined);
+    await page.screenshot({ path: join(OUT, 'J-17-FAIL.png') }).catch(() => undefined);
   }
   await handle.app.close();
   await probe.close();

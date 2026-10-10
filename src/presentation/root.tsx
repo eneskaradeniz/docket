@@ -18,6 +18,7 @@ import { createChatStore } from './stores/chat-store';
 import { createCockpitStore } from './stores/cockpit';
 import { createLivePaneStore } from './stores/live-pane';
 import { createLibraryStore } from './stores/library';
+import { createProposalsStore } from './stores/proposals';
 import { createLocaleStore, type LocaleStore } from './stores/locale';
 import { createProjectTreeStore } from './stores/project-tree';
 import { createRoadmapStore } from './stores/roadmap';
@@ -112,6 +113,15 @@ if (mount !== null) {
     now: () => Date.now(),
     notify: ({ type, key, values }) => toast({ type, text: fill(t(locale.current(), key), values ?? {}) }),
   });
+  // The Öneriler screen (U-136 … U-146): re-reads on open, on window focus and after its commands.
+  const proposals = createProposalsStore({
+    api,
+    actor: USER,
+    focus: (listener) => {
+      window.addEventListener('focus', listener);
+      return () => window.removeEventListener('focus', listener);
+    },
+  });
   const settings = createSettingsStore({ api, changes, actor: USER, locale: locale.current, timeZone });
   // The settings panel's per-account model list and its spend-consent flow (P-40).
   const accountModels = createAccountModelsStore({ api, changes, actor: USER });
@@ -160,6 +170,7 @@ if (mount !== null) {
           pageHost={pageHost}
           library={library}
           chat={chat}
+          proposals={proposals}
           accountView={accountView}
           settings={settings}
           models={accountModels}

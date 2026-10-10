@@ -22,6 +22,7 @@ import type { Actor, ProjectSlug, RepoSlug, RoleSlug } from '../src/domain/index
 import { DISPATCH_MODE_KEY } from '../src/application/use-cases/settings';
 import { publishPageUseCase, publishVersion } from '../src/application/use-cases/pages';
 import { attachProject } from '../src/application/use-cases/projects';
+import { createProposal, decideProposalUseCase } from '../src/application/use-cases/proposals';
 import { openWorkOrder } from '../src/application/use-cases/work-orders';
 import { createNodeDeps } from '../src/infrastructure/compose/create-node-deps';
 
@@ -313,10 +314,55 @@ const note = await publishPageUseCase(deps, {
 assert(note.ok, `the note page did not publish: ${note.ok ? '' : note.error.code}`);
 const notePageId = note.value.id;
 
+// The Öneriler journey's proposals (J-17), all on the repo's own definition files: a pending one the
+// operator approves, one whose target file then moves (so it is stale) and one already rejected.
+// The assistant wrote them; the operator decides, so the self-approval rule never applies.
+const REPO_SCOPE = { kind: 'repo', repo: PROJECT.repo as RepoSlug } as const;
+const ROLE_FILE = 'roles/gelistirici.yaml';
+const FLOW_FILE = 'flows/tek-asama.yaml';
+const roleFile = await deps.definitions.readFile(REPO_SCOPE, ROLE_FILE);
+const flowFile = await deps.definitions.readFile(REPO_SCOPE, FLOW_FILE);
+assert(roleFile !== undefined && flowFile !== undefined, 'the seeded definition files are missing');
+const LINE = /^instructions:.*$/m;
+const NAME = /^name: .*$/m;
+const removedLine = roleFile.content.match(LINE)?.[0];
+assert(removedLine !== undefined && NAME.test(flowFile.content), 'the seeded definitions lost the lines the proposals change');
+const addedLine = 'instructions: İş emrini yürüt ve sonucu özetle.';
+
+const pendingProposal = await createProposal(deps, {
+  scope: REPO_SCOPE,
+  target: ROLE_FILE,
+  after: roleFile.content.replace(LINE, addedLine),
+  summary: 'Geliştirici rolüne özet adımı ekle',
+  author: AGENT,
+});
+assert(pendingProposal.ok, 'the pending proposal was not created');
+const rejectedProposal = await createProposal(deps, {
+  scope: REPO_SCOPE,
+  target: ROLE_FILE,
+  after: roleFile.content.replace(LINE, 'instructions: Yalnızca testleri yaz.'),
+  summary: 'Geliştirici rolünü testlerle sınırla',
+  author: AGENT,
+});
+assert(rejectedProposal.ok, 'the rejected proposal was not created');
+const rejected = await decideProposalUseCase(deps, { id: rejectedProposal.value, decision: 'rejected', actor: OPERATOR });
+assert(rejected.ok, 'the proposal was not rejected');
+const staleProposal = await createProposal(deps, {
+  scope: REPO_SCOPE,
+  target: FLOW_FILE,
+  after: flowFile.content.replace(NAME, 'name: Tek aşamalı akış, gözden geçirilmiş'),
+  summary: 'Akışın adını güncelle',
+  author: AGENT,
+});
+assert(staleProposal.ok, 'the stale proposal was not created');
+// The flow file changes after the proposal was written: the proposal no longer fits it.
+const moved = await deps.definitions.writeFile(REPO_SCOPE, FLOW_FILE, flowFile.content.replace(NAME, 'name: Tek aşamalı akış, elle değişti'), flowFile.hash);
+assert(moved.ok, 'the flow file could not be moved under the stale proposal');
+
 // On disk in the version directory, but not a recorded file of the version.
 writeFileSync(join(dataDir, 'pages', pageId, 'v1', 'secret'), 'TOP SECRET');
 
 node.value.close();
 console.log(
-  `SEED=${JSON.stringify({ home, dataDir, pageId, project: PROJECT.name, workOrderTitle: WORK_ORDER_TITLE, notePageId, noteTitle: NOTE_TITLE, removedLine: OLD_LINE, addedLine: NEW_LINE })}`,
+  `SEED=${JSON.stringify({ home, dataDir, pageId, project: PROJECT.name, workOrderTitle: WORK_ORDER_TITLE, notePageId, noteTitle: NOTE_TITLE, removedLine: OLD_LINE, addedLine: NEW_LINE, proposals: { pending: pendingProposal.value, stale: staleProposal.value, rejected: rejectedProposal.value, pendingSummary: 'Geliştirici rolüne özet adımı ekle', removedLine, addedLine } })}`,
 );
