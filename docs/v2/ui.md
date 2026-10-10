@@ -1321,3 +1321,8 @@ than 8 words. A proposal's summary, target, scope, author and every diff line ar
   `rounded-panel` / `rounded-full` only, an explicit leading on every sized text line, a focus ring on
   every control, panes stacked below the `lg` breakpoint, transitions behind `motion-safe:` /
   `motion-reduce:`, no vendor name. A source-scan test pins these on the screen's own source.
+
+## Nav order (U-191)
+
+- **U-191** (added 2026-10-11, #951; amends U-84 and U-136) The sidebar rows stand in this order: Anasayfa, Ara, Öneriler, Çıktılar (Artifacts), Telefon, Ayarlar. Öneriler sits between Ara and the library row.
+
