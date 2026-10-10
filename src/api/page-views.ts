@@ -4,8 +4,8 @@
 import type { Actor, DiffLine, Page, PageComment, PageId, PageKind, PageVersion, WorkOrderId } from '../domain/index';
 import { PAGE_LIMITS, diffLines } from '../domain/index';
 
-import type { AppDeps } from '../application';
-import { pendingPageApprovalGate } from '../application';
+import type { AppDeps, PageLibraryFilter } from '../application';
+import { pageLibrary, pendingPageApprovalGate, workOrderCodeOf } from '../application';
 
 /** `pages.list` returns at most this many, newest update first. */
 export const PAGE_LIST_LIMIT = 200;
@@ -167,4 +167,49 @@ export async function pageDetailView(
     ...(diff === undefined ? {} : { diff }),
     ...(page.workOrder === undefined ? {} : { gate: gate === undefined ? { pending: false } : { pending: true, gate } }),
   };
+}
+
+/** Who put the page there: the operator, the Docket AI assistant role, or any other agent run. */
+export type PageProvenance = 'docket_ai' | 'agent_run' | 'operator';
+
+export interface PageLibraryItemView {
+  readonly id: string;
+  readonly title: string;
+  readonly kind: PageKind;
+  readonly project?: { readonly slug: string; readonly name: string };
+  readonly workOrder?: { readonly id: string; readonly code: string };
+  readonly latestVersion: number;
+  readonly updatedAt: number;
+  readonly approval: 'none' | 'pending' | 'approved' | 'rejected';
+  readonly approvedVersion?: number;
+  readonly pinned: boolean;
+  readonly provenance: PageProvenance;
+}
+
+// The assistant's role slug; its pages are the ones Docket AI made in conversation.
+const ASSISTANT_ROLE = 'asistan';
+
+const provenanceOf = (actor: Actor): PageProvenance =>
+  actor.kind === 'user' ? 'operator' : actor.kind === 'agent' && actor.role === ASSISTANT_ROLE ? 'docket_ai' : 'agent_run';
+
+export async function pageLibraryView(
+  deps: Pick<AppDeps, 'pages' | 'projects' | 'workOrders' | 'settings'>,
+  filter: PageLibraryFilter,
+): Promise<readonly PageLibraryItemView[]> {
+  const items = await pageLibrary(deps, filter);
+  return items.map(({ page, projectName, workOrderNumber, pinned }) => ({
+    id: page.id,
+    title: page.title,
+    kind: page.kind,
+    ...(page.project === undefined || projectName === undefined ? {} : { project: { slug: page.project, name: projectName } }),
+    ...(page.workOrder === undefined || workOrderNumber === undefined
+      ? {}
+      : { workOrder: { id: page.workOrder, code: workOrderCodeOf(workOrderNumber) } }),
+    latestVersion: page.versions.length,
+    updatedAt: updatedAtOf(page),
+    approval: page.approval,
+    ...(page.approvedVersion === undefined ? {} : { approvedVersion: page.approvedVersion }),
+    pinned,
+    provenance: provenanceOf(page.createdBy),
+  }));
 }

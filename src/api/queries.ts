@@ -1,6 +1,6 @@
 // api/queries.ts — the read side of the boundary. Exact contract: docs/v2/application.md § 4.
 // Plain JSON-serialisable shapes only; ids travel as strings and are parsed in api.ts.
-import type { ModelMatcher, ProposalStatus } from '../domain/index';
+import type { ModelMatcher, PageKind, ProposalStatus } from '../domain/index';
 import type {
   AccountTestView,
   ProposalDetailView,
@@ -11,7 +11,7 @@ import type {
   WorktreeFilePreview,
 } from '../application';
 
-export type { PageCommentView, PageDetailView, PageListItem, PageVersionView } from './page-views';
+export type { PageCommentView, PageDetailView, PageLibraryItemView, PageListItem, PageVersionView } from './page-views';
 export type { AccountTestView, ProposalDetailView, ProposalListItem, StageFilesView, WorktreeFilePreview };
 
 export type Query =
@@ -40,6 +40,7 @@ export type Query =
   | { readonly type: 'proposals.list'; readonly status?: ProposalStatus } // → readonly ProposalListItem[] (A-128, A-129)
   | { readonly type: 'proposal.detail'; readonly id: string } // → ProposalDetailView | not_found (A-130, A-131)
   | { readonly type: 'pages.list'; readonly workOrder: string } // → readonly PageListItem[] (A-154)
+  | { readonly type: 'pages.library'; readonly q?: string; readonly kind?: PageKind; readonly project?: string; readonly workOrder?: string; readonly pinned?: boolean } // → readonly PageLibraryItemView[] (A-202)
   | { readonly type: 'page.detail'; readonly id: string; readonly version?: number }; // → PageDetailView | not_found | unknown_version (A-155 … A-157, A-160)
 
 export interface AttentionItem {

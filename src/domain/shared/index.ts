@@ -7,3 +7,4 @@ export * from './ids';
 export * from './slug-from-name';
 export * from './run';
 export * from './actor';
+export * from './search';

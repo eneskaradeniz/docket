@@ -35,6 +35,7 @@ export type Command =
   | { readonly type: 'page.comment'; readonly page: string; readonly version: number; readonly text: string; readonly anchor?: string } // errors: the domain's PageError codes (A-158)
   | { readonly type: 'page.requestApproval'; readonly page: string }
   | { readonly type: 'page.decide'; readonly page: string; readonly decision: 'approved' | 'rejected'; readonly version: number }
+  | { readonly type: 'page.pin'; readonly page: string; readonly pinned: boolean } // errors: not_found, too_many_pinned (A-200)
   | { readonly type: 'app.update.check' }
   | { readonly type: 'app.update.apply' };
 

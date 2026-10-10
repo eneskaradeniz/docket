@@ -45,6 +45,18 @@ export interface Page {
   readonly approvedVersion?: number;
 }
 
+/** How a kind reads in Turkish; the library search matches a typed word against it. */
+export const PAGE_KIND_NAMES_TR: Readonly<Record<PageKind, string>> = {
+  html: 'taslak',
+  diagram: 'diyagram',
+  markdown: 'metin markdown',
+  table: 'tablo',
+  image: 'resim',
+  report: 'rapor',
+};
+
+export const pageKindNameTr = (kind: PageKind): string => PAGE_KIND_NAMES_TR[kind];
+
 export type PageError = {
   readonly code:
     | 'empty_title'
