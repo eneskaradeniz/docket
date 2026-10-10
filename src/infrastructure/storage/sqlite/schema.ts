@@ -94,4 +94,10 @@ CREATE INDEX drafts_by_conversation ON drafts (conversation, id);`,
     sql: `CREATE TABLE actions (id TEXT PRIMARY KEY, conversation TEXT NOT NULL, status TEXT NOT NULL, proposed_at INTEGER NOT NULL, data TEXT NOT NULL);
 CREATE INDEX actions_by_conversation ON actions (conversation, status);`,
   },
+  {
+    // Chat-page provenance (I-84): the conversation a chat turn's page belongs to, nullable so a
+    // run-made or operator page — and every row written before this migration — reads as absent.
+    version: 9,
+    sql: `ALTER TABLE pages ADD COLUMN conversation TEXT;`,
+  },
 ];

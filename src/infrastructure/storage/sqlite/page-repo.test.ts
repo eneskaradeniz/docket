@@ -221,4 +221,37 @@ describe('createSqlitePageRepo', () => {
       });
     });
   });
+
+  describe('the conversation column', () => {
+    it('I-84: the page repo persists and reads conversation through the real store, and old rows read as absent', async () => {
+      const CONVERSATION = ulid<'conversation'>('01ARZ3NDEKTSV4RRFFQ69G5FE1');
+      const OTHER = ulid<'conversation'>('01ARZ3NDEKTSV4RRFFQ69G5FE2');
+      const path = join(tmp, 'docket.db');
+      const first = openDb(path);
+      const repo = createSqlitePageRepo(first);
+      // A pre-conversation-era row: the JSON carries no conversation field.
+      first.raw
+        .prepare('INSERT INTO pages (id, work_order, project, data) VALUES (?, ?, ?, ?)')
+        .run(P1, null, null, JSON.stringify(page(P1)));
+      await repo.save(page(P2, { conversation: CONVERSATION }));
+
+      expect((await repo.get(P2))?.conversation).toBe(CONVERSATION);
+      const oldRow = await repo.get(P1);
+      expect(oldRow !== undefined && 'conversation' in oldRow).toBe(false);
+      const column = first.raw.prepare('SELECT conversation FROM pages WHERE id = ?').get(P2);
+      expect(column).toMatchObject({ conversation: CONVERSATION });
+      first.close();
+      openHandles.splice(openHandles.indexOf(first), 1);
+
+      const reopened = createSqlitePageRepo(openDb(path));
+      expect((await reopened.get(P2))?.conversation).toBe(CONVERSATION);
+      expect((await reopened.get(P2))?.conversation).not.toBe(OTHER);
+      const stillOld = await reopened.get(P1);
+      expect(stillOld !== undefined && 'conversation' in stillOld).toBe(false);
+      // An upsert that drops the field drops the column too, like work_order and project.
+      await reopened.save(page(P2, { workOrder: W1 }));
+      const replaced = await reopened.get(P2);
+      expect(replaced !== undefined && 'conversation' in replaced).toBe(false);
+    });
+  });
 });

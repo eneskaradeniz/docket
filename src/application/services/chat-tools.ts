@@ -96,7 +96,6 @@ export const CHAT_TOOL_DEFINITIONS: readonly DocketToolDefinition[] = [
   },
 ];
 
-export const CHAT_TOOL_NAMES: ReadonlySet<string> = new Set(CHAT_TOOL_DEFINITIONS.map((tool) => tool.name));
 
 // --- small helpers -----------------------------------------------------------------------------------
 
@@ -125,7 +124,10 @@ const STATUS_ATTENTION: ReadonlySet<WorkOrderStatus> = new Set(['awaiting_human'
 
 // --- the read access of one conversation ---------------------------------------------------------------
 
-interface Access {
+/** What one conversation may read through the assistant's tools; the write tools judge their
+ *  project, repo and page targets with the same predicates, so a chat turn can never write
+ *  somewhere it could not read. */
+export interface ChatAccess {
   readonly scope: ChatReadScope;
   readonly canProject: (project: ProjectSlug) => boolean;
   readonly canRepo: (repo: RepoSlug) => boolean;
@@ -138,7 +140,7 @@ interface Access {
  *  repos, its work orders and its pages; a work-order conversation opens that work order and, for
  *  context, its project and its repo — not its sibling work orders; every other reference opens
  *  exactly the thing it names. */
-const accessOf = async (deps: ChatToolDeps, scope: ChatReadScope, workOrderScope: WorkOrderId | undefined): Promise<Access> => {
+const accessOf = async (deps: Pick<AppDeps, 'projects' | 'workOrders'>, scope: ChatReadScope, workOrderScope: WorkOrderId | undefined): Promise<ChatAccess> => {
   const repos = new Set<RepoSlug>(scope.repos);
   for (const slug of scope.projects) {
     const project = await deps.projects.get(slug);
@@ -171,14 +173,21 @@ const accessOf = async (deps: ChatToolDeps, scope: ChatReadScope, workOrderScope
   };
 };
 
+/** The read access of the token's own conversation, re-resolved on every call; `undefined` when
+ *  the conversation is gone. Shared by the read tools and the write tools. */
+export const chatAccessFor = async (
+  deps: Pick<AppDeps, 'conversations' | 'workOrders' | 'projects'>,
+  binding: ChatBinding,
+): Promise<ChatAccess | undefined> => {
+  const conversation = await deps.conversations.get(binding.conversation);
+  if (conversation === undefined) return undefined;
+  return accessOf(deps, chatReadScope(conversation), conversation.scope.kind === 'workOrder' ? conversation.scope.workOrder : undefined);
+};
+
 // --- the tools -------------------------------------------------------------------------------------------
 
 export function createChatTools(deps: ChatToolDeps): ChatTools {
-  const accessFor = async (binding: ChatBinding): Promise<Access | undefined> => {
-    const conversation = await deps.conversations.get(binding.conversation);
-    if (conversation === undefined) return undefined;
-    return accessOf(deps, chatReadScope(conversation), conversation.scope.kind === 'workOrder' ? conversation.scope.workOrder : undefined);
-  };
+  const accessFor = (binding: ChatBinding): Promise<ChatAccess | undefined> => chatAccessFor(deps, binding);
 
   const flowCache = new Map<RepoSlug, readonly FlowDef[]>();
   const flowsOf = async (repo: RepoSlug): Promise<readonly FlowDef[]> => {
@@ -207,7 +216,7 @@ export function createChatTools(deps: ChatToolDeps): ChatTools {
 
   // --- docket_get ---
 
-  const getWorkOrderView = async (access: Access, id: WorkOrderId): Promise<DocketToolResponse> => {
+  const getWorkOrderView = async (access: ChatAccess, id: WorkOrderId): Promise<DocketToolResponse> => {
     const record = await deps.workOrders.get(id);
     if (record === undefined || !access.canOrder(record)) return fail('forbidden');
     const view = await getWorkOrder(deps, id);
@@ -243,7 +252,7 @@ export function createChatTools(deps: ChatToolDeps): ChatTools {
     return succeed(build(fitCount(pages.length, build)));
   };
 
-  const getProjectView = async (access: Access, slug: ProjectSlug): Promise<DocketToolResponse> => {
+  const getProjectView = async (access: ChatAccess, slug: ProjectSlug): Promise<DocketToolResponse> => {
     const project = await deps.projects.get(slug);
     if (project === undefined || !access.canProject(slug)) return fail('forbidden');
     const derived = await derive(await deps.workOrders.list({ project: slug }));
@@ -258,7 +267,7 @@ export function createChatTools(deps: ChatToolDeps): ChatTools {
     });
   };
 
-  const getRepoBoard = async (access: Access, slug: RepoSlug): Promise<DocketToolResponse> => {
+  const getRepoBoard = async (access: ChatAccess, slug: RepoSlug): Promise<DocketToolResponse> => {
     const known = (await deps.repos.path(slug)) !== undefined || (await deps.projects.projectOfRepo(slug)) !== undefined;
     if (!known || !access.canRepo(slug)) return fail('forbidden');
     const all = await derive(await deps.workOrders.list({ repo: slug }));
@@ -287,7 +296,7 @@ export function createChatTools(deps: ChatToolDeps): ChatTools {
     return succeed(build(fitCount(entries.length, build)));
   };
 
-  const getRoadmapView = async (access: Access, slug: ProjectSlug): Promise<DocketToolResponse> => {
+  const getRoadmapView = async (access: ChatAccess, slug: ProjectSlug): Promise<DocketToolResponse> => {
     if ((await deps.projects.get(slug)) === undefined || !access.canProject(slug)) return fail('forbidden');
     const roadmap = await deps.definitions.loadRoadmap(slug);
     if (roadmap === undefined) return fail('not_found');
@@ -319,7 +328,7 @@ export function createChatTools(deps: ChatToolDeps): ChatTools {
     return succeed(build(fitCount(roadmap.value.phases.length, build)));
   };
 
-  const getPageView = async (access: Access, id: PageId): Promise<DocketToolResponse> => {
+  const getPageView = async (access: ChatAccess, id: PageId): Promise<DocketToolResponse> => {
     const page = await deps.pages.get(id);
     if (page === undefined || !(await access.canPage(page))) return fail('forbidden');
     const project = page.project === undefined ? undefined : await deps.projects.get(page.project);

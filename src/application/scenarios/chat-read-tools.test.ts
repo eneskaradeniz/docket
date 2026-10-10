@@ -12,7 +12,7 @@ import {
   createFakeRepoFileReader,
   createFakeRunTokens,
 } from '../ports/fakes/index';
-import { createDocketTools, type DocketToolResponse } from '../services/index';
+import { createActionApplier, createChatTurnLedger, createDocketTools, type DocketToolResponse } from '../services/index';
 
 const ulid = <B extends string>(input: string) => {
   const parsed = parseUlid<B>(input);
@@ -84,7 +84,7 @@ describe('chat read tools scenario', () => {
         },
       ],
     });
-    const tools = createDocketTools(deps);
+    const tools = createDocketTools(deps, { applyAction: createActionApplier(deps), turnLedger: createChatTurnLedger() });
     const chat = tokens.mint({ kind: 'chat', turn: TURN, conversation: CONVERSATION, role: ROLE });
     const run = tokens.mint({ kind: 'run', runId: RUN, workOrderId: LOGIN, role: ROLE });
     const call = (token: string, tool: string, args: unknown): Promise<DocketToolResponse> => tools.call({ token, tool, args });

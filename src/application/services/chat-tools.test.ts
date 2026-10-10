@@ -43,6 +43,8 @@ import {
   DOCKET_TOOLS_INSTRUCTIONS_BY_KIND,
   type DocketToolResponse,
 } from './docket-tools';
+import { createActionApplier } from './action-appliers';
+import { createChatTurnLedger } from './chat-turn-ledger';
 
 // --- fixtures ----------------------------------------------------------------------------------------
 
@@ -223,7 +225,7 @@ const harness = async (overrides: Partial<Parameters<typeof createFakeDeps>[0]> 
   reader.put(BETA_APP, 'src/beta.ts', 'export const beta = 3;\n');
   reader.put(BETA_APP, 'src/beta2.ts', 'export const beta2 = 4;\n');
 
-  const tools = createDocketTools(deps);
+  const tools = createDocketTools(deps, { applyAction: createActionApplier(deps), turnLedger: createChatTurnLedger() });
   return {
     deps,
     tokens,
@@ -252,16 +254,18 @@ const PROJECT_ALPHA: ConversationScope = { kind: 'project', project: ALPHA };
 // --- A-204: the tool list belongs to the token's kind ----------------------------------------------
 
 describe('A-204: tools by token kind', () => {
-  it('A-204: run tokens list exactly the three page tools and chat tokens exactly the three read tools', () => {
+  it('A-204: run tokens list exactly the three page tools; a chat token\'s read tools open the list the write tools complete', () => {
     expect(DOCKET_TOOL_DEFINITIONS_BY_KIND.run.map((tool) => tool.name)).toEqual(['page_publish', 'page_update', 'page_comments']);
-    expect(DOCKET_TOOL_DEFINITIONS_BY_KIND.chat.map((tool) => tool.name)).toEqual(['docket_get', 'docket_search', 'docket_read_file']);
+    // A-204's own list was the three read tools; the shared page tools and the chat write tools
+    // follow them (A-213), so the chat list begins with exactly these three, in order.
+    expect(DOCKET_TOOL_DEFINITIONS_BY_KIND.chat.slice(0, 3).map((tool) => tool.name)).toEqual(['docket_get', 'docket_search', 'docket_read_file']);
     for (const tool of DOCKET_TOOL_DEFINITIONS_BY_KIND.chat) {
       expect(tool.inputSchema).toMatchObject({ type: 'object' });
       expect(tool.description.length).toBeGreaterThan(20);
     }
   });
 
-  it('A-204: a run token calling any chat tool is forbidden and reads nothing', async () => {
+  it('A-204: a run token calling any chat read tool is forbidden and reads nothing', async () => {
     const h = await harness();
     const run = h.tokens.mint({ kind: 'run', runId: RUN_RECORD, workOrderId: WO_A1, project: ALPHA, role: ROLE });
     for (const [tool, args] of [
@@ -274,12 +278,10 @@ describe('A-204: tools by token kind', () => {
     expect(h.reader.calls()).toEqual([]);
   });
 
-  it('A-204: a chat token calling a page tool is forbidden and writes nothing; an unknown tool stays unknown_tool', async () => {
+  it('A-204: a chat token calling the run-only page_comments is forbidden and writes nothing; an unknown tool stays unknown_tool', async () => {
     const h = await harness();
     const token = await h.chat(conversationOf({ kind: 'global' }));
     const before = (await h.deps.pages.list({})).length;
-    expect(codeOf(await h.call(token, 'page_publish', { title: 'x', kind: 'markdown', content: '# x' }))).toBe('forbidden');
-    expect(codeOf(await h.call(token, 'page_update', { pageId: PAGE_A, content: 'x' }))).toBe('forbidden');
     expect(codeOf(await h.call(token, 'page_comments', { pageId: PAGE_A }))).toBe('forbidden');
     expect(codeOf(await h.call(token, 'shell_exec', { command: 'ls' }))).toBe('unknown_tool');
     expect(codeOf(await h.call(token, 'constructor', {}))).toBe('unknown_tool');
@@ -809,7 +811,7 @@ describe('A-210: docket_read_file output', () => {
     const h = await harness();
     const token = await h.chat(conversationOf(PROJECT_ALPHA));
     const escaping = { read: async () => ({ ok: false as const, error: 'outside_repo' as const }) };
-    const tools = createDocketTools({ ...h.deps, repoFiles: escaping });
+    const tools = createDocketTools({ ...h.deps, repoFiles: escaping }, { applyAction: createActionApplier(h.deps), turnLedger: createChatTurnLedger() });
     expect(await tools.call({ token, tool: 'docket_read_file', args: { repo: ALPHA_APP, path: 'link-to-outside/passwd' } })).toEqual({
       ok: false,
       code: 'forbidden',
@@ -884,7 +886,7 @@ describe('A-212: codes only and the trust boundary', () => {
       await h.call(token, 'docket_get', { kind: 'work_order', id: WO_B1 }),
       await h.call(token, 'docket_read_file', { repo: ALPHA_APP, path: '.env' }),
       await h.call(token, 'docket_read_file', { repo: ALPHA_APP, path: 'src/missing.ts' }),
-      await h.call(token, 'page_publish', { title: 'x', kind: 'markdown', content: 'x' }),
+      await h.call(token, 'page_comments', { pageId: PAGE_A }),
       await h.call(token, 'docket_search', { query: '' }),
     ];
     await h.call(token, 'docket_read_file', { repo: ALPHA_APP, path: 'src/content.ts' });
