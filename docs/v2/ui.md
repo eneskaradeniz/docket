@@ -995,6 +995,72 @@ the native isolated view is the only place a page is rendered as a page.
   the stale-data banner, the page viewer's header and comments) shows the age as a standalone
   phrase, so "şimdi" reads correctly in each.
 
+## Artifact library (U-84 … U-90)
+
+Slice 6e-8b of Phase 6 (#922), over `pages.library` and `page.pin` (A-200 … A-202). The screen draws
+the operator-approved prototype (`docket-tasarim/artifactlar`, 2026-10-11) with the app's own
+components and tokens; where the prototype and the tokens disagree the tokens win. A page's title and
+project name are untrusted text: they enter the DOM only as React text nodes, and a thumbnail is
+decorative (faux lines for an html page, the kind's name in mono for the rest) — never a rendering of
+the page. The server's `q` is Turkish-aware, and no client-side text filter exists: anything the UI
+would filter by typed text must use the domain's `matchesSearch`.
+
+- **U-84** (nav, sidebar; added 2026-10-11, #922) Route, row, count. The route `library` is a U-25
+  history entry keyed `library` that always exists (nothing can vanish under it) and is pushed once,
+  never doubled; going back from a page opened out of it returns to the library with its scroll. The
+  sidebar row "Artifact'lar" stands between Ara and Telefon, is current (`aria-current="page"`) on the
+  route and shows the library's total as a mono count only above zero. The count is the store's
+  unfiltered read, loaded at startup and re-read on `workOrders.changed` even while the screen is
+  closed; a failed read keeps the last count and a filter never changes it.
+- **U-85** (library store, screen; added 2026-10-11, #922) The filter bar. Search text shows at once
+  and is requested 200 ms after typing rests (two keystrokes inside the window make one request with
+  the last text); it is sent trimmed and a blank text sends no `q`. Kind, project and Yeni / Sabitler
+  request at once, as the query's own `kind`, `project`, `pinned` fields. A reply that arrives after a
+  newer request is ignored. The kind control lists Tümü · Taslak · Diyagram · Metin · Tablo · Rapor,
+  plus Resim only while the loaded library holds an image page (or Resim is the chosen kind); the
+  project select lists "Tüm projeler" and the projects of the whole loaded library, once each by name.
+  Both lists come from the unfiltered library, so a chosen filter never shrinks the list it was chosen
+  from. Escape in the search field clears it and the list follows at once.
+- **U-86** (library screen; added 2026-10-11, #922) Cards. A card shows the thumbnail zone, the pin
+  button, the title (one truncated line, the full title in `title`), the kind chip with
+  "project · İE-code" (either half alone when the other is absent), "sürüm N · age" with the approval
+  chip (Onay bekliyor · ✓ Onaylandı · Reddedildi; none shows nothing) and the provenance line
+  (`docket_ai` "Docket AI · sohbet", `agent_run` "asistan", `operator` "sen"). Every card has the same
+  four rows with the same classes whatever its kind, approval, provenance or project, each at a fixed
+  height with its overflow truncated, and the thumbnail zone has one height — an approval chip or a
+  missing project never makes one card taller than its neighbours. The grid is
+  `repeat(auto-fill, minmax(15rem, 1fr))` with a 1rem gap and collapses by its own rule.
+- **U-87** (library store, screen; added 2026-10-11, #922) Open, pin, keyboard. A card is a
+  focusable `role="button"` (`tabindex="0"`) that opens the page route on click, Enter or Space; ‹ Geri
+  from the viewer returns to the library with search, kind, project and Yeni / Sabitler intact. The pin
+  button (☆ / ★, `aria-pressed`, name "Sabitle" / "Sabiti kaldır") is its own focusable button: it never
+  opens the card and a key pressed on it never reaches the card. `page.pin` toggles the card at once
+  (also while a re-read is in flight), keeps it on ok and, on a refusal, puts it back and says why with
+  the failure sentence (`too_many_pinned`: "En fazla 200 artifact sabitlenebilir; önce birini kaldır.",
+  `not_found` page-worded, anything else the generic line). Only a confirmed pin toasts "Sabitlendi" or
+  "Sabit kaldırıldı". In Sabitler an unpinned card leaves the list at once and comes back if the
+  unpin is refused.
+- **U-88** (library screen; added 2026-10-11, #922) States. Before the first reply the screen shows the
+  card-grid skeleton (past the U-26 delay) — never a blank area or an empty-state flash. An empty
+  library says "Henüz artifact yok" with "Docket AI’dan bir taslak, diyagram ya da rapor iste; burada
+  birikir."; a filter that matches nothing says "Eşleşen artifact yok" with "Aramayı ya da süzgeçleri
+  değiştir." and the filter bar stays; a failed read the operator asked for (first load, a filter, Yeniden
+  dene) shows an alert with the failure sentence and **Yeniden dene**, never a blank area. When the
+  filtered reply holds 500 pages (the api's cap) a quiet line "İlk 500 artifact gösteriliyor" follows
+  the grid, and not at 499.
+- **U-89** (library store; added 2026-10-11, #922) Refresh. The whole list is re-read silently on
+  `workOrders.changed` and every 10 s while the screen is open (the poll stops when it closes): a silent
+  read never shows a loading state or a skeleton, keeps the grid mounted (and so the scroll) and, when
+  it fails, keeps the list and shows no error. A pin in flight survives a re-read that lands before the
+  api answers. The filters live in the store, so they survive leaving and returning to the screen.
+- **U-90** (library screen; added 2026-10-11, #922) Measure. All new lengths are rem (U-53/U-62; the
+  only px-like value is the 1 px hairline border), spacing on the 4·8·12·16·20·24·32 scale, radii
+  `rounded-control`/`rounded-card`/`rounded-panel`/`rounded-full` only, every sized text line carries
+  an explicit leading (Tailwind's preflight puts line-height 1.5 on the root), controls show a
+  `focus-visible` ring, any transition sits behind `motion-safe:`/`motion-reduce:`. No class or string
+  names a vendor (`disabled:pointer-events-none`, not the vendor's own cursor utility), and nothing is
+  built from page text as markup. A source-scan test pins these on the screen's own source.
+
 ## Verifying the shell — E2E layers (Phase 3.5)
 
 The shell is verified against the frozen prototype **rev 8** (`~/source/docket-tasarim/rev8/`:
@@ -1055,6 +1121,12 @@ belongs to the mobile app.
   selector, Fark with the expected "+" / "−" lines → a comment shows "asistana iletilmedi" → Onay iste
   → Onayla → the success toast and the approved chip → switching to the older version shows disabled
   approval controls. It runs once per run.)*
+  *(Addendum 2026-10-11, #922: J-14 walks the Artifact'lar library on the same world, which now also holds
+  the operator's markdown note "Giriş ekranı notları" on the project: the sidebar row shows 2 → open
+  it → both cards with their chips → "taslak" finds the html page only → Escape clears → "giris
+  ekrani" (no Turkish characters) finds the note → the Metin kind → pin the html page ("Sabitlendi")
+  → Sabitler with Taslak and "taslak" on top → click the card → the page viewer → ‹ Geri returns to
+  the library with search, kind and Sabitler intact. It runs once per run.)*
 - **Layout audit** (pure DOM measurement, no pixel diff; each assertion named `L-n: …`, for every
   screen × size × theme):
   - **L-1** The sidebar's left edge is 0 and its width is 240px at every window size — it never

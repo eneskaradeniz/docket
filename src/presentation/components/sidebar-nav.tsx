@@ -1,5 +1,5 @@
-// components/sidebar-nav.tsx — the sidebar's four nav rows (U-24): Anasayfa, Ara, Telefon and
-// Ayarlar, each icon + label in a 32px row, above the project tree. Anasayfa goes to the cockpit
+// components/sidebar-nav.tsx — the sidebar's five nav rows (U-24, U-84): Anasayfa, Ara, Artifact'lar, Telefon
+// and Ayarlar, each icon + label in a 32px row, above the project tree. Anasayfa goes to the cockpit
 // and carries the shell's attention badge on its right edge (U-10 — the badge follows the row
 // that owns the cockpit); Ara opens the centered search palette, its ⌘K hint right-aligned and
 // part of the row's name the way the palette's door has always named itself; Telefon and Ayarlar
@@ -24,11 +24,16 @@ export interface SidebarNavProps {
   /** The settings panel's open section — the Telefon/Ayarlar rows' current standing; null while
    *  the panel is closed. */
   readonly settingsSection: SettingsSection | null;
+  /** Whether the Artifact'lar library is the current route — its row's current standing. */
+  readonly libraryCurrent: boolean;
+  /** How many artifacts the library holds; the row shows it only above zero (U-84). */
+  readonly libraryCount: number;
   /** The shell's attention badge; null renders nothing, never a zero (U-10). */
   readonly badge: ShellBadge | null;
   readonly onHome: () => void;
   /** Opens the palette; the origin decides where focus lands on close. */
   readonly onSearch: (origin: PaletteOrigin) => void;
+  readonly onLibrary: () => void;
   readonly onPhone: () => void;
   readonly onSettings: () => void;
 }
@@ -61,6 +66,24 @@ const SearchIcon = () => (
   >
     <circle cx="11" cy="11" r="7" />
     <path d="m21 21-4.3-4.3" />
+  </svg>
+);
+
+const LibraryIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+    className="h-4 w-4 flex-none"
+  >
+    <rect x="3.5" y="3.5" width="7" height="7" rx="1.5" />
+    <rect x="13.5" y="3.5" width="7" height="7" rx="1.5" />
+    <rect x="3.5" y="13.5" width="7" height="7" rx="1.5" />
+    <rect x="13.5" y="13.5" width="7" height="7" rx="1.5" />
   </svg>
 );
 
@@ -112,9 +135,12 @@ export function SidebarNav({
   homeCurrent,
   searchCurrent,
   settingsSection,
+  libraryCurrent,
+  libraryCount,
   badge,
   onHome,
   onSearch,
+  onLibrary,
   onPhone,
   onSettings,
 }: SidebarNavProps) {
@@ -145,6 +171,22 @@ export function SidebarNav({
         <SearchIcon />
         <span className="truncate">{t(locale, 'nav.search')}</span>
         <span className="ml-auto flex-none font-mono text-[12px] text-inkdim">{t(locale, 'nav.search.kbd')}</span>
+      </button>
+
+      <button
+        type="button"
+        data-nav-library=""
+        onClick={onLibrary}
+        aria-current={libraryCurrent ? 'page' : undefined}
+        className={rowClass(libraryCurrent)}
+      >
+        <LibraryIcon />
+        <span className="truncate">{t(locale, 'nav.library')}</span>
+        {libraryCount > 0 ? (
+          <span data-library-count="" className="ml-auto flex-none font-mono text-[12px] text-inkdim">
+            {libraryCount}
+          </span>
+        ) : null}
       </button>
 
       <button

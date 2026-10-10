@@ -30,6 +30,7 @@ import { unaddedRowTarget, type AccountsFrameStore } from '../stores/accounts-fr
 import { editInSettingsTarget, type AccountViewStore } from '../stores/account-view';
 import type { BoardStore } from '../stores/board';
 import type { CockpitStore } from '../stores/cockpit';
+import type { LibraryStore } from '../stores/library';
 import type { LocaleStore } from '../stores/locale';
 import {
   START_NAV_HISTORY,
@@ -71,6 +72,7 @@ import { AccountViewScreen } from './account-view';
 import { BoardScreen } from './board';
 import { CockpitScreen } from './cockpit';
 import { WorkOrderDetailScreen } from './detail';
+import { LibraryScreen } from './library';
 import { NewProjectScreen } from './new-project';
 import { PageViewerScreen } from './page-viewer';
 import { RoadmapScreen } from './roadmap';
@@ -90,6 +92,8 @@ export interface ShellScreenProps {
   readonly pageViewer: PageViewerStore;
   /** The host of the app's one isolated page view (U-76). */
   readonly pageHost: PageViewHost;
+  /** The Artifact'lar library (U-84): the screen's store, which also holds the sidebar's count. */
+  readonly library: LibraryStore;
   readonly accountView: AccountViewStore;
   readonly settings: SettingsStore;
   /** The settings panel's per-account model list and its spend-consent flow (P-40). */
@@ -134,6 +138,7 @@ type BackKind = 'detail.back.board' | 'detail.back.cockpit' | 'detail.back.accou
 const placeOf = (route: ShellRoute): TreePlace => {
   switch (route.name) {
     case 'cockpit':
+    case 'library':
       return { kind: 'cockpit' };
     case 'roadmap':
       return { kind: 'roadmap', project: route.project };
@@ -172,6 +177,7 @@ export function ShellScreen({
   pageList,
   pageViewer,
   pageHost,
+  library,
   accountView,
   settings,
   models,
@@ -189,6 +195,8 @@ export function ShellScreen({
   timeZone,
 }: ShellScreenProps) {
   const state = useSyncExternalStore(shell.subscribe, shell.state);
+  // The sidebar's Artifact'lar count (U-84): the library store's unfiltered read, loaded at startup.
+  const libraryCount = useSyncExternalStore(library.subscribe, () => library.state().all?.length ?? 0);
   const updateState = useSyncExternalStore(update.subscribe, update.state);
   // Where the operator is and has been (U-25): the navigation history is the shell's one route
   // state — the current entry's route is what renders, and each entry remembers the main
@@ -217,7 +225,9 @@ export function ShellScreen({
     void update.load();
     // The accounts frame's "n hesap eklenmedi" row reads the discovered list from startup.
     void candidateList.load();
-  }, [shell, update, candidateList]);
+    // The sidebar's Artifact'lar row reads its count from startup, not from the first visit.
+    void library.warm();
+  }, [shell, update, candidateList, library]);
   const unaddedCount = useSyncExternalStore(candidateList.subscribe, () => candidateList.state().rows.length);
   // The provider display names (A-67) the sidebar's card titles and popovers read: discovery's
   // own naming, resolved by id, null when it does not know the provider.
@@ -317,6 +327,7 @@ export function ShellScreen({
     (candidate: NavRoute): boolean => {
       switch (candidate.name) {
         case 'cockpit':
+        case 'library':
           return true;
         case 'board':
           return treeState.tree.some((item) => item.repos.some((node) => node.repo === candidate.repo));
@@ -468,10 +479,13 @@ export function ShellScreen({
             locale={locale}
             homeCurrent={route.name === 'cockpit'}
             searchCurrent={palette.open}
+            libraryCurrent={route.name === 'library'}
+            libraryCount={libraryCount}
             settingsSection={settingsPanel.open ? settingsPanel.section : null}
             badge={badge}
             onHome={() => navigate({ name: 'cockpit' })}
             onSearch={openPalette}
+            onLibrary={() => navigate({ name: 'library' })}
             onPhone={() => openSettings('phone')}
             onSettings={() => openSettings('accounts')}
           />
@@ -544,6 +558,9 @@ export function ShellScreen({
               onOpenSettings={() => openSettingsAt(editInSettingsTarget(route.id))}
               onBack={goBack}
             />
+          ) : null}
+          {route.name === 'library' ? (
+            <LibraryScreen store={library} locale={locale} now={clockNow()} onOpenPage={openPage} />
           ) : null}
           {route.name === 'newProject' ? (
             <NewProjectScreen store={newProject} locale={locale} onCancel={cancelNewProject} onDone={finishNewProject} />

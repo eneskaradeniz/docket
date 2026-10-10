@@ -16,6 +16,7 @@ export type NavRoute =
   | { readonly name: 'workOrder'; readonly id: string }
   | { readonly name: 'account'; readonly id: string }
   | { readonly name: 'page'; readonly id: string }
+  | { readonly name: 'library' }
   | { readonly name: 'newProject' };
 
 /** One place the operator stood, with the main column's scroll it had when it was last left. */
@@ -60,7 +61,9 @@ const routeKey = (route: NavRoute): string =>
             ? `page:${route.id}`
             : route.name === 'newProject'
               ? 'newProject'
-              : 'cockpit';
+              : route.name === 'library'
+                ? 'library'
+                : 'cockpit';
 
 /** Stamps the scroll of the screen being left into the current entry — every move does this, so
  *  each entry remembers its main column's scroll for the return. */
