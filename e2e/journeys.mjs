@@ -77,6 +77,15 @@ for (const [sizeName, theme] of combos) {
     mark(`click "${t}"`);
     return text(t).click({ timeout });
   };
+  // A sidebar tree row. The global text helpers take the first match in the document, and while the
+  // tree is still loading (a fresh launch, a reload) that is the cockpit card's text of the same
+  // name — a click on it succeeds and does nothing. So wait for the row INSIDE nav, then click it.
+  const treeRow = async (name, timeout = WAIT) => {
+    mark(`tree row "${name}"`);
+    const row = page.locator('nav').getByText(name, { exact: false }).first();
+    await row.waitFor({ state: 'visible', timeout });
+    await row.click({ timeout });
+  };
   const button = async (name) => {
     mark(`button "${name}"`);
     return page.getByRole('button', { name }).first().click({ timeout: WAIT });
@@ -139,7 +148,7 @@ for (const [sizeName, theme] of combos) {
   });
 
   await journey('J-2', 'tree → repo row → board; Kanban ⇄ Liste survives reload', async () => {
-    await click('antreo-api');
+    await treeRow('antreo-api');
     // The view choice persists per repo in the app profile; every launch starts from a throwaway
     // profile (e2e/profile.mjs), so the board opens at Kanban — the click pins that standing
     // whatever the app's default or the storage's history.
@@ -156,14 +165,17 @@ for (const [sizeName, theme] of combos) {
     await page.reload();
     mark('wait nav after reload');
     await page.waitForSelector('nav');
-    await click('antreo-api', SCAN_WAIT);
+    mark('tree row "antreo-api" after reload');
+    const apiRow = page.locator('nav').getByText('antreo-api', { exact: true });
+    await apiRow.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await apiRow.click({ timeout: SCAN_WAIT });
     await see('İE-0016', SCAN_WAIT);
     assert.equal(await page.locator('[data-board-kanban]').count(), 0, 'the Kanban columns must stay hidden after reload');
     await shot('board-liste-after-reload');
   });
 
   await journey('J-3', 'card → in-place detail → approve → ‹ Geri keeps the view state', async () => {
-    await click('antreo-api');
+    await treeRow('antreo-api');
     await button('Liste');
     await click('Swagger staging testi');
     await see('Bu aşamada senden beklenen');
@@ -178,7 +190,7 @@ for (const [sizeName, theme] of combos) {
   });
 
   await journey('J-4', 'project row → roadmap → expand a cross-repo task → its work order opens the detail', async () => {
-    await click('Antero');
+    await treeRow('Antero');
     await see('Yol haritası');
     await shot('roadmap');
     await click('Mobil login');
@@ -192,7 +204,7 @@ for (const [sizeName, theme] of combos) {
   });
 
   await journey('J-5', 'single-repo project → board → Yol haritası ↗', async () => {
-    await click('Kadife Odoo');
+    await treeRow('Kadife Odoo');
     await see('kadife-odoo');
     await page.waitForSelector('[data-board-kanban]');
     await shot('board');
@@ -433,7 +445,7 @@ for (const [sizeName, theme] of combos) {
     await dimmedIs('forward', true);
     await shot('ends-dimmed');
     // A project from the tree is the history's second entry.
-    await click('Antero');
+    await treeRow('Antero');
     await see('Yol haritası');
     await dimmedIs('back', false);
     await shot('roadmap');
