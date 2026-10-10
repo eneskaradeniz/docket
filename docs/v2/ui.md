@@ -1321,3 +1321,8 @@ than 8 words. A proposal's summary, target, scope, author and every diff line ar
   `rounded-panel` / `rounded-full` only, an explicit leading on every sized text line, a focus ring on
   every control, panes stacked below the `lg` breakpoint, transitions behind `motion-safe:` /
   `motion-reduce:`, no vendor name. A source-scan test pins these on the screen's own source.
+
+## Launcher after launcher (U-153 … U-154)
+
+- **U-153** (added 2026-10-11, #946; amends U-127) A launcher remembers, per chat store, the prefill it last placed. A draft that still equals it (untouched) is replaced by the next launcher's prefill; a blank draft takes the prefill as before.
+- **U-154** (added 2026-10-11, #946; amends U-127) Any other non-blank draft — a prefill with one character added, or text the operator typed — is kept and the new prefill is dropped; the scope still opens fresh. A sent (emptied) draft takes the next prefill.
