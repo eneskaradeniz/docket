@@ -60,6 +60,8 @@ ask; do not pick one yourself.
   summary, and the test evidence (the three commands' results).
 - Never push to `main`, never force-push, never delete branches you did not create.
 
+- **`main` is the only integration branch (added 2026-10-10; supersedes every `origin/v2` base and "`v2` integration branch" rule above and in `docs/v2/roadmap.md` → "Batch mode").** `v2` was merged into `main` (#925) and is retired. Branches are still `v2-<issue-number>-<short-slug>` but base on `origin/main` and their PRs go into `main`; batch mode merges into `main` only when CI is green and, for UI work, only after the operator's verdict (operator gate below). Issues now close automatically with `Closes #<issue>`; still check the PR state is MERGED.
+
 ## Operator gate
 - Work that changes the UI ends with a short numbered manual scenario for the operator; no merge to
   `main` before the operator's verdict. The assistant never launches the app itself.

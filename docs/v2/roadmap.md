@@ -71,3 +71,10 @@ morning. Rules:
 8. On a usage-limit error: finish the current step, write the progress comment on the PR, and stop.
 9. UI phases: UI work merges into `v2` normally; the numbered manual scenario lands on the tracker PR;
    the `v2 → main` merge waits for the operator's verdict (the operator gate in CLAUDE.md).
+
+### Addendum 2026-10-10 — `main` replaces the `v2` integration branch
+`v2` was merged into `main` (#925) and retired. In "Batch mode" above read `origin/main` for
+`origin/v2` and "into `main`" for "into `v2`"; rule 1's "never into `main`" and rule 6's "never merge
+to `main`" now mean: merge into `main` only through a PR with green CI and, for UI work, the
+operator's verdict. Rule 7's `v2 → main` PR no longer exists; UI phases end with the numbered manual
+scenario on the PR itself. Issues close automatically through `Closes #<issue>`.

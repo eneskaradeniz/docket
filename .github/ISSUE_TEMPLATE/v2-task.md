@@ -11,7 +11,7 @@ labels: v2
 Phase N · `model:…` · wave N
 
 ## Depends on
-<!-- issue numbers that must be merged into `v2` first, or "none" -->
+<!-- issue numbers that must be merged into `main` first, or "none" -->
 
 ## Context
 <!-- links into docs/v2/*.md; v1 reference as `git show v1-final:<path>` if any -->
@@ -46,4 +46,4 @@ Phase N · `model:…` · wave N
 ## Done when
 - [ ] tests for every listed rule, named `R-n: …`
 - [ ] `npm run typecheck && npm test && npm run check:boundaries` green
-- [ ] PR into `v2` with **Model Used** line and `Closes #…`
+- [ ] PR into `main` with **Model Used** line and `Closes #…`
