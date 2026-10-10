@@ -1061,6 +1061,15 @@ would filter by typed text must use the domain's `matchesSearch`.
   names a vendor (`disabled:pointer-events-none`, not the vendor's own cursor utility), and nothing is
   built from page text as markup. A source-scan test pins these on the screen's own source.
 
+## Chat events (U-97 … U-100)
+
+Amendment to U-12 (added 2026-10-11, #932): the chat adds three `UiEvent` members to the same `subscribe` channel — `chat.turn { conversation, turn, phase: 'started' | 'finished', outcome? }`, `chat.delta { conversation, turn, text }` and `chat.notice { conversation, turn, code }`.
+
+- **U-97** (added 2026-10-11, #932) `chat.delta` is the ONE event that carries a payload: a streamed text fragment of at most 4 KiB (a longer runner fragment is split, in order, without loss). It is never persisted; every other chat change is coarse — the store re-queries `chat.conversation` after `chat.turn` and after its own commands.
+- **U-98** (added 2026-10-11, #932) `chat.notice` carries only the stable error code; it is the sole route by which a runner error code reaches the UI.
+- **U-99** (added 2026-10-11, #932) The chat members ride the existing `subscribe` channel: `electron/preload.ts` needs no new channel and its bridge stays `Pick<Api, 'command' | 'query' | 'subscribe'>`.
+- **U-100** (added 2026-10-11, #932) Delta text is never written to the audit log: after a turn the log holds ids, outcome and counts only.
+
 ## Verifying the shell — E2E layers (Phase 3.5)
 
 The shell is verified against the frozen prototype **rev 8** (`~/source/docket-tasarim/rev8/`:

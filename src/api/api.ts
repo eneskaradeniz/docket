@@ -5,10 +5,15 @@
 import type {
   AccountId,
   AccountRoute,
+  ActionClass,
   Actor,
+  AttachmentId,
+  AttachmentKind,
   AuthMode,
   Billing,
   CatalogModel,
+  ConversationId,
+  ConversationRef,
   EpochMs,
   FlowDef,
   LimitPolicy,
@@ -30,8 +35,10 @@ import type {
   RepoSlug,
 } from '../domain/index';
 import {
+  ACTION_CLASSES,
   BUILTIN_FLOWS,
   BUILTIN_ROLES,
+  CONVERSATION_LIMITS,
   billingFromPools,
   deriveRoadmap,
   deriveWorkOrderState,
@@ -42,6 +49,7 @@ import {
   parseUlid,
   reserveClassOf,
   reserveFor,
+  titleFrom,
 } from '../domain/index';
 
 import type {
@@ -49,8 +57,11 @@ import type {
   AccountCandidateList,
   AccountDiscovery,
   AccountRecord,
+  ActionApplier,
+  ActionUndoer,
   AppDeps,
   CandidateQuotaPreview,
+  ChatRunner,
   CreateProjectSource,
   CredentialImporter,
   BindingScope,
@@ -64,6 +75,7 @@ import type {
   UpdateChecker,
 } from '../application';
 import {
+  ASSISTANT_ROLE_ID,
   accountTestViewOf,
   adoptAccountCandidate,
   approveAndDeploy,
@@ -74,27 +86,34 @@ import {
   capabilityCandidates,
   checkForUpdates,
   closeWorkOrder,
+  confirmDraftUseCase,
   createAccountCandidateList,
   createCandidateQuotaPreview,
   createQuotaService,
   createProject,
+  decideActionUseCase,
   decideHumanGate,
   commentOnPage,
   pinPage,
   decidePageApproval,
   decideProposalUseCase,
+  deleteConversation,
+  dropDraftUseCase,
   requestPageApproval,
   DEFAULT_MODEL_CONSENT,
   defaultBillingOf,
   enqueueStage,
   getUpdateState,
   getWorkOrder,
+  grantPermission,
   grantSpendConsent,
   importCapabilities,
   isSourceTaken,
   listProposals,
+  pinConversation,
   proposalDetail,
   openTaskWorkOrders,
+  revokePermission,
   runPhase,
   pausePhase,
   resumePhase,
@@ -114,11 +133,24 @@ import {
   stageFiles,
   unblockWorkOrder,
   unregisterRepo,
+  undoAction,
+  workOrderCodeOf,
   catalogOrEmpty,
   matchIdFor,
 } from '../application';
 
 import type { CapabilityImportResultView, Command, CommandResult } from './commands';
+import {
+  CHAT_API_LIMITS,
+  chatAttachmentView,
+  chatConversationView,
+  chatConversationsView,
+  chatReferencesView,
+  chatScopeOf,
+  chatUsageView,
+  decodeAttachment,
+  resolveChatRefs,
+} from './chat-views';
 import { pageDetailView, pageLibraryView, pageListView } from './page-views';
 import type {
   AccountDetailView,
@@ -147,13 +179,17 @@ import type {
 import { RUN_EVENTS_TAIL_LIMIT } from './queries';
 
 /** The push channel's events (U-12 of docs/v2/ui.md): coarse by design and never a payload — a
- *  store re-queries on receipt, so the channel survives every change of what the views show. */
+ *  store re-queries on receipt, so the channel survives every change of what the views show.
+ *  The chat members (U-97) carry the ONE payload exception: `chat.delta`'s text fragment. */
 export type UiEvent =
   | { readonly type: 'workOrders.changed' }
   | { readonly type: 'run.updated'; readonly runId: string }
   | { readonly type: 'update.changed' }
   /** A quota poll finished (P-49): meters and pools may have changed. */
-  | { readonly type: 'accounts.changed' };
+  | { readonly type: 'accounts.changed' }
+  | { readonly type: 'chat.turn'; readonly conversation: string; readonly turn: string; readonly phase: 'started' | 'finished'; readonly outcome?: string }
+  | { readonly type: 'chat.delta'; readonly conversation: string; readonly turn: string; readonly text: string }
+  | { readonly type: 'chat.notice'; readonly conversation: string; readonly turn: string; readonly code: string };
 
 export interface Api {
   command(actor: Actor, command: Command): Promise<CommandResult>;
@@ -210,6 +246,47 @@ const tierValue = (input: string | undefined): Tier | undefined | null => {
 
 const invalidId = (): CommandResult => ({ ok: false, code: 'invalid_id' });
 
+/** The chat surface's own malformed-answer (A-265): the same edge discipline as invalid_id, in the
+ *  vocabulary this slice was fixed with. */
+const badInput = (): CommandResult => ({ ok: false, code: 'bad_input' });
+
+/** The chat command surface's closure over createApi's own state — the pending uploads and the
+ *  runner bridge — handed to the shared switch below like every other optional wiring. */
+interface ChatOps {
+  readonly wiring: ChatWiring | undefined;
+  start(actor: Actor, command: Extract<Command, { readonly type: 'chat.start' }>): Promise<CommandResult>;
+  send(
+    actor: Actor,
+    conversation: ConversationId,
+    input: { readonly text: string; readonly refs: readonly ConversationRef[]; readonly attachments?: readonly string[] },
+  ): Promise<CommandResult>;
+  attach(command: Extract<Command, { readonly type: 'chat.attach' }>): Promise<CommandResult>;
+}
+
+const deltaEncoder = new TextEncoder();
+
+/** `chat.delta`'s one payload, cut at the byte cap on code-point boundaries and in order (U-97):
+ *  a fragment already within the cap passes through unchanged, a longer one becomes as many
+ *  fragments as the cap demands. */
+const deltaFragments = (delta: string): readonly string[] => {
+  if (deltaEncoder.encode(delta).length <= CHAT_API_LIMITS.deltaMaxBytes) return [delta];
+  const fragments: string[] = [];
+  let current = '';
+  let used = 0;
+  for (const char of delta) {
+    const size = deltaEncoder.encode(char).length;
+    if (used + size > CHAT_API_LIMITS.deltaMaxBytes && current !== '') {
+      fragments.push(current);
+      current = '';
+      used = 0;
+    }
+    current += char;
+    used += size;
+  }
+  if (current !== '') fragments.push(current);
+  return fragments;
+};
+
 /** undefined = the input is not a valid slug; the caller answers with invalid_id and runs nothing. */
 const slugValue = <B extends string>(input: string): Slug<B> | undefined => {
   const parsed = parseSlug<B>(input);
@@ -241,6 +318,17 @@ interface Adopting extends AccountAdoption {
   readonly candidates: AccountCandidateList;
 }
 
+/** What the chat surface needs, composed beside AppDeps like the adoption ports: the turn runner
+ *  (the composition's ONE runner, on the ledger the write tools fill), and the ONE action applier
+ *  and its undoer (A-214: a second applier must not exist anywhere). Without it the chat queries
+ *  still answer — only a turn cannot start, so the turn commands answer not_found like every
+ *  other unwired surface. */
+export interface ChatWiring {
+  readonly runner: ChatRunner;
+  readonly apply: ActionApplier;
+  readonly undo: ActionUndoer;
+}
+
 /** Page use cases fail with `{ code }` records; the code goes through unchanged (A-158). */
 const pageCommandOf = (outcome: Result<unknown, { readonly code: string }>): CommandResult =>
   outcome.ok ? { ok: true } : { ok: false, code: outcome.error.code };
@@ -269,6 +357,7 @@ export function createApi(
   marks?: ProviderMarks,
   adoption?: AccountAdoption,
   quota?: QuotaWiring,
+  chat?: ChatWiring,
 ): Api & RunEventFeed & { readonly quota: QuotaLifecycle } {
   // One remembered scan per api instance (A-85): the candidates query and every adoption read it.
   const adopting: Adopting | undefined =
@@ -286,6 +375,184 @@ export function createApi(
     }
   };
 
+  // --- the chat surface's own state (6e-5) -------------------------------------------------------------
+
+  /** One upload waiting for the next send that references it. Bytes live in the attachment store
+   *  under the conversation the renderer named; a conversation-less upload (the first message is
+   *  composed before any conversation exists) is held here, bounded by the same caps. */
+  interface PendingUpload {
+    readonly conversation: ConversationId | undefined;
+    readonly name: string;
+    readonly kind: AttachmentKind;
+    readonly bytes: number;
+    readonly at: EpochMs;
+    readonly held?: Uint8Array;
+  }
+  const uploads = new Map<AttachmentId, PendingUpload>();
+  const dropUpload = async (id: AttachmentId, upload: PendingUpload): Promise<void> => {
+    uploads.delete(id);
+    if (upload.conversation !== undefined) await deps.attachmentFiles.remove(upload.conversation, id).catch(() => undefined);
+  };
+  /** Unreferenced uploads older than an hour go when a turn starts (bounded work: the registry is
+   *  capped by the same count and byte limits the attach command enforces). */
+  const sweepUploads = async (now: EpochMs): Promise<void> => {
+    for (const [id, upload] of [...uploads.entries()]) {
+      if (now - upload.at >= CHAT_API_LIMITS.uploadSweepMs) await dropUpload(id, upload);
+    }
+  };
+
+  // The runner's own listeners are per conversation and the push channel is global, so the api
+  // bridges: it subscribes when a turn starts and drops every runner subscription the moment its
+  // last own listener unsubscribes (U-98) — no conversation stream outlives interest in it.
+  const runnerSubs = new Map<ConversationId, () => void>();
+  const bridgeRunner = (conversation: ConversationId): void => {
+    if (chat === undefined || runnerSubs.has(conversation)) return;
+    const off = chat.runner.subscribe(conversation, (event) => {
+      if (event.type === 'text') {
+        for (const fragment of deltaFragments(event.delta)) {
+          emit({ type: 'chat.delta', conversation, turn: event.turn, text: fragment });
+        }
+        return;
+      }
+      if (event.type === 'notice') {
+        emit({ type: 'chat.notice', conversation, turn: event.turn, code: event.code });
+        return;
+      }
+      if (event.type === 'started') emit({ type: 'chat.turn', conversation, turn: event.turn, phase: 'started' });
+      else emit({ type: 'chat.turn', conversation, turn: event.turn, phase: 'finished', outcome: event.outcome });
+    });
+    runnerSubs.set(conversation, off);
+  };
+  const dropRunnerSubs = (): void => {
+    for (const off of runnerSubs.values()) off();
+    runnerSubs.clear();
+  };
+
+  /** Reads the uploads a send references. The bytes come back as the use case's own input, so the
+   *  append writes them once under the ids it mints; the pending copies then go away — but only
+   *  after an append really happened, so a domain refusal leaves them for the retry. */
+  const takeUploads = async (
+    ids: readonly string[] | undefined,
+  ): Promise<
+    | { readonly inputs: readonly { readonly name: string; readonly kind: AttachmentKind; readonly bytes: Uint8Array }[]; readonly consumed: readonly AttachmentId[] }
+    | 'not_found'
+  > => {
+    if (ids === undefined || ids.length === 0) return { inputs: [], consumed: [] };
+    const inputs: { readonly name: string; readonly kind: AttachmentKind; readonly bytes: Uint8Array }[] = [];
+    const consumed: AttachmentId[] = [];
+    for (const raw of ids) {
+      const id = ulidValue<'attachment'>(raw);
+      if (id === undefined) return 'not_found';
+      const upload = uploads.get(id);
+      if (upload === undefined) return 'not_found';
+      const bytes = upload.held ?? (upload.conversation === undefined ? undefined : await deps.attachmentFiles.read(upload.conversation, id));
+      if (bytes === undefined) return 'not_found';
+      inputs.push({ name: upload.name, kind: upload.kind, bytes });
+      consumed.push(id);
+    }
+    return { inputs, consumed };
+  };
+
+  /** One send: the shared path of `chat.send` and `chat.start` with a message. Sweeps stale
+   *  uploads, resolves the pending ones, subscribes the bridge BEFORE the turn starts (so the
+   * first event is never missed) and hands the whole message to the runner — the one writer. The
+   * answer is the runner's own code; busy-style refusals still appended the message (A-232), so
+   * the pending uploads go in that case too. */
+  const sendTurn = async (
+    actor: Actor,
+    conversation: ConversationId,
+    input: { readonly text: string; readonly refs: readonly ConversationRef[]; readonly attachments?: readonly string[] },
+  ): Promise<CommandResult> => {
+    if (chat === undefined) return { ok: false, code: 'not_found' };
+    await sweepUploads(deps.clock.now());
+    const taken = await takeUploads(input.attachments);
+    if (taken === 'not_found') return { ok: false, code: 'not_found' };
+    bridgeRunner(conversation);
+    const started = await chat.runner.startTurn({
+      conversation,
+      message: {
+        text: input.text,
+        ...(input.refs.length > 0 ? { refs: [...input.refs] } : {}),
+        ...(taken.inputs.length > 0 ? { attachments: [...taken.inputs] } : {}),
+      },
+      by: actor,
+    });
+    if (started.ok || started.error.code === 'busy' || started.error.code === 'too_many_turns') {
+      for (const id of taken.consumed) {
+        const upload = uploads.get(id);
+        if (upload !== undefined) await dropUpload(id, upload);
+      }
+    }
+    return started.ok ? { ok: true, turn: started.value.turn } : { ok: false, code: started.error.code };
+  };
+
+  /** `chat.start` creates the conversation shell the runner then appends into — the domain's own
+   *  `startConversation` demands a first message, but a panel opens before one is typed, and the
+   *  turn's append is the only write that must ever carry the message. The shell's title is the
+   *  derived one from the message, exactly what a stored first message would have produced. */
+  /** One upload's arrival (A-259): decode and validate at the edge, cap the conversation's pending
+   *  set exactly as a message's own attachments are capped, then hand the bytes to the store —
+   *  immutable, like every attachment — and answer the id the next send references. */
+  const attachChat = async (command: Extract<Command, { readonly type: 'chat.attach' }>): Promise<CommandResult> => {
+    const decoded = decodeAttachment({ name: command.name, type: command.fileType, base64: command.base64 });
+    if (!decoded.ok) return { ok: false, code: decoded.error };
+    const conversation =
+      command.conversation === undefined ? undefined : ulidValue<'conversation'>(command.conversation);
+    if (conversation === undefined && command.conversation !== undefined) return badInput();
+    if (conversation !== undefined && (await deps.conversations.get(conversation)) === undefined) {
+      return { ok: false, code: 'not_found' };
+    }
+    const bucket = [...uploads.values()].filter((upload) => upload.conversation === conversation);
+    if (bucket.length >= CONVERSATION_LIMITS.attachmentsMax) return { ok: false, code: 'too_many_attachments' };
+    if (bucket.reduce((sum, upload) => sum + upload.bytes, 0) + decoded.value.bytes.length > CONVERSATION_LIMITS.attachmentsTotalMaxBytes) {
+      return { ok: false, code: 'attachments_too_large' };
+    }
+    const id = deps.ids.next<'attachment'>();
+    if (conversation !== undefined) await deps.attachmentFiles.write(conversation, id, decoded.value.bytes);
+    uploads.set(id, {
+      conversation,
+      name: decoded.value.name,
+      kind: decoded.value.kind,
+      bytes: decoded.value.bytes.length,
+      at: deps.clock.now(),
+      ...(conversation === undefined ? { held: decoded.value.bytes } : {}),
+    });
+    return { ok: true, attachment: id };
+  };
+
+  const startChat = async (actor: Actor, command: Extract<Command, { readonly type: 'chat.start' }>): Promise<CommandResult> => {
+    const scope = chatScopeOf(command.scope);
+    if (scope === undefined) return { ok: false, code: 'bad_scope' };
+    if (scope.kind === 'project' && (await deps.projects.get(scope.project)) === undefined) return { ok: false, code: 'bad_scope' };
+    if (scope.kind === 'workOrder' && (await deps.workOrders.get(scope.workOrder)) === undefined) return { ok: false, code: 'bad_scope' };
+    const text = command.message === undefined ? undefined : command.message.trim();
+    if (text === '') return { ok: false, code: 'empty_message' };
+    if (text !== undefined && text.length > CONVERSATION_LIMITS.messageMax) return { ok: false, code: 'message_too_long' };
+    const refs = await resolveChatRefs(deps, command.refs);
+    if (!refs.ok) return { ok: false, code: refs.error.code };
+    if (command.attachments !== undefined && command.attachments.length > CONVERSATION_LIMITS.attachmentsMax) {
+      return { ok: false, code: 'too_many_attachments' };
+    }
+    // A turn needs the runner; without the wiring nothing is created, so the answer is not_found
+    // exactly like every other unwired surface — never a conversation that cannot answer.
+    if (text !== undefined && chat === undefined) return { ok: false, code: 'not_found' };
+
+    const id = deps.ids.next<'conversation'>();
+    const now = deps.clock.now();
+    await deps.conversations.save({
+      id,
+      scope,
+      title: text === undefined ? '' : titleFrom(text),
+      createdAt: now,
+      updatedAt: now,
+      pinned: false,
+      messages: [],
+    });
+    if (text === undefined) return { ok: true, conversation: id };
+    const sent = await sendTurn(actor, id, { text, refs: refs.value, attachments: command.attachments });
+    return sent.ok ? { ok: true, conversation: id, turn: sent.turn } : { ok: false, code: sent.code };
+  };
+
   // The service reports every finished poll through the api's own push channel; without wiring
   // there is no schedule and the quota commands answer not_found.
   const quotaService: QuotaService | undefined =
@@ -296,6 +563,13 @@ export function createApi(
     quota === undefined || adopting === undefined
       ? undefined
       : createCandidateQuotaPreview(deps, adopting.candidates, quota.probes);
+
+  const chatOps: ChatOps = {
+    wiring: chat,
+    start: startChat,
+    send: sendTurn,
+    attach: attachChat,
+  };
 
   return {
     quota: { start: () => quotaService?.start(), stop: () => quotaService?.stop() },
@@ -315,7 +589,7 @@ export function createApi(
           },
         },
       };
-      const result = await runCommand(tracked, actor, command, board, updates, adopting, quotaService);
+      const result = await runCommand(tracked, actor, command, board, updates, adopting, quotaService, chatOps);
       if (appended) emit({ type: 'workOrders.changed' });
       // update.changed rides the same coarse pattern as workOrders.changed: the command answers
       // ok, the event tells every store to re-query — CommandResult carries no state payload. A
@@ -325,11 +599,15 @@ export function createApi(
       }
       return result;
     },
-    query: (query) => runQuery(deps, query, discovery, registry, board, updates, marks, adopting, candidateQuota),
+    query: (query) =>
+      runQuery(deps, query, discovery, registry, board, updates, marks, adopting, candidateQuota, chat === undefined ? undefined : chat.runner),
     subscribe: (listener) => {
       listeners.add(listener);
       return () => {
         listeners.delete(listener);
+        // The last listener out takes the runner bridges with it (U-98): a new listener set
+        // re-subscribes at the next turn, so no conversation stream is ever pumped into a void.
+        if (listeners.size === 0) dropRunnerSubs();
       };
     },
     runUpdated: (runId) => emit({ type: 'run.updated', runId }),
@@ -345,6 +623,7 @@ const runCommand = async (
   updates: UpdateChecker | undefined,
   adopting: Adopting | undefined,
   quotaService: QuotaService | undefined,
+  chatOps: ChatOps,
 ): Promise<CommandResult> => {
   switch (command.type) {
     case 'workOrder.open': {
@@ -862,6 +1141,112 @@ const runCommand = async (
       );
     }
 
+    // --- the chat surface (6e-5) -------------------------------------------------------------------
+
+    case 'chat.start':
+      return chatOps.start(actor, command);
+
+    case 'chat.send': {
+      const conversation = ulidValue<'conversation'>(command.conversation);
+      if (conversation === undefined) return badInput();
+      const text = command.text.trim();
+      if (text === '') return { ok: false, code: 'empty_message' };
+      if (text.length > CONVERSATION_LIMITS.messageMax) return { ok: false, code: 'message_too_long' };
+      // Reference resolution happens before the runner is ever called (A-261): a bad ref
+      // appends nothing, stores nothing and learns nothing about what it almost touched.
+      const refs = await resolveChatRefs(deps, command.refs);
+      if (!refs.ok) return { ok: false, code: refs.error.code };
+      if (command.attachments !== undefined && command.attachments.length > CONVERSATION_LIMITS.attachmentsMax) {
+        return { ok: false, code: 'too_many_attachments' };
+      }
+      return chatOps.send(actor, conversation, { text, refs: refs.value, ...(command.attachments === undefined ? {} : { attachments: command.attachments }) });
+    }
+
+    case 'chat.cancel': {
+      const conversation = ulidValue<'conversation'>(command.conversation);
+      if (conversation === undefined) return badInput();
+      if ((await deps.conversations.get(conversation)) === undefined) return { ok: false, code: 'not_found' };
+      if (chatOps.wiring === undefined) return { ok: false, code: 'not_found' };
+      return pageCommandOf(await chatOps.wiring.runner.cancel(conversation, actor));
+    }
+
+    case 'chat.pin': {
+      const conversation = ulidValue<'conversation'>(command.conversation);
+      if (conversation === undefined) return badInput();
+      return pageCommandOf(await pinConversation(deps, { conversation, pinned: command.pinned, by: actor }));
+    }
+
+    case 'chat.delete': {
+      const conversation = ulidValue<'conversation'>(command.conversation);
+      if (conversation === undefined) return badInput();
+      // An active turn is cancelled first, so a delete never leaves a stream writing into a
+      // conversation that no longer exists.
+      if (chatOps.wiring !== undefined && chatOps.wiring.runner.active(conversation) !== undefined) {
+        const stopped = await chatOps.wiring.runner.cancel(conversation, actor);
+        if (!stopped.ok) return pageCommandOf(stopped);
+      }
+      return pageCommandOf(await deleteConversation(deps, { conversation, by: actor }));
+    }
+
+    case 'chat.attach':
+      return chatOps.attach(command);
+
+    case 'chat.draft.confirm': {
+      const draft = ulidValue<'draft'>(command.draft);
+      if (draft === undefined) return badInput();
+      const confirmed = await confirmDraftUseCase(deps, { draft, by: actor });
+      if (!confirmed.ok) {
+        // `open_failed` carries a reason object for callers who can act on it; the boundary's
+        // stable code family takes the code alone.
+        return confirmed.error.code === 'open_failed' ? { ok: false, code: 'open_failed' } : { ok: false, code: confirmed.error.code };
+      }
+      const number = await deps.workOrders.number(confirmed.value.workOrder);
+      return number === undefined ? { ok: false, code: 'not_found' } : { ok: true, workOrder: confirmed.value.workOrder, code: workOrderCodeOf(number) };
+    }
+
+    case 'chat.draft.drop': {
+      const draft = ulidValue<'draft'>(command.draft);
+      if (draft === undefined) return badInput();
+      return pageCommandOf(await dropDraftUseCase(deps, { draft, by: actor }));
+    }
+
+    case 'chat.action.decide': {
+      const id = ulidValue<'action'>(command.id);
+      if (id === undefined) return badInput();
+      if (chatOps.wiring === undefined) return { ok: false, code: 'not_found' };
+      return pageCommandOf(await decideActionUseCase(deps, { id, decision: command.decision, by: actor }, chatOps.wiring.apply));
+    }
+
+    case 'chat.action.undo': {
+      const id = ulidValue<'action'>(command.id);
+      if (id === undefined) return badInput();
+      if (chatOps.wiring === undefined) return { ok: false, code: 'not_found' };
+      return pageCommandOf(await undoAction(deps, { id, by: actor }, chatOps.wiring.undo));
+    }
+
+    case 'chat.grant': {
+      const conversation = ulidValue<'conversation'>(command.conversation);
+      if (conversation === undefined) return badInput();
+      // The classes are the domain's closed set; an unknown one is the domain's own bad_class,
+      // answered here so the use case never sees a class it could not have minted.
+      if (!command.classes.every((value) => (ACTION_CLASSES as readonly string[]).includes(value))) {
+        return { ok: false, code: 'bad_class' };
+      }
+      const granted = await grantPermission(deps, {
+        conversation,
+        classes: command.classes as readonly ActionClass[],
+        minutes: command.minutes,
+        by: actor,
+      });
+      return granted.ok ? { ok: true, id: granted.value.id } : { ok: false, code: granted.error.code };
+    }
+
+    case 'chat.revoke': {
+      const grant = ulidValue<'grant'>(command.grant);
+      if (grant === undefined) return badInput();
+      return pageCommandOf(await revokePermission(deps, { grant, by: actor }));
+    }
+
     case 'app.update.check': {
       if (updates === undefined) return { ok: false, code: 'not_found' };
       // The re-check runs for its side effect on the checker's state; the answer itself travels
@@ -887,6 +1272,7 @@ const runQuery = async (
   marks: ProviderMarks | undefined,
   adopting: Adopting | undefined,
   candidateQuota: CandidateQuotaPreview | undefined,
+  chatRunner: Pick<ChatRunner, 'active'> | undefined,
 ): Promise<unknown> => {
   switch (query.type) {
     case 'workOrders.stageFiles': {
@@ -1068,6 +1454,63 @@ const runQuery = async (
       }
       return asks;
     }
+
+    // --- the chat read side (6e-5) -----------------------------------------------------------------
+
+    case 'chat.conversations': {
+      if (query.q !== undefined && (query.q.trim() === '' || query.q.length > CHAT_API_LIMITS.queryMax)) return badInput();
+      const scope = query.scope === undefined ? undefined : chatScopeOf(query.scope);
+      if (scope === undefined && query.scope !== undefined) return badInput();
+      if (query.limit !== undefined && (!Number.isInteger(query.limit) || query.limit < 1 || query.limit > CHAT_API_LIMITS.listMax)) {
+        return badInput();
+      }
+      if (query.before !== undefined && (typeof query.before !== 'number' || !Number.isFinite(query.before))) return badInput();
+      return chatConversationsView(deps, chatRunner, {
+        ...(query.q === undefined ? {} : { q: query.q }),
+        ...(scope === undefined ? {} : { scope }),
+        ...(query.pinned === undefined ? {} : { pinned: query.pinned }),
+        ...(query.before === undefined ? {} : { before: query.before }),
+        ...(query.limit === undefined ? {} : { limit: query.limit }),
+      });
+    }
+
+    case 'chat.conversation': {
+      const id = ulidValue<'conversation'>(query.id);
+      if (id === undefined) return badInput();
+      const found = await deps.conversations.get(id);
+      if (found === undefined) return { ok: false, code: 'not_found' };
+      return chatConversationView(deps, chatRunner, found);
+    }
+
+    case 'chat.references': {
+      if (typeof query.q !== 'string' || query.q.trim() === '' || query.q.length > CHAT_API_LIMITS.queryMax) return badInput();
+      let kinds: ReadonlySet<'work_order' | 'page' | 'project' | 'repo'> | undefined;
+      if (query.kinds !== undefined) {
+        if (query.kinds.length === 0 || !query.kinds.every((kind) => kind === 'work_order' || kind === 'page' || kind === 'project' || kind === 'repo')) {
+          return badInput();
+        }
+        kinds = new Set(query.kinds);
+      }
+      const project = query.project === undefined ? undefined : slugValue<'project'>(query.project);
+      if (project === undefined && query.project !== undefined) return badInput();
+      const limit = query.limit === undefined ? CHAT_API_LIMITS.referencesDefault : query.limit;
+      if (!Number.isInteger(limit) || limit < 1 || limit > CHAT_API_LIMITS.referencesMax) return badInput();
+      return chatReferencesView(deps, { q: query.q, ...(kinds === undefined ? {} : { kinds }), ...(project === undefined ? {} : { project }), limit });
+    }
+
+    case 'chat.attachment': {
+      const conversation = ulidValue<'conversation'>(query.conversation);
+      if (conversation === undefined) return badInput();
+      const id = ulidValue<'attachment'>(query.id);
+      if (id === undefined) return badInput();
+      const found = await deps.conversations.get(conversation);
+      if (found === undefined) return { ok: false, code: 'not_found' };
+      const view = await chatAttachmentView(deps, found, id);
+      return view ?? { ok: false, code: 'not_found' };
+    }
+
+    case 'chat.usage':
+      return chatUsageView(deps, ASSISTANT_ROLE_ID, startOfUtcMonth(deps.clock.now()));
 
     case 'app.update': {
       // The state is already the view: plain JSON, no derivation, nothing stored.
