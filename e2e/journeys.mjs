@@ -1,4 +1,4 @@
-// e2e/journeys.mjs — `npm run test:journeys`. J-1 … J-14 of docs/v2/ui.md → "Verifying the shell",
+// e2e/journeys.mjs — `npm run test:journeys`. J-1 … J-17 of docs/v2/ui.md → "Verifying the shell",
 // driven through the BUILT app on the design seed (e2e/seed-design.ts). Every step asserts visible
 // text and saves a screenshot to e2e/.out/journeys/, and every outcome lands in the structured
 // report (e2e/report.mjs) as it is printed.
@@ -19,6 +19,7 @@ import { ROOT, launchDesignApp, setWindow } from './design-app.mjs';
 import { acquireE2eLock } from './lock.mjs';
 import { SIZE_PLAN, comboPlan, resolveSizes } from './layout-rules.mjs';
 import { appendJourney, beginReport, REPORT_PATH } from './report.mjs';
+import { launchChatApp } from './chat-app.mjs';
 import { launchPageViewApp } from './page-view-app.mjs';
 import { launchRoadmapApp } from './roadmap-app.mjs';
 import { launchWizardApp } from './wizard-app.mjs';
@@ -1254,6 +1255,276 @@ for (const [sizeName, theme] of combos) {
     console.log(`  FAIL ${title}\n       ${String(error).slice(0, 600)}`);
     appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).slice(0, 600) });
     await page.screenshot({ path: join(OUT, 'J-14-FAIL.png') }).catch(() => undefined);
+  }
+  await handle.app.close();
+  await probe.close();
+}
+
+// J-15 walks Docket AI's chat (U-101 … U-125) on its own launch: the page world plus the chat seed
+// (e2e/seed-chat.ts) — an older global conversation, and a project conversation whose assistant
+// message carries a page, a table, a draft and a proposal with its pending action. No account, no
+// keychain, no agent run, no model: a message sent from the panel is refused by the runner with its
+// "auth" notice, so the journey proves send → pending bubble → persisted message → note, while the
+// streamed text itself (dots until the first delta, the text growing, the stored message replacing
+// it) is covered by the store's own tests over a fake bridge. The journey also proves the panel and
+// the native page view never overlap: the view yields while the panel is open (U-76, U-125). Once per
+// run, like J-10 … J-14.
+{
+  const handle = await launchChatApp();
+  const { page, seed, probe, errors } = handle;
+  const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
+  const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+  const toastWith = (t) => page.locator('[data-toast]').filter({ hasText: t }).first();
+  const dismissToasts = async () => {
+    const toasts = page.locator('[data-toast]');
+    for (let left = await toasts.count(); left > 0; left = await toasts.count()) {
+      await toasts.first().getByRole('button', { name: 'Kapat' }).click({ timeout: WAIT });
+      await page.waitForFunction((n) => document.querySelectorAll('[data-toast]').length < n, left, { timeout: WAIT });
+    }
+  };
+  const fab = page.locator('[data-chat-fab]');
+  const chip = page.locator('[data-chat-chip]');
+  const feed = page.locator('[data-chat-feed]');
+  const text = page.locator('[data-chat-text]');
+  const historyToggle = page.locator('[data-chat-history-toggle]');
+  const historyRow = (rowTitle) => page.locator('[data-chat-history-row]').filter({ hasText: rowTitle });
+  // The panel is open exactly when it is not inert; a closed panel at opacity 0 still counts as "visible" to Playwright.
+  const panelIs = (open) =>
+    page.waitForFunction(
+      (want) => {
+        const panel = document.querySelector('[data-chat-panel]');
+        return panel !== null && panel.hasAttribute('inert') === !want;
+      },
+      open,
+      { timeout: WAIT },
+    );
+  const chipSays = (part) => chip.filter({ hasText: part }).waitFor({ state: 'visible', timeout: WAIT });
+  const readTrace = async () => {
+    const reply = await page.evaluate(() => window.docketDev.call('page_view.trace'));
+    const body = JSON.parse(reply.payload);
+    assert(body.ok === true, `page_view.trace failed: ${reply.payload.slice(0, 200)}`);
+    return body;
+  };
+  /** Waits (load-dependent: SCAN_WAIT) until the native view stands as `open` says. */
+  const viewIs = async (open, what) => {
+    const deadline = Date.now() + SCAN_WAIT;
+    for (;;) {
+      const trace = await readTrace();
+      if (trace.view.open === open) return;
+      if (Date.now() > deadline) throw new Error(`the native view never became ${open ? 'open' : 'closed'} (${what}); last trace: ${JSON.stringify(trace)}`);
+      await sleep(200);
+    }
+  };
+
+  let stepNo = 0;
+  const steps = [];
+  const shot = async (label) => {
+    stepNo += 1;
+    steps.push(label);
+    const slug = label.toLowerCase().replace(/[^a-z0-9ğüşıöç]+/g, '-').replace(/^-|-$/g, '');
+    await page.screenshot({ path: join(OUT, `J-15-${stepNo}-${slug}.png`) });
+  };
+  const title = 'J-15: Docket AI: düğme ve ⌘J, kapsam, geçmiş (Türkçe arama, sabitle, sil), kartlar, izin, @ ve ek, gönder, Esc, sayfa görüntüleyici';
+  total += 1;
+  try {
+    // The round button opens the panel (a named toggle); Esc closes it and hands the focus back.
+    await fab.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    assert.equal(await fab.getAttribute('aria-label'), 'Docket AI’ı aç');
+    await fab.click({ timeout: WAIT });
+    await panelIs(true);
+    assert.equal(await fab.getAttribute('aria-label'), 'Docket AI’ı kapat');
+    assert.equal(await fab.getAttribute('aria-expanded'), 'true');
+    await chipSays('Tüm projeler');
+    await shot('panel-acik');
+    await page.keyboard.press('Escape');
+    await panelIs(false);
+    assert(await page.evaluate(() => document.activeElement?.hasAttribute('data-chat-fab') === true), 'Esc must hand the focus back to the round button');
+    await page.keyboard.press(`${mod}+J`);
+    await panelIs(true);
+
+    // The scope follows navigation: the project's board, then a work order; a manual choice is "sabit"
+    // and holds across a back step until "Bulunduğum ekranı izle" lets go.
+    await page.locator('nav').getByText(seed.project, { exact: false }).first().click({ timeout: WAIT });
+    await chipSays(seed.project);
+    const card = page.locator('[data-board-card]').filter({ hasText: seed.workOrderTitle }).first();
+    await card.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await card.click({ timeout: WAIT });
+    await chipSays(seed.workOrderTitle);
+    await chip.click({ timeout: WAIT });
+    const options = page.locator('[data-chat-pop] [role="option"]');
+    assert.equal(await options.count(), 3, 'a work order offers global, its project and itself');
+    await options.filter({ hasText: 'Tüm projeler' }).click({ timeout: WAIT });
+    await chipSays('sabit');
+    await page.getByRole('button', { name: '‹ Geri' }).first().click({ timeout: WAIT });
+    await chipSays('Tüm projeler');
+    await chipSays('sabit');
+    await chip.click({ timeout: WAIT });
+    await page.locator('[data-chat-follow]').click({ timeout: WAIT });
+    await chipSays(seed.project);
+    assert(!((await chip.textContent()) ?? '').includes('sabit'), 'following the screen lets the pin go');
+    await shot('kapsam');
+
+    // History: both conversations, the Turkish-blind search, pin, delete.
+    await historyToggle.click({ timeout: WAIT });
+    const search = page.locator('[data-chat-history-search]');
+    await search.waitFor({ state: 'visible', timeout: WAIT });
+    await historyRow(seed.firstTitle).waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await historyRow(seed.olderTitle).waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await search.fill('butce', { timeout: WAIT });
+    await historyRow(seed.firstTitle).waitFor({ state: 'detached', timeout: SCAN_WAIT });
+    assert.equal(await page.locator('[data-chat-history-row]').count(), 1, 'the ASCII search finds only the Bütçe conversation');
+    await shot('gecmis-arama');
+    await search.fill('', { timeout: WAIT });
+    await historyRow(seed.firstTitle).waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    const older = historyRow(seed.olderTitle);
+    await older.getByRole('button', { name: 'Sabitle' }).click({ timeout: WAIT });
+    await older.locator('button[aria-pressed="true"]').waitFor({ state: 'attached', timeout: SCAN_WAIT });
+    await page.getByText('Sabitlenenler', { exact: true }).waitFor({ state: 'visible', timeout: WAIT });
+    await shot('gecmis-sabit');
+    await dismissToasts();
+    await older.getByRole('button', { name: 'Sil' }).click({ timeout: WAIT });
+    await toastWith('Konuşma silindi').waitFor({ state: 'visible', timeout: WAIT });
+    await older.waitFor({ state: 'detached', timeout: SCAN_WAIT });
+
+    // Open the project conversation: the four cards.
+    await historyRow(seed.firstTitle).click({ timeout: WAIT });
+    await toastWith('Konuşma açıldı').waitFor({ state: 'visible', timeout: WAIT });
+    const pageCard = feed.locator('[data-chat-card="page"]');
+    await pageCard.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    const pageText = (await pageCard.textContent()) ?? '';
+    for (const part of ['Hostile page', 'html · sürüm 2', 'Aç']) assert(pageText.includes(part), `the page card must show "${part}", saw "${pageText}"`);
+    const tableText = (await feed.locator('table').textContent()) ?? '';
+    for (const part of ['Hesap A', '62%', '—']) assert(tableText.includes(part), `the table must show "${part}", saw "${tableText}"`);
+    const proposalCard = feed.locator('[data-chat-card="proposal"]');
+    await proposalCard.getByText('Tek aşamalı akış (gözden geçirildi)').waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    assert(((await proposalCard.textContent()) ?? '').includes(`Kaynak: ${seed.target}`), 'the proposal card names its source');
+    // A toast shown while the panel is open sits beside it, never over its header.
+    const overlap = await page.evaluate(() => {
+      const host = document.querySelector('[data-toast-host]')?.getBoundingClientRect();
+      const panel = document.querySelector('[data-chat-panel]')?.getBoundingClientRect();
+      if (host === undefined || panel === undefined) return null;
+      return host.left < panel.right && host.right > panel.left && host.top < panel.bottom && host.bottom > panel.top;
+    });
+    assert(overlap !== true, 'the toast stack must not cover the chat panel');
+    await shot('kartlar');
+
+    // The draft: Oluştur opens the work order. The proposal: Onayla applies it, the row offers Geri al, Geri al undoes it.
+    await dismissToasts();
+    const draftCard = feed.locator('[data-chat-card="draft"]');
+    await draftCard.getByRole('button', { name: 'Oluştur' }).click({ timeout: WAIT });
+    await toastWith('İş emri açıldı').waitFor({ state: 'visible', timeout: WAIT });
+    await draftCard.getByText('✓ İş emri açıldı').waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await dismissToasts();
+    await proposalCard.getByRole('button', { name: 'Onayla' }).click({ timeout: WAIT });
+    await toastWith('Öneri onaylandı').waitFor({ state: 'visible', timeout: WAIT });
+    await proposalCard.getByText('✓ Onaylandı').waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    const actionRow = feed.locator('[data-chat-action]').filter({ hasText: 'Akış veya rol dosyası değişti' });
+    await actionRow.getByRole('button', { name: 'Geri al' }).waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await shot('uygulandi');
+    await dismissToasts();
+    await actionRow.getByRole('button', { name: 'Geri al' }).click({ timeout: WAIT });
+    await toastWith('Geri alındı').waitFor({ state: 'visible', timeout: WAIT });
+    await actionRow.getByText('Geri alındı').waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    assert.equal(await actionRow.getByRole('button', { name: 'Geri al' }).count(), 0, 'an undone row has no Geri al');
+
+    // The permission surface: a class must be ticked, the grant counts down, İzni kapat revokes it.
+    await dismissToasts();
+    const tier = page.locator('[data-chat-tier]');
+    assert.equal(((await tier.textContent()) ?? '').trim(), 'Öner');
+    await tier.click({ timeout: WAIT });
+    const perm = page.locator('[data-chat-perm]');
+    await perm.getByText('Docket AI ne yapabilir?').waitFor({ state: 'visible', timeout: WAIT });
+    const grantButton = perm.getByRole('button', { name: '1 saat izin ver' });
+    assert.equal(await grantButton.isDisabled(), true, 'no class ticked, no grant');
+    await perm.locator('input[type="checkbox"]').first().check({ timeout: WAIT });
+    assert.equal(await grantButton.isDisabled(), false);
+    await grantButton.click({ timeout: WAIT });
+    await toastWith('Uygula açık · 1 saat').waitFor({ state: 'visible', timeout: WAIT });
+    await page.waitForFunction(() => /Uygula · (59|60) dk/.test(document.querySelector('[data-chat-tier]')?.textContent ?? ''), undefined, { timeout: SCAN_WAIT });
+    // A toast's Kapat sits outside the dialog and would close it, so the toasts go first.
+    await dismissToasts();
+    await tier.click({ timeout: WAIT });
+    await perm.getByText('✓ İş emri aç').waitFor({ state: 'visible', timeout: WAIT });
+    await shot('izin');
+    await perm.getByRole('button', { name: 'İzni kapat' }).click({ timeout: WAIT });
+    await toastWith('İzin kapandı').waitFor({ state: 'visible', timeout: WAIT });
+    await page.waitForFunction(() => (document.querySelector('[data-chat-tier]')?.textContent ?? '').trim() === 'Öner', undefined, { timeout: SCAN_WAIT });
+
+    // A new conversation: @ finds a work order by its Turkish-blind name, a text file is attached, the message is sent.
+    await dismissToasts();
+    await page.locator('[data-chat-new]').click({ timeout: WAIT });
+    await toastWith('Yeni konuşma').waitFor({ state: 'visible', timeout: WAIT });
+    await text.fill('@giris', { timeout: WAIT });
+    const atMenu = page.locator('[data-chat-menu="at"]');
+    await atMenu.getByRole('option', { name: /Giriş ekranını hazırla/ }).waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await text.press('Enter');
+    const tray = page.locator('[data-chat-tray]');
+    await tray.getByText('Giriş ekranını hazırla').waitFor({ state: 'visible', timeout: WAIT });
+    assert.equal(await text.inputValue(), '', 'committing the reference takes the @ token out of the text');
+    await page.locator('[data-chat-panel] input[type="file"]').setInputFiles({ name: 'notlar.md', mimeType: 'text/markdown', buffer: Buffer.from('# Notlar\n') });
+    await tray.locator('button[aria-label="notlar.md dosyasını kaldır"]').waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await shot('atif-ek');
+    await dismissToasts();
+    await text.fill('Merhaba', { timeout: WAIT });
+    await text.press('Enter');
+    // The pending bubble gives way to the persisted message; no model answers in this world, so the runner's refusal note follows.
+    await feed.getByText('Merhaba', { exact: true }).waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await page.locator('[data-chat-note="auth"]').waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    assert.equal(await page.locator('[data-chat-tray] button').count(), 0, 'the tray empties on send');
+    await shot('gonderildi');
+
+    // The panel and the native page view never overlap: a page card opens the viewer, and the view yields to the open panel.
+    await historyToggle.click({ timeout: WAIT });
+    await historyRow(seed.firstTitle).waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await historyRow(seed.firstTitle).click({ timeout: WAIT });
+    await pageCard.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await pageCard.getByRole('button', { name: 'Aç' }).click({ timeout: WAIT });
+    const viewer = page.locator('[data-page-screen]');
+    await viewer.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await viewIs(false, 'the panel is open over the page viewer');
+    await shot('goruntuleyici-panel-acik');
+    await page.keyboard.press('Escape');
+    await panelIs(false);
+    await viewIs(true, 'the panel closed, the view returns');
+    await page.keyboard.press(`${mod}+J`);
+    await panelIs(true);
+    await viewIs(false, 'the shortcut reopened the panel');
+    await page.keyboard.press('Escape');
+    await panelIs(false);
+    await viewIs(true, 'closed again');
+    await viewer.getByRole('button', { name: '‹ Geri' }).click({ timeout: WAIT });
+    await page.keyboard.press(`${mod}+J`);
+    await panelIs(true);
+
+    // The Esc ladder: scope pop, then a menu, then the history view, then the panel.
+    await chip.click({ timeout: WAIT });
+    await page.locator('[data-chat-pop]').waitFor({ state: 'visible', timeout: WAIT });
+    await page.keyboard.press('Escape');
+    await page.locator('[data-chat-pop]').waitFor({ state: 'detached', timeout: WAIT });
+    await panelIs(true);
+    await page.getByRole('button', { name: 'Ekle', exact: true }).click({ timeout: WAIT });
+    await page.locator('[data-chat-menu="plus"]').waitFor({ state: 'visible', timeout: WAIT });
+    await page.keyboard.press('Escape');
+    await page.locator('[data-chat-menu="plus"]').waitFor({ state: 'detached', timeout: WAIT });
+    await historyToggle.click({ timeout: WAIT });
+    await search.waitFor({ state: 'visible', timeout: WAIT });
+    await page.keyboard.press('Escape');
+    await search.waitFor({ state: 'detached', timeout: WAIT });
+    await panelIs(true);
+    await page.keyboard.press('Escape');
+    await panelIs(false);
+    await shot('esc-merdiveni');
+
+    assert.deepEqual(errors, [], `the page reported errors: ${errors.join(' | ').slice(0, 600)}`);
+    assert.deepEqual(probe.hits, [], `the probe saw requests: ${probe.hits.join(' | ')}`);
+
+    console.log(`  ok   ${title}`);
+    appendJourney({ id: title, status: 'ok', steps });
+  } catch (error) {
+    failures.push(title);
+    console.log(`  FAIL ${title}\n       ${String(error).slice(0, 600)}`);
+    appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).slice(0, 600) });
+    await page.screenshot({ path: join(OUT, 'J-15-FAIL.png') }).catch(() => undefined);
   }
   await handle.app.close();
   await probe.close();

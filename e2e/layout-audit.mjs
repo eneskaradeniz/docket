@@ -16,6 +16,10 @@
 // the window or the panel's own box (L-3's rule, measured while the panel is up, and the same
 // containment walked again on the two sections the nav rows open — Telefon, Güncelleme):
 //   settings: kokpit <WxH> <theme> ok|FAIL <detail>
+// and one for Docket AI's panel (U-120, U-124, U-125), opened through ⌘J: wholly inside the window,
+// its right edge aligned with the round button's and sitting above it, no control past the panel's
+// box, the focus in the composer on open and back on the button after Esc:
+//   chat: kokpit <WxH> <theme> ok|FAIL <detail>
 // and one for the title bar's Update button (U-24), measured on the cockpit: 40px bar, wordmark
 // at the left, the button 28px at the bar's right end, 16px clear of the window's right edge and
 // outside the drag region; the first combo of the run also walks the button's states — apply, a
@@ -108,6 +112,8 @@ const APP_SELECTORS = {
   settingsUpdate: '[data-settings-update]',
   settingsPanel: '[data-settings-panel]',
   settingsScrim: '[data-settings-scrim]',
+  chatFab: '[data-chat-fab]',
+  chatPanel: '[data-chat-panel]',
   accountMark: '[data-provider-mark]',
   skeleton: '[data-skeleton]',
   attentionCard: '[data-attention-card]',
@@ -460,6 +466,83 @@ async function settingsPanelCheck(target) {
     } sections ${phoneOutside.length + updateOutside.length + appearanceOutside.length === 0 ? 'contained' : `${phoneOutside.length + updateOutside.length + appearanceOutside.length} outside`} scrim ${
       m.covers ? 'covers' : 'gaps'
     } blur ${m.blurs ? 'yes' : 'no'}`,
+  };
+}
+
+/** Docket AI's panel (U-120, U-124, U-125), measured open on the cockpit through ⌘J: the panel sits
+ *  wholly inside the window, grows out of the round button — its right edge aligned with the
+ *  button's, its bottom a gap above the button's top, never covering it — and no control it carries
+ *  reaches past its box (L-3's rule, judged against the panel itself, the scrolling feed excepted
+ *  below the fold). The composer takes the focus on open; the closed panel is inert and takes none;
+ *  Esc closes it and hands the focus back to the button. The panel eases open (280ms), so the
+ *  measurement waits for the running transition to settle instead of sleeping. */
+async function chatPanelCheck(target) {
+  const { page, selectors } = target;
+  const settled = () =>
+    page.waitForFunction(
+      (sel) => {
+        const panel = document.querySelector(sel);
+        if (panel === null || panel.hasAttribute('inert')) return false;
+        return parseFloat(getComputedStyle(panel).opacity) > 0.999 && panel.getAnimations().length === 0;
+      },
+      selectors.chatPanel,
+      { timeout: 4000 },
+    );
+  const closed = () =>
+    page.waitForFunction((sel) => document.querySelector(sel)?.hasAttribute('inert') === true, selectors.chatPanel, { timeout: 4000 });
+
+  await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+J`);
+  await settled();
+  const m = await page.evaluate(([panelSel, fabSel]) => {
+    const panel = document.querySelector(panelSel);
+    const fab = document.querySelector(fabSel);
+    if (panel === null || fab === null) return null;
+    const r = panel.getBoundingClientRect();
+    const f = fab.getBoundingClientRect();
+    const visible = (el) => {
+      const b = el.getBoundingClientRect();
+      const style = getComputedStyle(el);
+      return b.width > 0 && b.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+    };
+    const outside = [];
+    for (const el of panel.querySelectorAll('button, input, select, textarea')) {
+      if (!visible(el)) continue;
+      const b = el.getBoundingClientRect();
+      // The feed scrolls: a control below its fold is not an escape, only a sideways one is.
+      const scrolls = el.closest('[data-chat-feed], [data-chat-history]') !== null;
+      if (b.left < r.left - 0.5 || b.right > r.right + 0.5 || (!scrolls && (b.top < r.top - 0.5 || b.bottom > r.bottom + 0.5))) {
+        outside.push((el.getAttribute('aria-label') || el.textContent || el.tagName).trim().slice(0, 24));
+      }
+    }
+    return {
+      left: r.left,
+      top: r.top,
+      right: r.right,
+      bottom: r.bottom,
+      fabTop: f.top,
+      fabRight: f.right,
+      iw: innerWidth,
+      ih: innerHeight,
+      expanded: fab.getAttribute('aria-expanded'),
+      focusInText: document.activeElement?.hasAttribute('data-chat-text') === true,
+      outside,
+    };
+  }, [selectors.chatPanel, selectors.chatFab]);
+  await page.keyboard.press('Escape');
+  await closed();
+  const focusBack = await page.evaluate(() => document.activeElement?.hasAttribute('data-chat-fab') === true);
+  if (m === null) return { ok: false, detail: 'chat panel elements not found' };
+  const inside = m.left >= -0.5 && m.top >= -0.5 && m.right <= m.iw + 0.5 && m.bottom <= m.ih + 0.5;
+  const aligned = Math.abs(m.right - m.fabRight) <= 1;
+  const above = m.bottom <= m.fabTop + 0.5;
+  const ok = inside && aligned && above && m.expanded === 'true' && m.focusInText && m.outside.length === 0 && focusBack;
+  return {
+    ok,
+    detail: `panel ${Math.round(m.right - m.left)}x${Math.round(m.bottom - m.top)} ${inside ? 'inside' : 'overflows the window'} right ${
+      aligned ? 'aligned' : 'OFF'
+    } with the button ${above ? 'above it' : 'COVERS it'} controls ${m.outside.length === 0 ? 'contained' : `${m.outside.length} outside: ${m.outside.slice(0, 3).join('; ')}`} focus ${
+      m.focusInText ? 'composer' : 'LOST'
+    } esc ${focusBack ? 'returns it to the button' : 'DROPS it'}`,
   };
 }
 
@@ -978,6 +1061,20 @@ for (const { size: entry, theme } of plan) {
       lines += 1;
       console.log(`settings: ${label} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
       appendCheck({ id: 'settings', screen, size: `${width}x${height}`, theme, status: r.ok ? 'ok' : 'FAIL', detail: r.detail });
+    }
+    // Docket AI's panel is measured open the same way, through ⌘J (the app target only: the frozen
+    // prototype has no panel).
+    if (screen === 'kokpit' && target.selectors.chatPanel) {
+      let r;
+      try {
+        r = await chatPanelCheck(target);
+      } catch (error) {
+        r = { ok: false, detail: `chat panel unreachable: ${String(error).split('\n')[0]}` };
+      }
+      if (!r.ok) failures += 1;
+      lines += 1;
+      console.log(`chat: ${label} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
+      appendCheck({ id: 'chat', screen, size: `${width}x${height}`, theme, status: r.ok ? 'ok' : 'FAIL', detail: r.detail });
     }
     if (screen === 'kokpit' && args.target === 'app' && target.selectors.accountsFrame) {
       let r;

@@ -50,6 +50,16 @@ describe('ToastHost', () => {
     expect(error).toContain('aria-live="assertive"');
   });
 
+  it('U-50b: while the chat panel is open the stack steps left of it from lg up, and otherwise stays top right', () => {
+    const store = createToastStore(stillClock);
+    store.toast({ type: 'success', text: 'copy' });
+    const beside = renderToStaticMarkup(createElement(ToastHost, { store, locale: 'tr', besideChat: true }));
+    const alone = renderToStaticMarkup(createElement(ToastHost, { store, locale: 'tr' }));
+    expect(beside).toContain('lg:right-[28rem]');
+    expect(alone).not.toContain('lg:right-[28rem]');
+    expect(alone).toContain('right-4');
+  });
+
   it('U-50: each toast carries a close button labelled from the bundle', () => {
     const html = hostWith([{ type: 'success', text: 'copy' }]);
     expect(html).toContain('aria-label="Kapat"');
