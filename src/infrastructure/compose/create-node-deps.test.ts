@@ -216,6 +216,27 @@ describe('createNodeDeps', () => {
     await expect(stat(join(dataDir, 'conversations', conversation))).rejects.toThrow();
   });
 
+  it('I-79: wires the action repository to docket.db and keeps grants in memory — a new start knows none', async () => {
+    const conversation = ulidOf<'conversation'>('01ARZ3NDEKTSV4RRFFQ69G5FC9');
+    const action = ulidOf<'action'>('01ARZ3NDEKTSV4RRFFQ69G5FA7');
+    const grant = ulidOf<'grant'>('01ARZ3NDEKTSV4RRFFQ69G5FG7');
+    const node = makeNode();
+    await node.deps.actions.save({
+      id: action, conversation, action: { kind: 'open_work_order', draft: ulidOf<'draft'>('01ARZ3NDEKTSV4RRFFQ69G5FD7') }, status: 'pending', proposedAt: 1,
+    });
+    await node.deps.grants.save({
+      id: grant, conversation, by: { kind: 'user', id: 'user-1' }, classes: ['open_work_order'], grantedAt: 1, expiresAt: 1 + 60_000, applied: 0,
+    });
+    expect(await node.deps.grants.get(grant)).toBeDefined();
+    node.close();
+
+    const restarted = makeNode();
+    expect((await restarted.deps.actions.get(action))?.status).toBe('pending');
+    expect(await restarted.deps.grants.get(grant)).toBeUndefined();
+    expect(await restarted.deps.grants.forConversation(conversation)).toEqual([]);
+    restarted.close();
+  });
+
   it('I-31: opens <dataDir>/docket.db, exposes the registry, and close() closes the database', async () => {
     const node = makeNode();
 

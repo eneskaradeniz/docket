@@ -87,6 +87,7 @@ const MIGRATED_TABLES = [
   'page_comments',
   'conversations',
   'drafts',
+  'actions',
 ];
 
 const MIGRATION_1_INDEXES = [
@@ -109,6 +110,7 @@ const MIGRATED_INDEXES = [
   'conversations_by_scope',
   'conversations_by_updated',
   'drafts_by_conversation',
+  'actions_by_conversation',
 ];
 
 let tmp: string;

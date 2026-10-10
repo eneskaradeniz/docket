@@ -36,6 +36,7 @@ import type { ModelCatalog } from './model-catalog';
 import type { Notifier } from './notifier';
 import type { ProjectRepo } from './project-repo';
 import type { RepoRegistry } from './repo-registry';
+import type { ActionRepo, GrantRepo } from './action-repo';
 import type { AttachmentFiles } from './attachment-files';
 import type { ConversationRepo } from './conversation-repo';
 import type { PageFiles } from './page-files';
@@ -77,6 +78,8 @@ describe('AppDeps', () => {
     expectTypeOf<AppDeps['pageFiles']>().toEqualTypeOf<PageFiles>();
     expectTypeOf<AppDeps['conversations']>().toEqualTypeOf<ConversationRepo>();
     expectTypeOf<AppDeps['attachmentFiles']>().toEqualTypeOf<AttachmentFiles>();
+    expectTypeOf<AppDeps['actions']>().toEqualTypeOf<ActionRepo>();
+    expectTypeOf<AppDeps['grants']>().toEqualTypeOf<GrantRepo>();
     expectTypeOf<AppDeps['secrets']>().toEqualTypeOf<SecretVault>();
     expectTypeOf<AppDeps['transports']>().toEqualTypeOf<TransportResolver>();
     expectTypeOf<AppDeps['commands']>().toEqualTypeOf<CommandRunner>();
@@ -118,6 +121,8 @@ describe('AppDeps', () => {
       | 'pageFiles'
       | 'conversations'
       | 'attachmentFiles'
+      | 'actions'
+      | 'grants'
       | 'secrets'
       | 'transports'
       | 'commands'

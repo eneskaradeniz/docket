@@ -6,6 +6,7 @@ export * from './projects';
 export * from './proposals';
 export * from './proposal-views';
 export * from './pages';
+export * from './actions';
 export * from './conversations';
 export * from './accounts';
 export * from './account-test';

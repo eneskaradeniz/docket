@@ -1,6 +1,7 @@
 // The dependency bundle every use case and service takes a Pick of.
 import type { AccountRepo } from './account-repo';
 import type { AccountTestRepo } from './account-test-repo';
+import type { ActionRepo, GrantRepo } from './action-repo';
 import type { TransportResolver } from './agent-transport';
 import type { AppSettingsRepo } from './app-settings-repo';
 import type { AttachmentFiles } from './attachment-files';
@@ -55,6 +56,8 @@ export interface AppDeps {
   readonly pageFiles: PageFiles;
   readonly conversations: ConversationRepo;
   readonly attachmentFiles: AttachmentFiles;
+  readonly actions: ActionRepo;
+  readonly grants: GrantRepo;
   readonly secrets: SecretVault;
   readonly transports: TransportResolver;
   readonly commands: CommandRunner;
