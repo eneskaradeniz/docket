@@ -634,3 +634,49 @@ describe('R-90: work-order drafts', () => {
     }
   });
 });
+
+// --- R-88 addendum: bounded tables and conversation size ---------------------------------------------
+
+describe('R-88: table artifacts and the whole conversation are bounded', () => {
+  const table = (columns: readonly string[], rows: readonly (readonly string[])[]) => ({ kind: 'table', columns, rows }) as const;
+  const answer = (artifact: ReturnType<typeof table>) => addAssistantMessage(started(), { text: 'x', artifacts: [artifact] }, 2, M2);
+  const cols = (n: number): string[] => Array.from({ length: n }, () => 'c');
+
+  it('R-88: the table limits are 20 columns, 200 rows, 500 characters per cell and 65 536 characters in all', () => {
+    expect(CONVERSATION_LIMITS).toMatchObject({ tableColumnsMax: 20, tableRowsMax: 200, tableCellMax: 500, tableTotalMax: 65_536, conversationMaxBytes: 4_000_000 });
+  });
+
+  it('R-88: 20 columns and 200 rows of short cells are accepted; 21 columns or 201 rows are artifact_too_large', () => {
+    const row = (n: number) => Array.from({ length: n }, () => 'v');
+    expect(answer(table(cols(20), Array.from({ length: 200 }, () => row(20)))).ok).toBe(true);
+    expect(answer(table(cols(21), [row(21)]))).toEqual({ ok: false, error: { code: 'artifact_too_large' } });
+    expect(answer(table(['a'], Array.from({ length: 201 }, () => ['v'])))).toEqual({ ok: false, error: { code: 'artifact_too_large' } });
+  });
+
+  it('R-88: a cell of 500 characters is accepted, 501 is artifact_too_large (a column name counts as a cell)', () => {
+    expect(answer(table(['a'], [['x'.repeat(500)]])).ok).toBe(true);
+    expect(answer(table(['a'], [['x'.repeat(501)]]))).toEqual({ ok: false, error: { code: 'artifact_too_large' } });
+    expect(answer(table(['x'.repeat(501)], []))).toEqual({ ok: false, error: { code: 'artifact_too_large' } });
+  });
+
+  it('R-88: exactly 65 536 characters over all cells and column names is accepted, one more is artifact_too_large', () => {
+    const full = Array.from({ length: 131 }, () => ['x'.repeat(500)]);
+    expect(answer(table(['a'], [...full, ['y'.repeat(35)]])).ok).toBe(true);
+    expect(answer(table(['a'], [...full, ['y'.repeat(36)]]))).toEqual({ ok: false, error: { code: 'artifact_too_large' } });
+  });
+
+  it('R-88: a ragged row stays bad_ref; the hostile 500 x 5000 x 200 table is refused', () => {
+    expect(answer(table(['a', 'b'], [['1']]))).toEqual({ ok: false, error: { code: 'bad_ref' } });
+    const huge = table(cols(500), Array.from({ length: 5000 }, () => cols(500).map(() => 'z'.repeat(200))));
+    expect(answer(huge)).toEqual({ ok: false, error: { code: 'artifact_too_large' } });
+  });
+
+  it('R-88: a conversation whose JSON would exceed 4 000 000 characters refuses further messages with conversation_too_large', () => {
+    const base = started();
+    const first = base.messages[0] as Conversation['messages'][number];
+    const bloated = (size: number): Conversation => ({ ...base, messages: [{ ...first, text: 'x'.repeat(size) }] });
+    expect(addUserMessage(bloated(3_999_800), { text: 'hi' }, 2, M2)).toEqual({ ok: false, error: { code: 'conversation_too_large' } });
+    expect(addAssistantMessage(bloated(3_999_800), { text: 'hi' }, 2, M2)).toEqual({ ok: false, error: { code: 'conversation_too_large' } });
+    expect(addUserMessage(bloated(1_000_000), { text: 'hi' }, 2, M2).ok).toBe(true);
+  });
+});

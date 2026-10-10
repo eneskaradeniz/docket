@@ -108,6 +108,9 @@ export type ConversationError = {
     | 'not_found'
     | 'bad_scope'
     | 'too_many_messages'
+    | 'artifact_too_large'
+    | 'conversation_too_large'
+    | 'not_user'
     | 'not_draft';
 };
 
@@ -132,6 +135,11 @@ export const CONVERSATION_LIMITS = {
   attachmentsTotalMaxBytes: 15_000_000,
   titleMax: 80,
   messagesMax: 400,
+  tableColumnsMax: 20,
+  tableRowsMax: 200,
+  tableCellMax: 500,
+  tableTotalMax: 65_536,
+  conversationMaxBytes: 4_000_000,
 } as const;
 
 /** A drafted work order's title is the operator's to refine, so it may be longer than a conversation title. */
@@ -260,27 +268,36 @@ const checkedAttachments = (
 
 // --- artifacts, sources, usage -----------------------------------------------------------------------
 
-const checkedArtifact = (artifact: unknown): Artifact | undefined => {
-  if (!isRecord(artifact)) return undefined;
+/** An artifact, or why it is refused: malformed (`bad_ref`) or over a size limit (`artifact_too_large`). */
+const checkedArtifact = (artifact: unknown): Artifact | 'bad_ref' | 'artifact_too_large' => {
+  if (!isRecord(artifact)) return 'bad_ref';
   switch (artifact.kind) {
     case 'page':
       return isUlidString(artifact.page) && typeof artifact.version === 'number' && Number.isInteger(artifact.version) && artifact.version >= 1
         ? { kind: 'page', page: artifact.page as PageId, version: artifact.version }
-        : undefined;
+        : 'bad_ref';
     case 'proposal':
-      return isUlidString(artifact.proposal) ? { kind: 'proposal', proposal: artifact.proposal as ProposalId } : undefined;
+      return isUlidString(artifact.proposal) ? { kind: 'proposal', proposal: artifact.proposal as ProposalId } : 'bad_ref';
     case 'draft':
-      return isUlidString(artifact.draft) ? { kind: 'draft', draft: artifact.draft as DraftId } : undefined;
+      return isUlidString(artifact.draft) ? { kind: 'draft', draft: artifact.draft as DraftId } : 'bad_ref';
     case 'table': {
       const { columns, rows } = artifact;
-      if (!Array.isArray(columns) || !Array.isArray(rows)) return undefined;
-      if (!columns.every((column) => typeof column === 'string')) return undefined;
+      if (!Array.isArray(columns) || !Array.isArray(rows)) return 'bad_ref';
+      if (!columns.every((column) => typeof column === 'string')) return 'bad_ref';
+      // Counts are judged before any cell is visited, so a hostile table costs nothing to refuse.
+      if (columns.length > CONVERSATION_LIMITS.tableColumnsMax || rows.length > CONVERSATION_LIMITS.tableRowsMax) return 'artifact_too_large';
       const rectangular = rows.every((row) => Array.isArray(row) && row.length === columns.length && row.every((cell) => typeof cell === 'string'));
-      if (!rectangular) return undefined;
+      if (!rectangular) return 'bad_ref';
+      let total = 0;
+      for (const cell of [...(columns as string[]), ...(rows as string[][]).flat()]) {
+        if (cell.length > CONVERSATION_LIMITS.tableCellMax) return 'artifact_too_large';
+        total += cell.length;
+      }
+      if (total > CONVERSATION_LIMITS.tableTotalMax) return 'artifact_too_large';
       return { kind: 'table', columns: [...(columns as string[])], rows: (rows as string[][]).map((row) => [...row]) };
     }
     default:
-      return undefined;
+      return 'bad_ref';
   }
 };
 
@@ -364,11 +381,12 @@ export function startConversation(
   });
 }
 
-const appended = (c: Conversation, message: Message, now: EpochMs): Conversation => ({
-  ...c,
-  updatedAt: now,
-  messages: [...c.messages, message],
-});
+/** Appends the message, unless the whole record would outgrow one stored row. */
+const appended = (c: Conversation, message: Message, now: EpochMs): Result<Conversation, ConversationError> => {
+  const next: Conversation = { ...c, updatedAt: now, messages: [...c.messages, message] };
+  if (JSON.stringify(next).length > CONVERSATION_LIMITS.conversationMaxBytes) return failure('conversation_too_large');
+  return ok(next);
+};
 
 export function addUserMessage(
   c: Conversation,
@@ -379,7 +397,7 @@ export function addUserMessage(
   if (c.messages.length >= CONVERSATION_LIMITS.messagesMax) return failure('too_many_messages');
   const message = buildUserMessage(m, now, id, attachmentIdsOf(c));
   if (!message.ok) return err(message.error);
-  return ok(appended(c, message.value, now));
+  return appended(c, message.value, now);
 }
 
 export function addAssistantMessage(
@@ -402,7 +420,7 @@ export function addAssistantMessage(
   const keptArtifacts: Artifact[] = [];
   for (const artifact of artifacts) {
     const checked = checkedArtifact(artifact);
-    if (checked === undefined) return failure('bad_ref');
+    if (typeof checked === 'string') return failure(checked);
     keptArtifacts.push(checked);
   }
   if (text.value === '' && keptArtifacts.length === 0) return failure('empty_message');
@@ -422,7 +440,7 @@ export function addAssistantMessage(
     sources,
     ...(usage === undefined ? {} : { usage }),
   };
-  return ok(appended(c, message, now));
+  return appended(c, message, now);
 }
 
 /** Pinning is the operator's marking, not activity: `updatedAt` stays the time of the last message,

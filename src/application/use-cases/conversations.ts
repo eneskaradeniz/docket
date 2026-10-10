@@ -77,6 +77,10 @@ const audit = async (
   });
 };
 
+/** Pinning, deleting, dropping and confirming are the operator's alone: a chat turn runs as an agent
+ *  or system actor and must never be able to open a work order or remove history. */
+const operatorOnly = (by: Actor): Result<never, ConversationError> | undefined => (by.kind === 'user' ? undefined : failure('not_user'));
+
 const NO_HASH = '0'.repeat(64);
 
 /** Names the bytes of each attachment. The domain refuses anything oversize or too many before
@@ -202,6 +206,8 @@ export async function pinConversation(
   deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'conversations'>,
   input: { readonly conversation: ConversationId; readonly pinned: boolean; readonly by: Actor },
 ): Promise<Result<Conversation, ConversationError>> {
+  const refused = operatorOnly(input.by);
+  if (refused !== undefined) return refused;
   const found = await deps.conversations.get(input.conversation);
   if (found === undefined) return failure('not_found');
   const pinned = setPinned(found, input.pinned, deps.clock.now());
@@ -216,7 +222,9 @@ export async function pinConversation(
 export async function deleteConversation(
   deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'conversations' | 'attachmentFiles'>,
   input: { readonly conversation: ConversationId; readonly by: Actor },
-): Promise<void> {
+): Promise<Result<void, ConversationError>> {
+  const refused = operatorOnly(input.by);
+  if (refused !== undefined) return refused;
   const found = await deps.conversations.get(input.conversation);
   if (found !== undefined) {
     const drafts = await deps.conversations.draftsOf(input.conversation);
@@ -230,6 +238,7 @@ export async function deleteConversation(
     });
   }
   await deps.attachmentFiles.removeAll(input.conversation);
+  return ok(undefined);
 }
 
 export async function createDraft(
@@ -264,6 +273,8 @@ export async function confirmDraftUseCase(
   deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'conversations' | 'workOrders' | 'definitions' | 'projects'>,
   input: { readonly draft: DraftId; readonly by: Actor },
 ): Promise<Result<{ readonly draft: WorkOrderDraft; readonly workOrder: WorkOrderId }, ConfirmDraftError>> {
+  const refused = operatorOnly(input.by);
+  if (refused !== undefined) return refused;
   const draft = await deps.conversations.getDraft(input.draft);
   if (draft === undefined) return failure('not_found');
   // Checked before opening: a draft that is already done must never open a second work order.
@@ -294,6 +305,8 @@ export async function dropDraftUseCase(
   deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'conversations'>,
   input: { readonly draft: DraftId; readonly by: Actor },
 ): Promise<Result<WorkOrderDraft, ConversationError>> {
+  const refused = operatorOnly(input.by);
+  if (refused !== undefined) return refused;
   const draft = await deps.conversations.getDraft(input.draft);
   if (draft === undefined) return failure('not_found');
   const dropped = dropDraft(draft);

@@ -670,3 +670,69 @@ describe('A-170: audit entries and logs carry no content', () => {
     expect(h.log.entries()).toEqual([]);
   });
 });
+
+// --- operator-only actions -------------------------------------------------------------------------
+
+describe('operator-only actions refuse agent and system actors', () => {
+  const AGENT: Actor = { kind: 'agent', runId: ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FA1'), role: slugOf<'role'>('assistant') };
+  const SYSTEM: Actor = { kind: 'system', component: 'chat-runner' };
+  const NOT_USER = { ok: false, error: { code: 'not_user' } };
+
+  const seeded = async (h: Harness) => {
+    const c = await start(h, { text: 'one', attachments: [attach('a.png', 'abc')] });
+    const d = await createDraft(h.deps, { conversation: c.id, project: PROJECT, repo: REPO, title: 'Add the login screen' });
+    if (!d.ok) throw new Error('draft must create');
+    return { c, draft: d.value };
+  };
+
+  it('A-166: an agent or system actor cannot pin; nothing is written or audited, and a user can', async () => {
+    const h = makeHarness();
+    const { c } = await seeded(h);
+    const entries = h.log.entries().length;
+    for (const by of [AGENT, SYSTEM]) expect(await pinConversation(h.deps, { conversation: c.id, pinned: true, by })).toEqual(NOT_USER);
+    expect((await h.deps.conversations.get(c.id))?.pinned).toBe(false);
+    expect(h.log.entries()).toHaveLength(entries);
+    expect((await pinConversation(h.deps, { conversation: c.id, pinned: true, by: USER })).ok).toBe(true);
+  });
+
+  it('A-167: an agent or system actor cannot delete; the record, drafts and bytes stay, and a user can', async () => {
+    const h = makeHarness();
+    const { c, draft } = await seeded(h);
+    const entries = h.log.entries().length;
+    for (const by of [AGENT, SYSTEM]) expect(await deleteConversation(h.deps, { conversation: c.id, by })).toEqual(NOT_USER);
+    expect(await h.deps.conversations.get(c.id)).toEqual(c);
+    expect(await h.deps.conversations.getDraft(draft.id)).toEqual(draft);
+    expect(h.files.stored()).toHaveLength(1);
+    expect(h.log.entries()).toHaveLength(entries);
+    expect((await deleteConversation(h.deps, { conversation: c.id, by: USER })).ok).toBe(true);
+    expect(h.files.stored()).toEqual([]);
+  });
+
+  it('A-168: an agent or system actor cannot drop a draft; it stays a draft, and a user can drop it', async () => {
+    const h = makeHarness();
+    const { draft } = await seeded(h);
+    const entries = h.log.entries().length;
+    for (const by of [AGENT, SYSTEM]) expect(await dropDraftUseCase(h.deps, { draft: draft.id, by })).toEqual(NOT_USER);
+    expect((await h.deps.conversations.getDraft(draft.id))?.status).toBe('draft');
+    expect(h.log.entries()).toHaveLength(entries);
+    expect((await dropDraftUseCase(h.deps, { draft: draft.id, by: USER })).ok).toBe(true);
+  });
+
+  it('A-169: an agent or system actor cannot confirm a draft; no work order is opened, nothing is written or audited, and a user can', async () => {
+    const h = makeHarness();
+    const { draft } = await seeded(h);
+    const entries = h.log.entries().length;
+    for (const by of [AGENT, SYSTEM]) expect(await confirmDraftUseCase(h.deps, { draft: draft.id, by })).toEqual(NOT_USER);
+    expect(await h.deps.workOrders.list({})).toEqual([]);
+    expect((await h.deps.conversations.getDraft(draft.id))?.status).toBe('draft');
+    expect(h.log.entries()).toHaveLength(entries);
+    expect((await confirmDraftUseCase(h.deps, { draft: draft.id, by: USER })).ok).toBe(true);
+  });
+
+  it('A-164: agent and system actors may still append assistant messages and create drafts', async () => {
+    const h = makeHarness();
+    const c = await start(h);
+    expect((await appendAssistantMessage(h.deps, { conversation: c.id, message: { text: 'hi' } })).ok).toBe(true);
+    expect((await createDraft(h.deps, { conversation: c.id, project: PROJECT, repo: REPO, title: 'From the assistant' })).ok).toBe(true);
+  });
+});
