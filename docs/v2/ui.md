@@ -1101,6 +1101,19 @@ Slice 6e-6 of Phase 6 (#936), over the chat API of #932 (`chat.*` queries, comma
 - **U-124** (dock sources; added 2026-10-11, #936) Measure. All new lengths are rem (U-53/U-62; the only px-like value is the 1 px hairline border), spacing on the 4·8·12·16·20·24·32 scale, radii `rounded-control`/`rounded-card`/`rounded-panel`/`rounded-full` only (U-23), every sized text line carries an explicit leading, no class or string names a vendor (`disabled:pointer-events-none`, not the vendor's own cursor utility). A source-scan test pins these on the chat's own sources.
 - **U-125** (dock, shell; added 2026-10-11, #936) Motion, focus, hiding. Every transition and animation sits behind `motion-safe:` / `motion-reduce:` (the panel opens by transform and opacity from the button's corner; reduced motion collapses it to opacity); every control shows a `focus-visible` ring; a closed panel is `inert` and `aria-hidden`, so nothing inside it takes focus; the whole dock is hidden while a blocking modal owns the screen; the native page view yields (U-76) while the panel is open, so the panel is never covered by it.
 
+## Docket AI launchers (U-126 … U-135)
+
+- **U-126** (launcher, shell; added 2026-10-11, #938) Click. A launcher is a pill (spark icon + label) that calls `chatStore.openChat({ scope, prefill })` exactly once and sends nothing: the panel opens on a new conversation in the host screen's scope with the composer filled and focused. The shell provides the chat store and the locale through one context; a launcher outside it draws nothing. Where the screen's own place (U-122) differs from the launcher's scope, the store's own rule (U-101) pins it.
+- **U-127** (launcher; added 2026-10-11, #938) Unsent draft. The chat store has no confirmation for replacing unsent text, so a launcher never replaces one: with a non-blank draft it opens the new conversation in the scope and leaves the draft as it is, appending nothing; a blank draft takes the prefill.
+- **U-128** (launcher; added 2026-10-11, #938) Caret. Focus goes to the composer with the caret after the last character once the panel's open transition has run (300 ms), at once under reduced motion.
+- **U-129** (home, new project, roadmap; added 2026-10-11, #938) "Docket AI ile birlikte kur" (global) sits on home and on the new-project screen; "Docket AI ile planla" (project) sits under the roadmap's heading. Both prefills come from the bundle.
+- **U-130** (board; added 2026-10-11, #938) "Tarif et, ben açayım" (project) shows inside the open create form when a project owns the repo; its prefill ends in a colon and a space, so the caret stands after it.
+- **U-131** (work-order detail; added 2026-10-11, #938) "Bu neden beklemede?" shows only while the order is awaiting a person, waiting on a limit or blocked; "Ne yapıyor?" only while it runs; any other standing shows neither. Hidden, never disabled. Scope: the work order.
+- **U-132** (settings; added 2026-10-11, #938) "Bunu benim için ayarla" (global) sits above the body of Hesaplar, Roller and Eşzamanlılık (the limits section); no other section carries one. Its prefill names the section by that section's own label, and the click closes the settings panel first, since the dock is hidden while it is open.
+- **U-133** (page viewer; added 2026-10-11, #938) "Yorumlarımı düzelt" sits in the header actions, outside the native view's area, only while the page has a comment not yet delivered; its scope is the page's work order, else its project, read from the library's rows; with no row yet it stays hidden.
+- **U-134** (labels; added 2026-10-11, #938) Copy. Every launcher label and prefill is a bundle key in Turkish and English with the same placeholders; a label stays under 28 characters. A page title, comment or id never enters a prefill — the scope carries the ids.
+- **U-135** (launcher sources; added 2026-10-11, #938) Measure. Rem lengths only, spacing on the 4·8·12·16·20·24·32 scale, `rounded-full` for the pill, explicit leading, a focus ring, transitions behind `motion-safe:` / `motion-reduce:`, no vendor name, no inline Turkish — pinned by a source-scan test like U-90.
+
 ## Verifying the shell — E2E layers (Phase 3.5)
 
 The shell is verified against the frozen prototype **rev 8** (`~/source/docket-tasarim/rev8/`:
@@ -1185,6 +1198,11 @@ belongs to the mobile app.
   Bayat shows the stale proposal with Onayla disabled and Reddet open → Karar verilen shows the rejected
   one without a bar → Onayla on the pending one → the toast "Onaylandı" and the item stands selected in
   Karar verilen. It runs once per run.)*
+  *(Addendum 2026-10-11, #938: J-16 walks the launchers on the same chat world: home's "Docket AI ile
+  birlikte kur" opens the panel with the starter text in the composer, nothing sent, the caret at the
+  end and the scope chip on Tüm projeler → a second click with an unsent draft keeps the draft → the
+  roadmap's "Docket AI ile planla" shows the project on the chip → the seeded (ready) work order offers
+  neither "Bu neden beklemede?" nor "Ne yapıyor?". It runs once per run; sending is not part of it.)*
 - **Layout audit** (pure DOM measurement, no pixel diff; each assertion named `L-n: …`, for every
   screen × size × theme):
   - **L-1** The sidebar's left edge is 0 and its width is 240px at every window size — it never

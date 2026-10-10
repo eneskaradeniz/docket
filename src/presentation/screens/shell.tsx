@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useSyncExternalStore } from 'react';
 
 import { ChatDock } from '../components/chat-dock';
+import { ChatLauncherContext } from '../components/chat-launcher';
 import { SearchPalette } from '../components/search-palette';
 import { SidebarAccounts } from '../components/sidebar-accounts';
 import { SidebarNav } from '../components/sidebar-nav';
@@ -30,6 +31,7 @@ import { t, type Locale } from '../labels/t';
 import { unaddedRowTarget, type AccountsFrameStore } from '../stores/accounts-frame';
 import { editInSettingsTarget, type AccountViewStore } from '../stores/account-view';
 import type { BoardStore } from '../stores/board';
+import { pageLaunchScope } from '../stores/chat-launcher';
 import { chatPlaceOf, chatShortcutPlan, isChatShortcut } from '../stores/chat-model';
 import type { ChatStore } from '../stores/chat-store';
 import type { CockpitStore } from '../stores/cockpit';
@@ -343,6 +345,15 @@ export function ShellScreen({
   useEffect(() => {
     chat.setPlace(chatPlace);
   }, [chat, chatPlace]);
+  // The contextual launchers (U-126) open this same panel; hosts reach it through the context.
+  const launcherEnv = useMemo(() => ({ store: chat, locale }), [chat, locale]);
+  // The page viewer's launcher scope comes from the library's rows: the page's work order, else its
+  // project. A page the library has not listed yet gives no scope, and the launcher stays hidden.
+  const libraryRows = useSyncExternalStore(library.subscribe, () => library.state().all);
+  const pageScope = useMemo(() => {
+    if (route.name !== 'page') return null;
+    return pageLaunchScope(libraryRows?.find((row) => row.id === route.id) ?? null);
+  }, [route, libraryRows]);
   // ⌘J (or Ctrl+J) toggles the panel (U-119): a blocking modal ignores it, an open palette is
   // closed first, and opening the palette in turn closes the panel — the two never stand together.
   useEffect(() => {
@@ -518,6 +529,7 @@ export function ShellScreen({
   };
 
   return (
+    <ChatLauncherContext.Provider value={launcherEnv}>
     <div className="flex h-dvh flex-col overflow-hidden bg-bg text-ink">
       <TitleBar
         locale={locale}
@@ -596,6 +608,7 @@ export function ShellScreen({
               roadmapProject={roadmapProjectOf(route.repo)}
               onOpenRoadmap={(project) => navigate({ name: 'roadmap', project })}
               onOpenSettings={() => openSettings('accounts')}
+              launchProject={treeState.tree.find((item) => item.repos.some((node) => node.repo === route.repo))?.project ?? null}
             />
           ) : null}
           {route.name === 'roadmap' ? (
@@ -650,6 +663,7 @@ export function ShellScreen({
               overlayOpen={palette.open || settingsPanel.open || wizardUp || chatOpen}
               now={clockNow()}
               onBack={goBack}
+              launchScope={pageScope}
             />
           ) : null}
         </main>
@@ -708,5 +722,6 @@ export function ShellScreen({
       {/* The one toast surface (U-50), above every overlay the shell mounts. */}
       <ToastHost store={toastStore} locale={locale} besideChat={chatOpen} />
     </div>
+    </ChatLauncherContext.Provider>
   );
 }
