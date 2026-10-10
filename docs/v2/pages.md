@@ -42,3 +42,25 @@ Docket collects them when the run ends.
 
 `~/.docket/pages/<pageId>/v<n>/` holds each version's files; `docket.db` holds the page record, link,
 author, comments, and approval state.
+
+## Addendum — the first viewer's isolation, as implemented (added 2026-10-10, #901)
+
+The first viewer has **no page-to-Docket channel at all**: no `postMessage` bridge and no preload in the
+page view. The "narrow `postMessage`" above is deferred until a design for it exists. Comments are
+typed in Docket's own comment rail, with an optional free-text `anchor`; a page can neither command nor
+signal anything.
+
+The security list above is implemented as follows (rules `I-63` … `I-70` in `docs/v2/infrastructure.md`):
+
+- A page is served by the privileged `docket-page` scheme (`docket-page://<pageId>/v<n>/<file>`), handled
+  on the pages partition's own session only. A file is found by exact match against the version's recorded
+  paths, never by joining a decoded URL path; every miss answers identically.
+- The view is a sandboxed `WebContentsView` on the in-memory partition `docket-pages` — no Node, context
+  isolation on, no preload, no dev tools, no webview tag. Its storage and cache are cleared whenever a
+  view closes, so nothing a page stored outlives its view.
+- Every response carries a CSP that shuts connect, form, frame, object, worker and base and allows only
+  the page's own origin plus inline script and style; the network filter cancels every request that is
+  not a page URL of the open page or an inline image, font or media load.
+- Popups, downloads, permission requests and every navigation away from the same page (will-navigate,
+  will-frame-navigate, will-redirect) are refused; audio is muted.
+- Only the main window's top frame may open, move or close the view; at most one view exists.

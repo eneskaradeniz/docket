@@ -59,6 +59,7 @@ const INFRA_MODULES = {
   forge: ['system'],
   providers: ['system'],
   mcp: [],
+  'pages-view': [],
   compose: ['system', 'storage/sqlite', 'storage/keychain', 'storage/definitions-yaml', 'vcs', 'gates', 'providers', 'mcp'],
   scenarios: ['system', 'storage/sqlite', 'storage/keychain', 'storage/definitions-yaml', 'vcs', 'gates', 'providers', 'mcp', 'compose'],
 };
