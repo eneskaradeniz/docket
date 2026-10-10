@@ -44,6 +44,7 @@ const setup = async () => {
       phases: [
         { id: 'p1', name: 'P1', blockedBy: [], tasks: [{ id: 'build', title: 'Build', dependsOn: [], acceptance: [], targets: [] }] },
         { id: 'p2', name: 'P2', blockedBy: ['p1'], tasks: [{ id: 'ship', title: 'Ship', dependsOn: [], acceptance: [], targets: [] }] },
+        { id: 'p3', name: 'P3', blockedBy: ['p1', 'p2'], tasks: [{ id: 'launch', title: 'Launch', dependsOn: [], acceptance: [], targets: [] }] },
       ],
     }),
   );
@@ -98,5 +99,13 @@ describe('roadmap.byProject autoRun', () => {
     if (order === undefined) throw new Error('expected a work order');
     await deps.phaseAutoRuns.put({ project: PROJECT, phase: slugOf('p1'), state: 'paused', startedAt: 1, attention: [order.id] });
     expect((await byProject(api)).phases[0]?.autoRun).toEqual({ state: 'paused', attention: [order.id] });
+  });
+});
+
+describe('roadmap.byProject blockedBy', () => {
+  it('A-127: a phase entry lists the ids of its blocking phases that are not done, in the phase\'s own order; empty when none block it', async () => {
+    const { api } = await setup();
+    const view = await byProject(api);
+    expect(view.phases.map((phase) => phase.blockedBy)).toEqual([[], ['p1'], ['p1', 'p2']]);
   });
 });

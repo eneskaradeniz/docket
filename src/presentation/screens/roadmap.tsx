@@ -5,13 +5,22 @@
 // detail. A task turns ✓ only when every linked work order is done; that judgement is the
 // query's (R-40), the page only renders it. The phases fill the main column as U-55's card grid
 // — repeat(auto-fill, minmax(23.75rem, 1fr)) — so a full row spans edge to edge at every width;
-// nothing here edits the roadmap (Phase 5).
+// nothing here edits the roadmap (Phase 5); the run controls (U-63 … U-68) start, pause and resume
+// phases but never change the roadmap file.
 import { useEffect, useSyncExternalStore } from 'react';
 
 import type { RoadmapPageView } from '../../api/queries';
 import { t, type Locale } from '../labels/t';
-import type { RoadmapStore } from '../stores/roadmap';
+import {
+  phaseControl,
+  phaseRunCounts,
+  type RoadmapNotice,
+  type RoadmapPanel,
+  type RoadmapPhase,
+  type RoadmapStore,
+} from '../stores/roadmap';
 import { failureKey } from '../stores/results';
+import { toast } from '../stores/toasts';
 import { formatWorkOrderCode } from '../stores/work-order-code';
 
 export interface RoadmapScreenProps {
@@ -90,17 +99,66 @@ const Chevron = ({ open, small }: { readonly open: boolean; readonly small?: boo
   </svg>
 );
 
+/** Fills a label's `{name}` placeholders; copy lives in the bundles, only the values come here. */
+const fill = (text: string, vars: Readonly<Record<string, string>> | undefined): string =>
+  Object.entries(vars ?? {}).reduce((out, [name, value]) => out.split(`{${name}}`).join(value), text);
+
+/** One notice as its single toast text: the headline, then the sub-line after a dash (the toast
+ *  service carries one text per toast, U-50). */
+const noticeText = (locale: Locale, notice: RoadmapNotice): string => {
+  const head = fill(t(locale, notice.key), notice.vars);
+  return notice.subKey === undefined ? head : `${head} — ${fill(t(locale, notice.subKey), notice.subVars)}`;
+};
+
+const showNotices = (locale: Locale, pending: Promise<readonly RoadmapNotice[]>): void => {
+  void pending.then((notices) => {
+    for (const notice of notices) {
+      toast({ type: notice.type, text: noticeText(locale, notice), ...(notice.copy === undefined ? {} : { copy: notice.copy }) });
+    }
+  });
+};
+
+// Every control is a visible-focus target (U-17 keyboard rule); the ring sits inside the card so
+// its overflow clip never hides it.
+const FOCUS = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-signal-soft';
+const BUTTON = `h-7 flex-none whitespace-nowrap rounded-control border px-3 text-[0.78125rem] font-semibold leading-none transition-colors motion-reduce:transition-none ${FOCUS}`;
+const BUTTON_SECONDARY = `${BUTTON} border-bord text-ink hover:bg-raised disabled:pointer-events-none disabled:border-hairline disabled:bg-raised disabled:text-inkdim`;
+const BUTTON_PRIMARY = `${BUTTON} border-signal bg-signal text-signal-ink disabled:pointer-events-none disabled:opacity-60`;
+const BUTTON_GHOST = `${BUTTON} border-transparent text-inkdim hover:text-ink`;
+
+const CHIP = 'inline-flex h-5 flex-none items-center gap-2 rounded-full border px-2 font-mono text-[0.6875rem] leading-none';
+
+/** A status chip: a lamp and its word. `lit` is the amber ring-and-fill of work in motion. */
+const StatusChip = ({ tone, label }: { readonly tone: 'run' | 'quiet' | 'done'; readonly label: string }) => {
+  if (tone === 'done') return <span className={`${CHIP} border-proceed text-proceed`}>{label}</span>;
+  const lit = tone === 'run';
+  return (
+    <span className={`${CHIP} ${lit ? 'border-signal-soft text-signal-soft' : 'border-bord text-inkdim'}`}>
+      <span aria-hidden="true" className={`h-2 w-2 flex-none rounded-full border ${lit ? 'border-signal bg-signal' : 'border-bord'}`} />
+      {label}
+    </span>
+  );
+};
+
+const PANEL = 'mx-4 mb-4 grid gap-2 rounded-control border border-bord bg-raised p-3';
+
 const PhaseCard = ({
+  view,
   phase,
   open,
+  panel,
+  pending,
   locale,
   store,
   expanded,
   onOpenRepo,
   onOpenWorkOrder,
 }: {
-  readonly phase: RoadmapPageView['phases'][number];
+  readonly view: RoadmapPageView;
+  readonly phase: RoadmapPhase;
   readonly open: boolean;
+  readonly panel: RoadmapPanel | null;
+  readonly pending: boolean;
   readonly locale: Locale;
   readonly store: RoadmapStore;
   readonly expanded: readonly string[];
@@ -108,23 +166,126 @@ const PhaseCard = ({
   readonly onOpenWorkOrder: (workOrderId: string) => void;
 }) => {
   const done = phase.tasks.filter((task) => task.status === 'done').length;
+  const control = phaseControl(view, phase);
+  const confirming = panel?.kind === 'confirm' && panel.phase === phase.id;
+  const attending = panel?.kind === 'attention' && panel.phase === phase.id;
+  const counts = phaseRunCounts(view, phase);
+  const hintId = `phase-${phase.id}-hint`;
+  const failedOrders = (phase.autoRun?.attention ?? []).flatMap((id) =>
+    phase.tasks.flatMap((task) => task.workOrders.filter((order) => order.id === id).map((order) => ({ task, order }))),
+  );
+
   return (
-    <section className="overflow-hidden rounded-card border border-hairline bg-surface">
-      <button
-        type="button"
-        onClick={() => store.togglePhase(phase.id)}
-        aria-expanded={open}
-        className="flex w-full items-center gap-2.5 px-4 py-3 text-left transition-colors hover:bg-raised"
-      >
-        <Chevron open={open} />
-        <span className="min-w-0 flex-1 truncate text-[0.875rem] font-bold text-ink" title={phase.name}>
-          {phase.name}
+    <section data-phase={phase.id} className={`overflow-hidden rounded-card border bg-surface ${phase.autoRun?.state === 'running' ? 'border-bord' : 'border-hairline'}`}>
+      {/* One grid for both header rows: chevron · name · count + button, the status row under the
+          name. The toggle is a real button whose overlay makes the whole header clickable without
+          nesting the controls inside it. */}
+      <div className="relative grid grid-cols-[1rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-4 py-3 transition-colors hover:bg-raised motion-reduce:transition-none">
+        <span className="grid h-7 place-items-center">
+          <Chevron open={open} />
         </span>
-        <span className="flex-none font-mono text-[0.6875rem] text-inkdim">
-          {done}/{phase.tasks.length}
+        <button
+          type="button"
+          onClick={() => store.togglePhase(phase.id)}
+          aria-expanded={open}
+          className="flex min-h-7 min-w-0 items-center text-left after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:after:outline focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-signal-soft"
+        >
+          <span className="min-w-0 flex-1 truncate text-[0.875rem] font-bold leading-5 text-ink" title={phase.name}>
+            {phase.name}
+          </span>
+        </button>
+        <span className="relative z-10 flex min-h-7 items-center gap-3">
+          <span className="flex-none font-mono text-[0.6875rem] leading-4 text-inkdim">
+            {done}/{phase.tasks.length}
+          </span>
+          {control.button === 'run' ? (
+            <button type="button" disabled={pending} onClick={() => store.askRun(phase.id)} className={BUTTON_SECONDARY}>
+              {t(locale, 'roadmap.run')}
+            </button>
+          ) : null}
+          {control.button === 'run-disabled' ? (
+            <button type="button" disabled aria-describedby={hintId} className={BUTTON_SECONDARY}>
+              {t(locale, 'roadmap.run')}
+            </button>
+          ) : null}
+          {control.button === 'pause' ? (
+            <button type="button" disabled={pending} onClick={() => showNotices(locale, store.pausePhase(phase.id))} className={BUTTON_SECONDARY}>
+              {t(locale, 'roadmap.pause')}
+            </button>
+          ) : null}
+          {control.button === 'resume' ? (
+            <button type="button" disabled={pending} onClick={() => showNotices(locale, store.resumePhase(phase.id))} className={BUTTON_SECONDARY}>
+              {t(locale, 'roadmap.resume')}
+            </button>
+          ) : null}
         </span>
-      </button>
-      <div className={`grid transition-[grid-template-rows] duration-200 ${open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+        <div className="relative z-10 col-start-2 col-end-4 flex min-h-5 flex-wrap items-center gap-2">
+          {control.chip === 'running' ? <StatusChip tone="run" label={t(locale, 'roadmap.chip.running')} /> : null}
+          {control.chip === 'paused' ? <StatusChip tone="quiet" label={t(locale, 'roadmap.chip.paused')} /> : null}
+          {control.chip === 'done' ? <StatusChip tone="done" label={t(locale, 'roadmap.chip.done')} /> : null}
+          {control.attention > 0 ? (
+            <button
+              type="button"
+              aria-expanded={attending}
+              onClick={() => store.toggleAttention(phase.id)}
+              className={`${CHIP} border-signal-soft text-signal-soft ${FOCUS}`}
+            >
+              <span aria-hidden="true" className="h-2 w-2 flex-none rounded-full border border-signal bg-signal" />
+              {fill(t(locale, 'roadmap.chip.attention'), { n: String(control.attention) })}
+            </button>
+          ) : null}
+          {control.hint === 'blocked' ? (
+            <span id={hintId} className="flex items-center gap-2 text-[0.75rem] leading-4 text-inkdim">
+              <span aria-hidden="true" className="h-2 w-2 flex-none rounded-full bg-signal" />
+              {fill(t(locale, 'roadmap.hint.blocked'), { names: control.blockedBy.join(', ') })}
+            </span>
+          ) : null}
+          {control.hint === 'paused' ? <span className="text-[0.75rem] leading-4 text-inkdim">{t(locale, 'roadmap.hint.paused')}</span> : null}
+        </div>
+      </div>
+      {confirming ? (
+        <div className={PANEL} role="group" aria-label={t(locale, 'roadmap.run')}>
+          <p className="text-[0.8125rem] leading-5 text-ink">
+            <strong className="font-bold">{fill(t(locale, 'roadmap.confirm.tasks'), { n: String(counts.tasks) })}</strong>
+            {t(locale, 'roadmap.confirm.tasksTail')}
+            <strong className="font-bold">{fill(t(locale, 'roadmap.confirm.orders'), { m: String(counts.orders) })}</strong>
+            {t(locale, 'roadmap.confirm.ordersTail')}
+          </p>
+          <p className="text-[0.75rem] leading-4 text-inkdim">{t(locale, 'roadmap.confirm.note')}</p>
+          <div className="mt-1 flex gap-2">
+            <button type="button" disabled={pending} onClick={() => showNotices(locale, store.runPhase(phase.id))} className={BUTTON_PRIMARY}>
+              {t(locale, 'roadmap.confirm.go')}
+            </button>
+            <button type="button" onClick={() => store.closePanel()} className={BUTTON_GHOST}>
+              {t(locale, 'roadmap.confirm.cancel')}
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {attending ? (
+        <div className={PANEL} role="group" aria-label={t(locale, 'roadmap.attention.title')}>
+          <p className="text-[0.8125rem] leading-5 text-ink">{t(locale, 'roadmap.attention.title')}</p>
+          {failedOrders.map(({ task, order }) => {
+            const code = formatWorkOrderCode(order.number, locale);
+            return (
+              <p key={order.id} className="flex flex-wrap items-center gap-x-2 text-[0.75rem] leading-4 text-inkdim">
+                <button
+                  type="button"
+                  onClick={() => onOpenWorkOrder(order.id)}
+                  title={code}
+                  className={`font-mono text-[0.6875rem] leading-4 text-ink hover:underline ${FOCUS}`}
+                >
+                  {code}
+                </button>
+                <span>
+                  · {task.title} · {t(locale, 'roadmap.attention.failed')}
+                </span>
+              </p>
+            );
+          })}
+        </div>
+      ) : null}
+      <div className={`grid transition-[grid-template-rows] duration-200 motion-reduce:transition-none ${open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
         <div className="min-h-0 overflow-hidden px-2.5 pb-2">
           {phase.tasks.map((task) => (
             <TaskRow
@@ -236,7 +397,7 @@ const TaskRow = ({
 };
 
 export function RoadmapScreen({ store, project, name, locale, onOpenRepo, onOpenWorkOrder }: RoadmapScreenProps) {
-  const state = useSyncExternalStore(store.subscribe, store.state);
+  const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   useEffect(() => {
     void store.load(project);
   }, [store, project]);
@@ -270,8 +431,11 @@ export function RoadmapScreen({ store, project, name, locale, onOpenRepo, onOpen
           {view.phases.map((phase) => (
             <PhaseCard
               key={phase.id}
+              view={view}
               phase={phase}
               open={state.openPhases.includes(phase.id)}
+              panel={state.panel}
+              pending={state.pending !== null}
               locale={locale}
               store={store}
               expanded={state.expanded}

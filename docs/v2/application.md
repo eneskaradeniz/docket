@@ -1498,3 +1498,7 @@ Addendum 2026-10-10 (#881) — machine-aware dispatch. New ports: `MachineProbe 
 - **A-124** (added 2026-10-10, #881) In `auto`, `perRepo` and every `perAccount` limit are clamped to the effective global for the tick; the stored limits are never rewritten.
 - **A-125** (added 2026-10-10, #881) Every tick writes the status holder: `mode`, `cap`, `effective`, `band` and, when a reading was taken, `load1`, `cores` and `freeMemRatio` (only when known).
 - **A-126** (added 2026-10-10, #881) The boundary: query `settings.dispatch` answers the limits plus `mode`, `suggested` (`suggestDispatchCap` over a fresh reading), `machine { cores, totalMemGb }` (one decimal) and `status` (the last tick's status, absent until the first tick); `suggested` and `machine` are absent when the machine cannot be read. Command `settings.setDispatch` accepts an optional `mode` (A-118).
+
+## 10. Blocked-by on the roadmap page (added 2026-10-10, #882)
+
+- **A-127** (added 2026-10-10, #882) Each phase entry of `roadmap.byProject` carries `blockedBy: readonly string[]`: the ids of the roadmap's blocking phases for that phase whose derived status is not `done`, in the order the roadmap lists them; empty when nothing blocks it or every blocker is done. It is a read-only projection of `PhaseDef.blockedBy` and the derived phase statuses; no other field of the query or any command changes.

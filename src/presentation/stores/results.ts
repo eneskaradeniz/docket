@@ -63,6 +63,13 @@ export const KNOWN_FAILURE_CODES: readonly string[] = [
   'docket_folder_exists',
   'io_failed',
   'project_exists',
+  // The phase commands' refusals (A-97, A-110).
+  'unknown_project',
+  'no_roadmap',
+  'unknown_phase',
+  'phase_not_runnable',
+  'not_running',
+  'not_paused',
   // saveBinding: a role's account chain cannot be empty (A-14).
   'empty_chain',
 ];
@@ -79,10 +86,11 @@ const SUCCESS_KEYS: Readonly<Record<Command['type'], LabelKey>> = {
   'workOrder.close': 'success.workOrder.close',
   'workOrder.enqueue': 'success.workOrder.enqueue',
   'task.open': 'success.task.open',
-  // No surface issues it yet (the roadmap-page button is a UI issue); it borrows the task-open copy.
+  // The roadmap page words its phase toasts itself (stores/roadmap.ts); these are the plain copy.
+  // (The run copy carries a {phase} placeholder only the page fills, so it keeps the plain line.)
   'roadmap.runPhase': 'success.task.open',
-  'roadmap.pausePhase': 'success.task.open',
-  'roadmap.resumePhase': 'success.task.open',
+  'roadmap.pausePhase': 'roadmap.toast.paused',
+  'roadmap.resumePhase': 'roadmap.toast.resumed',
   'project.attach': 'success.project.attach',
   'project.create': 'newProject.created',
   'repo.register': 'success.repo.register',
