@@ -103,7 +103,7 @@ import {
   saveAccount,
   saveAccountCap,
   saveBinding,
-  getDispatchLimits,
+  dispatchSettingsView,
   setDispatchLimits,
   stageFiles,
   unblockWorkOrder,
@@ -810,7 +810,7 @@ const runCommand = async (
       return commandOf(
         await setDispatchLimits(
           { clock: deps.clock, ids: deps.ids, log: deps.log, settings: deps.settings, accounts: deps.accounts },
-          { limits: { global: command.global, perRepo: command.perRepo, perAccount }, actor },
+          { limits: { global: command.global, perRepo: command.perRepo, perAccount }, ...(command.mode === undefined ? {} : { mode: command.mode }), actor },
         ),
       );
     }
@@ -920,7 +920,7 @@ const runQuery = async (
 
     // The stored limits are already the view: plain JSON, defaults when nothing valid is saved.
     case 'settings.dispatch':
-      return getDispatchLimits(deps);
+      return dispatchSettingsView(deps);
 
     case 'roles.list':
       return rolesListView(deps, registry);

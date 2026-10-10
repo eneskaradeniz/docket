@@ -13,6 +13,7 @@ import type { EventLog } from './event-log';
 import type { GitProbe } from './git-probe';
 import type { IdGen } from './id-gen';
 import type { InstructionFiles } from './instruction-files';
+import type { DispatchStatusHolder, MachineProbe } from './machine-probe';
 import type { ModelCatalog } from './model-catalog';
 import type { Notifier } from './notifier';
 import type { PhaseAutoRunRepo } from './phase-auto-run-repo';
@@ -60,4 +61,6 @@ export interface AppDeps {
   readonly scratch: ScratchDirs;
   readonly repoFolders: RepoFolders;
   readonly worktreeFiles: WorktreeFiles;
+  readonly machine: MachineProbe;
+  readonly dispatchStatus: DispatchStatusHolder;
 }

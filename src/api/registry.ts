@@ -47,7 +47,7 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
     input:
       'role: RoleSlug, accounts: { accountId: AccountId, model?: string }[], thinking?: { level? | effort? }, tier?: Tier',
   },
-  'settings.setDispatch': { input: 'global: 1-16, perRepo: 1-global, perAccount: Record<AccountId, 1-global>' },
+  'settings.setDispatch': { input: 'global: 1-16, perRepo: 1-global, perAccount: Record<AccountId, 1-global>, mode?: fixed | auto' },
   'quota.refresh': { input: 'id?: AccountId' },
   'capabilities.import': { input: 'identities: string[]' },
   'app.update.check': { input: 'no input' },

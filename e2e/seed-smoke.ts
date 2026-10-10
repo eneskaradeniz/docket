@@ -22,6 +22,7 @@ import assert from 'node:assert';
 import type { AccountId, Actor, ProjectSlug, RoleSlug, RepoSlug } from '../src/domain/index';
 import { deriveWorkOrderState } from '../src/domain/index';
 import { attachProject } from '../src/application/use-cases/projects';
+import { DISPATCH_MODE_KEY } from '../src/application/use-cases/settings';
 import { openWorkOrder } from '../src/application/use-cases/work-orders';
 import { createNodeDeps } from '../src/infrastructure/compose/create-node-deps';
 
@@ -156,6 +157,8 @@ const node = createNodeDeps({
 });
 assert(node.ok, `seed could not open deps: ${JSON.stringify(node.error)}`);
 const deps = node.value.deps;
+// The world must not depend on the host's load: pin the fixed dispatch mode.
+await deps.settings.set(DISPATCH_MODE_KEY, 'fixed');
 
 // Attach the way the app does — the use case persists the project def, registers the main repo
 // and writes the audit entry — so the rows match a real attach, not a hand-made mirror.

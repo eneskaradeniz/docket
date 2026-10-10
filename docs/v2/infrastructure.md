@@ -434,3 +434,8 @@ the real command runner, secret scanner and worktrees, a fake transport and a te
 the same states as 2a, that the worktree exists at `<dataDir>/worktrees/<repo>/<id>`, and — after
 `close()` and a fresh `createNodeDeps` on the same folder — that `workOrder.detail` returns the same
 state and runs.
+
+Addendum 2026-10-10 (#881) — the machine probe. `system/machine-probe.ts` holds both pieces; the OS calls are injected through `MachineOs` so the tests are hermetic.
+
+- **I-50** (added 2026-10-10, #881) `createNodeMachineProbe` implements `MachineProbe` (A-117 …) over `node:os`: `cpus().length`, `loadavg()[0]`, `totalmem()`, read fresh on every call. The free-memory ratio is, on `darwin`, the percentage `sysctl -n kern.memorystatus_level` prints divided by 100 (`os.freemem()` under-reports there), and elsewhere `os.freemem() / os.totalmem()`. Any failure of that reading — a failed or timed-out `sysctl`, unparsable text, a value outside 0 … 100, zero total memory — leaves `freeMemRatio` absent; a failure of cores, load or total memory rejects. The single `execFile` call lives in this one file.
+- **I-51** (added 2026-10-10, #881) `createMemoryDispatchStatus()` implements `DispatchStatusHolder` in memory only: `get` is `undefined` before the first `set`, the last `set` wins, and it keeps copies. The fake `createFakeDispatchStatus()` runs the same cases.

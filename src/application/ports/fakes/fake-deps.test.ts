@@ -39,6 +39,8 @@ const PORT_KEYS: readonly (keyof AppDeps)[] = [
   'scratch',
   'repoFolders',
   'worktreeFiles',
+  'machine',
+  'dispatchStatus',
 ];
 
 describe('createFakeDeps', () => {
