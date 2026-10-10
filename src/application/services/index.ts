@@ -14,3 +14,7 @@ export * from './chat-read-scope';
 export * from './chat-tools';
 export * from './chat-write-tools';
 export * from './chat-turn-ledger';
+export * from './mcp-attach';
+export * from './assistant-brief';
+export * from './assistant-role';
+export * from './chat-runner';

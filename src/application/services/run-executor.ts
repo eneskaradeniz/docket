@@ -28,13 +28,13 @@ import {
   effortForChoice,
   extendRollingNote,
   foldRun,
-  parseSlug,
   resolveTier,
   stageBrief,
 } from '../../domain/index';
 
 import type { AppDeps, AuditAction, RunDir, RunHandle, RunRecord, RunRepo, TransportError } from '../ports';
 
+import { attachDocketCapability } from './mcp-attach';
 import { spendConsentSatisfied } from './spend-consent';
 import type { BoardHooks } from './permission-board';
 import { buildHandoff, commitCheckpoint } from '../use-cases/index';
@@ -113,8 +113,9 @@ const sameCounter = (
 
 /** A-16: turns a `quota_signal` into a stored `Meter`. The id is reused when the same counter is
  *  already known, the pool is found by label, and a signal for an unknown pool still gets saved
- *  (attributed once that pool is discovered). */
-const saveQuotaMeter = async (
+ *  (attributed once that pool is discovered). Shared with the chat runner, which saves a turn's
+ *  signals exactly the same way. */
+export const saveQuotaMeter = async (
   deps: Pick<AppDeps, 'ids' | 'accounts'>,
   accountId: AccountId,
   signal: Extract<AgentEvent, { readonly type: 'quota_signal' }>,
@@ -299,13 +300,10 @@ type ExecuteDeps = Pick<
   | 'mcpEndpoint'
 >;
 
-const DOCKET_PAGES_CAPABILITY = parseSlug<'capability'>('docket-pages');
-
 /** A-144: Docket's own MCP child, appended LAST so nothing a stored definition says can reorder
- *  or shadow it (a stored capability of the same id is replaced). It exists only on this request:
- *  never stored, and its token only here. A role that opted out, a provider whose CLI cannot attach
- *  MCP, and a shell without an endpoint all get the capabilities unchanged and no token. */
-const withDocketTools = async (
+ *  or shadow it. The attachment itself lives in one shared helper (mcp-attach.ts) that the chat
+ *  runner calls with a chat binding; a run mints the run binding with the work order's project. */
+const withDocketTools = (
   deps: ExecuteDeps,
   input: {
     readonly runId: RunId;
@@ -313,32 +311,21 @@ const withDocketTools = async (
     readonly role: RoleDef;
     readonly capabilities: readonly CapabilityDef[];
   },
-): Promise<readonly CapabilityDef[]> => {
-  const endpoint = deps.mcpEndpoint;
-  if (endpoint === undefined || input.role.docketTools === false || !DOCKET_PAGES_CAPABILITY.ok) return input.capabilities;
-  const account = await deps.accounts.get(input.item.route.accountId);
-  if (account !== undefined && deps.capabilities.mcpSupport(account.provider) === false) return input.capabilities;
-
-  const workOrder = await deps.workOrders.get(input.item.workOrderId);
-  const token = deps.runTokens.mint({
-    kind: 'run',
-    runId: input.runId,
-    workOrderId: input.item.workOrderId,
-    ...(workOrder === undefined ? {} : { project: workOrder.project }),
-    role: input.role.id,
-  });
-  const env: Record<string, { readonly literal: string }> = {};
-  for (const [name, value] of Object.entries(endpoint.env)) env[name] = { literal: value };
-  env['DOCKET_MCP_SOCKET'] = { literal: endpoint.socketPath };
-  env['DOCKET_MCP_TOKEN'] = { literal: token };
-  // Not a secret: it only picks which tool list the child shows. The app enforces the kind of the
-  // token itself, so a changed value widens nothing.
-  env['DOCKET_MCP_KIND'] = { literal: 'run' };
-  return [
-    ...input.capabilities.filter((capability) => capability.id !== DOCKET_PAGES_CAPABILITY.value),
-    { kind: 'mcp', id: DOCKET_PAGES_CAPABILITY.value, name: 'Docket pages', command: endpoint.command, args: endpoint.args, env },
-  ];
-};
+): Promise<readonly CapabilityDef[]> =>
+  deps.workOrders.get(input.item.workOrderId).then((workOrder) =>
+    attachDocketCapability(deps, {
+      binding: {
+        kind: 'run',
+        runId: input.runId,
+        workOrderId: input.item.workOrderId,
+        ...(workOrder === undefined ? {} : { project: workOrder.project }),
+        role: input.role.id,
+      },
+      accountId: input.item.route.accountId,
+      role: input.role,
+      capabilities: input.capabilities,
+    }),
+  );
 
 /** A-142: the run's token ends with the run on every path — a normal finish, a limit, a failed
  *  start, a dried-up stream and an exception alike — so the revoke lives in one `finally`. */
