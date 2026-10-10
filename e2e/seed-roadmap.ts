@@ -28,7 +28,9 @@ const [home] = process.argv.slice(2);
 assert(home !== undefined, 'usage: seed-roadmap.ts <home>');
 
 const MINUTE = 60_000;
-const NOW = Date.UTC(2026, 9, 10, 9, 0, 0);
+// Three hours before the real clock at seed time: work-order numbers rank by creation time, so
+// every seeded order must sort before the ones the app opens later, on any day the seed runs.
+const NOW = Date.now() - 3 * 60 * MINUTE;
 let clockNow = NOW - 60 * MINUTE;
 
 const PROJECT = { id: 'atolye', name: 'Atölye', main: 'atolye-api', repos: ['atolye-api', 'atolye-web'] } as const;

@@ -643,13 +643,16 @@ for (const [sizeName, theme] of combos) {
     // The attention chip opens the panel: the work order's code, its task and the sentence; the
     // code opens the work order's detail.
     await inCard('odeme', '1 dikkat').click({ timeout: WAIT });
-    const code = `İE-${String(seed.flaggedNumber).padStart(4, '0')}`;
     const panel = phase('odeme').getByRole('group', { name: 'Dikkat isteyen iş emirleri' });
     await panel.waitFor({ state: 'visible', timeout: WAIT });
     await panel.getByText(seed.flaggedTask).waitFor({ state: 'visible', timeout: WAIT });
     await panel.getByText('başarısız. Faz sürüyor, bağımsız görevler devam ediyor.').waitFor({ state: 'visible', timeout: WAIT });
     await shot('attention');
-    await panel.getByRole('button', { name: code }).click({ timeout: WAIT });
+    // The panel lists exactly one flagged order; its number is not pinned, because the work orders
+    // Başlat opened since may rank anywhere.
+    const codeButton = panel.getByRole('button').first();
+    assert(/^İE-\d{4}$/.test(((await codeButton.textContent()) ?? '').trim()), 'the attention row must show a work-order code');
+    await codeButton.click({ timeout: WAIT });
     await phase('odeme').waitFor({ state: 'detached', timeout: WAIT });
     await shot('detail');
 
