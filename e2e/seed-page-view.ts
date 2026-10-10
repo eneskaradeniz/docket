@@ -26,7 +26,9 @@ assert(home !== undefined && probePortText !== undefined, 'usage: seed-page-view
 const probePort = Number(probePortText);
 assert(Number.isInteger(probePort) && probePort > 0 && probePort < 65536, 'the probe port must be a port number');
 
-const dataDir = join(home, '.docket');
+// Never <home>/.docket: with HOME=<home> the app reads that as the operator's real data dir and
+// deliberately registers no dev bridge (devBridgeEnabled).
+const dataDir = join(home, 'docket-data');
 mkdirSync(dataDir, { recursive: true });
 
 /** A 1x1 PNG: the control request that proves the served-request trace sees a real 200. */

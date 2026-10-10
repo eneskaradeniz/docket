@@ -100,5 +100,21 @@ export async function launchPageViewApp() {
     undefined,
     { timeout: 30_000 },
   );
+  // The preload exposes window.docketDev unconditionally, so its presence proves nothing: the
+  // handler behind it exists only when devBridgeEnabled holds (flag, unpackaged, data dir outside
+  // <HOME>/.docket). Readiness is a real op answering.
+  const deadline = Date.now() + 20_000;
+  for (;;) {
+    try {
+      const reply = await page.evaluate(() => window.docketDev.call('page_view.trace'));
+      if (JSON.parse(reply.payload).ok === true) break;
+    } catch (error) {
+      if (Date.now() > deadline) {
+        throw new Error(`the dev bridge never answered (${String(error).split('\n')[0]}); devBridgeEnabled requires DOCKET_DEV_BRIDGE=1, an unpackaged app and a data dir outside <HOME>/.docket`);
+      }
+    }
+    if (Date.now() > deadline) throw new Error('the dev bridge answered but page_view.trace was not ok');
+    await new Promise((done) => setTimeout(done, 250));
+  }
   return { app, page, seed, probe };
 }
