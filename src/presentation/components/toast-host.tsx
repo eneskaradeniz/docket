@@ -81,6 +81,8 @@ export interface ToastHostProps {
   /** The one toast service; the shell passes the app's own store. */
   readonly store: ToastStore;
   readonly locale: Locale;
+  /** True while the chat panel is open: from lg up the stack makes room for it. */
+  readonly besideChat?: boolean;
 }
 
 function ToastCard({ item, store, locale }: { readonly item: ToastItem; readonly store: ToastStore; readonly locale: Locale }) {
@@ -163,12 +165,14 @@ function ToastCard({ item, store, locale }: { readonly item: ToastItem; readonly
   );
 }
 
-export function ToastHost({ store, locale }: ToastHostProps) {
+export function ToastHost({ store, locale, besideChat = false }: ToastHostProps) {
   const items = useSyncExternalStore(store.subscribe, store.state, store.state);
   if (items.length === 0) return null;
   return (
-    // The one fixed stack: top right, sixteen pixels from the edges, over every overlay.
-    <div data-toast-host className="pointer-events-none fixed top-4 right-4 z-[70] grid w-[min(380px,calc(100vw-32px))] gap-2">
+    // The one fixed stack: top right, sixteen pixels from the edges, over every overlay. While the
+    // chat panel is open it steps left of the panel (its width plus margins) so the cards do not
+    // cover the panel's header; below lg the panel spans most of the window, so the stack stays.
+    <div data-toast-host className={`pointer-events-none fixed top-4 right-4 z-[70] grid w-[min(380px,calc(100vw-32px))] gap-2${besideChat ? ' lg:right-[28rem]' : ''}`}>
       {items.map((item) => (
         <ToastCard key={item.id} item={item} store={store} locale={locale} />
       ))}

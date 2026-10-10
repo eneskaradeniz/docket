@@ -1398,6 +1398,14 @@ for (const [sizeName, theme] of combos) {
     const proposalCard = feed.locator('[data-chat-card="proposal"]');
     await proposalCard.getByText('Tek aşamalı akış (gözden geçirildi)').waitFor({ state: 'visible', timeout: SCAN_WAIT });
     assert(((await proposalCard.textContent()) ?? '').includes(`Kaynak: ${seed.target}`), 'the proposal card names its source');
+    // A toast shown while the panel is open sits beside it, never over its header.
+    const overlap = await page.evaluate(() => {
+      const host = document.querySelector('[data-toast-host]')?.getBoundingClientRect();
+      const panel = document.querySelector('[data-chat-panel]')?.getBoundingClientRect();
+      if (host === undefined || panel === undefined) return null;
+      return host.left < panel.right && host.right > panel.left && host.top < panel.bottom && host.bottom > panel.top;
+    });
+    assert(overlap !== true, 'the toast stack must not cover the chat panel');
     await shot('kartlar');
 
     // The draft: Oluştur opens the work order. The proposal: Onayla applies it, the row offers Geri al, Geri al undoes it.

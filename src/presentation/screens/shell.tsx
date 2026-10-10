@@ -691,7 +691,7 @@ export function ShellScreen({
       <WizardScreen store={wizard} locale={locale} localeStore={localeStore} themeStore={themeStore} marks={marks} />
 
       {/* The one toast surface (U-50), above every overlay the shell mounts. */}
-      <ToastHost store={toastStore} locale={locale} />
+      <ToastHost store={toastStore} locale={locale} besideChat={chatOpen} />
     </div>
   );
 }

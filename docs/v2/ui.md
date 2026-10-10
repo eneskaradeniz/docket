@@ -545,6 +545,7 @@ being reset.
   code shows the generic failure text with the raw code only behind "Kodu kopyala", never in the text. A
   toast with a copy button does not dismiss itself while the pointer or focus is on it (U-50) and, being
   an error, stays 8 s.
+- **U-50b** (amends U-50; 2026-10-11, review of the chat UI) While the chat panel is open the ToastHost steps left of it (`lg:right-[28rem]`, the panel's width plus margins) so the cards never cover the panel's header; below `lg` the panel spans most of the window and the stack stays top right.
 - **U-51** (sidebar; amends U-16 and U-44; 2026-10-04, #774; approved prototype
   `docket-tasarim/kurulum-v3/index.html`) The sidebar is 264 px wide; section headers (Projeler, Hesaplar) are 14
   px/700, rows 13.5–14 px, helper text at least 12 px. The Hesaplar section has a collapsible header (chevron,
