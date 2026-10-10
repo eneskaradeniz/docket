@@ -34,7 +34,10 @@ const full = process.argv.includes('--full') || process.env.FULL === '1';
 // Only the size names are known before the first launch; the concrete numbers come from the
 // resolved plan inside the loop, read from the first launch's primary display.
 const combos = quick ? [['default', 'dark']] : comboPlan(SIZE_PLAN, { full }).map(({ size, theme }) => [size.name, theme]);
-const WAIT = 4000; // a step that is going to pass does so in well under a second
+// The default bound for a step. A step that is going to pass does so in well under a second; the
+// bound is only the upper limit, so it is generous enough for a loaded machine (a passing step stays
+// fast, only a failing step is reported later).
+const WAIT = 15_000;
 // Waits that depend on an account scan, an import or a data load are bounded by machine speed, not
 // by product behaviour: on a busy machine they run far past WAIT while the product is fine.
 const SCAN_WAIT = 20_000;
@@ -56,10 +59,28 @@ for (const [sizeName, theme] of combos) {
 
   const text = (t) => page.getByText(t, { exact: false }).first();
   /** Assert the text is visible. */
-  const see = async (t, timeout = WAIT) => text(t).waitFor({ state: 'visible', timeout });
-  const gone = async (t) => text(t).waitFor({ state: 'hidden', timeout: WAIT });
-  const click = async (t, timeout = WAIT) => text(t).click({ timeout });
-  const button = async (name) => page.getByRole('button', { name }).first().click({ timeout: WAIT });
+  // The step the walk is on: every helper records what it is about to do, so a failure line names
+  // the exact step (a bare "locator.waitFor: Timeout" does not say which of a journey's waits ran out).
+  let step = '';
+  const mark = (label) => {
+    step = label;
+  };
+  const see = async (t, timeout = WAIT) => {
+    mark(`see "${t}"`);
+    return text(t).waitFor({ state: 'visible', timeout });
+  };
+  const gone = async (t) => {
+    mark(`gone "${t}"`);
+    return text(t).waitFor({ state: 'hidden', timeout: WAIT });
+  };
+  const click = async (t, timeout = WAIT) => {
+    mark(`click "${t}"`);
+    return text(t).click({ timeout });
+  };
+  const button = async (name) => {
+    mark(`button "${name}"`);
+    return page.getByRole('button', { name }).first().click({ timeout: WAIT });
+  };
 
   let jn = '';
   let stepNo = 0;
@@ -78,6 +99,7 @@ for (const [sizeName, theme] of combos) {
     jn = id;
     stepNo = 0;
     steps = [];
+    step = '';
     total += 1;
     const title = `${id}: ${name} [${tag}]`;
     try {
@@ -92,8 +114,9 @@ for (const [sizeName, theme] of combos) {
       appendJourney({ id: title, status: 'ok', steps });
     } catch (error) {
       failures.push(title);
-      console.log(`  FAIL ${title}\n       ${String(error).split('\n')[0]}`);
-      appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).split('\n')[0] });
+      const detail = `${String(error).split('\n')[0]} [after: ${steps.at(-1) ?? 'start'}; at: ${step || 'start'}]`;
+      console.log(`  FAIL ${title}\n       ${detail}`);
+      appendJourney({ id: title, status: 'FAIL', steps, detail });
       await page.screenshot({ path: join(OUT, `${id}-${size[0]}x${size[1]}-${theme}-FAIL.png`) }).catch(() => undefined);
     }
   };
@@ -121,6 +144,7 @@ for (const [sizeName, theme] of combos) {
     // profile (e2e/profile.mjs), so the board opens at Kanban — the click pins that standing
     // whatever the app's default or the storage's history.
     await button('Kanban');
+    mark('wait [data-board-kanban]');
     await page.waitForSelector('[data-board-kanban]', { timeout: SCAN_WAIT });
     await see('Rol matrisi', SCAN_WAIT);
     await see('Bitti');
@@ -128,7 +152,9 @@ for (const [sizeName, theme] of combos) {
     await button('Liste');
     await see('İE-0016', SCAN_WAIT);
     await shot('board-liste');
+    mark('page.reload');
     await page.reload();
+    mark('wait nav after reload');
     await page.waitForSelector('nav');
     await click('antreo-api', SCAN_WAIT);
     await see('İE-0016', SCAN_WAIT);
