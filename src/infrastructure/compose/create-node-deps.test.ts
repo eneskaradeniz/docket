@@ -199,6 +199,65 @@ describe('createNodeDeps', () => {
     expect((await node.deps.pages.list({})).map((p) => p.id)).toEqual([page]);
   });
 
+  it('I-76: wires the conversation repository to docket.db and the attachment files to <dataDir>/conversations', async () => {
+    const node = makeNode();
+    const conversation = ulidOf<'conversation'>('01ARZ3NDEKTSV4RRFFQ69G5FC9');
+    const attachment = ulidOf<'attachment'>('01ARZ3NDEKTSV4RRFFQ69G5FA9');
+    await node.deps.attachmentFiles.write(conversation, attachment, encoder.encode('bytes'));
+    expect(await readFile(join(dataDir, 'conversations', conversation, attachment), 'utf8')).toBe('bytes');
+    await node.deps.conversations.save({
+      id: conversation, scope: { kind: 'global' }, title: 'T', createdAt: 1, updatedAt: 1, pinned: false,
+      messages: [{ id: ulidOf<'message'>('01ARZ3NDEKTSV4RRFFQ69G5FM9'), role: 'user', at: 1, text: 'hi', refs: [], attachments: [], artifacts: [], sources: [] }],
+    });
+    expect((await node.deps.conversations.list({})).map((c) => c.id)).toEqual([conversation]);
+    await node.deps.conversations.delete(conversation);
+    await node.deps.attachmentFiles.removeAll(conversation);
+    expect(await node.deps.conversations.get(conversation)).toBeUndefined();
+    await expect(stat(join(dataDir, 'conversations', conversation))).rejects.toThrow();
+  });
+
+  it('I-79: wires the action repository to docket.db and keeps grants in memory — a new start knows none', async () => {
+    const conversation = ulidOf<'conversation'>('01ARZ3NDEKTSV4RRFFQ69G5FC9');
+    const action = ulidOf<'action'>('01ARZ3NDEKTSV4RRFFQ69G5FA7');
+    const grant = ulidOf<'grant'>('01ARZ3NDEKTSV4RRFFQ69G5FG7');
+    const node = makeNode();
+    await node.deps.actions.save({
+      id: action, conversation, action: { kind: 'open_work_order', draft: ulidOf<'draft'>('01ARZ3NDEKTSV4RRFFQ69G5FD7') }, status: 'pending', proposedAt: 1,
+    });
+    await node.deps.grants.save({
+      id: grant, conversation, by: { kind: 'user', id: 'user-1' }, classes: ['open_work_order'], grantedAt: 1, expiresAt: 1 + 60_000, applied: 0,
+    });
+    expect(await node.deps.grants.get(grant)).toBeDefined();
+    node.close();
+
+    const restarted = makeNode();
+    expect((await restarted.deps.actions.get(action))?.status).toBe('pending');
+    expect(await restarted.deps.grants.get(grant)).toBeUndefined();
+    expect(await restarted.deps.grants.forConversation(conversation)).toEqual([]);
+    restarted.close();
+  });
+
+  it('I-83: wires repoFiles to the registered checkout with the real redaction; secret names and unregistered repos are refused', async () => {
+    const node = makeNode();
+    const checkout = join(scratch, 'registered-checkout');
+    await mkdir(join(checkout, 'src'), { recursive: true });
+    const planted = 'ghp_0123456789abcdefghijklmnopqrstuvwxyzAB';
+    await writeFile(join(checkout, 'src', 'app.ts'), `const t = '${planted}';\nconst ok = 1;\n`, 'utf8');
+    await writeFile(join(checkout, '.env'), 'KEY=1', 'utf8');
+    await node.repos.register(REPO, checkout);
+
+    const read = await node.deps.repoFiles.read(REPO, 'src/app.ts', { from: 1, maxLines: 400, maxBytes: 65_536 });
+    expect(read.ok).toBe(true);
+    expect(JSON.stringify(read)).not.toContain(planted);
+    expect(read.ok && read.value.lines[1]).toBe('const ok = 1;');
+    expect(await node.deps.repoFiles.read(REPO, '.env', { from: 1, maxLines: 400, maxBytes: 65_536 })).toEqual({ ok: false, error: 'outside_repo' });
+    expect(await node.deps.repoFiles.read(slugOf('unregistered'), 'src/app.ts', { from: 1, maxLines: 400, maxBytes: 65_536 })).toEqual({
+      ok: false,
+      error: 'repo_unknown',
+    });
+    node.close();
+  });
+
   it('I-31: opens <dataDir>/docket.db, exposes the registry, and close() closes the database', async () => {
     const node = makeNode();
 

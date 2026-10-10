@@ -76,4 +76,22 @@ CREATE INDEX pages_by_project ON pages (project, id);
 CREATE TABLE page_comments (id TEXT PRIMARY KEY, page TEXT NOT NULL, version INTEGER NOT NULL, delivered_at INTEGER, data TEXT NOT NULL);
 CREATE INDEX page_comments_by_page ON page_comments (page, id);`,
   },
+  {
+    // Conversations (I-73): the record as JSON `data`, with the columns the history lists filter and
+    // order on beside it, and a lower-cased `search_text` rebuilt on every save for the substring
+    // query. Drafts of a conversation are their own table. Attachment bytes live on disk, not here.
+    version: 7,
+    sql: `CREATE TABLE conversations (id TEXT PRIMARY KEY, scope_kind TEXT NOT NULL, scope_ref TEXT NOT NULL, updated_at INTEGER NOT NULL, pinned INTEGER NOT NULL, search_text TEXT NOT NULL, data TEXT NOT NULL);
+CREATE INDEX conversations_by_scope ON conversations (scope_kind, scope_ref);
+CREATE INDEX conversations_by_updated ON conversations (updated_at);
+CREATE TABLE drafts (id TEXT PRIMARY KEY, conversation TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
+CREATE INDEX drafts_by_conversation ON drafts (conversation, id);`,
+  },
+  {
+    // Assistant actions (I-77): the record as JSON `data`, with the columns one conversation's list,
+    // pending filter and count read beside it. Grants are deliberately not here: they live in memory.
+    version: 8,
+    sql: `CREATE TABLE actions (id TEXT PRIMARY KEY, conversation TEXT NOT NULL, status TEXT NOT NULL, proposed_at INTEGER NOT NULL, data TEXT NOT NULL);
+CREATE INDEX actions_by_conversation ON actions (conversation, status);`,
+  },
 ];

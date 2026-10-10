@@ -36,6 +36,9 @@ import type { ModelCatalog } from './model-catalog';
 import type { Notifier } from './notifier';
 import type { ProjectRepo } from './project-repo';
 import type { RepoRegistry } from './repo-registry';
+import type { ActionRepo, GrantRepo } from './action-repo';
+import type { AttachmentFiles } from './attachment-files';
+import type { ConversationRepo } from './conversation-repo';
 import type { PageFiles } from './page-files';
 import type { PageRepo } from './page-repo';
 import type { ProposalRecord, ProposalRepo } from './proposal-repo';
@@ -73,6 +76,10 @@ describe('AppDeps', () => {
     expectTypeOf<AppDeps['proposals']>().toEqualTypeOf<ProposalRepo>();
     expectTypeOf<AppDeps['pages']>().toEqualTypeOf<PageRepo>();
     expectTypeOf<AppDeps['pageFiles']>().toEqualTypeOf<PageFiles>();
+    expectTypeOf<AppDeps['conversations']>().toEqualTypeOf<ConversationRepo>();
+    expectTypeOf<AppDeps['attachmentFiles']>().toEqualTypeOf<AttachmentFiles>();
+    expectTypeOf<AppDeps['actions']>().toEqualTypeOf<ActionRepo>();
+    expectTypeOf<AppDeps['grants']>().toEqualTypeOf<GrantRepo>();
     expectTypeOf<AppDeps['secrets']>().toEqualTypeOf<SecretVault>();
     expectTypeOf<AppDeps['transports']>().toEqualTypeOf<TransportResolver>();
     expectTypeOf<AppDeps['commands']>().toEqualTypeOf<CommandRunner>();
@@ -112,6 +119,10 @@ describe('AppDeps', () => {
       | 'proposals'
       | 'pages'
       | 'pageFiles'
+      | 'conversations'
+      | 'attachmentFiles'
+      | 'actions'
+      | 'grants'
       | 'secrets'
       | 'transports'
       | 'commands'
@@ -128,6 +139,7 @@ describe('AppDeps', () => {
       | 'phaseAutoRuns'
       | 'scratch'
       | 'repoFolders'
+      | 'repoFiles'
       | 'machine'
       | 'dispatchStatus'
       | 'runTokens'
@@ -195,7 +207,7 @@ describe('port shapes', () => {
     expectTypeOf<ProposalRecord['scope']>().toEqualTypeOf<DefinitionScope>();
     expectTypeOf<AuditEntry['action']>().toEqualTypeOf<AuditAction>();
     expectTypeOf<AuditSubject['kind']>().toEqualTypeOf<
-      'work_order' | 'run' | 'proposal' | 'page' | 'account' | 'binding' | 'project' | 'repo' | 'capability' | 'settings'
+      'work_order' | 'run' | 'proposal' | 'page' | 'conversation' | 'account' | 'binding' | 'project' | 'repo' | 'capability' | 'settings'
     >();
     expectTypeOf<BindingScope['level']>().toEqualTypeOf<'global' | 'project' | 'repo' | 'workOrder'>();
     expectTypeOf<DefinitionScope['kind']>().toEqualTypeOf<'global' | 'project' | 'repo'>();

@@ -4,7 +4,7 @@
 // knows Electron, the socket or the app: the tool call is injected.
 import { StringDecoder } from 'node:string_decoder';
 
-import { DOCKET_TOOL_DEFINITIONS, DOCKET_TOOLS_INSTRUCTIONS } from '../../application/index';
+import { DOCKET_TOOL_DEFINITIONS_BY_KIND, DOCKET_TOOLS_INSTRUCTIONS_BY_KIND, type RunTokenKind } from '../../application/index';
 
 export type McpToolOutcome =
   | { readonly ok: true; readonly result: unknown }
@@ -39,7 +39,14 @@ const toolResult = (outcome: McpToolOutcome): unknown =>
     ? { content: [{ type: 'text', text: JSON.stringify(outcome.result) }] }
     : { isError: true, content: [{ type: 'text', text: JSON.stringify({ code: outcome.code }) }] };
 
-export function createMcpServer(options: { readonly call: McpToolCall }): McpServer {
+export interface McpServerOptions {
+  readonly call: McpToolCall;
+  /** Which tool list to show; `run` when absent. Only a listing: the app decides by the token. */
+  readonly kind?: RunTokenKind;
+}
+
+export function createMcpServer(options: McpServerOptions): McpServer {
+  const kind: RunTokenKind = options.kind ?? 'run';
   const callTool = async (id: Id, params: Readonly<Record<string, unknown>> | undefined): Promise<string> => {
     const name = params?.['name'];
     if (typeof name !== 'string') return replyError(id, -32602, 'Invalid params');
@@ -77,7 +84,7 @@ export function createMcpServer(options: { readonly call: McpToolCall }): McpSer
               protocolVersion,
               capabilities: { tools: {} },
               serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
-              instructions: DOCKET_TOOLS_INSTRUCTIONS,
+              instructions: DOCKET_TOOLS_INSTRUCTIONS_BY_KIND[kind],
             }),
           ];
         }
@@ -86,7 +93,7 @@ export function createMcpServer(options: { readonly call: McpToolCall }): McpSer
         case 'tools/list':
           return [
             reply(id, {
-              tools: DOCKET_TOOL_DEFINITIONS.map((tool) => ({
+              tools: DOCKET_TOOL_DEFINITIONS_BY_KIND[kind].map((tool) => ({
                 name: tool.name,
                 description: tool.description,
                 inputSchema: tool.inputSchema,
@@ -108,12 +115,14 @@ export interface StdioServerOptions {
   /** Where diagnostics go (the child's stderr): codes only, never arguments, results or the token. */
   readonly diagnostics: { write(chunk: string): unknown };
   readonly call: McpToolCall;
+  readonly kind?: RunTokenKind;
 }
 
 /** Frames `input` into lines, answers each in order on `output`, resolves when the input ends.
  *  stdout carries protocol lines and nothing else. */
 export async function runStdioServer(options: StdioServerOptions): Promise<void> {
   const server = createMcpServer({
+    ...(options.kind === undefined ? {} : { kind: options.kind }),
     call: async (tool, args) => {
       const outcome = await options.call(tool, args);
       if (!outcome.ok) options.diagnostics.write(`docket-mcp: ${tool} failed (${outcome.code})\n`);

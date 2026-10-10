@@ -16,6 +16,7 @@ import { createAccountViewStore } from './stores/account-view';
 import { createBoardStore } from './stores/board';
 import { createCockpitStore } from './stores/cockpit';
 import { createLivePaneStore } from './stores/live-pane';
+import { createLibraryStore } from './stores/library';
 import { createLocaleStore, type LocaleStore } from './stores/locale';
 import { createProjectTreeStore } from './stores/project-tree';
 import { createRoadmapStore } from './stores/roadmap';
@@ -97,6 +98,8 @@ if (mount !== null) {
       return () => cancelAnimationFrame(handle);
     },
   });
+  // The Artifact'lar library (U-84 … U-89): the screen's store, also the sidebar row's count.
+  const library = createLibraryStore({ api, changes, actor: USER });
   const settings = createSettingsStore({ api, changes, actor: USER, locale: locale.current, timeZone });
   // The settings panel's per-account model list and its spend-consent flow (P-40).
   const accountModels = createAccountModelsStore({ api, changes, actor: USER });
@@ -143,6 +146,7 @@ if (mount !== null) {
           pageList={pageList}
           pageViewer={pageViewer}
           pageHost={pageHost}
+          library={library}
           accountView={accountView}
           settings={settings}
           models={accountModels}

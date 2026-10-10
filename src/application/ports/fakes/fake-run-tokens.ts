@@ -1,7 +1,7 @@
 // In-memory RunTokens — deterministic tokens ("fake-token-1", …) with the live set exposed.
 import type { RunId } from '../../../domain/index';
 
-import type { RunTokenBinding, RunTokens } from '../run-tokens';
+import { runTokenOwner, type RunTokenBinding, type RunTokens } from '../run-tokens';
 
 export interface FakeRunTokens extends RunTokens {
   /** Every token ever minted, in order, live or not. */
@@ -22,7 +22,7 @@ export const createFakeRunTokens = (): FakeRunTokens => {
     },
     resolve: (token) => bindings.get(token),
     revoke: (runId: RunId) => {
-      for (const [token, binding] of [...bindings]) if (binding.runId === runId) bindings.delete(token);
+      for (const [token, binding] of [...bindings]) if (runTokenOwner(binding) === runId) bindings.delete(token);
     },
     minted: () => [...all],
     live: () => [...bindings.keys()],

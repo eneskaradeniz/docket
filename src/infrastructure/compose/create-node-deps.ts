@@ -26,6 +26,8 @@ import {
   createSqliteAppSettingsRepo,
   createSqliteBindingRepo,
   createSqliteEventLog,
+  createSqliteActionRepo,
+  createSqliteConversationRepo,
   createSqlitePageRepo,
   createSqlitePhaseAutoRunRepo,
   createSqliteProjectPaths,
@@ -46,7 +48,10 @@ import { createQuotaProbeResolver } from '../providers/quota/index';
 import { createNodeAccountScan, createNodeCapabilityScan, createNodeCredentialImporter, type LoginStates } from '../providers/discovery/index';
 import { createNodeRunTokens } from '../mcp/index';
 import { createNodeInstructionFiles } from './instruction-files';
+import { createFsAttachmentFiles } from './attachment-files';
+import { createMemoryGrantRepo } from './grant-repo';
 import { createFsPageFiles } from './page-files';
+import { createRepoFileReader } from './repo-file-reader';
 import { createRunDirs } from './run-dirs';
 
 export interface NodeDepsConfig {
@@ -94,6 +99,7 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
   const projectPaths: ProjectPaths = createSqliteProjectPaths(db);
   const accounts = createSqliteAccountRepo(db);
   const secrets = createKeychainVault(db, config.cipher);
+  const definitions = createYamlDefinitionStore({ globalRoot: config.dataDir, repos, projects: projectPaths });
   const deps: AppDeps = {
     clock,
     ids: createUlidGen(clock, config.random),
@@ -118,10 +124,14 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     settings: createSqliteAppSettingsRepo(db),
     phaseAutoRuns: createSqlitePhaseAutoRunRepo(db),
     queue: createSqliteQueueRepo(db),
-    definitions: createYamlDefinitionStore({ globalRoot: config.dataDir, repos, projects: projectPaths }),
+    definitions,
     proposals: createSqliteProposalRepo(db),
     pages: createSqlitePageRepo(db),
     pageFiles: createFsPageFiles(config.dataDir),
+    conversations: createSqliteConversationRepo(db),
+    attachmentFiles: createFsAttachmentFiles(config.dataDir),
+    actions: createSqliteActionRepo(db),
+    grants: createMemoryGrantRepo(),
     secrets,
     transports: config.transports,
     commands: createCommandRunner({ env: config.commandEnv }),
@@ -137,6 +147,9 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     accountTests: createMemoryAccountTestRepo(),
     scratch: createScratchDirs(),
     repoFolders: createRepoFolders(),
+    // Reads go to the repo's registered main checkout, and every line is redacted with the scanner's
+    // real patterns at the port boundary, like the checkpoints.
+    repoFiles: createRepoFileReader({ repoPath: (repo) => definitions.repoPath(repo), redact: redactSecrets }),
     machine: createNodeMachineProbe(),
     dispatchStatus: createMemoryDispatchStatus(),
     runTokens: createNodeRunTokens(),

@@ -128,6 +128,7 @@ const SUCCESS_KEYS: Readonly<Record<Command['type'], LabelKey>> = {
   'page.comment': 'page.toast.commented',
   'page.requestApproval': 'page.toast.requested',
   'page.decide': 'page.toast.approved',
+  'page.pin': 'editor.saved',
   'app.update.check': 'success.app.update.check',
   'app.update.apply': 'success.app.update.apply',
 };
@@ -140,6 +141,7 @@ const PAGE_FAILURE_KEYS: Readonly<Record<string, LabelKey>> = {
   not_found: 'page.error.not_found',
   not_pending: 'page.error.not_pending',
   self_approval: 'page.error.self_approval',
+  too_many_pinned: 'page.error.too_many_pinned',
 };
 
 /** The page screen's failure sentence for a code. */

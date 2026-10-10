@@ -1,13 +1,16 @@
 // The dependency bundle every use case and service takes a Pick of.
 import type { AccountRepo } from './account-repo';
 import type { AccountTestRepo } from './account-test-repo';
+import type { ActionRepo, GrantRepo } from './action-repo';
 import type { TransportResolver } from './agent-transport';
 import type { AppSettingsRepo } from './app-settings-repo';
+import type { AttachmentFiles } from './attachment-files';
 import type { BindingRepo } from './binding-repo';
 import type { CapabilityCatalog } from './capability-catalog';
 import type { CapabilityDiscovery } from './capability-discovery';
 import type { CheckpointCommitter } from './checkpoints';
 import type { Clock } from './clock';
+import type { ConversationRepo } from './conversation-repo';
 import type { DefinitionStore } from './definition-store';
 import type { EventLog } from './event-log';
 import type { GitProbe } from './git-probe';
@@ -26,6 +29,7 @@ import type { RepoFolders } from './repo-folders';
 import type { RepoRegistry } from './repo-registry';
 import type { RunDirs } from './run-dirs';
 import type { RunRepo } from './run-repo';
+import type { RepoFileReader } from './repo-file-reader';
 import type { McpEndpoint, RunTokens } from './run-tokens';
 import type { ScratchDirs } from './scratch-dirs';
 import type { SecretVault } from './secret-vault';
@@ -51,6 +55,10 @@ export interface AppDeps {
   readonly proposals: ProposalRepo;
   readonly pages: PageRepo;
   readonly pageFiles: PageFiles;
+  readonly conversations: ConversationRepo;
+  readonly attachmentFiles: AttachmentFiles;
+  readonly actions: ActionRepo;
+  readonly grants: GrantRepo;
   readonly secrets: SecretVault;
   readonly transports: TransportResolver;
   readonly commands: CommandRunner;
@@ -66,6 +74,8 @@ export interface AppDeps {
   readonly phaseAutoRuns: PhaseAutoRunRepo;
   readonly scratch: ScratchDirs;
   readonly repoFolders: RepoFolders;
+  /** Read-only text files of registered repos (the assistant's docket_read_file). */
+  readonly repoFiles: RepoFileReader;
   readonly worktreeFiles: WorktreeFiles;
   readonly machine: MachineProbe;
   readonly dispatchStatus: DispatchStatusHolder;

@@ -2,12 +2,15 @@
 // Contract: docs/v2/application.md (rules for fakes A-1 … A-4).
 export * from './fake-account-repo';
 export * from './fake-account-test-repo';
+export * from './fake-action-repo';
 export * from './fake-app-settings-repo';
+export * from './fake-attachment-files';
 export * from './fake-binding-repo';
 export * from './fake-capability-catalog';
 export * from './fake-capability-discovery';
 export * from './fake-checkpoints';
 export * from './fake-clock';
+export * from './fake-conversation-repo';
 export * from './fake-definition-store';
 export * from './fake-deps';
 export * from './fake-event-log';
@@ -26,6 +29,7 @@ export * from './fake-project-repo';
 export * from './fake-proposal-repo';
 export * from './fake-queue-repo';
 export * from './fake-repo-folders';
+export * from './fake-repo-file-reader';
 export * from './fake-repo-registry';
 export * from './fake-repo-tools';
 export * from './fake-run-dirs';

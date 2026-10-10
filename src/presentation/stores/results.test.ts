@@ -91,6 +91,12 @@ describe('results mapping', () => {
     expect(pageDecideKey('rejected', false)).toBe('page.toast.rejected');
   });
 
+  it('U-87: page.pin refusals have their own sentences — too_many_pinned names the limit, not_found is page-worded', () => {
+    expect(commandResultKey('page.pin', { ok: false, code: 'too_many_pinned' })).toBe('page.error.too_many_pinned');
+    expect(commandResultKey('page.pin', { ok: false, code: 'not_found' })).toBe('page.error.not_found');
+    expect(commandResultKey('page.pin', { ok: false, code: 'mystery' })).toBe(GENERIC_FAILURE_KEY);
+  });
+
   it('U-80: every page failure has its own sentence — the shared codes read page-worded, never the gate wording', () => {
     const codes = ['stale_version', 'not_pending', 'self_approval', 'not_found', 'unknown_version', 'empty_comment', 'comment_too_long'];
     const keys = codes.map((code) => commandResultKey('page.decide', { ok: false, code }));

@@ -9,6 +9,8 @@ import {
   addVersion,
   decideApproval,
   markDelivered,
+  PAGE_KIND_NAMES_TR,
+  pageKindNameTr,
   publishPage,
   requestApproval,
   sha256Hex,
@@ -400,5 +402,13 @@ describe('R-80: markDelivered', () => {
     expect(markDelivered(once, [C3], 99)).toEqual(once);
     expect(markDelivered(once, [C1, C1, C2], 60)[1]?.deliveredAt).toBe(60);
     expect(markDelivered(once, [C1, C1, C2], 60)[0]?.deliveredAt).toBe(50);
+  });
+});
+
+describe('R-105: kind display names', () => {
+  it('R-105: every page kind has its Turkish display name, defined once', () => {
+    const kinds: readonly PageKind[] = ['html', 'diagram', 'markdown', 'table', 'image', 'report'];
+    expect(kinds.map((kind) => pageKindNameTr(kind))).toEqual(['taslak', 'diyagram', 'metin markdown', 'tablo', 'resim', 'rapor']);
+    expect(Object.keys(PAGE_KIND_NAMES_TR).sort()).toEqual([...kinds].sort());
   });
 });

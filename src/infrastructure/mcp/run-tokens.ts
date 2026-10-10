@@ -3,7 +3,7 @@
 // or serialises one.
 import { randomBytes } from 'node:crypto';
 
-import type { RunTokenBinding, RunTokens } from '../../application/index';
+import { runTokenOwner, type RunTokenBinding, type RunTokens } from '../../application/index';
 import type { RunId } from '../../domain/index';
 
 const TOKEN_BYTES = 32;
@@ -25,7 +25,7 @@ export function createNodeRunTokens(random: TokenRandom = (length) => randomByte
     },
     resolve: (token) => live.get(token),
     revoke: (runId: RunId) => {
-      for (const [token, binding] of [...live]) if (binding.runId === runId) live.delete(token);
+      for (const [token, binding] of [...live]) if (runTokenOwner(binding) === runId) live.delete(token);
     },
   };
 }

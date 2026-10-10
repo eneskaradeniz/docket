@@ -3,13 +3,16 @@ import type { AppDeps } from '../deps';
 
 import { createFakeAccountRepo } from './fake-account-repo';
 import { createFakeAccountTestRepo } from './fake-account-test-repo';
+import { createFakeActionRepo, createFakeGrantRepo } from './fake-action-repo';
 import { createFakeAppSettingsRepo } from './fake-app-settings-repo';
+import { createFakeAttachmentFiles } from './fake-attachment-files';
 import { createFakeBindingRepo } from './fake-binding-repo';
 import { createFakeCapabilityCatalog } from './fake-capability-catalog';
 import { createFakeCapabilityDiscovery } from './fake-capability-discovery';
 import { createFakeCheckpointCommitter } from './fake-checkpoints';
 import { createFakeClock } from './fake-clock';
 import { createFakeCommandRunner, createFakeEvidenceChecker, createFakeSecretScanner, createFakeWorktrees } from './fake-repo-tools';
+import { createFakeConversationRepo } from './fake-conversation-repo';
 import { createFakeDefinitionStore } from './fake-definition-store';
 import { createFakeEventLog } from './fake-event-log';
 import { createFakeGitProbe } from './fake-git-probe';
@@ -25,6 +28,7 @@ import { createFakeProjectRepo } from './fake-project-repo';
 import { createFakeProposalRepo } from './fake-proposal-repo';
 import { createFakeQueueRepo } from './fake-queue-repo';
 import { createFakeRepoFolders } from './fake-repo-folders';
+import { createFakeRepoFileReader } from './fake-repo-file-reader';
 import { createFakeRepoRegistry } from './fake-repo-registry';
 import { createFakeRunDirs } from './fake-run-dirs';
 import { createFakeRunRepo } from './fake-run-repo';
@@ -57,6 +61,10 @@ export const createFakeDeps = (overrides: Partial<AppDeps> = {}): AppDeps => ({
   proposals: createFakeProposalRepo(),
   pages: createFakePageRepo(),
   pageFiles: createFakePageFiles(),
+  conversations: createFakeConversationRepo(),
+  attachmentFiles: createFakeAttachmentFiles(),
+  actions: createFakeActionRepo(),
+  grants: createFakeGrantRepo(),
   secrets: createFakeSecretVault(),
   transports: createFakeTransportResolver(),
   commands: createFakeCommandRunner(),
@@ -72,6 +80,7 @@ export const createFakeDeps = (overrides: Partial<AppDeps> = {}): AppDeps => ({
   phaseAutoRuns: createFakePhaseAutoRunRepo(),
   scratch: createFakeScratchDirs(),
   repoFolders: createFakeRepoFolders(),
+  repoFiles: createFakeRepoFileReader(),
   worktreeFiles: createFakeWorktreeFiles(),
   machine: createFakeMachineProbe(),
   dispatchStatus: createFakeDispatchStatus(),
