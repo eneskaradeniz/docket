@@ -20,6 +20,7 @@ import type { StageFilesView, WorktreeFilePreview } from '../../api/queries';
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
 import { ActionButton } from '../components/action-button';
+import { WorkOrderLaunchers } from '../components/launcher-rows';
 import { SectionCard } from '../components/section-card';
 import { StateBadge, type BadgeTone } from '../components/state-badge';
 import { formatWorkOrderCode } from '../stores/work-order-code';
@@ -469,6 +470,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
               {view.record.repo} · {view.record.flow}
               {currentStage !== undefined ? ` · ${currentStage.name}` : ''}
             </p>
+            <WorkOrderLaunchers workOrder={workOrderId} status={view.state.status} />
           </>
         )}
       </header>

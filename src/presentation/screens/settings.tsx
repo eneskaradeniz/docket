@@ -21,6 +21,7 @@ import { AccountGroups, candidateRowView, type AccountRowView } from '../compone
 import { AccountsScanning } from '../components/accounts-scanning';
 import { AccountTest } from '../components/account-test';
 import { ActionButton } from '../components/action-button';
+import { SettingsLaunchers } from '../components/launcher-rows';
 import { AppearanceRows } from '../components/appearance-rows';
 import { ConcurrencySection } from '../components/concurrency-section';
 import { KeyMoveCard } from '../components/key-move-card';
@@ -631,6 +632,8 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
               {t(locale, failureKey(state.problem))}
             </div>
           ) : null}
+
+          <SettingsLaunchers section={section} onLaunch={onClose} />
 
           {section === 'accounts' ? accountsSection : null}
           {section === 'roles' ? rolesSection : null}

@@ -9,9 +9,11 @@
 // Tailwind's preflight puts line-height 1.5 on the root.
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 
+import type { ChatScopeInput } from '../../api/commands';
 import type { PageListItem } from '../../api/queries';
 import { ActionButton } from '../components/action-button';
 import { formatAge } from '../components/cockpit-format';
+import { PageLaunchers } from '../components/launcher-rows';
 import { SectionCard } from '../components/section-card';
 import { StateBadge, type BadgeTone } from '../components/state-badge';
 import type { LabelKey } from '../labels/keys';
@@ -176,6 +178,9 @@ export interface PageViewerScreenProps {
   /** The clock the ages read against. */
   readonly now: number;
   readonly onBack: () => void;
+  /** The scope of the "Yorumlarımı düzelt" launcher — the page's work order, else its project —
+   *  or null while the shell does not know it yet. */
+  readonly launchScope?: ChatScopeInput | null;
 }
 
 const asRect = (box: DOMRect): Rect => ({ x: box.left, y: box.top, width: box.width, height: box.height });
@@ -191,7 +196,7 @@ const toastStackRect = (): Rect | null => {
   return null;
 };
 
-export function PageViewerScreen({ store, host, pageId, locale, overlayOpen, now, onBack }: PageViewerScreenProps) {
+export function PageViewerScreen({ store, host, pageId, locale, overlayOpen, now, onBack, launchScope = null }: PageViewerScreenProps) {
   const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   const hostState = useSyncExternalStore(host.subscribe, host.state, host.state);
   const toasts = useSyncExternalStore(toastStore.subscribe, toastStore.state, toastStore.state);
@@ -336,6 +341,7 @@ export function PageViewerScreen({ store, host, pageId, locale, overlayOpen, now
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <PageLaunchers scope={launchScope} openComments={detail.comments.filter((comment) => !comment.delivered).length} />
           <select
             data-page-version
             aria-label={t(locale, 'page.version.label')}

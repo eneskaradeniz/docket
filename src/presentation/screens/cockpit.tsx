@@ -18,6 +18,7 @@ import { CockpitSection } from '../components/cockpit-section';
 import { CockpitRunningRow } from '../components/cockpit-running';
 import { CockpitAlert, FirstRunCard, QuietRow, SectionHead } from '../components/cockpit-states';
 import { CockpitSkeleton } from '../components/cockpit-skeleton';
+import { HomeLaunchers } from '../components/launcher-rows';
 import { SkeletonReveal, useSkeleton } from '../components/skeleton';
 import type { AccountCard } from '../stores/accounts-frame';
 import {
@@ -151,6 +152,8 @@ export function CockpitScreen({ store, marks, locale, onOpenWorkOrder, onOpenPro
           </p>
         ) : null}
       </header>
+
+      <HomeLaunchers />
 
       {state.failed ? <CockpitAlert locale={locale} detail={staleDetail} onRetry={() => void store.retry()} /> : null}
 
