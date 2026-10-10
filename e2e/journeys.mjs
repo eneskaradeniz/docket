@@ -1,4 +1,4 @@
-// e2e/journeys.mjs — `npm run test:journeys`. J-1 … J-13 of docs/v2/ui.md → "Verifying the shell",
+// e2e/journeys.mjs — `npm run test:journeys`. J-1 … J-14 of docs/v2/ui.md → "Verifying the shell",
 // driven through the BUILT app on the design seed (e2e/seed-design.ts). Every step asserts visible
 // text and saves a screenshot to e2e/.out/journeys/, and every outcome lands in the structured
 // report (e2e/report.mjs) as it is printed.
@@ -1123,6 +1123,137 @@ for (const [sizeName, theme] of combos) {
     console.log(`  FAIL ${title}\n       ${String(error).slice(0, 600)}`);
     appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).slice(0, 600) });
     await page.screenshot({ path: join(OUT, 'J-13-FAIL.png') }).catch(() => undefined);
+  }
+  await handle.app.close();
+  await probe.close();
+}
+
+// J-14 walks the Artifact'lar library (U-84 … U-90) on the page world's launch: two pages — the
+// assistant-made html page of the work order ("Hostile page", sürüm 2) and the operator's markdown
+// note on the project ("Giriş ekranı notları", no work order). It runs on its own launch, so what
+// J-12 and J-13 did (a pinned page, an approval) cannot leak in. No account, no keychain, no agent
+// run: the only command is the library's own page.pin. Once per run, like J-10 … J-13.
+{
+  const handle = await launchPageViewApp();
+  const { page, seed, probe } = handle;
+  const toastWith = (t) => page.locator('[data-toast]').filter({ hasText: t }).first();
+  // The toast stack sits top-right, where the filter bar's controls can be: it is closed before any
+  // step reaches an element it could cover, and the step waits until none is left.
+  const dismissToasts = async () => {
+    const toasts = page.locator('[data-toast]');
+    for (let left = await toasts.count(); left > 0; left = await toasts.count()) {
+      await toasts.first().getByRole('button', { name: 'Kapat' }).click({ timeout: WAIT });
+      await page.waitForFunction((n) => document.querySelectorAll('[data-toast]').length < n, left, { timeout: WAIT });
+    }
+  };
+  const screen = page.locator('[data-library-screen]');
+  const card = (id) => screen.locator(`[data-library-card="${id}"]`);
+  const search = () => screen.locator('[data-library-search]');
+  /** A segment of one of the filter bar's two controls, by its region and text. */
+  const segment = (region, label) => screen.locator(`[data-library-${region}]`).getByRole('button', { name: label, exact: true });
+  /** Waits (load-dependent: SCAN_WAIT) until exactly these cards stand in the grid. */
+  const cardsAre = async (ids, what) => {
+    for (const id of [seed.pageId, seed.notePageId]) {
+      await card(id).waitFor({ state: ids.includes(id) ? 'visible' : 'detached', timeout: SCAN_WAIT });
+    }
+    assert.equal(await screen.locator('[data-library-card]').count(), ids.length, `${what}: the grid must hold exactly ${ids.length} card(s)`);
+  };
+
+  let stepNo = 0;
+  const steps = [];
+  const shot = async (label) => {
+    stepNo += 1;
+    steps.push(label);
+    const slug = label.toLowerCase().replace(/[^a-z0-9ğüşıöç]+/g, '-').replace(/^-|-$/g, '');
+    await page.screenshot({ path: join(OUT, `J-14-${stepNo}-${slug}.png`) });
+  };
+  const title = "J-14: Artifact'lar: kartlar, Türkçe arama, tür süzgeci, sabitleme, Sabitler, aç ve ‹ Geri";
+  total += 1;
+  try {
+    // The sidebar row between Ara and Telefon carries the total count (the world holds two pages).
+    const row = page.locator('[data-nav-library]');
+    await row.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await row.locator('[data-library-count]').filter({ hasText: '2' }).waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await row.click({ timeout: WAIT });
+    await screen.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    assert.equal(await row.getAttribute('aria-current'), 'page', "the Artifact'lar row is current on the library");
+
+    // Both pages are cards, each with the chips its data carries.
+    await cardsAre([seed.pageId, seed.notePageId], 'the full library');
+    const htmlText = (await card(seed.pageId).textContent()) ?? '';
+    for (const part of ['Hostile page', 'html', 'sürüm 2', 'asistan']) assert(htmlText.includes(part), `the html card must show "${part}", saw "${htmlText}"`);
+    const noteText = (await card(seed.notePageId).textContent()) ?? '';
+    for (const part of [seed.noteTitle, 'markdown', 'Sayfa Atölyesi', 'sürüm 1', 'sen']) assert(noteText.includes(part), `the note card must show "${part}", saw "${noteText}"`);
+    assert(!((await screen.locator('[data-library-kind]').textContent()) ?? '').includes('Resim'), 'no image page is loaded, so no Resim segment');
+    await shot('kartlar');
+
+    // "taslak" is the html kind's Turkish name: the server finds the html page and only it.
+    await search().fill('taslak', { timeout: WAIT });
+    await cardsAre([seed.pageId], 'search "taslak"');
+    await shot('arama-taslak');
+
+    // Escape clears the field and the full library returns.
+    await search().press('Escape', { timeout: WAIT });
+    await cardsAre([seed.pageId, seed.notePageId], 'after Escape');
+    assert.equal(await search().inputValue(), '', 'Escape clears the search field');
+
+    // No Turkish characters typed, the page whose title has them is still found.
+    await search().fill('giris ekrani', { timeout: WAIT });
+    await cardsAre([seed.notePageId], 'search "giris ekrani"');
+    await shot('arama-giris-ekrani');
+    await search().fill('', { timeout: WAIT });
+    await cardsAre([seed.pageId, seed.notePageId], 'search cleared');
+
+    // The kind control: Metin keeps the note, Tümü brings the library back.
+    await segment('kind', 'Metin').click({ timeout: WAIT });
+    await cardsAre([seed.notePageId], 'kind Metin');
+    await segment('kind', 'Tümü').click({ timeout: WAIT });
+    await cardsAre([seed.pageId, seed.notePageId], 'kind Tümü');
+
+    // Pin the html page: the toast says so only after the api confirmed it, the star stands pressed.
+    await dismissToasts();
+    const pin = card(seed.pageId).locator('[data-library-pin]');
+    assert.equal(await pin.getAttribute('aria-pressed'), 'false', 'nothing is pinned yet');
+    await pin.click({ timeout: WAIT });
+    await toastWith('Sabitlendi').waitFor({ state: 'visible', timeout: WAIT });
+    await card(seed.pageId).locator('[data-library-pin][aria-pressed="true"]').waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    assert.equal(await card(seed.pageId).locator('[data-library-pin]').getAttribute('aria-label'), 'Sabiti kaldır');
+    await shot('sabitlendi');
+
+    // Sabitler shows the pinned page alone; with a kind and a search on top, the filters are what
+    // must come back after opening a card.
+    await dismissToasts();
+    await segment('view', 'Sabitler').click({ timeout: WAIT });
+    await cardsAre([seed.pageId], 'Sabitler');
+    await segment('kind', 'Taslak').click({ timeout: WAIT });
+    await search().fill('taslak', { timeout: WAIT });
+    await cardsAre([seed.pageId], 'Sabitler + Taslak + "taslak"');
+    await shot('sabitler');
+
+    // Click the card (its title, not the star): the page viewer opens, and ‹ Geri returns here.
+    await card(seed.pageId).locator('[data-library-row="title"]').click({ timeout: WAIT });
+    const viewer = page.locator('[data-page-screen]');
+    await viewer.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await viewer.locator('[data-page-guard]').waitFor({ state: 'visible', timeout: WAIT });
+    assert(((await viewer.locator('[data-page-header]').textContent()) ?? '').includes('Hostile page'), 'the viewer shows the opened page');
+    await shot('goruntuleyici');
+    await viewer.getByRole('button', { name: '‹ Geri' }).click({ timeout: WAIT });
+    await screen.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await cardsAre([seed.pageId], 'back on the library');
+    assert.equal(await search().inputValue(), 'taslak', 'the search text survives the round trip');
+    for (const [region, label] of [['kind', 'Taslak'], ['view', 'Sabitler']]) {
+      await screen.locator(`[data-library-${region}] button[aria-pressed="true"]`).filter({ hasText: label }).waitFor({ state: 'visible', timeout: WAIT });
+    }
+    await shot('geri');
+    assert.deepEqual(probe.hits, [], `the probe saw requests: ${probe.hits.join(' | ')}`);
+
+    console.log(`  ok   ${title}`);
+    appendJourney({ id: title, status: 'ok', steps });
+  } catch (error) {
+    failures.push(title);
+    console.log(`  FAIL ${title}\n       ${String(error).slice(0, 600)}`);
+    appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).slice(0, 600) });
+    await page.screenshot({ path: join(OUT, 'J-14-FAIL.png') }).catch(() => undefined);
   }
   await handle.app.close();
   await probe.close();

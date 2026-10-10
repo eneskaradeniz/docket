@@ -22,9 +22,12 @@ describe('sidebar frame (U-51)', () => {
         homeCurrent: false,
         searchCurrent: false,
         settingsSection: null,
+        libraryCurrent: false,
+        libraryCount: 0,
         badge: null,
         onHome: () => undefined,
         onSearch: () => undefined,
+        onLibrary: () => undefined,
         onPhone: () => undefined,
         onSettings: () => undefined,
       }),
@@ -33,5 +36,45 @@ describe('sidebar frame (U-51)', () => {
     expect(html).toContain('Anasayfa');
     expect(html).toMatch(/text-\[12px\][^>]*>⌘K|⌘K/);
     expect(html).not.toContain('text-[10.5px]');
+  });
+
+  const nav = (patch: { readonly libraryCurrent?: boolean; readonly libraryCount?: number; readonly locale?: 'tr' | 'en' } = {}): string =>
+    renderToStaticMarkup(
+      createElement(SidebarNav, {
+        locale: patch.locale ?? 'tr',
+        homeCurrent: false,
+        searchCurrent: false,
+        settingsSection: null,
+        libraryCurrent: patch.libraryCurrent ?? false,
+        libraryCount: patch.libraryCount ?? 0,
+        badge: null,
+        onHome: () => undefined,
+        onSearch: () => undefined,
+        onLibrary: () => undefined,
+        onPhone: () => undefined,
+        onSettings: () => undefined,
+      }),
+    );
+
+  it("U-84: the Artifact'lar row stands between Ara and Telefon", () => {
+    const html = nav();
+    const order = ['Anasayfa', 'Ara', 'Artifact&#x27;lar', 'Telefon', 'Ayarlar'].map((label) => html.indexOf(label));
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(html).toContain('data-nav-library');
+  });
+
+  it('U-84: the row shows the total count in mono only when it is above zero', () => {
+    expect(nav({ libraryCount: 0 })).not.toContain('data-library-count');
+    const html = nav({ libraryCount: 7 });
+    expect(html).toMatch(/data-library-count[^>]*>7</);
+    expect(html.slice(html.indexOf('data-library-count') - 200, html.indexOf('data-library-count') + 200)).toContain('font-mono');
+  });
+
+  it('U-84: the row is current on the library route and not otherwise', () => {
+    const on = nav({ libraryCurrent: true });
+    const row = (html: string): string => html.slice(html.indexOf('data-nav-library') - 300, html.indexOf('data-nav-library') + 100);
+    expect(row(on)).toContain('aria-current="page"');
+    expect(row(nav())).not.toContain('aria-current');
   });
 });

@@ -141,6 +141,7 @@ const PAGE_FAILURE_KEYS: Readonly<Record<string, LabelKey>> = {
   not_found: 'page.error.not_found',
   not_pending: 'page.error.not_pending',
   self_approval: 'page.error.self_approval',
+  too_many_pinned: 'page.error.too_many_pinned',
 };
 
 /** The page screen's failure sentence for a code. */
