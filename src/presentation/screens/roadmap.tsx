@@ -11,6 +11,7 @@ import { useEffect, useSyncExternalStore } from 'react';
 
 import type { RoadmapPageView } from '../../api/queries';
 import { t, type Locale } from '../labels/t';
+import { RoadmapLaunchers } from '../components/launcher-rows';
 import {
   phaseControl,
   phaseRunCounts,
@@ -414,6 +415,7 @@ export function RoadmapScreen({ store, project, name, locale, onOpenRepo, onOpen
           <span className="flex-none whitespace-nowrap text-[0.78125rem] text-inkdim">{t(locale, 'roadmap.title')}</span>
         </div>
         <p className="text-xs text-inkdim">{t(locale, 'roadmap.caption')}</p>
+        <RoadmapLaunchers project={project} />
       </header>
 
       {state.loading && view === null && state.problem === null ? (

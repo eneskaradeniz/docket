@@ -1,4 +1,4 @@
-// e2e/journeys.mjs — `npm run test:journeys`. J-1 … J-15 of docs/v2/ui.md → "Verifying the shell",
+// e2e/journeys.mjs — `npm run test:journeys`. J-1 … J-16 of docs/v2/ui.md → "Verifying the shell",
 // driven through the BUILT app on the design seed (e2e/seed-design.ts). Every step asserts visible
 // text and saves a screenshot to e2e/.out/journeys/, and every outcome lands in the structured
 // report (e2e/report.mjs) as it is printed.
@@ -1525,6 +1525,116 @@ for (const [sizeName, theme] of combos) {
     console.log(`  FAIL ${title}\n       ${String(error).slice(0, 600)}`);
     appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).slice(0, 600) });
     await page.screenshot({ path: join(OUT, 'J-15-FAIL.png') }).catch(() => undefined);
+  }
+  await handle.app.close();
+  await probe.close();
+}
+
+// J-16 walks the contextual launchers (U-126 … U-135) on the chat world J-15 uses: the same panel opens
+// from a button on the host screen with its scope and a starter text that is NOT sent. Hermetic like
+// J-15: no account, no keychain, no model, so sending is never part of it. Once per run.
+{
+  const handle = await launchChatApp();
+  const { page, seed, probe, errors } = handle;
+  const chip = page.locator('[data-chat-chip]');
+  const feed = page.locator('[data-chat-feed]');
+  const text = page.locator('[data-chat-text]');
+  const panelIs = (open) =>
+    page.waitForFunction(
+      (want) => {
+        const panel = document.querySelector('[data-chat-panel]');
+        return panel !== null && panel.hasAttribute('inert') === !want;
+      },
+      open,
+      { timeout: WAIT },
+    );
+  const chipSays = (part) => chip.filter({ hasText: part }).waitFor({ state: 'visible', timeout: WAIT });
+  const launcher = (id) => page.locator(`[data-launch="${id}"]`);
+  /** The composer holds exactly `want`, has the focus, and the caret stands after the last character. */
+  const composerHolds = async (want) => {
+    await page.waitForFunction(
+      (expected) => {
+        const field = document.querySelector('[data-chat-text]');
+        return (
+          field instanceof HTMLTextAreaElement &&
+          field.value === expected &&
+          document.activeElement === field &&
+          field.selectionStart === expected.length &&
+          field.selectionEnd === expected.length
+        );
+      },
+      want,
+      { timeout: WAIT },
+    );
+  };
+  /** Nothing was sent: the feed still shows the empty conversation's question. */
+  const nothingSent = () => feed.getByText('Ne öğrenmek istersin?').waitFor({ state: 'visible', timeout: WAIT });
+
+  let stepNo = 0;
+  const steps = [];
+  const shot = async (label) => {
+    stepNo += 1;
+    steps.push(label);
+    const slug = label.toLowerCase().replace(/[^a-z0-9ğüşıöç]+/g, '-').replace(/^-|-$/g, '');
+    await page.screenshot({ path: join(OUT, `J-16-${stepNo}-${slug}.png`) });
+  };
+  const title = 'J-16: Docket AI başlatıcıları: Anasayfa (genel), yol haritası (proje), yarım taslak korunur, iş emrinde koşula bağlı';
+  total += 1;
+  try {
+    // Home: the global launcher opens the panel with its starter text, nothing sent, caret at the end.
+    await launcher('together').waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    assert.equal(((await launcher('together').textContent()) ?? '').trim(), 'Docket AI ile birlikte kur');
+    await launcher('together').click({ timeout: WAIT });
+    await panelIs(true);
+    await chipSays('Tüm projeler');
+    await composerHolds('Yeni bir proje kurmak istiyorum, birlikte yapalım.');
+    await nothingSent();
+    await shot('anasayfa');
+
+    // An unsent draft is never overwritten: the launcher keeps the operator's own words.
+    await text.fill('yarım kalan mesaj', { timeout: WAIT });
+    await launcher('together').click({ timeout: WAIT });
+    await composerHolds('yarım kalan mesaj');
+    await text.fill('', { timeout: WAIT });
+    await page.keyboard.press('Escape');
+    await panelIs(false);
+
+    // The project's roadmap: the project launcher, and the scope chip shows the project.
+    await page.locator('nav').getByText(seed.project, { exact: false }).first().click({ timeout: WAIT });
+    await page.locator('[data-board-card]').first().waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await page.getByText('Yol haritası ↗', { exact: true }).click({ timeout: WAIT });
+    await launcher('plan').waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    assert.equal(((await launcher('plan').textContent()) ?? '').trim(), 'Docket AI ile planla');
+    await launcher('plan').click({ timeout: WAIT });
+    await panelIs(true);
+    await chipSays(seed.project);
+    await composerHolds('Bu proje için bir yol haritası taslağı hazırla.');
+    await nothingSent();
+    await shot('yol-haritasi');
+    await text.fill('', { timeout: WAIT });
+    await page.keyboard.press('Escape');
+    await panelIs(false);
+
+    // The seeded work order is ready — neither waiting nor running — so neither question is offered.
+    await page.locator('nav').getByText(seed.project, { exact: false }).first().click({ timeout: WAIT });
+    const card = page.locator('[data-board-card]').filter({ hasText: seed.workOrderTitle }).first();
+    await card.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await card.click({ timeout: WAIT });
+    await page.getByRole('heading', { name: seed.workOrderTitle }).waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    assert.equal(await launcher('whyWaiting').count(), 0, 'a ready order has no "Bu neden beklemede?"');
+    assert.equal(await launcher('whatDoing').count(), 0, 'a ready order has no "Ne yapıyor?"');
+    await shot('is-emri-hazir');
+
+    assert.deepEqual(errors, [], `the page reported errors: ${errors.join(' | ').slice(0, 600)}`);
+    assert.deepEqual(probe.hits, [], `the probe saw requests: ${probe.hits.join(' | ')}`);
+
+    console.log(`  ok   ${title}`);
+    appendJourney({ id: title, status: 'ok', steps });
+  } catch (error) {
+    failures.push(title);
+    console.log(`  FAIL ${title}\n       ${String(error).slice(0, 600)}`);
+    appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).slice(0, 600) });
+    await page.screenshot({ path: join(OUT, 'J-16-FAIL.png') }).catch(() => undefined);
   }
   await handle.app.close();
   await probe.close();

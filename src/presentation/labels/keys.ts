@@ -1081,6 +1081,20 @@ export const LABEL_KEYS = [
   'chat.error.bad_class',
   'chat.error.conversation_full',
   'chat.ref.fallback.page',
+  'launch.together',
+  'launch.plan',
+  'launch.describe',
+  'launch.whyWaiting',
+  'launch.whatDoing',
+  'launch.setup',
+  'launch.fixComments',
+  'launch.prefill.together',
+  'launch.prefill.plan',
+  'launch.prefill.describe',
+  'launch.prefill.whyWaiting',
+  'launch.prefill.whatDoing',
+  'launch.prefill.setup',
+  'launch.prefill.fixComments',
 ] as const;
 
 export type LabelKey = (typeof LABEL_KEYS)[number];

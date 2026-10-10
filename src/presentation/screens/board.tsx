@@ -11,6 +11,7 @@ import { t, type Locale } from '../labels/t';
 import { ActionButton } from '../components/action-button';
 import { BoardKanban } from '../components/board-kanban';
 import { BoardList } from '../components/board-list';
+import { BoardLaunchers } from '../components/launcher-rows';
 import { KanbanIcon, ListIcon, PencilIcon } from '../components/board-icons';
 import { boardMotionVars } from '../components/motion';
 import { BoardSkeleton } from '../components/board-skeleton';
@@ -30,6 +31,8 @@ export interface BoardScreenProps {
   readonly roadmapProject: string | null;
   readonly onOpenRoadmap: (project: string) => void;
   readonly onOpenSettings: () => void;
+  /** The owning project's id for the create form's launcher; null when no project owns the repo. */
+  readonly launchProject?: string | null;
 }
 
 const VALIDATION_KEY: Readonly<Record<CreateValidation, LabelKey>> = {
@@ -96,7 +99,7 @@ const createToast = (locale: Locale, outcome: CreateOutcome): { readonly type: '
   return { type: 'error', text: t(locale, failureKey(outcome.code)), copy: outcome.code };
 };
 
-export function BoardScreen({ store, repo, locale, onOpenWorkOrder, roadmapProject, onOpenRoadmap, onOpenSettings }: BoardScreenProps) {
+export function BoardScreen({ store, repo, locale, onOpenWorkOrder, roadmapProject, onOpenRoadmap, onOpenSettings, launchProject = null }: BoardScreenProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
   useEffect(() => {
     void store.load(repo);
@@ -176,14 +179,17 @@ export function BoardScreen({ store, repo, locale, onOpenWorkOrder, roadmapProje
       ) : null}
 
       {view !== null && createOpen ? (
-        <BoardCreateForm
-          locale={locale}
-          title={title}
-          onTitleChange={setTitle}
-          flow={flowValue}
-          onFlowChange={setFlow}
-          onSubmit={submit}
-        />
+        <>
+          <BoardCreateForm
+            locale={locale}
+            title={title}
+            onTitleChange={setTitle}
+            flow={flowValue}
+            onFlowChange={setFlow}
+            onSubmit={submit}
+          />
+          <BoardLaunchers project={launchProject} />
+        </>
       ) : null}
 
       {!skeleton && view !== null && state.viewMode === 'kanban' ? (
