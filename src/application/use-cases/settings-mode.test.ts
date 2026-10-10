@@ -24,6 +24,14 @@ describe('dispatch mode', () => {
     expect(await getDispatchMode(deps)).toBe('auto');
   });
 
+  it('A-117: a world without the setting resolves to auto, so the e2e seeds pin fixed on purpose', async () => {
+    const { deps } = make();
+    expect(await deps.settings.get(DISPATCH_MODE_KEY)).toBeUndefined();
+    expect(await getDispatchMode(deps)).toBe('auto');
+    await deps.settings.set(DISPATCH_MODE_KEY, 'fixed');
+    expect(await getDispatchMode(deps)).toBe('fixed');
+  });
+
   it('A-118: a saved mode is stored under dispatch.mode; a save without a mode leaves the stored one alone', async () => {
     const { deps } = make();
     const limits = { global: 4, perRepo: 3, perAccount: {} };

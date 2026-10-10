@@ -63,6 +63,7 @@ import { saveAccount, saveBinding } from '../src/application/use-cases/accounts'
 import { decideHumanGate } from '../src/application/use-cases/gates';
 import { attachProject } from '../src/application/use-cases/projects';
 import { grantSpendConsent } from '../src/application/use-cases/spend-consent';
+import { DISPATCH_MODE_KEY } from '../src/application/use-cases/settings';
 import { openWorkOrder } from '../src/application/use-cases/work-orders';
 import { DEFAULT_MODEL_CONSENT } from '../src/application/services/spend-consent';
 import { enqueueStage } from '../src/application/services/dispatcher';
@@ -435,6 +436,8 @@ const node = createNodeDeps({
 });
 if (!node.ok) throw new Error(`seed could not open deps: ${JSON.stringify(node.error)}`);
 const deps = node.value.deps;
+// The world must not depend on the host's load: pin the fixed dispatch mode.
+await deps.settings.set(DISPATCH_MODE_KEY, 'fixed');
 
 // Accounts come first so their ids sort before everything else.
 setClock(ago(40 * 24 * 60));
