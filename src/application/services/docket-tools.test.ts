@@ -61,7 +61,7 @@ const harness = (overrides: Partial<Parameters<typeof createFakeDeps>[0]> = {}):
   const tokens = createFakeRunTokens();
   const deps = createFakeDeps({ clock, log, pageFiles: files, runTokens: tokens, ...overrides });
   const tools = createDocketTools(deps);
-  const token = tokens.mint({ runId: RUN, workOrderId: WORK_ORDER, project: PROJECT, role: ROLE });
+  const token = tokens.mint({ kind: 'run', runId: RUN, workOrderId: WORK_ORDER, project: PROJECT, role: ROLE });
   return {
     deps,
     clock,
@@ -224,8 +224,8 @@ describe('docket tools: page_publish and page_update', () => {
 
   it('A-146: a run may update a page an earlier run of the same work order made, never a page of another work order', async () => {
     const h = harness();
-    const earlier = h.mint({ runId: OTHER_RUN, workOrderId: WORK_ORDER, role: ROLE });
-    const foreign = h.mint({ runId: OTHER_RUN, workOrderId: OTHER_WORK_ORDER, role: ROLE });
+    const earlier = h.mint({ kind: 'run', runId: OTHER_RUN, workOrderId: WORK_ORDER, role: ROLE });
+    const foreign = h.mint({ kind: 'run', runId: OTHER_RUN, workOrderId: OTHER_WORK_ORDER, role: ROLE });
     const mine = resultOf(await h.call('page_publish', { title: 'Earlier', kind: 'markdown', content: 'a' }, earlier));
     const theirs = resultOf(await h.call('page_publish', { title: 'Theirs', kind: 'markdown', content: 'b' }, foreign));
 
@@ -265,7 +265,7 @@ describe('docket tools: limits', () => {
   it('A-147: a run may create at most 20 pages — the 21st is too_many_pages, other runs are not counted', async () => {
     const h = harness();
     expect(DOCKET_TOOL_LIMITS.pagesPerRun).toBe(20);
-    const other = h.mint({ runId: OTHER_RUN, workOrderId: WORK_ORDER, role: ROLE });
+    const other = h.mint({ kind: 'run', runId: OTHER_RUN, workOrderId: WORK_ORDER, role: ROLE });
     await h.call('page_publish', { title: 'Other', kind: 'markdown', content: 'o' }, other);
     for (let i = 0; i < 20; i += 1) {
       h.clock.advance(2_000); // stays far below the per-minute call limit
@@ -287,7 +287,7 @@ describe('docket tools: limits', () => {
     expect(codeOf(await h.call('page_comments', { pageId }))).toBe('rate_limited');
     expect(codeOf(await h.call('page_comments', { pageId }))).toBe('rate_limited');
 
-    const other = h.mint({ runId: OTHER_RUN, workOrderId: WORK_ORDER, role: ROLE });
+    const other = h.mint({ kind: 'run', runId: OTHER_RUN, workOrderId: WORK_ORDER, role: ROLE });
     expect((await h.call('page_comments', { pageId }, other)).ok).toBe(true);
 
     h.clock.advance(60_001);

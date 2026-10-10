@@ -29,6 +29,7 @@ import type { RepoFolders } from './repo-folders';
 import type { RepoRegistry } from './repo-registry';
 import type { RunDirs } from './run-dirs';
 import type { RunRepo } from './run-repo';
+import type { RepoFileReader } from './repo-file-reader';
 import type { McpEndpoint, RunTokens } from './run-tokens';
 import type { ScratchDirs } from './scratch-dirs';
 import type { SecretVault } from './secret-vault';
@@ -73,6 +74,8 @@ export interface AppDeps {
   readonly phaseAutoRuns: PhaseAutoRunRepo;
   readonly scratch: ScratchDirs;
   readonly repoFolders: RepoFolders;
+  /** Read-only text files of registered repos (the assistant's docket_read_file). */
+  readonly repoFiles: RepoFileReader;
   readonly worktreeFiles: WorktreeFiles;
   readonly machine: MachineProbe;
   readonly dispatchStatus: DispatchStatusHolder;

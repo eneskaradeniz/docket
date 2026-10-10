@@ -21,6 +21,14 @@ describe('mcpScriptPath', () => {
   });
 });
 
+describe('the child launcher', () => {
+  it('I-80: the child picks its tool list from the non-secret DOCKET_MCP_KIND (chat or, for anything else, run)', () => {
+    const source = readFileSync(resolve(__dirname, '../../../electron/docket-mcp.ts'), 'utf8');
+    expect(source).toContain("process.env.DOCKET_MCP_KIND === 'chat' ? 'chat' : 'run'");
+    expect(source).toMatch(/runStdioServer\(\{[^}]*\bkind\b[^}]*\}\)/);
+  });
+});
+
 describe('createMcpEndpoint', () => {
   it('I-60: the child is the app\'s own executable run as plain Node on the built script, reaching the data directory\'s socket', () => {
     const endpoint = createMcpEndpoint({

@@ -34,6 +34,7 @@ export * from './provider-marks';
 export * from './quota-probe';
 export * from './queue-repo';
 export * from './repo-folders';
+export * from './repo-file-reader';
 export * from './repo-registry';
 export * from './repo-tools';
 export * from './run-dirs';

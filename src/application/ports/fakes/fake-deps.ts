@@ -28,6 +28,7 @@ import { createFakeProjectRepo } from './fake-project-repo';
 import { createFakeProposalRepo } from './fake-proposal-repo';
 import { createFakeQueueRepo } from './fake-queue-repo';
 import { createFakeRepoFolders } from './fake-repo-folders';
+import { createFakeRepoFileReader } from './fake-repo-file-reader';
 import { createFakeRepoRegistry } from './fake-repo-registry';
 import { createFakeRunDirs } from './fake-run-dirs';
 import { createFakeRunRepo } from './fake-run-repo';
@@ -79,6 +80,7 @@ export const createFakeDeps = (overrides: Partial<AppDeps> = {}): AppDeps => ({
   phaseAutoRuns: createFakePhaseAutoRunRepo(),
   scratch: createFakeScratchDirs(),
   repoFolders: createFakeRepoFolders(),
+  repoFiles: createFakeRepoFileReader(),
   worktreeFiles: createFakeWorktreeFiles(),
   machine: createFakeMachineProbe(),
   dispatchStatus: createFakeDispatchStatus(),

@@ -1,7 +1,7 @@
 // mcp/run-tokens.test.ts — rule I-59: the node token source is crypto-random, 32 bytes as hex.
 import { describe, expect, it } from 'vitest';
 
-import { parseSlug, parseUlid, type RoleSlug, type RunId, type WorkOrderId } from '../../domain/index';
+import { parseSlug, parseUlid, type ConversationId, type RoleSlug, type RunId, type WorkOrderId } from '../../domain/index';
 
 import { createNodeRunTokens } from './run-tokens';
 
@@ -18,7 +18,7 @@ const ROLE = (() => {
   if (!parsed.ok) throw new Error('fixture slug');
   return parsed.value as RoleSlug;
 })();
-const binding = (runId: RunId) => ({ runId, workOrderId: WORK_ORDER, role: ROLE });
+const binding = (runId: RunId) => ({ kind: 'run' as const, runId, workOrderId: WORK_ORDER, role: ROLE });
 
 describe('createNodeRunTokens', () => {
   it('I-59: a token is 32 random bytes written as 64 lowercase hex characters, never repeated', () => {
@@ -61,5 +61,18 @@ describe('createNodeRunTokens', () => {
     expect(tokens.resolve(a2)).toBeUndefined();
     expect(tokens.resolve(b)).toMatchObject({ runId: RUN_B });
     expect(() => tokens.revoke(RUN_A)).not.toThrow();
+  });
+
+  it('A-203: a chat token resolves to its chat binding and is voided by its turn id, and only by that', () => {
+    const tokens = createNodeRunTokens();
+    const conversation = ulid<'conversation'>('01ARZ3NDEKTSV4RRFFQ69G5FC1') as ConversationId;
+    const chat = tokens.mint({ kind: 'chat', turn: RUN_B, conversation, role: ROLE });
+    const run = tokens.mint(binding(RUN_A));
+    expect(tokens.resolve(chat)).toEqual({ kind: 'chat', turn: RUN_B, conversation, role: ROLE });
+    tokens.revoke(RUN_A);
+    expect(tokens.resolve(chat)).toBeDefined();
+    expect(tokens.resolve(run)).toBeUndefined();
+    tokens.revoke(RUN_B);
+    expect(tokens.resolve(chat)).toBeUndefined();
   });
 });
