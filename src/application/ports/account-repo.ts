@@ -2,6 +2,7 @@
 import type {
   AccountId,
   AuthMode,
+  ConversationId,
   EpochMs,
   LimitPolicy,
   Meter,
@@ -47,6 +48,16 @@ export type AccountTestSpendEntry = {
   readonly at: EpochMs;
   readonly usd: number;
 };
+/** A chat turn's metered cost: the conversation's project only when the conversation has one —
+ *  a global conversation records none, so only the account caps see its spend. */
+export type ChatSpendEntry = {
+  readonly kind: 'chat';
+  readonly accountId: AccountId;
+  readonly at: EpochMs;
+  readonly usd: number;
+  readonly conversation: ConversationId;
+  readonly project?: ProjectSlug;
+};
 
 export interface AccountRepo {
   save(record: AccountRecord): Promise<void>; // upsert
@@ -57,7 +68,7 @@ export interface AccountRepo {
   saveMeter(meter: Meter): Promise<void>; // upsert by id
   pools(accountId?: AccountId): Promise<readonly Pool[]>;
   meters(accountId?: AccountId): Promise<readonly Meter[]>;
-  recordSpend(entry: RunSpendEntry | AccountTestSpendEntry): Promise<void>;
+  recordSpend(entry: RunSpendEntry | AccountTestSpendEntry | ChatSpendEntry): Promise<void>;
   spend(filter: {
     readonly accountId?: AccountId;
     readonly project?: ProjectSlug;

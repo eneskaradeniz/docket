@@ -402,10 +402,11 @@ export function createChatRunner(deps: ChatRunnerDeps, extras: ChatRunnerExtras)
     let runDir: RunDir | undefined;
     let account: AccountId | undefined;
     let model: string | undefined;
+    let project: ProjectSlug | undefined;
 
     try {
       await audit(deps, { action: 'chat.turn_started', conversation, detail: { turn } });
-      const project = await projectOfScope(deps, scope);
+      project = await projectOfScope(deps, scope);
       const binding = await chatBinding(deps, scope, project);
       const bound = binding === undefined ? undefined : await chatRoute(deps, binding);
       // No binding, or a chain whose accounts are all gone: nothing is bound to run on.
@@ -570,6 +571,23 @@ export function createChatRunner(deps: ChatRunnerDeps, extras: ChatRunnerExtras)
           if (written.ok) message = written.value.messages[written.value.messages.length - 1]?.id;
         } catch {
           // A failing store leaves no message; the turn still finishes, with the notice above.
+        }
+      }
+      // The turn's cost is spend the caps must see (invariant 3): one entry per costed turn,
+      // written before the finished event so the next gate already reads it. A failing write
+      // never breaks the turn — the cost is lost to the caps, not the reply to the operator.
+      if (account !== undefined && usage.costSeen && usage.costMicros > 0) {
+        try {
+          await deps.accounts.recordSpend({
+            kind: 'chat',
+            accountId: account,
+            at: deps.clock.now(),
+            usd: usage.costMicros / 1_000_000,
+            conversation,
+            ...(project !== undefined ? { project } : {}),
+          });
+        } catch {
+          // Swallowed on purpose, like a broken listener.
         }
       }
       await audit(deps, {

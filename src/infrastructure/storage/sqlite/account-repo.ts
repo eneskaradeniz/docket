@@ -82,17 +82,22 @@ export function createSqliteAccountRepo(db: DocketDb): AccountRepo {
     },
 
     recordSpend: async (entry): Promise<void> => {
+      // A run entry names its project, repo and work order; an account test and a chat turn name
+      // neither repo nor work order, so empty strings keep those filters from matching them while
+      // an accountId filter still counts them. A chat turn carries its conversation's project
+      // when it has one, and its conversation id rides the nullable column.
+      const chat = 'kind' in entry && entry.kind === 'chat' ? entry : undefined;
+      const run = 'kind' in entry ? undefined : entry;
       db.raw
-        .prepare('INSERT INTO spend (account_id, project, repo, work_order_id, at, usd) VALUES (?, ?, ?, ?, ?, ?)')
+        .prepare('INSERT INTO spend (account_id, project, repo, work_order_id, at, usd, conversation) VALUES (?, ?, ?, ?, ?, ?, ?)')
         .run(
           entry.accountId,
-          // An account test belongs to no project, repo or work order: empty strings keep every
-          // such filter from matching it while an accountId filter still counts it.
-          'kind' in entry ? '' : entry.project,
-          'kind' in entry ? '' : entry.repo,
-          'kind' in entry ? '' : entry.workOrderId,
+          chat?.project ?? run?.project ?? '',
+          run?.repo ?? '',
+          run?.workOrderId ?? '',
           entry.at,
           entry.usd,
+          chat?.conversation ?? null,
         );
     },
 
