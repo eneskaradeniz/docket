@@ -36,8 +36,37 @@ export type Command =
   | { readonly type: 'page.requestApproval'; readonly page: string }
   | { readonly type: 'page.decide'; readonly page: string; readonly decision: 'approved' | 'rejected'; readonly version: number }
   | { readonly type: 'page.pin'; readonly page: string; readonly pinned: boolean } // errors: not_found, too_many_pinned (A-200)
+  // The chat surface (6e-5). Every command acts as the operator the api's own actor names; a `by`
+  // or `actor` field in the payload is never read (A-256). Ids are strings, parsed at the edge.
+  | { readonly type: 'chat.start'; readonly scope: ChatScopeInput; readonly message?: string; readonly refs?: readonly ChatRefInput[]; readonly attachments?: readonly string[] } // ok → { conversation, turn? } (A-256)
+  | { readonly type: 'chat.send'; readonly conversation: string; readonly text: string; readonly refs?: readonly ChatRefInput[]; readonly attachments?: readonly string[] } // ok → { turn } (A-257)
+  | { readonly type: 'chat.cancel'; readonly conversation: string }
+  | { readonly type: 'chat.pin'; readonly conversation: string; readonly pinned: boolean }
+  | { readonly type: 'chat.delete'; readonly conversation: string } // cancels an active turn first (A-258)
+  | { readonly type: 'chat.attach'; readonly conversation?: string; readonly name: string; readonly fileType: string; readonly base64: string } // ok → { attachment } (A-259); `fileType` because the union's own discriminant is `type`
+  | { readonly type: 'chat.draft.confirm'; readonly draft: string } // ok → { workOrder, code } (A-262)
+  | { readonly type: 'chat.draft.drop'; readonly draft: string }
+  | { readonly type: 'chat.action.decide'; readonly id: string; readonly decision: 'approved' | 'rejected' }
+  | { readonly type: 'chat.action.undo'; readonly id: string }
+  | { readonly type: 'chat.grant'; readonly conversation: string; readonly classes: readonly string[]; readonly minutes: number } // ok → { id } (A-262)
+  | { readonly type: 'chat.revoke'; readonly grant: string }
   | { readonly type: 'app.update.check' }
   | { readonly type: 'app.update.apply' };
+
+/** A conversation scope on the wire: the domain's own three shapes with plain string ids. */
+export type ChatScopeInput =
+  | { readonly kind: 'global' }
+  | { readonly kind: 'project'; readonly project: string }
+  | { readonly kind: 'workOrder'; readonly workOrder: string };
+
+/** A reference the renderer sends: `{ kind, id }`, or `{ repo, path }` for a file. The api resolves
+ *  each against the operator's own state before anything is appended (A-261). */
+export type ChatRefInput =
+  | { readonly kind: 'workOrder'; readonly id: string }
+  | { readonly kind: 'page'; readonly id: string }
+  | { readonly kind: 'project'; readonly id: string }
+  | { readonly kind: 'repo'; readonly id: string }
+  | { readonly kind: 'file'; readonly repo: string; readonly path: string };
 
 /** One identity's import outcome on the wire (A-93): `id` is the target it took or would have
  *  taken, `reason` the rejection code — each null exactly when the other field is set. */
@@ -57,7 +86,9 @@ export interface PhaseRunView {
 
 export type CommandResult =
   /** `results` rides only `capabilities.import`: one row per requested identity, in input order.
-   *  `phaseRun` rides only `roadmap.runPhase`. */
-  | { readonly ok: true; readonly id?: string; readonly results?: readonly CapabilityImportResultView[]; readonly phaseRun?: PhaseRunView }
+   *  `phaseRun` rides only `roadmap.runPhase`. The chat fields ride only their own commands:
+   *  `conversation`+`turn` (chat.start), `turn` (chat.send), `attachment` (chat.attach),
+   *  `workOrder`+`code` (chat.draft.confirm), `id` (chat.grant). */
+  | { readonly ok: true; readonly id?: string; readonly results?: readonly CapabilityImportResultView[]; readonly phaseRun?: PhaseRunView; readonly conversation?: string; readonly turn?: string; readonly attachment?: string; readonly workOrder?: string; readonly code?: string }
   /** `roles` rides only `binding_exists`: the roles whose bindings still reference the account. */
   | { readonly ok: false; readonly code: string; readonly roles?: readonly string[] };

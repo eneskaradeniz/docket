@@ -10,8 +10,18 @@ import type {
   StageFilesView,
   WorktreeFilePreview,
 } from '../application';
+import type { ChatScopeInput } from './commands';
 
 export type { PageCommentView, PageDetailView, PageLibraryItemView, PageListItem, PageVersionView } from './page-views';
+export type {
+  ChatAttachmentBytesView,
+  ChatAttachmentView,
+  ChatConversationSummaryView,
+  ChatConversationView,
+  ChatReferenceView,
+  ChatScopeView,
+  ChatUsageView,
+} from './chat-views';
 export type { AccountTestView, ProposalDetailView, ProposalListItem, StageFilesView, WorktreeFilePreview };
 
 export type Query =
@@ -41,7 +51,13 @@ export type Query =
   | { readonly type: 'proposal.detail'; readonly id: string } // → ProposalDetailView | not_found (A-130, A-131)
   | { readonly type: 'pages.list'; readonly workOrder: string } // → readonly PageListItem[] (A-154)
   | { readonly type: 'pages.library'; readonly q?: string; readonly kind?: PageKind; readonly project?: string; readonly workOrder?: string; readonly pinned?: boolean } // → readonly PageLibraryItemView[] (A-202)
-  | { readonly type: 'page.detail'; readonly id: string; readonly version?: number }; // → PageDetailView | not_found | unknown_version (A-155 … A-157, A-160)
+  | { readonly type: 'page.detail'; readonly id: string; readonly version?: number } // → PageDetailView | not_found | unknown_version (A-155 … A-157, A-160)
+  // The chat read side (6e-5): views from ./chat-views, ids as strings parsed at the edge.
+  | { readonly type: 'chat.conversations'; readonly q?: string; readonly scope?: ChatScopeInput; readonly pinned?: boolean; readonly limit?: number; readonly before?: number } // → readonly ChatConversationSummaryView[] (A-251)
+  | { readonly type: 'chat.conversation'; readonly id: string } // → ChatConversationView | not_found (A-252)
+  | { readonly type: 'chat.references'; readonly q: string; readonly kinds?: readonly ('work_order' | 'page' | 'project' | 'repo')[]; readonly project?: string; readonly limit?: number } // → readonly ChatReferenceView[] (A-253)
+  | { readonly type: 'chat.attachment'; readonly conversation: string; readonly id: string } // → ChatAttachmentBytesView | not_found (A-254)
+  | { readonly type: 'chat.usage' }; // → ChatUsageView (A-255)
 
 export interface AttentionItem {
   readonly workOrderId: string;

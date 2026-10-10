@@ -129,6 +129,20 @@ const SUCCESS_KEYS: Readonly<Record<Command['type'], LabelKey>> = {
   'page.requestApproval': 'page.toast.requested',
   'page.decide': 'page.toast.approved',
   'page.pin': 'editor.saved',
+  // The chat commands' own copy lands with the chat UI slice (6e-6), which words its surface
+  // itself; until then every chat success borrows the neutral saved line, like quota.refresh.
+  'chat.start': 'editor.saved',
+  'chat.send': 'editor.saved',
+  'chat.cancel': 'editor.saved',
+  'chat.pin': 'editor.saved',
+  'chat.delete': 'editor.saved',
+  'chat.attach': 'editor.saved',
+  'chat.draft.confirm': 'editor.saved',
+  'chat.draft.drop': 'editor.saved',
+  'chat.action.decide': 'editor.saved',
+  'chat.action.undo': 'editor.saved',
+  'chat.grant': 'editor.saved',
+  'chat.revoke': 'editor.saved',
   'app.update.check': 'success.app.update.check',
   'app.update.apply': 'success.app.update.apply',
 };

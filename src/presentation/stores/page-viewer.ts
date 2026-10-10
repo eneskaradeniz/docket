@@ -18,7 +18,11 @@ export type PageChange =
   | { readonly type: 'workOrders.changed' }
   | { readonly type: 'run.updated'; readonly runId: string }
   | { readonly type: 'update.changed' }
-  | { readonly type: 'accounts.changed' };
+  | { readonly type: 'accounts.changed' }
+  // The chat members (U-97) ride the same push channel; stores that do not serve a chat ignore them.
+  | { readonly type: 'chat.turn'; readonly conversation: string; readonly turn: string; readonly phase: 'started' | 'finished'; readonly outcome?: string }
+  | { readonly type: 'chat.delta'; readonly conversation: string; readonly turn: string; readonly text: string }
+  | { readonly type: 'chat.notice'; readonly conversation: string; readonly turn: string; readonly code: string };
 
 /** Subscription to the change events; the api's `subscribe` satisfies it as-is. */
 export type PageChangeSignal = (listener: (change: PageChange) => void) => () => void;
