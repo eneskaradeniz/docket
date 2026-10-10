@@ -29,6 +29,7 @@ import type { DefinitionFile, DefinitionScope, DefinitionStore } from './definit
 import type { AppDeps } from './deps';
 import type { AuditAction, AuditEntry, AuditSubject, EventLog } from './event-log';
 import type { GitProbe } from './git-probe';
+import type { DispatchStatusHolder, MachineProbe } from './machine-probe';
 import type { IdGen } from './id-gen';
 import type { InstructionFiles } from './instruction-files';
 import type { ModelCatalog } from './model-catalog';
@@ -84,6 +85,8 @@ describe('AppDeps', () => {
     expectTypeOf<AppDeps['phaseAutoRuns']>().toEqualTypeOf<PhaseAutoRunRepo>();
     expectTypeOf<AppDeps['scratch']>().toEqualTypeOf<ScratchDirs>();
     expectTypeOf<AppDeps['repoFolders']>().toEqualTypeOf<RepoFolders>();
+    expectTypeOf<AppDeps['machine']>().toEqualTypeOf<MachineProbe>();
+    expectTypeOf<AppDeps['dispatchStatus']>().toEqualTypeOf<DispatchStatusHolder>();
   });
 
   it('exposes exactly the contract keys', () => {
@@ -119,6 +122,8 @@ describe('AppDeps', () => {
       | 'phaseAutoRuns'
       | 'scratch'
       | 'repoFolders'
+      | 'machine'
+      | 'dispatchStatus'
     >();
   });
 

@@ -124,7 +124,7 @@ describe('dispatch limits: audit', () => {
     expect(entry?.actor).toStrictEqual(USER);
     expect(entry?.at).toBe(5_000);
     expect(entry?.subject).toStrictEqual({ kind: 'settings', id: 'dispatch' });
-    expect(entry?.detail).toStrictEqual({ global: 8, perRepo: 5, [`account:${A1}`]: 2 });
+    expect(entry?.detail).toStrictEqual({ global: 8, perRepo: 5, mode: 'auto', [`account:${A1}`]: 2 });
     expect(await h.deps.log.list({ kind: 'settings', id: 'dispatch' }, 10)).toHaveLength(1);
   });
 });

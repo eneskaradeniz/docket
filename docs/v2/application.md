@@ -1486,6 +1486,19 @@ persisted record is `PhaseAutoRun { project, phase, state: 'running' | 'paused' 
 
 Trigger: the dispatcher tick in `electron/main.ts` calls `advancePhases` once, before `dispatcherTick`, inside the existing non-reentrant guard; a failure is logged and never blocks the tick. No new timer.
 
+Addendum 2026-10-10 (#881) — machine-aware dispatch. New ports: `MachineProbe { read(): Promise<MachineSample> }` and `DispatchStatusHolder { get(); set() }` (with `DispatchStatus { mode, cap, effective, band, load1?, cores?, freeMemRatio? }`, in memory only), both in `AppDeps` as `machine` and `dispatchStatus`, each with a fake. The per-tick composition is `resolveDispatchLimits(deps, onProbeError?)` in `services/machine-dispatch.ts`; the dispatcher tick in `electron/main.ts` calls it in place of `getDispatchLimits`, after `advancePhases`, inside the same non-reentrant guard.
+
+- **A-117** (added 2026-10-10, #881) The mode is the operator setting `dispatch.mode` (`'fixed' | 'auto'`) in the settings store, no new storage. `getDispatchMode` answers `auto` when nothing valid is stored, so a damaged value never stops the dispatcher.
+- **A-118** (added 2026-10-10, #881) `setDispatchLimits` takes an optional `mode`. A value outside `fixed` / `auto` answers `invalid_limits` and writes nothing (no limits, no mode, no audit entry); a save without a mode leaves the stored mode as it was.
+- **A-119** (added 2026-10-10, #881) The `settings.dispatch_changed` audit detail gains `mode`, the mode in force after the save (A-107's other fields are unchanged).
+- **A-120** (added 2026-10-10, #881) `fixed` behaves exactly as A-105 … A-108: `resolveDispatchLimits` answers the stored limits untouched, does not read the machine, and records a status with `band: 'free'` and `effective` equal to the cap, without load figures.
+- **A-121** (added 2026-10-10, #881) In `auto`, the global limit is `effectiveGlobal(cap, band, running)` (R-71) where `running` is the count of active runs: cap 4 gives 4 when free, 2 when reduced, and `max(1, running)` when busy. Throttling only decides whether NEW items start; it never ends or pauses a running run (A-20's path is unchanged).
+- **A-122** (added 2026-10-10, #881) The previous band is the one in the last written status (`free` before the first tick, after a `fixed` tick or after a failed probe), so R-70's hysteresis holds across ticks.
+- **A-123** (added 2026-10-10, #881) A probe failure behaves as `free` for that tick: the stored limits are answered unchanged, the failure goes to `onProbeError` (the main process logs it) and is never thrown, and the status records `band: 'free'`.
+- **A-124** (added 2026-10-10, #881) In `auto`, `perRepo` and every `perAccount` limit are clamped to the effective global for the tick; the stored limits are never rewritten.
+- **A-125** (added 2026-10-10, #881) Every tick writes the status holder: `mode`, `cap`, `effective`, `band` and, when a reading was taken, `load1`, `cores` and `freeMemRatio` (only when known).
+- **A-126** (added 2026-10-10, #881) The boundary: query `settings.dispatch` answers the limits plus `mode`, `suggested` (`suggestDispatchCap` over a fresh reading), `machine { cores, totalMemGb }` (one decimal) and `status` (the last tick's status, absent until the first tick); `suggested` and `machine` are absent when the machine cannot be read. Command `settings.setDispatch` accepts an optional `mode` (A-118).
+
 ## 10. Blocked-by on the roadmap page (added 2026-10-10, #882)
 
 - **A-127** (added 2026-10-10, #882) Each phase entry of `roadmap.byProject` carries `blockedBy: readonly string[]`: the ids of the roadmap's blocking phases for that phase whose derived status is not `done`, in the order the roadmap lists them; empty when nothing blocks it or every blocker is done. It is a read-only projection of `PhaseDef.blockedBy` and the derived phase statuses; no other field of the query or any command changes.

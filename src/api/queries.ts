@@ -20,7 +20,7 @@ export type Query =
   | { readonly type: 'providers.discovered' }
   | { readonly type: 'accounts.candidates'; readonly fresh?: boolean }
   | { readonly type: 'accounts.candidateQuota'; readonly sourcePath: string }
-  | { readonly type: 'settings.dispatch' } // → DispatchLimits: { global, perRepo, perAccount }
+  | { readonly type: 'settings.dispatch' } // → DispatchSettingsView: { global, perRepo, perAccount, mode, suggested?, machine?, status? }
   | { readonly type: 'providers.marks' }
   | { readonly type: 'run.events'; readonly runId: string }
   | { readonly type: 'permissions.open' }

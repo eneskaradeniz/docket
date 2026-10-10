@@ -11,6 +11,7 @@ import assert from 'node:assert';
 import type { AccountId, Actor } from '../src/domain/index';
 import type { AccountRecord } from '../src/application/index';
 import { saveAccount } from '../src/application/use-cases/accounts';
+import { DISPATCH_MODE_KEY } from '../src/application/use-cases/settings';
 import { createNodeDeps } from '../src/infrastructure/compose/create-node-deps';
 
 const OPERATOR: Actor = { kind: 'user', id: 'user-1' };
@@ -36,6 +37,8 @@ const node = createNodeDeps({
 });
 if (!node.ok) throw new Error(`wizard seed could not open deps: ${JSON.stringify(node.error)}`);
 const deps = node.value.deps;
+// The world must not depend on the host's load: pin the fixed dispatch mode.
+await deps.settings.set(DISPATCH_MODE_KEY, 'fixed');
 
 // Two claude-code subscriptions whose identity directories are the fixtures: the capability scan
 // has rows for that provider only (I-42), and identityDir is a subscription-route field (A-43).
