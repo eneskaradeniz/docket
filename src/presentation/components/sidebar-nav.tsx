@@ -28,12 +28,18 @@ export interface SidebarNavProps {
   readonly libraryCurrent: boolean;
   /** How many artifacts the library holds; the row shows it only above zero (U-84). */
   readonly libraryCount: number;
+  /** Whether the Öneriler screen is the current route (U-136). */
+  readonly proposalsCurrent?: boolean;
+  /** Pending, non-stale proposals; the row's badge shows only above zero (U-136). */
+  readonly proposalsCount?: number;
   /** The shell's attention badge; null renders nothing, never a zero (U-10). */
   readonly badge: ShellBadge | null;
   readonly onHome: () => void;
   /** Opens the palette; the origin decides where focus lands on close. */
   readonly onSearch: (origin: PaletteOrigin) => void;
   readonly onLibrary: () => void;
+  /** Opens Öneriler; the row is drawn only when the shell wires it. */
+  readonly onProposals?: () => void;
   readonly onPhone: () => void;
   readonly onSettings: () => void;
 }
@@ -87,6 +93,23 @@ const LibraryIcon = () => (
   </svg>
 );
 
+const ProposalsIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+    className="h-4 w-4 flex-none"
+  >
+    <path d="M6 3.5h8l4 4v13H6z" />
+    <path d="M9 12h6" />
+    <path d="M9 16h6" />
+  </svg>
+);
+
 const PhoneIcon = () => (
   <svg
     viewBox="0 0 24 24"
@@ -137,10 +160,13 @@ export function SidebarNav({
   settingsSection,
   libraryCurrent,
   libraryCount,
+  proposalsCurrent = false,
+  proposalsCount = 0,
   badge,
   onHome,
   onSearch,
   onLibrary,
+  onProposals,
   onPhone,
   onSettings,
 }: SidebarNavProps) {
@@ -154,6 +180,27 @@ export function SidebarNav({
         <span className="truncate">{t(locale, 'nav.home')}</span>
         {badge !== null ? <BadgePill count={badge.count} locale={locale} /> : null}
       </button>
+
+      {onProposals !== undefined ? (
+        <button
+          type="button"
+          data-nav-proposals=""
+          onClick={onProposals}
+          aria-current={proposalsCurrent ? 'page' : undefined}
+          className={rowClass(proposalsCurrent)}
+        >
+          <ProposalsIcon />
+          <span className="truncate">{t(locale, 'nav.proposals')}</span>
+          {proposalsCount > 0 ? (
+            <span
+              data-proposals-badge=""
+              className="ml-auto inline-flex h-[18px] min-w-[18px] flex-none items-center justify-center rounded-full border border-signal-soft px-1 font-mono text-[11px] text-signal-soft"
+            >
+              {proposalsCount}
+            </span>
+          ) : null}
+        </button>
+      ) : null}
 
       <button
         type="button"

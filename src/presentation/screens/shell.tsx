@@ -31,6 +31,7 @@ import { editInSettingsTarget, type AccountViewStore } from '../stores/account-v
 import type { BoardStore } from '../stores/board';
 import type { CockpitStore } from '../stores/cockpit';
 import type { LibraryStore } from '../stores/library';
+import { proposalBadge, type ProposalsStore } from '../stores/proposals';
 import type { LocaleStore } from '../stores/locale';
 import {
   START_NAV_HISTORY,
@@ -73,6 +74,7 @@ import { BoardScreen } from './board';
 import { CockpitScreen } from './cockpit';
 import { WorkOrderDetailScreen } from './detail';
 import { LibraryScreen } from './library';
+import { ProposalsScreen } from './proposals';
 import { NewProjectScreen } from './new-project';
 import { PageViewerScreen } from './page-viewer';
 import { RoadmapScreen } from './roadmap';
@@ -94,6 +96,8 @@ export interface ShellScreenProps {
   readonly pageHost: PageViewHost;
   /** The Artifact'lar library (U-84): the screen's store, which also holds the sidebar's count. */
   readonly library: LibraryStore;
+  /** The Öneriler screen's store, which also holds the sidebar badge's count (U-136). */
+  readonly proposals: ProposalsStore;
   readonly accountView: AccountViewStore;
   readonly settings: SettingsStore;
   /** The settings panel's per-account model list and its spend-consent flow (P-40). */
@@ -139,6 +143,7 @@ const placeOf = (route: ShellRoute): TreePlace => {
   switch (route.name) {
     case 'cockpit':
     case 'library':
+    case 'proposals':
       return { kind: 'cockpit' };
     case 'roadmap':
       return { kind: 'roadmap', project: route.project };
@@ -178,6 +183,7 @@ export function ShellScreen({
   pageViewer,
   pageHost,
   library,
+  proposals,
   accountView,
   settings,
   models,
@@ -197,6 +203,8 @@ export function ShellScreen({
   const state = useSyncExternalStore(shell.subscribe, shell.state);
   // The sidebar's Artifact'lar count (U-84): the library store's unfiltered read, loaded at startup.
   const libraryCount = useSyncExternalStore(library.subscribe, () => library.state().all?.length ?? 0);
+  // The sidebar's Öneriler badge (U-136): pending proposals whose file has not moved.
+  const proposalsCount = useSyncExternalStore(proposals.subscribe, () => proposalBadge(proposals.state()));
   const updateState = useSyncExternalStore(update.subscribe, update.state);
   // Where the operator is and has been (U-25): the navigation history is the shell's one route
   // state — the current entry's route is what renders, and each entry remembers the main
@@ -227,7 +235,9 @@ export function ShellScreen({
     void candidateList.load();
     // The sidebar's Artifact'lar row reads its count from startup, not from the first visit.
     void library.warm();
-  }, [shell, update, candidateList, library]);
+    // The Öneriler badge reads from startup too.
+    void proposals.refresh();
+  }, [shell, update, candidateList, library, proposals]);
   const unaddedCount = useSyncExternalStore(candidateList.subscribe, () => candidateList.state().rows.length);
   // The provider display names (A-67) the sidebar's card titles and popovers read: discovery's
   // own naming, resolved by id, null when it does not know the provider.
@@ -328,6 +338,7 @@ export function ShellScreen({
       switch (candidate.name) {
         case 'cockpit':
         case 'library':
+        case 'proposals':
           return true;
         case 'board':
           return treeState.tree.some((item) => item.repos.some((node) => node.repo === candidate.repo));
@@ -481,11 +492,14 @@ export function ShellScreen({
             searchCurrent={palette.open}
             libraryCurrent={route.name === 'library'}
             libraryCount={libraryCount}
+            proposalsCurrent={route.name === 'proposals'}
+            proposalsCount={proposalsCount}
             settingsSection={settingsPanel.open ? settingsPanel.section : null}
             badge={badge}
             onHome={() => navigate({ name: 'cockpit' })}
             onSearch={openPalette}
             onLibrary={() => navigate({ name: 'library' })}
+            onProposals={() => navigate({ name: 'proposals' })}
             onPhone={() => openSettings('phone')}
             onSettings={() => openSettings('accounts')}
           />
@@ -562,6 +576,7 @@ export function ShellScreen({
           {route.name === 'library' ? (
             <LibraryScreen store={library} locale={locale} now={clockNow()} onOpenPage={openPage} />
           ) : null}
+          {route.name === 'proposals' ? <ProposalsScreen store={proposals} locale={locale} now={clockNow()} /> : null}
           {route.name === 'newProject' ? (
             <NewProjectScreen store={newProject} locale={locale} onCancel={cancelNewProject} onDone={finishNewProject} />
           ) : null}
