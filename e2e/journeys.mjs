@@ -35,6 +35,9 @@ const full = process.argv.includes('--full') || process.env.FULL === '1';
 // resolved plan inside the loop, read from the first launch's primary display.
 const combos = quick ? [['default', 'dark']] : comboPlan(SIZE_PLAN, { full }).map(({ size, theme }) => [size.name, theme]);
 const WAIT = 4000; // a step that is going to pass does so in well under a second
+// Waits that depend on an account scan, an import or a data load are bounded by machine speed, not
+// by product behaviour: on a busy machine they run far past WAIT while the product is fine.
+const SCAN_WAIT = 20_000;
 
 const failures = [];
 let total = 0;
@@ -53,9 +56,9 @@ for (const [sizeName, theme] of combos) {
 
   const text = (t) => page.getByText(t, { exact: false }).first();
   /** Assert the text is visible. */
-  const see = async (t) => text(t).waitFor({ state: 'visible', timeout: WAIT });
+  const see = async (t, timeout = WAIT) => text(t).waitFor({ state: 'visible', timeout });
   const gone = async (t) => text(t).waitFor({ state: 'hidden', timeout: WAIT });
-  const click = async (t) => text(t).click({ timeout: WAIT });
+  const click = async (t, timeout = WAIT) => text(t).click({ timeout });
   const button = async (name) => page.getByRole('button', { name }).first().click({ timeout: WAIT });
 
   let jn = '';
@@ -118,17 +121,17 @@ for (const [sizeName, theme] of combos) {
     // profile (e2e/profile.mjs), so the board opens at Kanban — the click pins that standing
     // whatever the app's default or the storage's history.
     await button('Kanban');
-    await page.waitForSelector('[data-board-kanban]', { timeout: WAIT });
-    await see('Rol matrisi');
+    await page.waitForSelector('[data-board-kanban]', { timeout: SCAN_WAIT });
+    await see('Rol matrisi', SCAN_WAIT);
     await see('Bitti');
     await shot('board-kanban');
     await button('Liste');
-    await see('İE-0016');
+    await see('İE-0016', SCAN_WAIT);
     await shot('board-liste');
     await page.reload();
     await page.waitForSelector('nav');
-    await click('antreo-api');
-    await see('İE-0016');
+    await click('antreo-api', SCAN_WAIT);
+    await see('İE-0016', SCAN_WAIT);
     assert.equal(await page.locator('[data-board-kanban]').count(), 0, 'the Kanban columns must stay hidden after reload');
     await shot('board-liste-after-reload');
   });
@@ -453,8 +456,8 @@ for (const [sizeName, theme] of combos) {
   const handle = await launchWizardApp();
   const { page } = handle;
   const text = (t) => page.getByText(t, { exact: false }).first();
-  const see = async (t) => text(t).waitFor({ state: 'visible', timeout: WAIT });
-  const click = async (t) => text(t).click({ timeout: WAIT });
+  const see = async (t, timeout = WAIT) => text(t).waitFor({ state: 'visible', timeout });
+  const click = async (t, timeout = WAIT) => text(t).click({ timeout });
   const button = async (name) => page.getByRole('button', { name }).first().click({ timeout: WAIT });
 
   let jn = 'J-9';
@@ -475,7 +478,7 @@ for (const [sizeName, theme] of combos) {
     await see('Hoş geldin');
     await shot('welcome');
     await button('Devam');
-    await page.locator('[data-account-section="found"] [data-account-row]').first().waitFor({ state: 'visible', timeout: WAIT });
+    await page.locator('[data-account-section="found"] [data-account-row]').first().waitFor({ state: 'visible', timeout: SCAN_WAIT });
     const foundRows = page.locator('[data-account-section="found"] [data-account-row]');
     const rowCount = await foundRows.count();
     assert(rowCount === 2, `the wizard world must list exactly the two fixture accounts under Bulunanlar, saw ${rowCount}`);
@@ -497,10 +500,10 @@ for (const [sizeName, theme] of combos) {
     await button('Devam');
     // Yetenekler: one group per account; the shared capability is one row in both groups. The
     // group titles read "Asistan · Hesap" — the provider's name · the account's label (U-59).
-    await page.locator('[data-cap-group]').first().waitFor({ state: 'visible', timeout: WAIT });
+    await page.locator('[data-cap-group]').first().waitFor({ state: 'visible', timeout: SCAN_WAIT });
     const groupCount = await page.locator('[data-cap-group]').count();
     assert(groupCount === 2, `expected 2 capability groups, saw ${groupCount}`);
-    await page.locator('[data-cap-row="mcp:db|docker"]').waitFor({ state: 'visible', timeout: WAIT });
+    await page.locator('[data-cap-row="mcp:db|docker"]').waitFor({ state: 'visible', timeout: SCAN_WAIT });
     const sharedRows = page.locator('[data-cap-row="mcp:fetch|npx"]');
     assert((await sharedRows.count()) === 2, `the shared capability should list in both groups, saw ${await sharedRows.count()}`);
     await shot('capabilities');
@@ -533,9 +536,9 @@ for (const [sizeName, theme] of combos) {
     await see('Önerilen ayarlar uygulandı');
     await button('Kurulumu bitir');
     // The finish's capability line takes its check only when the import really ran (U-60).
-    await page.locator('[data-finish-line="capabilities"][data-ps="done"]').waitFor({ state: 'visible', timeout: WAIT });
+    await page.locator('[data-finish-line="capabilities"][data-ps="done"]').waitFor({ state: 'visible', timeout: SCAN_WAIT });
     await shot('finish-capability-line');
-    await page.locator('[data-wizard]').waitFor({ state: 'detached', timeout: WAIT });
+    await page.locator('[data-wizard]').waitFor({ state: 'detached', timeout: SCAN_WAIT });
     await see('Kurulum tamamlandı');
     await shot('done');
     // The import's own evidence: the definition file exists in the data dir. The yaml stores the
