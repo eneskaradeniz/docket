@@ -131,6 +131,7 @@ describe('AppDeps', () => {
       | 'machine'
       | 'dispatchStatus'
       | 'runTokens'
+      | 'runDirs'
       | 'mcpEndpoint'
     >();
   });

@@ -72,6 +72,7 @@ function request(accountId: AccountId, cwd: string = '/tmp/docket-transport-fact
   return {
     runId: RUN_ID,
     cwd,
+    runDir: cwd,
     role: ROLE,
     route: { accountId },
     prompt: 'do the work',

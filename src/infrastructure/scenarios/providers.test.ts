@@ -61,6 +61,7 @@ import {
   type FakeEvidenceChecker,
   type FakeTransportResolver,
 } from '../../application/ports/fakes/index';
+import { createRunDirs } from '../compose/index';
 import { createSdkTransport, type QueryFn } from '../providers/index';
 import { createAppServerTransport } from '../providers/transports/app-server/index';
 import { createAcpTransport } from '../providers/transports/acp/index';
@@ -437,7 +438,9 @@ const makeHarness = (): Harness => {
   const transports = createFakeTransportResolver();
   const checkpoints = createFakeCheckpointCommitter();
   definitions.setProject({ id: slugOf<'project'>('ws-proj'), name: 'Project', mainRepo: slugOf<'repo'>('ws'), repos: [slugOf<'repo'>('ws')] });
-  const deps = createFakeDeps({ clock, log, definitions, commands, evidence, transports, checkpoints });
+  // Real run directories: the transports write their run-scoped config into them.
+  const runDirs = createRunDirs({ dataDir: join(root, 'data') });
+  const deps = createFakeDeps({ clock, log, definitions, commands, evidence, transports, checkpoints, runDirs });
   deps.projects.save({ id: slugOf<'project'>('ws-proj'), name: 'Project', mainRepo: slugOf<'repo'>('ws'), repos: [slugOf<'repo'>('ws')] });
   return { deps, clock, log, definitions, commands, evidence, transports, checkpoints };
 };

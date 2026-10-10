@@ -180,4 +180,39 @@ describe('docket MCP scenario', () => {
     });
     expect(everything).not.toContain(token);
   });
+  it('A-150: a run that crashes mid-way also loses its token — a call with it afterwards is unauthorized and writes nothing', async () => {
+    const runTokens = createFakeRunTokens();
+    const transports = createFakeTransportResolver();
+    const accounts = createFakeAccountRepo();
+    const workOrders = createFakeWorkOrderRepo();
+    const deps = createFakeDeps({
+      runTokens,
+      transports,
+      accounts,
+      workOrders,
+      mcpEndpoint: { socketPath: '/s', command: '/c', args: [], env: {} },
+    });
+    await workOrders.create({ id: WORK_ORDER, project: slugOf('proj'), repo: slugOf('ws'), flow: slugOf('standard'), title: 'T', createdAt: T0, createdBy: OPERATOR });
+    await accounts.save({ id: ACCOUNT, provider: 'provider-x', label: 'Main', authMode: 'subscription', limitPolicy: 'wait_resume', caps: [] });
+    const tools = createDocketTools(deps);
+    let token = '';
+    transports.register(ACCOUNT, {
+      start: async (request: RunRequest) => {
+        const docket = request.capabilities.find((capability) => capability.id === 'docket-pages');
+        const value = docket !== undefined && docket.kind === 'mcp' ? docket.env['DOCKET_MCP_TOKEN'] : undefined;
+        token = value !== undefined && 'literal' in value ? value.literal : '';
+        const events = (async function* (): AsyncGenerator<AgentEvent, void> {
+          yield { type: 'text', at: T0 + 1, delta: 'working' };
+          throw new Error('the agent process blew up');
+        })();
+        return { ok: true, value: { events, answerPermission: () => undefined, steer: () => undefined, stop: async () => undefined } };
+      },
+    });
+
+    await expect(executeRun(deps, { onAsk: async () => 'allow' }, { item: ITEM, role: ROLE, prompt: 'go', cwd: '/wt', capabilities: [] })).rejects.toThrow('blew up');
+
+    expect(token).not.toBe('');
+    expect(await tools.call({ token, tool: 'page_publish', args: { title: 'late', kind: 'markdown', content: 'x' } })).toEqual({ ok: false, code: 'unauthorized' });
+    expect(await deps.pages.list({})).toEqual([]);
+  });
 });

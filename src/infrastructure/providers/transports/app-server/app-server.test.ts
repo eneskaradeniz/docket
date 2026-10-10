@@ -3,7 +3,7 @@
 // JSON-RPC 2.0 over stdio (fixtures/fake-app-server.cjs); no Codex install is needed. The fixture
 // appends every message in both directions to a log file so the tests assert the exact wire
 // traffic, not just the event stream.
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -71,6 +71,7 @@ const start = async (
     readonly resume?: { readonly sessionRef: string };
     readonly effort?: EffortLevel;
     readonly withEffortArg?: boolean;
+    readonly runDir?: string;
   } = {},
 ): Promise<Started> => {
   const cwd = runDir();
@@ -103,6 +104,7 @@ const start = async (
   const request: RunRequest = {
     runId: RUN_ID,
     cwd,
+    runDir: options.runDir ?? cwd,
     role: ROLE,
     route: { accountId: ACCOUNT },
     prompt: 'do the work',
@@ -150,6 +152,15 @@ const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 const finishedOf = (events: readonly AgentEvent[]) => events.filter((event) => event.type === 'finished');
 
 describe('createAppServerTransport', () => {
+  it('I-62: the config files are written under the request runDir and nothing is written into the working directory', async () => {
+    const separate = runDir();
+    const { events, cwd } = await runScenario('happy', { runDir: separate });
+    expect(events.length).toBeGreaterThan(0);
+    expect(existsSync(join(separate, 'config', 'mcp.json'))).toBe(true);
+    expect(existsSync(join(separate, 'config', 'skills.json'))).toBe(true);
+    expect(existsSync(join(cwd, 'config'))).toBe(false);
+  });
+
   describe('effort (P-41)', () => {
     const turnStartParams = (logPath: string): Record<string, unknown> => {
       const turn = clientRequests(logPath).find((msg) => msg['method'] === 'turn/start');
@@ -425,6 +436,7 @@ describe('createAppServerTransport', () => {
       const noBin = await createAppServerTransport(missingDef([])).start({
         runId: RUN_ID,
         cwd: runDir(),
+        runDir: runDir(),
         role: ROLE,
         route: { accountId: ACCOUNT },
         prompt: 'do the work',
@@ -436,6 +448,7 @@ describe('createAppServerTransport', () => {
       const notFound = await createAppServerTransport(missingDef([join(root, 'never-written-bin')])).start({
         runId: RUN_ID,
         cwd: runDir(),
+        runDir: runDir(),
         role: ROLE,
         route: { accountId: ACCOUNT },
         prompt: 'do the work',

@@ -28,6 +28,7 @@ export * from './fake-queue-repo';
 export * from './fake-repo-folders';
 export * from './fake-repo-registry';
 export * from './fake-repo-tools';
+export * from './fake-run-dirs';
 export * from './fake-run-repo';
 export * from './fake-run-tokens';
 export * from './fake-scratch-dirs';

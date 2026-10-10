@@ -44,6 +44,7 @@ const PORT_KEYS: readonly (keyof AppDeps)[] = [
   'machine',
   'dispatchStatus',
   'runTokens',
+  'runDirs',
   'mcpEndpoint',
 ];
 

@@ -2,7 +2,7 @@
 // "ACP transport (P-15 … P-17)"). The agent is a scripted node process speaking ACP JSON-RPC
 // over stdio (./fake-agent.cjs); it logs every exchanged message to a file, so the tests assert
 // on the client's exact wire behaviour. No real agent CLI is ever spawned.
-import { chmodSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -106,11 +106,13 @@ interface RequestOptions {
   readonly resume?: { readonly sessionRef: string };
   readonly effort?: EffortLevel;
   readonly model?: string;
+  readonly runDir?: string;
 }
 
 const requestOf = (cwd: string, options: RequestOptions = {}): RunRequest => ({
   runId: RUN_ID,
   cwd,
+  runDir: options.runDir ?? cwd,
   role: ROLE,
   route: { accountId: ACCOUNT, ...(options.model === undefined ? {} : { model: options.model }) },
   prompt: 'do the work',
@@ -214,6 +216,16 @@ const outcomeResponses = (messages: readonly WireMessage[]): readonly WireMessag
 // --- tests ---
 
 describe('acp transport', () => {
+  it('I-62: the config files are written under the request runDir and nothing is written into the working directory', async () => {
+    const cwd = runCwd();
+    const separate = join(root, 'separate-run-dir');
+    mkdirSync(separate, { recursive: true });
+    const run = await startRun('happy', requestOf(cwd, { runDir: separate, capabilities: [MCP_CAPABILITY] }));
+    await collect(run.handle.events);
+    expect(existsSync(join(separate, 'config', 'mcp.json'))).toBe(true);
+    expect(existsSync(join(cwd, 'config'))).toBe(false);
+  });
+
   it('P-15: initialize → session/new (carrying the run-scoped config) → session/prompt; session/update maps to AgentEvents and an unknown update kind becomes a raw event, never an error', async () => {
     const cwd = runCwd();
     const run = await startRun('happy', requestOf(cwd, { capabilities: [MCP_CAPABILITY, CONTEXT_CAPABILITY] }));

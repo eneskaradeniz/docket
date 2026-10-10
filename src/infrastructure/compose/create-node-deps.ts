@@ -47,6 +47,7 @@ import { createNodeAccountScan, createNodeCapabilityScan, createNodeCredentialIm
 import { createNodeRunTokens } from '../mcp/index';
 import { createNodeInstructionFiles } from './instruction-files';
 import { createFsPageFiles } from './page-files';
+import { createRunDirs } from './run-dirs';
 
 export interface NodeDepsConfig {
   readonly dataDir: string; // ~/.docket in the app, a temp folder in tests
@@ -139,6 +140,7 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     machine: createNodeMachineProbe(),
     dispatchStatus: createMemoryDispatchStatus(),
     runTokens: createNodeRunTokens(),
+    runDirs: createRunDirs({ dataDir: config.dataDir }),
     mcpEndpoint: config.mcpEndpoint,
   };
 

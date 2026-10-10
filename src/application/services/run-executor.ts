@@ -33,7 +33,7 @@ import {
   stageBrief,
 } from '../../domain/index';
 
-import type { AppDeps, AuditAction, RunHandle, RunRecord, RunRepo, TransportError } from '../ports';
+import type { AppDeps, AuditAction, RunDir, RunHandle, RunRecord, RunRepo, TransportError } from '../ports';
 
 import { spendConsentSatisfied } from './spend-consent';
 import type { BoardHooks } from './permission-board';
@@ -295,6 +295,7 @@ type ExecuteDeps = Pick<
   | 'definitions'
   | 'instructionFiles'
   | 'runTokens'
+  | 'runDirs'
   | 'mcpEndpoint'
 >;
 
@@ -346,12 +347,20 @@ export async function executeRun(
   workOrdersChanged?: WorkOrdersChangedNotify,
 ): Promise<ExecuteOutcome> {
   let started: RunId | undefined;
+  let runDir: RunDir | undefined;
   try {
-    return await driveRun(deps, permissions, input, board, notify, workOrdersChanged, (runId) => {
-      started = runId;
+    return await driveRun(deps, permissions, input, board, notify, workOrdersChanged, {
+      runId: (runId) => {
+        started = runId;
+      },
+      runDir: (dir) => {
+        runDir = dir;
+      },
     });
   } finally {
     if (started !== undefined) deps.runTokens.revoke(started);
+    // A-152: the run-scoped config dies with the run; a failed removal never masks the outcome.
+    await runDir?.dispose().catch(() => undefined);
   }
 }
 
@@ -362,7 +371,7 @@ async function driveRun(
   board: BoardHooks | undefined,
   notify: RunEventNotify | undefined,
   workOrdersChanged: WorkOrdersChangedNotify | undefined,
-  onRunId: (runId: RunId) => void,
+  hooks: { readonly runId: (runId: RunId) => void; readonly runDir: (dir: RunDir) => void },
 ): Promise<ExecuteOutcome> {
   const { item } = input;
   const { route, resolved } = await routeForTier(deps, item);
@@ -389,7 +398,7 @@ async function driveRun(
 
   const effort = await resolveEffort(deps, item, route);
   const runId = deps.ids.next<'run'>();
-  onRunId(runId);
+  hooks.runId(runId);
   const startedAt = deps.clock.now();
   const definitionsRev = await definitionsRevOf(deps, item, input.role);
   await deps.runs.create({
@@ -465,6 +474,15 @@ async function driveRun(
     role: input.role,
     capabilities: input.capabilities,
   });
+  // A-151: the run-scoped provider config lives here — outside the worktree, so no checkpoint
+  // commit can pick it up. Created after the token and before the first start.
+  let runDir: RunDir;
+  try {
+    runDir = await deps.runDirs.create(runId);
+  } catch {
+    return failAsTransport({ code: 'spawn_failed', message: 'the run directory could not be created' });
+  }
+  hooks.runDir(runDir);
   const startAttempt = async (
     resume: { readonly sessionRef: string } | undefined,
     prompt: string,
@@ -472,6 +490,7 @@ async function driveRun(
     transport.start({
       runId,
       cwd: input.cwd,
+      runDir: runDir.path,
       role: input.role,
       route,
       prompt,

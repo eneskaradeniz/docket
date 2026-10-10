@@ -48,6 +48,7 @@ import {
   createLoginStates,
   createPathDiscovery,
   createProviderTransportFactory,
+  pruneStaleRunDirs,
   startMcpListener,
 } from '../src/infrastructure/index';
 import type { McpListener } from '../src/infrastructure/index';
@@ -406,6 +407,14 @@ const startApp = async (): Promise<void> => {
     if (listening.ok) mcpListener = listening.value;
     else console.error(`docket MCP listener did not start (${listening.error})`);
   }
+
+  // Run directories a crash or a kill left behind (older than a day) are pruned best effort;
+  // only the count and error names are logged, never paths.
+  void pruneStaleRunDirs({
+    dataDir,
+    now: nodeDeps.clock.now(),
+    onError: (name) => console.error(`run directory prune failed (${name})`),
+  }).catch(() => undefined);
 
   const board = createPermissionBoard();
   // The app's update story in one seam: the no-op checker is the default (no updater ships

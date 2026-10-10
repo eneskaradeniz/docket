@@ -45,6 +45,7 @@ import {
   createFakeIdGen,
   createFakeInstructionFiles,
   createFakeModelCatalog,
+  createFakeRunDirs,
   createFakeRunRepo,
   createFakeRunTokens,
   createFakeTransport,
@@ -397,6 +398,7 @@ describe('executeRun', () => {
       {
         runId: record.id,
         cwd: INPUT.cwd,
+        runDir: `/fake-data/runs/${record.id}`,
         role: ROLE,
         route: { accountId: ACCOUNT },
         prompt: INPUT.prompt,
@@ -1797,6 +1799,94 @@ describe('executeRun — rolling note and handoff runs', () => {
       kind: 'ask',
       reason: 'billing_boundary',
     });
+  });
+});
+
+// --- the run directory (A-151 … A-153) --------------------------------------------------------------
+
+describe('executeRun run directory', () => {
+  const withDirs = async (options: Parameters<typeof harness>[0] = {}) => {
+    const h = await harness(options);
+    const runDirs = createFakeRunDirs();
+    const runTokens = createFakeRunTokens();
+    return {
+      ...h,
+      runDirs,
+      runTokens,
+      deps: {
+        ...h.deps,
+        runDirs,
+        runTokens,
+        mcpEndpoint: { socketPath: '/s', command: '/c', args: [], env: {} },
+      },
+    };
+  };
+
+  it('A-151: the run directory is created for the run, after the token, before the transport starts; it is not the cwd and not inside it', async () => {
+    const h = await withDirs();
+    const atStart: { dirs: readonly string[]; tokens: number }[] = [];
+    h.transports.register(ACCOUNT, {
+      start: async (request) => {
+        atStart.push({ dirs: h.runDirs.live(), tokens: h.runTokens.live().length });
+        return h.transport.start(request);
+      },
+    });
+    await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    const record = await theRun(h.runs);
+    const request = theRequest(h.transport);
+    expect(h.runDirs.created()).toEqual([request.runDir]);
+    expect(request.runDir).toContain(record.id);
+    expect(atStart).toEqual([{ dirs: [request.runDir], tokens: 1 }]);
+    expect(request.runDir).not.toBe(INPUT.cwd);
+    expect(request.runDir.startsWith(`${INPUT.cwd}/`)).toBe(false);
+    expect(INPUT.cwd.startsWith(`${request.runDir}/`)).toBe(false);
+    expect(request.cwd).toBe(INPUT.cwd);
+  });
+
+  describe('A-152: the run directory is removed — and the token revoked — in the same place, on every end path', () => {
+    const settled = async (options: Parameters<typeof harness>[0], tweak?: (h: Awaited<ReturnType<typeof withDirs>>) => void) => {
+      const h = await withDirs(options);
+      tweak?.(h);
+      await executeRun(h.deps, permissionGate().permissions, INPUT).catch(() => undefined);
+      return h;
+    };
+    const gone = (h: Awaited<ReturnType<typeof withDirs>>): void => {
+      expect(h.runDirs.created()).toHaveLength(1);
+      expect(h.runDirs.live()).toEqual([]);
+      expect(h.runTokens.live()).toEqual([]);
+    };
+
+    it('A-152: success, failure and a stop (cancelled)', async () => {
+      for (const reason of ['completed', 'failed', 'cancelled'] as const) gone(await settled({ script: [finished(reason)] }));
+    });
+    it('A-152: a limit hit and a stream that dries up', async () => {
+      gone(await settled({ script: [limitHit({ class: 'window_exhausted' })] }));
+      gone(await settled({ script: [text('x')] }));
+    });
+    it('A-152: a transport that fails to start', async () => {
+      gone(await settled({}, (h) => h.transport.failStart({ code: 'spawn_failed', message: 'nope' })));
+    });
+    it('A-152: an exception thrown while the run is driven', async () => {
+      const h = await withDirs();
+      h.transports.register(ACCOUNT, { start: async () => { throw new Error('crash'); } });
+      await expect(executeRun(h.deps, permissionGate().permissions, INPUT)).rejects.toThrow('crash');
+      gone(h);
+    });
+  });
+
+  it('A-153: a run that never reaches the transport creates no directory; a directory that cannot be created fails the run as a transport error and leaves no live token', async () => {
+    const none = await withDirs({ withTransport: false });
+    await executeRun(none.deps, permissionGate().permissions, INPUT);
+    expect(none.runDirs.created()).toEqual([]);
+
+    const broken = await withDirs();
+    broken.runDirs.failCreate();
+    const outcome = await executeRun(broken.deps, permissionGate().permissions, INPUT);
+    expect(outcome).toMatchObject({ kind: 'transport_error', error: { code: 'spawn_failed' } });
+    expect(broken.transport.requests()).toEqual([]);
+    expect(broken.runTokens.live()).toEqual([]);
+    expect((await theRun(broken.runs)).outcome).toBe('failed');
   });
 });
 
