@@ -128,6 +128,7 @@ const SUCCESS_KEYS: Readonly<Record<Command['type'], LabelKey>> = {
   'page.comment': 'page.toast.commented',
   'page.requestApproval': 'page.toast.requested',
   'page.decide': 'page.toast.approved',
+  'page.pin': 'editor.saved',
   'app.update.check': 'success.app.update.check',
   'app.update.apply': 'success.app.update.apply',
 };

@@ -80,6 +80,7 @@ import {
   createProject,
   decideHumanGate,
   commentOnPage,
+  pinPage,
   decidePageApproval,
   decideProposalUseCase,
   requestPageApproval,
@@ -118,7 +119,7 @@ import {
 } from '../application';
 
 import type { CapabilityImportResultView, Command, CommandResult } from './commands';
-import { pageDetailView, pageListView } from './page-views';
+import { pageDetailView, pageLibraryView, pageListView } from './page-views';
 import type {
   AccountDetailView,
   AccountModelsView,
@@ -557,6 +558,12 @@ const runCommand = async (
       );
     }
 
+    case 'page.pin': {
+      const page = ulidValue<'page'>(command.page);
+      if (page === undefined) return invalidId();
+      return pageCommandOf(await pinPage(deps, { page, pinned: command.pinned }));
+    }
+
     case 'page.requestApproval': {
       const page = ulidValue<'page'>(command.page);
       if (page === undefined) return invalidId();
@@ -905,6 +912,20 @@ const runQuery = async (
       const workOrder = ulidValue<'work-order'>(query.workOrder);
       if (workOrder === undefined) return invalidId();
       return pageListView(deps, workOrder);
+    }
+    case 'pages.library': {
+      const project = query.project === undefined ? undefined : slugValue<'project'>(query.project);
+      const workOrder = query.workOrder === undefined ? undefined : ulidValue<'work-order'>(query.workOrder);
+      if ((query.project !== undefined && project === undefined) || (query.workOrder !== undefined && workOrder === undefined)) {
+        return invalidId();
+      }
+      return pageLibraryView(deps, {
+        ...(query.q === undefined ? {} : { q: query.q }),
+        ...(query.kind === undefined ? {} : { kind: query.kind }),
+        ...(project === undefined ? {} : { project }),
+        ...(workOrder === undefined ? {} : { workOrder }),
+        ...(query.pinned === undefined ? {} : { pinned: query.pinned }),
+      });
     }
     case 'page.detail': {
       const id = ulidValue<'page'>(query.id);

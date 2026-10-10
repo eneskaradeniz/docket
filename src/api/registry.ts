@@ -53,6 +53,7 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
   'page.comment': { input: 'page: PageId, version: number, text: string, anchor?: string' },
   'page.requestApproval': { input: 'page: PageId' },
   'page.decide': { input: 'page: PageId, decision: approved|rejected, version: number' },
+  'page.pin': { input: 'page: PageId, pinned: boolean' },
   'app.update.check': { input: 'no input' },
   'app.update.apply': { input: 'no input' },
 };
@@ -83,5 +84,6 @@ export const QUERY_REGISTRY: Record<Query['type'], RegistryEntry> = {
   'proposals.list': { input: "status?: 'pending' | 'approved' | 'rejected' | 'stale'" },
   'proposal.detail': { input: 'id: ProposalId' },
   'pages.list': { input: 'workOrder: WorkOrderId' },
+  'pages.library': { input: 'q?: string, kind?: PageKind, project?: ProjectSlug, workOrder?: WorkOrderId, pinned?: boolean' },
   'page.detail': { input: 'id: PageId, version?: number' },
 };
