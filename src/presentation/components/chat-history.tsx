@@ -51,7 +51,7 @@ function Row({ entry, state, store, locale }: { readonly entry: ChatConversation
       onKeyDown={onKey}
     >
       <span className="min-w-0">
-        <span className="mb-1 block truncate text-[0.875rem] font-semibold leading-5 text-ink">{entry.title}</span>
+        <span className="mb-1 block truncate text-[0.875rem] font-semibold leading-5 text-ink" title={entry.title}>{entry.title}</span>
         <span className="flex items-center gap-2 text-[0.75rem] leading-4 text-inkdim">
           <span className="truncate">{scope}</span>
           <span>·</span>

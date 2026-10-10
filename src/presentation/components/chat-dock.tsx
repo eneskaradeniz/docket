@@ -60,7 +60,7 @@ function ScopeChip({ state, store, locale }: { readonly state: ChatState; readon
         onClick={() => store.togglePop()}
       >
         <ChatIcon name={scopeIcon(state.scope.kind)} className="h-3.5 w-3.5 flex-none text-inkdim" />
-        <span className="truncate">{scopeName(state.scope, state.place, locale)}</span>
+        <span className="truncate" title={scopeName(state.scope, state.place, locale)}>{scopeName(state.scope, state.place, locale)}</span>
         {extra > 0 ? <span className="font-mono text-[0.6875rem] font-medium leading-none text-signal-soft">{`+${extra}`}</span> : null}
         {state.pinned ? <span className="font-mono text-[0.6875rem] font-medium leading-none text-inkdim">{t(locale, 'chat.scope.pinned')}</span> : null}
         <ChatIcon name="chevron" className="h-2.5 w-2.5 flex-none text-inkdim" />

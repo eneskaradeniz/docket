@@ -99,7 +99,7 @@ function Table({ columns, rows, label }: { readonly columns: readonly string[]; 
 function CardHeader({ title, type, children }: { readonly title: string; readonly type?: string; readonly children?: ReactNode }) {
   return (
     <div className="flex min-h-8 items-center gap-2 px-3 py-2">
-      <span className="min-w-0 truncate text-[0.875rem] font-semibold leading-5 text-ink">{title}</span>
+      <span className="min-w-0 truncate text-[0.875rem] font-semibold leading-5 text-ink" title={title}>{title}</span>
       <span className="flex-1" />
       {type === undefined || type === '' ? null : <span className="whitespace-nowrap font-mono text-[0.6875rem] font-medium leading-none text-inkdim">{type}</span>}
       {children}

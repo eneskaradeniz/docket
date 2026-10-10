@@ -1166,6 +1166,18 @@ belongs to the mobile app.
   ekrani" (no Turkish characters) finds the note → the Metin kind → pin the html page ("Sabitlendi")
   → Sabitler with Taslak and "taslak" on top → click the card → the page viewer → ‹ Geri returns to
   the library with search, kind and Sabitler intact. It runs once per run.)*
+  *(Addendum 2026-10-11, #936: J-15 walks Docket AI's chat on the same world plus a chat seed
+  (`e2e/seed-chat.ts`: an older global conversation and a project conversation whose assistant message
+  carries a page, a table, a draft and a proposal with its pending action), launched by
+  `e2e/chat-app.mjs`: the round button and ⌘J open the panel and Esc hands the focus back → the scope
+  follows the board and a work order, a manual choice is "sabit" and holds across ‹ Geri until
+  "Bulunduğum ekranı izle" → the history lists both conversations, the ASCII search "butce" finds the
+  Bütçe one, pin and delete → the four cards, Oluştur, Onayla → the applied row → Geri al → the permission
+  dialog grants and revokes → @ picks the seeded work order, a text file is attached, a message is
+  sent (no model exists in this world: the runner refuses the turn and the "auth" note shows — the
+  streamed text itself is the store's tests') → the page card opens the viewer and the native view
+  yields to the open panel and returns when it closes → the Esc ladder → no page or console errors.
+  It runs once per run. The layout audit adds one `chat:` line per size × theme.)*
 - **Layout audit** (pure DOM measurement, no pixel diff; each assertion named `L-n: …`, for every
   screen × size × theme):
   - **L-1** The sidebar's left edge is 0 and its width is 240px at every window size — it never
