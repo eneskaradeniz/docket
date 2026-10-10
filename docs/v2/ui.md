@@ -1136,6 +1136,12 @@ belongs to the mobile app.
   ekrani" (no Turkish characters) finds the note → the Metin kind → pin the html page ("Sabitlendi")
   → Sabitler with Taslak and "taslak" on top → click the card → the page viewer → ‹ Geri returns to
   the library with search, kind and Sabitler intact. It runs once per run.)*
+  *(Addendum 2026-10-11, #939: J-17 walks the Öneriler screen on the same world, which now also holds
+  three proposals on the repo's definition files — a pending one, one whose file moved since (stale)
+  and one already rejected: the sidebar badge shows 1 → open it → the diff with its "−" and "+" lines →
+  Bayat shows the stale proposal with Onayla disabled and Reddet open → Karar verilen shows the rejected
+  one without a bar → Onayla on the pending one → the toast "Onaylandı" and the item stands selected in
+  Karar verilen. It runs once per run.)*
 - **Layout audit** (pure DOM measurement, no pixel diff; each assertion named `L-n: …`, for every
   screen × size × theme):
   - **L-1** The sidebar's left edge is 0 and its width is 240px at every window size — it never
@@ -1192,3 +1198,65 @@ the E2E smoke and the operator scenario, not by unit rules.
 Every UI-bearing PR batch ends with a numbered manual scenario on the tracker PR (Turkish);
 the operator walks it against `npm run dev` and records the verdict. No merge to `main`
 without the verdict; merges into `v2` are fine.
+
+## Proposals screen (U-136 … U-150)
+
+Slice 6e-9 of Phase 6 (#939), over `proposals.list`, `proposal.detail` and `proposal.decide` (A-128 …
+A-131, A-12). The screen draws the operator-approved prototype (`docket-tasarim/oneriler`, 2026-10-11)
+with the app's own tokens; where they disagree the tokens win. The operator's one change to the
+prototype: the copy is short and plain, no explanatory sentence, and no sentence of the screen is longer
+than 8 words. A proposal's summary, target, scope, author and every diff line are untrusted text.
+
+- **U-136** (nav, sidebar; added 2026-10-11, #939) Route, row, badge. The route `proposals` is a U-25
+  history entry that always exists and is pushed once, never doubled. The sidebar row "Öneriler"
+  ("Proposals") stands under Anasayfa, is current (`aria-current="page"`) on the route and shows the
+  number of pending proposals whose file has not moved as a mono badge only above zero. The count is
+  the store's own read, loaded at startup and re-read on window focus. The selection lives in the
+  store, not in the route.
+- **U-137** (proposals store; added 2026-10-11, #939) Grouping. The list is `proposals.list`; the UI
+  groups it: pending and not `currentlyStale` is Bekleyen, pending and `currentlyStale` is Bayat, approved
+  and rejected are Karar verilen. A list row carries no staleness, so the store reads `proposal.detail`
+  for every pending proposal; a proposal the api already saved as `stale` is Bayat too.
+- **U-138** (proposals store, screen; added 2026-10-11, #939) Tabs and selection. The tabs Bekleyen ·
+  Karar verilen · Bayat are `aria-pressed` buttons with mono counts; Bekleyen is the default. The first
+  item of the shown tab is selected when the chosen one is not in it, and choosing an item or a tab reads
+  the detail of what is now selected. No proposals at all says "Öneri yok", an empty tab "Bu sekmede
+  öneri yok", a failed first read shows an alert with Yeniden dene.
+- **U-139** (screen; added 2026-10-11, #939) List item. Summary, target (mono), scope, status chip,
+  relative age (the app's own formatter) and the author label. Scope `global` reads "Genel"; a project
+  or repo scope reads its name resolved from `project.tree`, and the slug when it does not resolve.
+- **U-140** (screen; added 2026-10-11, #939) Chips. Bekliyor with an amber lamp, ✓ Onaylandı,
+  Reddedildi, Bayat; only the pending chip has a lamp.
+- **U-141** (screen; added 2026-10-11, #939) Detail. A header with summary, target, scope, author, age
+  and chip; the diff in a `role="region"` labelled "Fark": removed, added and unchanged lines with `−` /
+  `+` gutters, monospace, `white-space: pre`, scrolling horizontally; a truncated diff ends with one short
+  row "Fark kısaltıldı".
+- **U-142** (screen; added 2026-10-11, #939) The bar. A pending proposal has a bottom bar with Reddet and
+  Onayla and the hint "Onaylarsan dosya yazılır". A stale one keeps Reddet, disables Onayla, shows the
+  note "Dosya değişti; öneri geçersiz." and the hint "Önce güncel hâli gerek". A decided proposal, and one
+  the api saved as stale (it can no longer be decided), has no bar.
+- **U-143** (proposals store, screen; added 2026-10-11, #939) A decision that lands. Onayla / Reddet send
+  `proposal.decide`; on success the store re-queries the list and the details, switches to Karar verilen
+  with the item selected, and the screen toasts "Onaylandı" / "Reddedildi".
+- **U-144** (proposals store, screen; added 2026-10-11, #939) A refusal. On `ok:false` the tab stays and the
+  failure sentence shows in the detail's note row — never a blank state; `stale` and `not_found` have
+  their own sentences, every other code one generic line. `stale` moves the proposal to Bayat, selected;
+  both re-read the list. Choosing another item or tab clears the note.
+- **U-145** (proposals store; added 2026-10-11, #939) One decision in flight per proposal. A second click
+  on a proposal being decided sends nothing; another proposal is not blocked, and the buttons are
+  disabled while their own decision runs.
+- **U-146** (proposals store; added 2026-10-11, #939) Refresh. The store re-reads on open, on window focus
+  and after its own commands; nothing polls. A read that fails after a list stands keeps it and shows no
+  error; an older reply never overwrites a newer one.
+- **U-147** (screen; added 2026-10-11, #939) Untrusted text. Summary, target, scope, author and every diff
+  line enter the DOM only as React text nodes — never as markup, never linked.
+- **U-148** (labels; added 2026-10-11, #939) Copy. Every string lives in the Turkish and English bundles;
+  none exceeds 8 words; the fixed Turkish sentences read exactly as the operator chose them.
+- **U-149** (screen; added 2026-10-11, #939) Keyboard and aria. The selected list item is
+  `aria-current`; ↑ / ↓ move the selection within the list; Enter never decides — Onayla and Reddet are
+  explicit buttons of their own.
+- **U-150** (screen; added 2026-10-11, #939) Measure. Rem lengths (the only px-like value is the 1 px
+  hairline), the 4·8·12·16·20·24·32 spacing scale, radii `rounded-control` / `rounded-card` /
+  `rounded-panel` / `rounded-full` only, an explicit leading on every sized text line, a focus ring on
+  every control, panes stacked below the `lg` breakpoint, transitions behind `motion-safe:` /
+  `motion-reduce:`, no vendor name. A source-scan test pins these on the screen's own source.
