@@ -16,8 +16,9 @@
 // store's `open` decides whether it shows at all (U-35). The badge mirrors the shell store: the
 // cockpit's attention count, present only while attention exists — zero renders nothing, never
 // a zero (U-10). Every user-visible string arrives through a label key (U-1).
-import { useCallback, useEffect, useReducer, useRef, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useSyncExternalStore } from 'react';
 
+import { ChatDock } from '../components/chat-dock';
 import { SearchPalette } from '../components/search-palette';
 import { SidebarAccounts } from '../components/sidebar-accounts';
 import { SidebarNav } from '../components/sidebar-nav';
@@ -29,6 +30,8 @@ import { t, type Locale } from '../labels/t';
 import { unaddedRowTarget, type AccountsFrameStore } from '../stores/accounts-frame';
 import { editInSettingsTarget, type AccountViewStore } from '../stores/account-view';
 import type { BoardStore } from '../stores/board';
+import { chatPlaceOf, chatShortcutPlan, isChatShortcut } from '../stores/chat-model';
+import type { ChatStore } from '../stores/chat-store';
 import type { CockpitStore } from '../stores/cockpit';
 import type { LibraryStore } from '../stores/library';
 import type { LocaleStore } from '../stores/locale';
@@ -68,6 +71,7 @@ import type { NewProjectDone, NewProjectStore } from '../stores/new-project';
 import type { WizardFinished, WizardStore } from '../stores/wizard';
 import type { PageListStore, PageViewerStore, PageViewHost } from '../stores/page-viewer';
 import type { WorkOrderDetailStore } from '../stores/work-order-detail';
+import { formatWorkOrderCode } from '../stores/work-order-code';
 import { AccountViewScreen } from './account-view';
 import { BoardScreen } from './board';
 import { CockpitScreen } from './cockpit';
@@ -94,6 +98,8 @@ export interface ShellScreenProps {
   readonly pageHost: PageViewHost;
   /** The Artifact'lar library (U-84): the screen's store, which also holds the sidebar's count. */
   readonly library: LibraryStore;
+  /** Docket AI's chat (U-101): the dock mounts once here, over every screen. */
+  readonly chat: ChatStore;
   readonly accountView: AccountViewStore;
   readonly settings: SettingsStore;
   /** The settings panel's per-account model list and its spend-consent flow (P-40). */
@@ -178,6 +184,7 @@ export function ShellScreen({
   pageViewer,
   pageHost,
   library,
+  chat,
   accountView,
   settings,
   models,
@@ -306,6 +313,47 @@ export function ShellScreen({
   const badge = state.badge;
   const treeState = useSyncExternalStore(tree.subscribe, tree.state);
   const accountsState = useSyncExternalStore(accounts.subscribe, accounts.state);
+  // Docket AI's panel: whether it is open drives the page view's yielding (U-76), and the place
+  // the current screen gives it (scope choices, the screen reference) follows the route (U-122).
+  const chatOpen = useSyncExternalStore(chat.subscribe, () => chat.state().open);
+  const detailView = useSyncExternalStore(detail.subscribe, () => detail.state().view);
+  const chatPlace = useMemo(
+    () =>
+      chatPlaceOf({
+        route,
+        tree: treeState.tree,
+        workOrder:
+          route.name === 'workOrder' && detailView !== null && detailView.record.id === route.id
+            ? { id: detailView.record.id, repo: detailView.record.repo, number: detailView.number, title: detailView.record.title }
+            : null,
+        code: (number) => formatWorkOrderCode(number, locale),
+      }),
+    [route, treeState.tree, detailView, locale],
+  );
+  useEffect(() => {
+    chat.setPlace(chatPlace);
+  }, [chat, chatPlace]);
+  // ⌘J (or Ctrl+J) toggles the panel (U-119): a blocking modal ignores it, an open palette is
+  // closed first, and opening the palette in turn closes the panel — the two never stand together.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (!isChatShortcut(event)) return;
+      event.preventDefault();
+      const plan = chatShortcutPlan({ paletteOpen: palette.open, modalOpen: wizardUp || settingsPanel.open, chatOpen: chat.state().open });
+      if (plan === 'ignore') return;
+      if (plan === 'closePaletteAndOpen') {
+        dispatchPalette({ type: 'close' });
+        chat.open();
+        return;
+      }
+      chat.toggle();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [chat, palette.open, wizardUp, settingsPanel.open]);
+  useEffect(() => {
+    if (palette.open) chat.close();
+  }, [chat, palette.open]);
   // A tree that loads or refreshes under an open palette must re-derive its results: the query
   // alone would keep the results of the tree it was typed over. Only the tree's identity is a
   // trigger — the palette's own fields are read as they stand in this render, so a keystroke
@@ -584,7 +632,7 @@ export function ShellScreen({
               pageId={route.id}
               locale={locale}
               // The native view paints above everything of Docket's: any overlay takes it away (U-76).
-              overlayOpen={palette.open || settingsPanel.open || wizardUp}
+              overlayOpen={palette.open || settingsPanel.open || wizardUp || chatOpen}
               now={clockNow()}
               onBack={goBack}
             />
@@ -629,6 +677,15 @@ export function ShellScreen({
           dispatchSettingsPanel({ type: 'close' });
           openAccount(id);
         }}
+      />
+
+      <ChatDock
+        store={chat}
+        locale={locale}
+        hidden={wizardUp || settingsPanel.open}
+        onOpenPage={openPage}
+        onOpenAccounts={() => openSettings('accounts')}
+        onOpenConsent={() => openSettings('accounts')}
       />
 
       <WizardScreen store={wizard} locale={locale} localeStore={localeStore} themeStore={themeStore} marks={marks} />

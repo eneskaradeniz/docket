@@ -14,6 +14,7 @@ import { createAccountModelsStore } from './stores/account-models';
 import { createRolesStore } from './stores/roles';
 import { createAccountViewStore } from './stores/account-view';
 import { createBoardStore } from './stores/board';
+import { createChatStore } from './stores/chat-store';
 import { createCockpitStore } from './stores/cockpit';
 import { createLivePaneStore } from './stores/live-pane';
 import { createLibraryStore } from './stores/library';
@@ -26,6 +27,9 @@ import { createSettingsStore } from './stores/settings';
 import { createCandidateDotStore } from './stores/settings-panel';
 import { createShellStore } from './stores/shell';
 import { createThemeStore, mediaSchemeSource } from './stores/theme';
+import { toast } from './stores/toasts';
+import { t } from './labels/t';
+import { fill } from './components/chat-style';
 import { createProviderMarksStore } from './stores/provider-marks';
 import { createUpdateStore } from './stores/update';
 import { createNewProjectStore } from './stores/new-project';
@@ -100,6 +104,14 @@ if (mount !== null) {
   });
   // The Artifact'lar library (U-84 … U-89): the screen's store, also the sidebar row's count.
   const library = createLibraryStore({ api, changes, actor: USER });
+  // Docket AI's chat (U-101): its toasts ride the one toast service in the active locale.
+  const chat = createChatStore({
+    api,
+    changes,
+    actor: USER,
+    now: () => Date.now(),
+    notify: ({ type, key, values }) => toast({ type, text: fill(t(locale.current(), key), values ?? {}) }),
+  });
   const settings = createSettingsStore({ api, changes, actor: USER, locale: locale.current, timeZone });
   // The settings panel's per-account model list and its spend-consent flow (P-40).
   const accountModels = createAccountModelsStore({ api, changes, actor: USER });
@@ -147,6 +159,7 @@ if (mount !== null) {
           pageViewer={pageViewer}
           pageHost={pageHost}
           library={library}
+          chat={chat}
           accountView={accountView}
           settings={settings}
           models={accountModels}
