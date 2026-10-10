@@ -14,6 +14,7 @@ import { createFakeDefinitionStore } from './fake-definition-store';
 import { createFakeEventLog } from './fake-event-log';
 import { createFakeGitProbe } from './fake-git-probe';
 import { createFakeIdGen } from './fake-id-gen';
+import { createFakeDispatchStatus, createFakeMachineProbe } from './fake-machine-probe';
 import { createFakeInstructionFiles } from './fake-instruction-files';
 import { createFakeModelCatalog } from './fake-model-catalog';
 import { createFakeNotifier } from './fake-notifier';
@@ -66,5 +67,7 @@ export const createFakeDeps = (overrides: Partial<AppDeps> = {}): AppDeps => ({
   scratch: createFakeScratchDirs(),
   repoFolders: createFakeRepoFolders(),
   worktreeFiles: createFakeWorktreeFiles(),
+  machine: createFakeMachineProbe(),
+  dispatchStatus: createFakeDispatchStatus(),
   ...overrides,
 });
