@@ -6,6 +6,7 @@
 import { useEffect, useSyncExternalStore } from 'react';
 
 import { ActionButton } from '../components/action-button';
+import { HomeLaunchers } from '../components/launcher-rows';
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
 import {
@@ -80,6 +81,7 @@ export function NewProjectScreen({ store, locale, onCancel, onDone }: NewProject
       <div className="px-8 pt-8">
         <h1 className="text-[20px] font-bold leading-tight text-ink">{t(locale, 'newProject.title')}</h1>
         <p className="mt-1 text-[14px] text-inkdim">{t(locale, 'newProject.copy')}</p>
+        <HomeLaunchers />
       </div>
 
       <div className="mt-5 min-h-0 overflow-y-auto px-8 pb-6">
