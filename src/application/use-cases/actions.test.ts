@@ -608,6 +608,39 @@ describe('undoAction (A-183)', () => {
   });
 });
 
+describe('applier context and undoer actor (A-186)', () => {
+  it('A-186: the applier receives the conversation and the record id as its context, on the grant path and the approval path', async () => {
+    const h = await makeHarness();
+    const seen: { readonly conversation: ConversationId; readonly action: ActionId }[] = [];
+    const apply: ActionApplier = async (_a, _authority, ctx) => {
+      seen.push(ctx);
+      return { ok: true, value: {} };
+    };
+    await grant(h, ['roadmap_edit']);
+    const viaGrant = (await propose(h, roadmapEdit, apply)).record;
+    const waiting = (await propose(h, openWorkOrder, apply)).record;
+    await decideActionUseCase(h.deps, { id: waiting.id, decision: 'approved', by: USER }, apply);
+    expect(seen).toEqual([
+      { conversation: h.conversation, action: viaGrant.id },
+      { conversation: h.conversation, action: waiting.id },
+    ]);
+  });
+
+  it('A-186: the undoer receives the stored record and the operator who asked', async () => {
+    const h = await makeHarness();
+    const { record } = await propose(h, openWorkOrder, recorder(() => ({ ok: true, value: { undo: UNDO } })).apply);
+    await decideActionUseCase(h.deps, { id: record.id, decision: 'approved', by: USER }, recorder(() => ({ ok: true, value: { undo: UNDO } })).apply);
+    const calls: { readonly record: ActionRecord; readonly by: Actor }[] = [];
+    const undo: ActionUndoer = async (r, by) => {
+      calls.push({ record: r, by });
+      return { ok: true, value: undefined };
+    };
+    const stored = await h.deps.actions.get(record.id);
+    expect(code(await undoAction(h.deps, { id: record.id, by: USER }, undo))).toBe('ok');
+    expect(calls).toEqual([{ record: stored, by: USER }]);
+  });
+});
+
 describe('listActions and activeGrants (A-184)', () => {
   it('A-184: listActions answers one conversation oldest first, or only its pending records', async () => {
     const h = await makeHarness();
