@@ -110,6 +110,21 @@ const recordGateDecision = async (
   return deriveWorkOrderState(flow, [...events, event]);
 };
 
+/** The `page_approval` gate the work order's current stage is waiting on, if any — the gate a page
+ *  approval decides. Undefined when the work order or its definitions are gone, or when nothing of
+ *  that kind is pending (the stage moved on, or another gate kind is the one waiting). */
+export async function pendingPageApprovalGate(
+  deps: Pick<AppDeps, 'workOrders' | 'definitions'>,
+  id: WorkOrderId,
+): Promise<GateSlug | undefined> {
+  const loaded = await loadWorkOrder(deps, id);
+  if (!loaded.ok) return undefined;
+  const { flow, state } = loaded.value;
+  if (state.status !== 'awaiting_human' || state.stage === null) return undefined;
+  const stage = flow.stages.find((candidate) => candidate.id === state.stage);
+  return stage?.exit.find((gate) => gate.kind === 'page_approval' && state.pendingGates.includes(gate.id))?.id;
+}
+
 export type DecideGateError = 'not_found' | 'not_current_stage' | 'not_pending' | 'not_a_human_gate' | 'agent_cannot_decide';
 
 export async function decideHumanGate(

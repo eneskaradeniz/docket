@@ -25,6 +25,7 @@ import {
   createSqliteAppSettingsRepo,
   createSqliteBindingRepo,
   createSqliteEventLog,
+  createSqlitePageRepo,
   createSqlitePhaseAutoRunRepo,
   createSqliteProjectPaths,
   createSqliteProjectRepo,
@@ -43,6 +44,7 @@ import { createModelCatalog } from '../providers/catalog/index';
 import { createQuotaProbeResolver } from '../providers/quota/index';
 import { createNodeAccountScan, createNodeCapabilityScan, createNodeCredentialImporter, type LoginStates } from '../providers/discovery/index';
 import { createNodeInstructionFiles } from './instruction-files';
+import { createFsPageFiles } from './page-files';
 
 export interface NodeDepsConfig {
   readonly dataDir: string; // ~/.docket in the app, a temp folder in tests
@@ -112,6 +114,8 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     queue: createSqliteQueueRepo(db),
     definitions: createYamlDefinitionStore({ globalRoot: config.dataDir, repos, projects: projectPaths }),
     proposals: createSqliteProposalRepo(db),
+    pages: createSqlitePageRepo(db),
+    pageFiles: createFsPageFiles(config.dataDir),
     secrets,
     transports: config.transports,
     commands: createCommandRunner({ env: config.commandEnv }),

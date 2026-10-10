@@ -66,4 +66,14 @@ CREATE INDEX project_repos_by_repo ON project_repos (repo);`,
     version: 5,
     sql: `CREATE TABLE phase_auto_runs (project TEXT NOT NULL, phase TEXT NOT NULL, state TEXT NOT NULL, started_at INTEGER NOT NULL, attention_json TEXT NOT NULL, PRIMARY KEY (project, phase));`,
   },
+  {
+    // Pages and their comments (I-55): JSON `data` like proposals, with the columns the lists
+    // filter on (link, page, version, delivery) beside it. Page files live on disk, not here.
+    version: 6,
+    sql: `CREATE TABLE pages (id TEXT PRIMARY KEY, work_order TEXT, project TEXT, data TEXT NOT NULL);
+CREATE INDEX pages_by_work_order ON pages (work_order, id);
+CREATE INDEX pages_by_project ON pages (project, id);
+CREATE TABLE page_comments (id TEXT PRIMARY KEY, page TEXT NOT NULL, version INTEGER NOT NULL, delivered_at INTEGER, data TEXT NOT NULL);
+CREATE INDEX page_comments_by_page ON page_comments (page, id);`,
+  },
 ];
