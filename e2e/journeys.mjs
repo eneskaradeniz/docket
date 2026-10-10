@@ -1433,10 +1433,11 @@ for (const [sizeName, theme] of combos) {
     await grantButton.click({ timeout: WAIT });
     await toastWith('Uygula açık · 1 saat').waitFor({ state: 'visible', timeout: WAIT });
     await page.waitForFunction(() => /Uygula · (59|60) dk/.test(document.querySelector('[data-chat-tier]')?.textContent ?? ''), undefined, { timeout: SCAN_WAIT });
+    // A toast's Kapat sits outside the dialog and would close it, so the toasts go first.
+    await dismissToasts();
     await tier.click({ timeout: WAIT });
     await perm.getByText('✓ İş emri aç').waitFor({ state: 'visible', timeout: WAIT });
     await shot('izin');
-    await dismissToasts();
     await perm.getByRole('button', { name: 'İzni kapat' }).click({ timeout: WAIT });
     await toastWith('İzin kapandı').waitFor({ state: 'visible', timeout: WAIT });
     await page.waitForFunction(() => (document.querySelector('[data-chat-tier]')?.textContent ?? '').trim() === 'Öner', undefined, { timeout: SCAN_WAIT });
