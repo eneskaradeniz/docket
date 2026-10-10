@@ -37,6 +37,7 @@ const DOMAIN_MODULES = {
   quota: ['shared'],
   budget: ['shared'],
   proposal: ['shared'],
+  pages: ['shared'],
   resolver: ['shared', 'definitions', 'quota'],
   gates: ['shared', 'definitions'],
   providers: ['shared', 'quota', 'definitions'],

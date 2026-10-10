@@ -21,6 +21,8 @@ export * from './instruction-files';
 export * from './issue-tracker';
 export * from './model-catalog';
 export * from './notifier';
+export * from './page-files';
+export * from './page-repo';
 export * from './phase-auto-run-repo';
 export * from './project-repo';
 export * from './proposal-repo';

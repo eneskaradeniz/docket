@@ -1,6 +1,7 @@
 // storage/sqlite module barrel — other modules import it only through this file.
 export * from './account-repo';
 export * from './app-settings-repo';
+export * from './page-repo';
 export * from './phase-auto-run-repo';
 export * from './binding-repo';
 export * from './database';

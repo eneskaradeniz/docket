@@ -23,6 +23,8 @@ const PORT_KEYS: readonly (keyof AppDeps)[] = [
   'queue',
   'definitions',
   'proposals',
+  'pages',
+  'pageFiles',
   'secrets',
   'transports',
   'commands',

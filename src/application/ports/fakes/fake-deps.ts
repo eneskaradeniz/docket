@@ -18,6 +18,8 @@ import { createFakeDispatchStatus, createFakeMachineProbe } from './fake-machine
 import { createFakeInstructionFiles } from './fake-instruction-files';
 import { createFakeModelCatalog } from './fake-model-catalog';
 import { createFakeNotifier } from './fake-notifier';
+import { createFakePageFiles } from './fake-page-files';
+import { createFakePageRepo } from './fake-page-repo';
 import { createFakePhaseAutoRunRepo } from './fake-phase-auto-run-repo';
 import { createFakeProjectRepo } from './fake-project-repo';
 import { createFakeProposalRepo } from './fake-proposal-repo';
@@ -51,6 +53,8 @@ export const createFakeDeps = (overrides: Partial<AppDeps> = {}): AppDeps => ({
   queue: createFakeQueueRepo(),
   definitions: createFakeDefinitionStore(),
   proposals: createFakeProposalRepo(),
+  pages: createFakePageRepo(),
+  pageFiles: createFakePageFiles(),
   secrets: createFakeSecretVault(),
   transports: createFakeTransportResolver(),
   commands: createFakeCommandRunner(),

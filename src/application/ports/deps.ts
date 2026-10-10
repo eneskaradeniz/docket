@@ -16,6 +16,8 @@ import type { InstructionFiles } from './instruction-files';
 import type { DispatchStatusHolder, MachineProbe } from './machine-probe';
 import type { ModelCatalog } from './model-catalog';
 import type { Notifier } from './notifier';
+import type { PageFiles } from './page-files';
+import type { PageRepo } from './page-repo';
 import type { PhaseAutoRunRepo } from './phase-auto-run-repo';
 import type { ProjectRepo } from './project-repo';
 import type { ProposalRepo } from './proposal-repo';
@@ -45,6 +47,8 @@ export interface AppDeps {
   readonly queue: QueueRepo;
   readonly definitions: DefinitionStore;
   readonly proposals: ProposalRepo;
+  readonly pages: PageRepo;
+  readonly pageFiles: PageFiles;
   readonly secrets: SecretVault;
   readonly transports: TransportResolver;
   readonly commands: CommandRunner;
