@@ -93,6 +93,7 @@ const accountOf = (provider: string): AccountRepo['get'] => async () =>
 const request = (cwd: string): RunRequest => ({
   runId: RUN_ID,
   cwd,
+  runDir: cwd,
   role: ROLE,
   route: { accountId: ACCOUNT },
   prompt: 'do the work',

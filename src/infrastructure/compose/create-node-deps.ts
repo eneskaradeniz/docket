@@ -8,6 +8,7 @@ import type {
   AppDeps,
   Clock,
   CredentialImporter,
+  McpEndpoint,
   Notifier,
   ProviderDiscovery,
   QuotaProbeResolver,
@@ -25,6 +26,7 @@ import {
   createSqliteAppSettingsRepo,
   createSqliteBindingRepo,
   createSqliteEventLog,
+  createSqlitePageRepo,
   createSqlitePhaseAutoRunRepo,
   createSqliteProjectPaths,
   createSqliteProjectRepo,
@@ -42,7 +44,10 @@ import { createCapabilityCatalog } from '../providers/registry/index';
 import { createModelCatalog } from '../providers/catalog/index';
 import { createQuotaProbeResolver } from '../providers/quota/index';
 import { createNodeAccountScan, createNodeCapabilityScan, createNodeCredentialImporter, type LoginStates } from '../providers/discovery/index';
+import { createNodeRunTokens } from '../mcp/index';
 import { createNodeInstructionFiles } from './instruction-files';
+import { createFsPageFiles } from './page-files';
+import { createRunDirs } from './run-dirs';
 
 export interface NodeDepsConfig {
   readonly dataDir: string; // ~/.docket in the app, a temp folder in tests
@@ -58,6 +63,9 @@ export interface NodeDepsConfig {
   /** The provider discovery whose facts the account scan turns into machine-login candidates (P-53);
    * absent = the scan lists directory candidates only. */
   readonly providerDiscovery?: ProviderDiscovery;
+  /** How the app launches its own MCP child (the shell knows its executable and the built script);
+   * absent = no run is given Docket's tools. */
+  readonly mcpEndpoint?: McpEndpoint;
 }
 
 export interface NodeDeps {
@@ -112,6 +120,8 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     queue: createSqliteQueueRepo(db),
     definitions: createYamlDefinitionStore({ globalRoot: config.dataDir, repos, projects: projectPaths }),
     proposals: createSqliteProposalRepo(db),
+    pages: createSqlitePageRepo(db),
+    pageFiles: createFsPageFiles(config.dataDir),
     secrets,
     transports: config.transports,
     commands: createCommandRunner({ env: config.commandEnv }),
@@ -129,6 +139,9 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     repoFolders: createRepoFolders(),
     machine: createNodeMachineProbe(),
     dispatchStatus: createMemoryDispatchStatus(),
+    runTokens: createNodeRunTokens(),
+    runDirs: createRunDirs({ dataDir: config.dataDir }),
+    mcpEndpoint: config.mcpEndpoint,
   };
 
   const accountDiscovery = createNodeAccountScan(

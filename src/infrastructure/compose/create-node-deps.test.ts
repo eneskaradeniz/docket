@@ -187,6 +187,18 @@ describe('createNodeDeps', () => {
     await expect(stat(dir.path)).rejects.toThrow();
   });
 
+  it('I-52: wires the page repository to docket.db and the page files to <dataDir>/pages', async () => {
+    const node = makeNode();
+    const page = ulidOf<'page'>('01ARZ3NDEKTSV4RRFFQ69G5FA9');
+    await node.deps.pageFiles.write(page, 1, [{ path: 'index.html', bytes: encoder.encode('<p>x</p>') }]);
+    expect(await readFile(join(dataDir, 'pages', page, 'v1', 'index.html'), 'utf8')).toBe('<p>x</p>');
+    await node.deps.pages.save({
+      id: page, title: 'T', kind: 'html', createdBy: USER, createdAt: 1, approval: 'none',
+      versions: [{ n: 1, createdAt: 1, by: USER, entry: 'index.html', files: [{ path: 'index.html', bytes: 8, sha256: 'a'.repeat(64) }] }],
+    });
+    expect((await node.deps.pages.list({})).map((p) => p.id)).toEqual([page]);
+  });
+
   it('I-31: opens <dataDir>/docket.db, exposes the registry, and close() closes the database', async () => {
     const node = makeNode();
 

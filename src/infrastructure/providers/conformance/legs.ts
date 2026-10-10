@@ -183,6 +183,7 @@ export function createLegs(root: string, defs: readonly ProviderDef[]): readonly
   const requestOf = (cwd: string, resume: string | undefined): RunRequest => ({
     runId: RUN_ID,
     cwd,
+    runDir: cwd,
     role: ROLE,
     route: { accountId: ACCOUNT_ID },
     prompt: PROMPT_SENTINEL,

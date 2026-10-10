@@ -203,7 +203,7 @@ export function createAcpTransport(def: ProviderDef): AgentTransport {
         runCapabilities.push({ ...capability });
       }
 
-      const runConfig = await writeRunConfig(request.cwd, def, runCapabilities);
+      const runConfig = await writeRunConfig(request.runDir, def, runCapabilities);
       const launch = def.buildLaunch({
         prompt: request.prompt,
         configDir: runConfig.configDir,

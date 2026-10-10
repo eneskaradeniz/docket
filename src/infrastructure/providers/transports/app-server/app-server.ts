@@ -143,7 +143,7 @@ export function createAppServerTransport(def: ProviderDef): AgentTransport {
 
       const effortValue = providerLevelOf(def.levelNames, request.effort);
       const effortField = def.effortArg?.kind === 'request-field' ? def.effortArg.name : undefined;
-      const runConfig = await writeRunConfig(request.cwd, def, runCapabilities);
+      const runConfig = await writeRunConfig(request.runDir, def, runCapabilities);
       const launch = def.buildLaunch({
         prompt: request.prompt,
         configDir: runConfig.configDir,

@@ -16,13 +16,17 @@ import type { InstructionFiles } from './instruction-files';
 import type { DispatchStatusHolder, MachineProbe } from './machine-probe';
 import type { ModelCatalog } from './model-catalog';
 import type { Notifier } from './notifier';
+import type { PageFiles } from './page-files';
+import type { PageRepo } from './page-repo';
 import type { PhaseAutoRunRepo } from './phase-auto-run-repo';
 import type { ProjectRepo } from './project-repo';
 import type { ProposalRepo } from './proposal-repo';
 import type { QueueRepo } from './queue-repo';
 import type { RepoFolders } from './repo-folders';
 import type { RepoRegistry } from './repo-registry';
+import type { RunDirs } from './run-dirs';
 import type { RunRepo } from './run-repo';
+import type { McpEndpoint, RunTokens } from './run-tokens';
 import type { ScratchDirs } from './scratch-dirs';
 import type { SecretVault } from './secret-vault';
 import type { CommandRunner, EvidenceChecker, SecretScanner, Worktrees } from './repo-tools';
@@ -45,6 +49,8 @@ export interface AppDeps {
   readonly queue: QueueRepo;
   readonly definitions: DefinitionStore;
   readonly proposals: ProposalRepo;
+  readonly pages: PageRepo;
+  readonly pageFiles: PageFiles;
   readonly secrets: SecretVault;
   readonly transports: TransportResolver;
   readonly commands: CommandRunner;
@@ -63,4 +69,8 @@ export interface AppDeps {
   readonly worktreeFiles: WorktreeFiles;
   readonly machine: MachineProbe;
   readonly dispatchStatus: DispatchStatusHolder;
+  readonly runTokens: RunTokens;
+  readonly runDirs: RunDirs;
+  /** How Docket's own MCP child is launched; undefined when this shell runs none. */
+  readonly mcpEndpoint: McpEndpoint | undefined;
 }

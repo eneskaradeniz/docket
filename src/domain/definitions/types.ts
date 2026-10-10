@@ -16,6 +16,8 @@ export interface RoleDef {
   readonly writeScope: WriteScope;
   readonly capabilities: readonly CapabilitySlug[];
   readonly active: boolean;
+  /** Whether the run is given Docket's own tools (page publishing); absent means yes. */
+  readonly docketTools?: boolean;
 }
 
 export type GateDef =

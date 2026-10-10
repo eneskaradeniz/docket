@@ -8,4 +8,5 @@ export * from './vcs/index';
 export * from './gates/index';
 export * from './forge/index';
 export * from './providers/index';
+export * from './mcp/index';
 export * from './compose/index';

@@ -18,13 +18,17 @@ import { createFakeDispatchStatus, createFakeMachineProbe } from './fake-machine
 import { createFakeInstructionFiles } from './fake-instruction-files';
 import { createFakeModelCatalog } from './fake-model-catalog';
 import { createFakeNotifier } from './fake-notifier';
+import { createFakePageFiles } from './fake-page-files';
+import { createFakePageRepo } from './fake-page-repo';
 import { createFakePhaseAutoRunRepo } from './fake-phase-auto-run-repo';
 import { createFakeProjectRepo } from './fake-project-repo';
 import { createFakeProposalRepo } from './fake-proposal-repo';
 import { createFakeQueueRepo } from './fake-queue-repo';
 import { createFakeRepoFolders } from './fake-repo-folders';
 import { createFakeRepoRegistry } from './fake-repo-registry';
+import { createFakeRunDirs } from './fake-run-dirs';
 import { createFakeRunRepo } from './fake-run-repo';
+import { createFakeRunTokens } from './fake-run-tokens';
 import { createFakeScratchDirs } from './fake-scratch-dirs';
 import { createFakeSecretVault } from './fake-secret-vault';
 import { createFakeTransportResolver } from './fake-transport';
@@ -51,6 +55,8 @@ export const createFakeDeps = (overrides: Partial<AppDeps> = {}): AppDeps => ({
   queue: createFakeQueueRepo(),
   definitions: createFakeDefinitionStore(),
   proposals: createFakeProposalRepo(),
+  pages: createFakePageRepo(),
+  pageFiles: createFakePageFiles(),
   secrets: createFakeSecretVault(),
   transports: createFakeTransportResolver(),
   commands: createFakeCommandRunner(),
@@ -69,5 +75,8 @@ export const createFakeDeps = (overrides: Partial<AppDeps> = {}): AppDeps => ({
   worktreeFiles: createFakeWorktreeFiles(),
   machine: createFakeMachineProbe(),
   dispatchStatus: createFakeDispatchStatus(),
+  runTokens: createFakeRunTokens(),
+  runDirs: createFakeRunDirs(),
+  mcpEndpoint: undefined,
   ...overrides,
 });

@@ -4,6 +4,8 @@ export * from './gates';
 export * from './routing';
 export * from './projects';
 export * from './proposals';
+export * from './proposal-views';
+export * from './pages';
 export * from './accounts';
 export * from './account-test';
 export * from './account-adoption';

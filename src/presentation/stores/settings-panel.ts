@@ -12,12 +12,13 @@ import type { PaletteOrigin } from './search-palette';
  *  (key activation of the same). It decides where focus lands when the panel closes. */
 export type SettingsPanelOrigin = PaletteOrigin;
 
-/** The panel's sections: Çalışma — accounts, roles, capabilities, providers; Uygulama —
+/** The panel's sections: Çalışma — accounts, roles, capabilities, concurrency, providers; Uygulama —
  *  appearance (Dil and Tema), phone, update. */
 export type SettingsSection =
   | 'accounts'
   | 'roles'
   | 'capabilities'
+  | 'concurrency'
   | 'providers'
   | 'appearance'
   | 'phone'
@@ -29,7 +30,7 @@ export interface SettingsMenuGroup {
 }
 
 export const SETTINGS_MENU: readonly SettingsMenuGroup[] = [
-  { id: 'work', sections: ['accounts', 'roles', 'capabilities', 'providers'] },
+  { id: 'work', sections: ['accounts', 'roles', 'capabilities', 'concurrency', 'providers'] },
   { id: 'app', sections: ['appearance', 'phone', 'update'] },
 ];
 

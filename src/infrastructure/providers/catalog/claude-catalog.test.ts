@@ -384,6 +384,7 @@ describe('listClaudeRouteModels (P-29)', () => {
       const started = await transport.start({
         runId: RUN_ID,
         cwd: '/tmp/docket-catalog-parity',
+        runDir: '/tmp/docket-catalog-parity',
         role: {
           id: ROLE,
           name: 'Implementer',

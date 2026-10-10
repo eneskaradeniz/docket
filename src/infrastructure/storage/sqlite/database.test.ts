@@ -83,6 +83,8 @@ const MIGRATED_TABLES = [
   'run_handoff',
   'app_settings',
   'phase_auto_runs',
+  'pages',
+  'page_comments',
 ];
 
 const MIGRATION_1_INDEXES = [
@@ -95,7 +97,14 @@ const MIGRATION_1_INDEXES = [
   'spend_by_time',
 ];
 
-const MIGRATED_INDEXES = [...MIGRATION_1_INDEXES, 'work_orders_by_project', 'project_repos_by_repo'];
+const MIGRATED_INDEXES = [
+  ...MIGRATION_1_INDEXES,
+  'work_orders_by_project',
+  'project_repos_by_repo',
+  'pages_by_work_order',
+  'pages_by_project',
+  'page_comments_by_page',
+];
 
 let tmp: string;
 let openHandles: DocketDb[];

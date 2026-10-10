@@ -19,6 +19,7 @@ import type { Locale } from '../labels/t';
 import { resetLine } from './reset-line';
 import { commandResultKey, isQueryFailure } from './results';
 import { testRefusal, type TestRefusal } from './account-test';
+import type { DispatchWrite } from './dispatch-settings';
 
 /** The coarse change events the api emits (docs/v2/ui.md, U-12). Notifications carry no
  *  payloads — the store re-queries. Tests inject a fake; the api's `subscribe` satisfies the
@@ -147,6 +148,10 @@ export interface SettingsStore {
    *  one — then the roles need another account first). There is no force path: the warning's way
    *  forward is updating the binding in Roller. */
   removeAccount(accountId: string): Promise<SettingsIntentOutcome>;
+  /** The Eşzamanlılık section's reads and writes (U-70 … U-74). They bypass `lastOutcome`: the
+   *  section confirms and refuses inline, so a toast would say it twice. */
+  readDispatch(): Promise<unknown>;
+  writeDispatch(input: DispatchWrite): Promise<CommandResult>;
   subscribe(listener: () => void): () => void;
 }
 
@@ -340,6 +345,8 @@ export const createSettingsStore = (deps: SettingsStoreDeps): SettingsStore => {
       }
       return runIntent({ type: 'account.remove', id: accountId });
     },
+    readDispatch: () => api.query({ type: 'settings.dispatch' } satisfies Query),
+    writeDispatch: (input) => api.command(actor, { type: 'settings.setDispatch', ...input }),
     subscribe: (listener) => {
       listeners.add(listener);
       return () => {

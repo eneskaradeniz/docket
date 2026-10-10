@@ -1,4 +1,4 @@
-// e2e/journeys.mjs — `npm run test:journeys`. J-1 … J-10 of docs/v2/ui.md → "Verifying the shell",
+// e2e/journeys.mjs — `npm run test:journeys`. J-1 … J-11 of docs/v2/ui.md → "Verifying the shell",
 // driven through the BUILT app on the design seed (e2e/seed-design.ts). Every step asserts visible
 // text and saves a screenshot to e2e/.out/journeys/, and every outcome lands in the structured
 // report (e2e/report.mjs) as it is printed.
@@ -34,7 +34,10 @@ const full = process.argv.includes('--full') || process.env.FULL === '1';
 // Only the size names are known before the first launch; the concrete numbers come from the
 // resolved plan inside the loop, read from the first launch's primary display.
 const combos = quick ? [['default', 'dark']] : comboPlan(SIZE_PLAN, { full }).map(({ size, theme }) => [size.name, theme]);
-const WAIT = 4000; // a step that is going to pass does so in well under a second
+// The default bound for a step. A step that is going to pass does so in well under a second; the
+// bound is only the upper limit, so it is generous enough for a loaded machine (a passing step stays
+// fast, only a failing step is reported later).
+const WAIT = 15_000;
 // Waits that depend on an account scan, an import or a data load are bounded by machine speed, not
 // by product behaviour: on a busy machine they run far past WAIT while the product is fine.
 const SCAN_WAIT = 20_000;
@@ -56,10 +59,37 @@ for (const [sizeName, theme] of combos) {
 
   const text = (t) => page.getByText(t, { exact: false }).first();
   /** Assert the text is visible. */
-  const see = async (t, timeout = WAIT) => text(t).waitFor({ state: 'visible', timeout });
-  const gone = async (t) => text(t).waitFor({ state: 'hidden', timeout: WAIT });
-  const click = async (t, timeout = WAIT) => text(t).click({ timeout });
-  const button = async (name) => page.getByRole('button', { name }).first().click({ timeout: WAIT });
+  // The step the walk is on: every helper records what it is about to do, so a failure line names
+  // the exact step (a bare "locator.waitFor: Timeout" does not say which of a journey's waits ran out).
+  let step = '';
+  const mark = (label) => {
+    step = label;
+  };
+  const see = async (t, timeout = WAIT) => {
+    mark(`see "${t}"`);
+    return text(t).waitFor({ state: 'visible', timeout });
+  };
+  const gone = async (t) => {
+    mark(`gone "${t}"`);
+    return text(t).waitFor({ state: 'hidden', timeout: WAIT });
+  };
+  const click = async (t, timeout = WAIT) => {
+    mark(`click "${t}"`);
+    return text(t).click({ timeout });
+  };
+  // A sidebar tree row. The global text helpers take the first match in the document, and while the
+  // tree is still loading (a fresh launch, a reload) that is the cockpit card's text of the same
+  // name — a click on it succeeds and does nothing. So wait for the row INSIDE nav, then click it.
+  const treeRow = async (name, timeout = WAIT) => {
+    mark(`tree row "${name}"`);
+    const row = page.locator('nav').getByText(name, { exact: false }).first();
+    await row.waitFor({ state: 'visible', timeout });
+    await row.click({ timeout });
+  };
+  const button = async (name) => {
+    mark(`button "${name}"`);
+    return page.getByRole('button', { name }).first().click({ timeout: WAIT });
+  };
 
   let jn = '';
   let stepNo = 0;
@@ -78,6 +108,7 @@ for (const [sizeName, theme] of combos) {
     jn = id;
     stepNo = 0;
     steps = [];
+    step = '';
     total += 1;
     const title = `${id}: ${name} [${tag}]`;
     try {
@@ -92,8 +123,9 @@ for (const [sizeName, theme] of combos) {
       appendJourney({ id: title, status: 'ok', steps });
     } catch (error) {
       failures.push(title);
-      console.log(`  FAIL ${title}\n       ${String(error).split('\n')[0]}`);
-      appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).split('\n')[0] });
+      const detail = `${String(error).split('\n')[0]} [after: ${steps.at(-1) ?? 'start'}; at: ${step || 'start'}]`;
+      console.log(`  FAIL ${title}\n       ${detail}`);
+      appendJourney({ id: title, status: 'FAIL', steps, detail });
       await page.screenshot({ path: join(OUT, `${id}-${size[0]}x${size[1]}-${theme}-FAIL.png`) }).catch(() => undefined);
     }
   };
@@ -116,11 +148,12 @@ for (const [sizeName, theme] of combos) {
   });
 
   await journey('J-2', 'tree → repo row → board; Kanban ⇄ Liste survives reload', async () => {
-    await click('antreo-api');
+    await treeRow('antreo-api');
     // The view choice persists per repo in the app profile; every launch starts from a throwaway
     // profile (e2e/profile.mjs), so the board opens at Kanban — the click pins that standing
     // whatever the app's default or the storage's history.
     await button('Kanban');
+    mark('wait [data-board-kanban]');
     await page.waitForSelector('[data-board-kanban]', { timeout: SCAN_WAIT });
     await see('Rol matrisi', SCAN_WAIT);
     await see('Bitti');
@@ -128,16 +161,21 @@ for (const [sizeName, theme] of combos) {
     await button('Liste');
     await see('İE-0016', SCAN_WAIT);
     await shot('board-liste');
+    mark('page.reload');
     await page.reload();
+    mark('wait nav after reload');
     await page.waitForSelector('nav');
-    await click('antreo-api', SCAN_WAIT);
+    mark('tree row "antreo-api" after reload');
+    const apiRow = page.locator('nav').getByText('antreo-api', { exact: true });
+    await apiRow.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await apiRow.click({ timeout: SCAN_WAIT });
     await see('İE-0016', SCAN_WAIT);
     assert.equal(await page.locator('[data-board-kanban]').count(), 0, 'the Kanban columns must stay hidden after reload');
     await shot('board-liste-after-reload');
   });
 
   await journey('J-3', 'card → in-place detail → approve → ‹ Geri keeps the view state', async () => {
-    await click('antreo-api');
+    await treeRow('antreo-api');
     await button('Liste');
     await click('Swagger staging testi');
     await see('Bu aşamada senden beklenen');
@@ -152,7 +190,7 @@ for (const [sizeName, theme] of combos) {
   });
 
   await journey('J-4', 'project row → roadmap → expand a cross-repo task → its work order opens the detail', async () => {
-    await click('Antero');
+    await treeRow('Antero');
     await see('Yol haritası');
     await shot('roadmap');
     await click('Mobil login');
@@ -166,7 +204,7 @@ for (const [sizeName, theme] of combos) {
   });
 
   await journey('J-5', 'single-repo project → board → Yol haritası ↗', async () => {
-    await click('Kadife Odoo');
+    await treeRow('Kadife Odoo');
     await see('kadife-odoo');
     await page.waitForSelector('[data-board-kanban]');
     await shot('board');
@@ -407,7 +445,7 @@ for (const [sizeName, theme] of combos) {
     await dimmedIs('forward', true);
     await shot('ends-dimmed');
     // A project from the tree is the history's second entry.
-    await click('Antero');
+    await treeRow('Antero');
     await see('Yol haritası');
     await dimmedIs('back', false);
     await shot('roadmap');
@@ -666,6 +704,106 @@ for (const [sizeName, theme] of combos) {
     console.log(`  FAIL ${title}\n       ${String(error).split('\n')[0]}`);
     appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).split('\n')[0] });
     await page.screenshot({ path: join(OUT, 'J-10-FAIL.png') }).catch(() => undefined);
+  }
+  await handle.app.close();
+}
+
+// J-11 walks Settings → Eşzamanlılık (U-69 … U-74) on the roadmap world — a hermetic home with no
+// account, so nothing can run or spend. That world does not pin the dispatch mode, so the walk
+// switches to Otomatik itself. Every number is reached by an absolute target (the steppers are
+// clicked until the output reads it), never derived from a value the walk changes. Persistence is
+// proven across a page reload, which rebuilds every store from the backend. Once per run.
+{
+  const handle = await launchRoadmapApp();
+  const { page } = handle;
+  const panel = page.locator('[data-settings-panel]');
+  const form = page.locator('[data-dispatch-settings]:not([data-dispatch-loading])');
+  const out = (id) => form.locator(`[role="group"]:has([data-step="${id}"]) output`);
+  const dismissToasts = async () => {
+    const toasts = page.locator('[data-toast]');
+    for (let left = await toasts.count(); left > 0; left = await toasts.count()) {
+      await toasts.first().getByRole('button', { name: 'Kapat' }).click({ timeout: WAIT });
+      await page.waitForFunction((n) => document.querySelectorAll('[data-toast]').length < n, left, { timeout: WAIT });
+    }
+  };
+  /** Click the stepper's arrows until its output reads `target`. */
+  const setStep = async (id, target) => {
+    for (let i = 0; i < 20; i += 1) {
+      const current = Number(await out(id).textContent({ timeout: WAIT }));
+      if (current === target) return;
+      await form.locator(`[data-step="${id}"][data-dir="${target > current ? 1 : -1}"]`).click({ timeout: WAIT });
+    }
+    throw new Error(`the ${id} stepper never reached ${target}`);
+  };
+  const openSection = async () => {
+    await page.getByRole('button', { name: 'Ayarlar', exact: true }).first().click({ timeout: WAIT });
+    await panel.waitFor({ state: 'visible', timeout: WAIT });
+    await panel.getByRole('button', { name: 'Eşzamanlılık', exact: true }).click({ timeout: WAIT });
+    // The form appears only once the settings read has landed.
+    await form.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+  };
+
+  let stepNo = 0;
+  const steps = [];
+  const shot = async (label) => {
+    stepNo += 1;
+    steps.push(label);
+    const slug = label.toLowerCase().replace(/[^a-z0-9ğüşıöç]+/g, '-').replace(/^-|-$/g, '');
+    await page.screenshot({ path: join(OUT, `J-11-${stepNo}-${slug}.png`) });
+  };
+  const title = 'J-11: settings: Eşzamanlılık — mode, cap, validation message, save, persisted across a reload';
+  total += 1;
+  try {
+    await openSection();
+    await shot('section');
+
+    // Otomatik (explicit, whatever the world started in): the machine's Tavan wording appears.
+    await form.getByRole('button', { name: 'Otomatik', exact: true }).click({ timeout: WAIT });
+    await form.getByText('Makine boşken aynı anda çalışan en fazla iş').waitFor({ state: 'visible', timeout: WAIT });
+    assert((await form.getByRole('button', { name: 'Otomatik', exact: true }).getAttribute('aria-pressed')) === 'true', 'Otomatik must be the pressed mode');
+
+    // Cap 6, per-repo 5, then the cap down to 4: per-repo is above it, the message names the rule
+    // and Kaydet is disabled.
+    await setStep('global', 6);
+    await setStep('perRepo', 5);
+    await setStep('global', 4);
+    await form.getByText('Depo başına sınır tavandan büyük olamaz.').waitFor({ state: 'visible', timeout: WAIT });
+    assert(await form.getByRole('button', { name: 'Kaydet', exact: true }).isDisabled(), 'Kaydet must be disabled while per-repo exceeds the cap');
+    await shot('validation');
+
+    // Fixed: per-repo 2, cap 6 — the message goes and Kaydet opens.
+    await setStep('perRepo', 2);
+    await setStep('global', 6);
+    await form.getByText('olamaz.').waitFor({ state: 'detached', timeout: WAIT });
+    await dismissToasts();
+    const save = form.getByRole('button', { name: 'Kaydet', exact: true });
+    await save.click({ timeout: WAIT });
+    await panel.getByText('Kaydedildi', { exact: true }).waitFor({ state: 'visible', timeout: WAIT });
+    assert(await save.isDisabled(), 'Kaydet must be disabled again once the form equals what was saved');
+    await shot('saved');
+
+    // The page reload rebuilds every store: what the section reads back is what the backend holds.
+    await page.reload();
+    await page.waitForSelector('nav', { timeout: 30_000 });
+    await openSection();
+    await page.waitForFunction(
+      () => {
+        const read = (id) => document.querySelector(`[role="group"]:has([data-step="${id}"]) output`)?.textContent;
+        return read('global') === '6' && read('perRepo') === '2';
+      },
+      undefined,
+      { timeout: SCAN_WAIT },
+    );
+    assert((await form.getByRole('button', { name: 'Otomatik', exact: true }).getAttribute('aria-pressed')) === 'true', 'the saved mode must read back as Otomatik');
+    await shot('reloaded');
+
+    console.log(`  ok   ${title}`);
+    appendJourney({ id: title, status: 'ok', steps });
+  } catch (error) {
+    failures.push(title);
+    console.log(`  FAIL ${title}\n       ${String(error).split('\n')[0]}`);
+    appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).split('\n')[0] });
+    await page.screenshot({ path: join(OUT, 'J-11-FAIL.png') }).catch(() => undefined);
   }
   await handle.app.close();
 }

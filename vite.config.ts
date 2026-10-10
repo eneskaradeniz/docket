@@ -14,17 +14,32 @@ export default defineConfig({
     tailwindcss(),
     electron({
       main: { entry: 'electron/main.ts' },
-      preload: {
-        input: 'electron/preload.ts',
-        // Sandboxed preloads run without an ESM context (Electron docs), so the preload must be
-        // CommonJS. The plugin's ESM-project default emits CJS content under a .mjs suffix —
-        // force a deterministic .cjs output to remove that ambiguity.
-        vite: {
-          build: {
-            rolldownOptions: { output: { format: 'cjs', entryFileNames: 'preload.cjs' } },
+      preload: [
+        {
+          input: 'electron/preload.ts',
+          // Sandboxed preloads run without an ESM context (Electron docs), so the preload must be
+          // CommonJS. The plugin's ESM-project default emits CJS content under a .mjs suffix —
+          // force a deterministic .cjs output to remove that ambiguity.
+          vite: {
+            build: {
+              rolldownOptions: { output: { format: 'cjs', entryFileNames: 'preload.cjs' } },
+            },
           },
         },
-      },
+        {
+          // The MCP child a run's CLI launches: a CommonJS script next to the main bundle that the
+          // shell never imports; Electron runs it as plain Node (ELECTRON_RUN_AS_NODE). It is built
+          // like the preload (a second entry of the same kind), but a change to it must not reload
+          // the renderer, hence the no-op onstart.
+          input: 'electron/docket-mcp.ts',
+          onstart: () => undefined,
+          vite: {
+            build: {
+              rolldownOptions: { output: { format: 'cjs', entryFileNames: 'docket-mcp.cjs' } },
+            },
+          },
+        },
+      ],
     }),
   ],
 });
