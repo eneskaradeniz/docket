@@ -72,6 +72,9 @@ export const KNOWN_FAILURE_CODES: readonly string[] = [
   'not_paused',
   // saveBinding: a role's account chain cannot be empty (A-14).
   'empty_chain',
+  // settings.setDispatch refusals (A-105 … A-107).
+  'invalid_limits',
+  'unknown_account',
 ];
 
 const FAILURE_KEYS: Readonly<Record<string, LabelKey>> = Object.fromEntries(
@@ -110,8 +113,7 @@ const SUCCESS_KEYS: Readonly<Record<Command['type'], LabelKey>> = {
   'account.consent.grant': 'success.account.consent.grant',
   'account.consent.revoke': 'success.account.consent.revoke',
   'binding.save': 'success.binding.save',
-  // The limits panel is a later issue; until it brings its own copy the write borrows the neutral one.
-  'settings.setDispatch': 'success.account.save',
+  'settings.setDispatch': 'success.settings.setDispatch',
   // No surface issues a refresh yet; it is a read, so it borrows the neutral account copy.
   'quota.refresh': 'success.account.save',
   // The import surface is part 3; the per-identity outcomes ride `results`, the toast is neutral.

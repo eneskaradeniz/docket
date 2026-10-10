@@ -853,6 +853,59 @@ The roadmap page's phase cards carry the run controls of the operator-approved p
   with ", "; an id without a phase falls back to the id. The dot beside it is amber, as in the
   prototype.
 
+## Settings Eşzamanlılık (U-69 … U-74)
+
+Settings gets a concurrency section from the operator-approved prototype (`docket-tasarim/eszamanlilik`,
+2026-10-11), over the backend of A-105 … A-108 and A-118 … A-126: query `settings.dispatch`, command
+`settings.setDispatch`. The section draws the prototype's structure and copy with the app's own
+components and tokens; where the prototype and the app's tokens disagree the app's tokens win.
+
+- **U-69** (settings panel; added 2026-10-11, #886) Placement. `concurrency` is a section of the
+  Çalışma group, right after Yetenekler (menu order: Hesaplar, Roller, Yetenekler, Eşzamanlılık,
+  Sağlayıcılar); its label is "Eşzamanlılık" (en "Concurrency") and its hint is the prototype's lead
+  paragraph. It can be opened by name like any section. The title's "Kaydedildi" confirmation (U-74)
+  sits in the window head beside the title, not in a heading of its own.
+- **U-70** (settings panel; added 2026-10-11, #886) Mode. A segmented Sabit / Otomatik control
+  mirrors `mode` (a reply without a readable mode is Otomatik, the backend default). Switching it
+  changes only the form until Kaydet. Otomatik describes itself as "Makine boşken tavan kadar iş
+  paralel çalışır, yoğunken yeni iş başlatma kendiliğinden azalır. Çalışan işler kesilmez." and calls
+  the stepper **Tavan**; Sabit says "Her zaman aşağıdaki sayı kadar iş paralel çalışır." and calls it
+  **Toplam**. Below it **Depo başına** (1 … cap) and the **Hesap başına** group: one row per account,
+  Sınırsız | Sınırlı with a stepper (1 … cap) that is dimmed and disabled while Sınırsız; Sınırlı
+  starts at 2 (or the cap when lower). Until the first read lands there is no form (only the read's
+  failure sentence, if it failed): the defaults are not the backend's values and an edit over them
+  would be overwritten by the reply. All lengths are rem (U-53/U-62), spacing sits on the
+  4·8·12·16·20·24·32 scale, radii come from the three tokens plus `rounded-full`, controls show a
+  visible focus ring and the transitions stop under reduced motion.
+- **U-71** (settings panel; added 2026-10-11, #886) Validation is the backend's rule and nothing
+  else: the cap is a whole number 1 … 16, per-repo and every per-account limit a whole number from
+  1 to the cap. The one message under the groups follows the order cap, per-repo, accounts:
+  "Tavan 1 ile 16 arasında olmalı.", "Depo başına sınır tavandan büyük olamaz.", "Hesap sınırı
+  tavandan büyük olamaz." (a value below 1 reads "Sınırlar en az 1 olmalı."). The offending
+  stepper is outlined in the error colour and Kaydet is disabled. A limit stored for an account that
+  no longer exists is neither judged nor sent. The steppers themselves stop at their bounds.
+- **U-72** (settings panel; added 2026-10-11, #886) Machine row. In Otomatik, when the reply carries
+  `suggested` and `machine`, a "Bu makine" row reads "<cores> çekirdek · <GB> GB bellek · önerilen
+  tavan <n>" with **Öneriyi uygula**: it sets the cap to the suggestion and lowers per-repo to it when
+  higher, unsaved. The button is disabled while the cap already equals the suggestion; without
+  `suggested` or `machine`, or in Sabit, the row is absent.
+- **U-73** (settings panel; added 2026-10-11, #886) Live status. In Otomatik, with no unsaved edits
+  and a `status` the dispatcher took in Otomatik, a card reads "Şu an etkin: <effective> / <cap> iş",
+  the band sentence — free "Makine boş", reduced "Makine meşgul", busy "Makine yoğun, yeni iş
+  başlamıyor" (lamp: green, amber, red) — and, when the status carries a load, "yük <load1>". The
+  wire carries no running-job count, so the card shows none. The card is absent in Sabit, before the
+  first dispatcher tick, while the form is edited, and for a status whose mode is not the saved one.
+  While the section is open it re-reads `settings.dispatch` every 5 s; a read never replaces a form
+  with unsaved edits (a read already in flight when an edit starts is dropped), a failed read keeps
+  everything as it was, and the poll stops when the section closes.
+- **U-74** (settings panel; added 2026-10-11, #886) Save and reset. **Kaydet** (the one primary
+  button) is disabled while the form is invalid, unchanged or saving; it sends `global`, `perRepo`,
+  `perAccount` (known accounts only) and `mode`, then re-reads, and only then does the title show
+  "Kaydedildi" — it stays until the next edit. A refusal shows its own sentence under the groups
+  through `failureKey` (`invalid_limits`, `unknown_account`, `invalid_id`), claims nothing and keeps
+  the edits; no toast repeats either outcome. **Varsayılana dön** (ghost) puts Otomatik, 4, 3 and no
+  account limit in the form, unsaved, and is disabled when the form already is that.
+
 ## Verifying the shell — E2E layers (Phase 3.5)
 
 The shell is verified against the frozen prototype **rev 8** (`~/source/docket-tasarim/rev8/`:
@@ -903,6 +956,10 @@ belongs to the mobile app.
   the counts and whose Vazgeç starts nothing and Başlat toasts, Duraklat → Sürdür, and a paused
   phase whose attention chip opens its panel and whose code opens the detail. Each step asserts
   visible text and saves a screenshot.
+  *(Addendum 2026-10-11, #886: J-11 walks Ayarlar → Eşzamanlılık on the roadmap world — switch to
+  Otomatik itself, set the cap and per-repo by absolute targets, see the per-repo-above-cap message
+  with Kaydet disabled, save, see "Kaydedildi", then reload the page and read the saved values back.
+  It runs once per run, like J-10.)*
 - **Layout audit** (pure DOM measurement, no pixel diff; each assertion named `L-n: …`, for every
   screen × size × theme):
   - **L-1** The sidebar's left edge is 0 and its width is 240px at every window size — it never

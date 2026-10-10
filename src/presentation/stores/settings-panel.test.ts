@@ -52,19 +52,29 @@ const candidate = (alreadyAdded: boolean, warnings: readonly ('env_overrides_log
 describe('settings sections (U-28)', () => {
   it('U-28: the menu has two groups in order — Çalışma then Uygulama — each with its sections in order', () => {
     expect(SETTINGS_MENU).toStrictEqual([
-      { id: 'work', sections: ['accounts', 'roles', 'capabilities', 'providers'] },
+      { id: 'work', sections: ['accounts', 'roles', 'capabilities', 'concurrency', 'providers'] },
       { id: 'app', sections: ['appearance', 'phone', 'update'] },
     ]);
     expect(SETTINGS_SECTIONS).toStrictEqual([
       'accounts',
       'roles',
       'capabilities',
+      'concurrency',
       'providers',
       'appearance',
       'phone',
       'update',
     ]);
     expect(SETTINGS_SECTIONS).not.toContain('language');
+  });
+
+  it('U-69: Eşzamanlılık is a section of the Çalışma group, after Yetenekler, and can be opened by name', () => {
+    const work = SETTINGS_MENU.find((group) => group.id === 'work');
+    expect(work?.sections.slice(2, 4)).toStrictEqual(['capabilities', 'concurrency']);
+    expect(SETTINGS_SECTIONS.filter((section) => section === 'concurrency')).toHaveLength(1);
+    const opened = settingsPanelReducer(CLOSED_SETTINGS_PANEL, { type: 'open', origin: 'pointer', section: 'concurrency' });
+    expect(opened.section).toBe('concurrency');
+    expect(settingsPanelReducer(opened, { type: 'select', section: 'roles' }).section).toBe('roles');
   });
 
   it("U-28: opening without a named section lands on Hesaplar — the nav's Ayarlar row; Telefon names its own", () => {
