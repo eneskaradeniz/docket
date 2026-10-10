@@ -4,6 +4,8 @@ export type Command =
   | { readonly type: 'workOrder.open'; readonly project: string; readonly repo: string; readonly title: string; readonly flow?: string; readonly task?: string }
   | { readonly type: 'task.open'; readonly project: string; readonly task: string }
   | { readonly type: 'roadmap.runPhase'; readonly project: string; readonly phase: string } // ok → { ok: true, phaseRun } (A-98)
+  | { readonly type: 'roadmap.pausePhase'; readonly project: string; readonly phase: string } // errors: not_running (A-110)
+  | { readonly type: 'roadmap.resumePhase'; readonly project: string; readonly phase: string } // errors: not_paused (A-110)
   | { readonly type: 'project.attach'; readonly path: string; readonly repos?: readonly { readonly repo: string; readonly path: string }[] }
   | { readonly type: 'project.create'; readonly mode: 'existing'; readonly path: string; readonly name: string }
   | { readonly type: 'project.create'; readonly mode: 'blank'; readonly parent: string; readonly name: string } // ok → { ok: true, id: <project slug> }

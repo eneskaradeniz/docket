@@ -110,6 +110,8 @@ export interface RoadmapPageView {
     readonly id: string;
     readonly name: string;
     readonly status: string;
+    /** Present once the operator started the phase (A-109); `attention` lists work-order ids. */
+    readonly autoRun?: { readonly state: string; readonly attention: readonly string[] };
     readonly tasks: readonly {
       readonly id: string;
       readonly title: string;

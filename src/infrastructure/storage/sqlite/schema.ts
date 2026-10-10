@@ -60,4 +60,10 @@ CREATE INDEX project_repos_by_repo ON project_repos (repo);`,
     version: 4,
     sql: `CREATE TABLE app_settings (key TEXT PRIMARY KEY, value_json TEXT);`,
   },
+  {
+    // The phases the operator started and let advance unattended (I-49): one row per
+    // (project, phase), the attention work-order ids as JSON text.
+    version: 5,
+    sql: `CREATE TABLE phase_auto_runs (project TEXT NOT NULL, phase TEXT NOT NULL, state TEXT NOT NULL, started_at INTEGER NOT NULL, attention_json TEXT NOT NULL, PRIMARY KEY (project, phase));`,
+  },
 ];

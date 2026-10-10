@@ -18,6 +18,7 @@ export * from './fake-instruction-files';
 export * from './fake-issue-tracker';
 export * from './fake-model-catalog';
 export * from './fake-notifier';
+export * from './fake-phase-auto-run-repo';
 export * from './fake-project-repo';
 export * from './fake-proposal-repo';
 export * from './fake-queue-repo';

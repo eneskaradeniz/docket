@@ -19,6 +19,7 @@ import type {
 } from './agent-transport';
 import type { AccountTestRepo } from './account-test-repo';
 import type { AppSettingsRepo } from './app-settings-repo';
+import type { PhaseAutoRunRepo } from './phase-auto-run-repo';
 import type { BindingRepo, BindingScope } from './binding-repo';
 import type { CapabilityCatalog } from './capability-catalog';
 import type { CapabilityDiscovery } from './capability-discovery';
@@ -80,6 +81,7 @@ describe('AppDeps', () => {
     expectTypeOf<AppDeps['checkpoints']>().toEqualTypeOf<CheckpointCommitter>();
     expectTypeOf<AppDeps['accountTests']>().toEqualTypeOf<AccountTestRepo>();
     expectTypeOf<AppDeps['settings']>().toEqualTypeOf<AppSettingsRepo>();
+    expectTypeOf<AppDeps['phaseAutoRuns']>().toEqualTypeOf<PhaseAutoRunRepo>();
     expectTypeOf<AppDeps['scratch']>().toEqualTypeOf<ScratchDirs>();
     expectTypeOf<AppDeps['repoFolders']>().toEqualTypeOf<RepoFolders>();
   });
@@ -114,6 +116,7 @@ describe('AppDeps', () => {
       | 'checkpoints'
       | 'accountTests'
       | 'settings'
+      | 'phaseAutoRuns'
       | 'scratch'
       | 'repoFolders'
     >();

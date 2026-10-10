@@ -22,3 +22,4 @@ export * from './capability-candidates';
 export * from './capability-import';
 export * from './settings';
 
+export * from './phase-control';

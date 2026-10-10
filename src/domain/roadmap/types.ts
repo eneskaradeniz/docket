@@ -1,6 +1,6 @@
 // roadmap/types.ts — exact contract from docs/v2/domain.md section 10.
 import type { WorkOrderStatus } from '../flow';
-import type { PhaseSlug, RepoSlug, TaskSlug } from '../shared';
+import type { EpochMs, PhaseSlug, ProjectSlug, RepoSlug, TaskSlug, WorkOrderId } from '../shared';
 
 export interface TaskDef {
   readonly id: TaskSlug;
@@ -51,4 +51,17 @@ export interface RoadmapView {
   readonly tasks: Readonly<Record<string, TaskStatus>>; // TaskSlug → status
   readonly phases: Readonly<Record<string, PhaseStatus>>; // PhaseSlug → status
   readonly runnable: readonly TaskSlug[]; // in roadmap order
+}
+
+/** Where a phase the operator started stands: advancing, held by the operator, or finished. */
+export type PhaseAutoRunState = 'running' | 'paused' | 'done';
+
+/** The persisted record of one phase started with "run phase"; one per (project, phase). */
+export interface PhaseAutoRun {
+  readonly project: ProjectSlug;
+  readonly phase: PhaseSlug;
+  readonly state: PhaseAutoRunState;
+  readonly startedAt: EpochMs;
+  /** The phase's work orders that need a person: blocked, waiting on a human or a limit, or asking permission. */
+  readonly attention: readonly WorkOrderId[];
 }

@@ -1001,3 +1001,8 @@ Addendum 2026-10-10 (#872): `QueueItem` gains one optional field, `readonly requ
 scheduled resume whose account quota is re-read before the item may start. The domain only carries
 it: `decideDispatch` ignores it and its decisions are unchanged. The application owns the re-query
 (A-101..A-104).
+
+Addendum 2026-10-10 (#879): the `roadmap` module gains `PhaseAutoRun { project, phase, state:
+'running' | 'paused' | 'done', startedAt, attention: readonly WorkOrderId[] }` and
+`PhaseAutoRunState`. They are plain data the application persists (A-109 … A-116); the roadmap
+derivation (R-40 … R-42) is unchanged and no new R-number is added.
