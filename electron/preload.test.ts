@@ -11,6 +11,7 @@ type Listener = (event: unknown, payload: unknown) => void;
 const harness = vi.hoisted(() => {
   const channels = new Map<string, Set<Listener>>();
   const exposed = new Map<string, unknown>();
+  const invocations: { channel: string; args: unknown[] }[] = [];
   const listeners = (channel: string): Set<Listener> => {
     const set = channels.get(channel) ?? new Set<Listener>();
     channels.set(channel, set);
@@ -18,6 +19,7 @@ const harness = vi.hoisted(() => {
   };
   return {
     exposed,
+    invocations,
     listenerCount: (channel: string) => listeners(channel).size,
     emit: (channel: string, payload: unknown) => {
       for (const listener of [...listeners(channel)]) listener({}, payload);
@@ -25,6 +27,7 @@ const harness = vi.hoisted(() => {
     reset: () => {
       channels.clear();
       exposed.clear();
+      invocations.length = 0;
     },
     mocks: {
       contextBridge: {
@@ -39,7 +42,10 @@ const harness = vi.hoisted(() => {
         removeListener: (channel: string, listener: Listener) => {
           listeners(channel).delete(listener);
         },
-        invoke: async () => undefined,
+        invoke: async (channel: string, ...args: unknown[]) => {
+          invocations.push({ channel, args });
+          return undefined;
+        },
       },
     },
   };
@@ -93,5 +99,37 @@ describe('preload subscribe (docket:event)', () => {
     harness.emit('docket:event', { type: 'runs.changed' });
     harness.emit('docket:event', { type: 'runs.changed' });
     expect(received).toEqual(['first', 'second', 'second']);
+  });
+});
+
+describe('I-69: preload pageView', () => {
+  const bridge = async () => {
+    await import('./preload');
+    return harness.exposed.get('docket') as { readonly pageView: Record<string, (request?: unknown) => Promise<unknown>> };
+  };
+
+  it('I-69: exposes exactly open, setBounds and close on window.docket.pageView', async () => {
+    const { pageView } = await bridge();
+    expect(Object.keys(pageView).sort()).toEqual(['close', 'open', 'setBounds']);
+  });
+
+  it('I-69: each call is one invoke on docket:page-view carrying only its own op and fields', async () => {
+    const { pageView } = await bridge();
+    const bounds = { x: 1, y: 2, width: 3, height: 4 };
+    await pageView.open({ pageId: 'ID', version: 2, bounds, extra: 'dropped' });
+    await pageView.setBounds({ bounds, extra: 'dropped' });
+    await pageView.close();
+    expect(harness.invocations).toEqual([
+      { channel: 'docket:page-view', args: [{ op: 'open', pageId: 'ID', version: 2, bounds }] },
+      { channel: 'docket:page-view', args: [{ op: 'setBounds', bounds }] },
+      { channel: 'docket:page-view', args: [{ op: 'close' }] },
+    ]);
+  });
+
+  it('I-69: nothing else about pages is on the bridge', async () => {
+    await import('./preload');
+    const docket = harness.exposed.get('docket') as Record<string, unknown>;
+    expect(Object.keys(docket).sort()).toEqual(['command', 'pageView', 'query', 'subscribe']);
+    expect([...harness.exposed.keys()].sort()).toEqual(['docket', 'docketDev']);
   });
 });

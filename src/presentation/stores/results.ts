@@ -118,6 +118,10 @@ const SUCCESS_KEYS: Readonly<Record<Command['type'], LabelKey>> = {
   'quota.refresh': 'success.account.save',
   // The import surface is part 3; the per-identity outcomes ride `results`, the toast is neutral.
   'capabilities.import': 'success.capabilities.import',
+  // The page viewer brings its own copy; until then the neutral recorded-decision line stands in.
+  'page.comment': 'success.gate.decide',
+  'page.requestApproval': 'success.gate.decide',
+  'page.decide': 'success.gate.decide',
   'app.update.check': 'success.app.update.check',
   'app.update.apply': 'success.app.update.apply',
 };
