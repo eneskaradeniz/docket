@@ -2,7 +2,12 @@
 import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 
-import { DOCKET_TOOL_DEFINITIONS, DOCKET_TOOLS_INSTRUCTIONS } from '../../application/index';
+import {
+  DOCKET_CHAT_TOOLS_INSTRUCTIONS,
+  DOCKET_TOOL_DEFINITIONS,
+  DOCKET_TOOL_DEFINITIONS_BY_KIND,
+  DOCKET_TOOLS_INSTRUCTIONS,
+} from '../../application/index';
 
 import { createMcpServer, runStdioServer, type McpToolCall } from './server';
 
@@ -111,6 +116,39 @@ describe('createMcpServer', () => {
     const lines = await server.handle(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'page_comments', arguments: {} } }));
     expect(lines).toHaveLength(1);
     expect(lines[0]).not.toMatch(/[\r\n]/);
+  });
+});
+
+describe('createMcpServer by token kind', () => {
+  const asKind = async (kind: 'run' | 'chat' | undefined, message: unknown): Promise<{ result: { tools?: { name: string }[]; instructions?: string } }> => {
+    const server = createMcpServer({ call: echoCall, ...(kind === undefined ? {} : { kind }) });
+    const [line] = await server.handle(JSON.stringify(message));
+    return JSON.parse(line ?? '{}') as { result: { tools?: { name: string }[]; instructions?: string } };
+  };
+
+  it('I-80: a chat-kind server lists the three read tools with the chat instructions, a run-kind one the three page tools', async () => {
+    const chat = await asKind('chat', { jsonrpc: '2.0', id: 1, method: 'tools/list' });
+    expect(chat.result.tools?.map((tool) => tool.name)).toEqual(['docket_get', 'docket_search', 'docket_read_file']);
+    expect(chat.result.tools).toEqual(
+      DOCKET_TOOL_DEFINITIONS_BY_KIND.chat.map((tool) => ({ name: tool.name, description: tool.description, inputSchema: tool.inputSchema })),
+    );
+    const run = await asKind('run', { jsonrpc: '2.0', id: 1, method: 'tools/list' });
+    expect(run.result.tools?.map((tool) => tool.name)).toEqual(['page_publish', 'page_update', 'page_comments']);
+    expect((await asKind('chat', { jsonrpc: '2.0', id: 2, method: 'initialize' })).result.instructions).toBe(DOCKET_CHAT_TOOLS_INSTRUCTIONS);
+    expect((await asKind('run', { jsonrpc: '2.0', id: 2, method: 'initialize' })).result.instructions).toBe(DOCKET_TOOLS_INSTRUCTIONS);
+  });
+
+  it('I-80: without a kind the server lists the run tools, as before', async () => {
+    const plain = await asKind(undefined, { jsonrpc: '2.0', id: 1, method: 'tools/list' });
+    expect(plain.result.tools?.map((tool) => tool.name)).toEqual(['page_publish', 'page_update', 'page_comments']);
+  });
+
+  it('I-80: the list is only a listing: tools/call hands any name to the app, which decides by the token', async () => {
+    const seen: string[] = [];
+    const server = createMcpServer({ kind: 'chat', call: async (tool) => { seen.push(tool); return { ok: false, code: 'forbidden' }; } });
+    const [line] = await server.handle(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'page_publish', arguments: {} } }));
+    expect(seen).toEqual(['page_publish']);
+    expect(JSON.parse(line ?? '{}')).toMatchObject({ result: { isError: true, content: [{ text: JSON.stringify({ code: 'forbidden' }) }] } });
   });
 });
 

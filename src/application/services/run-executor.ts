@@ -321,6 +321,7 @@ const withDocketTools = async (
 
   const workOrder = await deps.workOrders.get(input.item.workOrderId);
   const token = deps.runTokens.mint({
+    kind: 'run',
     runId: input.runId,
     workOrderId: input.item.workOrderId,
     ...(workOrder === undefined ? {} : { project: workOrder.project }),
@@ -330,6 +331,9 @@ const withDocketTools = async (
   for (const [name, value] of Object.entries(endpoint.env)) env[name] = { literal: value };
   env['DOCKET_MCP_SOCKET'] = { literal: endpoint.socketPath };
   env['DOCKET_MCP_TOKEN'] = { literal: token };
+  // Not a secret: it only picks which tool list the child shows. The app enforces the kind of the
+  // token itself, so a changed value widens nothing.
+  env['DOCKET_MCP_KIND'] = { literal: 'run' };
   return [
     ...input.capabilities.filter((capability) => capability.id !== DOCKET_PAGES_CAPABILITY.value),
     { kind: 'mcp', id: DOCKET_PAGES_CAPABILITY.value, name: 'Docket pages', command: endpoint.command, args: endpoint.args, env },

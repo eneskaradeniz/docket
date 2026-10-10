@@ -237,6 +237,27 @@ describe('createNodeDeps', () => {
     restarted.close();
   });
 
+  it('I-83: wires repoFiles to the registered checkout with the real redaction; secret names and unregistered repos are refused', async () => {
+    const node = makeNode();
+    const checkout = join(scratch, 'registered-checkout');
+    await mkdir(join(checkout, 'src'), { recursive: true });
+    const planted = 'ghp_0123456789abcdefghijklmnopqrstuvwxyzAB';
+    await writeFile(join(checkout, 'src', 'app.ts'), `const t = '${planted}';\nconst ok = 1;\n`, 'utf8');
+    await writeFile(join(checkout, '.env'), 'KEY=1', 'utf8');
+    await node.repos.register(REPO, checkout);
+
+    const read = await node.deps.repoFiles.read(REPO, 'src/app.ts', { from: 1, maxLines: 400, maxBytes: 65_536 });
+    expect(read.ok).toBe(true);
+    expect(JSON.stringify(read)).not.toContain(planted);
+    expect(read.ok && read.value.lines[1]).toBe('const ok = 1;');
+    expect(await node.deps.repoFiles.read(REPO, '.env', { from: 1, maxLines: 400, maxBytes: 65_536 })).toEqual({ ok: false, error: 'outside_repo' });
+    expect(await node.deps.repoFiles.read(slugOf('unregistered'), 'src/app.ts', { from: 1, maxLines: 400, maxBytes: 65_536 })).toEqual({
+      ok: false,
+      error: 'repo_unknown',
+    });
+    node.close();
+  });
+
   it('I-31: opens <dataDir>/docket.db, exposes the registry, and close() closes the database', async () => {
     const node = makeNode();
 

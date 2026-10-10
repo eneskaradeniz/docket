@@ -5,3 +5,4 @@ export * from './attachment-files';
 export * from './grant-repo';
 export * from './page-files';
 export * from './run-dirs';
+export * from './repo-file-reader';

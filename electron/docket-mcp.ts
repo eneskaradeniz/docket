@@ -7,6 +7,9 @@ import { createSocketCaller, runStdioServer, type McpToolCall } from '../src/inf
 
 const socketPath = process.env.DOCKET_MCP_SOCKET;
 const token = process.env.DOCKET_MCP_TOKEN;
+// A listing choice only (not a secret): anything but `chat` shows the run tools, and the app enforces
+// the token's own kind on every call.
+const kind = process.env.DOCKET_MCP_KIND === 'chat' ? 'chat' : 'run';
 
 const unconfigured: McpToolCall = async () => ({ ok: false, code: 'unauthorized' });
 
@@ -19,6 +22,6 @@ if (call === unconfigured) process.stderr.write('docket-mcp: not launched by a D
 
 // No process.exit on the way out: stdout may still hold unflushed lines, and the process ends by
 // itself once stdin has closed and nothing is pending.
-runStdioServer({ input: process.stdin, output: process.stdout, diagnostics: process.stderr, call }).catch(() => {
+runStdioServer({ input: process.stdin, output: process.stdout, diagnostics: process.stderr, call, kind }).catch(() => {
   process.exitCode = 1;
 });

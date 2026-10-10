@@ -139,6 +139,7 @@ describe('AppDeps', () => {
       | 'phaseAutoRuns'
       | 'scratch'
       | 'repoFolders'
+      | 'repoFiles'
       | 'machine'
       | 'dispatchStatus'
       | 'runTokens'

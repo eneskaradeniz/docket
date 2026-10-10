@@ -1936,7 +1936,7 @@ describe('executeRun docket tools attachment', () => {
 
     const record = await theRun(h.runs);
     expect(h.runTokens.minted()).toEqual([
-      { token: expect.any(String), binding: { runId: record.id, workOrderId: WORK_ORDER, project: WORK_ORDER_RECORD.project, role: ROLE.id } },
+      { token: expect.any(String), binding: { kind: 'run', runId: record.id, workOrderId: WORK_ORDER, project: WORK_ORDER_RECORD.project, role: ROLE.id } },
     ]);
     expect(seenAtStart).toEqual([true]);
     const request = theRequest(h.transport);
@@ -1944,7 +1944,26 @@ describe('executeRun docket tools attachment', () => {
       ELECTRON_RUN_AS_NODE: '1',
       DOCKET_MCP_SOCKET: ENDPOINT.socketPath,
       DOCKET_MCP_TOKEN: h.runTokens.minted()[0]?.token,
+      DOCKET_MCP_KIND: 'run',
     });
+  });
+
+  it('A-203: the run token is tagged kind "run" and the child is told its kind through the non-secret DOCKET_MCP_KIND', async () => {
+    const h = await withTools();
+    await executeRun(h.deps, permissionGate().permissions, INPUT);
+    expect(h.runTokens.minted().map((m) => m.binding.kind)).toEqual(['run']);
+    expect(envOf(theRequest(h.transport))['DOCKET_MCP_KIND']).toBe('run');
+  });
+
+  it('A-203: a chat token (fake source) resolves to its chat binding and is voided by its turn id only', () => {
+    const tokens = createFakeRunTokens();
+    const turn = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FB1');
+    const chat = tokens.mint({ kind: 'chat', turn, conversation: ulidOf<'conversation'>('01ARZ3NDEKTSV4RRFFQ69G5FB2'), role: ROLE.id });
+    expect(tokens.resolve(chat)).toMatchObject({ kind: 'chat', turn });
+    tokens.revoke(ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FB3'));
+    expect(tokens.live()).toEqual([chat]);
+    tokens.revoke(turn);
+    expect(tokens.live()).toEqual([]);
   });
 
   it('A-141: two runs active at the same time hold different tokens', async () => {
@@ -1959,7 +1978,7 @@ describe('executeRun docket tools attachment', () => {
     const tokens = h.transport.requests().map((request) => envOf(request)['DOCKET_MCP_TOKEN']);
     expect(tokens).toHaveLength(2);
     expect(new Set(tokens).size).toBe(2);
-    expect(h.runTokens.minted().map((m) => m.binding.workOrderId).sort()).toEqual([WORK_ORDER, second].sort());
+    expect(h.runTokens.minted().map((m) => (m.binding.kind === 'run' ? m.binding.workOrderId : '')).sort()).toEqual([WORK_ORDER, second].sort());
   });
 
   describe('A-142: the token is revoked on every path that ends the run', () => {

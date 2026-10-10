@@ -2,14 +2,30 @@
 // process a specific run started: it is minted when the run starts, bound to that run's work
 // order, project and role, and revoked when the run ends. It exists only in memory — never in a
 // record, event, audit entry or file — and reaches the child through its process environment.
-import type { ProjectSlug, RoleSlug, RunId, WorkOrderId } from '../../domain/index';
+import type { ConversationId, ProjectSlug, RoleSlug, RunId, WorkOrderId } from '../../domain/index';
 
-export interface RunTokenBinding {
-  readonly runId: RunId;
-  readonly workOrderId: WorkOrderId;
-  readonly project?: ProjectSlug;
-  readonly role: RoleSlug;
-}
+/** What a token is bound to. A `run` token belongs to a work-order run; a `chat` token to one
+ *  assistant turn of a conversation, where `turn` is a fresh id used as the agent actor's `runId`
+ *  (it is not a RunRecord). */
+export type RunTokenBinding =
+  | {
+      readonly kind: 'run';
+      readonly runId: RunId;
+      readonly workOrderId: WorkOrderId;
+      readonly project?: ProjectSlug;
+      readonly role: RoleSlug;
+    }
+  | {
+      readonly kind: 'chat';
+      readonly turn: RunId;
+      readonly conversation: ConversationId;
+      readonly role: RoleSlug;
+    };
+
+export type RunTokenKind = RunTokenBinding['kind'];
+
+/** The id `revoke` voids a token by: the run for a run token, the turn for a chat token. */
+export const runTokenOwner = (binding: RunTokenBinding): RunId => (binding.kind === 'run' ? binding.runId : binding.turn);
 
 export interface RunTokens {
   /** A fresh, unguessable token bound to the run; two mints never answer the same string. */
