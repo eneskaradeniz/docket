@@ -24,6 +24,7 @@ export type AuditAction =
   | 'capability.imported' | 'phase.run' | 'phase.paused' | 'phase.resumed' | 'settings.dispatch_changed'
   | 'page.published' | 'page.versioned' | 'page.commented' | 'page.approval_requested' | 'page.approval_decided'
   | 'conversation.started' | 'conversation.deleted' | 'conversation.pinned' | 'conversation.draft_confirmed' | 'conversation.draft_dropped'
+  | 'chat.turn_started' | 'chat.turn_finished'
   | 'action.proposed' | 'action.applied' | 'action.rejected' | 'action.failed' | 'action.undone' | 'grant.created' | 'grant.revoked';
 
 export type AuditSubject =

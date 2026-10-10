@@ -6,6 +6,7 @@ import { err, ok } from '../../domain/index';
 import type {
   AccountDiscovery,
   AppDeps,
+  ChatRunner,
   Clock,
   CredentialImporter,
   DocketToolExtras,
@@ -17,7 +18,7 @@ import type {
   RepoRegistry,
   TransportResolver,
 } from '../../application/index';
-import { createActionApplier, createChatTurnLedger } from '../../application/index';
+import { createActionApplier, createChatRunner, createChatTurnLedger } from '../../application/index';
 import { createMemoryAccountTestRepo } from './account-test-repo';
 import { createScratchDirs } from './scratch-dirs';
 import { createCommandRunner, createSecretScanner, redactSecrets } from '../gates/index';
@@ -90,6 +91,9 @@ export interface NodeDeps {
   /** What Docket's own tool dispatch needs: the ONE action applier of this composition and the
    *  chat turn ledger it fills. A second applier must not exist anywhere. */
   readonly docketToolExtras: DocketToolExtras;
+  /** The chat turn runner, built on the same ledger the write tools fill; the api slice (6e-5)
+   *  exposes it, nothing here starts a turn on its own. */
+  readonly chatRunner: ChatRunner;
   close(): void;
 }
 
@@ -180,8 +184,10 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     },
   };
   // The one applier of the composition (A-214): the tool dispatch, and later the action surfaces,
-  // all apply through this instance, never through one of their own.
+  // all apply through this instance, never through one of their own. The chat runner drains the
+  // same ledger instance the write tools fill, so one turn's effects meet one message.
   const docketToolExtras: DocketToolExtras = { applyAction: createActionApplier(deps), turnLedger: createChatTurnLedger() };
+  const chatRunner = createChatRunner(deps, { turnLedger: docketToolExtras.turnLedger });
   return ok({
     deps,
     quota,
@@ -190,6 +196,7 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     accountDiscovery,
     credentialImporter,
     docketToolExtras,
+    chatRunner,
     adoption: { discovery: accountDiscovery, importer: credentialImporter },
     close: (): void => db.close(),
   });
