@@ -372,7 +372,7 @@ function StageFilesPreview({
           ) : preview === 'error' ? (
             <div className="p-3 text-[0.75rem] text-signal">{t(locale, 'detail.expected.file.error')}</div>
           ) : preview !== null ? (
-            <div className="h-[12.5rem] overflow-y-auto p-3">
+            <div className="h-[clamp(12.5rem,calc(100vh-30rem),32rem)] overflow-y-auto p-3">
               <pre className="font-mono text-[0.71875rem] leading-[1.4] text-ink">
                 {preview.lines.join('\n')}
               </pre>

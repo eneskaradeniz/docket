@@ -410,7 +410,7 @@ export function PageViewerScreen({ store, host, pageId, locale, overlayOpen, now
                 data-page-diff
                 role="region"
                 aria-label={t(locale, 'page.diff.region')}
-                className="max-h-[28rem] overflow-auto bg-band font-mono text-[0.75rem] leading-[1.25rem]"
+                className="max-h-[max(28rem,calc(100vh-24rem))] overflow-auto bg-band font-mono text-[0.75rem] leading-[1.25rem]"
               >
                 {detail.diff.lines.map((line, index) => (
                   <div

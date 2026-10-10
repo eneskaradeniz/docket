@@ -87,7 +87,7 @@ describe('library screen — cards (U-86)', () => {
   it('U-86: the title, the filter bar and the cards of every page show', async () => {
     const html = await draw(FULL);
     expect(html).toContain('<h1');
-    expect(html).toContain("Artifact&#x27;lar");
+    expect(html).toContain("Çıktılar");
     expect(html).toContain('placeholder="Ara"');
     for (const label of ['Tümü', 'Taslak', 'Diyagram', 'Metin', 'Tablo', 'Rapor']) expect(html).toContain(`>${label}<`);
     expect(html).not.toContain('>Resim<');
@@ -216,10 +216,10 @@ describe('library screen — states (U-88)', () => {
     expect(html).not.toContain('data-library-card');
   });
 
-  it('U-88: an empty library says "Henüz artifact yok" and how to fill it', async () => {
+  it('U-88: an empty library says "Henüz çıktı yok" and how to fill it', async () => {
     const html = await draw([]);
     expect(html).toContain('data-library-empty');
-    expect(html).toContain('Henüz artifact yok');
+    expect(html).toContain('Henüz çıktı yok');
     expect(html).toContain('Docket AI’dan bir taslak, diyagram ya da rapor iste; burada birikir.');
   });
 
@@ -239,9 +239,9 @@ describe('library screen — states (U-88)', () => {
     store.setKind('report');
     await flush();
     const html = renderToStaticMarkup(createElement(LibraryScreen, { store, locale: 'tr', now: NOW, onOpenPage: () => undefined }));
-    expect(html).toContain('Eşleşen artifact yok');
+    expect(html).toContain('Eşleşen çıktı yok');
     expect(html).toContain('Aramayı ya da süzgeçleri değiştir.');
-    expect(html).not.toContain('Henüz artifact yok');
+    expect(html).not.toContain('Henüz çıktı yok');
     // The filter bar stays so the operator can undo the filter.
     expect(html).toContain('placeholder="Ara"');
   });
@@ -254,10 +254,10 @@ describe('library screen — states (U-88)', () => {
     expect(html).not.toContain('data-library-card');
   });
 
-  it('U-88: the cap line "İlk 500 artifact gösteriliyor" shows at 500 items and only then', async () => {
+  it('U-88: the cap line "İlk 500 çıktı gösteriliyor" shows at 500 items and only then', async () => {
     const many = Array.from({ length: 500 }, (_, index) => item(`p${index}`));
-    expect(await draw(many)).toContain('İlk 500 artifact gösteriliyor');
-    expect(await draw(many.slice(1))).not.toContain('İlk 500 artifact gösteriliyor');
+    expect(await draw(many)).toContain('İlk 500 çıktı gösteriliyor');
+    expect(await draw(many.slice(1))).not.toContain('İlk 500 çıktı gösteriliyor');
   });
 });
 

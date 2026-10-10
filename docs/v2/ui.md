@@ -1303,3 +1303,9 @@ than 8 words. A proposal's summary, target, scope, author and every diff line ar
   `rounded-panel` / `rounded-full` only, an explicit leading on every sized text line, a focus ring on
   every control, panes stacked below the `lg` breakpoint, transitions behind `motion-safe:` /
   `motion-reduce:`, no vendor name. A source-scan test pins these on the screen's own source.
+
+## Polish after the operator walk (U-151 … U-152)
+
+- **U-151** (added 2026-10-11, #944) The Turkish library name is "Çıktılar" (nav row, region, empty, filtered, error, cap and loading lines, the pin-limit sentence); no Turkish label says "artifact". English keeps "Artifacts".
+- **U-152** (added 2026-10-11, #944) Boxes that show long text grow with the window and keep their old size as the floor: the proposals diff `max(26rem, 100vh − 22rem)`, the page viewer's diff `max(28rem, 100vh − 24rem)`, the work-order detail's expected-file preview `clamp(12.5rem, 100vh − 30rem, 32rem)`. Chat-panel boxes, icons and chips are out of this rule.
+
