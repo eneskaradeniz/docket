@@ -46,6 +46,7 @@ import {
   createFakeInstructionFiles,
   createFakeModelCatalog,
   createFakeRunRepo,
+  createFakeRunTokens,
   createFakeTransport,
   createFakeTransportResolver,
   createFakeWorkOrderRepo,
@@ -1795,6 +1796,207 @@ describe('executeRun — rolling note and handoff runs', () => {
     expect(decideOnLimit(hit, ctxOf([{ route: { accountId: accountB }, billing: 'metered', consented: false }]))).toEqual({
       kind: 'ask',
       reason: 'billing_boundary',
+    });
+  });
+});
+
+// --- Docket's own MCP child (A-141 … A-144) --------------------------------------------------------
+
+describe('executeRun docket tools attachment', () => {
+  const ENDPOINT = {
+    socketPath: '/data/run/mcp.sock',
+    command: '/Applications/Docket.app/Contents/MacOS/Docket',
+    args: ['/Applications/Docket.app/Contents/Resources/app/dist-electron/docket-mcp.cjs'],
+    env: { ELECTRON_RUN_AS_NODE: '1' },
+  } as const;
+  const KIND = (mcp: boolean | 'unknown'): readonly FakeRouteKind[] => [
+    { id: 'kind-x', authMode: 'subscription', provider: 'provider-x', mcp },
+  ];
+
+  const withTools = async (
+    options: Parameters<typeof harness>[0] = {},
+    endpoint: typeof ENDPOINT | null = ENDPOINT,
+  ) => {
+    const h = await harness(options);
+    const runTokens = createFakeRunTokens();
+    return { ...h, runTokens, deps: { ...h.deps, runTokens, mcpEndpoint: endpoint ?? undefined } };
+  };
+
+  const dockets = (request: RunRequest) => request.capabilities.filter((c) => c.id === 'docket-pages');
+  const envOf = (request: RunRequest): Record<string, string> => {
+    const def = dockets(request)[0];
+    if (def === undefined || def.kind !== 'mcp') throw new Error('the docket-pages capability must be attached');
+    return Object.fromEntries(
+      Object.entries(def.env).map(([name, value]) => [name, 'literal' in value ? value.literal : '<secret>']),
+    );
+  };
+
+  it('A-141: a token is minted at run start, bound to the run, work order, project and role, and reaches the child through its environment', async () => {
+    const h = await withTools();
+    const seenAtStart: boolean[] = [];
+    const spy: AgentTransport = {
+      start: async (request) => {
+        seenAtStart.push(h.runTokens.resolve(envOf(request)['DOCKET_MCP_TOKEN'] ?? '') !== undefined);
+        return h.transport.start(request);
+      },
+    };
+    h.transports.register(ACCOUNT, spy);
+
+    await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    const record = await theRun(h.runs);
+    expect(h.runTokens.minted()).toEqual([
+      { token: expect.any(String), binding: { runId: record.id, workOrderId: WORK_ORDER, project: WORK_ORDER_RECORD.project, role: ROLE.id } },
+    ]);
+    expect(seenAtStart).toEqual([true]);
+    const request = theRequest(h.transport);
+    expect(envOf(request)).toEqual({
+      ELECTRON_RUN_AS_NODE: '1',
+      DOCKET_MCP_SOCKET: ENDPOINT.socketPath,
+      DOCKET_MCP_TOKEN: h.runTokens.minted()[0]?.token,
+    });
+  });
+
+  it('A-141: two runs active at the same time hold different tokens', async () => {
+    const h = await withTools();
+    const second = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FAX');
+    await h.workOrders.create({ ...WORK_ORDER_RECORD, id: second });
+    const gate = permissionGate();
+    await Promise.all([
+      executeRun(h.deps, gate.permissions, INPUT),
+      executeRun(h.deps, gate.permissions, { ...INPUT, item: { ...ITEM, workOrderId: second } }),
+    ]);
+    const tokens = h.transport.requests().map((request) => envOf(request)['DOCKET_MCP_TOKEN']);
+    expect(tokens).toHaveLength(2);
+    expect(new Set(tokens).size).toBe(2);
+    expect(h.runTokens.minted().map((m) => m.binding.workOrderId).sort()).toEqual([WORK_ORDER, second].sort());
+  });
+
+  describe('A-142: the token is revoked on every path that ends the run', () => {
+    const liveAfter = async (options: Parameters<typeof harness>[0], tweak?: (h: Awaited<ReturnType<typeof withTools>>) => void) => {
+      const h = await withTools(options);
+      tweak?.(h);
+      await executeRun(h.deps, permissionGate().permissions, INPUT).catch(() => undefined);
+      return h;
+    };
+
+    it('A-142: finished (completed, failed and cancelled alike)', async () => {
+      for (const reason of ['completed', 'failed', 'cancelled'] as const) {
+        const h = await liveAfter({ script: [finished(reason)] });
+        expect(h.runTokens.minted()).toHaveLength(1);
+        expect(h.runTokens.live(), reason).toEqual([]);
+      }
+    });
+
+    it('A-142: a limit hit', async () => {
+      const h = await liveAfter({ script: [limitHit({ class: 'window_exhausted' })] });
+      expect(h.runTokens.minted()).toHaveLength(1);
+      expect(h.runTokens.live()).toEqual([]);
+    });
+
+    it('A-142: a stream that dries up without finishing', async () => {
+      const h = await liveAfter({ script: [text('hello')] });
+      expect(h.runTokens.minted()).toHaveLength(1);
+      expect(h.runTokens.live()).toEqual([]);
+    });
+
+    it('A-142: a transport that fails to start', async () => {
+      const h = await liveAfter({}, (harnessed) => harnessed.transport.failStart({ code: 'spawn_failed', message: 'nope' }));
+      expect(h.runTokens.minted()).toHaveLength(1);
+      expect(h.runTokens.live()).toEqual([]);
+    });
+
+    it('A-142: an exception thrown while the run is driven', async () => {
+      const h = await withTools();
+      h.transports.register(ACCOUNT, { start: async () => { throw new Error('transport crashed'); } });
+      await expect(executeRun(h.deps, permissionGate().permissions, INPUT)).rejects.toThrow('transport crashed');
+      expect(h.runTokens.minted()).toHaveLength(1);
+      expect(h.runTokens.live()).toEqual([]);
+    });
+
+    it('A-142: a run that never reached the transport mints nothing', async () => {
+      const noTransport = await liveAfter({ withTransport: false });
+      expect(noTransport.runTokens.minted()).toEqual([]);
+      expect(noTransport.runTokens.live()).toEqual([]);
+    });
+  });
+
+  it('A-143: the token appears nowhere a run leaves behind — record, events, work-order log, audit entries, the prompt', async () => {
+    const h = await withTools({ script: [sessionStarted('sess-1'), text('hi'), toolCall(), toolResult(true), usage(0.01), finished('completed')] });
+    await executeRun(h.deps, permissionGate().permissions, INPUT);
+    const token = h.runTokens.minted()[0]?.token ?? '';
+    expect(token).not.toBe('');
+
+    const record = await theRun(h.runs);
+    const everything = JSON.stringify({
+      record,
+      events: await h.runs.events(record.id),
+      workOrderEvents: await h.workOrders.events(WORK_ORDER),
+      audit: h.log.entries(),
+    });
+    expect(everything).not.toContain(token);
+    // It does reach the child: only through the one capability's environment.
+    const request = theRequest(h.transport);
+    expect(request.prompt).not.toContain(token);
+    expect(JSON.stringify({ ...request, capabilities: request.capabilities.filter((c) => c.id !== 'docket-pages') })).not.toContain(token);
+    expect(JSON.stringify(request.capabilities.filter((c) => c.id === 'docket-pages'))).toContain(token);
+  });
+
+  describe('A-144: the built-in capability', () => {
+    it('A-144: is appended as the last capability, after the role\'s own, without touching the input', async () => {
+      const h = await withTools();
+      const input = { ...INPUT, capabilities: [CAPABILITY] };
+      await executeRun(h.deps, permissionGate().permissions, input);
+      const request = theRequest(h.transport);
+      expect(request.capabilities.map((c) => c.id)).toEqual(['docs', 'docket-pages']);
+      expect(request.capabilities[1]).toMatchObject({ kind: 'mcp', id: 'docket-pages', command: ENDPOINT.command, args: ENDPOINT.args });
+      expect(input.capabilities).toEqual([CAPABILITY]);
+    });
+
+    it('A-144: replaces a stored capability of the same id instead of duplicating it', async () => {
+      const h = await withTools();
+      const stored = { kind: 'mcp', id: slugOf<'capability'>('docket-pages'), name: 'Mine', command: 'evil', args: [], env: {} } as const;
+      await executeRun(h.deps, permissionGate().permissions, { ...INPUT, capabilities: [stored, CAPABILITY] });
+      const request = theRequest(h.transport);
+      expect(request.capabilities.map((c) => c.id)).toEqual(['docs', 'docket-pages']);
+      expect(dockets(request)[0]).toMatchObject({ command: ENDPOINT.command });
+    });
+
+    it('A-144: is not attached when the role opted out; no token is minted then', async () => {
+      const h = await withTools();
+      await executeRun(h.deps, permissionGate().permissions, { ...INPUT, role: { ...ROLE, docketTools: false } });
+      expect(theRequest(h.transport).capabilities).toEqual([CAPABILITY]);
+      expect(h.runTokens.minted()).toEqual([]);
+    });
+
+    it('A-144: docketTools true or absent attaches', async () => {
+      for (const role of [{ ...ROLE, docketTools: true }, ROLE]) {
+        const h = await withTools();
+        await executeRun(h.deps, permissionGate().permissions, { ...INPUT, role });
+        expect(dockets(theRequest(h.transport))).toHaveLength(1);
+      }
+    });
+
+    it('A-144: is not attached for a provider whose capability record says mcp false; unknown and true attach', async () => {
+      const none = await withTools({ routeKinds: KIND(false) });
+      await executeRun(none.deps, permissionGate().permissions, INPUT);
+      expect(theRequest(none.transport).capabilities).toEqual([CAPABILITY]);
+      expect(none.runTokens.minted()).toEqual([]);
+
+      const unknown = await withTools({ routeKinds: KIND('unknown') });
+      await executeRun(unknown.deps, permissionGate().permissions, INPUT);
+      expect(dockets(theRequest(unknown.transport))).toHaveLength(1);
+
+      const yes = await withTools({ routeKinds: KIND(true) });
+      await executeRun(yes.deps, permissionGate().permissions, INPUT);
+      expect(dockets(theRequest(yes.transport))).toHaveLength(1);
+    });
+
+    it('A-144: is not attached when the shell has no endpoint', async () => {
+      const h = await withTools({}, null);
+      await executeRun(h.deps, permissionGate().permissions, INPUT);
+      expect(theRequest(h.transport).capabilities).toEqual([CAPABILITY]);
+      expect(h.runTokens.minted()).toEqual([]);
     });
   });
 });

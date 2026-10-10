@@ -15,7 +15,9 @@ export interface FakeRouteKind {
   readonly tierModels?: Readonly<Record<Tier, string>>;
   /** The instruction-file names this provider reads natively (P-37). */
   readonly instructionFiles?: readonly string[];
-  readonly quotaProbe?: 'sdk_usage' | 'rate_limit_events' | 'http_monitor' | 'provider_query' | 'none';
+  /** The provider's `mcp` capability; absent reads as unknown. */
+  readonly mcp?: boolean | 'unknown';
+  readonly quotaProbe?:'sdk_usage' | 'rate_limit_events' | 'http_monitor' | 'provider_query' | 'none';
 }
 
 export const createFakeCapabilityCatalog = (routeKinds: readonly FakeRouteKind[] = []): CapabilityCatalog => ({
@@ -36,6 +38,7 @@ export const createFakeCapabilityCatalog = (routeKinds: readonly FakeRouteKind[]
           ...(kind.quotaProbe !== undefined ? { quotaProbe: kind.quotaProbe } : {}),
         };
   },
+  mcpSupport: (providerId) => routeKinds.find((kind) => kind.provider === providerId && kind.mcp !== undefined)?.mcp ?? 'unknown',
   // Registry order: the scripted kind order is the registry order, first appearance wins the union.
   nativeInstructionFiles: (providerId) =>
     routeKinds.filter((kind) => kind.provider === providerId).flatMap((kind) => kind.instructionFiles ?? []),

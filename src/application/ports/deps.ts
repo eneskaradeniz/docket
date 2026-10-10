@@ -25,6 +25,7 @@ import type { QueueRepo } from './queue-repo';
 import type { RepoFolders } from './repo-folders';
 import type { RepoRegistry } from './repo-registry';
 import type { RunRepo } from './run-repo';
+import type { McpEndpoint, RunTokens } from './run-tokens';
 import type { ScratchDirs } from './scratch-dirs';
 import type { SecretVault } from './secret-vault';
 import type { CommandRunner, EvidenceChecker, SecretScanner, Worktrees } from './repo-tools';
@@ -67,4 +68,7 @@ export interface AppDeps {
   readonly worktreeFiles: WorktreeFiles;
   readonly machine: MachineProbe;
   readonly dispatchStatus: DispatchStatusHolder;
+  readonly runTokens: RunTokens;
+  /** How Docket's own MCP child is launched; undefined when this shell runs none. */
+  readonly mcpEndpoint: McpEndpoint | undefined;
 }

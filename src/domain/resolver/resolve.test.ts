@@ -133,6 +133,12 @@ describe('resolve', () => {
 });
 
 describe('applyRoleOverrides', () => {
+  it('R-81: docketTools survives the merge, an override replaces it, and an unset one stays absent', () => {
+    expect(applyRoleOverrides({ ...BASE, docketTools: false }, []).docketTools).toBe(false);
+    expect(applyRoleOverrides(BASE, [{ id: BASE.id, docketTools: false }]).docketTools).toBe(false);
+    expect('docketTools' in applyRoleOverrides(BASE, [])).toBe(false);
+  });
+
   it('R-11: never changes id; an override with a different id is ignored entirely', () => {
     const result = applyRoleOverrides(BASE, [
       { id: asRole('coder'), name: 'Hijacked', instructions: 'other' },

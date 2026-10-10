@@ -47,6 +47,7 @@ export function applyRoleOverrides(base: RoleDef, overrides: readonly RoleOverri
   let writeScope = base.writeScope;
   let capabilities = base.capabilities;
   let active = base.active;
+  let docketTools = base.docketTools;
   for (const override of overrides) {
     if (override.id !== base.id) continue;
     if (override.name !== undefined) name = override.name;
@@ -54,8 +55,17 @@ export function applyRoleOverrides(base: RoleDef, overrides: readonly RoleOverri
     if (override.writeScope !== undefined) writeScope = override.writeScope;
     if (override.capabilities !== undefined) capabilities = override.capabilities;
     if (override.active !== undefined) active = override.active;
+    if (override.docketTools !== undefined) docketTools = override.docketTools;
   }
-  return { id: base.id, name, instructions, writeScope, capabilities, active };
+  return {
+    id: base.id,
+    name,
+    instructions,
+    writeScope,
+    capabilities,
+    active,
+    ...(docketTools === undefined ? {} : { docketTools }),
+  };
 }
 
 /** Machine-local binding of a role to an ordered chain of accounts (first = preferred). */

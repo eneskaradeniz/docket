@@ -29,6 +29,7 @@ export * from './fake-repo-folders';
 export * from './fake-repo-registry';
 export * from './fake-repo-tools';
 export * from './fake-run-repo';
+export * from './fake-run-tokens';
 export * from './fake-scratch-dirs';
 export * from './fake-secret-vault';
 export * from './fake-transport';

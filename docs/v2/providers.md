@@ -458,3 +458,9 @@ export interface QuotaProbe {
   credential is still valid, and whether a logout removes the file is unverified. `homeEnv` is optional
   for a presence rule (this CLI documents no home override); the existing presence rules are unchanged.
 
+
+### Launch rules addendum — Docket's own MCP child (added 2026-10-10, #898)
+
+- The built-in `docket-pages` MCP server reaches a run through the same run-scoped config as any MCP capability (P-7 is unchanged: the run's files stay inside the run's own directory). Its environment is the allowlist the writer gives every MCP server plus exactly the variables `DOCKET_MCP_SOCKET`, `DOCKET_MCP_TOKEN` and the launch variable `ELECTRON_RUN_AS_NODE=1`; nothing else of the app's environment reaches the child.
+- The per-run token is a bearer secret held in memory by the app and revoked when the run ends (A-141 … A-143). The run-config writer writes a server's `env` into the run's `mcp.json` (existing behaviour for every MCP capability), so for a provider that reads MCP servers from that file the token is present in that run-scoped file for the run's lifetime and dead once the run ends. Keeping the token out of that file altogether needs a change to the launch layer and is an open follow-up.
+- A provider whose capability record says `mcp: false` is given no Docket child and no token; its pages are collected from `.docket/out/` (not built yet).

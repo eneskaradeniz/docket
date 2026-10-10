@@ -11,6 +11,8 @@
 //      the executor's notify hooks, so run events and the executor's run-finished append reach
 //      the subscribed stores without the executor knowing the api.
 //   4. The dispatcher/executor loop: tick → start → executeRun → limit/gate follow-ups.
+//   4b. Docket's own MCP socket: the listener the run-scoped MCP child talks to. It only starts
+//      and stops here; every decision lives in the tool dispatch behind it.
 //   5. IPC handlers and the window last — the renderer boots only once every surface it can
 //      call already exists.
 import { app, BrowserWindow, Notification, dialog, ipcMain, safeStorage, screen } from 'electron';
@@ -28,6 +30,7 @@ import {
   advancePhases,
   applyLimitDecision,
   composeRunPrompt,
+  createDocketTools,
   createPermissionBoard,
   dispatcherTick,
   evaluateMachineGates,
@@ -39,12 +42,15 @@ import {
   BUILTIN_PROVIDER_DEFS,
   builtinProviderMarks,
   createDesignUpdateChecker,
+  createMcpEndpoint,
   createNodeDeps,
   createNoopUpdateChecker,
   createLoginStates,
   createPathDiscovery,
   createProviderTransportFactory,
+  startMcpListener,
 } from '../src/infrastructure/index';
+import type { McpListener } from '../src/infrastructure/index';
 import { createDevBridge, devBridgeEnabled } from './dev-bridge';
 import {
   WINDOW_MIN_HEIGHT,
@@ -120,6 +126,7 @@ const loginStates = createLoginStates();
 let node: NodeDeps | undefined;
 let dispatchTimer: NodeJS.Timeout | undefined;
 let quotaLifecycle: { stop(): void } | undefined;
+let mcpListener: McpListener | undefined;
 
 /** One discovery pass produces the binPaths the transport factory routes by. */
 const buildTransportFactory = (
@@ -366,6 +373,9 @@ const startApp = async (): Promise<void> => {
 
   const opened = createNodeDeps({
     dataDir,
+    // The child a run's CLI launches is this very executable run as Node, on the script built
+    // beside this bundle; the endpoint is plain data, the socket is opened below.
+    mcpEndpoint: createMcpEndpoint({ dataDir, platform: process.platform, execPath: process.execPath, mainDir: here }),
     cipher: safeStorageCipher(),
     transports: discoveredTransports(baseEnv, env),
     notifier: electronNotifier(),
@@ -383,6 +393,19 @@ const startApp = async (): Promise<void> => {
   node = opened.value;
   const nodeDeps = node.deps;
   deps = nodeDeps;
+
+  // Docket's own MCP socket, created at startup (a stale file of a dead instance is removed there)
+  // and removed at shutdown. A failure to listen is loud but not fatal: runs go on without
+  // working page tools, and their child reports `app_unreachable`.
+  if (nodeDeps.mcpEndpoint !== undefined) {
+    const tools = createDocketTools(nodeDeps);
+    const listening = await startMcpListener({
+      socketPath: nodeDeps.mcpEndpoint.socketPath,
+      handler: (request) => tools.call(request),
+    });
+    if (listening.ok) mcpListener = listening.value;
+    else console.error(`docket MCP listener did not start (${listening.error})`);
+  }
 
   const board = createPermissionBoard();
   // The app's update story in one seam: the no-op checker is the default (no updater ships
@@ -476,7 +499,15 @@ app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
 
-app.on('will-quit', () => {
+app.on('will-quit', (event) => {
+  if (mcpListener !== undefined) {
+    // The socket file goes away before the app does; will-quit fires again after app.quit().
+    const closing = mcpListener;
+    mcpListener = undefined;
+    event.preventDefault();
+    void closing.close().finally(() => app.quit());
+    return;
+  }
   quotaLifecycle?.stop();
   if (dispatchTimer !== undefined) clearInterval(dispatchTimer);
   node?.close();

@@ -28,6 +28,7 @@ import {
   effortForChoice,
   extendRollingNote,
   foldRun,
+  parseSlug,
   resolveTier,
   stageBrief,
 } from '../../domain/index';
@@ -279,27 +280,89 @@ const routeForTier = async (
   return { route: { ...item.route, model }, resolved: { model, tier: item.tier } };
 };
 
+type ExecuteDeps = Pick<
+  AppDeps,
+  | 'clock'
+  | 'ids'
+  | 'log'
+  | 'workOrders'
+  | 'runs'
+  | 'accounts'
+  | 'transports'
+  | 'modelCatalog'
+  | 'capabilities'
+  | 'checkpoints'
+  | 'definitions'
+  | 'instructionFiles'
+  | 'runTokens'
+  | 'mcpEndpoint'
+>;
+
+const DOCKET_PAGES_CAPABILITY = parseSlug<'capability'>('docket-pages');
+
+/** A-144: Docket's own MCP child, appended LAST so nothing a stored definition says can reorder
+ *  or shadow it (a stored capability of the same id is replaced). It exists only on this request:
+ *  never stored, and its token only here. A role that opted out, a provider whose CLI cannot attach
+ *  MCP, and a shell without an endpoint all get the capabilities unchanged and no token. */
+const withDocketTools = async (
+  deps: ExecuteDeps,
+  input: {
+    readonly runId: RunId;
+    readonly item: QueueItem;
+    readonly role: RoleDef;
+    readonly capabilities: readonly CapabilityDef[];
+  },
+): Promise<readonly CapabilityDef[]> => {
+  const endpoint = deps.mcpEndpoint;
+  if (endpoint === undefined || input.role.docketTools === false || !DOCKET_PAGES_CAPABILITY.ok) return input.capabilities;
+  const account = await deps.accounts.get(input.item.route.accountId);
+  if (account !== undefined && deps.capabilities.mcpSupport(account.provider) === false) return input.capabilities;
+
+  const workOrder = await deps.workOrders.get(input.item.workOrderId);
+  const token = deps.runTokens.mint({
+    runId: input.runId,
+    workOrderId: input.item.workOrderId,
+    ...(workOrder === undefined ? {} : { project: workOrder.project }),
+    role: input.role.id,
+  });
+  const env: Record<string, { readonly literal: string }> = {};
+  for (const [name, value] of Object.entries(endpoint.env)) env[name] = { literal: value };
+  env['DOCKET_MCP_SOCKET'] = { literal: endpoint.socketPath };
+  env['DOCKET_MCP_TOKEN'] = { literal: token };
+  return [
+    ...input.capabilities.filter((capability) => capability.id !== DOCKET_PAGES_CAPABILITY.value),
+    { kind: 'mcp', id: DOCKET_PAGES_CAPABILITY.value, name: 'Docket pages', command: endpoint.command, args: endpoint.args, env },
+  ];
+};
+
+/** A-142: the run's token ends with the run on every path — a normal finish, a limit, a failed
+ *  start, a dried-up stream and an exception alike — so the revoke lives in one `finally`. */
 export async function executeRun(
-  deps: Pick<
-    AppDeps,
-    | 'clock'
-    | 'ids'
-    | 'log'
-    | 'workOrders'
-    | 'runs'
-    | 'accounts'
-    | 'transports'
-    | 'modelCatalog'
-    | 'capabilities'
-    | 'checkpoints'
-    | 'definitions'
-    | 'instructionFiles'
-  >,
+  deps: ExecuteDeps,
   permissions: PermissionGate,
   input: ExecuteRunInput,
   board?: BoardHooks,
   notify?: RunEventNotify,
   workOrdersChanged?: WorkOrdersChangedNotify,
+): Promise<ExecuteOutcome> {
+  let started: RunId | undefined;
+  try {
+    return await driveRun(deps, permissions, input, board, notify, workOrdersChanged, (runId) => {
+      started = runId;
+    });
+  } finally {
+    if (started !== undefined) deps.runTokens.revoke(started);
+  }
+}
+
+async function driveRun(
+  deps: ExecuteDeps,
+  permissions: PermissionGate,
+  input: ExecuteRunInput,
+  board: BoardHooks | undefined,
+  notify: RunEventNotify | undefined,
+  workOrdersChanged: WorkOrdersChangedNotify | undefined,
+  onRunId: (runId: RunId) => void,
 ): Promise<ExecuteOutcome> {
   const { item } = input;
   const { route, resolved } = await routeForTier(deps, item);
@@ -326,6 +389,7 @@ export async function executeRun(
 
   const effort = await resolveEffort(deps, item, route);
   const runId = deps.ids.next<'run'>();
+  onRunId(runId);
   const startedAt = deps.clock.now();
   const definitionsRev = await definitionsRevOf(deps, item, input.role);
   await deps.runs.create({
@@ -395,6 +459,12 @@ export async function executeRun(
   if (transport === undefined) {
     return failAsTransport({ code: 'not_installed', message: `no transport for account ${item.route.accountId}` });
   }
+  const capabilities = await withDocketTools(deps, {
+    runId,
+    item,
+    role: input.role,
+    capabilities: input.capabilities,
+  });
   const startAttempt = async (
     resume: { readonly sessionRef: string } | undefined,
     prompt: string,
@@ -405,7 +475,7 @@ export async function executeRun(
       role: input.role,
       route,
       prompt,
-      capabilities: input.capabilities,
+      capabilities,
       ...(effort !== undefined ? { effort } : {}),
       ...(resume !== undefined ? { resume } : {}),
     });
