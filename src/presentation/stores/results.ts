@@ -75,6 +75,11 @@ export const KNOWN_FAILURE_CODES: readonly string[] = [
   // settings.setDispatch refusals (A-105 … A-107).
   'invalid_limits',
   'unknown_account',
+  // The page commands' refusals (A-158): the codes the gate commands do not share.
+  'empty_comment',
+  'comment_too_long',
+  'unknown_version',
+  'stale_version',
 ];
 
 const FAILURE_KEYS: Readonly<Record<string, LabelKey>> = Object.fromEntries(
@@ -118,20 +123,37 @@ const SUCCESS_KEYS: Readonly<Record<Command['type'], LabelKey>> = {
   'quota.refresh': 'success.account.save',
   // The import surface is part 3; the per-identity outcomes ride `results`, the toast is neutral.
   'capabilities.import': 'success.capabilities.import',
-  // The page viewer brings its own copy; until then the neutral recorded-decision line stands in.
-  'page.comment': 'success.gate.decide',
-  'page.requestApproval': 'success.gate.decide',
-  'page.decide': 'success.gate.decide',
+  // `page.decide` reads as the approval; the page screen picks the other two lines itself
+  // (pageDecideKey) because only it knows the decision and the gate it saw.
+  'page.comment': 'page.toast.commented',
+  'page.requestApproval': 'page.toast.requested',
+  'page.decide': 'page.toast.approved',
   'app.update.check': 'success.app.update.check',
   'app.update.apply': 'success.app.update.apply',
 };
 
 export const failureKey = (code: string): LabelKey => FAILURE_KEYS[code] ?? GENERIC_FAILURE_KEY;
 
+/** Codes the gate commands also return, worded for a page: "the gate is not pending" would be the
+ *  wrong sentence under a page. */
+const PAGE_FAILURE_KEYS: Readonly<Record<string, LabelKey>> = {
+  not_found: 'page.error.not_found',
+  not_pending: 'page.error.not_pending',
+  self_approval: 'page.error.self_approval',
+};
+
+/** The page screen's failure sentence for a code. */
+export const pageFailureKey = (code: string): LabelKey => PAGE_FAILURE_KEYS[code] ?? failureKey(code);
+
+/** The toast after a page decision the API confirmed: a rejection never claims the work order
+ *  moved; an approval says so only when the page's work order waited on that gate. */
+export const pageDecideKey = (decision: 'approved' | 'rejected', gatePending: boolean): LabelKey =>
+  decision === 'rejected' ? 'page.toast.rejected' : gatePending ? 'page.toast.approvedAdvanced' : 'page.toast.approved';
+
 export const queryFailureKey = (failure: QueryFailure): LabelKey => failureKey(failure.code);
 
 export const commandResultKey = (command: Command['type'], result: CommandResult): LabelKey =>
-  result.ok ? SUCCESS_KEYS[command] : failureKey(result.code);
+  result.ok ? SUCCESS_KEYS[command] : command.startsWith('page.') ? pageFailureKey(result.code) : failureKey(result.code);
 
 /** Narrow a raw query reply (queries resolve to `unknown` at the boundary) to its failure shape. */
 export const isQueryFailure = (value: unknown): value is QueryFailure => {

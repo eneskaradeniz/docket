@@ -1,5 +1,5 @@
 // preload.ts — the renderer's only bridge to the core. Exactly one surface crosses the context
-// bridge (`window.docket`) with the api's three members plus the page view's three calls:
+// bridge (`window.docket`) with the api's three members plus the page view's calls and its closed notice:
 // commands, queries and page-view calls ride ipcRenderer.invoke; events ride one channel and are
 // forwarded to the listener, so no ipcRenderer or Node object ever reaches the renderer. Built as CommonJS: a sandboxed preload runs without an ESM
 // context, so the bundler emits a .cjs file.
@@ -30,12 +30,21 @@ export interface PageViewBridge {
   open(request: { readonly pageId: string; readonly version: number; readonly bounds: PageViewBounds }): Promise<PageViewReply>;
   setBounds(request: { readonly bounds: PageViewBounds }): Promise<PageViewReply>;
   close(): Promise<PageViewReply>;
+  /** Fires when the main process tore the view down on its own (the page's process died or hung).
+   *  The listener gets no argument: the notice is only a signal, nothing from the page reaches it. */
+  onClosed(listener: () => void): () => void;
 }
 
 /** Every live subscriber, fanned out by the ONE channel listener below. The renderer's stores
  *  subscribe for the whole session and never unsubscribe, so a listener per subscriber would grow
  *  with the store count and trip the EventEmitter limit as a console warning. */
 const subscribers = new Set<(event: UiEvent) => void>();
+
+/** The view-closed notice's subscribers, behind one listener for the same reason. */
+const closedListeners = new Set<() => void>();
+ipcRenderer.on('docket:page-view-closed', (): void => {
+  for (const listener of [...closedListeners]) listener();
+});
 
 ipcRenderer.on('docket:event', (_event: IpcRendererEvent, event: UiEvent): void => {
   // A copy: a subscriber may unsubscribe inside its own dispatch, and the rest still receive it.
@@ -53,6 +62,12 @@ const bridge: DocketBridge = {
     open: ({ pageId, version, bounds }) => ipcRenderer.invoke('docket:page-view', { op: 'open', pageId, version, bounds }),
     setBounds: ({ bounds }) => ipcRenderer.invoke('docket:page-view', { op: 'setBounds', bounds }),
     close: () => ipcRenderer.invoke('docket:page-view', { op: 'close' }),
+    onClosed: (listener) => {
+      closedListeners.add(listener);
+      return () => {
+        closedListeners.delete(listener);
+      };
+    },
   },
 
   subscribe: (listener: (event: UiEvent) => void): (() => void) => {

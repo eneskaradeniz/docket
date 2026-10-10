@@ -34,7 +34,9 @@ import type {
 import { flowChips } from '../stores/work-order-detail';
 import { failureKey } from '../stores/results';
 import { toastOutcome } from '../stores/toasts';
+import type { PageListStore } from '../stores/page-viewer';
 import { LivePaneScreen } from './live';
+import { PagesSection } from './page-viewer';
 
 export interface WorkOrderDetailScreenProps {
   readonly store: WorkOrderDetailStore;
@@ -44,6 +46,9 @@ export interface WorkOrderDetailScreenProps {
    *  entry stands behind it, and the row stays hidden (U-25). */
   readonly backKey: 'detail.back.board' | 'detail.back.cockpit' | 'detail.back.account' | 'detail.back.roadmap' | null;
   readonly onBack: () => void;
+  /** The work order's pages (the Sayfalar section) and the door that opens one (U-75). */
+  readonly pages: PageListStore;
+  readonly onOpenPage: (id: string) => void;
 }
 
 const STATUS_TONE: Readonly<Record<WorkOrderStatus, BadgeTone>> = {
@@ -384,11 +389,14 @@ function StageFilesPreview({
   );
 }
 
-export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onBack }: WorkOrderDetailScreenProps) {
+export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onBack, pages, onOpenPage }: WorkOrderDetailScreenProps) {
   const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   useEffect(() => {
     void store.load(workOrderId);
   }, [store, workOrderId]);
+  useEffect(() => {
+    void pages.load(workOrderId);
+  }, [pages, workOrderId]);
   // Every intent's report leaves as the one toast (U-50) — once per outcome, so a re-render or
   // a reload of the same standing never repeats it.
   const lastOutcome = state.lastOutcome;
@@ -542,6 +550,8 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
               </div>
             )}
           </section>
+
+          <PagesSection store={pages} locale={locale} onOpenPage={onOpenPage} />
 
           <SectionCard title={t(locale, 'detail.section.stages')}>
             <ol className="grid gap-3">

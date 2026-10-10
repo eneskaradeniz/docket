@@ -5,18 +5,24 @@
 // launcher starts a counting HTTP server there before seeding, so the port is known when the HTML
 // is written and every attempt that escapes the view shows up as a counted request.
 //
-// Hermetic by construction: no account, no project, no repository, no secret and no agent run;
-// the page is written through the app's own composition and use-case, then one extra file is
-// dropped straight into the version directory — present on disk, never recorded — so the
-// traversal probes have something real to fail to reach.
+// Hermetic by construction: no account, no secret and no agent run; the page is written through
+// the app's own composition and use-cases, then one extra file is dropped straight into the version
+// directory — present on disk, never recorded — so the traversal probes have something real to
+// fail to reach. The same world serves the page viewer's journey (J-13): one project with one
+// single-repo throw-away repository, one open work order, and the hostile page linked to it with
+// two versions — the second changes one line of the entry, so Fark has a `-` and a `+`.
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import assert from 'node:assert';
+import { stringify } from 'yaml';
 
-import type { Actor } from '../src/domain/index';
+import type { Actor, ProjectSlug, RepoSlug, RoleSlug } from '../src/domain/index';
 import { DISPATCH_MODE_KEY } from '../src/application/use-cases/settings';
-import { publishPageUseCase } from '../src/application/use-cases/pages';
+import { publishPageUseCase, publishVersion } from '../src/application/use-cases/pages';
+import { attachProject } from '../src/application/use-cases/projects';
+import { openWorkOrder } from '../src/application/use-cases/work-orders';
 import { createNodeDeps } from '../src/infrastructure/compose/create-node-deps';
 
 const OPERATOR: Actor = { kind: 'user', id: 'user-1' };
@@ -204,11 +210,71 @@ const deps = node.value.deps;
 // The world must not depend on the host's load: pin the fixed dispatch mode.
 await deps.settings.set(DISPATCH_MODE_KEY, 'fixed');
 
+// --- the work order the page hangs on -------------------------------------------------------------
+const PROJECT = { id: 'sayfa-atolyesi', name: 'Sayfa Atölyesi', repo: 'sayfa-api' } as const;
+const WORK_ORDER_TITLE = 'Giriş ekranını hazırla';
+const repoDir = join(home, 'repos', PROJECT.repo);
+const vcs = (args: readonly string[]): void => {
+  execFileSync('git', [...args], { cwd: repoDir, stdio: 'ignore' });
+};
+const writeYaml = (relative: string, value: unknown): void => {
+  const target = join(repoDir, relative);
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(target, stringify(value));
+};
+mkdirSync(repoDir, { recursive: true });
+try {
+  vcs(['init', '--quiet', '--initial-branch=main']);
+} catch {
+  vcs(['init', '--quiet']);
+}
+writeFileSync(join(repoDir, 'README.md'), `# ${PROJECT.repo}\n`);
+writeYaml('.docket/repo.yaml', {
+  id: PROJECT.repo,
+  name: PROJECT.repo,
+  flows: ['tek-asama'],
+  defaultFlow: 'tek-asama',
+  commandSets: {},
+  roleOverrides: [],
+  docsRoot: 'docs',
+  testGlobs: [],
+});
+writeYaml('.docket/flows/tek-asama.yaml', {
+  id: 'tek-asama',
+  name: 'Tek aşamalı akış',
+  stages: [{ id: 'is', name: 'İş', role: 'gelistirici', exit: [{ kind: 'human', id: 'onay', label: 'Onay' }] }],
+});
+writeYaml('.docket/roles/gelistirici.yaml', {
+  id: 'gelistirici',
+  name: 'gelistirici',
+  instructions: 'İş emrini yürüt.',
+  writeScope: { kind: 'repo' },
+  capabilities: [],
+  active: true,
+});
+writeYaml('.docket/project.yaml', { id: PROJECT.id, name: PROJECT.name, mainRepo: PROJECT.repo, repos: [PROJECT.repo] });
+vcs(['add', '-A']);
+vcs(['-c', 'user.name=Seed', '-c', 'user.email=seed@example.invalid', 'commit', '--quiet', '-m', 'seed']);
+
+const attached = await attachProject(deps, { path: repoDir, actor: OPERATOR, repos: [] });
+assert(attached.ok, `the project did not attach: ${attached.ok ? '' : attached.error}`);
+const opened = await openWorkOrder(deps, {
+  project: PROJECT.id as ProjectSlug,
+  repo: PROJECT.repo as RepoSlug,
+  title: WORK_ORDER_TITLE,
+  actor: OPERATOR,
+});
+assert(opened.ok, `the work order did not open: ${opened.ok ? '' : opened.error}`);
+const workOrder = opened.value;
+
+// The page is the assistant's: an agent actor publishes both versions, the operator decides.
+const AGENT: Actor = { kind: 'agent', runId: deps.ids.next<'run'>(), role: 'gelistirici' as RoleSlug };
 const published = await publishPageUseCase(deps, {
   title: 'Hostile page',
   kind: 'html',
-  by: OPERATOR,
+  by: AGENT,
   entry: 'index.html',
+  workOrder,
   files: [
     { path: 'index.html', bytes: new TextEncoder().encode(HTML) },
     { path: 'pixel.png', bytes: new Uint8Array(PIXEL) },
@@ -217,8 +283,25 @@ const published = await publishPageUseCase(deps, {
 assert(published.ok, `the page did not publish: ${published.ok ? '' : published.error.code}`);
 const pageId = published.value.id;
 
+// Version 2 changes exactly one line of the entry (the <title> line): Fark shows one `-` and one `+`.
+const OLD_LINE = '<html><head><meta charset="utf-8"><title>hostile</title>';
+const NEW_LINE = '<html><head><meta charset="utf-8"><title>hostile, second version</title>';
+assert(HTML.includes(OLD_LINE), 'the entry no longer has the line version 2 changes');
+const second = await publishVersion(deps, {
+  page: pageId,
+  by: AGENT,
+  entry: 'index.html',
+  files: [
+    { path: 'index.html', bytes: new TextEncoder().encode(HTML.replace(OLD_LINE, NEW_LINE)) },
+    { path: 'pixel.png', bytes: new Uint8Array(PIXEL) },
+  ],
+});
+assert(second.ok, `version 2 did not publish: ${second.ok ? '' : second.error.code}`);
+
 // On disk in the version directory, but not a recorded file of the version.
 writeFileSync(join(dataDir, 'pages', pageId, 'v1', 'secret'), 'TOP SECRET');
 
 node.value.close();
-console.log(`SEED=${JSON.stringify({ home, dataDir, pageId })}`);
+console.log(
+  `SEED=${JSON.stringify({ home, dataDir, pageId, project: PROJECT.name, workOrderTitle: WORK_ORDER_TITLE, removedLine: OLD_LINE, addedLine: NEW_LINE })}`,
+);

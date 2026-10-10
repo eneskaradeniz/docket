@@ -153,4 +153,20 @@ describe('navHistoryReducer', () => {
     expect(cleaned.index).toBe(2);
     expect(canForward(cleaned)).toBe(false);
   });
+
+  it('U-75: a page is a route of its own — pushed once per page, never doubled, left by back to the work order', () => {
+    const page = (id: string): NavRoute => ({ name: 'page', id });
+    const detail = push(START_NAV_HISTORY, workOrder('wo-1'));
+    const opened = push(detail, page('p-1'));
+    expect(current(opened)).toStrictEqual(page('p-1'));
+    // The same page again adds nothing; another page is another entry.
+    expect(push(opened, page('p-1'))).toBe(opened);
+    expect(current(push(opened, page('p-2')))).toStrictEqual(page('p-2'));
+    expect(push(opened, page('p-2')).entries).toHaveLength(opened.entries.length + 1);
+    // ‹ Geri returns to the detail and the page stays forward.
+    const returned = back(opened);
+    expect(current(returned)).toStrictEqual(workOrder('wo-1'));
+    expect(canForward(returned)).toBe(true);
+    expect(current(forward(returned))).toStrictEqual(page('p-1'));
+  });
 });
