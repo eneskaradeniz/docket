@@ -985,6 +985,16 @@ the native isolated view is the only place a page is rendered as a page.
   collapse on the main container below 56 rem — the rail drops below the stage. No class or string
   names a vendor (`disabled:pointer-events-none`, not the vendor's own cursor utility).
 
+## Age wording addendum (U-83)
+
+- **U-83** (age formatter; added 2026-10-10, #909) An age under one minute reads as the locale's
+  "now" word (`şimdi` / `now`, from `Intl.RelativeTimeFormat` with `numeric: 'auto'`), never "0 saniye
+  sonra" (a future phrase). Boundaries: 59 999 ms is "now"; 60 000 ms is one minute; 3 599 999 ms is
+  59 minutes; 3 600 000 ms is one hour; 86 400 000 ms is one day. Minutes, hours and days keep their
+  past phrasing ("1 dakika önce"). Every caller (attention, running and closed rows, project cards,
+  the stale-data banner, the page viewer's header and comments) shows the age as a standalone
+  phrase, so "şimdi" reads correctly in each.
+
 ## Verifying the shell — E2E layers (Phase 3.5)
 
 The shell is verified against the frozen prototype **rev 8** (`~/source/docket-tasarim/rev8/`:
