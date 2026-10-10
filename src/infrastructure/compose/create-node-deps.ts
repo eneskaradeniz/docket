@@ -26,6 +26,7 @@ import {
   createSqliteAppSettingsRepo,
   createSqliteBindingRepo,
   createSqliteEventLog,
+  createSqliteConversationRepo,
   createSqlitePageRepo,
   createSqlitePhaseAutoRunRepo,
   createSqliteProjectPaths,
@@ -46,6 +47,7 @@ import { createQuotaProbeResolver } from '../providers/quota/index';
 import { createNodeAccountScan, createNodeCapabilityScan, createNodeCredentialImporter, type LoginStates } from '../providers/discovery/index';
 import { createNodeRunTokens } from '../mcp/index';
 import { createNodeInstructionFiles } from './instruction-files';
+import { createFsAttachmentFiles } from './attachment-files';
 import { createFsPageFiles } from './page-files';
 import { createRunDirs } from './run-dirs';
 
@@ -122,6 +124,8 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     proposals: createSqliteProposalRepo(db),
     pages: createSqlitePageRepo(db),
     pageFiles: createFsPageFiles(config.dataDir),
+    conversations: createSqliteConversationRepo(db),
+    attachmentFiles: createFsAttachmentFiles(config.dataDir),
     secrets,
     transports: config.transports,
     commands: createCommandRunner({ env: config.commandEnv }),

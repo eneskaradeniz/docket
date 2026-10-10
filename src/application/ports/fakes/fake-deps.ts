@@ -4,12 +4,14 @@ import type { AppDeps } from '../deps';
 import { createFakeAccountRepo } from './fake-account-repo';
 import { createFakeAccountTestRepo } from './fake-account-test-repo';
 import { createFakeAppSettingsRepo } from './fake-app-settings-repo';
+import { createFakeAttachmentFiles } from './fake-attachment-files';
 import { createFakeBindingRepo } from './fake-binding-repo';
 import { createFakeCapabilityCatalog } from './fake-capability-catalog';
 import { createFakeCapabilityDiscovery } from './fake-capability-discovery';
 import { createFakeCheckpointCommitter } from './fake-checkpoints';
 import { createFakeClock } from './fake-clock';
 import { createFakeCommandRunner, createFakeEvidenceChecker, createFakeSecretScanner, createFakeWorktrees } from './fake-repo-tools';
+import { createFakeConversationRepo } from './fake-conversation-repo';
 import { createFakeDefinitionStore } from './fake-definition-store';
 import { createFakeEventLog } from './fake-event-log';
 import { createFakeGitProbe } from './fake-git-probe';
@@ -57,6 +59,8 @@ export const createFakeDeps = (overrides: Partial<AppDeps> = {}): AppDeps => ({
   proposals: createFakeProposalRepo(),
   pages: createFakePageRepo(),
   pageFiles: createFakePageFiles(),
+  conversations: createFakeConversationRepo(),
+  attachmentFiles: createFakeAttachmentFiles(),
   secrets: createFakeSecretVault(),
   transports: createFakeTransportResolver(),
   commands: createFakeCommandRunner(),

@@ -199,6 +199,23 @@ describe('createNodeDeps', () => {
     expect((await node.deps.pages.list({})).map((p) => p.id)).toEqual([page]);
   });
 
+  it('I-76: wires the conversation repository to docket.db and the attachment files to <dataDir>/conversations', async () => {
+    const node = makeNode();
+    const conversation = ulidOf<'conversation'>('01ARZ3NDEKTSV4RRFFQ69G5FC9');
+    const attachment = ulidOf<'attachment'>('01ARZ3NDEKTSV4RRFFQ69G5FA9');
+    await node.deps.attachmentFiles.write(conversation, attachment, encoder.encode('bytes'));
+    expect(await readFile(join(dataDir, 'conversations', conversation, attachment), 'utf8')).toBe('bytes');
+    await node.deps.conversations.save({
+      id: conversation, scope: { kind: 'global' }, title: 'T', createdAt: 1, updatedAt: 1, pinned: false,
+      messages: [{ id: ulidOf<'message'>('01ARZ3NDEKTSV4RRFFQ69G5FM9'), role: 'user', at: 1, text: 'hi', refs: [], attachments: [], artifacts: [], sources: [] }],
+    });
+    expect((await node.deps.conversations.list({})).map((c) => c.id)).toEqual([conversation]);
+    await node.deps.conversations.delete(conversation);
+    await node.deps.attachmentFiles.removeAll(conversation);
+    expect(await node.deps.conversations.get(conversation)).toBeUndefined();
+    await expect(stat(join(dataDir, 'conversations', conversation))).rejects.toThrow();
+  });
+
   it('I-31: opens <dataDir>/docket.db, exposes the registry, and close() closes the database', async () => {
     const node = makeNode();
 

@@ -26,6 +26,10 @@ export type MeterId = Ulid<'meter'>;
 export type ProposalId = Ulid<'proposal'>;
 export type PageId = Ulid<'page'>;
 export type QueueItemId = Ulid<'queue-item'>;
+export type ConversationId = Ulid<'conversation'>;
+export type MessageId = Ulid<'message'>;
+export type DraftId = Ulid<'draft'>;
+export type AttachmentId = Ulid<'attachment'>;
 
 export type IdError = { readonly code: 'invalid_slug' | 'invalid_ulid'; readonly input: string };
 
