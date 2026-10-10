@@ -11,11 +11,12 @@ import { describe, expect, it } from 'vitest';
 
 import type { Api } from '../../api/api';
 import type { Command, CommandResult } from '../../api/commands';
-import type { OpenAskView, Query } from '../../api/queries';
+import type { OpenAskView, PageListItem, Query } from '../../api/queries';
 import type { Actor, FlowDef, Slug } from '../../domain/index';
 import { parseSlug } from '../../domain/index';
 
 import type { LivePaneStore } from '../stores/live-pane';
+import { createPageListStore } from '../stores/page-viewer';
 import {
   createWorkOrderDetailStore,
   type WorkOrderDetailView,
@@ -88,8 +89,14 @@ const LONG_TITLE =
 const ASK_ROW: OpenAskView = { runId: 'run-1', askId: 'ask-1', since: 0, title: LONG_TITLE };
 
 /** The detail query and the open-asks query are answered separately, both from one scripted reply. */
-const fakeApi = (reply: unknown, asks: readonly OpenAskView[] = [], stageFiles: unknown = null): Pick<Api, 'query' | 'command'> => ({
+const fakeApi = (
+  reply: unknown,
+  asks: readonly OpenAskView[] = [],
+  stageFiles: unknown = null,
+  pages: readonly PageListItem[] = [],
+): Pick<Api, 'query' | 'command'> => ({
   query: (query: Query) => {
+    if (query.type === 'pages.list') return Promise.resolve(pages);
     if (query.type === 'permissions.open') return Promise.resolve(asks);
     if (query.type === 'workOrders.stageFiles') return Promise.resolve(stageFiles);
     return Promise.resolve(reply);
@@ -108,17 +115,27 @@ const fakePane = (): LivePaneStore => ({
 });
 
 /** Loads the scripted view into a real store and draws the screen a user would see. */
-const draw = async (view: WorkOrderDetailView, asks: readonly OpenAskView[] = [], stageFiles: unknown = null): Promise<string> => {
+const draw = async (
+  view: WorkOrderDetailView,
+  asks: readonly OpenAskView[] = [],
+  stageFiles: unknown = null,
+  pages: readonly PageListItem[] = [],
+): Promise<string> => {
+  const api = fakeApi(view, asks, stageFiles, pages);
   const store = createWorkOrderDetailStore({
-    api: fakeApi(view, asks, stageFiles),
+    api,
     changes: () => () => {},
     actor: ACTOR,
     pane: fakePane(),
   });
   await store.load(WO_ID);
+  const pageList = createPageListStore({ api, changes: () => () => {} });
+  await pageList.load(WO_ID);
   return renderToStaticMarkup(
     createElement(WorkOrderDetailScreen, {
       store,
+      pages: pageList,
+      onOpenPage: () => {},
       workOrderId: WO_ID,
       locale: 'tr',
       backKey: null,
@@ -231,5 +248,50 @@ describe('work-order detail screen — the ask column contains unbreakable text'
     const html = await draw(ASKING, [ASK_ROW]);
 
     expect(html).toContain(`block truncate font-mono text-[0.8125rem] text-ink" title="${LONG_TITLE}">`);
+  });
+});
+
+const PAGE_ROW: PageListItem = {
+  id: '01ARZ3NDEKTSV4RRFFQ69G5PG1',
+  title: 'Giriş ekranı taslağı',
+  kind: 'html',
+  latestVersion: 2,
+  approval: 'pending',
+  updatedAt: 1_700_000_000_000 - 7_200_000,
+  createdBy: { kind: 'agent', label: 'builder' },
+  undeliveredComments: 0,
+};
+
+describe('work-order detail screen — Sayfalar', () => {
+  it('U-75: the section is absent while the work order has no page', async () => {
+    const html = await draw(READY, [], null, []);
+    expect(html).not.toContain('data-pages-section');
+    expect(html).not.toContain('Sayfalar');
+  });
+
+  it('U-75: each page is one row: title, kind chip, version and approval chip, opened by a button', async () => {
+    const html = await draw(READY, [], null, [PAGE_ROW]);
+    expect(html).toContain('data-pages-section');
+    expect(html).toContain('Sayfalar');
+    const row = html.slice(html.indexOf(`data-page-row="${PAGE_ROW.id}"`));
+    expect(row).toContain('Giriş ekranı taslağı');
+    expect(row).toContain('html');
+    expect(row).toContain('sürüm 2');
+    expect(row).toContain('Onay bekliyor');
+    expect(html).toMatch(new RegExp(`<button[^>]*data-page-row="${PAGE_ROW.id}"`));
+  });
+
+  it('U-75: an operator comment the agent has not read yet shows amber copy "M yorum henüz okunmadı", none shows nothing', async () => {
+    const none = await draw(READY, [], null, [PAGE_ROW]);
+    expect(none).not.toContain('henüz okunmadı');
+    const some = await draw(READY, [], null, [{ ...PAGE_ROW, undeliveredComments: 3 }]);
+    expect(some).toContain('3 yorum henüz okunmadı');
+    expect(some).toMatch(/data-page-unread[^>]*text-signal/);
+  });
+
+  it('U-75: a page title is rendered as text — markup inside it is escaped, never parsed', async () => {
+    const html = await draw(READY, [], null, [{ ...PAGE_ROW, title: '<img src=x onerror=alert(1)>' }]);
+    expect(html).not.toContain('<img src=x');
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
   });
 });

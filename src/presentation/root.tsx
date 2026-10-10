@@ -29,11 +29,12 @@ import { createProviderMarksStore } from './stores/provider-marks';
 import { createUpdateStore } from './stores/update';
 import { createNewProjectStore } from './stores/new-project';
 import { createWizardStore } from './stores/wizard';
+import { createPageListStore, createPageViewHost, createPageViewerStore, type PageViewPort } from './stores/page-viewer';
 import { createWorkOrderDetailStore } from './stores/work-order-detail';
 
 /** Exactly the surface the preload exposes under `window.docket` — the api's members, reached
  *  only through their types; no bridge implementation ever lives in this layer. */
-export type DocketBridge = Pick<Api, 'command' | 'query' | 'subscribe'>;
+export type DocketBridge = Pick<Api, 'command' | 'query' | 'subscribe'> & { readonly pageView: PageViewPort };
 
 /**
  * The bridge handle, read off the window with a local cast rather than a global Window
@@ -85,6 +86,17 @@ if (mount !== null) {
   // run of whichever work order loads.
   const pane = createLivePaneStore({ api, changes, actor: USER });
   const detail = createWorkOrderDetailStore({ api, changes, actor: USER, pane });
+  // The Sayfalar section's list and the page screen (U-75); one host drives the app's one native
+  // page view from whichever page screen is mounted (U-76).
+  const pageList = createPageListStore({ api, changes });
+  const pageViewer = createPageViewerStore({ api, changes, actor: USER });
+  const pageHost = createPageViewHost({
+    port: api.pageView,
+    frame: (callback) => {
+      const handle = requestAnimationFrame(callback);
+      return () => cancelAnimationFrame(handle);
+    },
+  });
   const settings = createSettingsStore({ api, changes, actor: USER, locale: locale.current, timeZone });
   // The settings panel's per-account model list and its spend-consent flow (P-40).
   const accountModels = createAccountModelsStore({ api, changes, actor: USER });
@@ -128,6 +140,9 @@ if (mount !== null) {
           board={board}
           roadmap={roadmap}
           detail={detail}
+          pageList={pageList}
+          pageViewer={pageViewer}
+          pageHost={pageHost}
           accountView={accountView}
           settings={settings}
           models={accountModels}

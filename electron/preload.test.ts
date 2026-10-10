@@ -108,9 +108,32 @@ describe('I-69: preload pageView', () => {
     return harness.exposed.get('docket') as { readonly pageView: Record<string, (request?: unknown) => Promise<unknown>> };
   };
 
-  it('I-69: exposes exactly open, setBounds and close on window.docket.pageView', async () => {
+  it('I-69: exposes exactly close, onClosed, open and setBounds on window.docket.pageView', async () => {
     const { pageView } = await bridge();
-    expect(Object.keys(pageView).sort()).toEqual(['close', 'open', 'setBounds']);
+    expect(Object.keys(pageView).sort()).toEqual(['close', 'onClosed', 'open', 'setBounds']);
+  });
+
+  it('I-69: onClosed rides docket:page-view-closed, fans out through one listener and unsubscribes only its own', async () => {
+    const { pageView } = await bridge();
+    const onClosed = pageView.onClosed as unknown as (listener: () => void) => () => void;
+    const received: string[] = [];
+    const stopA = onClosed(() => received.push('a'));
+    onClosed(() => received.push('b'));
+    expect(harness.listenerCount('docket:page-view-closed')).toBe(1);
+    harness.emit('docket:page-view-closed', { reason: 'ignored payload' });
+    expect(received).toEqual(['a', 'b']);
+    stopA();
+    harness.emit('docket:page-view-closed', undefined);
+    expect(received).toEqual(['a', 'b', 'b']);
+  });
+
+  it('I-69: the notice carries nothing to the listener — no payload reaches the renderer', async () => {
+    const { pageView } = await bridge();
+    const onClosed = pageView.onClosed as unknown as (listener: (...args: unknown[]) => void) => () => void;
+    const seen: unknown[][] = [];
+    onClosed((...args) => seen.push(args));
+    harness.emit('docket:page-view-closed', { secret: 'x' });
+    expect(seen).toEqual([[]]);
   });
 
   it('I-69: each call is one invoke on docket:page-view carrying only its own op and fields', async () => {
