@@ -1,4 +1,4 @@
-// e2e/journeys.mjs — `npm run test:journeys`. J-1 … J-10 of docs/v2/ui.md → "Verifying the shell",
+// e2e/journeys.mjs — `npm run test:journeys`. J-1 … J-11 of docs/v2/ui.md → "Verifying the shell",
 // driven through the BUILT app on the design seed (e2e/seed-design.ts). Every step asserts visible
 // text and saves a screenshot to e2e/.out/journeys/, and every outcome lands in the structured
 // report (e2e/report.mjs) as it is printed.
@@ -666,6 +666,106 @@ for (const [sizeName, theme] of combos) {
     console.log(`  FAIL ${title}\n       ${String(error).split('\n')[0]}`);
     appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).split('\n')[0] });
     await page.screenshot({ path: join(OUT, 'J-10-FAIL.png') }).catch(() => undefined);
+  }
+  await handle.app.close();
+}
+
+// J-11 walks Settings → Eşzamanlılık (U-69 … U-74) on the roadmap world — a hermetic home with no
+// account, so nothing can run or spend. That world does not pin the dispatch mode, so the walk
+// switches to Otomatik itself. Every number is reached by an absolute target (the steppers are
+// clicked until the output reads it), never derived from a value the walk changes. Persistence is
+// proven across a page reload, which rebuilds every store from the backend. Once per run.
+{
+  const handle = await launchRoadmapApp();
+  const { page } = handle;
+  const panel = page.locator('[data-settings-panel]');
+  const form = page.locator('[data-dispatch-settings]:not([data-dispatch-loading])');
+  const out = (id) => form.locator(`[role="group"]:has([data-step="${id}"]) output`);
+  const dismissToasts = async () => {
+    const toasts = page.locator('[data-toast]');
+    for (let left = await toasts.count(); left > 0; left = await toasts.count()) {
+      await toasts.first().getByRole('button', { name: 'Kapat' }).click({ timeout: WAIT });
+      await page.waitForFunction((n) => document.querySelectorAll('[data-toast]').length < n, left, { timeout: WAIT });
+    }
+  };
+  /** Click the stepper's arrows until its output reads `target`. */
+  const setStep = async (id, target) => {
+    for (let i = 0; i < 20; i += 1) {
+      const current = Number(await out(id).textContent({ timeout: WAIT }));
+      if (current === target) return;
+      await form.locator(`[data-step="${id}"][data-dir="${target > current ? 1 : -1}"]`).click({ timeout: WAIT });
+    }
+    throw new Error(`the ${id} stepper never reached ${target}`);
+  };
+  const openSection = async () => {
+    await page.getByRole('button', { name: 'Ayarlar', exact: true }).first().click({ timeout: WAIT });
+    await panel.waitFor({ state: 'visible', timeout: WAIT });
+    await panel.getByRole('button', { name: 'Eşzamanlılık', exact: true }).click({ timeout: WAIT });
+    // The form appears only once the settings read has landed.
+    await form.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+  };
+
+  let stepNo = 0;
+  const steps = [];
+  const shot = async (label) => {
+    stepNo += 1;
+    steps.push(label);
+    const slug = label.toLowerCase().replace(/[^a-z0-9ğüşıöç]+/g, '-').replace(/^-|-$/g, '');
+    await page.screenshot({ path: join(OUT, `J-11-${stepNo}-${slug}.png`) });
+  };
+  const title = 'J-11: settings: Eşzamanlılık — mode, cap, validation message, save, persisted across a reload';
+  total += 1;
+  try {
+    await openSection();
+    await shot('section');
+
+    // Otomatik (explicit, whatever the world started in): the machine's Tavan wording appears.
+    await form.getByRole('button', { name: 'Otomatik', exact: true }).click({ timeout: WAIT });
+    await form.getByText('Makine boşken aynı anda çalışan en fazla iş').waitFor({ state: 'visible', timeout: WAIT });
+    assert((await form.getByRole('button', { name: 'Otomatik', exact: true }).getAttribute('aria-pressed')) === 'true', 'Otomatik must be the pressed mode');
+
+    // Cap 6, per-repo 5, then the cap down to 4: per-repo is above it, the message names the rule
+    // and Kaydet is disabled.
+    await setStep('global', 6);
+    await setStep('perRepo', 5);
+    await setStep('global', 4);
+    await form.getByText('Depo başına sınır tavandan büyük olamaz.').waitFor({ state: 'visible', timeout: WAIT });
+    assert(await form.getByRole('button', { name: 'Kaydet', exact: true }).isDisabled(), 'Kaydet must be disabled while per-repo exceeds the cap');
+    await shot('validation');
+
+    // Fixed: per-repo 2, cap 6 — the message goes and Kaydet opens.
+    await setStep('perRepo', 2);
+    await setStep('global', 6);
+    await form.getByText('olamaz.').waitFor({ state: 'detached', timeout: WAIT });
+    await dismissToasts();
+    const save = form.getByRole('button', { name: 'Kaydet', exact: true });
+    await save.click({ timeout: WAIT });
+    await panel.getByText('Kaydedildi', { exact: true }).waitFor({ state: 'visible', timeout: WAIT });
+    assert(await save.isDisabled(), 'Kaydet must be disabled again once the form equals what was saved');
+    await shot('saved');
+
+    // The page reload rebuilds every store: what the section reads back is what the backend holds.
+    await page.reload();
+    await page.waitForSelector('nav', { timeout: 30_000 });
+    await openSection();
+    await page.waitForFunction(
+      () => {
+        const read = (id) => document.querySelector(`[role="group"]:has([data-step="${id}"]) output`)?.textContent;
+        return read('global') === '6' && read('perRepo') === '2';
+      },
+      undefined,
+      { timeout: SCAN_WAIT },
+    );
+    assert((await form.getByRole('button', { name: 'Otomatik', exact: true }).getAttribute('aria-pressed')) === 'true', 'the saved mode must read back as Otomatik');
+    await shot('reloaded');
+
+    console.log(`  ok   ${title}`);
+    appendJourney({ id: title, status: 'ok', steps });
+  } catch (error) {
+    failures.push(title);
+    console.log(`  FAIL ${title}\n       ${String(error).split('\n')[0]}`);
+    appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).split('\n')[0] });
+    await page.screenshot({ path: join(OUT, 'J-11-FAIL.png') }).catch(() => undefined);
   }
   await handle.app.close();
 }

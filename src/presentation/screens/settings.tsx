@@ -22,6 +22,7 @@ import { AccountsScanning } from '../components/accounts-scanning';
 import { AccountTest } from '../components/account-test';
 import { ActionButton } from '../components/action-button';
 import { AppearanceRows } from '../components/appearance-rows';
+import { ConcurrencySection } from '../components/concurrency-section';
 import { KeyMoveCard } from '../components/key-move-card';
 import { MOTION, motionVars } from '../components/motion';
 import { ProviderList } from '../components/provider-list';
@@ -40,6 +41,7 @@ import {
 } from '../stores/account-editor';
 import { SECTION_OPEN_INITIAL, groupAccountRows, groupTotals, toggleSection, type AccountGroup } from '../stores/account-groups';
 import { candidateDot, type CandidatesStore } from '../stores/candidates';
+import { createDispatchSettingsStore } from '../stores/dispatch-settings';
 import type { LocaleStore } from '../stores/locale';
 import { providerDisplayName, type ProvidersStore } from '../stores/providers';
 import type { AccountModelsStore } from '../stores/account-models';
@@ -118,6 +120,7 @@ const SECTION_KEY: Readonly<Record<SettingsSection, LabelKey>> = {
   accounts: 'settings.section.accounts',
   roles: 'settings.section.roles',
   capabilities: 'settings.section.capabilities',
+  concurrency: 'settings.section.concurrency',
   providers: 'settings.section.providers',
   appearance: 'settings.section.appearance',
   phone: 'settings.section.phone',
@@ -128,6 +131,7 @@ const SECTION_HINT_KEY: Readonly<Record<SettingsSection, LabelKey>> = {
   accounts: 'settings.hint.accounts',
   roles: 'settings.hint.roles',
   capabilities: 'settings.hint.capabilities',
+  concurrency: 'settings.hint.concurrency',
   providers: 'settings.hint.providers',
   appearance: 'settings.hint.appearance',
   phone: 'settings.hint.phone',
@@ -272,6 +276,10 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
   useEffect(() => {
     if (open && section === 'accounts' && subPage !== null && tab !== null) editor.setTab(tab);
   }, [open, section, subPage, tab, editor]);
+
+  // The Eşzamanlılık form: one store per panel life, over the settings store's own reads and writes.
+  const dispatch = useMemo(() => createDispatchSettingsStore({ read: store.readDispatch, write: store.writeDispatch }), [store]);
+  const dispatchState = useSyncExternalStore(dispatch.subscribe, dispatch.state);
 
   const panelRef = useRef<HTMLElement>(null);
   // Where focus stood before the panel opened — the panel gives it back on close, unless the
@@ -422,12 +430,17 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
   const head = (
     <div className="flex items-start gap-3">
       <WindowTitle title={t(locale, SECTION_KEY[section])} lead={t(locale, SECTION_HINT_KEY[section])} />
+      {section === 'concurrency' && dispatchState.justSaved ? (
+        <span role="status" className="ml-auto flex-none text-[0.75rem] leading-[1.875rem] text-proceed">
+          {t(locale, 'dispatch.saved')}
+        </span>
+      ) : null}
       <button
         type="button"
         onClick={onClose}
         aria-label={t(locale, 'settings.close')}
         title={t(locale, 'settings.close')}
-        className="ml-auto grid h-[30px] w-[30px] flex-none place-items-center rounded-control text-inkdim hover:bg-raised hover:text-ink"
+        className={`${section === 'concurrency' && dispatchState.justSaved ? '' : 'ml-auto '}grid h-[30px] w-[30px] flex-none place-items-center rounded-control text-inkdim hover:bg-raised hover:text-ink`}
       >
         <CloseIcon />
       </button>
@@ -626,6 +639,14 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
               <b className="mb-1 block text-ink">{t(locale, 'settings.capabilities.soonTitle')}</b>
               {t(locale, 'settings.capabilities.soonBody')}
             </div>
+          ) : null}
+          {section === 'concurrency' ? (
+            <ConcurrencySection
+              store={dispatch}
+              locale={locale}
+              active={open}
+              accounts={accounts.map((account) => ({ id: account.id, name: `${providerName(account.provider) ?? account.provider} · ${account.label}` }))}
+            />
           ) : null}
           {section === 'providers' ? <ProviderList store={providers} marks={marks} locale={locale} /> : null}
           {section === 'appearance' ? <AppearanceRows locale={locale} localeStore={localeStore} themeStore={themeStore} /> : null}
