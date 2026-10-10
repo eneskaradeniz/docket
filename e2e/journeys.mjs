@@ -874,7 +874,7 @@ for (const [sizeName, theme] of combos) {
     const appUrl = page.url();
 
     // The bridge carries three calls and nothing else; bad input and missing targets are refused.
-    assert.deepEqual(await page.evaluate(() => Object.keys(window.docket.pageView).sort()), ['close', 'open', 'setBounds']);
+    assert.deepEqual(await page.evaluate(() => Object.keys(window.docket.pageView).sort()), ['close', 'onClosed', 'open', 'setBounds']);
     assert.deepEqual(await sendPageView('open', { pageId: 'nope', version: 1, bounds: BOUNDS }), { ok: false, code: 'invalid' });
     assert.deepEqual(await sendPageView('open', { pageId, version: 0, bounds: BOUNDS }), { ok: false, code: 'invalid' });
     assert.deepEqual(await sendPageView('open', { pageId, version: 1, bounds: { ...BOUNDS, width: -5 } }), { ok: false, code: 'invalid' });
@@ -955,8 +955,8 @@ for (const [sizeName, theme] of combos) {
     appendJourney({ id: title, status: 'ok', steps });
   } catch (error) {
     failures.push(title);
-    console.log(`  FAIL ${title}\n       ${String(error).split('\n')[0]}`);
-    appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).split('\n')[0] });
+    console.log(`  FAIL ${title}\n       ${String(error).slice(0, 600)}`);
+    appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).slice(0, 600) });
     await page.screenshot({ path: join(OUT, 'J-12-FAIL.png') }).catch(() => undefined);
   }
   await handle.app.close();
@@ -984,8 +984,9 @@ for (const [sizeName, theme] of combos) {
     const deadline = Date.now() + SCAN_WAIT;
     for (;;) {
       const trace = await readTrace();
-      if (trace.view.open === open) return trace.view.url;
-      if (Date.now() > deadline) throw new Error(`the native view never became ${open ? 'open' : 'closed'} (${what})`);
+      // An open view has no url until its navigation commits: wait for it too.
+      if (trace.view.open === open && (!open || (typeof trace.view.url === 'string' && trace.view.url !== ''))) return trace.view.url;
+      if (Date.now() > deadline) throw new Error(`the native view never became ${open ? 'open with a url' : 'closed'} (${what}); last trace: ${JSON.stringify(trace)}`);
       await sleep(200);
     }
   };
@@ -1119,8 +1120,8 @@ for (const [sizeName, theme] of combos) {
     appendJourney({ id: title, status: 'ok', steps });
   } catch (error) {
     failures.push(title);
-    console.log(`  FAIL ${title}\n       ${String(error).split('\n')[0]}`);
-    appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).split('\n')[0] });
+    console.log(`  FAIL ${title}\n       ${String(error).slice(0, 600)}`);
+    appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).slice(0, 600) });
     await page.screenshot({ path: join(OUT, 'J-13-FAIL.png') }).catch(() => undefined);
   }
   await handle.app.close();
