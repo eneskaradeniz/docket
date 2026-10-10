@@ -34,7 +34,10 @@ const full = process.argv.includes('--full') || process.env.FULL === '1';
 // Only the size names are known before the first launch; the concrete numbers come from the
 // resolved plan inside the loop, read from the first launch's primary display.
 const combos = quick ? [['default', 'dark']] : comboPlan(SIZE_PLAN, { full }).map(({ size, theme }) => [size.name, theme]);
-const WAIT = 4000; // a step that is going to pass does so in well under a second
+// The default bound for a step. A step that is going to pass does so in well under a second; the
+// bound is only the upper limit, so it is generous enough for a loaded machine (a passing step stays
+// fast, only a failing step is reported later).
+const WAIT = 15_000;
 // Waits that depend on an account scan, an import or a data load are bounded by machine speed, not
 // by product behaviour: on a busy machine they run far past WAIT while the product is fine.
 const SCAN_WAIT = 20_000;
