@@ -906,6 +906,95 @@ components and tokens; where the prototype and the app's tokens disagree the app
   the edits; no toast repeats either outcome. **Varsayılana dön** (ghost) puts Otomatik, 4, 3 and no
   account limit in the form, unsaved, and is disabled when the form already is that.
 
+## Page viewer (U-75 … U-82)
+
+Slice 6d-3 of Phase 6, over the page API (`pages.list`, `page.detail`, `page.comment`,
+`page.requestApproval`, `page.decide`) and the isolated view host (`window.docket.pageView`). The
+screen draws the operator-approved prototype (`docket-tasarim/sayfa-goruntuleyici`, 2026-10-11) with
+the app's own components and tokens; where the prototype and the tokens disagree the tokens win.
+A page's text — diff lines, comment text, titles — is untrusted data: it enters the DOM only as React
+text nodes, never as markup and never as a link, and no page address ever appears in Docket's own DOM;
+the native isolated view is the only place a page is rendered as a page.
+
+- **U-75** (work-order detail, nav; added 2026-10-11, #904) Sayfalar and the route. The work-order
+  detail lists `pages.list` for that work order in a "Sayfalar" section: title, kind chip, "sürüm N",
+  the approval chip, and — while `undeliveredComments > 0` — an amber "M yorum henüz okunmadı" (the
+  operator's own comments the agent has not read yet; one reads "1 yorum henüz okunmadı"). The section
+  is absent while the list is empty; a failed re-read keeps the rows; opening another work order drops
+  the earlier rows at once; `workOrders.changed` re-reads. A row is a button: it navigates to the
+  route `page { id }`, a U-25 history entry keyed `page:<id>` (the same page again adds nothing, an
+  entry for a page the api no longer knows is skipped like a vanished work order). ‹ Geri returns to
+  the detail; the sidebar's selection stays where the detail was opened from.
+- **U-76** (page screen; added 2026-10-11, #904) The isolated view's lifecycle. Önizleme reserves one
+  rectangle (the stage body) and a host calls `pageView.open` once with its rounded bounds, then
+  `setBounds` on change — at most one call per animation frame, the last rectangle winning — and
+  `close()` on Fark, a version or page change (close then open, never two views), an unmount or a route
+  change. The rectangle is clipped to the main column (scrolled partly away it shrinks, fully away it
+  closes). While an overlay is open (the settings panel, the search palette, the wizard) or the toast
+  stack lies over the stage, the view is closed and reopened afterwards, because the native view would
+  paint above them. A refused `open` (any `{ ok: false }`, or a throwing bridge), a failed `setBounds`
+  or the preload's `onClosed` notice (the view's process died or hung) shows the stage's error state —
+  "Sayfa gösterilemedi" with **Yeniden dene** — never a blank area, and the same view is not retried on
+  its own; another page or version is tried at once. The guard strip ("izole" + the untrusted-content
+  sentence) is always visible, in Önizleme and in Fark. The preload gains `pageView.onClosed(listener)
+  → unsubscribe` (one shared listener on `docket:page-view-closed`; the listener receives no argument).
+- **U-77** (page screen; added 2026-10-11, #904) Fark. The version selector lists newest first, the
+  latest marked "(son)". Fark renders `page.detail.diff.lines` in the two-gutter grid — a "−" gutter
+  for removals, a "+" gutter for additions, tints from the `error` and `proceed` tokens at 15 % — as
+  plain text with preserved spaces; `truncated` adds "Fark kısaltıldı". Fark is disabled when the
+  reply carries no diff, with the tooltip "Karşılaştırılacak önceki sürüm yok" (version 1 and any
+  version without a readable previous one) or "Resimlerde fark gösterilmez" (image pages); a Fark
+  request on such a version shows Önizleme.
+- **U-78** (page screen; added 2026-10-11, #904) Comments rail. It lists the comments of the SHOWN
+  version (header "sürüm N · count"), each with "Sen · <age>", the text (`white-space: pre-wrap`,
+  never a link) and its delivery state — "asistana iletildi" (green) or "asistana iletilmedi"
+  (amber). The composer exists on the latest version only: a textarea limited to 4000 characters with
+  a counter from 3500, the prototype's hint, and **Yorum ekle** — a secondary button, disabled while
+  the text is empty or whitespace or a command is in flight. Blank or oversize text is refused before
+  it is sent (`empty_comment`, `comment_too_long`); on ok the field clears and the page is re-read;
+  on a refusal the text stays. On an older version the composer is replaced by "Eski sürüme yorum
+  eklenmez. Son sürüme geç.".
+- **U-79** (page screen; added 2026-10-11, #904) Approval bar. The state table (approval × shown
+  version × `gate.pending`): none/rejected → **Onay iste** (secondary); pending → **Reddet** (ghost)
+  and **Onayla** — the screen's only primary button; approved → no button, the chip "✓ Onaylandı ·
+  sürüm N"; a non-latest shown version disables every action. The reason sentence is "Eski sürüm: onay
+  işlemleri yalnızca son sürümde" on an older version, otherwise by approval: pending → "Onaylarsan iş
+  emri bir sonraki aşamaya geçer" with a pending gate, "Onaylarsan sayfa onaylı işaretlenir" without;
+  approved → "Bu sürüm onaylı"; none/rejected → "Asistan yeni sürüm yayınlayınca onay isteyebilirsin".
+  The chips: Onay istenmedi (dim), Onay bekliyor (amber with a lamp), Reddedildi (red).
+- **U-80** (page screen; added 2026-10-11, #904) Outcomes. The three page commands have their own
+  confirmation copy (the neutral recorded-decision stand-in is gone): comment → "Yorum eklendi",
+  request → "Onay istendi", approve → "Sayfa onaylandı" — or "Sayfa onaylandı · iş emri bir sonraki
+  aşamaya geçti" when the reply the operator decided on carried a pending gate — reject → "Sayfa
+  reddedildi" (it never claims the work order moved). Refusals each have a sentence: `stale_version`,
+  `not_pending`, `self_approval`, `not_found` (page-worded, distinct from the gate commands'),
+  `unknown_version`, `empty_comment`, `comment_too_long`; an unmapped code reads the generic line.
+  Every outcome, success or refusal, re-reads the page; an outcome toasts once.
+- **U-81** (page screen; added 2026-10-11, #904) Live updates. An open page is re-read on
+  `workOrders.changed` and every 5 s until the screen closes (a reply for a page already left never
+  lands). The selection follows the latest version while the operator is on it and stays on their
+  chosen older version otherwise. When a re-read shows a newer version and the approval went from
+  pending or approved to none, the stage shows "Yeni sürüm geldi, önceki onay geçersiz. Beğenirsen
+  yeniden onay iste." until approval is asked for again. A page the api does not know is a stated
+  problem with ‹ Geri, never a blank screen.
+- **U-82** (page screen; added 2026-10-11, #904) Measure. All new lengths are rem (U-53/U-62; the
+  only px-like value is the 1 px hairline border), spacing on the 4·8·12·16·20·24·32 scale, radii
+  `rounded-control`/`rounded-card`/`rounded-panel`/`rounded-full` only, every sized text line carries
+  an explicit leading (Tailwind's preflight puts line-height 1.5 on the root), controls show a
+  `focus-visible` ring, motion sits behind `motion-safe:`. The two columns (stage, 20 rem rail)
+  collapse on the main container below 56 rem — the rail drops below the stage. No class or string
+  names a vendor (`disabled:pointer-events-none`, not the vendor's own cursor utility).
+
+## Age wording addendum (U-83)
+
+- **U-83** (age formatter; added 2026-10-10, #909) An age under one minute reads as the locale's
+  "now" word (`şimdi` / `now`, from `Intl.RelativeTimeFormat` with `numeric: 'auto'`), never "0 saniye
+  sonra" (a future phrase). Boundaries: 59 999 ms is "now"; 60 000 ms is one minute; 3 599 999 ms is
+  59 minutes; 3 600 000 ms is one hour; 86 400 000 ms is one day. Minutes, hours and days keep their
+  past phrasing ("1 dakika önce"). Every caller (attention, running and closed rows, project cards,
+  the stale-data banner, the page viewer's header and comments) shows the age as a standalone
+  phrase, so "şimdi" reads correctly in each.
+
 ## Verifying the shell — E2E layers (Phase 3.5)
 
 The shell is verified against the frozen prototype **rev 8** (`~/source/docket-tasarim/rev8/`:
@@ -960,6 +1049,12 @@ belongs to the mobile app.
   Otomatik itself, set the cap and per-repo by absolute targets, see the per-repo-above-cap message
   with Kaydet disabled, save, see "Kaydedildi", then reload the page and read the saved values back.
   It runs once per run, like J-10.)*
+  *(Addendum 2026-10-11, #904: J-13 walks the page viewer on the hostile-page world, which now also
+  holds a project, one work order and two versions of the page (the second with a changed entry):
+  work-order detail → Sayfalar lists the page → open it → the guard strip, both versions in the
+  selector, Fark with the expected "+" / "−" lines → a comment shows "asistana iletilmedi" → Onay iste
+  → Onayla → the success toast and the approved chip → switching to the older version shows disabled
+  approval controls. It runs once per run.)*
 - **Layout audit** (pure DOM measurement, no pixel diff; each assertion named `L-n: …`, for every
   screen × size × theme):
   - **L-1** The sidebar's left edge is 0 and its width is 240px at every window size — it never

@@ -1,4 +1,4 @@
-// e2e/journeys.mjs — `npm run test:journeys`. J-1 … J-12 of docs/v2/ui.md → "Verifying the shell",
+// e2e/journeys.mjs — `npm run test:journeys`. J-1 … J-13 of docs/v2/ui.md → "Verifying the shell",
 // driven through the BUILT app on the design seed (e2e/seed-design.ts). Every step asserts visible
 // text and saves a screenshot to e2e/.out/journeys/, and every outcome lands in the structured
 // report (e2e/report.mjs) as it is printed.
@@ -874,7 +874,7 @@ for (const [sizeName, theme] of combos) {
     const appUrl = page.url();
 
     // The bridge carries three calls and nothing else; bad input and missing targets are refused.
-    assert.deepEqual(await page.evaluate(() => Object.keys(window.docket.pageView).sort()), ['close', 'open', 'setBounds']);
+    assert.deepEqual(await page.evaluate(() => Object.keys(window.docket.pageView).sort()), ['close', 'onClosed', 'open', 'setBounds']);
     assert.deepEqual(await sendPageView('open', { pageId: 'nope', version: 1, bounds: BOUNDS }), { ok: false, code: 'invalid' });
     assert.deepEqual(await sendPageView('open', { pageId, version: 0, bounds: BOUNDS }), { ok: false, code: 'invalid' });
     assert.deepEqual(await sendPageView('open', { pageId, version: 1, bounds: { ...BOUNDS, width: -5 } }), { ok: false, code: 'invalid' });
@@ -955,9 +955,174 @@ for (const [sizeName, theme] of combos) {
     appendJourney({ id: title, status: 'ok', steps });
   } catch (error) {
     failures.push(title);
-    console.log(`  FAIL ${title}\n       ${String(error).split('\n')[0]}`);
-    appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).split('\n')[0] });
+    console.log(`  FAIL ${title}\n       ${String(error).slice(0, 600)}`);
+    appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).slice(0, 600) });
     await page.screenshot({ path: join(OUT, 'J-12-FAIL.png') }).catch(() => undefined);
+  }
+  await handle.app.close();
+  await probe.close();
+}
+
+// J-13 walks the page viewer (U-75 … U-82) on the same world as J-12 — which holds one project, one
+// open work order and the page linked to it with two versions (the second changes one line of the
+// entry). It runs on its own launch, so nothing J-12 did (a re-opened view, a probe count) leaks in.
+// No account, no keychain, no agent run: the only commands are the page's own (comment, request
+// approval, decide). Once per run, like J-10 … J-12.
+{
+  const handle = await launchPageViewApp();
+  const { page, seed, probe } = handle;
+  const lowerId = seed.pageId.toLowerCase();
+  const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+  const readTrace = async () => {
+    const reply = await page.evaluate(() => window.docketDev.call('page_view.trace'));
+    const body = JSON.parse(reply.payload);
+    assert(body.ok === true, `page_view.trace failed: ${reply.payload.slice(0, 200)}`);
+    return body;
+  };
+  /** Waits (load-dependent: SCAN_WAIT) until the host's view stands as `open` says, then answers its url. */
+  const viewIs = async (open, what) => {
+    const deadline = Date.now() + SCAN_WAIT;
+    for (;;) {
+      const trace = await readTrace();
+      // An open view has no url until its navigation commits: wait for it too.
+      if (trace.view.open === open && (!open || (typeof trace.view.url === 'string' && trace.view.url !== ''))) return trace.view.url;
+      if (Date.now() > deadline) throw new Error(`the native view never became ${open ? 'open with a url' : 'closed'} (${what}); last trace: ${JSON.stringify(trace)}`);
+      await sleep(200);
+    }
+  };
+  const toastWith = (t) => page.locator('[data-toast]').filter({ hasText: t }).first();
+  // The toast stack sits top-right: it is closed (its own close button) before any step reaches an
+  // element it could cover, and the step waits until none is left.
+  const dismissToasts = async () => {
+    const toasts = page.locator('[data-toast]');
+    for (let left = await toasts.count(); left > 0; left = await toasts.count()) {
+      await toasts.first().getByRole('button', { name: 'Kapat' }).click({ timeout: WAIT });
+      await page.waitForFunction((n) => document.querySelectorAll('[data-toast]').length < n, left, { timeout: WAIT });
+    }
+  };
+  const screen = page.locator('[data-page-screen]');
+  const bar = () => screen.locator('[data-page-bar]');
+  const select = () => screen.locator('[data-page-version]');
+
+  let stepNo = 0;
+  const steps = [];
+  const shot = async (label) => {
+    stepNo += 1;
+    steps.push(label);
+    const slug = label.toLowerCase().replace(/[^a-z0-9ğüşıöç]+/g, '-').replace(/^-|-$/g, '');
+    await page.screenshot({ path: join(OUT, `J-13-${stepNo}-${slug}.png`) });
+  };
+  const title = 'J-13: page viewer: Sayfalar → versions, Fark, comment, approval, older version';
+  total += 1;
+  try {
+    // The single-repo project is one flat row; its board lists the work order; the card opens the detail.
+    const row = page.locator('nav').getByText(seed.project, { exact: false }).first();
+    await row.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await row.click({ timeout: WAIT });
+    const card = page.locator('[data-board-card]').filter({ hasText: seed.workOrderTitle }).first();
+    await card.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await card.click({ timeout: WAIT });
+
+    // Sayfalar lists the seeded page: title, kind, version, approval, no unread line yet.
+    const section = page.locator('[data-pages-section]');
+    await section.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    const pageRow = section.locator(`[data-page-row="${seed.pageId}"]`);
+    await pageRow.waitFor({ state: 'visible', timeout: WAIT });
+    const rowText = (await pageRow.textContent()) ?? '';
+    for (const part of ['Hostile page', 'html', 'sürüm 2', 'Onay istenmedi']) assert(rowText.includes(part), `the Sayfalar row must show "${part}", saw "${rowText}"`);
+    assert((await section.locator('[data-page-unread]').count()) === 0, 'no comment yet, so no unread line');
+    await shot('sayfalar');
+
+    // Open it: the screen, the always-visible guard strip, and (Önizleme) the native view.
+    await pageRow.click({ timeout: WAIT });
+    await screen.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    const guard = screen.locator('[data-page-guard]');
+    await guard.waitFor({ state: 'visible', timeout: WAIT });
+    assert(((await guard.textContent()) ?? '').includes('güvenilmez içerik'), 'the guard strip must say the page is untrusted');
+    const url = await viewIs(true, 'Önizleme');
+    assert(url.startsWith(`docket-page://${lowerId}/v2/`), `the view must show the latest version, not ${url}`);
+    await shot('page-open');
+
+    // The selector holds both versions, newest first, the latest marked.
+    await select().waitFor({ state: 'visible', timeout: WAIT });
+    assert.deepEqual(await select().locator('option').allTextContents(), ['Sürüm 2 (son)', 'Sürüm 1']);
+
+    // Fark: the native view goes away, the two gutters show exactly the one changed line.
+    await screen.locator('[data-page-view="diff"]').click({ timeout: WAIT });
+    const diff = screen.locator('[data-page-diff]');
+    await diff.waitFor({ state: 'visible', timeout: WAIT });
+    await viewIs(false, 'Fark');
+    const removed = diff.locator('[data-diff-line="remove"]');
+    const added = diff.locator('[data-diff-line="add"]');
+    assert.equal(await removed.count(), 1, 'exactly one removed line');
+    assert.equal(await added.count(), 1, 'exactly one added line');
+    assert.equal((await removed.textContent()) ?? '', `−${seed.removedLine}`);
+    assert.equal((await added.textContent()) ?? '', `+${seed.addedLine}`);
+    await shot('fark');
+
+    // A comment: pinned to the shown (latest) version, undelivered until the agent reads it.
+    const input = screen.locator('[data-page-composer-input]');
+    await input.fill('Giriş düğmesini büyüt', { timeout: WAIT });
+    const submit = screen.locator('[data-page-submit]');
+    await page.waitForFunction(() => !document.querySelector('[data-page-submit]')?.hasAttribute('disabled'), undefined, { timeout: WAIT });
+    await submit.click({ timeout: WAIT });
+    await toastWith('Yorum eklendi').waitFor({ state: 'visible', timeout: WAIT });
+    const comment = screen.locator('[data-page-comment]').filter({ hasText: 'Giriş düğmesini büyüt' });
+    await comment.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    assert.equal(await comment.getAttribute('data-delivered'), 'false');
+    assert(((await comment.textContent()) ?? '').includes('asistana iletilmedi'), 'a fresh comment is not delivered');
+    assert.equal(await input.inputValue(), '', 'the composer clears after an accepted comment');
+    await shot('comment');
+
+    // Approval: Onay iste → (older version: disabled controls) → Onayla → toast and chip.
+    await dismissToasts();
+    await bar().locator('[data-page-action="request"]').click({ timeout: WAIT });
+    await toastWith('Onay istendi').waitFor({ state: 'visible', timeout: WAIT });
+    const approve = bar().locator('[data-page-action="approve"]');
+    await approve.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await bar().locator('[data-page-action="reject"]').waitFor({ state: 'visible', timeout: WAIT });
+    await shot('approval-requested');
+
+    // Opened on the older version the same bar is disabled and says why.
+    await select().selectOption('1', { timeout: WAIT });
+    await bar().getByText('Eski sürüm: onay işlemleri yalnızca son sürümde').waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    assert(await bar().locator('[data-page-action="approve"]').isDisabled(), 'Onayla must be disabled on an older version');
+    assert(await bar().locator('[data-page-action="reject"]').isDisabled(), 'Reddet must be disabled on an older version');
+    assert.equal(await screen.locator('[data-page-composer-input]').count(), 0, 'no composer on an older version');
+    await screen.getByText('Eski sürüme yorum eklenmez. Son sürüme geç.').waitFor({ state: 'visible', timeout: WAIT });
+    await shot('older-version');
+
+    await select().selectOption('2', { timeout: WAIT });
+    await bar().getByText('Onaylarsan sayfa onaylı işaretlenir').waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await dismissToasts();
+    await bar().locator('[data-page-action="approve"]').click({ timeout: WAIT });
+    const approvedToast = toastWith('Sayfa onaylandı');
+    await approvedToast.waitFor({ state: 'visible', timeout: WAIT });
+    // The work order waits on no page_approval gate in this world, so the toast must not claim it advanced.
+    assert(!((await approvedToast.textContent()) ?? '').includes('geçti'), 'no gate was pending: the toast must not say the work order advanced');
+    await screen.locator('[data-page-approval-chip]').filter({ hasText: '✓ Onaylandı · sürüm 2' }).first().waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    assert.equal(await bar().locator('[data-page-action]').count(), 0, 'an approved page offers no approval button');
+    await shot('approved');
+
+    // Önizleme again, then ‹ Geri: the view closes and the detail is back with the page row.
+    await dismissToasts();
+    await screen.locator('[data-page-view="preview"]').click({ timeout: WAIT });
+    await viewIs(true, 'Önizleme again');
+    await screen.getByRole('button', { name: '‹ Geri' }).click({ timeout: WAIT });
+    await section.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await viewIs(false, 'back to the detail');
+    // The operator's comment is not yet read by an agent: the row says so.
+    await section.locator('[data-page-unread]').filter({ hasText: '1 yorum henüz okunmadı' }).waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await shot('back-to-detail');
+    assert.deepEqual(probe.hits, [], `the probe saw requests: ${probe.hits.join(' | ')}`);
+
+    console.log(`  ok   ${title}`);
+    appendJourney({ id: title, status: 'ok', steps });
+  } catch (error) {
+    failures.push(title);
+    console.log(`  FAIL ${title}\n       ${String(error).slice(0, 600)}`);
+    appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).slice(0, 600) });
+    await page.screenshot({ path: join(OUT, 'J-13-FAIL.png') }).catch(() => undefined);
   }
   await handle.app.close();
   await probe.close();

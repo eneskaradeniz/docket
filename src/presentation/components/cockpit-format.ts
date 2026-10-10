@@ -12,7 +12,8 @@ const LOCALE_TAG: Readonly<Record<Locale, string>> = { tr: 'tr-TR', en: 'en-US' 
 export const formatAge = (locale: Locale, ms: number): string => {
   const relative = new Intl.RelativeTimeFormat(LOCALE_TAG[locale], { numeric: 'always' });
   const minutes = Math.floor(ms / 60_000);
-  if (minutes < 1) return relative.format(0, 'second');
+  // "auto" turns zero into the locale's "now"; "always" would read as a future span.
+  if (minutes < 1) return new Intl.RelativeTimeFormat(LOCALE_TAG[locale], { numeric: 'auto' }).format(0, 'second');
   if (minutes < 60) return relative.format(-minutes, 'minute');
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return relative.format(-hours, 'hour');

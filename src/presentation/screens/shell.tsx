@@ -65,12 +65,14 @@ import type { ThemeStore } from '../stores/theme';
 import type { UpdateStore } from '../stores/update';
 import type { NewProjectDone, NewProjectStore } from '../stores/new-project';
 import type { WizardFinished, WizardStore } from '../stores/wizard';
+import type { PageListStore, PageViewerStore, PageViewHost } from '../stores/page-viewer';
 import type { WorkOrderDetailStore } from '../stores/work-order-detail';
 import { AccountViewScreen } from './account-view';
 import { BoardScreen } from './board';
 import { CockpitScreen } from './cockpit';
 import { WorkOrderDetailScreen } from './detail';
 import { NewProjectScreen } from './new-project';
+import { PageViewerScreen } from './page-viewer';
 import { RoadmapScreen } from './roadmap';
 import { SettingsPanel, type SettingsSection } from './settings';
 import { WizardScreen } from './wizard';
@@ -83,6 +85,11 @@ export interface ShellScreenProps {
   readonly board: BoardStore;
   readonly roadmap: RoadmapStore;
   readonly detail: WorkOrderDetailStore;
+  /** A work order's pages (the detail's Sayfalar section) and the page screen's store (U-75). */
+  readonly pageList: PageListStore;
+  readonly pageViewer: PageViewerStore;
+  /** The host of the app's one isolated page view (U-76). */
+  readonly pageHost: PageViewHost;
   readonly accountView: AccountViewStore;
   readonly settings: SettingsStore;
   /** The settings panel's per-account model list and its spend-consent flow (P-40). */
@@ -134,6 +141,7 @@ const placeOf = (route: ShellRoute): TreePlace => {
       return { kind: 'repo', repo: route.repo };
     case 'account':
     case 'workOrder':
+    case 'page':
     case 'newProject':
       return { kind: 'cockpit' };
   }
@@ -161,6 +169,9 @@ export function ShellScreen({
   board,
   roadmap,
   detail,
+  pageList,
+  pageViewer,
+  pageHost,
   accountView,
   settings,
   models,
@@ -216,7 +227,7 @@ export function ShellScreen({
   // stores publish, so the spans walk with them.
   const clockNow = (): number => Date.now();
   useEffect(() => {
-    if (route.name !== 'workOrder' && route.name !== 'account') placeRef.current = placeOf(route);
+    if (route.name !== 'workOrder' && route.name !== 'account' && route.name !== 'page') placeRef.current = placeOf(route);
   }, [route]);
   const wizardState = useSyncExternalStore(wizard.subscribe, wizard.state);
   // The wizard owns the screen and the focus while it is up: the palette stays away, or it would
@@ -295,7 +306,7 @@ export function ShellScreen({
   }, [treeState.tree]);
   const selection = treeSelection(
     treeState.tree,
-    route.name === 'workOrder' || route.name === 'account' ? placeRef.current : placeOf(route),
+    route.name === 'workOrder' || route.name === 'account' || route.name === 'page' ? placeRef.current : placeOf(route),
   );
 
   // The history's doors (U-25). What exists answers from the stores the shell already holds —
@@ -314,6 +325,7 @@ export function ShellScreen({
         case 'account':
           return accountsState.cards?.some((card) => card.id === candidate.id) ?? false;
         case 'workOrder':
+        case 'page':
         case 'newProject':
           return true;
       }
@@ -398,10 +410,21 @@ export function ShellScreen({
     move(lastMoveRef.current);
   }, [route, detailProblem, move]);
 
+  // The same walk for a page the api no longer knows (U-75): its own read is the signal.
+  const pageProblem = useSyncExternalStore(pageViewer.subscribe, () => pageViewer.state().problem);
+  useEffect(() => {
+    if (route.name !== 'page' || pageProblem !== 'not_found') return;
+    move(lastMoveRef.current);
+  }, [route, pageProblem, move]);
+
   /** Opens a work order in place of the current screen (U-19): the history records the step —
    *  ‹ Geri is the back — and the tree's selection stays where it was. */
   const openWorkOrder = (id: string): void => {
     navigate({ name: 'workOrder', id });
+  };
+  /** Opens a page of a work order in place of its detail (U-75); ‹ Geri returns to the detail. */
+  const openPage = (id: string): void => {
+    navigate({ name: 'page', id });
   };
   /** Opens an account view in place; the history records the step the same way. */
   const openAccount = (id: string): void => {
@@ -531,6 +554,21 @@ export function ShellScreen({
               workOrderId={route.id}
               locale={locale}
               backKey={nav.index > 0 ? backKindOf(nav.entries[nav.index - 1].route) : null}
+              onBack={goBack}
+              pages={pageList}
+              onOpenPage={openPage}
+            />
+          ) : null}
+          {route.name === 'page' ? (
+            <PageViewerScreen
+              key={route.id}
+              store={pageViewer}
+              host={pageHost}
+              pageId={route.id}
+              locale={locale}
+              // The native view paints above everything of Docket's: any overlay takes it away (U-76).
+              overlayOpen={palette.open || settingsPanel.open || wizardUp}
+              now={clockNow()}
               onBack={goBack}
             />
           ) : null}
