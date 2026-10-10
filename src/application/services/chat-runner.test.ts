@@ -23,7 +23,15 @@ import {
   type WorkOrderId,
 } from '../../domain/index';
 
-import type { AccountRecord, AgentTransport, McpEndpoint, RunRequest } from '../ports';
+import type {
+  AccountRecord,
+  AccountTestSpendEntry,
+  AgentTransport,
+  ChatSpendEntry,
+  McpEndpoint,
+  RunRequest,
+  RunSpendEntry,
+} from '../ports';
 import {
   createFakeAccountRepo,
   createFakeBindingRepo,
@@ -799,5 +807,186 @@ describe('createChatRunner', () => {
     expect(trail).not.toContain('gizli');
     const finishedEntry = h.log.entries().find((entry) => entry.action === 'chat.turn_finished');
     expect(finishedEntry?.detail).toMatchObject({ outcome: 'completed', artifacts: 0, sources: 0 });
+  });
+
+  // --- chat spend (A-276 … A-279) ------------------------------------------------------------------
+
+  /** Wraps the harness's recordSpend so a test sees every entry the runner writes; an `order`
+   *  array, when given, receives 'spend' beside the entry so the test can interleave it with the
+   *  turn's own events. */
+  const spyingSpend = (
+    h: Harness,
+    order?: string[],
+  ): { readonly entries: (RunSpendEntry | AccountTestSpendEntry | ChatSpendEntry)[] } => {
+    const entries: (RunSpendEntry | AccountTestSpendEntry | ChatSpendEntry)[] = [];
+    const record = h.accounts.recordSpend;
+    vi.spyOn(h.accounts, 'recordSpend').mockImplementation(async (entry) => {
+      entries.push(entry);
+      if (order !== undefined) order.push('spend');
+      await record(entry);
+    });
+    return { entries };
+  };
+
+  it('A-276: a costed turn writes exactly one chat spend entry — account, conversation, its project, no text — before finished; zero or absent cost writes none', async () => {
+    const h = await harness({ script: [text('gizli cevap metni'), usage(0.1), usage(0.05), finished('completed')] });
+    const order: string[] = [];
+    const spent = spyingSpend(h, order);
+    h.runner.subscribe(CONVERSATION, (event) => {
+      if (event.type === 'finished') order.push('finished');
+    });
+    const watch = watching(h.runner, CONVERSATION);
+    await send(h.runner, CONVERSATION, { text: 'gizli soru metni' });
+    await watch.finished;
+
+    expect(spent.entries).toHaveLength(1);
+    const entry = spent.entries[0];
+    if (entry === undefined || !('kind' in entry) || entry.kind !== 'chat') {
+      throw new Error('the turn must write a chat spend entry');
+    }
+    expect(entry).toStrictEqual({
+      kind: 'chat',
+      accountId: ACCOUNT,
+      at: T0,
+      usd: 0.15,
+      conversation: CONVERSATION,
+      project: PROJECT,
+    });
+    // Ids and a number only: no text, no title, no prompt ever rides the entry.
+    expect(Object.keys(entry).sort()).toEqual(['accountId', 'at', 'conversation', 'kind', 'project', 'usd']);
+    expect(JSON.stringify(entry)).not.toContain('gizli');
+    expect(order.filter((mark) => mark !== 'started')).toEqual(['spend', 'finished']);
+
+    const zero = await harness({ script: [text('a'), usage(0), finished('completed')] });
+    const zeroSpent = spyingSpend(zero);
+    const zeroWatch = watching(zero.runner, CONVERSATION);
+    await send(zero.runner, CONVERSATION, { text: 'Selam' });
+    await zeroWatch.finished;
+    expect(zeroSpent.entries).toEqual([]);
+
+    const noCost = await harness({ script: [text('a'), usage(), finished('completed')] });
+    const noCostSpent = spyingSpend(noCost);
+    const noCostWatch = watching(noCost.runner, CONVERSATION);
+    await send(noCost.runner, CONVERSATION, { text: 'Selam' });
+    await noCostWatch.finished;
+    expect(noCostSpent.entries).toEqual([]);
+
+    // A work-order conversation records its order's project; a global one records none.
+    const ordered = await harness({
+      script: [usage(0.2), finished('completed')],
+      conversation: conversationRecord(CONVERSATION, { scope: { kind: 'workOrder', workOrder: WORK_ORDER } }),
+    });
+    const orderedSpent = spyingSpend(ordered);
+    const orderedWatch = watching(ordered.runner, CONVERSATION);
+    await send(ordered.runner, CONVERSATION, { text: 'Selam' });
+    await orderedWatch.finished;
+    expect(orderedSpent.entries).toStrictEqual([
+      { kind: 'chat', accountId: ACCOUNT, at: T0, usd: 0.2, conversation: CONVERSATION, project: PROJECT },
+    ]);
+
+    const global = await harness({
+      script: [usage(0.2), finished('completed')],
+      conversation: conversationRecord(CONVERSATION, { scope: { kind: 'global' } }),
+    });
+    const globalSpent = spyingSpend(global);
+    const globalWatch = watching(global.runner, CONVERSATION);
+    await send(global.runner, CONVERSATION, { text: 'Selam' });
+    await globalWatch.finished;
+    expect(globalSpent.entries).toStrictEqual([{ kind: 'chat', accountId: ACCOUNT, at: T0, usd: 0.2, conversation: CONVERSATION }]);
+
+    // Cancelled, limit and failed turns record the cost they reported. The usage rides ahead of
+    // the text: seeing the text event proves the cost was already folded in.
+    const parked = parkedTransport([usage(0.3), text('yarı'), finished('completed')]);
+    const cancelled = await harness({ transport: parked.transport });
+    const cancelledSpent = spyingSpend(cancelled);
+    const cancelledWatch = watching(cancelled.runner, CONVERSATION);
+    await send(cancelled.runner, CONVERSATION, { text: 'Uzun anlat' });
+    await until(() => cancelledWatch.events.some((event) => event.type === 'text'));
+    await cancelled.runner.cancel(CONVERSATION, OPERATOR);
+    expect(await cancelledWatch.finished).toMatchObject({ outcome: 'cancelled' });
+    expect(cancelledSpent.entries).toStrictEqual([
+      { kind: 'chat', accountId: ACCOUNT, at: T0, usd: 0.3, conversation: CONVERSATION, project: PROJECT },
+    ]);
+
+    const limit = await harness({ script: [usage(0.3), limitHit()] });
+    const limitSpent = spyingSpend(limit);
+    const limitWatch = watching(limit.runner, CONVERSATION);
+    await send(limit.runner, CONVERSATION, { text: 'Selam' });
+    await limitWatch.finished;
+    expect(limitSpent.entries).toHaveLength(1);
+
+    const failed = await harness({ script: [usage(0.3), errorEvent('crash'), finished('failed')] });
+    const failedSpent = spyingSpend(failed);
+    const failedWatch = watching(failed.runner, CONVERSATION);
+    await send(failed.runner, CONVERSATION, { text: 'Selam' });
+    await failedWatch.finished;
+    expect(failedSpent.entries).toHaveLength(1);
+  });
+
+  it('A-277: a failing recordSpend never breaks the turn — the message is still written and finished still fires', async () => {
+    const h = await harness({ script: [text('cevap yazıldı'), usage(0.4), finished('completed')] });
+    const spy = vi.spyOn(h.accounts, 'recordSpend').mockRejectedValue(new Error('spend store down'));
+    const watch = watching(h.runner, CONVERSATION);
+    const turn = await send(h.runner, CONVERSATION, { text: 'Selam' });
+    const done = await watch.finished;
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(done).toMatchObject({ type: 'finished', turn, outcome: 'completed' });
+    if (done.type !== 'finished') throw new Error('the turn must finish');
+    expect(done.message).toBeDefined();
+    expect((await lastMessage(h, CONVERSATION)).text).toBe('cevap yazıldı');
+    expect(h.tokens.live()).toEqual([]);
+    expect(h.runner.active(CONVERSATION)).toBeUndefined();
+  });
+
+  it('A-278: chat spend the caps see — a turn that spends up to the account cap refuses the conversation\'s next turn with spend', async () => {
+    const h = await harness({
+      script: [usage(1.2), finished('completed')],
+      caps: [{ scope: 'account_month', cap: { amountUsd: 1, warnPercent: 80 } }],
+    });
+    const first = watching(h.runner, CONVERSATION);
+    await send(h.runner, CONVERSATION, { text: 'Pahalı soru' });
+    await first.finished;
+    expect(await h.accounts.spend({ accountId: ACCOUNT, from: 0, to: T0 })).toBe(1.2);
+
+    const second = watching(h.runner, CONVERSATION);
+    await send(h.runner, CONVERSATION, { text: 'Devam' });
+    const done = await second.finished;
+    expect(done).toMatchObject({ outcome: 'refused' });
+    expect(second.events.some((event) => event.type === 'notice' && event.code === 'spend')).toBe(true);
+    expect(h.transport.requests()).toHaveLength(1);
+  });
+
+  it('A-279: the project month budget counts a project conversation\'s chat spend and not a global one\'s', async () => {
+    const budget = { amountUsd: 2, warnPercent: 80 };
+
+    const projectSide = await harness({ script: [usage(2.5), finished('completed')] });
+    await projectSide.deps.projects.save({ id: PROJECT, name: 'Atölye', mainRepo: REPO, repos: [REPO], budget });
+    const first = watching(projectSide.runner, CONVERSATION);
+    await send(projectSide.runner, CONVERSATION, { text: 'Pahalı' });
+    await first.finished;
+    expect(await projectSide.accounts.spend({ project: PROJECT, from: 0, to: T0 })).toBe(2.5);
+    const second = watching(projectSide.runner, CONVERSATION);
+    await send(projectSide.runner, CONVERSATION, { text: 'Devam' });
+    const refused = await second.finished;
+    expect(refused).toMatchObject({ outcome: 'refused' });
+    expect(second.events.some((event) => event.type === 'notice' && event.code === 'spend')).toBe(true);
+    expect(projectSide.transport.requests()).toHaveLength(1);
+
+    // A global conversation's spend carries no project, so the ceiling never sees it: the
+    // project conversation still runs, while the account sum holds every chat dollar.
+    const globalSide = await harness({ script: [usage(3), finished('completed')] });
+    await globalSide.deps.projects.save({ id: PROJECT, name: 'Atölye', mainRepo: REPO, repos: [REPO], budget });
+    const GLOBAL = idOf<'conversation'>(42);
+    await globalSide.conversations.save(conversationRecord(GLOBAL, { scope: { kind: 'global' } }));
+    const globalWatch = watching(globalSide.runner, GLOBAL);
+    await send(globalSide.runner, GLOBAL, { text: 'Küresel' });
+    await globalWatch.finished;
+    expect(await globalSide.accounts.spend({ project: PROJECT, from: 0, to: T0 })).toBe(0);
+    expect(await globalSide.accounts.spend({ accountId: ACCOUNT, from: 0, to: T0 })).toBe(3);
+    const projectWatch = watching(globalSide.runner, CONVERSATION);
+    await send(globalSide.runner, CONVERSATION, { text: 'Proje sorusu' });
+    expect(await projectWatch.finished).toMatchObject({ outcome: 'completed' });
+    expect(globalSide.transport.requests()).toHaveLength(2);
   });
 });

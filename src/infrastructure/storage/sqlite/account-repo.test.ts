@@ -9,6 +9,7 @@ import { createFakeAccountRepo } from '../../../application/ports/fakes/index';
 import {
   parseUlid,
   type AccountId,
+  type ConversationId,
   type Meter,
   type MeterId,
   type Pool,
@@ -31,9 +32,17 @@ const M1 = '01ARZ3NDEKTSV4RRFFQ69G5FB1';
 const M2 = '01ARZ3NDEKTSV4RRFFQ69G5FB4';
 const W1 = '01ARZ3NDEKTSV4RRFFQ69G5FB2';
 const W2 = '01ARZ3NDEKTSV4RRFFQ69G5FB3';
+const C1 = '01ARZ3NDEKTSV4RRFFQ69G5FE1';
+const C2 = '01ARZ3NDEKTSV4RRFFQ69G5FE2';
 
 const accountId = (s: string): AccountId => {
   const parsed = parseUlid<'account'>(s);
+  if (!parsed.ok) throw new Error('fixture ulid must parse');
+  return parsed.value;
+};
+
+const conversationId = (s: string): ConversationId => {
+  const parsed = parseUlid<'conversation'>(s);
   if (!parsed.ok) throw new Error('fixture ulid must parse');
   return parsed.value;
 };
@@ -210,6 +219,19 @@ describe('createSqliteAccountRepo', () => {
       expect(await repo.spend({ workOrderId: workOrderId(W1), from: 0, to: 100 })).toBe(2);
     });
 
+    it('I-85: a chat spend entry counts for its account and for its project when it has one, and never matches a repo or work-order filter', async () => {
+      const repo = makeRepo();
+      await repo.recordSpend({ kind: 'chat', accountId: accountId(A1), at: 10, usd: 0.5, conversation: conversationId(C1), project: PROJECT });
+      await repo.recordSpend({ kind: 'chat', accountId: accountId(A1), at: 20, usd: 1.5, conversation: conversationId(C2) });
+      await repo.recordSpend({ accountId: accountId(A1), project: PROJECT, repo: REPO, workOrderId: workOrderId(W1), at: 30, usd: 2 });
+
+      expect(await repo.spend({ accountId: accountId(A1), from: 0, to: 100 })).toBe(4);
+      expect(await repo.spend({ accountId: accountId(A2), from: 0, to: 100 })).toBe(0);
+      expect(await repo.spend({ project: PROJECT, from: 0, to: 100 })).toBe(2.5);
+      expect(await repo.spend({ repo: REPO, from: 0, to: 100 })).toBe(2);
+      expect(await repo.spend({ workOrderId: workOrderId(W1), from: 0, to: 100 })).toBe(2);
+    });
+
     it('I-6: a record read back deep-equals the record written — absent optionals stay absent, arrays keep their order, numbers stay numbers', async () => {
       const repo = makeRepo();
       const full: AccountRecord = {
@@ -316,6 +338,30 @@ describe('createSqliteAccountRepo', () => {
       expect(await reopened.pools(accountId(A1))).toStrictEqual([pool(P1, A1)]);
       expect(await reopened.meters(accountId(A1))).toStrictEqual([meter(M1, P1)]);
       expect(await reopened.spend({ from: 0, to: 10 })).toBe(2.5);
+    });
+
+    it('I-85: chat entries round-trip on a file — the conversation rides its column, old rows keep summing, and the project sum survives a reopen', async () => {
+      const path = join(tmp, 'docket.db');
+      const first = openDb(path);
+      const repo = createSqliteAccountRepo(first);
+      // A pre-chat-era run row: written without the conversation column, as every run and
+      // account-test spend still is.
+      first.raw
+        .prepare('INSERT INTO spend (account_id, project, repo, work_order_id, at, usd) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(accountId(A1), PROJECT, REPO, workOrderId(W1), 5, 1);
+      await repo.recordSpend({ kind: 'chat', accountId: accountId(A1), at: 10, usd: 0.5, conversation: conversationId(C1), project: PROJECT });
+      await repo.recordSpend({ kind: 'chat', accountId: accountId(A2), at: 20, usd: 2.5, conversation: conversationId(C2) });
+
+      expect(await repo.spend({ accountId: accountId(A1), from: 0, to: 100 })).toBe(1.5);
+      expect(await repo.spend({ project: PROJECT, from: 0, to: 100 })).toBe(1.5);
+      expect(first.raw.prepare('SELECT conversation FROM spend WHERE at = 10').get()).toMatchObject({ conversation: conversationId(C1) });
+      expect(first.raw.prepare('SELECT conversation FROM spend WHERE at = 5').get()).toMatchObject({ conversation: null });
+      closeDb(first);
+
+      const reopened = createSqliteAccountRepo(openDb(path));
+      expect(await reopened.spend({ accountId: accountId(A1), from: 0, to: 100 })).toBe(1.5);
+      expect(await reopened.spend({ project: PROJECT, from: 0, to: 100 })).toBe(1.5);
+      expect(await reopened.spend({ accountId: accountId(A2), from: 0, to: 100 })).toBe(2.5);
     });
   });
 });
