@@ -1,9 +1,17 @@
 // api/queries.ts — the read side of the boundary. Exact contract: docs/v2/application.md § 4.
 // Plain JSON-serialisable shapes only; ids travel as strings and are parsed in api.ts.
-import type { ModelMatcher } from '../domain/index';
-import type { AccountTestView, ProviderMark, QuotaProbeError, StageFilesView, WorktreeFilePreview } from '../application';
+import type { ModelMatcher, ProposalStatus } from '../domain/index';
+import type {
+  AccountTestView,
+  ProposalDetailView,
+  ProposalListItem,
+  ProviderMark,
+  QuotaProbeError,
+  StageFilesView,
+  WorktreeFilePreview,
+} from '../application';
 
-export type { AccountTestView, StageFilesView, WorktreeFilePreview };
+export type { AccountTestView, ProposalDetailView, ProposalListItem, StageFilesView, WorktreeFilePreview };
 
 export type Query =
   | { readonly type: 'workOrder.detail'; readonly id: string }
@@ -27,7 +35,9 @@ export type Query =
   | { readonly type: 'app.update' }
   | { readonly type: 'workOrders.stageFiles'; readonly id: string }
   | { readonly type: 'workOrders.readStageFile'; readonly id: string; readonly path: string }
-  | { readonly type: 'capabilities.candidates' }; // no fresh: no cache (A-94)
+  | { readonly type: 'capabilities.candidates' } // no fresh: no cache (A-94)
+  | { readonly type: 'proposals.list'; readonly status?: ProposalStatus } // → readonly ProposalListItem[] (A-128, A-129)
+  | { readonly type: 'proposal.detail'; readonly id: string }; // → ProposalDetailView | not_found (A-130, A-131)
 
 export interface AttentionItem {
   readonly workOrderId: string;
