@@ -1,4 +1,4 @@
-// e2e/journeys.mjs — `npm run test:journeys`. J-1 … J-17 of docs/v2/ui.md → "Verifying the shell",
+// e2e/journeys.mjs — `npm run test:journeys`. J-1 … J-19 of docs/v2/ui.md → "Verifying the shell",
 // driven through the BUILT app on the design seed (e2e/seed-design.ts). Every step asserts visible
 // text and saves a screenshot to e2e/.out/journeys/, and every outcome lands in the structured
 // report (e2e/report.mjs) as it is printed.
@@ -1728,6 +1728,113 @@ for (const [sizeName, theme] of combos) {
   }
   await handle.app.close();
   await probe.close();
+}
+
+// J-19 walks Ayarlar as cards (U-165 … U-180) on the roadmap world — a hermetic home with no
+// account, so nothing can run or spend and the empty states are the ones on screen. It asserts the
+// menu without group titles, the Hesaplar disclosures and their cards, the Roller and Yetenekler
+// cards and, on every section, that the content fills at least 90 % of the body's content area
+// (bounding boxes, not class names). Once per run.
+{
+  const handle = await launchRoadmapApp();
+  const { page } = handle;
+  const panel = page.locator('[data-settings-panel]');
+  const body = panel.locator('[data-window-body]');
+  const section = (name) => panel.getByRole('button', { name, exact: true });
+  const SECTIONS = ['Hesaplar', 'Roller', 'Yetenekler', 'Eşzamanlılık', 'Sağlayıcılar', 'Görünüm', 'Telefon', 'Güncelleme'];
+  /** The widest direct child of the body against the body's content box (its width minus padding). */
+  const fill = () =>
+    body.evaluate((el) => {
+      const style = getComputedStyle(el);
+      const content = el.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      const widest = Math.max(0, ...[...el.children].filter((child) => child.tagName !== 'STYLE').map((child) => child.getBoundingClientRect().width));
+      return { content, widest, ratio: widest / content };
+    });
+
+  let stepNo = 0;
+  const steps = [];
+  const shot = async (label) => {
+    stepNo += 1;
+    steps.push(label);
+    const slug = label.toLowerCase().replace(/[^a-z0-9ğüşıöç]+/g, '-').replace(/^-|-$/g, '');
+    await page.screenshot({ path: join(OUT, `J-19-${stepNo}-${slug}.png`) });
+  };
+  const title = 'J-19: Ayarlar kartları: menüde grup başlığı yok, Hesaplar açılırları, Roller ve Yetenekler kartları, her bölüm tam genişlikte';
+  total += 1;
+  try {
+    await page.getByRole('button', { name: 'Ayarlar', exact: true }).first().click({ timeout: WAIT });
+    await panel.waitFor({ state: 'visible', timeout: WAIT });
+
+    // The menu: every section is a button, no group title is drawn anywhere in it.
+    const menuText = (await panel.locator('nav').last().textContent({ timeout: WAIT })) ?? '';
+    for (const word of ['Çalışma', 'Uygulama']) assert(!menuText.includes(word), `the menu must not draw the group title "${word}", saw "${menuText}"`);
+    for (const name of SECTIONS) await section(name).waitFor({ state: 'visible', timeout: WAIT });
+
+    // Hesaplar: two disclosures with count badges; Eklenenler open with its empty card, Eklenmemiş
+    // open too because nothing is added.
+    const sections = panel.locator('[data-accounts-sections]');
+    await sections.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    const added = panel.locator('#accounts-added');
+    const unadded = panel.locator('#accounts-unadded');
+    assert.equal(await added.getAttribute('aria-expanded'), 'true', 'Eklenenler is open by default');
+    assert.equal(await unadded.getAttribute('aria-expanded'), 'true', 'Eklenmemiş is open while no account is added');
+    assert.equal(await sections.locator('[data-count-badge]').count(), 2, 'both headers carry a count badge');
+    const emptyAdded = panel.locator('[data-empty-card="accounts-added"]');
+    await emptyAdded.waitFor({ state: 'visible', timeout: WAIT });
+    assert((await emptyAdded.textContent())?.includes('Henüz hesap eklenmedi'), 'the empty Eklenenler card names itself');
+    await emptyAdded.getByRole('button', { name: 'Hesap ekle', exact: true }).waitFor({ state: 'visible', timeout: WAIT });
+    const radius = await sections.locator('#accounts-added-body > div').evaluate((el) => getComputedStyle(el).borderTopLeftRadius);
+    assert.equal(radius, '12px', `the section card is a panel (12px), saw ${radius}`);
+    // A disclosure toggles: closing Eklenmemiş hides its body, opening it brings it back.
+    await unadded.click({ timeout: WAIT });
+    assert.equal(await unadded.getAttribute('aria-expanded'), 'false', 'a click closes Eklenmemiş');
+    await panel.locator('#accounts-unadded-body').waitFor({ state: 'hidden', timeout: WAIT });
+    await unadded.click({ timeout: WAIT });
+    await panel.locator('#accounts-unadded-body').waitFor({ state: 'visible', timeout: WAIT });
+    await shot('hesaplar');
+
+    // Roller: no account, so the order is an empty card whose button opens Hesaplar.
+    await section('Roller').click({ timeout: WAIT });
+    const chainCard = panel.locator('[data-empty-card="roles-chain"]');
+    await chainCard.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    assert((await chainCard.textContent())?.includes('Henüz hesap yok'), 'the order card names itself');
+    assert((await panel.textContent())?.includes('Hesaplar bu sırayla denenir.'), 'the order carries its one short line');
+    await shot('roller');
+    await chainCard.getByRole('button', { name: "Hesaplar'a git", exact: true }).click({ timeout: WAIT });
+    await sections.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    assert.equal(await section('Hesaplar').getAttribute('aria-current'), 'page', "Hesaplar'a git opens Hesaplar");
+
+    // Yetenekler: the discovery card.
+    await section('Yetenekler').click({ timeout: WAIT });
+    await panel.locator('[data-capabilities-empty]').waitFor({ state: 'visible', timeout: WAIT });
+    await shot('yetenekler');
+
+    // Every section fills the width: the widest block of the body is at least 90 % of its content box.
+    for (const name of SECTIONS) {
+      await section(name).click({ timeout: WAIT });
+      await page.waitForFunction(
+        () => {
+          const el = document.querySelector('[data-settings-panel] [data-window-body]');
+          return el !== null && el.children.length > 0 && el.querySelector('[aria-busy="true"]') === null;
+        },
+        undefined,
+        { timeout: SCAN_WAIT },
+      );
+      await page.waitForTimeout(500);
+      const { content, widest, ratio } = await fill();
+      assert(ratio >= 0.9, `${name}: the content must fill >= 90 % of the body (${widest.toFixed(0)} of ${content.toFixed(0)} px, ${(ratio * 100).toFixed(0)} %)`);
+    }
+    await shot('tam-genislik');
+
+    console.log(`  ok   ${title}`);
+    appendJourney({ id: title, status: 'ok', steps });
+  } catch (error) {
+    failures.push(title);
+    console.log(`  FAIL ${title}\n       ${String(error).slice(0, 600)}`);
+    appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).slice(0, 600) });
+    await page.screenshot({ path: join(OUT, 'J-19-FAIL.png') }).catch(() => undefined);
+  }
+  await handle.app.close();
 }
 
 console.log(`${total - failures.length}/${total} journeys ok; screenshots in ${OUT}`);

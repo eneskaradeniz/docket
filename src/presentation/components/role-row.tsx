@@ -29,6 +29,7 @@ import { Listbox } from './listbox';
 import { ProviderMark, type ProviderMarkProps } from './provider-mark';
 import { SegmentedControl } from './segmented-control';
 import { SettingRow } from './setting-row';
+import { EmptyCard } from './settings-cards';
 
 const STYLE_KEY: Readonly<Record<WorkStyle | 'custom', LabelKey>> = {
   fast: 'roles.style.fast',
@@ -96,13 +97,35 @@ export interface ChainSectionProps {
   readonly store: RolesStore;
   readonly locale: Locale;
   readonly markFor: MarkFor;
+  /** Opens Hesaplar — the empty card's jump when no account exists. */
+  readonly onOpenAccounts?: () => void;
+}
+
+/** The chain's empty state as a card: with no account at all it offers the jump to Hesaplar, with
+ *  accounts but no order it only says so (the recommended setup and the fine-tune are the way). */
+export function ChainEmpty({ locale, accountCount, onOpenAccounts }: { readonly locale: Locale; readonly accountCount: number; readonly onOpenAccounts?: () => void }) {
+  const none = accountCount === 0;
+  return (
+    <EmptyCard
+      mark="roles-chain"
+      title={t(locale, chainEmptyKey(accountCount))}
+      line={t(locale, none ? 'roles.chain.empty.line' : 'roles.chain.unbound.line')}
+      action={
+        none && onOpenAccounts !== undefined ? (
+          <ActionButton variant="primary" size="md" onClick={onOpenAccounts}>
+            {t(locale, 'roles.chain.empty.go')}
+          </ActionButton>
+        ) : undefined
+      }
+    />
+  );
 }
 
 /** Asistan sırası: the chain every role without its own uses, as the same DragOrderList the wizard
  *  uses. A drop saves every listed role once (U-33). An account the stored bindings never mention
  *  joins through a "+" chip — without it, an account added after setup could never be placed
  *  (U-33a); a click appends it to the chain's end, the same save a drop makes. */
-export function ChainSection({ store, locale, markFor }: ChainSectionProps) {
+export function ChainSection({ store, locale, markFor, onOpenAccounts }: ChainSectionProps) {
   const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   const saved = useSavedFlag(store, 'chain');
   const failure = state.failure?.row === 'chain' ? state.failure.labelKey : undefined;
@@ -127,7 +150,7 @@ export function ChainSection({ store, locale, markFor }: ChainSectionProps) {
         </span>
       ) : null}
       {chain.length === 0 ? (
-        <p className="text-[13px] text-inkdim">{t(locale, chainEmptyKey(state.accounts.length))}</p>
+        <ChainEmpty locale={locale} accountCount={state.accounts.length} {...(onOpenAccounts === undefined ? {} : { onOpenAccounts })} />
       ) : (
         <DragOrderList
           locale={locale}

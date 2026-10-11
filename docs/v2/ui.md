@@ -1203,6 +1203,11 @@ belongs to the mobile app.
   end and the scope chip on Tüm projeler → a second click with an unsent draft keeps the draft → the
   roadmap's "Docket AI ile planla" shows the project on the chip → the seeded (ready) work order offers
   neither "Bu neden beklemede?" nor "Ne yapıyor?". It runs once per run; sending is not part of it.)*
+  *(Addendum 2026-10-11, #949: J-19 walks Ayarlar on the roadmap world, which holds no account: the left
+  menu carries no group title → Hesaplar shows two disclosures with count badges, Eklenenler open and
+  its empty card with a primary "Hesap ekle" → Eklenmemiş is open while nothing is added → Roller and
+  Yetenekler show their cards → on every section the content fills at least 90 % of the panel's content
+  area, measured by bounding boxes. It runs once per run.)*
 - **Layout audit** (pure DOM measurement, no pixel diff; each assertion named `L-n: …`, for every
   screen × size × theme):
   - **L-1** The sidebar's left edge is 0 and its width is 240px at every window size — it never
@@ -1321,3 +1326,42 @@ than 8 words. A proposal's summary, target, scope, author and every diff line ar
   `rounded-panel` / `rounded-full` only, an explicit leading on every sized text line, a focus ring on
   every control, panes stacked below the `lg` breakpoint, transitions behind `motion-safe:` /
   `motion-reduce:`, no vendor name. A source-scan test pins these on the screen's own source.
+
+## Settings cards (U-165 … U-180)
+
+- **U-165** (settings menu; added 2026-10-11, #949) No group titles. The left menu draws the section buttons
+  in the store's order with a hairline where a menu group ends; "Çalışma" and "Uygulama" are drawn nowhere
+  and left the bundles.
+- **U-166** (Hesaplar; added 2026-10-11, #949) Eklenenler and Eklenmemiş are two disclosures: a header
+  button with a turning chevron, the name and a count badge, `aria-expanded` and `aria-controls`; a closed
+  body is `hidden`.
+- **U-167** (Hesaplar; added 2026-10-11, #949) Defaults. Eklenenler is open; Eklenmemiş is open while no
+  account is added and collapsed otherwise. The operator's own toggle overrides both and survives a rescan.
+- **U-168** (Hesaplar; added 2026-10-11, #949) Both bodies sit in the same `rounded-panel` card with a
+  hairline border, 16 inner spacing and 12 between rows.
+- **U-169** (Hesaplar; added 2026-10-11, #949) Empty Eklenenler is a centred card: icon, "Henüz hesap
+  eklenmedi", one short line, and a primary "Hesap ekle" that opens Eklenmemiş. No plain-text line.
+- **U-170** (Hesaplar; added 2026-10-11, #949) Empty Eklenmemiş is a card "Eklenecek hesap bulunamadı". Each
+  header carries a right-aligned slot (`data-section-aside`) for the scan's own action; this change draws
+  nothing in it.
+- **U-171** (account card; added 2026-10-11, #949) In Settings an account card reads identity (name, billing
+  tag) and the status chip on the left, and the actions (Test et, Ekle, ✎) on the right edge, centred
+  vertically. The wizard keeps its own order.
+- **U-172** (Roller; added 2026-10-11, #949) "n rol önerilen çalışma biçimini kullanmıyor" is a bordered info
+  banner with the icon on the left.
+- **U-173** (Roller; added 2026-10-11, #949) The apply button sits inside that banner, at the right.
+- **U-174** (Roller; added 2026-10-11, #949) Asistan sırası carries one line: "Hesaplar bu sırayla denenir."
+- **U-175** (Roller; added 2026-10-11, #949) An empty order is a card. With no account: "Henüz hesap yok", one
+  line and "Hesaplar'a git" (opens Hesaplar). With accounts but no order: "Sıra boş" and one line, no button.
+- **U-176** (Yetenekler; added 2026-10-11, #949) The discovery block is a full-width card with icon, title and
+  one line; it has no width cap.
+- **U-177** (every screen; added 2026-10-11, #949) Full width. No settings section root and no main-column
+  screen wraps itself in `max-w-*` or an inline max-width; a scan test fails on one. A cap on a truncating
+  cell is a cell's own and is not a section root.
+- **U-178** (labels; added 2026-10-11, #949) Every sentence of the new copy is at most 8 words, in both
+  bundles.
+- **U-179** (measure; added 2026-10-11, #949) The new surfaces use rem lengths, the four radius names and no
+  `max-w-`; a source scan pins it.
+- **U-180** (audit; added 2026-10-11, #949) Plain-text empty states in Settings are cards: Roller's empty list,
+  the Sağlayıcılar empty list. Eşzamanlılık's account line sits inside its own card and stays a line; Telefon,
+  Görünüm and Güncelleme already are cards.
