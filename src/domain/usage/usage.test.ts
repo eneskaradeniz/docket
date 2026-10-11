@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   PLANNING_STAGE_IDS,
   USAGE_THRESHOLDS,
+  costDisplay,
   findWaste,
   summarizeUsage,
   type RunUsageInput,
@@ -118,22 +119,82 @@ describe('usage: summarizeUsage (R-108 … R-111)', () => {
     expect(s.cacheRatio).toBeCloseTo(0.5, 12);
   });
 
-  it('R-111: costUsd sums only the inputs that carry it; absent everywhere stays absent, never 0', () => {
+  it('R-111: a cost is summed only over the inputs that carry it; absent everywhere stays absent, never 0', () => {
     const costless = summarizeUsage([run(), run({ stage: 'plan' }), run({ stage: 'review' })]);
-    expect('costUsd' in costless).toBe(false);
-    expect(costless.byStage.every((row) => !('costUsd' in row))).toBe(true);
+    expect('costByKind' in costless).toBe(false);
+    expect(costless.byStage.every((row) => !('costByKind' in row))).toBe(true);
     // A carried zero is a real zero, kept — an unknown cost is what stays absent.
     const zero = summarizeUsage([run({ costUsd: 0, costKind: 'reported' })]);
-    expect('costUsd' in zero).toBe(true);
-    expect(zero.costUsd).toBe(0);
-    const mixed = summarizeUsage([
+    expect(zero.costByKind).toStrictEqual({ reported: 0 });
+  });
+
+  it('R-115: costByKind sums each kind separately per stage and overall; a kind nobody carries is absent', () => {
+    const inputs = [
       run({ stage: 'plan', costUsd: 0.01, costKind: 'computed' }),
+      run({ stage: 'plan', costUsd: 0.5, costKind: 'equivalent' }),
       run({ stage: 'plan' }),
-      run({ stage: 'implement', costUsd: 0.02 }),
-    ]);
-    expect(mixed.costUsd).toBeCloseTo(0.03, 12);
-    expect(mixed.byStage.find((row) => row.stage === 'plan')?.costUsd).toBeCloseTo(0.01, 12);
-    expect(mixed.byStage.find((row) => row.stage === 'implement')?.costUsd).toBeCloseTo(0.02, 12);
+      run({ stage: 'implement', costUsd: 0.02, costKind: 'reported' }),
+      run({ stage: 'implement', costUsd: 0.03, costKind: 'reported' }),
+      run({ stage: 'implement', costUsd: 7, costKind: 'credits' }),
+    ];
+    deepFreeze(inputs);
+    const s = summarizeUsage(inputs);
+    expect(s.costByKind?.computed).toBeCloseTo(0.01, 12);
+    expect(s.costByKind?.equivalent).toBeCloseTo(0.5, 12);
+    expect(s.costByKind?.reported).toBeCloseTo(0.05, 12);
+    expect(s.costByKind?.credits).toBe(7);
+    expect('unspecified' in (s.costByKind ?? {})).toBe(false);
+    const plan = s.byStage.find((row) => row.stage === 'plan');
+    expect(Object.keys(plan?.costByKind ?? {}).sort()).toStrictEqual(['computed', 'equivalent']);
+    const implement = s.byStage.find((row) => row.stage === 'implement');
+    expect(Object.keys(implement?.costByKind ?? {}).sort()).toStrictEqual(['credits', 'reported']);
+    expect(summarizeUsage([run({ stage: 'plan' })]).byStage[0]).not.toHaveProperty('costByKind');
+  });
+
+  it('R-116: an input with costUsd and no costKind lands under unspecified', () => {
+    const s = summarizeUsage([run({ costUsd: 0.02 }), run({ costUsd: 0.03 }), run({ costUsd: 1, costKind: 'equivalent' })]);
+    expect(s.costByKind?.unspecified).toBeCloseTo(0.05, 12);
+    expect(s.costByKind?.equivalent).toBe(1);
+    expect(s.byStage[0]?.costByKind?.unspecified).toBeCloseTo(0.05, 12);
+    expect('reported' in (s.costByKind ?? {})).toBe(false);
+  });
+});
+
+describe('usage: costDisplay (R-117 … R-118)', () => {
+  it('R-117: pay_per_use shows money from reported + computed; computed or unspecified makes it an estimate', () => {
+    expect(costDisplay({ reported: 1.5 }, 'pay_per_use')).toStrictEqual({ kind: 'money', usd: 1.5, estimate: false });
+    expect(costDisplay({ reported: 1, computed: 0.5 }, 'pay_per_use')).toStrictEqual({ kind: 'money', usd: 1.5, estimate: true });
+    expect(costDisplay({ reported: 1, unspecified: 0.25 }, 'pay_per_use')).toStrictEqual({ kind: 'money', usd: 1.25, estimate: true });
+    // Equivalent is never added to money.
+    expect(costDisplay({ reported: 1, equivalent: 40 }, 'pay_per_use')).toStrictEqual({ kind: 'money', usd: 1, estimate: false });
+    // Credits lose to money, show alone otherwise.
+    expect(costDisplay({ reported: 1, credits: 9 }, 'pay_per_use')).toStrictEqual({ kind: 'money', usd: 1, estimate: false });
+    expect(costDisplay({ credits: 9 }, 'pay_per_use')).toStrictEqual({ kind: 'credits', credits: 9 });
+    // Only an equivalent figure: never money, shown as secondary information.
+    expect(costDisplay({ equivalent: 3 }, 'pay_per_use')).toStrictEqual({ kind: 'tokens', equivalentUsd: 3 });
+  });
+
+  it('R-117: included shows tokens with the equivalent as secondary info; credits-only shows credits; nothing is none', () => {
+    expect(costDisplay({ equivalent: 12.5 }, 'included')).toStrictEqual({ kind: 'tokens', equivalentUsd: 12.5 });
+    expect(costDisplay({ equivalent: 12.5, reported: 1 }, 'included')).toStrictEqual({ kind: 'tokens', equivalentUsd: 12.5 });
+    expect(costDisplay({ credits: 4 }, 'included')).toStrictEqual({ kind: 'credits', credits: 4 });
+    expect(costDisplay({ reported: 2 }, 'included')).toStrictEqual({ kind: 'money', usd: 2, estimate: false });
+    expect(costDisplay({}, 'included')).toStrictEqual({ kind: 'none' });
+    expect(costDisplay({}, 'pay_per_use')).toStrictEqual({ kind: 'none' });
+    // Unknown billing: money kinds are money, equivalent never is.
+    expect(costDisplay({ computed: 2, equivalent: 9 }, 'unknown')).toStrictEqual({ kind: 'money', usd: 2, estimate: true });
+    expect(costDisplay({ equivalent: 9 }, 'unknown')).toStrictEqual({ kind: 'tokens', equivalentUsd: 9 });
+    expect(costDisplay({}, 'unknown')).toStrictEqual({ kind: 'none' });
+  });
+
+  it('R-118: costDisplay is pure, never NaN, and an empty input is none', () => {
+    const input = { reported: 1, computed: 2, equivalent: 3 } as const;
+    deepFreeze(input);
+    expect(costDisplay(input, 'pay_per_use')).toStrictEqual(costDisplay(input, 'pay_per_use'));
+    expect(costDisplay({}, 'pay_per_use')).toStrictEqual({ kind: 'none' });
+    const odd = costDisplay({ reported: Number.NaN, equivalent: Number.NaN }, 'included');
+    expect(odd).toStrictEqual({ kind: 'none' });
+    expect(JSON.stringify(costDisplay({ reported: Number.NaN, computed: 1 }, 'pay_per_use'))).not.toContain('null');
   });
 });
 

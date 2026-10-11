@@ -108,3 +108,5 @@ text only); bucket → `Meter` (`label` = `name`, `unit: 'fraction'`, `remaining
 `resetsAt` = `reset_time`, `resetPrecision: 'exact'`, `source: 'polled'`). `window` (`weekly`, `5h`) is kept as
 data; `durationMs` is set only from a value the CLI states, never from the window name. The parser must
 read both stdout and stderr (the probe run showed the payload on stderr).
+
+Addendum 2026-10-11 (#968): the spend ledger holds real currency only. `recordSpend` runs for usage with `costKind` `reported` or `computed`, or with no kind; `equivalent` (subscriptions, custom endpoints, the GLM preset) and `credits` are never written, so an API-equivalent figure cannot move a cap or a project ceiling. Limit: the `spend` table has no kind column and is not backfilled — rows written before this change may include equivalent figures from such routes and can overstate a project ceiling until their month passes. Usage summaries show each kind separately (`costByKind`); only `reported` and `computed` are called money.

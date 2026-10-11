@@ -123,4 +123,28 @@ describe('usage.summary query', () => {
     const neither = (await api.query({ type: 'usage.summary' })) as { readonly ok: false; readonly code: string };
     expect(neither).toEqual({ ok: false, code: 'bad_input' });
   });
+
+  it('A-291: the view carries costByKind, with an equivalent figure kept apart from reported money', async () => {
+    const deps = createFakeDeps();
+    await deps.projects.save({ id: PROJECT_A, name: 'Alpha', mainRepo: slugOf<'repo'>('main'), repos: [slugOf<'repo'>('main')] });
+    await seedWorkOrder(deps, WO_A1, PROJECT_A, 1);
+    await seedRun(deps, {
+      id: RUN_A1,
+      workOrder: WO_A1,
+      stage: slugOf<'stage'>('plan'),
+      startedAt: 1_000,
+      events: [{ type: 'usage', at: 1_100, inputTokens: 10, outputTokens: 5, costUsd: 12, costKind: 'equivalent' }],
+    });
+    await seedRun(deps, {
+      id: RUN_A2,
+      workOrder: WO_A1,
+      stage: slugOf<'stage'>('plan'),
+      startedAt: 2_000,
+      events: [{ type: 'usage', at: 2_100, inputTokens: 10, outputTokens: 5, costUsd: 0.5, costKind: 'reported' }],
+    });
+    const view = (await createApi(deps).query({ type: 'usage.summary', project: 'alpha' })) as UsageSummaryView;
+    expect(view.summary.costByKind).toEqual({ equivalent: 12, reported: 0.5 });
+    expect(view.summary.byStage[0]?.costByKind).toEqual({ equivalent: 12, reported: 0.5 });
+    expect('costUsd' in view.summary).toBe(false);
+  });
 });

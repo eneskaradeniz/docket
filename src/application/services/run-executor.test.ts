@@ -15,6 +15,7 @@ import {
   type AgentEvent,
   type Billing,
   type CatalogModel,
+  type CostKind,
   type EpochMs,
   type LimitClass,
   type LimitPolicy,
@@ -65,6 +66,7 @@ import {
 } from '../ports/fakes';
 
 import { grantSpendConsent, revokeSpendConsent } from '../use-cases';
+import { dispatcherTick } from './dispatcher';
 import { executeRun, type PermissionGate } from './run-executor';
 
 // --- fixtures ---------------------------------------------------------------------------------------
@@ -188,13 +190,13 @@ const ask = (): AgentEvent => ({
   target: '/tmp/x',
   options: ['allow', 'deny'],
 });
-const usage = (costUsd?: number): AgentEvent => ({
+const usage = (costUsd?: number, costKind: CostKind | 'absent' = 'reported'): AgentEvent => ({
   type: 'usage',
   at: at(4),
   inputTokens: 120,
   outputTokens: 80,
   cachedInputTokens: 20,
-  ...(costUsd !== undefined ? { costUsd, costKind: 'reported' as const } : {}),
+  ...(costUsd !== undefined ? { costUsd, ...(costKind === 'absent' ? {} : { costKind }) } : {}),
 });
 const emptyUsage = (): AgentEvent => ({ type: 'usage', at: at(4), inputTokens: 0, outputTokens: 0 });
 const quotaSignal = (durationMs: number, used = 40): AgentEvent => ({
@@ -223,7 +225,7 @@ const finished = (reason: 'completed' | 'failed' | 'cancelled' | 'limit'): Agent
 // --- harness ----------------------------------------------------------------------------------------
 
 interface Harness {
-  readonly deps: Parameters<typeof executeRun>[0];
+  readonly deps: ReturnType<typeof createFakeDeps>;
   readonly clock: FakeClock;
   readonly ids: FakeIdGen;
   readonly log: FakeEventLog;
@@ -787,6 +789,47 @@ describe('executeRun', () => {
     const window = { from: 0, to: T0 + 10_000 };
     expect(await h.accounts.spend({ accountId: ACCOUNT, repo: REPO, workOrderId: WORK_ORDER, ...window })).toBe(1.75);
     expect(await h.accounts.spend({ repo: slugOf<'repo'>('elsewhere'), ...window })).toBe(0);
+  });
+
+  it('A-288: spend is recorded for reported, computed and kind-absent usage, never for equivalent or credits', async () => {
+    const window = { from: 0, to: T0 + 10_000 };
+    const spent = async (events: readonly AgentEvent[]): Promise<number> => {
+      const h = await harness({ script: [...events, finished('completed')] });
+      await executeRun(h.deps, permissionGate().permissions, INPUT);
+      return h.accounts.spend({ ...window });
+    };
+    expect(await spent([usage(1, 'reported')])).toBe(1);
+    expect(await spent([usage(2, 'computed')])).toBe(2);
+    expect(await spent([usage(4, 'absent')])).toBe(4);
+    expect(await spent([usage(8, 'equivalent')])).toBe(0);
+    expect(await spent([usage(16, 'credits')])).toBe(0);
+    // Only the money part of a mixed stream lands in the ledger.
+    expect(await spent([usage(1, 'reported'), usage(50, 'equivalent'), usage(2, 'computed'), usage(9, 'credits')])).toBe(3);
+  });
+
+  it('A-290: an equivalent run leaves the project month ceiling untouched, so the dispatcher still admits work a mixed-sum ledger would hold', async () => {
+    const project = slugOf<'project'>('proj');
+    const second = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FAF');
+    const admitted = async (kind: CostKind): Promise<readonly { readonly kind: string }[]> => {
+      const h = await harness({ script: [usage(50, kind), finished('completed')] });
+      await h.deps.projects.save({
+        id: project,
+        name: 'Proj',
+        mainRepo: REPO,
+        repos: [REPO],
+        budget: { amountUsd: 10, warnPercent: 80 },
+      });
+      await h.workOrders.create({ ...WORK_ORDER_RECORD, id: second });
+      await executeRun(h.deps, permissionGate().permissions, INPUT);
+      await h.deps.queue.put({ ...ITEM, id: ulidOf<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5FAG'), workOrderId: second });
+      const result = await dispatcherTick(h.deps, { limits: { global: 4, perRepo: 3, perAccount: {} } }, () => undefined);
+      return result.decisions;
+    };
+    expect(await admitted('equivalent')).toStrictEqual([{ item: ulidOf<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5FAG'), kind: 'start' }]);
+    // The same dollars as real money hold the item, which proves the ceiling was reachable.
+    expect(await admitted('reported')).toStrictEqual([
+      { item: ulidOf<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5FAG'), kind: 'wait', reason: 'budget' },
+    ]);
   });
 
   it('A-16: a usage event without a cost records no spend', async () => {

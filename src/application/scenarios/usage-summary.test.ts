@@ -137,8 +137,8 @@ describe('usage summary read model', () => {
     expect(res.value.runsWithoutUsage).toBe(0);
     // The stage fold really crossed stages and attempts, not just summed the totals.
     expect(res.value.summary.byStage).toEqual([
-      { stage: 'plan', runs: 2, maxAttempt: 2, tokens: 1_550, inputTokens: 1_300, cachedInputTokens: 400, costUsd: 0.01 },
-      { stage: 'implement', runs: 1, maxAttempt: 1, tokens: 5_800, inputTokens: 5_000, cachedInputTokens: 1_000, costUsd: 0.02 },
+      { stage: 'plan', runs: 2, maxAttempt: 2, tokens: 1_550, inputTokens: 1_300, cachedInputTokens: 400, costByKind: { reported: 0.01 } },
+      { stage: 'implement', runs: 1, maxAttempt: 1, tokens: 5_800, inputTokens: 5_000, cachedInputTokens: 1_000, costByKind: { reported: 0.02 } },
     ]);
   });
 
@@ -148,7 +148,7 @@ describe('usage summary read model', () => {
     const res = await usageSummary(deps, { workOrder: WO_A });
     if (!res.ok) throw new Error('expected ok');
     expect(res.value.summary).toEqual({ runs: 0, tokens: 0, inputTokens: 0, cachedInputTokens: 0, byStage: [], planningShare: 0, cacheRatio: 0 });
-    expect('costUsd' in res.value.summary).toBe(false);
+    expect('costByKind' in res.value.summary).toBe(false);
     expect(res.value.findings).toEqual([]);
     expect(res.value.runsWithoutUsage).toBe(0);
   });
@@ -192,7 +192,7 @@ describe('usage summary read model', () => {
     expect(res.value.summary.tokens).toBe(6_800);
     expect(res.value.summary.byStage).toContainEqual({ stage: 'review', runs: 1, maxAttempt: 1, tokens: 0, inputTokens: 0, cachedInputTokens: 0 });
     // Cost is summed only over the runs that reported one — the costless run never dilutes it as zero.
-    expect(res.value.summary.costUsd).toBe(0.05);
+    expect(res.value.summary.costByKind).toEqual({ computed: 0.05 });
   });
 
   it('A-281: when no run reports a cost the summary carries no cost key at all', async () => {
@@ -208,6 +208,20 @@ describe('usage summary read model', () => {
 
     const res = await usageSummary(deps, { workOrder: WO_A });
     if (!res.ok) throw new Error('expected ok');
+    expect('costByKind' in res.value.summary).toBe(false);
+  });
+
+  it('A-291: usage.summary splits cost by kind — reported, equivalent and a kind-less cost never share a total', async () => {
+    const { deps } = await seed(WO_A, PROJECT_A, [
+      { id: RUN_1, stage: slugOf<'stage'>('plan'), attempt: 1, startedAt: 1_000, events: [usageEvent(1_100, { inputTokens: 10, outputTokens: 5, costUsd: 0.5, costKind: 'reported' })] },
+      { id: RUN_2, stage: slugOf<'stage'>('plan'), attempt: 2, startedAt: 2_000, events: [usageEvent(2_100, { inputTokens: 10, outputTokens: 5, costUsd: 30, costKind: 'equivalent' })] },
+      { id: RUN_3, stage: slugOf<'stage'>('implement'), attempt: 1, startedAt: 3_000, events: [usageEvent(3_100, { inputTokens: 10, outputTokens: 5, costUsd: 0.25 })] },
+    ]);
+    const res = await usageSummary(deps, { workOrder: WO_A });
+    if (!res.ok) throw new Error('expected ok');
+    expect(res.value.summary.costByKind).toEqual({ reported: 0.5, equivalent: 30, unspecified: 0.25 });
+    expect(res.value.summary.byStage.find((row) => row.stage === 'plan')?.costByKind).toEqual({ reported: 0.5, equivalent: 30 });
+    expect(res.value.summary.byStage.find((row) => row.stage === 'implement')?.costByKind).toEqual({ unspecified: 0.25 });
     expect('costUsd' in res.value.summary).toBe(false);
   });
 

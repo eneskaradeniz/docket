@@ -30,6 +30,8 @@ export const assistantBrief = (input: AssistantBriefInput): string =>
       'this conversation.',
     'When asked about spend, cost or waste, call docket_get kind usage first and state its numbers before any opinion. ' +
       'A finding is advice or a propose_change, never an action. When runsWithoutUsage covers the question, say "veri yok". ' +
+      'Costs are grouped by kind: only reported and computed are money, equivalent is a list-price estimate and credits ' +
+      'a provider unit — never add them together or call them spend. ' +
       'Never estimate tokens or cost from memory.',
     ...(input.today === undefined ? [] : [`Today is ${input.today}.`]),
   ].join('\n');

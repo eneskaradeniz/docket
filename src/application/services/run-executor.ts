@@ -553,7 +553,9 @@ async function driveRun(
         if (cadenceDue()) await checkpoint();
         break;
       case 'usage':
-        if (event.costUsd !== undefined) {
+        // The ledger is real currency: an equivalent (list-price) or credit figure is never spend,
+        // while a provider that names no kind is treated as money so a cap never under-counts.
+        if (event.costUsd !== undefined && event.costKind !== 'equivalent' && event.costKind !== 'credits') {
           // Spend is attributed to the project the work order was opened under — the record, not
           // the queue item, carries it (a fallback item may outlive re-registration).
           const workOrder = await deps.workOrders.get(item.workOrderId);
