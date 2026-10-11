@@ -7,13 +7,15 @@ import { useEffect, useLayoutEffect, useReducer, useRef, useState, type ReactNod
 
 import type { CreateOutcome } from '../stores/board';
 import { failureKey } from '../stores/results';
-import { toast } from '../stores/toasts';
+import { toastOutcome } from '../stores/toasts';
 import {
   flowChoices,
+  flowToOpen,
   openedWorkOrderForm,
   STANDARD_FLOW,
   workOrderDraft,
   workOrderFormReducer,
+  workOrderOpenToast,
   type FlowOption,
 } from '../stores/work-order-window';
 import { t, type Locale } from '../labels/t';
@@ -212,22 +214,25 @@ export function NewWorkOrderWindow({
       dispatch({ type: 'invalid', field: 'title_required' });
       return;
     }
-    const flow = form.flow.trim() === '' ? '' : form.flow;
-    if (flow === '') {
+    const chosen = form.flow.trim() === '' ? '' : form.flow;
+    if (chosen === '') {
       dispatch({ type: 'invalid', field: 'flow_required' });
       return;
     }
+    const flow = flowToOpen(chosen, options);
     void onCreate({ title, flow }).then((outcome) => {
+      if (!outcome.ok && 'validation' in outcome) {
+        dispatch({ type: 'invalid', field: outcome.validation });
+        return;
+      }
+      // Success and a command refusal both leave through the command-result table. A refusal
+      // keeps the window up so the same sentence can sit beside the field.
+      toastOutcome(locale, workOrderOpenToast(outcome));
       if (outcome.ok) {
         workOrderDraft.clear();
         dispatch({ type: 'created' });
-        toast({ type: 'success', text: t(locale, 'success.workOrder.open') });
         onCreated(title);
         onClose();
-        return;
-      }
-      if ('validation' in outcome) {
-        dispatch({ type: 'invalid', field: outcome.validation });
         return;
       }
       dispatch({ type: 'failed', code: outcome.code });

@@ -6,13 +6,16 @@ import { describe, expect, it } from 'vitest';
 import { SETTINGS_SECTIONS } from '../screens/settings';
 import { t } from '../labels/t';
 import type { LaunchStore } from '../stores/chat-launcher';
+import { commandResultKey } from '../stores/results';
 import {
   boardFlowChoices,
+  flowToOpen,
   focusTarget,
   openedWorkOrderForm,
   STANDARD_FLOW,
   workOrderDraft,
   workOrderFormReducer,
+  workOrderOpenToast,
 } from '../stores/work-order-window';
 import { ChatLauncherContext } from './chat-launcher';
 import { NewWorkOrderWindow } from './new-work-order-window';
@@ -122,6 +125,29 @@ describe('new work order window (U-245, U-246, U-247)', () => {
     expect(focusTarget('Yok', [{ id: 'wo-1', title: 'Kapı' }])).toBeNull();
     expect(source('board.tsx')).toContain('focusTarget');
     expect(source('board.tsx')).toContain('.focus()');
+  });
+
+  it('U-247: a workOrder.open result is toasted through commandResultKey, success and failure alike', () => {
+    const opened = workOrderOpenToast({ ok: true, id: 'wo-1' });
+    expect(opened).toEqual({
+      result: { ok: true, id: 'wo-1' },
+      labelKey: commandResultKey('workOrder.open', { ok: true }),
+    });
+    expect(t('tr', opened.labelKey)).toBe('İş emri açıldı.');
+    const refused = workOrderOpenToast({ ok: false, code: 'flow_not_enabled' });
+    expect(refused.labelKey).toBe(commandResultKey('workOrder.open', { ok: false, code: 'flow_not_enabled' }));
+    expect(refused.result).toEqual({ ok: false, code: 'flow_not_enabled' });
+    // The window publishes that notice; it does not invent the success sentence itself.
+    const windowSource = source('new-work-order-window.tsx');
+    expect(windowSource).toContain('toastOutcome(');
+    expect(windowSource).toContain('workOrderOpenToast(');
+    expect(windowSource).not.toContain("t(locale, 'success.workOrder.open')");
+    // `standard` is the standing choice. A project whose only other flow is the one the board
+    // loaded cannot open the literal id, so the command uses that flow.
+    const known = boardFlowChoices('standart-akis');
+    expect(flowToOpen(STANDARD_FLOW, known)).toBe('standart-akis');
+    expect(flowToOpen('standart-akis', known)).toBe('standart-akis');
+    expect(flowToOpen(STANDARD_FLOW, boardFlowChoices('standard'))).toBe(STANDARD_FLOW);
   });
 });
 
