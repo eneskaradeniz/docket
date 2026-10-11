@@ -1203,7 +1203,7 @@ for (const [sizeName, theme] of combos) {
     const slug = label.toLowerCase().replace(/[^a-z0-9ğüşıöç]+/g, '-').replace(/^-|-$/g, '');
     await page.screenshot({ path: join(OUT, `J-14-${stepNo}-${slug}.png`) });
   };
-  const title = "J-14: Artifact'lar: kartlar, Türkçe arama, tür süzgeci, sabitleme, Sabitler, aç ve ‹ Geri";
+  const title = "J-14: Çıktılar: kartlar, Türkçe arama, tür süzgeci, sabitleme, Sabitler, aç ve ‹ Geri";
   total += 1;
   try {
     // The sidebar row between Ara and Telefon carries the total count (the world holds two pages).
@@ -1212,7 +1212,7 @@ for (const [sizeName, theme] of combos) {
     await row.locator('[data-library-count]').filter({ hasText: '2' }).waitFor({ state: 'visible', timeout: SCAN_WAIT });
     await row.click({ timeout: WAIT });
     await screen.waitFor({ state: 'visible', timeout: SCAN_WAIT });
-    assert.equal(await row.getAttribute('aria-current'), 'page', "the Artifact'lar row is current on the library");
+    assert.equal(await row.getAttribute('aria-current'), 'page', "the Çıktılar row is current on the library");
 
     // Both pages are cards, each with the chips its data carries.
     await cardsAre([seed.pageId, seed.notePageId], 'the full library');

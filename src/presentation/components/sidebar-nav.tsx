@@ -1,4 +1,4 @@
-// components/sidebar-nav.tsx — the sidebar's five nav rows (U-24, U-84): Anasayfa, Ara, Artifact'lar, Telefon
+// components/sidebar-nav.tsx — the sidebar's five nav rows (U-24, U-84): Anasayfa, Ara, Öneriler, Çıktılar, Telefon
 // and Ayarlar, each icon + label in a 32px row, above the project tree. Anasayfa goes to the cockpit
 // and carries the shell's attention badge on its right edge (U-10 — the badge follows the row
 // that owns the cockpit); Ara opens the centered search palette, its ⌘K hint right-aligned and
@@ -181,6 +181,24 @@ export function SidebarNav({
         {badge !== null ? <BadgePill count={badge.count} locale={locale} /> : null}
       </button>
 
+      <button
+        type="button"
+        onPointerDown={() => {
+          pointerOpenRef.current = true;
+        }}
+        onClick={() => {
+          const origin: PaletteOrigin = pointerOpenRef.current ? 'pointer' : 'keyboard';
+          pointerOpenRef.current = false;
+          onSearch(origin);
+        }}
+        aria-current={searchCurrent ? 'true' : undefined}
+        className={rowClass(searchCurrent)}
+      >
+        <SearchIcon />
+        <span className="truncate">{t(locale, 'nav.search')}</span>
+        <span className="ml-auto flex-none font-mono text-[12px] text-inkdim">{t(locale, 'nav.search.kbd')}</span>
+      </button>
+
       {onProposals !== undefined ? (
         <button
           type="button"
@@ -201,24 +219,6 @@ export function SidebarNav({
           ) : null}
         </button>
       ) : null}
-
-      <button
-        type="button"
-        onPointerDown={() => {
-          pointerOpenRef.current = true;
-        }}
-        onClick={() => {
-          const origin: PaletteOrigin = pointerOpenRef.current ? 'pointer' : 'keyboard';
-          pointerOpenRef.current = false;
-          onSearch(origin);
-        }}
-        aria-current={searchCurrent ? 'true' : undefined}
-        className={rowClass(searchCurrent)}
-      >
-        <SearchIcon />
-        <span className="truncate">{t(locale, 'nav.search')}</span>
-        <span className="ml-auto flex-none font-mono text-[12px] text-inkdim">{t(locale, 'nav.search.kbd')}</span>
-      </button>
 
       <button
         type="button"

@@ -138,7 +138,7 @@ function DiffRegion({ detail, locale }: { readonly detail: ProposalDetailView; r
       data-proposals-diff=""
       role="region"
       aria-label={t(locale, 'proposals.diff.label')}
-      className="max-h-[26rem] overflow-auto bg-band font-mono text-[0.75rem] leading-[1.25rem] whitespace-pre text-ink"
+      className="max-h-[max(26rem,calc(100vh-22rem))] overflow-auto bg-band font-mono text-[0.75rem] leading-[1.25rem] whitespace-pre text-ink"
     >
       <div className="min-w-max">
         {detail.lines.map((line, index) => (

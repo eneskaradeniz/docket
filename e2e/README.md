@@ -2,6 +2,9 @@
 
 e2e worlds pin dispatch.mode=fixed so results never depend on the host's load.
 
+The design seed also publishes one two-version page, approval pending, on İE-0033 (an order no
+other walk opens) — the page `test:layout`'s `page:` lines measure through the Sayfalar row.
+
 - `npm run design` — builds the app (skip with `--no-build`), seeds a fresh throwaway data dir,
   prints its path, and opens the built app on it with the seed's fake agent binary; quitting the
   window ends the run and the temp dir stays in place. Pure-part tests:
