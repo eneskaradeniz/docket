@@ -5,7 +5,9 @@ import {
   CHECKPOINT_MIN_INTERVAL_MS,
   decideOnLimit,
   definitionsDigest,
+  deriveWorkOrderState,
   isUlid,
+  nextAction,
   parseSlug,
   parseUlid,
   RESUME_JITTER_MS,
@@ -17,6 +19,7 @@ import {
   type CatalogModel,
   type CostKind,
   type EpochMs,
+  type FlowDef,
   type LimitClass,
   type LimitPolicy,
   type Meter,
@@ -2150,5 +2153,104 @@ describe('executeRun docket tools attachment', () => {
       expect(theRequest(h.transport).capabilities).toEqual([CAPABILITY]);
       expect(h.runTokens.minted()).toEqual([]);
     });
+  });
+});
+
+// --- a completed run with nothing inside its write scope (A-306 … A-309) ---------------------------
+
+const PLAN = slugOf<'stage'>('plan');
+const PLAN_GATE = slugOf<'gate'>('plan-approval');
+
+const plannerRole = (scope: RoleDef['writeScope']): RoleDef => ({
+  ...ROLE,
+  id: slugOf<'role'>('planner'),
+  name: 'Planner',
+  writeScope: scope,
+});
+
+const planFlow = (onFail?: { readonly goto: StageSlug; readonly maxAttempts: number }): FlowDef => ({
+  id: slugOf<'flow'>('standard'),
+  name: 'Standart',
+  stages: [
+    {
+      id: PLAN,
+      name: 'Plan',
+      role: slugOf<'role'>('planner'),
+      exit: [{ kind: 'human', id: PLAN_GATE, label: 'Plan onayı' }],
+      ...(onFail !== undefined ? { onFail } : {}),
+    },
+  ],
+});
+
+const planInput = (scope: RoleDef['writeScope']) => ({
+  ...INPUT,
+  role: plannerRole(scope),
+  item: { ...ITEM, stage: PLAN },
+  prompt: 'write the plan',
+});
+
+describe('stage output check', () => {
+  it('A-306: a planner run that finished completed and changed nothing ends failed / no_output, and plan-approval is not pending afterwards', async () => {
+    const h = await harness();
+    const outcome = await executeRun(h.deps, permissionGate().permissions, planInput({ kind: 'docs' }));
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'failed' });
+
+    const runs = await h.runs.listForWorkOrder(WORK_ORDER);
+    const last = runs[runs.length - 1];
+    expect(last?.outcome).toBe('failed');
+    const finished = h.log.entries().filter((entry) => entry.action === 'run.finished');
+    expect(finished.every((entry) => entry.detail?.['reason'] === 'no_output')).toBe(true);
+
+    const flow = planFlow();
+    const state = deriveWorkOrderState(flow, await h.workOrders.events(WORK_ORDER));
+    expect(state.status).toBe('blocked');
+    expect(nextAction(flow, state).kind).not.toBe('await_human');
+  });
+
+  it('A-307: the first no_output triggers one automatic re-run whose input contains the reminder; a second no_output follows onFail or blocks', async () => {
+    const h = await harness();
+    await executeRun(h.deps, permissionGate().permissions, planInput({ kind: 'docs' }));
+    const requests = h.transport.requests();
+    expect(requests).toHaveLength(2);
+    expect(requests[0]?.prompt).not.toContain('Your previous run produced no files');
+    expect(requests[1]?.prompt).toContain('Your previous run produced no files; write the result under docs.');
+
+    const blocked = deriveWorkOrderState(planFlow(), await h.workOrders.events(WORK_ORDER));
+    expect(blocked.status).toBe('blocked');
+    expect(blocked.blockedReason).toBe('run failed');
+
+    const retrying = await harness();
+    await executeRun(retrying.deps, permissionGate().permissions, planInput({ kind: 'docs' }));
+    const flowed = deriveWorkOrderState(
+      planFlow({ goto: PLAN, maxAttempts: 3 }),
+      await retrying.workOrders.events(WORK_ORDER),
+    );
+    expect(flowed.status).toBe('ready');
+    expect(flowed.stage).toBe(PLAN);
+    expect(flowed.attempt).toBe(2);
+  });
+
+  it('A-308: a run that wrote docs/plan.md passes and the human gate turns pending', async () => {
+    const h = await harness({ checkpointDiffs: { '': { files: ['docs/plan.md'], patch: '' } } });
+    const outcome = await executeRun(h.deps, permissionGate().permissions, planInput({ kind: 'docs' }));
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect(h.transport.requests()).toHaveLength(1);
+
+    const flow = planFlow();
+    const state = deriveWorkOrderState(flow, await h.workOrders.events(WORK_ORDER));
+    expect(state.status).toBe('awaiting_human');
+    expect(nextAction(flow, state)).toEqual({ kind: 'await_human', stage: PLAN, gates: [PLAN_GATE] });
+  });
+
+  it('A-309: reviewer and command stages are never judged by this check', async () => {
+    const reviewer = await harness();
+    const reviewed = await executeRun(reviewer.deps, permissionGate().permissions, planInput({ kind: 'none' }));
+    expect(reviewed).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect(reviewer.transport.requests()).toHaveLength(1);
+
+    const command = await harness({ script: [finished('cancelled')] });
+    const cancelled = await executeRun(command.deps, permissionGate().permissions, planInput({ kind: 'docs' }));
+    expect(cancelled).toEqual({ kind: 'finished', outcome: 'cancelled' });
+    expect(command.transport.requests()).toHaveLength(1);
   });
 });

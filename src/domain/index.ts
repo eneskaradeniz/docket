@@ -15,3 +15,4 @@ export * from './flow/index';
 export * from './dispatch/index';
 export * from './roadmap/index';
 export * from './usage/index';
+export * from './stage-output/index';

@@ -412,7 +412,7 @@ describe('limit handoff, three legs over fakes', () => {
     // The implement run's edit also stands in the worktree-base diff the changes gate counts
     // (A-96): one changed file since the base, same file the handoff pack carries.
     h.checkpoints.setBase(id, WORKTREE_BASE);
-    h.checkpoints.setDiff(WORKTREE_BASE, { files: [editedFile], patch: RAW_PATCH });
+    h.checkpoints.setDiff(WORKTREE_BASE, { files: ['docs/plan.md', editedFile], patch: RAW_PATCH });
     h.clock.advance(1_000);
     let view = await viewOf(h.deps, id);
     expectState(view, { status: 'ready', stage: PLAN, pendingGates: [PLAN_APPROVAL] });
