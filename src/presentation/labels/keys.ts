@@ -1006,6 +1006,7 @@ export const LABEL_KEYS = [
   'chat.notice.crash',
   'chat.notice.tools_unavailable',
   'chat.notice.cancelled',
+  'chat.notice.tool_denied',
   'chat.file.video',
   'chat.file.type',
   'chat.file.limit',
