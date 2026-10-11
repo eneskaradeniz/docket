@@ -142,3 +142,40 @@ describe('sparse row → side panel (U-56)', () => {
     expect(src('account-view.tsx')).toContain('@[900px]:col-span-2');
   });
 });
+
+// Every settings section and every main-column screen fills the width it is given: a section's
+// root may not wrap itself in a narrow measure (max-w-*, an inline max-width). The head's text
+// measure is not a section root and lives in window-frame.tsx; a cap on a truncating cell (a
+// version label that clips with an ellipsis) is a cell's own and is not scanned.
+const SETTINGS_SECTION_SOURCES = [
+  'settings.tsx',
+  'settings-cards.tsx',
+  'accounts-sections.tsx',
+  'settings-menu.tsx',
+  'account-groups.tsx',
+  'accounts-scanning.tsx',
+  'role-row.tsx',
+  'setting-row.tsx',
+  'concurrency-section.tsx',
+  'provider-list.tsx',
+  'appearance-rows.tsx',
+] as const;
+const MAIN_COLUMN_SCREENS = [...DATA_SCREENS, 'board.tsx', 'library.tsx', 'proposals.tsx', 'page-viewer.tsx'] as const;
+
+describe('every section fills its width (U-177)', () => {
+  it('U-177: no settings section root carries a max-w cap or an inline max-width', () => {
+    for (const name of SETTINGS_SECTION_SOURCES) {
+      const roots = src(name)
+        .split('\n')
+        .filter((line) => !line.includes('truncate'))
+        .join('\n');
+      expect(roots, name).not.toMatch(/max-w-|maxWidth|max-width/);
+    }
+  });
+
+  it('U-177: no main-column screen carries a max-w cap', () => {
+    for (const name of MAIN_COLUMN_SCREENS) {
+      expect(src(name), name).not.toMatch(/max-w-|maxWidth|max-width/);
+    }
+  });
+});

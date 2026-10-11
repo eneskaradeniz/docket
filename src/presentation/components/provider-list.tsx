@@ -10,6 +10,7 @@ import { providerStatusTone, type ProviderViewRow, type ProvidersStore } from '.
 import { ActionButton } from './action-button';
 import { countedLabel } from './counted-label';
 import { ProviderMark } from './provider-mark';
+import { EmptyCard } from './settings-cards';
 import { StatusLamp } from './status-lamp';
 
 export interface ProviderListProps {
@@ -69,7 +70,7 @@ export function ProviderList({ store, marks, locale }: ProviderListProps) {
       </div>
 
       {empty && !state.scanning && !state.failed ? (
-        <p className="text-[13px] text-inkdim">{t(locale, 'providers.empty')}</p>
+        <EmptyCard mark="providers" title={t(locale, 'providers.empty')} line={t(locale, 'providers.empty.line')} />
       ) : null}
 
       {state.installed.length > 0 ? (

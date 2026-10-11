@@ -76,7 +76,7 @@ describe('U-33a: Asistan sırası add chips', () => {
 
   it('U-33a: with accounts but an empty chain the chips still offer every account beside the empty line', async () => {
     const { html } = await renderChain({ accounts: [account('a1'), account('a2')], bindings: [] });
-    expect(html).toContain('Hesap var ama sıra boş.');
+    expect(html).toContain('>Sıra boş<');
     expect(html).toContain('+ a1');
     expect(html).toContain('+ a2');
   });
