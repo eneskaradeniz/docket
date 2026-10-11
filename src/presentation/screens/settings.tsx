@@ -127,7 +127,6 @@ const SECTION_KEY: Readonly<Record<SettingsSection, LabelKey>> = {
   concurrency: 'settings.section.concurrency',
   providers: 'settings.section.providers',
   appearance: 'settings.section.appearance',
-  phone: 'settings.section.phone',
   update: 'settings.section.update',
 };
 
@@ -138,7 +137,6 @@ const SECTION_HINT_KEY: Readonly<Record<SettingsSection, LabelKey>> = {
   concurrency: 'settings.hint.concurrency',
   providers: 'settings.hint.providers',
   appearance: 'settings.hint.appearance',
-  phone: 'settings.hint.phone',
   update: 'settings.hint.update',
 };
 
@@ -647,26 +645,6 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
           ) : null}
           {section === 'providers' ? <ProviderList store={providers} marks={marks} locale={locale} /> : null}
           {section === 'appearance' ? <AppearanceRows locale={locale} localeStore={localeStore} themeStore={themeStore} /> : null}
-          {section === 'phone' ? (
-            // The honest status, no fake data: the phone link feature does not exist yet, so the section
-            // says so and offers nothing that pretends otherwise (U-24).
-            <SettingRows>
-              <SettingRow
-                framed
-                locale={locale}
-                title={t(locale, 'settings.phone.none')}
-                purpose={t(locale, 'settings.phone.explain')}
-                control={
-                  <span className="flex items-center gap-3">
-                    <StatusLamp tone="dim">{t(locale, 'settings.phone.soon')}</StatusLamp>
-                    <ActionButton variant="neutral" size="md" disabled>
-                      {t(locale, 'settings.phone.pair')}
-                    </ActionButton>
-                  </span>
-                }
-              />
-            </SettingRows>
-          ) : null}
           {section === 'update' ? updateSection : null}
         </WindowFrame>
       </div>

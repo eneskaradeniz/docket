@@ -745,3 +745,233 @@ describe('deriveWorkOrderState — acceptance walk', () => {
     expect(() => derive(flow, events)).not.toThrow();
   });
 });
+
+// A stage whose only exit is a human gate and which declares no onFail — the case a reject used
+// to block on the first try.
+const HUMAN_RETRY_FLOW: FlowDef = {
+  id: flowOf('human-retry'),
+  name: 'Human retry',
+  stages: [{ id: stageOf('plan'), name: 'Plan', role: roleOf('planner'), exit: [HUMAN_PLAN] }],
+};
+
+const CLOSE_ONLY_FLOW: FlowDef = {
+  id: flowOf('close-only'),
+  name: 'Close only',
+  stages: [{ id: stageOf('close'), name: 'Close', role: null, exit: [HUMAN_CLOSURE] }],
+};
+
+const DECLARED_GOTO_FLOW: FlowDef = {
+  id: flowOf('declared-goto'),
+  name: 'Declared goto',
+  stages: [
+    {
+      id: stageOf('plan'),
+      name: 'Plan',
+      role: roleOf('planner'),
+      exit: [HUMAN_PLAN],
+      onFail: { goto: stageOf('fix'), maxAttempts: 3 },
+    },
+    { id: stageOf('fix'), name: 'Fix', role: roleOf('developer'), exit: [COMMAND_LINT] },
+  ],
+};
+
+const DECLARED_ONCE_FLOW: FlowDef = {
+  id: flowOf('declared-once'),
+  name: 'Declared once',
+  stages: [
+    {
+      id: stageOf('plan'),
+      name: 'Plan',
+      role: roleOf('planner'),
+      exit: [HUMAN_PLAN],
+      onFail: { goto: stageOf('plan'), maxAttempts: 1 },
+    },
+  ],
+};
+
+const MIXED_NO_ONFAIL: FlowDef = {
+  id: flowOf('mixed-no-onfail'),
+  name: 'Mixed no onFail',
+  stages: [
+    {
+      id: stageOf('mix'),
+      name: 'Mix',
+      role: roleOf('developer'),
+      exit: [COMMAND_TESTS, SCAN_SECRETS, AGENT_VERDICT, HUMAN_PLAN],
+    },
+  ],
+};
+
+const planRejects = (times: number, reason: string): readonly WorkOrderEvent[] => {
+  const events: WorkOrderEvent[] = [created()];
+  for (let attempt = 1; attempt <= times; attempt += 1) {
+    events.push(runStarted('plan', attempt, 20 + attempt), runFinished('succeeded', attempt, 30 + attempt));
+    events.push(gateFailed('plan', 'plan-approval', reason, 40 + attempt));
+  }
+  return events;
+};
+
+describe('deriveWorkOrderState — rejected human gates (R-120, R-121, R-122)', () => {
+  it('R-120: a rejected human gate on a stage without onFail re-enters that stage at attempt + 1', () => {
+    expect(derive(HUMAN_RETRY_FLOW, planRejects(1, 'plan eksik'))).toEqual({
+      status: 'ready',
+      stage: 'plan',
+      attempt: 2,
+      pendingGates: ['plan-approval'],
+    });
+    expect(derive(HUMAN_RETRY_FLOW, planRejects(2, 'plan eksik'))).toEqual({
+      status: 'ready',
+      stage: 'plan',
+      attempt: 3,
+      pendingGates: ['plan-approval'],
+    });
+  });
+
+  it('R-120: a role-less human stage re-opens awaiting the same gate, and the third reject blocks with the gate reason', () => {
+    const once = derive(CLOSE_ONLY_FLOW, [created(), gateFailed('close', 'closure', 'not yet')]);
+    expect(once).toEqual({ status: 'awaiting_human', stage: 'close', attempt: 2, pendingGates: ['closure'] });
+    const twice = derive(CLOSE_ONLY_FLOW, [created(), gateFailed('close', 'closure', 'not yet'), gateFailed('close', 'closure', 'still no', 41)]);
+    expect(twice).toEqual({ status: 'awaiting_human', stage: 'close', attempt: 3, pendingGates: ['closure'] });
+    const spent = derive(CLOSE_ONLY_FLOW, [
+      created(),
+      gateFailed('close', 'closure', 'not yet'),
+      gateFailed('close', 'closure', 'still no', 41),
+      gateFailed('close', 'closure', 'give up', 42),
+    ]);
+    expect(spent).toEqual({
+      status: 'blocked',
+      stage: 'close',
+      attempt: 3,
+      pendingGates: ['closure'],
+      blockedReason: 'gate "closure" failed: give up',
+    });
+  });
+
+  it('R-120: the blocking reason keeps the note from the reject that spent the attempts', () => {
+    const spent = derive(HUMAN_RETRY_FLOW, planRejects(3, 'plan eksik'));
+    expect(spent.status).toBe('blocked');
+    expect(spent.stage).toBe('plan');
+    expect(spent.attempt).toBe(3);
+    expect(spent.blockedReason).toBe('gate "plan-approval" failed: plan eksik');
+  });
+
+  it('R-121: a declared onFail keeps its goto and its limit; the implicit retry does not replace it', () => {
+    const jumped = derive(DECLARED_GOTO_FLOW, [
+      created(),
+      runStarted('plan'),
+      runFinished('succeeded'),
+      gateFailed('plan', 'plan-approval', 'send it back'),
+    ]);
+    expect(jumped).toEqual({ status: 'ready', stage: 'fix', attempt: 1, pendingGates: ['lint'] });
+
+    const capped = derive(DECLARED_ONCE_FLOW, [
+      created(),
+      runStarted('plan'),
+      runFinished('succeeded'),
+      gateFailed('plan', 'plan-approval', 'once'),
+    ]);
+    expect(capped.status).toBe('blocked');
+    expect(capped.attempt).toBe(1);
+    expect(capped.blockedReason).toBe('gate "plan-approval" failed: once');
+  });
+
+  it('R-121: command, secret_scan, agent_verdict and page_approval failures without onFail still block', () => {
+    const atGate = [created(), runStarted('mix'), runFinished('succeeded')];
+    for (const gate of ['tests', 'secrets', 'verdict'] as const) {
+      const blocked = derive(MIXED_NO_ONFAIL, [...atGate, gateFailed('mix', gate, 'no')]);
+      expect(blocked.status, gate).toBe('blocked');
+      expect(blocked.attempt, gate).toBe(1);
+      expect(blocked.blockedReason, gate).toBe(`gate "${gate}" failed: no`);
+    }
+    const page = derive(PAGE_FLOW, [
+      created(),
+      runStarted('research'),
+      runFinished('succeeded'),
+      gateFailed('research', 'findings', 'rejected'),
+    ]);
+    expect(page.status).toBe('blocked');
+    expect(page.attempt).toBe(1);
+  });
+
+  it('R-121: a human reject on a mixed stage without onFail still retries; a command reject on that stage does not', () => {
+    const passedCommand = derive(MIXED_NO_ONFAIL, [
+      created(),
+      runStarted('mix'),
+      runFinished('succeeded'),
+      gatePassed('mix', 'tests'),
+      gatePassed('mix', 'secrets'),
+      gatePassed('mix', 'verdict'),
+      gateFailed('mix', 'plan-approval', 'rework'),
+    ]);
+    expect(passedCommand).toEqual({
+      status: 'ready',
+      stage: 'mix',
+      attempt: 2,
+      pendingGates: ['tests', 'secrets', 'verdict', 'plan-approval'],
+    });
+  });
+
+  it('R-122: retry accounting is pure and survives cancelled runs and unblocked events across event orders', () => {
+    const reason = 'plan eksik';
+    const twoRejects: readonly WorkOrderEvent[] = planRejects(2, reason);
+    const bare = derive(HUMAN_RETRY_FLOW, twoRejects);
+
+    const noiseAt = (at: EpochMs): readonly WorkOrderEvent[] => [
+      runStarted('plan', bare.attempt, at),
+      runFinished('cancelled', bare.attempt, at + 1),
+      blockedEvent('hold', at + 2),
+      gateFailed('plan', 'plan-approval', 'ignored while blocked', at + 3),
+      runStarted('elsewhere', 1, at + 4),
+      unblockedEvent(at + 5),
+    ];
+
+    const insertAt = (events: readonly WorkOrderEvent[], index: number, extra: readonly WorkOrderEvent[]): WorkOrderEvent[] => [
+      ...events.slice(0, index),
+      ...extra,
+      ...events.slice(index),
+    ];
+
+    const gaps = [0, 1, twoRejects.length];
+    for (const index of gaps) {
+      const ordered = insertAt(twoRejects, index, noiseAt(200 + index));
+      const frozen: readonly WorkOrderEvent[] = Object.freeze(ordered.map((event) => Object.freeze({ ...event })));
+      const text = JSON.stringify(frozen);
+      const once = derive(HUMAN_RETRY_FLOW, frozen);
+      const twice = derive(HUMAN_RETRY_FLOW, frozen);
+      expect(twice).toEqual(once);
+      expect(JSON.stringify(frozen)).toBe(text);
+      expect(once.attempt).toBe(bare.attempt);
+      expect(once.stage).toBe(bare.stage);
+      expect(once.status).toBe(bare.status);
+    }
+
+    const spent = planRejects(3, reason);
+    const blocked = derive(HUMAN_RETRY_FLOW, spent);
+    expect(blocked.status).toBe('blocked');
+    const restored = derive(HUMAN_RETRY_FLOW, [...spent, unblockedEvent(90)]);
+    expect(restored).toEqual(derive(HUMAN_RETRY_FLOW, spent.slice(0, -1)));
+
+    const withCancel = [
+      created(),
+      runStarted('plan', 1, 20),
+      runFinished('succeeded', 1, 30),
+      gateFailed('plan', 'plan-approval', reason, 40),
+      runStarted('plan', 2, 50),
+      runFinished('cancelled', 2, 51),
+      runStarted('plan', 2, 60),
+      runFinished('succeeded', 2, 70),
+      gateFailed('plan', 'plan-approval', reason, 80),
+    ];
+    expect(derive(HUMAN_RETRY_FLOW, withCancel).attempt).toBe(derive(HUMAN_RETRY_FLOW, planRejects(2, reason)).attempt);
+
+    const orders: readonly (readonly WorkOrderEvent[])[] = [
+      [blockedEvent('hold', 1), unblockedEvent(2), runFinished('cancelled', 1, 3)],
+      [runFinished('cancelled', 1, 1), blockedEvent('hold', 2), unblockedEvent(3)],
+      [runStarted('plan', 9, 1), runFinished('cancelled', 9, 2), blockedEvent('hold', 3), gateFailed('other', 'tests', 'x', 4), unblockedEvent(5)],
+    ];
+    const anchor = derive(HUMAN_RETRY_FLOW, twoRejects);
+    for (const tail of orders) {
+      expect(derive(HUMAN_RETRY_FLOW, [...twoRejects, ...tail])).toEqual(anchor);
+    }
+  });
+});

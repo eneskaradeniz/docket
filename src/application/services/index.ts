@@ -18,3 +18,4 @@ export * from './mcp-attach';
 export * from './assistant-brief';
 export * from './assistant-role';
 export * from './chat-runner';
+export * from './operator-feedback';

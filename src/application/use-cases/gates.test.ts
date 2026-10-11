@@ -382,7 +382,7 @@ describe('decideHumanGate', () => {
     expect(isUlid(audit.id)).toBe(true);
   });
 
-  it('A-8: rejecting fails the gate with the note as the reason and blocks the work order', async () => {
+  it('A-8: rejecting fails the gate with the note as the reason and re-opens the stage', async () => {
     const h = makeHarness();
     await createIn(h, 'human-flow');
 
@@ -394,12 +394,49 @@ describe('decideHumanGate', () => {
       actor: USER,
     });
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.status).toBe('blocked');
-    expect(result.value.blockedReason).toBe('gate "approve-me" failed: needs more detail');
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        status: 'awaiting_human',
+        stage: slugOf('check'),
+        attempt: 2,
+        pendingGates: [slugOf('approve-me')],
+      },
+    });
     const events = await eventsOf(h);
     expect(events[1]).toMatchObject({ verdict: { status: 'failed', reason: 'needs more detail' } });
+  });
+
+  it('A-304: a secret-shaped note is redacted in the stored verdict and a 2000-character note is cut to 500', async () => {
+    const token = 'sk-' + 'k'.repeat(32);
+    const h = makeHarness();
+    await createIn(h, 'human-flow');
+
+    const secretNote = await decideHumanGate(h.deps, {
+      id: WORK_ORDER,
+      gate: slugOf('approve-me'),
+      decision: 'rejected',
+      note: `keep ${token} tail`,
+      actor: USER,
+    });
+    expect(secretNote.ok).toBe(true);
+    const afterSecret = await eventsOf(h);
+    expect(JSON.stringify(afterSecret)).not.toContain(token);
+    expect(afterSecret[1]).toMatchObject({ verdict: { status: 'failed', reason: 'keep [redacted] tail' } });
+
+    const long = `${'a'.repeat(2000)}TAIL`;
+    const cut = await decideHumanGate(h.deps, {
+      id: WORK_ORDER,
+      gate: slugOf('approve-me'),
+      decision: 'rejected',
+      note: long,
+      actor: USER,
+    });
+    expect(cut.ok).toBe(true);
+    const afterCut = await eventsOf(h);
+    const stored = afterCut[afterCut.length - 1];
+    expect(stored).toMatchObject({ verdict: { status: 'failed', reason: 'a'.repeat(500) } });
+    expect(JSON.stringify(stored)).not.toContain('TAIL');
   });
 
   it('A-8: rejecting without a note fails with the reason "rejected"', async () => {
