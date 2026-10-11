@@ -233,6 +233,22 @@ const runCurrentStage = async (h: Harness, id: WorkOrderId): Promise<ExecuteOutc
   const item = started[0];
   if (item === undefined) throw new Error('the tick must hand over the started item');
 
+  // The planner's docs scope is judged on the checkpoint diff. A run that reports nothing there
+  // fails before the human gate. Other roles keep the diff the scenario already scripted.
+  if (routed.value.role.writeScope.kind === 'docs') {
+    const cwd = `/fake/worktrees/${REPO}/${id}`;
+    const base = await h.deps.checkpoints.base({ cwd, workOrderId: id });
+    const since = base.ok ? base.value : '';
+    const diff = await h.deps.checkpoints.diffSince({ cwd, since });
+    const files = diff.ok ? diff.value.files : [];
+    if (!files.includes('docs/plan.md')) {
+      h.checkpoints.setDiff(since, {
+        files: [...files, 'docs/plan.md'],
+        patch: diff.ok ? diff.value.patch : '',
+      });
+    }
+  }
+
   return executeRun(h.deps, allowAll, {
     item,
     role: routed.value.role,
