@@ -48,8 +48,8 @@ interface Collected {
   timedOut: boolean;
 }
 
-/** Reads the run to its end or its deadline. Permission asks are denied, usage is recorded as
- *  account spend, and nothing reaches RunRepo or the work-order stream. */
+/** Reads the run to its end or its deadline. Permission asks are denied, real-currency usage is
+ *  recorded as account spend, and nothing reaches RunRepo or the work-order stream. */
 const collect = async (
   deps: Pick<AppDeps, 'accounts'>,
   accountId: AccountId,
@@ -75,7 +75,14 @@ const collect = async (
       const event = step.value;
       collected.events.push(event);
       if (event.type === 'permission_ask') handle.answerPermission(event.id, 'deny');
-      if (event.type === 'usage' && event.costUsd !== undefined) {
+      // The ledger is real currency: a list-price equivalent or a credit figure is never spend,
+      // while a provider that names no kind is treated as money so a cap never under-counts.
+      if (
+        event.type === 'usage' &&
+        event.costUsd !== undefined &&
+        event.costKind !== 'equivalent' &&
+        event.costKind !== 'credits'
+      ) {
         await deps.accounts.recordSpend({ kind: 'account_test', accountId, at: event.at, usd: event.costUsd });
       }
     }

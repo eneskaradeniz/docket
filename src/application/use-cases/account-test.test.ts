@@ -7,6 +7,7 @@ import {
   type AccountId,
   type Actor,
   type AgentEvent,
+  type CostKind,
   type EpochMs,
   type ProjectSlug,
   type RepoSlug,
@@ -60,8 +61,12 @@ const accountRecord = (overrides: Partial<AccountRecord> = {}): AccountRecord =>
 const DAY_CAP: AccountRecord['caps'][number] = { scope: 'account_day', cap: { amountUsd: 5, warnPercent: 80 } };
 
 const finished = (reason: 'completed' | 'failed' | 'cancelled' | 'limit' = 'completed'): AgentEvent => ({ type: 'finished', at: T0, reason });
-const usage = (costUsd?: number): AgentEvent => ({
-  type: 'usage', at: T0, inputTokens: 5, outputTokens: 2, ...(costUsd === undefined ? {} : { costUsd }),
+const usage = (costUsd?: number, costKind: CostKind | 'absent' = 'absent'): AgentEvent => ({
+  type: 'usage',
+  at: T0,
+  inputTokens: 5,
+  outputTokens: 2,
+  ...(costUsd === undefined ? {} : { costUsd, ...(costKind === 'absent' ? {} : { costKind }) }),
 });
 
 interface Harness {
@@ -413,6 +418,21 @@ describe('testAccount spend', () => {
     expect((await testAccount(h.deps, { id: ACCOUNT, actor: ACTOR })).ok).toBe(true);
     await h.deps.accountTests.clear(ACCOUNT);
     expect(await testAccount(h.deps, { id: ACCOUNT, actor: ACTOR })).toEqual({ ok: false, error: 'spend_cap_reached' });
+  });
+
+  it('A-292: an account test with equivalent and with credits cost writes no spend entry; reported, computed and kind-absent still do', async () => {
+    const spent = async (events: readonly AgentEvent[]): Promise<number> => {
+      const h = makeHarness();
+      await seed(h, accountRecord(), [...events, finished()]);
+      await testAccount(h.deps, { id: ACCOUNT, actor: ACTOR });
+      return h.deps.accounts.spend({ accountId: ACCOUNT, from: T0, to: T0 });
+    };
+    expect(await spent([usage(8, 'equivalent')])).toBe(0);
+    expect(await spent([usage(16, 'credits')])).toBe(0);
+    expect(await spent([usage(1, 'reported')])).toBe(1);
+    expect(await spent([usage(2, 'computed')])).toBe(2);
+    expect(await spent([usage(4)])).toBe(4);
+    expect(await spent([usage(1, 'reported'), usage(50, 'equivalent'), usage(2, 'computed'), usage(9, 'credits'), usage(0.5)])).toBe(3.5);
   });
 });
 

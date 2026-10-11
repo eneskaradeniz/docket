@@ -1704,3 +1704,7 @@ Addendum 2026-10-11 (#968): the spend ledger is real currency. `run-executor` an
 - **A-289** (added 2026-10-11, #968) A chat turn follows the same rule: a subscription-route (`equivalent`) turn writes no spend entry; a metered turn writes one, carrying the money part of the turn only.
 - **A-290** (added 2026-10-11, #968) Scenario: an `equivalent` run does not move the project month ceiling — the dispatcher still admits work that a mixed-sum ledger would have held (the same dollars as `reported` hold it with `budget`).
 - **A-291** (added 2026-10-11, #968) `usage.summary` and `docket_get usage` return `costByKind` (summary and stage rows) and no `costUsd`. The brief states that costs are grouped by kind, that only `reported` and `computed` are money, `equivalent` a list-price estimate and `credits` a provider unit, never to be added or called spend, and stays byte-identical for the same scope and date.
+
+Addendum 2026-10-11 (#975): account-test spend follows the same real-currency rule as the run executor and the chat runner. `testAccount` calls `recordSpend` only when a usage event's `costKind` is `reported`, `computed` or absent; `equivalent` and `credits` write no spend entry. Nothing else about the account test changes.
+
+- **A-292** (added 2026-10-11, #975) An account test with `equivalent` and with `credits` cost writes no spend entry; `reported`, `computed` and kind-absent still do.
