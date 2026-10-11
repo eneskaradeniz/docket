@@ -16,6 +16,23 @@ import { BUTTON, BUTTON_GHOST, BUTTON_PRIMARY, FOCUS, REF_CHIP, SOURCE_CHIP, THU
 
 const WRAP = 'whitespace-pre-wrap [overflow-wrap:anywhere]';
 
+/** The runner stores a denied ask as this key, a tab, then the tool name. */
+const TOOL_DENIED_PREFIX = 'chat.notice.tool_denied\t';
+
+/** Notice keys become the locale's sentence. A denied-tool line fills `{name}` with
+ *  the tool; every other line stays the text that was stored. */
+const shownTranscript = (text: string, locale: Locale): string =>
+  text
+    .split('\n')
+    .map((line) => {
+      if (line.startsWith(TOOL_DENIED_PREFIX)) {
+        return fill(t(locale, 'chat.notice.tool_denied'), { name: line.slice(TOOL_DENIED_PREFIX.length) });
+      }
+      const key = noticeTextKey(line);
+      return key === null ? line : t(locale, key);
+    })
+    .join('\n');
+
 const ACTION_APPLIED: Readonly<Record<string, LabelKey>> = {
   open_work_order: 'chat.action.open_work_order.applied',
   roadmap_edit: 'chat.action.roadmap_edit.applied',
@@ -256,7 +273,7 @@ function AssistantRow({ message, state, store, locale, onOpenPage }: { readonly 
   const hasProposal = message.artifacts.some((artifact) => artifact.kind === 'proposal');
   return (
     <div data-chat-row="assistant" className="grid gap-3">
-      {message.text === '' ? null : <div className={`${WRAP} text-[0.875rem] leading-5 text-ink`}>{noticeTextKey(message.text) === null ? message.text : t(locale, noticeTextKey(message.text) ?? 'chat.notice.crash')}</div>}
+      {message.text === '' ? null : <div className={`${WRAP} text-[0.875rem] leading-5 text-ink`}>{shownTranscript(message.text, locale)}</div>}
       {message.artifacts.map((artifact, index) => {
         if (artifact.kind === 'page') return <PageCard key={index} artifact={artifact} locale={locale} onOpenPage={onOpenPage} />;
         if (artifact.kind === 'table') return <Table key={index} columns={artifact.columns} rows={artifact.rows} label={t(locale, 'chat.card.table')} wide={state.full} />;

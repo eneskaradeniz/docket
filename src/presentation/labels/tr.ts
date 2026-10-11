@@ -956,6 +956,7 @@ export const TR: LabelBundle = {
   'chat.notice.crash': 'Docket AI beklenmedik şekilde durdu.',
   'chat.notice.tools_unavailable': 'Bu hesapla Docket araçları kullanılamıyor.',
   'chat.notice.cancelled': 'Yanıt durduruldu.',
+  'chat.notice.tool_denied': 'Docket AI bir aracı kullanamadı: {name}',
   'chat.note.dismiss': 'Notu kapat',
   'chat.file.video': 'Video desteklenmiyor. Bir kareyi resim olarak ekleyebilirsin.',
   'chat.file.type': 'Bu dosya türü eklenemez.',

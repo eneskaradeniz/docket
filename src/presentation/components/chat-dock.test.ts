@@ -656,6 +656,18 @@ describe('notice copy and the no_binding banner (U-241, U-242)', () => {
     expect(unknown).not.toContain('chat.notice.');
   });
 
+  it('U-241: a denied tool is a localized sentence naming the tool, never the stored key', async () => {
+    const stored = `baktım\nchat.notice.tool_denied\tpropose_change`;
+    const view = conversation('C1', { messages: [message('M1', { role: 'assistant', text: stored })] });
+    for (const locale of ['tr', 'en'] as const) {
+      const html = await draw(withConversation(view), locale);
+      const sentence = locale === 'tr' ? 'Docket AI bir aracı kullanamadı: propose_change' : 'Docket AI could not use a tool: propose_change';
+      expect(html, locale).toContain('baktım');
+      expect(html, locale).toContain(sentence);
+      expect(html, locale).not.toContain('chat.notice.');
+    }
+  });
+
   it('U-242: the no_binding banner reads its Turkish text and carries a button that opens Ayarlar › Roller', async () => {
     const opened: string[] = [];
     const b = bridge();

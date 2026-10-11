@@ -4,7 +4,22 @@
 import type { CanUseTool, Options, Query, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { QueryFn } from '../transports/sdk/transport';
 
-export type SdkScenario = 'happy' | 'permission' | 'resume' | 'hang' | 'steady';
+export type SdkScenario = 'happy' | 'permission' | 'resume' | 'hang' | 'steady' | 'docket-reads';
+
+/** Tool names the SDK permission callback receives for Docket's own MCP server (`docket-pages`)
+ *  and for the names that must not be confused with it. The fully-qualified form is the one the
+ *  SDK documents: `mcp__<server>__<tool>`. */
+export const DOCKET_READ_ASK_TOOLS = [
+  'mcp__docket-pages__docket_get',
+  'mcp__docket-pages__docket_search',
+  'mcp__docket-pages__docket_read_file',
+  'mcp__docket-pages__propose_change',
+  'mcp__docket-pages__page_publish',
+  'mcp__docket-pages__docket_get_extra',
+  'mcp__other__docket_get',
+  'not_docket_get',
+  'Bash',
+] as const;
 
 export interface SdkFake {
   readonly query: QueryFn;
@@ -76,15 +91,20 @@ export function createSdkFake(scenario: SdkScenario): SdkFake {
       yield success();
       return;
     }
-    if (scenario === 'permission') {
+    if (scenario === 'permission' || scenario === 'docket-reads') {
       const canUseTool: CanUseTool | undefined = options.canUseTool;
       if (canUseTool === undefined) throw new Error('the transport must supply a permission callback');
-      const verdict = await canUseTool('Bash', { command: 'rm -rf /tmp/fake' }, {
-        signal: abort.signal,
-        toolUseID: 'tool_perm',
-        requestId: 'req_perm',
-      });
-      yield assistant([{ type: 'text', text: `ANSWER:${verdict?.behavior ?? 'none'}` }]);
+      const names = scenario === 'docket-reads' ? DOCKET_READ_ASK_TOOLS : (['Bash'] as const);
+      let last = 'none';
+      for (const [index, name] of names.entries()) {
+        const verdict = await canUseTool(name, { command: 'rm -rf /tmp/fake' }, {
+          signal: abort.signal,
+          toolUseID: `tool_perm_${index}`,
+          requestId: `req_perm_${index}`,
+        });
+        last = verdict?.behavior ?? 'none';
+      }
+      yield assistant([{ type: 'text', text: `ANSWER:${last}` }]);
       yield success();
       return;
     }
