@@ -1,6 +1,6 @@
 // api/queries.ts — the read side of the boundary. Exact contract: docs/v2/application.md § 4.
 // Plain JSON-serialisable shapes only; ids travel as strings and are parsed in api.ts.
-import type { ModelMatcher, PageKind, ProposalStatus } from '../domain/index';
+import type { ModelMatcher, PageKind, ProposalStatus, UsageSummary, WasteFinding } from '../domain/index';
 import type {
   AccountTestView,
   ProposalDetailView,
@@ -57,7 +57,8 @@ export type Query =
   | { readonly type: 'chat.conversation'; readonly id: string } // → ChatConversationView | not_found (A-252)
   | { readonly type: 'chat.references'; readonly q: string; readonly kinds?: readonly ('work_order' | 'page' | 'project' | 'repo')[]; readonly project?: string; readonly limit?: number } // → readonly ChatReferenceView[] (A-253)
   | { readonly type: 'chat.attachment'; readonly conversation: string; readonly id: string } // → ChatAttachmentBytesView | not_found (A-254)
-  | { readonly type: 'chat.usage' }; // → ChatUsageView (A-255)
+  | { readonly type: 'chat.usage' } // → ChatUsageView (A-255)
+  | { readonly type: 'usage.summary'; readonly workOrder?: string; readonly project?: string; readonly sinceMs?: number }; // → UsageSummaryView | not_found | bad_input | invalid_id (A-280 … A-283)
 
 export interface AttentionItem {
   readonly workOrderId: string;
@@ -327,6 +328,16 @@ export interface AccountModelsView {
 /** The tail bound of `run.events`: a store re-queries on every `run.updated`, so an unbounded
  *  reply would ship a long run's whole history per event. The pane renders the recent past. */
 export const RUN_EVENTS_TAIL_LIMIT = 500;
+
+// --- usage.summary (A-280 … A-283) ---------------------------------------------------------------------
+
+/** Folded usage numbers of one work order's or one project's runs: domain aggregates and rule
+ *  findings only — never a raw event, transcript or environment value. */
+export interface UsageSummaryView {
+  readonly summary: UsageSummary;
+  readonly findings: readonly WasteFinding[];
+  readonly runsWithoutUsage: number;
+}
 
 // --- permissions.open ---------------------------------------------------------------------------------
 

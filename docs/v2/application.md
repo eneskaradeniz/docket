@@ -1674,3 +1674,19 @@ Addendum 2026-10-10 (#934): a chat turn's spend, recorded so the caps see it. Th
 - **A-277** (added 2026-10-10, #934) A `recordSpend` that throws or rejects never breaks the turn: the assistant message is still appended, `finished` still fires with its message id, the token is still revoked and the slot cleared — the failure is swallowed without audit, like a broken listener.
 - **A-278** (added 2026-10-10, #934) The pre-turn spend gate (A-235) sees chat spend end to end: a turn that spends up to the account's cap makes the NEXT turn on the same conversation `refused` with notice `spend` — no agent start, no token, no run dir.
 - **A-279** (added 2026-10-10, #934) The project month ceiling counts a project conversation's chat spend and never a global conversation's: after a project conversation crosses the ceiling the conversation's next turn is `refused` with `spend`, while a global conversation's spend leaves the ceiling untouched and the project conversation still runs (the account caps see both, as ever).
+
+Addendum 2026-10-11 (#962): the usage read model — `src/application/use-cases/usage-summary.ts` and the `usage.summary` member of `queries.ts`/`registry.ts`. It joins a work order's (or a project's work orders') runs with their streamed events through the existing `runs` port, folds each run with the domain `foldRun`, maps to `RunUsageInput` and hands the inputs to the pure `summarizeUsage`/`findWaste` rules (R-108 … R-113, #961). No new storage, no write of any kind. The API query list gains:
+
+```ts
+  | { readonly type: 'usage.summary'; readonly workOrder?: string; readonly project?: string; readonly sinceMs?: number }; // → UsageSummaryView | not_found | bad_input | invalid_id
+export interface UsageSummaryView {
+  readonly summary: UsageSummary;          // the domain aggregate as-is: folded numbers only
+  readonly findings: readonly WasteFinding[];
+  readonly runsWithoutUsage: number;       // runs whose route never sent a usage event
+}
+```
+
+- **A-280** (added 2026-10-11, #962) The read model sums a work order's runs across stages and attempts and equals `summarizeUsage` over the same inputs — the scenario test rebuilds the `RunUsageInput` list beside the read and asserts both `summary` and `findings` deep-equal the pure functions' answers, stage rows included (`runs`, `maxAttempt`, per-stage tokens). A work order without runs answers the zero summary: `runs` 0, all token counts 0, `byStage` `[]`, both ratios 0, no `costUsd` key, no findings, `runsWithoutUsage` 0.
+- **A-281** (added 2026-10-11, #962) A run with no usage event counts in `runsWithoutUsage` and contributes zero tokens (it still owns its stage row, so its attempt stays visible to the retry rule). Cost follows R-111: summed only over runs that report it, absent when none does — a costless run never dilutes the sum as zero, and a fold carries `costKind` only beside a carried `costUsd`.
+- **A-282** (added 2026-10-11, #962) `usage.summary { workOrder? | project?, sinceMs? }`: a project scope covers its own work orders only; `sinceMs` excludes strictly older runs (a run starting exactly at the bound stays); an unknown work order or project is `not_found`; both scopes or neither is `bad_input`; a malformed id is `invalid_id` and a non-number `sinceMs` is `bad_input`.
+- **A-283** (added 2026-10-11, #962) Reading usage writes nothing — no audit entry, no spend entry — and works while a run is in flight: a run without `endedAt` whose stream holds a `usage` event but no `finished` folds its partial totals without error. The view carries aggregated numbers and rule findings only — never a raw event, transcript or environment value (A-212 data rules).
