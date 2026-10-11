@@ -483,6 +483,41 @@ for (const [sizeName, theme] of combos) {
     await shot('back-from-detail');
   });
 
+  await journey('J-20', 'Proje ekle opens as a panel: "+" opens the first step, Esc closes it and returns focus, a reopen shows the same first step', async () => {
+    const panel = page.locator('[data-new-project-panel]');
+    const plus = page.locator('nav').getByRole('button', { name: 'Yeni proje', exact: true }).first();
+    const firstStep = async () => {
+      await panel.waitFor({ state: 'visible', timeout: WAIT });
+      await panel.locator('[data-new-project-form="existing"]').waitFor({ state: 'visible', timeout: WAIT });
+      assert.equal(await panel.getAttribute('role'), 'dialog', 'the panel is a dialog');
+      assert.equal(await panel.locator('[data-card="existing"]').getAttribute('aria-pressed'), 'true', 'the first step selects Var olan klasör');
+    };
+    // The pointer opens it over the current screen, which stays underneath.
+    await plus.click({ timeout: WAIT });
+    await firstStep();
+    await shot('panel-open');
+    await page.keyboard.press('Escape');
+    await panel.waitFor({ state: 'detached', timeout: WAIT });
+    // A keyboard open returns focus to the "+" on close (the palette's one rule).
+    await plus.focus();
+    await page.keyboard.press('Enter');
+    await firstStep();
+    await page.keyboard.press('Escape');
+    await panel.waitFor({ state: 'detached', timeout: WAIT });
+    const returned = await page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? '');
+    assert.equal(returned, 'Yeni proje', `focus must return to the opener, saw "${returned}"`);
+    // ✕ closes too, and the reopen shows the first step again.
+    await plus.click({ timeout: WAIT });
+    await firstStep();
+    await panel.getByRole('button', { name: 'Pencereyi kapat' }).click({ timeout: WAIT });
+    await panel.waitFor({ state: 'detached', timeout: WAIT });
+    await plus.click({ timeout: WAIT });
+    await firstStep();
+    await shot('panel-reopened');
+    await page.keyboard.press('Escape');
+    await panel.waitFor({ state: 'detached', timeout: WAIT });
+  });
+
   await handle.app.close();
 }
 
@@ -1166,7 +1201,7 @@ for (const [sizeName, theme] of combos) {
     const slug = label.toLowerCase().replace(/[^a-z0-9ğüşıöç]+/g, '-').replace(/^-|-$/g, '');
     await page.screenshot({ path: join(OUT, `J-14-${stepNo}-${slug}.png`) });
   };
-  const title = "J-14: Artifact'lar: kartlar, Türkçe arama, tür süzgeci, sabitleme, Sabitler, aç ve ‹ Geri";
+  const title = "J-14: Çıktılar: kartlar, Türkçe arama, tür süzgeci, sabitleme, Sabitler, aç ve ‹ Geri";
   total += 1;
   try {
     // The sidebar row between Ara and Telefon carries the total count (the world holds two pages).
@@ -1175,7 +1210,7 @@ for (const [sizeName, theme] of combos) {
     await row.locator('[data-library-count]').filter({ hasText: '2' }).waitFor({ state: 'visible', timeout: SCAN_WAIT });
     await row.click({ timeout: WAIT });
     await screen.waitFor({ state: 'visible', timeout: SCAN_WAIT });
-    assert.equal(await row.getAttribute('aria-current'), 'page', "the Artifact'lar row is current on the library");
+    assert.equal(await row.getAttribute('aria-current'), 'page', "the Çıktılar row is current on the library");
 
     // Both pages are cards, each with the chips its data carries.
     await cardsAre([seed.pageId, seed.notePageId], 'the full library');

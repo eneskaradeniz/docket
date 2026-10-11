@@ -692,6 +692,7 @@ export const LABEL_KEYS = [
   'newProject.create',
   'newProject.creating',
   'newProject.cancel',
+  'newProject.close',
   'newProject.attach',
   'newProject.created',
   'toast.close',

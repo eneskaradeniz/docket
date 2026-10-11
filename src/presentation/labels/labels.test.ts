@@ -42,4 +42,10 @@ describe('labels', () => {
     // The default locale is Turkish.
     expect(DEFAULT_LOCALE).toBe('tr');
   });
+
+  it('U-151: the Turkish bundle never says "artifact" — the library is Çıktılar — while English keeps Artifacts', () => {
+    for (const [key, value] of Object.entries(TR)) expect(value.toLowerCase(), key).not.toContain('artifact');
+    expect(TR['nav.library']).toBe('Çıktılar');
+    expect(EN['nav.library']).toBe('Artifacts');
+  });
 });

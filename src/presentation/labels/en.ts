@@ -638,6 +638,7 @@ export const EN: LabelBundle = {
   'newProject.create': 'Create',
   'newProject.creating': 'Creating…',
   'newProject.cancel': 'Cancel',
+  'newProject.close': 'Close window',
   'newProject.attach': 'Attach',
   'newProject.created': 'Project created. Write the test commands into .docket/repo.yaml; until then the test gate waits.',
   'toast.close': 'Dismiss',

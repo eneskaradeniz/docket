@@ -1327,6 +1327,55 @@ than 8 words. A proposal's summary, target, scope, author and every diff line ar
   every control, panes stacked below the `lg` breakpoint, transitions behind `motion-safe:` /
   `motion-reduce:`, no vendor name. A source-scan test pins these on the screen's own source.
 
+## Polish after the operator walk (U-151 … U-152)
+
+- **U-151** (added 2026-10-11, #944) The Turkish library name is "Çıktılar" (nav row, region, empty, filtered, error, cap and loading lines, the pin-limit sentence); no Turkish label says "artifact". English keeps "Artifacts".
+- **U-152** (added 2026-10-11, #944) Boxes that show long text grow with the window and keep their old size as the floor: the proposals diff `max(26rem, 100vh − 22rem)`, the page viewer's diff `max(28rem, 100vh − 24rem)`, the work-order detail's expected-file preview `clamp(12.5rem, 100vh − 30rem, 32rem)`. Chat-panel boxes, icons and chips are out of this rule.
+
+## Launcher after launcher (U-153 … U-154)
+
+- **U-153** (added 2026-10-11, #946; amends U-127) A launcher remembers, per chat store, the prefill it last placed. A draft that still equals it (untouched) is replaced by the next launcher's prefill; a blank draft takes the prefill as before.
+- **U-154** (added 2026-10-11, #946; amends U-127) Any other non-blank draft — a prefill with one character added, or text the operator typed — is kept and the new prefill is dropped; the scope still opens fresh. A sent (emptied) draft takes the next prefill.
+
+## Nav order (U-191)
+
+- **U-191** (added 2026-10-11, #951; amends U-84 and U-136) The sidebar rows stand in this order: Anasayfa, Ara, Öneriler, Çıktılar (Artifacts), Telefon, Ayarlar. Öneriler sits between Ara and the library row.
+
+## Proje ekle panel (U-181 … U-190)
+
+Operator walk, 2026-10-11 (#950). "Proje ekle" opens as a window over the current screen, like Settings,
+not as a full screen. Presentation only: the page's content, copy and flow are unchanged; only where it is
+hosted changes. This supersedes U-40's statement that the page is a route; the route is gone and the history
+never holds it. The J-20 walk covers it end to end.
+
+- **U-181** (shell; added 2026-10-11, #950) Entries. The sidebar "+" next to Projeler and the empty-state
+  button share one opener that opens the panel. No full-screen route exists, so nothing deep-links to one.
+  The home launcher "Docket AI ile birlikte kur" stays a chat launcher, and it closes the panel before the
+  chat opens.
+- **U-182** (store; added 2026-10-11, #950) Standing. The panel is a pure `{ open, origin }` reducer in
+  the shell, never a route. An open stamps pointer or keyboard; a second open changes nothing.
+- **U-183** (store, overlay; added 2026-10-11, #950) Leaving. ✕, Esc, a press on the scrim and "Vazgeç"
+  are all one close. Focus returns to the opener on a keyboard-opened close only (the palette's rule).
+- **U-184** (overlay; added 2026-10-11, #950) One frame. The panel is the Window frame in the shared
+  `PanelOverlay` (scrim, blur, enter and exit, focus trap), marked `data-new-project-panel`, with
+  `role="dialog"`, `aria-modal` and the title as its name. Reduced motion is a quick fade.
+- **U-185** (screen; added 2026-10-11, #950) Content. The cards, the selected mode's fields, the reason
+  line and the footer band are the approved page's, unchanged, inside the panel.
+- **U-186** (shell; added 2026-10-11, #950) Native view. While the panel is open the page view's native
+  view yields exactly as for Settings (U-76); ⌘K, ⌘[ and ⌘] stay away.
+- **U-187** (shell; added 2026-10-11, #950) Chat. The chat dock hides under the open panel, and ⌘J is
+  ignored while it is open.
+- **U-188** (shell; added 2026-10-11, #950) Draft. No discard confirmation exists in the app, so closing
+  with input keeps the draft in the store for the session. Opening resets nothing; a finished creation
+  closes the panel and starts the form over.
+- **U-189** (screen; added 2026-10-11, #950) Width. The content fills the panel's width: no fixed card, no
+  width cap, no centring margin inside it.
+- **U-190** (labels, screen; added 2026-10-11, #950) Measure. The close control's name is in the Turkish
+  and English bundles and is at most 4 words; lengths are rem; radii are the tokens only.
+
+J-20 (added 2026-10-11, #950): on the design world, "+" next to Projeler opens the panel on its first
+step; Esc closes it and focus returns; a reopen shows the same first step.
+
 ## Settings cards (U-165 … U-180)
 
 - **U-165** (settings menu; added 2026-10-11, #949) No group titles. The left menu draws the section buttons

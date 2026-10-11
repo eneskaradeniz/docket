@@ -12,12 +12,12 @@ import { ChatLauncher, ChatLauncherContext, LauncherRow } from './chat-launcher'
 
 const GLOBAL: ChatScopeInput = { kind: 'global' };
 
-/** Home and the new-project screen. */
-export function HomeLaunchers() {
+/** Home and the new-project panel; `onLaunch` lets the panel step aside before the chat opens. */
+export function HomeLaunchers({ onLaunch }: { readonly onLaunch?: () => void }) {
   if (useContext(ChatLauncherContext) === null) return null;
   return (
     <LauncherRow className="mt-3">
-      <ChatLauncher id="together" labelKey="launch.together" prefillKey="launch.prefill.together" scope={GLOBAL} />
+      <ChatLauncher id="together" labelKey="launch.together" prefillKey="launch.prefill.together" scope={GLOBAL} onLaunch={onLaunch} />
     </LauncherRow>
   );
 }
