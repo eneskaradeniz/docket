@@ -324,6 +324,8 @@ interface UsageFold {
   output: number;
   costMicros: number;
   costSeen: boolean;
+  /** The part of the cost that is real currency; only this reaches the spend ledger. */
+  moneyMicros: number;
   seen: boolean;
 }
 
@@ -398,7 +400,7 @@ export function createChatRunner(deps: ChatRunnerDeps, extras: ChatRunnerExtras)
     let outcome: ChatTurnOutcome = 'failed';
     let notice: ChatNotice | undefined;
     let text = '';
-    const usage: UsageFold = { input: 0, output: 0, costMicros: 0, costSeen: false, seen: false };
+    const usage: UsageFold = { input: 0, output: 0, costMicros: 0, costSeen: false, moneyMicros: 0, seen: false };
     let runDir: RunDir | undefined;
     let account: AccountId | undefined;
     let model: string | undefined;
@@ -516,7 +518,10 @@ export function createChatRunner(deps: ChatRunnerDeps, extras: ChatRunnerExtras)
             usage.output += event.outputTokens;
             if (event.costUsd !== undefined) {
               usage.costSeen = true;
-              usage.costMicros += Math.round(event.costUsd * 1_000_000);
+              const micros = Math.round(event.costUsd * 1_000_000);
+              usage.costMicros += micros;
+              // Equivalent and credit figures are not money; an absent kind counts as money.
+              if (event.costKind !== 'equivalent' && event.costKind !== 'credits') usage.moneyMicros += micros;
             }
             break;
           case 'quota_signal':
@@ -576,13 +581,13 @@ export function createChatRunner(deps: ChatRunnerDeps, extras: ChatRunnerExtras)
       // The turn's cost is spend the caps must see (invariant 3): one entry per costed turn,
       // written before the finished event so the next gate already reads it. A failing write
       // never breaks the turn — the cost is lost to the caps, not the reply to the operator.
-      if (account !== undefined && usage.costSeen && usage.costMicros > 0) {
+      if (account !== undefined && usage.moneyMicros > 0) {
         try {
           await deps.accounts.recordSpend({
             kind: 'chat',
             accountId: account,
             at: deps.clock.now(),
-            usd: usage.costMicros / 1_000_000,
+            usd: usage.moneyMicros / 1_000_000,
             conversation,
             ...(project !== undefined ? { project } : {}),
           });

@@ -1,7 +1,12 @@
-// Rules R-108 … R-113 of docs/v2/domain.md: the pure usage read model. It folds per-run usage into
+// Rules R-108 … R-118 of docs/v2/domain.md: the pure usage read model. It folds per-run usage into
 // a summary and names waste findings with their numbers, so a reader states a rule's finding
 // instead of inventing one.
 import type { CostKind } from '../providers/index';
+
+/** Cost per kind, in the kind's own unit: USD for every kind but `credits`, which counts the
+ *  provider's credit unit. A kind nobody contributed to is absent, never 0 standing in for unknown;
+ *  `unspecified` holds a cost whose provider did not say what kind it is. */
+export type CostByKind = Readonly<Partial<Record<CostKind | 'unspecified', number>>>;
 
 export interface RunUsageInput {
   readonly runId: string;
@@ -22,7 +27,7 @@ export interface StageUsage {
   readonly tokens: number;
   readonly inputTokens: number;
   readonly cachedInputTokens: number;
-  readonly costUsd?: number;
+  readonly costByKind?: CostByKind;
 }
 
 export interface UsageSummary {
@@ -30,7 +35,7 @@ export interface UsageSummary {
   readonly tokens: number;
   readonly inputTokens: number;
   readonly cachedInputTokens: number;
-  readonly costUsd?: number;
+  readonly costByKind?: CostByKind;
   readonly byStage: readonly StageUsage[];
   readonly planningShare: number;
   readonly cacheRatio: number;
@@ -70,22 +75,28 @@ interface StageFold {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
-  costUsd?: number;
+  costByKind?: CostByKind;
 }
+
+/** Adds one input's cost to a scope's per-kind totals; no cost leaves the totals as they were. */
+const addCost = (current: CostByKind | undefined, input: RunUsageInput): CostByKind | undefined => {
+  if (input.costUsd === undefined) return current;
+  const kind = input.costKind ?? 'unspecified';
+  return { ...current, [kind]: (current?.[kind] ?? 0) + input.costUsd };
+};
 
 export function summarizeUsage(inputs: readonly RunUsageInput[]): UsageSummary {
   const stages = new Map<string, StageFold>();
   let inputTokens = 0;
   let outputTokens = 0;
   let cachedInputTokens = 0;
-  let costUsd: number | undefined = undefined;
+  let costByKind: CostByKind | undefined = undefined;
   let planningTokens = 0;
   for (const input of inputs) {
     inputTokens += input.inputTokens;
     outputTokens += input.outputTokens;
     cachedInputTokens += input.cachedInputTokens;
-    // An absent cost is unknown, not zero: only carried values are summed, on every level.
-    if (input.costUsd !== undefined) costUsd = (costUsd ?? 0) + input.costUsd;
+    costByKind = addCost(costByKind, input);
     if (PLANNING_STAGE_IDS.includes(input.stage)) planningTokens += input.inputTokens + input.outputTokens;
     let fold = stages.get(input.stage);
     if (!fold) {
@@ -97,7 +108,8 @@ export function summarizeUsage(inputs: readonly RunUsageInput[]): UsageSummary {
     fold.inputTokens += input.inputTokens;
     fold.outputTokens += input.outputTokens;
     fold.cachedInputTokens += input.cachedInputTokens;
-    if (input.costUsd !== undefined) fold.costUsd = (fold.costUsd ?? 0) + input.costUsd;
+    const stageCost = addCost(fold.costByKind, input);
+    if (stageCost !== undefined) fold.costByKind = stageCost;
   }
   const tokens = inputTokens + outputTokens;
   const byStage: StageUsage[] = [];
@@ -109,7 +121,7 @@ export function summarizeUsage(inputs: readonly RunUsageInput[]): UsageSummary {
       tokens: fold.inputTokens + fold.outputTokens,
       inputTokens: fold.inputTokens,
       cachedInputTokens: fold.cachedInputTokens,
-      ...(fold.costUsd === undefined ? {} : { costUsd: fold.costUsd }),
+      ...(fold.costByKind === undefined ? {} : { costByKind: fold.costByKind }),
     });
   }
   return {
@@ -117,7 +129,7 @@ export function summarizeUsage(inputs: readonly RunUsageInput[]): UsageSummary {
     tokens,
     inputTokens,
     cachedInputTokens,
-    ...(costUsd === undefined ? {} : { costUsd }),
+    ...(costByKind === undefined ? {} : { costByKind }),
     byStage,
     // A zero denominator means the share is undefined; 0 keeps every ratio a plain finite number.
     planningShare: tokens === 0 ? 0 : planningTokens / tokens,
@@ -149,4 +161,43 @@ export function findWaste(summary: UsageSummary, thresholds?: typeof USAGE_THRES
     });
   }
   return findings;
+}
+
+export type CostDisplay =
+  | { readonly kind: 'money'; readonly usd: number; readonly estimate: boolean }
+  | { readonly kind: 'tokens'; readonly equivalentUsd?: number }
+  | { readonly kind: 'credits'; readonly credits: number }
+  | { readonly kind: 'none' };
+
+/** A contribution counts only when it is a real number; a NaN or infinity must not reach a screen. */
+const amountOf = (costByKind: CostByKind, kind: CostKind | 'unspecified'): number | undefined => {
+  const value = costByKind[kind];
+  return value !== undefined && Number.isFinite(value) ? value : undefined;
+};
+
+/** What a cost figure may be called on screen. Only `reported`, `computed` and `unspecified` are
+ *  money; `equivalent` is a list-price estimate and is never added to them, and `credits` is the
+ *  provider's own unit. A route with included billing has no per-run money, so its equivalent is
+ *  secondary information next to the tokens. */
+export function costDisplay(costByKind: CostByKind, billing: 'pay_per_use' | 'included' | 'unknown'): CostDisplay {
+  const reported = amountOf(costByKind, 'reported');
+  const computed = amountOf(costByKind, 'computed');
+  const unspecified = amountOf(costByKind, 'unspecified');
+  const equivalent = amountOf(costByKind, 'equivalent');
+  const credits = amountOf(costByKind, 'credits');
+  const hasMoney = reported !== undefined || computed !== undefined || unspecified !== undefined;
+  const money: CostDisplay = {
+    kind: 'money',
+    usd: (reported ?? 0) + (computed ?? 0) + (unspecified ?? 0),
+    estimate: computed !== undefined || unspecified !== undefined,
+  };
+  const tokens: CostDisplay = equivalent === undefined ? { kind: 'tokens' } : { kind: 'tokens', equivalentUsd: equivalent };
+  if (billing === 'included') {
+    if (equivalent !== undefined) return tokens;
+    if (hasMoney) return money;
+    return credits !== undefined ? { kind: 'credits', credits } : { kind: 'none' };
+  }
+  if (hasMoney) return money;
+  if (credits !== undefined) return { kind: 'credits', credits };
+  return equivalent !== undefined ? tokens : { kind: 'none' };
 }

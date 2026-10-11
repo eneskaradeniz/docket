@@ -7,6 +7,7 @@ import {
   type AccountId,
   type Actor,
   type AgentEvent,
+  type CostKind,
   type CatalogModel,
   type Conversation,
   type ConversationId,
@@ -167,13 +168,13 @@ const ask = (id: string): AgentEvent => ({
   target: '/tmp/x',
   options: ['allow', 'deny'],
 });
-const usage = (costUsd?: number): AgentEvent => ({
+const usage = (costUsd?: number, costKind: CostKind | 'absent' = 'reported'): AgentEvent => ({
   type: 'usage',
   at: at(4),
   inputTokens: 120,
   outputTokens: 80,
   cachedInputTokens: 20,
-  ...(costUsd !== undefined ? { costUsd, costKind: 'reported' as const } : {}),
+  ...(costUsd !== undefined ? { costUsd, ...(costKind === 'absent' ? {} : { costKind }) } : {}),
 });
 const quotaSignal = (): AgentEvent => ({
   type: 'quota_signal',
@@ -593,6 +594,9 @@ describe('createChatRunner', () => {
     expect(brief).toContain('A finding is advice or a propose_change, never an action.');
     expect(brief).toContain('say "veri yok"');
     expect(brief).toContain('Never estimate tokens or cost from memory.');
+    expect(brief).toContain('only reported and computed are money');
+    expect(brief).toContain('equivalent is a list-price estimate');
+    expect(brief).toContain('credits a provider unit');
     expect(brief).not.toContain('ghp_');
     expect(brief).not.toContain('PRIVATE KEY');
     expect(assistantBrief({ scope: { kind: 'global' } })).not.toBe(brief);
@@ -935,6 +939,24 @@ describe('createChatRunner', () => {
     await send(failed.runner, CONVERSATION, { text: 'Selam' });
     await failedWatch.finished;
     expect(failedSpent.entries).toHaveLength(1);
+  });
+
+  it('A-289: a chat turn writes spend for reported, computed and kind-absent cost only; a subscription-route (equivalent) turn writes none', async () => {
+    const spentBy = async (script: readonly AgentEvent[]): Promise<readonly number[]> => {
+      const h = await harness({ script: [text('a'), ...script, finished('completed')] });
+      const spent = spyingSpend(h);
+      const watch = watching(h.runner, CONVERSATION);
+      await send(h.runner, CONVERSATION, { text: 'Selam' });
+      await watch.finished;
+      return spent.entries.map((entry) => entry.usd);
+    };
+    expect(await spentBy([usage(0.1, 'reported')])).toEqual([0.1]);
+    expect(await spentBy([usage(0.2, 'computed')])).toEqual([0.2]);
+    expect(await spentBy([usage(0.4, 'absent')])).toEqual([0.4]);
+    expect(await spentBy([usage(3, 'equivalent')])).toEqual([]);
+    expect(await spentBy([usage(5, 'credits')])).toEqual([]);
+    // A mixed turn records the money part alone, in one entry.
+    expect(await spentBy([usage(0.1, 'reported'), usage(9, 'equivalent'), usage(0.05, 'computed')])).toEqual([0.15]);
   });
 
   it('A-277: a failing recordSpend never breaks the turn — the message is still written and finished still fires', async () => {

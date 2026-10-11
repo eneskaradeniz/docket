@@ -572,6 +572,10 @@ describe('A-284 … A-286: docket_get usage', () => {
     ];
     const expected = { kind: 'data', source: 'docket_get usage', summary: summarizeUsage(inputs), findings: findWaste(summarizeUsage(inputs)), runsWithoutUsage: 0 };
     expect(resultOf(await h.call(token, 'docket_get', { kind: 'usage', id: WO_A1 }))).toEqual(expected);
+    // A-291: the answer carries the cost split by kind and no single dollar total.
+    const answered = resultOf(await h.call(token, 'docket_get', { kind: 'usage', id: WO_A1 }))['summary'] as Record<string, unknown>;
+    expect(answered['costByKind']).toEqual({ reported: 0.01 });
+    expect('costUsd' in answered).toBe(false);
     // The project read covers the same runs: WO_A2 has none of its own.
     expect(resultOf(await h.call(token, 'docket_get', { kind: 'usage', id: ALPHA }))).toEqual(expected);
     // The id and period shapes are checked before any scope answer.

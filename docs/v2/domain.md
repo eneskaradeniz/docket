@@ -1090,3 +1090,21 @@ stop losing their cache number on the way: `TurnUsage` (conversations) gains `ca
 - **R-112** (added 2026-10-11, #961) `findWaste(summary, thresholds?)` reports `planning_heavy` when `planningShare ≥ thresholds.planningShare` AND `runs ≥ thresholds.planningMinRuns` (both inclusive; the defaults are 0.4 and 5). The finding carries `{ share, runs }` — the summary's own numbers — and cites the rule id that fired. Omitting `thresholds` uses `USAGE_THRESHOLDS`.
 - **R-113** (added 2026-10-11, #961) `retry_loop`: one finding per stage whose `maxAttempt ≥ retryAttempts` (3 by default, inclusive), carrying `{ attempts }` and the stage. `low_cache`: `cacheRatio < cacheRatio` threshold (0.2, strict) AND `inputTokens ≥ cacheMinInputTokens` (50 000, inclusive), carrying `{ ratio, inputTokens }`, no stage. Findings come in the fixed order planning, retry by stage id, cache; `findWaste` never mutates the summary.
 - **R-114** (added 2026-10-11, #961) `TurnUsage` (conversations) gains `cachedInputTokens?` — a non-negative whole number when present, kept by the usage check like the other reported fields and dropped when it is not one. A value stored before the field existed — every stored turn — reads as having none.
+
+Addendum 2026-10-11 (#968): cost by kind. A summary no longer carries one dollar total: `UsageSummary` and `StageUsage` replace `costUsd` with `costByKind`, and the module gains one pure display rule. This addendum amends R-111 — its text above stays as written; "carried cost is summed, absent stays absent" now holds per kind inside `costByKind`.
+
+```ts
+export type CostByKind = Readonly<Partial<Record<CostKind | 'unspecified', number>>>;
+// RunUsageInput keeps costUsd?/costKind?. `credits` counts the provider's credit unit, not USD.
+export type CostDisplay =
+  | { readonly kind: 'money'; readonly usd: number; readonly estimate: boolean }
+  | { readonly kind: 'tokens'; readonly equivalentUsd?: number }
+  | { readonly kind: 'credits'; readonly credits: number }
+  | { readonly kind: 'none' };
+export function costDisplay(costByKind: CostByKind, billing: 'pay_per_use' | 'included' | 'unknown'): CostDisplay;
+```
+
+- **R-115** (added 2026-10-11, #968) `summarizeUsage` fills `costByKind` on the summary and on each stage row; every kind is summed separately over the inputs that carry a cost of that kind. A kind no input of the scope contributes to is absent, and `costByKind` itself is absent when no input carries a cost. A carried 0 is a real zero and stays. This replaces R-111's single total (R-111 is amended by this addendum, not deleted).
+- **R-116** (added 2026-10-11, #968) An input with `costUsd` and no `costKind` is counted under `unspecified`.
+- **R-117** (added 2026-10-11, #968) `costDisplay`. `pay_per_use` and `unknown` → `money` over `reported + computed + unspecified`, with `estimate` true when any `computed` or `unspecified` amount contributes; `equivalent` is never added to money. No money kind but `credits` → `credits`; nothing but `equivalent` → `tokens` with `equivalentUsd` (never shown as money). `included` → `tokens` with `equivalentUsd` when `equivalent` is present; with no equivalent, money kinds still show as `money` and credits-only as `credits`, so a real charge is never hidden. No cost at all → `none`.
+- **R-118** (added 2026-10-11, #968) `summarizeUsage` and `costDisplay` are pure: the same input gives the same output and inputs are never mutated. An amount that is not a finite number is ignored by `costDisplay`, so no result carries `NaN`; an empty `costByKind` → `none`.
