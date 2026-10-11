@@ -39,3 +39,9 @@ other walk opens) — the page `test:layout`'s `page:` lines measure through the
   outcome, first-output latency, pack stats, canary per leg, whether leg 2 finished the second step
   from the pack alone, audit actions in order). Pure-part tests:
   `node --test e2e/operator-handoff.test.mjs`. Never run it from a test or CI.
+
+Suite launches (`test:ui`, journeys, layout, and the design/chat/page-view/roadmap/wizard
+launchers) go through `e2e/quiet-launch.mjs`, which sets `DOCKET_E2E_QUIET=1` unless
+`DOCKET_E2E_VISIBLE=1` is set. Quiet mode keeps the window off-screen and leaves keyboard focus
+in the previous app. It applies only to an unpackaged build. `e2e/launch-cdp.mjs` and
+`npm run design` stay visible.

@@ -1542,3 +1542,11 @@ Added 2026-10-11. "+ Yeni iş emri" opens a modal on the shared window frame; Te
 - **U-250** (added 2026-10-11, #976) Journeys and layout: a journey step creates a work order through the dialog; the layout audit measures both windows at 1024×640 and 1152×720 (no overflow, actions visible).
 
 Clarified 2026-10-11. The Akış select lists only flows the project has. **U-246** now reads: the default is `standard` when that id is one of the options, otherwise the first option, reapplied on every open including after a successful create; the command sends that same id. An empty list disables Aç and shows `workOrder.new.noFlow`.
+
+## Quiet e2e window (U-257 … U-259)
+
+Added 2026-10-12. The app under test stays off-screen and does not take keyboard focus. Bounds are unchanged, so layout measurements stay the same. A packaged build ignores the switch: no environment variable can hide a shipped app.
+
+- **U-257** (added 2026-10-12) `quietWindowOptions(env, isPackaged)` returns options only when `DOCKET_E2E_QUIET` is exactly `1` and `isPackaged === false`. Unset, `0`, any other value, or a packaged app returns `undefined`.
+- **U-258** (added 2026-10-12) Those options are `show: false`, opacity 0, ignore-mouse-events, no dock, and background throttling off. The shape is data: it has no `focus` and no `show` call. The window path creates the window with `show: false`, then maps it with `showInactive()` and applies opacity, click-through and the taskbar flag; it does not call `show()`, `focus()` or `app.focus()`.
+- **U-259** (added 2026-10-12) Every `electron.launch` under `e2e/` goes through one shared helper that sets `DOCKET_E2E_QUIET=1`. `DOCKET_E2E_VISIBLE=1` turns quiet off for debugging. The CDP launcher does not use the helper, so it stays visible unless asked.

@@ -39,3 +39,32 @@ export const titleBarOptionsFor = (platform: NodeJS.Platform): TitleBarOptions =
   platform === 'darwin'
     ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 14, y: 14 } }
     : {};
+
+/** Data the shell reads when a test build must stay off-screen. Fields only — nothing here can
+ *  call focus or show; the window path applies the fields itself. */
+export type QuietWindowOptions = {
+  readonly show: false;
+  readonly opacity: 0;
+  readonly ignoreMouseEvents: true;
+  readonly skipTaskbar: true;
+  readonly hideDock: true;
+  readonly backgroundThrottling: false;
+};
+
+/** Quiet mode is a test-build switch. A packaged app returns undefined for every environment, so
+ *  a shipped build cannot be made invisible by setting a variable. Any value other than the exact
+ *  string "1" is off, including an unset variable. */
+export const quietWindowOptions = (
+  env: Readonly<Record<string, string | undefined>>,
+  isPackaged: boolean,
+): QuietWindowOptions | undefined => {
+  if (isPackaged || env.DOCKET_E2E_QUIET !== '1') return undefined;
+  return {
+    show: false,
+    opacity: 0,
+    ignoreMouseEvents: true,
+    skipTaskbar: true,
+    hideDock: true,
+    backgroundThrottling: false,
+  };
+};

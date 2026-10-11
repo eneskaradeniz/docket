@@ -12,9 +12,8 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { _electron as electron } from 'playwright-core';
-
 import { ROOT, seedPageView, startProbe } from './page-view-app.mjs';
+import { launchQuietElectron } from './quiet-launch.mjs';
 import { assertProfileIsolated, freshProfile } from './profile.mjs';
 
 /** The variables that can steer a discovery root away from $HOME (same list as the other worlds). */
@@ -56,7 +55,7 @@ export async function launchChatApp() {
     PATH: `${seed.bin}:${process.env.PATH ?? ''}`,
   };
   for (const name of REAL_MACHINE_VARS) delete env[name];
-  const app = await electron.launch({
+  const app = await launchQuietElectron({
     args: [...profile.args, join(ROOT, 'dist-electron', 'main.js')],
     env,
   });

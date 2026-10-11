@@ -6,9 +6,8 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { _electron as electron } from 'playwright-core';
-
 import { assertProfileIsolated, freshProfile } from './profile.mjs';
+import { launchQuietElectron } from './quiet-launch.mjs';
 
 export const ROOT = resolve(new URL('..', import.meta.url).pathname);
 
@@ -29,7 +28,7 @@ export async function launchDesignApp() {
   const seed = seedDesign();
   const profile = freshProfile();
   console.log(`profile: ${profile.dir}`);
-  const app = await electron.launch({
+  const app = await launchQuietElectron({
     args: [...profile.args, join(ROOT, 'dist-electron', 'main.js')],
     env: { ...process.env, DOCKET_DATA_DIR: seed.dataDir, DOCKET_OPENCODE_BIN: seed.agentBin, DOCKET_UPDATE_FAKE: '0.9.0' },
   });

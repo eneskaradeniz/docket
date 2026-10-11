@@ -16,7 +16,7 @@ import { createSocket } from 'node:dgram';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { _electron as electron } from 'playwright-core';
+import { launchQuietElectron } from './quiet-launch.mjs';
 
 import { assertProfileIsolated, freshProfile } from './profile.mjs';
 
@@ -115,7 +115,7 @@ export async function launchPageViewApp() {
     PATH: `${seed.bin}:${process.env.PATH ?? ''}`,
   };
   for (const name of REAL_MACHINE_VARS) delete env[name];
-  const app = await electron.launch({
+  const app = await launchQuietElectron({
     args: [...profile.args, join(ROOT, 'dist-electron', 'main.js')],
     env,
   });
