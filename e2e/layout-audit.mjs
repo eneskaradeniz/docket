@@ -69,11 +69,12 @@
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { _electron as electron, chromium } from 'playwright-core';
+import { chromium } from 'playwright-core';
 import { ROOT, launchDesignApp, screenNavigator, seedDesign, setWindow } from './design-app.mjs';
 import { SLOW_API_DELAY_MS } from './design-run.mjs';
 import { acquireE2eLock } from './lock.mjs';
 import { assertProfileIsolated, freshProfile } from './profile.mjs';
+import { launchQuietElectron } from './quiet-launch.mjs';
 import { appendCheck, beginReport, REPORT_PATH } from './report.mjs';
 import {
   comboPlan,
@@ -865,7 +866,7 @@ async function plainTitleBarCheck() {
   // Its own throwaway profile too: this second launch must not see the main walk's persisted UI
   // settings (the audit's Liste screen leaves the board's view choice behind).
   const profile = freshProfile();
-  const app = await electron.launch({ args: [...profile.args, join(ROOT, 'dist-electron', 'main.js')], env });
+  const app = await launchQuietElectron({ args: [...profile.args, join(ROOT, 'dist-electron', 'main.js')], env });
   await assertProfileIsolated(app, profile.dir);
   try {
     const page = await app.firstWindow();

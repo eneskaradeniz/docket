@@ -233,6 +233,22 @@ const runCurrentStage = async (h: Harness, id: WorkOrderId): Promise<ExecuteOutc
   const item = started[0];
   if (item === undefined) throw new Error('the tick must hand over the started item');
 
+  // The planner's docs scope is judged on the checkpoint diff. A run that reports nothing there
+  // fails before the human gate. Other roles keep the diff the scenario already scripted.
+  if (routed.value.role.writeScope.kind === 'docs') {
+    const cwd = `/fake/worktrees/${REPO}/${id}`;
+    const base = await h.deps.checkpoints.base({ cwd, workOrderId: id });
+    const since = base.ok ? base.value : '';
+    const diff = await h.deps.checkpoints.diffSince({ cwd, since });
+    const files = diff.ok ? diff.value.files : [];
+    if (!files.includes('docs/plan.md')) {
+      h.checkpoints.setDiff(since, {
+        files: [...files, 'docs/plan.md'],
+        patch: diff.ok ? diff.value.patch : '',
+      });
+    }
+  }
+
   return executeRun(h.deps, allowAll, {
     item,
     role: routed.value.role,
@@ -275,7 +291,7 @@ describe('standard flow, headless end to end', () => {
     // The implement run's edit: one changed file since the worktree base — the changes gate's
     // measured evidence (A-96).
     h.checkpoints.setBase(id, WORKTREE_BASE);
-    h.checkpoints.setDiff(WORKTREE_BASE, { files: ['src/main.ts'], patch: 'diff --git a/src/main.ts' });
+    h.checkpoints.setDiff(WORKTREE_BASE, { files: ['docs/plan.md', 'src/main.ts'], patch: 'diff --git a/src/main.ts' });
     h.clock.advance(1_000);
     let view = await viewOf(h.deps, id);
     expectState(view, { status: 'ready', stage: PLAN, pendingGates: [PLAN_APPROVAL] });
@@ -386,11 +402,13 @@ describe('standard flow, headless end to end', () => {
     expect(id).toBeDefined();
     if (id === undefined) return;
     h.checkpoints.setBase(id, WORKTREE_BASE);
-    h.checkpoints.setDiff(WORKTREE_BASE, { files: [], patch: '' });
+    // The plan stage writes under docs; the implement run is the one that changes nothing.
+    h.checkpoints.setDiff(WORKTREE_BASE, { files: ['docs/plan.md'], patch: '' });
 
-    // Walk to implement/gating with a zero-file diff behind the run.
+    // Walk to implement/gating with a zero-file diff behind the implement run.
     expect((await runCurrentStage(h, id)).kind).toBe('finished');
     expect((await approveViaApi(h.deps, id, PLAN_APPROVAL)).ok).toBe(true);
+    h.checkpoints.setDiff(WORKTREE_BASE, { files: [], patch: '' });
     expect((await runCurrentStage(h, id)).kind).toBe('finished');
     let view = await viewOf(h.deps, id);
     expectState(view, { status: 'gating', stage: IMPLEMENT, pendingGates: [CHANGES, slugOf<'gate'>('tests'), slugOf<'gate'>('secrets')] });
@@ -445,6 +463,8 @@ describe('standard flow, headless end to end', () => {
     const id = await openViaApi(h.deps, 'Hit the window limit');
     expect(id).toBeDefined();
     if (id === undefined) return;
+    h.checkpoints.setBase(id, WORKTREE_BASE);
+    h.checkpoints.setDiff(WORKTREE_BASE, { files: ['docs/plan.md'], patch: '' });
     expect((await runCurrentStage(h, id)).kind).toBe('finished');
     expect((await approveViaApi(h.deps, id, PLAN_APPROVAL)).ok).toBe(true);
     let view = await viewOf(h.deps, id);

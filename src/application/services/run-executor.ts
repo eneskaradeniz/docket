@@ -30,6 +30,8 @@ import {
   foldRun,
   resolveTier,
   stageBrief,
+  stageOutputScopeRoot,
+  stageOutputVerdict,
 } from '../../domain/index';
 
 import type { AppDeps, AuditAction, RunDir, RunHandle, RunRecord, RunRepo, TransportError } from '../ports';
@@ -172,6 +174,59 @@ const endRun = async (
   // After the append, not before: a store re-querying at delivery time already sees it.
   workOrdersChanged?.();
   return endedAt;
+};
+
+/** Changed paths since the work order's worktree base. Undefined when git cannot answer — that
+ *  is not an empty scope. */
+const changedSinceBase = async (
+  deps: Pick<AppDeps, 'checkpoints'>,
+  input: { readonly cwd: string; readonly item: QueueItem },
+): Promise<readonly string[] | undefined> => {
+  const base = await deps.checkpoints.base({ cwd: input.cwd, workOrderId: input.item.workOrderId });
+  if (!base.ok) return undefined;
+  const diff = await deps.checkpoints.diffSince({ cwd: input.cwd, since: base.value });
+  if (!diff.ok) return undefined;
+  return diff.value.files;
+};
+
+/** The application's reminder. It is not taken from the operator's text. */
+const stageOutputReminder = (scopeRoot: string): string =>
+  `Your previous run produced no files; write the result under ${scopeRoot}.`;
+
+/** A previous run of this stage already spent the one automatic re-run. */
+const stageHasNoOutputRetry = async (
+  deps: Pick<AppDeps, 'runs' | 'log'>,
+  item: QueueItem,
+): Promise<boolean> => {
+  const runs = (await deps.runs.listForWorkOrder(item.workOrderId)).filter((run) => run.stage === item.stage);
+  for (const run of runs) {
+    const entries = await deps.log.list({ kind: 'run', id: run.id }, 20);
+    for (const entry of entries) {
+      if (entry.action === 'run.finished' && entry.detail?.['reason'] === 'no_output') return true;
+    }
+  }
+  return false;
+};
+
+/**
+ * Closes the run record as failed without a work-order `run_finished`. Appending the failure
+ * now would apply the flow's fail rule before the one automatic re-run exists, so the stage
+ * would block or jump while the reminder run is still to come. The audit still names the cause.
+ */
+const sealNoOutputRun = async (
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'runs'>,
+  input: { readonly runId: RunId; readonly workOrderId: WorkOrderId },
+  board?: BoardHooks,
+): Promise<void> => {
+  const endedAt = deps.clock.now();
+  await deps.runs.update(input.runId, { endedAt, outcome: 'failed' });
+  board?.unregister(input.runId);
+  await audit(deps, {
+    at: endedAt,
+    action: 'run.finished',
+    runId: input.runId,
+    detail: { outcome: 'failed', reason: 'no_output' },
+  });
 };
 
 /** One summarised event contributes at most this many characters, ellipsis included. */
@@ -385,7 +440,10 @@ async function driveRun(
   const plan = planAttempt(
     (await deps.runs.listForWorkOrder(item.workOrderId)).filter((run) => run.stage === item.stage),
   );
-  const resume = handoffOf === undefined ? plan.resume : undefined;
+  let sessionResume = handoffOf === undefined ? plan.resume : undefined;
+  let sessionPrompt = prompt;
+
+  for (;;) {
 
   const effort = await resolveEffort(deps, item, route);
   const runId = deps.ids.next<'run'>();
@@ -495,11 +553,11 @@ async function driveRun(
   // without resume is the remedy this executor owns; a restart that fails the same way is a
   // transport error and fails the run — there is no third attempt. A handoff run asked for no
   // resume, so it owns no restart either: its prompt is the pack, not a summary over a session.
-  const started = await startAttempt(resume, prompt);
+  const started = await startAttempt(sessionResume, sessionPrompt);
   let handle: RunHandle;
   if (started.ok) {
     handle = started.value;
-  } else if (resume === undefined || plan.resumedRunId === undefined) {
+  } else if (sessionResume === undefined || plan.resumedRunId === undefined) {
     return failAsTransport(started.error);
   } else {
     const restart = await startAttempt(
@@ -513,10 +571,12 @@ async function driveRun(
   // A-60: the rolling note rides the persisted stream — extended and saved with every event batch,
   // so it exists the moment the account blocks.
   let note: RollingNote | undefined;
+  // Set when this session wrote nothing in scope and the stage still has its one automatic re-run.
+  let retryRoot: string | undefined;
   // The finished fold must see the whole streamed prefix — the empty-run rule reads the
   // accumulated usage, so the executor keeps in memory what it already persists.
   const streamed: AgentEvent[] = [];
-  for await (const event of handle.events) {
+  events: for await (const event of handle.events) {
     streamed.push(event);
     await deps.runs.appendEvents(runId, [event]);
     note = extendRollingNote(note, [event]);
@@ -595,11 +655,37 @@ async function driveRun(
         const outcome = summary.outcome;
         if (outcome !== undefined) {
           // Terminal commit (A-57): the run's work is complete, the interval never gates it.
+          // The output check reads the diff after this commit, so a file the checkpoint just
+          // took still counts. The diff is the checkpoint port's (the same base the changes
+          // gate reads); a git failure is not proof the scope is empty.
           await checkpoint();
-          const endedAt = await endRun(deps, { runId, workOrderId: item.workOrderId, outcome }, board, workOrdersChanged);
+          const loaded = outcome === 'succeeded' ? await deps.definitions.load(item.repo) : undefined;
+          const repo = loaded !== undefined && loaded.ok ? loaded.value.repo : undefined;
+          const changed = outcome === 'succeeded' ? await changedSinceBase(deps, input) : undefined;
+          const output =
+            outcome === 'succeeded' && changed !== undefined
+              ? stageOutputVerdict({
+                  writeScope: input.role.writeScope,
+                  changed,
+                  runOutcome: event.reason,
+                  ...(repo?.docsRoot !== undefined ? { docsRoot: repo.docsRoot } : {}),
+                  ...(repo?.testGlobs !== undefined ? { testGlobs: repo.testGlobs } : {}),
+                })
+              : 'not_applicable';
+          if (output === 'no_output' && !(await stageHasNoOutputRetry(deps, item))) {
+            const root = stageOutputScopeRoot(input.role.writeScope, repo?.docsRoot, repo?.testGlobs);
+            if (root !== undefined) {
+              await sealNoOutputRun(deps, { runId, workOrderId: item.workOrderId }, board);
+              retryRoot = root;
+              break events;
+            }
+          }
+          const finalOutcome = output === 'no_output' ? 'failed' : outcome;
+          const endedAt = await endRun(deps, { runId, workOrderId: item.workOrderId, outcome: finalOutcome }, board, workOrdersChanged);
           // Two fold rules flip a completed finish to failed; the audit names the one that fired.
           // 0/0 tokens with a usage report is the empty run (the more fundamental verdict), an
-          // all-failed tool stream that said nothing is the other.
+          // all-failed tool stream that said nothing is the other. A scope with no file is named
+          // beside them.
           const emptyRun =
             event.reason === 'completed' &&
             outcome === 'failed' &&
@@ -612,14 +698,14 @@ async function driveRun(
             !emptyRun &&
             summary.toolCalls > 0 &&
             summary.failedToolCalls === summary.toolCalls;
-          const reason = emptyRun ? 'empty_run' : allToolsFailed ? 'all_tool_calls_failed' : undefined;
+          const reason = output === 'no_output' ? 'no_output' : emptyRun ? 'empty_run' : allToolsFailed ? 'all_tool_calls_failed' : undefined;
           await audit(deps, {
             at: endedAt,
             action: 'run.finished',
             runId,
-            detail: { outcome, ...(reason !== undefined ? { reason } : {}) },
+            detail: { outcome: finalOutcome, ...(reason !== undefined ? { reason } : {}) },
           });
-          return { kind: 'finished', outcome };
+          return { kind: 'finished', outcome: finalOutcome };
         }
         break;
       }
@@ -628,10 +714,20 @@ async function driveRun(
     }
   }
 
+  if (retryRoot !== undefined) {
+    // The first run's token and directory end with it; the reminder run mints its own.
+    deps.runTokens.revoke(runId);
+    await runDir.dispose().catch(() => undefined);
+    sessionPrompt = `${sessionPrompt}\n${stageOutputReminder(retryRoot)}`;
+    sessionResume = undefined;
+    continue;
+  }
+
   // The port promises a stream that ends after `finished`; one that dries up any other way cannot
   // be waited on, so the run is closed as failed instead of staying active forever. Stream end is
   // a terminal boundary too (A-57): whatever the run wrote stays committed for the next attempt.
   await checkpoint();
   await endRun(deps, { runId, workOrderId: item.workOrderId, outcome: 'failed' }, undefined, workOrdersChanged);
   return { kind: 'finished', outcome: 'failed' };
+  }
 }

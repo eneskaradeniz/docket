@@ -9,9 +9,8 @@ import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { _electron as electron } from 'playwright-core';
-
 import { assertProfileIsolated, freshProfile } from './profile.mjs';
+import { launchQuietElectron } from './quiet-launch.mjs';
 
 export const ROOT = resolve(new URL('..', import.meta.url).pathname);
 
@@ -61,7 +60,7 @@ export async function launchRoadmapApp() {
     PATH: `${seed.bin}:${process.env.PATH ?? ''}`,
   };
   for (const name of REAL_MACHINE_VARS) delete env[name];
-  const app = await electron.launch({
+  const app = await launchQuietElectron({
     args: [...profile.args, join(ROOT, 'dist-electron', 'main.js')],
     env,
   });

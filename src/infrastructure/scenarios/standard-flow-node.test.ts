@@ -249,6 +249,13 @@ const runCurrentStage = async (deps: AppDeps, id: WorkOrderId) => {
   const worktree = await deps.worktrees.ensure(REPO, id);
   if (!worktree.ok) throw new Error(`the worktree must exist: ${worktree.error}`);
 
+  // The planner's write scope is the docs root; the file has to exist before the run finishes
+  // or the output check fails the stage.
+  if (item.stage === 'plan') {
+    await mkdir(join(worktree.value.path, 'docs'), { recursive: true });
+    await writeFile(join(worktree.value.path, 'docs', 'plan.md'), '# Plan\n', 'utf8');
+  }
+
   return {
     outcome: await executeRun(deps, allowAll, {
       item,

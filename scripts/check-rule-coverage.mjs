@@ -18,7 +18,8 @@
 // effort mapping), infrastructure (defs, transports, forge, quota, scenarios), application
 // (executor behaviour) and api. The U rules are defined in
 // ui.md and tested under src/presentation, except U-11..U-14 whose behaviour tests live under
-// src/api and src/application. Runs as part of
+// src/api and src/application, and the quiet-window rules whose pure function and source scan
+// live under electron/ (the shell is outside src/). Runs as part of
 // `npm run check:boundaries`.
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
@@ -34,7 +35,7 @@ const SECTIONS = [
   { name: 'providers', prefix: 'P', doc: join(ROOT, 'docs', 'v2', 'providers.md'), dirs: [join(ROOT, 'src', 'domain'), join(ROOT, 'src', 'infrastructure'), join(ROOT, 'src', 'application'), join(ROOT, 'src', 'api')] },
   { name: 'domain environments', prefix: 'E', doc: join(ROOT, 'docs', 'v2', 'domain.md'), dirs: [join(ROOT, 'src', 'domain')] },
   { name: 'application environments', prefix: 'E', doc: join(ROOT, 'docs', 'v2', 'application.md'), dirs: [join(ROOT, 'src', 'application'), join(ROOT, 'src', 'api')] },
-  { name: 'ui', prefix: 'U', doc: join(ROOT, 'docs', 'v2', 'ui.md'), dirs: [join(ROOT, 'src', 'presentation'), join(ROOT, 'src', 'api'), join(ROOT, 'src', 'application')] },
+  { name: 'ui', prefix: 'U', doc: join(ROOT, 'docs', 'v2', 'ui.md'), dirs: [join(ROOT, 'src', 'presentation'), join(ROOT, 'src', 'api'), join(ROOT, 'src', 'application'), join(ROOT, 'electron')] },
 ];
 
 // Rules whose definition landed in the docs ahead of their implementing wave (Phase 3.5 —

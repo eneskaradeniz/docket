@@ -31,8 +31,8 @@ import { strict as assert } from 'node:assert';
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { _electron as electron } from 'playwright-core';
 import { acquireE2eLock } from './lock.mjs';
+import { launchQuietElectron } from './quiet-launch.mjs';
 import { assertProfileIsolated, freshProfile } from './profile.mjs';
 import { appendCheck, beginReport, REPORT_PATH } from './report.mjs';
 
@@ -77,7 +77,7 @@ const L = {
 const TITLE = SEED.title;
 const OPERATOR = { kind: 'user', id: 'duman-operatoru', label: 'Duman operatörü' };
 
-const app = await electron.launch({
+const app = await launchQuietElectron({
   args: [...profile.args, join(ROOT, 'dist-electron', 'main.js')],
   env: { ...process.env, DOCKET_DATA_DIR: SEED.dataDir, DOCKET_OPENCODE_BIN: SEED.agentBin },
 });

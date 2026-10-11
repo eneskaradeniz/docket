@@ -68,6 +68,7 @@ import {
   WINDOW_MIN_HEIGHT,
   WINDOW_MIN_WIDTH,
   clampDefaultWindowSize,
+  quietWindowOptions,
   titleBarOptionsFor,
 } from './window-options';
 
@@ -346,6 +347,9 @@ function createWindow(): BrowserWindow {
   // The first window must fit the display it opens on: the default size clamped to the primary
   // display's work area (window-options.ts) — never below the minimums, never spilling off screen.
   const size = clampDefaultWindowSize(screen.getPrimaryDisplay().workArea);
+  // Quiet mode never changes bounds. It only exists for an unpackaged test build that asked for
+  // it; a packaged app gets undefined here no matter what the environment says.
+  const quiet = quietWindowOptions(process.env, app.isPackaged);
   const win = new BrowserWindow({
     width: size.width,
     height: size.height,
@@ -354,6 +358,9 @@ function createWindow(): BrowserWindow {
     // On darwin the traffic lights sit inside the app bar (see window-options.ts); everywhere
     // else this spreads nothing and the default frame applies.
     ...titleBarOptionsFor(process.platform),
+    ...(quiet === undefined
+      ? {}
+      : { show: quiet.show, opacity: quiet.opacity, skipTaskbar: quiet.skipTaskbar }),
     webPreferences: {
       // The renderer reaches the core only through the preload's one bridge; everything else
       // about this window is deliberately the Electron default-secure set.
@@ -361,8 +368,25 @@ function createWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // A window created with show:false is background-throttled by default, which would freeze
+      // the renderer's timers while the suites poll it. Quiet mode keeps the frame clock running.
+      ...(quiet === undefined ? {} : { backgroundThrottling: quiet.backgroundThrottling }),
     },
   });
+  if (quiet !== undefined) {
+    // Map the window without becoming the key window. show() and focus() would take the
+    // operator's keyboard; showInactive leaves the previous app in front. The stealth flags go
+    // on before the map so the first frame is already transparent and click-through.
+    win.once('ready-to-show', () => {
+      if (win.isDestroyed()) return;
+      win.setOpacity(quiet.opacity);
+      win.setIgnoreMouseEvents(quiet.ignoreMouseEvents);
+      win.setSkipTaskbar(quiet.skipTaskbar);
+      win.showInactive();
+    });
+    // The Dock icon is the other announcement. Only macOS has a dock; elsewhere this is absent.
+    if (quiet.hideDock) app.dock?.hide();
+  }
   windows.add(win);
   mainWindow = win;
   win.on('closed', () => {
