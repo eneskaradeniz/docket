@@ -301,6 +301,7 @@ export const EN: LabelBundle = {
   'workOrder.new.titleLabel': 'Title',
   'workOrder.new.titlePlaceholder': 'work order title',
   'workOrder.new.flowLabel': 'Flow',
+  'workOrder.new.noFlow': 'No flow is available to open.',
   'workOrder.new.open': 'Open',
   'workOrder.new.cancel': 'Cancel',
   'workOrder.new.close': 'Close',

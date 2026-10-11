@@ -2,17 +2,17 @@
 // Telefon window uses too. The shell is a Window: focus moves in on open and stays trapped, Esc
 // and the scrim and the close control all close it, and focus returns to the control that opened
 // it. Reduced motion is a fade only. A typed title is kept for the session; an empty one is not,
-// so closing never asks. The flow select returns to `standard` on every open.
+// so closing never asks. Every open selects `standard` when the project lists it, otherwise the
+// first flow it does list — the same id the command sends.
 import { useEffect, useLayoutEffect, useReducer, useRef, useState, type ReactNode } from 'react';
 
 import type { CreateOutcome } from '../stores/board';
 import { failureKey } from '../stores/results';
 import { toastOutcome } from '../stores/toasts';
 import {
+  defaultFlow,
   flowChoices,
-  flowToOpen,
   openedWorkOrderForm,
-  STANDARD_FLOW,
   workOrderDraft,
   workOrderFormReducer,
   workOrderOpenToast,
@@ -193,15 +193,21 @@ export function NewWorkOrderWindow({
   onCreated,
   onCreate,
 }: NewWorkOrderWindowProps) {
-  const [form, dispatch] = useReducer(workOrderFormReducer, openedWorkOrderForm(workOrderDraft.read()));
-  const titleRef = useRef<HTMLInputElement>(null);
   const options = flowChoices(flows);
+  const optionKey = options.map((option) => option.id).join('\n');
+  const [form, dispatch] = useReducer(workOrderFormReducer, openedWorkOrderForm(workOrderDraft.read(), options));
+  const titleRef = useRef<HTMLInputElement>(null);
+  // The shown value is the one the command sends. A flow the list does not contain falls back to
+  // the same default a fresh open would pick, never to an id that is not an option.
+  const selected = options.some((option) => option.id === form.flow) ? form.flow : defaultFlow(options);
 
+  // `optionKey` stands in for the list: `options` is a new array on every board render, and
+  // depending on it would wipe a selection the operator had just made.
   useLayoutEffect(() => {
     if (!open) return;
-    dispatch({ type: 'open', draft: workOrderDraft.read() });
+    dispatch({ type: 'open', draft: workOrderDraft.read(), options });
     titleRef.current?.focus();
-  }, [open]);
+  }, [open, optionKey]);
 
   const dismiss = (): void => {
     workOrderDraft.remember(form.title);
@@ -214,13 +220,11 @@ export function NewWorkOrderWindow({
       dispatch({ type: 'invalid', field: 'title_required' });
       return;
     }
-    const chosen = form.flow.trim() === '' ? '' : form.flow;
-    if (chosen === '') {
+    if (selected === '') {
       dispatch({ type: 'invalid', field: 'flow_required' });
       return;
     }
-    const flow = flowToOpen(chosen, options);
-    void onCreate({ title, flow }).then((outcome) => {
+    void onCreate({ title, flow: selected }).then((outcome) => {
       if (!outcome.ok && 'validation' in outcome) {
         dispatch({ type: 'invalid', field: outcome.validation });
         return;
@@ -230,7 +234,7 @@ export function NewWorkOrderWindow({
       toastOutcome(locale, workOrderOpenToast(outcome));
       if (outcome.ok) {
         workOrderDraft.clear();
-        dispatch({ type: 'created' });
+        dispatch({ type: 'created', options });
         onCreated(title);
         onClose();
         return;
@@ -266,7 +270,7 @@ export function NewWorkOrderWindow({
       </span>
       <BoardLaunchers project={launchProject} onLaunch={dismiss} />
       <span className="ml-auto inline-flex [&>button]:h-8">
-        <ActionButton variant="primary" size="md" onClick={submit}>
+        <ActionButton variant="primary" size="md" disabled={options.length === 0} onClick={submit}>
           {t(locale, 'workOrder.new.open')}
         </ActionButton>
       </span>
@@ -317,7 +321,7 @@ export function NewWorkOrderWindow({
         <label className="grid gap-1">
           <span className={LABEL_CLASS}>{t(locale, 'workOrder.new.flowLabel')}</span>
           <select
-            value={options.some((option) => option.id === form.flow) ? form.flow : STANDARD_FLOW}
+            value={selected}
             onChange={(event) => dispatch({ type: 'flow', value: event.target.value })}
             className={INPUT_CLASS}
           >
@@ -327,6 +331,11 @@ export function NewWorkOrderWindow({
               </option>
             ))}
           </select>
+          {options.length === 0 ? (
+            <p role="alert" className="text-[12px] text-error">
+              {t(locale, 'workOrder.new.noFlow')}
+            </p>
+          ) : null}
           {form.fieldError === 'flow_required' ? (
             <p role="alert" className="text-[12px] text-error">
               {t(locale, 'validate.flow_required')}

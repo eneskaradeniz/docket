@@ -9,7 +9,7 @@ import type { LaunchStore } from '../stores/chat-launcher';
 import { commandResultKey } from '../stores/results';
 import {
   boardFlowChoices,
-  flowToOpen,
+  defaultFlow,
   focusTarget,
   openedWorkOrderForm,
   STANDARD_FLOW,
@@ -90,24 +90,48 @@ describe('new work order window (U-245, U-246, U-247)', () => {
     expect(board).not.toContain('<input');
   });
 
-  it('U-246: the Akış default is standard on every open, including after a successful create', () => {
-    let state = openedWorkOrderForm('Taslak');
+  it('U-246: the Akış default is standard when that flow is listed, otherwise the first flow, on every open including after a successful create', () => {
+    const withStandard = [
+      { id: 'release', name: 'release' },
+      { id: STANDARD_FLOW, name: 'Standard' },
+    ];
+    expect(defaultFlow(withStandard)).toBe(STANDARD_FLOW);
+    const onlyRelease = boardFlowChoices('release');
+    expect(onlyRelease.map((flow) => flow.id)).toEqual(['release']);
+    expect(defaultFlow(onlyRelease)).toBe('release');
+    expect(defaultFlow(boardFlowChoices('standart-akis'))).toBe('standart-akis');
+    expect(defaultFlow(boardFlowChoices('standard'))).toBe(STANDARD_FLOW);
+    expect(defaultFlow([])).toBe('');
+    let state = openedWorkOrderForm('Taslak', withStandard);
     expect(state.flow).toBe(STANDARD_FLOW);
-    state = workOrderFormReducer(state, { type: 'flow', value: 'quick-fix' });
-    expect(state.flow).toBe('quick-fix');
-    state = workOrderFormReducer(state, { type: 'created' });
-    state = workOrderFormReducer(state, { type: 'open', draft: state.title });
+    state = workOrderFormReducer(state, { type: 'flow', value: 'release' });
+    expect(state.flow).toBe('release');
+    state = workOrderFormReducer(state, { type: 'created', options: withStandard });
+    state = workOrderFormReducer(state, { type: 'open', draft: state.title, options: withStandard });
     expect(state.flow).toBe(STANDARD_FLOW);
-    state = workOrderFormReducer(state, { type: 'flow', value: 'research' });
-    state = workOrderFormReducer(state, { type: 'open', draft: 'Taslak' });
-    expect(state.flow).toBe(STANDARD_FLOW);
-    expect(boardFlowChoices('release')[0]?.id).toBe(STANDARD_FLOW);
-    expect(boardFlowChoices('release').map((flow) => flow.id)).toContain('release');
+    state = workOrderFormReducer(state, { type: 'open', draft: 'Taslak', options: onlyRelease });
+    expect(state.flow).toBe('release');
+    const empty = draw(
+      createElement(NewWorkOrderWindow, {
+        open: true,
+        locale: 'tr',
+        projectName: 'Kadife Odoo',
+        flows: [],
+        launchProject: null,
+        onClose: () => undefined,
+        onCreated: () => undefined,
+        onCreate: () => Promise.resolve({ ok: true as const }),
+      }),
+    );
+    expect(empty).toContain(t('tr', 'workOrder.new.noFlow'));
+    expect(empty).toContain('disabled');
+    expect(source('new-work-order-window.tsx')).not.toContain('flowToOpen');
   });
 
   it('U-247: an empty title is refused with a field message; Enter submits; success closes the dialog and names the card to focus', () => {
     workOrderDraft.clear();
-    const open = openedWorkOrderForm('   ');
+    const listed = [{ id: STANDARD_FLOW, name: STANDARD_FLOW }];
+    const open = openedWorkOrderForm('   ', listed);
     const refused = workOrderFormReducer(open, { type: 'invalid', field: 'title_required' });
     expect(refused.fieldError).toBe('title_required');
     expect(refused.failure).toBeNull();
@@ -117,9 +141,9 @@ describe('new work order window (U-245, U-246, U-247)', () => {
     expect(workOrderDraft.read()).toBe('');
     workOrderDraft.remember('Kapı');
     expect(workOrderDraft.read()).toBe('Kapı');
-    const created = workOrderFormReducer(workOrderFormReducer(open, { type: 'title', value: 'Kapı' }), { type: 'created' });
+    const created = workOrderFormReducer(workOrderFormReducer(open, { type: 'title', value: 'Kapı' }), { type: 'created', options: listed });
     expect(created.title).toBe('');
-    expect(created.flow).toBe(STANDARD_FLOW);
+    expect(created.flow).toBe(defaultFlow(listed));
     workOrderDraft.clear();
     expect(focusTarget('Kapı', [{ id: 'wo-1', title: 'Kapı' }, { id: 'wo-2', title: 'Diğer' }])).toBe('wo-1');
     expect(focusTarget('Yok', [{ id: 'wo-1', title: 'Kapı' }])).toBeNull();
@@ -142,12 +166,7 @@ describe('new work order window (U-245, U-246, U-247)', () => {
     expect(windowSource).toContain('toastOutcome(');
     expect(windowSource).toContain('workOrderOpenToast(');
     expect(windowSource).not.toContain("t(locale, 'success.workOrder.open')");
-    // `standard` is the standing choice. A project whose only other flow is the one the board
-    // loaded cannot open the literal id, so the command uses that flow.
-    const known = boardFlowChoices('standart-akis');
-    expect(flowToOpen(STANDARD_FLOW, known)).toBe('standart-akis');
-    expect(flowToOpen('standart-akis', known)).toBe('standart-akis');
-    expect(flowToOpen(STANDARD_FLOW, boardFlowChoices('standard'))).toBe(STANDARD_FLOW);
+    expect(windowSource).not.toContain('flowToOpen');
   });
 });
 

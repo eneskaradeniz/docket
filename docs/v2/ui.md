@@ -1540,3 +1540,5 @@ Added 2026-10-11. "+ Yeni iş emri" opens a modal on the shared window frame; Te
 - **U-248** (added 2026-10-11, #976) The Telefon row opens the phone window; Settings has no `phone` section and no Telefon tab; the section union has no `'phone'`.
 - **U-249** (added 2026-10-11, #976) Both windows: dialog semantics, focus trap, Esc, focus return to the opener.
 - **U-250** (added 2026-10-11, #976) Journeys and layout: a journey step creates a work order through the dialog; the layout audit measures both windows at 1024×640 and 1152×720 (no overflow, actions visible).
+
+Clarified 2026-10-11. The Akış select lists only flows the project has. **U-246** now reads: the default is `standard` when that id is one of the options, otherwise the first option, reapplied on every open including after a successful create; the command sends that same id. An empty list disables Aç and shows `workOrder.new.noFlow`.

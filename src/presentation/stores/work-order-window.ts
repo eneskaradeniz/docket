@@ -1,7 +1,7 @@
 // stores/work-order-window.ts — the new-work-order dialog's session draft and the form standing.
 // The title survives a scrim or Esc close for the rest of the session; the flow does not, because
-// every open restores `standard`. An empty title is remembered as nothing, so closing never has
-// to ask whether to keep a blank draft.
+// every open picks its default again from the flows the project actually has. An empty title is
+// remembered as nothing, so closing never has to ask whether to keep a blank draft.
 import type { CommandResult } from '../../api/commands';
 import type { LabelKey } from '../labels/keys';
 import type { CreateOutcome, CreateValidation } from './board';
@@ -14,29 +14,21 @@ export interface FlowOption {
   readonly name: string;
 }
 
-const STANDARD_OPTION: FlowOption = { id: STANDARD_FLOW, name: STANDARD_FLOW };
+/** Drops a blank id. Does not invent `standard`: a flow the project does not have must not appear
+ *  as a choice, or the select and the command would disagree. */
+export const flowChoices = (known: readonly FlowOption[]): readonly FlowOption[] =>
+  known.filter((flow) => flow.id.trim() !== '');
 
-/** The Akış select: `standard` first, then every other flow the caller knows the project has. */
-export const flowChoices = (known: readonly FlowOption[]): readonly FlowOption[] => {
-  const rest = known.filter((flow) => flow.id !== STANDARD_FLOW && flow.id.trim() !== '');
-  const named = known.find((flow) => flow.id === STANDARD_FLOW);
-  return [named ?? STANDARD_OPTION, ...rest];
-};
-
-/** The board query names one flow — the repo's default. It joins `standard` when it is another. */
+/** The board query names one flow — the repo's default. That is the only choice the board can offer. */
 export const boardFlowChoices = (boardFlow: string | null): readonly FlowOption[] =>
   flowChoices(boardFlow === null || boardFlow.trim() === '' ? [] : [{ id: boardFlow, name: boardFlow }]);
 
-/** The flow id the open command should carry. The select stands on `standard`, but a repo whose
- *  only enabled flow is another id cannot open that literal, so the command uses the flow the
- *  board already loaded. An explicit other choice is sent as chosen. */
-export const flowToOpen = (selected: string, known: readonly FlowOption[]): string => {
-  const others = known.filter((flow) => flow.id !== STANDARD_FLOW);
-  if (selected === STANDARD_FLOW && others.length === 1) {
-    const only = others[0];
-    if (only !== undefined) return only.id;
-  }
-  return selected;
+/** The select's starting value, and the value a fresh open restores. `standard` when the project
+ *  lists it; otherwise the first listed flow. An empty list has nothing to select. */
+export const defaultFlow = (options: readonly FlowOption[]): string => {
+  const standard = options.find((flow) => flow.id === STANDARD_FLOW);
+  if (standard !== undefined) return standard.id;
+  return options[0]?.id ?? '';
 };
 
 export interface WorkOrderOpenToast {
@@ -88,25 +80,25 @@ export interface WorkOrderFormState {
   readonly failure: string | null;
 }
 
-export const openedWorkOrderForm = (kept: string): WorkOrderFormState => ({
+export const openedWorkOrderForm = (kept: string, options: readonly FlowOption[]): WorkOrderFormState => ({
   title: kept,
-  flow: STANDARD_FLOW,
+  flow: defaultFlow(options),
   fieldError: null,
   failure: null,
 });
 
 export type WorkOrderFormAction =
-  | { readonly type: 'open'; readonly draft: string }
+  | { readonly type: 'open'; readonly draft: string; readonly options: readonly FlowOption[] }
   | { readonly type: 'title'; readonly value: string }
   | { readonly type: 'flow'; readonly value: string }
   | { readonly type: 'invalid'; readonly field: CreateValidation }
   | { readonly type: 'failed'; readonly code: string }
-  | { readonly type: 'created' };
+  | { readonly type: 'created'; readonly options: readonly FlowOption[] };
 
 export const workOrderFormReducer = (state: WorkOrderFormState, action: WorkOrderFormAction): WorkOrderFormState => {
   switch (action.type) {
     case 'open':
-      return openedWorkOrderForm(action.draft);
+      return openedWorkOrderForm(action.draft, action.options);
     case 'title':
       return {
         ...state,
@@ -124,6 +116,6 @@ export const workOrderFormReducer = (state: WorkOrderFormState, action: WorkOrde
     case 'failed':
       return { ...state, failure: action.code, fieldError: null };
     case 'created':
-      return openedWorkOrderForm('');
+      return openedWorkOrderForm('', action.options);
   }
 };

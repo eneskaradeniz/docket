@@ -300,6 +300,7 @@ export const TR: LabelBundle = {
   'workOrder.new.titleLabel': 'Başlık',
   'workOrder.new.titlePlaceholder': 'iş emri başlığı',
   'workOrder.new.flowLabel': 'Akış',
+  'workOrder.new.noFlow': 'Açılabilecek bir akış yok.',
   'workOrder.new.open': 'Aç',
   'workOrder.new.cancel': 'Vazgeç',
   'workOrder.new.close': 'Kapat',

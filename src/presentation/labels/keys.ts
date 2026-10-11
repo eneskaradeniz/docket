@@ -318,6 +318,7 @@ export const LABEL_KEYS = [
   'workOrder.new.titleLabel',
   'workOrder.new.titlePlaceholder',
   'workOrder.new.flowLabel',
+  'workOrder.new.noFlow',
   'workOrder.new.open',
   'workOrder.new.cancel',
   'workOrder.new.close',
