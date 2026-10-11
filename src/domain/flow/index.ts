@@ -2,3 +2,4 @@
 export * from './events';
 export * from './derive';
 export * from './next-action';
+export * from './description';

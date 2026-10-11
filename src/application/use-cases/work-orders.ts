@@ -14,7 +14,7 @@ import type {
   WorkOrderState,
   RepoSlug,
 } from '../../domain/index';
-import { deriveWorkOrderState, err, nextAction, ok } from '../../domain/index';
+import { deriveWorkOrderState, err, nextAction, normalizeWorkOrderDescription, ok } from '../../domain/index';
 
 import type { AppDeps, RunRecord, WorkOrderRecord } from '../ports';
 
@@ -25,7 +25,8 @@ export type OpenError =
   | 'unknown_flow'
   | 'flow_not_enabled'
   | 'unknown_task'
-  | 'empty_title';
+  | 'empty_title'
+  | 'description_too_long';
 
 export async function openWorkOrder(
   deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'definitions' | 'projects'>,
@@ -33,6 +34,7 @@ export async function openWorkOrder(
     readonly project: ProjectSlug;
     readonly repo: RepoSlug;
     readonly title: string;
+    readonly description?: string;
     readonly flow?: FlowSlug;
     readonly task?: TaskSlug;
     readonly actor: Actor;
@@ -40,6 +42,8 @@ export async function openWorkOrder(
 ): Promise<Result<WorkOrderId, OpenError>> {
   const title = input.title.trim();
   if (title === '') return err('empty_title');
+  const description = normalizeWorkOrderDescription(input.description);
+  if (!description.ok) return err(description.error);
 
   // The project is the membership authority: a work order cannot target a repo the project
   // does not list, whatever the definitions say.
@@ -75,6 +79,7 @@ export async function openWorkOrder(
     repo: input.repo,
     flow,
     title,
+    ...(description.value !== undefined ? { description: description.value } : {}),
     ...(input.task !== undefined ? { task: input.task } : {}),
     createdAt: at,
     createdBy: input.actor,

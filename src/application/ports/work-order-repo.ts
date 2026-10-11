@@ -16,6 +16,8 @@ export interface WorkOrderRecord {
   readonly repo: RepoSlug;
   readonly flow: FlowSlug;
   readonly title: string;
+  /** Absent when the operator wrote none, and on every row stored before the field existed. */
+  readonly description?: string;
   readonly task?: TaskSlug;
   readonly createdAt: EpochMs;
   readonly createdBy: Actor;

@@ -14,7 +14,7 @@ export interface RegistryEntry {
 }
 
 export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
-  'workOrder.open': { input: 'project: ProjectSlug, repo: RepoSlug, title: string, flow?: FlowSlug, task?: TaskSlug' },
+  'workOrder.open': { input: 'project: ProjectSlug, repo: RepoSlug, title: string, description?: string, flow?: FlowSlug, task?: TaskSlug' },
   'task.open': { input: 'project: ProjectSlug, task: TaskSlug' },
   'roadmap.runPhase': { input: 'project: ProjectSlug, phase: PhaseSlug' },
   'roadmap.pausePhase': { input: 'project: ProjectSlug, phase: PhaseSlug' },

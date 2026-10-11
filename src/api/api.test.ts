@@ -365,6 +365,40 @@ describe('createApi', () => {
       expect((await h.deps.workOrders.events(id))[0]?.type).toBe('created');
     });
 
+    it('A-320: workOrder.open accepts a description and workOrder.detail returns it', async () => {
+      const h = await createHarness();
+      const api = createApi(h.deps);
+
+      const opened = await api.command(ACTOR, {
+        type: 'workOrder.open',
+        project: PROJECT,
+        repo: REPO,
+        title: 'Fix the login',
+        description: '  The session drops after a refresh.  ',
+      });
+      expect(opened.ok).toBe(true);
+      if (!opened.ok || opened.id === undefined) throw new Error('open must return an id');
+
+      const detail = await api.query({ type: 'workOrder.detail', id: opened.id });
+      expect(detail).toMatchObject({
+        record: { title: 'Fix the login', description: 'The session drops after a refresh.' },
+      });
+
+      const bare = await api.command(ACTOR, {
+        type: 'workOrder.open',
+        project: PROJECT,
+        repo: REPO,
+        title: 'No description',
+      });
+      if (!bare.ok || bare.id === undefined) throw new Error('open must return an id');
+      const bareDetail = await api.query({ type: 'workOrder.detail', id: bare.id });
+      expect(bareDetail).toMatchObject({ record: { title: 'No description' } });
+      if (typeof bareDetail !== 'object' || bareDetail === null || !('record' in bareDetail)) {
+        throw new Error('detail must carry the record');
+      }
+      expect(bareDetail.record).not.toHaveProperty('description');
+    });
+
     it('maps a use-case failure onto { ok: false, code }', async () => {
       const h = await createHarness();
       const api = createApi(h.deps);

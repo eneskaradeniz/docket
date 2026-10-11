@@ -151,12 +151,15 @@ const buildHarness = (
     { name: 'AGENTS.md', content: AGENTS_MD },
   ],
   routeKinds: readonly FakeRouteKind[] = ROUTE_KINDS,
+  description?: string,
 ): Harness => {
   const definitions = createFakeDefinitionStore();
   definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', DEFS_JSON);
   const workOrders = createFakeWorkOrderRepo();
   // The store throws on events for an unknown id, so the record is created, not just seeded.
-  void workOrders.create(WORK_ORDER_RECORD);
+  void workOrders.create(
+    description === undefined ? WORK_ORDER_RECORD : { ...WORK_ORDER_RECORD, description },
+  );
   const accounts = createFakeAccountRepo();
   void accounts.save(accountRecord(ACCOUNT_X, 'prov-x'));
   void accounts.save(accountRecord(ACCOUNT_Y, 'prov-y'));
@@ -444,6 +447,74 @@ describe('composeRunPrompt', () => {
     if (!without.ok) throw new Error(`composition must succeed: ${without.error}`);
     expect(without.value.prompt).toContain('rejected without a reason');
     expect(without.value.prompt).not.toContain('plan eksik');
+  });
+
+  it('A-319: the first stage and a later stage quote the request; a missing description adds no section', async () => {
+    const description = 'The session drops after a refresh.';
+    const h = buildHarness(
+      [
+        { name: 'CLAUDE.md', content: CLAUDE_MD },
+        { name: 'AGENTS.md', content: AGENTS_MD },
+      ],
+      ROUTE_KINDS,
+      description,
+    );
+    h.deps.definitions.seed(
+      { kind: 'repo', repo: REPO },
+      'defs.json',
+      JSON.stringify({
+        roles: [
+          ROLE_JSON,
+          {
+            id: 'planner',
+            name: 'Planner',
+            instructions: 'Write the plan.',
+            writeScope: { kind: 'docs' },
+            capabilities: [],
+            active: true,
+          },
+        ],
+        flows: [
+          {
+            id: 'standard',
+            name: 'Standart',
+            stages: [
+              { id: 'plan', name: 'Planlama', role: 'planner', exit: [] },
+              STAGE_JSON,
+            ],
+          },
+        ],
+        capabilities: [],
+        repo: REPO_JSON,
+      }),
+    );
+
+    for (const stage of [
+      { stage: slugOf<'stage'>('plan'), role: slugOf<'role'>('planner') },
+      { stage: slugOf<'stage'>('implement'), role: slugOf<'role'>('worker') },
+    ]) {
+      const composed = await composeRunPrompt(h.deps, { ...INPUT({ accountId: ACCOUNT_X }), ...stage });
+      if (!composed.ok) throw new Error(`composition must succeed: ${composed.error}`);
+      expect(occurrences(composed.value.prompt, '## Request')).toBe(1);
+      expect(composed.value.prompt).toContain(WORK_ORDER_RECORD.title);
+      expect(composed.value.prompt).toContain(description);
+      expect(composed.value.prompt.indexOf('Work order:')).toBeLessThan(composed.value.prompt.indexOf('## Request'));
+    }
+
+    const plain = buildHarness();
+    plain.deps.definitions.seed(
+      { kind: 'repo', repo: REPO },
+      'defs.json',
+      JSON.stringify({
+        roles: [ROLE_JSON],
+        flows: [{ id: 'standard', name: 'Standart', stages: [STAGE_JSON] }],
+        capabilities: [],
+        repo: REPO_JSON,
+      }),
+    );
+    const without = await composeRunPrompt(plain.deps, INPUT({ accountId: ACCOUNT_X }));
+    if (!without.ok) throw new Error(`composition must succeed: ${without.error}`);
+    expect(without.value.prompt).not.toContain('## Request');
   });
 
   it('A-304: the run input redacts a token-shaped note and cuts a 2000-character note to 500', async () => {
