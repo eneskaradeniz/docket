@@ -60,7 +60,7 @@ import {
 } from '../ports/fakes';
 
 import { assistantBrief } from './assistant-brief';
-import { createChatRunner, CHAT_NOTICE_TEXT_KEY, CHAT_TURN_HISTORY_LIMITS, type ChatRunner, type ChatTurnEvent } from './chat-runner';
+import { createChatRunner, CHAT_NOTICE_TEXT_KEY, CHAT_TOOL_DENIED_NOTICE, CHAT_TURN_HISTORY_LIMITS, type ChatRunner, type ChatTurnEvent } from './chat-runner';
 import { createChatTurnLedger, type ChatTurnLedger } from './chat-turn-ledger';
 import type { UserMessageInput } from '../use-cases';
 
@@ -160,11 +160,11 @@ const conversationRecord = (id: ConversationId, overrides: Partial<Conversation>
 
 const at = (ms: number): EpochMs => T0 + ms;
 const text = (delta: string): AgentEvent => ({ type: 'text', at: at(2), delta });
-const ask = (id: string): AgentEvent => ({
+const ask = (id: string, tool = 'bash'): AgentEvent => ({
   type: 'permission_ask',
   at: at(3),
   id,
-  tool: 'bash',
+  tool,
   target: '/tmp/x',
   options: ['allow', 'deny'],
 });
@@ -744,7 +744,7 @@ describe('createChatRunner', () => {
     expect(request.prompt.length).toBeLessThan(CHAT_TURN_HISTORY_LIMITS.bytes + 8_000);
   });
 
-  it('A-237: permission asks are always denied, limit hits end the turn without fallback or queueing, and bookkeeping events never reach listeners', async () => {
+  it('A-237: a permission ask that is not an own read tool is denied, limit hits end the turn without fallback or queueing, and bookkeeping events never reach listeners', async () => {
     const h = await harness({ script: [text('a'), ask('ask-1'), quotaSignal(), errorEvent('network'), limitHit()], pools: POOLS });
     const watch = watching(h.runner, CONVERSATION);
     await send(h.runner, CONVERSATION, { text: 'Selam' });
@@ -753,10 +753,62 @@ describe('createChatRunner', () => {
     expect(h.transport.answers()).toEqual([{ askId: 'ask-1', decision: 'deny' }]);
     expect(done).toMatchObject({ type: 'finished', outcome: 'limit' });
     expect(watch.events.some((event) => event.type === 'notice' && event.code === 'limit')).toBe(true);
-    expect((await lastMessage(h, CONVERSATION)).text).toBe('a');
+    expect((await lastMessage(h, CONVERSATION)).text).toBe(`a\n${CHAT_TOOL_DENIED_NOTICE}\tbash`);
     expect(await h.accounts.meters(ACCOUNT)).toHaveLength(1);
     for (const event of watch.events) expect(['started', 'text', 'notice', 'finished']).toContain(event.type);
     expect(await h.deps.queue.list()).toEqual([]);
+  });
+
+  it('A-316: only the exact own read tools are allowed; a longer name, a prefixed name, or a write tool is denied', async () => {
+    const h = await harness({
+      script: [
+        ask('a1', 'docket_get'),
+        ask('a2', 'docket_search'),
+        ask('a3', 'docket_read_file'),
+        ask('a4', 'propose_change'),
+        ask('a5', 'page_publish'),
+        ask('a6', 'draft_work_order'),
+        ask('a7', 'mcp__docket-pages__docket_get'),
+        ask('a8', 'docket_get_extra'),
+        ask('a9', 'docket_searching'),
+        ask('a10', 'x_docket_get'),
+        finished('completed'),
+      ],
+    });
+    const watch = watching(h.runner, CONVERSATION);
+    await send(h.runner, CONVERSATION, { text: 'Kaç iş emri var?' });
+    expect(await watch.finished).toMatchObject({ outcome: 'completed' });
+    expect(h.transport.answers()).toEqual([
+      { askId: 'a1', decision: 'allow' },
+      { askId: 'a2', decision: 'allow' },
+      { askId: 'a3', decision: 'deny' },
+      { askId: 'a4', decision: 'deny' },
+      { askId: 'a5', decision: 'deny' },
+      { askId: 'a6', decision: 'deny' },
+      { askId: 'a7', decision: 'deny' },
+      { askId: 'a8', decision: 'deny' },
+      { askId: 'a9', decision: 'deny' },
+      { askId: 'a10', decision: 'deny' },
+    ]);
+  });
+
+  it('A-317: a denied ask is a transcript line naming the tool; an allowed read tool adds none', async () => {
+    const h = await harness({
+      script: [text('baktım'), ask('a1', 'docket_get'), ask('a2', 'propose_change'), ask('a3', 'Bash'), finished('completed')],
+    });
+    const watch = watching(h.runner, CONVERSATION);
+    await send(h.runner, CONVERSATION, { text: 'Say' });
+    await watch.finished;
+    expect((await lastMessage(h, CONVERSATION)).text).toBe(
+      `baktım\n${CHAT_TOOL_DENIED_NOTICE}\tpropose_change\n${CHAT_TOOL_DENIED_NOTICE}\tBash`,
+    );
+    expect(watch.events.some((event) => event.type === 'notice')).toBe(false);
+
+    const empty = await harness({ script: [ask('a1', 'line\nbreak\there'), finished('completed')] });
+    const watchEmpty = watching(empty.runner, CONVERSATION);
+    await send(empty.runner, CONVERSATION, { text: 'Say' });
+    await watchEmpty.finished;
+    expect((await lastMessage(empty, CONVERSATION)).text).toBe(`${CHAT_TOOL_DENIED_NOTICE}\tline break here`);
   });
 
   it('A-237: an error class names the notice of a failed turn', async () => {

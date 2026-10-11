@@ -958,6 +958,7 @@ export const EN: LabelBundle = {
   'chat.notice.crash': 'Docket AI stopped unexpectedly.',
   'chat.notice.tools_unavailable': 'Docket tools are not available with this account.',
   'chat.notice.cancelled': 'The reply was stopped.',
+  'chat.notice.tool_denied': 'Docket AI could not use a tool: {name}',
   'chat.note.dismiss': 'Dismiss note',
   'chat.file.video': 'Video is not supported. You can add a frame as an image.',
   'chat.file.type': 'This file type cannot be added.',
