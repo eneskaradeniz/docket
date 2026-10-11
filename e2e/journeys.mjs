@@ -1715,20 +1715,14 @@ for (const [sizeName, theme] of combos) {
       () => {
         const p = document.querySelector('[data-chat-panel]');
         if (p === null) return false;
-        // The panel eases between its two boxes in 280ms; the attribute can be seen a frame
-        // before the transition starts, so a settled frame is one with no running animation
-        // and an unchanged box — only then is the geometry below final.
-        const before = p.getBoundingClientRect();
-        return new Promise((resolve) => {
-          requestAnimationFrame(() => {
-            const after = p.getBoundingClientRect();
-            resolve(
-              p.getAnimations().length === 0 &&
-                Math.abs(after.right - before.right) < 0.5 &&
-                Math.abs(after.bottom - before.bottom) < 0.5,
-            );
-          });
-        });
+        // The panel eases between its two boxes in 280ms, so a settled frame is one with no
+        // running animation and the same box as the previous polled frame. The predicate stays
+        // synchronous: a Promise result would be taken as done after a single frame.
+        const r = p.getBoundingClientRect();
+        const key = `${r.right}|${r.bottom}`;
+        const last = window.__chatPanelBox;
+        window.__chatPanelBox = key;
+        return p.getAnimations().length === 0 && last === key;
       },
       undefined,
       { timeout: WAIT },
