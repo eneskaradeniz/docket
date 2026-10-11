@@ -294,6 +294,28 @@ describe('work order detail reads', () => {
     expect(result.value).not.toHaveProperty('patch');
   });
 
+  it('A-321: a git failure of base or diffSince is unavailable, not an empty ready list', async () => {
+    const h = await harness();
+    h.worktrees.markExisting(REPO, h.id);
+    h.checkpoints.failNext();
+
+    const baseFailed = await workOrderChanges(h.changeDeps, h.id);
+    expect(baseFailed).toEqual({ ok: true, value: { state: 'unavailable', files: [], truncated: false } });
+
+    h.checkpoints.setBase(h.id, 'base-sha');
+    const diffFailed = await workOrderChanges(
+      {
+        ...h.changeDeps,
+        checkpoints: {
+          ...h.checkpoints,
+          diffSince: async () => ({ ok: false, error: 'git_failed' }),
+        },
+      },
+      h.id,
+    );
+    expect(diffFailed).toEqual({ ok: true, value: { state: 'unavailable', files: [], truncated: false } });
+  });
+
   it('A-315: both reads write nothing and still answer while a run is in flight', async () => {
     const h = await harness();
     await h.runs.create(runOf(RUN_A, h.id, 10, ACCOUNT, 'fast-1'));

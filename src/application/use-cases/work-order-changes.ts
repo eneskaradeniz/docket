@@ -9,7 +9,7 @@ import type { AppDeps } from '../ports/index';
 const MAX_FILES = 200;
 
 export interface WorkOrderChangesView {
-  readonly state: 'ready' | 'no_worktree';
+  readonly state: 'ready' | 'no_worktree' | 'unavailable';
   readonly files: readonly DiffFileStat[];
   readonly truncated: boolean;
 }
@@ -32,9 +32,10 @@ export async function workOrderChanges(
   if (located === undefined) return ok(none('no_worktree'));
 
   const base = await deps.checkpoints.base({ cwd: located.path, workOrderId: record.id });
-  if (!base.ok || base.value === '') return ok(none('ready'));
+  // A git failure is not an empty tree: the caller must not treat it as "no changes".
+  if (!base.ok) return ok(none('unavailable'));
   const diff = await deps.checkpoints.diffSince({ cwd: located.path, since: base.value });
-  if (!diff.ok) return ok(none('ready'));
+  if (!diff.ok) return ok(none('unavailable'));
 
   const stats = diffStatOf(diff.value.patch);
   const truncated = stats.length > MAX_FILES;

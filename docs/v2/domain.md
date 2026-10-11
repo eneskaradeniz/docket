@@ -1152,3 +1152,15 @@ export function diffStatOf(patch: string): readonly DiffFileStat[];
 ```
 
 - **R-119** (added 2026-10-12, #969) `diffStatOf` counts `+` and `-` lines per file. `+++` and `---` before the first hunk of that file are headers and are ignored; after a hunk the same characters are content and count as one line each. A rename is reported at the `rename to` path (the destination), including a quoted path. `Binary files … differ` and `GIT binary patch` mark the file binary and contribute no line counts — the binary body is not source. An empty patch yields no files. A deleted file keeps the source path and a new file the destination. The function is pure: the same patch yields the same rows and the patch text is not modified.
+
+Addendum 2026-10-12 (#982): a work order may carry an optional description. `flow/description.ts` exports the pure check the application stores and the section a stage run quotes. The record stays valid when the field is absent. No migration.
+
+```ts
+export const WORK_ORDER_DESCRIPTION_MAX_CHARS: number; // 4_000
+export function normalizeWorkOrderDescription(
+  input: string | undefined,
+): Result<string | undefined, 'description_too_long'>;
+export function workOrderRequestSection(title: string, description: string | undefined): string | undefined;
+```
+
+- **R-123** (added 2026-10-12, #982) `normalizeWorkOrderDescription` trims first. `undefined`, `''` and whitespace-only become absent (`ok(undefined)`), not an error. A trimmed value longer than `WORK_ORDER_DESCRIPTION_MAX_CHARS` (4 000) is `description_too_long`; exactly 4 000 is kept. Token-shaped text is replaced with `[redacted]` and the surrounding text stays. The input is not mutated. `workOrderRequestSection` is a `## Request` section containing the title and the description when a description is present, with the same redaction; an absent or blank description returns `undefined`, so no empty section is produced.

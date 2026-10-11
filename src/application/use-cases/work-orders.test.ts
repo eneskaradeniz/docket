@@ -445,6 +445,50 @@ describe('openWorkOrder', () => {
       },
     ]);
   });
+
+  it('A-318: a description is stored trimmed and redacted, a blank one is omitted, and an over-long one writes nothing', async () => {
+    const h = createHarness();
+    const token = `sk-${'k'.repeat(32)}`;
+
+    const opened = await openWorkOrder(h.openDeps, {
+      project: PROJECT,
+      repo: REPO,
+      title: 'Fix the login flow',
+      description: `  session drops after ${token}  `,
+      actor: ACTOR,
+    });
+    if (!opened.ok) throw new Error('open must succeed');
+    const stored = await h.workOrders.get(opened.value);
+    expect(stored?.description).toBe('session drops after [redacted]');
+    expect(stored?.description).not.toContain(token);
+
+    const view = await getWorkOrder(h.viewDeps, opened.value);
+    if (!view.ok) throw new Error('detail must succeed');
+    expect(view.value.record.description).toBe('session drops after [redacted]');
+
+    for (const description of ['', '   ', ' \n\t ']) {
+      const blank = await openWorkOrder(h.openDeps, {
+        project: PROJECT,
+        repo: REPO,
+        title: 'Fix the login flow',
+        description,
+        actor: ACTOR,
+      });
+      if (!blank.ok) throw new Error('a blank description must still open');
+      expect(await h.workOrders.get(blank.value)).not.toHaveProperty('description');
+    }
+
+    const tooLong = await openWorkOrder(h.openDeps, {
+      project: PROJECT,
+      repo: REPO,
+      title: 'Fix the login flow',
+      description: 'y'.repeat(4_001),
+      actor: ACTOR,
+    });
+    expect(tooLong).toEqual(err('description_too_long'));
+    expect(await h.workOrders.list({})).toHaveLength(4);
+    expect(h.log.entries()).toHaveLength(4);
+  });
 });
 
 describe('getWorkOrder', () => {

@@ -18,6 +18,7 @@ import {
   planInstructions,
   renderInstructionBlock,
   stageBrief,
+  workOrderRequestSection,
 } from '../../domain/index';
 
 import type { AppDeps } from '../ports/index';
@@ -65,9 +66,13 @@ export async function composeRunPrompt(
   // Docket layers first — byte-identical for every provider given the same definitions (A-53); the
   // brief already embeds the role instructions, so they are never appended a second time.
   const brief = stageBrief(flow, stage, role, { id: record.id, title: record.title });
+  const request = workOrderRequestSection(record.title, record.description);
   const events = await deps.workOrders.events(input.workOrderId);
   const feedback = operatorFeedbackSection(flow, events, input.stage);
-  const docket = feedback === undefined ? brief : `${brief}\n\n${feedback}`;
+  // The request is operator data, not a definition, so it stays out of the brief the definitions
+  // digest is computed from. A missing description adds nothing — no empty heading.
+  const layers = [brief, request, feedback].filter((part): part is string => part !== undefined);
+  const docket = layers.join('\n\n');
 
   // The instruction block: candidates from the registry union, present files read as data through
   // the port, the provider's native set never inlined (A-54), the budget fixed (A-55).

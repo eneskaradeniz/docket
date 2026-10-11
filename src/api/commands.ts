@@ -1,7 +1,7 @@
 // api/commands.ts — the write side of the boundary. Exact contract: docs/v2/application.md § 4.
 // Plain JSON-serialisable shapes only; ids travel as strings and are parsed in api.ts (A-21).
 export type Command =
-  | { readonly type: 'workOrder.open'; readonly project: string; readonly repo: string; readonly title: string; readonly flow?: string; readonly task?: string }
+  | { readonly type: 'workOrder.open'; readonly project: string; readonly repo: string; readonly title: string; readonly description?: string; readonly flow?: string; readonly task?: string }
   | { readonly type: 'task.open'; readonly project: string; readonly task: string }
   | { readonly type: 'roadmap.runPhase'; readonly project: string; readonly phase: string } // ok → { ok: true, phaseRun } (A-98)
   | { readonly type: 'roadmap.pausePhase'; readonly project: string; readonly phase: string } // errors: not_running (A-110)

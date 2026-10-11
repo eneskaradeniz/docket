@@ -16,6 +16,14 @@ import {
 
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
 
+/** Tracked e2e source only. A local e2e run writes generated scripts under e2e/.out, and
+ *  installed packages sit in node_modules; neither is a launcher the suite is guarding. */
+export const includeInLaunchScan = (repoRelativePath: string): boolean => {
+  const segments = repoRelativePath.split(/[/\\]/);
+  if (segments.includes('node_modules')) return false;
+  return !(segments[0] === 'e2e' && segments[1] === '.out');
+};
+
 /** Source files under e2e/ whose text contains needle. The scan is the guard that a new launcher
  *  cannot open Electron on its own and skip the quiet env. */
 const e2eSourcesContaining = (needle: string): readonly string[] => {
@@ -23,6 +31,7 @@ const e2eSourcesContaining = (needle: string): readonly string[] => {
   const walk = (dir: string): void => {
     for (const name of readdirSync(dir)) {
       const path = join(dir, name);
+      if (!includeInLaunchScan(relative(REPO_ROOT, path))) continue;
       if (statSync(path).isDirectory()) {
         walk(path);
         continue;
@@ -143,5 +152,10 @@ describe('quietWindowOptions', () => {
     expect(helper).toContain("DOCKET_E2E_VISIBLE === '1'");
     expect(helper).toContain('electron.launch');
     expect(helper).not.toMatch(/\.focus\s*\(|\.show\s*\(/);
+  });
+
+  it('U-259: the launch scan ignores generated files under e2e/.out', () => {
+    expect(includeInLaunchScan('e2e/.out/anything.mjs')).toBe(false);
+    expect(includeInLaunchScan('e2e/quiet-launch.mjs')).toBe(true);
   });
 });
