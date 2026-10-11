@@ -1078,6 +1078,23 @@ describe('createApi', () => {
       });
     });
 
+    it('A-301: saving the assistant chain writes the global assistant binding in the same order, with an audit row, and a second save leaves the same binding', async () => {
+      const h = await createHarness();
+      const api = createApi(h.deps);
+      const assistant = slugOf<'role'>('assistant');
+      const command = { type: 'binding.save' as const, role: 'assistant', accounts: [{ accountId: ACCOUNT_OTHER }, { accountId: ACCOUNT }] };
+
+      expect(await api.command(ACTOR, command)).toEqual({ ok: true });
+      const stored = { role: assistant, accounts: [{ accountId: ACCOUNT_OTHER }, { accountId: ACCOUNT }] };
+      expect(await h.deps.bindings.get({ level: 'global' }, assistant)).toEqual(stored);
+      const audits = await h.deps.log.list({ kind: 'binding', role: assistant }, 10);
+      expect(audits.map((entry) => entry.action)).toEqual(['binding.saved']);
+
+      expect(await api.command(ACTOR, command)).toEqual({ ok: true });
+      expect(await h.deps.bindings.get({ level: 'global' }, assistant)).toEqual(stored);
+      expect((await h.deps.bindings.listAll()).filter((entry) => entry.binding.role === assistant)).toHaveLength(1);
+    });
+
     it('U-13: binding.save stores a valid thinking choice and rejects a malformed one with invalid_id', async () => {
       const h = await createHarness();
       const api = createApi(h.deps);

@@ -6,7 +6,9 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { chatShortcutPlan, GLOBAL_PLACE, isChatShortcut, type ChatPlace } from '../stores/chat-model';
+import { EN } from '../labels/en';
+import { TR } from '../labels/tr';
+import { chatShortcutPlan, GLOBAL_PLACE, isChatShortcut, noticeOf, type ChatPlace } from '../stores/chat-model';
 import { createChatStore, type ChatStore } from '../stores/chat-store';
 import { ACTOR, action, bridge, conversation, draft, flush, grant, message, summary, type Bridge } from '../stores/chat-kit';
 import { ChatDock } from './chat-dock';
@@ -46,6 +48,7 @@ const draw = async (
       onOpenPage: () => undefined,
       onOpenAccounts: () => undefined,
       onOpenConsent: () => undefined,
+      onOpenRoles: () => undefined,
     }),
   );
 };
@@ -632,5 +635,52 @@ describe('closed and hidden panels (U-125)', () => {
   it('U-125: while a blocking modal owns focus the whole dock is hidden', async () => {
     const html = await draw((store) => store.open(), 'tr', { hidden: true });
     expect(html).toContain('hidden=""');
+  });
+});
+
+describe('notice copy and the no_binding banner (U-241, U-242)', () => {
+  const NOTICES = ['limit', 'quota', 'spend', 'consent', 'auth', 'no_binding', 'network', 'crash', 'tools_unavailable', 'cancelled'] as const;
+
+  it('U-241: every notice has non-empty tr and en copy, and the transcript never shows a raw chat.notice. key', async () => {
+    for (const code of NOTICES) {
+      expect(TR[`chat.notice.${code}`].length, `tr ${code}`).toBeGreaterThan(0);
+      expect(EN[`chat.notice.${code}`].length, `en ${code}`).toBeGreaterThan(0);
+      const view = conversation('C1', { messages: [message('M1', { role: 'assistant', text: `chat.notice.${code}` })] });
+      for (const locale of ['tr', 'en'] as const) {
+        const html = await draw(withConversation(view), locale);
+        expect(html, `${locale} ${code}`).not.toContain('chat.notice.');
+        expect(html, `${locale} ${code}`).toContain((locale === 'tr' ? TR : EN)[`chat.notice.${code}`]);
+      }
+    }
+    const unknown = await draw(withConversation(conversation('C1', { messages: [message('M1', { text: 'chat.notice.from_the_future' })] })));
+    expect(unknown).not.toContain('chat.notice.');
+  });
+
+  it('U-242: the no_binding banner reads its Turkish text and carries a button that opens Ayarlar › Roller', async () => {
+    const opened: string[] = [];
+    const b = bridge();
+    const store = createChatStore({ api: b.api, changes: b.changes, actor: ACTOR, now: () => NOW, notify: b.notify });
+    store.setPlace(PLACE);
+    b.onCommand('chat.start', () => ({ ok: true, conversation: 'C1', turn: 'T1' }));
+    b.onQuery('chat.conversation', () => conversation('C1', {}));
+    store.open();
+    store.setDraft('x');
+    await store.send();
+    b.emit({ type: 'chat.notice', conversation: 'C1', turn: 'T1', code: 'no_binding' });
+    await flush();
+    const element = createElement(ChatDock, {
+      store,
+      locale: 'tr',
+      hidden: false,
+      onOpenPage: () => undefined,
+      onOpenAccounts: () => opened.push('accounts'),
+      onOpenConsent: () => opened.push('consent'),
+      onOpenRoles: () => opened.push('roles'),
+    });
+    const html = renderToStaticMarkup(element);
+    expect(html).toContain('Docket AI için hesap sırası belirlenmemiş.');
+    expect(html).toContain('Sırayı ayarla');
+    expect(html).not.toMatch(/<textarea[^>]*\sdisabled=""/);
+    expect(noticeOf('no_binding').action).toBe('roles');
   });
 });

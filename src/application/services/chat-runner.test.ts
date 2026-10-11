@@ -315,7 +315,11 @@ const harness = async (options: {
   const capabilities = createFakeCapabilityCatalog(
     options.mcpUnsupported === true ? [{ id: 'rk-x', provider: 'provider-x', authMode: 'subscription', mcp: false }] : [],
   );
-  const modelCatalog = createFakeModelCatalog({ [ACCOUNT]: options.models ?? [INCLUDED_MODEL] });
+  const modelCatalog = createFakeModelCatalog({
+    [ACCOUNT]: options.models ?? [INCLUDED_MODEL],
+    [idOf<'account'>(71)]: [INCLUDED_MODEL],
+    [idOf<'account'>(72)]: [INCLUDED_MODEL],
+  });
   const transports = createFakeTransportResolver();
   const transport = createFakeTransport(options.script ?? [finished('completed')]);
   if (options.transport !== undefined) transports.register(ACCOUNT, options.transport);
@@ -517,7 +521,7 @@ describe('createChatRunner', () => {
     expect(h.runDirs.live()).toEqual([]);
   });
 
-  it('A-233: with no account bound the turn is refused with notice auth and a notice message; a work-order conversation prefers its own binding', async () => {
+  it('A-233: with no account bound the turn is refused with notice no_binding and a notice message; a work-order conversation prefers its own binding', async () => {
     const parked = parkedTransport([text('a'), finished('completed')]);
     const h = await harness({ transport: parked.transport, withBinding: false });
     const watch = watching(h.runner, CONVERSATION);
@@ -525,12 +529,12 @@ describe('createChatRunner', () => {
     const turn = await send(h.runner, CONVERSATION, { text: 'Selam' });
     const done = await watch.finished;
     expect(done).toMatchObject({ type: 'finished', turn, outcome: 'refused' });
-    expect(watch.events.some((event) => event.type === 'notice' && event.code === 'auth')).toBe(true);
+    expect(watch.events.some((event) => event.type === 'notice' && event.code === 'no_binding')).toBe(true);
     expect(parked.requests()).toHaveLength(0);
     expect(h.tokens.minted()).toEqual([]);
     expect(h.runDirs.created()).toEqual([]);
     const message = await lastMessage(h, CONVERSATION);
-    expect(message).toMatchObject({ role: 'assistant', text: CHAT_NOTICE_TEXT_KEY.auth, artifacts: [], sources: [] });
+    expect(message).toMatchObject({ role: 'assistant', text: CHAT_NOTICE_TEXT_KEY.no_binding, artifacts: [], sources: [] });
     expect((done as { readonly message?: Message['id'] }).message).toBe(message.id);
 
     // The work-order layer of the chain wins over the project and global layers.
@@ -600,6 +604,56 @@ describe('createChatRunner', () => {
     expect(brief).not.toContain('ghp_');
     expect(brief).not.toContain('PRIVATE KEY');
     expect(assistantBrief({ scope: { kind: 'global' } })).not.toBe(brief);
+  });
+
+  it('A-298: no assistant binding anywhere and accounts exist: the turn runs on the first account of the order the roles settings display', async () => {
+    const SECOND = idOf<'account'>(71);
+    const h = await harness({ withBinding: false, script: [text('selam'), finished('completed')] });
+    await h.accounts.save(accountRecord({ id: SECOND, label: 'Second' }));
+    h.transports.register(SECOND, createFakeTransport([text('ikinci'), finished('completed')]));
+    for (const role of ['developer', 'reviewer', 'planner']) {
+      await h.bindings.save({ level: 'global' }, { role: slugOf<'role'>(role), accounts: [{ accountId: SECOND }, { accountId: ACCOUNT }] });
+    }
+    await h.bindings.save({ level: 'global' }, { role: slugOf<'role'>('analyst'), accounts: [{ accountId: ACCOUNT }] });
+    const watch = watching(h.runner, CONVERSATION);
+
+    await send(h.runner, CONVERSATION, { text: 'Selam' });
+    const done = await watch.finished;
+    expect(done).toMatchObject({ type: 'finished', outcome: 'completed' });
+    expect(h.transport.requests()).toHaveLength(0);
+    expect((await lastMessage(h, CONVERSATION)).text).toBe('ikinci');
+  });
+
+  it('A-299: a stored assistant binding wins over the fallback, and the work-order and project layers still win over global', async () => {
+    const OTHER = idOf<'account'>(72);
+    const h = await harness({ script: [text('global'), finished('completed')] });
+    await h.accounts.save(accountRecord({ id: OTHER, label: 'Other' }));
+    h.transports.register(OTHER, createFakeTransport([text('other'), finished('completed')]));
+    for (const role of ['developer', 'reviewer']) {
+      await h.bindings.save({ level: 'global' }, { role: slugOf<'role'>(role), accounts: [{ accountId: OTHER }] });
+    }
+    const watch = watching(h.runner, CONVERSATION);
+    await send(h.runner, CONVERSATION, { text: 'Selam' });
+    await watch.finished;
+    expect((await lastMessage(h, CONVERSATION)).text).toBe('global');
+
+    await h.bindings.save({ level: 'project', project: PROJECT }, { role: ASSISTANT, accounts: [{ accountId: OTHER }] });
+    const again = watching(h.runner, CONVERSATION);
+    await send(h.runner, CONVERSATION, { text: 'Tekrar' });
+    await again.finished;
+    expect((await lastMessage(h, CONVERSATION)).text).toBe('other');
+  });
+
+  it('A-300: no binding and no account order refuses with no_binding, starts no model call and leaves a notice message', async () => {
+    const h = await harness({ withBinding: false, withAccount: false });
+    const watch = watching(h.runner, CONVERSATION);
+    await send(h.runner, CONVERSATION, { text: 'Selam' });
+    const done = await watch.finished;
+    expect(done).toMatchObject({ type: 'finished', outcome: 'refused' });
+    expect(watch.events.some((event) => event.type === 'notice' && event.code === 'no_binding')).toBe(true);
+    expect(h.transport.requests()).toHaveLength(0);
+    expect(h.tokens.minted()).toEqual([]);
+    expect((await lastMessage(h, CONVERSATION)).text).toBe(CHAT_NOTICE_TEXT_KEY.no_binding);
   });
 
   it('A-235: each pre-turn refusal starts no agent run and writes only the notice message', async () => {

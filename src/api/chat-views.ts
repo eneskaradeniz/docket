@@ -610,10 +610,21 @@ export const chatReferencesView = async (
   return items;
 };
 
+/** The assistant messages of this conversation's refused turns, read from the turn records. */
+const refusedTurnMessages = async (deps: Pick<AppDeps, 'log'>, conversation: Conversation): Promise<ReadonlySet<string>> => {
+  const refused = new Set<string>();
+  for (const entry of await deps.log.list({ kind: 'conversation', id: conversation.id }, 10_000)) {
+    if (entry.action !== 'chat.turn_finished' || entry.detail?.outcome !== 'refused') continue;
+    const message = entry.detail.message;
+    if (typeof message === 'string') refused.add(message);
+  }
+  return refused;
+};
+
 /** The footer line (A-255): this month's message and token totals over every conversation, and
  *  the account the assistant role's global binding resolves to — a label only, never a secret. */
 export const chatUsageView = async (
-  deps: Pick<AppDeps, 'clock' | 'conversations' | 'bindings' | 'accounts'>,
+  deps: Pick<AppDeps, 'clock' | 'conversations' | 'bindings' | 'accounts' | 'log'>,
   assistantRole: RoleSlug,
   monthStart: EpochMs,
 ): Promise<ChatUsageView> => {
@@ -624,8 +635,11 @@ export const chatUsageView = async (
   for (const summary of await deps.conversations.list({})) {
     const conversation = await deps.conversations.get(summary.id);
     if (conversation === undefined) continue;
-    for (const message of conversation.messages) {
+    const refused = await refusedTurnMessages(deps, conversation);
+    for (const [at, message] of conversation.messages.entries()) {
       if (message.at < monthStart) continue;
+      // A refused turn ran nothing: neither its notice nor the message it answered is usage.
+      if (refused.has(message.id) || (message.role === 'user' && refused.has(conversation.messages[at + 1]?.id ?? ''))) continue;
       messages += 1;
       if (message.usage === undefined) continue;
       tokens += (message.usage.inputTokens ?? 0) + (message.usage.outputTokens ?? 0);

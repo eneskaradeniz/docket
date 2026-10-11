@@ -47,5 +47,6 @@ describe('the shell carries the dock', () => {
     expect(shell).toContain('onOpenPage={openPage}');
     expect(shell).toContain("onOpenAccounts={() => openSettings('accounts')}");
     expect(shell).toContain("onOpenConsent={() => openSettings('accounts')}");
+    expect(shell).toContain("onOpenRoles={() => openSettings('roles')}");
   });
 });
