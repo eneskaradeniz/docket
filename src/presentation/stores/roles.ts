@@ -17,11 +17,14 @@ import type {
   SettingsAccountsView,
   SettingsBindingView,
 } from '../../api/queries';
-import type { Actor } from '../../domain/index';
+import { mostSharedChain, type Actor } from '../../domain/index';
 import type { LabelKey } from '../labels/keys';
 import { SAVED_FLAG_MS } from './account-editor';
 import { recommendedWorkStyle, type WorkStyle } from './recommended';
 import { commandResultKey, isQueryFailure } from './results';
+
+/** The built-in chat role whose binding follows the shared order. */
+export const ASSISTANT_ROLE = 'assistant';
 
 export type Tier = 'strong' | 'balanced' | 'fast';
 export type Thinking = { readonly level: string } | { readonly effort: string };
@@ -134,20 +137,13 @@ export interface RolesState {
 const sameIds = (a: readonly ChainEntry[], b: readonly string[]): boolean =>
   a.length === b.length && a.every((entry, at) => entry.accountId === b[at]);
 
-/** The chain most roles' global bindings share; the first role's wins a tie. Pure. */
-export const globalChainOf = (bindings: readonly SettingsBindingView[]): readonly string[] => {
-  const counts = new Map<string, { ids: readonly string[]; count: number }>();
-  for (const binding of bindings) {
-    if (binding.scope.level !== 'global') continue;
-    const ids = binding.accounts.map((entry) => entry.accountId);
-    const key = ids.join('|');
-    const seen = counts.get(key);
-    counts.set(key, { ids, count: (seen?.count ?? 0) + 1 });
-  }
-  let best: { ids: readonly string[]; count: number } | undefined;
-  for (const entry of counts.values()) if (best === undefined || entry.count > best.count) best = entry;
-  return best?.ids ?? [];
-};
+/** The chain most roles' global bindings share; the first role's wins a tie. The chat reads the
+ *  same rule when no assistant binding is stored. Pure. */
+export const globalChainOf = (bindings: readonly SettingsBindingView[]): readonly string[] =>
+  mostSharedChain(
+    bindings.filter((binding) => binding.scope.level === 'global').map((binding) => binding.accounts),
+    (entry) => entry.accountId,
+  ).map((entry) => entry.accountId);
 
 /** The empty-chain line's key: with no account at all the line asks for one; with accounts but an
  *  empty chain it asks for the recommended setup or a pick — the same empty look is not the same
@@ -354,6 +350,9 @@ export const createRolesStore = (deps: RolesStoreDeps): RolesStore => {
       const chain: readonly ChainEntry[] = own && row !== undefined ? row.chain : next.map((accountId) => ({ accountId, model: null }));
       return bindingCommand(entry.id, chain, row?.tier ?? null, row?.thinking ?? null);
     });
+    // The assistant is not a listed role, yet it rides this order: saving it is what makes the
+    // chat run on the chain the list shows, once a stored binding stands in for the fallback.
+    commands.push(bindingCommand(ASSISTANT_ROLE, next.map((accountId) => ({ accountId, model: null })), null, null));
     await runAll('chain', commands);
   };
 

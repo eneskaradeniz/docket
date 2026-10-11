@@ -97,9 +97,15 @@ function Tray({ state, store, locale }: { readonly state: ChatState; readonly st
   );
 }
 
+const NOTE_ACTION_KEY = {
+  accounts: 'chat.note.quota.action',
+  consent: 'chat.note.consent.action',
+  roles: 'chat.note.no_binding.action',
+} as const satisfies Record<'accounts' | 'consent' | 'roles', LabelKey>;
+
 const NOTE = 'flex items-center gap-2 rounded-control bg-raised px-3 py-2 text-[0.78125rem] leading-4 text-ink';
 
-function Notes({ state, store, locale, onOpenAccounts, onOpenConsent }: Pick<ComposerProps, 'state' | 'store' | 'locale' | 'onOpenAccounts' | 'onOpenConsent'>) {
+function Notes({ state, store, locale, onOpenAccounts, onOpenConsent, onOpenRoles }: Pick<ComposerProps, 'state' | 'store' | 'locale' | 'onOpenAccounts' | 'onOpenConsent' | 'onOpenRoles'>) {
   const notice = state.notice === null ? null : noticeOf(state.notice);
   return (
     <>
@@ -113,11 +119,12 @@ function Notes({ state, store, locale, onOpenAccounts, onOpenConsent }: Pick<Com
               className={`${BUTTON} ml-auto`}
               onClick={() => {
                 if (notice.action === 'accounts') onOpenAccounts();
+                else if (notice.action === 'roles') onOpenRoles();
                 else onOpenConsent();
                 store.clearNotice();
               }}
             >
-              {t(locale, notice.action === 'accounts' ? 'chat.note.quota.action' : 'chat.note.consent.action')}
+              {t(locale, NOTE_ACTION_KEY[notice.action])}
             </button>
           )}
         </div>
@@ -265,9 +272,10 @@ export interface ComposerProps {
   readonly locale: Locale;
   readonly onOpenAccounts: () => void;
   readonly onOpenConsent: () => void;
+  readonly onOpenRoles: () => void;
 }
 
-export function ChatComposer({ state, store, locale, onOpenAccounts, onOpenConsent }: ComposerProps) {
+export function ChatComposer({ state, store, locale, onOpenAccounts, onOpenConsent, onOpenRoles }: ComposerProps) {
   const textRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [drag, setDrag] = useState(false);
@@ -315,7 +323,7 @@ export function ChatComposer({ state, store, locale, onOpenAccounts, onOpenConse
     >
       {state.menu === 'at' ? <AtMenu state={state} store={store} locale={locale} /> : null}
       {state.menu === 'plus' ? <PlusMenu store={store} locale={locale} pick={() => fileRef.current?.click()} full={state.full} /> : null}
-      <Notes state={state} store={store} locale={locale} onOpenAccounts={onOpenAccounts} onOpenConsent={onOpenConsent} />
+      <Notes state={state} store={store} locale={locale} onOpenAccounts={onOpenAccounts} onOpenConsent={onOpenConsent} onOpenRoles={onOpenRoles} />
       <Tray state={state} store={store} locale={locale} />
       <div
         data-chat-input=""

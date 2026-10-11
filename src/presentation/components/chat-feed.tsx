@@ -9,7 +9,7 @@ import { useEffect, type ReactNode } from 'react';
 import type { ChatActionView, ChatArtifactView, ChatConversationView, ChatMessageView } from '../../api/chat-views';
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
-import { chatShowsDots, chipOfSentRef, suggestionKeysOf, undoOpen, type ChatState, type TrayItem } from '../stores/chat-model';
+import { chatShowsDots, chipOfSentRef, noticeTextKey, suggestionKeysOf, undoOpen, type ChatState, type TrayItem } from '../stores/chat-model';
 import type { ChatStore } from '../stores/chat-store';
 import { ChatIcon, refIcon } from './chat-icons';
 import { BUTTON, BUTTON_GHOST, BUTTON_PRIMARY, FOCUS, REF_CHIP, SOURCE_CHIP, THUMB, fill } from './chat-style';
@@ -256,7 +256,7 @@ function AssistantRow({ message, state, store, locale, onOpenPage }: { readonly 
   const hasProposal = message.artifacts.some((artifact) => artifact.kind === 'proposal');
   return (
     <div data-chat-row="assistant" className="grid gap-3">
-      {message.text === '' ? null : <div className={`${WRAP} text-[0.875rem] leading-5 text-ink`}>{message.text}</div>}
+      {message.text === '' ? null : <div className={`${WRAP} text-[0.875rem] leading-5 text-ink`}>{noticeTextKey(message.text) === null ? message.text : t(locale, noticeTextKey(message.text) ?? 'chat.notice.crash')}</div>}
       {message.artifacts.map((artifact, index) => {
         if (artifact.kind === 'page') return <PageCard key={index} artifact={artifact} locale={locale} onOpenPage={onOpenPage} />;
         if (artifact.kind === 'table') return <Table key={index} columns={artifact.columns} rows={artifact.rows} label={t(locale, 'chat.card.table')} wide={state.full} />;

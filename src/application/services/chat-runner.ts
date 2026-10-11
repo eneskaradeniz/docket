@@ -25,7 +25,7 @@ import type {
   SpendStatus,
   TurnUsage,
 } from '../../domain/index';
-import { combinedSpendStatus, CONVERSATION_LIMITS, err, headroom, ok, resolveBinding, resolveTier } from '../../domain/index';
+import { combinedSpendStatus, CONVERSATION_LIMITS, err, headroom, mostSharedChain, ok, resolveBinding, resolveTier } from '../../domain/index';
 
 import type { AppDeps, AuditAction, RunDir, RunHandle, TransportError } from '../ports';
 import { appendAssistantMessage, appendUserMessage, type UserMessageInput } from '../use-cases/index';
@@ -39,7 +39,7 @@ import { spendWindow } from './dispatcher';
 import { spendConsentSatisfied } from './spend-consent';
 
 /** Why a turn went wrong, in the vocabulary a message or a surface can show. */
-export type ChatNotice = 'limit' | 'quota' | 'spend' | 'consent' | 'auth' | 'network' | 'crash' | 'tools_unavailable';
+export type ChatNotice = 'limit' | 'quota' | 'spend' | 'consent' | 'auth' | 'no_binding' | 'network' | 'crash' | 'tools_unavailable';
 
 export type ChatTurnOutcome = 'completed' | 'failed' | 'cancelled' | 'limit' | 'refused';
 
@@ -83,6 +83,7 @@ export const CHAT_NOTICE_TEXT_KEY: Readonly<Record<ChatNotice | 'cancelled', str
   spend: 'chat.notice.spend',
   consent: 'chat.notice.consent',
   auth: 'chat.notice.auth',
+  no_binding: 'chat.notice.no_binding',
   network: 'chat.notice.network',
   crash: 'chat.notice.crash',
   tools_unavailable: 'chat.notice.tools_unavailable',
@@ -152,7 +153,9 @@ const projectOfScope = async (
 };
 
 /** The assistant binding of a conversation: its own work-order layer, its project layer, then the
- *  global one — the same precedence the stage chain resolves with, minus the repo layer a chat has. */
+ *  global one — the same precedence the stage chain resolves with, minus the repo layer a chat has.
+ *  With none stored anywhere, the account order the roles settings display stands in, so a fresh
+ *  setup answers before anyone has saved an assistant order. */
 const chatBinding = async (
   deps: Pick<AppDeps, 'bindings' | 'workOrders'>,
   scope: ConversationScope,
@@ -166,7 +169,15 @@ const chatBinding = async (
     layers.push({ level: 'project', value: await deps.bindings.get({ level: 'project', project }, ASSISTANT_ROLE_ID) });
   }
   layers.push({ level: 'global', value: await deps.bindings.get({ level: 'global' }, ASSISTANT_ROLE_ID) });
-  return resolveBinding(layers)?.value;
+  const stored = resolveBinding(layers)?.value;
+  if (stored !== undefined) return stored;
+  const shared = mostSharedChain(
+    (await deps.bindings.listAll())
+      .filter((entry) => entry.scope.level === 'global')
+      .map((entry) => entry.binding.accounts),
+    (route) => route.accountId,
+  );
+  return shared.length === 0 ? undefined : { role: ASSISTANT_ROLE_ID, accounts: shared.map((route) => ({ accountId: route.accountId })) };
 };
 
 /** The bound chain's first account that still exists, as a fresh route object. */
@@ -411,10 +422,10 @@ export function createChatRunner(deps: ChatRunnerDeps, extras: ChatRunnerExtras)
       project = await projectOfScope(deps, scope);
       const binding = await chatBinding(deps, scope, project);
       const bound = binding === undefined ? undefined : await chatRoute(deps, binding);
-      // No binding, or a chain whose accounts are all gone: nothing is bound to run on.
+      // No binding and no account order, or a chain whose accounts are all gone: nothing to run on.
       if (bound === undefined) {
         outcome = 'refused';
-        notice = 'auth';
+        notice = 'no_binding';
         return;
       }
       const route = await routeForAssistantTier(deps, bound);

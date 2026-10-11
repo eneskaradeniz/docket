@@ -1524,3 +1524,8 @@ panel) → ⌘J reopens in panel mode. The layout audit walks the same mode as `
 size × theme: content-area edges, the 48 rem column centred, no horizontal overflow, the rail from
 64 rem on.
 
+
+- **U-241** (added 2026-10-11, #974) Every `ChatNotice` (limit, quota, spend, consent, auth, no_binding, network, crash, tools_unavailable, plus cancelled) has non-empty `chat.notice.*` copy in the tr and en bundles; a stored notice message renders that copy for the viewer's locale, and an unknown key reads as the crash copy — the transcript never shows a `chat.notice.` key.
+- **U-242** (added 2026-10-11, #974) The `no_binding` banner reads "Docket AI için hesap sırası belirlenmemiş." and carries a "Sırayı ayarla" button that opens Ayarlar › Roller; it does not block the input.
+- **U-243** (added 2026-10-11, #974) The "Asistan sırası" list and the chat fallback read one rule, `mostSharedChain` in `domain/resolver`: the chain most global role bindings share, the first to reach the top count winning a tie.
+- **U-244** (added 2026-10-11, #974) Journey step: a project with accounts and no `assistant` binding, a message sent in Docket AI, the reply is a normal assistant turn or a localized notice, never a raw key (the chat API test uses a fake transport; J-15 walks the no-account world and asserts the `no_binding` banner, its button and a transcript without raw keys).

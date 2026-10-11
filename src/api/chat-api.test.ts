@@ -447,6 +447,48 @@ describe('chat queries', () => {
     const bareView = (await query(bare, { type: 'chat.usage' })) as ChatUsageView;
     expect(bareView.account).toBeUndefined();
   });
+  it('A-302: the monthly message count leaves out a refused turn (its notice and the message it answered)', async () => {
+    const h = await seed();
+    const before = (await query(h, { type: 'chat.usage' })) as ChatUsageView;
+    const refusedAssistant = idOf<'message'>(82);
+    await h.deps.conversations.save({
+      id: idOf<'conversation'>(80),
+      scope: { kind: 'global' },
+      title: 'reddedilen',
+      createdAt: T0 - 5_000,
+      updatedAt: T0 - 4_000,
+      pinned: false,
+      messages: [
+        { id: idOf<'message'>(81), role: 'user', at: T0 - 5_000, text: 'selam', refs: [], attachments: [], artifacts: [], sources: [] },
+        { id: refusedAssistant, role: 'assistant', at: T0 - 4_000, text: 'chat.notice.no_binding', refs: [], attachments: [], artifacts: [], sources: [] },
+      ],
+    });
+    await h.deps.log.append({
+      id: idOf<'audit'>(83),
+      at: T0 - 4_000,
+      actor: { kind: 'system', component: 'chat-runner' },
+      action: 'chat.turn_finished',
+      subject: { kind: 'conversation', id: idOf<'conversation'>(80) },
+      detail: { turn: idOf<'run'>(84), outcome: 'refused', message: refusedAssistant },
+    });
+    const after = (await query(h, { type: 'chat.usage' })) as ChatUsageView;
+    expect(after.month.messages).toBe(before.month.messages);
+
+    // The same two messages without the refusal record are an ordinary turn and count.
+    await h.deps.conversations.save({
+      id: idOf<'conversation'>(85),
+      scope: { kind: 'global' },
+      title: 'normal',
+      createdAt: T0 - 3_000,
+      updatedAt: T0 - 2_000,
+      pinned: false,
+      messages: [
+        { id: idOf<'message'>(86), role: 'user', at: T0 - 3_000, text: 'selam', refs: [], attachments: [], artifacts: [], sources: [] },
+        { id: idOf<'message'>(87), role: 'assistant', at: T0 - 2_000, text: 'merhaba', refs: [], attachments: [], artifacts: [], sources: [] },
+      ],
+    });
+    expect(((await query(h, { type: 'chat.usage' })) as ChatUsageView).month.messages).toBe(before.month.messages + 2);
+  });
 });
 
 describe('chat commands', () => {
@@ -473,6 +515,30 @@ describe('chat commands', () => {
     const conversation = await h.deps.conversations.get(ulidOf<'conversation'>(String(started.conversation)));
     expect(conversation?.title).toBe('Yeni bir rapor taslağı');
     expect(conversation?.messages.map((message) => message.role)).toEqual(['user', 'assistant']);
+  });
+
+  it('U-244: a project with accounts and no assistant binding answers a message as a normal turn, never a raw notice key', async () => {
+    const h = await seed({ withTurn: true, withBinding: false });
+    await h.deps.accounts.save({
+      id: ACCOUNT,
+      provider: 'provider-x',
+      label: 'Ana hesap',
+      authMode: 'subscription',
+      limitPolicy: 'wait_resume',
+      caps: [],
+      tierModels: { strong: 'm-bal', balanced: 'm-bal', fast: 'm-bal' },
+    });
+    await h.deps.bindings.save({ level: 'global' }, { role: slugOf<'role'>('developer'), accounts: [{ accountId: ACCOUNT } as AccountRoute] });
+    expect(await h.deps.bindings.get({ level: 'global' }, ROLE)).toBeUndefined();
+
+    const sent = await h.api.command(USER, { type: 'chat.send', conversation: CONVERSATION, text: 'selam' });
+    expect(sent.ok).toBe(true);
+    h.release?.();
+    expect(await h.finished).toBe('completed');
+    const messages = (await h.deps.conversations.get(CONVERSATION))?.messages ?? [];
+    const reply = messages[messages.length - 1];
+    expect(reply?.role).toBe('assistant');
+    expect(reply?.text).toBe('Merhaba, rapora baktım.');
   });
 
   it('A-257: chat.send appends and starts the turn; conversation errors, busy and too_many_turns pass through', async () => {

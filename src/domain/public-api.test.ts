@@ -18,6 +18,7 @@ const CONTRACT_FUNCTIONS = [
   'resolve',
   'applyRoleOverrides',
   'resolveBinding',
+  'mostSharedChain',
   // gates (section 4)
   'evaluateGate',
   // flow (section 5)

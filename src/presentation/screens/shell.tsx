@@ -716,6 +716,7 @@ export function ShellScreen({
         onOpenPage={openPage}
         onOpenAccounts={() => openSettings('accounts')}
         onOpenConsent={() => openSettings('accounts')}
+        onOpenRoles={() => openSettings('roles')}
       />
 
       <WizardScreen store={wizard} locale={locale} localeStore={localeStore} themeStore={themeStore} marks={marks} />

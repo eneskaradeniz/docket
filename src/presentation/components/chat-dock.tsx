@@ -33,6 +33,7 @@ export interface ChatDockProps {
   readonly onOpenAccounts: () => void;
   /** İzin ver: the consent step already in the settings. */
   readonly onOpenConsent: () => void;
+  readonly onOpenRoles: () => void;
 }
 
 /** The name the chip shows for a scope: the screen's own label when it gave one, else the generic
@@ -111,7 +112,7 @@ function ScopeChip({ state, store, locale }: { readonly state: ChatState; readon
   );
 }
 
-export function ChatDock({ store, locale, hidden, onOpenPage, onOpenAccounts, onOpenConsent }: ChatDockProps) {
+export function ChatDock({ store, locale, hidden, onOpenPage, onOpenAccounts, onOpenConsent, onOpenRoles }: ChatDockProps) {
   const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   const fabRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLElement>(null);
@@ -246,7 +247,7 @@ export function ChatDock({ store, locale, hidden, onOpenPage, onOpenAccounts, on
         ) : (
           <ChatFeed state={state} store={store} locale={locale} onOpenPage={onOpenPage} />
         )}
-        {state.view === 'history' ? <div /> : <ChatComposer state={state} store={store} locale={locale} onOpenAccounts={onOpenAccounts} onOpenConsent={onOpenConsent} />}
+        {state.view === 'history' ? <div /> : <ChatComposer state={state} store={store} locale={locale} onOpenAccounts={onOpenAccounts} onOpenConsent={onOpenConsent} onOpenRoles={onOpenRoles} />}
       </section>
     </div>
   );
