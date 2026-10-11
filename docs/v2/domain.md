@@ -38,6 +38,7 @@ This keeps Phase 1 issues independent and conflict-free.
 | `roadmap` | `shared`, `flow`, `definitions` |
 | `usage` | `shared`, `providers` |
 | `stage-output` | `definitions`, `pages` |
+| `changes` | — |
 | `scenarios` | every module above — **test files only**, no production code, no `index.ts` |
 
 Each module folder has an `index.ts` that re-exports its public API; `src/domain/index.ts` re-exports
@@ -1137,3 +1138,17 @@ Addendum 2026-10-11 (#978): a rejected human gate retries the stage. R-21's "wit
 - **R-120** (added 2026-10-11, #978) A rejected `human` gate on a stage without `onFail` re-enters that same stage at attempt + 1 (`ready` when it has a role, `awaiting_human` when it does not), with the stage's gates pending again. When the next entry would pass 3, the order is `blocked` at the current attempt and the reason is kept: `gate "<gate>" failed: <reason>`.
 - **R-121** (added 2026-10-11, #978) A stage that declares `onFail` is unchanged by R-120: the goto target and `maxAttempts` are the ones written, including a limit of 1 and a goto to another stage. A failed `command`, `secret_scan`, `agent_verdict` or `page_approval` gate on a stage without `onFail` still blocks at the current attempt. A human reject on a mixed stage without `onFail` still retries.
 - **R-122** (added 2026-10-11, #978) The retry count is pure: the same events fold to the same state and the inputs are not mutated. A `cancelled` run leaves the attempt where it was. An `unblocked` after the attempts are spent restores the state before the reject that blocked, and events that arrive while blocked (including another reject) do not change that restored count. Inserting a cancelled run, or a block that is then lifted, among the rejects does not change the attempt those rejects produced.
+
+Addendum 2026-10-12 (#969): per-file counts from a unified patch. New module `changes` (no imports). `diffStatOf` reads a unified patch already redacted at the checkpoint boundary and returns one row per file. It does not return line text.
+
+```ts
+export interface DiffFileStat {
+  readonly path: string;
+  readonly added: number;
+  readonly removed: number;
+  readonly binary: boolean;
+}
+export function diffStatOf(patch: string): readonly DiffFileStat[];
+```
+
+- **R-119** (added 2026-10-12, #969) `diffStatOf` counts `+` and `-` lines per file. `+++` and `---` before the first hunk of that file are headers and are ignored; after a hunk the same characters are content and count as one line each. A rename is reported at the `rename to` path (the destination), including a quoted path. `Binary files … differ` and `GIT binary patch` mark the file binary and contribute no line counts — the binary body is not source. An empty patch yields no files. A deleted file keeps the source path and a new file the destination. The function is pure: the same patch yields the same rows and the patch text is not modified.

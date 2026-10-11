@@ -23,4 +23,6 @@ export interface EvidenceChecker {
 
 export interface Worktrees {
   ensure(repo: RepoSlug, workOrderId: WorkOrderId): Promise<Result<{ readonly path: string }, 'no_repo'>>;
+  /** The worktree path when one is already listed. Never creates a worktree, a branch or a ref. */
+  existing(repo: RepoSlug, workOrderId: WorkOrderId): Promise<{ readonly path: string } | undefined>;
 }

@@ -72,6 +72,7 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
 
 export const QUERY_REGISTRY: Record<Query['type'], RegistryEntry> = {
   'workOrder.detail': { input: 'id: WorkOrderId' },
+  'workOrder.changes': { input: 'workOrder: WorkOrderId' },
   'project.tree': { input: 'no input' },
   'roadmap.byProject': { input: 'project: ProjectSlug' },
   'repo.board': { input: 'repo: RepoSlug' },

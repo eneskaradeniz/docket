@@ -1729,3 +1729,38 @@ Addendum 2026-10-11 (#978): the operator's reject reaches the next run. `decideH
 - **A-303** (added 2026-10-11, #978) After a reject whose note is `plan eksik`, the next plan run's input contains an `Operator feedback` section with that text. With no note the section says `rejected without a reason`. A run that was not opened by such a reject has no such section.
 - **A-304** (added 2026-10-11, #978) A secret-shaped note (a token pattern) is redacted in the run input and in the stored verdict reason. A 2 000-character note is cut to 500 in both places; the cut-off tail is absent.
 - **A-305** (added 2026-10-11, #978) Scenario: reject the plan twice, then approve the third → the order advances to `implement`. Reject three times → `blocked` with `gate "plan-approval" failed: <note>`, and `workOrder.close` still closes it.
+
+Addendum 2026-10-12 (#969): the work-order detail gains per-run account, model, billing and folded usage, and a read-only changed-file query. `workOrder.detail` keeps `runs` and `RunRecord` as they are and adds `runSummaries`, one `RunSummaryView` per run in that order, from `workOrderRunSummaries` (the state read itself does not list model catalogs). Billing is the account route's billing the way `settings.accounts` derives it (the catalog's default model settled by pools, otherwise the route kind's own rule); `metered` is reported as `pay_per_use`. An `included` route keeps `equivalent` inside `costByKind` — this read does not apply `costDisplay`. Usage is the `foldRun` totals and is omitted when the run has no usage event. A missing account still yields a row (`label` = the stored id, `provider` = `'unknown'`, `billing` = `'unknown'`). Changed files are `workOrder.changes`: `Worktrees.existing` (the path only when the worktree is already listed — `ensure` creates one, so this read never calls it), then `CheckpointCommitter.base` and `diffSince`, then `diffStatOf` on the redacted patch. No patch text is returned. More than 200 files sets `truncated` and keeps the first 200. No listed worktree → `no_worktree` and no files. An unknown work order → `not_found`. A base or diff that git cannot answer is `ready` with no files. Neither read appends an event, an audit row or a commit, including while a run has no `endedAt`.
+
+```ts
+export interface RunSummaryView {
+  readonly runId: RunId; readonly stage: StageSlug; readonly attempt: number; readonly role: RoleSlug;
+  readonly account: { readonly id: AccountId; readonly label: string; readonly provider: string };
+  readonly model?: string;
+  readonly billing: 'pay_per_use' | 'included' | 'unknown';
+  readonly usage?: { readonly inputTokens: number; readonly outputTokens: number; readonly cachedInputTokens: number; readonly costByKind: CostByKind };
+}
+// workOrder.detail runSummaries: readonly RunSummaryView[]
+export interface WorkOrderChangesView {
+  readonly state: 'ready' | 'no_worktree';
+  readonly files: readonly { readonly path: string; readonly added: number; readonly removed: number; readonly binary: boolean }[];
+  readonly truncated: boolean;
+}
+```
+
+`Worktrees` gains `existing(repo, id)`, which returns the path when `git worktree list` already lists it and otherwise `undefined`. It does not create a worktree, a branch or a ref.
+
+The API query list gains:
+
+```ts
+| { readonly type: 'workOrder.changes'; readonly workOrder: string } // → WorkOrderChangesView | not_found | invalid_id
+```
+
+`workOrder.detail` is unchanged apart from the `runSummaries` field on the view it already returns.
+
+- **A-310** (added 2026-10-12, #969) `runSummaries` has one entry per run in `runs` order, with the account label, provider, model and folded usage. A run with no usage event has no `usage`.
+- **A-311** (added 2026-10-12, #969) Billing follows the account's route as `settings.accounts` derives it. An `included` route's equivalent cost stays in `costByKind`.
+- **A-312** (added 2026-10-12, #969) A deleted account still yields a row (`label` = the stored id, `provider` = `'unknown'`).
+- **A-313** (added 2026-10-12, #969) `workOrder.changes` returns files with counts for a work order with a worktree, `no_worktree` without, and caps at 200 with `truncated`. An unknown work order is `not_found`.
+- **A-314** (added 2026-10-12, #969) The patch is redacted at the checkpoint boundary and is never returned. A secret-looking line in the diff does not appear in the answer.
+- **A-315** (added 2026-10-12, #969) Neither query writes anything — no event, no audit row, no commit, no worktree creation — and both answer while a run is in flight.

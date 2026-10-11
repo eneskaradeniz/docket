@@ -1,22 +1,30 @@
 // use-cases/work-orders.ts — exact contract from docs/v2/application.md § 2 (rules A-5..A-7).
 // The use cases only orchestrate: validation lives in the domain, decisions in `deriveWorkOrderState`.
 import type {
+  AccountId,
   Actor,
+  Billing,
+  CostByKind,
   EnvironmentDef,
   FlowAction,
   FlowDef,
   FlowSlug,
   ProjectSlug,
   Result,
+  RoleSlug,
+  RunId,
+  StageSlug,
   TaskSlug,
   WorkOrderEvent,
   WorkOrderId,
   WorkOrderState,
   RepoSlug,
 } from '../../domain/index';
-import { deriveWorkOrderState, err, nextAction, ok } from '../../domain/index';
+import { billingFromPools, deriveWorkOrderState, err, foldRun, nextAction, ok } from '../../domain/index';
 
-import type { AppDeps, RunRecord, WorkOrderRecord } from '../ports';
+import type { AccountRecord, AppDeps, RunRecord, WorkOrderRecord } from '../ports';
+import { catalogOrEmpty } from '../services/match-id';
+import { defaultBillingOf } from '../services/spend-consent';
 
 export type OpenError =
   | 'definitions_invalid'
@@ -90,6 +98,26 @@ export async function openWorkOrder(
   return ok(id);
 }
 
+/** The billing a run summary shows. `metered` is the route's verified per-use charge, named here
+ *  the way the cost display rule names it. */
+export type RunBilling = 'pay_per_use' | 'included' | 'unknown';
+
+export interface RunSummaryView {
+  readonly runId: RunId;
+  readonly stage: StageSlug;
+  readonly attempt: number;
+  readonly role: RoleSlug;
+  readonly account: { readonly id: AccountId; readonly label: string; readonly provider: string };
+  readonly model?: string;
+  readonly billing: RunBilling;
+  readonly usage?: {
+    readonly inputTokens: number;
+    readonly outputTokens: number;
+    readonly cachedInputTokens: number;
+    readonly costByKind: CostByKind;
+  };
+}
+
 export interface WorkOrderView {
   readonly record: WorkOrderRecord;
   readonly state: WorkOrderState;
@@ -102,6 +130,77 @@ export interface WorkOrderView {
   readonly environments: readonly EnvironmentDef[];
 }
 export type ViewError = 'not_found' | 'definitions_invalid' | 'unknown_flow';
+
+const runBillingOf = (billing: Billing): RunBilling => (billing === 'metered' ? 'pay_per_use' : billing);
+
+/** The same billing `settings.accounts` puts on the row: the route's default model when the catalog
+ *  names one, otherwise the route kind's own rule. */
+const accountRouteBilling = async (
+  deps: Pick<AppDeps, 'accounts' | 'capabilities' | 'modelCatalog'>,
+  account: AccountRecord,
+): Promise<RunBilling> => {
+  const [pools, models] = await Promise.all([
+    deps.accounts.pools(account.id),
+    catalogOrEmpty(() => deps.modelCatalog.list(account.id)),
+  ]);
+  const defaultModel = models.find((model) => model.isDefault === true);
+  const billing =
+    defaultModel === undefined
+      ? defaultBillingOf(deps.capabilities, account)
+      : billingFromPools(defaultModel.billing, defaultModel.resolvedId ?? defaultModel.id, pools);
+  return runBillingOf(billing);
+};
+
+/** One summary per run, in the given order. Other readers of `getWorkOrder` do not list catalogs. */
+export async function workOrderRunSummaries(
+  deps: Pick<AppDeps, 'runs' | 'accounts' | 'capabilities' | 'modelCatalog'>,
+  runs: readonly RunRecord[],
+): Promise<readonly RunSummaryView[]> {
+  const billingByAccount = new Map<AccountId, RunBilling>();
+  const summaries: RunSummaryView[] = [];
+  for (const run of runs) {
+    const account = await deps.accounts.get(run.route.accountId);
+    let billing: RunBilling = 'unknown';
+    if (account !== undefined) {
+      const cached = billingByAccount.get(account.id);
+      if (cached !== undefined) {
+        billing = cached;
+      } else {
+        billing = await accountRouteBilling(deps, account);
+        billingByAccount.set(account.id, billing);
+      }
+    }
+    const events = await deps.runs.events(run.id);
+    const folded = foldRun(events);
+    const costByKind: CostByKind =
+      folded.costUsd === undefined ? {} : { [folded.costKind ?? 'unspecified']: folded.costUsd };
+    summaries.push({
+      runId: run.id,
+      stage: run.stage,
+      attempt: run.attempt,
+      role: run.role,
+      account: {
+        id: run.route.accountId,
+        label: account === undefined ? run.route.accountId : account.label,
+        provider: account === undefined ? 'unknown' : account.provider,
+      },
+      ...(run.route.model === undefined ? {} : { model: run.route.model }),
+      billing,
+      // A run that never sent a usage event has no usage, even when the fold's counters are zero.
+      ...(events.some((event) => event.type === 'usage')
+        ? {
+            usage: {
+              inputTokens: folded.inputTokens,
+              outputTokens: folded.outputTokens,
+              cachedInputTokens: folded.cachedInputTokens,
+              costByKind,
+            },
+          }
+        : {}),
+    });
+  }
+  return summaries;
+}
 
 export async function getWorkOrder(
   deps: Pick<AppDeps, 'workOrders' | 'runs' | 'definitions'>,

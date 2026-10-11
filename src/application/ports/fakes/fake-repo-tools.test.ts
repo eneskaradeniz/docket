@@ -153,4 +153,15 @@ describe('createFakeWorktrees', () => {
     const allowed = await worktrees.ensure(toSlug('other'), woIdOf(U1));
     expect(allowed.ok).toBe(true);
   });
+
+  it('existing answers only a worktree markExisting recorded, and ensure is counted apart', async () => {
+    const worktrees = createFakeWorktrees();
+    expect(await worktrees.existing(toSlug('acme'), woIdOf(U1))).toBeUndefined();
+    expect(worktrees.ensureCalls()).toBe(0);
+
+    worktrees.markExisting(toSlug('acme'), woIdOf(U1));
+
+    expect(await worktrees.existing(toSlug('acme'), woIdOf(U1))).toEqual({ path: `/fake/worktrees/acme/${U1}` });
+    expect(worktrees.ensureCalls()).toBe(0);
+  });
 });

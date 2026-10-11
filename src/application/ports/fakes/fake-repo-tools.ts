@@ -33,6 +33,10 @@ export interface FakeEvidenceChecker extends EvidenceChecker {
 export interface FakeWorktrees extends Worktrees {
   /** Makes ensure fail with no_repo for that repo (a missing checkout on the machine). */
   markNoRepo(repo: RepoSlug): void;
+  /** Records that this work order already has a worktree. Does not create one. */
+  markExisting(repo: RepoSlug, workOrderId: WorkOrderId): void;
+  /** How many times `ensure` ran. A read that must not create a worktree stays at zero. */
+  ensureCalls(): number;
 }
 
 const SUCCESS: CommandResult = { exitCode: 0, durationMs: 0, outputTail: '' };
@@ -107,15 +111,28 @@ export const createFakeEvidenceChecker = (): FakeEvidenceChecker => {
   };
 };
 
+const worktreePath = (repo: RepoSlug, workOrderId: WorkOrderId): string => `/fake/worktrees/${repo}/${workOrderId}`;
+
 export const createFakeWorktrees = (): FakeWorktrees => {
   const withoutRepo = new Set<RepoSlug>();
+  const listed = new Set<string>();
+  let ensures = 0;
+  const keyOf = (repo: RepoSlug, workOrderId: WorkOrderId): string => `${repo}/${workOrderId}`;
   return {
     markNoRepo: (repo: RepoSlug): void => {
       withoutRepo.add(repo);
     },
-    ensure: async (repo: RepoSlug, workOrderId: WorkOrderId): Promise<Result<{ readonly path: string }, 'no_repo'>> =>
-      withoutRepo.has(repo)
+    markExisting: (repo: RepoSlug, workOrderId: WorkOrderId): void => {
+      listed.add(keyOf(repo, workOrderId));
+    },
+    ensureCalls: (): number => ensures,
+    ensure: async (repo: RepoSlug, workOrderId: WorkOrderId): Promise<Result<{ readonly path: string }, 'no_repo'>> => {
+      ensures += 1;
+      return withoutRepo.has(repo)
         ? { ok: false, error: 'no_repo' }
-        : { ok: true, value: { path: `/fake/worktrees/${repo}/${workOrderId}` } },
+        : { ok: true, value: { path: worktreePath(repo, workOrderId) } };
+    },
+    existing: async (repo: RepoSlug, workOrderId: WorkOrderId): Promise<{ readonly path: string } | undefined> =>
+      withoutRepo.has(repo) || !listed.has(keyOf(repo, workOrderId)) ? undefined : { path: worktreePath(repo, workOrderId) },
   };
 };
