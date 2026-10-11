@@ -13,12 +13,21 @@ export interface LaunchStore {
   openChat(input: { readonly scope: ChatScopeInput; readonly prefill?: string }): void;
 }
 
+/** The last prefill a launcher placed, per store. A draft that still equals it was never touched by
+ *  the operator, so the next launcher may replace it; any other non-blank draft is the operator's. */
+const lastPrefill = new WeakMap<LaunchStore, string>();
+
 /** Opens the panel on a fresh conversation in the host's scope with the composer pre-filled, never
- *  sent. The chat store has no confirm for replacing unsent text, so an unsent draft is kept as it
- *  is and the prefill is dropped: the operator's own words are never overwritten or appended to. */
+ *  sent. The operator's own words are never overwritten or appended to: only a blank draft or an
+ *  untouched earlier prefill is replaced; an edited or hand-typed draft stays and the prefill drops. */
 export const launchChat = (store: LaunchStore, scope: ChatScopeInput, prefill: string): void => {
-  if (store.state().draft.trim() !== '') store.openChat({ scope });
-  else store.openChat({ scope, prefill });
+  const draft = store.state().draft;
+  if (draft.trim() !== '' && draft !== lastPrefill.get(store)) {
+    store.openChat({ scope });
+    return;
+  }
+  lastPrefill.set(store, prefill);
+  store.openChat({ scope, prefill });
 };
 
 /** The panel opens by a 300 ms transform and fade; focus waits for it so the caret lands in a

@@ -55,6 +55,54 @@ describe('launching the chat', () => {
   });
 });
 
+/** A store whose draft behaves like the real one: openChat with a prefill sets it, the operator edits it. */
+const livingStore = (): LaunchStore & { draft: string } => {
+  const store = {
+    draft: '',
+    state: () => ({ draft: store.draft }),
+    openChat: (input: { readonly scope: ChatScopeInput; readonly prefill?: string }) => {
+      if (input.prefill !== undefined) store.draft = input.prefill;
+    },
+  };
+  return store;
+};
+
+describe('a launcher after a launcher', () => {
+  it('U-153: an untouched prefill is replaced by the next launcher\'s prefill', () => {
+    const store = livingStore();
+    launchChat(store, { kind: 'global' }, 'Yeni bir proje kurmak istiyorum, birlikte yapalım.');
+    launchChat(store, { kind: 'project', project: 'antero' }, 'Bu proje için bir yol haritası taslağı hazırla.');
+    expect(store.draft).toBe('Bu proje için bir yol haritası taslağı hazırla.');
+  });
+
+  it('U-153: two stores do not share the memory of the last prefill', () => {
+    const a = livingStore();
+    const b = livingStore();
+    launchChat(a, { kind: 'global' }, 'birinci');
+    b.draft = 'birinci'; // typed by hand in the other store: not a launcher's text there
+    launchChat(b, { kind: 'global' }, 'ikinci');
+    expect(b.draft).toBe('birinci');
+  });
+
+  it('U-154: an edited prefill is the operator\'s — one added character keeps it', () => {
+    const store = livingStore();
+    launchChat(store, { kind: 'global' }, 'Şunu yapmak istiyorum: ');
+    store.draft = 'Şunu yapmak istiyorum: login sayfası';
+    launchChat(store, { kind: 'global' }, 'başka bir metin');
+    expect(store.draft).toBe('Şunu yapmak istiyorum: login sayfası');
+  });
+
+  it('U-154: a hand-typed draft is kept, and a sent (emptied) draft takes the next prefill', () => {
+    const store = livingStore();
+    store.draft = 'kendi yazdığım';
+    launchChat(store, { kind: 'global' }, 'metin');
+    expect(store.draft).toBe('kendi yazdığım');
+    store.draft = '';
+    launchChat(store, { kind: 'global' }, 'metin');
+    expect(store.draft).toBe('metin');
+  });
+});
+
 describe('the caret', () => {
   it('U-128: focus waits for the panel\'s open transition, and not at all under reduced motion', () => {
     expect(caretDelayMs(false)).toBeGreaterThan(0);
