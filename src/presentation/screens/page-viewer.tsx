@@ -51,12 +51,11 @@ const FOCUS =
 const fill = (text: string, values: Readonly<Record<string, string | number>>): string =>
   Object.entries(values).reduce((out, [name, value]) => out.replaceAll(`{${name}}`, String(value)), text);
 
-type ButtonLook = 'primary' | 'neutral' | 'ghost';
+type ButtonLook = 'primary' | 'neutral';
 
 const LOOK: Readonly<Record<ButtonLook, string>> = {
   primary: 'border-signal bg-signal text-signal-ink hover:brightness-110',
   neutral: 'border-bord bg-transparent text-ink hover:bg-raised',
-  ghost: 'border-transparent bg-transparent text-inkdim hover:text-ink',
 };
 
 /** The screen's button: the shared button grammar plus the data hooks the journeys read (the
@@ -261,7 +260,7 @@ export function PageViewerScreen({ store, host, pageId, locale, overlayOpen, now
 
   const back = (
     <div>
-      <ActionButton variant="ghost" onClick={onBack}>
+      <ActionButton variant="neutral" onClick={onBack}>
         {t(locale, 'page.back')}
       </ActionButton>
     </div>
@@ -365,8 +364,8 @@ export function PageViewerScreen({ store, host, pageId, locale, overlayOpen, now
               const button = (
                 <button
                   type="button"
-                  className={`h-[1.625rem] rounded-control px-3 text-[0.78125rem] font-semibold leading-[1rem] disabled:pointer-events-none disabled:opacity-45 ${FOCUS} ${
-                    mode === id ? 'bg-raised text-ink shadow-[inset_0_0_0_0.0625rem_var(--signal)]' : 'bg-transparent text-inkdim hover:text-ink'
+                  className={`h-[1.625rem] rounded-control border border-bord px-3 text-[0.78125rem] font-semibold leading-[1rem] disabled:pointer-events-none disabled:opacity-45 ${FOCUS} ${
+                    mode === id ? 'bg-raised text-ink shadow-[inset_0_0_0_0.0625rem_var(--signal)]' : 'bg-transparent text-ink hover:bg-raised'
                   }`}
                   data-page-view={id}
                   aria-pressed={mode === id}
@@ -462,17 +461,22 @@ export function PageViewerScreen({ store, host, pageId, locale, overlayOpen, now
 
           <div data-page-bar className="flex flex-wrap items-center gap-2 border-t border-hairline px-4 py-3">
             <span className="mr-auto text-[0.75rem] leading-[1rem] text-inkdim">{t(locale, plan.reasonKey)}</span>
-            {plan.actions.map((action) => (
+            {plan.actions.map((action) => {
+              // The bar plan still names reject as ghost; a text action draws as the outline.
+              const stored = plan.emphasis[action] ?? 'neutral';
+              const look: ButtonLook = stored === 'ghost' ? 'neutral' : stored;
+              return (
               <PageButton
                 key={action}
-                look={plan.emphasis[action] ?? 'neutral'}
+                look={look}
                 disabled={plan.disabled || state.busy}
                 attrs={{ 'data-page-action': action }}
                 onClick={() => act(action)}
               >
                 {t(locale, actionLabel[action])}
               </PageButton>
-            ))}
+              );
+            })}
           </div>
         </section>
 

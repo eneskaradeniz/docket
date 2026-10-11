@@ -102,7 +102,7 @@ export function NewProjectPanel({ open, origin, store, locale, onClose, onDone }
 
   const footer = (
     <>
-      <ActionButton variant="ghost" size="md" onClick={onClose}>
+      <ActionButton variant="neutral" size="md" onClick={onClose}>
         {t(locale, 'newProject.cancel')}
       </ActionButton>
       <span aria-live="polite" className={`ml-auto flex min-w-0 items-center gap-2 ${NOTE_CLASS} text-inkdim`}>

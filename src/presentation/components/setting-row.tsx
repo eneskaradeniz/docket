@@ -61,7 +61,7 @@ export function SettingRow({ locale, title, purpose, control, below, differsFrom
         <p className="flex flex-wrap items-center gap-2 text-[12px] text-signal-soft">
           <span>{t(locale, 'editor.differs').replace('{value}', differsFrom)}</span>
           {onReset !== undefined ? (
-            <ActionButton variant="ghost" onClick={onReset}>
+            <ActionButton variant="neutral" onClick={onReset}>
               {t(locale, 'editor.reset')}
             </ActionButton>
           ) : null}
@@ -79,7 +79,7 @@ export function SettingRow({ locale, title, purpose, control, below, differsFrom
             type="button"
             aria-expanded={open}
             onClick={() => setOpen(!open)}
-            className="rounded-control text-[12.5px] text-inkdim hover:text-ink"
+            className="rounded-control border border-bord bg-transparent px-2 py-0.5 text-[12.5px] text-ink hover:bg-raised"
           >
             {open ? '⌄' : '›'} {disclosure.label}
           </button>

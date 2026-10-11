@@ -15,7 +15,6 @@ export const ICON_BUTTON_SMALL = `grid h-6 w-6 flex-none place-items-center roun
 /** The 28 high text buttons of the cards and notes. */
 export const BUTTON = `inline-flex h-7 flex-none items-center justify-center whitespace-nowrap rounded-control border border-bord bg-transparent px-3 text-[0.78125rem] font-semibold leading-4 text-ink hover:bg-raised disabled:pointer-events-none disabled:opacity-50 ${FOCUS}`;
 export const BUTTON_PRIMARY = `inline-flex h-7 flex-none items-center justify-center whitespace-nowrap rounded-control border border-signal bg-signal px-3 text-[0.78125rem] font-semibold leading-4 text-signal-ink disabled:pointer-events-none disabled:opacity-50 ${FOCUS}`;
-export const BUTTON_GHOST = `inline-flex h-7 flex-none items-center justify-center whitespace-nowrap rounded-control border border-transparent bg-transparent px-3 text-[0.78125rem] font-semibold leading-4 text-inkdim hover:text-ink ${FOCUS}`;
 
 /** The 22 high pills of sources and references. */
 export const SOURCE_CHIP =

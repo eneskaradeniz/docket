@@ -257,7 +257,7 @@ function FineTune({ row, store, locale, markFor }: { readonly row: RoleRow; read
                   })}
                 </select>
                 <MoveButtons locale={locale} name={label(entry.accountId)} index={index} count={row.chain.length} onMove={(delta) => void store.moveOwn(row.id, index, delta)} />
-                <ActionButton variant="ghost" onClick={() => void store.toggleAccount(row.id, entry.accountId)}>
+                <ActionButton variant="neutral" onClick={() => void store.toggleAccount(row.id, entry.accountId)}>
                   ✕
                 </ActionButton>
               </div>

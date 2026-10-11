@@ -219,7 +219,7 @@ export function ConcurrencySection({ store, locale, accounts, active }: Concurre
       </p>
 
       <div className="flex items-center gap-2">
-        <ActionButton variant="ghost" size="md" disabled={state.isDefault} onClick={() => store.reset()}>
+        <ActionButton variant="neutral" size="md" disabled={state.isDefault} onClick={() => store.reset()}>
           {t(locale, 'dispatch.reset')}
         </ActionButton>
         <span className="flex-1" />

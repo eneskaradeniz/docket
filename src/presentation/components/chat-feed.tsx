@@ -12,7 +12,7 @@ import { t, type Locale } from '../labels/t';
 import { chatShowsDots, chipOfSentRef, noticeTextKey, suggestionKeysOf, undoOpen, type ChatState, type TrayItem } from '../stores/chat-model';
 import type { ChatStore } from '../stores/chat-store';
 import { ChatIcon, refIcon } from './chat-icons';
-import { BUTTON, BUTTON_GHOST, BUTTON_PRIMARY, FOCUS, REF_CHIP, SOURCE_CHIP, THUMB, fill } from './chat-style';
+import { BUTTON, BUTTON_PRIMARY, FOCUS, REF_CHIP, SOURCE_CHIP, THUMB, fill } from './chat-style';
 
 const WRAP = 'whitespace-pre-wrap [overflow-wrap:anywhere]';
 
@@ -149,7 +149,7 @@ function DraftCard({ artifact, detail, store, locale }: { readonly artifact: Ext
         <div className="flex items-center justify-end gap-2 border-t border-hairline px-3 py-2">
           {draft.status === 'draft' ? (
             <>
-              <button type="button" className={BUTTON_GHOST} onClick={() => void store.dropDraft(artifact.id)}>
+              <button type="button" className={BUTTON} onClick={() => void store.dropDraft(artifact.id)}>
                 {t(locale, 'chat.card.draft.drop')}
               </button>
               <button type="button" className={BUTTON_PRIMARY} onClick={() => void store.confirmDraft(artifact.id)}>
@@ -205,7 +205,7 @@ function ProposalCard({ artifact, state, store, locale }: { readonly artifact: E
           <span className="flex-1" />
           {action.status === 'pending' ? (
             <>
-              <button type="button" className={BUTTON_GHOST} onClick={() => void store.decide(action.id, 'rejected')}>
+              <button type="button" className={BUTTON} onClick={() => void store.decide(action.id, 'rejected')}>
                 {t(locale, 'chat.card.proposal.reject')}
               </button>
               <button type="button" className={BUTTON_PRIMARY} onClick={() => void store.decide(action.id, 'approved')}>
@@ -251,7 +251,7 @@ function ActionRow({ action, backed, store, locale, now }: { readonly action: Ch
       <span className={`min-w-0 flex-1 ${WRAP}`}>{text}</span>
       {pending && !backed ? (
         <>
-          <button type="button" className={BUTTON_GHOST} onClick={() => void store.decide(action.id, 'rejected')}>
+          <button type="button" className={BUTTON} onClick={() => void store.decide(action.id, 'rejected')}>
             {t(locale, 'chat.card.proposal.reject')}
           </button>
           <button type="button" className={BUTTON_PRIMARY} onClick={() => void store.decide(action.id, 'approved')}>

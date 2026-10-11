@@ -11,6 +11,8 @@ import type { Api } from '../../api/api';
 import type { Command, CommandResult } from '../../api/commands';
 import type { Query, SettingsAccountView } from '../../api/queries';
 import type { Actor } from '../../domain/index';
+import { NewProjectPanel } from './new-project';
+import { createNewProjectStore } from '../stores/new-project';
 import { Budget, BudgetDetail, toggleBudgetRow, WizardScreen } from './wizard';
 import type { LocaleStore } from '../stores/locale';
 import type { ThemeStore } from '../stores/theme';
@@ -311,5 +313,38 @@ describe('wizard screen — finishing (U-49)', () => {
     expect(html).toContain('data-wizard-leaving');
     expect(store.state()).toBe(store.state());
     expect(draw(store)).toBe(draw(store));
+  });
+});
+
+const buttonNamed = (html: string, name: string): string =>
+  [...html.matchAll(/<button\b[^>]*>[\s\S]*?<\/button>/g)].map((match) => match[0]).find((button) => button.includes(name)) ?? '';
+
+describe('button tiers — wizard and new project', () => {
+  it('U-220: wizard and new project former text buttons are outlined and still named', async () => {
+    const { store } = await toBudget();
+    const wizard = draw(store);
+    for (const name of ['Geri', 'Bu adımı atla', 'Geri al']) {
+      const button = buttonNamed(wizard, name);
+      expect(button, name).not.toBe('');
+      expect(button, name).toContain('border-bord');
+      expect(button, name).not.toContain('border-transparent');
+    }
+    const project = renderToStaticMarkup(
+      createElement(NewProjectPanel, {
+        open: true,
+        origin: 'pointer',
+        store: createNewProjectStore({
+          api: { query: async () => [], command: async () => ({ ok: true }) } as unknown as Pick<Api, 'query' | 'command'>,
+          actor: userActor,
+          reloadTree: async () => undefined,
+        }),
+        locale: 'tr',
+        onClose: () => undefined,
+        onDone: () => undefined,
+      }),
+    );
+    const cancel = buttonNamed(project, 'Vazgeç');
+    expect(cancel).toContain('border-bord');
+    expect(cancel).not.toContain('border-transparent');
   });
 });

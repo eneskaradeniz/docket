@@ -304,14 +304,15 @@ describe('page screen — approval bar (U-79)', () => {
     return [...bar.matchAll(/data-page-action="(\w+)"/g)].map((match) => match[1]);
   };
 
-  it('U-79: pending on the latest shows Reddet (ghost) and Onayla — the page\'s only primary button', async () => {
+  it('U-79: pending on the latest shows Reddet (outline) and Onayla — the page\'s only primary button', async () => {
     const html = await draw(detail({ item: { approval: 'pending' }, gate: { pending: true, gate: 'g' } }));
     expect(buttons(html)).toEqual(['reject', 'approve']);
     expect(html).toContain('Onaylarsan iş emri bir sonraki aşamaya geçer');
     const primaries = html.match(/<button[^>]*\bbg-signal\b[^>]*>/g) ?? [];
     expect(primaries).toHaveLength(1);
     expect(primaries[0]).toContain('data-page-action="approve"');
-    expect(html).toMatch(/<button[^>]*text-inkdim[^>]*data-page-action="reject"/);
+    expect(html).toMatch(/<button[^>]*border-bord[^>]*data-page-action="reject"/);
+    expect(html).not.toMatch(/<button[^>]*border-transparent[^>]*data-page-action="reject"/);
   });
 
   it('U-79: without a gate the reason reads "Onaylarsan sayfa onaylı işaretlenir"', async () => {
@@ -439,5 +440,19 @@ describe('page screen — measure rules (U-82)', () => {
     expect(text).toContain('data-pages-section');
     expect(text).toContain('motion-safe:');
     expect(text).toContain('focus-visible:');
+  });
+});
+
+describe('button tiers — page viewer', () => {
+  it('U-221: page viewer and account view former text buttons are outlined and still named', async () => {
+    const html = await draw(detail({ item: { approval: 'pending' }, gate: { pending: true, gate: 'g' } }));
+    const buttons = [...html.matchAll(/<button\b[^>]*>[\s\S]*?<\/button>/g)].map((match) => match[0]);
+    const back = buttons.find((button) => button.includes('‹ Geri')) ?? '';
+    const reject = buttons.find((button) => button.includes('data-page-action="reject"')) ?? '';
+    expect(back).toContain('border-bord');
+    expect(back).not.toContain('border-transparent');
+    expect(reject).toContain('Reddet');
+    expect(reject).toContain('border-bord');
+    expect(reject).not.toContain('border-transparent');
   });
 });

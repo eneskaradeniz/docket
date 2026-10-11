@@ -14,13 +14,14 @@ const html = (props: Partial<RescanButtonProps> = {}): string =>
 const buttonTag = (out: string): string => /<button[^>]*>/.exec(out)?.[0] ?? '';
 
 describe('RescanButton — idle (U-160)', () => {
-  it('U-160: reads "Yeniden tara" with a refresh icon, as a small ghost button', () => {
+  it('U-160: reads "Yeniden tara" with a refresh icon, as a small secondary button', () => {
     const out = html();
     expect(out).toContain('Yeniden tara');
     expect(out).toContain('<svg');
     expect(buttonTag(out)).toContain('type="button"');
-    expect(buttonTag(out)).toContain('text-inkdim');
-    expect(buttonTag(out)).toContain('border-transparent');
+    expect(buttonTag(out)).toContain('border-bord');
+    expect(buttonTag(out)).not.toContain('border-transparent');
+    expect(buttonTag(out)).not.toContain('text-inkdim');
     expect(buttonTag(out)).not.toMatch(/\sdisabled(=|\s|>)/);
     expect(buttonTag(out)).not.toContain('aria-busy="true"');
   });

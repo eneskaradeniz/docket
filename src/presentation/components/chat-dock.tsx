@@ -101,7 +101,7 @@ function ScopeChip({ state, store, locale }: { readonly state: ChatState; readon
             {sameScope(state.scope, placeScope(state.place)) && !state.pinned ? (
               t(locale, 'chat.scope.following')
             ) : (
-              <button type="button" data-chat-follow="" className={`border-0 bg-transparent p-0 text-[0.75rem] font-semibold leading-4 text-ink underline ${FOCUS}`} onClick={() => store.followScreen()}>
+              <button type="button" data-chat-follow="" className={BUTTON} onClick={() => store.followScreen()}>
                 {t(locale, 'chat.scope.follow')}
               </button>
             )}

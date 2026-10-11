@@ -23,7 +23,7 @@ import {
 } from '../stores/chat-model';
 import type { ChatFileInput, ChatStore } from '../stores/chat-store';
 import { ChatIcon, refIcon } from './chat-icons';
-import { BUTTON, BUTTON_GHOST, BUTTON_PRIMARY, FLOATING, FOCUS, ICON_BUTTON, MENU_DESC, MENU_OPTION, MENU_TITLE, REF_CHIP, THUMB, fill } from './chat-style';
+import { BUTTON, BUTTON_PRIMARY, FLOATING, FOCUS, ICON_BUTTON, MENU_DESC, MENU_OPTION, MENU_TITLE, REF_CHIP, THUMB, fill } from './chat-style';
 
 const ACCEPT = '.png,.jpg,.jpeg,.webp,.md,.txt,.log,.csv,.json,.pdf';
 const PERM_CLASSES = ['open_work_order', 'roadmap_edit', 'definition_edit', 'setting_change'] as const;
@@ -253,7 +253,7 @@ function PermDialog({ state, store, locale }: Pick<ComposerProps, 'state' | 'sto
           </div>
           <div className="border-t border-hairline pt-2 text-[0.75rem] leading-4 text-inkdim">{t(locale, 'chat.perm.never')}</div>
           <div className="flex items-center justify-end gap-2">
-            <button type="button" className={BUTTON_GHOST} onClick={() => store.closePerm()}>
+            <button type="button" className={BUTTON} onClick={() => store.closePerm()}>
               {t(locale, 'chat.perm.cancel')}
             </button>
             <button type="button" className={BUTTON_PRIMARY} disabled={state.permDraft.length === 0} onClick={() => void store.grant()}>
@@ -380,7 +380,7 @@ export function ChatComposer({ state, store, locale, onOpenAccounts, onOpenConse
           data-chat-tier=""
           aria-haspopup="dialog"
           aria-expanded={state.permOpen}
-          className={`rounded-control border-0 bg-transparent px-1 font-mono text-[0.6875rem] font-medium leading-4 underline underline-offset-2 hover:text-ink ${minutes === null ? 'text-inkdim' : 'text-signal-soft'} ${FOCUS}`}
+          className={`rounded-control border border-bord bg-transparent px-2 py-1 font-mono text-[0.6875rem] font-medium leading-4 hover:bg-raised ${minutes === null ? 'text-inkdim' : 'text-signal-soft'} ${FOCUS}`}
           onClick={() => store.togglePerm()}
         >
           {minutes === null ? t(locale, 'chat.tier.suggest') : fill(t(locale, 'chat.tier.apply'), { n: minutes })}

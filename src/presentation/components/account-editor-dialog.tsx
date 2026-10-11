@@ -147,14 +147,14 @@ export function AccountEditorDialog(props: AccountEditorDialogProps) {
           <span className="mr-auto flex items-center gap-3 text-[12.5px] text-inkdim">
             {t(locale, host === 'wizard' ? 'editor.footer.draft' : 'editor.footer.saves')}
             {host === 'settings' && onOpenView !== undefined ? (
-              <button type="button" onClick={onOpenView} className="rounded-control text-ink underline decoration-bord underline-offset-4 hover:decoration-ink">
+              <button type="button" onClick={onOpenView} className="rounded-control border border-bord bg-transparent px-2 py-0.5 text-ink hover:bg-raised">
                 {t(locale, 'editor.openView')}
               </button>
             ) : null}
           </span>
           {host === 'wizard' ? (
             <>
-              <ActionButton variant="ghost" size="md" onClick={onClose}>
+              <ActionButton variant="neutral" size="md" onClick={onClose}>
                 {t(locale, 'wizard.editor.cancel')}
               </ActionButton>
               <ActionButton variant="primary" size="md" onClick={() => onSave?.()}>

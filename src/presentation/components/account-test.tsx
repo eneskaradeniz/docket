@@ -6,6 +6,7 @@ import { t, type Locale } from '../labels/t';
 import { accountTestLine, relativeTime, type TestRefusal } from '../stores/account-test';
 import type { AccountTestView } from '../../api/queries';
 import { ActionButton } from './action-button';
+import { InlineLink, Prose } from './inline-link';
 
 export interface AccountTestProps {
   readonly locale: Locale;
@@ -48,17 +49,15 @@ export function AccountTest({ locale, test, testing, refusal, showButton, onTest
         </details>
       ) : null}
       {refusal !== undefined ? (
-        <p role="alert" className="text-[12.5px] text-signal-soft" data-test-refusal={refusal.code}>
+        <Prose role="alert" className="text-[12.5px] text-signal-soft" marker={['data-test-refusal', refusal.code]}>
           {t(locale, refusal.labelKey)}
           {refusal.modelsLink ? (
             <>
               {' '}
-              <button type="button" onClick={onOpenModels} className="rounded-control text-ink underline decoration-bord underline-offset-4 hover:decoration-ink">
-                {t(locale, 'accountTest.openModels')}
-              </button>
+              <InlineLink onClick={onOpenModels}>{t(locale, 'accountTest.openModels')}</InlineLink>
             </>
           ) : null}
-        </p>
+        </Prose>
       ) : null}
     </div>
   );

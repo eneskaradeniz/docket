@@ -351,7 +351,7 @@ function StageFilesPreview({
               return (
                 <li key={file.path}>
                   <button
-                    className={`block w-full truncate px-3 py-1.5 text-left font-mono text-[0.71875rem] hover:bg-raised ${isSelected ? 'bg-raised font-semibold text-ink' : 'text-inkdim'}`}
+                    className={`block w-full truncate rounded-control border border-bord px-3 py-1.5 text-left font-mono text-[0.71875rem] hover:bg-raised ${isSelected ? 'bg-raised font-semibold text-ink' : 'bg-transparent text-ink'}`}
                     onClick={() => setSelectedFile(file.path)}
                     title={file.path}
                   >
@@ -448,7 +448,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
     <div className="grid gap-5">
       {backKey !== null ? (
         <div className="-mb-2">
-          <ActionButton variant="ghost" onClick={onBack}>
+          <ActionButton variant="neutral" onClick={onBack}>
             {t(locale, backKey)}
           </ActionButton>
         </div>
