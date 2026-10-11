@@ -1710,6 +1710,29 @@ for (const [sizeName, theme] of combos) {
       full,
       { timeout: WAIT },
     );
+  const panelSettled = () =>
+    page.waitForFunction(
+      () => {
+        const p = document.querySelector('[data-chat-panel]');
+        if (p === null) return false;
+        // The panel eases between its two boxes in 280ms; the attribute can be seen a frame
+        // before the transition starts, so a settled frame is one with no running animation
+        // and an unchanged box — only then is the geometry below final.
+        const before = p.getBoundingClientRect();
+        return new Promise((resolve) => {
+          requestAnimationFrame(() => {
+            const after = p.getBoundingClientRect();
+            resolve(
+              p.getAnimations().length === 0 &&
+                Math.abs(after.right - before.right) < 0.5 &&
+                Math.abs(after.bottom - before.bottom) < 0.5,
+            );
+          });
+        });
+      },
+      undefined,
+      { timeout: WAIT },
+    );
 
   let stepNo = 0;
   const steps = [];
@@ -1728,13 +1751,14 @@ for (const [sizeName, theme] of combos) {
     await panelIs(true);
     await expand.click({ timeout: WAIT });
     await fullIs(true);
+    await panelSettled();
     const edges = await page.evaluate(() => {
       const p = document.querySelector('[data-chat-panel]').getBoundingClientRect();
       const nav = document.querySelector('nav[aria-label]').getBoundingClientRect();
       const bar = document.querySelector('[data-title-bar]').getBoundingClientRect();
       return { left: p.left, top: p.top, right: p.right, bottom: p.bottom, navRight: nav.right, barBottom: bar.bottom, iw: innerWidth, ih: innerHeight };
     });
-    assert(Math.abs(edges.right - edges.iw) <= 1 && Math.abs(edges.bottom - edges.ih) <= 1, 'the full panel must reach the window\'s right and bottom edges');
+    assert(Math.abs(edges.right - edges.iw) <= 1 && Math.abs(edges.bottom - edges.ih) <= 1, `the full panel must reach the window's right and bottom edges (right ${edges.right.toFixed(1)} vs ${edges.iw}, bottom ${edges.bottom.toFixed(1)} vs ${edges.ih})`);
     assert(Math.abs(edges.left - edges.navRight) <= 1, `the full panel must start at the sidebar's edge (${edges.left.toFixed(1)} vs ${edges.navRight.toFixed(1)})`);
     assert(Math.abs(edges.top - edges.barBottom) <= 1, `the full panel must start under the title bar (${edges.top.toFixed(1)} vs ${edges.barBottom.toFixed(1)})`);
     assert.equal(await fab.isVisible(), false, 'the round button hides in the full mode');
