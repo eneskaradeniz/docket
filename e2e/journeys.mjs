@@ -215,7 +215,7 @@ for (const [sizeName, theme] of combos) {
     await shot('roadmap');
   });
 
-  await journey('J-6', "account card → limits popover → Hesabı aç → account view → Ayarlar'da düzenle ↗ opens the settings panel; the nav's Telefon and Ayarlar rows open it on their own sections; Esc closes and the account view is still there", async () => {
+  await journey('J-6', "account card → limits popover → Hesabı aç → account view → Ayarlar'da düzenle ↗ opens the settings panel; Telefon opens its own window and Ayarlar opens Hesaplar; Esc closes and the account view is still there", async () => {
     await button('Hesapları gizle / göster'); // the frame starts collapsed; the cards need it open
     // U-51: the card's click opens the limits popover; U-51a: its Hesabı aç button is the way
     // into the account view (the card's own click no longer navigates).
@@ -239,15 +239,20 @@ for (const [sizeName, theme] of combos) {
     await page.locator('[data-settings-panel]').waitFor({ state: 'detached', timeout: WAIT });
     await see('Ayarlar\'da düzenle');
     await shot('closed-back-on-account');
-    // The sidebar's nav rows are the panel's doors (U-24): Telefon opens it on the phone
-    // section's honest "not linked yet" standing; Ayarlar opens it on Hesaplar (U-28), with Görünüm holding Dil and Tema.
+    // Telefon is its own window (U-248); Ayarlar opens the panel on Hesaplar (U-28), with Görünüm holding Dil and Tema.
     await page.getByRole('button', { name: 'Telefon', exact: true }).first().click({ timeout: WAIT });
-    await page.waitForSelector('[data-settings-panel]', { timeout: WAIT });
+    await page.waitForSelector('[data-phone-window]', { timeout: WAIT });
+    assert.equal(await page.locator('[data-settings-panel]').count(), 0, 'Telefon must not open Ayarlar');
     await see('Telefon bağlı değil');
     await see('Yakında');
-    await shot('settings-phone');
+    assert.equal(
+      await page.locator('[data-phone-window]').getByRole('button', { name: 'Eşleştir', exact: true }).first().isDisabled(),
+      true,
+      'Eşleştir stays disabled',
+    );
+    await shot('phone-window');
     await page.keyboard.press('Escape');
-    await page.locator('[data-settings-panel]').waitFor({ state: 'detached', timeout: WAIT });
+    await page.locator('[data-phone-window]').waitFor({ state: 'detached', timeout: WAIT });
     await page.getByRole('button', { name: 'Ayarlar', exact: true }).first().click({ timeout: WAIT });
     await page.waitForSelector('[data-settings-panel]', { timeout: WAIT });
     await see('Hesaplar');
@@ -2050,7 +2055,7 @@ for (const [sizeName, theme] of combos) {
   // answers, so the match anchors on the section word itself — scoped to the menu's own nav, where
   // the roles card's "Hesaplar'a git" (its apostrophe fails the anchor) cannot collide anyway.
   const section = (name) => panel.locator('nav').last().getByRole('button', { name: new RegExp(`^${name}(?:\\s|$)`) });
-  const SECTIONS = ['Hesaplar', 'Roller', 'Yetenekler', 'Eşzamanlılık', 'Sağlayıcılar', 'Görünüm', 'Telefon', 'Güncelleme'];
+  const SECTIONS = ['Hesaplar', 'Roller', 'Yetenekler', 'Eşzamanlılık', 'Sağlayıcılar', 'Görünüm', 'Güncelleme'];
   /** The widest direct child of the body against the body's content box (its width minus padding). */
   const fill = () =>
     body.evaluate((el) => {
@@ -2142,6 +2147,56 @@ for (const [sizeName, theme] of combos) {
     console.log(`  FAIL ${title}\n       ${String(error).slice(0, 600)}`);
     appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).slice(0, 600) });
     await page.screenshot({ path: join(OUT, 'J-19-FAIL.png') }).catch(() => undefined);
+  }
+  await handle.app.close();
+}
+
+// U-250: a fresh launch, so creating a work order cannot change the seed the earlier journeys share.
+{
+  const handle = await launchDesignApp();
+  const { page } = handle;
+  const title = 'U-250: new work order opens as a dialog, refuses an empty title, and focuses the new card';
+  const steps = [];
+  total += 1;
+  try {
+    const row = page.locator('nav').getByText('Kadife Odoo', { exact: false }).first();
+    await row.waitFor({ state: 'visible', timeout: WAIT });
+    await row.click({ timeout: WAIT });
+    await page.waitForSelector('[data-board-kanban]', { timeout: WAIT });
+    const openNew = () => page.getByRole('button', { name: '+ Yeni iş emri', exact: true }).first().click({ timeout: WAIT });
+    await openNew();
+    const dialog = page.locator('[data-new-work-order]');
+    await dialog.waitFor({ state: 'visible', timeout: WAIT });
+    steps.push('dialog');
+    const flow = dialog.getByRole('combobox', { name: 'Akış' });
+    assert.equal(await flow.inputValue(), 'standard', 'Akış opens on standard');
+    await dialog.getByRole('button', { name: 'Aç', exact: true }).click({ timeout: WAIT });
+    await dialog.getByText('Bir başlık yazın.').waitFor({ state: 'visible', timeout: WAIT });
+    const titleBox = dialog.getByRole('textbox', { name: 'Başlık' });
+    await titleBox.fill('Pencere işi');
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'detached', timeout: WAIT });
+    await openNew();
+    await dialog.waitFor({ state: 'visible', timeout: WAIT });
+    assert.equal(await dialog.getByRole('textbox', { name: 'Başlık' }).inputValue(), 'Pencere işi', 'Esc keeps the draft');
+    assert.equal(await dialog.getByRole('combobox', { name: 'Akış' }).inputValue(), 'standard', 'Akış is standard again');
+    await dialog.getByRole('textbox', { name: 'Başlık' }).press('Enter');
+    await page.getByText('İş emri açıldı.').first().waitFor({ state: 'visible', timeout: WAIT });
+    await dialog.waitFor({ state: 'detached', timeout: WAIT });
+    const card = page.locator('[data-board-card]', { hasText: 'Pencere işi' }).first();
+    await card.waitFor({ state: 'visible', timeout: WAIT });
+    await page.waitForFunction(
+      () => document.activeElement?.closest('[data-board-card]')?.textContent?.includes('Pencere işi') === true,
+      undefined,
+      { timeout: WAIT },
+    );
+    steps.push('created');
+    console.log(`  ok   ${title}`);
+    appendJourney({ id: title, status: 'ok', steps });
+  } catch (error) {
+    failures.push(title);
+    console.log(`  FAIL ${title}\n       ${String(error).slice(0, 600)}`);
+    appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).slice(0, 600) });
   }
   await handle.app.close();
 }

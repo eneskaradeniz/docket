@@ -32,12 +32,13 @@ export function RoadmapLaunchers({ project }: { readonly project: string }) {
   );
 }
 
-/** The board's create form: describe the work order, the operator opens it. */
-export function BoardLaunchers({ project }: { readonly project: string | null }) {
+/** The new-work-order window: describe the work, the operator opens it. `onLaunch` closes the
+ *  window first, otherwise the dialog would hide the chat it opens. */
+export function BoardLaunchers({ project, onLaunch }: { readonly project: string | null; readonly onLaunch?: () => void }) {
   if (useContext(ChatLauncherContext) === null || project === null) return null;
   return (
     <LauncherRow>
-      <ChatLauncher id="describe" labelKey="launch.describe" prefillKey="launch.prefill.describe" scope={{ kind: 'project', project }} />
+      <ChatLauncher id="describe" labelKey="launch.describe" prefillKey="launch.prefill.describe" scope={{ kind: 'project', project }} onLaunch={onLaunch} />
     </LauncherRow>
   );
 }

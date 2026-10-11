@@ -72,7 +72,7 @@ describe('settings sections (U-28)', () => {
   it('U-28: the menu has two groups in order — Çalışma then Uygulama — each with its sections in order', () => {
     expect(SETTINGS_MENU).toStrictEqual([
       { id: 'work', sections: ['accounts', 'roles', 'capabilities', 'concurrency', 'providers'] },
-      { id: 'app', sections: ['appearance', 'phone', 'update'] },
+      { id: 'app', sections: ['appearance', 'update'] },
     ]);
     expect(SETTINGS_SECTIONS).toStrictEqual([
       'accounts',
@@ -81,7 +81,6 @@ describe('settings sections (U-28)', () => {
       'concurrency',
       'providers',
       'appearance',
-      'phone',
       'update',
     ]);
     expect(SETTINGS_SECTIONS).not.toContain('language');
@@ -96,11 +95,9 @@ describe('settings sections (U-28)', () => {
     expect(settingsPanelReducer(opened, { type: 'select', section: 'roles' }).section).toBe('roles');
   });
 
-  it("U-28: opening without a named section lands on Hesaplar — the nav's Ayarlar row; Telefon names its own", () => {
+  it("U-28: opening without a named section lands on Hesaplar — the nav's Ayarlar row", () => {
     expect(settingsPanelReducer(CLOSED_SETTINGS_PANEL, { type: 'open', origin: 'pointer' }).section).toBe('accounts');
-    expect(
-      settingsPanelReducer(CLOSED_SETTINGS_PANEL, { type: 'open', origin: 'pointer', section: 'phone' }).section,
-    ).toBe('phone');
+    expect(settingsPanelReducer(CLOSED_SETTINGS_PANEL, { type: 'open', origin: 'pointer', section: 'update' }).section).toBe('update');
   });
 
   it('U-28: selecting a section moves the menu and drops any sub-page', () => {

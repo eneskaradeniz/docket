@@ -1529,3 +1529,14 @@ size × theme: content-area edges, the 48 rem column centred, no horizontal over
 - **U-242** (added 2026-10-11, #974) The `no_binding` banner reads "Docket AI için hesap sırası belirlenmemiş." and carries a "Sırayı ayarla" button that opens Ayarlar › Roller; it does not block the input.
 - **U-243** (added 2026-10-11, #974) The "Asistan sırası" list and the chat fallback read one rule, `mostSharedChain` in `domain/resolver`: the chain most global role bindings share, the first to reach the top count winning a tie.
 - **U-244** (added 2026-10-11, #974) Journey step: a project with accounts and no `assistant` binding, a message sent in Docket AI, the reply is a normal assistant turn or a localized notice, never a raw key (the chat API test uses a fake transport; J-15 walks the no-account world and asserts the `no_binding` banner, its button and a transcript without raw keys).
+
+## Work-order and phone windows (U-245 … U-250)
+
+Added 2026-10-11. "+ Yeni iş emri" opens a modal on the shared window frame; Telefon is its own window and is no longer a Settings section.
+
+- **U-245** (added 2026-10-11, #976) "+ Yeni iş emri" opens a dialog containing Başlık, Akış (a select, default `standard`) and Aç / Vazgeç / Tarif et; the board has no inline create form.
+- **U-246** (added 2026-10-11, #976) The Akış default is `standard` on every open, including after a successful create.
+- **U-247** (added 2026-10-11, #976) Submit with an empty title is refused with a field message; Enter submits; on success the dialog closes and the new card is focused.
+- **U-248** (added 2026-10-11, #976) The Telefon row opens the phone window; Settings has no `phone` section and no Telefon tab; the section union has no `'phone'`.
+- **U-249** (added 2026-10-11, #976) Both windows: dialog semantics, focus trap, Esc, focus return to the opener.
+- **U-250** (added 2026-10-11, #976) Journeys and layout: a journey step creates a work order through the dialog; the layout audit measures both windows at 1024×640 and 1152×720 (no overflow, actions visible).

@@ -13,7 +13,7 @@ import type { PaletteOrigin } from './search-palette';
 export type SettingsPanelOrigin = PaletteOrigin;
 
 /** The panel's sections: Çalışma — accounts, roles, capabilities, concurrency, providers; Uygulama —
- *  appearance (Dil and Tema), phone, update. */
+ *  appearance (Dil and Tema) and update. Telefon is its own window, not a section. */
 export type SettingsSection =
   | 'accounts'
   | 'roles'
@@ -21,7 +21,6 @@ export type SettingsSection =
   | 'concurrency'
   | 'providers'
   | 'appearance'
-  | 'phone'
   | 'update';
 
 export interface SettingsMenuGroup {
@@ -31,7 +30,7 @@ export interface SettingsMenuGroup {
 
 export const SETTINGS_MENU: readonly SettingsMenuGroup[] = [
   { id: 'work', sections: ['accounts', 'roles', 'capabilities', 'concurrency', 'providers'] },
-  { id: 'app', sections: ['appearance', 'phone', 'update'] },
+  { id: 'app', sections: ['appearance', 'update'] },
 ];
 
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = SETTINGS_MENU.flatMap((group) => group.sections);
