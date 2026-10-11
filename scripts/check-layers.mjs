@@ -47,8 +47,9 @@ const DOMAIN_MODULES = {
   flow: ['shared', 'definitions', 'gates'],
   dispatch: ['shared', 'quota', 'budget'],
   roadmap: ['shared', 'flow', 'definitions'],
+  usage: ['shared', 'providers'],
   // Cross-module scenario tests only (no production code): may import every module.
-  scenarios: ['shared', 'definitions', 'quota', 'budget', 'proposal', 'conversations', 'actions', 'resolver', 'gates', 'providers', 'library', 'flow', 'dispatch', 'roadmap'],
+  scenarios: ['shared', 'definitions', 'quota', 'budget', 'proposal', 'conversations', 'actions', 'resolver', 'gates', 'providers', 'library', 'flow', 'dispatch', 'roadmap', 'usage'],
 };
 // Module dependency map inside src/infrastructure (docs/v2/infrastructure.md).
 const INFRA_MODULES = {

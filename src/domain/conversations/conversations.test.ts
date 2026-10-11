@@ -549,6 +549,18 @@ describe('R-88: append-only messages, roles and artifacts', () => {
     expect(none.ok && 'usage' in (none.value.messages[1] ?? {})).toBe(false);
   });
 
+  it('R-114: TurnUsage keeps a whole non-negative cachedInputTokens; a turn stored without it stays as it was', () => {
+    const r = addAssistantMessage(started(), { text: 'x', usage: { inputTokens: 10, outputTokens: 5, cachedInputTokens: 64 } }, 2, M2);
+    expect(r.ok && r.value.messages[1]?.usage).toStrictEqual({ inputTokens: 10, outputTokens: 5, cachedInputTokens: 64 });
+    const before = addAssistantMessage(started(), { text: 'x', usage: { inputTokens: 3, outputTokens: 4 } }, 2, M2);
+    expect(before.ok && before.value.messages[1]?.usage).toStrictEqual({ inputTokens: 3, outputTokens: 4 });
+    const fractional = addAssistantMessage(started(), { text: 'x', usage: { inputTokens: 1, cachedInputTokens: 2.5 } as never }, 2, M2);
+    expect(fractional.ok && fractional.value.messages[1]?.usage).toStrictEqual({ inputTokens: 1 });
+    const negative = addAssistantMessage(started(), { text: 'x', usage: { cachedInputTokens: -1 } as never }, 2, M2);
+    expect(negative.ok && 'usage' in (negative.value.messages[1] ?? {})).toBe(false);
+    expect(addAssistantMessage(started(), { text: 'x', usage: { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0 } }, 2, M2).ok).toBe(true);
+  });
+
   it('R-88: a user message carries refs and attachments but never artifacts, sources or usage', () => {
     const r = addUserMessage(
       started(),
