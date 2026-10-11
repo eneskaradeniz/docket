@@ -1,6 +1,8 @@
 // components/provider-list.tsx — Settings → Sağlayıcılar (U-38): one row per discovered provider
 // (mark, name, version in mono, status word, binary path in mono and dim with the full path in
-// `title`), a "Yeniden tara" action whose rows settle as their provider answers, and the
+// `title`), the shared "Yeniden tara" button in the header row (rows settle as their provider
+// answers; the list never blanks on a rescan, and a skeleton stands only before the first
+// result), and the
 // providers not found on the machine folded into one closed group whose rows show the install
 // URL as copyable text. The store decides every state; a null field renders nothing.
 import { useSyncExternalStore } from 'react';
@@ -10,6 +12,8 @@ import { providerStatusTone, type ProviderViewRow, type ProvidersStore } from '.
 import { ActionButton } from './action-button';
 import { countedLabel } from './counted-label';
 import { ProviderMark } from './provider-mark';
+import { RescanButton } from './rescan-button';
+import { Skeleton, SkeletonStyle } from './skeleton';
 import { StatusLamp } from './status-lamp';
 
 export interface ProviderListProps {
@@ -54,21 +58,40 @@ function Row({ row, marks, locale }: { readonly row: ProviderViewRow; readonly m
   );
 }
 
+/** The first load's placeholder: two rows about the size of a real one. */
+function ProviderSkeleton({ locale }: { readonly locale: Locale }) {
+  return (
+    <ul data-provider-skeleton="" aria-busy="true" aria-label={t(locale, 'scan.scanning')} className="m-0 list-none overflow-hidden rounded-card border border-hairline bg-surface p-0">
+      <SkeletonStyle />
+      {[0, 1, 2].map((index) => (
+        <li key={index} className="flex items-center gap-3.5 border-t border-hairline px-3.5 py-3 first:border-t-0">
+          <Skeleton width="1.625rem" height="1.625rem" radius="control" className="flex-none" />
+          <Skeleton width="34%" height="0.875rem" radius="control" />
+          <Skeleton width="5rem" height="0.75rem" radius="control" className="ml-auto flex-none" />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function ProviderList({ store, marks, locale }: ProviderListProps) {
-  const state = useSyncExternalStore(store.subscribe, store.state);
+  const state = useSyncExternalStore(store.subscribe, store.state, store.state);
+  const firstLoad = !state.loaded && state.scanning;
+  const failedEmpty = !state.loaded && state.failed && !state.scanning;
   const empty = state.installed.length === 0 && state.notInstalled.length === 0;
   const folded = state.notInstalled.length;
 
   return (
     <div className="grid gap-3">
-      <div className="flex items-center justify-between gap-3">
-        <ActionButton disabled={state.scanning} onClick={() => void store.rescan()}>
-          {t(locale, 'providers.rescan')}
-        </ActionButton>
-        {state.failed ? <span className="text-[12px] text-error">{t(locale, 'providers.failed')}</span> : null}
+      <div className="flex items-center gap-3">
+        <RescanButton locale={locale} busy={state.scanning} scannedAt={state.scannedAt} now={Date.now()} onRescan={() => void store.rescan()} />
       </div>
 
-      {empty && !state.scanning && !state.failed ? (
+      {firstLoad ? <ProviderSkeleton locale={locale} /> : null}
+      {failedEmpty ? <p className="text-[0.8125rem] leading-5 text-inkdim">{t(locale, 'scan.failed')}</p> : null}
+      {state.loaded && state.failed ? <p className="text-[0.75rem] leading-4 text-error">{t(locale, 'scan.failed')}</p> : null}
+
+      {empty && state.loaded && !state.scanning && !state.failed ? (
         <p className="text-[13px] text-inkdim">{t(locale, 'providers.empty')}</p>
       ) : null}
 

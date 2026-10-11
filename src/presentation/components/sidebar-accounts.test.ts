@@ -85,8 +85,7 @@ const renderFrame = async (reply: SettingsAccountsView, open: boolean): Promise<
       activeAccountId: null,
       providerName: () => 'OpenCode',
       now: 0,
-      unaddedCount: 0,
-      onOpenUnadded: () => undefined,
+      onAddAccount: () => undefined,
       onOpenAccount: () => undefined,
     }),
   );
@@ -119,9 +118,8 @@ describe('SidebarAccounts (U-51)', () => {
     expect(open).toContain('>1</span>');
     expect(open).toContain('aria-expanded="true"');
     expect(open).toContain('grid-rows-[1fr]');
-    // The helper line sits once under the header, dim and 12 px.
-    expect(open).toContain('Çubuk en dar limiti gösterir.');
-    expect((open.match(/Çubuk en dar limiti gösterir\./g) ?? []).length).toBe(1);
+    // The helper line is gone (U-163): the bar needs no sentence.
+    expect(open).not.toContain('Çubuk en dar limiti gösterir.');
   });
 
   it('the collapsed body is inert — its cards are neither focusable nor reachable while hidden', async () => {

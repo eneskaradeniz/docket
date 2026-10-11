@@ -1321,3 +1321,50 @@ than 8 words. A proposal's summary, target, scope, author and every diff line ar
   `rounded-panel` / `rounded-full` only, an explicit leading on every sized text line, a focus ring on
   every control, panes stacked below the `lg` breakpoint, transitions behind `motion-safe:` /
   `motion-reduce:`, no vendor name. A source-scan test pins these on the screen's own source.
+
+## Remembered scans (U-155 … U-164)
+
+Added 2026-10-11 (#948), append only. Operator walk: Settings re-scanned the machine on every open,
+Sağlayıcılar opened blank, the rescan button differed in every place and spun as a whole. These rules
+replace the "reads on open" parts of U-34, U-38 and U-52, and drop U-37's "n hesap eklenmedi" row and
+U-51's helper line.
+
+- **U-155** (candidates store, providers store; added 2026-10-11, #948) One scan at start. The shell
+  starts the accounts scan once, in the background; the providers store is seeded by the discovery that
+  scan already read, so start costs one pass. Each store reports `status` (`idle`, `loading`, `ready`,
+  `error`), its result and `scannedAt` (the last successful scan; null before one).
+- **U-156** (stores, Settings, shell; added 2026-10-11, #948) Opening reads memory. `ensure()` scans only
+  while nothing was ever read and joins a scan in flight; opening Settings or a section never calls
+  `load` or `rescan`. A scan runs again only on "Yeniden tara" or after an `accounts.changed` event.
+- **U-157** (stores; added 2026-10-11, #948) Rescan replaces, never blanks. While it runs the old rows
+  stay listed and `status` reads `loading`; on the answer the rows and `scannedAt` are replaced. A fresh
+  ask during a scan waits for it, then runs.
+- **U-158** (stores, screens; added 2026-10-11, #948) Errors keep the last result: status `error`, rows and
+  `scannedAt` unchanged. A first scan that fails has no result: the section shows "Tarama olmadı." and
+  the Yeniden tara button, never a blank. (Amends U-34: a failed reply no longer empties the list.)
+- **U-159** (stores; added 2026-10-11, #948) Kinds are independent. A providers rescan sends no accounts
+  query; an accounts error leaves the providers status as it was.
+- **U-160** (`RescanButton`; added 2026-10-11, #948) One component draws every scan or refresh button:
+  ghost, small, refresh icon and "Yeniden tara", right-aligned in the section's header row (title left,
+  actions right). Beside it, muted small text "Son tarama: 2 dakika önce" (the cockpit's age formatter)
+  once a scan exists.
+- **U-161** (`RescanButton`; added 2026-10-11, #948) Busy. The button stays put and only its icon turns,
+  about its own centre, linear, 0.9 s, behind `motion-safe:`. The label reads "Taranıyor…", the button is
+  disabled and `aria-busy`. Under reduced motion nothing turns. The button box never rotates. The icon-only
+  variant (sidebar) has no label: tooltip and `aria-label` "Yeniden tara".
+- **U-162** (Hesaplar, Sağlayıcılar; added 2026-10-11, #948) Skeleton on first load only: shown while no
+  result exists and a scan runs, never over a result. Hesaplar reuses the U-52 skeleton; Sağlayıcılar draws
+  three skeleton rows.
+- **U-163** (sidebar accounts block; added 2026-10-11, #948) Clean block. "Çubuk en dar limiti
+  gösterir.", "Henüz hesap yok." and the "n hesap eklenmedi · Gör ›" row are gone (not-yet-added accounts
+  live in Ayarlar › Hesaplar › Eklenmemiş). With no account the body is one compact card: "Hesap yok" and
+  a small "Hesap ekle" button that opens Ayarlar › Hesaplar. The refresh is the icon-only RescanButton.
+- **U-164** (sources, labels; added 2026-10-11, #948) One button, short copy, measure. No file but
+  `rescan-button.tsx` draws a scan spinner or a rescan label (a source-scan test). Every new label is in
+  both bundles and has at most 8 words. The component uses rem lengths and the radius tokens only.
+
+*(Addendum 2026-10-11, #948: J-18 walks the remembered scans on the page world: Settings opens, the first
+result stands → closed and opened twice more, then Sağlayıcılar: no skeleton and no busy button ever
+appears → Yeniden tara on the right goes busy, then "Son tarama" shows again with the rows kept → the
+sidebar's accounts block holds none of the removed lines and its refresh has no label. A DOM observer
+stands in for a request counter. It runs once per run.)*

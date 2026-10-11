@@ -15,6 +15,7 @@ import type { LabelKey } from '../labels/keys';
 import type { RowStanding } from './account-groups';
 import { commandResultKey, isQueryFailure } from './results';
 import { bindingCommand, unboundRoleIds } from './roles';
+import { scanStatusOf, type ScanStatus } from './scan-status';
 import type { SettingsIntentOutcome } from './settings';
 
 /** The candidate fields this list reads, as `accounts.candidates` reports them. */
@@ -234,6 +235,10 @@ export interface CandidatesState {
   readonly loaded: boolean;
   readonly adopting: boolean;
   readonly lastOutcome: SettingsIntentOutcome | null;
+  /** The scan's standing; an old result stays listed through `loading` and `error`. */
+  readonly status: ScanStatus;
+  /** When the last successful scan finished; null before one has. */
+  readonly scannedAt: number | null;
 }
 
 export interface CandidatesStoreDeps {
@@ -243,11 +248,18 @@ export interface CandidatesStoreDeps {
   readonly onAdopted?: () => void;
   /** The api's change events: an `accounts.changed` re-reads a list that has been read once (U-44). */
   readonly changes?: (listener: (change: { readonly type: string }) => void) => () => void;
+  /** The clock the scan time reads; the app passes the wall clock. */
+  readonly now?: () => number;
+  /** Receives the discovery answer this scan already read, so the providers cache needs no
+   *  second pass at start. */
+  readonly onProviders?: (facts: readonly ProviderFact[]) => void;
 }
 
 export interface CandidatesStore {
   /** Reads both queries (cached candidates). */
   load(): Promise<void>;
+  /** Scans only when nothing has been read yet; a result or a scan in flight is left alone. */
+  ensure(): Promise<void>;
   /** "Yeniden tara": a fresh scan of both. */
   rescan(): Promise<void>;
   select(id: string | null): void;
@@ -295,9 +307,13 @@ export const createCandidatesStore = (deps: CandidatesStoreDeps): CandidatesStor
   let importToken = false;
   let loading = false;
   let loaded = false;
+  let failed = false;
+  let scannedAt: number | null = null;
+  let inFlight: Promise<void> | null = null;
   let adopting = false;
   let lastOutcome: SettingsIntentOutcome | null = null;
-  let state: CandidatesState = { loading, rows: [], providers: [], selected, importToken, addVisible: false, loaded: false, adopting, lastOutcome };
+  const now = deps.now ?? ((): number => Date.now());
+  let state: CandidatesState = { loading, rows: [], providers: [], selected, importToken, addVisible: false, loaded: false, adopting, lastOutcome, status: 'idle', scannedAt: null };
   const listeners = new Set<() => void>();
 
   const publish = (): void => {
@@ -312,11 +328,13 @@ export const createCandidatesStore = (deps: CandidatesStoreDeps): CandidatesStor
       loaded,
       adopting,
       lastOutcome,
+      status: scanStatusOf({ loading, loaded, failed }),
+      scannedAt,
     };
     for (const listener of [...listeners]) listener();
   };
 
-  const read = async (refresh: boolean): Promise<void> => {
+  const run = async (refresh: boolean): Promise<void> => {
     loading = true;
     publish();
     const candidateQuery: Query = refresh ? { type: 'accounts.candidates', fresh: true } : { type: 'accounts.candidates' };
@@ -324,16 +342,36 @@ export const createCandidatesStore = (deps: CandidatesStoreDeps): CandidatesStor
       api.query(candidateQuery),
       api.query({ type: 'providers.discovered' }),
     ]);
-    facts = !isQueryFailure(candidateReply) && Array.isArray(candidateReply) ? candidateReply.filter(isFact) : [];
-    providerFacts = !isQueryFailure(providerReply) && Array.isArray(providerReply) ? providerReply.filter(isProviderFact) : [];
+    const candidatesOk = !isQueryFailure(candidateReply) && Array.isArray(candidateReply);
+    const providersOk = !isQueryFailure(providerReply) && Array.isArray(providerReply);
+    // A failed read keeps the last result: only an answer replaces what is listed.
+    if (candidatesOk) facts = candidateReply.filter(isFact);
+    if (providersOk) {
+      providerFacts = providerReply.filter(isProviderFact);
+      deps.onProviders?.(providerFacts);
+    }
     // A selection that is no longer listed (added elsewhere, vanished on rescan) falls away.
     if (selected !== null && !candidateRows(facts, selected, false, providerFacts).some((row) => row.id === selected)) {
       selected = null;
       importToken = false;
     }
+    failed = !candidatesOk;
+    if (candidatesOk) {
+      loaded = true;
+      scannedAt = now();
+    }
     loading = false;
-    loaded = true;
     publish();
+  };
+
+  /** One scan at a time: a plain ask while one runs joins it; a fresh ask waits for it, then runs. */
+  const read = (refresh: boolean): Promise<void> => {
+    if (inFlight !== null) return refresh ? inFlight.then(() => read(true)) : inFlight;
+    const current = run(refresh).finally(() => {
+      inFlight = null;
+    });
+    inFlight = current;
+    return current;
   };
 
   deps.changes?.((change) => {
@@ -399,6 +437,7 @@ export const createCandidatesStore = (deps: CandidatesStoreDeps): CandidatesStor
 
   return {
     load: () => read(false),
+    ensure: () => (state.status === 'idle' ? read(false) : (inFlight ?? Promise.resolve())),
     rescan: () => read(true),
     select: (id) => {
       if (id !== null && !candidateRows(facts, null, false, providerFacts).some((row) => row.id === id && row.selectable)) return;
