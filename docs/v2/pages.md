@@ -14,7 +14,7 @@ turn it off). Tools:
 | `page_publish(title, kind, content)` | Creates a page linked to the current work order; returns its id |
 | `page_update(pageId, content)` | Publishes a new immutable version |
 | `page_comments(pageId)` | Reads the user's comments to address them |
-| `ask_operator(question, options)` | A structured multiple-choice question |
+| `ask_operator(question, options)` | A structured multiple-choice question. Phase 7 — not shipped yet (moved on 2026-10-11, #147: the companion needs it first) |
 
 Kinds: `html` (interactive mockup), `diagram` (Mermaid), `markdown`, `table` (CSV/JSON), `image`,
 `report`. Providers without MCP (experimental tier) write pages to `.docket/out/` in the worktree;

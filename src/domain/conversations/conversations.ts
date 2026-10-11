@@ -58,6 +58,7 @@ export type Artifact =
 export interface TurnUsage {
   readonly inputTokens?: number;
   readonly outputTokens?: number;
+  readonly cachedInputTokens?: number;
   readonly costMicros?: number;
 }
 
@@ -304,12 +305,16 @@ const checkedArtifact = (artifact: unknown): Artifact | 'bad_ref' | 'artifact_to
 const checkedUsage = (usage: unknown): TurnUsage | undefined => {
   if (!isRecord(usage)) return undefined;
   const reported = (value: unknown): number | undefined => (typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined);
+  // A token count is a whole number; the cache field is held to that standard.
+  const counted = (value: unknown): number | undefined => (typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : undefined);
   const inputTokens = reported(usage.inputTokens);
   const outputTokens = reported(usage.outputTokens);
+  const cachedInputTokens = counted(usage.cachedInputTokens);
   const costMicros = reported(usage.costMicros);
   const kept: TurnUsage = {
     ...(inputTokens === undefined ? {} : { inputTokens }),
     ...(outputTokens === undefined ? {} : { outputTokens }),
+    ...(cachedInputTokens === undefined ? {} : { cachedInputTokens }),
     ...(costMicros === undefined ? {} : { costMicros }),
   };
   return Object.keys(kept).length === 0 ? undefined : kept;
