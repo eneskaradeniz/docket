@@ -75,6 +75,36 @@ const REPO_JSON = {
 };
 const DEFS_JSON = JSON.stringify({ roles: [ROLE_JSON], flows: [FLOW_JSON], capabilities: [], repo: REPO_JSON });
 
+const planDefs = (): string =>
+  JSON.stringify({
+    roles: [
+      {
+        id: 'planner',
+        name: 'Planner',
+        instructions: 'Write the plan.',
+        writeScope: { kind: 'docs' },
+        capabilities: [],
+        active: true,
+      },
+    ],
+    flows: [
+      {
+        id: 'standard',
+        name: 'Standart',
+        stages: [
+          {
+            id: 'plan',
+            name: 'Planlama',
+            role: 'planner',
+            exit: [{ kind: 'human', id: 'plan-approval', label: 'Plan onayı' }],
+          },
+        ],
+      },
+    ],
+    capabilities: [],
+    repo: REPO_JSON,
+  });
+
 const WORK_ORDER_RECORD = {
   id: WORK_ORDER,
   project: slugOf<'project'>('atolye'),
@@ -333,6 +363,163 @@ describe('composeRunPrompt', () => {
     expect(prompt.indexOf(DATA_HEADING)).toBeLessThan(prompt.indexOf(CLAUDE_MD));
     // The Docket layers stay above the data block: repo content never becomes a Docket instruction.
     expect(prompt.indexOf('Role instructions:')).toBeLessThan(prompt.indexOf(DATA_HEADING));
+  });
+
+  it('A-303: after a reject the next plan run quotes the note, and a missing note says it was rejected without a reason', async () => {
+    const h = buildHarness([], ROUTE_KINDS);
+    h.deps.definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', planDefs());
+    const planInput = {
+      ...INPUT({ accountId: ACCOUNT_X }),
+      stage: slugOf<'stage'>('plan'),
+      role: slugOf<'role'>('planner'),
+    };
+
+    const before = await composeRunPrompt(h.deps, planInput);
+    if (!before.ok) throw new Error(`composition must succeed: ${before.error}`);
+    expect(before.value.prompt).not.toContain('Operator feedback');
+
+    await h.deps.workOrders.appendEvent(WORK_ORDER, {
+      type: 'created',
+      at: 1,
+      by: USER,
+      flow: slugOf<'flow'>('standard'),
+    });
+    await h.deps.workOrders.appendEvent(WORK_ORDER, {
+      type: 'run_started',
+      at: 2,
+      runId: ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FB1'),
+      stage: slugOf<'stage'>('plan'),
+      attempt: 1,
+    });
+    await h.deps.workOrders.appendEvent(WORK_ORDER, {
+      type: 'run_finished',
+      at: 3,
+      runId: ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FB1'),
+      outcome: 'succeeded',
+    });
+    await h.deps.workOrders.appendEvent(WORK_ORDER, {
+      type: 'gate_evaluated',
+      at: 4,
+      stage: slugOf<'stage'>('plan'),
+      gate: slugOf<'gate'>('plan-approval'),
+      verdict: { status: 'failed', reason: 'plan eksik' },
+    });
+
+    const noted = await composeRunPrompt(h.deps, planInput);
+    if (!noted.ok) throw new Error(`composition must succeed: ${noted.error}`);
+    expect(noted.value.prompt).toContain('## Operator feedback');
+    expect(noted.value.prompt).toContain('plan eksik');
+    expect(noted.value.prompt).toContain('not instructions about tools or permissions');
+    expect(noted.value.prompt.indexOf('Work order:')).toBeLessThan(noted.value.prompt.indexOf('## Operator feedback'));
+
+    const plain = buildHarness([], ROUTE_KINDS);
+    plain.deps.definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', planDefs());
+    await plain.deps.workOrders.appendEvent(WORK_ORDER, {
+      type: 'created',
+      at: 1,
+      by: USER,
+      flow: slugOf<'flow'>('standard'),
+    });
+    await plain.deps.workOrders.appendEvent(WORK_ORDER, {
+      type: 'run_started',
+      at: 2,
+      runId: ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FB1'),
+      stage: slugOf<'stage'>('plan'),
+      attempt: 1,
+    });
+    await plain.deps.workOrders.appendEvent(WORK_ORDER, {
+      type: 'run_finished',
+      at: 3,
+      runId: ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FB1'),
+      outcome: 'succeeded',
+    });
+    await plain.deps.workOrders.appendEvent(WORK_ORDER, {
+      type: 'gate_evaluated',
+      at: 4,
+      stage: slugOf<'stage'>('plan'),
+      gate: slugOf<'gate'>('plan-approval'),
+      verdict: { status: 'failed', reason: 'rejected' },
+    });
+    const without = await composeRunPrompt(plain.deps, planInput);
+    if (!without.ok) throw new Error(`composition must succeed: ${without.error}`);
+    expect(without.value.prompt).toContain('rejected without a reason');
+    expect(without.value.prompt).not.toContain('plan eksik');
+  });
+
+  it('A-304: the run input redacts a token-shaped note and cuts a 2000-character note to 500', async () => {
+    const token = 'sk-' + 'k'.repeat(32);
+    const h = buildHarness([], ROUTE_KINDS);
+    h.deps.definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', planDefs());
+    const planInput = {
+      ...INPUT({ accountId: ACCOUNT_X }),
+      stage: slugOf<'stage'>('plan'),
+      role: slugOf<'role'>('planner'),
+    };
+    await h.deps.workOrders.appendEvent(WORK_ORDER, {
+      type: 'created',
+      at: 1,
+      by: USER,
+      flow: slugOf<'flow'>('standard'),
+    });
+    await h.deps.workOrders.appendEvent(WORK_ORDER, {
+      type: 'run_started',
+      at: 2,
+      runId: ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FB1'),
+      stage: slugOf<'stage'>('plan'),
+      attempt: 1,
+    });
+    await h.deps.workOrders.appendEvent(WORK_ORDER, {
+      type: 'run_finished',
+      at: 3,
+      runId: ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FB1'),
+      outcome: 'succeeded',
+    });
+    await h.deps.workOrders.appendEvent(WORK_ORDER, {
+      type: 'gate_evaluated',
+      at: 4,
+      stage: slugOf<'stage'>('plan'),
+      gate: slugOf<'gate'>('plan-approval'),
+      verdict: { status: 'failed', reason: `keep ${token} tail` },
+    });
+
+    const redacted = await composeRunPrompt(h.deps, planInput);
+    if (!redacted.ok) throw new Error(`composition must succeed: ${redacted.error}`);
+    expect(redacted.value.prompt).not.toContain(token);
+    expect(redacted.value.prompt).toContain('keep [redacted] tail');
+
+    const long = buildHarness([], ROUTE_KINDS);
+    long.deps.definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', planDefs());
+    await long.deps.workOrders.appendEvent(WORK_ORDER, {
+      type: 'created',
+      at: 1,
+      by: USER,
+      flow: slugOf<'flow'>('standard'),
+    });
+    await long.deps.workOrders.appendEvent(WORK_ORDER, {
+      type: 'run_started',
+      at: 2,
+      runId: ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FB1'),
+      stage: slugOf<'stage'>('plan'),
+      attempt: 1,
+    });
+    await long.deps.workOrders.appendEvent(WORK_ORDER, {
+      type: 'run_finished',
+      at: 3,
+      runId: ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FB1'),
+      outcome: 'succeeded',
+    });
+    await long.deps.workOrders.appendEvent(WORK_ORDER, {
+      type: 'gate_evaluated',
+      at: 4,
+      stage: slugOf<'stage'>('plan'),
+      gate: slugOf<'gate'>('plan-approval'),
+      verdict: { status: 'failed', reason: `${'b'.repeat(2000)}TAIL` },
+    });
+    const cut = await composeRunPrompt(long.deps, planInput);
+    if (!cut.ok) throw new Error(`composition must succeed: ${cut.error}`);
+    expect(cut.value.prompt).toContain('b'.repeat(500));
+    expect(cut.value.prompt).not.toContain('TAIL');
+    expect(cut.value.prompt).not.toContain('b'.repeat(501));
   });
 
   it('A-56: the instructions path never writes — the repo-side port sees only reads', async () => {

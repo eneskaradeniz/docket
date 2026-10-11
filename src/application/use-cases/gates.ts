@@ -20,6 +20,7 @@ import type {
 import { MINUTE, deriveWorkOrderState, err, evaluateGate, ok } from '../../domain/index';
 
 import type { AppDeps, ForgeResolver, WorkOrderRecord } from '../ports';
+import { boundOperatorNote } from '../services/operator-feedback';
 
 import { pollRemoteChecks } from './remote-checks-gate';
 
@@ -152,14 +153,17 @@ export async function decideHumanGate(
   // gate_evaluated event now would be a dead fact the fold ignores.
   if (state.status !== 'awaiting_human' || !state.pendingGates.includes(input.gate)) return err('not_pending');
 
+  // The note is untrusted text that is stored on the verdict. Bound it before the domain
+  // copies it into the reason, so a token never lands in the event log.
+  const note = boundOperatorNote(input.note);
   const evidence: GateEvidence =
     current.gate.kind === 'page_approval'
       ? { pageApproval: { decision: input.decision, by: input.actor } }
       : {
           approval:
-            input.note === undefined
+            note === undefined
               ? { decision: input.decision, by: input.actor }
-              : { decision: input.decision, by: input.actor, note: input.note },
+              : { decision: input.decision, by: input.actor, note },
         };
   const verdict = evaluateGate(current.gate, evidence, gateContext(definitions));
   const stateAfter = await recordGateDecision(

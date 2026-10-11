@@ -36,6 +36,7 @@ describe('BUILTIN_FLOWS', () => {
         name: 'Planlama',
         role: 'planner',
         exit: [{ kind: 'human', id: 'plan-approval', label: 'Plan onayı' }],
+        onFail: { goto: 'plan', maxAttempts: 3 },
       },
       {
         id: 'implement',
@@ -65,6 +66,7 @@ describe('BUILTIN_FLOWS', () => {
         name: 'Kapatma',
         role: null,
         exit: [{ kind: 'human', id: 'closure', label: 'Kapanış onayı' }],
+        onFail: { goto: 'close', maxAttempts: 3 },
       },
     ]);
   });
@@ -96,6 +98,7 @@ describe('BUILTIN_FLOWS', () => {
         name: 'Kapatma',
         role: null,
         exit: [{ kind: 'human', id: 'closure', label: 'Kapanış onayı' }],
+        onFail: { goto: 'close', maxAttempts: 3 },
       },
     ]);
   });
@@ -108,6 +111,8 @@ describe('BUILTIN_FLOWS', () => {
       'review',
       'close',
     ]);
+    expect(flowById('security-reviewed').stages[0]?.onFail).toEqual({ goto: 'plan', maxAttempts: 3 });
+    expect(flowById('security-reviewed').stages[4]?.onFail).toEqual({ goto: 'close', maxAttempts: 3 });
     expect(flowById('security-reviewed').stages[2]).toEqual({
       id: 'security',
       name: 'Güvenlik incelemesi',
