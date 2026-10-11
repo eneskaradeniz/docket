@@ -56,9 +56,9 @@ describe('sidebar frame (U-51)', () => {
       }),
     );
 
-  it("U-84: the Artifact'lar row stands between Ara and Telefon", () => {
+  it("U-84: the Çıktılar row stands between Ara and Telefon", () => {
     const html = nav();
-    const order = ['Anasayfa', 'Ara', 'Artifact&#x27;lar', 'Telefon', 'Ayarlar'].map((label) => html.indexOf(label));
+    const order = ['Anasayfa', 'Ara', 'Çıktılar', 'Telefon', 'Ayarlar'].map((label) => html.indexOf(label));
     expect(order.every((at) => at >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(html).toContain('data-nav-library');
