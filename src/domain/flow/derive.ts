@@ -116,9 +116,17 @@ const block = (acc: Acc, reason: string): Acc => ({
   preBlock: acc.status === 'blocked' ? acc.preBlock : acc,
 });
 
-/** R-21: a failure either jumps to `onFail.goto` (while the goto stage has entries left) or blocks. */
-const applyFail = (flow: FlowDef, acc: Acc, reason: string): Acc => {
-  const onFail = flow.stages[acc.stageIndex].onFail;
+/** A person's reject is steering. A stage that forgot `onFail` still gets the same three tries
+ *  the shipped loops declare, aimed at itself. A run failure is not steering, so it never
+ *  borrows this limit. */
+const HUMAN_GATE_RETRY_ATTEMPTS = 3;
+
+/** R-21: a failure either jumps to `onFail.goto` (while the goto stage has entries left) or blocks.
+ *  A rejected human gate with no declared `onFail` uses `{ goto: this stage, maxAttempts: 3 }`
+ *  (R-120). A declared `onFail` is left as written (R-121). */
+const applyFail = (flow: FlowDef, acc: Acc, reason: string, humanGate = false): Acc => {
+  const stage = flow.stages[acc.stageIndex];
+  const onFail = stage.onFail ?? (humanGate ? { goto: stage.id, maxAttempts: HUMAN_GATE_RETRY_ATTEMPTS } : undefined);
   if (onFail === undefined) return block(acc, reason);
   const next = (acc.entries[onFail.goto] ?? 0) + 1;
   const targetIndex = flow.stages.findIndex((candidate) => candidate.id === onFail.goto);
@@ -149,7 +157,10 @@ const applyVerdict = (flow: FlowDef, acc: Acc, gate: GateSlug, verdict: GateVerd
   }
   if (verdict.status === 'pending') return { ...acc, status: statusForPending(stage, acc.pendingGates) };
   if (verdict.status === 'unknown') return block(acc, verdict.reason); // R-22: never advances
-  return applyFail(flow, acc, `gate "${gate}" failed: ${verdict.reason}`); // R-21
+  const failed = stage.exit.find((candidate) => candidate.id === gate);
+  // Only a `human` gate is the operator's steering reject. page_approval and every machine
+  // gate still block when the stage declares no onFail (R-121).
+  return applyFail(flow, acc, `gate "${gate}" failed: ${verdict.reason}`, failed?.kind === 'human');
 };
 
 const step = (flow: FlowDef, acc: Acc, event: WorkOrderEvent): Acc => {
