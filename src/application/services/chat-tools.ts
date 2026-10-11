@@ -21,7 +21,8 @@ import { deriveRoadmap, deriveWorkOrderState, isSlug, isUlid, matchesSearch, pag
 
 import type { AppDeps, RunTokenBinding } from '../ports';
 import { isSecretRepoPath } from '../ports';
-import { getWorkOrder, workOrderCodeOf } from '../use-cases/index';
+import { getWorkOrder, usageSummary, workOrderCodeOf } from '../use-cases/index';
+import type { UsageScope } from '../use-cases/index';
 
 import { chatReadScope, type ChatReadScope } from './chat-read-scope';
 import { asArgs, fail, succeed, type DocketToolDefinition, type DocketToolResponse, type ToolArgs } from './docket-tool-types';
@@ -44,7 +45,7 @@ export interface ChatTools {
 
 type ChatToolDeps = Pick<
   AppDeps,
-  'conversations' | 'workOrders' | 'runs' | 'projects' | 'repos' | 'definitions' | 'pages' | 'repoFiles'
+  'clock' | 'conversations' | 'workOrders' | 'runs' | 'projects' | 'repos' | 'definitions' | 'pages' | 'repoFiles'
 >;
 
 export const CHAT_TOOL_DEFINITIONS: readonly DocketToolDefinition[] = [
@@ -52,13 +53,15 @@ export const CHAT_TOOL_DEFINITIONS: readonly DocketToolDefinition[] = [
     name: 'docket_get',
     description:
       'Read one thing from the operator\'s Docket workspace by id: a work order (state, gates, linked pages, usage), a project ' +
-      '(repos and counts), a repo board (work orders by stage), a roadmap (phases and tasks with derived statuses) or a page ' +
-      '(metadata only). Only what this conversation may read is answered; anything else is forbidden.',
+      '(repos and counts), a repo board (work orders by stage), a roadmap (phases and tasks with derived statuses), a page ' +
+      '(metadata only) or usage (the folded token, cost and waste-findings numbers of a work order or a project over a period). ' +
+      'Only what this conversation may read is answered; anything else is forbidden.',
     inputSchema: {
       type: 'object',
       properties: {
-        kind: { type: 'string', enum: ['work_order', 'project', 'repo_board', 'roadmap', 'page'] },
-        id: { type: 'string', description: 'A work order or page id, or a project or repo slug (by kind).' },
+        kind: { type: 'string', enum: ['work_order', 'project', 'repo_board', 'roadmap', 'page', 'usage'] },
+        id: { type: 'string', description: 'A work order or page id, or a project or repo slug (by kind; usage takes a work order id or a project slug).' },
+        period: { type: 'string', enum: ['7d', '30d', 'all'], description: 'The usage kind\'s window; the default is 30d.' },
       },
       required: ['kind', 'id'],
     },
@@ -119,6 +122,11 @@ const fitCount = (total: number, build: (n: number) => unknown): number => {
 
 const slugArg = (value: unknown): string | undefined => (typeof value === 'string' && isSlug(value) ? value : undefined);
 const ulidArg = (value: unknown): string | undefined => (typeof value === 'string' && isUlid(value) ? value : undefined);
+
+/** The usage kind's window words, as the milliseconds they subtract from now; 'all' has no window. */
+const USAGE_PERIOD_MS = { '7d': 7 * 24 * 60 * 60 * 1000, '30d': 30 * 24 * 60 * 60 * 1000 } as const;
+type UsagePeriod = keyof typeof USAGE_PERIOD_MS | 'all';
+const isUsagePeriod = (value: unknown): value is UsagePeriod => value === '7d' || value === '30d' || value === 'all';
 
 const STATUS_ATTENTION: ReadonlySet<WorkOrderStatus> = new Set(['awaiting_human', 'blocked', 'limit_waiting']);
 
@@ -348,12 +356,50 @@ export function createChatTools(deps: ChatToolDeps): ChatTools {
     });
   };
 
+  // --- docket_get usage ---
+
+  const getUsageView = async (access: ChatAccess, id: string, period: UsagePeriod): Promise<DocketToolResponse> => {
+    // A ULID names a work order, anything slug-shaped a project: exactly one read-model scope.
+    const scope: UsageScope = isUlid(id) ? { workOrder: id as WorkOrderId } : { project: id as ProjectSlug };
+    if ('workOrder' in scope) {
+      const record = await deps.workOrders.get(scope.workOrder);
+      if (record === undefined || !access.canOrder(record)) return fail('forbidden');
+    } else if ((await deps.projects.get(scope.project)) === undefined || !access.canProject(scope.project)) {
+      return fail('forbidden');
+    }
+    // 'all' reads without a bound; every other word becomes the read model's sinceMs, from the clock.
+    const windowMs = period === 'all' ? undefined : USAGE_PERIOD_MS[period];
+    const read = await usageSummary(deps, { ...scope, ...(windowMs === undefined ? {} : { sinceMs: deps.clock.now() - windowMs }) });
+    if (!read.ok) return fail('internal');
+    const { summary, findings, runsWithoutUsage } = read.value;
+    // Only the per-stage rows grow without bound; the cap cuts them alone and the totals stay whole.
+    const build = (n: number): unknown => ({
+      kind: 'data',
+      source: 'docket_get usage',
+      summary: { ...summary, byStage: summary.byStage.slice(0, n) },
+      findings,
+      runsWithoutUsage,
+      ...(n < summary.byStage.length ? { truncated: true } : {}),
+    });
+    return succeed(build(fitCount(summary.byStage.length, build)));
+  };
+
   const get = async (binding: ChatBinding, args: ToolArgs): Promise<DocketToolResponse> => {
     const { kind } = args;
     const id = args['id'];
     // The id's shape is checked first, per kind: a malformed one is bad_input, never a scope answer.
-    const valid = kind === 'work_order' || kind === 'page' ? ulidArg(id) : kind === 'project' || kind === 'roadmap' || kind === 'repo_board' ? slugArg(id) : undefined;
+    const valid =
+      kind === 'work_order' || kind === 'page'
+        ? ulidArg(id)
+        : kind === 'project' || kind === 'roadmap' || kind === 'repo_board'
+          ? slugArg(id)
+          : kind === 'usage'
+            ? (ulidArg(id) ?? slugArg(id))
+            : undefined;
     if (valid === undefined) return fail('bad_input');
+    // The usage period is an argument of the same rank, so its shape is settled before any scope answer too.
+    const periodArg = args['period'];
+    if (periodArg !== undefined && !isUsagePeriod(periodArg)) return fail('bad_input');
     const access = await accessFor(binding);
     if (access === undefined) return fail('forbidden');
     switch (kind) {
@@ -365,6 +411,8 @@ export function createChatTools(deps: ChatToolDeps): ChatTools {
         return getProjectView(access, valid as ProjectSlug);
       case 'roadmap':
         return getRoadmapView(access, valid as ProjectSlug);
+      case 'usage':
+        return getUsageView(access, valid, periodArg ?? '30d');
       default:
         return getRepoBoard(access, valid as RepoSlug);
     }

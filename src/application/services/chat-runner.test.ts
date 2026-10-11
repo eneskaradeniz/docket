@@ -584,6 +584,20 @@ describe('createChatRunner', () => {
     expect(assistantBrief({ scope: { kind: 'workOrder', workOrder: WORK_ORDER } })).toContain(WORK_ORDER);
   });
 
+  it('A-287: the brief gains the usage guidance and stays byte-identical, with no secret or file content', () => {
+    const input = { scope: { kind: 'project' as const, project: PROJECT }, today: '2026-10-11' };
+    const brief = assistantBrief(input);
+    expect(assistantBrief(input)).toBe(brief);
+    expect(brief).toContain('call docket_get kind usage first');
+    expect(brief).toContain('state its numbers before any opinion');
+    expect(brief).toContain('A finding is advice or a propose_change, never an action.');
+    expect(brief).toContain('say "veri yok"');
+    expect(brief).toContain('Never estimate tokens or cost from memory.');
+    expect(brief).not.toContain('ghp_');
+    expect(brief).not.toContain('PRIVATE KEY');
+    expect(assistantBrief({ scope: { kind: 'global' } })).not.toBe(brief);
+  });
+
   it('A-235: each pre-turn refusal starts no agent run and writes only the notice message', async () => {
     const cases: readonly { readonly name: string; readonly code: 'tools_unavailable' | 'consent' | 'quota' | 'spend'; readonly setup: () => Promise<Harness> }[] = [
       { name: 'no transport', code: 'tools_unavailable', setup: (): Promise<Harness> => harness({ withTransport: false }) },
