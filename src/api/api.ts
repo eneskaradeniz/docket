@@ -639,7 +639,15 @@ const runCommand = async (
 
       const opened = await openWorkOrder(
         { clock: deps.clock, ids: deps.ids, log: deps.log, workOrders: deps.workOrders, definitions: deps.definitions, projects: deps.projects },
-        { project, repo, title: command.title, flow, task, actor },
+        {
+          project,
+          repo,
+          title: command.title,
+          ...(command.description !== undefined ? { description: command.description } : {}),
+          flow,
+          task,
+          actor,
+        },
       );
       return opened.ok ? { ok: true, id: opened.value } : { ok: false, code: opened.error };
     }
