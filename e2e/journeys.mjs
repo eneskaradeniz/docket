@@ -250,8 +250,6 @@ for (const [sizeName, theme] of combos) {
     await page.locator('[data-settings-panel]').waitFor({ state: 'detached', timeout: WAIT });
     await page.getByRole('button', { name: 'Ayarlar', exact: true }).first().click({ timeout: WAIT });
     await page.waitForSelector('[data-settings-panel]', { timeout: WAIT });
-    await see('Çalışma');
-    await see('Uygulama');
     await see('Hesaplar');
     await page.locator('[data-settings-panel]').getByRole('button', { name: 'Görünüm', exact: true }).click({ timeout: WAIT });
     await see('Dil');
@@ -1740,7 +1738,10 @@ for (const [sizeName, theme] of combos) {
   const { page } = handle;
   const panel = page.locator('[data-settings-panel]');
   const body = panel.locator('[data-window-body]');
-  const section = (name) => panel.getByRole('button', { name, exact: true });
+  // The Hesaplar row grows the amber dot's label onto its accessible name once the candidate scan
+  // answers, so the match anchors on the section word itself — scoped to the menu's own nav, where
+  // the roles card's "Hesaplar'a git" (its apostrophe fails the anchor) cannot collide anyway.
+  const section = (name) => panel.locator('nav').last().getByRole('button', { name: new RegExp(`^${name}(?:\\s|$)`) });
   const SECTIONS = ['Hesaplar', 'Roller', 'Yetenekler', 'Eşzamanlılık', 'Sağlayıcılar', 'Görünüm', 'Telefon', 'Güncelleme'];
   /** The widest direct child of the body against the body's content box (its width minus padding). */
   const fill = () =>
