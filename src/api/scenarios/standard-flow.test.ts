@@ -491,4 +491,51 @@ describe('standard flow, headless end to end', () => {
     const afterSchedule = await stageRun(h, id, IMPLEMENT);
     expect(afterSchedule[0]?.autoResumesUsed).toBe(1);
   });
+
+  it('A-305: reject twice then approve the third plan advances to implement; three rejects block and close still closes', async () => {
+    const h = makeHarness();
+    await h.deps.accounts.save(account(MAIN));
+    h.transports.register(MAIN, createFakeTransport(completedScript()));
+    await bindRole(h.deps, slugOf<'role'>('planner'), MAIN);
+
+    const reject = (id: WorkOrderId, note: string) =>
+      createApi(h.deps).command(USER, {
+        type: 'gate.decide',
+        workOrderId: id,
+        gate: PLAN_APPROVAL,
+        decision: 'rejected',
+        note,
+      });
+
+    const steered = await openViaApi(h.deps, 'Steer the plan');
+    expect(steered).toBeDefined();
+    if (steered === undefined) return;
+    for (const attempt of [2, 3]) {
+      expect((await runCurrentStage(h, steered)).kind).toBe('finished');
+      expect((await reject(steered, 'plan eksik')).ok).toBe(true);
+      const view = await viewOf(h.deps, steered);
+      expectState(view, { status: 'ready', stage: PLAN, pendingGates: [PLAN_APPROVAL] });
+      expect(view.state.attempt).toBe(attempt);
+    }
+    expect((await runCurrentStage(h, steered)).kind).toBe('finished');
+    expect((await approveViaApi(h.deps, steered, PLAN_APPROVAL)).ok).toBe(true);
+    const advanced = await viewOf(h.deps, steered);
+    expectState(advanced, { status: 'ready', stage: IMPLEMENT });
+    expect(advanced.state.attempt).toBe(1);
+
+    const stuck = await openViaApi(h.deps, 'Spend the plan');
+    expect(stuck).toBeDefined();
+    if (stuck === undefined) return;
+    for (let n = 0; n < 3; n += 1) {
+      expect((await runCurrentStage(h, stuck)).kind).toBe('finished');
+      expect((await reject(stuck, 'plan eksik')).ok).toBe(true);
+    }
+    const blocked = await viewOf(h.deps, stuck);
+    expect(blocked.state.status).toBe('blocked');
+    expect(blocked.state.stage).toBe(PLAN);
+    expect(blocked.state.blockedReason).toBe('gate "plan-approval" failed: plan eksik');
+    expect((await createApi(h.deps).command(USER, { type: 'workOrder.close', id: stuck })).ok).toBe(true);
+    const closed = await viewOf(h.deps, stuck);
+    expectState(closed, { status: 'done', stage: null, pendingGates: [] });
+  });
 });

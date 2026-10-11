@@ -13,6 +13,7 @@ import type {
 } from '../../../../application/index';
 import type { AgentEvent, Result } from '../../../../domain/index';
 import { err, ok } from '../../../../domain/index';
+import { docketOwnReadTool } from './docket-own-tool';
 import { mapSdkMessage, toolTarget } from './map-message';
 import { buildRouteEnvironment } from './route-env';
 
@@ -154,11 +155,15 @@ export function createSdkTransport(config: SdkTransportConfig): AgentTransport {
         askCount += 1;
         const askId = `ask-${askCount}`;
         const target = toolTarget(input);
+        // The application matches Docket's own tools by their bare names. The SDK's
+        // server prefix stays in this transport, so a write tool on the same server
+        // still arrives under the name the callback was given.
+        const ownTool = docketOwnReadTool(toolName);
         events.push({
           type: 'permission_ask',
           at: config.clock.now(),
           id: askId,
-          tool: toolName,
+          tool: ownTool ?? toolName,
           ...(target === undefined ? {} : { target }),
           options: ['allow', 'deny'],
         });

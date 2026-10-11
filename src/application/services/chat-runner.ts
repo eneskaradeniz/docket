@@ -76,6 +76,10 @@ export const CHAT_RUNNER_LIMITS = { activeTurnsAppWide: 3 } as const;
 /** The conversation tail one prompt carries: at most this many messages and bytes, oldest dropped first. */
 export const CHAT_TURN_HISTORY_LIMITS = { messages: 24, bytes: 48 * 1024 } as const;
 
+/** A denied permission, stored as its own line of the assistant message. The view
+ *  resolves the key; the tool name follows a tab so it is data, not part of the key. */
+export const CHAT_TOOL_DENIED_NOTICE = 'chat.notice.tool_denied';
+
 /** What an assistant message with no reply text says instead — a text key the surface resolves. */
 export const CHAT_NOTICE_TEXT_KEY: Readonly<Record<ChatNotice | 'cancelled', string>> = {
   limit: 'chat.notice.limit',
@@ -141,6 +145,15 @@ const noticeOfClass = (cls: Extract<AgentEvent, { readonly type: 'error' }>['cla
 
 const outcomeOfFinished = (reason: Extract<AgentEvent, { readonly type: 'finished' }>['reason']): ChatTurnOutcome =>
   reason === 'completed' ? 'completed' : reason === 'cancelled' ? 'cancelled' : reason === 'limit' ? 'limit' : 'failed';
+
+/** Docket's own read tools, named as the transport reports them. Equality is the
+ *  whole name: a write tool, or a name that only contains one of these, is not. */
+const isDocketOwnReadTool = (tool: string): boolean => tool === 'docket_get' || tool === 'docket_search';
+
+/** One transcript line for a denied ask. Newlines and tabs in the name would split
+ *  the line or the field, so they become spaces; the name stays visible data. */
+const toolDeniedLine = (tool: string): string =>
+  `${CHAT_TOOL_DENIED_NOTICE}\t${tool.replaceAll('\n', ' ').replaceAll('\t', ' ')}`;
 
 /** The project a conversation's scope lives in, if any — the work-order scope's order decides. */
 const projectOfScope = async (
@@ -411,6 +424,7 @@ export function createChatRunner(deps: ChatRunnerDeps, extras: ChatRunnerExtras)
     let outcome: ChatTurnOutcome = 'failed';
     let notice: ChatNotice | undefined;
     let text = '';
+    const deniedLines: string[] = [];
     const usage: UsageFold = { input: 0, output: 0, costMicros: 0, costSeen: false, moneyMicros: 0, seen: false };
     let runDir: RunDir | undefined;
     let account: AccountId | undefined;
@@ -520,8 +534,14 @@ export function createChatRunner(deps: ChatRunnerDeps, extras: ChatRunnerExtras)
             emit(conversation, { type: 'text', turn, delta: event.delta });
             break;
           case 'permission_ask':
-            // The role owns no tools but Docket's own, and those never ask; anything else is denied.
-            handle.answerPermission(event.id, 'deny');
+            // Only Docket's own read tools are allowed, and only by the exact name the
+            // transport reports. A denial is not a failed turn; the transcript says so.
+            if (isDocketOwnReadTool(event.tool)) {
+              handle.answerPermission(event.id, 'allow');
+            } else {
+              handle.answerPermission(event.id, 'deny');
+              deniedLines.push(toolDeniedLine(event.tool));
+            }
             break;
           case 'usage':
             usage.seen = true;
@@ -574,11 +594,14 @@ export function createChatRunner(deps: ChatRunnerDeps, extras: ChatRunnerExtras)
       if ((await deps.conversations.get(conversation)) !== undefined) {
         const fallback = notice ?? (outcome === 'cancelled' ? 'cancelled' : undefined);
         const recordedUsage = usageOf(usage);
+        const base = text !== '' ? text : fallback !== undefined ? CHAT_NOTICE_TEXT_KEY[fallback] : '';
+        const denialText = deniedLines.join('\n');
+        const storedText = denialText === '' ? base : base === '' ? denialText : `${base}\n${denialText}`;
         try {
           const written = await appendAssistantMessage(deps, {
             conversation,
             message: {
-              text: text !== '' ? text : fallback !== undefined ? CHAT_NOTICE_TEXT_KEY[fallback] : '',
+              text: storedText,
               ...(mapped.artifacts.length > 0 ? { artifacts: [...mapped.artifacts] } : {}),
               ...(mapped.sources.length > 0 ? { sources: [...mapped.sources] } : {}),
               ...(recordedUsage !== undefined ? { usage: recordedUsage } : {}),

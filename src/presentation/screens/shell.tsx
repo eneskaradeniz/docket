@@ -10,16 +10,17 @@
 // back and forward — the bar's chevrons, ⌘[/⌘], the detail's ‹ Geri — walk it, each entry
 // returning with its main column's scroll where the operator left it (U-19). The centered
 // search palette rides over it all: it searches the tree's own names and opens
-// what a tree row opens. The settings panel rides the same way: the nav's Telefon and Ayarlar
-// rows and the screens' shortcuts open it over the current route, which stays underneath
-// unchanged. The first-run wizard rides above everything: the shell mounts it, the wizard
+// what a tree row opens. The settings panel rides the same way: the nav's Ayarlar row and the
+// screens' shortcuts open it over the current route, which stays underneath unchanged. Telefon
+// opens its own window. The first-run wizard rides above everything: the shell mounts it, the wizard
 // store's `open` decides whether it shows at all (U-35). The badge mirrors the shell store: the
 // cockpit's attention count, present only while attention exists — zero renders nothing, never
 // a zero (U-10). Every user-visible string arrives through a label key (U-1).
-import { useCallback, useEffect, useMemo, useReducer, useRef, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react';
 
 import { ChatDock } from '../components/chat-dock';
 import { ChatLauncherContext } from '../components/chat-launcher';
+import { PhoneWindow } from '../components/phone-window';
 import { SearchPalette } from '../components/search-palette';
 import { SidebarAccounts } from '../components/sidebar-accounts';
 import { SidebarNav } from '../components/sidebar-nav';
@@ -226,6 +227,7 @@ export function ShellScreen({
   // open/close and the origin the close's focus rule reads, never a route.
   const [palette, dispatchPalette] = useReducer(paletteReducer, CLOSED_PALETTE);
   const [settingsPanel, dispatchSettingsPanel] = useReducer(settingsPanelReducer, CLOSED_SETTINGS_PANEL);
+  const [phoneOpen, setPhoneOpen] = useState(false);
   // The Proje ekle panel is the same kind of overlay: a standing and an origin, never a route.
   const [newProjectPanel, dispatchNewProjectPanel] = useReducer(newProjectPanelReducer, CLOSED_NEW_PROJECT_PANEL);
   // The panel's section lives in the same reducer: the nav's Telefon and Ayarlar rows name it on
@@ -523,6 +525,10 @@ export function ShellScreen({
     const owner = treeState.tree.find((item) => item.repos.some((node) => node.repo === repo));
     return owner !== undefined && owner.repos.length === 1 ? owner.project : null;
   };
+  const projectOfRepo = (repo: string): { readonly project: string; readonly name: string } | null => {
+    const owner = treeState.tree.find((item) => item.repos.some((node) => node.repo === repo));
+    return owner === undefined ? null : { project: owner.project, name: owner.name };
+  };
 
   return (
     <ChatLauncherContext.Provider value={launcherEnv}>
@@ -551,13 +557,20 @@ export function ShellScreen({
             proposalsCurrent={route.name === 'proposals'}
             proposalsCount={proposalsCount}
             settingsSection={settingsPanel.open ? settingsPanel.section : null}
+            phoneCurrent={phoneOpen}
             badge={badge}
             onHome={() => navigate({ name: 'cockpit' })}
             onSearch={openPalette}
             onLibrary={() => navigate({ name: 'library' })}
             onProposals={() => navigate({ name: 'proposals' })}
-            onPhone={() => openSettings('phone')}
-            onSettings={() => openSettings('accounts')}
+            onPhone={() => {
+              dispatchSettingsPanel({ type: 'close' });
+              setPhoneOpen(true);
+            }}
+            onSettings={() => {
+              setPhoneOpen(false);
+              openSettings('accounts');
+            }}
           />
 
           <SidebarTree
@@ -603,7 +616,8 @@ export function ShellScreen({
               roadmapProject={roadmapProjectOf(route.repo)}
               onOpenRoadmap={(project) => navigate({ name: 'roadmap', project })}
               onOpenSettings={() => openSettings('accounts')}
-              launchProject={treeState.tree.find((item) => item.repos.some((node) => node.repo === route.repo))?.project ?? null}
+              launchProject={projectOfRepo(route.repo)?.project ?? null}
+              projectName={projectOfRepo(route.repo)?.name ?? route.repo}
             />
           ) : null}
           {route.name === 'roadmap' ? (
@@ -652,7 +666,7 @@ export function ShellScreen({
               pageId={route.id}
               locale={locale}
               // The native view paints above everything of Docket's: any overlay takes it away (U-76).
-              overlayOpen={palette.open || settingsPanel.open || newProjectPanel.open || wizardUp || chatOpen}
+              overlayOpen={palette.open || settingsPanel.open || newProjectPanel.open || wizardUp || chatOpen || phoneOpen}
               now={clockNow()}
               onBack={goBack}
               launchScope={pageScope}
@@ -700,6 +714,8 @@ export function ShellScreen({
         }}
       />
 
+      <PhoneWindow open={phoneOpen} locale={locale} onClose={() => setPhoneOpen(false)} />
+
       <NewProjectPanel
         open={newProjectPanel.open}
         origin={newProjectPanel.origin}
@@ -712,7 +728,7 @@ export function ShellScreen({
       <ChatDock
         store={chat}
         locale={locale}
-        hidden={wizardUp || settingsPanel.open || newProjectPanel.open}
+        hidden={wizardUp || settingsPanel.open || newProjectPanel.open || phoneOpen}
         onOpenPage={openPage}
         onOpenAccounts={() => openSettings('accounts')}
         onOpenConsent={() => openSettings('accounts')}

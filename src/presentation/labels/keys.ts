@@ -312,6 +312,16 @@ export const LABEL_KEYS = [
   'board.create.flowLabel',
   'board.create.flowPlaceholder',
   'board.create.submit',
+  // The new-work-order window: title, the flow select, and the footer actions.
+  'workOrder.new.title',
+  'workOrder.new.project',
+  'workOrder.new.titleLabel',
+  'workOrder.new.titlePlaceholder',
+  'workOrder.new.flowLabel',
+  'workOrder.new.noFlow',
+  'workOrder.new.open',
+  'workOrder.new.cancel',
+  'workOrder.new.close',
   // Board screen, U-18: the view segment, the header's rule and shortcuts, the Kanban grammar
   // and the list view's rail.
   'board.view.aria',
@@ -390,13 +400,14 @@ export const LABEL_KEYS = [
   'tier.strong',
   'tier.balanced',
   'tier.fast',
-  // Settings screen (U-24): the phone section's honest "not linked yet" standing, and the
-  // Güncelleme section's version line, status lines and check action.
-  'settings.section.phone',
-  'settings.phone.none',
-  'settings.phone.explain',
-  'settings.phone.pair',
-  'settings.phone.soon',
+  // Settings screen (U-24): the Güncelleme section's version line, status lines and check action.
+  // Telefon left Settings; its honest standing lives on phone.*.
+  'phone.title',
+  'phone.none',
+  'phone.explain',
+  'phone.pair',
+  'phone.soon',
+  'phone.close',
   'settings.section.update',
   'settings.update.version',
   'settings.update.status.none',
@@ -793,7 +804,6 @@ export const LABEL_KEYS = [
   'settings.hint.capabilities',
   'settings.hint.providers',
   'settings.hint.appearance',
-  'settings.hint.phone',
   'settings.hint.update',
   'settings.capabilities.soonTitle',
   'settings.capabilities.soonBody',
@@ -1006,6 +1016,7 @@ export const LABEL_KEYS = [
   'chat.notice.crash',
   'chat.notice.tools_unavailable',
   'chat.notice.cancelled',
+  'chat.notice.tool_denied',
   'chat.file.video',
   'chat.file.type',
   'chat.file.limit',

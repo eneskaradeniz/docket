@@ -95,7 +95,7 @@ describe('the Proje ekle panel', () => {
   });
 
   it('U-187: the chat dock hides under the open panel', () => {
-    expect(shell).toContain('hidden={wizardUp || settingsPanel.open || newProjectPanel.open}');
+    expect(shell).toContain('hidden={wizardUp || settingsPanel.open || newProjectPanel.open || phoneOpen}');
   });
 
   it('U-188: closing keeps the draft — opening resets nothing, only a finished creation does', () => {

@@ -2,10 +2,10 @@
 // and Ayarlar, each icon + label in a 32px row, above the project tree. Anasayfa goes to the cockpit
 // and carries the shell's attention badge on its right edge (U-10 — the badge follows the row
 // that owns the cockpit); Ara opens the centered search palette, its ⌘K hint right-aligned and
-// part of the row's name the way the palette's door has always named itself; Telefon and Ayarlar
-// open the settings panel on their own section. While current — Anasayfa on the cockpit, Ara
-// while the palette is open, Telefon/Ayarlar while the panel is open on their section — a row
-// speaks the one active-state language of active-state.ts. The rows are the only interactive
+// part of the row's name the way the palette's door has always named itself; Telefon opens its
+// own window and Ayarlar opens the settings panel. While current — Anasayfa on the cockpit, Ara
+// while the palette is open, Telefon while its window is open, Ayarlar while the panel is open —
+// a row speaks the one active-state language of active-state.ts. The rows are the only interactive
 // things here; every user-visible string arrives through a label key (U-1).
 import { useRef } from 'react';
 
@@ -21,9 +21,11 @@ export interface SidebarNavProps {
   readonly homeCurrent: boolean;
   /** Whether the search palette is open — Ara's current standing while it is. */
   readonly searchCurrent: boolean;
-  /** The settings panel's open section — the Telefon/Ayarlar rows' current standing; null while
-   *  the panel is closed. */
+  /** The settings panel's open section — Ayarlar is current while the panel is open; null while
+   *  it is closed. Telefon is current from `phoneCurrent`, not from a settings section. */
   readonly settingsSection: SettingsSection | null;
+  /** Whether the Telefon window is open — that row's current standing. */
+  readonly phoneCurrent?: boolean;
   /** Whether the Artifact'lar library is the current route — its row's current standing. */
   readonly libraryCurrent: boolean;
   /** How many artifacts the library holds; the row shows it only above zero (U-84). */
@@ -158,6 +160,7 @@ export function SidebarNav({
   homeCurrent,
   searchCurrent,
   settingsSection,
+  phoneCurrent = false,
   libraryCurrent,
   libraryCount,
   proposalsCurrent = false,
@@ -238,9 +241,10 @@ export function SidebarNav({
 
       <button
         type="button"
+        data-nav-phone=""
         onClick={onPhone}
-        aria-current={settingsSection === 'phone' ? 'true' : undefined}
-        className={rowClass(settingsSection === 'phone')}
+        aria-current={phoneCurrent ? 'true' : undefined}
+        className={rowClass(phoneCurrent)}
       >
         <PhoneIcon />
         <span className="truncate">{t(locale, 'nav.phone')}</span>
@@ -249,8 +253,8 @@ export function SidebarNav({
       <button
         type="button"
         onClick={onSettings}
-        aria-current={settingsSection !== null && settingsSection !== 'phone' ? 'true' : undefined}
-        className={rowClass(settingsSection !== null && settingsSection !== 'phone')}
+        aria-current={settingsSection !== null ? 'true' : undefined}
+        className={rowClass(settingsSection !== null)}
       >
         <GearIcon />
         <span className="truncate">{t(locale, 'nav.settings')}</span>
