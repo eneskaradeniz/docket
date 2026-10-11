@@ -37,6 +37,7 @@ This keeps Phase 1 issues independent and conflict-free.
 | `dispatch` | `shared`, `quota`, `budget` |
 | `roadmap` | `shared`, `flow`, `definitions` |
 | `usage` | `shared`, `providers` |
+| `stage-output` | `definitions`, `pages` |
 | `scenarios` | every module above — **test files only**, no production code, no `index.ts` |
 
 Each module folder has an `index.ts` that re-exports its public API; `src/domain/index.ts` re-exports
@@ -1109,6 +1110,28 @@ export function costDisplay(costByKind: CostByKind, billing: 'pay_per_use' | 'in
 - **R-117** (added 2026-10-11, #968) `costDisplay`. `pay_per_use` and `unknown` → `money` over `reported + computed + unspecified`, with `estimate` true when any `computed` or `unspecified` amount contributes; `equivalent` is never added to money. No money kind but `credits` → `credits`; nothing but `equivalent` → `tokens` with `equivalentUsd` (never shown as money). `included` → `tokens` with `equivalentUsd` when `equivalent` is present; with no equivalent, money kinds still show as `money` and credits-only as `credits`, so a real charge is never hidden. No cost at all → `none`.
 - **R-118** (added 2026-10-11, #968) `summarizeUsage` and `costDisplay` are pure: the same input gives the same output and inputs are never mutated. An amount that is not a finite number is ignored by `costDisplay`, so no result carries `NaN`; an empty `costByKind` → `none`.
 
+Addendum 2026-10-11: a completed stage must land a file inside its write scope. New module `stage-output` (imports `definitions` and `pages` only). `stageOutputVerdict` judges a run by the paths it changed; containment uses `validatePagePath`, the path rule that already refuses traversal, so a path is outside a scope when that rule rejects it. `stageOutputScopeRoot` is the directory or glob list the reminder names.
+
+```ts
+export type StageOutputVerdict = 'ok' | 'no_output' | 'not_applicable';
+export type StageRunFinish = 'completed' | 'failed' | 'cancelled' | 'limit';
+export interface StageOutputInput {
+  readonly writeScope: WriteScope;
+  readonly changed: readonly string[];
+  readonly runOutcome: StageRunFinish;
+  readonly docsRoot?: string;                 // absent → "docs"
+  readonly testGlobs?: readonly string[];     // a `tests` scope
+}
+export function stageOutputVerdict(input: StageOutputInput): StageOutputVerdict;
+export function stageOutputScopeRoot(
+  writeScope: WriteScope,
+  docsRoot: string | undefined,
+  testGlobs: readonly string[] | undefined,
+): string | undefined;
+```
+
+- **R-123** (added 2026-10-11, #979) `stageOutputVerdict`. A `docs` scope with a changed `docs/…` path (or a path under `docsRoot` when that field is set) → `ok`. Only a changed path outside the scope → `no_output`. No changed path → `no_output`. `none` → `not_applicable`. A finish other than `completed` → `not_applicable`. `tests` and `paths` are judged the same way against their globs (`*` in one segment, `**` across segments). `repo` is `not_applicable`: the scope is the whole worktree, and a zero-file tree stays the changes gate's measurement. The function is pure: the same input gives the same verdict and `changed` is never mutated.
+- **R-124** (added 2026-10-11, #979) The verdict does not depend on path order. `docs/../src/x` is outside the docs scope, because the page-path rule rejects it before any prefix is considered. A path that fails that rule never counts as inside.
 Addendum 2026-10-11 (#978): a rejected human gate retries the stage. R-21's "without `onFail` → `blocked`" stays for a failed run and for every non-human gate (`command`, `secret_scan`, `agent_verdict`, `page_approval`, and the rest). A rejected `human` gate on a stage that declares no `onFail` is the exception: it behaves as `onFail: { goto: <that stage>, maxAttempts: 3 }`. A stage that declares `onFail` keeps the goto and the limit it wrote. The shipped `plan` and `close` stages of `standard` and `security-reviewed`, and the `close` stage of `quick-fix`, now declare that same self-retry so a new data dir reads what runs; `research` is unchanged. The entry count is the same fold R-21a already keeps, so `cancelled` does not spend an attempt (R-18) and `unblocked` restores the pre-block entries (R-23).
 
 - **R-120** (added 2026-10-11, #978) A rejected `human` gate on a stage without `onFail` re-enters that same stage at attempt + 1 (`ready` when it has a role, `awaiting_human` when it does not), with the stage's gates pending again. When the next entry would pass 3, the order is `blocked` at the current attempt and the reason is kept: `gate "<gate>" failed: <reason>`.
