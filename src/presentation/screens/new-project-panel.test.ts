@@ -85,7 +85,7 @@ describe('the Proje ekle panel', () => {
     expect(html).toContain(TR['newProject.cancel']);
     expect(html).toContain(TR['newProject.create']);
     expect(html).toContain(TR['newProject.gate.folder']);
-    expect(html).toContain(TR['newProject.copy'].replace("'", '&#x27;'));
+    expect(html).toContain(TR['newProject.copy'].replaceAll("'", '&#x27;'));
   });
 
   it('U-186: the page view yields while the panel is open, and its shortcuts and palette stay away', () => {
