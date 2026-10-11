@@ -65,12 +65,14 @@ export interface ModalWindowProps {
   readonly dataMark: string;
   readonly scrimMark: string;
   readonly onClose: () => void;
+  /** Opening focuses this control instead of the frame. Absent keeps the frame focus. */
+  readonly initialFocusRef?: { readonly current: HTMLElement | null };
   readonly children: ReactNode;
 }
 
 /** The shared dialog shell. Focus returns to the opener on every close — pointer and keyboard —
  *  because the opener is the control the operator just used. */
-export function ModalWindow({ open, label, titleId, brand, head, footer, dataMark, scrimMark, onClose, children }: ModalWindowProps) {
+export function ModalWindow({ open, label, titleId, brand, head, footer, dataMark, scrimMark, onClose, initialFocusRef, children }: ModalWindowProps) {
   const panelRef = useRef<HTMLElement>(null);
   const restoreRef = useRef<HTMLElement | null>(null);
   const wasOpen = useRef(false);
@@ -89,8 +91,14 @@ export function ModalWindow({ open, label, titleId, brand, head, footer, dataMar
 
   useEffect(() => {
     const panel = panelRef.current;
-    if (open && mounted && panel !== null && !panel.contains(document.activeElement)) panel.focus();
-  }, [open, mounted]);
+    if (!open || !mounted || panel === null) return;
+    if (panel.contains(document.activeElement)) return;
+    // The field is not in the document on the render where `open` flips — the frame mounts
+    // afterwards. Focusing here is the moment the frame would otherwise take focus.
+    const start = initialFocusRef?.current ?? null;
+    if (start !== null) start.focus();
+    else panel.focus();
+  }, [open, mounted, initialFocusRef]);
 
   useEffect(() => {
     if (open) setMounted(true);
@@ -206,7 +214,6 @@ export function NewWorkOrderWindow({
   useLayoutEffect(() => {
     if (!open) return;
     dispatch({ type: 'open', draft: workOrderDraft.read(), options });
-    titleRef.current?.focus();
   }, [open, optionKey]);
 
   const dismiss = (): void => {
@@ -288,6 +295,7 @@ export function NewWorkOrderWindow({
       dataMark="data-new-work-order"
       scrimMark="data-new-work-order-scrim"
       onClose={dismiss}
+      initialFocusRef={titleRef}
     >
       <div className="grid max-w-[36rem] gap-4">
         <p className="text-[13px] text-ink">

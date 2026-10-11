@@ -151,6 +151,14 @@ describe('new work order window (U-245, U-246, U-247)', () => {
     expect(source('board.tsx')).toContain('.focus()');
   });
 
+  it('U-247: opening focuses the title field; the phone window still focuses its frame', () => {
+    const modal = source('new-work-order-window.tsx');
+    expect(modal).toContain('initialFocusRef={titleRef}');
+    expect(modal).toContain('initialFocusRef?.current');
+    expect(modal).toContain('panel.focus()');
+    expect(source('phone-window.tsx')).not.toContain('initialFocusRef');
+  });
+
   it('U-247: a workOrder.open result is toasted through commandResultKey, success and failure alike', () => {
     const opened = workOrderOpenToast({ ok: true, id: 'wo-1' });
     expect(opened).toEqual({

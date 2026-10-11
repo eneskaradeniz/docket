@@ -2167,6 +2167,16 @@ for (const [sizeName, theme] of combos) {
     await openNew();
     const dialog = page.locator('[data-new-work-order]');
     await dialog.waitFor({ state: 'visible', timeout: WAIT });
+    const expectTitleFocused = () =>
+      page.waitForFunction(
+        () => {
+          const box = document.querySelector('[data-new-work-order] input');
+          return box !== null && document.activeElement === box;
+        },
+        undefined,
+        { timeout: WAIT },
+      );
+    await expectTitleFocused();
     steps.push('dialog');
     const flow = dialog.getByRole('combobox', { name: 'Akış' });
     // The standing choice is `standard` only when that id is one of the options; otherwise it is
@@ -2187,6 +2197,7 @@ for (const [sizeName, theme] of combos) {
     await dialog.waitFor({ state: 'detached', timeout: WAIT });
     await openNew();
     await dialog.waitFor({ state: 'visible', timeout: WAIT });
+    await expectTitleFocused();
     assert.equal(await dialog.getByRole('textbox', { name: 'Başlık' }).inputValue(), 'Pencere işi', 'Esc keeps the draft');
     await expectShownFlow();
     await dialog.getByRole('textbox', { name: 'Başlık' }).press('Enter');
