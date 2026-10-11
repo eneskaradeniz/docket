@@ -28,11 +28,12 @@ const nav = (patch: { readonly proposalsCurrent?: boolean; readonly proposalsCou
   );
 
 describe('Öneriler nav row (U-136)', () => {
-  it('U-136: the row "Öneriler" (en "Proposals") stands under Anasayfa', () => {
+  it('U-191: the row "Öneriler" (en "Proposals") stands between Ara and Çıktılar', () => {
     const html = nav();
     expect(html).toContain('data-nav-proposals');
-    expect(html.indexOf('Anasayfa')).toBeLessThan(html.indexOf('Öneriler'));
-    expect(html.indexOf('Öneriler')).toBeLessThan(html.indexOf('>Ara<'));
+    expect(html.indexOf('Anasayfa')).toBeLessThan(html.indexOf('>Ara<'));
+    expect(html.indexOf('>Ara<')).toBeLessThan(html.indexOf('Öneriler'));
+    expect(html.indexOf('data-nav-proposals')).toBeLessThan(html.indexOf('data-nav-library'));
     expect(nav({ locale: 'en' })).toContain('Proposals');
   });
 

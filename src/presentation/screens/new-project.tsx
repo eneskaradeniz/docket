@@ -1,12 +1,15 @@
-// screens/new-project.tsx — the "Yeni proje" page (U-40), in the wizard's page language: a centred
-// 880×580 card with the title and one line, the cards in the prototype's order (the guided start
-// and the clone card shown dim with a "Yakında" tag, never selectable), the selected mode's
-// fields, and a fixed bottom band — Vazgeç · the reason line · the primary. The machine lives in
-// stores/new-project.ts; this file mirrors it. Paths are typed: no folder picker exists yet.
+// screens/new-project.tsx — the "Proje ekle" panel: the new-project page's content hosted in the
+// same overlay Settings uses (components/panel-overlay.tsx over the Window frame). The content is
+// the page's own, unchanged — the guided start and the clone card shown dim with a "Yakında" tag,
+// never selectable, the selected mode's fields, and a footer band: Vazgeç · the reason line · the
+// primary. The machine lives in stores/new-project.ts; this file mirrors it. Paths are typed: no
+// folder picker exists yet.
 import { useEffect, useSyncExternalStore } from 'react';
 
 import { ActionButton } from '../components/action-button';
 import { HomeLaunchers } from '../components/launcher-rows';
+import { PanelOverlay } from '../components/panel-overlay';
+import { WindowTitle } from '../components/window-frame';
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
 import {
@@ -15,20 +18,24 @@ import {
   type NewProjectMode,
   type NewProjectStore,
 } from '../stores/new-project';
+import type { NewProjectPanelOrigin } from '../stores/new-project-panel';
 
-export interface NewProjectScreenProps {
+export interface NewProjectPanelProps {
+  readonly open: boolean;
+  readonly origin: NewProjectPanelOrigin;
   readonly store: NewProjectStore;
   readonly locale: Locale;
-  /** "Vazgeç": back to where the page was opened from. */
-  readonly onCancel: () => void;
+  /** ✕, Esc, a press on the scrim and "Vazgeç": the panel closes and the draft stays. */
+  readonly onClose: () => void;
   /** A project was created or attached: the shell opens its view and shows the toast. */
   readonly onDone: (done: NewProjectDone) => void;
 }
 
-const LABEL_CLASS = 'text-[12.5px] font-semibold text-ink';
+const LABEL_CLASS = 'text-[0.8125rem] leading-[1.25rem] font-semibold text-ink';
+const NOTE_CLASS = 'text-[0.78rem] leading-[1.125rem]';
 const INPUT_CLASS =
-  'w-full rounded-control border border-bord bg-transparent px-2.5 py-1.5 text-[13px] text-ink focus:border-signal focus:outline-none';
-const SOON_CLASS = 'rounded-full border border-hairline px-2 py-px text-[12px] font-semibold text-inkdim';
+  'w-full rounded-control border border-bord bg-transparent px-2.5 py-1.5 text-[0.8125rem] leading-[1.25rem] text-ink focus:border-signal focus:outline-none';
+const SOON_CLASS = 'rounded-full border border-hairline px-2 py-px text-[0.75rem] leading-[1rem] font-semibold text-inkdim';
 
 const MODE_CARDS: readonly { readonly mode: NewProjectMode | 'clone'; readonly title: LabelKey; readonly desc: LabelKey }[] = [
   { mode: 'existing', title: 'newProject.existing', desc: 'newProject.existing.desc' },
@@ -42,8 +49,14 @@ const SparkIcon = () => (
   </svg>
 );
 
-export function NewProjectScreen({ store, locale, onCancel, onDone }: NewProjectScreenProps) {
-  const state = useSyncExternalStore(store.subscribe, store.state);
+const CloseIcon = () => (
+  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true" className="block h-4 w-4">
+    <path d="m4 4 8 8M12 4 4 12" />
+  </svg>
+);
+
+export function NewProjectPanel({ open, origin, store, locale, onClose, onDone }: NewProjectPanelProps) {
+  const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   const { form, failure, done } = state;
   useEffect(() => {
     if (done !== null) onDone(done);
@@ -51,7 +64,7 @@ export function NewProjectScreen({ store, locale, onCancel, onDone }: NewProject
 
   const errorUnder = (field: NewProjectField) =>
     failure !== null && failure.field === field ? (
-      <p role="alert" className="flex flex-wrap items-center gap-2 text-[12.5px] text-error" data-new-project-error={failure.code}>
+      <p role="alert" className={`flex flex-wrap items-center gap-2 ${NOTE_CLASS} text-error`} data-new-project-error={failure.code}>
         <span>{t(locale, failure.key)}</span>
         {failure.offerAttach ? (
           <button
@@ -59,7 +72,7 @@ export function NewProjectScreen({ store, locale, onCancel, onDone }: NewProject
             disabled={state.busy}
             onClick={() => void store.attachExisting()}
             data-new-project-attach=""
-            className="rounded-control border border-bord px-2 py-0.5 text-[12.5px] font-semibold text-ink hover:bg-raised disabled:opacity-50"
+            className={`rounded-control border border-bord px-2 py-0.5 ${NOTE_CLASS} font-semibold text-ink hover:bg-raised disabled:opacity-50`}
           >
             {t(locale, 'newProject.attach')}
           </button>
@@ -72,42 +85,80 @@ export function NewProjectScreen({ store, locale, onCancel, onDone }: NewProject
     if (event.key === 'Enter') submit();
   };
 
-  return (
-    <section
-      aria-label={t(locale, 'newProject.title')}
-      data-new-project=""
-      className="mx-auto grid h-[580px] w-[880px] max-w-full grid-rows-[auto_minmax(0,1fr)_64px] overflow-hidden rounded-panel border border-bord bg-surface"
-    >
-      <div className="px-8 pt-8">
-        <h1 className="text-[20px] font-bold leading-tight text-ink">{t(locale, 'newProject.title')}</h1>
-        <p className="mt-1 text-[14px] text-inkdim">{t(locale, 'newProject.copy')}</p>
-        <HomeLaunchers />
-      </div>
+  const head = (
+    <div className="flex items-start gap-3">
+      <WindowTitle title={t(locale, 'newProject.title')} lead={t(locale, 'newProject.copy')} />
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label={t(locale, 'newProject.close')}
+        title={t(locale, 'newProject.close')}
+        className="ml-auto grid h-[1.875rem] w-[1.875rem] flex-none place-items-center rounded-control text-inkdim hover:bg-raised hover:text-ink"
+      >
+        <CloseIcon />
+      </button>
+    </div>
+  );
 
-      <div className="mt-5 min-h-0 overflow-y-auto px-8 pb-6">
+  const footer = (
+    <>
+      <ActionButton variant="ghost" size="md" onClick={onClose}>
+        {t(locale, 'newProject.cancel')}
+      </ActionButton>
+      <span aria-live="polite" className={`ml-auto flex min-w-0 items-center gap-2 ${NOTE_CLASS} text-inkdim`}>
+        {state.reasonKey !== null ? (
+          <>
+            <span aria-hidden="true" className="inline-block h-1.5 w-1.5 flex-none rounded-full bg-signal" />
+            <span className="truncate">{t(locale, state.reasonKey)}</span>
+          </>
+        ) : null}
+      </span>
+      <span className="min-w-[8.25rem] flex-none [&>button]:w-full">
+        <ActionButton variant="primary" size="md" disabled={state.reasonKey !== null || state.busy} onClick={submit}>
+          {t(locale, state.busy ? 'newProject.creating' : 'newProject.create')}
+        </ActionButton>
+      </span>
+    </>
+  );
+
+  return (
+    <PanelOverlay
+      open={open}
+      origin={origin}
+      label={t(locale, 'newProject.title')}
+      brand={t(locale, 'newProject.title')}
+      rail={null}
+      head={head}
+      footer={footer}
+      dataMark="data-new-project-panel"
+      scrimMark="data-new-project-scrim"
+      onClose={onClose}
+    >
+      <div data-new-project="" className="w-full">
+        <HomeLaunchers onLaunch={onClose} />
         <button
           type="button"
           disabled
           aria-disabled="true"
           data-card="together"
-          className="grid w-full gap-1 rounded-panel border border-bord bg-surface px-4 py-3.5 text-left opacity-50"
+          className="mt-3 grid w-full gap-1 rounded-panel border border-bord bg-surface px-4 py-3.5 text-left opacity-50"
         >
           <span className="flex items-center gap-2.5">
             <span aria-hidden="true" className="text-signal">
               <SparkIcon />
             </span>
-            <span className="text-[15px] font-semibold text-ink">{t(locale, 'newProject.featured')}</span>
-            <span className="rounded-full border border-signal-soft px-2 py-px text-[12px] font-semibold text-signal-soft">
+            <span className="text-[0.9375rem] leading-[1.25rem] font-semibold text-ink">{t(locale, 'newProject.featured')}</span>
+            <span className="rounded-full border border-signal-soft px-2 py-px text-[0.75rem] leading-[1rem] font-semibold text-signal-soft">
               {t(locale, 'newProject.featured.chip')}
             </span>
             <span className={`ml-auto ${SOON_CLASS}`}>{t(locale, 'newProject.soon')}</span>
           </span>
-          <span className="text-[12.5px] text-inkdim">{t(locale, 'newProject.featured.sub')}</span>
+          <span className={`${NOTE_CLASS} text-inkdim`}>{t(locale, 'newProject.featured.sub')}</span>
         </button>
 
         <div className="my-4 flex items-center gap-3">
           <i className="h-px flex-1 bg-hairline" />
-          <span className="text-[12.5px] text-inkdim">{t(locale, 'newProject.divider')}</span>
+          <span className={`${NOTE_CLASS} text-inkdim`}>{t(locale, 'newProject.divider')}</span>
           <i className="h-px flex-1 bg-hairline" />
         </div>
 
@@ -131,13 +182,13 @@ export function NewProjectScreen({ store, locale, onCancel, onDone }: NewProject
                 onClick={() => {
                   if (card.mode !== 'clone') store.pickCard(card.mode);
                 }}
-                className={`flex min-h-[72px] min-w-0 flex-1 flex-col items-start gap-0.5 rounded-card border bg-surface px-3.5 py-3 text-left ${tone}`}
+                className={`flex min-h-[4.5rem] min-w-0 flex-1 flex-col items-start gap-0.5 rounded-card border bg-surface px-3.5 py-3 text-left ${tone}`}
               >
                 <span className="flex w-full items-center gap-2">
-                  <b className="text-[14px] font-semibold text-ink">{t(locale, card.title)}</b>
+                  <b className="text-[0.875rem] leading-[1.25rem] font-semibold text-ink">{t(locale, card.title)}</b>
                   {disabled ? <span className={`ml-auto ${SOON_CLASS}`}>{t(locale, 'newProject.soon')}</span> : null}
                 </span>
-                <span className="text-[12.5px] text-inkdim">{t(locale, card.desc)}</span>
+                <span className={`${NOTE_CLASS} text-inkdim`}>{t(locale, card.desc)}</span>
               </button>
             );
           })}
@@ -187,29 +238,10 @@ export function NewProjectScreen({ store, locale, onCancel, onDone }: NewProject
               />
             </label>
             {errorUnder('parent')}
-            <p className="text-[12.5px] text-inkdim">{t(locale, 'newProject.blank.note')}</p>
+            <p className={`${NOTE_CLASS} text-inkdim`}>{t(locale, 'newProject.blank.note')}</p>
           </div>
         )}
       </div>
-
-      <footer className="flex items-center gap-3 border-t border-hairline px-8">
-        <ActionButton variant="ghost" size="md" onClick={onCancel}>
-          {t(locale, 'newProject.cancel')}
-        </ActionButton>
-        <span aria-live="polite" className="ml-auto flex min-w-0 items-center gap-2 text-[12.5px] text-inkdim">
-          {state.reasonKey !== null ? (
-            <>
-              <span aria-hidden="true" className="inline-block h-1.5 w-1.5 flex-none rounded-full bg-signal" />
-              <span className="truncate">{t(locale, state.reasonKey)}</span>
-            </>
-          ) : null}
-        </span>
-        <span className="min-w-[132px] flex-none [&>button]:w-full">
-          <ActionButton variant="primary" size="md" disabled={state.reasonKey !== null || state.busy} onClick={submit}>
-            {t(locale, state.busy ? 'newProject.creating' : 'newProject.create')}
-          </ActionButton>
-        </span>
-      </footer>
-    </section>
+    </PanelOverlay>
   );
 }

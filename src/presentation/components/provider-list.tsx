@@ -13,6 +13,7 @@ import { ActionButton } from './action-button';
 import { countedLabel } from './counted-label';
 import { ProviderMark } from './provider-mark';
 import { RescanButton } from './rescan-button';
+import { EmptyCard } from './settings-cards';
 import { Skeleton, SkeletonStyle } from './skeleton';
 import { StatusLamp } from './status-lamp';
 
@@ -92,7 +93,7 @@ export function ProviderList({ store, marks, locale }: ProviderListProps) {
       {state.loaded && state.failed ? <p className="text-[0.75rem] leading-4 text-error">{t(locale, 'scan.failed')}</p> : null}
 
       {empty && state.loaded && !state.scanning && !state.failed ? (
-        <p className="text-[13px] text-inkdim">{t(locale, 'providers.empty')}</p>
+        <EmptyCard mark="providers" title={t(locale, 'providers.empty')} line={t(locale, 'providers.empty.line')} />
       ) : null}
 
       {state.installed.length > 0 ? (

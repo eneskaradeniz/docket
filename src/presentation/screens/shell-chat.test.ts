@@ -34,8 +34,8 @@ describe('the shell carries the dock', () => {
   });
 
   it('U-125: the page view yields while the panel is open, and a blocking modal hides the dock', () => {
-    expect(shell).toContain('overlayOpen={palette.open || settingsPanel.open || wizardUp || chatOpen}');
-    expect(shell).toContain('hidden={wizardUp || settingsPanel.open}');
+    expect(shell).toContain('overlayOpen={palette.open || settingsPanel.open || newProjectPanel.open || wizardUp || chatOpen}');
+    expect(shell).toContain('hidden={wizardUp || settingsPanel.open || newProjectPanel.open}');
   });
 
   it('U-122: the place follows the route, the tree and the loaded work order', () => {

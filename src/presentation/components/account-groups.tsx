@@ -94,6 +94,9 @@ export interface AccountGroupsProps<R extends AccountRowView> {
   /** Present when a scan's skeleton preceded this list (U-52): each group enters with the scan
    *  motion, staggered in list order by the delay set inline. */
   readonly reveal?: boolean;
+  /** Settings' card layout: identity and the status chip on the left, the actions (trailing, ✎)
+   *  on the right edge, vertically centred. Absent = the wizard's order. */
+  readonly actionsRight?: boolean;
 }
 
 const Pencil = () => (
@@ -140,7 +143,7 @@ export function EditButton({ locale, onClick }: { readonly locale: Locale; reado
   );
 }
 
-function Row<R extends AccountRowView>({ row, locale, onToggle, onEdit, trailing, below }: Pick<AccountGroupsProps<R>, 'locale' | 'onToggle' | 'onEdit' | 'trailing' | 'below'> & { readonly row: R }) {
+function Row<R extends AccountRowView>({ row, locale, onToggle, onEdit, trailing, below, actionsRight = false }: Pick<AccountGroupsProps<R>, 'locale' | 'onToggle' | 'onEdit' | 'trailing' | 'below' | 'actionsRight'> & { readonly row: R }) {
   const selectable = onToggle !== undefined;
   const meta = [row.path, row.host].filter((part): part is string => part !== null && part !== '').join(' · ');
   const toggle = (): void => {
@@ -163,6 +166,7 @@ function Row<R extends AccountRowView>({ row, locale, onToggle, onEdit, trailing
           <div className="flex flex-wrap items-center gap-2 font-bold text-ink">
             <span className="min-w-0 truncate">{row.label}</span>
             <BillingTag locale={locale} billing={row.billing} viaKey={row.viaKey} />
+            {actionsRight ? <StatusLamp tone={row.status.tone}>{row.status.text}</StatusLamp> : null}
             {row.warnings?.map((warning) => (
               <span key={warning.text} className="inline-flex items-center gap-1 text-[12px] font-normal text-signal-soft">
                 {warning.text}
@@ -178,11 +182,20 @@ function Row<R extends AccountRowView>({ row, locale, onToggle, onEdit, trailing
           {row.reason !== undefined ? <div className="mt-0.5 text-[12.5px] text-inkdim">{row.reason}</div> : null}
           {row.hint !== undefined ? <div className="mt-0.5 text-[12.5px] text-inkdim">{row.hint}</div> : null}
         </div>
-        {trailing?.(row)}
-        <span className="flex w-[118px] flex-none">
-          <StatusLamp tone={row.status.tone}>{row.status.text}</StatusLamp>
-        </span>
-        {onEdit !== undefined ? <EditButton locale={locale} onClick={() => onEdit(row)} /> : null}
+        {actionsRight ? (
+          <div data-account-actions="" className="ml-auto flex flex-none items-center gap-2">
+            {trailing?.(row)}
+            {onEdit !== undefined ? <EditButton locale={locale} onClick={() => onEdit(row)} /> : null}
+          </div>
+        ) : (
+          <>
+            {trailing?.(row)}
+            <span className="flex w-[118px] flex-none">
+              <StatusLamp tone={row.status.tone}>{row.status.text}</StatusLamp>
+            </span>
+            {onEdit !== undefined ? <EditButton locale={locale} onClick={() => onEdit(row)} /> : null}
+          </>
+        )}
         {selectable ? (
           <span
             aria-hidden="true"
@@ -259,7 +272,7 @@ function Section<R extends SectionableRow>({
   );
 }
 
-export function AccountGroups<R extends AccountRowView>({ locale, groups, markFor, nameOf, onToggle, onEdit, trailing, below, sections, reveal = false }: AccountGroupsProps<R>) {
+export function AccountGroups<R extends AccountRowView>({ locale, groups, markFor, nameOf, onToggle, onEdit, trailing, below, sections, reveal = false, actionsRight = false }: AccountGroupsProps<R>) {
   const cards = (list: readonly AccountGroup<R>[]): readonly ReactNode[] =>
     list.map((group, index) => {
       const name = nameOf(group);
@@ -283,7 +296,7 @@ export function AccountGroups<R extends AccountRowView>({ locale, groups, markFo
           {group.rows.length > 0 ? (
             <ul className="m-0 list-none p-0">
               {group.rows.map((row) => (
-                <Row key={row.id} row={row} locale={locale} onToggle={onToggle} onEdit={onEdit} trailing={trailing} below={below} />
+                <Row key={row.id} row={row} locale={locale} onToggle={onToggle} onEdit={onEdit} trailing={trailing} below={below} actionsRight={actionsRight} />
               ))}
             </ul>
           ) : null}

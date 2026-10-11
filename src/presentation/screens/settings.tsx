@@ -19,6 +19,7 @@ import { t, type Locale } from '../labels/t';
 import { AccountEditorDialog } from '../components/account-editor-dialog';
 import { AccountGroups, candidateRowView, type AccountRowView } from '../components/account-groups';
 import { AccountsScanning } from '../components/accounts-scanning';
+import { AccountsSections, type AccountsSectionKind } from '../components/accounts-sections';
 import { AccountTest } from '../components/account-test';
 import { ActionButton } from '../components/action-button';
 import { SettingsLaunchers } from '../components/launcher-rows';
@@ -30,6 +31,8 @@ import { ProviderList } from '../components/provider-list';
 import { ProviderMark } from '../components/provider-mark';
 import { ChainSection, RoleRowView } from '../components/role-row';
 import { SettingRow, SettingRows } from '../components/setting-row';
+import { CapabilitiesCard, EmptyCard, RolesUnsetBanner } from '../components/settings-cards';
+import { SettingsMenu } from '../components/settings-menu';
 import { StatusLamp } from '../components/status-lamp';
 import { WindowFrame, WindowTitle } from '../components/window-frame';
 import {
@@ -40,19 +43,18 @@ import {
   type AccountStatus,
   type EditorTab,
 } from '../stores/account-editor';
-import { SECTION_OPEN_INITIAL, groupAccountRows, groupTotals, toggleSection, type AccountGroup } from '../stores/account-groups';
+import { groupAccountRows, groupTotals, type AccountGroup } from '../stores/account-groups';
 import { candidateDot, type CandidatesStore } from '../stores/candidates';
 import { createDispatchSettingsStore } from '../stores/dispatch-settings';
+import { addedOpen, unaddedOpen } from '../stores/settings-cards';
 import type { LocaleStore } from '../stores/locale';
 import { providerDisplayName, type ProvidersStore } from '../stores/providers';
 import type { AccountModelsStore } from '../stores/account-models';
 import type { RolesStore } from '../stores/roles';
 import { focusRestoredOnClose } from '../stores/search-palette';
 import {
-  SETTINGS_MENU,
   SETTINGS_SECTIONS,
   reclaimsPanelFocus,
-  type SettingsMenuGroup,
   type SettingsOpenTarget,
   type SettingsPanelOrigin,
   type SettingsSection,
@@ -138,11 +140,6 @@ const SECTION_HINT_KEY: Readonly<Record<SettingsSection, LabelKey>> = {
   appearance: 'settings.hint.appearance',
   phone: 'settings.hint.phone',
   update: 'settings.hint.update',
-};
-
-const GROUP_KEY: Readonly<Record<SettingsMenuGroup['id'], LabelKey>> = {
-  work: 'settings.group.work',
-  app: 'settings.group.app',
 };
 
 /** One status line per UpdateStatus (U-24) — the Güncelleme section's quiet reading of where the
@@ -256,9 +253,10 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
   // The dismissal of a remove warning is panel-transient (the store exposes no dismiss intent):
   // keyed by the account it was about, so a fresh warning for the same account re-shows the card.
   const [warningDismissedFor, setWarningDismissedFor] = useState<string | null>(null);
-  // The accounts sections' open standing is this screen's: a "Yeniden tara" re-renders it, never
-  // resets it (U-45).
-  const [sectionOpen, setSectionOpen] = useState(SECTION_OPEN_INITIAL);
+  // The Hesaplar disclosures' standing is this screen's: a "Yeniden tara" re-renders it, never
+  // resets it. A null override means the default of stores/settings-cards.ts stands.
+  const [addedOverride, setAddedOverride] = useState<boolean | null>(null);
+  const [unaddedOverride, setUnaddedOverride] = useState<boolean | null>(null);
   // One editor store per open account: the tab starts on Genel each time the dialog opens.
   const editor = useMemo(
     () =>
@@ -419,39 +417,7 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
   });
   const unaddedGroups = groupAccountRows(unaddedViews, groupProviders);
 
-  const rail = (
-    <div className="grid gap-0.5">
-      {SETTINGS_MENU.map((group) => (
-        <div key={group.id} role="group" aria-label={t(locale, GROUP_KEY[group.id])}>
-          <p className="px-2 pb-1 pt-2.5 text-[12px] font-bold text-inkdim">{t(locale, GROUP_KEY[group.id])}</p>
-          {group.sections.map((entry) => {
-            const current = entry === section;
-            return (
-              <button
-                key={entry}
-                type="button"
-                onClick={() => onSection(entry)}
-                aria-current={current ? 'page' : undefined}
-                className={`flex w-full items-center gap-2.5 rounded-control px-2.5 py-[7px] text-left text-[13px] font-semibold ${
-                  current ? 'bg-raised text-ink shadow-[inset_0_0_0_1px_var(--signal)]' : 'text-inkdim hover:bg-raised'
-                }`}
-              >
-                {t(locale, SECTION_KEY[entry])}
-                {entry === 'accounts' && candidateDot(candidateState, candidateDotMirror) ? (
-                  <span
-                    role="img"
-                    aria-label={t(locale, 'settings.accounts.dot')}
-                    title={t(locale, 'settings.accounts.dot')}
-                    className="ml-auto h-[7px] w-[7px] flex-none rounded-full bg-signal"
-                  />
-                ) : null}
-              </button>
-            );
-          })}
-        </div>
-      ))}
-    </div>
-  );
+  const rail = <SettingsMenu locale={locale} section={section} onSection={onSection} dot={candidateDot(candidateState, candidateDotMirror)} />;
 
   const head = (
     <div className="flex items-start gap-3">
@@ -479,58 +445,69 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
     <AccountsScanning locale={locale} titleKey="accountGroups.added" scanning={candidateState.loading && !candidateState.loaded} busy={candidateState.loading} scannedAt={candidateState.scannedAt} failed={candidateState.status === 'error' && !candidateState.loaded} onRescan={() => void candidates.rescan()} totals={addedTotals} now={Date.now}>
       {(reveal) => (
         <>
-          {accounts.length === 0 ? <p className="text-[13px] text-inkdim">{t(locale, 'settings.accounts.empty')}</p> : null}
-          <AccountGroups
+          <AccountsSections
             locale={locale}
-            groups={addedGroups}
-            markFor={marks.markFor}
-            nameOf={groupName}
-            reveal={reveal}
-            onEdit={(row) => onEnterSubPage(row.id)}
-            sections={{ open: sectionOpen, onToggle: (kind) => setSectionOpen(toggleSection(sectionOpen, kind)) }}
-            below={(row) => {
-              const account = accounts.find((entry) => entry.id === row.id);
-              if (account === undefined) return null;
-              const testing = state.testing.includes(account.id) || account.detail.test?.state === 'running';
-              const refusal = state.testRefusals[account.id];
-              if (!row.source.unverified && account.detail.test === null && refusal === undefined) return null;
-              return (
-                <div className="px-3.5 pb-3">
-                  <AccountTest
-                    locale={locale}
-                    test={account.detail.test}
-                    showButton={row.source.unverified}
-                    testing={testing}
-                    refusal={refusal}
-                    onTest={() => void store.testAccount(account.id)}
-                    onOpenModels={() => onOpenTarget({ section: 'accounts', subPage: account.id, tab: 'models' })}
-                  />
-                </div>
-              );
+            addedCount={accounts.length}
+            unaddedCount={candidateState.rows.length}
+            addedOpen={addedOpen(addedOverride)}
+            unaddedOpen={unaddedOpen(accounts.length, unaddedOverride)}
+            onToggle={(kind: AccountsSectionKind) => {
+              if (kind === 'added') setAddedOverride(!addedOpen(addedOverride));
+              else setUnaddedOverride(!unaddedOpen(accounts.length, unaddedOverride));
             }}
-          />
-
-          {/* Eklenmemiş (U-34, U-43): the discovered accounts, a group of their own under the added ones. */}
-          {candidateState.rows.length > 0 ? (
-            <div data-unadded="">
-              <SubHeading title={t(locale, 'candidates.title')} note={t(locale, 'accountGroups.count').replace('{n}', String(candidateState.rows.length))} />
+            onAdd={() => setUnaddedOverride(true)}
+            added={
               <AccountGroups
                 locale={locale}
-                groups={unaddedGroups}
+                groups={addedGroups}
                 markFor={marks.markFor}
                 nameOf={groupName}
                 reveal={reveal}
-                trailing={(row) => (
-                  <ActionButton variant="neutral" disabled={candidateState.adopting || row.disabled === true} onClick={() => void candidates.add(row.id)}>
-                    {t(locale, 'candidates.add')}
-                  </ActionButton>
-                )}
-                below={(row) =>
-                  row.source.keyMoveCard ? <KeyMoveCard locale={locale} on={candidateState.importToken} onChange={(on) => candidates.setImportToken(on)} /> : null
-                }
+                actionsRight
+                onEdit={(row) => onEnterSubPage(row.id)}
+                below={(row) => {
+                  const account = accounts.find((entry) => entry.id === row.id);
+                  if (account === undefined) return null;
+                  const testing = state.testing.includes(account.id) || account.detail.test?.state === 'running';
+                  const refusal = state.testRefusals[account.id];
+                  if (!row.source.unverified && account.detail.test === null && refusal === undefined) return null;
+                  return (
+                    <div className="px-3.5 pb-3">
+                      <AccountTest
+                        locale={locale}
+                        test={account.detail.test}
+                        showButton={row.source.unverified}
+                        testing={testing}
+                        refusal={refusal}
+                        onTest={() => void store.testAccount(account.id)}
+                        onOpenModels={() => onOpenTarget({ section: 'accounts', subPage: account.id, tab: 'models' })}
+                      />
+                    </div>
+                  );
+                }}
               />
-            </div>
-          ) : null}
+            }
+            unadded={
+              <div data-unadded="">
+                <AccountGroups
+                  locale={locale}
+                  groups={unaddedGroups}
+                  markFor={marks.markFor}
+                  nameOf={groupName}
+                  reveal={reveal}
+                  actionsRight
+                  trailing={(row) => (
+                    <ActionButton variant="neutral" disabled={candidateState.adopting || row.disabled === true} onClick={() => void candidates.add(row.id)}>
+                      {t(locale, 'candidates.add')}
+                    </ActionButton>
+                  )}
+                  below={(row) =>
+                    row.source.keyMoveCard ? <KeyMoveCard locale={locale} on={candidateState.importToken} onChange={(on) => candidates.setImportToken(on)} /> : null
+                  }
+                />
+              </div>
+            }
+          />
         </>
       )}
     </AccountsScanning>
@@ -539,18 +516,15 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
   const rolesSection = (
     <div>
       {rolesState.unsetCount > 0 ? (
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3" data-roles-unset>
-          <span className="text-[12.5px] text-inkdim">{t(locale, 'roles.unset.line').replace('{n}', String(rolesState.unsetCount))}</span>
-          <ActionButton variant="neutral" onClick={() => void roles.applyRecommended()}>
-            {t(locale, 'roles.unset.apply')}
-          </ActionButton>
+        <div className="mb-3">
+          <RolesUnsetBanner locale={locale} count={rolesState.unsetCount} onApply={() => void roles.applyRecommended()} />
         </div>
       ) : null}
       <SubHeading title={t(locale, 'roles.chain.title')} note={t(locale, 'roles.chain.purpose')} />
-      <ChainSection store={roles} locale={locale} markFor={marks.markFor} />
+      <ChainSection store={roles} locale={locale} markFor={marks.markFor} onOpenAccounts={() => onSection('accounts')} />
       <SubHeading title={t(locale, 'roles.style.title')} />
       {rolesState.rows === null || rolesState.rows.length === 0 ? (
-        <p className="text-[13px] text-inkdim">{t(locale, 'roles.empty')}</p>
+        <EmptyCard mark="roles-list" title={t(locale, 'roles.empty')} />
       ) : (
         <SettingRows>
           {rolesState.rows.map((row) => (
@@ -662,12 +636,7 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
 
           {section === 'accounts' ? accountsSection : null}
           {section === 'roles' ? rolesSection : null}
-          {section === 'capabilities' ? (
-            <div className="max-w-[520px] rounded-card border border-dashed border-bord p-[22px] text-inkdim" data-capabilities-empty="">
-              <b className="mb-1 block text-ink">{t(locale, 'settings.capabilities.soonTitle')}</b>
-              {t(locale, 'settings.capabilities.soonBody')}
-            </div>
-          ) : null}
+          {section === 'capabilities' ? <CapabilitiesCard locale={locale} /> : null}
           {section === 'concurrency' ? (
             <ConcurrencySection
               store={dispatch}
