@@ -36,6 +36,7 @@ This keeps Phase 1 issues independent and conflict-free.
 | `flow` | `shared`, `definitions`, `gates` |
 | `dispatch` | `shared`, `quota`, `budget` |
 | `roadmap` | `shared`, `flow`, `definitions` |
+| `usage` | `shared`, `providers` |
 | `scenarios` | every module above — **test files only**, no production code, no `index.ts` |
 
 Each module folder has an `index.ts` that re-exports its public API; `src/domain/index.ts` re-exports
@@ -1072,3 +1073,20 @@ Addendum 2026-10-10 (#927): a page may carry the conversation whose chat turn ma
 
 - **R-106** (added 2026-10-10, #927) `publishPage` sets `conversation` exactly once, from the input's own field, when it is given; a page published without one has no `conversation` property at all. No other function of the module reads a conversation from any input: `addVersion`, `requestApproval`, `decideApproval` and `addComment` never set, change or drop it.
 - **R-107** (added 2026-10-10, #927) The field is immutable for the page's life: every `addVersion` result carries the same `conversation` as the page it versioned (absent stays absent), and the approval round-trips keep it too. A page stored before the field existed — every run-made and operator page — reads as having none, so no conversation can claim an old page after the fact.
+
+Addendum 2026-10-11 (#961): the `usage` module (imports `shared` and `providers` — for `CostKind`
+and nothing else) folds per-run usage into a summary and names waste findings with their numbers:
+`RunUsageInput`, `StageUsage`, `UsageSummary`, `WasteKind`, `WasteFinding`, `USAGE_THRESHOLDS`
+(`planningShare` 0.4, `planningMinRuns` 5, `retryAttempts` 3, `cacheRatio` 0.2,
+`cacheMinInputTokens` 50 000), `PLANNING_STAGE_IDS` (`plan`, `research`), `summarizeUsage`,
+`findWaste`. Pure data rules: no clock, no randomness, inputs never mutated, the same input always
+folds to the same summary; `byStage` follows the order in which a stage first appears. Chat turns
+stop losing their cache number on the way: `TurnUsage` (conversations) gains `cachedInputTokens?`.
+
+- **R-108** (added 2026-10-11, #961) `summarizeUsage(inputs)` folds the list into one `UsageSummary`: overall `runs` is the input count, `tokens = inputTokens + outputTokens` on the summary and on every `StageUsage`, and every input lands in exactly one stage row — `runs` counted, `maxAttempt` the highest attempt seen there, the token, cache and cost fields summed. An empty list folds to all-zero counters with `byStage: []` and `planningShare` and `cacheRatio` 0 — never `NaN` or `Infinity`. The function never mutates its input and the same list always folds to the same summary.
+- **R-109** (added 2026-10-11, #961) `planningShare` is the token share (`input + output`) of the stages named in `PLANNING_STAGE_IDS` over all tokens. A stage outside the list — built-in like `implement` or a custom one like `verify` — counts as other. No tokens at all → 0.
+- **R-110** (added 2026-10-11, #961) `cacheRatio` is summed `cachedInputTokens` over summed `inputTokens`; no input tokens (output-only runs) → 0. Both ratios are plain finite numbers for every input.
+- **R-111** (added 2026-10-11, #961) `costUsd` is summed only over the inputs that carry it, on the summary and on each stage row. When no input of a scope carries it the field is absent there — an unknown cost is never reported as 0. A carried 0 is a real zero and stays.
+- **R-112** (added 2026-10-11, #961) `findWaste(summary, thresholds?)` reports `planning_heavy` when `planningShare ≥ thresholds.planningShare` AND `runs ≥ thresholds.planningMinRuns` (both inclusive; the defaults are 0.4 and 5). The finding carries `{ share, runs }` — the summary's own numbers — and cites the rule id that fired. Omitting `thresholds` uses `USAGE_THRESHOLDS`.
+- **R-113** (added 2026-10-11, #961) `retry_loop`: one finding per stage whose `maxAttempt ≥ retryAttempts` (3 by default, inclusive), carrying `{ attempts }` and the stage. `low_cache`: `cacheRatio < cacheRatio` threshold (0.2, strict) AND `inputTokens ≥ cacheMinInputTokens` (50 000, inclusive), carrying `{ ratio, inputTokens }`, no stage. Findings come in the fixed order planning, retry by stage id, cache; `findWaste` never mutates the summary.
+- **R-114** (added 2026-10-11, #961) `TurnUsage` (conversations) gains `cachedInputTokens?` — a non-negative whole number when present, kept by the usage check like the other reported fields and dropped when it is not one. A value stored before the field existed — every stored turn — reads as having none.
