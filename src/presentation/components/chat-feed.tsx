@@ -67,9 +67,11 @@ function UserRow({ text, refs, files }: { readonly text: string; readonly refs: 
   );
 }
 
-function Table({ columns, rows, label }: { readonly columns: readonly string[]; readonly rows: readonly (readonly string[])[]; readonly label: string }) {
+function Table({ columns, rows, label, wide }: { readonly columns: readonly string[]; readonly rows: readonly (readonly string[])[]; readonly label: string; readonly wide: boolean }) {
   return (
-    <div className="overflow-hidden rounded-card border border-hairline bg-band">
+    // A table is a wide artifact: in the full mode it reaches one gutter past the reading column
+    // on each side and scrolls from 20 rem (U-194).
+    <div className={`${wide ? '-mx-2 max-h-[20rem] overflow-auto' : 'overflow-hidden'} rounded-card border border-hairline bg-band`}>
       <table aria-label={label} className="w-full border-collapse text-[0.78125rem] leading-5">
         <thead>
           <tr>
@@ -156,10 +158,12 @@ function ProposalCard({ artifact, state, store, locale }: { readonly artifact: E
   const action = state.detail?.actions.find((entry) => entry.id === artifact.action);
   const target = proposal?.status === 'ready' ? proposal.target : '';
   return (
-    <div data-chat-card="proposal" className="overflow-hidden rounded-card border border-hairline bg-band">
+    // A proposal is a wide artifact: in the full mode the card reaches one gutter past the reading
+    // column on each side and its diff scrolls from 18 rem — the panel's 11 rem (U-194).
+    <div data-chat-card="proposal" className={`${state.full ? '-mx-2' : ''} overflow-hidden rounded-card border border-hairline bg-band`}>
       <CardHeader title={artifact.label ?? t(locale, 'chat.card.gone')} type={target} />
       {proposal?.status === 'ready' ? (
-        <div className="max-h-44 overflow-auto border-t border-hairline font-mono text-[0.75rem] leading-5">
+        <div className={`${state.full ? 'max-h-[18rem]' : 'max-h-44'} overflow-auto border-t border-hairline font-mono text-[0.75rem] leading-5`}>
           {proposal.lines.map((line, index) => (
             <div key={index} className={`grid grid-cols-[1.25rem_1.25rem_1fr] whitespace-pre ${line.kind === 'add' ? 'bg-proceed/15' : line.kind === 'remove' ? 'bg-error/15' : ''}`}>
               <span className={`text-center ${line.kind === 'remove' ? 'text-error' : 'text-inkdim'}`}>{line.kind === 'remove' ? '−' : ''}</span>
@@ -255,7 +259,7 @@ function AssistantRow({ message, state, store, locale, onOpenPage }: { readonly 
       {message.text === '' ? null : <div className={`${WRAP} text-[0.875rem] leading-5 text-ink`}>{message.text}</div>}
       {message.artifacts.map((artifact, index) => {
         if (artifact.kind === 'page') return <PageCard key={index} artifact={artifact} locale={locale} onOpenPage={onOpenPage} />;
-        if (artifact.kind === 'table') return <Table key={index} columns={artifact.columns} rows={artifact.rows} label={t(locale, 'chat.card.table')} />;
+        if (artifact.kind === 'table') return <Table key={index} columns={artifact.columns} rows={artifact.rows} label={t(locale, 'chat.card.table')} wide={state.full} />;
         if (artifact.kind === 'draft' && state.detail !== null) return <DraftCard key={index} artifact={artifact} detail={state.detail} store={store} locale={locale} />;
         if (artifact.kind === 'proposal') return <ProposalCard key={index} artifact={artifact} state={state} store={store} locale={locale} />;
         return null;
@@ -296,7 +300,17 @@ export function ChatFeed({ state, store, locale, onOpenPage }: ChatFeedProps) {
   }, [bottom]);
 
   return (
-    <div data-chat-feed="" aria-live="polite" className="grid min-h-0 content-start gap-5 overflow-auto px-4 pb-4 pt-2">
+    // In the full mode the feed centres a 48 rem reading column; wide artifacts reach past it by
+    // their own negative margins, and the gutter never moves under the scrollbar (U-194).
+    <div
+      data-chat-feed=""
+      aria-live="polite"
+      className={`grid min-h-0 content-start overflow-auto ${
+        state.full
+          ? 'gap-6 px-8 pb-6 pt-6 [scrollbar-gutter:stable_both-edges] grid-cols-[minmax(0,48rem)] justify-center'
+          : 'gap-5 px-4 pb-4 pt-2'
+      }`}
+    >
       {empty ? (
         <div className="grid gap-3 py-6">
           <div className="text-base font-bold leading-6 text-ink">{t(locale, 'chat.empty.title')}</div>

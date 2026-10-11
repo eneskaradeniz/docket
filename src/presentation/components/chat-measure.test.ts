@@ -15,6 +15,13 @@ const RAW = import.meta.glob(
 ) as Record<string, string>;
 const SOURCES = Object.entries(RAW);
 const COMPONENTS = SOURCES.filter(([path]) => path.endsWith('.tsx'));
+// The shell's own measures, read for the full-mode geometry pins only (U-193): they are not the
+// chat's sources, so the U-124 scans must not judge them (the title bar is a px-fixed surface).
+const SHELL_RAW = import.meta.glob(['./sidebar-geometry.ts', './title-bar.tsx'], {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>;
 
 /** Source with its comments blanked, so a rule is judged on code and not on prose about it. */
 const code = (source: string): string => source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
@@ -97,6 +104,61 @@ describe('measure (U-124)', () => {
     expect(lower).not.toContain('cursor');
     for (const vendor of ['claude', 'anthropic', 'openai', 'codex', 'copilot', 'opencode', 'antigravity', 'gemini', 'zai', 'glm']) {
       expect(lower, vendor).not.toContain(vendor);
+    }
+  });
+});
+
+describe('full-screen geometry and measure (U-193, U-194, U-198)', () => {
+  const sourceOf = (end: string): string => code(SOURCES.find(([path]) => path.endsWith(end))?.[1] ?? '');
+  const dock = sourceOf('chat-dock.tsx');
+  const feed = sourceOf('chat-feed.tsx');
+  const composer = sourceOf('chat-composer.tsx');
+  const model = sourceOf('chat-model.ts');
+  const shellOf = (end: string): string => SHELL_RAW[Object.keys(SHELL_RAW).find((path) => path.endsWith(end)) ?? ''] ?? '';
+
+  it('U-193: full mode anchors to the shell\'s real tokens — the sidebar\'s column and the title bar\'s height — never the prototype\'s own widths', () => {
+    const geometry = shellOf('sidebar-geometry.ts');
+    const bar = shellOf('title-bar.tsx');
+    expect(geometry).toContain('16.5rem');
+    expect(dock).toContain('left-[16.5rem]');
+    // the prototype's 15rem/240px sidebar is an artifact and must not come back
+    expect(dock).not.toContain('left-[15rem]');
+    expect(dock).not.toMatch(/240px/);
+    // the top edge is the title bar's bottom: the bar's own px height equals the panel's rem inset at the 16px root
+    const barPx = parseFloat(bar.match(/data-title-bar\b[\s\S]{0,400}?h-\[(\d+(?:\.\d+)?)px\]/)?.[1] ?? '0');
+    const topRem = parseFloat(dock.match(/top-\[(\d+(?:\.\d+)?)rem\]/)?.[1] ?? '0');
+    expect(barPx).toBeGreaterThan(0);
+    expect(topRem).toBeGreaterThan(0);
+    expect(barPx).toBe(topRem * 16);
+  });
+
+  it('U-194: the reading column, the wide gutter and the artifact caps are named rem values', () => {
+    expect(model).toContain('(min-width: 64rem)');
+    // the feed centres the column and the dock's own rows align to it
+    for (const source of [feed, composer]) expect(source).toContain('minmax(0,48rem)');
+    // a wide artifact reaches one 8px gutter further each side, and no further
+    expect(feed).toMatch(/-mx-2[^2]/);
+    // the diff scrolls from 18rem in full mode (11rem in the panel); a table from 20rem
+    expect(feed).toContain('max-h-[18rem]');
+    expect(feed).toContain('max-h-44');
+    expect(feed).toContain('max-h-[20rem]');
+  });
+
+  it('U-198: foundations over the prototype — the header buttons sit 8px apart and the assistant text keeps 14/20', () => {
+    expect(dock).toMatch(/items-center gap-2 pb-2/);
+    // 15/20 and 15/24 text are not in the scale and must not appear for the full mode
+    expect(feed).not.toContain('text-[0.9375rem]');
+    expect(feed).not.toContain('leading-6 text-[0.9375rem]');
+    expect(feed).toContain('text-[0.875rem] leading-5');
+  });
+
+  it('U-199: Genişlet, Küçült and Kapat live in both bundles and never inline in a source', () => {
+    for (const key of ['chat.full.expand', 'chat.full.collapse', 'chat.close'] as const) {
+      expect(TR[key].length, `tr ${key}`).toBeGreaterThan(0);
+      expect(EN[key].length, `en ${key}`).toBeGreaterThan(0);
+    }
+    for (const word of ['Genişlet', 'Küçült', 'Kapat']) {
+      for (const [path, source] of SOURCES) expect(code(source), `${path}: ${word}`).not.toContain(word);
     }
   });
 });

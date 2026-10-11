@@ -16,7 +16,9 @@ export type ChatIconName =
   | 'repo'
   | 'pin'
   | 'trash'
-  | 'mention';
+  | 'mention'
+  | 'expand'
+  | 'collapse';
 
 const PATHS: Readonly<Record<ChatIconName, string>> = {
   spark: 'M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8L12 3zM18.5 15.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8.8-2z',
@@ -35,6 +37,8 @@ const PATHS: Readonly<Record<ChatIconName, string>> = {
   pin: 'M8 2.5l2.5 3.5 3-1-1 4-3 1.5V14L8 12l-1.5 2v-3.5l-3-1.5-1-4 3 1z',
   trash: 'M3.5 4.5h9M6.5 4.5V3h3v1.5M5 4.5l.5 8h5l.5-8',
   mention: 'M8 5.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5zM10.5 8v1a2 2 0 004 0V8a6.5 6.5 0 10-2.5 5.1',
+  expand: 'M9.5 2.5h4v4M13.5 2.5L9 7M6.5 13.5h-4v-4M2.5 13.5L7 9',
+  collapse: 'M13 6.5H9.5V3M9.5 6.5L14 2M3 9.5h3.5V13M6.5 9.5L2 14',
 };
 
 const VIEWBOX: Readonly<Partial<Record<ChatIconName, string>>> = { spark: '0 0 24 24', close: '0 0 24 24', chevron: '0 0 10 10' };

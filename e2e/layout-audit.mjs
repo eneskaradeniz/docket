@@ -20,6 +20,11 @@
 // its right edge aligned with the round button's and sitting above it, no control past the panel's
 // box, the focus in the composer on open and back on the button after Esc:
 //   chat: kokpit <WxH> <theme> ok|FAIL <detail>
+// followed by one for its full-screen reading mode (U-192 … U-198), through Genişlet: the panel
+// covers the content area only (the sidebar's right edge, the title bar's bottom, the window's
+// right and bottom), the reading column at most 48 rem and centred in the area the rail leaves, no
+// horizontal overflow in the feed, the history rail standing exactly from the 64 rem viewport on:
+//   chat-full: kokpit <WxH> <theme> ok|FAIL <detail>
 // and one for the title bar's Update button (U-24), measured on the cockpit: 40px bar, wordmark
 // at the left, the button 28px at the bar's right end, 16px clear of the window's right edge and
 // outside the drag region; the first combo of the run also walks the button's states — apply, a
@@ -559,6 +564,93 @@ async function chatPanelCheck(target) {
     } with the button ${above ? 'above it' : 'COVERS it'} controls ${m.outside.length === 0 ? 'contained' : `${m.outside.length} outside: ${m.outside.slice(0, 3).join('; ')}`} focus ${
       m.focusInText ? 'composer' : 'LOST'
     } esc ${focusBack ? 'returns it to the button' : 'DROPS it'}`,
+  };
+}
+
+/** Docket AI's full-screen reading mode (U-192 … U-198), measured right after the panel's own
+ *  check on the same screen: Genişlet must cover the content area only — from the sidebar's own
+ *  right edge to the window's right, from the title bar's own bottom to the window's bottom —
+ *  centre a reading column at most 48 rem wide inside the area the rail leaves, keep the feed free
+ *  of horizontal overflow, and stand the history rail exactly from the 64 rem viewport on (15 rem
+ *  wide, the reading area beginning at its right edge). Esc leaves the full mode and then closes
+ *  the panel, so the walk hands the next check the same closed standing the panel's own walk did. */
+async function chatFullCheck(target) {
+  const { page, selectors } = target;
+  const settled = () =>
+    page.waitForFunction(
+      (sel) => {
+        const panel = document.querySelector(sel);
+        if (panel === null || panel.hasAttribute('inert')) return false;
+        return parseFloat(getComputedStyle(panel).opacity) > 0.999 && panel.getAnimations().length === 0;
+      },
+      selectors.chatPanel,
+      { timeout: 4000 },
+    );
+  await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+J`);
+  await settled();
+  await page.locator('[data-chat-expand]').click({ timeout: 4000 });
+  await page.waitForFunction(
+    (sel) => document.querySelector(sel)?.hasAttribute('data-chat-full') === true,
+    selectors.chatPanel,
+    { timeout: 4000 },
+  );
+  await settled();
+  const m = await page.evaluate((panelSel) => {
+    const panel = document.querySelector(panelSel);
+    if (panel === null) return null;
+    const rail = panel.querySelector('[data-chat-rail]');
+    const feed = panel.querySelector('[data-chat-feed]');
+    const nav = document.querySelector('nav[aria-label]');
+    const bar = document.querySelector('[data-title-bar]');
+    if (feed === null || nav === null || bar === null) return null;
+    const r = panel.getBoundingClientRect();
+    const n = nav.getBoundingClientRect();
+    const b = bar.getBoundingClientRect();
+    const railBox = rail === null ? null : rail.getBoundingClientRect();
+    const column = feed.firstElementChild;
+    const col = column === null ? null : column.getBoundingClientRect();
+    return {
+      left: r.left,
+      top: r.top,
+      right: r.right,
+      bottom: r.bottom,
+      navRight: n.right,
+      barBottom: b.bottom,
+      iw: innerWidth,
+      ih: innerHeight,
+      feedOverflow: feed.scrollWidth - feed.clientWidth,
+      colW: col === null ? 0 : col.width,
+      colCentre: col === null ? 0 : (col.left + col.right) / 2,
+      areaCentre: ((railBox === null ? r.left : railBox.right) + r.right) / 2,
+      railVisible: rail !== null && getComputedStyle(rail).display !== 'none',
+      railW: railBox === null ? 0 : railBox.width,
+      root: parseFloat(getComputedStyle(document.documentElement).fontSize),
+    };
+  }, selectors.chatPanel);
+  // Leave the standing closed, the way the walk found it.
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(
+    (sel) => document.querySelector(sel)?.hasAttribute('data-chat-full') === false,
+    selectors.chatPanel,
+    { timeout: 4000 },
+  );
+  await page.keyboard.press('Escape');
+  await page.waitForFunction((sel) => document.querySelector(sel)?.hasAttribute('inert') === true, selectors.chatPanel, { timeout: 4000 });
+  if (m === null) return { ok: false, detail: 'full-mode elements not found' };
+  const edges =
+    Math.abs(m.right - m.iw) <= 1 &&
+    Math.abs(m.bottom - m.ih) <= 1 &&
+    Math.abs(m.left - m.navRight) <= 1 &&
+    Math.abs(m.top - m.barBottom) <= 1;
+  const wantRail = m.iw >= 1024;
+  const railOk = m.railVisible === wantRail && (!wantRail || Math.abs(m.railW - 15 * m.root) <= 1);
+  const columnOk = m.colW > 0 && m.colW <= 48 * m.root + 1 && Math.abs(m.colCentre - m.areaCentre) <= 1;
+  const ok = edges && railOk && columnOk && m.feedOverflow <= 0;
+  return {
+    ok,
+    detail: `edges ${edges ? 'content area' : 'misaligned'} rail ${m.railVisible ? 'on' : 'off'}${wantRail ? '' : ' (window under 64rem)'} column ${Math.round(m.colW)}px ${
+      Math.abs(m.colCentre - m.areaCentre) <= 1 ? 'centred' : 'OFF-centre'
+    } overflow ${m.feedOverflow <= 0 ? 'none' : `${Math.round(m.feedOverflow)}px`}`,
   };
 }
 
@@ -1263,7 +1355,7 @@ for (const { size: entry, theme } of plan) {
       appendCheck({ id: 'settings', screen, size: `${width}x${height}`, theme, status: r.ok ? 'ok' : 'FAIL', detail: r.detail });
     }
     // Docket AI's panel is measured open the same way, through ⌘J (the app target only: the frozen
-    // prototype has no panel).
+    // prototype has no panel), and its full-screen reading mode right after it, through Genişlet.
     if (screen === 'kokpit' && target.selectors.chatPanel) {
       let r;
       try {
@@ -1275,6 +1367,18 @@ for (const { size: entry, theme } of plan) {
       lines += 1;
       console.log(`chat: ${label} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
       appendCheck({ id: 'chat', screen, size: `${width}x${height}`, theme, status: r.ok ? 'ok' : 'FAIL', detail: r.detail });
+      if (r.ok) {
+        let f;
+        try {
+          f = await chatFullCheck(target);
+        } catch (error) {
+          f = { ok: false, detail: `chat full mode unreachable: ${String(error).split('\n')[0]}` };
+        }
+        if (!f.ok) failures += 1;
+        lines += 1;
+        console.log(`chat-full: ${label} ${f.ok ? 'ok' : 'FAIL'} ${f.detail}`);
+        appendCheck({ id: 'chat-full', screen, size: `${width}x${height}`, theme, status: f.ok ? 'ok' : 'FAIL', detail: f.detail });
+      }
     }
     if (screen === 'kokpit' && args.target === 'app' && target.selectors.accountsFrame) {
       let r;

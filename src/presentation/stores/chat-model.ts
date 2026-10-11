@@ -323,6 +323,11 @@ export const minutesLeft = (expiresAt: number, now: number): number => Math.max(
 export const undoOpen = (action: ChatActionView, now: number): boolean =>
   action.status === 'applied' && action.undoable && (action.undoExpiresAt === null || now < action.undoExpiresAt);
 
+// --- full-screen reading mode --------------------------------------------------------------------------
+
+/** The rail stands from this viewport width on (64 rem = 1024 px); the panel mode never shows it. */
+export const CHAT_RAIL_QUERY = '(min-width: 64rem)';
+
 // --- the shortcut --------------------------------------------------------------------------------------
 
 export interface KeyLike {
@@ -395,6 +400,10 @@ export interface HistoryState {
 
 export interface ChatState {
   readonly open: boolean;
+  /** The full-screen reading mode: session UI state, never persisted, never a route. */
+  readonly full: boolean;
+  /** The viewport is at least the rail's width; the dock keeps this in step with the media query. */
+  readonly wide: boolean;
   readonly view: 'chat' | 'history';
   readonly conversation: string | null;
   readonly detail: ChatConversationView | null;
@@ -431,6 +440,9 @@ export interface ChatState {
 }
 
 export const chatBusy = (state: ChatState): boolean => state.turn !== null || state.sending;
+
+/** The history rail stands exactly in the full mode on a wide enough viewport (U-195). */
+export const chatRailVisible = (state: ChatState): boolean => state.full && state.wide;
 
 /** Dots show from the send until the first streamed text (U-104). */
 export const chatShowsDots = (state: ChatState): boolean => chatBusy(state) && state.streamed === '';

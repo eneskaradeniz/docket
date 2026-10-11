@@ -1051,6 +1051,129 @@ describe('the Esc ladder (U-117)', () => {
   });
 });
 
+describe('full-screen reading mode (U-192, U-195, U-197)', () => {
+  it('U-192: Genişlet toggles full mode without a reload — the conversation, the draft, the tray and the detail all stand', async () => {
+    const { store, b } = live();
+    b.onCommand('chat.attach', () => ({ ok: true, attachment: 'A1' }));
+    store.setPlace(PROJECT_PLACE);
+    store.setDraft('soru');
+    await store.send();
+    store.addFiles([{ name: 'a.txt', base64: 'aGk=' }]);
+    await flush();
+    store.setDraft('devam eden taslak');
+    const before = store.state();
+    const reads = b.queries.filter((q) => q.type === 'chat.conversation').length;
+    store.toggleFull();
+    expect(store.state().full).toBe(true);
+    store.toggleFull();
+    expect(store.state().full).toBe(false);
+    const after = store.state();
+    expect(after.conversation).toBe(before.conversation);
+    expect(after.detail).toBe(before.detail);
+    expect(after.draft).toBe('devam eden taslak');
+    expect(after.tray).toEqual(before.tray);
+    expect(after.scope).toEqual(before.scope);
+    // the switch reads nothing: the feed's own scroll and data are untouched
+    expect(b.queries.filter((q) => q.type === 'chat.conversation')).toHaveLength(reads);
+  });
+
+  it('U-192: a running turn keeps streaming across the switch', async () => {
+    const { store, b } = live();
+    store.setPlace(PROJECT_PLACE);
+    store.setDraft('soru');
+    await store.send();
+    b.emit({ type: 'chat.delta', conversation: 'C1', turn: 'T1', text: 'bir ' });
+    store.toggleFull();
+    b.emit({ type: 'chat.delta', conversation: 'C1', turn: 'T1', text: 'iki' });
+    expect(store.state().streamed).toBe('bir iki');
+    expect(store.state().full).toBe(true);
+  });
+
+  it('U-192: closing the panel always leaves full mode — the toggle, Esc and the palette\'s close', () => {
+    const { store } = make();
+    store.open();
+    store.toggleFull();
+    store.close();
+    expect(store.state().open).toBe(false);
+    expect(store.state().full).toBe(false);
+    store.open();
+    store.toggleFull();
+    store.toggle();
+    expect(store.state().full).toBe(false);
+    store.open();
+    store.toggleFull();
+    store.escape();
+    store.escape();
+    expect(store.state().open).toBe(false);
+    expect(store.state().full).toBe(false);
+  });
+
+  it('U-192: switching closes the scope pop and the menus, the panel itself stays open', () => {
+    const { store } = make();
+    store.open();
+    store.togglePop();
+    store.openPlus();
+    store.toggleFull();
+    expect(store.state().scopePop).toBe(false);
+    expect(store.state().menu).toBeNull();
+    expect(store.state().open).toBe(true);
+  });
+
+  it('U-197: the Esc ladder in full mode — pop, menu, permission, leaving full, the history view, the panel', () => {
+    const { store } = make();
+    store.open();
+    store.setWide(false);
+    store.toggleFull();
+    store.togglePerm();
+    store.openPlus();
+    store.togglePop();
+    expect(store.escape()).toBe(true);
+    expect(store.state().scopePop).toBe(false);
+    expect(store.state().full).toBe(true);
+    expect(store.escape()).toBe(true);
+    expect(store.state().menu).toBeNull();
+    expect(store.escape()).toBe(true);
+    expect(store.state().permOpen).toBe(false);
+    expect(store.escape()).toBe(true);
+    expect(store.state().full).toBe(false);
+    expect(store.state().open).toBe(true);
+    expect(store.escape()).toBe(true);
+    expect(store.state().open).toBe(false);
+    expect(store.escape()).toBe(false);
+  });
+
+  it('U-197: below the rail\'s width a full-mode history view stands, and Esc leaves full before it', () => {
+    const { store } = make();
+    store.open();
+    store.setWide(false);
+    store.toggleFull();
+    store.openHistory();
+    expect(store.state().view).toBe('history');
+    expect(store.escape()).toBe(true);
+    expect(store.state().full).toBe(false);
+    expect(store.state().view).toBe('history');
+    expect(store.escape()).toBe(true);
+    expect(store.state().view).toBe('chat');
+  });
+
+  it('U-195: a history view gives way whenever the rail comes to stand — entering full, or the window growing wide', () => {
+    const { store } = make();
+    store.open();
+    store.setWide(true);
+    store.openHistory();
+    store.toggleFull();
+    expect(store.state().view).toBe('chat');
+    store.toggleFull();
+    expect(store.state().full).toBe(false);
+    store.setWide(false);
+    store.openHistory();
+    store.toggleFull();
+    expect(store.state().view).toBe('history');
+    store.setWide(true);
+    expect(store.state().view).toBe('chat');
+  });
+});
+
 describe('new conversation (U-101)', () => {
   it('U-101: Yeni konuşma clears the conversation, tray, refs and note and toasts', async () => {
     const { store, b } = live();

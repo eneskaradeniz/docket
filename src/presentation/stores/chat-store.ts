@@ -80,6 +80,10 @@ export interface ChatStore {
   open(): void;
   close(): void;
   toggle(): void;
+  /** Genişlet / Küçült: the same panel as a full-screen reading surface, and back (U-192). */
+  toggleFull(): void;
+  /** The dock reports the viewport crossing the rail's width so the store can keep its rules. */
+  setWide(wide: boolean): void;
   /** The one door for the contextual launchers: open on a scope with an optional prefilled text. */
   openChat(input: { readonly scope: ChatScopeInput; readonly prefill?: string }): void;
   /** The shell tells the panel what the current screen gives it (U-122). */
@@ -155,6 +159,8 @@ export const createChatStore = (deps: ChatStoreDeps): ChatStore => {
 
   let state: ChatState = {
     open: false,
+    full: false,
+    wide: false,
     view: 'chat',
     conversation: null,
     detail: null,
@@ -470,6 +476,15 @@ export const createChatStore = (deps: ChatStoreDeps): ChatStore => {
     return true;
   };
 
+  /** A patch that may bring the rail to stand: the panel's own history view then gives way to the
+   *  conversation (the rail owns the history while it shows), and the rail's list is asked for —
+   *  the same query the history view reads, never a second one (U-195). */
+  const railSettles = (patch: Partial<ChatState> = {}): void => {
+    const next = { ...state, ...patch };
+    set(next.full && next.wide && next.view === 'history' ? { ...patch, view: 'chat' } : patch);
+    if (next.full && next.wide) void loadHistory();
+  };
+
   const store: ChatStore = {
     state: () => state,
     subscribe: (listener) => {
@@ -484,11 +499,19 @@ export const createChatStore = (deps: ChatStoreDeps): ChatStore => {
       void loadUsage();
     },
     close: () => {
-      set({ open: false, scopePop: false, menu: null, permOpen: false });
+      // Closing always leaves the full mode: the next open starts from the panel (U-192).
+      set({ open: false, full: false, scopePop: false, menu: null, permOpen: false });
     },
     toggle: () => {
       if (state.open) store.close();
       else store.open();
+    },
+    toggleFull: () => {
+      railSettles({ full: !state.full, scopePop: false, menu: null });
+    },
+    setWide: (wide) => {
+      if (state.wide === wide) return;
+      railSettles({ wide });
     },
     openChat: ({ scope, prefill }) => {
       const pinned = !sameScope(scope, placeScope(state.place));
@@ -506,6 +529,8 @@ export const createChatStore = (deps: ChatStoreDeps): ChatStore => {
       if (state.scopePop) set({ scopePop: false });
       else if (state.menu !== null) store.closeMenu();
       else if (state.permOpen) set({ permOpen: false });
+      // Leaving the full mode is a rung before the history view and the panel (U-197).
+      else if (state.full) set({ full: false });
       else if (state.view === 'history') store.closeHistory();
       else store.close();
       return true;
