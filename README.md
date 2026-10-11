@@ -47,6 +47,15 @@ from the capability registry; regenerate with `npm run gen:provider-matrix`.
 | opencode (`opencode`) | `opencode-subscription` | — | — | — | equivalent | experimental |
 <!-- provider-matrix:end -->
 
+### Bringing a provider back
+
+Docket ships with the six verified providers in the matrix above; the other providers that were
+tried during the launch phase were removed from the launch set. Their code, fixtures and evidence
+stay at the git tag `providers-extended`. Bringing one back means one PR per provider, following
+the promotion checklist in `docs/v2/provider-capabilities.md` §9 ("Adding a provider"). A provider
+whose billing route is `metered` or `unknown` also needs an operator run with `--cap-usd` before
+promotion (P-40).
+
 ## License
 
 [Apache License 2.0](LICENSE). Contributions: see [CONTRIBUTING.md](CONTRIBUTING.md). Security
