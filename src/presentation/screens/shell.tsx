@@ -71,6 +71,7 @@ import { toast, toastStore } from '../stores/toasts';
 import type { ThemeStore } from '../stores/theme';
 import type { UpdateStore } from '../stores/update';
 import type { NewProjectDone, NewProjectStore } from '../stores/new-project';
+import { CLOSED_NEW_PROJECT_PANEL, newProjectPanelReducer, type NewProjectPanelOrigin } from '../stores/new-project-panel';
 import type { WizardFinished, WizardStore } from '../stores/wizard';
 import type { PageListStore, PageViewerStore, PageViewHost } from '../stores/page-viewer';
 import type { WorkOrderDetailStore } from '../stores/work-order-detail';
@@ -81,7 +82,7 @@ import { CockpitScreen } from './cockpit';
 import { WorkOrderDetailScreen } from './detail';
 import { LibraryScreen } from './library';
 import { ProposalsScreen } from './proposals';
-import { NewProjectScreen } from './new-project';
+import { NewProjectPanel } from './new-project';
 import { PageViewerScreen } from './page-viewer';
 import { RoadmapScreen } from './roadmap';
 import { SettingsPanel, type SettingsSection } from './settings';
@@ -160,7 +161,6 @@ const placeOf = (route: ShellRoute): TreePlace => {
     case 'account':
     case 'workOrder':
     case 'page':
-    case 'newProject':
       return { kind: 'cockpit' };
   }
 };
@@ -226,6 +226,8 @@ export function ShellScreen({
   // open/close and the origin the close's focus rule reads, never a route.
   const [palette, dispatchPalette] = useReducer(paletteReducer, CLOSED_PALETTE);
   const [settingsPanel, dispatchSettingsPanel] = useReducer(settingsPanelReducer, CLOSED_SETTINGS_PANEL);
+  // The Proje ekle panel is the same kind of overlay: a standing and an origin, never a route.
+  const [newProjectPanel, dispatchNewProjectPanel] = useReducer(newProjectPanelReducer, CLOSED_NEW_PROJECT_PANEL);
   // The panel's section lives in the same reducer: the nav's Telefon and Ayarlar rows name it on
   // open and read their current standing from it (U-24, U-28).
   const candidateDot = useSyncExternalStore(candidates.subscribe, candidates.dot);
@@ -265,10 +267,10 @@ export function ShellScreen({
   const wizardUp = wizardState.visible && !wizardState.checking;
   const openPalette = useCallback(
     (origin: PaletteOrigin): void => {
-      if (wizardUp || settingsPanel.open) return;
+      if (wizardUp || settingsPanel.open || newProjectPanel.open) return;
       dispatchPalette({ type: 'open', origin });
     },
-    [wizardUp, settingsPanel.open],
+    [wizardUp, settingsPanel.open, newProjectPanel.open],
   );
   // ⌘K (or Ctrl+K) opens the search palette (U-15) — the same door the title bar's Ara button is.
   useEffect(() => {
@@ -360,7 +362,7 @@ export function ShellScreen({
     const onKey = (event: KeyboardEvent): void => {
       if (!isChatShortcut(event)) return;
       event.preventDefault();
-      const plan = chatShortcutPlan({ paletteOpen: palette.open, modalOpen: wizardUp || settingsPanel.open, chatOpen: chat.state().open });
+      const plan = chatShortcutPlan({ paletteOpen: palette.open, modalOpen: wizardUp || settingsPanel.open || newProjectPanel.open, chatOpen: chat.state().open });
       if (plan === 'ignore') return;
       if (plan === 'closePaletteAndOpen') {
         dispatchPalette({ type: 'close' });
@@ -371,7 +373,7 @@ export function ShellScreen({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [chat, palette.open, wizardUp, settingsPanel.open]);
+  }, [chat, palette.open, wizardUp, settingsPanel.open, newProjectPanel.open]);
   useEffect(() => {
     if (palette.open) chat.close();
   }, [chat, palette.open]);
@@ -407,7 +409,6 @@ export function ShellScreen({
           return accountsState.cards?.some((card) => card.id === candidate.id) ?? false;
         case 'workOrder':
         case 'page':
-        case 'newProject':
           return true;
       }
     },
@@ -429,8 +430,9 @@ export function ShellScreen({
     lastMoveRef.current = 'back';
     dispatchNav({ type: 'push', route: next, scroll: mainRef.current?.scrollTop ?? 0 });
   }, []);
-  // The Yeni proje page's success (U-40): its machine starts fresh, the new project's view opens
-  // and the one toast (U-50) shows; no target (the tree does not list it) lands on the cockpit.
+  // The Proje ekle panel opens over the current route like Settings does and reads the same
+  // pointer-or-keyboard stamp. Opening resets nothing: a panel closed with input keeps its draft for
+  // the session, and only a finished creation starts the form over.
   // The setup finished (U-42): Anasayfa opens directly and the one toast says how many accounts are
   // ready. The wizard hands the result over once; its window fades over the Anasayfa now open
   // beneath it and acks its own leave (U-49), so the shell never acks for it — the seen ref keeps
@@ -446,28 +448,25 @@ export function ShellScreen({
   const finishNewProject = useCallback(
     (done: NewProjectDone): void => {
       newProject.reset();
+      dispatchNewProjectPanel({ type: 'close' });
       const target = done.target;
       navigate(target === null ? { name: 'cockpit' } : target.kind === 'roadmap' ? { name: 'roadmap', project: target.project } : { name: 'board', repo: target.repo });
       toast({ type: 'success', text: t(locale, done.toastKey) });
     },
     [newProject, navigate, locale],
   );
-  /** Vazgeç: back where the page was opened from. */
-  const cancelNewProject = useCallback((): void => {
-    goBack();
-  }, [goBack]);
-  /** Opens the Yeni proje page with a fresh form. */
   const openNewProject = useCallback((): void => {
-    newProject.reset();
-    navigate({ name: 'newProject' });
-  }, [newProject, navigate]);
+    const origin: NewProjectPanelOrigin = pointerOpenRef.current ? 'pointer' : 'keyboard';
+    pointerOpenRef.current = false;
+    dispatchNewProjectPanel({ type: 'open', origin });
+  }, []);
   // ⌘[ and ⌘] ride the history (U-25) — ignored while an input, a textarea or something editable
   // holds focus, and while the palette, the settings panel or the wizard owns the screen: the
   // route underneath an overlay stays put. No other shortcut or menu claims these two keys.
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
       if (!(event.metaKey || event.ctrlKey) || (event.key !== '[' && event.key !== ']')) return;
-      if (palette.open || settingsPanel.open || wizardUp) return;
+      if (palette.open || settingsPanel.open || wizardUp || newProjectPanel.open) return;
       const target = event.target;
       if (
         target instanceof HTMLElement &&
@@ -481,7 +480,7 @@ export function ShellScreen({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [goBack, goForward, palette.open, settingsPanel.open, wizardUp]);
+  }, [goBack, goForward, palette.open, settingsPanel.open, wizardUp, newProjectPanel.open]);
   // A work order that no longer exists cannot be a destination (U-25): the detail's own failed
   // read is the signal, and the shell walks the history on in the direction it was moving —
   // silently, the way the tree's own dead entries are skipped.
@@ -638,9 +637,6 @@ export function ShellScreen({
             <LibraryScreen store={library} locale={locale} now={clockNow()} onOpenPage={openPage} />
           ) : null}
           {route.name === 'proposals' ? <ProposalsScreen store={proposals} locale={locale} now={clockNow()} /> : null}
-          {route.name === 'newProject' ? (
-            <NewProjectScreen store={newProject} locale={locale} onCancel={cancelNewProject} onDone={finishNewProject} />
-          ) : null}
           {route.name === 'workOrder' ? (
             <WorkOrderDetailScreen
               store={detail}
@@ -660,7 +656,7 @@ export function ShellScreen({
               pageId={route.id}
               locale={locale}
               // The native view paints above everything of Docket's: any overlay takes it away (U-76).
-              overlayOpen={palette.open || settingsPanel.open || wizardUp || chatOpen}
+              overlayOpen={palette.open || settingsPanel.open || newProjectPanel.open || wizardUp || chatOpen}
               now={clockNow()}
               onBack={goBack}
               launchScope={pageScope}
@@ -708,10 +704,19 @@ export function ShellScreen({
         }}
       />
 
+      <NewProjectPanel
+        open={newProjectPanel.open}
+        origin={newProjectPanel.origin}
+        store={newProject}
+        locale={locale}
+        onClose={() => dispatchNewProjectPanel({ type: 'close' })}
+        onDone={finishNewProject}
+      />
+
       <ChatDock
         store={chat}
         locale={locale}
-        hidden={wizardUp || settingsPanel.open}
+        hidden={wizardUp || settingsPanel.open || newProjectPanel.open}
         onOpenPage={openPage}
         onOpenAccounts={() => openSettings('accounts')}
         onOpenConsent={() => openSettings('accounts')}

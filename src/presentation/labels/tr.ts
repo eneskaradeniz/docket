@@ -634,6 +634,7 @@ export const TR: LabelBundle = {
   'newProject.create': 'Oluştur',
   'newProject.creating': 'Oluşturuluyor…',
   'newProject.cancel': 'Vazgeç',
+  'newProject.close': 'Pencereyi kapat',
   'newProject.attach': 'Bağla',
   'newProject.created': "Proje oluşturuldu. Test komutlarını .docket/repo.yaml'a yaz; yazılana kadar test kapısı bekler.",
   'toast.close': 'Kapat',

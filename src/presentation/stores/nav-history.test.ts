@@ -29,14 +29,6 @@ const forward = (state: NavHistory, exists: (route: NavRoute) => boolean = () =>
 const current = (state: NavHistory): NavRoute => state.entries[state.index].route;
 
 describe('navHistoryReducer', () => {
-  it('U-40: the Yeni proje page is a route of its own — pushed once, never doubled, left by back', () => {
-    const page: NavRoute = { name: 'newProject' };
-    const opened = push(START_NAV_HISTORY, page);
-    expect(current(opened)).toStrictEqual(page);
-    expect(push(opened, page)).toBe(opened);
-    expect(current(back(opened))).toStrictEqual(cockpit);
-  });
-
   it('U-84: the library is a route of its own — pushed once, never doubled, left by back, and it always exists', () => {
     const library: NavRoute = { name: 'library' };
     const opened = push(START_NAV_HISTORY, library);
