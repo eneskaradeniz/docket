@@ -269,6 +269,22 @@ describe('createWorktrees', () => {
       expect((await git(repoDir, ['rev-parse', 'HEAD'])).trim()).toBe(head);
     });
   });
+
+  describe('existing', () => {
+    it('returns the path only after the worktree is listed, and listing it creates nothing', async () => {
+      await initRepo(repoDir);
+      await commitFile(repoDir, 'a.ts', 'l1\n');
+      const worktrees = createWorktrees({ root: rootDir, repos: pathsOf({ acme: repoDir }) });
+      const before = await listedWorktrees(repoDir);
+
+      expect(await worktrees.existing(ACME, woId(U1))).toBeUndefined();
+      expect(await listedWorktrees(repoDir)).toEqual(before);
+
+      await worktrees.ensure(ACME, woId(U1));
+
+      expect(await worktrees.existing(ACME, woId(U1))).toEqual({ path: worktreeOf(U1) });
+    });
+  });
 });
 
 describe('worktreeBranch', () => {

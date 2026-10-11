@@ -8,6 +8,7 @@ import type {
   ProviderMark,
   QuotaProbeError,
   StageFilesView,
+  WorkOrderChangesView,
   WorktreeFilePreview,
 } from '../application';
 import type { ChatScopeInput } from './commands';
@@ -22,10 +23,11 @@ export type {
   ChatScopeView,
   ChatUsageView,
 } from './chat-views';
-export type { AccountTestView, ProposalDetailView, ProposalListItem, StageFilesView, WorktreeFilePreview };
+export type { AccountTestView, ProposalDetailView, ProposalListItem, StageFilesView, WorkOrderChangesView, WorktreeFilePreview };
 
 export type Query =
   | { readonly type: 'workOrder.detail'; readonly id: string }
+  | { readonly type: 'workOrder.changes'; readonly workOrder: string } // → WorkOrderChangesView | not_found | invalid_id
   | { readonly type: 'project.tree' }
   | { readonly type: 'roadmap.byProject'; readonly project: string }
   | { readonly type: 'repo.board'; readonly repo: string }

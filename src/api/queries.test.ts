@@ -744,6 +744,7 @@ describe('workOrder.detail', () => {
       state: { status: 'awaiting_human', stage: 'plan', attempt: 1, pendingGates: ['plan-approval'] },
       next: { kind: 'await_human', stage: 'plan', gates: ['plan-approval'] },
       runs: [],
+      runSummaries: [],
       flow: { id: 'board-flow' },
       // The acme repo section carries no environments, so the list is empty, not absent.
       environments: [],

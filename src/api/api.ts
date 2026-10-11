@@ -105,6 +105,8 @@ import {
   enqueueStage,
   getUpdateState,
   getWorkOrder,
+  workOrderChanges,
+  workOrderRunSummaries,
   grantPermission,
   grantSpendConsent,
   importCapabilities,
@@ -1340,11 +1342,19 @@ const runQuery = async (
         id,
       );
       if (!view.ok) return { ok: false, code: view.error };
+      const runSummaries = await workOrderRunSummaries(deps, view.value.runs);
       // The detail names its work order, so it carries the A-29 number like every view item. The
       // record the use case just read always numbers; undefined would mean it vanished between
       // the two reads, which the never-deleted rule rules out.
       const number = await deps.workOrders.number(id);
-      return number === undefined ? { ok: false, code: 'not_found' } : { ...view.value, number };
+      return number === undefined ? { ok: false, code: 'not_found' } : { ...view.value, number, runSummaries };
+    }
+
+    case 'workOrder.changes': {
+      const id = ulidValue<'work-order'>(query.workOrder);
+      if (id === undefined) return invalidId();
+      const view = await workOrderChanges(deps, id);
+      return view.ok ? view.value : { ok: false, code: view.error };
     }
 
     case 'cockpit': {

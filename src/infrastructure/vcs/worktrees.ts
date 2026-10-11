@@ -77,6 +77,15 @@ export function createWorktrees(config: WorktreesConfig): Worktrees {
   }
 
   return {
+    async existing(repo, id): Promise<{ readonly path: string } | undefined> {
+      const checkout = await config.repos.path(repo);
+      if (checkout === undefined) return undefined;
+      const path = join(config.root, repo, id);
+      // A listed worktree is the only proof one exists. Creating it is `ensure`'s job.
+      if (!(await isListed(checkout, path))) return undefined;
+      return { path };
+    },
+
     async ensure(repo, id): Promise<EnsureResult> {
       const checkout = await config.repos.path(repo);
       if (checkout === undefined) return err('no_repo');
