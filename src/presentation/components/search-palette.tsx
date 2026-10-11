@@ -596,7 +596,7 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
                 <button
                   type="button"
                   onClick={clearHistory}
-                  className="py-0.5 text-[11px] text-inkdim transition-colors duration-[var(--motion-highlight)] hover:text-ink motion-reduce:transition-none"
+                  className="rounded-control border border-bord bg-transparent px-2 py-0.5 text-[11px] text-ink transition-colors duration-[var(--motion-highlight)] hover:bg-raised motion-reduce:transition-none"
                 >
                   {t(locale, 'palette.history.clear')}
                 </button>

@@ -68,7 +68,7 @@ export function RescanButton({ locale, busy, onRescan, scannedAt = null, now = 0
       {scannedAt === null ? null : (
         <span className="text-[0.75rem] leading-4 text-inkdim">{t(locale, 'scan.last').replace('{age}', formatAge(locale, Math.max(0, now - scannedAt)))}</span>
       )}
-      <ActionButton variant="ghost" size="sm" disabled={busy} ariaBusy={busy} onClick={onRescan}>
+      <ActionButton variant="neutral" size="sm" disabled={busy} ariaBusy={busy} onClick={onRescan}>
         <RefreshIcon turning={busy} className="h-[0.9375rem] w-[0.9375rem]" />
         <span>{t(locale, busy ? 'scan.scanning' : 'scan.rescan')}</span>
       </ActionButton>

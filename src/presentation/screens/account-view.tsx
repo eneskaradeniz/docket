@@ -58,9 +58,9 @@ export function AccountViewScreen({
   onOpenSettings,
   onBack,
 }: AccountViewScreenProps) {
-  const state = useSyncExternalStore(store.subscribe, store.state);
+  const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   // The marks land once, after the first paint; the subscription turns them into a re-render.
-  useSyncExternalStore(marks.subscribe, marks.state);
+  useSyncExternalStore(marks.subscribe, marks.state, marks.state);
   useEffect(() => {
     void store.load(accountId);
   }, [store, accountId]);
@@ -71,7 +71,7 @@ export function AccountViewScreen({
   return (
     <div className="grid gap-5">
       <div className="-mb-2">
-        <ActionButton variant="ghost" onClick={onBack}>
+        <ActionButton variant="neutral" onClick={onBack}>
           {t(locale, 'account.back')}
         </ActionButton>
       </div>
@@ -155,7 +155,7 @@ export function AccountViewScreen({
             <span data-limit-band="" className="min-w-0 text-ink">{limitBand(locale, view.account.limitPolicy, reserve)}</span>
             <InfoBubble locale={locale} subject={t(locale, 'account.policy.subject')} body={t(locale, 'account.policy.info')} />
             <span className="flex-1" />
-            <ActionButton variant="ghost" onClick={onOpenSettings}>
+            <ActionButton variant="neutral" onClick={onOpenSettings}>
               {t(locale, 'account.edit')}
             </ActionButton>
           </div>

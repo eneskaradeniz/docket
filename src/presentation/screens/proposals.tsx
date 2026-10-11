@@ -239,7 +239,7 @@ function DetailPane({
             data-proposals-reject=""
             disabled={busy}
             onClick={() => decide('rejected')}
-            className={`h-8 rounded-control border border-transparent px-4 text-[0.875rem] font-semibold leading-[1.25rem] text-inkdim hover:text-ink disabled:pointer-events-none disabled:opacity-50 ${FOCUS}`}
+            className={`h-8 rounded-control border border-bord bg-transparent px-4 text-[0.875rem] font-semibold leading-[1.25rem] text-ink hover:bg-raised disabled:pointer-events-none disabled:opacity-50 ${FOCUS}`}
           >
             {t(locale, 'proposals.reject')}
           </button>

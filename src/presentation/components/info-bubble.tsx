@@ -63,7 +63,7 @@ export function InfoBubble({ locale, subject, title, body }: InfoBubbleProps) {
   const wrapRef = useRef<HTMLSpanElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
-  const shared = useSyncExternalStore(subscribe, snapshot);
+  const shared = useSyncExternalStore(subscribe, snapshot, snapshot);
   const open = shared.openId === id;
   const [placement, setPlacement] = useState<BubblePlacement | null>(null);
 

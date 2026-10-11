@@ -35,7 +35,7 @@ export function CockpitAttentionRow({ item, ask, locale, ageMs, onOpen, onAnswer
         <button
           type="button"
           onClick={onOpen}
-          className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-left hover:underline"
+          className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap rounded-control border border-bord bg-transparent px-1.5 text-left hover:bg-raised"
           title={item.title}
         >
           {item.title}

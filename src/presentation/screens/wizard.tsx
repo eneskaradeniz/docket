@@ -359,7 +359,7 @@ function CapAndConsent({ row, store, locale }: { readonly row: BudgetRow; readon
       {row.consented ? (
         <span className="flex items-center gap-2 text-[12.5px]" data-consent="granted">
           <span className="text-proceed">{t(locale, 'wizard.consent.granted')}</span>
-          <ActionButton variant="ghost" onClick={() => store.revokeSpend(row.id)}>
+          <ActionButton variant="neutral" onClick={() => store.revokeSpend(row.id)}>
             {t(locale, 'wizard.consent.revoke')}
           </ActionButton>
         </span>
@@ -711,12 +711,12 @@ export function WizardScreen({ store, locale, localeStore, themeStore, marks }: 
         footer={
           <>
             {state.canBack ? (
-              <ActionButton variant="ghost" size="md" disabled={state.finishing || leaving} onClick={() => store.back()}>
+              <ActionButton variant="neutral" size="md" disabled={state.finishing || leaving} onClick={() => store.back()}>
                 {t(locale, 'wizard.back')}
               </ActionButton>
             ) : null}
             {state.canSkip ? (
-              <ActionButton variant="ghost" size="md" disabled={state.finishing || leaving} onClick={() => void store.skip()}>
+              <ActionButton variant="neutral" size="md" disabled={state.finishing || leaving} onClick={() => void store.skip()}>
                 {t(locale, 'wizard.skip')}
               </ActionButton>
             ) : null}

@@ -731,9 +731,9 @@ for (const [sizeName, theme] of combos) {
     await shot('attention');
     // The panel lists exactly one flagged order; its number is not pinned, because the work orders
     // Başlat opened since may rank anywhere.
-    const codeButton = panel.getByRole('button').first();
-    assert(/^İE-\d{4}$/.test(((await codeButton.textContent()) ?? '').trim()), 'the attention row must show a work-order code');
-    await codeButton.click({ timeout: WAIT });
+    const codeLink = panel.getByRole('link').first();
+    assert(/^İE-\d{4}$/.test(((await codeLink.textContent()) ?? '').trim()), 'the attention row must show a work-order code');
+    await codeLink.click({ timeout: WAIT });
     await phase('odeme').waitFor({ state: 'detached', timeout: WAIT });
     await shot('detail');
 

@@ -75,7 +75,7 @@ function FoldButton({ label, onClick }: { readonly label: string; readonly onCli
     <button
       type="button"
       onClick={onClick}
-      className="rounded-control px-1.5 py-0.5 text-[0.78125rem] text-inkdim transition-colors hover:bg-raised hover:text-ink"
+      className="rounded-control border border-bord bg-transparent px-1.5 py-0.5 text-[0.78125rem] text-ink transition-colors hover:bg-raised"
     >
       {label}
     </button>

@@ -87,7 +87,7 @@ const ModelRow = ({
       {row.consented ? (
         <>
           <StateBadge tone="proceed">{t(locale, 'settings.models.allowed')}</StateBadge>
-          <ActionButton variant="ghost" onClick={() => onRevoke(row.id)}>
+          <ActionButton variant="neutral" onClick={() => onRevoke(row.id)}>
             {t(locale, 'settings.models.revoke')}
           </ActionButton>
         </>
@@ -225,7 +225,7 @@ export function ModelList({ locale, state, onSelect, onSelectDefault, onRefresh,
         : state.stale && (
             <p className="flex flex-wrap items-center gap-2 text-[12px] text-inkdim">
               {t(locale, 'settings.models.stale')}
-              <ActionButton variant="ghost" disabled={state.refreshing} onClick={onRefresh}>
+              <ActionButton variant="neutral" disabled={state.refreshing} onClick={onRefresh}>
                 {t(locale, 'settings.models.refresh')}
               </ActionButton>
             </p>
@@ -260,7 +260,7 @@ export function ModelList({ locale, state, onSelect, onSelectDefault, onRefresh,
                         {defaultModel.consented ? (
                           <>
                             <StateBadge tone="proceed">{t(locale, 'settings.models.allowed')}</StateBadge>
-                            <ActionButton variant="ghost" onClick={() => onRevoke('*')}>
+                            <ActionButton variant="neutral" onClick={() => onRevoke('*')}>
                               {t(locale, 'settings.models.revoke')}
                             </ActionButton>
                           </>

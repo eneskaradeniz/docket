@@ -1550,3 +1550,15 @@ Added 2026-10-12. The app under test stays off-screen and does not take keyboard
 - **U-257** (added 2026-10-12) `quietWindowOptions(env, isPackaged)` returns options only when `DOCKET_E2E_QUIET` is exactly `1` and `isPackaged === false`. Unset, `0`, any other value, or a packaged app returns `undefined`.
 - **U-258** (added 2026-10-12) Those options are `show: false`, opacity 0, ignore-mouse-events, no dock, and background throttling off. The shape is data: it has no `focus` and no `show` call. The window path creates the window with `show: false`, then maps it with `showInactive()` and applies opacity, click-through and the taskbar flag; it does not call `show()`, `focus()` or `app.focus()`.
 - **U-259** (added 2026-10-12) Every `electron.launch` under `e2e/` goes through one shared helper that sets `DOCKET_E2E_QUIET=1`. `DOCKET_E2E_VISIBLE=1` turns quiet off for debugging. The CDP launcher does not use the helper, so it stays visible unless asked.
+
+## Button tiers (U-216 … U-222)
+
+Added 2026-10-12. Three tiers. Primary is the amber fill. Secondary is the existing neutral outline (1 px `border-bord`, ink text, hover `bg-raised`). Tertiary is plain text only as an `InlineLink` inside running text (`Prose`); it is an anchor, not a button, and it does not render as a control outside that wrapper. `ActionButton`'s `ghost` variant stays, and it draws only when the children are an icon; a text label on `ghost` is drawn as the outline. Heights are `md` 2 rem and `sm` 1.75 rem, in rem, with `rounded-control`. A trailing "…" stays only on a control that opens a further step. This amends the ghost look of U-79's Reddet and of U-160's labelled Yeniden tara: both are the secondary outline. Icon-only controls (title-bar history, closes, drawer toggles, the sidebar rescan) stay borderless.
+
+- **U-216** `ActionButton` exposes `primary | neutral | ghost`. A markup test fails a text-labelled ghost: that button renders the outline. An icon child still renders `ghost`.
+- **U-217** A source scan over `src/presentation/**/*.tsx` finds no raw `<button` whose class list is borderless and text-only outside the icon-button host (`action-button.tsx`) and the `InlineLink` allow-list.
+- **U-218** Heights: `md` is 2 rem, `sm` is 1.75 rem, rem lengths only, radius `rounded-control`.
+- **U-219** `InlineLink` renders only inside running text (a `Prose` wrapper), is keyboard-focusable, shows a visible focus ring, and is underlined. Outside the wrapper it is inert text.
+- **U-220** Wizard and new project: the former text buttons (Geri, Bu adımı atla, Geri al, Vazgeç) are outlined and still reachable by those names.
+- **U-221** Page viewer and account view: ‹ Geri, Reddet, ‹ Geri · kokpit and Ayarlar'da düzenle are outlined and still reachable by those names.
+- **U-222** Settings sections: Önerilene dön, Geri al, Yenile, Varsayılana dön and the wizard editor's Vazgeç are outlined and still reachable by those names.

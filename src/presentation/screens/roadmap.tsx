@@ -11,6 +11,7 @@ import { useEffect, useSyncExternalStore } from 'react';
 
 import type { RoadmapPageView } from '../../api/queries';
 import { t, type Locale } from '../labels/t';
+import { InlineLink, Prose } from '../components/inline-link';
 import { RoadmapLaunchers } from '../components/launcher-rows';
 import {
   phaseControl,
@@ -125,7 +126,6 @@ const FOCUS = 'focus-visible:outline focus-visible:outline-2 focus-visible:outli
 const BUTTON = `h-7 flex-none whitespace-nowrap rounded-control border px-3 text-[0.78125rem] font-semibold leading-none transition-colors motion-reduce:transition-none ${FOCUS}`;
 const BUTTON_SECONDARY = `${BUTTON} border-bord text-ink hover:bg-raised disabled:pointer-events-none disabled:border-hairline disabled:bg-raised disabled:text-inkdim`;
 const BUTTON_PRIMARY = `${BUTTON} border-signal bg-signal text-signal-ink disabled:pointer-events-none disabled:opacity-60`;
-const BUTTON_GHOST = `${BUTTON} border-transparent text-inkdim hover:text-ink`;
 
 const CHIP = 'inline-flex h-5 flex-none items-center gap-2 rounded-full border px-2 font-mono text-[0.6875rem] leading-none';
 
@@ -257,7 +257,7 @@ const PhaseCard = ({
             <button type="button" disabled={pending} onClick={() => showNotices(locale, store.runPhase(phase.id))} className={BUTTON_PRIMARY}>
               {t(locale, 'roadmap.confirm.go')}
             </button>
-            <button type="button" onClick={() => store.closePanel()} className={BUTTON_GHOST}>
+            <button type="button" onClick={() => store.closePanel()} className={BUTTON_SECONDARY}>
               {t(locale, 'roadmap.confirm.cancel')}
             </button>
           </div>
@@ -269,19 +269,18 @@ const PhaseCard = ({
           {failedOrders.map(({ task, order }) => {
             const code = formatWorkOrderCode(order.number, locale);
             return (
-              <p key={order.id} className="flex flex-wrap items-center gap-x-2 text-[0.75rem] leading-4 text-inkdim">
-                <button
-                  type="button"
+              <Prose key={order.id} className="flex flex-wrap items-center gap-x-2 text-[0.75rem] leading-4 text-inkdim">
+                <InlineLink
                   onClick={() => onOpenWorkOrder(order.id)}
                   title={code}
-                  className={`font-mono text-[0.6875rem] leading-4 text-ink hover:underline ${FOCUS}`}
+                  className="font-mono text-[0.6875rem] leading-4"
                 >
                   {code}
-                </button>
+                </InlineLink>
                 <span>
                   · {task.title} · {t(locale, 'roadmap.attention.failed')}
                 </span>
-              </p>
+              </Prose>
             );
           })}
         </div>
@@ -381,7 +380,7 @@ const TaskRow = ({
                     type="button"
                     onClick={() => onOpenWorkOrder(order.id)}
                     title={code}
-                    className="min-w-0 truncate font-mono text-[0.625rem] text-inkdim transition-colors hover:text-ink"
+                    className="min-w-0 truncate rounded-control border border-bord bg-transparent px-1.5 font-mono text-[0.625rem] text-ink transition-colors hover:bg-raised"
                   >
                     {code}
                   </button>

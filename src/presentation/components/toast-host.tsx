@@ -138,7 +138,7 @@ function ToastCard({ item, store, locale }: { readonly item: ToastItem; readonly
         <button
           type="button"
           onClick={onCopy}
-          className="-mt-0.5 flex-none self-start rounded-control px-1.5 py-0.5 font-mono text-[11px] text-inkdim hover:bg-band hover:text-ink"
+          className="-mt-0.5 flex-none self-start rounded-control border border-bord bg-transparent px-1.5 py-0.5 font-mono text-[11px] text-ink hover:bg-band"
         >
           {copied ? t(locale, 'toast.copied') : t(locale, 'toast.copy')}
         </button>

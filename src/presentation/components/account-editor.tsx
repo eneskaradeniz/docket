@@ -283,7 +283,7 @@ function Usage({ account, locale, formatTime, onRefresh }: Pick<AccountEditorPro
             {lastRead !== null ? ` ${lastRead}` : ''}
           </span>
           <span aria-hidden="true">·</span>
-          <ActionButton variant="ghost" onClick={onRefresh}>
+          <ActionButton variant="neutral" onClick={onRefresh}>
             {t(locale, 'editor.usage.refresh')}
           </ActionButton>
         </p>
@@ -456,7 +456,7 @@ function ReserveRow({ account, locale, store }: Pick<AccountEditorProps, 'accoun
             aria-expanded={splitOpen}
             onClick={() => setSplitOpen(!splitOpen)}
             data-reserve-option="split"
-            className="rounded-control text-[12.5px] text-inkdim hover:text-ink"
+            className="rounded-control border border-bord bg-transparent px-2 py-0.5 text-[12.5px] text-ink hover:bg-raised"
           >
             {splitOpen ? '⌄' : '›'} {t(locale, 'editor.limits.reserve.split')}
           </button>
@@ -565,7 +565,7 @@ function CapRow({ account, locale, store }: Pick<AccountEditorProps, 'account' |
             {warnDiff !== undefined ? (
               <p className="flex flex-wrap items-center gap-2 text-[12px] text-signal-soft">
                 <span>{t(locale, 'editor.differs').replace('{value}', diffValueLabel(locale, 'warnPercent', warnDiff.recommended))}</span>
-                <ActionButton variant="ghost" onClick={() => void store.reset(account, 'warnPercent')}>
+                <ActionButton variant="neutral" onClick={() => void store.reset(account, 'warnPercent')}>
                   {t(locale, 'editor.reset')}
                 </ActionButton>
               </p>
@@ -645,7 +645,7 @@ export function AccountEditorPanels(props: AccountEditorProps) {
             <span aria-hidden="true" className="text-inkdim">
               ·
             </span>
-            <ActionButton variant="ghost" onClick={() => void store.resetAll(account)}>
+            <ActionButton variant="neutral" onClick={() => void store.resetAll(account)}>
               {t(locale, 'editor.resetAll')}
             </ActionButton>
           </>
