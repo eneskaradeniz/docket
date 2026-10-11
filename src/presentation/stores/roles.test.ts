@@ -8,7 +8,8 @@ import type { Api } from '../../api/api';
 import type { Command } from '../../api/commands';
 import type { AccountModelsView, Query, RoleListItem, SettingsAccountView, SettingsAccountsView, SettingsBindingView } from '../../api/queries';
 
-import { chainEmptyKey, createRolesStore, effortOptions, selectableModels, styleChoices, styleSettings, styleStanding, unboundRoleIds, workStyle } from './roles';
+import { mostSharedChain } from '../../domain/index';
+import { chainEmptyKey, createRolesStore, globalChainOf, effortOptions, selectableModels, styleChoices, styleSettings, styleStanding, unboundRoleIds, workStyle } from './roles';
 
 type BindingSave = Extract<Command, { readonly type: 'binding.save' }>;
 
@@ -187,6 +188,7 @@ describe('U-33: Asistan sırası', () => {
       { type: 'binding.save', role: 'developer', accounts: [{ accountId: 'a2' }, { accountId: 'a1' }], tier: 'balanced', thinking: { level: 'balanced' } },
       { type: 'binding.save', role: 'planner', accounts: [{ accountId: 'a2' }, { accountId: 'a1' }], tier: 'strong', thinking: { level: 'deep' } },
       { type: 'binding.save', role: 'reviewer', accounts: [{ accountId: 'a2' }, { accountId: 'a1' }], tier: 'fast', thinking: { effort: 'high' } },
+      { type: 'binding.save', role: 'assistant', accounts: [{ accountId: 'a2' }, { accountId: 'a1' }] },
     ]);
   });
 
@@ -198,7 +200,7 @@ describe('U-33: Asistan sırası', () => {
     await store.moveGlobal(0, 1);
     const planner = saves(api).find((c) => c.role === 'planner');
     expect(planner?.accounts).toEqual([{ accountId: 'a2', model: 'atlas-x' }]);
-    expect(saves(api)).toHaveLength(3);
+    expect(saves(api)).toHaveLength(4);
   });
 
   it('U-33: a role without a stored binding gets the new global chain and nothing invented', async () => {
@@ -237,6 +239,7 @@ describe('U-33: Asistan sırası', () => {
       { type: 'binding.save', role: 'developer', accounts: [{ accountId: 'a1' }, { accountId: 'a2' }, { accountId: 'a3' }], tier: 'balanced', thinking: { level: 'balanced' } },
       { type: 'binding.save', role: 'planner', accounts: [{ accountId: 'a1' }, { accountId: 'a2' }, { accountId: 'a3' }], tier: 'strong', thinking: { level: 'deep' } },
       { type: 'binding.save', role: 'reviewer', accounts: [{ accountId: 'a1' }, { accountId: 'a2' }, { accountId: 'a3' }], tier: 'fast', thinking: { effort: 'high' } },
+      { type: 'binding.save', role: 'assistant', accounts: [{ accountId: 'a1' }, { accountId: 'a2' }, { accountId: 'a3' }] },
     ]);
   });
 
@@ -442,7 +445,7 @@ describe('U-43: the work-style Listbox and the drag order', () => {
     await store.load();
     // A drop reports (from, to − from): one call per drop, however many slots it crossed.
     await store.moveGlobal(1, -1);
-    expect(saves(api)).toHaveLength(3);
+    expect(saves(api)).toHaveLength(4);
     for (const saved of saves(api)) expect(saved.accounts.map((entry) => entry.accountId)).toEqual(['a2', 'a1']);
   });
 });
@@ -468,3 +471,29 @@ describe('roles without a binding', () => {
   });
 });
 
+
+describe('A-301: the assistant binding follows the order', () => {
+  it('A-301: saving the chain also saves the assistant with the same accounts in the same order, every time', async () => {
+    const api = fake();
+    const store = makeStore(api);
+    await store.load();
+    await store.moveGlobal(0, 1);
+    await store.moveGlobal(0, 1);
+    const assistant = saves(api).filter((command) => command.role === 'assistant');
+    expect(assistant).toHaveLength(2);
+    expect(assistant[0]).toEqual({ type: 'binding.save', role: 'assistant', accounts: [{ accountId: 'a2' }, { accountId: 'a1' }] });
+    expect(assistant[1]).toEqual(assistant[0]);
+  });
+});
+
+describe('U-243: one order rule for the list and the chat', () => {
+  it('U-243: the chain the settings list shows is the shared-chain rule the chat falls back to', () => {
+    const views = [binding('x', ['a2', 'a1']), binding('y', ['a1']), binding('z', ['a2', 'a1'])];
+    const rule = mostSharedChain(
+      views.map((view) => view.accounts),
+      (entry) => entry.accountId,
+    ).map((entry) => entry.accountId);
+    expect(globalChainOf(views)).toEqual(rule);
+    expect(rule).toEqual(['a2', 'a1']);
+  });
+});

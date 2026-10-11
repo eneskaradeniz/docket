@@ -258,14 +258,15 @@ export interface TrayItem {
 
 // --- notices and failure sentences --------------------------------------------------------------------
 
-export type NoticeKind = 'quota' | 'spend' | 'consent' | 'auth' | 'limit' | 'network' | 'crash' | 'tools_unavailable';
+export type NoticeKind = 'quota' | 'spend' | 'consent' | 'auth' | 'no_binding' | 'limit' | 'network' | 'crash' | 'tools_unavailable';
 
 export interface NoticeInfo {
   readonly kind: NoticeKind;
   /** The input stays disabled until the operator acts (quota, spend, consent). */
   readonly blocks: boolean;
-  /** The button the note carries: Hesabı değiştir opens the accounts, İzin ver the consent step. */
-  readonly action: 'accounts' | 'consent' | null;
+  /** The button the note carries: Hesabı değiştir opens the accounts, İzin ver the consent step,
+   *  Sırayı ayarla the roles' account order. */
+  readonly action: 'accounts' | 'consent' | 'roles' | null;
 }
 
 const NOTICES: Readonly<Record<NoticeKind, NoticeInfo>> = {
@@ -273,6 +274,7 @@ const NOTICES: Readonly<Record<NoticeKind, NoticeInfo>> = {
   spend: { kind: 'spend', blocks: true, action: 'consent' },
   consent: { kind: 'consent', blocks: true, action: 'consent' },
   auth: { kind: 'auth', blocks: false, action: null },
+  no_binding: { kind: 'no_binding', blocks: false, action: 'roles' },
   limit: { kind: 'limit', blocks: false, action: null },
   network: { kind: 'network', blocks: false, action: null },
   crash: { kind: 'crash', blocks: false, action: null },
@@ -281,6 +283,28 @@ const NOTICES: Readonly<Record<NoticeKind, NoticeInfo>> = {
 
 /** A runner notice code as the note it shows; a code this build does not know reads as a crash. */
 export const noticeOf = (code: string): NoticeInfo => (code in NOTICES ? NOTICES[code as NoticeKind] : NOTICES.crash);
+
+const NOTICE_TEXT_PREFIX = 'chat.notice.';
+const NOTICE_TEXT_KEYS: Readonly<Record<string, LabelKey>> = {
+  limit: 'chat.notice.limit',
+  quota: 'chat.notice.quota',
+  spend: 'chat.notice.spend',
+  consent: 'chat.notice.consent',
+  auth: 'chat.notice.auth',
+  no_binding: 'chat.notice.no_binding',
+  network: 'chat.notice.network',
+  crash: 'chat.notice.crash',
+  tools_unavailable: 'chat.notice.tools_unavailable',
+  cancelled: 'chat.notice.cancelled',
+};
+
+/** The label of a stored notice message (the runner stores the key, not a sentence): the viewer's
+ *  locale renders it. A key this build does not know reads as a crash, never as the raw key.
+ *  Any other text is not a notice and returns null. */
+export const noticeTextKey = (text: string): LabelKey | null => {
+  if (!text.startsWith(NOTICE_TEXT_PREFIX)) return null;
+  return NOTICE_TEXT_KEYS[text.slice(NOTICE_TEXT_PREFIX.length)] ?? 'chat.notice.crash';
+};
 
 const CHAT_FAILURES: readonly string[] = [
   'empty_message',

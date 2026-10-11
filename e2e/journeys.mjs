@@ -1297,7 +1297,7 @@ for (const [sizeName, theme] of combos) {
 // (e2e/seed-chat.ts) — an older global conversation, and a project conversation whose assistant
 // message carries a page, a table, a draft and a proposal with its pending action. No account, no
 // keychain, no agent run, no model: a message sent from the panel is refused by the runner with its
-// "auth" notice, so the journey proves send → pending bubble → persisted message → note, while the
+// "no_binding" notice, so the journey proves send → pending bubble → persisted message → note, while the
 // streamed text itself (dots until the first delta, the text growing, the stored message replacing
 // it) is covered by the store's own tests over a fake bridge. The journey also proves the panel and
 // the native page view never overlap: the view yields while the panel is open (U-76, U-125). Once per
@@ -1502,7 +1502,12 @@ for (const [sizeName, theme] of combos) {
     await text.press('Enter');
     // The pending bubble gives way to the persisted message; no model answers in this world, so the runner's refusal note follows.
     await feed.getByText('Merhaba', { exact: true }).waitFor({ state: 'visible', timeout: SCAN_WAIT });
-    await page.locator('[data-chat-note="auth"]').waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    // U-244: no account order in this world, so the reply is the localized no_binding notice — never a raw key — and its banner button opens Ayarlar › Roller.
+    const banner = page.locator('[data-chat-note="no_binding"]');
+    await banner.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    assert((await banner.textContent())?.includes('Docket AI için hesap sırası belirlenmemiş.'), 'the banner names the missing order');
+    await banner.getByRole('button', { name: 'Sırayı ayarla', exact: true }).waitFor({ state: 'visible', timeout: WAIT });
+    assert(!((await feed.textContent()) ?? '').includes('chat.notice.'), 'the transcript never shows a raw notice key');
     assert.equal(await page.locator('[data-chat-tray] button').count(), 0, 'the tray empties on send');
     await shot('gonderildi');
 

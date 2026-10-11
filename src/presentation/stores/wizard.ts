@@ -55,7 +55,7 @@ import {
 import { RECOMMENDED, isPayPerUse, recommendedWorkStyle, settingDiffs } from './recommended';
 import { commandResultKey, isQueryFailure, queryFailureKey } from './results';
 import { moveItem } from './drag-order';
-import { bindingCommand, styleSettings } from './roles';
+import { ASSISTANT_ROLE, bindingCommand, styleSettings } from './roles';
 
 export type WizardStep = 'welcome' | 'accounts' | 'capabilities' | 'order' | 'budget';
 
@@ -970,6 +970,14 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
           failWith('order', outcomeOf(command, result));
           return;
         }
+      }
+      // The assistant rides the same order: without its own binding the chat would fall back
+      // to a derived order instead of the one just chosen.
+      const assistant = bindingCommand(ASSISTANT_ROLE, chain, null, null);
+      const assistantResult = await api.command(actor, assistant);
+      if (!assistantResult.ok) {
+        failWith('order', outcomeOf(assistant, assistantResult));
+        return;
       }
       finishPhase = 'budget';
       finishResume = 'budget';

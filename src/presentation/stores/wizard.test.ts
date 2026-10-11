@@ -669,7 +669,8 @@ describe('wizard store (U-35, U-42)', () => {
     await bundle.store.next();
     await bundle.store.next();
     const bindings = bundle.api.commands.filter((command) => command.type === 'binding.save');
-    expect(bindings.length).toBe(3);
+    // Three roles and the assistant ride the one order the wizard saved.
+    expect(bindings.length).toBe(4);
     for (const binding of bindings) {
       expect(binding.type === 'binding.save' && binding.accounts.map((entry) => entry.accountId)).toEqual(['acc-2', 'acc-1']);
     }
@@ -876,6 +877,7 @@ describe('wizard store (U-35, U-42)', () => {
       { type: 'binding.save', role: 'analyst', accounts: [{ accountId: 'acc-1' }, { accountId: 'acc-2' }], tier: 'fast', thinking: { level: 'fast' } },
       { type: 'binding.save', role: 'developer', accounts: [{ accountId: 'acc-1' }, { accountId: 'acc-2' }], tier: 'balanced', thinking: { level: 'balanced' } },
       { type: 'binding.save', role: 'planner', accounts: [{ accountId: 'acc-1' }, { accountId: 'acc-2' }], tier: 'strong', thinking: { level: 'deep' } },
+      { type: 'binding.save', role: 'assistant', accounts: [{ accountId: 'acc-1' }, { accountId: 'acc-2' }] },
       { type: 'account.save', id: 'acc-1', provider: 'claude', label: 'Kişisel', authMode: 'subscription', reserve: { short: 0.2, long: 0.2 } },
       { type: 'account.cap.save', id: 'acc-2', scope: 'account_month', amountUsd: 40, warnPercent: 80 },
       { type: 'account.consent.grant', id: 'acc-2', model: '*' },
