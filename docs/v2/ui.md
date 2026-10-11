@@ -1468,3 +1468,59 @@ step; Esc closes it and focus returns; a reopen shows the same first step.
 
 - **U-191** (added 2026-10-11, #951; amends U-84 and U-136) The sidebar rows stand in this order: Anasayfa, Ara, Öneriler, Çıktılar (Artifacts), Telefon, Ayarlar. Öneriler sits between Ara and the library row.
 
+## Docket AI tam ekran okuma modu (U-192 … U-199)
+
+Operator-approved follow-up of the chat panel (#936), walked 2026-10-11 (#956). The approved
+prototype is `~/source/docket-tasarim/sohbet-tam-ekran/index.html` (the panel's own stays
+`~/source/docket-tasarim/sohbet/index.html`); where the prototype deviates from the foundations the
+foundations win (U-198). Presentation only — no api, domain or application change.
+
+- **U-192** (store; added 2026-10-11, #956) Standing. The full-screen reading mode is session UI
+  state in the chat store (`full`), never a route and never persisted: the same panel, conversation,
+  composer and permission surface, bigger. The header's Genişlet button (Küçült while full) toggles
+  it and closes the scope pop and the menus; ⌘J still opens and closes the panel, and every close —
+  the button, the shortcut, Esc, the palette's takeover — leaves full mode. Switching reads nothing
+  from the api: the conversation, the draft, the tray, the feed's own scroll and a running turn all
+  survive.
+- **U-193** (dock; added 2026-10-11, #956) Geometry. Full mode covers the content area only, right-
+  and bottom-anchored at the window's edges: width = viewport − the sidebar's own 16.5 rem column,
+  height = viewport − the title bar's own 40 px (2.5 rem at the 16 px root). The prototype's 15 rem
+  sidebar is an artifact and must not come back; a source-scan test pins the panel's anchors to the
+  shell's real tokens. Corners stay `rounded-panel` (U-23 — the prototype's square corners are not a
+  token) and the panel carries `data-chat-full` while it stands.
+- **U-194** (feed, composer; added 2026-10-11, #956) Reading column. In full mode the feed centres a
+  48 rem column (24 px row gaps, 32 px side padding, a stable scrollbar gutter); a wide artifact — a
+  table, a proposal card — reaches one 8 px gutter further each side, a diff scrolls from 18 rem
+  (the panel's 11 rem stands below it) and a table from 20 rem; a page card is unchanged. The dock's
+  own rows — the notes, the tray, the input, the footer — align to the same column, and so do the @
+  and + menus and the permission dialog, never narrower than the column's own edge.
+- **U-195** (rail; added 2026-10-11, #956) History rail. The rail stands exactly in full mode on a
+  viewport from 64 rem (1024 px) on: a fixed 15 rem column on `--band` at the panel's left,
+  "Geçmiş" and "Yeni konuşma" in its head, the shipped history component below — one implementation,
+  its query asked when the rail comes to stand — with the open conversation marked `aria-current`.
+  While it shows, the panel's own Geçmiş and Yeni konuşma header buttons are hidden and a history
+  view gives way to the conversation, on entering full mode and on the window crossing the width
+  alike; below the width the panel keeps its own history view.
+- **U-196** (dock; added 2026-10-11, #956) Buttons. The round Docket AI button is hidden in full
+  mode; the header carries a Kapat button only then, and Genişlet is a named toggle (aria-expanded,
+  the label switching with the state). A markup test pins all three.
+- **U-197** (store; added 2026-10-11, #956) Esc ladder. In full mode the ladder reads: the scope
+  pop, the @ / + menu, the permission dialog, leaving full mode, the history view, the panel —
+  leaving full mode is a rung before the view and the close, never a jump past them.
+- **U-198** (measure; added 2026-10-11, #956) Foundations over the prototype. Assistant body text
+  stays 14/20 in full mode (the prototype's 15/24 is not in the scale); the header buttons sit 8 px
+  apart (gap-2, the prototype's 4 px corrected); the empty state keeps the shipped two suggestion
+  chips — no bordered variant; lengths stay rem, radii the tokens, motion under motion-safe with a
+  motion-reduce face, colours on the theme tokens. A source-scan test pins these on the sources.
+- **U-199** (labels; added 2026-10-11, #956) Copy. Genişlet, Küçült and Kapat (and every new string
+  of the mode) live in both bundles — Turkish by default, English the peer — never inline in a
+  component.
+
+J-21 (added 2026-10-11, #956): on the chat world at a 1280×800 window, open Docket AI → Genişlet
+(the panel covers the content area, the sidebar and the title bar stay, the round button hides) →
+the rail lists the seeded history → open a conversation from the rail (the row marks itself) → type
+a draft, Küçült, the draft is still there → the Esc ladder (pop, menu, leaving full, history,
+panel) → ⌘J reopens in panel mode. The layout audit walks the same mode as `chat-full` at every
+size × theme: content-area edges, the 48 rem column centred, no horizontal overflow, the rail from
+64 rem on.
+

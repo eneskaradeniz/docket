@@ -1,4 +1,4 @@
-// e2e/journeys.mjs — `npm run test:journeys`. J-1 … J-19 of docs/v2/ui.md → "Verifying the shell",
+// e2e/journeys.mjs — `npm run test:journeys`. J-1 … J-21 of docs/v2/ui.md → "Verifying the shell",
 // driven through the BUILT app on the design seed (e2e/seed-design.ts). Every step asserts visible
 // text and saves a screenshot to e2e/.out/journeys/, and every outcome lands in the structured
 // report (e2e/report.mjs) as it is printed.
@@ -1668,6 +1668,148 @@ for (const [sizeName, theme] of combos) {
     console.log(`  FAIL ${title}\n       ${String(error).slice(0, 600)}`);
     appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).slice(0, 600) });
     await page.screenshot({ path: join(OUT, 'J-16-FAIL.png') }).catch(() => undefined);
+  }
+  await handle.app.close();
+  await probe.close();
+}
+
+// J-21 walks the full-screen reading mode (U-192 … U-199) on the chat world J-15 uses, on its own
+// launch with the window set to 1280x800 so the history rail stands: Genişlet covers the content
+// area only (the sidebar and the title bar stay visible beside it, the round button hides, Kapat
+// joins the header), the rail lists the seeded history, a conversation opened from the rail marks
+// its row, a typed draft survives Küçült and a second Genişlet, the Esc ladder climbs its rungs
+// (the scope pop, the + menu, leaving full mode, the history view, the panel), and ⌘J reopens in
+// the panel mode. Hermetic like J-15: no account, no keychain, no agent run, no model.
+{
+  const handle = await launchChatApp();
+  const { page, seed, probe, errors } = handle;
+  await setWindow(handle, [1280, 800], 'dark');
+  const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
+  const fab = page.locator('[data-chat-fab]');
+  const panel = page.locator('[data-chat-panel]');
+  const expand = page.locator('[data-chat-expand]');
+  const text = page.locator('[data-chat-text]');
+  const rail = page.locator('[data-chat-rail]');
+  const railRow = (rowTitle) => rail.locator('[data-chat-history-row]').filter({ hasText: rowTitle });
+  const toastWith = (t) => page.locator('[data-toast]').filter({ hasText: t }).first();
+  const panelIs = (open) =>
+    page.waitForFunction(
+      (want) => {
+        const p = document.querySelector('[data-chat-panel]');
+        return p !== null && p.hasAttribute('inert') === !want;
+      },
+      open,
+      { timeout: WAIT },
+    );
+  const fullIs = (full) =>
+    page.waitForFunction(
+      (want) => {
+        const p = document.querySelector('[data-chat-panel]');
+        return p !== null && p.hasAttribute('data-chat-full') === want;
+      },
+      full,
+      { timeout: WAIT },
+    );
+
+  let stepNo = 0;
+  const steps = [];
+  const shot = async (label) => {
+    stepNo += 1;
+    steps.push(label);
+    const slug = label.toLowerCase().replace(/[^a-z0-9ğüşıöç]+/g, '-').replace(/^-|-$/g, '');
+    await page.screenshot({ path: join(OUT, `J-21-${stepNo}-${slug}.png`) });
+  };
+  const title = 'J-21: Docket AI tam ekran: Genişlet içerik alanını kaplar, ray geçmişi listeler, taslak korunur, Esc merdiveni, ⌘J panel modunda açar';
+  total += 1;
+  try {
+    // Open Docket AI, then Genişlet: the panel covers the content area only, the round button hides.
+    await fab.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await fab.click({ timeout: WAIT });
+    await panelIs(true);
+    await expand.click({ timeout: WAIT });
+    await fullIs(true);
+    const edges = await page.evaluate(() => {
+      const p = document.querySelector('[data-chat-panel]').getBoundingClientRect();
+      const nav = document.querySelector('nav[aria-label]').getBoundingClientRect();
+      const bar = document.querySelector('[data-title-bar]').getBoundingClientRect();
+      return { left: p.left, top: p.top, right: p.right, bottom: p.bottom, navRight: nav.right, barBottom: bar.bottom, iw: innerWidth, ih: innerHeight };
+    });
+    assert(Math.abs(edges.right - edges.iw) <= 1 && Math.abs(edges.bottom - edges.ih) <= 1, 'the full panel must reach the window\'s right and bottom edges');
+    assert(Math.abs(edges.left - edges.navRight) <= 1, `the full panel must start at the sidebar's edge (${edges.left.toFixed(1)} vs ${edges.navRight.toFixed(1)})`);
+    assert(Math.abs(edges.top - edges.barBottom) <= 1, `the full panel must start under the title bar (${edges.top.toFixed(1)} vs ${edges.barBottom.toFixed(1)})`);
+    assert.equal(await fab.isVisible(), false, 'the round button hides in the full mode');
+    await panel.locator('[data-chat-close]').waitFor({ state: 'visible', timeout: WAIT });
+    await shot('tam-ekran');
+
+    // The rail lists the seeded history; the panel's own history buttons are hidden while it shows.
+    await rail.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await railRow(seed.firstTitle).waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await railRow(seed.olderTitle).waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await page.waitForFunction(() => document.querySelector('[data-chat-history-toggle]')?.hidden === true, undefined, { timeout: WAIT });
+
+    // A conversation opened from the rail marks its own row.
+    await railRow(seed.firstTitle).click({ timeout: WAIT });
+    await toastWith('Konuşma açıldı').waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await rail.locator('[data-chat-history-row][aria-current="true"]').filter({ hasText: seed.firstTitle }).waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await shot('ray-konusma-acik');
+
+    // Another conversation from the rail: the mark moves with it.
+    await railRow(seed.olderTitle).click({ timeout: WAIT });
+    await rail.locator('[data-chat-history-row][aria-current="true"]').filter({ hasText: seed.olderTitle }).waitFor({ state: 'visible', timeout: SCAN_WAIT });
+
+    // A draft survives Küçült and a second Genişlet — the same conversation, the same composer.
+    await text.fill('yarım kalan taslak', { timeout: WAIT });
+    await expand.click({ timeout: WAIT });
+    await fullIs(false);
+    await panelIs(true);
+    assert.equal(await text.inputValue(), 'yarım kalan taslak', 'Küçült must keep the draft');
+    await expand.click({ timeout: WAIT });
+    await fullIs(true);
+    assert.equal(await text.inputValue(), 'yarım kalan taslak', 'a second Genişlet must keep the draft too');
+    await shot('taslak-korunur');
+
+    // The Esc ladder in full mode: the scope pop, then the + menu, then leaving full mode.
+    await page.locator('[data-chat-chip]').click({ timeout: WAIT });
+    await page.locator('[data-chat-pop]').waitFor({ state: 'visible', timeout: WAIT });
+    await page.keyboard.press('Escape');
+    await page.locator('[data-chat-pop]').waitFor({ state: 'detached', timeout: WAIT });
+    await fullIs(true);
+    await page.getByRole('button', { name: 'Ekle', exact: true }).click({ timeout: WAIT });
+    await page.locator('[data-chat-menu="plus"]').waitFor({ state: 'visible', timeout: WAIT });
+    await page.keyboard.press('Escape');
+    await page.locator('[data-chat-menu="plus"]').waitFor({ state: 'detached', timeout: WAIT });
+    await fullIs(true);
+    await page.keyboard.press('Escape');
+    await fullIs(false);
+    await panelIs(true);
+
+    // Below full mode the ladder keeps its own rungs: the history view, then the panel.
+    await page.locator('[data-chat-history-toggle]').click({ timeout: WAIT });
+    await page.locator('[data-chat-history-search]').waitFor({ state: 'visible', timeout: WAIT });
+    await page.keyboard.press('Escape');
+    await page.locator('[data-chat-history-search]').waitFor({ state: 'detached', timeout: WAIT });
+    await panelIs(true);
+    await page.keyboard.press('Escape');
+    await panelIs(false);
+    await shot('esc-merdiveni');
+
+    // ⌘J reopens in the panel mode, never in the full mode.
+    await page.keyboard.press(`${mod}+J`);
+    await panelIs(true);
+    await fullIs(false);
+    assert.equal(await fab.isVisible(), true, 'the round button stands again in the panel mode');
+    await shot('cmd-j-panel');
+
+    assert.deepEqual(errors, [], `the page reported errors: ${errors.join(' | ').slice(0, 600)}`);
+    assert.deepEqual(probe.hits, [], `the probe saw requests: ${probe.hits.join(' | ').slice(0, 600)}`);
+
+    console.log(`  ok   ${title}`);
+    appendJourney({ id: title, status: 'ok', steps });
+  } catch (error) {
+    failures.push(title);
+    console.log(`  FAIL ${title}\n       ${String(error).slice(0, 600)}`);
+    appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).slice(0, 600) });
+    await page.screenshot({ path: join(OUT, 'J-21-FAIL.png') }).catch(() => undefined);
   }
   await handle.app.close();
   await probe.close();

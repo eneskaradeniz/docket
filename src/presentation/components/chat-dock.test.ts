@@ -531,6 +531,95 @@ describe('scope pop, menus and the permission surface (U-102, U-109, U-113)', ()
   });
 });
 
+describe('full-screen reading mode (U-192, U-194 … U-196, U-198)', () => {
+  const withHistory = (b: Bridge): void => {
+    b.onQuery('chat.conversations', () => [
+      summary('a', { title: 'Bu iş emri neden beklemede?', pinned: true, updatedAt: NOW - 1000 }),
+      summary('b', { title: 'Bütçe sınırı ne kadar?', updatedAt: NOW - 2000 }),
+    ]);
+  };
+  const fullSetup = (wide: boolean) => async (store: ChatStore, b: Bridge): Promise<void> => {
+    withHistory(b);
+    store.open();
+    store.setWide(wide);
+    store.toggleFull();
+  };
+
+  it('U-192, U-196: the header carries a named Genişlet toggle that becomes Küçült; both locales', async () => {
+    const panel = await draw((store) => store.open());
+    expect(panel).toContain('data-chat-expand');
+    expect(panel).toContain('aria-label="Genişlet"');
+    expect(panel).toContain('aria-expanded="false"');
+    expect(panel).not.toContain('aria-label="Küçült"');
+    const full = await draw(fullSetup(true));
+    expect(full).toContain('aria-label="Küçült"');
+    expect(full).toContain('aria-expanded="true"');
+    const enPanel = await draw((store) => store.open(), 'en');
+    expect(enPanel).toContain('aria-label="Expand"');
+    const enFull = await draw(fullSetup(true), 'en');
+    expect(enFull).toContain('aria-label="Collapse"');
+  });
+
+  it('U-195: the rail stands only in full mode and from the 64 rem width, hides the panel\'s own history buttons and reuses the shipped list', async () => {
+    const panel = await draw(async (store, b) => {
+      withHistory(b);
+      store.open();
+      store.openHistory();
+    });
+    expect(panel).not.toContain('data-chat-rail');
+    expect(panel).not.toMatch(/data-chat-history-toggle[^>]*hidden/);
+    const narrow = await draw(fullSetup(false));
+    expect(narrow).toContain('data-chat-full');
+    expect(narrow).not.toContain('data-chat-rail');
+    expect(narrow).not.toMatch(/data-chat-history-toggle[^>]*hidden/);
+    const wide = await draw(fullSetup(true));
+    expect(wide).toContain('data-chat-rail');
+    expect(wide).toContain('aria-label="Geçmişte ara"');
+    expect(wide).toContain('Sabitlenenler');
+    expect(wide).toContain('Bu iş emri neden beklemede?');
+    expect(wide).toMatch(/data-chat-rail-new/);
+    expect(wide).toMatch(/data-chat-history-toggle[^>]*hidden/);
+    expect(wide).toMatch(/data-chat-new=""/);
+    expect(wide).toMatch(/<button[^>]*data-chat-new=""[^>]*hidden/);
+  });
+
+  it('U-195: the rail highlights the open conversation', async () => {
+    const html = await draw(async (store, b) => {
+      withHistory(b);
+      b.onQuery('chat.conversation', () => conversation('b', { messages: [message('m1')] }));
+      store.open();
+      await store.openConversation('b');
+      store.setWide(true);
+      store.toggleFull();
+    });
+    expect(html).toMatch(/data-chat-history-row="b"[^>]*aria-current="true"/);
+    expect(html).toMatch(/data-chat-history-row="a"(?![^>]*aria-current)/);
+  });
+
+  it('U-196: the round button hides in full mode and the header carries Kapat only then', async () => {
+    const full = await draw(fullSetup(true));
+    expect(full).toMatch(/data-chat-fab[^>]*invisible/);
+    expect(full).toContain('data-chat-close');
+    expect(full).toContain('aria-label="Kapat"');
+    const panel = await draw((store) => store.open());
+    expect(panel).not.toMatch(/data-chat-fab[^>]*invisible/);
+    expect(panel).not.toContain('data-chat-close');
+    const en = await draw(fullSetup(true), 'en');
+    expect(en).toContain('aria-label="Close"');
+  });
+
+  it('U-194, U-198: the feed centres the 48 rem reading column, the empty state keeps its two chips and the assistant text its 14/20', async () => {
+    const full = await draw(fullSetup(true));
+    expect(full).toMatch(/data-chat-feed[^>]*48rem/);
+    expect(full).toContain('Ne öğrenmek istersin?');
+    expect(full).toContain('Neden beklemede?');
+    expect(full).toContain('Son çalışmada ne değişti?');
+    expect(full).not.toContain('text-[0.9375rem]');
+    const panel = await draw((store) => store.open());
+    expect(panel).not.toMatch(/data-chat-feed[^>]*48rem/);
+  });
+});
+
 describe('closed and hidden panels (U-125)', () => {
   it('U-125: a closed panel is inert and hidden from assistive tech; an open one is not', async () => {
     const closed = await draw();

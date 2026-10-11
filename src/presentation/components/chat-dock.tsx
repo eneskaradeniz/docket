@@ -1,22 +1,26 @@
 // components/chat-dock.tsx — Docket AI's round button and the panel that grows out of it (U-101,
-// U-102, U-117, U-120, U-125): one dock at the app root, over every screen. The button is a named
-// toggle with an alert dot; the panel is a non-modal dialog whose header carries the scope chip
-// (a listbox of the scopes the screen offers, the attached items and the follow row), the history
-// toggle and Yeni konuşma; its body is the conversation or the history; its foot is the composer.
-// Esc climbs the ladder (scope pop, menu, permission dialog, history, panel) and a close by Esc
-// returns focus to the button. A closed panel is inert and hidden from assistive technology; the
-// whole dock is hidden while a blocking modal owns the screen. All lengths are rem, the panel's
-// opening is a transform and opacity change under motion-safe, and every string is a label.
+// U-102, U-117, U-120, U-125), and the panel's full-screen reading mode (U-192 … U-198): one dock
+// at the app root, over every screen. The button is a named toggle with an alert dot; the panel is
+// a non-modal dialog whose header carries the scope chip (a listbox of the scopes the screen
+// offers, the attached items and the follow row), the history toggle and Yeni konuşma; its body is
+// the conversation or the history; its foot is the composer. Genişlet turns the same panel into a
+// surface that covers the content area only — the sidebar and the title bar stay — with the
+// history rail at its left from 64 rem on; the round button hides while it stands, and a Kapat
+// joins the header for the same while. Esc climbs the ladder (scope pop, menu, permission dialog,
+// leaving full mode, history, panel) and a close by Esc returns focus to the button. A closed
+// panel is inert and hidden from assistive technology; the whole dock is hidden while a blocking
+// modal owns the screen. All lengths are rem, the panel's opening is a transform and opacity
+// change under motion-safe, and every string is a label.
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 
 import { t, type Locale } from '../labels/t';
-import { placeScope, sameScope, type ChatPlace, type ChatScopeInput, type ChatState } from '../stores/chat-model';
+import { CHAT_RAIL_QUERY, chatRailVisible, placeScope, sameScope, type ChatPlace, type ChatScopeInput, type ChatState } from '../stores/chat-model';
 import type { ChatStore } from '../stores/chat-store';
 import { ChatComposer } from './chat-composer';
 import { ChatFeed } from './chat-feed';
 import { ChatHistory } from './chat-history';
 import { ChatIcon, scopeIcon } from './chat-icons';
-import { FLOATING, FOCUS, ICON_BUTTON, MENU_DESC, MENU_OPTION, MENU_TITLE } from './chat-style';
+import { BUTTON, FLOATING, FOCUS, ICON_BUTTON, MENU_DESC, MENU_OPTION, MENU_TITLE } from './chat-style';
 
 export interface ChatDockProps {
   readonly store: ChatStore;
@@ -111,6 +115,18 @@ export function ChatDock({ store, locale, hidden, onOpenPage, onOpenAccounts, on
   const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   const fabRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLElement>(null);
+  const full = state.full;
+  const rail = chatRailVisible(state);
+
+  // The window's width decides whether the full mode has room for the history rail; the flag lives
+  // in the store so its own rule — the rail replacing the panel's history view — follows the window.
+  useEffect(() => {
+    const query = window.matchMedia(CHAT_RAIL_QUERY);
+    const sync = (): void => store.setWide(query.matches);
+    sync();
+    query.addEventListener('change', sync);
+    return () => query.removeEventListener('change', sync);
+  }, [store]);
 
   // Esc climbs the ladder; when the climb ends by closing the panel, focus goes back to the button.
   useEffect(() => {
@@ -149,7 +165,9 @@ export function ChatDock({ store, locale, hidden, onOpenPage, onOpenAccounts, on
         data-chat-fab=""
         aria-label={t(locale, open ? 'chat.fab.close' : 'chat.fab.open')}
         aria-expanded={open}
-        className={`fixed bottom-6 right-6 z-[21] grid h-14 w-14 place-items-center rounded-full border border-bord bg-raised text-ink shadow-[0_1rem_3rem_rgba(0,0,0,0.35)] motion-safe:transition-transform motion-safe:duration-200 motion-safe:hover:scale-105 ${FOCUS}`}
+        className={`fixed bottom-6 right-6 z-[21] grid h-14 w-14 place-items-center rounded-full border border-bord bg-raised text-ink shadow-[0_1rem_3rem_rgba(0,0,0,0.35)] motion-safe:transition-transform motion-safe:duration-200 motion-safe:hover:scale-105 ${FOCUS} ${
+          full ? 'invisible opacity-0' : ''
+        }`}
         onClick={() => store.toggle()}
       >
         <ChatIcon name="spark" className={`col-start-1 row-start-1 h-6 w-6 motion-safe:transition-opacity ${open ? 'opacity-0' : 'opacity-100'}`} />
@@ -159,16 +177,36 @@ export function ChatDock({ store, locale, hidden, onOpenPage, onOpenAccounts, on
       <section
         ref={panelRef}
         data-chat-panel=""
+        data-chat-full={full ? '' : undefined}
         role="dialog"
         aria-label={t(locale, 'chat.panel')}
         aria-modal="false"
         aria-hidden={open ? undefined : true}
         inert={!open}
-        className={`fixed bottom-[5.75rem] right-6 z-20 grid h-[min(38rem,calc(100vh-9rem))] w-[min(26rem,calc(100vw-2rem))] origin-[calc(100%-1.75rem)_100%] grid-rows-[auto_1fr_auto] overflow-hidden border border-bord bg-surface shadow-[0_1rem_3rem_rgba(0,0,0,0.35)] motion-safe:transition-all motion-safe:duration-[280ms] motion-safe:ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:transition-opacity motion-reduce:duration-[10ms] ${
-          open ? 'translate-y-0 scale-100 rounded-panel opacity-100' : 'pointer-events-none translate-y-8 scale-[0.1] rounded-full opacity-0 motion-reduce:translate-y-0 motion-reduce:scale-100'
+        className={`fixed z-20 grid grid-rows-[auto_1fr_auto] overflow-hidden border border-bord bg-surface motion-safe:transition-all motion-safe:duration-[280ms] motion-safe:ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:transition-opacity motion-reduce:duration-[10ms] ${
+          full
+            ? // The reading surface covers the content area only: the sidebar's own column to the
+              // left, the title bar's own height above, and the window's right and bottom edges.
+              `bottom-0 left-[16.5rem] right-0 top-[2.5rem] rounded-panel opacity-100 ${rail ? 'grid-cols-[15rem_minmax(0,1fr)]' : ''}`
+            : `bottom-[5.75rem] right-6 h-[min(38rem,calc(100vh-9rem))] w-[min(26rem,calc(100vw-2rem))] origin-[calc(100%-1.75rem)_100%] shadow-[0_1rem_3rem_rgba(0,0,0,0.35)] ${
+                open ? 'translate-y-0 scale-100 rounded-panel opacity-100' : 'pointer-events-none translate-y-8 scale-[0.1] rounded-full opacity-0 motion-reduce:translate-y-0 motion-reduce:scale-100'
+              }`
         }`}
       >
-        <div className="flex items-center gap-1 pb-2 pl-4 pr-3 pt-3">
+        {rail ? (
+          // The history rail: the shipped history component under its own head, the only history
+          // while it stands — the panel's own history buttons are hidden for the same while.
+          <aside data-chat-rail="" aria-label={t(locale, 'chat.history')} className="col-start-1 row-span-3 grid min-h-0 grid-rows-[auto_minmax(0,1fr)] border-r border-hairline bg-band">
+            <div className="flex items-center justify-between gap-2 px-4 pb-2 pt-3">
+              <h2 className="m-0 text-[0.8125rem] font-semibold leading-5 text-ink">{t(locale, 'chat.history')}</h2>
+              <button type="button" data-chat-rail-new="" className={BUTTON} onClick={() => void store.newConversation()}>
+                {t(locale, 'chat.new')}
+              </button>
+            </div>
+            <ChatHistory state={state} store={store} locale={locale} current={state.conversation} />
+          </aside>
+        ) : null}
+        <div className={`flex items-center gap-2 pb-2 pl-4 pr-3 pt-3 ${rail ? 'col-start-2' : ''}`}>
           <ScopeChip state={state} store={store} locale={locale} />
           <span className="flex-1" />
           <button
@@ -178,13 +216,30 @@ export function ChatDock({ store, locale, hidden, onOpenPage, onOpenAccounts, on
             aria-pressed={state.view === 'history'}
             aria-label={t(locale, 'chat.history')}
             title={t(locale, 'chat.history')}
+            hidden={rail}
             onClick={() => store.toggleHistory()}
           >
             <ChatIcon name="history" className="h-4 w-4" />
           </button>
-          <button type="button" data-chat-new="" className={ICON_BUTTON} aria-label={t(locale, 'chat.new')} title={t(locale, 'chat.new')} onClick={() => void store.newConversation()}>
+          <button type="button" data-chat-new="" className={ICON_BUTTON} aria-label={t(locale, 'chat.new')} title={t(locale, 'chat.new')} hidden={rail} onClick={() => void store.newConversation()}>
             <ChatIcon name="plus" className="h-4 w-4" />
           </button>
+          <button
+            type="button"
+            data-chat-expand=""
+            className={ICON_BUTTON}
+            aria-expanded={full}
+            aria-label={t(locale, full ? 'chat.full.collapse' : 'chat.full.expand')}
+            title={t(locale, full ? 'chat.full.collapse' : 'chat.full.expand')}
+            onClick={() => store.toggleFull()}
+          >
+            <ChatIcon name={full ? 'collapse' : 'expand'} className="h-4 w-4" />
+          </button>
+          {full ? (
+            <button type="button" data-chat-close="" className={ICON_BUTTON} aria-label={t(locale, 'chat.close')} title={t(locale, 'chat.close')} onClick={() => store.close()}>
+              <ChatIcon name="close" className="h-4 w-4" />
+            </button>
+          ) : null}
         </div>
         {state.view === 'history' ? (
           <ChatHistory state={state} store={store} locale={locale} />

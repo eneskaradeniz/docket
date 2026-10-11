@@ -57,6 +57,10 @@ const chipLabel = (chip: RefChip, locale: Locale): string => {
 
 const REMOVE = `border-0 bg-transparent pl-1 font-mono text-[0.75rem] leading-none text-inkdim hover:text-ink ${FOCUS}`;
 
+/** The full mode aligns the floating menus to the reading column's edges — never narrower than
+ *  the column's own 2 rem gutter (U-194). */
+const FULL_FLOATING_INSET = 'left-[max(2rem,calc(50%_-_24rem))] right-[max(2rem,calc(50%_-_24rem))]';
+
 function Tray({ state, store, locale }: { readonly state: ChatState; readonly store: ChatStore; readonly locale: Locale }) {
   if (state.refs.length === 0 && state.tray.length === 0) return null;
   return (
@@ -134,7 +138,7 @@ function Notes({ state, store, locale, onOpenAccounts, onOpenConsent }: Pick<Com
 function AtMenu({ state, store, locale }: Pick<ComposerProps, 'state' | 'store' | 'locale'>) {
   const { items, index, q, loading } = state.at;
   return (
-    <div data-chat-menu="at" role="listbox" aria-label={t(locale, 'chat.at.section')} className={`${FLOATING} absolute inset-x-3 bottom-full max-h-60 overflow-auto`}>
+    <div data-chat-menu="at" role="listbox" aria-label={t(locale, 'chat.at.section')} className={`${FLOATING} absolute bottom-full max-h-60 overflow-auto ${state.full ? FULL_FLOATING_INSET : 'inset-x-3'}`}>
       {items.length === 0 ? (
         <div className="px-3 py-3 text-[0.78125rem] leading-4 text-inkdim">
           {t(locale, loading ? 'chat.at.loading' : q === '' ? 'chat.at.hint' : 'chat.at.none')}
@@ -169,9 +173,9 @@ function AtMenu({ state, store, locale }: Pick<ComposerProps, 'state' | 'store' 
   );
 }
 
-function PlusMenu({ store, locale, pick }: { readonly store: ChatStore; readonly locale: Locale; readonly pick: () => void }) {
+function PlusMenu({ store, locale, pick, full }: { readonly store: ChatStore; readonly locale: Locale; readonly pick: () => void; readonly full: boolean }) {
   return (
-    <div data-chat-menu="plus" role="menu" className={`${FLOATING} absolute inset-x-3 bottom-full`}>
+    <div data-chat-menu="plus" role="menu" className={`${FLOATING} absolute bottom-full ${full ? FULL_FLOATING_INSET : 'inset-x-3'}`}>
       <button type="button" role="menuitem" className={MENU_OPTION} onClick={pick}>
         <ChatIcon name="file" className="h-3.5 w-3.5 text-inkdim" />
         <span>
@@ -204,7 +208,7 @@ function PermDialog({ state, store, locale }: Pick<ComposerProps, 'state' | 'sto
   const grant = chatActiveGrant(state);
   const minutes = chatTierMinutes(state);
   return (
-    <div data-chat-perm="" role="dialog" aria-label={t(locale, 'chat.perm.aria')} className={`${FLOATING} absolute inset-x-3 bottom-full grid gap-3 p-3`}>
+    <div data-chat-perm="" role="dialog" aria-label={t(locale, 'chat.perm.aria')} className={`${FLOATING} absolute bottom-full grid gap-3 p-3 ${state.full ? FULL_FLOATING_INSET : 'inset-x-3'}`}>
       {grant !== null && minutes !== null ? (
         <>
           <h3 className="m-0 text-[0.875rem] font-semibold leading-5 text-ink">{fill(t(locale, 'chat.perm.on.title'), { n: minutes })}</h3>
@@ -303,9 +307,14 @@ export function ChatComposer({ state, store, locale, onOpenAccounts, onOpenConse
   };
 
   return (
-    <div data-chat-dock="" className="relative grid gap-2 px-3 pb-3 pt-2">
+    // In the full mode the dock's own rows — the notes, the tray, the input, the footer — align to
+    // the feed's reading column (U-194).
+    <div
+      data-chat-dock=""
+      className={`relative grid gap-2 ${state.full ? 'grid-cols-[minmax(0,48rem)] justify-center px-8 pb-4 pt-2' : 'px-3 pb-3 pt-2'}`}
+    >
       {state.menu === 'at' ? <AtMenu state={state} store={store} locale={locale} /> : null}
-      {state.menu === 'plus' ? <PlusMenu store={store} locale={locale} pick={() => fileRef.current?.click()} /> : null}
+      {state.menu === 'plus' ? <PlusMenu store={store} locale={locale} pick={() => fileRef.current?.click()} full={state.full} /> : null}
       <Notes state={state} store={store} locale={locale} onOpenAccounts={onOpenAccounts} onOpenConsent={onOpenConsent} />
       <Tray state={state} store={store} locale={locale} />
       <div

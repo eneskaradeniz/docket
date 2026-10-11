@@ -1,4 +1,5 @@
-// components/chat-history.tsx — the panel's history view (U-107, U-108): a search field over the
+// components/chat-history.tsx — the panel's history view (U-107, U-108), which the full mode's
+// history rail reuses as it stands (U-195): a search field over the
 // grouped conversation list (pinned first, then Bugün, Dün, Bu hafta, older), each row opening its
 // conversation on click, Enter or Space, with pin and delete buttons that show on hover or focus.
 // The search text goes to the store, which asks the server's Turkish-aware search after a short
@@ -30,7 +31,7 @@ const timeOf = (updatedAt: number, now: number, locale: Locale): string => {
   return new Intl.DateTimeFormat(locale, options).format(updatedAt);
 };
 
-function Row({ entry, state, store, locale }: { readonly entry: ChatConversationSummaryView; readonly state: ChatState; readonly store: ChatStore; readonly locale: Locale }) {
+function Row({ entry, state, store, locale, current }: { readonly entry: ChatConversationSummaryView; readonly state: ChatState; readonly store: ChatStore; readonly locale: Locale; readonly current: boolean }) {
   const scope = entry.scope.kind === 'global' ? t(locale, 'chat.scope.global') : entry.scope.kind === 'project' ? entry.scope.project : t(locale, 'chat.scope.fallback.workOrder');
   const open = (): void => void store.openConversation(entry.id);
   const onKey = (event: KeyboardEvent<HTMLDivElement>): void => {
@@ -46,7 +47,8 @@ function Row({ entry, state, store, locale }: { readonly entry: ChatConversation
       role="button"
       tabIndex={0}
       data-chat-history-row={entry.id}
-      className={`group grid w-full grid-cols-[1fr_auto] items-center gap-2 rounded-control p-2 text-left hover:bg-raised focus-within:bg-raised ${FOCUS}`}
+      aria-current={current ? 'true' : undefined}
+      className={`group grid w-full grid-cols-[1fr_auto] items-center gap-2 rounded-control p-2 text-left hover:bg-raised focus-within:bg-raised ${current ? 'bg-raised' : ''} ${FOCUS}`}
       onClick={open}
       onKeyDown={onKey}
     >
@@ -90,7 +92,19 @@ function Row({ entry, state, store, locale }: { readonly entry: ChatConversation
   );
 }
 
-export function ChatHistory({ state, store, locale }: { readonly state: ChatState; readonly store: ChatStore; readonly locale: Locale }) {
+export function ChatHistory({
+  state,
+  store,
+  locale,
+  current = null,
+}: {
+  readonly state: ChatState;
+  readonly store: ChatStore;
+  readonly locale: Locale;
+  /** The conversation standing open now, so the rail can mark its row (U-195); the panel's own
+   *  history view passes nothing and keeps its shipped face. */
+  readonly current?: string | null;
+}) {
   const groups = groupConversations(state.history.items, state.now);
   const { search, loaded, failed } = state.history;
   return (
@@ -118,7 +132,7 @@ export function ChatHistory({ state, store, locale }: { readonly state: ChatStat
             <div key={group.group}>
               <div className="px-2 pb-1 pt-3 text-[0.75rem] leading-4 text-inkdim">{t(locale, GROUP_LABEL[group.group])}</div>
               {group.items.map((entry) => (
-                <Row key={entry.id} entry={entry} state={state} store={store} locale={locale} />
+                <Row key={entry.id} entry={entry} state={state} store={store} locale={locale} current={entry.id === current} />
               ))}
             </div>
           ))
