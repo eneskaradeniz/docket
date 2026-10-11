@@ -1,19 +1,19 @@
 // components/sidebar-accounts.tsx — the sidebar's Hesaplar section (U-16, cards per U-51, its
 // visible count per U-51b): the one collapsible part of the sidebar, collapsed when the session
 // starts, its header a chevron, the section name and the account count, with the usage refresh
-// beside it. Open, one dim line says what the bars read, and every account is one equal 56 px
-// card — mark, the account's name only, a status dot, then one bar for the tightest limit with
+// beside it (the shared icon-only RescanButton). Open, every account is one equal 56 px card — mark, the account's name only, a status dot, then one bar for the tightest limit with
 // its percent on the right (or the dim no-data line); the bar and the dot colour by what remains
 // (U-51's thresholds). Click or Enter opens the limits popover; Esc or an outside click closes
 // it and the focus never leaves the card. The body is one fixed height — two cards with the top
 // of a third peeking beneath — and the rest scroll inside it, never the sidebar. The refresh
-// intent re-polls usage through the store while the icon spins.
+// intent re-polls usage through the store while the icon turns; with no account the body is one
+// compact card with a "Hesap ekle" button.
 import { useEffect, useId, useRef, useState, useLayoutEffect, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
 
 import { ACTIVE_CLASS } from './active-state';
 import { MARK_SIZE, ProviderMark } from './provider-mark';
 import { ACCOUNTS_BODY_MAX_HEIGHT } from './sidebar-geometry';
-import { SIDEBAR_HEADER_BUTTON } from './sidebar-header-button';
+import { RescanButton } from './rescan-button';
 import { Skeleton, SkeletonReveal, SkeletonStyle, useSkeleton } from './skeleton';
 import { t, type Locale } from '../labels/t';
 import {
@@ -21,7 +21,6 @@ import {
   type AccountCard,
   type AccountLimit,
   type AccountsFrameStore,
-  unaddedRow,
 } from '../stores/accounts-frame';
 import { meterResetText } from '../stores/meter-list';
 import type { ProviderMark as ProviderMarkValue, ProviderMarksStore } from '../stores/provider-marks';
@@ -50,24 +49,6 @@ const Chevron = ({ open }: { readonly open: boolean }) => (
     className={`h-3.5 w-3.5 flex-none transition-transform duration-150 ${open ? '' : '-rotate-90'}`}
   >
     <path d="M6 9l6 6 6-6" />
-  </svg>
-);
-
-const RefreshIcon = () => (
-  <svg
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-    className="block h-3 w-3"
-  >
-    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
-    <path d="M21 3v5h-5" />
-    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
-    <path d="M8 16H3v5" />
   </svg>
 );
 
@@ -328,8 +309,7 @@ export function SidebarAccounts({
   activeAccountId,
   providerName,
   now,
-  unaddedCount,
-  onOpenUnadded,
+  onAddAccount,
   onOpenAccount,
 }: {
   readonly store: AccountsFrameStore;
@@ -340,27 +320,16 @@ export function SidebarAccounts({
   readonly providerName: (id: string) => string | null;
   /** The clock the popover's reset spans read against. */
   readonly now: number;
-  /** The candidates store's count of accounts discovery holds that are not yet added (U-37). */
-  readonly unaddedCount: number;
-  /** The trailing row: Settings → Hesaplar. */
-  readonly onOpenUnadded: () => void;
+  /** The empty card's "Hesap ekle": Settings → Hesaplar. */
+  readonly onAddAccount: () => void;
   /** Opens an account's view — the popover's "Hesabı aç" button (U-51a). */
   readonly onOpenAccount: (id: string) => void;
 }) {
   const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   // The marks land once, after the first paint; the subscription turns them into a re-render.
   useSyncExternalStore(marks.subscribe, marks.state, marks.state);
-  // The refresh icon spins for a fixed beat, like the prototype's — a fast reply would end the
-  // spin before the eye catches it.
-  const [spinning, setSpinning] = useState(false);
-  useEffect(() => {
-    if (!spinning) return;
-    const timer = window.setTimeout(() => setSpinning(false), 820);
-    return () => window.clearTimeout(timer);
-  }, [spinning]);
   // Only a section with no cards yet can carry a skeleton (U-26); a refresh keeps the cards up.
   const { skeleton, reveal } = useSkeleton(state.loading && state.cards === null, () => Date.now());
-  const unadded = unaddedRow(locale, unaddedCount);
   const cards = state.cards ?? [];
   const listId = useId();
 
@@ -432,19 +401,7 @@ export function SidebarAccounts({
           <span className="truncate text-[14px] font-bold">{t(locale, 'accounts.title')}</span>
           <span className="flex-none text-[12px] font-medium">{cards.length}</span>
         </button>
-        <button
-          type="button"
-          onClick={() => {
-            if (spinning) return;
-            setSpinning(true);
-            void store.refresh();
-          }}
-          aria-label={t(locale, 'accounts.refresh')}
-          title={t(locale, 'accounts.refresh')}
-          className={`${SIDEBAR_HEADER_BUTTON} ${spinning || state.refreshing ? 'animate-spin' : ''}`}
-        >
-          <RefreshIcon />
-        </button>
+        <RescanButton locale={locale} variant="icon" busy={state.refreshing} onRescan={() => void store.refresh()} />
       </div>
       <div
         data-accounts-body=""
@@ -455,7 +412,6 @@ export function SidebarAccounts({
         className={`grid transition-all duration-200 ${state.open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
       >
         <div className="flex min-h-0 flex-col overflow-hidden">
-          <p className="flex-none px-3 pb-1 text-[12px] text-inkdim">{t(locale, 'accounts.barHint')}</p>
           {/* The body's one fixed height (U-51b): two cards with the top of a third peeking
               beneath them, whatever the window's height — the peek is what says it scrolls. */}
           <div
@@ -467,7 +423,17 @@ export function SidebarAccounts({
             {skeleton ? (
               <AccountsSkeletonBody />
             ) : cards.length === 0 ? (
-              <p className="px-1 pb-1 text-xs text-inkdim">{t(locale, 'accounts.empty')}</p>
+              <div data-accounts-empty="" className="flex items-center gap-2 rounded-card border border-hairline bg-surface px-3 py-2">
+                <span className="min-w-0 flex-1 truncate text-[0.8125rem] leading-5 text-inkdim">{t(locale, 'accounts.none')}</span>
+                <button
+                  type="button"
+                  data-accounts-add=""
+                  onClick={onAddAccount}
+                  className="flex-none rounded-control border border-hairline px-2 py-1 text-[0.75rem] font-semibold leading-4 text-inkdim hover:bg-raised hover:text-ink focus-visible:bg-raised focus-visible:text-ink"
+                >
+                  {t(locale, 'accounts.add')}
+                </button>
+              </div>
             ) : (
               <SkeletonReveal active={reveal}>
                 {cards.map((card) => (
@@ -485,17 +451,6 @@ export function SidebarAccounts({
               </SkeletonReveal>
             )}
           </div>
-          {unadded === null ? null : (
-            <button
-              type="button"
-              data-unadded-row=""
-              onClick={onOpenUnadded}
-              className="mt-1 flex w-full flex-none items-center gap-1.5 rounded-control px-2 py-1 text-left text-[12px] text-inkdim hover:bg-raised hover:text-ink focus-visible:bg-raised focus-visible:text-ink"
-            >
-              <span className="min-w-0 flex-1 truncate">{unadded.text}</span>
-              <span className="flex-none text-signal">· {unadded.action}</span>
-            </button>
-          )}
         </div>
       </div>
       {/* The popover rides at the page level so the section's own scroll never clips it. */}

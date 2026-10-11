@@ -10,6 +10,7 @@ import type { Api } from '../../api/api';
 import type { LabelKey } from '../labels/keys';
 import { isProviderFact, providerStatus, type LampTone, type ProviderFact, type ProviderStatus } from './candidates';
 import { isQueryFailure } from './results';
+import { scanStatusOf, type ScanStatus } from './scan-status';
 
 export type ProviderStatusKey = Extract<LabelKey, `providers.status.${string}`>;
 
@@ -94,17 +95,28 @@ export interface ProvidersState {
   readonly scanning: boolean;
   /** True when the latest finished scan failed; the prior rows stay listed. */
   readonly failed: boolean;
+  /** True once a scan has answered: from then on a rescan never blanks the rows. */
+  readonly loaded: boolean;
+  readonly status: ScanStatus;
+  /** When the last successful scan finished; null before one has. */
+  readonly scannedAt: number | null;
 }
 
 export interface ProvidersStoreDeps {
   readonly api: Pick<Api, 'query'>;
+  /** The clock the scan time reads; the app passes the wall clock. */
+  readonly now?: () => number;
 }
 
 export interface ProvidersStore {
   /** Reads the providers (a discovery pass). */
   load(): Promise<void>;
+  /** Scans only when nothing has been read yet; a result or a scan in flight is left alone. */
+  ensure(): Promise<void>;
   /** "Yeniden tara". */
   rescan(): Promise<void>;
+  /** Takes a whole discovery answer another scan already read, as if this store had scanned. */
+  seed(facts: readonly ProviderFact[]): void;
   /** Marks every listed row as awaiting its provider's answer. */
   beginScan(): void;
   /** Takes the answers of some providers: each updates (or adds) its own row and settles it. */
@@ -121,12 +133,16 @@ export const createProvidersStore = (deps: ProvidersStoreDeps): ProvidersStore =
   let groupOpen = false;
   let scanning = false;
   let failed = false;
+  let loaded = false;
+  let scannedAt: number | null = null;
   let attempts = 0;
-  let state: ProvidersState = { ...providerViewRows([], pending), groupOpen, scanning, failed };
+  const now = deps.now ?? ((): number => Date.now());
+  const standing = () => ({ groupOpen, scanning, failed, loaded, scannedAt, status: scanStatusOf({ loading: scanning, loaded, failed }) });
+  let state: ProvidersState = { ...providerViewRows([], pending), ...standing() };
   const listeners = new Set<() => void>();
 
   const publish = (): void => {
-    state = { ...providerViewRows(facts, pending), groupOpen, scanning, failed };
+    state = { ...providerViewRows(facts, pending), ...standing() };
     for (const listener of [...listeners]) listener();
   };
 
@@ -154,15 +170,29 @@ export const createProvidersStore = (deps: ProvidersStoreDeps): ProvidersStore =
       failed = true;
     } else {
       receive(reply.filter(isProviderFact));
+      loaded = true;
+      scannedAt = now();
     }
     pending = new Set();
     scanning = false;
     publish();
   };
 
+  const seed = (answers: readonly ProviderFact[]): void => {
+    if (scanning) return;
+    facts = [...answers];
+    pending = new Set();
+    failed = false;
+    loaded = true;
+    scannedAt = now();
+    publish();
+  };
+
   return {
     load: scan,
+    ensure: () => (!loaded && !scanning && !failed ? scan() : Promise.resolve()),
     rescan: scan,
+    seed,
     beginScan,
     receive,
     toggleGroup: () => {

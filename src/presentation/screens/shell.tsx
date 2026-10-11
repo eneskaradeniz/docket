@@ -242,14 +242,13 @@ export function ShellScreen({
     void shell.load();
     // The bar's Update button reads the standing from startup, not from the panel's first open.
     void update.load();
-    // The accounts frame's "n hesap eklenmedi" row reads the discovered list from startup.
-    void candidateList.load();
+    // The machine scan runs once here, in the background; sections read its result from memory.
+    void candidateList.ensure();
     // The sidebar's Artifact'lar row reads its count from startup, not from the first visit.
     void library.warm();
     // The Öneriler badge reads from startup too.
     void proposals.refresh();
   }, [shell, update, candidateList, library, proposals]);
-  const unaddedCount = useSyncExternalStore(candidateList.subscribe, () => candidateList.state().rows.length);
   // The provider display names (A-67) the sidebar's card titles and popovers read: discovery's
   // own naming, resolved by id, null when it does not know the provider.
   const providerRows = useSyncExternalStore(candidateList.subscribe, () => candidateList.state().providers);
@@ -310,9 +309,7 @@ export function ShellScreen({
     const origin: SettingsPanelOrigin = pointerOpenRef.current ? 'pointer' : 'keyboard';
     pointerOpenRef.current = false;
     dispatchSettingsPanel({ type: 'open', origin, ...target });
-    // The dot reads the discovery's standing as the panel opens, so it is never stale.
-    void candidates.load();
-  }, [candidates]);
+  }, []);
   const openSettings = useCallback((section: SettingsSection): void => openSettingsAt({ section }), [openSettingsAt]);
   // Every arrival — a push, a back, a forward — restores the current entry's scroll once the
   // main column has painted again (U-25): each screen returns where the operator left it, the
@@ -579,8 +576,7 @@ export function ShellScreen({
             activeAccountId={route.name === 'account' ? route.id : null}
             providerName={providerName}
             now={clockNow()}
-            unaddedCount={unaddedCount}
-            onOpenUnadded={() => openSettingsAt(unaddedRowTarget())}
+            onAddAccount={() => openSettingsAt(unaddedRowTarget())}
             onOpenAccount={openAccount}
           />
         </nav>

@@ -11,6 +11,7 @@ import {
   SETTINGS_SECTIONS,
   createCandidateDotStore,
   hasUnaddedCandidate,
+  reclaimsPanelFocus,
   settingsPanelReducer,
   type CandidateDotSource,
 } from './settings-panel';
@@ -47,6 +48,24 @@ describe('settingsPanelReducer', () => {
 const candidate = (alreadyAdded: boolean, warnings: readonly ('env_overrides_login' | 'unreadable')[] = []) => ({
   alreadyAdded,
   warnings,
+});
+
+describe('reclaimsPanelFocus', () => {
+  const body = { tag: 'body' };
+
+  it('a focus that fell to the body while the panel is open is reclaimed — the busy rescan button drops it there', () => {
+    expect(reclaimsPanelFocus(true, body, body)).toBe(true);
+  });
+
+  it('a closed panel never reclaims — the close own restore rule owns focus then', () => {
+    expect(reclaimsPanelFocus(false, body, body)).toBe(false);
+  });
+
+  it('a focus inside the panel or moved into another overlay (the account editor) is no fall and stays', () => {
+    expect(reclaimsPanelFocus(true, { tag: 'rescan-button' }, body)).toBe(false);
+    expect(reclaimsPanelFocus(true, { tag: 'editor-dialog-input' }, body)).toBe(false);
+    expect(reclaimsPanelFocus(true, null, body)).toBe(false);
+  });
 });
 
 describe('settings sections (U-28)', () => {

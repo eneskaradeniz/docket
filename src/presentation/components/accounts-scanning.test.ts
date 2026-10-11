@@ -68,7 +68,7 @@ describe('AccountsScanning (U-52)', () => {
     expect(out).toContain('· —');
     expect(out).toContain('<button type="button" disabled');
     expect(out).toContain('Taranıyor…');
-    expect(out).toContain('data-scan-spin');
+    expect(out).toContain('motion-safe:animate-spin');
     expect(out).toContain('rounded-full');
     const idle = html();
     expect(idle).toContain('3 hesap · 2 asistan');

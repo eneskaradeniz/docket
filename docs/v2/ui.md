@@ -1337,44 +1337,59 @@ than 8 words. A proposal's summary, target, scope, author and every diff line ar
 - **U-153** (added 2026-10-11, #946; amends U-127) A launcher remembers, per chat store, the prefill it last placed. A draft that still equals it (untouched) is replaced by the next launcher's prefill; a blank draft takes the prefill as before.
 - **U-154** (added 2026-10-11, #946; amends U-127) Any other non-blank draft — a prefill with one character added, or text the operator typed — is kept and the new prefill is dropped; the scope still opens fresh. A sent (emptied) draft takes the next prefill.
 
-## Nav order (U-191)
+## Remembered scans (U-155 … U-164)
 
-- **U-191** (added 2026-10-11, #951; amends U-84 and U-136) The sidebar rows stand in this order: Anasayfa, Ara, Öneriler, Çıktılar (Artifacts), Telefon, Ayarlar. Öneriler sits between Ara and the library row.
+Added 2026-10-11 (#948), append only. Operator walk: Settings re-scanned the machine on every open,
+Sağlayıcılar opened blank, the rescan button differed in every place and spun as a whole. These rules
+replace the "reads on open" parts of U-34, U-38 and U-52, and drop U-37's "n hesap eklenmedi" row and
+U-51's helper line.
 
-## Proje ekle panel (U-181 … U-190)
+- **U-155** (candidates store, providers store; added 2026-10-11, #948) One scan at start. The shell
+  starts the accounts scan once, in the background; the providers store is seeded by the discovery that
+  scan already read, so start costs one pass. Each store reports `status` (`idle`, `loading`, `ready`,
+  `error`), its result and `scannedAt` (the last successful scan; null before one).
+- **U-156** (stores, Settings, shell; added 2026-10-11, #948) Opening reads memory. `ensure()` scans only
+  while nothing was ever read and joins a scan in flight; opening Settings or a section never calls
+  `load` or `rescan`. A scan runs again only on "Yeniden tara" or after an `accounts.changed` event.
+- **U-157** (stores; added 2026-10-11, #948) Rescan replaces, never blanks. While it runs the old rows
+  stay listed and `status` reads `loading`; on the answer the rows and `scannedAt` are replaced. A fresh
+  ask during a scan waits for it, then runs.
+- **U-158** (stores, screens; added 2026-10-11, #948) Errors keep the last result: status `error`, rows and
+  `scannedAt` unchanged. A first scan that fails has no result: the section shows "Tarama olmadı." and
+  the Yeniden tara button, never a blank. (Amends U-34: a failed reply no longer empties the list.)
+- **U-159** (stores; added 2026-10-11, #948) Kinds are independent. A providers rescan sends no accounts
+  query; an accounts error leaves the providers status as it was.
+- **U-160** (`RescanButton`; added 2026-10-11, #948) One component draws every scan or refresh button:
+  ghost, small, refresh icon and "Yeniden tara", right-aligned in the section's header row (title left,
+  actions right). Beside it, muted small text "Son tarama: 2 dakika önce" (the cockpit's age formatter)
+  once a scan exists.
+- **U-161** (`RescanButton`; added 2026-10-11, #948) Busy. The button stays put and only its icon turns,
+  about its own centre, linear, 0.9 s, behind `motion-safe:`. The label reads "Taranıyor…", the button is
+  disabled and `aria-busy`. Under reduced motion nothing turns. The button box never rotates. The icon-only
+  variant (sidebar) has no label: tooltip and `aria-label` "Yeniden tara".
+- **U-162** (Hesaplar, Sağlayıcılar; added 2026-10-11, #948) Skeleton on first load only: shown while no
+  result exists and a scan runs, never over a result. Hesaplar reuses the U-52 skeleton; Sağlayıcılar draws
+  three skeleton rows.
+- **U-163** (sidebar accounts block; added 2026-10-11, #948) Clean block. "Çubuk en dar limiti
+  gösterir.", "Henüz hesap yok." and the "n hesap eklenmedi · Gör ›" row are gone (not-yet-added accounts
+  live in Ayarlar › Hesaplar › Eklenmemiş). With no account the body is one compact card: "Hesap yok" and
+  a small "Hesap ekle" button that opens Ayarlar › Hesaplar. The refresh is the icon-only RescanButton.
+- **U-164** (sources, labels; added 2026-10-11, #948) One button, short copy, measure. No file but
+  `rescan-button.tsx` draws a scan spinner or a rescan label (a source-scan test). Every new label is in
+  both bundles and has at most 8 words. The component uses rem lengths and the radius tokens only.
 
-Operator walk, 2026-10-11 (#950). "Proje ekle" opens as a window over the current screen, like Settings,
-not as a full screen. Presentation only: the page's content, copy and flow are unchanged; only where it is
-hosted changes. This supersedes U-40's statement that the page is a route; the route is gone and the history
-never holds it. The J-20 walk covers it end to end.
+*(Addendum 2026-10-11, #948: J-18 walks the remembered scans on the page world: Settings opens, the first
+result stands → closed and opened twice more, then Sağlayıcılar: no skeleton and no busy button ever
+appears → Yeniden tara on the right goes busy, then "Son tarama" shows again with the rows kept → the
+sidebar's accounts block holds none of the removed lines and its refresh has no label. A DOM observer
+stands in for a request counter. It runs once per run.)*
 
-- **U-181** (shell; added 2026-10-11, #950) Entries. The sidebar "+" next to Projeler and the empty-state
-  button share one opener that opens the panel. No full-screen route exists, so nothing deep-links to one.
-  The home launcher "Docket AI ile birlikte kur" stays a chat launcher, and it closes the panel before the
-  chat opens.
-- **U-182** (store; added 2026-10-11, #950) Standing. The panel is a pure `{ open, origin }` reducer in
-  the shell, never a route. An open stamps pointer or keyboard; a second open changes nothing.
-- **U-183** (store, overlay; added 2026-10-11, #950) Leaving. ✕, Esc, a press on the scrim and "Vazgeç"
-  are all one close. Focus returns to the opener on a keyboard-opened close only (the palette's rule).
-- **U-184** (overlay; added 2026-10-11, #950) One frame. The panel is the Window frame in the shared
-  `PanelOverlay` (scrim, blur, enter and exit, focus trap), marked `data-new-project-panel`, with
-  `role="dialog"`, `aria-modal` and the title as its name. Reduced motion is a quick fade.
-- **U-185** (screen; added 2026-10-11, #950) Content. The cards, the selected mode's fields, the reason
-  line and the footer band are the approved page's, unchanged, inside the panel.
-- **U-186** (shell; added 2026-10-11, #950) Native view. While the panel is open the page view's native
-  view yields exactly as for Settings (U-76); ⌘K, ⌘[ and ⌘] stay away.
-- **U-187** (shell; added 2026-10-11, #950) Chat. The chat dock hides under the open panel, and ⌘J is
-  ignored while it is open.
-- **U-188** (shell; added 2026-10-11, #950) Draft. No discard confirmation exists in the app, so closing
-  with input keeps the draft in the store for the session. Opening resets nothing; a finished creation
-  closes the panel and starts the form over.
-- **U-189** (screen; added 2026-10-11, #950) Width. The content fills the panel's width: no fixed card, no
-  width cap, no centring margin inside it.
-- **U-190** (labels, screen; added 2026-10-11, #950) Measure. The close control's name is in the Turkish
-  and English bundles and is at most 4 words; lengths are rem; radii are the tokens only.
-
-J-20 (added 2026-10-11, #950): on the design world, "+" next to Projeler opens the panel on its first
-step; Esc closes it and focus returns; a reopen shows the same first step.
+*(Addendum 2026-10-11, #948: U-160's busy button is natively disabled, so the focus it holds falls to the
+body while the scan runs; the Settings panel — U-43's "focus is trapped while open" — takes a fallen
+focus back to its root the moment it falls (a focus that moved into another overlay, the AccountEditor,
+is a move, not a fall, and stays). Without the repair Esc dies on the body focus and the panel stops
+closing after a rescan (J-18's red). The pure rule is `reclaimsPanelFocus`, unit-tested in
+`stores/settings-panel.test.ts`.)*
 
 ## Settings cards (U-165 … U-180)
 
@@ -1414,3 +1429,42 @@ step; Esc closes it and focus returns; a reopen shows the same first step.
 - **U-180** (audit; added 2026-10-11, #949) Plain-text empty states in Settings are cards: Roller's empty list,
   the Sağlayıcılar empty list. Eşzamanlılık's account line sits inside its own card and stays a line; Telefon,
   Görünüm and Güncelleme already are cards.
+## Proje ekle panel (U-181 … U-190)
+
+Operator walk, 2026-10-11 (#950). "Proje ekle" opens as a window over the current screen, like Settings,
+not as a full screen. Presentation only: the page's content, copy and flow are unchanged; only where it is
+hosted changes. This supersedes U-40's statement that the page is a route; the route is gone and the history
+never holds it. The J-20 walk covers it end to end.
+
+- **U-181** (shell; added 2026-10-11, #950) Entries. The sidebar "+" next to Projeler and the empty-state
+  button share one opener that opens the panel. No full-screen route exists, so nothing deep-links to one.
+  The home launcher "Docket AI ile birlikte kur" stays a chat launcher, and it closes the panel before the
+  chat opens.
+- **U-182** (store; added 2026-10-11, #950) Standing. The panel is a pure `{ open, origin }` reducer in
+  the shell, never a route. An open stamps pointer or keyboard; a second open changes nothing.
+- **U-183** (store, overlay; added 2026-10-11, #950) Leaving. ✕, Esc, a press on the scrim and "Vazgeç"
+  are all one close. Focus returns to the opener on a keyboard-opened close only (the palette's rule).
+- **U-184** (overlay; added 2026-10-11, #950) One frame. The panel is the Window frame in the shared
+  `PanelOverlay` (scrim, blur, enter and exit, focus trap), marked `data-new-project-panel`, with
+  `role="dialog"`, `aria-modal` and the title as its name. Reduced motion is a quick fade.
+- **U-185** (screen; added 2026-10-11, #950) Content. The cards, the selected mode's fields, the reason
+  line and the footer band are the approved page's, unchanged, inside the panel.
+- **U-186** (shell; added 2026-10-11, #950) Native view. While the panel is open the page view's native
+  view yields exactly as for Settings (U-76); ⌘K, ⌘[ and ⌘] stay away.
+- **U-187** (shell; added 2026-10-11, #950) Chat. The chat dock hides under the open panel, and ⌘J is
+  ignored while it is open.
+- **U-188** (shell; added 2026-10-11, #950) Draft. No discard confirmation exists in the app, so closing
+  with input keeps the draft in the store for the session. Opening resets nothing; a finished creation
+  closes the panel and starts the form over.
+- **U-189** (screen; added 2026-10-11, #950) Width. The content fills the panel's width: no fixed card, no
+  width cap, no centring margin inside it.
+- **U-190** (labels, screen; added 2026-10-11, #950) Measure. The close control's name is in the Turkish
+  and English bundles and is at most 4 words; lengths are rem; radii are the tokens only.
+
+J-20 (added 2026-10-11, #950): on the design world, "+" next to Projeler opens the panel on its first
+step; Esc closes it and focus returns; a reopen shows the same first step.
+
+## Nav order (U-191)
+
+- **U-191** (added 2026-10-11, #951; amends U-84 and U-136) The sidebar rows stand in this order: Anasayfa, Ara, Öneriler, Çıktılar (Artifacts), Telefon, Ayarlar. Öneriler sits between Ara and the library row.
+

@@ -80,9 +80,19 @@ if (mount !== null) {
   applyTheme();
   theme.subscribe(applyTheme);
   const candidates = createCandidateDotStore(api);
+  // The machine scans (accounts, providers) live in these two stores for the whole session: the
+  // shell starts the first one in the background, the accounts scan seeds the providers one with
+  // the discovery it already read, and only "Yeniden tara" or an accounts change reads again.
+  const providerList = createProvidersStore({ api, now: () => Date.now() });
   // The list under Hesaplar → Eklenmemiş; an adoption re-reads the dot.
-  const candidateList = createCandidatesStore({ api, actor: USER, changes, onAdopted: () => void candidates.load() });
-  const providerList = createProvidersStore({ api });
+  const candidateList = createCandidatesStore({
+    api,
+    actor: USER,
+    changes,
+    now: () => Date.now(),
+    onProviders: (facts) => providerList.seed(facts),
+    onAdopted: () => void candidates.load(),
+  });
   // The meters' reset times render in the machine's zone; tests pass 'UTC' instead.
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 

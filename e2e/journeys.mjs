@@ -1763,6 +1763,114 @@ for (const [sizeName, theme] of combos) {
   await probe.close();
 }
 
+// J-18 walks the remembered scans (U-155 … U-164) on the page world's launch: Settings opens twice and
+// Hesaplar / Sağlayıcılar never re-scan (no skeleton, no busy button — a scan that ran again would
+// show one of them), "Yeniden tara" goes busy and then shows a fresh "Son tarama", and the sidebar's
+// accounts block carries none of the removed lines. Hermetic like J-17: no account, no keychain, no
+// agent run. A DOM observer stands in for a request counter: the page has no way to count bridge
+// requests, but every real scan first draws a busy button or a skeleton. Once per run.
+{
+  const handle = await launchPageViewApp();
+  const { page, probe } = handle;
+  const panel = page.locator('[data-settings-panel]');
+  const rescan = panel.locator('[data-rescan] button');
+  const age = panel.locator('[data-rescan]').getByText('Son tarama:');
+  /** Starts recording whether a scan surface ever appears: a skeleton, or a busy rescan button. */
+  const watch = () =>
+    page.evaluate(() => {
+      const seen = { skeleton: false, busy: false };
+      window.__scanSeen = seen;
+      const look = () => {
+        if (document.querySelector('[data-scan-skeleton-group], [data-provider-skeleton]') !== null) seen.skeleton = true;
+        if (document.querySelector('[data-rescan] button[aria-busy="true"]') !== null) seen.busy = true;
+      };
+      new MutationObserver(look).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['aria-busy'] });
+      look();
+    });
+  const seen = () => page.evaluate(() => window.__scanSeen);
+  const openSettings = async () => {
+    await page.getByRole('button', { name: 'Ayarlar', exact: true }).first().click({ timeout: WAIT });
+    await panel.waitFor({ state: 'visible', timeout: WAIT });
+  };
+  const closeSettings = async () => {
+    await page.keyboard.press('Escape');
+    await panel.waitFor({ state: 'detached', timeout: WAIT });
+  };
+
+  let stepNo = 0;
+  const steps = [];
+  const shot = async (label) => {
+    stepNo += 1;
+    steps.push(label);
+    const slug = label.toLowerCase().replace(/[^a-z0-9ğüşıöç]+/g, '-').replace(/^-|-$/g, '');
+    await page.screenshot({ path: join(OUT, `J-18-${stepNo}-${slug}.png`) });
+  };
+  const title = 'J-18: taramalar hatırlanır: Ayarlar iki kez açılır, yeniden taranmaz; Yeniden tara meşgul olur ve zamanı yeniler; kenar çubuğu temiz';
+  total += 1;
+  try {
+    // The first open may meet the start scan still running; wait until Hesaplar holds a result.
+    await openSettings();
+    await age.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    assert.equal(await rescan.first().isDisabled(), false, 'the button is idle once the first scan ended');
+    assert.equal(((await rescan.first().textContent()) ?? '').trim(), 'Yeniden tara');
+    await shot('ilk-acilis');
+    await closeSettings();
+
+    // Open twice more, and visit Sağlayıcılar: the cache answers, nothing scans.
+    await watch();
+    for (let round = 0; round < 2; round += 1) {
+      await openSettings();
+      await age.waitFor({ state: 'visible', timeout: WAIT });
+      await closeSettings();
+    }
+    await openSettings();
+    await panel.getByRole('button', { name: 'Sağlayıcılar', exact: true }).click({ timeout: WAIT });
+    await age.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    assert.equal(await panel.locator('[data-provider-skeleton]').count(), 0, 'Sağlayıcılar shows no skeleton over a remembered scan');
+    await shot('saglayicilar');
+    const afterOpens = await seen();
+    assert.deepEqual(afterOpens, { skeleton: false, busy: false }, `opening Settings scanned again: ${JSON.stringify(afterOpens)}`);
+
+    // The button sits on the right of its header row, and a press goes busy and then stamps a fresh time.
+    const box = await panel.locator('[data-rescan]').boundingBox();
+    const panelBox = await panel.boundingBox();
+    assert(box !== null && panelBox !== null && box.x + box.width > panelBox.x + panelBox.width / 2, 'Yeniden tara sits right-aligned');
+    await rescan.first().click({ timeout: WAIT });
+    await page.waitForFunction(() => window.__scanSeen.busy === true, undefined, { timeout: WAIT });
+    await page.waitForFunction(() => document.querySelector('[data-settings-panel] [data-rescan] button[aria-busy="true"]') === null, undefined, { timeout: SCAN_WAIT });
+    await age.waitFor({ state: 'visible', timeout: WAIT });
+    const skeletonSeen = await page.evaluate(() => window.__scanSeen.skeleton);
+    assert.equal(skeletonSeen, false, 'a rescan keeps the rows: no skeleton');
+    await shot('yeniden-tara');
+    await closeSettings();
+
+    // The sidebar's accounts block: none of the removed lines, in either state of the frame.
+    const frame = page.locator('[data-accounts-frame]');
+    await frame.waitFor({ state: 'visible', timeout: WAIT });
+    await frame.locator('[aria-expanded]').first().click({ timeout: WAIT });
+    const frameText = (await frame.textContent()) ?? '';
+    for (const gone of ['Çubuk en dar limiti gösterir.', 'Henüz hesap yok.', 'eklenmedi', 'Gör ›']) {
+      assert(!frameText.includes(gone), `the accounts block must not show "${gone}"`);
+    }
+    const refresh = frame.locator('[data-rescan-icon]');
+    assert.equal(await refresh.getAttribute('aria-label'), 'Yeniden tara');
+    assert.equal(((await refresh.textContent()) ?? '').trim(), '', 'the sidebar refresh has no label');
+    await shot('kenar-cubugu');
+
+    assert.deepEqual(probe.hits, [], `the probe saw requests: ${probe.hits.join(' | ')}`);
+
+    console.log(`  ok   ${title}`);
+    appendJourney({ id: title, status: 'ok', steps });
+  } catch (error) {
+    failures.push(title);
+    console.log(`  FAIL ${title}\n       ${String(error).slice(0, 600)}`);
+    appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).slice(0, 600) });
+    await page.screenshot({ path: join(OUT, 'J-18-FAIL.png') }).catch(() => undefined);
+  }
+  await handle.app.close();
+  await probe.close();
+}
+
 // J-19 walks Ayarlar as cards (U-165 … U-180) on the roadmap world — a hermetic home with no
 // account, so nothing can run or spend and the empty states are the ones on screen. It asserts the
 // menu without group titles, the Hesaplar disclosures and their cards, the Roller and Yetenekler

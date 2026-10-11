@@ -29,10 +29,12 @@ export interface ActionButtonProps {
   readonly ariaExpanded?: boolean;
   /** The id of the region an expanded button folds (Ayrıntı's in-place detail, U-48). */
   readonly ariaControls?: string;
+  /** A button whose work is running says so to assistive tech. */
+  readonly ariaBusy?: boolean;
   readonly children: ReactNode;
 }
 
-export function ActionButton({ variant = 'neutral', size = 'sm', disabled = false, onClick, title, ariaExpanded, ariaControls, children }: ActionButtonProps) {
+export function ActionButton({ variant = 'neutral', size = 'sm', disabled = false, onClick, title, ariaExpanded, ariaControls, ariaBusy, children }: ActionButtonProps) {
   return (
     <button
       type="button"
@@ -41,6 +43,7 @@ export function ActionButton({ variant = 'neutral', size = 'sm', disabled = fals
       title={title}
       aria-expanded={ariaExpanded}
       aria-controls={ariaControls}
+      aria-busy={ariaBusy === true ? true : undefined}
       className={`inline-flex items-center justify-center gap-1.5 rounded-control border transition-[filter,background-color,color] duration-100 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-45 ${VARIANT_CLASS[variant]} ${SIZE_CLASS[size]}`}
     >
       {children}

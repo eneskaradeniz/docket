@@ -54,6 +54,7 @@ import type { RolesStore } from '../stores/roles';
 import { focusRestoredOnClose } from '../stores/search-palette';
 import {
   SETTINGS_SECTIONS,
+  reclaimsPanelFocus,
   type SettingsOpenTarget,
   type SettingsPanelOrigin,
   type SettingsSection,
@@ -233,13 +234,13 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
     // Hesaplar decides removal on when the user comes back, not the view from before the trip.
     if (open) void store.load();
   }, [store, open, section]);
-  // The Eklenmemiş list reads (cached) whenever Hesaplar is on screen.
+  // The scans live in memory for the session: opening a section reads them and scans only if
+  // none was ever read ("Yeniden tara" is the one way to refresh).
   useEffect(() => {
-    if (open && section === 'accounts') void candidates.load();
+    if (open && section === 'accounts') void candidates.ensure();
   }, [open, section, candidates]);
-  // Sağlayıcılar scans whenever the section opens.
   useEffect(() => {
-    if (open && section === 'providers') void providers.load();
+    if (open && section === 'providers') void providers.ensure();
   }, [open, section, providers]);
 
   const view = state.view;
@@ -305,6 +306,30 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
   // by one render, so an effect on `open` alone would find an empty ref.
   useEffect(() => {
     if (open && mounted) panelRef.current?.focus();
+  }, [open, mounted]);
+
+  // A control that goes natively disabled while busy — the rescan button's "Taranıyor…" — drops
+  // focus to the body, and the panel's keydown surface (Esc, the Tab trap) rides its own subtree:
+  // a body focus leaves it dead. While open, a focus that falls to the body comes back to the
+  // root; a focus that moved into another overlay (the editor beside the scrim) is a move, not a
+  // fall, and stays.
+  useEffect(() => {
+    if (!open || !mounted) return undefined;
+    const panel = panelRef.current;
+    if (panel === null) return undefined;
+    let queued = 0;
+    const onFocusOut = () => {
+      window.clearTimeout(queued);
+      // The check rides a task of its own: at focusout time the new focus is not settled yet.
+      queued = window.setTimeout(() => {
+        if (reclaimsPanelFocus(open, document.activeElement, document.body)) panel.focus();
+      });
+    };
+    panel.addEventListener('focusout', onFocusOut);
+    return () => {
+      window.clearTimeout(queued);
+      panel.removeEventListener('focusout', onFocusOut);
+    };
   }, [open, mounted]);
 
   useEffect(() => {
@@ -417,7 +442,7 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
   // The scanning surface (U-52) is the one the wizard's Hesaplar step shares: while the scan
   // runs it draws the skeleton over both lists; the body mounts only once it ends.
   const accountsSection = (
-    <AccountsScanning locale={locale} titleKey="accountGroups.added" scanning={candidateState.loading} onRescan={() => void candidates.rescan()} totals={addedTotals} now={Date.now}>
+    <AccountsScanning locale={locale} titleKey="accountGroups.added" scanning={candidateState.loading && !candidateState.loaded} busy={candidateState.loading} scannedAt={candidateState.scannedAt} failed={candidateState.status === 'error' && !candidateState.loaded} onRescan={() => void candidates.rescan()} totals={addedTotals} now={Date.now}>
       {(reveal) => (
         <>
           <AccountsSections

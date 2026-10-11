@@ -170,7 +170,7 @@ describe('provider hints', () => {
 });
 
 describe('createCandidatesStore', () => {
-  it('U-34: load reads both queries and lists the rows; a failed reply lists nothing', async () => {
+  it('U-34: load reads both queries and lists the rows; a failed reply keeps the last rows', async () => {
     const f = fake([base, keyed], [{ defId: 'p1', name: 'One', installUrl: null, binPath: '/b', version: null, loggedIn: true, optionalFlags: [] }]);
     const store = make(f);
     await store.load();
@@ -178,7 +178,9 @@ describe('createCandidatesStore', () => {
     expect(store.state().providers).toHaveLength(1);
     f.candidates = { ok: false, code: 'not_found' };
     await store.load();
-    expect(store.state().rows).toHaveLength(0);
+    // A failed read never blanks a result that stands (U-158).
+    expect(store.state().rows).toHaveLength(2);
+    expect(store.state().status).toBe('error');
   });
 
   it('U-34: the key-move switch starts off on every selection, and off sends adopt without importToken', async () => {

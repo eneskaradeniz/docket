@@ -13,12 +13,12 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
 import { scanPhase } from '../stores/scan-phase';
-import { ActionButton } from './action-button';
 import { MOTION } from './motion';
+import { RescanButton } from './rescan-button';
 import { Skeleton, SkeletonStyle } from './skeleton';
 
 /** The scan's own motions: the groups' entrance (160 ms fade with an 8 px rise, `backwards`
- *  holding each one faded below until its staggered turn) and the button's spinner. The
+ *  holding each one faded below until its staggered turn) (the button's icon turns through RescanButton). The
  *  reduced-motion standings play none of it — the groups land at once, the shapes stand dim. */
 export const SCAN_STYLE_CSS = `\
 [data-scan-group-in] {
@@ -28,14 +28,8 @@ export const SCAN_STYLE_CSS = `\
   from { opacity: 0; transform: translateY(${MOTION.scan.risePx}px); }
   to { opacity: 1; transform: translateY(0); }
 }
-[data-scan-spin] {
-  animation: docket-scan-spin 0.8s linear infinite;
-}
-@keyframes docket-scan-spin {
-  to { transform: rotate(360deg); }
-}
 @media (prefers-reduced-motion: reduce) {
-  [data-scan-group-in], [data-scan-spin] { animation: none; }
+  [data-scan-group-in] { animation: none; }
 }`;
 
 /** One `<style>` element with the scan's motions, mounted once beside the surface. */
@@ -145,6 +139,12 @@ export interface AccountsScanningProps {
   readonly titleKey: LabelKey;
   /** The scan in flight — the store's loading standing. */
   readonly scanning: boolean;
+  /** A scan runs, over a result or not: the button goes busy. Defaults to `scanning`. */
+  readonly busy?: boolean;
+  /** When the last scan finished; the age shows beside the button once there is one. */
+  readonly scannedAt?: number | null;
+  /** The last scan failed and no result stands: one short sentence replaces the list. */
+  readonly failed?: boolean;
   readonly onRescan: () => void;
   /** The counts the toolbar reads once the scan has answered. */
   readonly totals: Readonly<{ readonly accounts: number; readonly assistants: number }>;
@@ -153,7 +153,7 @@ export interface AccountsScanningProps {
   readonly children: (reveal: boolean) => ReactNode;
 }
 
-export function AccountsScanning({ locale, titleKey, scanning, onRescan, totals, now, children }: AccountsScanningProps) {
+export function AccountsScanning({ locale, titleKey, scanning, busy, scannedAt = null, failed = false, onRescan, totals, now, children }: AccountsScanningProps) {
   const { skeleton, reveal } = useScan(scanning, now);
   // The end line speaks once per scan: a new skeleton clears the old line, the hold's end sets
   // it, and a quiet re-render never repeats it.
@@ -174,16 +174,7 @@ export function AccountsScanning({ locale, titleKey, scanning, onRescan, totals,
             {skeleton ? '· —' : `· ${t(locale, 'accountGroups.counts').replace('{accounts}', String(totals.accounts)).replace('{assistants}', String(totals.assistants))}`}
           </span>
         </span>
-        <span className="ml-auto">
-          {skeleton ? (
-            <ActionButton disabled onClick={onRescan}>
-              <i data-scan-spin="" aria-hidden="true" className="inline-block h-[15px] w-[15px] flex-none rounded-full border-2 border-ink/30 border-t-ink" />
-              <span>{t(locale, 'candidates.status.scanning')}</span>
-            </ActionButton>
-          ) : (
-            <ActionButton onClick={onRescan}>{t(locale, 'candidates.rescan')}</ActionButton>
-          )}
-        </span>
+        <RescanButton locale={locale} busy={skeleton || (busy ?? scanning)} scannedAt={scannedAt} now={now()} onRescan={onRescan} />
       </div>
       {skeleton ? (
         <>
@@ -193,6 +184,8 @@ export function AccountsScanning({ locale, titleKey, scanning, onRescan, totals,
           </div>
           <ScanSkeleton />
         </>
+      ) : failed ? (
+        <p className="text-[0.8125rem] leading-5 text-inkdim">{t(locale, 'scan.failed')}</p>
       ) : (
         children(reveal)
       )}
