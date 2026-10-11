@@ -22,6 +22,12 @@
 // real ACP transport once the launched app's dispatcher starts the run. Answering in the UI then
 // resolves the board entry and the permission_answered event closes the row (#815).
 //
+// One page rides İE-0033 (no audit walks that order's detail, so its Sayfalar section surfaces only
+// when a harness opens it on purpose): two versions, two operator comments on the latest one in
+// both delivery states, approval pending — the standing the layout audit's page walk measures. The
+// hostile-page world of seed-page-view.ts keeps its own page; this one is benign, because the audit
+// measures boxes, never the view's isolation.
+//
 // Determinism: a fixed clock and a zero random source. The ULID generator stays monotonic when the
 // clock moves backwards, so ids follow creation order and repeat exactly run over run.
 //
@@ -61,6 +67,7 @@ import { createApi } from '../src/api/index';
 import type { AccountRecord } from '../src/application/index';
 import { saveAccount, saveBinding } from '../src/application/use-cases/accounts';
 import { decideHumanGate } from '../src/application/use-cases/gates';
+import { ackComments, commentOnPage, publishPageUseCase, publishVersion, requestPageApproval } from '../src/application/use-cases/pages';
 import { attachProject } from '../src/application/use-cases/projects';
 import { grantSpendConsent } from '../src/application/use-cases/spend-consent';
 import { DISPATCH_MODE_KEY } from '../src/application/use-cases/settings';
@@ -724,6 +731,70 @@ assert(consented.ok, `the OpenCode account's consent did not record: ${consented
 const queuedAsk = await enqueueStage(deps, { id: askingOrder.id });
 assert(queuedAsk.ok, `the asking stage did not enqueue: ${queuedAsk.ok ? '' : queuedAsk.error}`);
 
+// --- the page the layout audit opens -----------------------------------------------------------------
+// İE-0033 is the carrier: no audit walk opens that order's detail, so the Sayfalar section never
+// joins a screen another check measures. The agent of the order's role publishes both versions (the
+// second changes one line, so Fark stays real), the operator writes both comments on the latest
+// version — the rail of the shown version is where the two delivery states must both be visible —
+// and the agent-side pull that marks one delivered is simulated by the ack use-case the real
+// agent-side read goes through. The operator then asks for the review, and the page stands pending.
+const PAGE_ORDER = 'İE-0033';
+const PAGE_TITLE = 'Log düzeni taslağı';
+const pageOrder = codes[PAGE_ORDER];
+assert(pageOrder !== undefined, `${PAGE_ORDER} is seeded`);
+const PAGE_V1 = `<!doctype html>
+<html lang="tr"><head><meta charset="utf-8"><title>${PAGE_TITLE}</title></head>
+<body>
+<h1>${PAGE_TITLE}</h1>
+<p>İstek günlükleri tek düzende toplanır; her satır bir isteği adlandırır.</p>
+</body></html>
+`;
+const PAGE_V2 = PAGE_V1.replace('bir isteği adlandırır', 'bir isteği ve süresini sayar');
+assert(PAGE_V2 !== PAGE_V1, 'version 2 must change the entry');
+const pageAgent: Actor = { kind: 'agent', runId: deps.ids.next<'run'>(), role: 'gelistirici' as RoleSlug };
+const pageFiles = (html: string): readonly { readonly path: string; readonly bytes: Uint8Array }[] => [
+  { path: 'index.html', bytes: new TextEncoder().encode(html) },
+];
+setClock(ago(18));
+const publishedPage = await publishPageUseCase(deps, {
+  title: PAGE_TITLE,
+  kind: 'html',
+  by: pageAgent,
+  entry: 'index.html',
+  workOrder: pageOrder.id,
+  files: pageFiles(PAGE_V1),
+});
+assert(publishedPage.ok, `the page did not publish: ${publishedPage.ok ? '' : publishedPage.error.code}`);
+const seededPageId = publishedPage.value.id;
+setClock(ago(10));
+const secondVersion = await publishVersion(deps, {
+  page: seededPageId,
+  by: pageAgent,
+  entry: 'index.html',
+  files: pageFiles(PAGE_V2),
+});
+assert(secondVersion.ok, `version 2 did not publish: ${secondVersion.ok ? '' : secondVersion.error.code}`);
+const commentOnLatest = async (text: string, at: EpochMs): Promise<string> => {
+  setClock(at);
+  const written = await commentOnPage(deps, { page: seededPageId, version: 2, by: OPERATOR, text });
+  assert(written.ok, `a comment did not land: ${written.ok ? '' : written.error.code}`);
+  return written.value.id;
+};
+const readComment = await commentOnLatest('Satır sayısı yeterli; süreleri de görmek istiyorum.', ago(8));
+setClock(ago(7));
+const pulled = await ackComments(deps, { page: seededPageId, ids: [readComment] });
+assert(pulled.ok && pulled.value.length === 1, `the read comment did not deliver: ${pulled.ok ? '' : pulled.error.code}`);
+await commentOnLatest('Başlıkları büyük harfle yazma.', ago(5));
+setClock(ago(4));
+const reviewAsked = await requestPageApproval(deps, { page: seededPageId, by: OPERATOR });
+assert(reviewAsked.ok, `the review did not pend: ${reviewAsked.ok ? '' : reviewAsked.error.code}`);
+const seededPage = await deps.pages.get(seededPageId);
+assert(seededPage !== undefined && seededPage.versions.length === 2, 'the page must stand two versions');
+assert.equal(seededPage?.approval, 'pending', 'the page must stand approval pending');
+const pageCommentRows = await deps.pages.comments(seededPageId, {});
+assert.equal(pageCommentRows.length, 2, 'the page must carry both comments on the latest version');
+assert.equal(pageCommentRows.filter((comment) => comment.deliveredAt !== undefined).length, 1, 'exactly one comment delivered');
+
 // --- self-checks: the seed refuses to hand out a world that differs from the plan -----------------------
 const EXPECTED_STATUS: Readonly<Record<PlanState, string>> = {
   running: 'running',
@@ -897,6 +968,7 @@ const manifest = {
   projects: Object.fromEntries(PROJECTS.map((project) => [project.id, { name: project.name, main: project.main, repos: project.repos }])),
   accounts: Object.fromEntries(ACCOUNTS.map((plan) => [plan.label, accountIds.get(plan.key)])),
   codes,
+  page: { id: seededPageId, title: PAGE_TITLE, workOrder: PAGE_ORDER },
 };
 console.log(`# home ${home}`);
 console.log(`# ${Object.keys(codes).length} work orders in ${PROJECTS.length} projects`);
