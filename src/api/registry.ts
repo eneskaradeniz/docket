@@ -103,4 +103,5 @@ export const QUERY_REGISTRY: Record<Query['type'], RegistryEntry> = {
   'chat.references': { input: 'q: string, kinds?: (work_order|page|project|repo)[], project?: ProjectSlug, limit?: number (1-50, default 20)' },
   'chat.attachment': { input: 'conversation: ConversationId, id: AttachmentId' },
   'chat.usage': { input: 'no input' },
+  'usage.summary': { input: 'workOrder?: WorkOrderId | project?: ProjectSlug (exactly one; both or neither is bad_input), sinceMs?: EpochMs' },
 };

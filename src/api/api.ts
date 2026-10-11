@@ -131,6 +131,7 @@ import {
   dispatchSettingsView,
   setDispatchLimits,
   stageFiles,
+  usageSummary,
   unblockWorkOrder,
   unregisterRepo,
   undoAction,
@@ -1442,6 +1443,25 @@ const runQuery = async (
       if ((await deps.runs.get(runId)) === undefined) return { ok: false, code: 'not_found' };
       // Arrival order is the fold order (newest last); the bound keeps the reply a tail.
       return (await deps.runs.events(runId)).slice(-RUN_EVENTS_TAIL_LIMIT);
+    }
+
+    case 'usage.summary': {
+      const workOrder = query.workOrder === undefined ? undefined : ulidValue<'work-order'>(query.workOrder);
+      const project = query.project === undefined ? undefined : slugValue<'project'>(query.project);
+      if ((query.workOrder !== undefined && workOrder === undefined) || (query.project !== undefined && project === undefined)) {
+        return invalidId();
+      }
+      if (query.sinceMs !== undefined && (typeof query.sinceMs !== 'number' || !Number.isFinite(query.sinceMs))) return badInput();
+      // Exactly one scope: the union the use case takes cannot say "both" or "neither", and the
+      // branches narrow the parsed value so neither undefined reaches it.
+      if (workOrder === undefined) {
+        if (project === undefined) return badInput();
+        const res = await usageSummary(deps, { project, ...(query.sinceMs === undefined ? {} : { sinceMs: query.sinceMs }) });
+        return res.ok ? res.value : { ok: false, code: res.error.code };
+      }
+      if (project !== undefined) return badInput();
+      const res = await usageSummary(deps, { workOrder, ...(query.sinceMs === undefined ? {} : { sinceMs: query.sinceMs }) });
+      return res.ok ? res.value : { ok: false, code: res.error.code };
     }
 
     case 'permissions.open': {
