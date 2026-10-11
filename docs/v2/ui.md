@@ -1327,3 +1327,11 @@ than 8 words. A proposal's summary, target, scope, author and every diff line ar
 - **U-151** (added 2026-10-11, #944) The Turkish library name is "Çıktılar" (nav row, region, empty, filtered, error, cap and loading lines, the pin-limit sentence); no Turkish label says "artifact". English keeps "Artifacts".
 - **U-152** (added 2026-10-11, #944) Boxes that show long text grow with the window and keep their old size as the floor: the proposals diff `max(26rem, 100vh − 22rem)`, the page viewer's diff `max(28rem, 100vh − 24rem)`, the work-order detail's expected-file preview `clamp(12.5rem, 100vh − 30rem, 32rem)`. Chat-panel boxes, icons and chips are out of this rule.
 
+## Launcher after launcher (U-153 … U-154)
+
+- **U-153** (added 2026-10-11, #946; amends U-127) A launcher remembers, per chat store, the prefill it last placed. A draft that still equals it (untouched) is replaced by the next launcher's prefill; a blank draft takes the prefill as before.
+- **U-154** (added 2026-10-11, #946; amends U-127) Any other non-blank draft — a prefill with one character added, or text the operator typed — is kept and the new prefill is dropped; the scope still opens fresh. A sent (emptied) draft takes the next prefill.
+
+## Nav order (U-191)
+
+- **U-191** (added 2026-10-11, #951; amends U-84 and U-136) The sidebar rows stand in this order: Anasayfa, Ara, Öneriler, Çıktılar (Artifacts), Telefon, Ayarlar. Öneriler sits between Ara and the library row.

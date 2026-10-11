@@ -32,6 +32,15 @@
 // 1024/1280/1512 clamped to the work area: every project line clamps at two lines, no card
 // overflows, the cards of one row keep one height:
 //   attention: kokpit <WxH> ok|FAIL <detail>
+// The page viewer walks the same three fixed widths in both themes (U-75 … U-82), once per run
+// after the combos: the seeded page of İE-0033 opens from its work order's Sayfalar row, and the
+// measured standing is the latest version in Önizleme — no horizontal overflow on the document or
+// the main column, the header's controls level on their row, the stage box (the native view's
+// reserved rectangle, never the view itself) inside the main column at its reserved minimum, the
+// comments rail below the stage while the main container sits under its two-column floor and
+// beside it above, no text clipped without its ellipsis, and the rail honest about what it holds
+// (both delivery states, the pending chip, the two versions):
+//   page: sayfa <WxH> <theme> ok|FAIL <detail>
 // Exit code is 1 when any line is FAIL.
 //
 // The run walks four combinations by default — dark at every size plus light at the default
@@ -70,6 +79,7 @@ import {
   RULE_IDS,
   SCREENS,
   skeletonVerdict,
+  THEMES,
 } from './layout-rules.mjs';
 
 /** Selector maps. A key the target lacks is reported by the rule as `skipped: no hook <key>`. */
@@ -88,7 +98,8 @@ const PROTOTYPE_SELECTORS = {
 // the board's Kanban track and scroller (#379), the detail's left column and live pane (#379),
 // the accounts frame and its collapsible body (#377), the cockpit's closed-list heading, the
 // search palette's panel, scrim, body and history head, the settings panel's panel and scrim,
-// and the title bar with its state-driven Update button (U-24).
+// the title bar with its state-driven Update button (U-24), and the page screen's header, stage,
+// reserved stage body and comments rail.
 const APP_SELECTORS = {
   sidebar: 'nav[aria-label]',
   main: 'main',
@@ -118,6 +129,11 @@ const APP_SELECTORS = {
   skeleton: '[data-skeleton]',
   attentionCard: '[data-attention-card]',
   attentionLine: '[data-attention-line]',
+  pageScreen: '[data-page-screen]',
+  pageHeader: '[data-page-header]',
+  pageStage: '[data-page-stage]',
+  pageStageBody: '[data-page-stage-body]',
+  pageRail: '[data-page-rail]',
 };
 
 const parseArgs = (argv) => {
@@ -748,6 +764,9 @@ async function openApp() {
     sizes,
     close: () => handle.app.close(),
     show: makeShow(handle),
+    // The seed manifest: the page walk reads the page's id and its order's derived code from the
+    // world it is measuring, never from a typed literal.
+    seed: handle.seed,
     /** The guarantee behind every combination: the window's bounds lie wholly inside the primary
      *  display's work area. Both rectangles are read in the main process, where they live. */
     async windowCheck() {
@@ -978,6 +997,187 @@ async function attentionCardsCheck(target) {
   return rows;
 }
 
+/** The page viewer's own measurement (U-75 … U-82), once per run after the combos at the three
+ *  fixed widths, in both themes. The walk opens the seeded page the way a person does — the
+ *  board's card for the order that carries it, the order's Sayfalar row — and measures the page
+ *  screen's boxes: no horizontal overflow on the document or the main column, the header's
+ *  controls level on their row whatever heights they carry, the stage and the native view's
+ *  reserved rectangle inside the main column (the view itself is never audited, only its box),
+ *  the comments rail below the stage while the main container sits under its two-column floor
+ *  and beside it above, and no text clipped without its ellipsis. The rail's honesty pins what
+ *  the seed stands for: both delivery states, the pending chip, the two versions. ‹ Geri closes
+ *  each standing back to the detail, so every combo starts from a known screen. */
+async function pageViewerCheck(target) {
+  const { page, selectors } = target;
+  const area = await target.workArea();
+  const widths = [...new Set(ATTENTION_WIDTHS.map((w) => Math.min(w, area.width)))];
+  // The card's code is the derived one: the manifest's number is the order's rank in code order,
+  // so the code follows the world, never a typed literal.
+  const code = `İE-${String(target.seed.codes['İE-0033'].number).padStart(4, '0')}`;
+  const rows = [];
+  for (const width of widths) {
+    const height = Math.min(720, area.height);
+    for (const theme of THEMES) {
+      let m = null;
+      try {
+        await target.show('pano', theme, { size: [width, height] });
+        await page.locator('nav button, main button, main a').filter({ hasText: code }).first().click({ timeout: 4000 });
+        await page.waitForSelector('[data-pages-section]', { timeout: 10_000 });
+        const pageRow = page.locator(`[data-page-row="${target.seed.page.id}"]`).first();
+        await pageRow.waitFor({ state: 'visible', timeout: 4000 });
+        // The screen stands loading until the page has loaded: the header and the reserved body
+        // are the loaded standing's own hooks, so waiting them out is waiting the load out.
+        await pageRow.click({ timeout: 4000 });
+        await page.waitForSelector(selectors.pageHeader, { state: 'visible', timeout: 10_000 });
+        await page.waitForSelector(selectors.pageStageBody, { state: 'visible', timeout: 10_000 });
+        await page.waitForTimeout(450);
+        m = await page.evaluate(
+          ([screenSel, headerSel, stageSel, bodySel, railSel, mainSel]) => {
+            const screen = document.querySelector(screenSel);
+            const header = document.querySelector(headerSel);
+            const stage = document.querySelector(stageSel);
+            const body = document.querySelector(bodySel);
+            const rail = document.querySelector(railSel);
+            const main = document.querySelector(mainSel);
+            if (screen === null || header === null || stage === null || body === null || rail === null || main === null) {
+              return null;
+            }
+            const visible = (el) => {
+              const r = el.getBoundingClientRect();
+              const cs = getComputedStyle(el);
+              return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none';
+            };
+            // The header's controls fold into visual rows when the header narrows; each row must
+            // sit level — one centre line within a pixel, whatever heights the controls carry.
+            const controls = [...header.querySelectorAll('button, select')]
+              .filter(visible)
+              .map((el) => el.getBoundingClientRect())
+              .sort((a, b) => a.top - b.top);
+            const headerRows = [];
+            for (const r of controls) {
+              const row = headerRows[headerRows.length - 1];
+              if (row !== undefined && r.top <= row.bottom + 0.5) {
+                row.bottom = Math.max(row.bottom, r.bottom);
+                row.cys.push((r.top + r.bottom) / 2);
+              } else {
+                headerRows.push({ top: r.top, bottom: r.bottom, cys: [(r.top + r.bottom) / 2] });
+              }
+            }
+            // No text clipped: the shell-wide rule's own reading, scoped to the screen the walk is on.
+            const clipped = [];
+            for (const el of screen.querySelectorAll('*')) {
+              const r = el.getBoundingClientRect();
+              if (r.width === 0 || r.height === 0) continue;
+              const own = [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join('').trim();
+              if (own === '' || el.scrollWidth <= el.clientWidth + 1) continue;
+              const cs = getComputedStyle(el);
+              if (cs.overflowX === 'auto' || cs.overflowX === 'scroll') continue;
+              if (!(cs.textOverflow === 'ellipsis' && (el.getAttribute('title') || '').includes(own.slice(0, 20)))) {
+                clipped.push(own.slice(0, 24));
+              }
+            }
+            const mr = main.getBoundingClientRect();
+            const mainLeft = mr.left + main.clientLeft;
+            const mainRight = mainLeft + main.clientWidth;
+            const within = (r) => r.left >= mainLeft - 0.5 && r.right <= mainRight + 0.5;
+            const sr = stage.getBoundingClientRect();
+            const br = body.getBoundingClientRect();
+            const rr = rail.getBoundingClientRect();
+            const mainCs = getComputedStyle(main);
+            // The container the screen's collapse breakpoints read is main itself (inline-size),
+            // so its content width — padding out, like the query reads it — decides the rail's place.
+            const containerW = main.clientWidth - parseFloat(mainCs.paddingLeft) - parseFloat(mainCs.paddingRight);
+            const beside = containerW >= 56 * parseFloat(getComputedStyle(document.documentElement).fontSize);
+            return {
+              docScroll: document.documentElement.scrollWidth,
+              iw: innerWidth,
+              mainScroll: main.scrollWidth,
+              mainClient: main.clientWidth,
+              headerRows: headerRows.map((row) => Math.max(...row.cys) - Math.min(...row.cys)),
+              headerControls: controls.length,
+              stageIn: within(sr),
+              bodyIn: within(br),
+              railIn: within(rr),
+              bodyH: br.height,
+              bodyMin: parseFloat(getComputedStyle(body).minHeight) || 0,
+              stageTop: sr.top,
+              stageBottom: sr.bottom,
+              stageRight: sr.right,
+              railTop: rr.top,
+              railLeft: rr.left,
+              containerW,
+              beside,
+              clipped,
+              delivered: rail.querySelectorAll('[data-page-comment][data-delivered="true"]').length,
+              undelivered: rail.querySelectorAll('[data-page-comment][data-delivered="false"]').length,
+              chip: header.querySelector('[data-page-approval-chip]')?.textContent?.trim() ?? '',
+              versions: header.querySelectorAll('[data-page-version] option').length,
+            };
+          },
+          [
+            selectors.pageScreen,
+            selectors.pageHeader,
+            selectors.pageStage,
+            selectors.pageStageBody,
+            selectors.pageRail,
+            selectors.main,
+          ],
+        );
+      } catch (error) {
+        rows.push({
+          ok: false,
+          size: `${width}x${height}`,
+          theme,
+          detail: `page viewer unreachable: ${String(error).split('\n')[0]}`,
+        });
+        continue;
+      }
+      // ‹ Geri is best effort: the row's verdict is the measurement, and the next combo's own
+      // navigation starts from wherever the app stands.
+      try {
+        await page.locator(selectors.pageScreen).getByRole('button', { name: '‹ Geri' }).click({ timeout: 4000 });
+        await page.waitForSelector('[data-pages-section]', { timeout: 4000 });
+      } catch {
+        // stays on the page screen; the next combo navigates home first
+      }
+      if (m === null) {
+        rows.push({ ok: false, size: `${width}x${height}`, theme, detail: 'page screen elements not found' });
+        continue;
+      }
+      const bad = [];
+      if (m.docScroll > m.iw) bad.push(`the document scrolls sideways (${m.docScroll} of ${m.iw})`);
+      if (m.mainScroll > m.mainClient) bad.push(`main scrolls sideways (${m.mainScroll} of ${m.mainClient})`);
+      const worstRow = Math.max(0, ...m.headerRows);
+      if (m.headerControls === 0) bad.push('the header carries no controls to level');
+      else if (worstRow > 1) bad.push(`a header row sits ${worstRow.toFixed(1)}px off level`);
+      if (!m.stageIn) bad.push('the stage passes the main column');
+      if (!m.bodyIn) bad.push('the reserved box passes the main column');
+      if (!m.railIn) bad.push('the rail passes the main column');
+      if (m.bodyH < m.bodyMin - 0.5) {
+        bad.push(`the reserved box is ${m.bodyH.toFixed(0)}px, under its ${m.bodyMin.toFixed(0)}px minimum`);
+      }
+      const besideOk = m.railLeft >= m.stageRight - 1 && Math.abs(m.railTop - m.stageTop) <= 1;
+      const belowOk = m.railTop >= m.stageBottom - 1;
+      if (m.beside && !besideOk) bad.push(`container ${Math.round(m.containerW)}px should hold the rail beside the stage`);
+      if (!m.beside && !belowOk) bad.push(`container ${Math.round(m.containerW)}px should drop the rail below the stage`);
+      if (m.clipped.length > 0) bad.push(`text clipped: ${m.clipped.slice(0, 3).join('; ')}`);
+      if (m.versions < 2) bad.push('the version selector lists fewer than two versions');
+      if (m.delivered < 1 || m.undelivered < 1) bad.push('the rail must show a delivered and an undelivered comment');
+      if (!m.chip.includes('Onay bekliyor')) bad.push(`the chip reads "${m.chip}", not the pending one`);
+      rows.push({
+        ok: bad.length === 0,
+        size: `${width}x${height}`,
+        theme,
+        detail:
+          bad.length === 0
+            ? `${m.versions} versions, chip "${m.chip}", ${m.delivered + m.undelivered} comments (${m.delivered} delivered), header level over ${m.headerControls} controls, reserved ${Math.round(m.bodyH)}px, rail ${m.beside ? 'beside' : 'below'} (container ${Math.round(m.containerW)}px), no overflow`
+            : bad.slice(0, 3).join('; '),
+      });
+    }
+  }
+  return rows;
+}
+
 // --- run ---------------------------------------------------------------------------------------------
 const args = parseArgs(process.argv.slice(2));
 if (args.target === 'prototype' && !args.path) {
@@ -1117,6 +1317,22 @@ if (args.target === 'app' && target.selectors.attentionCard) {
     lines += 1;
     console.log(`attention: kokpit ${r.size} dark ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
     appendCheck({ id: 'attention', screen: 'kokpit', size: r.size, theme: 'dark', status: r.ok ? 'ok' : 'FAIL', detail: r.detail });
+  }
+}
+// The page viewer's width × theme walk runs once per run, beside the attention cards' — the app
+// target only; the frozen prototype has no page viewer.
+if (args.target === 'app' && target.selectors.pageScreen) {
+  let rows;
+  try {
+    rows = await pageViewerCheck(target);
+  } catch (error) {
+    rows = [{ ok: false, size: '', theme: '', detail: `page viewer unreachable: ${String(error).split('\n')[0]}` }];
+  }
+  for (const r of rows) {
+    if (!r.ok) failures += 1;
+    lines += 1;
+    console.log(`page: sayfa ${r.size} ${r.theme} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
+    appendCheck({ id: 'page', screen: 'sayfa', size: r.size, theme: r.theme, status: r.ok ? 'ok' : 'FAIL', detail: r.detail });
   }
 }
 // The without-standing runs once per run, on its own fake-free launch.
