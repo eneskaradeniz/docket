@@ -14,7 +14,7 @@
 // and one for the settings panel, opened once through the sidebar's gear: the panel must sit
 // centred and wholly inside the window at its min() size, no control it carries may reach past
 // the window or the panel's own box (L-3's rule, measured while the panel is up, and the same
-// containment walked again on the two sections the nav rows open — Telefon, Güncelleme):
+// containment walked again on Görünüm and Güncelleme; Telefon is its own window):
 //   settings: kokpit <WxH> <theme> ok|FAIL <detail>
 // and one for Docket AI's panel (U-120, U-124, U-125), opened through ⌘J: wholly inside the window,
 // its right edge aligned with the round button's and sitting above it, no control past the panel's
@@ -128,6 +128,10 @@ const APP_SELECTORS = {
   settingsUpdate: '[data-settings-update]',
   settingsPanel: '[data-settings-panel]',
   settingsScrim: '[data-settings-scrim]',
+  newWorkOrder: '[data-new-work-order]',
+  newWorkOrderScrim: '[data-new-work-order-scrim]',
+  phoneWindow: '[data-phone-window]',
+  phoneWindowScrim: '[data-phone-window-scrim]',
   chatFab: '[data-chat-fab]',
   chatPanel: '[data-chat-panel]',
   accountMark: '[data-provider-mark]',
@@ -329,7 +333,7 @@ async function paletteCheck(target, theme) {
  *  panel must sit centred and wholly inside the window at its min() size (the 1024×640 minimum
  *  fits it by construction), over a scrim that covers the window and blurs what is behind it,
  *  and no control it carries may reach past the window or the panel's own box (L-3's rule,
- *  measured while the panel is up, then walked again on the Telefon and Güncelleme sections).
+ *  measured while the panel is up, then walked again on the Görünüm and Güncelleme sections).
  *  The panel eases in with the palette's motion numbers, so the measurement waits for the
  *  running transition to settle. Esc closes it again. */
 async function settingsPanelCheck(target) {
@@ -395,9 +399,8 @@ async function settingsPanelCheck(target) {
       outside,
     };
   }, [selectors.settingsPanel, selectors.settingsScrim]);
-  // The two sections the nav's rows open (U-24) get the same containment walk as the default
-  // section, plus their own honest content: the phone section's "not linked" standing with its
-  // disabled pair action, the Güncelleme section's version line, status and check action.
+  // Görünüm and Güncelleme get the same containment walk as the default section. Telefon is its
+  // own window, measured with the new-work-order dialog (U-250), not as a settings tab.
   const sectionOutside = async () =>
     page.evaluate((panelSel) => {
       const panel = document.querySelector(panelSel);
@@ -439,15 +442,7 @@ async function settingsPanelCheck(target) {
   // The open popup keeps the panel's Esc for itself (the list stops the key), so this close
   // leaves the panel standing.
   await page.keyboard.press('Escape');
-  await menuButton('Telefon').click({ timeout: 4000 });
-  await inPanel('Telefon bağlı değil').waitFor({ state: 'visible', timeout: 4000 });
-  const pairDisabled = await page
-    .locator(selectors.settingsPanel)
-    .getByRole('button', { name: 'Eşleştir', exact: true })
-    .first()
-    .isDisabled();
-  await inPanel('Yakında').waitFor({ state: 'visible', timeout: 4000 });
-  const phoneOutside = await sectionOutside();
+  const menuText = (await page.locator(selectors.settingsPanel).locator('nav').last().textContent()) ?? '';
   await menuButton('Güncelleme').click({ timeout: 4000 });
   await inPanel('Şimdi kontrol et').waitFor({ state: 'visible', timeout: 4000 });
   await inPanel('Sürüm').waitFor({ state: 'visible', timeout: 4000 });
@@ -455,7 +450,7 @@ async function settingsPanelCheck(target) {
   await page.keyboard.press('Escape');
   await page.locator(selectors.settingsPanel).waitFor({ state: 'detached', timeout: 4000 });
   if (m === null) return { ok: false, detail: 'settings panel elements not found' };
-  if (phoneOutside === null || updateOutside === null || appearanceOutside === null) {
+  if (updateOutside === null || appearanceOutside === null) {
     return { ok: false, detail: 'a section walk lost the panel' };
   }
   const dx = Math.abs(m.cx - m.iw / 2);
@@ -474,19 +469,99 @@ async function settingsPanelCheck(target) {
     m.covers &&
     m.blurs &&
     m.outside.length === 0 &&
-    pairDisabled &&
-    phoneOutside.length === 0 &&
+    !menuText.includes('Telefon') &&
     appearanceOutside.length === 0 &&
     updateOutside.length === 0;
   return {
     ok,
     detail: `centre +${dx.toFixed(1)}/+${dy.toFixed(1)} panel ${Math.round(m.w)}x${Math.round(m.h)} want ${wantW}x${wantH} ${
       inside ? 'inside' : 'overflows the window'
-    } controls ${m.outside.length === 0 ? 'contained' : `${m.outside.length} outside: ${m.outside.slice(0, 3).join('; ')}`} pair ${
-      pairDisabled ? 'disabled' : 'ENABLED'
-    } sections ${phoneOutside.length + updateOutside.length + appearanceOutside.length === 0 ? 'contained' : `${phoneOutside.length + updateOutside.length + appearanceOutside.length} outside`} scrim ${
+    } controls ${m.outside.length === 0 ? 'contained' : `${m.outside.length} outside: ${m.outside.slice(0, 3).join('; ')}`} menu ${
+      menuText.includes('Telefon') ? 'still lists Telefon' : 'no Telefon tab'
+    } sections ${updateOutside.length + appearanceOutside.length === 0 ? 'contained' : `${updateOutside.length + appearanceOutside.length} outside`} scrim ${
       m.covers ? 'covers' : 'gaps'
     } blur ${m.blurs ? 'yes' : 'no'}`,
+  };
+}
+
+/** Both dialogs (U-250) at the audit's 1024×640 and 1152×720 sizes (and the rest of the plan):
+ *  the window stays inside the viewport, its actions are visible, and no control overflows it. */
+async function dialogWindowsCheck(target) {
+  const { page, selectors } = target;
+  const settled = (sel) =>
+    page.waitForFunction(
+      (panelSel) => {
+        const panel = document.querySelector(panelSel);
+        if (panel === null) return false;
+        return parseFloat(getComputedStyle(panel).opacity) > 0.999 && panel.getAnimations().length === 0;
+      },
+      sel,
+      { timeout: 4000 },
+    );
+  const measure = (panelSel) =>
+    page.evaluate((sel) => {
+      const panel = document.querySelector(sel);
+      if (panel === null) return null;
+      const r = panel.getBoundingClientRect();
+      const visible = (el) => {
+        const b = el.getBoundingClientRect();
+        const style = getComputedStyle(el);
+        return b.width > 0 && b.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+      };
+      const outside = [];
+      const actions = [];
+      for (const el of panel.querySelectorAll('button, input, select, textarea')) {
+        if (!visible(el)) continue;
+        const b = el.getBoundingClientRect();
+        const name = (el.getAttribute('aria-label') || el.textContent || el.tagName).trim().slice(0, 40);
+        const scrolls = el.closest('[data-window-body]') !== null;
+        if (b.left < r.left - 0.5 || b.right > r.right + 0.5 || (!scrolls && (b.top < r.top - 0.5 || b.bottom > r.bottom + 0.5))) {
+          outside.push(name);
+        }
+        const inView = b.bottom <= innerHeight + 0.5 && b.top >= -0.5 && b.width > 0 && b.height > 0;
+        actions.push({ name, inView });
+      }
+      return {
+        inside: r.left >= -0.5 && r.top >= -0.5 && r.right <= innerWidth + 0.5 && r.bottom <= innerHeight + 0.5,
+        outside,
+        actions,
+        w: Math.round(r.width),
+        h: Math.round(r.height),
+      };
+    }, panelSel);
+
+  await page.getByRole('button', { name: '+ Yeni iş emri', exact: true }).first().click({ timeout: 4000 });
+  await page.waitForSelector(selectors.newWorkOrder, { timeout: 4000 });
+  await settled(selectors.newWorkOrder);
+  const work = await measure(selectors.newWorkOrder);
+  const workActions = work === null ? [] : work.actions.map((action) => action.name);
+  const workVisible =
+    work !== null &&
+    ['Aç', 'Vazgeç'].every((name) => work.actions.some((action) => action.name.includes(name) && action.inView)) &&
+    work.actions.some((action) => action.name.includes('Tarif et') && action.inView);
+  await page.keyboard.press('Escape');
+  await page.locator(selectors.newWorkOrder).waitFor({ state: 'detached', timeout: 4000 });
+
+  await page.getByRole('button', { name: 'Telefon', exact: true }).first().click({ timeout: 4000 });
+  await page.waitForSelector(selectors.phoneWindow, { timeout: 4000 });
+  await settled(selectors.phoneWindow);
+  const phoneBox = page.locator(selectors.phoneWindow);
+  await phoneBox.getByText('Telefon bağlı değil').waitFor({ state: 'visible', timeout: 4000 });
+  await phoneBox.getByText('Yakında').waitFor({ state: 'visible', timeout: 4000 });
+  const pairDisabled = await phoneBox.getByRole('button', { name: 'Eşleştir', exact: true }).first().isDisabled();
+  const phone = await measure(selectors.phoneWindow);
+  await page.keyboard.press('Escape');
+  await page.locator(selectors.phoneWindow).waitFor({ state: 'detached', timeout: 4000 });
+
+  if (work === null || phone === null) return { ok: false, detail: 'a dialog was not on screen' };
+  const ok = work.inside && work.outside.length === 0 && workVisible && phone.inside && phone.outside.length === 0 && pairDisabled;
+  return {
+    ok,
+    detail: `1024×640 and 1152×720 (this pass ${work.w}x${work.h} / ${phone.w}x${phone.h}) work ${
+      work.inside && work.outside.length === 0 ? 'contained' : `overflow ${work.outside.slice(0, 3).join('; ')}`
+    } actions ${workVisible ? workActions.slice(0, 4).join(', ') : 'missing'} phone ${
+      phone.inside && phone.outside.length === 0 ? 'contained' : `overflow ${phone.outside.slice(0, 3).join('; ')}`
+    } pair ${pairDisabled ? 'disabled' : 'ENABLED'}`,
   };
 }
 
@@ -1341,6 +1416,18 @@ for (const { size: entry, theme } of plan) {
       lines += 1;
       console.log(`palette: ${label} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
       appendCheck({ id: 'palette', screen, size: `${width}x${height}`, theme, status: r.ok ? 'ok' : 'FAIL', detail: r.detail });
+    }
+    if (screen === 'pano' && target.selectors.newWorkOrder) {
+      let r;
+      try {
+        r = await dialogWindowsCheck(target);
+      } catch (error) {
+        r = { ok: false, detail: `dialogs unreachable: ${String(error).split('\n')[0]}` };
+      }
+      if (!r.ok) failures += 1;
+      lines += 1;
+      console.log(`dialogs: ${label} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
+      appendCheck({ id: 'dialogs', screen, size: `${width}x${height}`, theme, status: r.ok ? 'ok' : 'FAIL', detail: r.detail });
     }
     if (screen === 'kokpit' && target.selectors.settingsPanel) {
       let r;

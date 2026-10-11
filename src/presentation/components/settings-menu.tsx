@@ -12,7 +12,6 @@ const SECTION_KEY: Readonly<Record<SettingsSection, LabelKey>> = {
   concurrency: 'settings.section.concurrency',
   providers: 'settings.section.providers',
   appearance: 'settings.section.appearance',
-  phone: 'settings.section.phone',
   update: 'settings.section.update',
 };
 

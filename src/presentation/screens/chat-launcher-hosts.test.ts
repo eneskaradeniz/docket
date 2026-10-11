@@ -20,10 +20,20 @@ import { PageViewerScreen } from './page-viewer';
 import { RoadmapScreen } from './roadmap';
 
 const SOURCES = import.meta.glob(
-  ['./cockpit.tsx', './new-project.tsx', './board.tsx', './detail.tsx', './settings.tsx', './shell.tsx', './roadmap.tsx', './page-viewer.tsx'],
+  [
+    './cockpit.tsx',
+    './new-project.tsx',
+    './board.tsx',
+    './detail.tsx',
+    './settings.tsx',
+    './shell.tsx',
+    './roadmap.tsx',
+    './page-viewer.tsx',
+    '../components/new-work-order-window.tsx',
+  ],
   { query: '?raw', import: 'default', eager: true },
 ) as Record<string, string>;
-const source = (name: string): string => SOURCES[`./${name}`] ?? '';
+const source = (name: string): string => Object.entries(SOURCES).find(([path]) => path.endsWith(name))?.[1] ?? '';
 
 const launchStore: LaunchStore = { state: () => ({ draft: '' }), openChat: () => undefined };
 const within = (element: ReturnType<typeof createElement>): string =>
@@ -122,10 +132,10 @@ describe('the other hosts mount their row', () => {
     expect(source('new-project.tsx')).toContain('<HomeLaunchers');
   });
 
-  it('U-130: the board mounts the work-order creation launcher inside its create form', () => {
-    const text = source('board.tsx');
+  it('U-130: the new-work-order window mounts the creation launcher', () => {
+    const text = source('new-work-order-window.tsx');
     expect(text).toContain('<BoardLaunchers');
-    expect(text.indexOf('<BoardLaunchers')).toBeGreaterThan(text.indexOf('<BoardCreateForm'));
+    expect(source('board.tsx')).toContain('<NewWorkOrderWindow');
   });
 
   it('U-131: the work-order detail passes its id and its status to the launcher row', () => {

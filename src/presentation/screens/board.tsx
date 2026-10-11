@@ -6,20 +6,19 @@
 // flow, rows grouped by stage; the Kanban ⇄ Liste choice persists per repo. A failed board query
 // shows the repo-problem state, never an empty board.
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
 import { ActionButton } from '../components/action-button';
 import { BoardKanban } from '../components/board-kanban';
 import { BoardList } from '../components/board-list';
-import { BoardLaunchers } from '../components/launcher-rows';
 import { KanbanIcon, ListIcon, PencilIcon } from '../components/board-icons';
 import { boardMotionVars } from '../components/motion';
+import { NewWorkOrderWindow } from '../components/new-work-order-window';
 import { BoardSkeleton } from '../components/board-skeleton';
 import { SkeletonReveal, useSkeleton } from '../components/skeleton';
-import type { BoardStore, CreateOutcome, CreateValidation } from '../stores/board';
+import type { BoardStore } from '../stores/board';
 import { kanbanColumns, listGroups } from '../stores/board';
 import { failureKey } from '../stores/results';
-import { toast } from '../stores/toasts';
+import { boardFlowChoices, focusTarget } from '../stores/work-order-window';
 
 export interface BoardScreenProps {
   readonly store: BoardStore;
@@ -31,75 +30,13 @@ export interface BoardScreenProps {
   readonly roadmapProject: string | null;
   readonly onOpenRoadmap: (project: string) => void;
   readonly onOpenSettings: () => void;
-  /** The owning project's id for the create form's launcher; null when no project owns the repo. */
+  /** The owning project's id for the dialog's describe launcher; null when no project owns the repo. */
   readonly launchProject?: string | null;
+  /** The owning project's name, shown read-only in the new-work-order window. */
+  readonly projectName: string;
 }
 
-const VALIDATION_KEY: Readonly<Record<CreateValidation, LabelKey>> = {
-  title_required: 'validate.title_required',
-  flow_required: 'validate.flow_required',
-};
-
-const INPUT_CLASS =
-  'rounded-control border border-bord bg-raised px-2 py-[5px] text-[13px] text-ink outline-none placeholder:text-inkdim focus:border-signal';
-const LABEL_CLASS = 'font-mono text-[11px] uppercase tracking-[0.06em] text-inkdim';
-
-/** The create form (U-18's "+ Yeni iş emri" intent): title and flow, each input named by its
- *  wrapping label from the bundle — the accessible name a keyboard or screen reader reads. */
-export function BoardCreateForm({
-  locale,
-  title,
-  onTitleChange,
-  flow,
-  onFlowChange,
-  onSubmit,
-}: {
-  readonly locale: Locale;
-  readonly title: string;
-  readonly onTitleChange: (value: string) => void;
-  readonly flow: string;
-  readonly onFlowChange: (value: string) => void;
-  readonly onSubmit: () => void;
-}) {
-  return (
-    <section className="rounded-card border border-hairline bg-band p-3">
-      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end">
-        <label className="grid gap-1">
-          <span className={LABEL_CLASS}>{t(locale, 'board.create.titleLabel')}</span>
-          <input
-            value={title}
-            onChange={(event) => onTitleChange(event.target.value)}
-            placeholder={t(locale, 'board.create.titlePlaceholder')}
-            className={INPUT_CLASS}
-          />
-        </label>
-        <label className="grid gap-1">
-          <span className={LABEL_CLASS}>{t(locale, 'board.create.flowLabel')}</span>
-          <input
-            value={flow}
-            onChange={(event) => onFlowChange(event.target.value)}
-            placeholder={t(locale, 'board.create.flowPlaceholder')}
-            className={`${INPUT_CLASS} font-mono`}
-          />
-        </label>
-        <ActionButton variant="primary" size="md" onClick={onSubmit}>
-          {t(locale, 'board.create.submit')}
-        </ActionButton>
-      </div>
-    </section>
-  );
-}
-
-/** What the create intent reports, mapped through U-8's discipline: validation refusals show
- *  their own copy, a command failure its code's label with the code itself behind the copy
- *  button (U-50a), a success its confirmation — the whole report leaves as the one toast. */
-const createToast = (locale: Locale, outcome: CreateOutcome): { readonly type: 'success' | 'error'; readonly text: string; readonly copy?: string } => {
-  if (outcome.ok) return { type: 'success', text: t(locale, 'success.workOrder.open') };
-  if ('validation' in outcome) return { type: 'error', text: t(locale, VALIDATION_KEY[outcome.validation]) };
-  return { type: 'error', text: t(locale, failureKey(outcome.code)), copy: outcome.code };
-};
-
-export function BoardScreen({ store, repo, locale, onOpenWorkOrder, roadmapProject, onOpenRoadmap, onOpenSettings, launchProject = null }: BoardScreenProps) {
+export function BoardScreen({ store, repo, locale, onOpenWorkOrder, roadmapProject, onOpenRoadmap, onOpenSettings, launchProject = null, projectName }: BoardScreenProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
   useEffect(() => {
     void store.load(repo);
@@ -108,25 +45,30 @@ export function BoardScreen({ store, repo, locale, onOpenWorkOrder, roadmapProje
   // stands to gain one — a reload over the standing board or a repo problem never blanks it.
   const { skeleton, reveal } = useSkeleton(state.loading && state.view === null && state.problem === null, () => Date.now());
 
-  // The flow input stands on the board's own flow until the operator types one: the choice the
-  // validation needs is then explicit, not silent.
-  const [title, setTitle] = useState('');
-  const [flow, setFlow] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
+  const [focusTitle, setFocusTitle] = useState<string | null>(null);
   const view = state.view;
-  const flowValue = flow.trim() !== '' ? flow : (view?.flow ?? '');
 
-  const submit = (): void => {
-    void store.create({ repo, title, flow: flowValue }).then((outcome) => {
-      toast(createToast(locale, outcome));
-      if (outcome.ok) setTitle('');
-    });
-  };
+  // After a successful create the new card takes focus once the refreshed board lists it.
+  useEffect(() => {
+    if (focusTitle === null || view === null) return;
+    const cards = [...view.columns.flatMap((column) => column.workOrders), ...view.done];
+    if (focusTarget(focusTitle, cards) === null) return;
+    const nodes = document.querySelectorAll<HTMLElement>('[data-board-card], [data-list-row]');
+    for (const node of nodes) {
+      if ((node.textContent ?? '').includes(focusTitle)) {
+        node.focus();
+        setFocusTitle(null);
+        return;
+      }
+    }
+  }, [focusTitle, view, state.viewMode]);
 
   const columns = view === null ? [] : kanbanColumns(view, state.columnOverrides);
   const groups = view === null ? [] : listGroups(view, state.groupOverrides);
 
   return (
+    <>
     <div
       style={boardMotionVars()}
       className="flex h-full min-h-0 flex-col gap-[18px]"
@@ -165,7 +107,7 @@ export function BoardScreen({ store, repo, locale, onOpenWorkOrder, roadmapProje
             {t(locale, 'board.roadmap')}
           </ActionButton>
         ) : null}
-        <ActionButton variant="primary" onClick={() => setCreateOpen(!createOpen)}>
+        <ActionButton variant="primary" onClick={() => setCreateOpen(true)}>
           {t(locale, 'board.new')}
         </ActionButton>
       </header>
@@ -176,20 +118,6 @@ export function BoardScreen({ store, repo, locale, onOpenWorkOrder, roadmapProje
         <div role="alert" className="rounded-card border border-error/40 bg-surface px-3 py-2 text-[13px] text-error">
           {t(locale, failureKey(state.problem))}
         </div>
-      ) : null}
-
-      {view !== null && createOpen ? (
-        <>
-          <BoardCreateForm
-            locale={locale}
-            title={title}
-            onTitleChange={setTitle}
-            flow={flowValue}
-            onFlowChange={setFlow}
-            onSubmit={submit}
-          />
-          <BoardLaunchers project={launchProject} />
-        </>
       ) : null}
 
       {!skeleton && view !== null && state.viewMode === 'kanban' ? (
@@ -214,5 +142,16 @@ export function BoardScreen({ store, repo, locale, onOpenWorkOrder, roadmapProje
         </SkeletonReveal>
       ) : null}
     </div>
+    <NewWorkOrderWindow
+      open={createOpen}
+      locale={locale}
+      projectName={projectName}
+      flows={boardFlowChoices(view?.flow ?? null)}
+      launchProject={launchProject}
+      onClose={() => setCreateOpen(false)}
+      onCreated={setFocusTitle}
+      onCreate={(intent) => store.create({ repo, title: intent.title, flow: intent.flow })}
+    />
+    </>
   );
 }

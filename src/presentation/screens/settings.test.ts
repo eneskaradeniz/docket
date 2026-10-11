@@ -5,8 +5,9 @@ import { describe, expect, it } from 'vitest';
 import { SETTINGS_SECTIONS } from './settings';
 
 describe('SETTINGS_SECTIONS', () => {
-  it('U-24: the phone and update sections stay at the end of the list', () => {
-    expect(SETTINGS_SECTIONS.slice(-2)).toStrictEqual(['phone', 'update']);
+  it('U-24: update stays at the end of the list', () => {
+    expect(SETTINGS_SECTIONS.at(-1)).toBe('update');
+    expect(SETTINGS_SECTIONS).not.toContain('phone');
   });
 
   it('every section appears exactly once — a duplicated door would split the menu', () => {

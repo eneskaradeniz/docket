@@ -108,7 +108,7 @@ describe('settings (U-132)', () => {
   });
 
   it('U-132: the other sections draw nothing', () => {
-    for (const section of ['capabilities', 'providers', 'appearance', 'phone', 'update'] as const) {
+    for (const section of ['capabilities', 'providers', 'appearance', 'update'] as const) {
       expect(draw(createElement(SettingsLaunchers, { section, onLaunch: () => undefined })), section).toBe('');
     }
   });

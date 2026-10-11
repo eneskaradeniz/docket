@@ -7,8 +7,10 @@
 import type { ReactNode, Ref } from 'react';
 
 export interface WindowFrameProps {
-  /** The window's accessible name. */
+  /** The window's accessible name, used when `labelledBy` is absent. */
   readonly label: string;
+  /** The id of the visible title. When set, the dialog is named by that element. */
+  readonly labelledBy?: string;
   /** The brand line at the top of the left column. */
   readonly brand: string;
   /** The left column below the brand: steps or menu. */
@@ -41,7 +43,7 @@ export function BrandMark({ name }: { readonly name: string }) {
   );
 }
 
-export function WindowFrame({ label, brand, rail, railNote, head, children, footer, className = '', frameRef, onKeyDown, dataMark }: WindowFrameProps) {
+export function WindowFrame({ label, brand, rail, railNote, head, children, footer, className = '', frameRef, onKeyDown, dataMark, labelledBy }: WindowFrameProps) {
   return (
     <section
       ref={frameRef}
@@ -49,7 +51,7 @@ export function WindowFrame({ label, brand, rail, railNote, head, children, foot
       onKeyDown={onKeyDown}
       role="dialog"
       aria-modal="true"
-      aria-label={label}
+      {...(labelledBy === undefined ? { 'aria-label': label } : { 'aria-labelledby': labelledBy })}
       data-window=""
       {...(dataMark === undefined ? {} : { [dataMark]: '' })}
       className={`relative grid h-[680px] max-h-[calc(100vh-96px)] w-[1040px] max-w-[calc(100vw-48px)] grid-cols-[200px_minmax(0,1fr)] overflow-hidden rounded-panel border border-bord bg-surface shadow-2xl outline-none ${className}`}

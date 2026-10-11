@@ -129,7 +129,7 @@ describe('settings launchers', () => {
     expect(settingsLaunchSections('accounts')).toBe(true);
     expect(settingsLaunchSections('roles')).toBe(true);
     expect(settingsLaunchSections('concurrency')).toBe(true);
-    for (const section of ['capabilities', 'providers', 'appearance', 'phone', 'update'] as const) expect(settingsLaunchSections(section), section).toBe(false);
+    for (const section of ['capabilities', 'providers', 'appearance', 'update'] as const) expect(settingsLaunchSections(section), section).toBe(false);
   });
 });
 
