@@ -4,8 +4,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  findWaste,
   parseSlug,
   parseUlid,
+  summarizeUsage,
   type Actor,
   type Conversation,
   type ConversationRef,
@@ -17,6 +19,7 @@ import {
   type RepoSlug,
   type RoleSlug,
   type RunId,
+  type RunUsageInput,
   type Ulid,
   type WorkOrderEvent,
   type WorkOrderId,
@@ -79,6 +82,7 @@ const CONVERSATION = idOf<'conversation'>(21);
 const TURN = idOf<'run'>(31) as RunId;
 const RUN_RECORD = idOf<'run'>(32) as RunId;
 const RUN_RECORD_2 = idOf<'run'>(33) as RunId;
+const RUN_BETA = idOf<'run'>(34) as RunId;
 const ACCOUNT = idOf<'account'>(41);
 
 const OPERATOR: Actor = { kind: 'user', id: 'operator', label: 'Operator' };
@@ -546,6 +550,115 @@ describe('A-207: docket_get', () => {
     expect(text).not.toContain(COMMENT_TEXT);
     expect(text).not.toContain('index.html');
     expect(text).not.toContain('sha256');
+  });
+});
+
+// --- A-284 … A-286: docket_get usage ------------------------------------------------------------------
+
+describe('A-284 … A-286: docket_get usage', () => {
+  it('A-284: a work order and a project in scope answer the read model\'s summary and findings; shapes are bad_input before scope', async () => {
+    const h = await harness();
+    await h.deps.runs.appendEvents(RUN_RECORD, [
+      { type: 'usage', at: 1_200 as EpochMs, inputTokens: 1_000, outputTokens: 200, cachedInputTokens: 400, costUsd: 0.01, costKind: 'reported' },
+    ]);
+    await h.deps.runs.appendEvents(RUN_RECORD_2, [
+      { type: 'usage', at: 1_400 as EpochMs, inputTokens: 300, outputTokens: 50 },
+    ]);
+    const token = await h.chat(conversationOf(PROJECT_ALPHA));
+    // The expected answer is rebuilt beside the call from the same folded inputs, like the read model's own scenario.
+    const inputs: readonly RunUsageInput[] = [
+      { runId: RUN_RECORD, stage: 'plan', attempt: 1, role: 'worker', inputTokens: 1_000, outputTokens: 200, cachedInputTokens: 400, costUsd: 0.01, costKind: 'reported' },
+      { runId: RUN_RECORD_2, stage: 'plan', attempt: 1, role: 'worker', inputTokens: 300, outputTokens: 50, cachedInputTokens: 0 },
+    ];
+    const expected = { kind: 'data', source: 'docket_get usage', summary: summarizeUsage(inputs), findings: findWaste(summarizeUsage(inputs)), runsWithoutUsage: 0 };
+    expect(resultOf(await h.call(token, 'docket_get', { kind: 'usage', id: WO_A1 }))).toEqual(expected);
+    // The project read covers the same runs: WO_A2 has none of its own.
+    expect(resultOf(await h.call(token, 'docket_get', { kind: 'usage', id: ALPHA }))).toEqual(expected);
+    // The id and period shapes are checked before any scope answer.
+    expect(await h.call(token, 'docket_get', { kind: 'usage', id: 'Not a slug!' })).toEqual({ ok: false, code: 'bad_input' });
+    expect(await h.call(token, 'docket_get', { kind: 'usage', id: WO_A1, period: 'year' })).toEqual({ ok: false, code: 'bad_input' });
+  });
+
+  it('A-284: period defaults to 30d, 7d bounds by run start and all keeps everything', async () => {
+    // The seeded runs sit at 1_100 and 1_300: inside a 30-day window of this clock, outside a 7-day one.
+    const h = await harness({ clock: createFakeClock(1_200_000_000) });
+    const token = await h.chat(conversationOf(PROJECT_ALPHA));
+    const runsOf = async (args: Record<string, unknown>): Promise<number> => (resultOf(await h.call(token, 'docket_get', args))['summary'] as { runs: number }).runs;
+    expect(await runsOf({ kind: 'usage', id: WO_A1, period: '7d' })).toBe(0);
+    expect(await runsOf({ kind: 'usage', id: WO_A1, period: '30d' })).toBe(2);
+    expect(await runsOf({ kind: 'usage', id: WO_A1, period: 'all' })).toBe(2);
+    expect(await runsOf({ kind: 'usage', id: WO_A1 })).toBe(2);
+  });
+
+  it('A-285: an out-of-scope work order or project answers exactly what the other kinds answer, and none of its usage leaks', async () => {
+    const h = await harness();
+    await h.deps.runs.create({
+      id: RUN_BETA,
+      workOrderId: WO_B1,
+      stage: slugOf<'stage'>('plan'),
+      attempt: 1,
+      role: slugOf<'role'>('worker'),
+      route: { accountId: ACCOUNT },
+      startedAt: 1_500 as EpochMs,
+      autoResumesUsed: 0,
+    });
+    await h.deps.runs.appendEvents(RUN_BETA, [
+      { type: 'usage', at: 1_600 as EpochMs, inputTokens: 987_654, outputTokens: 123_456, cachedInputTokens: 99_999, costUsd: 5.25, costKind: 'reported' },
+    ]);
+    const token = await h.chat(conversationOf(PROJECT_ALPHA));
+    const refusal = await h.call(token, 'docket_get', { kind: 'usage', id: WO_B1 });
+    expect(refusal).toEqual({ ok: false, code: 'forbidden' });
+    expect(refusal).toEqual(await h.call(token, 'docket_get', { kind: 'work_order', id: WO_B1 }));
+    const projectRefusal = await h.call(token, 'docket_get', { kind: 'usage', id: BETA });
+    expect(projectRefusal).toEqual({ ok: false, code: 'forbidden' });
+    const text = JSON.stringify(refusal) + JSON.stringify(projectRefusal);
+    expect(text).not.toContain('987654');
+    expect(text).not.toContain('123456');
+    expect(text).not.toContain('5.25');
+  });
+
+  it('A-286: only numbers leave the stream — hostile event text never reaches the answer — and the answer stays within 32 KiB', async () => {
+    const h = await harness();
+    await h.deps.runs.appendEvents(RUN_RECORD, [
+      { type: 'text', at: 1_200 as EpochMs, delta: `the secret is ${PLANTED}` },
+      { type: 'raw', at: 1_250 as EpochMs, line: `export TOKEN=${PLANTED}` },
+      { type: 'error', at: 1_260 as EpochMs, class: 'crash', message: PLANTED },
+      { type: 'usage', at: 1_300 as EpochMs, inputTokens: 1_000, outputTokens: 200, cachedInputTokens: 400 },
+    ]);
+    const token = await h.chat(conversationOf(PROJECT_ALPHA));
+    const response = await h.call(token, 'docket_get', { kind: 'usage', id: WO_A1 });
+    expect(JSON.stringify(response)).not.toContain(PLANTED);
+    // RUN_RECORD_2 stays eventless: it counts in runsWithoutUsage and adds zero tokens.
+    const inputs: readonly RunUsageInput[] = [
+      { runId: RUN_RECORD, stage: 'plan', attempt: 1, role: 'worker', inputTokens: 1_000, outputTokens: 200, cachedInputTokens: 400 },
+      { runId: RUN_RECORD_2, stage: 'plan', attempt: 1, role: 'worker', inputTokens: 0, outputTokens: 0, cachedInputTokens: 0 },
+    ];
+    expect(response).toEqual({
+      ok: true,
+      result: { kind: 'data', source: 'docket_get usage', summary: summarizeUsage(inputs), findings: findWaste(summarizeUsage(inputs)), runsWithoutUsage: 1 },
+    });
+    expect(bytesOf(response)).toBeLessThanOrEqual(MAX_RESPONSE_BYTES);
+
+    // A pathological stage count is cut to fit the cap, the totals staying whole.
+    for (let i = 0; i < 500; i += 1) {
+      await h.deps.runs.create({
+        id: idOf<'run'>(1_000 + i),
+        workOrderId: WO_A1,
+        stage: slugOf<'stage'>(`stage-${String(i).padStart(4, '0')}`),
+        attempt: 1,
+        role: slugOf<'role'>('worker'),
+        route: { accountId: ACCOUNT },
+        startedAt: 2_000 as EpochMs,
+        autoResumesUsed: 0,
+      });
+    }
+    const big = await h.call(token, 'docket_get', { kind: 'usage', id: WO_A1, period: 'all' });
+    expect(big.ok).toBe(true);
+    expect(bytesOf(big)).toBeLessThanOrEqual(MAX_RESPONSE_BYTES);
+    const view = resultOf(big);
+    expect(view['truncated']).toBe(true);
+    expect((view['summary'] as { byStage: readonly unknown[] }).byStage.length).toBeLessThan(501);
+    expect((view['summary'] as { runs: number }).runs).toBe(502);
   });
 });
 
