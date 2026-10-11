@@ -1368,3 +1368,10 @@ result stands → closed and opened twice more, then Sağlayıcılar: no skeleto
 appears → Yeniden tara on the right goes busy, then "Son tarama" shows again with the rows kept → the
 sidebar's accounts block holds none of the removed lines and its refresh has no label. A DOM observer
 stands in for a request counter. It runs once per run.)*
+
+*(Addendum 2026-10-11, #948: U-160's busy button is natively disabled, so the focus it holds falls to the
+body while the scan runs; the Settings panel — U-43's "focus is trapped while open" — takes a fallen
+focus back to its root the moment it falls (a focus that moved into another overlay, the AccountEditor,
+is a move, not a fall, and stays). Without the repair Esc dies on the body focus and the panel stops
+closing after a rescan (J-18's red). The pure rule is `reclaimsPanelFocus`, unit-tested in
+`stores/settings-panel.test.ts`.)*

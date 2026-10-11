@@ -124,6 +124,13 @@ export interface CandidateFacts {
   readonly warnings: readonly string[];
 }
 
+/** Whether the panel root must take focus back once focus left its subtree: only a focus that
+ * fell to the body — the drop a control that went natively disabled while busy causes (the
+ * rescan button's "Taranıyor…") — kills the panel's keydown surface (Esc, the Tab trap), so only
+ * that fall is reclaimed, and only while the panel is open. A focus that moved into another
+ * overlay (the account editor beside the scrim) or back inside the panel is no fall and stays. */
+export const reclaimsPanelFocus = (open: boolean, active: unknown, body: unknown): boolean => open && active === body;
+
 /** Hesaplar carries an amber dot while the Eklenmemiş list has a row: the dot reads the list's own
  *  count (an unreadable candidate is listed, disabled, and so counts). */
 export const hasUnaddedCandidate = (candidates: readonly CandidateFacts[]): boolean => listedCandidateCount(candidates) > 0;

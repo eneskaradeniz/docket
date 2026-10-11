@@ -51,6 +51,7 @@ import { focusRestoredOnClose } from '../stores/search-palette';
 import {
   SETTINGS_MENU,
   SETTINGS_SECTIONS,
+  reclaimsPanelFocus,
   type SettingsMenuGroup,
   type SettingsOpenTarget,
   type SettingsPanelOrigin,
@@ -307,6 +308,30 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
   // by one render, so an effect on `open` alone would find an empty ref.
   useEffect(() => {
     if (open && mounted) panelRef.current?.focus();
+  }, [open, mounted]);
+
+  // A control that goes natively disabled while busy — the rescan button's "Taranıyor…" — drops
+  // focus to the body, and the panel's keydown surface (Esc, the Tab trap) rides its own subtree:
+  // a body focus leaves it dead. While open, a focus that falls to the body comes back to the
+  // root; a focus that moved into another overlay (the editor beside the scrim) is a move, not a
+  // fall, and stays.
+  useEffect(() => {
+    if (!open || !mounted) return undefined;
+    const panel = panelRef.current;
+    if (panel === null) return undefined;
+    let queued = 0;
+    const onFocusOut = () => {
+      window.clearTimeout(queued);
+      // The check rides a task of its own: at focusout time the new focus is not settled yet.
+      queued = window.setTimeout(() => {
+        if (reclaimsPanelFocus(open, document.activeElement, document.body)) panel.focus();
+      });
+    };
+    panel.addEventListener('focusout', onFocusOut);
+    return () => {
+      window.clearTimeout(queued);
+      panel.removeEventListener('focusout', onFocusOut);
+    };
   }, [open, mounted]);
 
   useEffect(() => {
