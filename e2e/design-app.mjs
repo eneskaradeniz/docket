@@ -80,10 +80,22 @@ export function screenNavigator(page) {
   return goto;
 }
 
+/** The app's own theme persistence key (src/presentation/stores/theme.ts): a run writes it so the
+ *  requested theme survives the boot-time apply every reload runs, not just the moment of the
+ *  attribute write. */
+const THEME_STORAGE_KEY = 'docket.theme.v1';
+
 /** Resize the real BrowserWindow (content area, so innerWidth matches) and set the theme. The
  *  window is then moved so it lies wholly inside the primary display's work area: a size the
  *  display cannot hold (full screen on a small screen) lands at the work area's origin instead
- *  of spilling off it, and a size that fits keeps its position. */
+ *  of spilling off it, and a size that fits keeps its position.
+ *
+ *  The theme ('dark' | 'light') is set the way the app itself persists it: the store reads the
+ *  key above at boot and re-applies its resolved value to the same document attribute, so a bare
+ *  attribute write is undone by the next reload the walks do. The written preference makes every
+ *  later boot apply the requested theme itself; the attribute write covers the page as it stands.
+ *  The call returns only while both hold the requested theme — a run measured under the other
+ *  face measures the same theme twice, so the walk refuses to continue on a mismatch. */
 export async function setWindow({ app, page }, [width, height], theme) {
   await app.evaluate(({ BrowserWindow, screen }, [w, h]) => {
     const win = BrowserWindow.getAllWindows()[0];
@@ -94,7 +106,18 @@ export async function setWindow({ app, page }, [width, height], theme) {
     const y = Math.min(Math.max(b.y, area.y), area.y + area.height - b.height);
     if (x !== b.x || y !== b.y) win.setPosition(x, y);
   }, [width, height]);
-  // The theme goes through the document attribute; the app's own switch lives in Settings.
-  await page.evaluate((t) => { document.documentElement.dataset.theme = t; }, theme);
+  await page.evaluate(([key, t]) => {
+    window.localStorage.setItem(key, t);
+    document.documentElement.dataset.theme = t;
+  }, [THEME_STORAGE_KEY, theme]);
   await page.waitForTimeout(450);
+  const held = await page.evaluate(
+    (key) => ({ attr: document.documentElement.dataset.theme, stored: window.localStorage.getItem(key) }),
+    THEME_STORAGE_KEY,
+  );
+  if (held.attr !== theme || held.stored !== theme) {
+    throw new Error(
+      `the theme did not hold: data-theme "${held.attr ?? ''}", store "${held.stored ?? ''}", requested "${theme}"`,
+    );
+  }
 }
