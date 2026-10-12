@@ -5,6 +5,10 @@
 // full screen being the primary display's work area), and the app target adds one line per
 // size × theme asserting the window lies wholly inside that work area:
 //   window: <size name> <WxH> <theme> ok|FAIL window WxH at x,y ⊆ workArea WxH at x,y
+// Every screen × theme also reads its face back from the document after the resize: a walk that
+// lost the theme (a reload's boot applying the system scheme) must fail, not measure the same
+// theme twice:
+//   theme: <screen> <WxH> <theme> ok|FAIL data-theme=<held>, requested <theme>
 // The app target adds one more line per size × theme for the search palette, measured open on the
 // cockpit screen (⌘K): the panel must sit in the window's centre over a scrim that covers the
 // window and blurs what is behind it, the empty standing must show the input row alone, a typed
@@ -1514,6 +1518,19 @@ for (const { size: entry, theme } of plan) {
       results = RULE_IDS.map((id) => ({
         id, ok: false, detail: `screen unreachable: ${why}`,
       }));
+    }
+    // The face the screen was measured under, read back from the document: it must be the plan's,
+    // or every rule below it just measured the wrong theme.
+    {
+      const held = await target.page
+        .evaluate(() => document.documentElement.dataset.theme)
+        .catch(() => null);
+      const ok = held === theme;
+      if (!ok) failures += 1;
+      lines += 1;
+      const detail = `data-theme=${held ?? 'none'}, requested ${theme}`;
+      console.log(`theme: ${label} ${ok ? 'ok' : 'FAIL'} ${detail}`);
+      appendCheck({ id: 'theme', screen, size: `${width}x${height}`, theme, status: ok ? 'ok' : 'FAIL', detail });
     }
     for (const r of results) {
       const status = r.skipped ? 'skipped' : r.ok ? 'ok' : 'FAIL';
