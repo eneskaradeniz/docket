@@ -870,6 +870,8 @@ export const LABEL_KEYS = [
   'editor.footer.save',
   'editor.footer.saved',
   'editor.footer.discardPrompt',
+  'editor.footer.exitWithoutSaving',
+  'editor.footer.returnToEditing',
   'editor.recommended.tooltip',
   'editor.reset.aria',
   'settings.models.groupHint.included',

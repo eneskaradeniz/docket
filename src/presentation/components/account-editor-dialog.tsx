@@ -5,7 +5,7 @@
 // and offers Vazgeç and Kaydet; in Settings every change saves on commit (U-29), so the footer says
 // so and closes. Esc or a click outside closes (in the wizard that is Vazgeç); an open Listbox
 // takes the Esc first. Both hosts draw this one dialog.
-import { useEffect, useRef, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 
 import { t } from '../labels/t';
 import type { Billing } from '../stores/account-groups';
@@ -44,6 +44,8 @@ const CloseIcon = () => (
 export function AccountEditorDialog(props: AccountEditorDialogProps) {
   const { locale, store, host, onClose, onSave, onOpenView } = props;
   const state = useSyncExternalStore(store.subscribe, store.state, store.state);
+  const [confirmingClose, setConfirmingClose] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<(() => void) | null>(null);
   const tabs: readonly EditorTab[] = (props.tabs ?? EDITOR_TABS).filter((tab) => tab !== 'models' || props.models !== undefined);
   const dialog = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Partial<Record<EditorTab, HTMLButtonElement | null>>>({});
@@ -71,13 +73,15 @@ export function AccountEditorDialog(props: AccountEditorDialogProps) {
     const next = at === -1 ? (event.shiftKey ? stops.length - 1 : 0) : (at + (event.shiftKey ? -1 : 1) + stops.length) % stops.length;
     stops[next]?.focus();
   };
-  const close = (): void => {
+  const leave = (action: () => void): void => {
     if (host === 'settings' && !store.canClose()) {
-      if (!window.confirm(t(locale, 'editor.footer.discardPrompt'))) return;
-      store.discardDraft();
+      setConfirmAction(() => action);
+      setConfirmingClose(true);
+      return;
     }
-    onClose();
+    action();
   };
+  const close = (): void => leave(onClose);
 
   return (
     <div
@@ -93,7 +97,7 @@ export function AccountEditorDialog(props: AccountEditorDialogProps) {
         aria-modal="true"
         aria-labelledby="account-editor-title"
         onKeyDown={onKeyDown}
-        className="grid h-[600px] max-h-full w-[820px] max-w-full grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-panel border border-bord bg-surface shadow-2xl"
+        className="relative grid h-[600px] max-h-full w-[820px] max-w-full grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-panel border border-bord bg-surface shadow-2xl"
         data-account-editor-dialog={host}
       >
         <header className="flex items-center gap-3 border-b border-hairline px-5 py-4">
@@ -157,11 +161,7 @@ export function AccountEditorDialog(props: AccountEditorDialogProps) {
               <button
                 type="button"
                 onClick={() => {
-                  if (store.canClose()) onOpenView();
-                  else if (window.confirm(t(locale, 'editor.footer.discardPrompt'))) {
-                    store.discardDraft();
-                    onOpenView();
-                  }
+                  leave(onOpenView);
                 }}
                 className="rounded-control border border-bord bg-transparent px-2 py-0.5 text-ink hover:bg-raised"
               >
@@ -193,6 +193,21 @@ export function AccountEditorDialog(props: AccountEditorDialogProps) {
               </ActionButton>
             )}
         </footer>
+        {confirmingClose ? (
+          <div role="alertdialog" aria-labelledby="editor-close-title" className="absolute inset-0 grid place-items-center bg-black/30 p-6">
+            <div className="grid max-w-[360px] gap-3 rounded-panel border border-bord bg-surface p-5 shadow-xl">
+              <h3 id="editor-close-title" className="m-0 text-[15px] font-bold text-ink">{t(locale, 'editor.footer.discardPrompt')}</h3>
+              <div className="flex justify-end gap-2">
+                <ActionButton variant="neutral" size="md" onClick={() => { setConfirmingClose(false); setConfirmAction(null); }}>
+                  {t(locale, 'editor.footer.returnToEditing')}
+                </ActionButton>
+                <ActionButton variant="primary" size="md" onClick={() => { store.discardDraft(); setConfirmingClose(false); confirmAction?.(); setConfirmAction(null); }}>
+                  {t(locale, 'editor.footer.exitWithoutSaving')}
+                </ActionButton>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );
