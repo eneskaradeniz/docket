@@ -6,12 +6,12 @@
 // id and share one dispatching probe that picks their accounts at poll time; the account and
 // vault ports those polls need arrive with the config, so a composition root without them simply
 // resolves no such kind.
-import { spawn as nodeSpawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 
 import type { EpochMs } from '../../../domain/index';
 import type { AccountRepo, QuotaProbe, QuotaProbeResolver, SecretVault } from '../../../application/index';
 
+import { registeredSpawn } from '../../system/index';
 import { createAgyUsageProbe, type UsageSpawn } from './agy/index';
 import { createClaudeUsageProbe } from './claude/index';
 import { createSdkGetUsage } from './claude/sdk-usage-source';
@@ -39,8 +39,10 @@ export interface ProbeResolverConfig {
   readonly secrets?: Pick<SecretVault, 'get'>;
 }
 
+// The production default registers every quota probe child; the injected spawns of tests stay
+// unregistered and hermetic.
 const realSpawn: QuotaProbeSpawn = (command, args, options) =>
-  nodeSpawn(command, [...args], { timeout: options.timeout });
+  registeredSpawn(command, args, { timeout: options.timeout }, { kind: 'probe', label: `quota ${command}` });
 
 const ownEnv = (): Record<string, string> =>
   Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
