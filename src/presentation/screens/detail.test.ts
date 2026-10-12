@@ -352,6 +352,10 @@ describe('work-order detail screen — the strip (U-224, U-225)', () => {
     expect(audit).toContain('the 12px token');
     expect(audit).toContain("'Swagger staging testi', 'Onayla'");
     expect(audit).toContain("'Hız sınırı', 'İzin ver'");
+    // The action measurement opens the detail from its top — a stale scroll from the screen
+    // before would read a reachable action as escaped — and an escape names the side it left by.
+    expect(audit).toContain('main.scrollTop = 0');
+    expect(audit).toMatch(/action escapes the main column[^(]*\(\$\{escapes\.join/);
   });
 
   it('U-224: the strip is an ordered list of stages with the counter on the current label alone', async () => {

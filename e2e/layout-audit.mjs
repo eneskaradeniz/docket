@@ -1402,36 +1402,58 @@ async function detailGeometry(target, theme, size) {
 }
 
 /** One decision standing's actions must sit wholly inside the main column's box — reachable
- *  without scrolling — at the default window. */
+ *  without scrolling — at the default window. The walk opens the detail the way a person does,
+ *  from its top: `main` keeps whatever scroll the screen before it left (the cockpit's attention
+ *  list, the board's columns, the page walk's reading), and a stale scroll would read a
+ *  reachable action as escaped — or flatter a buried one — so the scroll is reset before the
+ *  button is read, and the first screen is what the rule measures. */
 async function decisionActionsVisible(target, theme, cardText, buttonText, { wait = 8000 } = {}) {
   const { page } = target;
   const size = [1152, 720];
   await target.show('pano', theme, { size });
   await page.locator('main button').filter({ hasText: cardText }).first().click({ timeout: 4000 });
+  await page.evaluate(() => {
+    const main = document.querySelector('main');
+    if (main !== null) main.scrollTop = 0;
+  });
   const button = page
     .locator('[data-decision-stack] button')
     .filter({ hasText: buttonText })
     .first();
   await button.waitFor({ state: 'visible', timeout: wait });
+  // The store's riding reads (asks, changes) land after the view and re-render the zone in
+  // place; a box read in the same breath as a re-render can catch the node between trees. Let
+  // the reads land, then take the box — retrying only against that race, never against the
+  // assertion itself.
+  await page.waitForTimeout(450);
+  let box = await button.boundingBox();
+  for (let at = 0; box === null && at < 3; at += 1) {
+    await page.waitForTimeout(450);
+    box = await button.boundingBox();
+  }
   const m = await page.evaluate(() => {
     const main = document.querySelector('main');
     const rect = main?.getBoundingClientRect();
     return main === undefined || rect === undefined ? null : { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right };
   });
   if (m === null) return { ok: false, theme, detail: 'main not found' };
-  const box = await button.boundingBox();
-  const inside =
-    box !== null &&
-    box.top >= m.top - 1 &&
-    box.bottom <= m.bottom + 1 &&
-    box.left >= m.left - 1 &&
-    box.right <= m.right + 1;
+  const escapes =
+    box === null
+      ? ['no box']
+      : [
+          ...(box.top < m.top - 1 ? [`top ${box.top.toFixed(0)} < ${m.top.toFixed(0)}`] : []),
+          ...(box.bottom > m.bottom + 1 ? [`bottom ${box.bottom.toFixed(0)} > ${m.bottom.toFixed(0)}`] : []),
+          ...(box.left < m.left - 1 ? [`left ${box.left.toFixed(0)} < ${m.left.toFixed(0)}`] : []),
+          ...(box.right > m.right + 1 ? [`right ${box.right.toFixed(0)} > ${m.right.toFixed(0)}`] : []),
+        ];
   return {
-    ok: inside,
+    ok: escapes.length === 0,
+    size: '1152x720',
     theme,
-    detail: inside
-      ? `the ${buttonText} action sits inside the main column at 1152x720`
-      : `the ${buttonText} action escapes the main column at 1152x720`,
+    detail:
+      escapes.length === 0
+        ? `the ${buttonText} action sits inside the main column at 1152x720`
+        : `the ${buttonText} action escapes the main column at 1152x720 (${escapes.join(', ')})`,
   };
 }
 
