@@ -298,6 +298,117 @@ Rules:
 - **E-4** A `deploy` gate's `environment` must name an environment in `repo.environments` (`unknown_environment`).
 - **E-5** A `protected` environment must have `promoteFrom` set (`missing_promote_from`). `promoteFrom` must name another environment with a lower `order` value; an equal- or higher-order target reports `promote_cycle` — with unique `order` values (E-2), a non-descending chain and a cyclic one are the same defect class. The `promoteFrom` chain must be acyclic (`promote_cycle`).
 
+### Addendum: repo-owned flows, roles, and versioned definitions (added 2026-10-12, #1003)
+
+Under **D-1**, **D-4**, and **D-6**, flows, roles, assistants, and limit policy belong to the repository; a project carries no roles or flows and no "main repo". Library definitions are versioned and immutable; a repository flow binds concrete library role versions with an optional overlay or detached copy; work orders pin effective flow and role definitions at creation.
+
+```ts
+// definitions/repo-flow.ts (added 2026-10-12, #1003)
+/** Which version of a library role a stage uses. `latest` is never stored: a binding always names a concrete version. */
+export interface RoleRef {
+  readonly roleId: RoleSlug;
+  readonly version: number;                    // >= 1, a version that exists in the library
+  readonly overlay?: RoleOverlay;              // per-repo changes on top of that version
+  readonly detached?: RoleDef;                 // set → the repo owns this copy; roleId/version are provenance only
+}
+export type RoleOverlay = Partial<Omit<RoleDef, 'id' | 'active'>>;
+export interface StageBinding {
+  readonly stage: StageSlug;
+  readonly role?: RoleRef;                     // absent exactly when the flow's stage has role === null
+  readonly accounts: readonly AccountRoute[];  // ordered chain, first preferred (what RoleBinding.accounts was)
+  readonly limitPolicy?: LimitPolicy;          // absent → the repo's defaultLimitPolicy
+}
+export interface RepoFlow {
+  readonly flowId: FlowSlug;
+  readonly version: number;                    // version of the library flow this was copied from (provenance)
+  readonly stages: readonly StageDef[];        // the repo's own copy: edits here never touch the library
+  readonly bindings: readonly StageBinding[];  // exactly one per stage, same order
+}
+// RepoDef gains (supersedes `flows`, `defaultFlow`, `roleOverrides` — kept readable for import only, R-134):
+//   readonly flow: RepoFlow;
+//   readonly defaultLimitPolicy: LimitPolicy;  // default 'wait_resume'
+// ProjectDef loses `mainRepo` and carries no roles/flows: { id, name, repos, budget? }.
+
+export interface VersionRecord<T> {
+  readonly definitionId: string;
+  readonly version: number;                    // contiguous from 1
+  readonly body: T;                            // immutable once recorded
+  readonly recordedAt: EpochMs;                // passed in; the domain reads no clock
+  readonly archived: boolean;
+}
+export function nextVersion<T>(history: readonly VersionRecord<T>[]): number;
+export function effectiveRole(ref: RoleRef, library: readonly VersionRecord<RoleDef>[]): Result<RoleDef, 'unknown_role_version'>;
+export interface RoleUpdateProposal { readonly stage: StageSlug; readonly from: number; readonly to: number; readonly overlayFieldsChangedUpstream: readonly (keyof RoleOverlay)[] }
+export function roleUpdateProposals(flow: RepoFlow, library: readonly VersionRecord<RoleDef>[]): readonly RoleUpdateProposal[];
+
+export interface FlowPin {                      // what a work order records at creation
+  readonly flowId: FlowSlug; readonly flowVersion: number;
+  readonly stages: readonly { readonly stage: StageDef; readonly role: RoleDef | null; readonly roleVersion: number | null;
+                              readonly accounts: readonly AccountRoute[]; readonly limitPolicy: LimitPolicy }[];
+}
+export function pinFlow(flow: RepoFlow, library: readonly VersionRecord<RoleDef>[], defaultLimitPolicy: LimitPolicy): Result<FlowPin, DefinitionIssue>;
+
+export type RemovalVerdict =
+  | { readonly kind: 'delete' }
+  | { readonly kind: 'archive' }
+  | { readonly kind: 'blocked'; readonly reasons: readonly RemovalBlock[] };
+export type RemovalBlock = { readonly kind: 'running_work'; readonly workOrders: readonly string[] } | { readonly kind: 'dependant'; readonly of: 'stage' | 'binding'; readonly repo: RepoSlug; readonly stage?: StageSlug };
+export function roleRemoval(roleId: RoleSlug, repos: readonly RepoDef[], pins: readonly { workOrder: string; running: boolean; pin: FlowPin }[]): RemovalVerdict;
+export function accountRemoval(accountId: AccountId, repos: readonly RepoDef[], pins: readonly { workOrder: string; running: boolean; pin: FlowPin }[]): RemovalVerdict;
+export function dependantsOfRole(roleId: RoleSlug, repos: readonly RepoDef[]): readonly { repo: RepoSlug; stage: StageSlug }[];
+export function dependantsOfAccount(accountId: AccountId, repos: readonly RepoDef[]): readonly { repo: RepoSlug; stage: StageSlug }[];
+
+export function limitPolicyFor(flow: RepoFlow, stage: StageSlug, defaultLimitPolicy: LimitPolicy): LimitPolicy;
+```
+
+`DefinitionIssueCode` gains members: `'binding_stage_mismatch' | 'unknown_role_version' | 'role_required' | 'role_forbidden' | 'duplicate_binding'`.
+
+Rules:
+- **R-126** (added 2026-10-12, #1003, supersedes R-46's `main_repo_not_listed` arm) `ProjectDef` has no `mainRepo`: R-46's `main_repo_not_listed` arm no longer exists (`empty_repos` and `duplicate_id` stay); a roadmap task's empty `targets` means the project's only repo when the project lists exactly one repo, otherwise the validated roadmap reports `target_required` (supersedes the "empty → [project.mainRepo]" wording of section 10).
+- **R-127** (added 2026-10-12, #1003) A `RepoFlow`'s `bindings` hold exactly one binding per stage, in stage order; a count or order mismatch is `binding_stage_mismatch`, two bindings for one stage `duplicate_binding`.
+- **R-128** (added 2026-10-12, #1003) A stage with `role === null` has no `role` on its binding (`role_forbidden` otherwise); a stage with a role has one (`role_required` otherwise); a `RoleRef` without `detached` must name an existing library version (`unknown_role_version`).
+- **R-129** (added 2026-10-12, #1003) Library definition versions are immutable and contiguous from 1: `nextVersion([])` is 1, otherwise last+1; an edit never changes a recorded body.
+- **R-131** (added 2026-10-12, #1003) `roleUpdateProposals` lists, per non-detached stage binding whose `version` is below the library's latest version of that role, one proposal `{from, to: latest, overlayFieldsChangedUpstream}` where the list names the overlay fields whose upstream value differs between the two versions; it never applies anything, never lists a detached stage, and is empty when everything is current.
+- **R-132** (added 2026-10-12, #1003) `pinFlow` copies every stage with its effective role body and role version, accounts and effective limit policy (`limitPolicyFor`); the pin is self-contained: later edits, archiving or deleting library items or repo bindings do not change it. A work order stores its `FlowPin` at creation (A-324); a stage run record carries `flowVersion` and the stage's `roleVersion`; resume and retry use the pin, never the live repo flow.
+- **R-133** (added 2026-10-12, #1003) Planner stage-skip: a planner may only PROPOSE skipping stages; the proposal is a ledger event `stage_skip_proposed {stages, reason}` and the human decision a ledger event `stage_skip_decided {approved}`; an approved skip marks those stages `skipped` for this work order only — the pin never changes; a stage whose exit gates include a `deploy` gate or a `human` gate cannot be proposed for skipping (invariant 1).
+- **R-134** (added 2026-10-12, #1003) Deletion and archive: `roleRemoval`/`accountRemoval` return `blocked` when any pin with `running: true` references it or any repo stage still binds it (`dependant`), `archive` when only finished work orders' pins reference it, `delete` when nothing references it; archived definitions stay resolvable for pins and history but cannot be chosen for new bindings; the legacy `flows`/`defaultFlow`/`roleOverrides` fields are read only by the one-time import (#1004) and are never written.
+
+Conflicts and supersessions (added 2026-10-12, #1003, D-1, D-4, D-6):
+- **D-1** supersedes the Phase 3.5 project main-repo model in `ProjectDef` and `RepoDef`: `ProjectDef` loses `mainRepo` and carries no roles or flows (`{ id, name, repos, budget? }`); `RepoDef` gains `flow: RepoFlow` and `defaultLimitPolicy: LimitPolicy` (default `'wait_resume'`), superseding `flows`, `defaultFlow`, and `roleOverrides`. R-126 supersedes R-46's `main_repo_not_listed` arm (`empty_repos` and `duplicate_id` remain).
+- **D-4** replaces monolithic unversioned role definitions without overlay or detach: replaced by library role (versioned) + per-repo overlay + optional detach (R-128, R-130).
+- **D-6** replaces unversioned definitions and unconstrained lifecycle: library versions are immutable and contiguous from 1 (R-129); work orders pin flow and role versions at creation (R-132, A-324); removals default to archive and are blocked by running work or repo dependants (R-134). The legacy `flows`, `defaultFlow`, and `roleOverrides` fields on `RepoDef` are read only by the one-time import (#1004) and are never written.
+
+### Addendum 2026-10-12 (#1006, D-4, D-7): Agent capabilities addendum — library, memory, commands and plugins
+
+```ts
+// definitions/types.ts — CapabilityDef addendum (added 2026-10-12, #1006). The existing four members stay.
+export type CapabilityDef =
+  | /* existing mcp | skill | hook | context */
+  | { readonly kind: 'plugin';  readonly id: CapabilitySlug; readonly name: string; readonly source: PluginSource; readonly version?: string;
+      readonly includes: readonly CapabilitySlug[] }                      // a package: bundles other capabilities (skills, commands, mcp, hooks)
+  | { readonly kind: 'command'; readonly id: CapabilitySlug; readonly name: string; readonly template: string;   // prompt template, Docket renders it
+      readonly arguments: readonly { readonly name: string; readonly required: boolean }[] };
+export type PluginSource = { readonly kind: 'path'; readonly path: string } | { readonly kind: 'marketplace'; readonly marketplace: string; readonly name: string };
+
+export type MemoryScope = 'global' | 'project' | 'repo';
+export interface MemoryNote { readonly id: string; readonly scope: MemoryScope; readonly scopeId?: string; readonly text: string; readonly createdBy: 'user' | 'agent'; readonly active: boolean }
+export interface MemoryProposal { readonly id: string; readonly scope: MemoryScope; readonly scopeId?: string; readonly text: string; readonly sourceRun: string; readonly state: 'pending' | 'accepted' | 'rejected' }
+export const MEMORY_INJECTION_CAP_CHARS: number;      // 4000 per run, total over all scopes
+export function selectMemory(notes: readonly MemoryNote[], ctx: { project?: string; repo?: string }): { readonly text: string; readonly truncated: boolean; readonly used: readonly string[] };
+
+// definitions/validate.ts — new issue codes
+export type DefinitionIssueCode =
+  | /* existing codes */
+  | 'plugin_cycle' | 'unknown_argument';
+```
+
+- **R-140** (added 2026-10-12, #1006) `validateDefinitions` accepts `plugin` and `command`; a `plugin.includes` entry must name an existing capability (`unknown_capability`) and a plugin may not include itself or form a cycle (`plugin_cycle`); a `command.template`'s `{{name}}` placeholders must all be declared in `arguments` (`unknown_argument`); new `DefinitionIssueCode`s: `plugin_cycle`, `unknown_argument`. R-8's secret-literal rule applies to plugin/mcp env as before.
+- **R-141** (added 2026-10-12, #1006) `command` is a prompt template rendered by Docket itself (placeholder substitution), never a provider-native slash command: a provider that lacks native commands is therefore never `unsupported` for `command` (it is at worst `degraded` to `prompt_text`).
+- **R-142** (added 2026-10-12, #1006) Memory is propose-and-approve: an agent can only create a `MemoryProposal` (state `pending`); only a user decision makes a `MemoryNote`; optional auto-accept is a per-scope setting (`global`, `project`, `repo`), default off, and an auto-accepted note records `createdBy: 'agent'`.
+- **R-143** (added 2026-10-12, #1006) `selectMemory` takes active notes of the global scope, the run's project and the run's repo (in that order, newest last), and stops at `MEMORY_INJECTION_CAP_CHARS` without cutting a note in the middle (the first note that would exceed the cap and everything after it is dropped, `truncated: true`).
+
+Conflicts and supersessions (added 2026-10-12, #1006, D-7): Glossary "Capability — MCP, skill, hook, context" grows by plugin and command; "capabilities attached to roles" now also arrive through plugins; Phase 3.5 account-scoped capability candidates (R-62…R-67, #850–#866) stay as the import mechanism.
+
 ---
 
 ## 3. `resolver/` — the precedence chain
@@ -342,6 +453,16 @@ Rules:
 
 Project defaults sit between global and repo (S3): a repo's `.docket/` overrides the project, the
 project overrides `~/.docket`; the work-order level resolves above all three.
+
+### Addendum: repo flow role resolution and level simplification (added 2026-10-12, #1003)
+
+Under **D-1** and **D-4**, roles and flows belong to the repository. The precedence chain no longer resolves role, flow, or capability definitions through the `project` level.
+
+Rules:
+- **R-130** (added 2026-10-12, #1003, supersedes project-level definitions resolution) `effectiveRole`: detached → the detached body; otherwise the library body of `roleId`@`version` with `overlay` applied field-wise (same field rule as `applyRoleOverrides`, `id` and `active` never overlaid); an unknown version is `unknown_role_version`. The resolver's `project` level carries no role, flow or capability layers any more (section 3: the level stays in `Level` for settings that remain project-scoped; supersedes the "Project defaults sit between global and repo" paragraph for definitions).
+
+Conflicts and supersessions (added 2026-10-12, #1003, D-1):
+- Supersedes the "Project defaults sit between global and repo" paragraph above for definitions: the `project` level carries no role, flow, or capability layers; those definitions are repo-owned or library-owned. The `project` level is retained in `Level` solely for settings that remain project-scoped.
 
 ---
 
@@ -591,6 +712,22 @@ Rules:
   - policy `fallback_account`: first fallback route if any, else fall through to `wait_resume`.
   - `wait_resume`: if `autoResumesUsed >= maxAutoResumes` → `ask`/`max_resumes`; if `resetsAt` → at `resetsAt + RESUME_JITTER_MS`; else if `retryAfterMs` → at `now + retryAfterMs`; else `ask`/`no_reset_time`.
 
+### Addendum: stage limit policy resolution (added 2026-10-12, #1003)
+
+Under **D-1**, limit policies are configured per stage binding on the repo flow, falling back to the repository's `defaultLimitPolicy`.
+
+```ts
+// quota/limit-policy.ts (added 2026-10-12, #1003)
+export function limitPolicyFor(flow: RepoFlow, stage: StageSlug, defaultLimitPolicy: LimitPolicy): LimitPolicy;
+```
+
+Rules:
+- **R-135** (added 2026-10-12, #1003) `limitPolicyFor` returns the stage binding's `limitPolicy`, else the repo's `defaultLimitPolicy`.
+
+Conflicts and supersessions (added 2026-10-12, #1003, D-1):
+- `LimitPolicy` and `decideOnLimit` (R-30) are UNCHANGED: no new variant; the UI word "notify" is `ask`. What is new is only where the value comes from.
+- Conflict with Phase 3.5 account settings (#372–#382, A-51): the account-level limit behaviour of the accounts/limit settings (`account.save` / `SettingsAccountView.limitPolicy`) becomes the fallback used when a run has no repo/stage context (chat, probes); inside a work-order stage run the stage value (`limitPolicyFor`) wins.
+
 ---
 
 ## 7. `budget/` — spend caps (API accounts)
@@ -736,6 +873,52 @@ Rules:
 - **R-40** Task status: any linked work order not `done` → `running`; linked and all `done` → `done`; no linked work orders → `waiting` if any dependency is not `done` or the phase is blocked, else `planned`.
 - **R-41** Phase status, first matching rule wins: (1) any task `running` → `running`; (2) at least one task and all tasks `done` → `done`; (3) blocked by a phase that is not `done` → `waiting` (this includes a blocked zero-task phase); (4) otherwise `planned` (including an unblocked zero-task phase). Finished work is never reported as waiting.
 - **R-42** `runnable` = tasks with status `planned` (so dependencies done and phase not blocked).
+
+### Addendum: roadmap task targets without main repo (added 2026-10-12, #1003)
+
+Under **D-1**, projects no longer define a `mainRepo`. `RoadmapIssueCode` gains `'target_required'`.
+
+Conflicts and supersessions (added 2026-10-12, #1003, D-1):
+- Supersedes the `empty → [project.mainRepo] at load` wording of `TaskDef` and R-47's `Absent or empty targets default to [project.mainRepo] in the validated roadmap`: under R-126, a roadmap task's empty `targets` means the project's only repo when the project lists exactly one repo, otherwise the validated roadmap reports `target_required`.
+
+### Phase 7 addendum: two-layer roadmap model (added 2026-10-12, #1005)
+
+Under D-2 (see `docs/v2/decisions-phase7.md`), the roadmap becomes a two-layer model: repo roadmaps hold milestones and issues (tracked or local), while the project roadmap holds phases whose items link to repo milestones or issues, plus childless manual items. Progress derives from leaf items.
+
+```ts
+// roadmap/repo-roadmap.ts (added 2026-10-12, #1005)
+export type IssueSource = { readonly kind: 'local' } | { readonly kind: 'tracker'; readonly tracker: string; readonly externalId: string; readonly url?: string };
+export interface RepoMilestone { readonly id: string; readonly title: string; readonly dueAt?: EpochMs; readonly state: 'open' | 'closed'; readonly source: IssueSource }
+export interface RepoIssue {
+  readonly id: string;                           // ULID, Docket's own
+  readonly title: string; readonly body?: string;
+  readonly state: 'open' | 'closed';
+  readonly milestone?: string;                   // RepoMilestone.id
+  readonly labels: readonly string[];
+  readonly parent?: string;                      // a local subtask has a parent RepoIssue.id
+  readonly source: IssueSource;                  // a subtask is always { kind: 'local' }
+}
+export interface RepoRoadmap { readonly repo: RepoSlug; readonly milestones: readonly RepoMilestone[]; readonly issues: readonly RepoIssue[] }
+
+export type RepoItemRef = { readonly repo: RepoSlug; readonly kind: 'milestone' | 'issue'; readonly id: string };
+export type PhaseItem = { readonly kind: 'repo_item'; readonly ref: RepoItemRef } | { readonly kind: 'manual'; readonly id: string; readonly title: string; readonly done: boolean };
+// PhaseDef gains: readonly items: readonly PhaseItem[]   (the project roadmap; TaskDef stays as the execution-planning unit)
+export interface Progress { readonly done: number; readonly total: number }
+export function deriveProgress(phase: PhaseDef, repoRoadmaps: readonly RepoRoadmap[]): Progress;
+```
+
+Rules:
+- **R-136** (added 2026-10-12, #1005) A repo roadmap's ids are unique per kind; an issue's `milestone` and `parent` must resolve inside the same repo roadmap; a subtask (an issue with `parent`) has `source.kind === 'local'`; nesting is one level (a parent is never itself a subtask).
+- **R-137** (added 2026-10-12, #1005) `deriveProgress` counts leaves: a `manual` item is one leaf (done when `done`); an `issue` ref is one leaf (done when `closed`; a subtask counts with its parent only as detail, not as extra leaf); a `milestone` ref expands to its non-subtask issues (one leaf each), and a milestone with no issues is one leaf done when `closed`; a ref that does not resolve counts as one not-done leaf; progress is never stored, only derived.
+- **R-138** (added 2026-10-12, #1005) A phase's status derives from its Progress and its tasks: `total === 0` and no tasks → unchanged R-41; when items exist, `done === total` and all tasks done → `done`; any done leaf or running task → `running`; else per R-41 (supersedes R-41 only for phases that have items; phases without `items` keep R-41 byte for byte).
+- **R-139** (added 2026-10-12, #1005) The project roadmap lives under `~/.docket/projects/<slug>/roadmap.yaml` (see #1004) and supersedes "loaded from the main repo's `.docket/roadmap.yaml`"; `PhaseItem` refs must name repos listed in `project.repos` (`unknown_repo`).
+
+#### Conflicts and supersessions (added 2026-10-12, #1005)
+
+- **Storage location:** The project roadmap is loaded from `~/.docket/projects/<slug>/roadmap.yaml` (D-2, D-5; see #1004), superseding the main-repo `.docket/roadmap.yaml` rule at the top of section 10.
+- **Phase status derivation:** R-138 supersedes R-41 for phases containing `items`; phases without `items` keep R-41 byte for byte.
+- **Execution units vs roadmap items:** `TaskDef` and roadmap tasks stay as the execution-planning unit for work orders and gain no tracker fields; tracker and issue links belong exclusively to `RepoRoadmap` (`RepoIssue`, `RepoMilestone`) and `PhaseDef.items` (`PhaseItem`).
+- **Proposal model:** Imports into repo roadmaps are read-only mirrors (D-3) and do not create proposals, whereas modifications to the project roadmap's `PhaseItem` list remain proposals.
 
 ---
 

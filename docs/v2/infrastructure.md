@@ -506,3 +506,71 @@ Addendum 2026-10-10 (#927): the page conversation column, the extras of the comp
 Addendum 2026-10-10 (#934): the chat spend column.
 
 - **I-85** (added 2026-10-10, #934) Migration 10 adds the nullable `conversation` column to `spend`. `createSqliteAccountRepo.recordSpend` writes a chat entry with its conversation's project (or the empty string a global conversation leaves) and empty repo/work-order columns, the conversation id on the new column; run and account-test entries leave the column NULL and sum exactly as before. Rows written before the migration keep summing unchanged, and a close and reopen on the same file still sums chat entries by account and by project.
+
+## Phase 7 storage addendum (added 2026-10-12, #1004; decisions D-5, D-6, D-7)
+
+Layout under `~/.docket/` (added 2026-10-12, #1004):
+```
+~/.docket/
+  docket.db                      runtime state, registry (repoId → current folder), accounts, work orders, runs index
+  library/roles|flows|capabilities|memory/<id>/v<N>.yaml    versioned library definitions (immutable files, domain.md R-129)
+  projects/<project-slug>/project.yaml, roadmap.yaml        ProjectDef (no mainRepo), roadmap
+  repos/<repo-slug>/repo.yaml                                RepoDef incl. flow, bindings, defaultLimitPolicy (domain.md R-126…R-135)
+  worktrees/<repo-slug>/<work-order-code>/                   agent worktrees (already machine-local)
+  runs/<run-id>/                                             records, transcripts
+  run/children.json                                          process registry mirror (#999)
+  exports/                                                   bundles the user exported
+```
+
+```ts
+// Repo identity & registry mapping (I-88)
+export interface RepoFingerprint {
+  readonly rootCommit: string;
+  readonly remote?: string;
+}
+
+export interface RepoRegistryEntry {
+  readonly repoId: string; // ULID
+  readonly slug: RepoSlug;
+  readonly path: string;
+  readonly fingerprint: RepoFingerprint;
+}
+
+// Bundle format (I-89, I-91)
+export interface DocketBundle {
+  readonly format: 'docket-bundle';
+  readonly version: 1;
+  readonly createdAt: EpochMs;
+  readonly projects: readonly unknown[];
+  readonly repos: readonly unknown[];
+  readonly library: unknown;
+  readonly memory: unknown;
+  readonly checksum: string; // SHA-256 over canonical JSON of everything else
+}
+
+// Legacy import (I-90)
+export interface LegacyImportReport {
+  readonly warnings: readonly string[];
+  readonly renames: readonly { readonly id: string; readonly to: string }[];
+}
+
+export function importLegacyRepo(path: string): Promise<Result<LegacyImportReport, readonly DefinitionIssue[]>>;
+```
+
+Rules:
+
+- **I-86** (added 2026-10-12, #1004; supersedes I-12's repo-path loading and the "Where things live" rows for `<main-repo>/.docket/` and `<repo>/.docket/`, and Team-ready rule 5) Every definition Docket reads or writes (roles, flows, capabilities, memory, project, repo, roadmap) lives under the layout above; the definition store never opens `<repo>/.docket/` except through the one-time import (I-90).
+- **I-87** (added 2026-10-12, #1004) Invariant: Docket writes no file into a repository's working tree and no tracked content unless the operator runs an explicit "export to repo" (a use case that names the target path and shows the diff first). What may still be written into a repo: git refs (agent branches `docket/<work-order-code>`) and git worktree metadata under `.git/`; the worktree directories themselves live under `~/.docket/worktrees/`. A test scans the application's write calls for any path inside a registered repo folder that is not under `.git/`.
+- **I-88** (added 2026-10-12, #1004) Repo identity: a repo is identified by its generated `repoId` (ULID) plus a fingerprint `{ rootCommit: string; remote?: string }` read from git (the first root commit hash; the normalised `origin` URL when present). The registry maps `repoId` → folder. When the folder is missing at start, the repo shows "folder not found"; a folder whose fingerprint `rootCommit` equals the stored one is offered as the relink target, never applied silently; a different `rootCommit` is refused.
+- **I-89** (added 2026-10-12, #1004) Bundle format: one JSON file `*.docket-bundle.json` `{ format: 'docket-bundle', version: 1, createdAt, projects, repos, library (all versions), memory, checksum }` where `checksum` is a SHA-256 over the canonical JSON of everything else. It never contains secrets, secret refs, account ids, folder paths, runs, records, transcripts or quota data; stage bindings are exported with `accounts: []` (import leaves them unbound and the setup asks).
+- **I-90** (added 2026-10-12, #1004) One-time import of existing repo-side `.docket/`: `importLegacyRepo(path)` reads `project.yaml`, `repo.yaml`, `roadmap.yaml`, overrides and maps them to the new shapes (`flows[defaultFlow]` → `RepoFlow`, `roleOverrides` → overlays, project-level role/flow defaults → dropped with a reported warning list); it only reads; it never modifies or deletes the repo's `.docket/`; the repo is marked `legacyImported` and its `.docket/` is never read again.
+- **I-91** (added 2026-10-12, #1004) Import never overwrites: an imported definition whose id exists gets the next version (library) or a `-2`, `-3` slug (project/repo), and the import report lists every such rename; an invalid bundle (`validateDefinitions` issues, bad checksum, unknown `version`) writes nothing and returns all issues (all-or-nothing).
+- **I-92** (added 2026-10-12, #1004) Team-ready rules, revised: rules 1–4 (actor on every write, ULIDs and UTC times, storage behind ports, approvals record who) stand unchanged; rule 5 is superseded: definitions are portable by export/import (I-89, I-91), not by git. This product stays single-user; a later team server serves the same API and is out of Phase 7.
+
+### Conflicts and supersessions
+
+- **I-12** (`load(repo)` via `RepoPaths`, reading `<repo>/.docket/repo.yaml` and `<main-repo>/.docket/` project defaults) is superseded by **I-86**: all definitions are read and written under `~/.docket/`; `<repo>/.docket/` is never read except via the one-time `importLegacyRepo` (**I-90**).
+- **I-11**, **I-14**, and **I-32** (target parsing and project/roadmap loading under `<main-repo>/.docket/` and `<repo>/.docket/`) are superseded by **I-86**: project definitions live at `~/.docket/projects/<project-slug>/project.yaml`, roadmaps at `~/.docket/projects/<project-slug>/roadmap.yaml`, and repo definitions at `~/.docket/repos/<repo-slug>/repo.yaml`.
+- **I-18** and the `RepoRegistry` contract (mapping `RepoSlug` → folder) are superseded by **I-88**: repo identity is `repoId` (ULID) + git fingerprint `{ rootCommit, remote }`, and the registry maps `repoId` → folder with relinking verification against the stored `rootCommit`.
+- **Phase 3.5 decisions S1 and S3** (#372, #375; project config in main repo `.docket/`, repo overriding project defaults): superseded by **D-1**, **D-5**, and **I-86**; a project has no roles or flows and no main repo, and repo definitions are self-contained under `~/.docket/repos/<repo-slug>/repo.yaml`.
+- **Team-ready rule 5** (`architecture.md` lines 116–117; definitions shared via git tracking): superseded by **I-92** and **D-5**; definitions are shared across machines via portable export/import bundles (**I-89**, **I-91**), keeping repositories completely clean of tracked Docket files (**I-87**).
