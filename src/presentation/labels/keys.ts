@@ -525,6 +525,7 @@ export const LABEL_KEYS = [
   'editor.fact.secret.no',
   'editor.usage.lastRead',
   'editor.usage.refresh',
+  'editor.usage.retry',
   'editor.usage.spend',
   'editor.usage.spendNone',
   'editor.usage.cap',

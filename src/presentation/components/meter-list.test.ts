@@ -4,8 +4,9 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import type { SettingsMeterView, SettingsPoolView } from '../../api/queries';
+import type { SettingsAccountView, SettingsMeterView, SettingsPoolView } from '../../api/queries';
 import { meterListView } from '../stores/meter-list';
+import { Usage } from './account-editor';
 import { MeterList } from './meter-list';
 
 const NOW = 1_000_000;
@@ -76,5 +77,133 @@ describe('MeterList markup', () => {
     expect(html('tr', [], [], 'meterList.needsLogin')).toContain('Giriş yapılınca limitler görünür.');
     expect(html('tr', [], [], 'meterList.afterAdd')).toContain('Limitler hesap eklenince okunur.');
     expect(html('tr', [], [], null)).toBe('');
+  });
+});
+
+const mockAccount = (meters: readonly SettingsMeterView[] = []): SettingsAccountView => ({
+  id: 'a-1',
+  provider: 'claude',
+  label: 'Work',
+  authMode: 'subscription',
+  billing: 'included',
+  plan: 'pro',
+  limitPolicy: 'wait_resume',
+  reserve: { short: null, long: null },
+  caps: [],
+  consentedModels: [],
+  routeKind: null,
+  identityDir: '/home/u/.claude',
+  endpointHost: null,
+  hasSecret: false,
+  test: null,
+  pools: [pool('p', 'plan', 'all')],
+  meters,
+});
+
+describe('Usage honest states (U-266, U-267)', () => {
+  it('U-266: while a refresh runs, Yenile is disabled and the skeleton shows after 150 ms; the no-usage message is not rendered', () => {
+    // 1. Refreshing with 0 meters before 150 ms: Yenile disabled, skeleton not visible yet, no "no usage" message
+    const beforeDelay = renderToStaticMarkup(
+      createElement(Usage, {
+        account: mockAccount([]),
+        locale: 'tr',
+        formatTime: () => '12:00',
+        onRefresh: () => {},
+        refreshing: true,
+        skeletonNow: () => 0,
+      }),
+    );
+    expect(beforeDelay).toContain('disabled');
+    expect(beforeDelay).not.toContain('data-usage-skeleton');
+    expect(beforeDelay).not.toContain('Bu asistan kullanım bilgisi vermiyor');
+
+    // 2. Refreshing with 0 meters after 150 ms: Yenile disabled, skeleton is rendered, no "no usage" message
+    let step = 0;
+    const afterDelay = renderToStaticMarkup(
+      createElement(Usage, {
+        account: mockAccount([]),
+        locale: 'tr',
+        formatTime: () => '12:00',
+        onRefresh: () => {},
+        refreshing: true,
+        skeletonNow: () => {
+          const val = step;
+          step += 200;
+          return val;
+        },
+      }),
+    );
+    expect(afterDelay).toContain('disabled');
+    expect(afterDelay).toContain('data-usage-skeleton');
+    expect(afterDelay).not.toContain('Bu asistan kullanım bilgisi vermiyor');
+
+    // 3. Refreshing with previous bars: Yenile disabled, previous bars remain visible under subtle busy state
+    const withBars = renderToStaticMarkup(
+      createElement(Usage, {
+        account: mockAccount([meter({ id: 'm', poolId: 'p' })]),
+        locale: 'tr',
+        formatTime: () => '12:00',
+        onRefresh: () => {},
+        refreshing: true,
+      }),
+    );
+    expect(withBars).toContain('disabled');
+    expect(withBars).toContain('data-usage-busy');
+    expect(withBars).toContain('aria-busy="true"');
+    expect(withBars).toContain('5 saatlik');
+    expect(withBars).not.toContain('data-usage-skeleton');
+    expect(withBars).not.toContain('Bu asistan kullanım bilgisi vermiyor');
+  });
+
+  it('U-267: a failed refresh shows the reason and "Tekrar dene"; a retry re-enters the loading state', () => {
+    // 1. Failed refresh shows typed reason and "Tekrar dene"
+    const failedHtml = renderToStaticMarkup(
+      createElement(Usage, {
+        account: mockAccount([]),
+        locale: 'tr',
+        formatTime: () => '12:00',
+        onRefresh: () => {},
+        refreshing: false,
+        refreshFailure: 'network',
+      }),
+    );
+    expect(failedHtml).toContain('data-usage-error');
+    expect(failedHtml).toContain('Bağlantı kurulamadı; kullanım okunamadı.');
+    expect(failedHtml).toContain('Tekrar dene');
+    expect(failedHtml).not.toContain('Bu asistan kullanım bilgisi vermiyor');
+
+    // In English
+    const failedEn = renderToStaticMarkup(
+      createElement(Usage, {
+        account: mockAccount([]),
+        locale: 'en',
+        formatTime: () => '12:00',
+        onRefresh: () => {},
+        refreshing: false,
+        refreshFailure: 'rejected',
+      }),
+    );
+    expect(failedEn).toContain('Request rejected; usage could not be read.');
+    expect(failedEn).toContain('Try again');
+
+    // 2. Retry re-enters loading state (refreshing=true, no error note)
+    let retryStep = 0;
+    const retryingHtml = renderToStaticMarkup(
+      createElement(Usage, {
+        account: mockAccount([]),
+        locale: 'tr',
+        formatTime: () => '12:00',
+        onRefresh: () => {},
+        refreshing: true,
+        refreshFailure: null,
+        skeletonNow: () => {
+          const val = retryStep;
+          retryStep += 200;
+          return val;
+        },
+      }),
+    );
+    expect(retryingHtml).not.toContain('data-usage-error');
+    expect(retryingHtml).toContain('data-usage-skeleton');
   });
 });

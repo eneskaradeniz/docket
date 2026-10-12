@@ -1690,3 +1690,9 @@ Added 2026-10-12, #1029; amends U-44.
 - **U-264** A failed quota read shows its typed reason (`meterList.failed.needsKey`, `meterList.failed.network`, `meterList.failed.rejected`), never the no-meter line. The typed failure reason outranks the presence of a usage source.
 - **U-265** The no-meter line (`meterList.noMeter`) is shown only when the provider has no usage source; an account whose usage source has not yet been read says so (`meterList.notRead`).
 
+## Account Usage tab states (U-266 … U-267)
+
+Added 2026-10-12, #1030; amends U-44.
+- **U-266** While a refresh runs, Yenile is disabled, previous bars remain visible under a subtle busy state if there are any, and the skeleton shows after 150 ms (U-26) when there are no bars; the no-usage message is not rendered.
+- **U-267** A failed refresh shows the reason and "Tekrar dene"; a retry re-enters the loading state.
+
