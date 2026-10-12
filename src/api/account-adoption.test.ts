@@ -148,7 +148,7 @@ describe('accounts.candidates', () => {
     await api.query({ type: 'accounts.candidates' });
     expect(scans.count).toBe(1);
     for (const candidate of [SUBSCRIPTION, ENDPOINT, MACHINE]) {
-      const adopted = await api.command(ACTOR, { type: 'account.adopt', sourcePath: candidate.sourcePath, label: 'L' });
+      const adopted = await api.command(ACTOR, { type: 'account.adopt', sourcePath: candidate.sourcePath, label: 'L', importToken: true });
       expect(adopted.ok).toBe(true);
     }
     // The remembered scan still answers, but its alreadyAdded flags are decided against the store.
@@ -192,7 +192,7 @@ describe('account.adopt', () => {
     });
     await api.query({ type: 'accounts.candidates' });
     const before = h.scans.count;
-    const adopted = await api.command(ACTOR, { type: 'account.adopt', sourcePath: ENDPOINT.sourcePath, label: 'GLM' });
+    const adopted = await api.command(ACTOR, { type: 'account.adopt', sourcePath: ENDPOINT.sourcePath, label: 'GLM', importToken: true });
     expect(adopted.ok).toBe(true);
     await api.query({ type: 'accounts.candidates' });
     expect(h.scans.count).toBe(before);

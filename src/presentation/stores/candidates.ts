@@ -1,12 +1,12 @@
 // stores/candidates.ts — U-34: the discovered accounts (`accounts.candidates`) and providers
 // (`providers.discovered`) as one list for Settings → Hesaplar → "Eklenmemiş" and the wizard.
 // The pure row mapping decides mark, label, status and selectability; the store holds the
-// selection and the key-move switch (always off on a fresh selection) and issues `account.adopt`
-// — with `importToken: true` only when the switch is on. A successful adoption then binds every
-// role that has no binding yet to the new account: the wizard is not the only door in, and an
-// account added from Settings must leave the roles runnable too. No value ever travels through
-// here: a candidate carries only a path and an endpoint host. Results map through results.ts
-// (U-8).
+// selection and the per-row key-move standing (U-262: a token-needing row is "Kurulum bekliyor"
+// and inert until its key is moved) and issues `account.adopt` — with `importToken: true` only
+// for a row whose key was moved. A successful adoption then binds every role that has no binding
+// yet to the new account: the wizard is not the only door in, and an account added from Settings
+// must leave the roles runnable too. No value ever travels through here: a candidate carries only
+// a path and an endpoint host. Results map through results.ts (U-8).
 import type { Api } from '../../api/api';
 import type { Command } from '../../api/commands';
 import type { Query, RoleListItem, SettingsAccountsView } from '../../api/queries';
@@ -62,8 +62,11 @@ export interface CandidateRow {
   /** Why the row is disabled; null while selectable. */
   readonly disabledReasonKey: LabelKey | null;
   readonly warnKeys: readonly CandidateWarnKey[];
-  /** Whether the separate key-move card shows: selected and `envOverrides` holds `token`. */
+  /** Whether the separate key-move card shows: `envOverrides` holds `token` — while the row
+   *  waits for the move and after it, so the move can be undone before adoption (U-262). */
   readonly keyMoveCard: boolean;
+  /** The row's key-move standing: off until the user moves the key, then on (U-262). */
+  readonly importToken: boolean;
   /** The provider's def id; null when discovery does not know it. */
   readonly provider: string | null;
   /** The path the account reads from, as the candidate displays it (mono in the row). */
@@ -98,7 +101,7 @@ export type LampTone = 'proceed' | 'signal' | 'dim' | 'error' | 'info';
 
 const CANDIDATE_TONE: Readonly<Record<CandidateStatusKey, LampTone>> = {
   'candidates.status.ready': 'proceed',
-  'candidates.status.key_needed': 'signal',
+  'candidates.status.setup_pending': 'signal',
   'candidates.status.needs_login': 'signal',
   'candidates.status.unreadable': 'dim',
   'candidates.status.not_installed': 'dim',
@@ -113,7 +116,7 @@ export const candidateStatusTone = (key: CandidateStatusKey): LampTone => CANDID
  *  status stays in Bulunanlar. */
 const CANDIDATE_STANDING: Readonly<Record<CandidateStatusKey, RowStanding>> = {
   'candidates.status.ready': 'ready',
-  'candidates.status.key_needed': 'other',
+  'candidates.status.setup_pending': 'other',
   'candidates.status.needs_login': 'needsLogin',
   'candidates.status.unreadable': 'other',
   'candidates.status.not_installed': 'other',
@@ -158,19 +161,26 @@ export const candidateDot = (state: Pick<CandidatesState, 'loaded' | 'rows'>, mi
 export const listBody = (state: Pick<CandidatesState, 'loading' | 'loaded' | 'rows' | 'providers'>): 'scanning' | 'empty' | 'list' =>
   state.loading ? 'scanning' : state.loaded && state.rows.length === 0 && state.providers.length === 0 ? 'empty' : 'list';
 
-/** The rows of the list: `alreadyAdded` candidates are not listed. Pure. */
+/** The rows of the list: `alreadyAdded` candidates are not listed. `moved` holds the source
+ *  paths whose key the user has already moved to the keychain. Pure. */
 export const candidateRows = (
   facts: readonly CandidateFact[],
   selected: string | null,
-  importToken: boolean,
+  moved: ReadonlySet<string>,
   providers: readonly ProviderFact[] = [],
 ): readonly CandidateRow[] =>
   facts
     .filter((fact) => !fact.alreadyAdded)
     .map((fact): CandidateRow => {
       const unreadable = fact.warnings.includes('unreadable');
-      const isSelected = !unreadable && fact.sourcePath === selected;
-      const keyMoveCard = isSelected && fact.envOverrides.includes('token');
+      // U-262: adopting a candidate whose env token is its credential would leave a secretRef
+      // with nothing behind it, so the row waits for the key move instead — before any selection.
+      const needsKeyMove = fact.envOverrides.includes('token');
+      const keyMoved = moved.has(fact.sourcePath);
+      const setupPending = needsKeyMove && !keyMoved;
+      const isSelected = !unreadable && !setupPending && fact.sourcePath === selected;
+      // The card stays once the key is moved, so the move can be undone before adoption.
+      const keyMoveCard = needsKeyMove;
       // A machine-login candidate has no folder to read: its standing is its provider's login
       // probe (P-53), and a probe that proved nothing is "Doğrulanamadı", never "Hazır".
       const loginFact = fact.kind === 'machine_login' ? providers.find((provider) => provider.defId === fact.provider) : undefined;
@@ -182,8 +192,8 @@ export const candidateRows = (
             : CANDIDATE_STATUS_KEY[providerStatus(loginFact)];
       const statusKey: CandidateStatusKey = unreadable
         ? 'candidates.status.unreadable'
-        : keyMoveCard && !importToken
-          ? 'candidates.status.key_needed'
+        : setupPending
+          ? 'candidates.status.setup_pending'
           : (loginStatus ?? 'candidates.status.ready');
       const hintKey: LabelKey | null =
         statusKey === 'candidates.status.needs_login'
@@ -197,11 +207,12 @@ export const candidateRows = (
         label: fact.displayPath,
         endpointHost: fact.endpointHost ?? null,
         statusKey,
-        selectable: !unreadable,
+        selectable: !unreadable && !setupPending,
         selected: isSelected,
-        disabledReasonKey: unreadable ? 'candidates.reason.unreadable' : null,
+        disabledReasonKey: unreadable ? 'candidates.reason.unreadable' : setupPending ? 'candidates.reason.setup_pending' : null,
         warnKeys: fact.warnings.includes('env_overrides_login') ? [WARN_KEY.env_overrides_login] : [],
         keyMoveCard,
+        importToken: keyMoved,
         provider: fact.provider,
         displayPath: fact.displayPath,
         billing: fact.billing,
@@ -227,8 +238,6 @@ export interface CandidatesState {
   readonly providers: readonly ProviderRow[];
   /** The selected candidate's source path, or null. */
   readonly selected: string | null;
-  /** The key-move switch; false on every fresh selection. */
-  readonly importToken: boolean;
   /** "Ekle" shows only while a candidate is selected. */
   readonly addVisible: boolean;
   /** True once a read has finished: from then on the list's own count is the dot's truth. */
@@ -263,11 +272,12 @@ export interface CandidatesStore {
   /** "Yeniden tara": a fresh scan of both. */
   rescan(): Promise<void>;
   select(id: string | null): void;
-  setImportToken(on: boolean): void;
+  /** The key-move switch of one row (U-262); turning it off drops the row's selection. */
+  setImportToken(id: string, on: boolean): void;
   /** Adopts the selected candidate; null when nothing adoptable is selected. */
   adopt(): Promise<SettingsIntentOutcome | null>;
-  /** A row's "Ekle" (U-43): selects the candidate and adopts it at once, unless it needs the
-   *  key-move decision first — then the row only opens its card and a second "Ekle" adopts. */
+  /** A row's "Ekle" (U-43): selects the candidate and adopts it at once. A row still waiting for
+   *  its key move is not selectable (U-262), so its "Ekle" does nothing until the move. */
   add(id: string): Promise<SettingsIntentOutcome | null>;
   state(): CandidatesState;
   subscribe(listener: () => void): () => void;
@@ -304,7 +314,8 @@ export const createCandidatesStore = (deps: CandidatesStoreDeps): CandidatesStor
   let facts: readonly CandidateFact[] = [];
   let providerFacts: readonly ProviderFact[] = [];
   let selected: string | null = null;
-  let importToken = false;
+  /** The source paths whose key the user has moved to the keychain (U-262); sticky per row. */
+  const moved = new Set<string>();
   let loading = false;
   let loaded = false;
   let failed = false;
@@ -313,17 +324,16 @@ export const createCandidatesStore = (deps: CandidatesStoreDeps): CandidatesStor
   let adopting = false;
   let lastOutcome: SettingsIntentOutcome | null = null;
   const now = deps.now ?? ((): number => Date.now());
-  let state: CandidatesState = { loading, rows: [], providers: [], selected, importToken, addVisible: false, loaded: false, adopting, lastOutcome, status: 'idle', scannedAt: null };
+  let state: CandidatesState = { loading, rows: [], providers: [], selected, addVisible: false, loaded: false, adopting, lastOutcome, status: 'idle', scannedAt: null };
   const listeners = new Set<() => void>();
 
   const publish = (): void => {
-    const rows = candidateRows(facts, selected, importToken, providerFacts);
+    const rows = candidateRows(facts, selected, moved, providerFacts);
     state = {
       loading,
       rows,
       providers: providerRows(providerFacts),
       selected,
-      importToken,
       addVisible: rows.some((row) => row.selected),
       loaded,
       adopting,
@@ -351,9 +361,8 @@ export const createCandidatesStore = (deps: CandidatesStoreDeps): CandidatesStor
       deps.onProviders?.(providerFacts);
     }
     // A selection that is no longer listed (added elsewhere, vanished on rescan) falls away.
-    if (selected !== null && !candidateRows(facts, selected, false, providerFacts).some((row) => row.id === selected)) {
+    if (selected !== null && !candidateRows(facts, selected, moved, providerFacts).some((row) => row.id === selected)) {
       selected = null;
-      importToken = false;
     }
     failed = !candidatesOk;
     if (candidatesOk) {
@@ -403,7 +412,7 @@ export const createCandidatesStore = (deps: CandidatesStoreDeps): CandidatesStor
   };
 
   const adopt = async (): Promise<SettingsIntentOutcome | null> => {
-    const row = candidateRows(facts, selected, importToken, providerFacts).find((entry) => entry.selected);
+    const row = candidateRows(facts, selected, moved, providerFacts).find((entry) => entry.selected);
     const fact = facts.find((entry) => entry.sourcePath === row?.id);
     if (row === undefined || fact === undefined || adopting) return null;
     adopting = true;
@@ -412,7 +421,7 @@ export const createCandidatesStore = (deps: CandidatesStoreDeps): CandidatesStor
       type: 'account.adopt',
       sourcePath: fact.sourcePath,
       label: labelOf(fact.displayPath),
-      ...(importToken ? { importToken: true } : {}),
+      ...(moved.has(fact.sourcePath) ? { importToken: true } : {}),
     };
     const result = await api.command(actor, command);
     const outcome: SettingsIntentOutcome = {
@@ -424,7 +433,7 @@ export const createCandidatesStore = (deps: CandidatesStoreDeps): CandidatesStor
     adopting = false;
     if (result.ok) {
       selected = null;
-      importToken = false;
+      moved.delete(fact.sourcePath);
       publish();
       if (result.id !== undefined) await bindUnboundRoles(result.id);
       await read(true);
@@ -440,24 +449,26 @@ export const createCandidatesStore = (deps: CandidatesStoreDeps): CandidatesStor
     ensure: () => (state.status === 'idle' ? read(false) : (inFlight ?? Promise.resolve())),
     rescan: () => read(true),
     select: (id) => {
-      if (id !== null && !candidateRows(facts, null, false, providerFacts).some((row) => row.id === id && row.selectable)) return;
+      if (id !== null && !candidateRows(facts, null, moved, providerFacts).some((row) => row.id === id && row.selectable)) return;
       selected = id === selected ? null : id;
-      importToken = false;
       publish();
     },
-    setImportToken: (on) => {
-      importToken = on;
+    setImportToken: (id, on) => {
+      if (!facts.some((fact) => fact.sourcePath === id && fact.envOverrides.includes('token'))) return;
+      if (on) moved.add(id);
+      else {
+        moved.delete(id);
+        // A row back to "Kurulum bekliyor" cannot stand selected (U-262).
+        if (selected === id) selected = null;
+      }
       publish();
     },
     add: async (id) => {
-      const row = candidateRows(facts, null, false, providerFacts).find((entry) => entry.id === id);
+      const row = candidateRows(facts, null, moved, providerFacts).find((entry) => entry.id === id);
       if (row === undefined || !row.selectable) return null;
       if (selected !== id) {
         selected = id;
-        importToken = false;
         publish();
-        // A candidate whose token overrides the login waits for the user's key-move choice.
-        if (candidateRows(facts, selected, false, providerFacts).some((entry) => entry.id === id && entry.keyMoveCard)) return null;
       }
       return adopt();
     },

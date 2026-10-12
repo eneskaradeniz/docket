@@ -1,6 +1,8 @@
-// components/key-move-card.tsx — the separate card of a selected candidate whose `envOverrides`
-// holds a token (U-34): "Erişim anahtarını Anahtar Zinciri'ne taşı" with a switch that starts off.
-// The wizard's Hesaplar rows and Settings → Hesaplar → Eklenmemiş share it. No value is ever shown.
+// components/key-move-card.tsx — the separate card of a candidate whose `envOverrides` holds a
+// token (U-34): "Erişim anahtarını Anahtar Zinciri'ne taşı" with a switch that starts off. While
+// the token is not moved the row it belongs to is "Kurulum bekliyor" and cannot be selected
+// (U-262), so the card shows before any selection and stays after the move to allow undo. The
+// wizard's Hesaplar rows and Settings → Hesaplar → Eklenmemiş share it. No value is ever shown.
 import { t, type Locale } from '../labels/t';
 
 export interface KeyMoveCardProps {
