@@ -33,12 +33,13 @@ This keeps Phase 1 issues independent and conflict-free.
 | `gates` | `shared`, `definitions` |
 | `providers` | `shared`, `quota`, `definitions` |
 | `library` | `shared`, `definitions` |
-| `flow` | `shared`, `definitions`, `gates` |
+| `flow` | `shared`, `definitions`, `gates`, `redaction` |
 | `dispatch` | `shared`, `quota`, `budget` |
 | `roadmap` | `shared`, `flow`, `definitions` |
 | `usage` | `shared`, `providers` |
 | `stage-output` | `definitions`, `pages` |
 | `changes` | — |
+| `redaction` | — |
 | `scenarios` | every module above — **test files only**, no production code, no `index.ts` |
 
 Each module folder has an `index.ts` that re-exports its public API; `src/domain/index.ts` re-exports
@@ -1164,3 +1165,11 @@ export function workOrderRequestSection(title: string, description: string | und
 ```
 
 - **R-123** (added 2026-10-12, #982) `normalizeWorkOrderDescription` trims first. `undefined`, `''` and whitespace-only become absent (`ok(undefined)`), not an error. A trimmed value longer than `WORK_ORDER_DESCRIPTION_MAX_CHARS` (4 000) is `description_too_long`; exactly 4 000 is kept. Token-shaped text is replaced with `[redacted]` and the surrounding text stays. The input is not mutated. `workOrderRequestSection` is a `## Request` section containing the title and the description when a description is present, with the same redaction; an absent or blank description returns `undefined`, so no empty section is produced.
+
+Addendum 2026-10-12 (#993): one secret-shape rule. New module `redaction` (no imports). `flow` may import it. `redactSecretShapes` is the replacement both a work-order description and an operator note use. The shapes are unchanged.
+
+```ts
+export function redactSecretShapes(text: string): string;
+```
+
+- **R-125** (added 2026-10-12, #993) `redactSecretShapes` replaces each secret shape with `[redacted]` and leaves the surrounding text. Text that matches none of the shapes is returned unchanged. Applying it to its own output changes nothing. The same input yields the same output and the input is not modified.
