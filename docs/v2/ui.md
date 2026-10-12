@@ -305,6 +305,7 @@ being reset.
   önerilenden farklı" wherever it appears, never an abbreviation. In Settings a change saves on
   commit (choice → at once; number → on blur or Enter) and shows "Kaydedildi" for 1.5 s; a failure
   shows its U-8 label under the row and keeps the entered value.
+  Amended 2026-10-12, see U-280…
 - **U-30** (account editor) One editor body with four tabs — Genel · Kullanım · Limitler ·
   Modeller — has two hosts: in Settings the account sub-page (saving per U-29, with a "Hesap
   görünümünü aç" link that closes the panel and opens the account view), in the wizard a centred
@@ -323,6 +324,7 @@ being reset.
   percent (`account.cap.save`; A-52's `cap_required` mapped). Under Limitler a fixed note: an
   automatic switch never moves from an included model to a paid or unverified one (P-40). A
   subscription account without consents shows no money anywhere.
+  Amended 2026-10-12, see U-280…
 - **U-31** (reserve on a bar) A meter bar shows remaining from the left. With a non-zero
   `reserveShare` (A-48) the bar carries a hatched zone from 0 to that share with a 2px
   edge, the footnote "%r senin için ayrılmış", and — when remaining is at or below that share —
@@ -469,6 +471,7 @@ being reset.
   its resolved billing says; a model made `included` by an allowance pool says why, e.g. "haftalık
   limiti olduğu için planda") — and a footer (in the wizard "Değişiklikler kurulum bitince
   kaydedilir." · Vazgeç · Kaydet; in Settings saving per U-29). Esc or a click outside closes it.
+  Amended 2026-10-12, see U-280…
 - **U-44** (meter list; amends U-31; added 2026-10-04, #750) A MeterList shows one row per meter:
   the meter's label (the provider's own window name: "5 saatlik", "Haftalık", …) with a scope tag —
   "tüm modeller" for a pool that applies to all while another pool of the same account is
@@ -1683,3 +1686,85 @@ that account.
   working account — one that is unreadable, or whose key is still not moved: a rescan that breaks
   the row drops it from the selection, and the finish's own account list skips it in depth, so no
   `account.adopt` is sent for it and the drafts phase writes nothing for it either.
+
+## Project setup permission prompt (U-272 … U-279)
+
+Added 2026-10-12 (#1007, implementing D-8). Implemented in #1023. When Docket AI requests an out-of-scope path during project setup via `docket_read_path`, the user is prompted with a native-style permission dialog. Out-of-scope permission grants are strictly session-only and read-only. Secret-shaped paths bypass the prompt and are refused automatically.
+
+- **U-272** (added 2026-10-12, #1007) When an out-of-scope path is requested during setup, a native-style dialog displays the heading "Docket AI şu yolu okumak istiyor" (en: "Docket AI wants to read this path"), the requested path in monospace font, and the reason line provided by the tool call.
+- **U-273** (added 2026-10-12, #1007) The permission dialog provides exactly two action buttons: "Reddet" (default button, focused, triggered by Esc) and "Bu oturum için izin ver" (en: "Deny" and "Allow for this session").
+- **U-274** (added 2026-10-12, #1007) Permission grants are strictly session-only: the UI never offers an "always" or permanent grant option.
+- **U-275** (added 2026-10-12, #1007) Exactly one permission prompt is presented per requested path at a time.
+- **U-276** (added 2026-10-12, #1007) A denied path is remembered for the conversation and is never asked again during that setup conversation.
+- **U-277** (added 2026-10-12, #1007) A secret-shaped path displays no permission prompt: the agent receives a typed refusal and the thread displays the one-line notice "Anahtar benzeri dosya okunmaz" (en: "Key-like files cannot be read").
+- **U-278** (added 2026-10-12, #1007) The permission prompt uses modal dialog semantics (`role="dialog"`, `aria-modal="true"`), traps focus while visible, closes on Esc triggering "Reddet", and restores focus to the thread on dismissal.
+- **U-279** (added 2026-10-12, #1007) All prompt copy, button labels, and thread notice lines live in Turkish and English label bundles, with no inline copy in presentation components.
+
+## Phase 7 surfaces (U-280 … U-295)
+
+Added 2026-10-12 (#1008, implementing D-1, D-4, D-6, D-7, D-8, D-9 from `docs/v2/decisions-phase7.md`). Orientation only: docket-tasarim/akis-modeli (not a source).
+
+### Conflicts and supersessions
+
+Phase 7 decisions supersede prior UI rules as follows:
+- **U-29, U-30, U-43 (Settings saving and differs banner)**: The sentences in U-29 ("In Settings a change saves on commit (choice → at once; number → on blur or Enter) and shows 'Kaydedildi' for 1.5 s", the head line "n ayar önerilenden farklı · Hepsini önerilene döndür", and the per-row "Önerilenden farklı · önerilen: X / Önerilene dön" text), in U-30 ("in Settings the account sub-page (saving per U-29...)"), and in U-43 ("in Settings saving per U-29") are superseded by U-280…U-283 (#1031). Settings forms edit a local draft; changes are not committed immediately; a footer bar appears only when dirty; differing fields use a quiet dot indicator and a single icon button per field per U-216…U-222; leaving a dirty draft prompts the user.
+- **U-43, U-176 (Agent capabilities menu)**: U-43's single flat "Yetenekler" section and placement of Roller under "Çalışma" are superseded by the "Ajan yetenekleri" menu group (D-7, U-284, U-285, #1022) with seven dedicated menus (Hafıza, Roller, Eklentiler, MCP, Skill'ler, Komutlar, Hook'lar).
+- **U-42, U-40 (Project setup)**: Replaced by three entry paths (Docket AI, Quick, Detailed) that all converge on the single `SetupProposal` diff review (D-8, U-286, U-287, #1007, #1023). The U-181…U-190 panel frame is retained as the entry host. No basic/advanced switch exists anywhere, and no flow catalog is offered.
+- **U-33, U-43 (Repo settings)**: Global role and flow configuration in Settings is superseded by repository settings sections for Akış, Roller, and Limit politikası (D-1, D-4, U-288, U-289, #1024). Projects containing a single repository omit any project/repo navigation split (D-1).
+- **U-245, U-246 (New work order)**: The flow selector dropdown in work-order creation (#976, #986) is superseded by D-1 (U-290, U-291, #1025). The dialog renders a fixed read-only flow strip of the repository's configured flow with pinned versions; planner stage-skipping is presented as an approval card when a proposal exists (domain R-133, see #1003).
+- **Definitions lifecycle (D-6)**: Unversioned definition lists and unconstrained deletion are superseded by immutable version badges, read-only past version inspection, replacement of "Sil" with "Arşivle" once referenced (domain R-134, see #1003), and disablement of delete/archive when dependants or active runs exist (U-292, U-293, #1026).
+- **Application quit (D-9, #999)**: Unmanaged application exit is superseded by a managed quit confirmation modal that verifies active work, lists running runs/chat turns up to 5 items, and terminates registered worker processes cleanly upon confirmation (U-294, U-295, #999).
+
+```ts
+export interface SettingDraftState<T> {
+  readonly stored: T;
+  readonly draft: T;
+  readonly isDirty: boolean;
+}
+
+export type CapabilityMenuKind =
+  | 'memory'
+  | 'roles'
+  | 'plugins'
+  | 'mcp'
+  | 'skills'
+  | 'commands'
+  | 'hooks';
+
+export type RepoLimitPolicyChoice =
+  | 'wait_resume'
+  | 'switch_pool'
+  | 'backup_account'
+  | 'ask';
+
+export interface StageSkipProposalCard {
+  readonly stages: readonly string[];
+  readonly reason: string;
+}
+
+export interface QuitConfirmViewModel {
+  readonly activeJobsCount: number;
+  readonly items: readonly { readonly id: string; readonly title: string; readonly kind: 'run' | 'chat' }[];
+}
+```
+
+- **U-280** (settings draft; added 2026-10-12, #1008, implemented in #1031) Settings forms (the account editor first) edit a local draft, and no save intent is sent to the backend before Kaydet is pressed.
+- **U-281** (settings dirty footer; added 2026-10-12, #1008, implemented in #1031) A footer bar appears only while the draft differs from the stored value displaying "Kaydedilmemiş değişiklik" (en: "Unsaved change") alongside "Vazgeç" (en: "Cancel") and "Kaydet" (en: "Save"), where Kaydet is disabled when the draft equals the stored value, Vazgeç restores the stored values, and "Kaydedildi" (en: "Saved") displays once for 1.5 s only after a real save.
+- **U-282** (differs from recommended marker; added 2026-10-12, #1008, implemented in #1031) The differs-from-recommended state is presented as a small dot beside the field (with a tooltip showing the recommended value) and exactly one quiet icon button per differing field that sets the draft to the recommended value, removing the always-visible text line and all standalone plain-text reset controls per U-216…U-222 while preserving `settingDiffs` as the data source and ensuring any disclosure containing differing values starts open.
+- **U-283** (dirty draft discard confirmation; added 2026-10-12, #1008, implemented in #1031) Leaving the screen or closing the editor while a draft has unsaved changes displays a confirmation dialog asking "Kaydedilmemiş değişiklikler var" (en: "You have unsaved changes") with actions "Kaydetmeden çık" (en: "Exit without saving") and "Düzenlemeye dön" (en: "Return to editing").
+- **U-284** (agent capabilities menu group; added 2026-10-12, #1008, implemented in #1022) In Settings, the "Ajan yetenekleri" (en: "Agent capabilities") group presents one menu entry per capability kind in strict order: Hafıza, Roller, Eklentiler, MCP, Skill'ler, Komutlar, Hook'lar (en: Memory, Roles, Plugins, MCP, Skills, Commands, Hooks), moving Roller out of "Çalışma", where every menu view renders an items list, an empty-state card with exactly one action, and translation support-table warnings (see #1006) as a row note (D-7).
+- **U-285** (memory proposals and machine import; added 2026-10-12, #1008, implemented in #1022) Hafıza displays a proposal queue with "Kabul" (en: "Accept") and "Reddet" (en: "Reject") controls per proposal alongside a per-scope auto-accept switch (default off), while "Makineden içe aktar" (en: "Import from machine") is strictly read-only, displaying discovered item names only and the informational notice "Sır değerleri kopyalanmaz; anahtar zincirine eklersin" (en: "Secret values are not copied; add them to the keychain") (D-7).
+- **U-286** (project setup entries; added 2026-10-12, #1008, implemented in #1023) Project setup, entered from the U-181 panel without modifying its host frame, offers three setup entries: "Docket AI ile kur" (disabled with the reason line "Bağlı sağlayıcı yok", en: "No connected provider", when no connected provider exists), "Hızlı" (en: "Quick"), and "Ayrıntılı" (en: "Detailed"), with all three paths concluding on the identical proposal diff screen displaying a `SetupProposal` (see #1007) for operator review (D-8).
+- **U-287** (setup proposal details and flow initialization; added 2026-10-12, #1008, implemented in #1023) The setup proposal diff screen presents detail sections (flow, roles, limits, commands) as collapsible disclosure groups that are collapsed by default with their open state remembered per group across the session, contains no Basit/Gelişmiş (en: Basic/Advanced) mode switch anywhere, and provides no flow catalog, initializing each repository flow strictly as a copy of the library flow (D-8).
+- **U-288** (repo settings flow and roles; added 2026-10-12, #1008, implemented in #1024) Repo settings provides section Akış displaying the stage strip with its role and assistant chain per stage, and section Roller displaying library version badges, an overlay editor, an "Ayır" (en: "Detach") action requiring confirmation, and "Yeni sürüm var" (en: "New version available") proposal rows from `roleUpdateProposals`, omitting any project/repo navigation split whenever a project contains only one repository (D-1, D-4).
+- **U-289** (repo limit policy and save controls; added 2026-10-12, #1008, implemented in #1024) Repo settings section Limit politikası provides per-stage policy selection among "Bekle ve devam", "Başka havuz", "Yedek hesap", and "Bildir" (en: "Wait and resume", "Other pool", "Backup account", and "Ask", where "Bildir" maps to domain `ask`, see domain R-135 in #1003), governed by the footer save bar of U-280…U-283 and the quiet differs-from-recommended dot and reset icon button of U-282 (D-1).
+- **U-290** (new work order fixed flow strip; added 2026-10-12, #1008, implemented in #1025) The new work order dialog contains no flow selector, superseding U-245 and U-246 (#976, #986), and displays a fixed read-only flow strip representing the repository's configured flow with its pinned flow and role versions (D-1, D-6).
+- **U-291** (planner stage-skip proposal card; added 2026-10-12, #1008, implemented in #1025) In the new work order dialog, a planner stage-skip card appears only when a skip proposal exists (see domain R-133 in #1003), displaying the proposed skipped stages and the planner's rationale alongside decision buttons "Atla" (en: "Skip") and "Atlama" (en: "Do not skip"), while strictly excluding deploy and human-gate stages from the skippable list (D-1).
+- **U-292** (definition versions and history view; added 2026-10-12, #1008, implemented in #1026) Every definition row for flows, roles, and capabilities displays its current version badge and provides access to a read-only "Eski sürümler" (en: "Past versions") list displaying past immutable revisions of the definition (D-6).
+- **U-293** (archive replacement and dependency disablement; added 2026-10-12, #1008, implemented in #1026) On definition rows that have been referenced in past work orders, "Arşivle" (en: "Archive") replaces "Sil" (en: "Delete") per domain R-134 (see #1003), and any Sil or Arşivle action is disabled whenever running work or active dependants exist, displaying the blocking dependants explicitly (e.g. "Bu rol 2 aşamada kullanılıyor: …" / "Çalışan iş var: …", en: "This role is used in 2 stages: …" / "Active work in progress: …") (D-6).
+- **U-294** (quit confirmation trigger conditions; added 2026-10-12, #1008, implemented in #999) When an application quit intent occurs (Cmd+Q, app menu, Dock), the quit confirmation dialog is suppressed and the application exits immediately if no user-visible work (no active runs or chat turns) is in progress, background probes alone never trigger a dialog, and closing the last window does not raise the quit confirmation (D-9, #999).
+- **U-295** (quit confirmation dialog copy and list; added 2026-10-12, #1008, implemented in #999) When active user-visible work exists upon quitting, the confirmation dialog displays title "Docket kapatılsın mı?" (en: "Quit Docket?"), body "{n} iş çalışıyor. Kapatırsan şunlar durdurulur:" (en: "{n} jobs are running. Quitting stops:"), a list showing up to 5 running work-order or chat titles followed by "+ N tane daha" (en: "+ N more") when more exist, note "Durdurulan koşular iptal edilir, sonra devam ettirilebilir." (en: "Stopped runs are cancelled and can be continued later."), and buttons "Vazgeç" (en: "Cancel", default, focused, Esc) and "Kapat ve durdur" (en: "Quit and stop") (D-9, #999).
+
+### Project-menu export/import (added 2026-10-13, #1046; implements A-342)
+
+- **U-296** (project-menu export/import entry; added 2026-10-13, #1046, implemented in #1010) The project menu offers "Dışa aktar" (en: "Export") and "İçe aktar" (en: "Import"), and each opens a confirm dialog naming the target path before anything runs — Export: "Paket şuraya yazılacak: {path}" (en: "The bundle will be written to: {path}") naming the `~/.docket/exports/` folder, with "Dışa aktar" (en: "Export") and "Vazgeç" (en: "Cancel"); Import: after the file picker, "Şu dosya içe aktarılacak: {path}" (en: "This file will be imported: {path}") naming the picked `.docket-bundle.json` file, with the same button pair; a finished export shows the written file's absolute path, and every string lives in both label bundles, never inline in a component.
