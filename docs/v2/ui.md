@@ -1687,6 +1687,15 @@ that account.
   the row drops it from the selection, and the finish's own account list skips it in depth, so no
   `account.adopt` is sent for it and the drafts phase writes nothing for it either.
 
+## Hesaplar scan deduplication (U-260 … U-261)
+
+Added 2026-10-12, #1027.
+
+- **U-260** Opening the wizard's Hesaplar step with an account scan already in flight starts no
+  second read: concurrent reads coalesce behind the in-flight scan.
+- **U-261** An `accounts.changed` event caused by this wizard does not show the scanning skeleton
+  again: background re-reads update without re-entering `loading`.
+
 ## Project setup permission prompt (U-272 … U-279)
 
 Added 2026-10-12 (#1007, implementing D-8). Implemented in #1023. When Docket AI requests an out-of-scope path during project setup via `docket_read_path`, the user is prompted with a native-style permission dialog. Out-of-scope permission grants are strictly session-only and read-only. Secret-shaped paths bypass the prompt and are refused automatically.
