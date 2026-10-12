@@ -78,6 +78,16 @@ const PENDING = new Map([
   ['application:A-331', '#1019'],
   ['application:A-332', '#1019'],
   ['application:A-333', '#1020'],
+
+  // #1006 — agent capabilities: library, provider translation, memory, machine import
+  ['domain:R-140', '#1014'],
+  ['domain:R-141', '#1014'],
+  ['domain:R-142', '#1016'],
+  ['domain:R-143', '#1016'],
+  ['providers:P-57', '#1014'],
+  ['providers:P-58', '#1015'],
+  ['providers:P-59', '#1014'],
+  ['providers:P-60', '#1017'],
 ]);
 
 function walk(dir, acc = []) {
