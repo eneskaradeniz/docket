@@ -153,11 +153,14 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
   const firstStart = view === null || view.runs.length === 0 ? null : Math.min(...view.runs.map((run) => run.startedAt));
   const duration = firstStart !== null && lastActivity > firstStart ? formatDurationMs(locale, lastActivity - firstStart) : null;
   // The approve card's evidence: the measured file count and the pending page (U-231's comment
-  // decision — the card names what it approves).
+  // decision — the card names what it approves). A changes read that measured nothing — no
+  // working copy, a git failure, a read not landed — is NOT an empty tree (the store's own
+  // stance); the card keeps its normal shape and only a measured-empty tree falls to the
+  // rerun-only branch.
   const pageItems = useSyncExternalStore(pages.subscribe, () => pages.state().items, () => pages.state().items);
   const pendingPage = pageItems.find((page) => page.approval === 'pending') ?? null;
   const evidence = {
-    files: state.changes === null ? null : state.changes.state === 'ready' ? state.changes.files.length : 0,
+    files: state.changes !== null && state.changes.state === 'ready' ? state.changes.files.length : null,
     pendingPage: pendingPage === null ? null : { id: pendingPage.id, title: pendingPage.title },
   };
   const failedRun = view === null ? null : newestFailedRunOf(view);
@@ -210,15 +213,17 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
   return (
     <div className="relative grid min-w-0 gap-6" style={barShown ? { paddingBottom: barHeight } : undefined}>
       <SkeletonStyle />
-      <DetailSkipLink locale={locale} targetId="detail-expected-heading" />
-
-      {backKey !== null ? (
-        <div className="-mb-2 justify-self-start">
+      {/* The back row's wrapper carries the skip link (A1: the detail's first focusable element,
+          ahead of the back control in the tab order) and fills the main column (L-5: every
+          top-level child reaches the edge — the row inside keeps its own content width). */}
+      <div className="-mb-2">
+        <DetailSkipLink locale={locale} targetId="detail-expected-heading" />
+        {backKey !== null ? (
           <ActionButton variant="neutral" onClick={onBack}>
             {t(locale, backKey)}
           </ActionButton>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
 
       {view === null ? (
         <div aria-busy="true" className="grid gap-3">
@@ -285,7 +290,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
           {/* The close confirmation (A3): focus moves in, Tab is trapped, Esc returns to the menu
               button — the ⋯ menu stays the named opener. */}
           {closeConfirm ? (
-            <div className="justify-self-end">
+            <div className="grid justify-items-end">
               <InlineDialog active onClose={() => setCloseConfirm(false)}>
                 <div data-detail-close className="grid w-[22rem] gap-3 rounded-card border border-bord bg-surface px-4 py-4">
                   <p className="m-0 text-[0.8125rem] font-semibold text-ink">{t(locale, 'detail.close.title')}</p>
@@ -369,7 +374,10 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
                         {stage.role !== null && newest?.accountLabel != null ? (
                           <span className="flex min-w-0 items-center gap-2 text-[0.75rem] text-inkdim">
                             <span>{t(locale, stage.role === 'reviewer' ? 'detail.run.provenance.review' : 'detail.run.provenance.write')}</span>
-                            <span className="truncate">
+                            <span
+                              className="truncate"
+                              title={`${newest.accountLabel}${newest.model !== null ? ` · ${newest.model}` : ''}`}
+                            >
                               {newest.accountLabel}
                               {newest.model !== null ? ` · ${newest.model}` : ''}
                             </span>

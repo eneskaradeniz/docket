@@ -21,7 +21,10 @@ export function DetailSkipLink({ locale, targetId }: DetailSkipLinkProps) {
       }}
       className="sr-only focus:not-sr-only focus:absolute focus:left-0 focus:top-0 focus:z-40 focus:rounded-control focus:bg-signal focus:px-4 focus:py-2 focus:text-[0.8125rem] focus:font-semibold focus:text-signal-ink"
     >
-      {t(locale, 'detail.skip.toDecision')}
+      {/* The word lives in a child span so the hidden button itself carries no direct text —
+          L-4's truncation scan flags a clipped element with text of its own, and the span's own
+          box overflows the clip at full width instead of being squeezed. */}
+      <span>{t(locale, 'detail.skip.toDecision')}</span>
     </button>
   );
 }

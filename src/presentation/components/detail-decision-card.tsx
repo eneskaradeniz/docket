@@ -84,7 +84,7 @@ function ApproveCard({
   return (
     <li
       data-decision-card="approve"
-      className={`grid gap-3 rounded-card px-5 py-4 ${parallel ? 'border border-dashed border-signal bg-surface' : 'border border-hairline bg-surface'}`}
+      className={`grid min-w-0 gap-3 rounded-card px-5 py-4 ${parallel ? 'border border-dashed border-signal bg-surface' : 'border border-hairline bg-surface'}`}
     >
       <h3 className="text-[0.875rem] font-semibold text-ink">
         {t(locale, 'detail.zone.approveTitle').replace('{gate}', gateName(gate))}
@@ -170,7 +170,7 @@ function AttestCard({
   readonly onAttest: DecisionZoneProps['onAttest'];
 }) {
   return (
-    <li data-decision-card="attest" className="grid gap-3 rounded-card border border-hairline bg-surface px-5 py-4">
+    <li data-decision-card="attest" className="grid min-w-0 gap-3 rounded-card border border-hairline bg-surface px-5 py-4">
       <h3 className="text-[0.875rem] font-semibold text-ink">{t(locale, 'detail.zone.attestTitle')}</h3>
       <p className="m-0 text-[0.8125rem] text-inkdim">{t(locale, 'detail.zone.attestBody')}</p>
       <div className="flex flex-wrap items-center gap-2">
@@ -203,7 +203,7 @@ function DeployCard({
   const commitReady = commit.trim() !== '';
   const confirmationReady = !deploy.protectedEnvironment || confirmation === deploy.environment;
   return (
-    <li data-decision-card="deploy" className="grid gap-3 rounded-card border border-hairline bg-surface px-5 py-4">
+    <li data-decision-card="deploy" className="grid min-w-0 gap-3 rounded-card border border-hairline bg-surface px-5 py-4">
       <h3 className="text-[0.875rem] font-semibold text-ink">
         {t(locale, 'detail.zone.deployTitle').replace('{env}', deploy.environment)}
       </h3>
@@ -277,7 +277,7 @@ function PermissionCard({
   readonly onAnswer: DecisionZoneProps['onAnswer'];
 }) {
   return (
-    <li data-decision-card="permission" className="grid gap-3 rounded-card border border-signal/45 bg-surface px-5 py-4">
+    <li data-decision-card="permission" className="grid min-w-0 gap-3 rounded-card border border-signal/45 bg-surface px-5 py-4">
       <div className="flex flex-wrap items-center gap-2">
         <span className="inline-flex items-center rounded-control border border-bord px-2 py-px font-mono text-[0.75rem] font-bold text-inkdim">
           {t(locale, 'detail.zone.permissionChip')}
@@ -324,7 +324,7 @@ function FailedCard({
   readonly onCloseRequest: () => void;
 }) {
   return (
-    <li data-decision-card="failed" className="grid gap-3 rounded-card border border-hairline bg-surface px-5 py-4">
+    <li data-decision-card="failed" className="grid min-w-0 gap-3 rounded-card border border-hairline bg-surface px-5 py-4">
       <h3 className="text-[0.875rem] font-semibold text-ink">
         {t(locale, retry ? 'detail.zone.failedRetryTitle' : 'detail.zone.failedOutTitle')}
       </h3>
@@ -363,7 +363,7 @@ function StartCard({
   readonly onEnqueue: () => void;
 }) {
   return (
-    <li data-decision-card="start" className="grid gap-3 rounded-card border border-hairline bg-surface px-5 py-4">
+    <li data-decision-card="start" className="grid min-w-0 gap-3 rounded-card border border-hairline bg-surface px-5 py-4">
       <h3 className="text-[0.875rem] font-semibold text-ink">
         {t(locale, 'detail.zone.startTitle').replace('{stage}', stageName)}
       </h3>
@@ -389,7 +389,7 @@ export function DecisionZoneCards(props: DecisionZoneProps) {
           {t(locale, zone.done ? 'detail.expected.done' : 'detail.expected.empty')}
         </p>
       ) : (
-        <ul data-decision-stack className="m-0 grid list-none gap-3 p-0">
+        <ul data-decision-stack className="m-0 grid min-w-0 list-none gap-3 p-0">
           {zone.cards.map((card) => {
             switch (card.kind) {
               case 'approve':

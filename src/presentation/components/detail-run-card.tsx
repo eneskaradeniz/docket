@@ -53,7 +53,10 @@ export function DetailRunCard({ run, locale }: DetailRunCardProps) {
       </div>
       {run.accountLabel !== null ? (
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[0.78125rem] text-inkdim">
-          <span className="min-w-0 truncate">
+          <span
+            className="min-w-0 truncate"
+            title={`${run.accountLabel}${run.model !== null ? ` · ${run.model}` : ''}`}
+          >
             {run.accountLabel}
             {run.model !== null ? ` · ${run.model}` : ''}
           </span>

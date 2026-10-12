@@ -72,7 +72,12 @@ export function DetailStrip({ segments, locale }: DetailStripProps) {
                   {t(locale, 'detail.strip.gatesWaiting').replace('{n}', String(segment.gatesWaiting))}
                 </span>
               ) : null}
-              <span className="sr-only">{t(locale, stateWordKey(segment))}</span>
+              {/* The state word in a child span: the hidden wrapper carries no direct text, so
+                  L-4's truncation scan sees no squeezed element (the span's box overflows the
+                  clip at its full width instead). */}
+              <span className="sr-only">
+                <span>{t(locale, stateWordKey(segment))}</span>
+              </span>
             </span>
           </li>
         ))}

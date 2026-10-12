@@ -239,6 +239,16 @@ describe('work-order detail screen — the decision zone (U-4, U-226)', () => {
     expect(html).not.toContain('Reddet…');
   });
 
+  it('U-226: an unmeasurable tree keeps the approval — no working copy is not “nothing to approve”', async () => {
+    // The seed world has no git worktree: the changes read answers no_worktree, and the walk
+    // still approves through the card (J-3's standing).
+    const html = await draw(AWAITING_HUMAN, [], { state: 'no_worktree', files: [], truncated: false });
+
+    expect(html).toContain('>Onayla<');
+    expect(html).toContain('Reddet…');
+    expect(html).not.toContain('Onaylanacak çıktı yok');
+  });
+
   it('U-226: parallel approvals carry no primary button — every answer is an equal', async () => {
     const html = await draw(MULTI);
     const stackAt = html.indexOf('data-decision-stack');
@@ -322,9 +332,11 @@ describe('work-order detail screen — the decision zone (U-4, U-226)', () => {
 });
 
 describe('work-order detail screen — the strip (U-224, U-225)', () => {
-  it('U-227: stacked cards sit on the 12 px gap token', async () => {
+  it('U-227: stacked cards sit on the 12 px gap token, on shrinkable boxes', async () => {
     const html = await draw(MULTI);
-    expect(html).toContain('<ul data-decision-stack="true" class="m-0 grid list-none gap-3 p-0">');
+    expect(html).toContain('<ul data-decision-stack="true" class="m-0 grid min-w-0 list-none gap-3 p-0">');
+    // Every card may shrink below its content — L-15's containment hooks.
+    expect(html.match(/class="grid min-w-0 gap-3 rounded-card/g)?.length).toBeGreaterThan(1);
   });
 
   it('U-239: the layout audit walks the detail at the four named sizes and pins the two decision standings', () => {

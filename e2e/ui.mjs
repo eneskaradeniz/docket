@@ -63,8 +63,10 @@ console.log(`profile: ${profile.dir}`);
 const L = {
   home: 'Anasayfa',
   badge: 'Senden bekleyenler',
-  // Phase A (#972): the detail's one badge word for a single human gate — "Onay bekliyor".
-  awaiting: 'Onay bekliyor',
+  // The cockpit and the board card keep the fold's own word; the detail's Phase A badge (#972)
+  // says its own — two constants, two surfaces.
+  awaiting: 'İnsan yanıtı bekleniyor',
+  awaitingDetail: 'Onay bekliyor',
   ask: 'İzin bekleniyor',
   ready: 'Hazır',
   done: 'Tamamlandı',
@@ -190,7 +192,7 @@ await spec('the card opens the work-order detail', async () => {
   await page.locator('main section button').filter({ hasText: TITLE }).click();
   await waitFor('the detail heading', () => present(page.locator('main h1').filter({ hasText: TITLE })));
   await waitFor('the awaiting status badge', () =>
-    present(page.locator('main [role="status"], main span').filter({ hasText: L.awaiting }).first()),
+    present(page.locator('main [role="status"], main span').filter({ hasText: L.awaitingDetail }).first()),
   );
   // Phase A (#972): the runs list left with the third column — the decision zone's approval
   // card is the standing's own surface, and no run has started yet.
