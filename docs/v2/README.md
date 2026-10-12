@@ -22,6 +22,7 @@ until an architect change updates them.
 | [pages.md](pages.md) | Visual pages produced by agents (artifacts), sandboxing |
 | [roadmap.md](roadmap.md) | Phases, milestones, issue contract, model routing, batch mode |
 | [layer-promotion.md](layer-promotion.md), [screen-contract-template.md](screen-contract-template.md) | Layer-by-layer v2 → main promotion (order, gates, dogfood ladder, sign-off); per-screen contract template (a11y + measurements, no screenshots) |
+| [decisions-phase7.md](decisions-phase7.md) | Phase 7 decision record: flow and capability model, repo-owned definitions, storage under `~/.docket`, two-layer roadmap, managed quit |
 
 ## Glossary
 
@@ -39,8 +40,10 @@ The UI speaks Turkish; code uses the English term.
 | Stage | Aşama | One step of a flow; a role acts, then exit gates are checked |
 | Gate | Kapı | An exit condition: human approval, command, agent verdict, secret scan, page approval |
 | Project | Proje | A set of repos with one main repo: the roadmap, project-level defaults, the project budget ceiling |
+| | | (added 2026-10-12, see decisions-phase7.md) |
 | Repo | Depo | One repository of a project: overrides, enabled flows, environments, the repo budget limit |
 | Main repo | Ana depo | The project's central repo: `.docket/project.yaml` and the roadmap live there |
+| | | (added 2026-10-12, see decisions-phase7.md) |
 | Roadmap / Phase / Task | Yol haritası / Faz / Görev | The plan, owned by the project; a task is a planning unit targeting one or more repos |
 | Work order | İş emri | One execution of a flow in one repo, usually for a task |
 | Run | Koşu | One execution of one stage by one role on one account (one agent session) |
