@@ -123,6 +123,22 @@ const PENDING = new Map([
   ['ui:U-293', '#1026'],
   ['ui:U-294', '#999'],
   ['ui:U-295', '#999'],
+
+  // #1046 — Phase 7 contract gaps: storage, registry, bundles, library versions (#1009–#1012 implement)
+  ['infrastructure:I-93', '#1009'],
+  ['infrastructure:I-94', '#1009'],
+  ['infrastructure:I-95', '#1009'],
+  ['infrastructure:I-96', '#1009'],
+  ['infrastructure:I-97', '#1009'],
+  ['infrastructure:I-98', '#1010'],
+  ['infrastructure:I-99', '#1010'],
+  ['infrastructure:I-100', '#1010'],
+  ['application:A-341', '#1009'],
+  ['application:A-342', '#1010'],
+  ['application:A-343', '#1011'],
+  ['application:A-344', '#1011'],
+  ['application:A-345', '#1012'],
+  ['ui:U-296', '#1010'],
 ]);
 
 function walk(dir, acc = []) {

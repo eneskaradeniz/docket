@@ -1848,3 +1848,75 @@ Phase 7 decision D-8 supersedes the Phase 3.5 project attachment rules in A-24 (
 - **A-338** (added 2026-10-12, #1007) `docket_setup_propose` yields one `project_setup` proposal; approving it is the only way definitions are written; rejecting it writes nothing and the setup draft is kept.
 - **A-339** (added 2026-10-12, #1007) Quick and Detailed produce the same `SetupProposal` through `buildSetupProposal(answers)` (pure, application layer): the same input set gives an equal proposal regardless of path; the proposal diff the user approves is identical in shape for all three paths.
 - **A-340** (added 2026-10-12, #1007) No connected provider: the Docket AI path is not startable and says why (typed `no_provider`); Quick and Detailed stay available; a started setup is persisted as a draft under `~/.docket/setup/<draftId>.json` after every answer and can be resumed after a restart; a draft holds no secret and no file content read by the agent.
+
+## Phase 7 addendum: storage, registry and library contracts (added 2026-10-13, #1046)
+
+Closes the contract gaps that block #1009–#1012 (resolution plan Q8–Q14, Q17–Q19, Q23, Q24). The
+commands and queries extend the existing api unions; `AuditAction` gains each rule's audit name.
+
+```ts
+// commands.ts (A-341)
+| { type: 'repo.importLegacy'; repoId: string; path: string }        // ok → LegacyImportReport (I-90)
+| { type: 'repo.relink'; repoId: string; path: string }              // ok → { ok: true }
+
+// queries.ts (A-341)
+| { type: 'repoStatus' } → RepoStatusView[]
+export interface RepoStatusView {
+  readonly repoId: string;
+  readonly slug: RepoSlug;
+  readonly path: string;
+  readonly status: 'ok' | 'folder_not_found' | 'relink_offered';
+}
+
+// commands.ts (A-342)
+| { type: 'project.export'; project: string }                        // ok → { path, counts }
+| { type: 'project.importBundle'; path: string }                     // ok → { warnings, renames }
+
+// ports/definition-store.ts — DefinitionKind (A-343): the library kinds the store versions
+export type DefinitionKind = 'roles' | 'flows' | 'capabilities' | 'memory';
+
+// definition-store.ts — DefinitionStore gains library version histories (A-343; #1011 port + fakes, #1009 adapter)
+listVersions(kind: DefinitionKind, id: string): Promise<readonly VersionRecord<unknown>[]>;   // version order; empty for an unknown id
+appendVersion(kind: DefinitionKind, id: string, body: unknown, at: EpochMs): Promise<Result<VersionRecord<unknown>, 'stale'>>;
+
+// use-cases/library.ts (A-343) — the A-327 use case
+export type SaveVersionError = 'definitions_invalid' | 'stale';
+export function saveVersion(
+  deps: Pick<AppDeps, 'clock' | 'log' | 'definitions'>,
+  input: { readonly kind: DefinitionKind; readonly id: string; readonly body: unknown; readonly actor: Actor },
+): Promise<Result<VersionRecord<unknown>, SaveVersionError>>;
+
+// work-order-repo.ts (A-344) — WorkOrderRecord gains (set at creation; absent on rows stored before Phase 7)
+readonly pin: FlowPin;
+
+// commands.ts (A-345)
+| { type: 'repo.saveFlow'; repo: string; flow: RepoFlow }            // ok → { ok: true }
+
+// queries.ts (A-345)
+| { type: 'repo.flow'; repo: string } → RepoFlowView
+export type RepoFlowView =
+  | { readonly ok: true; readonly flow: RepoFlow }
+  | { readonly ok: false; readonly code: 'not_found' };
+```
+
+Rules:
+
+- **A-341** (added 2026-10-13, #1046) `repoStatus` lists every registry entry (I-94) with: `ok` — the registered path exists and its `rootCommit` equals the stored fingerprint's; `folder_not_found` — the registered path does not exist; `relink_offered` — the path exists but its `rootCommit` differs from the stored one, so the repo is offered for relink and never re-pointed silently (I-88). `repo.importLegacy` runs I-90's import for that entry (`not_found` for an unknown `repoId`; `already_imported` and nothing read when `legacyImported` is set), sets `legacyImported` (I-97) and audits `repo.legacy_imported`; `repo.relink` applies the operator's confirmed folder through I-94's verification (`not_found` · `folder_not_found` · `fingerprint_mismatch`) and audits `repo.relinked`.
+- **A-342** (added 2026-10-13, #1046) `project.export {project}` builds the bundle of I-89/I-99 (the project, its repos' definitions, the library histories, accepted memory notes) and writes it through `BundleStore.export` (I-100), answering `{ path, counts: { projects, repos, definitions, memoryNotes } }` (`not_found` for an unknown project; audit `project.exported`). `project.importBundle {path}` reads through `BundleStore.read` (`not_found` · `wrong_format` · `bad_checksum`), validates all-or-nothing (I-91: issues → `definitions_invalid`, nothing written) and applies every rename, answering the report's `{ warnings, renames }`; audit `project.imported`.
+- **A-343** (added 2026-10-13, #1046) `saveVersion` is the A-327 use case: the body is validated as the definition's next version before anything is written (issues → `definitions_invalid`), the port's `appendVersion` is the only write (`stale` when a concurrent writer appended the same next version first), the new `VersionRecord` is returned, and one audit `library.version_created` lands with subject the definition and `detail: { kind, id, version }`.
+- **A-344** (added 2026-10-13, #1046) `WorkOrderRecord.pin: FlowPin` is the field A-324 stores; `openWorkOrder` maps a `pinFlow` failure to the existing `OpenError` `'definitions_invalid'` and writes nothing (no record, no event).
+- **A-345** (added 2026-10-13, #1046) `repo.saveFlow {repo, flow}` applies an operator edit directly — no proposal: the repo must exist (`not_found`), the flow must pass R-127/R-128 (issues → `definitions_invalid`, nothing written), the store write is the repo definition's single file (I-95), and one audit `repo.flow_saved` lands with subject the repo. The `repo.flow` query answers the stored `RepoFlow` (`not_found` for an unknown repo); pins of existing work orders are never rewritten (A-325).
+
+A-324 note (added 2026-10-13, #1046): the pin A-324 creates is stored as `WorkOrderRecord.pin: FlowPin` (A-344); a `pinFlow` failure refuses the opening with `OpenError 'definitions_invalid'`.
+
+### Amendment: the project/repo model rules under D-1/D-5/D-8 (added 2026-10-13, #1046)
+
+One dated amendment for the Phase 3.5 rules the Phase 7 decisions contradict (#1046 Q24); the rule
+texts above stand as history, the sentences named here are superseded:
+
+- **A-24** (added 2026-10-13, #1046; supersedes the rule's `readProjectAt`/`<path>/.docket` read and `register mainRepo` steps — A-338, I-86, I-88) Attaching an existing folder no longer reads `<path>/.docket/project.yaml` and no longer registers a main repo: the `not_a_repo` check stands, then one `RepoRegistryEntry { repoId, slug, path, fingerprint }` is registered (I-94) and the one-time legacy import is offered (A-341); nothing is written into the folder and no project definitions are read from it.
+- **A-25** (added 2026-10-13, #1046; supersedes the rule's `targets = task.targets or [mainRepo]` sentence — R-126) A roadmap task with empty `targets` means the project's only repo when the project lists exactly one repo; otherwise the validated roadmap reports `target_required` (the roadmap arm is the #1005 family's). The all-or-nothing stance stands.
+- **A-26** (added 2026-10-13, #1046; supersedes the rule's "registry pointer" and "edited in the file" wording) `registerRepo`/`unregisterRepo` write a `RepoRegistryEntry` keyed by `repoId` (I-94's `register`/`relink`; the `repo_in_use` refusal stands); the project's `repos` list is versioned truth edited in `~/.docket/projects/<slug>/project.yaml` (I-95) or through a proposal.
+- **A-50** (added 2026-10-13, #1046; supersedes the rule's sources sentence) `roles.list` reads two sources: the library's versioned role histories (R-129 — the current version of each definition) and every registered repo's `RepoFlow` bindings (a binding's `RoleRef` with its `detached` copy or `overlay`, D-4 — the `roleOverrides` wording is out); the ordering, `stages` and `sameProviderReview` sentences stand.
+- **A-76** (added 2026-10-13, #1046; supersedes the rule's written shape) A new project's definitions are written by the `project_setup` proposal (A-338) into `~/.docket/projects/<slug>/project.yaml` and `~/.docket/repos/<slug>/repo.yaml` (I-95): `project` = `{ id, name, repos: [slug], budget? }` (no `mainRepo`, R-126) and `repo` carries `flow: RepoFlow` and `defaultLimitPolicy` (no `flows`/`defaultFlow`/`roleOverrides`, D-1); the empty-command-sets stance stands.
+- **A-77** (added 2026-10-13, #1046; supersedes the rule's write order) The write order is: source `blank` → `repoFolders.createRepo` (the arm stands, I-96); then the setup proposal path (A-338) creates the definitions and the registry registration (I-94) — the `installBuiltins`, `scaffoldProject` and `attachProject` steps are superseded; a failure after `createRepo` still leaves the new folder in place, and a refusal writes no audit entry (A-78's audit stands).
