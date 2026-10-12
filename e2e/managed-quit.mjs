@@ -248,6 +248,49 @@ await spec('quit without the switch shows the in-app modal (no native dialog)', 
   assert.ok(text.includes('Vazgeç') && text.includes('Kapat ve durdur'), `buttons missing: ${text}`);
   const focused = await page3.evaluate(() => document.activeElement?.textContent?.trim());
   assert.equal(focused, 'Vazgeç', 'Vazgeç holds the default focus');
+  // The dialog enters with an opacity/translate/scale transition, so "visible" fires mid-entrance
+  // and a screenshot there shows the bare cockpit. Wait for the entrance to settle first.
+  const readDialog = () =>
+    page3.evaluate(() => {
+      const dialog = document.querySelector('[data-quit-dialog]');
+      if (dialog === null) return null;
+      const box = dialog.getBoundingClientRect();
+      return { opacity: getComputedStyle(dialog).opacity, x: box.x, y: box.y, width: box.width, height: box.height };
+    });
+  await waitFor('quit dialog entrance to reach opacity 1', async () => {
+    const snap = await readDialog();
+    return snap !== null && snap.opacity === '1' ? true : undefined;
+  }, 10_000);
+  const settled = await readDialog();
+  assert.ok(settled !== null, 'quit dialog is mounted');
+  await sleep(100);
+  const resampled = await readDialog();
+  assert.ok(
+    resampled !== null &&
+      settled.x === resampled.x &&
+      settled.y === resampled.y &&
+      settled.width === resampled.width &&
+      settled.height === resampled.height,
+    'quit dialog bounding box is stable across two consecutive 100 ms samples',
+  );
+  await sleep(200);
+  const { scrimCovers, dialogInside } = await page3.evaluate(() => {
+    const scrim = document.querySelector('[data-quit-dialog-scrim]');
+    const dialog = document.querySelector('[data-quit-dialog]');
+    if (scrim === null || dialog === null) return { scrimCovers: false, dialogInside: false };
+    const scrimBox = scrim.getBoundingClientRect();
+    const dialogBox = dialog.getBoundingClientRect();
+    return {
+      scrimCovers: scrimBox.width >= window.innerWidth && scrimBox.height >= window.innerHeight,
+      dialogInside:
+        dialogBox.x >= 0 &&
+        dialogBox.y >= 0 &&
+        dialogBox.x + dialogBox.width <= window.innerWidth &&
+        dialogBox.y + dialogBox.height <= window.innerHeight,
+    };
+  });
+  assert.ok(scrimCovers, 'the quit scrim covers the window');
+  assert.ok(dialogInside, 'the quit dialog sits inside the window');
   await page3.screenshot({ path: join(OUT_DIR, 'modal.png') });
 });
 
