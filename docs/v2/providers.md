@@ -344,6 +344,17 @@ Design and evidence: [provider-capabilities.md](provider-capabilities.md), one s
 - **P-40** Every route and model has billing `included | metered | unknown`; `unknown` is never assumed free and shows `?`; tier resolution and limit-driven switches never pick a non-included model; a non-included model runs only with the user's consent and a spend cap (`needs_spend_consent` otherwise).
 - **P-46** A handoff continuation (P-38) never starts on a route whose model billing is `unknown` without the user's consent and a spend cap on the account: the continuation run passes the same preflight as any run (`needs_spend_consent`), and an automatic fallback treats an `unknown`-billing candidate exactly like a `metered` one — skipped. The pack changes the provider, never the money boundary (P-40).
 
+### Capability translation, support table and machine import (added 2026-10-12, #1006, D-4, D-7; P-57 … P-60)
+
+Design and evidence: [provider-capabilities.md §15](provider-capabilities.md#15-capability-translation-and-support-table-p-57).
+
+- **P-57** (added 2026-10-12, #1006) `supportFor` answers from the table; a missing row is `unverified`; `setupWarnings` returns one warning per (stage, capability) whose support is not `native`, in stage order; the UI shows them at setup time and before a run starts; `unverified` is shown as such, never as `native`.
+- **P-58** (added 2026-10-12, #1006) The table's initial content (data in the registry; honest, no claim without evidence — the real-run probe #1015 later turns `unverified` into the observed value): for provider `claude-code` (stream-json/SDK): mcp native, skill native, hook native, context native, plugin native, command degraded→prompt_text; for `codex`: mcp native, context native, skill degraded→context, hook unsupported, plugin unverified, command degraded→prompt_text; for `agy`, `copilot`, `cursor`, `opencode`: every kind `unverified` except context (native: instruction files, P-37) and command (degraded→prompt_text).
+- **P-59** (added 2026-10-12, #1006) Translation is per provider and per run: a stage's role capabilities are translated into the run-scoped files/flags the provider's launch rules already use (P-7 addendum for run-scoped files, the MCP child launch rules); a capability whose support is `unsupported` is omitted from the run and recorded in the run record as `omitted_capability`; `degraded` capabilities are inlined as instruction text; no translation ever writes into the repository (D-5) or the user's own provider config.
+- **P-60** (added 2026-10-12, #1006) Machine import is read-only: a scan lists `MachineCandidate`s per provider from that provider's own user-level config locations; it never writes there, never copies a secret value (only `secretNames`; at import the user is asked to store the value in the keychain, the definition then holds `{secretRef}`); it supersedes nothing in R-62…R-67 — the existing `CapabilityCandidate` for mcp/skill/context stays and this adds plugin and hook candidates: hook candidates are listed but still not importable (R-66's note, 2026-10-11, stands).
+
+Conflicts and supersessions (added 2026-10-12, #1006, D-7): Glossary "Capability — MCP, skill, hook, context" grows by plugin and command; "capabilities attached to roles" now also arrive through plugins; Phase 3.5 account-scoped capability candidates (R-62…R-67, #850–#866) stay as the import mechanism.
+
 ## Candidate providers: effort, isolation, discovery safety (P-43 … P-45)
 
 Design: [provider-capabilities.md](provider-capabilities.md) §9.

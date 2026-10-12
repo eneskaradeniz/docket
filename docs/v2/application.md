@@ -345,6 +345,37 @@ export interface IssueTracker {
 
 Fake: `createFakeTracker(): IssueTracker & { readonly items: ExternalItem[]; readonly comments: readonly { key: string; text: string }[] }`.
 
+### Phase 7 tracker addendum (added 2026-10-12, #1005)
+
+Under D-3 (see `docs/v2/decisions-phase7.md`), Docket introduces its own issue and milestone mirror model with per-repo sync modes (`docket_only`, `read_only_mirror`, `limited_write`, `two_way`), token permission probing, conflict tracking, and local subtasks that never reach the external tracker.
+
+```ts
+export type SyncMode = 'docket_only' | 'read_only_mirror' | 'limited_write' | 'two_way';   // default 'read_only_mirror'
+export interface TrackerPermissions { readonly read: boolean; readonly comment: boolean; readonly transition: boolean; readonly edit: boolean }
+export interface RepoTrackerLink { readonly repo: RepoSlug; readonly tracker: string; readonly connection: string /* integration account id */; readonly scope: string /* project key / owner-repo */; readonly mode: SyncMode }
+export interface ExternalMilestone { readonly id: string; readonly title: string; readonly dueAt?: EpochMs; readonly state: 'open' | 'closed'; readonly url?: string }
+// IssueTracker port gains (existing search/get/comment/transition stay):
+//   probePermissions(scope: string): Promise<Result<TrackerPermissions, TrackerError>>
+//   listMilestones(scope: string, cursor?: string): Promise<Result<{ items: readonly ExternalMilestone[]; next?: string }, TrackerError>>
+//   listIssues(scope: string, opts: { since?: EpochMs; cursor?: string }): Promise<Result<{ items: readonly ExternalItem[]; next?: string }, TrackerError>>
+//   updateIssue / createIssue (only called in two_way)
+export interface SyncConflict { readonly issue: string; readonly field: 'title' | 'body' | 'state' | 'milestone' | 'labels'; readonly local: string; readonly remote: string; readonly detectedAt: EpochMs }
+export type ConflictResolution = 'keep_remote' | 'keep_local';
+export function effectiveMode(mode: SyncMode, probed: TrackerPermissions): SyncMode;   // pure; lives in domain
+```
+
+Rules:
+- **A-328** (added 2026-10-12, #1005) `docket_only` never calls the tracker port; `read_only_mirror` calls only probe/list/get; `limited_write` additionally allows exactly `transition` (status), `comment` (including a pull-request link comment); `two_way` additionally `createIssue`/`updateIssue`; a test with a recording fake asserts the call set per mode.
+- **A-329** (added 2026-10-12, #1005) `effectiveMode` clamps the configured mode to what the probed permissions allow (`edit` false → at most `limited_write`; `comment` and `transition` both false → at most `read_only_mirror`; `read` false → `docket_only`); the clamp and its reason are surfaced to the UI, never silently applied.
+- **A-330** (added 2026-10-12, #1005) In `read_only_mirror` the mirrored fields (title, body, state, milestone, labels) of a tracker-sourced issue are not editable locally (typed refusal); local-only data (subtasks, notes) is always editable.
+- **A-331** (added 2026-10-12, #1005) A subtask or any issue with `source.kind === 'local'` is never sent to the tracker in any mode.
+- **A-332** (added 2026-10-12, #1005) Sync detects a conflict when the remote value changed since the last sync AND the local value changed (recording a `SyncConflict`, writing neither side, and keeping the conflict visible until a `ConflictResolution` is chosen, with no automatic overwrite in any mode); syncing twice with no remote change is idempotent, recording no new event and changing no local row.
+- **A-333** (added 2026-10-12, #1005) Every adapter must pass `trackerAdapterContract(adapter)`: pagination via `cursor`, `probePermissions` never reports a capability the API refuses, rate limit → `TrackerError 'rate_limited'`, no write call in `read_only_mirror`, and re-listing is idempotent.
+
+#### Conflicts and supersessions (added 2026-10-12, #1005)
+
+The previous IssueTracker design provided only search/get/comment/transition with import as proposal (`integrations.md` principle 5). Under D-3, import into Docket's issue/milestone mirror is a direct mirror (read-only by default), NOT a proposal, while changes to the PROJECT roadmap (phases and phase items) remain proposals; `TaskDef` and roadmap tasks stay as the execution-planning unit and gain no tracker fields.
+
 ### Update checker port (`ports/update-checker.ts`)
 
 The app's own newer version — machine-local state with no repo data and no fitting `AuditAction`
@@ -567,6 +598,16 @@ Rules:
 - **A-24** `attachProject`: `path` must be an existing git work tree per `git.isWorkTree` (`not_a_repo`, nothing written); `readProjectAt` yields the project — `no_project_yaml` when `<path>/.docket/project.yaml` is absent, `definitions_invalid` with the R-46 issues otherwise. On success: save the `ProjectDef`, register `mainRepo → path`, and register every entry of `repos` whose slug the project lists (a slug not listed → `repo_not_in_project`, nothing written). Audit `project.attached`.
 - **A-25** `openTaskWorkOrders`: loads the project (`unknown_project`) and its roadmap (`unknown_task`); targets = `task.targets` or `[mainRepo]`; opens one work order per target with `title = task.title` and `task` set — all-or-nothing: every opening is validated first, and any error opens none. Each success follows A-5 (one `created` event, one audit entry).
 - **A-26** `registerRepo` upserts the registry pointer after the project exists and lists the repo (`unknown_project` / `repo_not_in_project`). `unregisterRepo` fails `repo_in_use` while non-done work orders reference the repo, else removes the pointer — the project's `repos` list in `project.yaml` is untouched (membership is versioned truth, edited in the file or through a proposal). Audit `repo.registered` / `repo.unregistered`.
+
+### Phase 7 addendum: work-order flow pins, definition versions, and removals (added 2026-10-12, #1003)
+
+Under **D-1**, **D-4**, and **D-6**, work orders pin immutable flow and role definitions at creation time; library definitions are versioned contiguously; removals respect active work orders and repository bindings.
+
+Rules:
+- **A-324** (added 2026-10-12, #1003) `openWorkOrder` creates and stores the `FlowPin` (via `pinFlow`) on the work order record at creation.
+- **A-325** (added 2026-10-12, #1003) Changing a repo's flow or bindings never rewrites pins of existing work orders; stage runs, resume and retry use the work order's stored `FlowPin`.
+- **A-326** (added 2026-10-12, #1003) An account removal is refused while `accountRemoval` is `blocked` (by running work orders or stage bindings), and archives the account otherwise.
+- **A-327** (added 2026-10-12, #1003) Role and flow library edits create a new version via `nextVersion`, keeping previous version records immutable.
 
 ### Instructions, checkpoints, handoff — use cases (#581)
 
@@ -1776,3 +1817,34 @@ Addendum 2026-10-12 (#982): a work order may carry an optional description. `Wor
 Addendum 2026-10-12 (#993): a handoff continuation carries the work order's Request. `buildHandoff` appends `workOrderRequestSection` to the rendered pack prompt, after the sized pack. The section is operator data, so it is not part of the pack the budget sizes and not part of the definitions digest. An absent or blank description adds nothing.
 
 - **A-322** (added 2026-10-12, #993) The handoff prompt contains a `Request` section with the title and the description when the work order has a description. When the description is absent, the prompt has no `Request` section and is the rendered pack.
+
+## Phase 7 addendum: Docket AI project setup
+
+Added 2026-10-12 (#1007, implementing D-8). Implemented in #1021. Setup tools (names are fixed; they extend the chat tool set of A-204 for a conversation of kind `setup` only):
+- `docket_repo_analyze { path }` → `{ kind: 'data', source: 'docket_repo_analyze', summary }` where summary = `{ vcs: { remote?: string; defaultBranch?: string }, languages: string[], packageManager?: string, commands: { test?: string; lint?: string; build?: string }[], docsRoot?: string, ci: string[], readmeExcerpt?: string }`; `readmeExcerpt` is cut at 2000 characters; every string passes the shared secret-shape redaction (#993) before it leaves the tool.
+- `docket_read_path { path, reason }` → file excerpt (cut at 8000 characters) or directory listing (200 entries), read-only.
+- `docket_setup_propose { project, repos, flow, bindings, defaultLimitPolicy, commandSets }` → creates exactly ONE proposal (domain §9 `Proposal`) of kind `project_setup`; it never writes a definition (invariant 5).
+
+```ts
+export interface SetupProposal {            // the single diff shape every setup path produces
+  readonly project: { readonly name: string; readonly repos: readonly string[] };
+  readonly repo: { readonly id: string; readonly flow: RepoFlow; readonly defaultLimitPolicy: LimitPolicy; readonly commandSets: Readonly<Record<string, readonly string[]>>; readonly docsRoot: string; readonly testGlobs: readonly string[] };
+  readonly warnings: readonly SetupWarning[];      // domain/providers: translation support table (#1006)
+  readonly differsFromRecommended: readonly string[];   // field paths
+}
+export type ReadScope = { readonly paths: readonly string[]; readonly sessionOnly: true };
+export type ReadDecision = { readonly kind: 'allow' } | { readonly kind: 'ask'; readonly path: string } | { readonly kind: 'deny'; readonly reason: 'secret_shaped' | 'outside_scope_denied' | 'not_readable' };
+export function decideRead(scope: ReadScope, requested: string, ctx: { repoFolder: string; docketHome: string }): ReadDecision;   // pure
+```
+
+### Conflicts and supersessions
+
+Phase 7 decision D-8 supersedes the Phase 3.5 project attachment rules in A-24 (`attachProject` reading `<path>/.docket/project.yaml` directly): project configuration is produced as a `SetupProposal` diff and applied strictly through proposal approval into `~/.docket`, never writing Docket files into the repository (invariant 5, D-5). A-204 and A-213 are extended: for a conversation of kind `setup`, the tool set is restricted to exactly five tools (`docket_get`, `docket_search`, `docket_repo_analyze`, `docket_read_path`, `docket_setup_propose`), denying all others. A-316 (docket_get and docket_search auto-allowed, all other tools denied on the sdk transport) is extended, not weakened — the three new tools are not auto-allowed on the sdk transport; `docket_read_path` out-of-scope asks go through the setup prompt, everything else the setup tools do is decided by `decideRead` and the proposal gate.
+
+- **A-334** (added 2026-10-12, #1007) Default read scope of a setup conversation is exactly the repo folder being set up plus `~/.docket`; `decideRead` allows a path inside it (after resolving `..` and symlinks to their real path), returns `ask` for any other path, and never grants a prefix wider than the asked path.
+- **A-335** (added 2026-10-12, #1007) A grant answers one path (that file or that directory and its descendants), lives for the conversation only (it is dropped when the conversation ends or the app quits; never written to disk), and is read-only.
+- **A-336** (added 2026-10-12, #1007) A path is `deny: secret_shaped` even inside scope and even when the user would grant it: any file named `.env` or `.env.*`, `*.pem`, `*.key`, `id_rsa*`, `id_ed25519*`, `credentials*`, `*.p12`, `*.keystore`, anything under `~/.ssh`, `~/.aws`, `~/.gnupg`, the OS keychain files, and `~/.docket/docket.db`; and any content read passes the shared secret-shape redaction before the agent sees it.
+- **A-337** (added 2026-10-12, #1007) The setup conversation's tool set is exactly `docket_get`, `docket_search`, `docket_repo_analyze`, `docket_read_path`, `docket_setup_propose`: no shell, no write tool; a call outside the set is denied.
+- **A-338** (added 2026-10-12, #1007) `docket_setup_propose` yields one `project_setup` proposal; approving it is the only way definitions are written; rejecting it writes nothing and the setup draft is kept.
+- **A-339** (added 2026-10-12, #1007) Quick and Detailed produce the same `SetupProposal` through `buildSetupProposal(answers)` (pure, application layer): the same input set gives an equal proposal regardless of path; the proposal diff the user approves is identical in shape for all three paths.
+- **A-340** (added 2026-10-12, #1007) No connected provider: the Docket AI path is not startable and says why (typed `no_provider`); Quick and Detailed stay available; a started setup is persisted as a draft under `~/.docket/setup/<draftId>.json` after every answer and can be resumed after a restart; a draft holds no secret and no file content read by the agent.
