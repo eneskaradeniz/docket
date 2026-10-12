@@ -80,6 +80,26 @@ the project overrides `~/.docket`; the work-order level resolves above all three
 and is read from the main repo's `.docket/roadmap.yaml`; changing the main repo moves where the
 roadmap lives.
 
+### Storage addendum (added 2026-10-12, #1004; decisions D-5, D-6, D-7)
+
+Layout under `~/.docket/` (added 2026-10-12, #1004):
+```
+~/.docket/
+  docket.db                      runtime state, registry (repoId → current folder), accounts, work orders, runs index
+  library/roles|flows|capabilities|memory/<id>/v<N>.yaml    versioned library definitions (immutable files, domain.md R-129)
+  projects/<project-slug>/project.yaml, roadmap.yaml        ProjectDef (no mainRepo), roadmap
+  repos/<repo-slug>/repo.yaml                                RepoDef incl. flow, bindings, defaultLimitPolicy (domain.md R-126…R-135)
+  worktrees/<repo-slug>/<work-order-code>/                   agent worktrees (already machine-local)
+  runs/<run-id>/                                             records, transcripts
+  run/children.json                                          process registry mirror (#999)
+  exports/                                                   bundles the user exported
+```
+
+The registry (`docket.db`) maps `repoId` (ULID) → current folder on this machine together with a git fingerprint `{ rootCommit: string; remote?: string }` (I-88); `RepoRegistry` stays the port in application architecture. When a repo's folder is missing at start, it shows "folder not found"; a folder whose fingerprint `rootCommit` equals the stored one is offered as the relink target, never applied silently; a different `rootCommit` is refused.
+
+**Conflicts and supersessions:**
+Under D-5, Docket writes no file into a repository's working tree and no tracked content unless the operator runs an explicit "export to repo" (I-87). This supersedes the `<main-repo>/.docket/` and `<repo>/.docket/` rows above, project-level role/flow defaults, and roadmap in the main repo (Phase 3.5 decisions S1, S3 in #372, #375; R-46 `main_repo_not_listed`). Every definition Docket reads or writes lives under `~/.docket/`; the definition store never opens `<repo>/.docket/` except through the one-time legacy import (I-86, I-90). Definitions are versioned under `library/` (D-6) and agent capabilities are organized into dedicated library menus (D-7). Definitions and projects move across machines via portable export/import bundles (`*.docket-bundle.json`; I-89, I-91), never through git tracking in user repos.
+
 ## Ports (defined in `src/application/ports/`)
 
 | Port | Responsibility |
@@ -115,6 +135,10 @@ mobile app. Contracts are plain JSON-serialisable types — no class instances, 
 4. An approval records who approved; a gate may later declare who is allowed to approve.
 5. Project and repo definitions live in git (the main repo's and each repo's `.docket/`), so sharing
    them with a team already works; `~/.docket` holds only registrations and machine-local records.
+
+### Team-ready rules addendum (added 2026-10-12, #1004, see D-5 in decisions-phase7.md)
+
+Team-ready rules, revised: rules 1–4 (actor on every write, ULIDs and UTC times, storage behind ports, approvals record who) stand unchanged; rule 5 is superseded: definitions are portable by export/import (I-89, I-91; `*.docket-bundle.json`), not by git. This product stays single-user; a later team server serves the same API and is out of Phase 7 (I-92).
 
 ## Security rules
 
