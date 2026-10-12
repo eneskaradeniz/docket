@@ -1818,6 +1818,19 @@ Addendum 2026-10-12 (#993): a handoff continuation carries the work order's Requ
 
 - **A-322** (added 2026-10-12, #993) The handoff prompt contains a `Request` section with the title and the description when the work order has a description. When the description is absent, the prompt has no `Request` section and is the rendered pack.
 
+Addendum 2026-10-12 (#1028): a candidate whose `envOverrides` holds `token` refuses adoption
+without the key move — the adoption used to leave an endpoint account with a `secretRef` and no
+secret behind it, an account that can never run (and the root cause the issue was opened for).
+This tightens the door the candidates rows (A-83a's own list) feed: the wizard and Settings keep
+such a row unselectable until the move (U-262), so the refusal below is the boundary's own guard,
+not the first line of defence.
+
+- **A-323** `adoptAccountCandidate` returns `token_move_required` and writes nothing when the
+  candidate's `envOverrides` includes `token` and the command did not send `importToken: true`.
+  The check sits after the store's `already_added` decision (A-85's rule that the store, not the
+  scan, decides duplicates) and before any id is taken or record is built. A candidate without
+  the token override keeps P-33's shape: adoptable without a secret, `secretRef` set, empty vault.
+
 ## Phase 7 addendum: Docket AI project setup
 
 Added 2026-10-12 (#1007, implementing D-8). Implemented in #1021. Setup tools (names are fixed; they extend the chat tool set of A-204 for a conversation of kind `setup` only):

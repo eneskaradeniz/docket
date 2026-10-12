@@ -2,6 +2,8 @@
 // names a source path and a label only; the candidate is re-found in the remembered scan (A-85) so
 // no client claim about its kind is ever trusted. A token travels one way, from the importer into
 // the vault, and only for a compatible-endpoint candidate when the caller asked for the import.
+// A candidate whose env token is its only credential refuses adoption without that import (A-323):
+// the account it would leave behind has a secretRef with nothing behind it.
 import { err, ok, type AccountId, type Actor, type EpochMs, type Result } from '../../domain/index';
 
 import type { AccountCandidate, AccountDiscovery, AccountRecord, AppDeps, Clock, CredentialImporter } from '../ports';
@@ -11,6 +13,7 @@ import { httpsUrlOf, saveAccount } from './accounts';
 export type AdoptError =
   | 'not_found'
   | 'already_added'
+  | 'token_move_required'
   | 'secret_without_ref'
   | 'invalid_endpoint'
   | 'endpoint_mismatch'
@@ -90,6 +93,10 @@ export async function adoptAccountCandidate(
   // The remembered scan can predate the accounts this window produced, so the store — not the
   // scan-time flag — decides whether the source is already an account.
   if (isSourceTaken(candidate, await deps.accounts.list())) return err('already_added');
+
+  // A-323: the env token is this candidate's only credential, so adopting without moving it to
+  // the vault would create a secretRef with no secret behind it — an account that can never run.
+  if (candidate.envOverrides.includes('token') && input.importToken !== true) return err('token_move_required');
 
   const id = deps.ids.next<'account'>();
   const isMachineLogin = candidate.kind === 'machine_login';

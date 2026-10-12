@@ -1,12 +1,18 @@
 // candidates.test.ts — U-34: the discovered accounts and providers as one list; selection, the
-// key-move switch (starts off, never a value), and adoption results through U-8. A successful
-// adoption also binds every role that has no binding yet to the new account — Settings is not
-// the wizard, but it must not leave roles unrunnable either.
+// key-move switch (starts off, never a value), and adoption results through U-8. A token-needing
+// row is "Kurulum bekliyor" and inert until its key is moved (U-262). A successful adoption also
+// binds every role that has no binding yet to the new account — Settings is not the wizard, but
+// it must not leave roles unrunnable either.
 import { describe, expect, it } from 'vitest';
 
 import type { Command, CommandResult } from '../../api/commands';
 import type { Query } from '../../api/queries';
 import { createCandidatesStore, candidateRows, candidateDot, candidateStanding, candidateStatusTone, listedCandidateCount, listBody, providerRows, type CandidateFact } from './candidates';
+
+/** No key moved yet. */
+const none = (): ReadonlySet<string> => new Set();
+/** The source paths whose key the user has moved. */
+const moved = (...paths: readonly string[]): ReadonlySet<string> => new Set(paths);
 
 const base: CandidateFact = {
   sourcePath: '/home/u/.alpha',
@@ -78,7 +84,7 @@ const make = (f: Fake, onAdopted?: () => void) =>
 
 describe('candidateRows', () => {
   it('U-34: a row carries mark key, label, status and selectable; alreadyAdded rows are not listed', () => {
-    const rows = candidateRows([base, { ...keyed, alreadyAdded: true }], null, false);
+    const rows = candidateRows([base, { ...keyed, alreadyAdded: true }], null, none());
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       id: '/home/u/.alpha',
@@ -91,36 +97,45 @@ describe('candidateRows', () => {
   });
 
   it('U-34: the mark comes from the candidate provider; an unknown provider has none', () => {
-    const rows = candidateRows([base, keyed], null, false);
+    const rows = candidateRows([base, keyed], null, none());
     expect(rows.map((row) => row.markKey)).toEqual(['prov-a', null]);
   });
 
   it('U-34: unreadable is disabled and carries its reason', () => {
-    const [row] = candidateRows([{ ...base, warnings: ['unreadable'] }], null, false);
+    const [row] = candidateRows([{ ...base, warnings: ['unreadable'] }], null, none());
     expect(row?.selectable).toBe(false);
     expect(row?.statusKey).toBe('candidates.status.unreadable');
     expect(row?.disabledReasonKey).toBe('candidates.reason.unreadable');
   });
 
   it('U-34: env_overrides_login shows a warning tag with an info bubble', () => {
-    const [row] = candidateRows([{ ...base, warnings: ['env_overrides_login'] }], null, false);
+    const [row] = candidateRows([{ ...base, warnings: ['env_overrides_login'] }], null, none());
     expect(row?.warnKeys).toEqual(['candidates.warn.env_overrides_login']);
     expect(row?.selectable).toBe(true);
   });
 
-  it('U-34: a token candidate reads "Anahtar gerekli" once selected with the switch off, ready with it on', () => {
-    const [unselected] = candidateRows([keyed], null, false);
-    expect(unselected?.statusKey).toBe('candidates.status.ready');
-    expect(unselected?.keyMoveCard).toBe(false);
-    const [off] = candidateRows([keyed], keyed.sourcePath, false);
-    expect(off?.keyMoveCard).toBe(true);
-    expect(off?.statusKey).toBe('candidates.status.key_needed');
-    const [on] = candidateRows([keyed], keyed.sourcePath, true);
-    expect(on?.statusKey).toBe('candidates.status.ready');
+  it('U-262: a token-needing row is "Kurulum bekliyor", not selectable, with its card and reason — before any selection', () => {
+    const [row] = candidateRows([keyed], null, none());
+    expect(row?.statusKey).toBe('candidates.status.setup_pending');
+    expect(row?.selectable).toBe(false);
+    expect(row?.selected).toBe(false);
+    expect(row?.importToken).toBe(false);
+    expect(row?.keyMoveCard).toBe(true);
+    expect(row?.disabledReasonKey).toBe('candidates.reason.setup_pending');
+  });
+
+  it('U-262: once the key is moved the row reads ready, becomes selectable and can stand selected; the card stays', () => {
+    const [row] = candidateRows([keyed], keyed.sourcePath, moved(keyed.sourcePath));
+    expect(row?.statusKey).toBe('candidates.status.ready');
+    expect(row?.selectable).toBe(true);
+    expect(row?.selected).toBe(true);
+    expect(row?.importToken).toBe(true);
+    expect(row?.keyMoveCard).toBe(true);
+    expect(row?.disabledReasonKey).toBeNull();
   });
 
   it('U-34: a candidate without a token override never shows the key-move card', () => {
-    const [row] = candidateRows([base], base.sourcePath, false);
+    const [row] = candidateRows([base], base.sourcePath, none());
     expect(row?.keyMoveCard).toBe(false);
   });
 });
@@ -130,7 +145,7 @@ describe('candidate section standing (U-45)', () => {
     expect(candidateStanding('candidates.status.ready')).toBe('ready');
     expect(candidateStanding('candidates.status.needs_login')).toBe('needsLogin');
     expect(candidateStanding('candidates.status.unknown')).toBe('unverified');
-    expect(candidateStanding('candidates.status.key_needed')).toBe('other');
+    expect(candidateStanding('candidates.status.setup_pending')).toBe('other');
     expect(candidateStanding('candidates.status.unreadable')).toBe('other');
   });
 });
@@ -183,30 +198,46 @@ describe('createCandidatesStore', () => {
     expect(store.state().status).toBe('error');
   });
 
-  it('U-34: the key-move switch starts off on every selection, and off sends adopt without importToken', async () => {
-    const f = fake([keyed]);
-    const store = make(f);
-    await store.load();
-    store.select(keyed.sourcePath);
-    expect(store.state().importToken).toBe(false);
-    await store.adopt();
-    expect(f.commands).toEqual([{ type: 'account.adopt', sourcePath: keyed.sourcePath, label: '.beta' }]);
-    expect('importToken' in (f.commands[0] ?? {})).toBe(false);
-  });
-
-  it('U-34: switch on sends importToken: true; re-selecting resets it to off', async () => {
+  it('U-262: a token-needing row cannot be selected while its key is not moved; the switch unblocks it and sticks across selections', async () => {
     const f = fake([keyed, base]);
     const store = make(f);
     await store.load();
     store.select(keyed.sourcePath);
-    store.setImportToken(true);
-    expect(store.state().importToken).toBe(true);
+    expect(store.state().selected).toBeNull();
+    store.setImportToken(keyed.sourcePath, true);
+    const row = store.state().rows.find((entry) => entry.id === keyed.sourcePath);
+    expect(row).toMatchObject({ statusKey: 'candidates.status.ready', selectable: true, importToken: true, keyMoveCard: true });
+    store.select(keyed.sourcePath);
+    expect(store.state().selected).toBe(keyed.sourcePath);
+    // The moved standing is a fact about the key, not the selection: re-selecting keeps it.
     store.select(base.sourcePath);
     store.select(keyed.sourcePath);
-    expect(store.state().importToken).toBe(false);
-    store.setImportToken(true);
+    expect(store.state().rows.find((entry) => entry.id === keyed.sourcePath)?.importToken).toBe(true);
     await store.adopt();
     expect(f.commands[0]).toMatchObject({ importToken: true });
+  });
+
+  it('U-262: turning the switch back off returns the row to pending and drops its selection', async () => {
+    const f = fake([keyed]);
+    const store = make(f);
+    await store.load();
+    store.setImportToken(keyed.sourcePath, true);
+    store.select(keyed.sourcePath);
+    expect(store.state().selected).toBe(keyed.sourcePath);
+    store.setImportToken(keyed.sourcePath, false);
+    const row = store.state().rows.find((entry) => entry.id === keyed.sourcePath);
+    expect(row).toMatchObject({ statusKey: 'candidates.status.setup_pending', selectable: false, selected: false });
+    expect(store.state().selected).toBeNull();
+  });
+
+  it('U-34: a row without a token override adopts without importToken', async () => {
+    const f = fake([base]);
+    const store = make(f);
+    await store.load();
+    store.select(base.sourcePath);
+    await store.adopt();
+    expect(f.commands).toEqual([{ type: 'account.adopt', sourcePath: base.sourcePath, label: '.alpha' }]);
+    expect('importToken' in (f.commands[0] ?? {})).toBe(false);
   });
 
   it('U-34: an unreadable candidate cannot be selected or adopted', async () => {
@@ -303,7 +334,7 @@ describe('createCandidatesStore', () => {
 describe('Eklenmemiş list (U-28, U-34)', () => {
   it('U-28: the list count and the dot count are one function of the facts', () => {
     const facts = [base, { ...keyed, alreadyAdded: true }, { ...base, sourcePath: '/x', warnings: ['unreadable' as const] }];
-    expect(listedCandidateCount(facts)).toBe(candidateRows(facts, null, false).length);
+    expect(listedCandidateCount(facts)).toBe(candidateRows(facts, null, none()).length);
     expect(listedCandidateCount(facts)).toBe(2);
     expect(listedCandidateCount([{ ...base, alreadyAdded: true }])).toBe(0);
   });
@@ -319,9 +350,9 @@ describe('Eklenmemiş list (U-28, U-34)', () => {
     expect(store.state().addVisible).toBe(false);
   });
 
-  it('U-34: status words carry a lamp tone — Hazır proceed, a needed key or login signal, the rest dim', () => {
+  it('U-34: status words carry a lamp tone — Hazır proceed, a pending setup or needed login signal, the rest dim', () => {
     expect(candidateStatusTone('candidates.status.ready')).toBe('proceed');
-    expect(candidateStatusTone('candidates.status.key_needed')).toBe('signal');
+    expect(candidateStatusTone('candidates.status.setup_pending')).toBe('signal');
     expect(candidateStatusTone('candidates.status.needs_login')).toBe('signal');
     expect(candidateStatusTone('candidates.status.unreadable')).toBe('dim');
     expect(candidateStatusTone('candidates.status.not_installed')).toBe('dim');
@@ -347,7 +378,7 @@ describe('list body', () => {
     expect(listBody({ loading: true, loaded: false, rows: [], providers: [] })).toBe('scanning');
     expect(listBody({ loading: true, loaded: true, rows: [], providers: [] })).toBe('scanning');
     expect(listBody({ loading: false, loaded: true, rows: [], providers: [] })).toBe('empty');
-    expect(listBody({ loading: false, loaded: true, rows: candidateRows([base], null, false), providers: [] })).toBe('list');
+    expect(listBody({ loading: false, loaded: true, rows: candidateRows([base], null, none()), providers: [] })).toBe('list');
     expect(candidateStatusTone('candidates.status.scanning')).toBe('info');
   });
 });
@@ -365,7 +396,7 @@ describe('machine-login candidates and the row\'s Ekle (U-42, U-43)', () => {
   const provider = (loggedIn: boolean | null) => ({ defId: 'prov-m', name: 'M', installUrl: null, binPath: '/bin/m', version: '1', loggedIn, optionalFlags: [] });
 
   it('U-42: a machine-login candidate reads its provider\'s login probe — signed in is ready, signed out needs a login, unproven is Doğrulanamadı', () => {
-    const status = (loggedIn: boolean | null) => candidateRows([login], null, false, [provider(loggedIn)])[0];
+    const status = (loggedIn: boolean | null) => candidateRows([login], null, none(), [provider(loggedIn)])[0];
     expect(status(true)?.statusKey).toBe('candidates.status.ready');
     expect(status(true)?.hintKey).toBeNull();
     expect(status(false)?.statusKey).toBe('candidates.status.needs_login');
@@ -373,11 +404,11 @@ describe('machine-login candidates and the row\'s Ekle (U-42, U-43)', () => {
     expect(status(null)?.statusKey).toBe('candidates.status.unknown');
     expect(status(null)?.hintKey).toBe('candidates.hint.testLater');
     // No probe answer yet proves nothing either.
-    expect(candidateRows([login], null, false, [])[0]?.statusKey).toBe('candidates.status.unknown');
+    expect(candidateRows([login], null, none(), [])[0]?.statusKey).toBe('candidates.status.unknown');
   });
 
   it('U-42: a row carries the billing of its route and whether it rides a key', () => {
-    const [plain, keyedRow] = candidateRows([base, { ...keyed, billing: 'included' }], null, false);
+    const [plain, keyedRow] = candidateRows([base, { ...keyed, billing: 'included' }], null, none());
     expect(plain).toMatchObject({ billing: 'included', viaKey: false, provider: 'prov-a', displayPath: '~/.alpha', hintKey: null });
     expect(keyedRow).toMatchObject({ billing: 'included', viaKey: true });
   });
@@ -391,15 +422,17 @@ describe('machine-login candidates and the row\'s Ekle (U-42, U-43)', () => {
     expect(f.commands).toEqual([{ type: 'account.adopt', sourcePath: base.sourcePath, label: '.alpha' }]);
   });
 
-  it('U-43: a candidate whose token overrides the login opens its key-move card first; a second Ekle adopts', async () => {
+  it('U-262: a token candidate\'s Ekle does nothing while the key is not moved; after the move it adopts with importToken', async () => {
     const f = fake([keyed]);
     const store = make(f);
     await store.load();
     expect(await store.add(keyed.sourcePath)).toBeNull();
     expect(f.commands).toHaveLength(0);
     expect(store.state().rows[0]?.keyMoveCard).toBe(true);
+    expect(store.state().rows[0]?.statusKey).toBe('candidates.status.setup_pending');
+    store.setImportToken(keyed.sourcePath, true);
     await store.add(keyed.sourcePath);
-    expect(f.commands).toHaveLength(1);
+    expect(f.commands).toEqual([{ type: 'account.adopt', sourcePath: keyed.sourcePath, label: '.beta', importToken: true }]);
   });
 
   it('U-43: an unreadable candidate cannot be added', async () => {

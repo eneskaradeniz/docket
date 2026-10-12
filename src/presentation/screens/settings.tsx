@@ -500,7 +500,7 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
                     </ActionButton>
                   )}
                   below={(row) =>
-                    row.source.keyMoveCard ? <KeyMoveCard locale={locale} on={candidateState.importToken} onChange={(on) => candidates.setImportToken(on)} /> : null
+                    row.source.keyMoveCard ? <KeyMoveCard locale={locale} on={row.source.importToken} onChange={(on) => candidates.setImportToken(row.id, on)} /> : null
                   }
                 />
               </div>

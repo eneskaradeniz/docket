@@ -1666,6 +1666,27 @@ stays on the screen below the header's meta line.
   issue's clause does not authorise; the failing number is pinned by the test so the fix must
   come through it.
 
+## Kurulum bekliyor (U-262 … U-263)
+
+Added 2026-10-12, #1028. A discovered account whose adoption needs a token — its `envOverrides`
+holds `token` — is never adopted half-set-up: until its access key is moved to the keychain the
+row is inert. This amends U-34: the key-move card no longer waits for a selection, the row's own
+status word while the switch is off is no longer "Anahtar gerekli", and U-34's "while off the row
+reads 'Anahtar gerekli' and `account.adopt` is sent without `importToken`" is superseded. The
+gate of U-35/U-42 (at least one ready account selected) stands; a pending row simply cannot be
+that account.
+
+- **U-262** Such a row reads "Kurulum bekliyor" (en "Setup pending") with the one-line reason
+  "Erişim anahtarı anahtar zincirine taşınmadı", is not selectable — neither in the wizard's
+  Hesaplar nor under Settings → Hesaplar → Eklenmemiş — and shows the key-move card before any
+  selection; its "Ekle" does nothing. Once the switch is on the row reads "Hazır" and becomes
+  selectable; turning the switch back off returns it to "Kurulum bekliyor" and drops it from the
+  selection. The moved standing is a fact about the key: it survives re-selecting the row.
+- **U-263** The wizard's finish adopts no selected row that can no longer be adopted into a
+  working account — one that is unreadable, or whose key is still not moved: a rescan that breaks
+  the row drops it from the selection, and the finish's own account list skips it in depth, so no
+  `account.adopt` is sent for it and the drafts phase writes nothing for it either.
+
 ## Project setup permission prompt (U-272 … U-279)
 
 Added 2026-10-12 (#1007, implementing D-8). Implemented in #1023. When Docket AI requests an out-of-scope path during project setup via `docket_read_path`, the user is prompted with a native-style permission dialog. Out-of-scope permission grants are strictly session-only and read-only. Secret-shaped paths bypass the prompt and are refused automatically.
