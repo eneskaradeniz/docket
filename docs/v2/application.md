@@ -1817,3 +1817,34 @@ Addendum 2026-10-12 (#982): a work order may carry an optional description. `Wor
 Addendum 2026-10-12 (#993): a handoff continuation carries the work order's Request. `buildHandoff` appends `workOrderRequestSection` to the rendered pack prompt, after the sized pack. The section is operator data, so it is not part of the pack the budget sizes and not part of the definitions digest. An absent or blank description adds nothing.
 
 - **A-322** (added 2026-10-12, #993) The handoff prompt contains a `Request` section with the title and the description when the work order has a description. When the description is absent, the prompt has no `Request` section and is the rendered pack.
+
+## Phase 7 addendum: Docket AI project setup
+
+Added 2026-10-12 (#1007, implementing D-8). Implemented in #1021. Setup tools (names are fixed; they extend the chat tool set of A-204 for a conversation of kind `setup` only):
+- `docket_repo_analyze { path }` → `{ kind: 'data', source: 'docket_repo_analyze', summary }` where summary = `{ vcs: { remote?: string; defaultBranch?: string }, languages: string[], packageManager?: string, commands: { test?: string; lint?: string; build?: string }[], docsRoot?: string, ci: string[], readmeExcerpt?: string }`; `readmeExcerpt` is cut at 2000 characters; every string passes the shared secret-shape redaction (#993) before it leaves the tool.
+- `docket_read_path { path, reason }` → file excerpt (cut at 8000 characters) or directory listing (200 entries), read-only.
+- `docket_setup_propose { project, repos, flow, bindings, defaultLimitPolicy, commandSets }` → creates exactly ONE proposal (domain §9 `Proposal`) of kind `project_setup`; it never writes a definition (invariant 5).
+
+```ts
+export interface SetupProposal {            // the single diff shape every setup path produces
+  readonly project: { readonly name: string; readonly repos: readonly string[] };
+  readonly repo: { readonly id: string; readonly flow: RepoFlow; readonly defaultLimitPolicy: LimitPolicy; readonly commandSets: Readonly<Record<string, readonly string[]>>; readonly docsRoot: string; readonly testGlobs: readonly string[] };
+  readonly warnings: readonly SetupWarning[];      // domain/providers: translation support table (#1006)
+  readonly differsFromRecommended: readonly string[];   // field paths
+}
+export type ReadScope = { readonly paths: readonly string[]; readonly sessionOnly: true };
+export type ReadDecision = { readonly kind: 'allow' } | { readonly kind: 'ask'; readonly path: string } | { readonly kind: 'deny'; readonly reason: 'secret_shaped' | 'outside_scope_denied' | 'not_readable' };
+export function decideRead(scope: ReadScope, requested: string, ctx: { repoFolder: string; docketHome: string }): ReadDecision;   // pure
+```
+
+### Conflicts and supersessions
+
+Phase 7 decision D-8 supersedes the Phase 3.5 project attachment rules in A-24 (`attachProject` reading `<path>/.docket/project.yaml` directly): project configuration is produced as a `SetupProposal` diff and applied strictly through proposal approval into `~/.docket`, never writing Docket files into the repository (invariant 5, D-5). A-204 and A-213 are extended: for a conversation of kind `setup`, the tool set is restricted to exactly five tools (`docket_get`, `docket_search`, `docket_repo_analyze`, `docket_read_path`, `docket_setup_propose`), denying all others. A-316 (docket_get and docket_search auto-allowed, all other tools denied on the sdk transport) is extended, not weakened — the three new tools are not auto-allowed on the sdk transport; `docket_read_path` out-of-scope asks go through the setup prompt, everything else the setup tools do is decided by `decideRead` and the proposal gate.
+
+- **A-334** (added 2026-10-12, #1007) Default read scope of a setup conversation is exactly the repo folder being set up plus `~/.docket`; `decideRead` allows a path inside it (after resolving `..` and symlinks to their real path), returns `ask` for any other path, and never grants a prefix wider than the asked path.
+- **A-335** (added 2026-10-12, #1007) A grant answers one path (that file or that directory and its descendants), lives for the conversation only (it is dropped when the conversation ends or the app quits; never written to disk), and is read-only.
+- **A-336** (added 2026-10-12, #1007) A path is `deny: secret_shaped` even inside scope and even when the user would grant it: any file named `.env` or `.env.*`, `*.pem`, `*.key`, `id_rsa*`, `id_ed25519*`, `credentials*`, `*.p12`, `*.keystore`, anything under `~/.ssh`, `~/.aws`, `~/.gnupg`, the OS keychain files, and `~/.docket/docket.db`; and any content read passes the shared secret-shape redaction before the agent sees it.
+- **A-337** (added 2026-10-12, #1007) The setup conversation's tool set is exactly `docket_get`, `docket_search`, `docket_repo_analyze`, `docket_read_path`, `docket_setup_propose`: no shell, no write tool; a call outside the set is denied.
+- **A-338** (added 2026-10-12, #1007) `docket_setup_propose` yields one `project_setup` proposal; approving it is the only way definitions are written; rejecting it writes nothing and the setup draft is kept.
+- **A-339** (added 2026-10-12, #1007) Quick and Detailed produce the same `SetupProposal` through `buildSetupProposal(answers)` (pure, application layer): the same input set gives an equal proposal regardless of path; the proposal diff the user approves is identical in shape for all three paths.
+- **A-340** (added 2026-10-12, #1007) No connected provider: the Docket AI path is not startable and says why (typed `no_provider`); Quick and Detailed stay available; a started setup is persisted as a draft under `~/.docket/setup/<draftId>.json` after every answer and can be resumed after a restart; a draft holds no secret and no file content read by the agent.
