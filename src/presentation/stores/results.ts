@@ -87,7 +87,12 @@ const FAILURE_KEYS: Readonly<Record<string, LabelKey>> = Object.fromEntries(
 );
 
 /** Success copy is per command: the store knows which command it issued alongside the result. */
-const SUCCESS_KEYS: Readonly<Record<Command['type'], LabelKey>> = {
+/** The quit modal's two answers are never toasted: the window is about to close or the modal
+ *  just did. They have no success line; a refusal reads like any other. */
+type SilentCommand = 'quit.ack' | 'quit.answer';
+const isSilent = (command: Command['type']): command is SilentCommand => command === 'quit.ack' || command === 'quit.answer';
+
+const SUCCESS_KEYS: Readonly<Record<Exclude<Command['type'], SilentCommand>, LabelKey>> = {
   'workOrder.open': 'success.workOrder.open',
   'workOrder.block': 'success.workOrder.block',
   'workOrder.unblock': 'success.workOrder.unblock',
@@ -169,7 +174,7 @@ export const pageDecideKey = (decision: 'approved' | 'rejected', gatePending: bo
 export const queryFailureKey = (failure: QueryFailure): LabelKey => failureKey(failure.code);
 
 export const commandResultKey = (command: Command['type'], result: CommandResult): LabelKey =>
-  result.ok ? SUCCESS_KEYS[command] : command.startsWith('page.') ? pageFailureKey(result.code) : failureKey(result.code);
+  result.ok ? (isSilent(command) ? failureKey('unknown') : SUCCESS_KEYS[command]) : command.startsWith('page.') ? pageFailureKey(result.code) : failureKey(result.code);
 
 /** Narrow a raw query reply (queries resolve to `unknown` at the boundary) to its failure shape. */
 export const isQueryFailure = (value: unknown): value is QueryFailure => {

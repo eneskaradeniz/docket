@@ -8,9 +8,11 @@
 //      Auto-answers "Quit and stop". App completes managed shutdown and exits.
 //   5. ps check: no fake-agent or helper process remains alive.
 //   6. Reopen storage / database: the run outcome is marked 'cancelled' (resumable).
+//   7. Part 3, no switch: the in-app modal shows (screenshot e2e/.out/managed-quit/modal.png),
+//      Enter does not confirm, Esc cancels, "Kapat ve durdur" quits and cancels the run.
 import { strict as assert } from 'node:assert';
 import { execFileSync, execSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { acquireE2eLock } from './lock.mjs';
 import { launchQuietElectron } from './quiet-launch.mjs';
@@ -196,6 +198,99 @@ await spec('trigger quit with DOCKET_QUIT_CONFIRM=accept: shuts down, marks canc
   const record = JSON.parse(row.data);
   assert.equal(record.outcome, 'cancelled', `expected run outcome to be cancelled, saw ${record.outcome}`);
   assert.ok(record.endedAt, 'run endedAt is set');
+});
+
+// --- Part 3: no switch — the in-app modal answers (U-294, U-295) ---------------------------------
+// A fresh seed and launch with DOCKET_QUIT_CONFIRM set to the empty string (the app reads it as
+// unset, and the quiet launcher keeps a caller's value), so the quit raises the modal in the window.
+const seed3Out = execFileSync('npx', ['tsx', 'e2e/seed-smoke.ts'], { cwd: ROOT, encoding: 'utf8' });
+const seed3Line = seed3Out.trim().split('\n').find((line) => line.startsWith('SEED='));
+if (seed3Line === undefined) throw new Error('the seed failed: no SEED= line');
+const SEED3 = JSON.parse(seed3Line.slice(5));
+const profile3 = freshProfile();
+const OUT_DIR = join(ROOT, 'e2e', '.out', 'managed-quit');
+mkdirSync(OUT_DIR, { recursive: true });
+
+const app3 = await launchQuietElectron({
+  args: [...profile3.args, join(ROOT, 'dist-electron', 'main.js')],
+  env: {
+    ...process.env,
+    DOCKET_DATA_DIR: SEED3.dataDir,
+    DOCKET_OPENCODE_BIN: SEED3.agentBin,
+    DOCKET_QUIT_CONFIRM: '',
+  },
+});
+await assertProfileIsolated(app3, profile3.dir);
+const page3 = await app3.firstWindow();
+const command3 = (body) => page3.evaluate(([actor, c]) => window.docket.command(actor, c), [OPERATOR, body]);
+const detail3 = () => page3.evaluate((id) => window.docket.query({ type: 'workOrder.detail', id }), SEED3.workOrderId);
+const agentAlive3 = () =>
+  execSync('ps -axo pid,ppid,command', { encoding: 'utf8' })
+    .split('\n')
+    .some((line) => line.includes(SEED3.agentBin) && !line.includes('agy'));
+const requestQuit = () => app3.evaluate(({ app: electronApp }) => electronApp.quit());
+const modal = page3.locator('[data-quit-dialog]');
+let run3;
+
+await spec('modal part: start a long-lived run', async () => {
+  assert.ok((await command3({ type: 'gate.decide', workOrderId: SEED3.workOrderId, gate: 'onay', decision: 'approved' })).ok, 'gate.decide');
+  assert.ok((await command3({ type: 'workOrder.enqueue', id: SEED3.workOrderId })).ok, 'enqueue');
+  run3 = await waitFor('active run started', async () => (await detail3()).runs?.find((r) => r.endedAt === undefined || r.endedAt === null), 45_000);
+  await waitFor('fake agent process', async () => (agentAlive3() ? true : undefined), 15_000);
+});
+
+await spec('quit without the switch shows the in-app modal (no native dialog)', async () => {
+  await requestQuit();
+  await modal.waitFor({ state: 'visible', timeout: 10_000 });
+  const text = await modal.innerText();
+  assert.ok(text.includes('Docket kapatılsın mı?'), `title missing: ${text}`);
+  assert.ok(text.includes('1 iş çalışıyor'), `count line missing: ${text}`);
+  assert.ok(text.includes('Vazgeç') && text.includes('Kapat ve durdur'), `buttons missing: ${text}`);
+  const focused = await page3.evaluate(() => document.activeElement?.textContent?.trim());
+  assert.equal(focused, 'Vazgeç', 'Vazgeç holds the default focus');
+  await page3.screenshot({ path: join(OUT_DIR, 'modal.png') });
+});
+
+await spec('Enter does not confirm; Escape cancels: app stays open and the run keeps running', async () => {
+  await page3.keyboard.press('Enter'); // on Vazgeç this is its own press — but must never be a confirm
+  await sleep(500);
+  assert.equal(await app3.evaluate(() => true), true, 'app is still open');
+  // Enter pressed Vazgeç (default focus), so the modal is gone: ask again and use Escape.
+  await requestQuit();
+  await modal.waitFor({ state: 'visible', timeout: 10_000 });
+  await page3.keyboard.press('Escape');
+  await modal.waitFor({ state: 'hidden', timeout: 5_000 });
+  await sleep(1_000);
+  assert.equal(await app3.evaluate(() => true), true, 'app is still open after Escape');
+  const run = (await detail3()).runs?.find((r) => r.id === run3.id);
+  assert.ok(run && (run.endedAt === undefined || run.endedAt === null), 'run is still running');
+  assert.ok(agentAlive3(), 'fake agent still alive');
+});
+
+await spec('quit again, click "Kapat ve durdur": app exits, run cancelled, nothing left', async () => {
+  await requestQuit();
+  await modal.waitFor({ state: 'visible', timeout: 10_000 });
+  await page3.getByRole('button', { name: 'Kapat ve durdur' }).click();
+  await waitFor('app process to close', async () => {
+    try {
+      await app3.evaluate(() => true);
+      return undefined;
+    } catch {
+      return true;
+    }
+  }, 15_000);
+  await sleep(500);
+  assert.ok(!agentAlive3(), 'fake agent is gone');
+  const leaked = execSync('ps -axo pid,ppid,command', { encoding: 'utf8' })
+    .split('\n')
+    .filter((line) => !line.includes('agy') && !line.includes('claude') && !line.includes('managed-quit.mjs'))
+    .filter((line) => line.includes(SEED3.agentBin) || line.includes('cursor-agent') || line.includes('docket-mcp'));
+  assert.equal(leaked.length, 0, `leaked processes: ${leaked.join('; ')}`);
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(join(SEED3.dataDir, 'docket.db'));
+  const row = db.prepare('SELECT data FROM runs WHERE id = ?').get(run3.id);
+  db.close();
+  assert.equal(JSON.parse(row.data).outcome, 'cancelled', 'run outcome is cancelled');
 });
 
 if (failures.length > 0) {

@@ -76,6 +76,7 @@ import {
   managedQuit,
   quitConfirmAutoAnswer,
 } from './quit-flow';
+import { createQuitPrompt } from './quit-prompt';
 import {
   WINDOW_MIN_HEIGHT,
   WINDOW_MIN_WIDTH,
@@ -156,7 +157,7 @@ let dispatchTimer: NodeJS.Timeout | undefined;
 let quotaLifecycle: { stop(): void } | undefined;
 let mcpListener: McpListener | undefined;
 let currentBoard: PermissionBoard | undefined;
-let currentApi: (Api & RunEventFeed) | undefined;
+let currentApi: (Api & RunEventFeed & { readonly quitRequested: (runs: readonly string[], chats: readonly string[]) => void }) | undefined;
 let quitting = false;
 let shutdownInProgress = false;
 
@@ -496,7 +497,7 @@ const startApp = async (): Promise<void> => {
     runner: node.chatRunner,
     apply: node.docketToolExtras.applyAction,
     undo: createActionUndoer(nodeDeps),
-  });
+  }, { ack: () => quitPrompt.ack(), answer: (accept) => quitPrompt.answer(accept) });
   currentApi = api;
   const quotaProbes = node.quota.probes; // read here: `node` is not narrowed inside the tick closure
 
@@ -613,16 +614,8 @@ const resolveActiveLocale = async (win?: BrowserWindow): Promise<Locale> => {
   return DEFAULT_LOCALE;
 };
 
-const askQuitConfirmation = async (work: ActiveWork): Promise<boolean> => {
-  const answer = quitConfirmAutoAnswer({
-    value: process.env[QUIT_CONFIRM_ENV],
-    isPackaged: app.isPackaged,
-    dataDir: process.env.DOCKET_DATA_DIR,
-    docketHome: join(homedir(), '.docket'),
-  });
-  if (answer === 'accept') return true;
-  if (answer === 'cancel') return false;
-
+/** The native confirmation: the fallback when the window cannot show the in-app modal (U-296). */
+const askQuitNatively = async (work: ActiveWork): Promise<boolean> => {
   const win = BrowserWindow.getFocusedWindow() ?? [...windows].find((w) => !w.isDestroyed());
   const locale = await resolveActiveLocale(win);
   const dialogContent = formatQuitDialog(work, locale);
@@ -645,10 +638,58 @@ const askQuitConfirmation = async (work: ActiveWork): Promise<boolean> => {
   return choice.response === 1;
 };
 
+/** A main window for the quit modal: the open one, or a fresh one when every window is closed.
+ *  Shown and focused (a quiet test build maps it inactive instead), then given a bounded moment to
+ *  finish loading so the renderer's listener exists when the request arrives (U-294). */
+const ensureQuitWindow = async (): Promise<void> => {
+  let win = mainWindow !== undefined && !mainWindow.isDestroyed() ? mainWindow : [...windows].find((w) => !w.isDestroyed());
+  if (win === undefined) win = createWindow();
+  if (quietWindowOptions(process.env, app.isPackaged) === undefined) {
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+    app.focus({ steal: true });
+  }
+  const contents = win.webContents;
+  if (contents.isLoading()) {
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, 5_000);
+      contents.once('did-finish-load', () => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+  }
+};
+
+const quitPrompt = createQuitPrompt({
+  ensureWindow: ensureQuitWindow,
+  request: (runs, chats) => currentApi?.quitRequested(runs, chats),
+  nativeAsk: askQuitNatively,
+  delay: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+});
+
+const askQuitConfirmation = async (work: ActiveWork): Promise<boolean> => {
+  const answer = quitConfirmAutoAnswer({
+    value: process.env[QUIT_CONFIRM_ENV],
+    isPackaged: app.isPackaged,
+    dataDir: process.env.DOCKET_DATA_DIR,
+    docketHome: join(homedir(), '.docket'),
+  });
+  // The harness answer comes before any UI: no window is created, no modal is shown.
+  if (answer === 'accept') return true;
+  if (answer === 'cancel') return false;
+  return quitPrompt.ask(work);
+};
+
 app.on('before-quit', (event) => {
   if (quitting) return;
   event.preventDefault();
-  if (shutdownInProgress) return;
+  if (shutdownInProgress) {
+    // A second quit request while the prompt is open only brings it back to the front.
+    if (quitPrompt.open()) void quitPrompt.ask({ runs: [], chats: [] });
+    return;
+  }
   shutdownInProgress = true;
 
   void managedQuit({

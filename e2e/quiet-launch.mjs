@@ -4,9 +4,17 @@
 // helper, so it stays on screen unless the operator asks.
 import { _electron as electron } from 'playwright-core';
 
-/** Copy env and arm quiet mode, unless the visible escape is set. */
+/** The quit confirmation's harness answer: every suite launch auto-accepts the quit prompt, or an
+ *  `electronApp.close()` with a run active at the end would hang on a dialog nobody answers. The
+ *  app honours it only for an unpackaged build on a data dir outside the operator's real one. */
+export const DEFAULT_QUIT_CONFIRM = 'accept';
+
+/** Copy env and arm quiet mode, unless the visible escape is set. A caller that sets
+ *  DOCKET_QUIT_CONFIRM itself (even to an empty string, which the app reads as "unset") keeps its
+ *  value: managed-quit.mjs drives the prompt per part. */
 export function withQuietEnv(env) {
   const next = { ...env };
+  if (next.DOCKET_QUIT_CONFIRM === undefined) next.DOCKET_QUIT_CONFIRM = DEFAULT_QUIT_CONFIRM;
   if (next.DOCKET_E2E_VISIBLE === '1') {
     delete next.DOCKET_E2E_QUIET;
     return next;
