@@ -27,6 +27,28 @@ if (!existsSync(join(ROOT, 'dist-electron', 'main.js'))) {
 
 beginReport();
 
+// --- cleanup any leftovers at the start ---
+try {
+  const psOutput = execSync('ps -axo pid,ppid,command', { encoding: 'utf8' });
+  for (const line of psOutput.split('\n')) {
+    const match = line.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/);
+    if (!match) continue;
+    const [_, pidStr, _ppidStr, cmd] = match;
+    const pid = parseInt(pidStr, 10);
+    if (pid === process.pid || pid === process.ppid) continue;
+    if (cmd.includes('agy') || cmd.includes('claude') || cmd.includes('managed-quit.mjs')) continue;
+    if (cmd.includes('duman-agent') || cmd.includes('smoke-agent.mjs')) {
+      try {
+        process.kill(pid, 'SIGKILL');
+      } catch {
+        // already exited
+      }
+    }
+  }
+} catch {
+  // best effort cleanup
+}
+
 // --- seed throwaway data dir and long-lived agent ---
 const seedOut = execFileSync('npx', ['tsx', 'e2e/seed-smoke.ts'], { cwd: ROOT, encoding: 'utf8' });
 const seedLine = seedOut.trim().split('\n').find((line) => line.startsWith('SEED='));
@@ -97,11 +119,10 @@ await spec('start long-lived agent run via approval gate and stage enqueue', asy
   assert.ok(gateResult.ok, `gate.decide failed: ${JSON.stringify(gateResult)}`);
 
   const enqueueResult = await command({
-    type: 'stage.start',
-    workOrderId: SEED.workOrderId,
-    stage: 'uygulama',
+    type: 'workOrder.enqueue',
+    id: SEED.workOrderId,
   });
-  assert.ok(enqueueResult.ok, `stage.start failed: ${JSON.stringify(enqueueResult)}`);
+  assert.ok(enqueueResult.ok, `workOrder.enqueue failed: ${JSON.stringify(enqueueResult)}`);
 
   const runInfo = await waitFor('active run started', async () => {
     const detail = await detailView();
@@ -110,6 +131,12 @@ await spec('start long-lived agent run via approval gate and stage enqueue', asy
   }, 45_000);
   activeRunId = runInfo.id;
   assert.ok(activeRunId, 'run is active');
+
+  await waitFor('fake agent process to spawn', async () => {
+    const ps = execSync('ps -axo pid,ppid,command', { encoding: 'utf8' });
+    const agentRunning = ps.split('\n').some((line) => line.includes(SEED.agentBin) && !line.includes('agy'));
+    return agentRunning ? true : undefined;
+  }, 15_000);
 });
 
 await spec('trigger quit with DOCKET_QUIT_CONFIRM=cancel: dialog cancels, run stays running', async () => {
@@ -121,7 +148,11 @@ await spec('trigger quit with DOCKET_QUIT_CONFIRM=cancel: dialog cancels, run st
   const detail = await detailView();
   const run = detail.runs?.find((r) => r.id === activeRunId);
   assert.ok(run, 'run still exists');
-  assert.equal(run.endedAt, null, 'run has not ended');
+  assert.ok(run.endedAt === undefined || run.endedAt === null, 'run has not ended');
+
+  const ps = execSync('ps -axo pid,ppid,command', { encoding: 'utf8' });
+  const agentAlive = ps.split('\n').some((line) => line.includes(SEED.agentBin) && !line.includes('agy'));
+  assert.ok(agentAlive, 'fake agent process is still alive after cancelled quit');
 });
 
 // Part 2: Trigger quit with DOCKET_QUIT_CONFIRM=accept
@@ -140,11 +171,31 @@ await spec('trigger quit with DOCKET_QUIT_CONFIRM=accept: shuts down, marks canc
     }
   }, 10_000);
 
-  const psOutput = execSync('ps -axo pid,command', { encoding: 'utf8' });
-  const leaked = psOutput
+  const psOutput = execSync('ps -axo pid,ppid,command', { encoding: 'utf8' });
+  const cleanLines = psOutput
     .split('\n')
-    .filter((line) => line.includes('duman-agent') || line.includes('smoke-agent'));
-  assert.equal(leaked.length, 0, `leaked agent processes found: ${leaked.join('; ')}`);
+    .filter((line) => !line.includes('agy') && !line.includes('claude') && !line.includes('managed-quit.mjs'));
+  const leaked = cleanLines.filter(
+    (line) =>
+      line.includes(SEED.agentBin) ||
+      line.includes('cursor-agent') ||
+      line.includes('docket-mcp'),
+  );
+  assert.equal(leaked.length, 0, `leaked agent/helper processes found: ${leaked.join('; ')}`);
+
+  // Assert no orphan from this test remains (grep on the fake agent's script path)
+  const orphans = cleanLines.filter((line) => line.includes(SEED.agentBin));
+  assert.equal(orphans.length, 0, `orphan process for fake agent script path found: ${orphans.join('; ')}`);
+
+  // Verify the run outcome is marked 'cancelled'
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(join(SEED.dataDir, 'docket.db'));
+  const row = db.prepare('SELECT data FROM runs WHERE id = ?').get(activeRunId);
+  db.close();
+  assert.ok(row, 'run record found in database');
+  const record = JSON.parse(row.data);
+  assert.equal(record.outcome, 'cancelled', `expected run outcome to be cancelled, saw ${record.outcome}`);
+  assert.ok(record.endedAt, 'run endedAt is set');
 });
 
 if (failures.length > 0) {

@@ -334,6 +334,13 @@ describe('createApi', () => {
       for (const spy of spies) expect(spy).not.toHaveBeenCalled();
     });
 
+    it('answers unknown for an unrecognized command type', async () => {
+      const h = await createHarness();
+      const api = createApi(h.deps);
+      const result = await api.command(ACTOR, { type: 'stage.start' } as unknown as Command);
+      expect(result).toEqual({ ok: false, code: 'unknown' });
+    });
+
     it('A-21: an invalid gate slug in gate.decide is rejected before any port call', async () => {
       const h = await createHarness();
       const api = createApi(h.deps);

@@ -1270,6 +1270,8 @@ const runCommand = async (
       if (updates === undefined) return { ok: false, code: 'not_found' };
       return commandOf(await applyUpdate(updates));
     }
+    default:
+      return { ok: false, code: 'unknown' };
   }
 };
 

@@ -59,7 +59,7 @@ export interface QuitDialogContent {
   readonly stopLabel: string;
 }
 
-/** Formats the native confirmation dialog content from the active locale's label bundle (U-260). */
+/** Formats the native confirmation dialog content from the active locale's label bundle (U-295). */
 export const formatQuitDialog = (work: ActiveWork, locale: Locale): QuitDialogContent => {
   const total = work.runs.length + work.chats.length;
   const title = t(locale, 'quit.title');

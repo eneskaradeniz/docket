@@ -1,4 +1,4 @@
-// quit-flow tests — the managed quit's decisions (U-260, U-261): what the confirmation lists and
+// quit-flow tests — the managed quit's decisions (U-294, U-295): what the confirmation lists and
 // when, the auto-answer gate for the e2e switch, and the stop → cancel → quit order with its
 // 8-second bound. Everything Electron is injected; the module itself imports none of it.
 import { describe, expect, it } from 'vitest';
@@ -40,7 +40,7 @@ describe('quitConfirmAutoAnswer', () => {
     ...overrides,
   });
 
-  it('U-260: the harness switch answers only for an unpackaged app on a data dir outside the operator’s real one', () => {
+  it('U-295: the harness switch answers only for an unpackaged app on a data dir outside the operator’s real one', () => {
     expect(quitConfirmAutoAnswer(gate())).toBe('accept');
     expect(quitConfirmAutoAnswer(gate({ value: 'cancel' }))).toBe('cancel');
     // Every other condition loses the auto-answer: packaged, real data dir, unset dir, bad value.
@@ -55,7 +55,7 @@ describe('quitConfirmAutoAnswer', () => {
 });
 
 describe('quitDetailLines', () => {
-  it('U-260: lists runs then chats by title, at most five lines, then “+N more”', () => {
+  it('U-295: lists runs then chats by title, at most five lines, then “+N more”', () => {
     const more = (hidden: number): string => `+${hidden} more`;
     expect(quitDetailLines(workOf([]), more)).toStrictEqual([]);
     expect(quitDetailLines(workOf(['Kayıt katmanı'], ['Sohbet']), more)).toStrictEqual(['Kayıt katmanı', 'Sohbet']);
@@ -66,7 +66,7 @@ describe('quitDetailLines', () => {
 });
 
 describe('formatQuitDialog', () => {
-  it('U-260: formats dialog text and buttons from label bundle for Turkish (default)', () => {
+  it('U-295: formats dialog text and buttons from label bundle for Turkish (default)', () => {
     const work = workOf(['İş 1'], ['Sohbet 1']);
     const dialog = formatQuitDialog(work, 'tr');
     expect(dialog.title).toBe('Docket kapatılsın mı?');
@@ -77,7 +77,7 @@ describe('formatQuitDialog', () => {
     expect(dialog.detail).toContain('Durdurulan koşular iptal edilir, sonra devam ettirilebilir.');
   });
 
-  it('U-260: formats dialog text and buttons from label bundle for English', () => {
+  it('U-295: formats dialog text and buttons from label bundle for English', () => {
     const work = workOf(['Job 1']);
     const dialog = formatQuitDialog(work, 'en');
     expect(dialog.title).toBe('Quit Docket?');
@@ -151,26 +151,26 @@ describe('managedQuit', () => {
     log: () => undefined,
   });
 
-  it('U-261: no user-visible work → no dialog; the children are still stopped, the sweep runs, the app quits', async () => {
+  it('U-294: no user-visible work → no dialog; the children are still stopped, the sweep runs, the app quits', async () => {
     const recording = makePorts(workOf([]));
     await managedQuit(portsOf(recording));
     expect(recording.calls).toStrictEqual(['work', 'stopAll', 'cancelRuns', 'quit']);
   });
 
-  it('U-261: work in flight → ask first; Cancel changes nothing — no stop, no cancel, no quit', async () => {
+  it('U-294: work in flight → ask first; Cancel changes nothing — no stop, no cancel, no quit', async () => {
     const recording = makePorts(workOf(['Kayıt katmanı']));
     recording.askAnswer = false;
     await managedQuit(portsOf(recording));
     expect(recording.calls).toStrictEqual(['work', 'ask']);
   });
 
-  it('U-261: confirm → stop every child, then cancel what stayed active, then quit — in that order', async () => {
+  it('U-294: confirm → stop every child, then cancel what stayed active, then quit — in that order', async () => {
     const recording = makePorts(workOf(['Kayıt katmanı'], ['Sohbet']));
     await managedQuit(portsOf(recording));
     expect(recording.calls).toStrictEqual(['work', 'ask', 'stopAll', 'cancelRuns', 'quit']);
   });
 
-  it(`U-261: a shutdown that never ends is cut off at the ${QUIT_SEQUENCE_BOUND_MS} ms bound — last resort kill, sweep, quit anyway`, async () => {
+  it(`U-294: a shutdown that never ends is cut off at the ${QUIT_SEQUENCE_BOUND_MS} ms bound — last resort kill, sweep, quit anyway`, async () => {
     const recording = makePorts(workOf(['Kayıt katmanı']));
     recording.stopAllHangs = true;
     await managedQuit(portsOf(recording));
