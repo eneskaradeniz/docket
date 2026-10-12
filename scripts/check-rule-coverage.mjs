@@ -45,6 +45,23 @@ const SECTIONS = [
 // when the phase closes.
 const PENDING = new Map([
   ['providers:P-38', '#672'],
+
+  // #1007: Docket AI project setup and read-permission scopes (#1021 application, #1023 ui)
+  ['application:A-334', '#1021'],
+  ['application:A-335', '#1021'],
+  ['application:A-336', '#1021'],
+  ['application:A-337', '#1021'],
+  ['application:A-338', '#1021'],
+  ['application:A-339', '#1021'],
+  ['application:A-340', '#1021'],
+  ['ui:U-272', '#1023'],
+  ['ui:U-273', '#1023'],
+  ['ui:U-274', '#1023'],
+  ['ui:U-275', '#1023'],
+  ['ui:U-276', '#1023'],
+  ['ui:U-277', '#1023'],
+  ['ui:U-278', '#1023'],
+  ['ui:U-279', '#1023'],
 ]);
 
 function walk(dir, acc = []) {

@@ -1662,3 +1662,17 @@ stays on the screen below the header's meta line.
   `--signal` would retune the primary fill and every lamp, an architect token decision this
   issue's clause does not authorise; the failing number is pinned by the test so the fix must
   come through it.
+
+## Project setup permission prompt (U-272 … U-279)
+
+Added 2026-10-12 (#1007, implementing D-8). Implemented in #1023. When Docket AI requests an out-of-scope path during project setup via `docket_read_path`, the user is prompted with a native-style permission dialog. Out-of-scope permission grants are strictly session-only and read-only. Secret-shaped paths bypass the prompt and are refused automatically.
+
+- **U-272** (added 2026-10-12, #1007) When an out-of-scope path is requested during setup, a native-style dialog displays the heading "Docket AI şu yolu okumak istiyor" (en: "Docket AI wants to read this path"), the requested path in monospace font, and the reason line provided by the tool call.
+- **U-273** (added 2026-10-12, #1007) The permission dialog provides exactly two action buttons: "Reddet" (default button, focused, triggered by Esc) and "Bu oturum için izin ver" (en: "Deny" and "Allow for this session").
+- **U-274** (added 2026-10-12, #1007) Permission grants are strictly session-only: the UI never offers an "always" or permanent grant option.
+- **U-275** (added 2026-10-12, #1007) Exactly one permission prompt is presented per requested path at a time.
+- **U-276** (added 2026-10-12, #1007) A denied path is remembered for the conversation and is never asked again during that setup conversation.
+- **U-277** (added 2026-10-12, #1007) A secret-shaped path displays no permission prompt: the agent receives a typed refusal and the thread displays the one-line notice "Anahtar benzeri dosya okunmaz" (en: "Key-like files cannot be read").
+- **U-278** (added 2026-10-12, #1007) The permission prompt uses modal dialog semantics (`role="dialog"`, `aria-modal="true"`), traps focus while visible, closes on Esc triggering "Reddet", and restores focus to the thread on dismissal.
+- **U-279** (added 2026-10-12, #1007) All prompt copy, button labels, and thread notice lines live in Turkish and English label bundles, with no inline copy in presentation components.
+
