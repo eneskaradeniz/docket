@@ -80,3 +80,5 @@ Everything else is configurable. These five are not.
 | `<repo>/.docket/` | `repo.yaml` (the repo definition) and repo-level overrides | Versioned with the repo |
 | `~/.docket/docket.db` | Projects, repo registrations, providers, accounts, role bindings, work orders, runs, records, quota observations, pages, proposals | Machine-local |
 | OS keychain | API keys, tokens | Never written to files or the DB |
+
+*(Added 2026-10-12, #1004, citing D-5 in [decisions-phase7.md](decisions-phase7.md): repo-side `.docket/` storage is superseded; all definitions and runtime state live under `~/.docket/` and move between machines via export/import bundles — see [architecture.md](architecture.md#where-things-live) and [infrastructure.md](infrastructure.md) for layout and rules.)*
