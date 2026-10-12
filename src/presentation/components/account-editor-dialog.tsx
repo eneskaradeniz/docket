@@ -58,7 +58,7 @@ export function AccountEditorDialog(props: AccountEditorDialogProps) {
     if (event.key === 'Escape') {
       event.preventDefault();
       event.stopPropagation();
-      onClose();
+      close();
       return;
     }
     if (event.key !== 'Tab') return;
@@ -71,12 +71,19 @@ export function AccountEditorDialog(props: AccountEditorDialogProps) {
     const next = at === -1 ? (event.shiftKey ? stops.length - 1 : 0) : (at + (event.shiftKey ? -1 : 1) + stops.length) % stops.length;
     stops[next]?.focus();
   };
+  const close = (): void => {
+    if (host === 'settings' && !store.canClose()) {
+      if (!window.confirm(t(locale, 'editor.footer.discardPrompt'))) return;
+      store.discardDraft();
+    }
+    onClose();
+  };
 
   return (
     <div
       className="fixed inset-0 z-[60] grid place-items-center bg-black/60 p-5"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget) close();
       }}
       data-editor-scrim=""
     >
@@ -102,7 +109,7 @@ export function AccountEditorDialog(props: AccountEditorDialogProps) {
             <StatusLamp tone={props.status.tone}>{props.status.text}</StatusLamp>
             <button
               type="button"
-              onClick={onClose}
+              onClick={close}
               aria-label={t(locale, 'settings.close')}
               title={t(locale, 'settings.close')}
               className="grid h-[30px] w-[30px] flex-none place-items-center rounded-control text-inkdim hover:bg-raised hover:text-ink"
@@ -140,32 +147,51 @@ export function AccountEditorDialog(props: AccountEditorDialogProps) {
             ))}
           </div>
           <div data-editor-body="" className="min-h-0 overflow-y-auto px-6 pb-6 pt-5">
-            <AccountEditorPanels {...props} />
+            <AccountEditorPanels {...props} draftMode={host === 'settings'} />
           </div>
         </div>
         <footer className="flex items-center gap-2 border-t border-hairline px-5 py-3">
           <span className="mr-auto flex items-center gap-3 text-[12.5px] text-inkdim">
-            {t(locale, host === 'wizard' ? 'editor.footer.draft' : 'editor.footer.saves')}
+            {host === 'wizard' ? t(locale, 'editor.footer.draft') : store.state().dirty ? t(locale, 'editor.footer.dirty') : store.isSaved('draft') ? t(locale, 'editor.footer.saved') : null}
             {host === 'settings' && onOpenView !== undefined ? (
-              <button type="button" onClick={onOpenView} className="rounded-control border border-bord bg-transparent px-2 py-0.5 text-ink hover:bg-raised">
+              <button
+                type="button"
+                onClick={() => {
+                  if (store.canClose()) onOpenView();
+                  else if (window.confirm(t(locale, 'editor.footer.discardPrompt'))) {
+                    store.discardDraft();
+                    onOpenView();
+                  }
+                }}
+                className="rounded-control border border-bord bg-transparent px-2 py-0.5 text-ink hover:bg-raised"
+              >
                 {t(locale, 'editor.openView')}
               </button>
             ) : null}
           </span>
           {host === 'wizard' ? (
             <>
-              <ActionButton variant="neutral" size="md" onClick={onClose}>
+              <ActionButton variant="neutral" size="md" onClick={close}>
                 {t(locale, 'wizard.editor.cancel')}
               </ActionButton>
               <ActionButton variant="primary" size="md" onClick={() => onSave?.()}>
                 {t(locale, 'wizard.editor.save')}
               </ActionButton>
             </>
-          ) : (
-            <ActionButton variant="neutral" size="md" onClick={onClose}>
-              {t(locale, 'editor.footer.close')}
-            </ActionButton>
-          )}
+          ) : store.state().dirty ? (
+              <>
+                <ActionButton variant="neutral" size="md" onClick={() => store.discardDraft()}>
+                  {t(locale, 'editor.footer.discard')}
+                </ActionButton>
+                <ActionButton variant="primary" size="md" onClick={() => void store.saveDraft(props.account)} disabled={!store.state().dirty}>
+                  {t(locale, 'editor.footer.save')}
+                </ActionButton>
+              </>
+            ) : (
+              <ActionButton variant="neutral" size="md" onClick={close}>
+                {t(locale, 'editor.footer.close')}
+              </ActionButton>
+            )}
         </footer>
       </div>
     </div>

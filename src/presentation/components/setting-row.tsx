@@ -1,12 +1,11 @@
 // components/setting-row.tsx — the one anatomy of every setting (U-29): title and one sentence of
-// purpose on the left, one control on the right, an optional "Önerilenden farklı" line with its
-// "Önerilene dön" intent, the "Kaydedildi" flag, a U-8 failure under the row, and an optional
-// disclosure for the setting's deeper parameters that starts open when its content differs from
-// the recommendation. Purely presentational; copy arrives resolved.
+// purpose on the left, one control on the right, an optional recommendation marker and quiet reset
+// intent, the "Kaydedildi" flag, a U-8 failure under the row, and an optional disclosure for the
+// setting's deeper parameters that starts open when its content differs from the recommendation.
+// Purely presentational; copy arrives resolved.
 import { useState, type ReactNode } from 'react';
 
 import { t, type Locale } from '../labels/t';
-import { ActionButton } from './action-button';
 
 export interface SettingRowProps {
   readonly locale: Locale;
@@ -58,12 +57,23 @@ export function SettingRow({ locale, title, purpose, control, below, differsFrom
       </div>
       {below !== undefined ? <div>{below}</div> : null}
       {differsFrom !== undefined ? (
-        <p className="flex flex-wrap items-center gap-2 text-[12px] text-signal-soft">
-          <span>{t(locale, 'editor.differs').replace('{value}', differsFrom)}</span>
+        <p className="flex items-center gap-2 text-[12px] text-signal-soft">
+          <span
+            aria-label={t(locale, 'editor.recommended.tooltip').replace('{value}', differsFrom)}
+            title={t(locale, 'editor.recommended.tooltip').replace('{value}', differsFrom)}
+            className="h-1.5 w-1.5 rounded-full bg-signal"
+          />
           {onReset !== undefined ? (
-            <ActionButton variant="neutral" onClick={onReset}>
-              {t(locale, 'editor.reset')}
-            </ActionButton>
+            <button
+              type="button"
+              onClick={onReset}
+              aria-label={t(locale, 'editor.reset.aria')}
+              title={t(locale, 'editor.reset.aria')}
+              className="grid h-6 w-6 place-items-center rounded-control border border-bord text-inkdim hover:bg-raised hover:text-ink"
+            >
+              <span aria-hidden="true">↶</span>
+              <span className="sr-only">{t(locale, 'editor.reset')}</span>
+            </button>
           ) : null}
         </p>
       ) : null}
