@@ -1683,3 +1683,12 @@ that account.
   working account — one that is unreadable, or whose key is still not moved: a rescan that breaks
   the row drops it from the selection, and the finish's own account list skips it in depth, so no
   `account.adopt` is sent for it and the drafts phase writes nothing for it either.
+
+## Hesaplar scan deduplication (U-260 … U-261)
+
+Added 2026-10-12, #1027.
+
+- **U-260** Opening the wizard's Hesaplar step with an account scan already in flight starts no
+  second read: concurrent reads coalesce behind the in-flight scan.
+- **U-261** An `accounts.changed` event caused by this wizard does not show the scanning skeleton
+  again: background re-reads update without re-entering `loading`.
