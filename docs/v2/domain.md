@@ -737,6 +737,45 @@ Rules:
 - **R-41** Phase status, first matching rule wins: (1) any task `running` → `running`; (2) at least one task and all tasks `done` → `done`; (3) blocked by a phase that is not `done` → `waiting` (this includes a blocked zero-task phase); (4) otherwise `planned` (including an unblocked zero-task phase). Finished work is never reported as waiting.
 - **R-42** `runnable` = tasks with status `planned` (so dependencies done and phase not blocked).
 
+### Phase 7 addendum: two-layer roadmap model (added 2026-10-12, #1005)
+
+Under D-2 (see `docs/v2/decisions-phase7.md`), the roadmap becomes a two-layer model: repo roadmaps hold milestones and issues (tracked or local), while the project roadmap holds phases whose items link to repo milestones or issues, plus childless manual items. Progress derives from leaf items.
+
+```ts
+// roadmap/repo-roadmap.ts (added 2026-10-12, #1005)
+export type IssueSource = { readonly kind: 'local' } | { readonly kind: 'tracker'; readonly tracker: string; readonly externalId: string; readonly url?: string };
+export interface RepoMilestone { readonly id: string; readonly title: string; readonly dueAt?: EpochMs; readonly state: 'open' | 'closed'; readonly source: IssueSource }
+export interface RepoIssue {
+  readonly id: string;                           // ULID, Docket's own
+  readonly title: string; readonly body?: string;
+  readonly state: 'open' | 'closed';
+  readonly milestone?: string;                   // RepoMilestone.id
+  readonly labels: readonly string[];
+  readonly parent?: string;                      // a local subtask has a parent RepoIssue.id
+  readonly source: IssueSource;                  // a subtask is always { kind: 'local' }
+}
+export interface RepoRoadmap { readonly repo: RepoSlug; readonly milestones: readonly RepoMilestone[]; readonly issues: readonly RepoIssue[] }
+
+export type RepoItemRef = { readonly repo: RepoSlug; readonly kind: 'milestone' | 'issue'; readonly id: string };
+export type PhaseItem = { readonly kind: 'repo_item'; readonly ref: RepoItemRef } | { readonly kind: 'manual'; readonly id: string; readonly title: string; readonly done: boolean };
+// PhaseDef gains: readonly items: readonly PhaseItem[]   (the project roadmap; TaskDef stays as the execution-planning unit)
+export interface Progress { readonly done: number; readonly total: number }
+export function deriveProgress(phase: PhaseDef, repoRoadmaps: readonly RepoRoadmap[]): Progress;
+```
+
+Rules:
+- **R-136** (added 2026-10-12, #1005) A repo roadmap's ids are unique per kind; an issue's `milestone` and `parent` must resolve inside the same repo roadmap; a subtask (an issue with `parent`) has `source.kind === 'local'`; nesting is one level (a parent is never itself a subtask).
+- **R-137** (added 2026-10-12, #1005) `deriveProgress` counts leaves: a `manual` item is one leaf (done when `done`); an `issue` ref is one leaf (done when `closed`; a subtask counts with its parent only as detail, not as extra leaf); a `milestone` ref expands to its non-subtask issues (one leaf each), and a milestone with no issues is one leaf done when `closed`; a ref that does not resolve counts as one not-done leaf; progress is never stored, only derived.
+- **R-138** (added 2026-10-12, #1005) A phase's status derives from its Progress and its tasks: `total === 0` and no tasks → unchanged R-41; when items exist, `done === total` and all tasks done → `done`; any done leaf or running task → `running`; else per R-41 (supersedes R-41 only for phases that have items; phases without `items` keep R-41 byte for byte).
+- **R-139** (added 2026-10-12, #1005) The project roadmap lives under `~/.docket/projects/<slug>/roadmap.yaml` (see #1004) and supersedes "loaded from the main repo's `.docket/roadmap.yaml`"; `PhaseItem` refs must name repos listed in `project.repos` (`unknown_repo`).
+
+#### Conflicts and supersessions (added 2026-10-12, #1005)
+
+- **Storage location:** The project roadmap is loaded from `~/.docket/projects/<slug>/roadmap.yaml` (D-2, D-5; see #1004), superseding the main-repo `.docket/roadmap.yaml` rule at the top of section 10.
+- **Phase status derivation:** R-138 supersedes R-41 for phases containing `items`; phases without `items` keep R-41 byte for byte.
+- **Execution units vs roadmap items:** `TaskDef` and roadmap tasks stay as the execution-planning unit for work orders and gain no tracker fields; tracker and issue links belong exclusively to `RepoRoadmap` (`RepoIssue`, `RepoMilestone`) and `PhaseDef.items` (`PhaseItem`).
+- **Proposal model:** Imports into repo roadmaps are read-only mirrors (D-3) and do not create proposals, whereas modifications to the project roadmap's `PhaseItem` list remain proposals.
+
 ---
 
 ## 11. `providers/` — capabilities, tiers, the common event stream

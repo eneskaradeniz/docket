@@ -73,6 +73,41 @@ interface IssueTracker {
 - An agent may also read a tracker through an MCP capability attached to a role; that path is read-only
   context for the agent and never replaces the port.
 
+### Phase 7 addendum: tracker model (added 2026-10-12, #1005)
+
+Under D-3 (see `docs/v2/decisions-phase7.md`), Docket establishes its two-layer issue tracking architecture. Phase 7 ships the extended port, the sync engine, an in-memory recording fake adapter (#1019), and the GitHub adapter (#1020). Other platform adapters (Bitbucket, Jira, Azure Boards, Odoo) belong to Phase 9 (#226).
+
+#### Port capabilities by sync mode
+
+| Port method | `docket_only` | `read_only_mirror` | `limited_write` | `two_way` |
+| --- | --- | --- | --- | --- |
+| `probePermissions(scope)` | — | allowed | allowed | allowed |
+| `listMilestones(scope, cursor?)` | — | allowed | allowed | allowed |
+| `listIssues(scope, opts)` | — | allowed | allowed | allowed |
+| `get(key)` / `search(query, limit)` | — | allowed | allowed | allowed |
+| `transition(key, status)` | — | — | allowed | allowed |
+| `comment(key, text)` | — | — | allowed | allowed |
+| `createIssue(scope, input)` | — | — | — | allowed |
+| `updateIssue(key, patch)` | — | — | — | allowed |
+
+#### Platform support and phase boundaries
+
+| Tracker Platform | Phase | Implementation Status | Scope / Supported Sync Modes |
+| --- | --- | --- | --- |
+| GitHub Issues & Milestones | Phase 7 (#1020) | GitHub adapter over `gh` CLI | `docket_only`, `read_only_mirror`, `limited_write`, `two_way` |
+| In-memory Fake | Phase 7 (#1019) | Test fake with recording spy | all modes |
+| Bitbucket Issues | Phase 9 (#226) | Deferred adapter | all modes |
+| Jira | Phase 9 (#226) | Deferred adapter | all modes |
+| Azure Boards | Phase 9 (#226) | Deferred adapter | all modes |
+| Odoo Project | Phase 9 (#226) | Deferred adapter | all modes |
+
+Contract every adapter must pass (**A-333** `trackerAdapterContract(adapter)`, shared test suite): pagination via `cursor`, `probePermissions` never reports a capability the API refuses, rate limit → `TrackerError 'rate_limited'`, no write call in `read_only_mirror`, re-listing is idempotent. The GitHub adapter must pass it (#1020).
+
+#### Conflicts and supersessions (added 2026-10-12, #1005)
+
+- **Tracker import is not a proposal:** Replaces Principle 5 ("Imports are proposals") and the import proposal note in §Issue tracking: importing into the repo roadmap mirror is a direct mirror (default `read_only_mirror`, D-3), NOT a proposal. Changes to the PROJECT roadmap (phase items) remain proposals.
+- **Task external links:** Supersedes "A roadmap `Task` gains an optional `external?: { source; key }` link": `TaskDef` and roadmap tasks stay as the execution-planning unit and gain no tracker fields; tracker identity is tracked on `RepoIssue` and `RepoMilestone` inside `RepoRoadmap`.
+
 ## Environments (dev, stg, prd, …)
 
 The workspace definition gains an ordered list of environments:
