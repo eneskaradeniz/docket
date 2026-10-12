@@ -66,6 +66,18 @@ const PENDING = new Map([
   ['infrastructure:I-90', '#1009'],
   ['infrastructure:I-91', '#1010'],
   ['infrastructure:I-92', '#1009'],
+
+  // #1005 — two-layer roadmap and tracker model with sync modes
+  ['domain:R-136', '#1018'],
+  ['domain:R-137', '#1018'],
+  ['domain:R-138', '#1018'],
+  ['domain:R-139', '#1018'],
+  ['application:A-328', '#1019'],
+  ['application:A-329', '#1019'],
+  ['application:A-330', '#1019'],
+  ['application:A-331', '#1019'],
+  ['application:A-332', '#1019'],
+  ['application:A-333', '#1020'],
 ]);
 
 function walk(dir, acc = []) {

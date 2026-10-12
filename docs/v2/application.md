@@ -345,6 +345,37 @@ export interface IssueTracker {
 
 Fake: `createFakeTracker(): IssueTracker & { readonly items: ExternalItem[]; readonly comments: readonly { key: string; text: string }[] }`.
 
+### Phase 7 tracker addendum (added 2026-10-12, #1005)
+
+Under D-3 (see `docs/v2/decisions-phase7.md`), Docket introduces its own issue and milestone mirror model with per-repo sync modes (`docket_only`, `read_only_mirror`, `limited_write`, `two_way`), token permission probing, conflict tracking, and local subtasks that never reach the external tracker.
+
+```ts
+export type SyncMode = 'docket_only' | 'read_only_mirror' | 'limited_write' | 'two_way';   // default 'read_only_mirror'
+export interface TrackerPermissions { readonly read: boolean; readonly comment: boolean; readonly transition: boolean; readonly edit: boolean }
+export interface RepoTrackerLink { readonly repo: RepoSlug; readonly tracker: string; readonly connection: string /* integration account id */; readonly scope: string /* project key / owner-repo */; readonly mode: SyncMode }
+export interface ExternalMilestone { readonly id: string; readonly title: string; readonly dueAt?: EpochMs; readonly state: 'open' | 'closed'; readonly url?: string }
+// IssueTracker port gains (existing search/get/comment/transition stay):
+//   probePermissions(scope: string): Promise<Result<TrackerPermissions, TrackerError>>
+//   listMilestones(scope: string, cursor?: string): Promise<Result<{ items: readonly ExternalMilestone[]; next?: string }, TrackerError>>
+//   listIssues(scope: string, opts: { since?: EpochMs; cursor?: string }): Promise<Result<{ items: readonly ExternalItem[]; next?: string }, TrackerError>>
+//   updateIssue / createIssue (only called in two_way)
+export interface SyncConflict { readonly issue: string; readonly field: 'title' | 'body' | 'state' | 'milestone' | 'labels'; readonly local: string; readonly remote: string; readonly detectedAt: EpochMs }
+export type ConflictResolution = 'keep_remote' | 'keep_local';
+export function effectiveMode(mode: SyncMode, probed: TrackerPermissions): SyncMode;   // pure; lives in domain
+```
+
+Rules:
+- **A-328** (added 2026-10-12, #1005) `docket_only` never calls the tracker port; `read_only_mirror` calls only probe/list/get; `limited_write` additionally allows exactly `transition` (status), `comment` (including a pull-request link comment); `two_way` additionally `createIssue`/`updateIssue`; a test with a recording fake asserts the call set per mode.
+- **A-329** (added 2026-10-12, #1005) `effectiveMode` clamps the configured mode to what the probed permissions allow (`edit` false → at most `limited_write`; `comment` and `transition` both false → at most `read_only_mirror`; `read` false → `docket_only`); the clamp and its reason are surfaced to the UI, never silently applied.
+- **A-330** (added 2026-10-12, #1005) In `read_only_mirror` the mirrored fields (title, body, state, milestone, labels) of a tracker-sourced issue are not editable locally (typed refusal); local-only data (subtasks, notes) is always editable.
+- **A-331** (added 2026-10-12, #1005) A subtask or any issue with `source.kind === 'local'` is never sent to the tracker in any mode.
+- **A-332** (added 2026-10-12, #1005) Sync detects a conflict when the remote value changed since the last sync AND the local value changed (recording a `SyncConflict`, writing neither side, and keeping the conflict visible until a `ConflictResolution` is chosen, with no automatic overwrite in any mode); syncing twice with no remote change is idempotent, recording no new event and changing no local row.
+- **A-333** (added 2026-10-12, #1005) Every adapter must pass `trackerAdapterContract(adapter)`: pagination via `cursor`, `probePermissions` never reports a capability the API refuses, rate limit → `TrackerError 'rate_limited'`, no write call in `read_only_mirror`, and re-listing is idempotent.
+
+#### Conflicts and supersessions (added 2026-10-12, #1005)
+
+The previous IssueTracker design provided only search/get/comment/transition with import as proposal (`integrations.md` principle 5). Under D-3, import into Docket's issue/milestone mirror is a direct mirror (read-only by default), NOT a proposal, while changes to the PROJECT roadmap (phases and phase items) remain proposals; `TaskDef` and roadmap tasks stay as the execution-planning unit and gain no tracker fields.
+
 ### Update checker port (`ports/update-checker.ts`)
 
 The app's own newer version — machine-local state with no repo data and no fitting `AuditAction`
