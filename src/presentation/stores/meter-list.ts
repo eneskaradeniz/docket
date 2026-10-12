@@ -4,7 +4,7 @@
 // ("120 / 300") for counted units, and the single note that names a model-scoped pool's model.
 // The same rows serve the wizard's Bütçe step (a candidate's preview), Settings and the account
 // editor's Kullanım tab.
-import type { SettingsMeterView, SettingsPoolView } from '../../api/queries';
+import type { SettingsAccountView, SettingsMeterView, SettingsPoolView } from '../../api/queries';
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
 import { meterBar } from './account-editor';
@@ -94,14 +94,56 @@ export const meterListView = (pools: readonly SettingsPoolView[], meters: readon
 
 export { hasModelScopedPool };
 
-export type MeterListEmpty = 'meterList.noMeter' | 'meterList.needsLogin' | 'meterList.afterAdd';
+export type MeterFailure = 'needs_key' | 'network' | 'rejected';
+
+export type MeterListEmpty =
+  | 'meterList.noMeter'
+  | 'meterList.needsLogin'
+  | 'meterList.afterAdd'
+  | 'meterList.notRead'
+  | 'meterList.failed.needsKey'
+  | 'meterList.failed.network'
+  | 'meterList.failed.rejected';
+
+export interface MeterListStanding {
+  readonly loading: boolean;
+  readonly failed: boolean;
+  readonly needsLogin: boolean;
+  readonly failure?: MeterFailure | null;
+  readonly hasUsageSource?: boolean;
+}
 
 /** The one line shown in place of rows: while a candidate's quota loads or fails it says limits are
  *  read once the account is added; a provider that needs a login says so; else it reports no usage. */
-export const meterListEmpty = (standing: { readonly loading: boolean; readonly failed: boolean; readonly needsLogin: boolean }): MeterListEmpty => {
+export const meterListEmpty = (standing: MeterListStanding): MeterListEmpty => {
+  if (standing.failure === 'needs_key') return 'meterList.failed.needsKey';
+  if (standing.failure === 'network') return 'meterList.failed.network';
+  if (standing.failure === 'rejected') return 'meterList.failed.rejected';
   if (standing.needsLogin) return 'meterList.needsLogin';
   if (standing.loading || standing.failed) return 'meterList.afterAdd';
+  if (standing.hasUsageSource === true) return 'meterList.notRead';
   return 'meterList.noMeter';
+};
+
+/** The standing of an account's quota meter list derived from its configuration and last test. */
+export const accountMeterStanding = (account: SettingsAccountView): MeterListStanding => {
+  const hasUsageSource = account.endpointHost !== null || account.pools.length > 0;
+  if (account.authMode === 'api_key' && !account.hasSecret) {
+    return { loading: false, failed: true, needsLogin: false, failure: 'needs_key', hasUsageSource };
+  }
+  if (account.test?.state === 'failed') {
+    if (account.test.class === 'auth') {
+      if (account.authMode === 'subscription') {
+        return { loading: false, failed: true, needsLogin: true, failure: null, hasUsageSource };
+      }
+      return { loading: false, failed: true, needsLogin: false, failure: account.hasSecret ? 'rejected' : 'needs_key', hasUsageSource };
+    }
+    if (account.test.class === 'network') {
+      return { loading: false, failed: true, needsLogin: false, failure: 'network', hasUsageSource };
+    }
+    return { loading: false, failed: true, needsLogin: false, failure: 'rejected', hasUsageSource };
+  }
+  return { loading: false, failed: false, needsLogin: false, failure: null, hasUsageSource };
 };
 
 /** "<span> sonra sıfırlanır" for a window resetting at `resetsAt`, read at `now`; null without a reset. */

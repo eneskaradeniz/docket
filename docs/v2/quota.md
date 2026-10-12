@@ -110,3 +110,8 @@ data; `durationMs` is set only from a value the CLI states, never from the windo
 read both stdout and stderr (the probe run showed the payload on stderr).
 
 Addendum 2026-10-11 (#968): the spend ledger holds real currency only. `recordSpend` runs for usage with `costKind` `reported` or `computed`, or with no kind; `equivalent` (subscriptions, custom endpoints, the GLM preset) and `credits` are never written, so an API-equivalent figure cannot move a cap or a project ceiling. Limit: the `spend` table has no kind column and is not backfilled — rows written before this change may include equivalent figures from such routes and can overstate a project ceiling until their month passes. Usage summaries show each kind separately (`costByKind`); only `reported` and `computed` are called money.
+
+## Typed quota probe failure reasons (A-324)
+
+Added 2026-10-12, #1029; amends A-81/A-82. A quota probe error carries its failure class (`not_logged_in`, `probe_failed`, `unknown_provider`, `not_installed`) through `pollQuota` unchanged and persists nothing to the account's stored meters.
+

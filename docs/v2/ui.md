@@ -1683,3 +1683,10 @@ that account.
   working account — one that is unreadable, or whose key is still not moved: a rescan that breaks
   the row drops it from the selection, and the finish's own account list skips it in depth, so no
   `account.adopt` is sent for it and the drafts phase writes nothing for it either.
+
+## Typed meter failure and empty state reasons (U-264 … U-265)
+
+Added 2026-10-12, #1029; amends U-44.
+- **U-264** A failed quota read shows its typed reason (`meterList.failed.needsKey`, `meterList.failed.network`, `meterList.failed.rejected`), never the no-meter line. The typed failure reason outranks the presence of a usage source.
+- **U-265** The no-meter line (`meterList.noMeter`) is shown only when the provider has no usage source; an account whose usage source has not yet been read says so (`meterList.notRead`).
+
