@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import type { SettingsMeterView, SettingsPoolView } from '../../api/queries';
-import { hasModelScopedPool, meterListEmpty, meterListView, meterResetText } from './meter-list';
+import type { SettingsAccountView, SettingsMeterView, SettingsPoolView } from '../../api/queries';
+import { accountMeterStanding, hasModelScopedPool, meterListEmpty, meterListView, meterResetText } from './meter-list';
 
 const pool = (id: string, label: string, appliesTo: SettingsPoolView['appliesTo']): SettingsPoolView => ({ id, label, kind: 'allowance', appliesTo });
 
@@ -88,11 +88,93 @@ describe('meter list (U-44)', () => {
     expect(meterListView([ACCOUNT], [meter({ id: 'a', poolId: 'p-acc', unit: 'usd', used: 3, limit: 50, remaining: 47 })]).rows[0]?.fraction).toBeNull();
   });
 
-  it('U-44: with no rows the line says what is missing — login first, then a load or failure, else no usage', () => {
+  it('U-44: with no rows the line says what is missing — login first, then a load, then an unclassed failure', () => {
     expect(meterListEmpty({ loading: false, failed: false, needsLogin: true })).toBe('meterList.needsLogin');
     expect(meterListEmpty({ loading: true, failed: false, needsLogin: false })).toBe('meterList.afterAdd');
+    // A preview failure that carries no class (the wizard's candidate quota) keeps its own line.
     expect(meterListEmpty({ loading: false, failed: true, needsLogin: false })).toBe('meterList.afterAdd');
-    expect(meterListEmpty({ loading: false, failed: false, needsLogin: false })).toBe('meterList.noMeter');
+  });
+
+  it('U-264: a failed read shows its typed reason, never the no-meter line', () => {
+    const standing = { loading: false, needsLogin: false, failed: true };
+    expect(meterListEmpty({ ...standing, failure: 'needs_key', hasUsageSource: true })).toBe('meterList.failed.needsKey');
+    expect(meterListEmpty({ ...standing, failure: 'network', hasUsageSource: true })).toBe('meterList.failed.network');
+    // The reason outranks the source question: even a sourceless provider shows why a read failed.
+    expect(meterListEmpty({ ...standing, failure: 'rejected', hasUsageSource: false })).toBe('meterList.failed.rejected');
+  });
+
+  it('U-264: accountMeterStanding derives typed failures from account state and test results', () => {
+    const baseAccount: SettingsAccountView = {
+      id: 'acc-1',
+      provider: 'custom',
+      label: 'Custom Account',
+      authMode: 'api_key',
+      billing: 'metered',
+      plan: null,
+      limitPolicy: 'wait_resume',
+      reserve: { short: null, long: null },
+      caps: [],
+      consentedModels: [],
+      routeKind: null,
+      identityDir: null,
+      endpointHost: 'api.example.com',
+      hasSecret: true,
+      test: null,
+      pools: [],
+      meters: [],
+    };
+
+    // An API key account without a secret in the vault needs a key
+    expect(accountMeterStanding({ ...baseAccount, hasSecret: false })).toEqual({
+      loading: false,
+      failed: true,
+      needsLogin: false,
+      failure: 'needs_key',
+      hasUsageSource: true,
+    });
+
+    // An API key account with a network test failure reports network
+    expect(accountMeterStanding({ ...baseAccount, test: { state: 'failed', class: 'network', detail: null, model: null, at: 100 } })).toEqual({
+      loading: false,
+      failed: true,
+      needsLogin: false,
+      failure: 'network',
+      hasUsageSource: true,
+    });
+
+    // An API key account with an auth rejection reports rejected
+    expect(accountMeterStanding({ ...baseAccount, test: { state: 'failed', class: 'auth', detail: null, model: null, at: 100 } })).toEqual({
+      loading: false,
+      failed: true,
+      needsLogin: false,
+      failure: 'rejected',
+      hasUsageSource: true,
+    });
+
+    // A subscription account with auth failure reports needsLogin
+    expect(accountMeterStanding({ ...baseAccount, authMode: 'subscription', test: { state: 'failed', class: 'auth', detail: null, model: null, at: 100 } })).toEqual({
+      loading: false,
+      failed: true,
+      needsLogin: true,
+      failure: null,
+      hasUsageSource: true,
+    });
+
+    // A sourceless account without endpoint or pools reports hasUsageSource false
+    expect(accountMeterStanding({ ...baseAccount, endpointHost: null, pools: [] })).toEqual({
+      loading: false,
+      failed: false,
+      needsLogin: false,
+      failure: null,
+      hasUsageSource: false,
+    });
+  });
+
+  it('U-265: the no-meter line appears only for a provider with no usage source; a source not yet read says so', () => {
+    expect(meterListEmpty({ loading: false, needsLogin: false, failed: false, failure: null, hasUsageSource: false })).toBe('meterList.noMeter');
+    expect(meterListEmpty({ loading: false, needsLogin: false, failed: false, failure: null, hasUsageSource: true })).toBe('meterList.notRead');
+    // A caller that does not know the source (the wizard's preview) claims none: no-meter, as before.
+    expect(meterListEmpty({ loading: false, needsLogin: false, failed: false, failure: null })).toBe('meterList.noMeter');
   });
 
   it('U-44: the reset reads "<span> sonra sıfırlanır" from the clock it is given, and nothing without a reset', () => {

@@ -1777,3 +1777,9 @@ export interface QuitConfirmViewModel {
 ### Project-menu export/import (added 2026-10-13, #1046; implements A-342)
 
 - **U-296** (project-menu export/import entry; added 2026-10-13, #1046, implemented in #1010) The project menu offers "Dışa aktar" (en: "Export") and "İçe aktar" (en: "Import"), and each opens a confirm dialog naming the target path before anything runs — Export: "Paket şuraya yazılacak: {path}" (en: "The bundle will be written to: {path}") naming the `~/.docket/exports/` folder, with "Dışa aktar" (en: "Export") and "Vazgeç" (en: "Cancel"); Import: after the file picker, "Şu dosya içe aktarılacak: {path}" (en: "This file will be imported: {path}") naming the picked `.docket-bundle.json` file, with the same button pair; a finished export shows the written file's absolute path, and every string lives in both label bundles, never inline in a component.
+
+## Typed meter failure and empty state reasons (U-264 … U-265)
+
+Added 2026-10-12, #1029; amends U-44.
+- **U-264** A failed quota read shows its typed reason (`meterList.failed.needsKey`, `meterList.failed.network`, `meterList.failed.rejected`), never the no-meter line. The typed failure reason outranks the presence of a usage source.
+- **U-265** The no-meter line (`meterList.noMeter`) is shown only when the provider has no usage source; an account whose usage source has not yet been read says so (`meterList.notRead`).

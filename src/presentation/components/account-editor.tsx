@@ -38,7 +38,7 @@ import { MeterList } from './meter-list';
 import { ModelList } from './model-list';
 import { formatMeterValue } from './meter-value';
 import { SettingRow } from './setting-row';
-import { meterListEmpty, meterListView } from '../stores/meter-list';
+import { accountMeterStanding, meterListEmpty, meterListView } from '../stores/meter-list';
 
 const TAB_KEY: Readonly<Record<EditorTab, LabelKey>> = {
   general: 'editor.tab.general',
@@ -291,7 +291,7 @@ function Usage({ account, locale, formatTime, onRefresh }: Pick<AccountEditorPro
           <MeterList
             locale={locale}
             view={meterListView(account.pools, account.meters)}
-            empty={meterListEmpty({ loading: false, failed: false, needsLogin: false })}
+            empty={meterListEmpty(accountMeterStanding(account))}
             now={Date.now()}
           />
         ) : (
