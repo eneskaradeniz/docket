@@ -115,8 +115,13 @@ Under D-5, Docket writes no file into a repository's working tree and no tracked
 | `Vcs`, `Forge` | Worktrees, branches, diff, merge · pull requests and issues |
 | `CommandRunner` | Run gate commands (tests, lint, secret scan) |
 | `Clock`, `IdGen`, `Notifier` | Time (epoch ms), ULIDs, desktop notifications |
+| `BundleStore` | Write and read export/import bundles (`*.docket-bundle.json`) under `~/.docket/exports/` (added 2026-10-13, #1046; I-100, A-342) |
 
 Every port has an in-memory fake in `src/application/ports/fakes/` used by application tests.
+
+Ports addendum (added 2026-10-13, #1046):
+- `RepoRegistry` (row above): its responsibility is superseded by I-88/I-94 — the registry maps `repoId` (ULID) plus a git fingerprint to the current folder on this machine, with relink verification against the stored `rootCommit`, never applied silently.
+- `DefinitionStore` (row above): its responsibility extends to the Phase 7 library — reading library version histories and appending versions (append-only, A-343) beside the re-rooted single-root YAML grammar (I-95).
 
 ## API boundary (team-ready)
 

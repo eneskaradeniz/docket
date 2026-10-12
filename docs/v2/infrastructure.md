@@ -574,3 +574,111 @@ Rules:
 - **I-18** and the `RepoRegistry` contract (mapping `RepoSlug` → folder) are superseded by **I-88**: repo identity is `repoId` (ULID) + git fingerprint `{ rootCommit, remote }`, and the registry maps `repoId` → folder with relinking verification against the stored `rootCommit`.
 - **Phase 3.5 decisions S1 and S3** (#372, #375; project config in main repo `.docket/`, repo overriding project defaults): superseded by **D-1**, **D-5**, and **I-86**; a project has no roles or flows and no main repo, and repo definitions are self-contained under `~/.docket/repos/<repo-slug>/repo.yaml`.
 - **Team-ready rule 5** (`architecture.md` lines 116–117; definitions shared via git tracking): superseded by **I-92** and **D-5**; definitions are shared across machines via portable export/import bundles (**I-89**, **I-91**), keeping repositories completely clean of tracked Docket files (**I-87**).
+
+Layout note, memory (added 2026-10-13, #1046): the `library/memory/<id>/v<N>.yaml` row above is a
+location convention only. Memory files follow the library's version law — an edit is a new version,
+deactivation is the `archived` flag (R-129) — while the note-level semantics (scope, proposal flow,
+`active`) stay with R-142/R-143 and the #1006 implementing issue.
+
+### Storage addendum, second wave (added 2026-10-13, #1046)
+
+Closes the contract gaps that block #1009–#1012 (resolution plan Q1–Q6, Q8–Q14). Extends the Phase 7
+storage addendum above; nothing in it is deleted. Module map addendum: `storage/bundle/` (`store.ts`)
+may import no other infrastructure module (the `scripts/check-layers.mjs` entry lands with its
+implementing issue); `vcs/git.ts` gains the `readRepoFingerprint` helper.
+
+```ts
+// storage/sqlite/repo-registry.ts — the repoId registry (I-88, I-94)
+export interface RepoRegistry {
+  register(entry: RepoRegistryEntry): Promise<void>;               // upsert by repoId; a slug held by another repoId throws (the unique index)
+  byRepoId(repoId: string): Promise<RepoRegistryEntry | undefined>;
+  list(): Promise<readonly RepoRegistryEntry[]>;                   // slug asc
+  relink(repoId: string, path: string): Promise<Result<void, 'folder_not_found' | 'fingerprint_mismatch'>>;
+}
+/** Injected by compose/ — storage/sqlite may import system only, so the reader is a parameter. */
+export type ReadRepoFingerprint = (path: string) => Promise<RepoFingerprint | undefined>;
+export function createSqliteRepoRegistry(db: DocketDb, readFingerprint: ReadRepoFingerprint): RepoRegistry;
+
+// vcs/git.ts — the fingerprint reader (I-94); undefined when path is not a git work tree with commits
+export function readRepoFingerprint(path: string): Promise<RepoFingerprint | undefined>;
+
+// RepoRegistryEntry gains (I-97, extends I-88's entry)
+export interface RepoRegistryEntry {
+  readonly repoId: string;         // ULID
+  readonly slug: RepoSlug;
+  readonly path: string;
+  readonly fingerprint: RepoFingerprint;
+  readonly legacyImported?: true;  // set exactly by the legacy import (I-90); never travels in a bundle
+}
+
+// storage/definitions-yaml/targets.ts — the Phase 7 target grammar (I-95)
+export type DefinitionKind = 'roles' | 'flows' | 'capabilities' | 'memory';
+export type ParsedTarget =
+  | { readonly kind: DefinitionKind; readonly id: string; readonly version: number }
+  | { readonly kind: 'project' }
+  | { readonly kind: 'repo' }
+  | { readonly kind: 'roadmap' };
+export function parseTarget(target: string): ParsedTarget | undefined;
+
+// storage/definitions-yaml/store.ts — the config collapses to one root (I-95)
+export interface YamlStoreConfig { readonly globalRoot: string }
+
+// ports/bundle-store.ts (application.md → A-342) — the adapter contract (I-100)
+export interface BundleStore {
+  /** Writes the bundle under exports/ and returns its absolute path; never overwrites. */
+  export(project: ProjectSlug, bundle: DocketBundle): Promise<Result<{ readonly path: string }, 'io_failed'>>;
+  /** Reads and checks a bundle file; the checksum is verified against I-98's canonical form. */
+  read(path: string): Promise<Result<DocketBundle, 'not_found' | 'wrong_format' | 'bad_checksum'>>;
+}
+export function createFsBundleStore(root: string): BundleStore;   // root = <dataDir>/exports
+
+// The element shapes inside DocketBundle's unknown fields (I-99)
+export type BundleProjects = readonly { readonly project: ProjectDef; readonly roadmap?: Roadmap }[];
+export type BundleRepos = readonly RepoDef[];
+export type BundleLibrary = Readonly<Record<DefinitionKind, Readonly<Record<string, readonly VersionRecord<unknown>[]>>>>;
+export type BundleMemory = readonly MemoryNote[];
+```
+
+Migration 11 (`MIGRATIONS[10]`, exact — the repos table becomes the repoId registry and the projects
+table loses the main repo; existing registry rows survive with minted ULIDs; I-93):
+
+```sql
+CREATE TABLE repo_registry (repo_id TEXT PRIMARY KEY, slug TEXT NOT NULL, path TEXT NOT NULL, legacy_imported INTEGER NOT NULL DEFAULT 0, data TEXT NOT NULL);
+CREATE UNIQUE INDEX repo_registry_by_slug ON repo_registry (slug);
+WITH seeds AS (
+  SELECT slug, path, unixepoch('now') * 1000 AS t, random() & 1099511627775 AS a, random() & 1099511627775 AS b FROM repos
+)
+INSERT INTO repo_registry (repo_id, slug, path, legacy_imported, data)
+  SELECT
+    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 45) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 40) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 35) & 31) + 1, 1) ||
+    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 30) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 25) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 20) & 31) + 1, 1) ||
+    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 15) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 10) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 5) & 31) + 1, 1) ||
+    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 0) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 35) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 30) & 31) + 1, 1) ||
+    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 25) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 20) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 15) & 31) + 1, 1) ||
+    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 10) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 5) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 0) & 31) + 1, 1) ||
+    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 35) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 30) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 25) & 31) + 1, 1) ||
+    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 20) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 15) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 10) & 31) + 1, 1) ||
+    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 5) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 0) & 31) + 1, 1),
+    slug, path, 0, ''
+  FROM seeds;
+UPDATE repo_registry SET data = json_object('repoId', repo_id, 'slug', slug, 'path', path, 'fingerprint', json_object('rootCommit', ''));
+DROP TABLE repos;
+ALTER TABLE projects DROP COLUMN main_repo;
+UPDATE projects SET data = json_remove(data, '$.mainRepo');
+```
+
+Rules:
+
+- **I-93** (added 2026-10-13, #1046) Migration 11 turns the slug-keyed `repos` table into the `repo_registry` above and rewrites the projects table per R-126, in one transaction that sets `user_version = 11`; opening a database already at 11 is a no-op (`too_new` unchanged). Every migrated row keeps its `slug` and `path`, gains a `repo_id` minted by the SQL's ULID expression (26 Crockford base-32 characters that pass the domain's `isUlid`, unique within the migration), carries `legacy_imported = 0` (not yet imported — its repo-side `.docket/` still awaits I-90) and a `data` record whose `fingerprint.rootCommit` is `''` until the app reads git; `projects.data` loses `$.mainRepo` and the `main_repo` column is gone; the `repos` table no longer exists.
+- **I-94** (added 2026-10-13, #1046; supersedes the `repo-registry.ts` block of §2 beside I-18's already-superseded line) The SQLite registry implements the port above over migration 11's table: `register` upserts the whole entry (index columns rebuilt from the record on every write, I-6); `relink(repoId, path)` reads the candidate folder's fingerprint through the injected reader — no fingerprint (`undefined`) → `folder_not_found`, a stored non-empty `rootCommit` that differs → `fingerprint_mismatch`, anything else (equal, or stored `''` from migration 11, which is then backfilled) updates the entry's `path` and `fingerprint`; `readRepoFingerprint` lives in `vcs/git.ts` (`git rev-parse --show-toplevel`'s repo, `rootCommit` = the first root commit, `remote` = the normalised `origin` URL when present) and is injected by `compose/` — `storage/sqlite` imports no `vcs` module.
+- **I-95** (added 2026-10-13, #1046; supersedes I-11/I-14/I-32's grammar, already superseded by I-86 — this is the replacement) `parseTarget` accepts exactly `library/<kind>/<id>/v<N>.yaml` (`kind` one of the four above, `id` passing the domain's `parseSlug`, `N` a positive integer without a leading zero), `projects/<slug>/project.yaml`, `projects/<slug>/roadmap.yaml` and `repos/<slug>/repo.yaml`; everything else → `undefined` (absolute paths, `..`, `./`, backslashes, other extensions, deeper or shallower folders, upper case, `v0`, `v01`, `v1.5`). Library version files are **create-only**: `writeFile` on a version target succeeds only with `expectedHash ''` and a file that does not exist — a version is never overwritten or renamed over; `project`, `repo` and `roadmap` targets keep I-16's hash-guard semantics. The store's config is `{ globalRoot }` only — the `repos` and `projects` path objects are gone (`ProjectPaths.mainRepoPath` is dead under D-1).
+- **I-96** (added 2026-10-13, #1046; supersedes I-36's and I-44's flat targets) `installBuiltins` writes `<globalRoot>/library/roles/<id>/v1.yaml` and `<globalRoot>/library/flows/<id>/v1.yaml`; `installCapabilities` writes `<globalRoot>/library/capabilities/<id>/v1.yaml` — the round-trip law and the skip-if-exists stance of I-36/I-44 stand, re-rooted to the version files (a written file round-trips to an equal definition through the store's reader). `scaffoldProject`'s `.docket` writes are superseded — the DefinitionStore loses the method; project creation goes through the `project_setup` proposal (A-338); `RepoFolders.createRepo` (I-36's arm) stands unchanged.
+- **I-97** (added 2026-10-13, #1046) `RepoRegistryEntry.legacyImported?: true` is set exactly by the legacy import (I-90) once that repo's repo-side `.docket/` has been read and mapped, and by nothing else — a bundle import on machine B is not a legacy import, so the flag never travels in a bundle (I-89); the `legacy_imported` column rides migration 11 and is rebuilt from the record on every write (I-6).
+- **I-98** (added 2026-10-13, #1046) The canonical JSON of I-89's `checksum` is RFC 8785 (JSON Canonicalization Scheme): UTF-8, object members sorted by key in UTF-16 code-unit order, no insignificant whitespace, numbers in their shortest round-trip form — the same bundle bytes checksum identically on every machine, and a bundle whose recomputed checksum differs is `bad_checksum`.
+- **I-99** (added 2026-10-13, #1046) The bundle elements are shaped exactly as the types above: `projects` elements carry the `ProjectDef` with the `Roadmap` riding inside (`roadmap` absent when the project has none — no top-level field, DocketBundle's pinned interface is unchanged); `repos` is `RepoDef[]`; `library` maps each kind to its definition ids, each id to its full `VersionRecord[]` history in version order; `memory` carries only accepted `MemoryNote`s — a pending or rejected `MemoryProposal` never travels (R-142).
+- **I-100** (added 2026-10-13, #1046) `createFsBundleStore(root)` implements `BundleStore` in `storage/bundle/`: `export` writes `<root>/<project-slug>-<UTCYmd-HMS>.docket-bundle.json` (name timestamp UTC, `Ymd-HMS` zero-padded, e.g. `proj-20261013-142512.docket-bundle.json`), a name already taken gains `-2`, then `-3`, … before `.docket-bundle.json`, and an existing file is never overwritten; `read` returns `not_found` for a missing file, `wrong_format` for anything that is not a `docket-bundle` of a known `version`, and `bad_checksum` when I-98's recomputed checksum differs; the file is staged in a temporary directory and renamed into place, and the store holds no state between calls.
+
+Conflicts and supersessions (added 2026-10-13, #1046):
+
+- **I-36** (`installBuiltins`/`scaffoldProject` flat paths): superseded by I-96 — `<globalRoot>/roles|flows/<id>.yaml` becomes `library/<kind>/<id>/v1.yaml` and `scaffoldProject`'s `.docket` arm is superseded by the `project_setup` proposal (A-338); the round-trip law, skip-if-exists and `createRepo` stand.
+- **I-44** (flat capabilities path): superseded by I-96 — `<globalRoot>/capabilities/<id>.yaml` becomes `library/capabilities/<id>/v1.yaml`; the round-trip law and skip-if-exists stand.
