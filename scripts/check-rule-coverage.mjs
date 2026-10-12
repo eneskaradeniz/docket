@@ -45,6 +45,24 @@ const SECTIONS = [
 // when the phase closes.
 const PENDING = new Map([
   ['providers:P-38', '#672'],
+
+  // #1008: Phase 7 surfaces — settings, setup, repo, work orders, versions, quit
+  ['ui:U-280', '#1031'],
+  ['ui:U-281', '#1031'],
+  ['ui:U-282', '#1031'],
+  ['ui:U-283', '#1031'],
+  ['ui:U-284', '#1022'],
+  ['ui:U-285', '#1022'],
+  ['ui:U-286', '#1023'],
+  ['ui:U-287', '#1023'],
+  ['ui:U-288', '#1024'],
+  ['ui:U-289', '#1024'],
+  ['ui:U-290', '#1025'],
+  ['ui:U-291', '#1025'],
+  ['ui:U-292', '#1026'],
+  ['ui:U-293', '#1026'],
+  ['ui:U-294', '#999'],
+  ['ui:U-295', '#999'],
 ]);
 
 function walk(dir, acc = []) {
