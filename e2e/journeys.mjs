@@ -98,12 +98,20 @@ for (const [sizeName, theme] of combos) {
   // The milestones the walk has passed — the shot labels, in order; a FAIL entry keeps the ones
   // that landed before the error, which is the honest shape of a partial walk.
   let steps = [];
-  /** Save a screenshot for the step that just passed. */
+  /** Save a screenshot for the step that just passed, then check the face it claims: a reload's
+   *  boot re-applies the store's own theme to the document, and an image taken under the other
+   *  theme is evidence of the wrong world. The wrong image is kept for the report, then the step
+   *  fails on the mismatch. */
   const shot = async (label) => {
     stepNo += 1;
     steps.push(label);
     const slug = label.toLowerCase().replace(/[^a-z0-9ğüşıöç]+/g, '-').replace(/^-|-$/g, '');
     await page.screenshot({ path: join(OUT, `${jn}-${size[0]}x${size[1]}-${theme}-${stepNo}-${slug}.png`) });
+    mark('theme check');
+    const held = await page.evaluate(() => document.documentElement.dataset.theme);
+    if (held !== theme) {
+      throw new Error(`data-theme is "${held ?? ''}", requested "${theme}" — the screenshot shows the other theme`);
+    }
   };
 
   const journey = async (id, name, fn) => {
