@@ -298,6 +298,37 @@ Rules:
 - **E-4** A `deploy` gate's `environment` must name an environment in `repo.environments` (`unknown_environment`).
 - **E-5** A `protected` environment must have `promoteFrom` set (`missing_promote_from`). `promoteFrom` must name another environment with a lower `order` value; an equal- or higher-order target reports `promote_cycle` — with unique `order` values (E-2), a non-descending chain and a cyclic one are the same defect class. The `promoteFrom` chain must be acyclic (`promote_cycle`).
 
+### Addendum 2026-10-12 (#1006, D-4, D-7): Agent capabilities addendum — library, memory, commands and plugins
+
+```ts
+// definitions/types.ts — CapabilityDef addendum (added 2026-10-12, #1006). The existing four members stay.
+export type CapabilityDef =
+  | /* existing mcp | skill | hook | context */
+  | { readonly kind: 'plugin';  readonly id: CapabilitySlug; readonly name: string; readonly source: PluginSource; readonly version?: string;
+      readonly includes: readonly CapabilitySlug[] }                      // a package: bundles other capabilities (skills, commands, mcp, hooks)
+  | { readonly kind: 'command'; readonly id: CapabilitySlug; readonly name: string; readonly template: string;   // prompt template, Docket renders it
+      readonly arguments: readonly { readonly name: string; readonly required: boolean }[] };
+export type PluginSource = { readonly kind: 'path'; readonly path: string } | { readonly kind: 'marketplace'; readonly marketplace: string; readonly name: string };
+
+export type MemoryScope = 'global' | 'project' | 'repo';
+export interface MemoryNote { readonly id: string; readonly scope: MemoryScope; readonly scopeId?: string; readonly text: string; readonly createdBy: 'user' | 'agent'; readonly active: boolean }
+export interface MemoryProposal { readonly id: string; readonly scope: MemoryScope; readonly scopeId?: string; readonly text: string; readonly sourceRun: string; readonly state: 'pending' | 'accepted' | 'rejected' }
+export const MEMORY_INJECTION_CAP_CHARS: number;      // 4000 per run, total over all scopes
+export function selectMemory(notes: readonly MemoryNote[], ctx: { project?: string; repo?: string }): { readonly text: string; readonly truncated: boolean; readonly used: readonly string[] };
+
+// definitions/validate.ts — new issue codes
+export type DefinitionIssueCode =
+  | /* existing codes */
+  | 'plugin_cycle' | 'unknown_argument';
+```
+
+- **R-140** (added 2026-10-12, #1006) `validateDefinitions` accepts `plugin` and `command`; a `plugin.includes` entry must name an existing capability (`unknown_capability`) and a plugin may not include itself or form a cycle (`plugin_cycle`); a `command.template`'s `{{name}}` placeholders must all be declared in `arguments` (`unknown_argument`); new `DefinitionIssueCode`s: `plugin_cycle`, `unknown_argument`. R-8's secret-literal rule applies to plugin/mcp env as before.
+- **R-141** (added 2026-10-12, #1006) `command` is a prompt template rendered by Docket itself (placeholder substitution), never a provider-native slash command: a provider that lacks native commands is therefore never `unsupported` for `command` (it is at worst `degraded` to `prompt_text`).
+- **R-142** (added 2026-10-12, #1006) Memory is propose-and-approve: an agent can only create a `MemoryProposal` (state `pending`); only a user decision makes a `MemoryNote`; optional auto-accept is a per-scope setting (`global`, `project`, `repo`), default off, and an auto-accepted note records `createdBy: 'agent'`.
+- **R-143** (added 2026-10-12, #1006) `selectMemory` takes active notes of the global scope, the run's project and the run's repo (in that order, newest last), and stops at `MEMORY_INJECTION_CAP_CHARS` without cutting a note in the middle (the first note that would exceed the cap and everything after it is dropped, `truncated: true`).
+
+Conflicts and supersessions (added 2026-10-12, #1006, D-7): Glossary "Capability — MCP, skill, hook, context" grows by plugin and command; "capabilities attached to roles" now also arrive through plugins; Phase 3.5 account-scoped capability candidates (R-62…R-67, #850–#866) stay as the import mechanism.
+
 ---
 
 ## 3. `resolver/` — the precedence chain
