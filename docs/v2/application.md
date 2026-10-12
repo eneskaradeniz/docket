@@ -568,6 +568,16 @@ Rules:
 - **A-25** `openTaskWorkOrders`: loads the project (`unknown_project`) and its roadmap (`unknown_task`); targets = `task.targets` or `[mainRepo]`; opens one work order per target with `title = task.title` and `task` set — all-or-nothing: every opening is validated first, and any error opens none. Each success follows A-5 (one `created` event, one audit entry).
 - **A-26** `registerRepo` upserts the registry pointer after the project exists and lists the repo (`unknown_project` / `repo_not_in_project`). `unregisterRepo` fails `repo_in_use` while non-done work orders reference the repo, else removes the pointer — the project's `repos` list in `project.yaml` is untouched (membership is versioned truth, edited in the file or through a proposal). Audit `repo.registered` / `repo.unregistered`.
 
+### Phase 7 addendum: work-order flow pins, definition versions, and removals (added 2026-10-12, #1003)
+
+Under **D-1**, **D-4**, and **D-6**, work orders pin immutable flow and role definitions at creation time; library definitions are versioned contiguously; removals respect active work orders and repository bindings.
+
+Rules:
+- **A-324** (added 2026-10-12, #1003) `openWorkOrder` creates and stores the `FlowPin` (via `pinFlow`) on the work order record at creation.
+- **A-325** (added 2026-10-12, #1003) Changing a repo's flow or bindings never rewrites pins of existing work orders; stage runs, resume and retry use the work order's stored `FlowPin`.
+- **A-326** (added 2026-10-12, #1003) An account removal is refused while `accountRemoval` is `blocked` (by running work orders or stage bindings), and archives the account otherwise.
+- **A-327** (added 2026-10-12, #1003) Role and flow library edits create a new version via `nextVersion`, keeping previous version records immutable.
+
 ### Instructions, checkpoints, handoff — use cases (#581)
 
 ```ts
