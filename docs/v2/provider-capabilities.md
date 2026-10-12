@@ -269,6 +269,86 @@ Docket never starts a run that may spend real money without the user's explicit 
 - Observed (Claude): a model outside a plan's limits (documented for one plan: billed at standard API rates through usage credits, and only when extra usage is enabled) is `metered`; with extra usage disabled it cannot be used. The CLI's non-interactive mode may spend credits without asking, so Docket enforces the cap and does not leave it to the CLI.
 - Ambient API keys never reach a run (P-8, I-34): a key is used only when the account is an API-key account.
 
+## 15. Capability translation and support table (P-57…)
+
+Decisions D-4 and D-7 (#1006, 2026-10-12). Agent capabilities in Docket are composed of six kinds:
+`mcp`, `skill`, `hook`, `context`, `plugin`, `command`. Plugins bundle other capabilities as packages;
+commands are prompt templates rendered by Docket (placeholder substitution); memory is propose-and-approve
+(R-142, R-143 in [domain.md](domain.md) §2).
+
+Different agent CLIs support different capability kinds natively, in degraded form, or not at all.
+Docket translates stage role capabilities per provider and per run into the run-scoped files or flags
+the provider uses, without ever modifying the repository (D-5) or the user's ambient provider config.
+
+Because real agent runs across all providers are not yet executed, the support table is recorded with an
+honest `unverified` status where live evidence is lacking. The real-run probe #1015 later turns
+`unverified` into observed values.
+
+```ts
+// providers — translation and support table (data, in the capability registry)
+export type CapabilityKind = CapabilityDef['kind'];
+export type TranslationSupport = 'native' | 'degraded' | 'unsupported' | 'unverified';
+export interface TranslationRow { readonly provider: string; readonly kind: CapabilityKind; readonly support: TranslationSupport; readonly how: string; readonly degradesTo?: CapabilityKind | 'prompt_text' }
+export function supportFor(table: readonly TranslationRow[], provider: string, kind: CapabilityKind): TranslationRow;   // missing row → { support: 'unverified' }
+export interface SetupWarning { readonly stage: string; readonly capability: CapabilitySlug; readonly provider: string; readonly support: 'degraded' | 'unsupported' | 'unverified'; readonly how: string }
+export function setupWarnings(stages: readonly { stage: string; provider: string; capabilities: readonly CapabilityDef[] }[], table: readonly TranslationRow[]): readonly SetupWarning[];
+
+// machine import (read-only)
+export interface MachineCandidate { readonly provider: string; readonly kind: CapabilityKind; readonly name: string; readonly sourcePath: string; readonly secretNames: readonly string[] }   // names only, never values
+```
+
+### Initial translation and support table (P-58)
+
+The initial table recorded as data in the capability registry (`registry/capability-registry.ts`). Honest, no claim without evidence — real-run probe #1015 later turns `unverified` into the observed value:
+
+| Provider | Kind | Support | How / Mechanism | Degrades To |
+| --- | --- | --- | --- | --- |
+| `claude-code` | `mcp` | `native` | Inlined via SDK / run-scoped config | |
+| `claude-code` | `skill` | `native` | Run-scoped directory / SDK setting | |
+| `claude-code` | `hook` | `native` | Run-scoped hooks | |
+| `claude-code` | `context` | `native` | Native instruction files (`CLAUDE.md`, P-37) | |
+| `claude-code` | `plugin` | `native` | Unpacks package bundle to native capabilities | |
+| `claude-code` | `command` | `degraded` | Docket renders template placeholders | `prompt_text` |
+| `codex` | `mcp` | `native` | App-server `-c mcp_servers.*` | |
+| `codex` | `context` | `native` | Native instruction files (`AGENTS.md` / fallback, P-37) | |
+| `codex` | `skill` | `degraded` | Inlined as instruction text | `context` |
+| `codex` | `hook` | `unsupported` | Unsupported by app-server protocol | |
+| `codex` | `plugin` | `unverified` | Unverified without live probe (#1015) | |
+| `codex` | `command` | `degraded` | Docket renders template placeholders | `prompt_text` |
+| `agy` | `mcp` | `unverified` | Unverified without live probe (#1015) | |
+| `agy` | `skill` | `unverified` | Unverified without live probe (#1015) | |
+| `agy` | `hook` | `unverified` | Unverified without live probe (#1015) | |
+| `agy` | `context` | `native` | Native instruction files (P-37) | |
+| `agy` | `plugin` | `unverified` | Unverified without live probe (#1015) | |
+| `agy` | `command` | `degraded` | Docket renders template placeholders | `prompt_text` |
+| `copilot` | `mcp` | `unverified` | Unverified without live probe (#1015) | |
+| `copilot` | `skill` | `unverified` | Unverified without live probe (#1015) | |
+| `copilot` | `hook` | `unverified` | Unverified without live probe (#1015) | |
+| `copilot` | `context` | `native` | Native instruction files (P-37) | |
+| `copilot` | `plugin` | `unverified` | Unverified without live probe (#1015) | |
+| `copilot` | `command` | `degraded` | Docket renders template placeholders | `prompt_text` |
+| `cursor` | `mcp` | `unverified` | Unverified without live probe (#1015) | |
+| `cursor` | `skill` | `unverified` | Unverified without live probe (#1015) | |
+| `cursor` | `hook` | `unverified` | Unverified without live probe (#1015) | |
+| `cursor` | `context` | `native` | Native instruction files (P-37) | |
+| `cursor` | `plugin` | `unverified` | Unverified without live probe (#1015) | |
+| `cursor` | `command` | `degraded` | Docket renders template placeholders | `prompt_text` |
+| `opencode` | `mcp` | `unverified` | Unverified without live probe (#1015) | |
+| `opencode` | `skill` | `unverified` | Unverified without live probe (#1015) | |
+| `opencode` | `hook` | `unverified` | Unverified without live probe (#1015) | |
+| `opencode` | `context` | `native` | Native instruction files (P-37) | |
+| `opencode` | `plugin` | `unverified` | Unverified without live probe (#1015) | |
+| `opencode` | `command` | `degraded` | Docket renders template placeholders | `prompt_text` |
+
+### Rules (P-57 … P-60)
+
+- **P-57** (added 2026-10-12, #1006) `supportFor` answers from the table; a missing row is `unverified`; `setupWarnings` returns one warning per (stage, capability) whose support is not `native`, in stage order; the UI shows them at setup time and before a run starts; `unverified` is shown as such, never as `native`.
+- **P-58** (added 2026-10-12, #1006) The table's initial content (data in the registry; honest, no claim without evidence — the real-run probe #1015 later turns `unverified` into the observed value): for provider `claude-code` (stream-json/SDK): mcp native, skill native, hook native, context native, plugin native, command degraded→prompt_text; for `codex`: mcp native, context native, skill degraded→context, hook unsupported, plugin unverified, command degraded→prompt_text; for `agy`, `copilot`, `cursor`, `opencode`: every kind `unverified` except context (native: instruction files, P-37) and command (degraded→prompt_text).
+- **P-59** (added 2026-10-12, #1006) Translation is per provider and per run: a stage's role capabilities are translated into the run-scoped files/flags the provider's launch rules already use (P-7 addendum for run-scoped files, the MCP child launch rules); a capability whose support is `unsupported` is omitted from the run and recorded in the run record as `omitted_capability`; `degraded` capabilities are inlined as instruction text; no translation ever writes into the repository (D-5) or the user's own provider config.
+- **P-60** (added 2026-10-12, #1006) Machine import is read-only: a scan lists `MachineCandidate`s per provider from that provider's own user-level config locations; it never writes there, never copies a secret value (only `secretNames`; at import the user is asked to store the value in the keychain, the definition then holds `{secretRef}`); it supersedes nothing in R-62…R-67 — the existing `CapabilityCandidate` for mcp/skill/context stays and this adds plugin and hook candidates: hook candidates are listed but still not importable (R-66's note, 2026-10-11, stands).
+
+Conflicts and supersessions (added 2026-10-12, #1006, D-7): Glossary "Capability — MCP, skill, hook, context" grows by plugin and command; "capabilities attached to roles" now also arrive through plugins; Phase 3.5 account-scoped capability candidates (R-62…R-67, #850–#866) stay as the import mechanism.
+
 ## Open decisions
 - O-1 Where endpoint and model mapping live: account fields (proposed) or a separate preset record.
 - O-2 Resolved: sessions stay under the user's config directory; a per-run copy cannot keep the macOS login.
