@@ -1,0 +1,438 @@
+// components/detail-decision-card.tsx — the “Bu aşamada senden beklenen” zone (U-226): one card
+// per pending decision, stacked 12 px apart (U-227), or the single quiet line when nothing is
+// expected. The approve card names what it approves (the changed-files count and the pending
+// page — “Onaylanacak çıktı yok” offers only a rerun when there is neither); its reject opens
+// the inline reason box whose note travels to gate.decide (#978); parallel approvals carry no
+// primary button — none of them outranks the other. The failed card quotes the run's own last
+// words; the deploy card mirrors E-8's typed confirmation; the permission card folds the run's
+// already-allowed asks into one line.
+import { useState } from 'react';
+import { t, type Locale } from '../labels/t';
+import { ActionButton } from './action-button';
+import { StateBadge } from './state-badge';
+import { InlineDialog } from './detail-dialog';
+import type {
+  DecisionZone,
+  DeployApproveInput,
+  GateView,
+  WorkOrderAskView,
+} from '../stores/work-order-detail';
+
+const INPUT_CLASS =
+  'rounded-control border border-bord bg-raised px-2 py-[0.3125rem] font-mono text-[0.8125rem] text-ink outline-none placeholder:text-inkdim focus:border-signal';
+const LABEL_CLASS = 'font-mono text-[0.6875rem] uppercase tracking-[0.06em] text-inkdim';
+
+export interface DecisionEvidence {
+  /** The changed-files count the approve card names; null while the changes read has not landed
+   *  — an unread list is not an empty one, so the card keeps its normal shape. */
+  readonly files: number | null;
+  /** The pending page the approval covers, opened into the page viewer. */
+  readonly pendingPage: { readonly id: string; readonly title: string } | null;
+}
+
+/** Nothing to approve only when the list landed empty and no page waits — a missing read never
+ *  counts as “no output” (#979 made the true empty standing rare). */
+const hasEvidenceToApprove = (evidence: DecisionEvidence): boolean =>
+  evidence.files === null || evidence.files > 0 || evidence.pendingPage !== null;
+
+export interface DecisionZoneProps {
+  readonly zone: DecisionZone;
+  readonly locale: Locale;
+  /** True while two or more approvals wait: no card in the zone carries a primary button. */
+  readonly parallel: boolean;
+  readonly evidence: DecisionEvidence;
+  readonly lastErrorLine: string | null;
+  readonly failedRunCode: string | null;
+  readonly autoAllowed: number;
+  readonly onDecide: (gate: string, decision: 'approved' | 'rejected', note?: string) => void;
+  readonly onAttest: (gate: string, noChangeNeeded: boolean) => void;
+  readonly onAnswer: (ask: WorkOrderAskView, decision: 'allow' | 'deny') => void;
+  readonly onDeployApprove: (input: DeployApproveInput) => void;
+  readonly onEnqueue: () => void;
+  /** The failed card's “İş emrini kapat…” asks the screen for its confirm dialog. */
+  readonly onCloseRequest: () => void;
+  readonly onReviewChanges: () => void;
+  readonly onOpenFailedRun: () => void;
+  readonly onOpenPage: (id: string) => void;
+}
+
+const gateName = (gate: GateView): string => gate.label ?? gate.id;
+
+/** The approve card: what is being approved, said out loud, and the two ways to answer. */
+function ApproveCard({
+  gate,
+  locale,
+  parallel,
+  evidence,
+  onDecide,
+  onEnqueue,
+  onReviewChanges,
+  onOpenPage,
+}: {
+  readonly gate: GateView;
+  readonly locale: Locale;
+  readonly parallel: boolean;
+  readonly evidence: DecisionEvidence;
+  readonly onDecide: DecisionZoneProps['onDecide'];
+  readonly onEnqueue: () => void;
+  readonly onReviewChanges: () => void;
+  readonly onOpenPage: (id: string) => void;
+}) {
+  const [rejecting, setRejecting] = useState(false);
+  const [note, setNote] = useState('');
+  const hasEvidence = hasEvidenceToApprove(evidence);
+  return (
+    <li
+      data-decision-card="approve"
+      className={`grid gap-3 rounded-card px-5 py-4 ${parallel ? 'border border-dashed border-signal bg-surface' : 'border border-hairline bg-surface'}`}
+    >
+      <h3 className="text-[0.875rem] font-semibold text-ink">
+        {t(locale, 'detail.zone.approveTitle').replace('{gate}', gateName(gate))}
+      </h3>
+      <p className="m-0 text-[0.8125rem] text-inkdim">
+        {parallel ? t(locale, 'detail.zone.multiBody') : t(locale, 'detail.zone.approveBody')}
+      </p>
+      {hasEvidence ? (
+        <div className="flex min-w-0 flex-wrap items-center gap-2 text-[0.8125rem] text-inkdim">
+          {(evidence.files ?? 0) > 0 ? (
+            <span>{t(locale, 'detail.zone.evidence.files').replace('{n}', String(evidence.files))}</span>
+          ) : null}
+          {(evidence.files ?? 0) > 0 ? <ActionButton onClick={onReviewChanges}>{t(locale, 'detail.zone.reviewChanges')}</ActionButton> : null}
+          {evidence.pendingPage !== null ? (
+            <ActionButton onClick={() => onOpenPage(evidence.pendingPage?.id ?? '')}>{evidence.pendingPage.title}</ActionButton>
+          ) : null}
+        </div>
+      ) : (
+        <div className="grid gap-2">
+          <p className="m-0 text-[0.8125rem] text-inkdim">{t(locale, 'detail.zone.approveNone')}</p>
+          <div>
+            <ActionButton variant="neutral" size="md" onClick={onEnqueue}>
+              {t(locale, 'detail.zone.rerunStage')}
+            </ActionButton>
+          </div>
+        </div>
+      )}
+      {hasEvidence ? (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <ActionButton variant="neutral" onClick={() => setRejecting(true)}>
+              {t(locale, 'detail.zone.rejectOpen')}
+            </ActionButton>
+            <ActionButton variant={parallel ? 'neutral' : 'primary'} size="md" onClick={() => onDecide(gate.id, 'approved')}>
+              {t(locale, 'action.approve')}
+            </ActionButton>
+          </div>
+          {!parallel ? <p className="m-0 text-[0.78125rem] text-inkdim">{t(locale, 'detail.zone.approveHint')}</p> : null}
+          <InlineDialog active={rejecting} onClose={() => setRejecting(false)}>
+            {rejecting ? (
+              <div className="grid gap-2 border-t border-hairline pt-3">
+                <label htmlFor={`rej-${gate.id}`} className="text-[0.8125rem] font-semibold text-ink">
+                  {t(locale, 'detail.zone.rejectNoteLabel')} <span className="font-normal text-inkdim">{t(locale, 'detail.zone.rejectNoteOptional')}</span>
+                </label>
+                <textarea
+                  id={`rej-${gate.id}`}
+                  rows={3}
+                  value={note}
+                  onChange={(event) => setNote(event.target.value)}
+                  placeholder={t(locale, 'detail.zone.rejectNotePlaceholder')}
+                  className="min-h-[4.5rem] w-full resize-y rounded-control border border-bord bg-raised px-3 py-2 text-[0.8125rem] text-ink placeholder:text-inkdim focus:border-signal"
+                />
+                <div className="flex gap-2">
+                  <ActionButton
+                    variant="primary"
+                    onClick={() => {
+                      setRejecting(false);
+                      onDecide(gate.id, 'rejected', note.trim() === '' ? undefined : note);
+                    }}
+                  >
+                    {t(locale, 'action.reject')}
+                  </ActionButton>
+                  <ActionButton onClick={() => setRejecting(false)}>{t(locale, 'detail.action.cancel')}</ActionButton>
+                </div>
+              </div>
+            ) : null}
+          </InlineDialog>
+        </>
+      ) : null}
+    </li>
+  );
+}
+
+/** The attestation pair (U-61): both answers are equals — the operator attests, neither is the
+ *  “go on” default. */
+function AttestCard({
+  gate,
+  locale,
+  onAttest,
+}: {
+  readonly gate: GateView;
+  readonly locale: Locale;
+  readonly onAttest: DecisionZoneProps['onAttest'];
+}) {
+  return (
+    <li data-decision-card="attest" className="grid gap-3 rounded-card border border-hairline bg-surface px-5 py-4">
+      <h3 className="text-[0.875rem] font-semibold text-ink">{t(locale, 'detail.zone.attestTitle')}</h3>
+      <p className="m-0 text-[0.8125rem] text-inkdim">{t(locale, 'detail.zone.attestBody')}</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <ActionButton variant="neutral" onClick={() => onAttest(gate.id, false)}>
+          {t(locale, 'detail.changes.attestRerun')}
+        </ActionButton>
+        <ActionButton variant="neutral" onClick={() => onAttest(gate.id, true)}>
+          {t(locale, 'detail.changes.attestNoChange')}
+        </ActionButton>
+      </div>
+    </li>
+  );
+}
+
+/** The deploy approval (E-8 mirrored at the card): the commit, and — for a protected
+ *  environment — the typed name that must equal it before the primary unlocks. */
+function DeployCard({
+  gate,
+  locale,
+  onDeployApprove,
+}: {
+  readonly gate: GateView;
+  readonly locale: Locale;
+  readonly onDeployApprove: DecisionZoneProps['onDeployApprove'];
+}) {
+  const [commit, setCommit] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const deploy = gate.deploy;
+  if (deploy === undefined) return null;
+  const commitReady = commit.trim() !== '';
+  const confirmationReady = !deploy.protectedEnvironment || confirmation === deploy.environment;
+  return (
+    <li data-decision-card="deploy" className="grid gap-3 rounded-card border border-hairline bg-surface px-5 py-4">
+      <h3 className="text-[0.875rem] font-semibold text-ink">
+        {t(locale, 'detail.zone.deployTitle').replace('{env}', deploy.environment)}
+      </h3>
+      <p className="m-0 text-[0.8125rem] text-inkdim">
+        {t(locale, deploy.protectedEnvironment ? 'detail.zone.deployBody' : 'detail.zone.deployBodyPlain')}
+      </p>
+      <InlineDialog active onClose={() => undefined}>
+        <div className="grid gap-3 rounded-card border border-hairline bg-band p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <code className="font-mono text-[0.8125rem] text-ink">{deploy.environment}</code>
+            {deploy.protectedEnvironment ? <StateBadge tone="signal">{t(locale, 'gate.deploy.protected')}</StateBadge> : null}
+            {deploy.promoteFromChain.length > 0 ? (
+              <span className="font-mono text-[0.6875rem] text-inkdim">
+                {t(locale, 'gate.deploy.prerequisite')}: {deploy.promoteFromChain.join(' → ')}
+              </span>
+            ) : null}
+          </div>
+          <label className="grid gap-1">
+            <span className={LABEL_CLASS}>{t(locale, 'detail.deploy.commitLabel')}</span>
+            <input
+              value={commit}
+              onChange={(event) => setCommit(event.target.value)}
+              placeholder={t(locale, 'detail.deploy.commitPlaceholder')}
+              className={INPUT_CLASS}
+            />
+          </label>
+          {deploy.protectedEnvironment ? (
+            <div className="grid gap-1">
+              <p className="m-0 text-[0.8125rem] text-ink">{t(locale, 'detail.deploy.confirmPrompt')}</p>
+              <input
+                value={confirmation}
+                onChange={(event) => setConfirmation(event.target.value)}
+                placeholder={t(locale, 'detail.deploy.confirmPlaceholder')}
+                className={INPUT_CLASS}
+              />
+            </div>
+          ) : null}
+          <div>
+            <ActionButton
+              variant="primary"
+              size="md"
+              disabled={!(commitReady && confirmationReady)}
+              onClick={() =>
+                onDeployApprove({
+                  gate: gate.id,
+                  commit: commit.trim(),
+                  ...(deploy.protectedEnvironment ? { confirmedEnvironment: confirmation } : {}),
+                })
+              }
+            >
+              {t(locale, 'detail.deploy.approve')}
+            </ActionButton>
+          </div>
+        </div>
+      </InlineDialog>
+    </li>
+  );
+}
+
+/** The permission card: the pending question, the command in its code box, the two answers, and
+ *  the asking run's already-allowed asks folded into one line. */
+function PermissionCard({
+  ask,
+  locale,
+  autoAllowed,
+  onAnswer,
+}: {
+  readonly ask: WorkOrderAskView;
+  readonly locale: Locale;
+  readonly autoAllowed: number;
+  readonly onAnswer: DecisionZoneProps['onAnswer'];
+}) {
+  return (
+    <li data-decision-card="permission" className="grid gap-3 rounded-card border border-signal/45 bg-surface px-5 py-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="inline-flex items-center rounded-control border border-bord px-2 py-px font-mono text-[0.75rem] font-bold text-inkdim">
+          {t(locale, 'detail.zone.permissionChip')}
+        </span>
+      </div>
+      <pre className="m-0 min-w-0 overflow-auto whitespace-pre-wrap [overflow-wrap:anywhere] rounded-control border border-hairline bg-band px-3 py-2 font-mono text-[0.6875rem] leading-[1.6] text-ink">
+        {ask.tool}
+      </pre>
+      <p className="m-0 text-[0.8125rem] text-inkdim">{t(locale, 'detail.zone.permissionBody')}</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <ActionButton variant="neutral" onClick={() => onAnswer(ask, 'deny')}>
+          {t(locale, 'action.deny')}
+        </ActionButton>
+        <ActionButton variant="primary" size="md" onClick={() => onAnswer(ask, 'allow')}>
+          {t(locale, 'action.allow')}
+        </ActionButton>
+      </div>
+      {autoAllowed > 0 ? (
+        <p className="m-0 text-[0.78125rem] text-inkdim">
+          {t(locale, 'detail.zone.autoAllowed').replace('{n}', String(autoAllowed))}
+        </p>
+      ) : null}
+    </li>
+  );
+}
+
+/** The failure card: the run's own last words as the one mono line, the door to the failed run,
+ *  and the retry the fold's budget still allows — or the way out when it does not. */
+function FailedCard({
+  retry,
+  locale,
+  lastErrorLine,
+  failedRunCode,
+  onOpenFailedRun,
+  onEnqueue,
+  onCloseRequest,
+}: {
+  readonly retry: boolean;
+  readonly locale: Locale;
+  readonly lastErrorLine: string | null;
+  readonly failedRunCode: string | null;
+  readonly onOpenFailedRun: () => void;
+  readonly onEnqueue: () => void;
+  readonly onCloseRequest: () => void;
+}) {
+  return (
+    <li data-decision-card="failed" className="grid gap-3 rounded-card border border-hairline bg-surface px-5 py-4">
+      <h3 className="text-[0.875rem] font-semibold text-ink">
+        {t(locale, retry ? 'detail.zone.failedRetryTitle' : 'detail.zone.failedOutTitle')}
+      </h3>
+      <p className="m-0 text-[0.8125rem] text-inkdim">
+        {t(locale, retry ? 'detail.zone.failedRetryBody' : 'detail.zone.failedOutBody')}
+      </p>
+      <blockquote className="m-0 border-l-2 border-bord pl-3 font-mono text-[0.75rem] text-inkdim [overflow-wrap:anywhere]">
+        {lastErrorLine ?? failedRunCode ?? ''}
+      </blockquote>
+      <div className="flex flex-wrap items-center gap-2">
+        <ActionButton variant="neutral" onClick={onOpenFailedRun}>
+          {t(locale, 'detail.zone.openFailedRun')}
+        </ActionButton>
+        {retry ? (
+          <ActionButton variant="primary" size="md" onClick={onEnqueue}>
+            {t(locale, 'action.retry')}
+          </ActionButton>
+        ) : (
+          <ActionButton variant="neutral" size="md" onClick={onCloseRequest}>
+            {t(locale, 'detail.close.open')}
+          </ActionButton>
+        )}
+      </div>
+    </li>
+  );
+}
+
+/** The start card: the stage's own door into the run. */
+function StartCard({
+  stageName,
+  locale,
+  onEnqueue,
+}: {
+  readonly stageName: string;
+  readonly locale: Locale;
+  readonly onEnqueue: () => void;
+}) {
+  return (
+    <li data-decision-card="start" className="grid gap-3 rounded-card border border-hairline bg-surface px-5 py-4">
+      <h3 className="text-[0.875rem] font-semibold text-ink">
+        {t(locale, 'detail.zone.startTitle').replace('{stage}', stageName)}
+      </h3>
+      <p className="m-0 text-[0.8125rem] text-inkdim">{t(locale, 'detail.zone.startBody')}</p>
+      <div>
+        <ActionButton variant="primary" size="md" onClick={onEnqueue}>
+          {t(locale, 'detail.action.startStage')}
+        </ActionButton>
+      </div>
+    </li>
+  );
+}
+
+export function DecisionZoneCards(props: DecisionZoneProps) {
+  const { zone, locale } = props;
+  return (
+    <section id="detail-expected" data-detail-ask className="grid min-w-0 gap-3">
+      <h2 id="detail-expected-heading" tabIndex={-1} className="m-0 text-[0.78125rem] font-semibold text-inkdim">
+        {t(locale, 'detail.section.expected')}
+      </h2>
+      {zone.kind === 'quiet' ? (
+        <p className="m-0 rounded-card border border-hairline bg-surface px-4 py-3 text-[0.8125rem] text-inkdim">
+          {t(locale, zone.done ? 'detail.expected.done' : 'detail.expected.empty')}
+        </p>
+      ) : (
+        <ul data-decision-stack className="m-0 grid list-none gap-3 p-0">
+          {zone.cards.map((card) => {
+            switch (card.kind) {
+              case 'approve':
+                return (
+                  <ApproveCard
+                    key={`approve:${card.gate.id}`}
+                    gate={card.gate}
+                    locale={locale}
+                    parallel={props.parallel}
+                    evidence={props.evidence}
+                    onDecide={props.onDecide}
+                    onEnqueue={props.onEnqueue}
+                    onReviewChanges={props.onReviewChanges}
+                    onOpenPage={props.onOpenPage}
+                  />
+                );
+              case 'attest':
+                return <AttestCard key={`attest:${card.gate.id}`} gate={card.gate} locale={locale} onAttest={props.onAttest} />;
+              case 'deploy':
+                return <DeployCard key={`deploy:${card.gate.id}`} gate={card.gate} locale={locale} onDeployApprove={props.onDeployApprove} />;
+              case 'permission':
+                return (
+                  <PermissionCard key={`permission:${card.ask.askId}`} ask={card.ask} locale={locale} autoAllowed={props.autoAllowed} onAnswer={props.onAnswer} />
+                );
+              case 'failed':
+                return (
+                  <FailedCard
+                    key="failed"
+                    retry={card.retry}
+                    locale={locale}
+                    lastErrorLine={props.lastErrorLine}
+                    failedRunCode={props.failedRunCode}
+                    onOpenFailedRun={props.onOpenFailedRun}
+                    onEnqueue={props.onEnqueue}
+                    onCloseRequest={props.onCloseRequest}
+                  />
+                );
+              case 'start':
+                return <StartCard key="start" stageName={card.stageName} locale={locale} onEnqueue={props.onEnqueue} />;
+            }
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}

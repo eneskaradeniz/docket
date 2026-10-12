@@ -1,40 +1,47 @@
 // screens/detail.tsx — the work-order detail screen (U-4's window, opened in place of where the
-// work order was reached from — U-19): the back row returns to that screen, the flow strip marks
-// the pending gates amber and dashed, the left column carries "bu aşamada senden beklenen" with
-// the actions that map U-4's intents and the stage list under it, and the live pane rides beside
-// it, sticky, while a run of this work order is still going. The deploy approval's typed
+// work order was reached from — U-19): the back row returns to that screen, the stage strip
+// counts the waiting gates on the current stage's label (U-224), the decision zone carries the
+// cards that map U-4's intents (U-226), the changed files are read-only (U-231), the runs sit
+// inside their stages with their provenance and cost by billing (U-229, U-230), and the live
+// pane rides beside the zone while a run is still going. The deploy approval's typed
 // confirmation mirrors E-8 at the button itself. Every decision is a store intent; the screen
 // only renders state and forwards clicks, and every user-visible string arrives through a label
 // key (U-1).
 // An ask's texts carry no break opportunities to rely on (whole commands, long titles), so every
-// box between such text and the ask column must be allowed to shrink below its content
-// (`min-w-0`) — intrinsic min-content otherwise widens the column's grids past the track the
-// detail layout pins — and the text either wraps anywhere or truncates with the full value on
-// its title. The layout audit's L-15 measures the result on the real asking screen.
-// The body columnates on main's container (U-55): the live pane is the fixed 22.5 rem second
-// column from ≥900, the runs list joins it as the 21.25 rem third column at ≥1700, and below 900
-// everything stacks. The screen fills the main column at every width (U-54).
-import { useEffect, useState, useSyncExternalStore } from 'react';
-import type { WorkOrderStatus } from '../../domain/index';
-import type { StageFilesView, WorktreeFilePreview } from '../../api/queries';
-import type { LabelKey } from '../labels/keys';
-import { t, type Locale } from '../labels/t';
-import { ActionButton } from '../components/action-button';
-import { WorkOrderLaunchers } from '../components/launcher-rows';
-import { SectionCard } from '../components/section-card';
-import { StateBadge, type BadgeTone } from '../components/state-badge';
-import { formatWorkOrderCode } from '../stores/work-order-code';
-import type {
-  DeployApproveInput,
-  DeployGateView,
-  GateView,
-  StageGates,
-  WorkOrderAskView,
-  WorkOrderDetailStore,
+// box between such text and the zone column must be allowed to shrink below its content
+// (`min-w-0`) — the layout audit's L-15 measures the result on the real asking screen.
+// Accessibility is part of the screen's contract (#972): the skip link is the first focusable
+// element and lands on the zone's heading (A1), the badge is the one polite live region (A5),
+// the strip says its states in words (A6), and short windows pin the decision bar at the bottom
+// while the content's padding grows by its height (the prototype's IntersectionObserver rule).
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import type { DeployGateView, GateView, StageGates } from '../stores/work-order-detail';
+import {
+  decisionZone,
+  detailBadge,
+  newestFailedRunOf,
+  runRows,
+  stripSegments,
+  type WorkOrderAskView,
+  type WorkOrderDetailStore,
 } from '../stores/work-order-detail';
-import { flowChips } from '../stores/work-order-detail';
+import { formatWorkOrderCode } from '../stores/work-order-code';
 import { failureKey } from '../stores/results';
 import { toastOutcome } from '../stores/toasts';
+import { t, type Locale } from '../labels/t';
+import type { LabelKey } from '../labels/keys';
+import { ActionButton } from '../components/action-button';
+import { WorkOrderLaunchers } from '../components/launcher-rows';
+import { StateBadge, type BadgeTone } from '../components/state-badge';
+import { DetailStrip } from '../components/detail-strip';
+import { DecisionZoneCards } from '../components/detail-decision-card';
+import { DetailFiles } from '../components/detail-files';
+import { DetailRunCard } from '../components/detail-run-card';
+import { DetailRowMenu } from '../components/detail-row-menu';
+import { DetailSkipLink } from '../components/detail-skip-link';
+import { InlineDialog } from '../components/detail-dialog';
+import { Skeleton, SkeletonStyle } from '../components/skeleton';
+import { formatDateTime, formatDurationMs } from '../components/detail-format';
 import type { PageListStore } from '../stores/page-viewer';
 import { LivePaneScreen } from './live';
 import { PagesSection } from './page-viewer';
@@ -52,26 +59,6 @@ export interface WorkOrderDetailScreenProps {
   readonly onOpenPage: (id: string) => void;
 }
 
-const STATUS_TONE: Readonly<Record<WorkOrderStatus, BadgeTone>> = {
-  ready: 'info',
-  running: 'proceed',
-  gating: 'info',
-  awaiting_human: 'signal',
-  limit_waiting: 'info',
-  blocked: 'error',
-  done: 'proceed',
-};
-
-const STATUS_KEY: Readonly<Record<WorkOrderStatus, LabelKey>> = {
-  ready: 'wo.status.ready',
-  running: 'wo.status.running',
-  gating: 'wo.status.gating',
-  awaiting_human: 'wo.status.awaiting_human',
-  limit_waiting: 'wo.status.limit_waiting',
-  blocked: 'wo.status.blocked',
-  done: 'wo.status.done',
-};
-
 const GATE_KIND_KEY: Readonly<Record<GateView['kind'], LabelKey>> = {
   human: 'gate.kind.human',
   command: 'gate.kind.command',
@@ -83,315 +70,48 @@ const GATE_KIND_KEY: Readonly<Record<GateView['kind'], LabelKey>> = {
   remote_checks: 'gate.kind.remote_checks',
 };
 
-const GATE_STATUS_TONE: Readonly<Record<GateView['status'], BadgeTone>> = {
-  pending: 'signal',
-  passed: 'proceed',
-  upcoming: 'dim',
-};
-
 const GATE_STATUS_KEY: Readonly<Record<GateView['status'], LabelKey>> = {
   pending: 'gate.state.pending',
   passed: 'gate.state.passed',
   upcoming: 'gate.state.upcoming',
 };
 
-const RUN_OUTCOME_TONE: Readonly<Record<'running' | 'succeeded' | 'failed' | 'limit' | 'cancelled', BadgeTone>> = {
-  running: 'proceed',
-  succeeded: 'proceed',
-  failed: 'error',
-  limit: 'signal',
-  cancelled: 'dim',
-};
+/** The stage row's standing word: done behind the work order, the current stage running or
+ *  waiting, upcoming ahead of it. */
+const stageStandingKey = (stage: StageGates, done: boolean, running: boolean): LabelKey =>
+  stage.current ? (running ? 'detail.stage.running' : 'detail.stage.now') : done ? 'detail.stage.done' : 'detail.stage.upcoming';
 
-const RUN_OUTCOME_KEY: Readonly<Record<'running' | 'succeeded' | 'failed' | 'limit' | 'cancelled', LabelKey>> = {
-  running: 'detail.run.running',
-  succeeded: 'run.outcome.succeeded',
-  failed: 'run.outcome.failed',
-  limit: 'run.outcome.limit',
-  cancelled: 'run.outcome.cancelled',
-};
+/** Scroll with the motion the operator asked for (A9): smooth by default, instant under
+ *  prefers-reduced-motion. */
+const scrollBehavior = (): ScrollBehavior =>
+  typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
 
-/** The run lamp: green while going or finished well, red failed, amber hit a limit, dim ended by
- *  a person — the row grammar the board and the cockpit already speak. */
-const RUN_OUTCOME_LAMP: Readonly<Record<'running' | 'succeeded' | 'failed' | 'limit' | 'cancelled', string>> = {
-  running: 'bg-proceed motion-safe:animate-pulse',
-  succeeded: 'bg-proceed',
-  failed: 'bg-error',
-  limit: 'bg-signal',
-  cancelled: 'bg-inkdim',
-};
-
-const INPUT_CLASS =
-  'rounded-control border border-bord bg-raised px-2 py-[0.3125rem] font-mono text-[0.8125rem] text-ink outline-none placeholder:text-inkdim focus:border-signal';
-const LABEL_CLASS = 'font-mono text-[0.6875rem] uppercase tracking-[0.06em] text-inkdim';
-
-/** Only a person opens these two kinds; every other gate is machine-evaluated, so only these
- *  carry approve/reject buttons. */
-const isHumanDecision = (gate: GateView): boolean => gate.kind === 'human' || gate.kind === 'page_approval';
-
-/** The deploy approval form (E-8 at the screen): the commit being deployed, and — for a protected
- *  environment — the typed confirmation that must equal the environment name before the approve
- *  button unlocks. The store re-checks the same equality before issuing the command. */
-function DeployApprovalForm({
-  gateId,
-  deploy,
-  locale,
-  onApprove,
-}: {
-  readonly gateId: string;
-  readonly deploy: DeployGateView;
-  readonly locale: Locale;
-  readonly onApprove: (input: DeployApproveInput) => void;
-}) {
-  const [commit, setCommit] = useState('');
-  const [confirmation, setConfirmation] = useState('');
-  const commitReady = commit.trim() !== '';
-  // The E-8 mirror: an unprotected environment needs no typed confirmation at all.
-  const confirmationReady = !deploy.protectedEnvironment || confirmation === deploy.environment;
-  const approve = (): void => {
-    onApprove({
-      gate: gateId,
-      commit: commit.trim(),
-      ...(deploy.protectedEnvironment ? { confirmedEnvironment: confirmation } : {}),
-    });
-  };
+/** One read-only gate row of a stage's list (the decision itself lives in the zone's cards). */
+function GateRow({ gate, locale }: { readonly gate: GateView; readonly locale: Locale }) {
   return (
-    <div className="mt-2 grid gap-2 rounded-card border border-hairline bg-band p-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <code className="font-mono text-[0.8125rem] text-ink">{deploy.environment}</code>
-        {deploy.protectedEnvironment ? <StateBadge tone="signal">{t(locale, 'gate.deploy.protected')}</StateBadge> : null}
-        {deploy.promoteFromChain.length > 0 ? (
-          <span className="font-mono text-[0.6875rem] text-inkdim">
-            {t(locale, 'gate.deploy.prerequisite')}: {deploy.promoteFromChain.join(' → ')}
-          </span>
-        ) : null}
+    <li
+      className={`flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-card border bg-surface px-3 py-2 ${
+        gate.status === 'pending' ? 'border-dashed border-signal' : 'border-hairline'
+      }`}
+    >
+      <div className="flex min-w-0 items-baseline gap-2">
+        <span className={`text-[0.84375rem] font-semibold ${gate.status === 'pending' ? 'text-signal-soft' : 'text-ink'}`}>
+          {t(locale, GATE_KIND_KEY[gate.kind])}
+          {gate.label !== undefined ? ` · ${gate.label}` : ''}
+        </span>
+        <code className="truncate font-mono text-[0.6875rem] text-inkdim" title={gate.id}>{gate.id}</code>
       </div>
-      <label className="grid gap-1">
-        <span className={LABEL_CLASS}>{t(locale, 'detail.deploy.commitLabel')}</span>
-        <input
-          value={commit}
-          onChange={(event) => setCommit(event.target.value)}
-          placeholder={t(locale, 'detail.deploy.commitPlaceholder')}
-          className={INPUT_CLASS}
-        />
-      </label>
-      {deploy.protectedEnvironment ? (
-        <div className="grid gap-1">
-          <p className="text-[0.8125rem] text-ink">{t(locale, 'detail.deploy.confirmPrompt')}</p>
-          <input
-            value={confirmation}
-            onChange={(event) => setConfirmation(event.target.value)}
-            placeholder={t(locale, 'detail.deploy.confirmPlaceholder')}
-            className={INPUT_CLASS}
-          />
-        </div>
-      ) : null}
-      <div>
-        <ActionButton variant="primary" size="md" disabled={!(commitReady && confirmationReady)} onClick={approve}>
-          {t(locale, 'detail.deploy.approve')}
-        </ActionButton>
-      </div>
-    </div>
-  );
-}
-
-/** One gate row: kind name, slug, state badge — plus, in the current stage, the decision the
- *  gate's kind actually accepts: human gates take approve/reject, deploy gates take the typed
- *  approval form, a pending changes gate takes the attestation pair (U-58), and secret-scan
- *  gates show their evidence standing. */
-function GateRow({
-  gate,
-  current,
-  locale,
-  awaitingHuman,
-  onDecide,
-  onAttest,
-  onApproveDeploy,
-}: {
-  readonly gate: GateView;
-  readonly current: boolean;
-  readonly locale: Locale;
-  /** Whether the work order actually waits for a person — a pre-filled pending gate in `ready`
-   *  is listed, but its decision buttons stay hidden until the stage asks. */
-  readonly awaitingHuman: boolean;
-  readonly onDecide: (gate: string, decision: 'approved' | 'rejected') => void;
-  readonly onAttest: (gate: string, noChangeNeeded: boolean) => void;
-  readonly onApproveDeploy: (input: DeployApproveInput) => void;
-}) {
-  const actionable = current && gate.status === 'pending';
-  // A gate that waits on the operator tints its edge amber — the same attention edge the
-  // cockpit's rows carry; machine gates keep the plain hairline. A pending changes gate waits
-  // on one the moment the machine has measured zero, so it carries the edge too.
-  const edge =
-    actionable && (isHumanDecision(gate) || gate.kind === 'deploy' || gate.kind === 'changes')
-      ? 'border-signal/40'
-      : 'border-hairline';
-  return (
-    <li className={`rounded-card border bg-surface px-3 py-2 ${edge}`}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex min-w-0 items-baseline gap-2">
-          <span className="text-[0.84375rem] font-semibold text-ink">{t(locale, GATE_KIND_KEY[gate.kind])}</span>
-          <code className="truncate font-mono text-[0.6875rem] text-inkdim" title={gate.id}>{gate.id}</code>
-        </div>
-        <div className="flex items-center gap-2">
-          {actionable && awaitingHuman && isHumanDecision(gate) ? (
-            <>
-              <ActionButton variant="neutral" onClick={() => onDecide(gate.id, 'rejected')}>
-                {t(locale, 'action.reject')}
-              </ActionButton>
-              <ActionButton variant="primary" onClick={() => onDecide(gate.id, 'approved')}>
-                {t(locale, 'action.approve')}
-              </ActionButton>
-            </>
-          ) : null}
-          {actionable && gate.kind === 'changes' ? (
-            <>
-              <ActionButton variant="neutral" onClick={() => onAttest(gate.id, false)}>
-                {t(locale, 'detail.changes.attestRerun')}
-              </ActionButton>
-              <ActionButton variant="primary" onClick={() => onAttest(gate.id, true)}>
-                {t(locale, 'detail.changes.attestNoChange')}
-              </ActionButton>
-            </>
-          ) : null}
-          <StateBadge tone={GATE_STATUS_TONE[gate.status]}>{t(locale, GATE_STATUS_KEY[gate.status])}</StateBadge>
-        </div>
-      </div>
-      {actionable && gate.kind === 'deploy' && gate.deploy !== undefined ? (
-        <DeployApprovalForm gateId={gate.id} deploy={gate.deploy} locale={locale} onApprove={onApproveDeploy} />
-      ) : null}
-      {current && gate.kind === 'secret_scan' && gate.status !== 'upcoming' ? (
-        <p className="mt-1.5 border-l-2 border-hairline pl-2.5 text-[0.78125rem] text-inkdim">
-          {t(locale, gate.status === 'pending' ? 'detail.secretScan.pending' : 'detail.secretScan.passed')}
-        </p>
-      ) : null}
+      <span className={`text-[0.78125rem] ${gate.status === 'pending' ? 'font-semibold text-signal-soft' : gate.status === 'passed' ? 'text-proceed' : 'text-inkdim'}`}>
+        {t(locale, GATE_STATUS_KEY[gate.status])}
+      </span>
     </li>
-  );
-}
-
-/** The flow strip (U-19): the stages as chips — done ones carry the check, the current is
- *  outlined — with the current stage's pending gates as dashed amber chips right after it. */
-function FlowStrip({ stages, locale }: { readonly stages: readonly StageGates[]; readonly locale: Locale }) {
-  return (
-    <div className="mt-3.5 flex flex-wrap items-center gap-1.5">
-      {flowChips(stages).map((chip, index) =>
-        chip.kind === 'stage' ? (
-          <span
-            key={`${chip.name}:${index}`}
-            className={`inline-flex h-[1.625rem] flex-none items-center gap-[0.3125rem] rounded-control px-2.5 text-[0.78125rem] ${
-              chip.standing === 'done' ? 'bg-raised text-ink' : chip.standing === 'current'
-              ? 'bg-raised text-ink shadow-[0_0_0_1.5px_var(--signal)]'
-              : 'bg-raised text-inkdim'
-            }`}
-          >
-            {chip.standing === 'done' ? (
-              <span aria-hidden="true" className="grid h-4 w-4 place-items-center rounded-full bg-proceed font-mono text-[0.5625rem] font-bold leading-4 text-black">
-                ✓
-              </span>
-            ) : null}
-            {chip.name}
-          </span>
-        ) : (
-          <span
-            key={`gate:${chip.name}:${index}`}
-            className="inline-flex h-[1.625rem] flex-none items-center rounded-control border border-dashed border-signal px-2.5 text-[0.71875rem] text-signal"
-          >
-            {t(locale, 'detail.flow.gate')} · {chip.name}
-          </span>
-        ),
-      )}
-    </div>
-  );
-}
-
-function StageFilesPreview({
-  store,
-  stageFiles,
-  locale,
-}: {
-  readonly store: WorkOrderDetailStore;
-  readonly stageFiles: StageFilesView;
-  readonly locale: Locale;
-}) {
-  const [selectedFile, setSelectedFile] = useState<string | null>(
-    stageFiles.files.length > 0 ? stageFiles.files[0].path : null,
-  );
-  const [preview, setPreview] = useState<WorktreeFilePreview | 'loading' | 'error' | null>(null);
-
-  useEffect(() => {
-    if (selectedFile === null) {
-      setPreview(null);
-      return;
-    }
-    setPreview('loading');
-    let active = true;
-    void store.readStageFile(selectedFile).then((res) => {
-      if (!active) return;
-      if (res === null) {
-        setPreview('error');
-      } else {
-        setPreview(res);
-      }
-    });
-    return () => {
-      active = false;
-    };
-  }, [store, selectedFile]);
-
-  if (stageFiles.files.length === 0) return null;
-
-  return (
-    <div className="grid gap-2">
-      <h3 className="text-[0.78125rem] font-semibold text-inkdim">{t(locale, 'detail.expected.files')}</h3>
-      <div className="flex overflow-hidden rounded-control border border-hairline bg-surface">
-        <div className="flex w-[12.5rem] flex-none flex-col border-r border-hairline bg-subtle">
-          <ul className="flex-1 overflow-y-auto">
-            {stageFiles.files.map((file) => {
-              const isSelected = selectedFile === file.path;
-              return (
-                <li key={file.path}>
-                  <button
-                    className={`block w-full truncate rounded-control border border-bord px-3 py-1.5 text-left font-mono text-[0.71875rem] hover:bg-raised ${isSelected ? 'bg-raised font-semibold text-ink' : 'bg-transparent text-ink'}`}
-                    onClick={() => setSelectedFile(file.path)}
-                    title={file.path}
-                  >
-                    {file.path.split('/').pop() || file.path}
-                  </button>
-                </li>
-              );
-            })}
-            {stageFiles.truncated ? (
-              <li className="px-3 py-1.5 text-[0.6875rem] text-inkdim italic">
-                {t(locale, 'detail.expected.files.truncated')}
-              </li>
-            ) : null}
-          </ul>
-        </div>
-        <div className="flex-1 min-w-0 bg-surface">
-          {preview === 'loading' ? (
-            <div className="p-3 text-[0.75rem] text-inkdim">{t(locale, 'detail.expected.file.loading')}</div>
-          ) : preview === 'error' ? (
-            <div className="p-3 text-[0.75rem] text-signal">{t(locale, 'detail.expected.file.error')}</div>
-          ) : preview !== null ? (
-            <div className="h-[clamp(12.5rem,calc(100vh-30rem),32rem)] overflow-y-auto p-3">
-              <pre className="font-mono text-[0.71875rem] leading-[1.4] text-ink">
-                {preview.lines.join('\n')}
-              </pre>
-              {preview.truncated ? (
-                <div className="mt-2 text-[0.6875rem] text-inkdim italic">
-                  {t(locale, 'detail.expected.file.truncated')}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-      </div>
-    </div>
   );
 }
 
 export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onBack, pages, onOpenPage }: WorkOrderDetailScreenProps) {
   const state = useSyncExternalStore(store.subscribe, store.state, store.state);
+  // The close confirmation's own little dialog (A3) — the ⋯ menu and the failed card both open it.
+  const [closeConfirm, setCloseConfirm] = useState(false);
   useEffect(() => {
     void store.load(workOrderId);
   }, [store, workOrderId]);
@@ -407,10 +127,15 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
 
   const view = state.view;
   const asks = state.asks;
-  // The live pane exists for a run that is still going; a finished work order shows its history
-  // in the run list instead.
+  const zone = view === null ? null : decisionZone(state.stages, view, asks);
+  const badge = view === null ? null : detailBadge(state.stages, view, asks);
+  const segments = view === null || zone === null ? [] : stripSegments(state.stages, zone, view);
+  // Equal parallel approvals: no card in the zone carries a primary button (U-226).
+  const parallel =
+    zone?.kind === 'cards' && zone.cards.filter((card) => card.kind === 'approve').length >= 2;
+  const rows = view === null ? [] : runRows(view);
   const livePaneVisible = view !== null && view.runs.some((run) => run.endedAt === undefined);
-  const currentStage = state.stages.find((stage) => stage.current);
+  const running = view !== null && (view.state.status === 'running' || view.state.status === 'limit_waiting');
   // The environments the flow's deploy gates actually target, in flow order, deduplicated —
   // the read-only promotion facts (E-5) the operator needs before approving anything.
   const environments: DeployGateView[] = [];
@@ -422,226 +147,330 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
       environments.push(gate.deploy);
     }
   }
-  // What the expected-of-you card decides on: the current stage's pending human gate, but only
-  // while the work order actually waits for a person — the fold pre-fills the stage's gates in
-  // `ready` too, and there the card must lose to the start action (U-4).
-  const awaitingHuman = view !== null && view.state.status === 'awaiting_human';
-  const pendingHumanGate = awaitingHuman
-    ? currentStage?.gates.find((gate) => gate.status === 'pending' && isHumanDecision(gate))
-    : undefined;
-  const canStart = view !== null && view.next.kind === 'start_run';
+  // The header's quiet duration: the span from the first run's start to the last activity — the
+  // running order's age, not a wall-clock sum.
+  const lastActivity = view === null ? 0 : Math.max(...view.runs.map((run) => run.endedAt ?? Date.now()), 0);
+  const firstStart = view === null || view.runs.length === 0 ? null : Math.min(...view.runs.map((run) => run.startedAt));
+  const duration = firstStart !== null && lastActivity > firstStart ? formatDurationMs(locale, lastActivity - firstStart) : null;
+  // The approve card's evidence: the measured file count and the pending page (U-231's comment
+  // decision — the card names what it approves).
+  const pageItems = useSyncExternalStore(pages.subscribe, () => pages.state().items, () => pages.state().items);
+  const pendingPage = pageItems.find((page) => page.approval === 'pending') ?? null;
+  const evidence = {
+    files: state.changes === null ? null : state.changes.state === 'ready' ? state.changes.files.length : 0,
+    pendingPage: pendingPage === null ? null : { id: pendingPage.id, title: pendingPage.title },
+  };
+  const failedRun = view === null ? null : newestFailedRunOf(view);
 
-  const decide = (gate: string, decision: 'approved' | 'rejected'): void => {
-    void store.decideGate({ gate, decision });
-  };
-  const attest = (gate: string, noChangeNeeded: boolean): void => {
-    void store.attestNoChanges({ gate, noChangeNeeded });
-  };
-  const approveDeploy = (input: DeployApproveInput): void => {
-    void store.approveDeploy(input);
+  const decide = (gate: string, decision: 'approved' | 'rejected', note?: string): void => {
+    void store.decideGate({ gate, decision, ...(note !== undefined ? { note } : {}) });
   };
   const answer = (ask: WorkOrderAskView, decision: 'allow' | 'deny'): void => {
     void store.answerPermission({ runId: ask.runId, askId: ask.askId, decision });
   };
+  const scrollTo = (selector: string): void => {
+    const element = document.querySelector(selector);
+    element?.scrollIntoView({ behavior: scrollBehavior(), block: 'start' });
+  };
+
+  // The short-window decision bar (decision 7): while the zone's first card is out of the main
+  // column's view the bar pins itself to the bottom with the same decision, and the content's
+  // bottom padding grows by the bar's height so nothing hides under it. The observer runs only
+  // in a real browser — the static markup keeps the bar hidden.
+  const zoneRef = useRef<HTMLDivElement | null>(null);
+  const barRef = useRef<HTMLDivElement | null>(null);
+  const [barShown, setBarShown] = useState(false);
+  const [barHeight, setBarHeight] = useState(0);
+  const zoneHasCards = zone?.kind === 'cards';
+  useEffect(() => {
+    if (!zoneHasCards || zoneRef.current === null || typeof IntersectionObserver === 'undefined') {
+      setBarShown(false);
+      return;
+    }
+    const main = zoneRef.current.closest('main');
+    const card = zoneRef.current.querySelector('[data-decision-stack] > li');
+    if (main === null || card === null) {
+      setBarShown(false);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => setBarShown(entries[0]?.isIntersecting !== true),
+      { root: main, threshold: 0.2 },
+    );
+    observer.observe(card);
+    return () => observer.disconnect();
+  }, [zoneHasCards, state.stages, state.view, state.asks]);
+  useEffect(() => {
+    if (barRef.current !== null) setBarHeight(barRef.current.offsetHeight);
+  }, [barShown]);
+  // The bar's own action mirrors the zone's first decidable card: approve and permission act
+  // directly, every other standing offers the jump back to the form.
+  const firstCard = zone?.kind === 'cards' ? zone.cards.find((card) => card.kind !== 'failed' && card.kind !== 'start') ?? null : null;
 
   return (
-    <div className="grid gap-5">
+    <div className="relative grid min-w-0 gap-6" style={barShown ? { paddingBottom: barHeight } : undefined}>
+      <SkeletonStyle />
+      <DetailSkipLink locale={locale} targetId="detail-expected-heading" />
+
       {backKey !== null ? (
-        <div className="-mb-2">
+        <div className="-mb-2 justify-self-start">
           <ActionButton variant="neutral" onClick={onBack}>
             {t(locale, backKey)}
           </ActionButton>
         </div>
       ) : null}
 
-      <header className="grid gap-1">
-        {view === null ? (
-          state.loading ? (
-            <p className="font-mono text-[0.6875rem] uppercase tracking-[0.04em] text-inkdim">{t(locale, 'detail.loading')}</p>
-          ) : null
-        ) : (
-          <>
-            <div className="flex flex-wrap items-center gap-2.5">
-              <span className="font-mono text-[0.6875rem] text-inkdim">{formatWorkOrderCode(view.number, locale)}</span>
-              <h1 className="text-[1.25rem] font-bold tracking-[-0.01em] text-ink">{view.record.title}</h1>
-              <StateBadge tone={STATUS_TONE[view.state.status]}>{t(locale, STATUS_KEY[view.state.status])}</StateBadge>
+      {view === null ? (
+        <div aria-busy="true" className="grid gap-3">
+          {state.problem !== null ? (
+            <div role="alert" data-detail-problem className="flex flex-wrap items-center gap-3 rounded-card border border-error/50 bg-surface px-4 py-3 text-[0.8125rem] text-error">
+              <span>{t(locale, failureKey(state.problem))}</span>
+              <ActionButton variant="neutral" onClick={() => void store.load(workOrderId)}>{t(locale, 'action.retry')}</ActionButton>
             </div>
-            <p className="font-mono text-[0.71875rem] text-inkdim">
-              {view.record.repo} · {view.record.flow}
-              {currentStage !== undefined ? ` · ${currentStage.name}` : ''}
-            </p>
-            <WorkOrderLaunchers workOrder={workOrderId} status={view.state.status} />
-          </>
-        )}
-      </header>
-
-      {state.problem !== null ? (
-        <div role="alert" className="rounded-card border border-error/40 bg-surface px-3 py-2 text-[0.8125rem] text-error">
-          {t(locale, failureKey(state.problem))}
+          ) : (
+            <>
+              <Skeleton width="7.5rem" height="0.75rem" radius="control" />
+              <Skeleton width="62%" height="1.25rem" />
+              <Skeleton width="40%" height="0.75rem" radius="control" />
+              <Skeleton height="0.375rem" radius="control" />
+              <Skeleton height="6rem" />
+              <Skeleton height="10rem" />
+              <p className="m-0 font-mono text-[0.6875rem] text-inkdim">{t(locale, 'detail.loading')}</p>
+            </>
+          )}
         </div>
-      ) : null}
+      ) : (
+        <>
+          <header className="grid gap-2">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="font-mono text-[0.75rem] text-inkdim">{formatWorkOrderCode(view.number, locale)}</span>
+              {/* The one polite live region (A5): the badge's word changes announce themselves;
+                  nothing here ever moves focus. */}
+              <span role="status" aria-live="polite" data-detail-badge>
+                <StateBadge tone={badge === null ? 'dim' : (badge.tone as BadgeTone)}>
+                  {badge === null ? '' : t(locale, badge.wordKey)}
+                </StateBadge>
+              </span>
+              {badge?.subKey !== undefined ? (
+                <span className="text-[0.78125rem] text-inkdim">{t(locale, badge.subKey)}</span>
+              ) : null}
+              <span className="ml-auto flex items-center gap-3">
+                {duration !== null ? <span className="text-[0.78125rem] text-inkdim">{t(locale, 'detail.meta.duration').replace('{n}', duration)}</span> : null}
+                <DetailRowMenu
+                  locale={locale}
+                  items={[{ key: 'detail.close.open', onSelect: () => setCloseConfirm(true) }]}
+                />
+              </span>
+            </div>
+            <h1 className="m-0 text-[1.25rem] font-bold leading-[1.3] tracking-[-0.01em] text-ink [text-wrap:balance] [overflow-wrap:anywhere]">
+              {view.record.title}
+            </h1>
+            <p className="m-0 flex flex-wrap gap-x-5 gap-y-1 font-mono text-[0.6875rem] text-inkdim">
+              <span>{view.record.repo}</span>
+              <span>{view.record.flow}</span>
+              {view.record.createdAt !== undefined ? (
+                <span title={formatDateTime(locale, view.record.createdAt)}>
+                  {t(locale, 'detail.meta.opened').replace('{n}', formatDateTime(locale, view.record.createdAt))}
+                </span>
+              ) : null}
+            </p>
+            {/* The chat launcher row keeps its U-131 door on this screen — the prototype's
+                header carries no row of its own, but the standing-scoped questions are the
+                screen's own behaviour, not decoration. */}
+            <WorkOrderLaunchers workOrder={workOrderId} status={view.state.status} />
+          </header>
 
-      {view !== null ? <FlowStrip stages={state.stages} locale={locale} /> : null}
+          <DetailStrip segments={segments} locale={locale} />
 
-      <div className="grid items-start gap-5 @[900px]:grid-cols-[minmax(0,1fr)_22.5rem] @[1700px]:grid-cols-[minmax(0,1fr)_22.5rem_21.25rem]">
-        <div className="grid min-w-0 gap-5" data-detail-ask>
-          {asks.length > 0 ? (
-            <SectionCard title={t(locale, 'detail.section.asks')}>
-              <ul className="grid min-w-0 gap-2">
-                {asks.map((ask) => (
-                  <li key={ask.askId} className="min-w-0 flex flex-wrap items-center justify-between gap-2 rounded-card border border-signal/40 bg-surface px-3 py-2">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <span aria-hidden="true" className="h-2 w-2 flex-none rounded-full bg-signal motion-safe:animate-pulse" />
-                      <div className="min-w-0">
-                        <span className="block truncate font-mono text-[0.8125rem] text-ink" title={ask.tool}>{ask.tool}</span>
-                        {ask.target !== null ? (
-                          <code className="block truncate font-mono text-[0.6875rem] text-inkdim" title={ask.target}>
-                            {ask.target}
-                          </code>
+          {/* The close confirmation (A3): focus moves in, Tab is trapped, Esc returns to the menu
+              button — the ⋯ menu stays the named opener. */}
+          {closeConfirm ? (
+            <div className="justify-self-end">
+              <InlineDialog active onClose={() => setCloseConfirm(false)}>
+                <div data-detail-close className="grid w-[22rem] gap-3 rounded-card border border-bord bg-surface px-4 py-4">
+                  <p className="m-0 text-[0.8125rem] font-semibold text-ink">{t(locale, 'detail.close.title')}</p>
+                  <p className="m-0 text-[0.8125rem] text-inkdim">{t(locale, 'detail.close.body')}</p>
+                  <div className="flex gap-2">
+                    <ActionButton variant="primary" size="md" onClick={() => void store.closeWorkOrder()}>
+                      {t(locale, 'detail.close.confirm')}
+                    </ActionButton>
+                    <ActionButton onClick={() => setCloseConfirm(false)}>{t(locale, 'detail.action.cancel')}</ActionButton>
+                  </div>
+                </div>
+              </InlineDialog>
+            </div>
+          ) : null}
+
+          {/* The body columns on the main container (U-55's grammar, one live column in Phase A):
+              below 900 everything stacks in reading order — the zone first, the live pane right
+              under it (L-7), then the files, pages, stages and environments. */}
+          <div className="grid min-w-0 items-start gap-6 @[900px]:grid-cols-[minmax(0,1fr)_21.25rem]">
+            <div ref={zoneRef} className="grid min-w-0 gap-6 @[900px]:col-start-1">
+              <DecisionZoneCards
+                zone={zone ?? { kind: 'quiet', done: false }}
+                locale={locale}
+                parallel={parallel}
+                evidence={evidence}
+                lastErrorLine={state.lastErrorLine}
+                failedRunCode={failedRun === null ? null : `run_${failedRun.id.slice(-4).toLowerCase()}`}
+                autoAllowed={state.autoAllowed}
+                onDecide={decide}
+                onAttest={(gate, noChangeNeeded) => void store.attestNoChanges({ gate, noChangeNeeded })}
+                onAnswer={answer}
+                onDeployApprove={(input) => void store.approveDeploy(input)}
+                onEnqueue={() => void store.enqueue()}
+                onCloseRequest={() => setCloseConfirm(true)}
+                onReviewChanges={() => scrollTo('[data-detail-files]')}
+                onOpenFailedRun={() => {
+                  const element = failedRun === null ? null : document.querySelector(`[data-detail-run="${failedRun.id}"]`);
+                  const holder = element?.closest('details');
+                  if (holder !== null && holder !== undefined) holder.open = true;
+                  element?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' });
+                }}
+                onOpenPage={onOpenPage}
+              />
+            </div>
+
+            {livePaneVisible ? (
+              <div className="grid min-w-0 self-start @[900px]:col-start-2 @[900px]:row-start-1 @[900px]:sticky @[900px]:top-0" data-detail-live>
+                <LivePaneScreen store={store.pane} locale={locale} />
+              </div>
+            ) : null}
+
+            <div className="grid min-w-0 gap-6 @[900px]:col-start-1">
+              <DetailFiles changes={state.changes} locale={locale} />
+            </div>
+
+            <div className="grid min-w-0 gap-6 @[900px]:col-start-1">
+              <PagesSection store={pages} locale={locale} onOpenPage={onOpenPage} />
+            </div>
+
+            <section data-detail-stages className="grid min-w-0 @[900px]:col-start-1">
+              <h2 className="mb-3 text-[0.78125rem] font-semibold text-inkdim">{t(locale, 'detail.section.stages')}</h2>
+              <div className="border-t border-hairline">
+                {state.stages.map((stage, index) => {
+                  const stageRuns = rows.filter((row) => row.stage === stage.stage);
+                  const newest = stageRuns[stageRuns.length - 1] ?? null;
+                  const open = stage.current || stageRuns.length > 0;
+                  const doneStage = !stage.current && state.stages.some((other, otherIndex) => other.current && otherIndex < index);
+                  return (
+                    <details key={stage.stage} open={open} className="border-b border-hairline">
+                      <summary className="flex list-none flex-wrap items-center gap-3 py-3">
+                        <span
+                          aria-hidden="true"
+                          className={`font-mono text-[0.6875rem] transition-transform motion-reduce:transition-none ${open ? 'rotate-90' : ''}`}
+                        >
+                          ▸
+                        </span>
+                        <span className="font-mono text-[0.6875rem] text-inkdim">{String(index + 1).padStart(2, '0')}</span>
+                        <span className={`text-[0.875rem] ${stage.current ? 'font-semibold text-ink' : 'font-medium text-inkdim'}`}>
+                          {stage.name}
+                        </span>
+                        {stage.role !== null && newest?.accountLabel != null ? (
+                          <span className="flex min-w-0 items-center gap-2 text-[0.75rem] text-inkdim">
+                            <span>{t(locale, stage.role === 'reviewer' ? 'detail.run.provenance.review' : 'detail.run.provenance.write')}</span>
+                            <span className="truncate">
+                              {newest.accountLabel}
+                              {newest.model !== null ? ` · ${newest.model}` : ''}
+                            </span>
+                          </span>
+                        ) : null}
+                        <span className={`ml-auto text-[0.78125rem] text-inkdim ${stage.current && !running ? 'font-semibold text-signal-soft' : ''}`}>
+                          {t(locale, stageStandingKey(stage, doneStage, running))}
+                        </span>
+                      </summary>
+                      <div className="grid gap-3 pb-4 pl-6">
+                        {stage.gates.length > 0 ? (
+                          <ul className="m-0 grid list-none gap-2 p-0">
+                            {stage.gates.map((gate) => (
+                              <GateRow key={gate.id} gate={gate} locale={locale} />
+                            ))}
+                          </ul>
+                        ) : null}
+                        {stageRuns.length > 0 ? (
+                          <ul className="m-0 grid list-none gap-2 p-0">
+                            {stageRuns.map((row) => (
+                              <DetailRunCard key={row.id} run={row} locale={locale} />
+                            ))}
+                          </ul>
+                        ) : null}
+                        {stage.gates.length === 0 && stageRuns.length === 0 ? (
+                          <p className="m-0 text-[0.8125rem] text-inkdim">{t(locale, 'detail.stage.upcoming')}</p>
                         ) : null}
                       </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <ActionButton variant="neutral" onClick={() => answer(ask, 'deny')}>
-                        {t(locale, 'action.deny')}
-                      </ActionButton>
-                      <ActionButton variant="primary" onClick={() => answer(ask, 'allow')}>
-                        {t(locale, 'action.allow')}
-                      </ActionButton>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </SectionCard>
-          ) : null}
-
-          <section className="grid gap-2.5">
-            <h2 className="text-[0.78125rem] font-semibold text-inkdim">{t(locale, 'detail.section.expected')}</h2>
-            {view === null ? null : pendingHumanGate !== undefined ? (
-              <div className="rounded-card border border-hairline bg-surface p-4">
-                <p className="text-[0.875rem] font-semibold text-ink">{pendingHumanGate.label ?? pendingHumanGate.id}</p>
-                <p className="mt-1.5 text-[0.8125rem] text-inkdim">{t(locale, 'detail.expected.body')}</p>
-                {state.stageFiles !== null && state.stageFiles.files.length > 0 ? (
-                  <div className="mt-4 border-t border-hairline pt-4">
-                    <StageFilesPreview store={store} stageFiles={state.stageFiles} locale={locale} />
-                  </div>
-                ) : null}
-                <div className="mt-3.5 flex gap-2">
-                  <ActionButton variant="neutral" size="md" onClick={() => decide(pendingHumanGate.id, 'rejected')}>
-                    {t(locale, 'detail.expected.refuse')}
-                  </ActionButton>
-                  <ActionButton variant="primary" size="md" onClick={() => decide(pendingHumanGate.id, 'approved')}>
-                    {t(locale, 'detail.expected.approve')}
-                  </ActionButton>
-                </div>
-              </div>
-            ) : canStart ? (
-              <div className="rounded-card border border-hairline bg-surface p-4">
-                <p className="mt-1.5 text-[0.8125rem] text-inkdim">{t(locale, 'detail.expected.empty')}</p>
-                <div className="mt-3.5">
-                  <ActionButton variant="primary" size="md" onClick={() => void store.enqueue()}>
-                    {t(locale, 'detail.action.startStage')}
-                  </ActionButton>
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-card border border-hairline bg-surface p-4">
-                <p className="mt-1.5 text-[0.8125rem] text-inkdim">
-                  {t(locale, view.state.status === 'done' ? 'detail.expected.done' : 'detail.expected.empty')}
-                </p>
-              </div>
-            )}
-          </section>
-
-          <PagesSection store={pages} locale={locale} onOpenPage={onOpenPage} />
-
-          <SectionCard title={t(locale, 'detail.section.stages')}>
-            <ol className="grid gap-3">
-              {state.stages.map((stage: StageGates, index: number) => (
-                <li key={stage.stage} className="grid gap-1.5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className={`font-mono text-[0.8125rem] ${stage.current ? 'text-signal' : 'text-inkdim'}`}>
-                      {String(index + 1).padStart(2, '0')}
-                    </span>
-                    <span className={`text-[0.875rem] font-semibold ${stage.current ? 'text-ink' : 'text-inkdim'}`}>{stage.name}</span>
-                    {stage.current ? <StateBadge tone="signal">{t(locale, 'detail.stage.current')}</StateBadge> : null}
-                  </div>
-                  {stage.gates.length > 0 ? (
-                    <ul className="grid gap-1.5">
-                      {stage.gates.map((gate) => (
-                        <GateRow
-                          key={gate.id}
-                          gate={gate}
-                          current={stage.current}
-                          locale={locale}
-                          awaitingHuman={awaitingHuman}
-                          onDecide={decide}
-                          onAttest={attest}
-                          onApproveDeploy={approveDeploy}
-                        />
-                      ))}
-                    </ul>
-                  ) : null}
-                </li>
-              ))}
-            </ol>
-          </SectionCard>
-
-          {environments.length > 0 ? (
-            <SectionCard title={t(locale, 'detail.section.environments')}>
-              <ul className="grid gap-1.5">
-                {environments.map((deploy) => (
-                  <li key={deploy.environment} className="flex flex-wrap items-center justify-between gap-2 rounded-card border border-hairline bg-surface px-3 py-2">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <span aria-hidden="true" className="h-2 w-2 flex-none rounded-full bg-info" />
-                      <code className="font-mono text-[0.8125rem] text-ink">{deploy.environment}</code>
-                      {deploy.protectedEnvironment ? <StateBadge tone="signal">{t(locale, 'gate.deploy.protected')}</StateBadge> : null}
-                    </div>
-                    {deploy.promoteFromChain.length > 0 ? (
-                      <span className="font-mono text-[0.6875rem] text-inkdim">
-                        {t(locale, 'gate.deploy.prerequisite')}: {deploy.promoteFromChain.join(' → ')}
-                      </span>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            </SectionCard>
-          ) : null}
-        </div>
-
-        {livePaneVisible ? (
-          <div className="sticky top-0 min-w-0" data-detail-live>
-            <LivePaneScreen store={store.pane} locale={locale} />
-          </div>
-        ) : null}
-
-        {/* U-55: the runs list spans the two columns below 1700 and takes the third column's
-            place beside the live pane from ≥1700 — auto placement lands it there through the
-            explicit start, with or without a live pane showing. */}
-        <div className="grid min-w-0 gap-5 self-start @[900px]:col-span-2 @[1700px]:col-span-1 @[1700px]:col-start-3">
-          <SectionCard title={t(locale, 'detail.section.runs')}>
-            {view === null || view.runs.length === 0 ? (
-              <p className="text-[0.8125rem] text-inkdim">{t(locale, 'detail.run.empty')}</p>
-            ) : (
-              <ul className="grid gap-1.5">
-                {view.runs.map((run) => {
-                  const outcome = run.endedAt === undefined ? 'running' : (run.outcome ?? 'running');
-                  return (
-                    <li key={run.id} className="grid grid-cols-[0.625rem_minmax(0,1fr)_auto] items-center gap-3 rounded-card border border-hairline bg-surface px-3 py-2">
-                      <span aria-hidden="true" className={`h-2 w-2 flex-none rounded-full ${RUN_OUTCOME_LAMP[outcome]}`} />
-                      <div className="flex min-w-0 items-baseline gap-2">
-                        <code className="truncate font-mono text-[0.75rem] text-ink">{run.id}</code>
-                        <code className="truncate font-mono text-[0.6875rem] text-inkdim">{run.stage}</code>
-                      </div>
-                      <StateBadge tone={RUN_OUTCOME_TONE[outcome]}>{t(locale, RUN_OUTCOME_KEY[outcome])}</StateBadge>
-                    </li>
+                    </details>
                   );
                 })}
-              </ul>
-            )}
-          </SectionCard>
-        </div>
-      </div>
+              </div>
+            </section>
+
+            {environments.length > 0 ? (
+              <section data-detail-environments className="grid min-w-0 @[900px]:col-start-1">
+                <h2 className="mb-3 text-[0.78125rem] font-semibold text-inkdim">{t(locale, 'detail.section.environments')}</h2>
+                <ul className="m-0 grid list-none gap-2 p-0">
+                  {environments.map((deploy) => (
+                    <li
+                      key={deploy.environment}
+                      className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-card border border-hairline bg-surface px-3 py-2"
+                    >
+                      <span className="flex min-w-0 items-center gap-3">
+                        <span aria-hidden="true" className="h-2 w-2 flex-none rounded-full bg-info" />
+                        <code className="font-mono text-[0.8125rem] text-ink">{deploy.environment}</code>
+                        {deploy.protectedEnvironment ? <StateBadge tone="signal">{t(locale, 'gate.deploy.protected')}</StateBadge> : null}
+                      </span>
+                      {deploy.promoteFromChain.length > 0 ? (
+                        <span className="font-mono text-[0.6875rem] text-inkdim">
+                          {t(locale, 'gate.deploy.prerequisite')}: {deploy.promoteFromChain.join(' → ')}
+                        </span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+          </div>
+
+          {/* The pinned decision bar rides at the very end of the detail so a sticky bottom holds
+              it whenever the zone itself is out of view (short windows, decision 7). */}
+          {zoneHasCards && barShown ? (
+            <div
+              ref={barRef}
+              data-decision-bar
+              className="sticky bottom-0 z-30 flex min-w-0 items-center gap-3 border-t border-hairline bg-surface py-2"
+            >
+              <span className="m-0 min-w-0 truncate text-[0.8125rem] font-semibold text-ink">
+                {firstCard?.kind === 'approve'
+                  ? t(locale, 'detail.zone.approveTitle').replace('{gate}', firstCard.gate.label ?? firstCard.gate.id)
+                  : firstCard?.kind === 'permission'
+                    ? t(locale, 'detail.badge.permission')
+                    : firstCard?.kind === 'deploy'
+                      ? t(locale, 'detail.badge.deployWaiting')
+                      : t(locale, 'detail.section.expected')}
+              </span>
+              <span className="ml-auto flex flex-none items-center gap-2">
+                {firstCard?.kind === 'approve' ? (
+                  <>
+                    <ActionButton variant="neutral" onClick={() => decide(firstCard.gate.id, 'rejected')}>
+                      {t(locale, 'detail.zone.rejectOpen')}
+                    </ActionButton>
+                    <ActionButton variant="primary" onClick={() => decide(firstCard.gate.id, 'approved')}>
+                      {t(locale, 'action.approve')}
+                    </ActionButton>
+                  </>
+                ) : firstCard?.kind === 'permission' ? (
+                  <ActionButton variant="primary" onClick={() => answer(firstCard.ask, 'allow')}>
+                    {t(locale, 'action.allow')}
+                  </ActionButton>
+                ) : (
+                  <ActionButton variant="neutral" onClick={() => scrollTo('#detail-expected')}>
+                    {t(locale, 'detail.zone.goToDecision')}
+                  </ActionButton>
+                )}
+              </span>
+            </div>
+          ) : null}
+        </>
+      )}
     </div>
   );
 }

@@ -7,12 +7,13 @@ const RAW = import.meta.glob(['./proposals.tsx', './page-viewer.tsx', './detail.
 const source = (name: string): string => RAW[`./${name}`] ?? '';
 
 describe('viewport heights', () => {
-  it('U-152: the proposals diff, the page diff and the expected-file preview follow the window height', () => {
+  it('U-152: the proposals diff and the page diff follow the window height', () => {
     expect(source('proposals.tsx')).toContain('max-h-[max(26rem,calc(100vh-22rem))]');
     expect(source('page-viewer.tsx')).toContain('max-h-[max(28rem,calc(100vh-24rem))]');
-    expect(source('detail.tsx')).toContain('h-[clamp(12.5rem,calc(100vh-30rem),32rem)]');
     expect(source('proposals.tsx')).not.toContain('max-h-[26rem]');
     expect(source('page-viewer.tsx')).not.toContain('max-h-[28rem]');
+    // The detail's expected-file preview left with U-57's card (#972: the read-only changes
+    // list of U-231 replaced it); no long-text box remains on that screen to size.
     expect(source('detail.tsx')).not.toContain('h-[12.5rem]');
   });
 });

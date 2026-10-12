@@ -3,9 +3,11 @@
 // (E-5, read-only), and gates the approve intent on the typed environment confirmation (E-8:
 // the input must equal the environment name before deploy.approve is issued — wrong or absent
 // never fires). Every intent maps its CommandResult through results.ts (U-8) and refreshes the
-// detail query. The asks section is fed from `permissions.open`, scoped to the loaded work
-// order's runs, and the live pane mounts on the work order's newest active run. The flow and
-// the environments ride the detail view itself; api, change signal and pane are injected fakes.
+// detail query. The decision zone is fed from `permissions.open`, scoped to the loaded work
+// order's runs, and the live pane mounts on the work order's newest active run. Phase A (#972)
+// adds the view-model rules: U-223 (one badge word per state), U-224 (the stage strip's counter),
+// U-226 (the decision-zone matrix), U-229 (cost by billing), U-230 (provenance) and U-231 (the
+// read-only changes list). Api, change signal and pane are injected fakes.
 import { describe, expect, it } from 'vitest';
 
 import type { Api } from '../../api/api';
@@ -13,7 +15,8 @@ import type { Command, CommandResult } from '../../api/commands';
 import type { Query } from '../../api/queries';
 import type {
   Actor,
-  EnvironmentDef,
+  AgentEvent,
+  CostByKind,
   FlowDef,
   FlowAction,
   GateSlug,
@@ -27,11 +30,20 @@ import { parseSlug } from '../../domain/index';
 import type { LivePaneStore } from './live-pane';
 import {
   createWorkOrderDetailStore,
-  flowChips,
+  decisionZone,
+  detailBadge,
+  formatRunCode,
+  gateWaitingCount,
+  isFailedStanding,
+  lastMessageOf,
+  newestFailedRunOf,
+  runRows,
+  stripSegments,
   type DetailChange,
   type DetailChangeSignal,
   type WorkOrderDetailRun,
   type WorkOrderDetailView,
+  type WorkOrderRunSummary,
 } from './work-order-detail';
 
 function slugOf<B extends string>(input: string): Slug<B> {
@@ -44,6 +56,7 @@ const ACTOR: Actor = { kind: 'user', id: 'u-1' };
 const WO_ID = '01ARZ3NDEKTSV4RRFFQ69G5FZZ';
 const RUN_ID = '01ARZ3NDEKTSV4RRFFQ69G5FA0';
 const ACTIVE_RUN_ID = '01ARZ3NDEKTSV4RRFFQ69G5FB1';
+const FAILED_RUN_ID = '01ARZ3NDEKTSV4RRFFQ69G5FC9';
 
 const STAGE_PLAN = slugOf<'stage'>('plan');
 const STAGE_BUILD = slugOf<'stage'>('build');
@@ -57,7 +70,8 @@ const ENV_DEV = slugOf<'env'>('dev');
 const ENV_STAGING = slugOf<'env'>('staging');
 const ENV_PROD = slugOf<'env'>('prod');
 
-/** A release flow whose ship stage carries an unprotected and a protected deploy gate. */
+/** A release flow whose ship stage carries an unprotected and a protected deploy gate; the build
+ *  stage's role is the reviewer role the provenance word reads (U-230). */
 const FLOW: FlowDef = {
   id: slugOf<'flow'>('release-flow'),
   name: 'Release Flow',
@@ -71,7 +85,7 @@ const FLOW: FlowDef = {
     {
       id: STAGE_BUILD,
       name: 'Build',
-      role: slugOf<'role'>('builder'),
+      role: slugOf<'role'>('reviewer'),
       exit: [{ kind: 'secret_scan', id: GATE_SECRET_SCAN }],
     },
     {
@@ -88,7 +102,7 @@ const FLOW: FlowDef = {
 };
 
 /** dev ← staging ← prod: the protected prod environment promotes through staging, which promotes through dev (E-5). */
-const ENVIRONMENTS: readonly EnvironmentDef[] = [
+const ENVIRONMENTS = [
   { id: ENV_DEV, name: 'Dev', order: 1, deploy: 'deploy-dev', env: {}, protected: false },
   { id: ENV_STAGING, name: 'Staging', order: 2, deploy: 'deploy-staging', env: {}, protected: false, promoteFrom: ENV_DEV },
   { id: ENV_PROD, name: 'Prod', order: 3, deploy: 'deploy-prod', env: {}, protected: true, promoteFrom: ENV_STAGING },
@@ -96,8 +110,8 @@ const ENVIRONMENTS: readonly EnvironmentDef[] = [
 
 const NONE: FlowAction = { kind: 'none' };
 
-const stateAt = (stage: StageSlug, pending: readonly GateSlug[]): WorkOrderState => ({
-  status: 'gating', // a pending deploy gate is a machine gate, so the stage is gating
+const stateAt = (stage: StageSlug, pending: readonly GateSlug[], status: WorkOrderState['status'] = 'gating'): WorkOrderState => ({
+  status,
   stage,
   attempt: 1,
   pendingGates: pending,
@@ -122,6 +136,7 @@ const detailReply = (state: WorkOrderState): WorkOrderDetailView => ({
     {
       id: RUN_ID,
       stage: 'build',
+      attempt: 1,
       startedAt: 1_000,
       endedAt: 2_000,
       outcome: 'succeeded' satisfies RunOutcome,
@@ -138,25 +153,50 @@ const detailReplyWithRuns = (state: WorkOrderState, runs: readonly WorkOrderDeta
   runs,
 });
 
+/** The stage list the fixture flow yields for a state — the same derivation the store applies
+ *  (pinned by the store's own tests above), factored out for the pure view-model rules. */
+const stagesFor = (flow: FlowDef, state: WorkOrderState) => {
+  const currentIndex =
+    state.stage === null ? flow.stages.length : flow.stages.findIndex((stage) => stage.id === state.stage);
+  return flow.stages.map((stage, index) => ({
+    stage: stage.id,
+    name: stage.name,
+    role: stage.role,
+    current: state.stage !== null && index === currentIndex,
+    gates: stage.exit.map((gate) => ({
+      id: gate.id,
+      kind: gate.kind,
+      status:
+        state.stage === null
+          ? ('passed' as const)
+          : index === currentIndex
+            ? (state.pendingGates.includes(gate.id) ? ('pending' as const) : ('passed' as const))
+            : index < currentIndex
+              ? ('passed' as const)
+              : ('upcoming' as const),
+    })),
+  }));
+};
+
 interface FakeApi extends Pick<Api, 'query' | 'command'> {
   readonly queries: Query[];
   readonly commands: Command[];
   setReply(reply: unknown): void;
   setAsks(reply: unknown): void;
-  setStageFiles(reply: unknown): void;
-  setFilePreview(reply: unknown): void;
+  setChanges(reply: unknown): void;
+  setRunEvents(reply: unknown): void;
   setCommandResult(result: CommandResult): void;
 }
 
-/** The detail query, the open-asks query and the stage-file reads are answered separately; every
- *  call is recorded. */
+/** The detail query, the open-asks query, the changes read and the run-event tail are answered
+ *  separately; every call is recorded. */
 const fakeApi = (initialReply: unknown): FakeApi => {
   const queries: Query[] = [];
   const commands: Command[] = [];
   let reply: unknown = initialReply;
   let asksReply: unknown = [];
-  let stageFilesReply: unknown = null;
-  let filePreviewReply: unknown = null;
+  let changesReply: unknown = null;
+  let runEventsReply: unknown = null;
   let commandResult: CommandResult = { ok: true };
   return {
     queries,
@@ -167,11 +207,11 @@ const fakeApi = (initialReply: unknown): FakeApi => {
     setAsks: (next) => {
       asksReply = next;
     },
-    setStageFiles: (next) => {
-      stageFilesReply = next;
+    setChanges: (next) => {
+      changesReply = next;
     },
-    setFilePreview: (next) => {
-      filePreviewReply = next;
+    setRunEvents: (next) => {
+      runEventsReply = next;
     },
     setCommandResult: (next) => {
       commandResult = next;
@@ -179,8 +219,8 @@ const fakeApi = (initialReply: unknown): FakeApi => {
     query: (query) => {
       queries.push(query);
       if (query.type === 'permissions.open') return Promise.resolve(asksReply);
-      if (query.type === 'workOrders.stageFiles') return Promise.resolve(stageFilesReply);
-      if (query.type === 'workOrders.readStageFile') return Promise.resolve(filePreviewReply);
+      if (query.type === 'workOrder.changes') return Promise.resolve(changesReply);
+      if (query.type === 'run.events') return Promise.resolve(runEventsReply);
       return Promise.resolve(reply);
     },
     command: (_actor, command) => {
@@ -258,7 +298,9 @@ describe('work-order detail store', () => {
       asks: [],
       problem: null,
       lastOutcome: null,
-      stageFiles: null,
+      changes: null,
+      lastErrorLine: null,
+      autoAllowed: 0,
     });
     const loading = store.load(WO_ID);
     expect(store.state().loading).toBe(true);
@@ -267,11 +309,12 @@ describe('work-order detail store', () => {
     expect(api.queries[0]).toEqual({ type: 'workOrder.detail', id: WO_ID });
     // Before the ship stage is reached its gates — deploy gates included — are upcoming.
     expect(store.state().stages).toEqual([
-      { stage: 'plan', name: 'Plan', current: false, gates: [{ id: 'plan-approval', kind: 'human', label: 'Plan approval', status: 'passed' }] },
-      { stage: 'build', name: 'Build', current: true, gates: [{ id: 'secret-scan', kind: 'secret_scan', status: 'pending' }] },
+      { stage: 'plan', name: 'Plan', role: null, current: false, gates: [{ id: 'plan-approval', kind: 'human', label: 'Plan approval', status: 'passed' }] },
+      { stage: 'build', name: 'Build', role: 'reviewer', current: true, gates: [{ id: 'secret-scan', kind: 'secret_scan', status: 'pending' }] },
       {
         stage: 'ship',
         name: 'Ship',
+        role: null,
         current: false,
         gates: [
           { id: 'ship-approval', kind: 'human', label: 'Ship approval', status: 'upcoming' },
@@ -284,11 +327,12 @@ describe('work-order detail store', () => {
     api.setReply(detailReply(AT_SHIP));
     await store.load(WO_ID);
     expect(store.state().stages).toEqual([
-      { stage: 'plan', name: 'Plan', current: false, gates: [{ id: 'plan-approval', kind: 'human', label: 'Plan approval', status: 'passed' }] },
-      { stage: 'build', name: 'Build', current: false, gates: [{ id: 'secret-scan', kind: 'secret_scan', status: 'passed' }] },
+      { stage: 'plan', name: 'Plan', role: null, current: false, gates: [{ id: 'plan-approval', kind: 'human', label: 'Plan approval', status: 'passed' }] },
+      { stage: 'build', name: 'Build', role: 'reviewer', current: false, gates: [{ id: 'secret-scan', kind: 'secret_scan', status: 'passed' }] },
       {
         stage: 'ship',
         name: 'Ship',
+        role: null,
         current: true,
         gates: [
           { id: 'ship-approval', kind: 'human', label: 'Ship approval', status: 'pending' },
@@ -393,8 +437,16 @@ describe('work-order detail store', () => {
     expect(store.state().lastOutcome).toEqual(rejected);
 
     api.setCommandResult({ ok: true });
-    const refused = await store.decideGate({ gate: 'ship-approval', decision: 'rejected' });
+    const refused = await store.decideGate({ gate: 'ship-approval', decision: 'rejected', note: 'redo the edge case' });
     expect(refused).toEqual({ command: 'gate.decide', result: { ok: true }, labelKey: 'success.gate.rejected' });
+    // #978: the reject's note travels to gate.decide — the reason box's text is the note.
+    expect(api.commands.at(-1)).toEqual({
+      type: 'gate.decide',
+      workOrderId: WO_ID,
+      gate: 'ship-approval',
+      decision: 'rejected',
+      note: 'redo the edge case',
+    });
   });
 
   it('U-61: the pending changes gate attests through gate.attest and each answer names its own success', async () => {
@@ -430,6 +482,18 @@ describe('work-order detail store', () => {
     expect(api.commands).toEqual([{ type: 'workOrder.enqueue', id: WO_ID }]);
     expect(api.queries.filter((query) => query.type === 'workOrder.detail')).toHaveLength(2);
     expect(outcome).toEqual({ command: 'workOrder.enqueue', result: { ok: true }, labelKey: 'success.workOrder.enqueue' });
+  });
+
+  it('U-226: closing the work order is the ⋯ menu\'s intent — workOrder.close, its own success word', async () => {
+    const api = fakeApi(detailReply(AT_BUILD));
+    const store = createStore(api);
+    await store.load(WO_ID);
+
+    const outcome = await store.closeWorkOrder();
+
+    expect(api.commands).toEqual([{ type: 'workOrder.close', id: WO_ID }]);
+    expect(api.queries.filter((query) => query.type === 'workOrder.detail')).toHaveLength(2);
+    expect(outcome).toEqual({ command: 'workOrder.close', result: { ok: true }, labelKey: 'success.workOrder.close' });
   });
 
   it('U-4: a permission answer is an intent mapped through U-8 that refreshes the detail query', async () => {
@@ -568,12 +632,30 @@ describe('work-order detail store', () => {
     expect(store.state().asks).toEqual([]);
   });
 
+  it('U-226: the permission card\'s collapsed count is the asking run\'s already-allowed asks', async () => {
+    const api = fakeApi(detailReplyWithRuns(stateAt(STAGE_BUILD, [], 'running'), [
+      { id: RUN_ID, stage: 'build', attempt: 1, startedAt: 1_000 },
+    ]));
+    api.setAsks([{ runId: RUN_ID, askId: 'ask-1', since: 5, title: 'Ship the thing' }]);
+    api.setRunEvents([
+      { type: 'permission_ask', at: 1, id: 'a', tool: 'Read', options: ['allow'] },
+      { type: 'permission_answered', at: 2, id: 'a', decision: 'allow' },
+      { type: 'permission_answered', at: 3, id: 'b', decision: 'deny' },
+    ]);
+    const store = createStore(api);
+    await store.load(WO_ID);
+    await flush();
+
+    // Only the allows count; a failed read or no asks leaves 0.
+    expect(store.state().autoAllowed).toBe(1);
+  });
+
   it('U-4: the live pane mounts on the newest active run, never on a finished one', async () => {
     const pane = fakePane();
     const api = fakeApi(
       detailReplyWithRuns(AT_BUILD, [
-        { id: RUN_ID, stage: 'build', startedAt: 1_000, endedAt: 2_000, outcome: 'succeeded' },
-        { id: ACTIVE_RUN_ID, stage: 'build', startedAt: 3_000 },
+        { id: RUN_ID, stage: 'build', attempt: 1, startedAt: 1_000, endedAt: 2_000, outcome: 'succeeded' },
+        { id: ACTIVE_RUN_ID, stage: 'build', attempt: 1, startedAt: 3_000 },
       ]),
     );
     const store = createStore(api, fakeSignal(), pane);
@@ -585,7 +667,7 @@ describe('work-order detail store', () => {
     const idle = createStore(
       fakeApi(
         detailReplyWithRuns(AT_SHIP, [
-          { id: RUN_ID, stage: 'ship', startedAt: 1_000, endedAt: 2_000, outcome: 'succeeded' },
+          { id: RUN_ID, stage: 'ship', attempt: 1, startedAt: 1_000, endedAt: 2_000, outcome: 'succeeded' },
         ]),
       ),
       fakeSignal(),
@@ -596,107 +678,450 @@ describe('work-order detail store', () => {
   });
 });
 
-// --- U-19: the in-place detail's flow strip ----------------------------------------------------------
+// --- U-223: one badge word per state ------------------------------------------------------------------
 
-describe('flow strip (U-19)', () => {
-  it('U-19: chips follow stage order — done carry the check, the current is marked, the current stage\'s pending gates sit as dashed gate chips after it', async () => {
-    const api = fakeApi(detailReply(AT_SHIP));
-    const store = createStore(api);
-    await store.load(WO_ID);
+describe('detail badge (U-223)', () => {
+  const badgeFor = (state: WorkOrderState, asks = 0, flow: FlowDef = FLOW) => {
+    const view = { ...detailReply(state), flow };
+    return detailBadge(stagesFor(flow, state), view, asks > 0 ? [{ runId: RUN_ID, askId: 'a', tool: 'Bash', target: null }] : []);
+  };
 
-    expect(flowChips(store.state().stages)).toEqual([
-      { kind: 'stage', name: 'Plan', standing: 'done' },
-      { kind: 'stage', name: 'Build', standing: 'done' },
-      { kind: 'stage', name: 'Ship', standing: 'current' },
-      { kind: 'gate', name: 'Ship approval', standing: 'pending' },
-      { kind: 'gate', name: 'prod', standing: 'pending' },
-      { kind: 'gate', name: 'staging', standing: 'pending' },
-    ]);
+  it('U-223: one word per state — the table every standing of the fold can leave', () => {
+    expect(badgeFor(stateAt(STAGE_BUILD, [], 'ready'))).toEqual({ tone: 'info', wordKey: 'wo.status.ready', pulse: false });
+    expect(badgeFor(stateAt(STAGE_BUILD, [], 'running'))).toEqual({ tone: 'proceed', wordKey: 'wo.status.running', pulse: true });
+    expect(badgeFor(AT_BUILD)).toEqual({ tone: 'info', wordKey: 'wo.status.gating', pulse: false });
+    expect(badgeFor(stateAt(STAGE_BUILD, [], 'limit_waiting'))).toEqual({ tone: 'info', wordKey: 'wo.status.limit_waiting', pulse: false });
+    expect(badgeFor(DONE)).toEqual({ tone: 'proceed', wordKey: 'wo.status.done', pulse: false });
+    // One human gate waiting: “Onay bekliyor”, never “İnsan yanıtı bekleniyor”.
+    expect(badgeFor(AWAITING_PLAN)).toEqual({ tone: 'signal', wordKey: 'detail.badge.awaiting', pulse: false });
+    // A pending deploy gate is its own word whatever the fold status around it.
+    expect(badgeFor(AT_SHIP)).toEqual({ tone: 'signal', wordKey: 'detail.badge.deployWaiting', pulse: false });
+    expect(badgeFor({ ...stateAt(STAGE_SHIP, [GATE_DEPLOY_PROD], 'awaiting_human') })).toEqual({
+      tone: 'signal',
+      wordKey: 'detail.badge.deployWaiting',
+      pulse: false,
+    });
+    // Several human gates waiting on one stage: “Birden fazla onay bekliyor”.
+    const GATE_SHIP_SECURITY = slugOf<'gate'>('ship-security');
+    const multiFlow: FlowDef = {
+      ...FLOW,
+      stages: [
+        {
+          id: STAGE_SHIP,
+          name: 'Ship',
+          role: null,
+          exit: [
+            { kind: 'human', id: GATE_SHIP_APPROVAL, label: 'Ship approval' },
+            { kind: 'human', id: GATE_SHIP_SECURITY, label: 'Ship security' },
+          ],
+        },
+      ],
+    };
+    expect(
+      badgeFor(
+        { status: 'awaiting_human', stage: STAGE_SHIP, attempt: 1, pendingGates: [GATE_SHIP_APPROVAL, GATE_SHIP_SECURITY] },
+        0,
+        multiFlow,
+      ),
+    ).toEqual({ tone: 'signal', wordKey: 'detail.badge.multi', pulse: false });
+    // An open ask outranks every gate standing: “İzin bekleniyor”.
+    expect(badgeFor(stateAt(STAGE_BUILD, [], 'running'), 1)).toEqual({ tone: 'signal', wordKey: 'detail.badge.permission', pulse: true });
   });
 
-  it('U-19: a done work order renders every stage done and no gate chip', async () => {
-    const api = fakeApi(detailReply(DONE));
-    const store = createStore(api);
-    await store.load(WO_ID);
-
-    expect(flowChips(store.state().stages)).toEqual([
-      { kind: 'stage', name: 'Plan', standing: 'done' },
-      { kind: 'stage', name: 'Build', standing: 'done' },
-      { kind: 'stage', name: 'Ship', standing: 'done' },
-    ]);
-  });
-
-  it('U-19: a work order waiting to start still marks its entered stage current', async () => {
-    const atPlan: WorkOrderState = { status: 'ready', stage: STAGE_PLAN, attempt: 1, pendingGates: [] };
-    const api = fakeApi(detailReply(atPlan));
-    const store = createStore(api);
-    await store.load(WO_ID);
-
-    expect(flowChips(store.state().stages)).toEqual([
-      { kind: 'stage', name: 'Plan', standing: 'current' },
-      { kind: 'stage', name: 'Build', standing: 'upcoming' },
-      { kind: 'stage', name: 'Ship', standing: 'upcoming' },
-    ]);
-  });
-});
-
-// --- U-57: the stage-files card rides the awaiting_human detail --------------------------------------
-
-describe('stage files (U-57)', () => {
-  it('U-57: an awaiting_human detail carries the stage files exactly as the query resolved them', async () => {
-    // The exact shape the api resolves `workOrders.stageFiles` to: the bare view, no envelope.
-    const stageFiles = { files: [{ path: 'docs/plan.md', sizeBytes: 1024 }], truncated: false };
-    const api = fakeApi(detailReply(AWAITING_PLAN));
-    api.setStageFiles(stageFiles);
-    const store = createStore(api);
-    await store.load(WO_ID);
-
-    expect(api.queries).toContainEqual({ type: 'workOrders.stageFiles', id: WO_ID });
-    expect(store.state().stageFiles).toEqual(stageFiles);
-
-    // The preview read resolves to the bare preview the same way.
-    api.setFilePreview({ path: 'docs/plan.md', lines: ['# Plan'], truncated: false });
-    await expect(store.readStageFile('docs/plan.md')).resolves.toEqual({
-      path: 'docs/plan.md',
-      lines: ['# Plan'],
-      truncated: false,
+  it('U-223: failure standings say “Başarısız” with the attempts sub-line — “Engellendi” is never used', () => {
+    // The block standing is a failure with no attempts left.
+    expect(badgeFor({ status: 'blocked', stage: STAGE_BUILD, attempt: 3, pendingGates: [], blockedReason: 'run failed' })).toEqual({
+      tone: 'error',
+      wordKey: 'run.outcome.failed',
+      subKey: 'detail.badge.retryOut',
+      pulse: false,
+    });
+    // A ready stage re-entered after a failed run is a failure with attempts left.
+    const retry: WorkOrderState = { status: 'ready', stage: STAGE_BUILD, attempt: 2, pendingGates: [GATE_SECRET_SCAN] };
+    const failedRun: WorkOrderDetailRun = { id: FAILED_RUN_ID, stage: 'build', attempt: 1, startedAt: 100, endedAt: 200, outcome: 'failed' };
+    const view = detailReplyWithRuns(retry, [failedRun]);
+    expect(isFailedStanding(view)).toBe(true);
+    expect(detailBadge(stagesFor(FLOW, retry), view, [])).toEqual({
+      tone: 'error',
+      wordKey: 'run.outcome.failed',
+      subKey: 'detail.badge.retryLeft',
+      pulse: false,
     });
   });
 
-  it('U-57: a detail outside awaiting_human never asks for stage files', async () => {
-    const api = fakeApi(detailReply(AT_SHIP));
-    const store = createStore(api);
-    await store.load(WO_ID);
+  it('U-223: a no-role stage holding machine gates keeps the honest gating word', () => {
+    expect(
+      badgeFor({ status: 'awaiting_human', stage: STAGE_SHIP, attempt: 1, pendingGates: [GATE_DEPLOY_STAGING] }),
+    ).toEqual({ tone: 'signal', wordKey: 'detail.badge.deployWaiting', pulse: false });
+  });
+});
 
-    expect(api.queries).not.toContainEqual({ type: 'workOrders.stageFiles', id: WO_ID });
-    expect(store.state().stageFiles).toBe(null);
+// --- U-226: the decision-zone matrix -------------------------------------------------------------------
+
+describe('decision zone (U-226)', () => {
+  const zoneFor = (state: WorkOrderState, runs: readonly WorkOrderDetailRun[] = [], asks = 0, flow: FlowDef = FLOW) => {
+    const view = { ...detailReplyWithRuns(state, runs), flow };
+    return decisionZone(stagesFor(flow, state), view, asks > 0 ? [{ runId: RUN_ID, askId: 'a', tool: 'Bash', target: null }] : []);
+  };
+
+  it('U-226: nothing decidable → one quiet line, no card; done → the done line', () => {
+    expect(zoneFor(stateAt(STAGE_BUILD, [], 'running'))).toEqual({ kind: 'quiet', done: false });
+    expect(zoneFor(stateAt(STAGE_BUILD, [GATE_SECRET_SCAN]))).toEqual({ kind: 'quiet', done: false });
+    expect(zoneFor(stateAt(STAGE_BUILD, [], 'limit_waiting'))).toEqual({ kind: 'quiet', done: false });
+    expect(zoneFor(DONE)).toEqual({ kind: 'quiet', done: true });
   });
 
-  it('U-57: a stage-files reply that is not the view shows no card instead of crashing the detail', async () => {
-    const broken: readonly unknown[] = [
-      { ok: false, code: 'not_found' },
-      // The envelope a bridge may answer with — the shape that took the detail screen down.
-      { ok: true, data: { files: [{ path: 'docs/plan.md', sizeBytes: 1024 }], truncated: false } },
-      undefined,
-      { files: 'docs/plan.md', truncated: false },
-      { files: [{ sizeBytes: 1024 }], truncated: false },
-      { files: [], truncated: 'no' },
-    ];
-    for (const reply of broken) {
-      const api = fakeApi(detailReply(AWAITING_PLAN));
-      api.setStageFiles(reply);
-      const store = createStore(api);
-      await expect(store.load(WO_ID)).resolves.toBeUndefined();
-      expect(store.state().stageFiles).toBe(null);
-      // The detail itself still loaded: the card is absent, the screen is not.
-      expect(store.state().view?.state.status).toBe('awaiting_human');
-    }
+  it('U-226: a fresh ready stage with a `none` next falls quiet — the start card needs the fold\'s own next action', () => {
+    expect(zoneFor(stateAt(STAGE_PLAN, [], 'ready'))).toEqual({ kind: 'quiet', done: false });
+  });
 
-    // The preview read takes the same stance: anything but a preview is the failure copy's null.
+  it('U-226: a start_run next action is the start card naming the current stage', () => {
+    const state = stateAt(STAGE_PLAN, [], 'ready');
+    const view: WorkOrderDetailView = {
+      ...detailReply(state),
+      next: { kind: 'start_run', stage: STAGE_PLAN, role: slugOf<'role'>('planner'), attempt: 1 },
+    };
+    expect(decisionZone(stagesFor(FLOW, state), view, [])).toEqual({ kind: 'cards', cards: [{ kind: 'start', stageName: 'Plan' }] });
+  });
+
+  it('U-226: awaiting_human with one human gate is one approve card; two human gates are two stacked cards', () => {
+    expect(zoneFor(AWAITING_PLAN)).toEqual({
+      kind: 'cards',
+      cards: [{ kind: 'approve', gate: expect.objectContaining({ id: 'plan-approval' }) }],
+    });
+    const GATE_SHIP_SECURITY = slugOf<'gate'>('ship-security');
+    const flow: FlowDef = {
+      ...FLOW,
+      stages: [
+        {
+          id: STAGE_SHIP,
+          name: 'Ship',
+          role: null,
+          exit: [
+            { kind: 'human', id: GATE_SHIP_APPROVAL, label: 'Ship approval' },
+            { kind: 'human', id: GATE_SHIP_SECURITY, label: 'Ship security' },
+          ],
+        },
+      ],
+    };
+    expect(
+      zoneFor(
+        { status: 'awaiting_human', stage: STAGE_SHIP, attempt: 1, pendingGates: [GATE_SHIP_APPROVAL, GATE_SHIP_SECURITY] },
+        [],
+        0,
+        flow,
+      ),
+    ).toEqual({
+      kind: 'cards',
+      cards: [
+        { kind: 'approve', gate: expect.objectContaining({ id: 'ship-approval' }) },
+        { kind: 'approve', gate: expect.objectContaining({ id: 'ship-security' }) },
+      ],
+    });
+  });
+
+  it('U-226: a pending changes gate carries the attestation card; a pending deploy gate the deploy card', () => {
+    const GATE_CHANGES = slugOf<'gate'>('changes');
+    const flow: FlowDef = {
+      ...FLOW,
+      stages: [
+        {
+          id: STAGE_BUILD,
+          name: 'Build',
+          role: slugOf<'role'>('builder'),
+          exit: [
+            { kind: 'changes', id: GATE_CHANGES },
+            { kind: 'deploy', id: GATE_DEPLOY_PROD, environment: ENV_PROD },
+          ],
+        },
+      ],
+    };
+    expect(zoneFor(stateAt(STAGE_BUILD, [GATE_CHANGES, GATE_DEPLOY_PROD], 'gating'), [], 0, flow)).toEqual({
+      kind: 'cards',
+      cards: [
+        { kind: 'attest', gate: expect.objectContaining({ id: 'changes' }) },
+        { kind: 'deploy', gate: expect.objectContaining({ id: 'deploy-prod' }) },
+      ],
+    });
+  });
+
+  it('U-226: an open ask is the permission card — one card per ask, ahead of every gate standing', () => {
+    expect(zoneFor(stateAt(STAGE_BUILD, [], 'running'), [], 1)).toEqual({
+      kind: 'cards',
+      cards: [{ kind: 'permission', ask: { runId: RUN_ID, askId: 'a', tool: 'Bash', target: null } }],
+    });
+  });
+
+  it('U-226: a failed re-entry is the retry card; the block is the out-of-retries card', () => {
+    const failedRuns: readonly WorkOrderDetailRun[] = [
+      { id: FAILED_RUN_ID, stage: 'build', attempt: 1, startedAt: 100, endedAt: 200, outcome: 'failed' },
+    ];
+    expect(zoneFor({ status: 'ready', stage: STAGE_BUILD, attempt: 2, pendingGates: [GATE_SECRET_SCAN] }, failedRuns)).toEqual({
+      kind: 'cards',
+      cards: [{ kind: 'failed', retry: true }],
+    });
+    expect(zoneFor({ status: 'blocked', stage: STAGE_BUILD, attempt: 3, pendingGates: [], blockedReason: 'run failed' }, failedRuns)).toEqual({
+      kind: 'cards',
+      cards: [{ kind: 'failed', retry: false }],
+    });
+    // Attempts exhausted through the fold's own budget: onFail.maxAttempts reached.
+    expect(
+      zoneFor({ status: 'blocked', stage: STAGE_BUILD, attempt: 4, pendingGates: [], blockedReason: 'run failed' }, failedRuns, 0, {
+        ...FLOW,
+        stages: [{ id: STAGE_BUILD, name: 'Build', role: null, exit: [], onFail: { goto: STAGE_BUILD, maxAttempts: 3 } }],
+      }),
+    ).toEqual({ kind: 'cards', cards: [{ kind: 'failed', retry: false }] });
+  });
+
+  it('U-224: the gate count a strip counter reads — approve, attest, deploy and permission cards count; start and failure do not', () => {
+    const state = stateAt(STAGE_SHIP, [GATE_SHIP_APPROVAL, GATE_DEPLOY_PROD, GATE_DEPLOY_STAGING], 'awaiting_human');
+    const zone = zoneFor(state);
+    expect(gateWaitingCount(zone)).toBe(3);
+    expect(gateWaitingCount({ kind: 'quiet', done: false })).toBe(0);
+    expect(gateWaitingCount({ kind: 'cards', cards: [{ kind: 'start', stageName: 'Plan' }] })).toBe(0);
+    expect(gateWaitingCount({ kind: 'cards', cards: [{ kind: 'failed', retry: true }] })).toBe(0);
+  });
+});
+
+// --- U-19: the in-place detail's stage strip (order and marking; #972 keeps the in-place opening and
+// the back row, the pending-gate marking moved to U-224's counter) --------------------------------------
+
+describe('stage strip order (U-19)', () => {
+  it('U-19: segments follow the flow\'s order — done behind, the current marked, upcoming ahead', () => {
+    const state = stateAt(STAGE_SHIP, [], 'running');
+    const view = detailReply(state);
+    const stages = stagesFor(FLOW, state);
+    const segments = stripSegments(stages, decisionZone(stages, view, []), view);
+    expect(segments.map((segment) => segment.name)).toEqual(['Plan', 'Build', 'Ship']);
+    expect(segments.map((segment) => segment.standing)).toEqual(['done', 'done', 'current']);
+    // A done work order walks off the flow's end: every stage done, none current.
+    const done = stripSegments(stagesFor(FLOW, DONE), { kind: 'quiet', done: true }, detailReply(DONE));
+    expect(done.map((segment) => segment.standing)).toEqual(['done', 'done', 'done']);
+  });
+});
+
+// --- U-57: the stage-files card left with #972's changes list (U-231); the queries stay for their
+// other readers, the detail renders no per-file preview ----------------------------------------------
+
+describe('stage files superseded (U-57)', () => {
+  it('U-57: the store carries no stage-files state and no per-file read — the card is U-231\'s list now', async () => {
     const api = fakeApi(detailReply(AWAITING_PLAN));
-    api.setFilePreview({ ok: true, data: { path: 'docs/plan.md', lines: ['# Plan'], truncated: false } });
     const store = createStore(api);
     await store.load(WO_ID);
-    await expect(store.readStageFile('docs/plan.md')).resolves.toBe(null);
+    // No stage-files query rides the detail load; the changes read (U-231) is the one that does.
+    expect(api.queries).not.toContainEqual({ type: 'workOrders.stageFiles', id: WO_ID });
+    expect(api.queries).toContainEqual({ type: 'workOrder.changes', workOrder: WO_ID });
+    expect(store.state()).not.toHaveProperty('stageFiles');
+    expect(store).not.toHaveProperty('readStageFile');
+  });
+});
+
+// --- U-224: the stage strip ----------------------------------------------------------------------------
+
+describe('stage strip (U-224)', () => {
+  it('U-224: segments are stages only; the counter sits on the current label alone; N>2 stays one counter part', () => {
+    const state = stateAt(STAGE_SHIP, [GATE_SHIP_APPROVAL, GATE_DEPLOY_PROD, GATE_DEPLOY_STAGING], 'awaiting_human');
+    const view = detailReply(state);
+    const stages = stagesFor(FLOW, state);
+    const zone = decisionZone(stages, view, []);
+    const segments = stripSegments(stages, zone, view);
+    // Stages only — no gate segment, no gate name anywhere in the model.
+    expect(segments.map((segment) => segment.name)).toEqual(['Plan', 'Build', 'Ship']);
+    expect(JSON.stringify(segments)).not.toContain('approval');
+    expect(JSON.stringify(segments)).not.toContain('deploy-prod');
+    expect(segments.map((segment) => segment.standing)).toEqual(['done', 'done', 'current']);
+    // The counter: current only, counting the zone's three decision cards as one number.
+    expect(segments.map((segment) => segment.gatesWaiting)).toEqual([0, 0, 3]);
+    // Done work order: every stage done, no counter.
+    const doneSegments = stripSegments(
+      stagesFor(FLOW, DONE),
+      { kind: 'quiet', done: true },
+      detailReply(DONE),
+    );
+    expect(doneSegments.map((segment) => segment.standing)).toEqual(['done', 'done', 'done']);
+    expect(doneSegments.every((segment) => segment.gatesWaiting === 0)).toBe(true);
+  });
+
+  it('U-224: the failed and running markings ride the current segment only', () => {
+    const failed: WorkOrderState = { status: 'ready', stage: STAGE_BUILD, attempt: 2, pendingGates: [GATE_SECRET_SCAN] };
+    const failedView = detailReplyWithRuns(failed, [
+      { id: FAILED_RUN_ID, stage: 'build', attempt: 1, startedAt: 100, endedAt: 200, outcome: 'failed' },
+    ]);
+    const failedStages = stagesFor(FLOW, failed);
+    const segments = stripSegments(failedStages, decisionZone(failedStages, failedView, []), failedView);
+    expect(segments.map((segment) => segment.failed)).toEqual([false, true, false]);
+
+    const runningView = detailReply(stateAt(STAGE_BUILD, [], 'running'));
+    const runningStages = stagesFor(FLOW, runningView.state);
+    const runningSegments = stripSegments(runningStages, decisionZone(runningStages, runningView, []), runningView);
+    expect(runningSegments.map((segment) => segment.running)).toEqual([false, true, false]);
+  });
+});
+
+// --- U-229/U-230: the run rows -------------------------------------------------------------------------
+
+describe('run rows (U-229, U-230)', () => {
+  const summary = (over: Partial<WorkOrderRunSummary>): WorkOrderRunSummary => ({
+    runId: RUN_ID,
+    stage: 'build',
+    attempt: 1,
+    role: 'builder',
+    account: { id: 'acct-1', label: 'Hesap A', provider: 'claude-code' },
+    model: 'Sonnet',
+    billing: 'pay_per_use',
+    ...over,
+  });
+
+  const costOf = (costByKind: CostByKind, billing: 'pay_per_use' | 'included' | 'unknown') =>
+    runRows({
+      ...detailReply(AT_BUILD),
+      runSummaries: [summary({ billing, usage: { inputTokens: 12_400, outputTokens: 3_100, cachedInputTokens: 0, costByKind } })],
+    })[0]?.cost ?? null;
+
+  it('U-229: pay-per-use shows money, marked as an estimate when the kind is computed, never a dollar from a bare equivalent', () => {
+    expect(costOf({ reported: 1.42 }, 'pay_per_use')).toEqual({ kind: 'money', usd: 1.42, estimate: false });
+    expect(costOf({ computed: 1.42 }, 'pay_per_use')).toEqual({ kind: 'money', usd: 1.42, estimate: true });
+    // The domain's own honesty: a pay-per-use run that reported only an equivalent figure shows
+    // tokens with the estimate, never a dollar as a charge.
+    expect(costOf({ equivalent: 1.42 }, 'pay_per_use')).toEqual({ kind: 'tokens', equivalentUsd: 1.42 });
+  });
+
+  it('U-229: an included run shows tokens — the equivalent stays a secondary estimate, never a dollar charge (adversarial)', () => {
+    expect(costOf({ equivalent: 1.42 }, 'included')).toEqual({ kind: 'tokens', equivalentUsd: 1.42 });
+    // Adversarial: an included run whose only figure is the estimate never renders money.
+    const row = costOf({ equivalent: 9.99 }, 'included');
+    expect(row).not.toEqual(expect.objectContaining({ kind: 'money' }));
+    // Credits read in the provider's own unit.
+    expect(costOf({ credits: 1_400 }, 'included')).toEqual({ kind: 'credits', credits: 1_400 });
+    // No cost at all: none.
+    expect(costOf({}, 'included')).toEqual({ kind: 'none' });
+  });
+
+  it('U-230: the provenance line reads runSummaries; a deleted account still renders its stored id', () => {
+    const rows = runRows({
+      ...detailReply(AT_BUILD),
+      runSummaries: [
+        summary({ account: { id: 'acct-gone', label: '01ARZGONE', provider: 'unknown' }, model: undefined }),
+      ],
+    });
+    expect(rows[0]?.accountLabel).toBe('01ARZGONE');
+    expect(rows[0]?.model).toBeNull();
+    // The short code, never the raw ULID (the walk-through decision).
+    expect(rows[0]?.shortCode).toBe(formatRunCode(RUN_ID));
+    expect(rows[0]?.shortCode).not.toContain(RUN_ID);
+    // A run without a summary still renders: no provenance, no usage.
+    const bare = runRows({ ...detailReply(AT_BUILD), runSummaries: [] });
+    expect(bare[0]?.accountLabel).toBeNull();
+    expect(bare[0]?.usage).toBeNull();
+  });
+
+  it('the run code is the id\'s last four characters on the run_ prefix, lowercase', () => {
+    expect(formatRunCode('01ARZ3NDEKTSV4RRFFQ69G5FA0')).toBe('run_5fa0');
+    expect(formatRunCode('01ARZ3NDEKTSV4RRFFQ69G5FB1')).toBe('run_5fb1');
+  });
+});
+
+// --- U-226 (failed card): the error quote ---------------------------------------------------------------
+
+describe('the failed card\'s error line', () => {
+  const at = (millis: number, text?: string): AgentEvent =>
+    text === undefined
+      ? { type: 'tool_call', at: millis, id: `t-${millis}`, name: 'Bash' }
+      : { type: 'text', at: millis, delta: text };
+
+  it('the line is the failed run\'s trailing spoken answer, joined in arrival order', () => {
+    expect(lastMessageOf([at(1, 'Önce '), at(2, 'bakıyorum.'), at(3, 'Bitti.')])).toBe('Önce bakıyorum.Bitti.');
+    expect(lastMessageOf([at(1, 'eski'), at(2), at(3, 'yeni')])).toBe('yeni');
+    expect(lastMessageOf([at(1), at(2)])).toBeNull();
+    expect(lastMessageOf([])).toBeNull();
+    expect(lastMessageOf([at(1, '   ')])).toBeNull();
+  });
+
+  it('the store reads the failed run\'s tail once on a failed standing and quotes its last words', async () => {
+    const failed: WorkOrderState = { status: 'ready', stage: STAGE_BUILD, attempt: 2, pendingGates: [GATE_SECRET_SCAN] };
+    const api = fakeApi(
+      detailReplyWithRuns(failed, [
+        { id: FAILED_RUN_ID, stage: 'build', attempt: 1, startedAt: 100, endedAt: 200, outcome: 'failed' },
+      ]),
+    );
+    api.setRunEvents([{ type: 'text', at: 1, delta: 'npm test: 3 test başarısız' }]);
+    const store = createStore(api);
+    await store.load(WO_ID);
+    await flush();
+
+    expect(api.queries).toContainEqual({ type: 'run.events', runId: FAILED_RUN_ID });
+    expect(store.state().lastErrorLine).toBe('npm test: 3 test başarısız');
+    // A stage with no failed run quotes nothing.
+    expect(newestFailedRunOf(detailReplyWithRuns(failed, []))).toBeNull();
+  });
+
+  it('a failed standing whose run said nothing — or whose tail fails to read — keeps the line null', async () => {
+    const failed: WorkOrderState = { status: 'ready', stage: STAGE_BUILD, attempt: 2, pendingGates: [GATE_SECRET_SCAN] };
+    const runs: readonly WorkOrderDetailRun[] = [
+      { id: FAILED_RUN_ID, stage: 'build', attempt: 1, startedAt: 100, endedAt: 200, outcome: 'failed' },
+    ];
+    // The fake answers run.events with null unless set — a non-array read, same stance as a failure.
+    const store = createStore(fakeApi(detailReplyWithRuns(failed, runs)));
+    await store.load(WO_ID);
+    await flush();
+    expect(store.state().lastErrorLine).toBeNull();
+  });
+});
+
+// --- U-231: the read-only changes list ------------------------------------------------------------------
+
+describe('changed files (U-231)', () => {
+  const CHANGES = {
+    state: 'ready',
+    files: [
+      { path: 'src/export/pdf-table.ts', added: 96, removed: 40, binary: false },
+      { path: 'assets/logo.png', added: 0, removed: 0, binary: true },
+    ],
+    truncated: false,
+  };
+
+  it('U-231: the changes read rides every load and lands verbatim in the state', async () => {
+    const api = fakeApi(detailReply(AT_BUILD));
+    api.setChanges(CHANGES);
+    const store = createStore(api);
+    await store.load(WO_ID);
+
+    expect(api.queries).toContainEqual({ type: 'workOrder.changes', workOrder: WO_ID });
+    expect(store.state().changes).toEqual(CHANGES);
+  });
+
+  it('U-231: no_worktree and unavailable are honest states, not empty lists; a failed read keeps the list shown', async () => {
+    const api = fakeApi(detailReply(AT_BUILD));
+    api.setChanges({ state: 'no_worktree', files: [], truncated: false });
+    const store = createStore(api);
+    await store.load(WO_ID);
+    expect(store.state().changes?.state).toBe('no_worktree');
+
+    api.setChanges({ state: 'unavailable', files: [], truncated: false });
+    await store.load(WO_ID);
+    expect(store.state().changes?.state).toBe('unavailable');
+
+    // A failing read keeps the list already on screen.
+    api.setChanges({ ok: false, code: 'not_found' });
+    await store.load(WO_ID);
+    expect(store.state().changes?.state).toBe('unavailable');
+  });
+
+  it('U-231: a reply that is not the changes view shows no section instead of crashing the detail', async () => {
+    const broken: readonly unknown[] = [
+      { ok: true, data: CHANGES },
+      undefined,
+      { state: 'ready', files: 'src/x.ts', truncated: false },
+      { state: 'ready', files: [{ added: 1 }], truncated: false },
+      { state: 'weird', files: [], truncated: false },
+    ];
+    for (const reply of broken) {
+      const api = fakeApi(detailReply(AT_BUILD));
+      api.setChanges(reply);
+      const store = createStore(api);
+      await expect(store.load(WO_ID)).resolves.toBeUndefined();
+      expect(store.state().changes).toBeNull();
+      expect(store.state().view?.state.status).toBe('gating');
+    }
   });
 });

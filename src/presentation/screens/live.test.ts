@@ -47,11 +47,13 @@ describe('live pane — unbreakable stream text stays inside the pane', () => {
     expect(html.match(/<p class="whitespace-pre-wrap \[overflow-wrap:anywhere][^"]*"/g)?.length).toBe(2);
   });
 
-  it('the item list and its rows may shrink below their content', () => {
+  it('the item stream and its rows may shrink below their content', () => {
     const html = draw({ runId: 'run-1', items, ask: null, ended: false });
 
-    expect(html).toContain('<ol class="grid min-w-0 gap-1.5">');
-    expect(html).toContain('<li class="min-w-0 rounded-card border border-hairline bg-surface px-3 py-2">');
+    // The stream is the pane's fixed-height log (A5): shrinkable itself, shrinkable rows.
+    expect(html).toContain('data-live-stream');
+    expect(html).toMatch(/class="[^"]*min-w-0[^"]*"/);
+    expect(html).toContain('grid min-w-0 gap-0.5 rounded-card');
   });
 
   it('the ask card truncates its command with the full text on the title, inside shrinkable boxes', () => {
