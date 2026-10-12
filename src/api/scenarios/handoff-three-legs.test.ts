@@ -15,6 +15,7 @@ import {
   parseSlug,
   parseUlid,
   stageBrief,
+  workOrderRequestSection,
   type AccountId,
   type Actor,
   type AgentEvent,
@@ -189,6 +190,8 @@ const RAW_PATCH = [
 ].join('\n');
 
 const CLAUDE_MD = '# Repo ground rules\n\nRead the acceptance criteria before claiming the stage done.';
+/** Operator text the taking-over run must still see (the pack replaces the composed prompt). */
+const REQUEST = 'Keep the session across the account switch.';
 
 const completedScript = (): readonly AgentEvent[] => [
   { type: 'session_started', at: T0, sessionRef: 'sess-a' },
@@ -295,8 +298,18 @@ const expectState = (
   if (expected.pendingGates !== undefined) expect([...view.state.pendingGates]).toEqual(expected.pendingGates);
 };
 
-const openViaApi = async (deps: AppDeps, title: string): Promise<WorkOrderId | undefined> => {
-  const result = await createApi(deps).command(USER, { type: 'workOrder.open', project: slugOf<'project'>('ws-proj'), repo: REPO, title });
+const openViaApi = async (
+  deps: AppDeps,
+  title: string,
+  description?: string,
+): Promise<WorkOrderId | undefined> => {
+  const result = await createApi(deps).command(USER, {
+    type: 'workOrder.open',
+    project: slugOf<'project'>('ws-proj'),
+    repo: REPO,
+    title,
+    ...(description === undefined ? {} : { description }),
+  });
   if (!result.ok || result.id === undefined) return undefined;
   const parsed = parseUlid<'work-order'>(result.id);
   return parsed.ok ? parsed.value : undefined;
@@ -406,7 +419,7 @@ describe('limit handoff, three legs over fakes', () => {
     // Walk to implement/ready: open, run the plan on A, approve it.
     const transportPlan = createFakeTransport(completedScript());
     h.transports.register(ACCOUNT_A, transportPlan);
-    const id = await openViaApi(h.deps, 'Hand off across the window limit');
+    const id = await openViaApi(h.deps, 'Hand off across the window limit', REQUEST);
     expect(id).toBeDefined();
     if (id === undefined) return;
     // The implement run's edit also stands in the worktree-base diff the changes gate counts
@@ -518,6 +531,10 @@ describe('limit handoff, three legs over fakes', () => {
     expect(promptTwo).toContain(editedFile);
     expect(promptTwo).toContain(REDACTED);
     expect(promptTwo).not.toContain(PLANTED_TOKEN);
+    // The composed prompt is discarded for a handoff item; the pack still quotes the Request.
+    expect(promptTwo).toContain('## Request');
+    expect(promptTwo).toContain('Hand off across the window limit');
+    expect(promptTwo).toContain(REQUEST);
     // Native resume and the pack are never mixed (P-38): no resume field is set at all.
     expect('resume' in legTwoRequest).toBe(false);
 
@@ -546,10 +563,13 @@ describe('limit handoff, three legs over fakes', () => {
     expect(promptThree).not.toContain('## Project context');
     expect(promptThree).not.toContain('### CLAUDE.md');
     expect(promptThree).not.toContain(CLAUDE_MD);
-    // And its whole prompt is byte-for-byte the Docket layers the current definitions render for
-    // the stage (A-53) — the same deterministic layers that led leg 2's prompt under its stage
-    // heading, whose work-order and flow lines are byte-identical in both legs.
-    expect(promptThree).toBe(await briefOf(h, id, REVIEW));
+    // The review run is not a handoff, so its prompt is the Docket layers (A-53) plus the same
+    // Request section the pack quoted. The work-order and flow lines stay byte-identical.
+    const reviewBrief = await briefOf(h, id, REVIEW);
+    const reviewRecord = await h.deps.workOrders.get(id);
+    if (reviewRecord === undefined) throw new Error('the work order must exist');
+    const request = workOrderRequestSection(reviewRecord.title, reviewRecord.description);
+    expect(promptThree).toBe(request === undefined ? reviewBrief : `${reviewBrief}\n\n${request}`);
     const spineOf = (brief: string) => brief.split('\n').slice(0, 2).join('\n');
     expect(spineOf(promptThree)).toBe(spineOf(await briefOf(h, id, IMPLEMENT)));
 

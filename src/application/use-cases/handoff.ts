@@ -25,6 +25,7 @@ import {
   renderHandoffPrompt,
   sizeHandoffPack,
   stageBrief,
+  workOrderRequestSection,
 } from '../../domain/index';
 
 import type { AppDeps } from '../ports/index';
@@ -178,7 +179,12 @@ const assemblePack = async (
   };
 
   const sized = sizeHandoffPack(pack, { maxChars: packBudgetChars(windows) });
-  return ok({ pack: sized, prompt: renderHandoffPrompt(sized) });
+  const rendered = renderHandoffPrompt(sized);
+  // Operator data, same section composeRunPrompt quotes. It is not a definition layer, so it
+  // stays out of the sized pack. A missing description adds nothing — no empty heading.
+  const request = workOrderRequestSection(record.title, record.description);
+  const prompt = request === undefined ? rendered : `${rendered}\n\n${request}`;
+  return ok({ pack: sized, prompt });
 };
 
 /** `base` fails flat with `git_failed`; only its success carries a sha, so the failure folds to

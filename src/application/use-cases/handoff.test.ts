@@ -180,6 +180,7 @@ const harness = async (options: {
   readonly bases?: Readonly<Record<string, string>>;
   readonly models?: Readonly<Record<string, readonly CatalogModel[]>>;
   readonly routeKinds?: readonly FakeRouteKind[];
+  readonly description?: string;
 } = {}): Promise<Harness> => {
   const clock = createFakeClock(T0);
   const ids = createFakeIdGen();
@@ -192,7 +193,10 @@ const harness = async (options: {
   const definitions = createFakeDefinitionStore();
   definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', DEFS_JSON);
 
-  await workOrders.create({ ...WORK_ORDER_RECORD });
+  await workOrders.create({
+    ...WORK_ORDER_RECORD,
+    ...(options.description === undefined ? {} : { description: options.description }),
+  });
   await accounts.save(accountRecord(ACCOUNT_X, 'prov-x'));
   await accounts.save(accountRecord(ACCOUNT_Y, 'prov-y'));
   const run = options.run ?? failedRun();
@@ -284,6 +288,24 @@ describe('buildHandoff', () => {
     // The rendered prompt is exactly the rendered pack — checks-first preamble included (R-57).
     expect(prompt).toBe(renderHandoffPrompt(pack));
     expect(prompt.split('\n')[0].toLowerCase()).toContain("first run the stage's checks");
+  });
+
+  it('A-322: the handoff prompt carries the Request section; an absent description adds none', async () => {
+    const ready = { note: NOTE, stageBase: STAGE_BASE, diffs: { [STAGE_BASE]: DIFF } };
+    const absent = await harness(ready);
+    const without = await buildHandoff(absent.deps, { runId: FAILED_RUN, cwd: CWD, candidates: [ROUTE_Y] });
+    if (!without.ok) throw new Error(`the pack must build: ${without.error}`);
+    expect(without.value.prompt).not.toContain('## Request');
+    expect(without.value.prompt).toBe(renderHandoffPrompt(without.value.pack));
+
+    const description = 'session drops after idle';
+    const present = await harness({ ...ready, description });
+    const withRequest = await buildHandoff(present.deps, { runId: FAILED_RUN, cwd: CWD, candidates: [ROUTE_Y] });
+    if (!withRequest.ok) throw new Error(`the pack must build: ${withRequest.error}`);
+    expect(withRequest.value.prompt).toContain('## Request');
+    expect(withRequest.value.prompt).toContain(WORK_ORDER_RECORD.title);
+    expect(withRequest.value.prompt).toContain(description);
+    expect(withRequest.value.prompt.startsWith(renderHandoffPrompt(withRequest.value.pack))).toBe(true);
   });
 
   it('A-62: with no stage base the code state diffs from the worktree base ref', async () => {

@@ -1772,3 +1772,7 @@ Addendum 2026-10-12 (#982): a work order may carry an optional description. `Wor
 - **A-320** (added 2026-10-12, #982) `workOrder.open` accepts `description` and `workOrder.detail` returns it on the record. Opening without one leaves `description` absent on the detail record.
 
 - **A-321** (added 2026-10-12, #969) When the worktree is listed but `base` or `diffSince` fails, `workOrder.changes` answers `unavailable` with no files and `truncated` false. That is not an empty change list.
+
+Addendum 2026-10-12 (#993): a handoff continuation carries the work order's Request. `buildHandoff` appends `workOrderRequestSection` to the rendered pack prompt, after the sized pack. The section is operator data, so it is not part of the pack the budget sizes and not part of the definitions digest. An absent or blank description adds nothing.
+
+- **A-322** (added 2026-10-12, #993) The handoff prompt contains a `Request` section with the title and the description when the work order has a description. When the description is absent, the prompt has no `Request` section and is the rendered pack.
