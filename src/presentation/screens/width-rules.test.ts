@@ -110,10 +110,11 @@ describe('columnation on the main container (U-55)', () => {
     expect(src('shell.tsx')).toContain('@container');
   });
 
-  it('U-55: the detail’s live pane is the fixed 22.5 rem second column from ≥900; the runs column (21.25 rem) arrives at ≥1700', () => {
+  it('U-55: the detail’s live pane is the fixed 21.25 rem second column from ≥900 — Phase A’s one live column (#972)', () => {
     const detail = src('detail.tsx');
-    expect(detail).toContain('@[900px]:grid-cols-[minmax(0,1fr)_22.5rem]');
-    expect(detail).toContain('@[1700px]:grid-cols-[minmax(0,1fr)_22.5rem_21.25rem]');
+    expect(detail).toContain('@[900px]:grid-cols-[minmax(0,1fr)_21.25rem]');
+    // Phase A (#972): the runs live inside their stages, so the ≥1700 third column is gone.
+    expect(detail).not.toContain('@[1700px]');
   });
 
   it('U-55: the account view columnates on the main container — one column below 900, two from ≥900', () => {

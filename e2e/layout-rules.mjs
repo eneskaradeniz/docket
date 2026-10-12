@@ -584,16 +584,17 @@ const l14 = async (page, ctx, sel) => {
 // L-15: an ask's unbreakable command never widens the surfaces that carry it. The seed's one ask
 // rides a real queued run — the dispatcher raises it on its own cadence, first tick 5 s in — and
 // it lands on two surfaces: the cockpit's attention row and the asking order's own detail, where
-// the ask column ([data-detail-ask]) stands beside the live pane whose ask card carries the same
-// command. The walk's own detay (İE-0006) never shows an ask, so the rule — measured on the
-// cockpit, where the ask row lands first — waits the ask out, reads `main`'s scroll there, then
-// follows the ask row's own title into the asking order's detail and reads `main` again, ending
-// home so the walk's cockpit labels stay honest for the checks that follow. Geometry alone cannot
-// tell the ask column's containment from luck — its texts stay short until a real run asks with a
-// long one — so the rule also pins the shrink hooks the boxes between an ask's text and the
-// column must carry: the ask list and every ask row may shrink below their content, the live
-// pane's own lesson measured where an ask actually lives. A target whose ask command carries no
-// unbroken run (the frozen prototype's short one) is not this rule's subject.
+// the ask stands as the decision zone's ([data-detail-ask]) permission card, beside the live
+// pane that carries the same command. The walk's own detay (İE-0006) never shows an ask, so the
+// rule — measured on the cockpit, where the ask row lands first — waits the ask out, reads
+// `main`'s scroll there, then follows the ask row's own title into the asking order's detail and
+// reads `main` again, ending home so the walk's cockpit labels stay honest for the checks that
+// follow. Geometry alone cannot tell the ask column's containment from luck — its texts stay
+// short until a real run asks with a long one — so the rule also pins the shrink hooks the boxes
+// between an ask's text and the column must carry: the zone's card stack and every card may
+// shrink below their content, the live pane's own lesson measured where an ask actually lives. A
+// target whose ask command carries no unbroken run (the frozen prototype's short one) is not
+// this rule's subject.
 const ASK_HEAD = 'dotnet ef database update';
 const ASK_WITNESS_MIN = 150;
 
@@ -635,13 +636,13 @@ const l15 = async (page, ctx, sel) => {
     .then((handle) => handle.asElement());
   if (button === null) return result('L-15', false, 'the ask row carries no title button to open its work order');
   await button.click({ timeout: 4000 });
-  // The asks card is the ask column's first child once an ask of this work order is open on it.
+  // Phase A (#972): the ask is the zone's permission card — one card of the stack that follows
+  // the zone's heading, no longer the column's first child.
   await page.waitForFunction(
     (colSel) => {
       const col = document.querySelector(colSel);
       if (col === null) return false;
-      const card = col.firstElementChild;
-      return card !== null && card.querySelector('ul li') !== null;
+      return col.querySelector('[data-decision-card="permission"]') !== null;
     },
     sel.detailAsk,
     { timeout: 5000 },
@@ -650,8 +651,8 @@ const l15 = async (page, ctx, sel) => {
     page,
     `const main = resolve(arg.main), col = resolve(arg.col);
     if (!main || !col) return null;
-    const card = col.firstElementChild;
-    const ul = card?.querySelector('ul') ?? null;
+    const card = col.querySelector('[data-decision-card="permission"]');
+    const ul = card?.closest('ul') ?? null;
     const rows = ul === null ? [] : [...ul.children];
     return {
       sw: main.scrollWidth, cw: main.clientWidth,

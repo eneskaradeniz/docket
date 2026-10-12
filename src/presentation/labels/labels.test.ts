@@ -48,4 +48,23 @@ describe('labels', () => {
     expect(TR['nav.library']).toBe('Çıktılar');
     expect(EN['nav.library']).toBe('Artifacts');
   });
+
+  it('U-238: every detail.* key is complete in both bundles', () => {
+    // Completeness for the whole detail.* family is U-1's own loop; this pins the family exists
+    // in both voices.
+    for (const key of LABEL_KEYS) {
+      if (!key.startsWith('detail.')) continue;
+      expect(TR[key], `tr:${key}`).toBeTypeOf('string');
+      expect(EN[key], `en:${key}`).not.toBeUndefined();
+    }
+  });
+
+  it('U-228: the trailing “…” marks only the two controls that open a further step (label-bundle scan)', () => {
+    // “Yükleniyor…” is progress punctuation, not a control; every dotted CONTROL opens a further
+    // step (the reject box, the close confirmation).
+    const dotted = Object.entries(TR)
+      .filter(([key, value]) => key.startsWith('detail.') && value.endsWith('…') && key !== 'detail.loading')
+      .map(([key]) => key);
+    expect(dotted.sort()).toEqual(['detail.close.open', 'detail.zone.rejectOpen']);
+  });
 });

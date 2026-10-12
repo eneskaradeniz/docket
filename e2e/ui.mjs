@@ -63,13 +63,16 @@ console.log(`profile: ${profile.dir}`);
 const L = {
   home: 'Anasayfa',
   badge: 'Senden bekleyenler',
+  // The cockpit and the board card keep the fold's own word; the detail's Phase A badge (#972)
+  // says its own — two constants, two surfaces.
   awaiting: 'İnsan yanıtı bekleniyor',
+  awaitingDetail: 'Onay bekliyor',
   ask: 'İzin bekleniyor',
   ready: 'Hazır',
   done: 'Tamamlandı',
   runningRun: 'Koşuyor',
   succeededRun: 'Başarılı',
-  runsEmpty: 'Bu iş emrinde henüz koşu yok.',
+  approveTitle: 'Senden onay bekleniyor:',
   attentionEmpty: 'Senden bekleyen yok',
   startStage: 'Aşamayı başlat',
   enqueuedNotice: 'Aşama kuyruğa alındı.',
@@ -189,9 +192,11 @@ await spec('the card opens the work-order detail', async () => {
   await page.locator('main section button').filter({ hasText: TITLE }).click();
   await waitFor('the detail heading', () => present(page.locator('main h1').filter({ hasText: TITLE })));
   await waitFor('the awaiting status badge', () =>
-    present(page.locator('main [role="status"], main span').filter({ hasText: L.awaiting }).first()),
+    present(page.locator('main [role="status"], main span').filter({ hasText: L.awaitingDetail }).first()),
   );
-  await waitFor('the empty runs section', () => present(page.getByText(L.runsEmpty, { exact: true })));
+  // Phase A (#972): the runs list left with the third column — the decision zone's approval
+  // card is the standing's own surface, and no run has started yet.
+  await waitFor('the approval card', () => present(page.getByText(L.approveTitle).first()));
   const view = await detailView();
   assert.equal(view.state.status, 'awaiting_human');
   assert.equal(view.state.stage, 'inceleme');
@@ -252,7 +257,10 @@ await spec('the detail shows the waiting run', async () => {
     const active = detail.runs.find((run) => run.endedAt === undefined || run.endedAt === null);
     return active === undefined ? undefined : { detail, active };
   });
-  const row = page.locator('main li').filter({ hasText: view.active.id });
+  // Phase A (#972): the run row shows the short code (run_ plus the id's last four), never the
+  // raw ULID — the row is found by that code.
+  const shortCode = `run_${view.active.id.slice(-4).toLowerCase()}`;
+  const row = page.locator('main li').filter({ hasText: shortCode });
   await waitFor('the run row', () => present(row));
   assert.ok((await row.textContent())?.includes(L.runningRun), 'the run row is not marked running');
 });

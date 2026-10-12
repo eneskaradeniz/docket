@@ -1562,3 +1562,103 @@ Added 2026-10-12. Three tiers. Primary is the amber fill. Secondary is the exist
 - **U-220** Wizard and new project: the former text buttons (Geri, Bu adımı atla, Geri al, Vazgeç) are outlined and still reachable by those names.
 - **U-221** Page viewer and account view: ‹ Geri, Reddet, ‹ Geri · kokpit and Ayarlar'da düzenle are outlined and still reachable by those names.
 - **U-222** Settings sections: Önerilene dön, Geri al, Yenile, Varsayılana dön and the wizard editor's Vazgeç are outlined and still reachable by those names.
+
+## Work-order detail, Phase A (U-223 … U-240)
+
+Added 2026-10-12, #972. The approved prototype (`docket-tasarim/detay-v2/index.html` final) is
+the visual contract; these rules are the behavioural one. Accessibility (A1–A11 of the issue) is
+part of the same contract, not a follow-up.
+
+Two architect decisions taken at implementation start (2026-10-12), both recorded here because
+the issue's own text carried both readings: the strip is the operator's Alternative 1 — stage
+segments only, the pending-gate marking is the counter on the current stage's label and the
+zone's dashed rows, and **no dashed gate segment exists** (U-225 pins this); and the badge
+vocabulary drops “Kapatıldı” and the “Yedek modele geçti” chip — the fold maps `closed` to
+`done` and no fallback field reaches the detail, so neither word has data behind it (both would
+need a small API addition first; U-223's table names every word that renders).
+
+Clarified the same day, #972: three sentences older rules carry about this screen are superseded
+on the detail only, append-only as ever — U-19's “the flow strip marks pending gates amber and
+dashed” (the marking is now U-224's counter plus the zone's dashed rows), U-55's “the detail's
+live pane is the fixed 22.5 rem second column from ≥900 … the runs list … third column at ≥1700”
+(the pane is the 21.25 rem second column; the runs sit inside their stages and the third column
+is gone), and U-57's stage-files card (the read-only changes list of U-231 replaced it, with
+U-152's detail half — the file-preview height — leaving with it). The chat launcher row (U-131)
+stays on the screen below the header's meta line.
+
+- **U-223** The header shows exactly one status badge, one word per state: Hazır, Koşuyor,
+  Değerlendiriliyor, Onay bekliyor (one human gate), Birden fazla onay bekliyor (two or more),
+  Dağıtım onayı bekliyor (a pending deploy gate), İzin bekleniyor (an open ask, pulse), Limit
+  bekleniyor, Tamamlandı, Başarısız with the sub-line “deneme hakkı var” (a re-entered stage)
+  or “deneme hakkı bitti” (the block). “Engellendi” is never used; the fold's `blocked` is the
+  spent-attempts failure. Table-driven in the store's tests.
+- **U-224** The strip is an ordered list of stage segments only — no gate segment, no gate name.
+  The current stage's label alone carries “· N kapı bekliyor”, N = the decision cards the zone
+  holds (approve, attest, deploy, permission; a start or failure card is not a gate waiting);
+  the counter is one part whatever N is. `aria-current="step"` on the current segment.
+- **U-225** No dashed pending-gate segment exists in the strip (the architect's Alternative-1
+  call): the strip's own markup carries no dashed edge, and every segment's bar shares one
+  height and the `rounded-control` token whatever the standing. The dashed amber edge marks the
+  zone's parallel cards instead.
+- **U-226** The decision zone's matrix, one card per pending decision stacked 12 px apart or the
+  single quiet line: `ready` with a `start_run` next shows the start card; a failed re-entry
+  shows the retry card (the run's own last words as one mono line, “Başarısız koşuyu aç”, and
+  “Yeniden dene”); the block shows the same card with “İş emrini kapat…” only; `awaiting_human`
+  shows one approve card per human gate (the card names its evidence — the changed-files count
+  and the pending page; “Onaylanacak çıktı yok” offers only “Aşamayı yeniden çalıştır”), one
+  attest card per pending changes gate, one deploy card per pending deploy gate (E-8's typed
+  confirmation at the button); an open ask shows the permission card (the question in the code
+  box, “{n} otomatik izin verildi” folded below). Parallel approvals (two or more approve cards)
+  carry no primary button. The reject's reason box is inline and its note travels to
+  `gate.decide` (#978: a rejection retries the stage with the note).
+- **U-227** Stacked decision cards sit on the 12 px gap token (`gap-3`); the layout audit
+  measures it on the real screen.
+- **U-228** A trailing “…” marks only the controls that open a further step — “Reddet…” (the
+  reason box) and “İş emrini kapat…” (the close confirmation) — pinned by a label-bundle scan
+  over `detail.*` (“Yükleniyor…” is progress punctuation, not a control).
+- **U-229** Cost reads by billing through the domain's own `costDisplay`: pay-per-use shows
+  money (≈ while an estimate), an included run shows tokens with the API-equivalent behind the
+  ⓘ control (“tahmini, ücret değil”), credits read in the provider's unit — never a dollar next
+  to an included run. Run rows show “12,4k girdi · 3,1k çıktı” in the compact voice and the
+  short run code, never the raw ULID.
+- **U-230** Stage headers carry the provenance word of the stage's role — “inceleyen:” for the
+  reviewer role, “yazan:” for every other — with the newest run's account · model from
+  `runSummaries`; a deleted account renders its stored id.
+- **U-231** The changed-files list is read-only: `workOrder.changes` fills it, eight rows stand
+  open before the “Tümünü gör” fold, `no_worktree` and `unavailable` carry their own calm lines
+  (a git failure is never “no changes”), and no control in the detail writes to git (source
+  scan).
+- **U-232** The skip link “Karara geç” is the detail's first focusable element and moves focus
+  to the zone's heading; the keyboard order follows the visual order, the zone before the files.
+  The amber focus ring (2 px, offset 2) shows on every control in both themes.
+- **U-233** The reject box, the deploy confirmation and the close confirmation are inline
+  dialogs: focus moves in on open, Tab is trapped inside, Esc closes and returns focus to the
+  opening control, which keeps its accessible name.
+- **U-234** The ⋯ menu speaks the menu-button model: `aria-haspopup="menu"` with `aria-expanded`;
+  Enter/Space/ArrowDown open and focus the first item, ArrowUp the last, ↑/↓ move, Home/End
+  jump, Esc closes and restores focus, Tab closes.
+- **U-235** One polite `role="status"` region — the badge — announces state changes and never
+  moves focus. The live pane's stream is a labelled `role="log"` with `aria-live="off"` (a
+  stream would flood), and follows the end only while the reader is already there; “En alta in”
+  is the reader's own door back.
+- **U-236** Semantics: one `h1`, the strip an ordered list, section headings in order, stages
+  as `details/summary` disclosures, file and run lists as lists, and the ⓘ estimate note a
+  focusable control whose text is reachable by keyboard and screen reader — never a hover-only
+  title.
+- **U-237** Every animated cue sits behind `motion-safe:` and the stream's snap yields under
+  `prefers-reduced-motion`; the zone's own actions render at the 32 px (`md`) tier and the
+  smaller icon controls carry 32 px hit areas (U-218's visual sizes unchanged).
+- **U-238** Every `detail.*` key is complete in the tr and en bundles and the screen's source
+  carries no inline UI copy.
+- **U-239** The layout audit walks the detail at 1024×640, 1152×720, 1280×800 and 1512×982
+  (work-area clamped) in both themes — no horizontal page scroll, strip segments disjoint,
+  stacked cards on the 12 px token — and the approval's and the live permission ask's actions
+  sit inside the main column at 1152×720, reachable without scrolling.
+- **U-240** Contrast, measured from `tokens.css` in both themes: text pairs at 4.5:1 or better
+  on every surface they are drawn on, the primary's ink on its amber fill included; the focus
+  ring and the strip's state bars at 3:1 or better in dark. Measured finding, reported per the
+  issue's A8 clause: the light theme's `--signal` ring and current bar read ≈1.74:1 on the
+  near-white surfaces — the amber **text** token passes in both themes, and darkening the light
+  `--signal` would retune the primary fill and every lamp, an architect token decision this
+  issue's clause does not authorise; the failing number is pinned by the test so the fix must
+  come through it.

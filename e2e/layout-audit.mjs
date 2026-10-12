@@ -46,6 +46,12 @@
 // beside it above, no text clipped without its ellipsis, and the rail honest about what it holds
 // (both delivery states, the pending chip, the two versions):
 //   page: sayfa <WxH> <theme> ok|FAIL <detail>
+// The work-order detail walks its own pass (U-239, #972) after the page viewer's, once per run:
+// the four named sizes (1024×640, 1152×720, 1280×800, 1512×982, clamped to the work area) in
+// both themes — no horizontal page scroll, strip segments disjoint, stacked cards on the 12 px
+// token — and the two decision standings U-239 names at the default window: the approval's and
+// the live permission ask's actions sit inside the main column, reachable without scrolling:
+//   detail: detay <WxH> <theme> ok|FAIL <detail>
 // Exit code is 1 when any line is FAIL.
 //
 // The run walks four combinations by default — dark at every size plus light at the default
@@ -1346,6 +1352,133 @@ async function pageViewerCheck(target) {
   return rows;
 }
 
+// --- the detail walk (U-239, #972) ---------------------------------------------------------------------
+/** The work-order detail's own pass: the four named sizes — the 1024 minimum, the 1152 default,
+ *  the 1280×800 preset, the 1512×982 full window — clamped to the work area as every plan size
+ *  is, in both themes. The measured standing is İE-0006's running detail (the navigator's own);
+ *  the two decision standings that must keep their actions on screen at 1152×720 — the approval
+ *  (İE-0046) and the live permission ask (İE-0029, whose scripted agent raises the ask when the
+ *  executor starts its queued stage) — are walked once per theme after the sizes. */
+const DETAIL_SIZES = [
+  [1024, 640],
+  [1152, 720],
+  [1280, 800],
+  [1512, 982],
+];
+
+async function detailGeometry(target, theme, size) {
+  const { page } = target;
+  await target.show('detay', theme, { size });
+  const m = await page.evaluate(() => {
+    const main = document.querySelector('main');
+    const segments = [...document.querySelectorAll('[data-detail-strip] > li')].map((li) => li.getBoundingClientRect());
+    const cards = [...document.querySelectorAll('[data-decision-stack] > li')].map((card) => card.getBoundingClientRect());
+    return {
+      sw: main?.scrollWidth ?? 0,
+      cw: main?.clientWidth ?? 0,
+      mainRect: main?.getBoundingClientRect().toJSON(),
+      segments,
+      cards,
+    };
+  });
+  const bad = [];
+  if (m.sw > m.cw + 1) bad.push(`main scrollWidth ${m.sw} of clientWidth ${m.cw}`);
+  for (let at = 1; at < m.segments.length; at += 1) {
+    if (m.segments[at - 1].right > m.segments[at].left + 1) bad.push('strip segments overlap');
+  }
+  for (let at = 1; at < m.cards.length; at += 1) {
+    const gap = m.cards[at].top - m.cards[at - 1].bottom;
+    if (gap < 11 || gap > 13) bad.push(`stacked cards ${Math.round(gap)}px apart, not the 12px token`);
+  }
+  return {
+    ok: bad.length === 0,
+    size: `${size[0]}x${size[1]}`,
+    theme,
+    detail:
+      bad.length === 0
+        ? `no overflow, ${m.segments.length} segments, ${m.cards.length} cards on the 12px token`
+        : bad.slice(0, 2).join('; '),
+  };
+}
+
+/** One decision standing's actions must sit wholly inside the main column's box — reachable
+ *  without scrolling — at the default window. The walk opens the detail the way a person does,
+ *  from its top: `main` keeps whatever scroll the screen before it left (the cockpit's attention
+ *  list, the board's columns, the page walk's reading), and a stale scroll would read a
+ *  reachable action as escaped — or flatter a buried one — so the scroll is reset before the
+ *  button is read, and the first screen is what the rule measures. */
+async function decisionActionsVisible(target, theme, cardText, buttonText, { wait = 8000 } = {}) {
+  const { page } = target;
+  const size = [1152, 720];
+  await target.show('pano', theme, { size });
+  await page.locator('main button').filter({ hasText: cardText }).first().click({ timeout: 4000 });
+  await page.evaluate(() => {
+    const main = document.querySelector('main');
+    if (main !== null) main.scrollTop = 0;
+  });
+  const button = page
+    .locator('[data-decision-stack] button')
+    .filter({ hasText: buttonText })
+    .first();
+  await button.waitFor({ state: 'visible', timeout: wait });
+  // The store's riding reads (asks, changes) land after the view and re-render the zone in
+  // place; a box read in the same breath as a re-render can catch the node between trees. Let
+  // the reads land, then take the box — retrying only against that race, never against the
+  // assertion itself.
+  await page.waitForTimeout(450);
+  let box = await button.boundingBox();
+  for (let at = 0; box === null && at < 3; at += 1) {
+    await page.waitForTimeout(450);
+    box = await button.boundingBox();
+  }
+  const m = await page.evaluate(() => {
+    const main = document.querySelector('main');
+    const rect = main?.getBoundingClientRect();
+    return main === undefined || rect === undefined ? null : { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right };
+  });
+  if (m === null) return { ok: false, theme, detail: 'main not found' };
+  const escapes =
+    box === null
+      ? ['no box']
+      : [
+          ...(box.top < m.top - 1 ? [`top ${box.top.toFixed(0)} < ${m.top.toFixed(0)}`] : []),
+          ...(box.bottom > m.bottom + 1 ? [`bottom ${box.bottom.toFixed(0)} > ${m.bottom.toFixed(0)}`] : []),
+          ...(box.left < m.left - 1 ? [`left ${box.left.toFixed(0)} < ${m.left.toFixed(0)}`] : []),
+          ...(box.right > m.right + 1 ? [`right ${box.right.toFixed(0)} > ${m.right.toFixed(0)}`] : []),
+        ];
+  return {
+    ok: escapes.length === 0,
+    size: '1152x720',
+    theme,
+    detail:
+      escapes.length === 0
+        ? `the ${buttonText} action sits inside the main column at 1152x720`
+        : `the ${buttonText} action escapes the main column at 1152x720 (${escapes.join(', ')})`,
+  };
+}
+
+async function detailCheck(target) {
+  const rows = [];
+  const workArea = target.workArea === undefined ? { width: 1920, height: 1080 } : await target.workArea();
+  const sizes = DETAIL_SIZES.map(([w, h]) => [
+    Math.min(w, workArea.width),
+    Math.min(h, workArea.height),
+  ]);
+  for (const size of sizes) {
+    for (const theme of THEMES) {
+      rows.push(await detailGeometry(target, theme, size));
+    }
+  }
+  // The two standings U-239 names: approve and permission, at the default window, both themes.
+  for (const theme of THEMES) {
+    rows.push(await decisionActionsVisible(target, theme, 'Swagger staging testi', 'Onayla'));
+    // İE-0029's ask rises through the real scripted agent; the wait covers the dispatcher's
+    // cadence and the transport handshake the smoke walk itself budgets for.
+    rows.push(await decisionActionsVisible(target, theme, 'Hız sınırı', 'İzin ver', { wait: 60_000 }));
+  }
+  return rows;
+}
+
 // --- run ---------------------------------------------------------------------------------------------
 const args = parseArgs(process.argv.slice(2));
 if (args.target === 'prototype' && !args.path) {
@@ -1525,6 +1658,22 @@ if (args.target === 'app' && target.selectors.pageScreen) {
     lines += 1;
     console.log(`page: sayfa ${r.size} ${r.theme} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
     appendCheck({ id: 'page', screen: 'sayfa', size: r.size, theme: r.theme, status: r.ok ? 'ok' : 'FAIL', detail: r.detail });
+  }
+}
+// The work-order detail's own walk (U-239) runs once per run, after the page viewer's — the app
+// target only; the frozen prototype is not the Phase A screen.
+if (args.target === 'app' && target.selectors.detailAsk) {
+  let rows;
+  try {
+    rows = await detailCheck(target);
+  } catch (error) {
+    rows = [{ ok: false, size: '', theme: '', detail: `detail walk unreachable: ${String(error).split('\n')[0]}` }];
+  }
+  for (const r of rows) {
+    if (!r.ok) failures += 1;
+    lines += 1;
+    console.log(`detail: detay ${r.size} ${r.theme} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
+    appendCheck({ id: 'detail', screen: 'detay', size: r.size, theme: r.theme, status: r.ok ? 'ok' : 'FAIL', detail: r.detail });
   }
 }
 // The without-standing runs once per run, on its own fake-free launch.

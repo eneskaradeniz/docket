@@ -29,7 +29,9 @@ const SOURCES = raw(
 );
 
 /** The tier component hosts the icon ghost; the inline link is the other legal plain-text control. */
-const ALLOWED = new Set(['action-button.tsx', 'inline-link.tsx', 'icon-button.tsx']);
+// The skip link's resting shape is invisible by design (A1: nothing until focus) — its focused
+// shape draws the full amber chip, so the scan's borderless-word trap does not apply to it.
+const ALLOWED = new Set(['action-button.tsx', 'inline-link.tsx', 'icon-button.tsx', 'detail-skip-link.tsx']);
 
 const buttonNamed = (html: string, name: string): string =>
   [...html.matchAll(/<button\b[^>]*>[\s\S]*?<\/button>/g)].map((match) => match[0]).find((button) => button.includes(name)) ?? '';

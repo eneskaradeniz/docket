@@ -2,7 +2,7 @@
 // from that bridge alone, and mounts React into the page's root element. The bridge is the only
 // api access here; every store takes its deps by injection, so composition stays the single place
 // where the real sources are named.
-import React, { useSyncExternalStore } from 'react';
+import React, { useEffect, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import type { Api } from '../api/index';
@@ -64,6 +64,11 @@ const USER: Actor = { kind: 'user', id: 'user-1', label: 'Operator' };
  *  reload (U-9). */
 function App({ localeStore, ...screens }: Omit<ShellScreenProps, 'locale'> & { readonly localeStore: LocaleStore }) {
   const locale = useSyncExternalStore(localeStore.subscribe, localeStore.current);
+  // The document's language follows the locale (A10): assistive tech must hear the UI's language,
+  // and the Turkish suffixes (ı İ ş ğ) must reach the mono voice through the right locale.
+  useEffect(() => {
+    document.documentElement.lang = locale;
+  }, [locale]);
   return <ShellScreen {...screens} localeStore={localeStore} locale={locale} />;
 }
 
