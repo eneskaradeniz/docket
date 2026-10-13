@@ -792,9 +792,13 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
     await Promise.all(wanted.map(readQuota));
   };
 
-  const read = async (refresh: boolean): Promise<void> => {
-    loading = true;
-    publish();
+  let inFlight: Promise<void> | null = null;
+
+  const runRead = async (refresh: boolean, showLoading: boolean): Promise<void> => {
+    if (showLoading) {
+      loading = true;
+      publish();
+    }
     const candidateQuery: Query = refresh ? { type: 'accounts.candidates', fresh: true } : { type: 'accounts.candidates' };
     const [candidateReply, providerReply, accountsReply] = await Promise.all([
       api.query(candidateQuery),
@@ -821,8 +825,20 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
     const adoptable = new Set(rowsOf().filter((row) => row.selectable).map((row) => row.id));
     selection = selection.filter((key) => listed.has(key) && adoptable.has(key));
     for (const key of [...quotas.keys()]) if (!listed.has(key)) quotas.delete(key);
-    loading = false;
+    if (showLoading) {
+      loading = false;
+    }
     publish();
+  };
+
+  /** One scan at a time: a plain ask while one runs joins it; a fresh ask waits for it, then runs (U-260). */
+  const read = (refresh: boolean, showLoading = true): Promise<void> => {
+    if (inFlight !== null) return refresh ? inFlight.then(() => read(true, showLoading)) : inFlight;
+    const current = runRead(refresh, showLoading).finally(() => {
+      inFlight = null;
+    });
+    inFlight = current;
+    return current;
   };
 
   const open = async (): Promise<void> => {
@@ -848,11 +864,12 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
   // `accounts.changed` — an adoption, a removal or a quota poll elsewhere: the lists the wizard
   // shows are read again, and a candidate's quota with them. A finish in flight, stopped on its
   // failed line or handing off owns the window: a re-read there could drop an already-adopted
-  // candidate out of the selection under the retry that must resume from it (U-49).
+  // candidate out of the selection under the retry that must resume from it (U-49). Background
+  // updates do not re-enter loading (U-261).
   deps.changes?.((change) => {
-    if (change.type !== 'accounts.changed' || !visible || !loaded || loading || finishing || finishPhase !== null || finished !== null) return;
+    if (change.type !== 'accounts.changed' || !visible || !loaded || finishing || finishPhase !== null || finished !== null) return;
     void (async () => {
-      await read(false);
+      await read(false, false);
       quotas.clear();
       if (step === 'budget' || editorWork !== null) await ensureQuotas();
       // The adopted set changed: Yetenekler's answer changes with it (U-58).

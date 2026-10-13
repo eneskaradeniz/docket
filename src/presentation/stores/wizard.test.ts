@@ -1125,4 +1125,41 @@ describe('wizard store (U-35, U-42)', () => {
     await bundle.store.open();
     expect(bundle.store.state().visible).toBe(false);
   });
+
+  it('U-260: opening the Hesaplar step with a scan already in flight starts no second read', async () => {
+    const bundle = setup([claudeA]);
+    const held = bundle.api.holdQuery('accounts.candidates');
+    const opening = bundle.store.open();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // Calling open again or advancing to Hesaplar while scan is in flight starts no second read:
+    const openingAgain = bundle.store.open();
+    await bundle.store.next();
+    expect(bundle.store.state().step).toBe('accounts');
+    const queries = bundle.api.queries.filter((q) => q.type === 'accounts.candidates');
+    expect(queries).toHaveLength(1);
+    held.resolve();
+    await Promise.all([opening, openingAgain]);
+    expect(bundle.store.state().rows).toHaveLength(1);
+    const queriesAfter = bundle.api.queries.filter((q) => q.type === 'accounts.candidates');
+    expect(queriesAfter).toHaveLength(1);
+    expect(bundle.api.queries.filter((q) => q.type === 'providers.discovered')).toHaveLength(1);
+    await bundle.store.rescan();
+    expect(bundle.api.queries.filter((q) => q.type === 'accounts.candidates')).toHaveLength(2);
+    expect(bundle.api.queries.filter((q) => q.type === 'providers.discovered')).toHaveLength(2);
+  });
+
+  it('U-261: an accounts.changed caused by this wizard does not show the scanning skeleton again', async () => {
+    const bundle = setup([claudeA]);
+    await toAccounts(bundle);
+    expect(bundle.store.state().step).toBe('accounts');
+    expect(bundle.store.state().loading).toBe(false);
+    expect(bundle.store.state().rows).toHaveLength(1);
+    const beforeCount = bundle.api.queries.filter((q) => q.type === 'accounts.candidates').length;
+    bundle.api.emit({ type: 'accounts.changed' });
+    // An accounts.changed re-reads in the background without setting loading = true:
+    expect(bundle.store.state().loading).toBe(false);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(bundle.store.state().loading).toBe(false);
+    expect(bundle.api.queries.filter((q) => q.type === 'accounts.candidates').length).toBe(beforeCount + 1);
+  });
 });
