@@ -86,7 +86,7 @@ const ROADMAP_JSON = JSON.stringify({
       blockedBy: [],
       tasks: [
         { id: 'setup-auth', title: 'Setup auth', dependsOn: [], acceptance: [], targets: ['main', 'acme'] },
-        { id: 'docs-pass', title: 'Docs pass', dependsOn: [], acceptance: [], targets: [] },
+        { id: 'docs-pass', title: 'Docs pass', dependsOn: [], acceptance: [], targets: ['main'] },
       ],
     },
   ],

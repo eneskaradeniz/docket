@@ -8,11 +8,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { stringify } from 'yaml';
 
 import type { DefinitionStore } from '../../../application/index';
-import type { CapabilityDef, CapabilitySlug, ProjectSlug, RepoSlug } from '../../../domain/index';
+import type { CapabilityDef, CapabilitySlug, ProjectSlug, RepoRoadmap, RepoSlug } from '../../../domain/index';
 import { BUILTIN_FLOWS, BUILTIN_ROLES } from '../../../domain/index';
 
 import { createYamlDefinitionStore } from './store';
-import { hashContent } from './targets';
+import { hashContent, parseTarget } from './targets';
 
 const REPO = 'acme' as RepoSlug;
 const UNKNOWN_REPO = 'ghost' as RepoSlug;
@@ -284,6 +284,27 @@ describe('loadRoadmap', () => {
     if (roadmap === undefined || roadmap.ok) return;
     expect(roadmap.error[0]?.path).toBe('roadmap.yaml');
     expect(roadmap.error[0]?.code).toBe('wrong_type');
+  });
+});
+
+describe('loadRepoRoadmap / saveRepoRoadmap', () => {
+  const repoRoadmapBody = {
+    milestones: [{ id: 'm1', title: 'M1', state: 'open' as const, source: { kind: 'local' as const } }],
+    issues: [{ id: 'i1', title: 'I1', state: 'open' as const, labels: [], source: { kind: 'local' as const } }],
+  };
+
+  it('I-95: round-trips repos/<slug>/roadmap.yaml through save and load', async () => {
+    const store = makeStore();
+    expect(await store.loadRepoRoadmap(REPO)).toBeUndefined();
+    const payload: RepoRoadmap = { repo: REPO, ...repoRoadmapBody };
+    const saved = await store.saveRepoRoadmap(REPO, payload, '');
+    expect(saved.ok).toBe(true);
+    const loaded = await store.loadRepoRoadmap(REPO);
+    expect(loaded !== undefined && loaded.ok).toBe(true);
+    if (loaded === undefined || !loaded.ok) return;
+    expect(loaded.value.milestones[0]?.id).toBe('m1');
+    expect(loaded.value.issues[0]?.id).toBe('i1');
+    expect(parseTarget(`repos/${REPO}/roadmap.yaml`)).toEqual({ kind: 'repo_roadmap' });
   });
 });
 
