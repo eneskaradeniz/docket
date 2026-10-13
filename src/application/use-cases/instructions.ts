@@ -11,7 +11,6 @@ import type {
   WorkOrderId,
 } from '../../domain/index';
 import {
-  applyRoleOverrides,
   DEFAULT_INSTRUCTION_BUDGET_CHARS,
   err,
   ok,
@@ -59,9 +58,9 @@ export async function composeRunPrompt(
   // failing, which is `not_found` on the gates' precedent (a run can no longer be prompted).
   const flow = loaded.value.flows.find((candidate) => candidate.id === record.flow);
   const stage = flow?.stages.find((candidate) => candidate.id === input.stage);
-  const baseRole = loaded.value.roles.find((candidate) => candidate.id === input.role);
-  if (flow === undefined || stage === undefined || baseRole === undefined) return err('not_found');
-  const role = applyRoleOverrides(baseRole, loaded.value.repo?.roleOverrides ?? []);
+  // The role a load answers is already the binding's effective role (R-130).
+  const role = loaded.value.roles.find((candidate) => candidate.id === input.role);
+  if (flow === undefined || stage === undefined || role === undefined) return err('not_found');
 
   // Docket layers first — byte-identical for every provider given the same definitions (A-53); the
   // brief already embeds the role instructions, so they are never appended a second time.

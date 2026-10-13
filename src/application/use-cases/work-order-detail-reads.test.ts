@@ -18,6 +18,7 @@ import {
   createFakeRunRepo,
   createFakeWorkOrderRepo,
   createFakeWorktrees,
+  repoFlowOf,
 } from '../ports/fakes';
 
 import { openWorkOrder, workOrderChanges, workOrderRunSummaries } from './index';
@@ -51,24 +52,22 @@ const RUN_B = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FAW');
 const RUN_C = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FAX');
 const RUN_D = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FB3');
 
+const FLOW_A = {
+  id: 'flow-a',
+  name: 'Flow A',
+  stages: [{ id: 'plan', name: 'Plan', role: 'worker', exit: [{ kind: 'human', id: 'plan-approval', label: 'Plan approval' }] }],
+};
+
 const DEFINITIONS = JSON.stringify({
   roles: [{ id: 'worker', name: 'Worker', instructions: 'Do the work.', writeScope: { kind: 'repo' }, capabilities: [], active: true }],
-  flows: [
-    {
-      id: 'flow-a',
-      name: 'Flow A',
-      stages: [{ id: 'plan', name: 'Plan', role: 'worker', exit: [{ kind: 'human', id: 'plan-approval', label: 'Plan approval' }] }],
-    },
-  ],
+  flows: [FLOW_A],
   capabilities: [],
   repo: {
     id: 'acme',
     name: 'Acme',
-    repos: [],
-    flows: ['flow-a'],
-    defaultFlow: 'flow-a',
+    flow: repoFlowOf(FLOW_A),
+    defaultLimitPolicy: 'wait_resume',
     commandSets: {},
-    roleOverrides: [],
     docsRoot: 'docs',
     testGlobs: [],
   },
@@ -98,8 +97,8 @@ const harness = async () => {
   const modelCatalog = createFakeModelCatalog({ [CATALOGUED]: [routeDefault()] });
   const worktrees = createFakeWorktrees();
   const checkpoints = createFakeCheckpointCommitter();
-  definitions.setProject({ id: PROJECT, name: 'Atölye', mainRepo: REPO, repos: [REPO] });
-  await projects.save({ id: PROJECT, name: 'Atölye', mainRepo: REPO, repos: [REPO] });
+  definitions.setProject({ id: PROJECT, name: 'Atölye', repos: [REPO] });
+  await projects.save({ id: PROJECT, name: 'Atölye', repos: [REPO] });
   definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', DEFINITIONS);
   await accounts.save({ id: ACCOUNT, provider: 'plan-prov', label: 'Plan', authMode: 'subscription', limitPolicy: 'ask', caps: [] });
   await accounts.save({

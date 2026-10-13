@@ -31,10 +31,14 @@ const WORK_ORDER = { id: orderOf('01J8Z0A7BCTHEXAMPLE0Q7Z8V9Q'), title: 'Fix the
 const REPO: RepoDef = {
   id: repoOf('docket'),
   name: 'docket',
-  flows: [flowOf('standard')],
-  defaultFlow: flowOf('standard'),
+  flow: {
+    flowId: flowOf('standard'),
+    version: 1,
+    stages: [{ id: stageOf('implement'), name: 'Implement', role: roleOf('developer'), exit: [] }],
+    bindings: [{ stage: stageOf('implement'), role: { roleId: roleOf('developer'), version: 1 }, accounts: [] }],
+  },
+  defaultLimitPolicy: 'wait_resume',
   commandSets: { check: ['npm test', 'npm run typecheck'] },
-  roleOverrides: [],
   docsRoot: 'docs',
   testGlobs: ['**/*.test.ts'],
 };

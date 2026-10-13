@@ -18,7 +18,7 @@ import {
 } from '../../domain/index';
 
 import type { AccountRecord, AppDeps } from '../ports/index';
-import { createFakeDefinitionStore, createFakeDeps, createFakeEventLog, type FakeEventLog } from '../ports/fakes/index';
+import { createFakeDefinitionStore, createFakeDeps, createFakeEventLog, repoFlowOf, type FakeEventLog } from '../ports/fakes/index';
 
 import { closeWorkOrder } from '../use-cases/index';
 import { runPhase } from './run-phase';
@@ -47,18 +47,19 @@ const POLISH: TaskSlug = slugOf('polish');
 const SHIP: TaskSlug = slugOf('ship');
 const ACCOUNT: AccountId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FCV');
 
+const STANDARD_FLOW = BUILTIN_FLOWS.find((flow) => flow.id === 'standard')!;
+
 const repoDefinitions = (repo: string): string =>
   JSON.stringify({
     roles: BUILTIN_ROLES,
-    flows: BUILTIN_FLOWS.filter((flow) => flow.id === 'standard'),
+    flows: [STANDARD_FLOW],
     capabilities: [],
     repo: {
       id: repo,
       name: repo,
-      flows: ['standard'],
-      defaultFlow: 'standard',
+      flow: repoFlowOf(STANDARD_FLOW),
+      defaultLimitPolicy: 'wait_resume',
       commandSets: { tests: ['npm test'] },
-      roleOverrides: [],
       docsRoot: 'docs',
       testGlobs: [],
     },
@@ -87,7 +88,7 @@ const roadmapJson = (phases: readonly PhaseSpec[]): string =>
         title: `Task ${task.id}`,
         dependsOn: task.dependsOn ?? [],
         acceptance: [],
-        targets: task.targets ?? [],
+        targets: task.targets ?? ['main'],
       })),
     })),
   });
@@ -115,7 +116,7 @@ const harness = async (options: HarnessOptions = {}): Promise<Harness> => {
   const definitions = createFakeDefinitionStore();
   const log = createFakeEventLog();
   const deps = createFakeDeps({ definitions, log });
-  const project = { id: PROJECT, name: 'Atölye', mainRepo: MAIN, repos: [MAIN, WEB] };
+  const project = { id: PROJECT, name: 'Atölye', repos: [MAIN, WEB] };
   definitions.setProject(project);
   await deps.projects.save(project);
   for (const repo of [MAIN, WEB]) {

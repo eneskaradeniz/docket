@@ -21,6 +21,7 @@ import {
   createFakeProjectRepo,
   createFakeRepoRegistry,
   createFakeWorkOrderRepo,
+  repoFlowOf,
 } from '../ports/fakes';
 
 import { attachProject, openTaskWorkOrders, registerRepo, unregisterRepo } from './projects';
@@ -49,33 +50,33 @@ const OTHER_TASK: TaskSlug = slugOf<'task'>('docs-pass');
 const CHECKOUT = '/checkouts/atolye';
 const OTHER_CHECKOUT = '/checkouts/other';
 
-const PROJECT_DEF = { id: PROJECT, name: 'Atölye', mainRepo: MAIN, repos: [MAIN, REPO] };
+const PROJECT_DEF = { id: PROJECT, name: 'Atölye', repos: [MAIN, REPO] };
 
-const DEFINITIONS_JSON = JSON.stringify({
-  roles: [
-    { id: 'worker', name: 'Worker', instructions: 'work', writeScope: { kind: 'repo' }, capabilities: [], active: true },
+const STANDARD_FLOW = {
+  id: 'standard',
+  name: 'Standard',
+  stages: [
+    { id: 'plan', name: 'Plan', role: 'worker', exit: [{ kind: 'human', id: 'plan-approval', label: 'Plan' }] },
   ],
-  flows: [
-    {
-      id: 'standard',
-      name: 'Standard',
-      stages: [
-        { id: 'plan', name: 'Plan', role: 'worker', exit: [{ kind: 'human', id: 'plan-approval', label: 'Plan' }] },
-      ],
+};
+
+const repoDefsOf = (repoId: string) =>
+  JSON.stringify({
+    roles: [
+      { id: 'worker', name: 'Worker', instructions: 'work', writeScope: { kind: 'repo' }, capabilities: [], active: true },
+    ],
+    flows: [STANDARD_FLOW],
+    capabilities: [],
+    repo: {
+      id: repoId,
+      name: repoId === 'main' ? 'Main' : 'Acme',
+      flow: repoFlowOf(STANDARD_FLOW),
+      defaultLimitPolicy: 'wait_resume',
+      commandSets: {},
+      docsRoot: 'docs',
+      testGlobs: [],
     },
-  ],
-  capabilities: [],
-  repo: {
-    id: 'main',
-    name: 'Main',
-    flows: ['standard'],
-    defaultFlow: 'standard',
-    commandSets: {},
-    roleOverrides: [],
-    docsRoot: 'docs',
-    testGlobs: [],
-  },
-});
+  });
 
 const ROADMAP_JSON = JSON.stringify({
   phases: [
@@ -114,8 +115,8 @@ const createHarness = (configure?: (h: Harness) => void, withRoadmap = true): Ha
   const log = createFakeEventLog();
 
   definitions.setProject(PROJECT_DEF);
-  definitions.seed({ kind: 'repo', repo: MAIN }, 'defs.json', DEFINITIONS_JSON);
-  definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', DEFINITIONS_JSON);
+  definitions.seed({ kind: 'repo', repo: MAIN }, 'defs.json', repoDefsOf('main'));
+  definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', repoDefsOf('acme'));
   if (withRoadmap) definitions.seed({ kind: 'project', project: PROJECT }, 'roadmap.json', ROADMAP_JSON);
 
   const h: Harness = {
@@ -254,8 +255,24 @@ describe('openTaskWorkOrders', () => {
   });
 
   it('A-25: a task with empty targets opens on the main repo alone', async () => {
-    const h = createHarness();
-    await h.projects.save(PROJECT_DEF);
+    const singleRepoProject = { id: PROJECT, name: 'Atölye', repos: [MAIN] };
+    const h = createHarness(undefined, false);
+    h.definitions.setProject(singleRepoProject);
+    h.definitions.seed(
+      { kind: 'project', project: PROJECT },
+      'roadmap.json',
+      JSON.stringify({
+        phases: [
+          {
+            id: 'p1',
+            name: 'Phase 1',
+            blockedBy: [],
+            tasks: [{ id: 'docs-pass', title: 'Docs pass', dependsOn: [], acceptance: [], targets: [] }],
+          },
+        ],
+      }),
+    );
+    await h.projects.save(singleRepoProject);
 
     const result = await openTaskWorkOrders(h.taskDeps, { project: PROJECT, task: OTHER_TASK, actor: ACTOR });
 

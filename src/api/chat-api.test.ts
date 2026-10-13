@@ -49,6 +49,7 @@ import {
   type FakeRunDirs,
   type FakeRunTokens,
   type FakeTransportResolver,
+  repoFlowOf,
 } from '../application/ports/fakes';
 
 import { createApi, type ChatWiring, type UiEvent } from './api';
@@ -165,8 +166,8 @@ const seed = async (options: SeedOptions = {}): Promise<Harness> => {
     mcpEndpoint: ENDPOINT,
     attachmentFiles: createFakeAttachmentFiles(),
   });
-  await deps.projects.save({ id: ATOLYE, name: 'Atölye', mainRepo: ACME, repos: [ACME, WEB] });
-  await deps.projects.save({ id: DIGER, name: 'Diğer', mainRepo: YABANCI, repos: [YABANCI] });
+  await deps.projects.save({ id: ATOLYE, name: 'Atölye', repos: [ACME, WEB] });
+  await deps.projects.save({ id: DIGER, name: 'Diğer', repos: [YABANCI] });
   await deps.workOrders.create({
     id: WORK_ORDER,
     project: ATOLYE,
@@ -670,11 +671,20 @@ describe('chat commands', () => {
 
   it('A-262: draft confirm/drop, action decide/undo and grant/revoke are thin maps with their own codes', async () => {
     const h = await seed();
+    const mainFlow = { id: 'main', name: 'Main', stages: [{ id: 'plan', name: 'Plan', role: null, exit: [{ kind: 'human', id: 'ok', label: 'Ok' }] }] };
     h.definitions.seed({ kind: 'repo', repo: ACME }, 'defs.json', JSON.stringify({
       roles: [],
-      flows: [{ id: 'main', name: 'Main', stages: [{ id: 'plan', name: 'Plan', role: null, exit: [{ kind: 'human', id: 'ok', label: 'Ok' }] }] }],
+      flows: [mainFlow],
       capabilities: [],
-      repo: { id: ACME, name: ACME, repos: [], flows: ['main'], defaultFlow: 'main', commandSets: {}, roleOverrides: [], docsRoot: 'docs', testGlobs: [] },
+      repo: {
+        id: ACME,
+        name: ACME,
+        flow: repoFlowOf(mainFlow),
+        defaultLimitPolicy: 'wait_resume',
+        commandSets: {},
+        docsRoot: 'docs',
+        testGlobs: [],
+      },
     }));
 
     const confirmed = await h.api.command(USER, { type: 'chat.draft.confirm', draft: DRAFT });

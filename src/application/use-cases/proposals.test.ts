@@ -11,6 +11,7 @@ import {
   createFakeDeps,
   createFakeEventLog,
   createFakeProposalRepo,
+  repoFlowOf,
   type FakeDefinitionStore,
   type FakeEventLog,
   type FakeProposalRepo,
@@ -40,15 +41,20 @@ const RUN_ID: RunId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FA1');
 const USER: Actor = { kind: 'user', id: 'user-1', label: 'Operator' };
 const AGENT: Actor = { kind: 'agent', runId: RUN_ID, role: slugOf<'role'>('reviewer') };
 
+const STANDARD_FLOW_DEF = {
+  id: 'standard',
+  name: 'Standard',
+  stages: [{ id: 'plan', name: 'Plan', role: null, exit: [] }],
+};
+
 /** A bare repo definition body — the file a repo-scope proposal edits. */
 const rolesFile = (name: string): string =>
   JSON.stringify({
     id: 'acme',
     name,
-    flows: ['standard'],
-    defaultFlow: 'standard',
+    flow: repoFlowOf(STANDARD_FLOW_DEF),
+    defaultLimitPolicy: 'wait_resume',
     commandSets: {},
-    roleOverrides: [],
     docsRoot: 'docs',
     testGlobs: [],
   });
@@ -65,11 +71,7 @@ interface Harness {
 }
 
 /** The minimal library a repo.yaml candidate validates against. */
-const STANDARD_FLOW = JSON.stringify({
-  id: 'standard',
-  name: 'Standard',
-  stages: [{ id: 'plan', name: 'Plan', role: null, exit: [] }],
-});
+const STANDARD_FLOW = JSON.stringify(STANDARD_FLOW_DEF);
 
 const makeHarness = (): Harness => {
   const clock = createFakeClock(1_000);

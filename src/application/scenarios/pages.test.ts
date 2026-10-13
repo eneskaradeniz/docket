@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 
 import { parseSlug, parseUlid, type Actor, type FlowSlug, type RoleSlug, type RunId, type Ulid, type WorkOrderId } from '../../domain/index';
 
-import { createFakeClock, createFakeDefinitionStore, createFakeDeps, createFakeEventLog, createFakePageFiles } from '../ports/fakes/index';
+import { createFakeClock, createFakeDefinitionStore, createFakeDeps, createFakeEventLog, createFakePageFiles, repoFlowOf } from '../ports/fakes/index';
 import {
   ackComments,
   commentOnPage,
@@ -35,17 +35,25 @@ const USER: Actor = { kind: 'user', id: 'operator', label: 'Operator' };
 const AGENT: Actor = { kind: 'agent', runId: ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FA1') as RunId, role: slugOf<'role'>('designer') as RoleSlug };
 const enc = (text: string): Uint8Array => new TextEncoder().encode(text);
 
+const MOCKUP_FLOW = {
+  id: 'mockup-flow',
+  name: 'Mockup',
+  stages: [{ id: 'design', name: 'Design', role: null, exit: [{ kind: 'page_approval', id: 'mockup-ok', label: 'Mockup approved' }] }],
+};
+
 const DEFINITIONS = {
   roles: [],
-  flows: [
-    {
-      id: 'mockup-flow',
-      name: 'Mockup',
-      stages: [{ id: 'design', name: 'Design', role: null, exit: [{ kind: 'page_approval', id: 'mockup-ok', label: 'Mockup approved' }] }],
-    },
-  ],
+  flows: [MOCKUP_FLOW],
   capabilities: [],
-  repo: { id: 'ws', name: 'Repo', repos: [], flows: ['mockup-flow'], defaultFlow: 'mockup-flow', commandSets: {}, roleOverrides: [], docsRoot: 'docs', testGlobs: [] },
+  repo: {
+    id: 'ws',
+    name: 'Repo',
+    flow: repoFlowOf(MOCKUP_FLOW),
+    defaultLimitPolicy: 'wait_resume',
+    commandSets: {},
+    docsRoot: 'docs',
+    testGlobs: [],
+  },
 };
 
 describe('pages core scenario', () => {

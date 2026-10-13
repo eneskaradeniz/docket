@@ -18,7 +18,7 @@ import {
 } from '../../domain/index';
 
 import type { AccountRecord, AppDeps } from '../ports/index';
-import { createFakeClock, createFakeDefinitionStore, createFakeDeps, createFakeEventLog, type FakeClock, type FakeEventLog } from '../ports/fakes/index';
+import { createFakeClock, createFakeDefinitionStore, createFakeDeps, createFakeEventLog, repoFlowOf, type FakeClock, type FakeEventLog } from '../ports/fakes/index';
 
 import { blockWorkOrder, closeWorkOrder, pausePhase, resumePhase } from '../use-cases/index';
 import { advancePhases } from './advance-phases';
@@ -49,11 +49,20 @@ const C: TaskSlug = slugOf('c');
 const SHIP: TaskSlug = slugOf('ship');
 const ACCOUNT: AccountId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FCV');
 
+const STANDARD_FLOW = BUILTIN_FLOWS.find((flow) => flow.id === 'standard')!;
 const repoDefinitions = JSON.stringify({
   roles: BUILTIN_ROLES,
-  flows: BUILTIN_FLOWS.filter((flow) => flow.id === 'standard'),
+  flows: [STANDARD_FLOW],
   capabilities: [],
-  repo: { id: 'main', name: 'main', flows: ['standard'], defaultFlow: 'standard', commandSets: { tests: ['npm test'] }, roleOverrides: [], docsRoot: 'docs', testGlobs: [] },
+  repo: {
+    id: 'main',
+    name: 'main',
+    flow: repoFlowOf(STANDARD_FLOW),
+    defaultLimitPolicy: 'wait_resume',
+    commandSets: { tests: ['npm test'] },
+    docsRoot: 'docs',
+    testGlobs: [],
+  },
 });
 
 // p1: a → b, and an independent c; p2 waits for p1.
@@ -84,7 +93,7 @@ const harness = async (roadmap: string | null = ROADMAP): Promise<Harness> => {
   const log = createFakeEventLog();
   const clock = createFakeClock(1_000);
   const deps = createFakeDeps({ definitions, log, clock });
-  const project = { id: PROJECT, name: 'Atölye', mainRepo: MAIN, repos: [MAIN] };
+  const project = { id: PROJECT, name: 'Atölye', repos: [MAIN] };
   definitions.setProject(project);
   await deps.projects.save(project);
   definitions.seed({ kind: 'repo', repo: MAIN }, 'defs.json', repoDefinitions);

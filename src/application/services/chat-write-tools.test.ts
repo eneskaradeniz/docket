@@ -28,6 +28,7 @@ import {
   createFakeDeps,
   createFakeEventLog,
   createFakeRunTokens,
+  repoFlowOf,
   type FakeClock,
   type FakeDefinitionStore,
   type FakeEventLog,
@@ -94,12 +95,22 @@ const SCOPE_BETA: ConversationScope = { kind: 'project', project: BETA };
 const SCOPE_GLOBAL: ConversationScope = { kind: 'global' };
 const SCOPE_ORDER: ConversationScope = { kind: 'workOrder', workOrder: WORK_ORDER };
 
+const MAIN_FLOW = { id: 'main', name: 'Main', stages: [{ id: 'plan', name: 'Plan', role: null, exit: [{ kind: 'human', id: 'ok', label: 'Ok' }] }] };
+
 const defs = (repo: string): string =>
   JSON.stringify({
     roles: [],
-    flows: [{ id: 'main', name: 'Main', stages: [{ id: 'plan', name: 'Plan', role: null, exit: [{ kind: 'human', id: 'ok', label: 'Ok' }] }] }],
+    flows: [MAIN_FLOW],
     capabilities: [],
-    repo: { id: repo, name: repo, repos: [], flows: ['main'], defaultFlow: 'main', commandSets: {}, roleOverrides: [], docsRoot: 'docs', testGlobs: [] },
+    repo: {
+      id: repo,
+      name: repo,
+      flow: repoFlowOf(MAIN_FLOW),
+      defaultLimitPolicy: 'wait_resume',
+      commandSets: {},
+      docsRoot: 'docs',
+      testGlobs: [],
+    },
   });
 const ROLES_FILE = JSON.stringify({ roles: [{ id: 'helper', name: 'Helper', instructions: 'help', writeScope: { kind: 'repo' }, capabilities: [], active: true }] });
 const ROADMAP = JSON.stringify({ phases: [] });
@@ -143,11 +154,11 @@ const harness = (overrides: Partial<Parameters<typeof createFakeDeps>[0]> = {}):
   const tokens = createFakeRunTokens();
   // The fake definition store, seeded the way the scenario needs it (projects, repo defs, roadmap).
   const definitions = createFakeDefinitionStore();
-  definitions.setProject({ id: ALPHA, name: 'Alpha', mainRepo: ALPHA_APP, repos: [ALPHA_APP, ALPHA_API] });
-  definitions.setProject({ id: BETA, name: 'Beta', mainRepo: BETA_APP, repos: [BETA_APP] });
+  definitions.setProject({ id: ALPHA, name: 'Alpha', repos: [ALPHA_APP, ALPHA_API] });
+  definitions.setProject({ id: BETA, name: 'Beta', repos: [BETA_APP] });
   for (const repo of [ALPHA_APP, ALPHA_API, BETA_APP]) definitions.seed({ kind: 'repo', repo }, 'defs.json', defs(repo));
   definitions.seed({ kind: 'project', project: ALPHA }, 'roadmap.yaml', ROADMAP);
-  definitions.seed({ kind: 'project', project: ALPHA }, 'project.yaml', JSON.stringify({ name: 'Alpha', mainRepo: ALPHA_APP, repos: [ALPHA_APP, ALPHA_API] }));
+  definitions.seed({ kind: 'project', project: ALPHA }, 'project.yaml', JSON.stringify({ name: 'Alpha', repos: [ALPHA_APP, ALPHA_API] }));
   definitions.seed({ kind: 'project', project: ALPHA }, 'roles/helper.yaml', ROLES_FILE);
   const deps = createFakeDeps({ clock, log, runTokens: tokens, definitions, ...overrides });
   const ledger = createChatTurnLedger();
@@ -180,8 +191,8 @@ const codeOf = (response: DocketToolResponse): string => {
 /** The seeded base: both projects, the alpha work order, every conversation. */
 const setup = async (): Promise<Harness> => {
   const h = harness();
-  await h.deps.projects.save({ id: ALPHA, name: 'Alpha', mainRepo: ALPHA_APP, repos: [ALPHA_APP, ALPHA_API] });
-  await h.deps.projects.save({ id: BETA, name: 'Beta', mainRepo: BETA_APP, repos: [BETA_APP] });
+  await h.deps.projects.save({ id: ALPHA, name: 'Alpha', repos: [ALPHA_APP, ALPHA_API] });
+  await h.deps.projects.save({ id: BETA, name: 'Beta', repos: [BETA_APP] });
   await h.deps.workOrders.create({
     id: WORK_ORDER,
     project: ALPHA,
@@ -473,7 +484,7 @@ describe('A-220: propose_change', () => {
   it('A-220: a definition change takes a project or repo scope, and the store\'s own names win', async () => {
     const h = await setup();
     const chat = await h.chat(CONVERSATION, SCOPE_ALPHA);
-    const afterProject = JSON.stringify({ name: 'Alpha Renamed', mainRepo: ALPHA_APP, repos: [ALPHA_APP, ALPHA_API] });
+    const afterProject = JSON.stringify({ name: 'Alpha Renamed', repos: [ALPHA_APP, ALPHA_API] });
     const receipt = resultOf(await h.call(chat, 'propose_change', {
       target: 'definition',
       scope: { kind: 'project', project: ALPHA },

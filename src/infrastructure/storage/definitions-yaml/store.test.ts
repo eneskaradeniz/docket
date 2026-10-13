@@ -73,10 +73,14 @@ const capabilityDef = (id: CapabilitySlug): CapabilityDef => ({
 const repoDef = (id: string, overrides: Record<string, unknown> = {}): unknown => ({
   id,
   name: `Repo ${id}`,
-  flows: ['std'],
-  defaultFlow: 'std',
+  flow: {
+    flowId: 'std',
+    version: 1,
+    stages: [{ id: 'plan', name: 'Plan', role: 'planner', exit: [] }],
+    bindings: [{ stage: 'plan', role: { roleId: 'planner', version: 1 }, accounts: [] }],
+  },
+  defaultLimitPolicy: 'wait_resume',
   commandSets: {},
-  roleOverrides: [],
   docsRoot: 'docs',
   testGlobs: [],
   ...overrides,
@@ -96,7 +100,7 @@ const roadmapDef = (overrides: Record<string, unknown> = {}): unknown => ({
 
 /** A loadable world: the standard flow, the planner role, and the repo's repo.yaml. */
 const seedLoadableWorld = async (): Promise<void> => {
-  await writeYaml(globalRoot, 'library/flows/std/v1.yaml', flowDef('std', { stages: [{ id: 'plan', name: 'Plan', role: null, exit: [] }] }));
+  await writeYaml(globalRoot, 'library/flows/std/v1.yaml', flowDef('std', { stages: [{ id: 'plan', name: 'Plan', role: 'planner', exit: [] }] }));
   await writeYaml(globalRoot, 'library/roles/planner/v1.yaml', roleDef('planner'));
   await writeYaml(globalRoot, `repos/${REPO}/repo.yaml`, repoDef(REPO));
 };
@@ -116,16 +120,22 @@ describe('load', () => {
   });
 
   it('I-12: the newest version of a definition is the current one', async () => {
-    await writeYaml(globalRoot, 'library/flows/std/v1.yaml', flowDef('std', { stages: [{ id: 'plan', name: 'Plan', role: null, exit: [] }] }));
+    await writeYaml(globalRoot, 'library/flows/std/v1.yaml', flowDef('std', { stages: [{ id: 'plan', name: 'Plan', role: 'planner', exit: [] }] }));
     await writeYaml(globalRoot, 'library/roles/planner/v1.yaml', roleDef('planner', { name: 'Old' }));
     await writeYaml(globalRoot, 'library/roles/planner/v2.yaml', roleDef('planner', { name: 'New' }));
-    await writeYaml(globalRoot, `repos/${REPO}/repo.yaml`, repoDef(REPO));
+    const flowV2 = {
+      flowId: 'std',
+      version: 1,
+      stages: [{ id: 'plan', name: 'Plan', role: 'planner', exit: [] }],
+      bindings: [{ stage: 'plan', role: { roleId: 'planner', version: 2 }, accounts: [] }],
+    };
+    await writeYaml(globalRoot, `repos/${REPO}/repo.yaml`, repoDef(REPO, { flow: flowV2 }));
     const loaded = await makeStore().load(REPO);
     expect(loaded.ok && loaded.value.roles[0]?.name).toBe('New');
   });
 
   it('I-11: only version files the grammar accepts are read, in version order', async () => {
-    await writeYaml(globalRoot, 'library/flows/std/v1.yaml', flowDef('std', { stages: [{ id: 'plan', name: 'Plan', role: null, exit: [] }] }));
+    await writeYaml(globalRoot, 'library/flows/std/v1.yaml', flowDef('std', { stages: [{ id: 'plan', name: 'Plan', role: 'planner', exit: [] }] }));
     await writeYaml(globalRoot, 'library/roles/planner/v1.yaml', roleDef('planner'));
     await writeText(globalRoot, 'library/roles/planner/notes.txt', 'not a definition');
     await writeYaml(globalRoot, `repos/${REPO}/repo.yaml`, repoDef(REPO));
@@ -171,11 +181,17 @@ describe('load', () => {
 
   it('I-12: the merged input goes through validateDefinitions, so semantic issues surface with their paths', async () => {
     await writeYaml(globalRoot, 'library/roles/planner/v1.yaml', roleDef('planner'));
-    await writeYaml(globalRoot, `repos/${REPO}/repo.yaml`, repoDef(REPO, { defaultFlow: 'missing' }));
+    const invalidFlow = {
+      flowId: 'std',
+      version: 1,
+      stages: [{ id: 'plan', name: 'Plan', role: 'planner', exit: [] }],
+      bindings: [{ stage: 'plan', role: { roleId: 'planner', version: 99 }, accounts: [] }],
+    };
+    await writeYaml(globalRoot, `repos/${REPO}/repo.yaml`, repoDef(REPO, { flow: invalidFlow }));
     const loaded = await makeStore().load(REPO);
     expect(loaded.ok).toBe(false);
     if (loaded.ok) return;
-    expect(loaded.error.some((issue) => issue.code === 'unknown_flow')).toBe(true);
+    expect(loaded.error.some((issue) => issue.code === 'unknown_role_version')).toBe(true);
   });
 
   it('I-86: every definition is read and written under the ~/.docket layout', async () => {
@@ -246,14 +262,14 @@ describe('loadRoadmap', () => {
   });
 
   it('I-14: a valid roadmap.yaml loads through validateRoadmap with the project', async () => {
-    await writeYaml(globalRoot, `projects/${PROJECT}/project.yaml`, { id: PROJECT, name: 'Atölye', mainRepo: REPO, repos: [REPO] });
+    await writeYaml(globalRoot, `projects/${PROJECT}/project.yaml`, { id: PROJECT, name: 'Atölye', repos: [REPO] });
     await writeYaml(globalRoot, `projects/${PROJECT}/roadmap.yaml`, roadmapDef({ phases: [{ id: 'phase-1', name: 'Bir', blockedBy: [], tasks: [{ id: 'task-1', title: 'İş', dependsOn: [], targets: [REPO], acceptance: ['kabul'] }] }] }));
     const roadmap = await makeStore().loadRoadmap(PROJECT);
     expect(roadmap !== undefined && roadmap.ok).toBe(true);
   });
 
   it('I-14: an invalid roadmap returns the validateRoadmap issues', async () => {
-    await writeYaml(globalRoot, `projects/${PROJECT}/project.yaml`, { id: PROJECT, name: 'Atölye', mainRepo: REPO, repos: [REPO] });
+    await writeYaml(globalRoot, `projects/${PROJECT}/project.yaml`, { id: PROJECT, name: 'Atölye', repos: [REPO] });
     await writeYaml(globalRoot, `projects/${PROJECT}/roadmap.yaml`, roadmapDef({ phases: [{ id: 'phase-1', name: 'Bir', blockedBy: [], tasks: [{ id: 'task-1', title: 'İş', dependsOn: [], targets: [UNKNOWN_REPO], acceptance: [] }] }] }));
     const roadmap = await makeStore().loadRoadmap(PROJECT);
     expect(roadmap !== undefined && !roadmap.ok).toBe(true);
@@ -394,15 +410,21 @@ describe('validateCandidate', () => {
     await seedLoadableWorld();
     const valid = await store.validateCandidate(`repos/${REPO}/repo.yaml`, `${stringify(repoDef(REPO))}\n`);
     expect(valid.ok).toBe(true);
-    const unknownRole = await store.validateCandidate(`repos/${REPO}/repo.yaml`, `${stringify(repoDef(REPO, { roleOverrides: [{ id: 'ghost' }] }))}\n`);
+    const invalidFlow = {
+      flowId: 'std',
+      version: 1,
+      stages: [{ id: 'plan', name: 'Plan', role: 'planner', exit: [] }],
+      bindings: [{ stage: 'plan', role: { roleId: 'ghost', version: 1 }, accounts: [] }],
+    };
+    const unknownRole = await store.validateCandidate(`repos/${REPO}/repo.yaml`, `${stringify(repoDef(REPO, { flow: invalidFlow }))}\n`);
     expect(unknownRole.ok).toBe(false);
   });
 
   it('I-32: a project.yaml candidate validates through the project rules alone', async () => {
     const store = makeStore();
-    const valid = await store.validateCandidate(`projects/${PROJECT}/project.yaml`, `${stringify({ id: PROJECT, name: 'Atölye', mainRepo: REPO, repos: [REPO] })}\n`);
+    const valid = await store.validateCandidate(`projects/${PROJECT}/project.yaml`, `${stringify({ id: PROJECT, name: 'Atölye', repos: [REPO] })}\n`);
     expect(valid.ok).toBe(true);
-    const emptyRepos = await store.validateCandidate(`projects/${PROJECT}/project.yaml`, `${stringify({ id: PROJECT, name: 'Atölye', mainRepo: REPO, repos: [] })}\n`);
+    const emptyRepos = await store.validateCandidate(`projects/${PROJECT}/project.yaml`, `${stringify({ id: PROJECT, name: 'Atölye', repos: [] })}\n`);
     expect(emptyRepos.ok).toBe(false);
   });
 
@@ -414,7 +436,7 @@ describe('validateCandidate', () => {
   });
 
   it('validates a roadmap candidate against the project\'s own project.yaml', async () => {
-    await writeYaml(globalRoot, `projects/${PROJECT}/project.yaml`, { id: PROJECT, name: 'Atölye', mainRepo: REPO, repos: [REPO] });
+    await writeYaml(globalRoot, `projects/${PROJECT}/project.yaml`, { id: PROJECT, name: 'Atölye', repos: [REPO] });
     const store = makeStore();
     const valid = await store.validateCandidate(`projects/${PROJECT}/roadmap.yaml`, `${stringify(roadmapDef())}\n`);
     expect(valid.ok).toBe(true);
@@ -446,9 +468,23 @@ describe('installBuiltins', () => {
 
   it('I-96: the written files round-trip — loaded back they equal the library definitions', async () => {
     await makeStore().installBuiltins({ roles: BUILTIN_ROLES, flows: BUILTIN_FLOWS });
+    const allRolesFlow = {
+      flowId: BUILTIN_FLOWS[0]?.id ?? 'standard',
+      version: 1,
+      stages: BUILTIN_ROLES.map((role) => ({
+        id: role.id,
+        name: role.name,
+        role: role.id,
+        exit: [],
+      })),
+      bindings: BUILTIN_ROLES.map((role) => ({
+        stage: role.id,
+        role: { roleId: role.id, version: 1 },
+        accounts: [],
+      })),
+    };
     await writeYaml(globalRoot, `repos/${REPO}/repo.yaml`, repoDef(REPO, {
-      flows: BUILTIN_FLOWS.map((flow) => flow.id),
-      defaultFlow: BUILTIN_FLOWS[0]?.id ?? 'standard',
+      flow: allRolesFlow,
       commandSets: { tests: ['node -e "process.exit(0)"'] },
     }));
     const loaded = await makeStore().load(REPO);
@@ -457,7 +493,10 @@ describe('installBuiltins', () => {
     // The library answers ids in slug order; the built-ins ride their own library order.
     const byId = (a: { readonly id: string }, b: { readonly id: string }): number => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
     expect([...loaded.value.roles].sort(byId)).toEqual([...BUILTIN_ROLES].sort(byId));
-    expect([...loaded.value.flows].sort(byId)).toEqual([...BUILTIN_FLOWS].sort(byId));
+    const expectedFlows = BUILTIN_FLOWS.map((flow) =>
+      flow.id === allRolesFlow.flowId ? { ...flow, stages: allRolesFlow.stages } : flow,
+    );
+    expect([...loaded.value.flows].sort(byId)).toEqual([...expectedFlows].sort(byId));
   });
 
   it('I-36: a target that exists is skipped untouched whatever its content; written lists only what was written', async () => {
@@ -506,7 +545,14 @@ describe('installCapabilities', () => {
     const capability = capabilityDef('docs' as CapabilitySlug);
     await makeStore().installCapabilities([capability]);
     await writeYaml(globalRoot, 'library/flows/std/v1.yaml', flowDef('std', { stages: [{ id: 'plan', name: 'Plan', role: null, exit: [] }] }));
-    await writeYaml(globalRoot, `repos/${REPO}/repo.yaml`, repoDef(REPO));
+    await writeYaml(globalRoot, `repos/${REPO}/repo.yaml`, repoDef(REPO, {
+      flow: {
+        flowId: 'std',
+        version: 1,
+        stages: [{ id: 'plan', name: 'Plan', role: null, exit: [] }],
+        bindings: [{ stage: 'plan', accounts: [] }],
+      },
+    }));
     const loaded = await makeStore().load(REPO);
     expect(loaded.ok && loaded.value.capabilities).toEqual([capability]);
   });

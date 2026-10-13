@@ -60,8 +60,8 @@ const sameValue = (a: unknown, b: unknown): boolean => {
   return false;
 };
 
-/** The overlay's field rule (the same one `applyRoleOverrides` applies): set fields win, `id`
- *  and `active` never do. Always a fresh object when an overlay is present. */
+/** The overlay's field rule: set fields win, `id` and `active` never do (R-130). Always a fresh
+ *  object when an overlay is present. */
 const applyOverlay = (base: RoleDef, overlay: RoleOverlay | undefined): RoleDef =>
   overlay === undefined
     ? base
@@ -94,6 +94,23 @@ export function effectiveRole(
   );
   if (record === undefined) return { ok: false, error: 'unknown_role_version' };
   return { ok: true, value: applyOverlay(record.body, ref.overlay) };
+}
+
+/** R-130's view of a flow's roles: each binding's effective role, first binding per role id.
+ *  A binding whose version the library does not carry is skipped here — validation refuses it
+ *  before this runs, and the caller never sees a half-resolved list. */
+export function effectiveRoles(
+  flow: RepoFlow,
+  library: readonly VersionRecord<RoleDef>[],
+): readonly RoleDef[] {
+  const byId = new Map<RoleSlug, RoleDef>();
+  for (const binding of flow.bindings) {
+    const ref = binding.role;
+    if (ref === undefined || byId.has(ref.roleId)) continue;
+    const resolved = effectiveRole(ref, library);
+    if (resolved.ok) byId.set(ref.roleId, resolved.value);
+  }
+  return [...byId.values()];
 }
 
 export interface RoleUpdateProposal {
@@ -316,7 +333,6 @@ const verdictOf = (
 export function dependantsOfRole(roleId: RoleSlug, repos: readonly RepoDef[]): readonly { repo: RepoSlug; stage: StageSlug }[] {
   const dependants: { repo: RepoSlug; stage: StageSlug }[] = [];
   for (const repo of repos) {
-    if (repo.flow === undefined) continue;
     for (const binding of repo.flow.bindings) {
       const ref = binding.role;
       if (ref === undefined || ref.detached !== undefined || ref.roleId !== roleId) continue;
@@ -333,7 +349,6 @@ export function dependantsOfAccount(
 ): readonly { repo: RepoSlug; stage: StageSlug }[] {
   const dependants: { repo: RepoSlug; stage: StageSlug }[] = [];
   for (const repo of repos) {
-    if (repo.flow === undefined) continue;
     for (const binding of repo.flow.bindings) {
       if (!binding.accounts.some((route) => route.accountId === accountId)) continue;
       dependants.push({ repo: repo.id, stage: binding.stage });

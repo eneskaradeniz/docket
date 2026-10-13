@@ -1,12 +1,14 @@
 // use-cases/routing.ts — the role and account chain a stage run uses (docs/v2/application.md A-10).
 import type { AccountRoute, RoleBinding, RoleDef, RoleSlug, Result, WorkOrderId, RepoSlug } from '../../domain/index';
-import { applyRoleOverrides, err, resolveBinding } from '../../domain/index';
+import { err, resolveBinding } from '../../domain/index';
 
 import type { AppDeps } from '../ports/index';
 
 export type RouteError = 'unknown_role' | 'no_binding' | 'no_account';
 
-/** Resolves the role definition (with overrides) and the account chain for a stage run. */
+/** Resolves the role definition and the account chain for a stage run. The role a load answers is
+ *  already the binding's effective role (R-130) — the repo's overlay is baked in, never applied
+ *  here; the `project` level carries no definition layers, only settings bindings (A-10). */
 export async function resolveRoute(
   deps: Pick<AppDeps, 'definitions' | 'bindings' | 'accounts' | 'projects'>,
   input: { readonly repo: RepoSlug; readonly workOrderId: WorkOrderId; readonly role: RoleSlug },
@@ -17,10 +19,8 @@ export async function resolveRoute(
   // Without loadable definitions the role cannot be shown to exist, which is `unknown_role` by A-10.
   const loaded = await deps.definitions.load(input.repo);
   if (!loaded.ok) return err('unknown_role');
-  const base = loaded.value.roles.find((role) => role.id === input.role);
-  if (base === undefined) return err('unknown_role');
-
-  const role = applyRoleOverrides(base, loaded.value.repo?.roleOverrides ?? []);
+  const role = loaded.value.roles.find((candidate) => candidate.id === input.role);
+  if (role === undefined) return err('unknown_role');
   if (!role.active) return err('unknown_role');
 
   // The project layer sits between repo and global: a repo with no owning project simply has

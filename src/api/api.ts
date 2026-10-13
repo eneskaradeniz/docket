@@ -45,6 +45,7 @@ import {
   foldRun,
   headroom,
   orderForReview,
+  parseRepoFlowValue,
   parseSlug,
   parseUlid,
   reserveClassOf,
@@ -150,6 +151,8 @@ import {
   unregisterRepo,
   relinkRepo,
   repoStatuses,
+  repoFlowView,
+  saveRepoFlow,
   undoAction,
   workOrderCodeOf,
   catalogOrEmpty,
@@ -810,6 +813,21 @@ const runCommand = async (
         await relinkRepo(
           { clock: deps.clock, ids: deps.ids, log: deps.log, repos: deps.repos },
           { repoId: command.repoId, path: command.path, actor },
+        ),
+      );
+    }
+
+    case 'repo.saveFlow': {
+      const repo = slugValue<'repo'>(command.repo);
+      if (repo === undefined) return invalidId();
+      // The edge narrows the wire payload with the file world's own law; the contract rules
+      // (R-127/R-128 against the merged definitions) are the use case's to refuse.
+      const flow = parseRepoFlowValue(command.flow);
+      if (!flow.ok) return { ok: false, code: 'bad_input' };
+      return commandOf(
+        await saveRepoFlow(
+          { clock: deps.clock, ids: deps.ids, log: deps.log, repos: deps.repos, definitions: deps.definitions },
+          { repo, flow: flow.value, actor },
         ),
       );
     }
@@ -1515,6 +1533,12 @@ const runQuery = async (
 
     case 'repoStatus':
       return repoStatuses(deps);
+
+    case 'repo.flow': {
+      const repo = slugValue<'repo'>(query.repo);
+      if (repo === undefined) return invalidId();
+      return repoFlowView(deps, repo);
+    }
 
     case 'project.tree':
       return projectTree(deps);
@@ -2571,10 +2595,10 @@ const isoInstant = (at: EpochMs): string => {
 const boardView = async (deps: AppDeps, repo: RepoSlug): Promise<BoardView | QueryFailure> => {
   const loaded = await deps.definitions.load(repo);
   if (!loaded.ok) return { ok: false, code: 'definitions_invalid' };
-  // Without a repo section there is no default flow to build columns from.
+  // Without a repo section there is no repo-owned flow to build columns from.
   const def = loaded.value.repo;
   if (def === undefined) return { ok: false, code: 'definitions_invalid' };
-  const flow = loaded.value.flows.find((candidate) => candidate.id === def.defaultFlow);
+  const flow = loaded.value.flows.find((candidate) => candidate.id === def.flow.flowId);
   if (flow === undefined) return { ok: false, code: 'definitions_invalid' };
 
   const placed = new Map<StageSlug, { readonly id: string; readonly number: number; readonly title: string; readonly status: string; readonly account: string | null; readonly since: string }[]>();
@@ -2617,7 +2641,7 @@ const boardView = async (deps: AppDeps, repo: RepoSlug): Promise<BoardView | Que
 
   return {
     repo,
-    flow: def.defaultFlow,
+    flow: def.flow.flowId,
     columns: flow.stages.map((stage) => ({ stage: stage.id, name: stage.name, workOrders: placed.get(stage.id) ?? [] })),
     done,
   };

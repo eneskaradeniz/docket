@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { AccountRoute, RoleBinding, RoleOverride } from '../../domain/index';
+import type { AccountRoute, RoleBinding } from '../../domain/index';
 import { parseSlug, parseUlid, type AccountId, type RoleSlug, type WorkOrderId, type RepoSlug } from '../../domain/index';
 
 import type { AccountRecord } from '../ports/account-repo';
@@ -80,24 +80,33 @@ const flowFile = JSON.stringify({
   ],
 });
 
-const repoFile = (overrides: readonly RoleOverride[]): string =>
+/** The repo's own flow: the standard flow's one stage binding the implementer, with the
+ *  per-repo overlay the test varies. */
+const repoFile = (overlay?: Record<string, unknown>): string =>
   JSON.stringify({
     repo: {
       id: 'acme',
       name: 'Acme',
-      repos: [],
-      flows: ['standard'],
-      defaultFlow: 'standard',
+      flow: {
+        flowId: 'standard',
+        version: 1,
+        stages: [{ id: 'implement', name: 'Implement', role: 'implementer', exit: [] }],
+        bindings: [
+          {
+            stage: 'implement',
+            role: { roleId: 'implementer', version: 1, ...(overlay === undefined ? {} : { overlay }) },
+            accounts: [],
+          },
+        ],
+      },
+      defaultLimitPolicy: 'wait_resume',
       commandSets: {},
-      roleOverrides: overrides,
       docsRoot: 'docs',
       testGlobs: [],
     },
   });
 
-const OVERRIDES: readonly RoleOverride[] = [
-  { id: IMPLEMENTER, name: 'Acme Implementer', instructions: 'acme instructions' },
-];
+const OVERLAY: Record<string, unknown> = { name: 'Acme Implementer', instructions: 'acme instructions' };
 
 const route = (accountId: AccountId, model?: string): AccountRoute =>
   model === undefined ? { accountId } : { accountId, model };
@@ -120,9 +129,9 @@ interface Harness {
   readonly projects: ReturnType<typeof createFakeProjectRepo>;
 }
 
-/** Valid definitions for `acme`; pass repo overrides to also seed the repo definition. */
+/** Valid definitions for `acme`; pass an overlay to seed the repo's own flow with it. */
 const harness = async (options: {
-  readonly overrides?: readonly RoleOverride[];
+  readonly overlay?: Record<string, unknown>;
   readonly accountIds?: readonly AccountId[];
 } = {}): Promise<Harness> => {
   const definitions = createFakeDefinitionStore();
@@ -132,8 +141,8 @@ const harness = async (options: {
 
   definitions.seed({ kind: 'global' }, 'roles/main.json', rolesFile);
   definitions.seed({ kind: 'global' }, 'flows/standard.json', flowFile);
-  if (options.overrides !== undefined) {
-    definitions.seed({ kind: 'repo', repo: REPO }, 'repo/acme.json', repoFile(options.overrides));
+  if (options.overlay !== undefined) {
+    definitions.seed({ kind: 'repo', repo: REPO }, 'repo/acme.json', repoFile(options.overlay));
   }
   for (const id of options.accountIds ?? [A1, A2, A3, A4]) await accounts.save(account(id));
 
@@ -185,8 +194,8 @@ describe('resolveRoute', () => {
     if (result.ok) expect(result.value.chain).toEqual([route(A1)]);
   });
 
-  it('A-10: the role comes back with the repo overrides applied', async () => {
-    const h = await harness({ overrides: OVERRIDES });
+  it('A-10: the role comes back as the binding’s effective role — the repo overlay applied (R-130)', async () => {
+    const h = await harness({ overlay: OVERLAY });
     await h.bindings.save(GLOBAL, binding(IMPLEMENTER, [route(A1)]));
 
     const result = await call(h, IMPLEMENTER);
@@ -216,10 +225,11 @@ describe('resolveRoute', () => {
     expectErr(await call(h, RETIRED), 'unknown_role');
   });
 
-  it('A-10: a repo override that deactivates the role is rejected with unknown_role', async () => {
-    const h = await harness({ overrides: [{ id: REVIEWER, active: false }] });
+  it('A-10: a role the repo flow does not bind is unknown — the binding is the role source (R-130)', async () => {
+    const h = await harness({ overlay: OVERLAY });
 
     expectErr(await call(h, REVIEWER), 'unknown_role');
+    expectErr(await call(h, RETIRED), 'unknown_role');
   });
 
   it('A-10: no binding at any level is rejected with no_binding', async () => {
@@ -294,7 +304,6 @@ describe('resolveRoute', () => {
     await h.projects.save({
       id: project,
       name: 'Atölye',
-      mainRepo: REPO,
       repos: [REPO],
     });
     await h.bindings.save(GLOBAL, binding(IMPLEMENTER, [route(A1)]));

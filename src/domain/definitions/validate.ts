@@ -2,7 +2,8 @@
 // Field-by-field narrowing only; every issue is collected before deciding (all-or-nothing).
 import type { SpendCap } from '../budget';
 import { commandPlaceholders } from './command-template';
-import { err, ok, parseSlug, type Result, type Slug, type CapabilitySlug, type EnvSlug, type FlowSlug, type ProjectSlug, type RepoSlug, type RoleSlug, type StageSlug, type EffortLevel, type ThinkingChoice, type Tier } from '../shared';
+import type { AccountRoute, LimitPolicy } from '../quota';
+import { err, ok, parseSlug, parseUlid, type Result, type Slug, type CapabilitySlug, type EnvSlug, type FlowSlug, type ProjectSlug, type RepoSlug, type RoleSlug, type StageSlug, type EffortLevel, type ThinkingChoice, type Tier } from '../shared';
 import type {
   CapabilityDef,
   CapabilityKind,
@@ -17,11 +18,12 @@ import type {
   HookEvent,
   ProjectDef,
   RoleDef,
-  RoleOverride,
   StageDef,
   RepoDef,
   WriteScope,
 } from './types';
+import type { RepoFlow, RoleOverlay, RoleRef, StageBinding, VersionRecord } from './repo-flow';
+import { effectiveRoles } from './repo-flow';
 
 type UnknownRecord = Readonly<Record<string, unknown>>;
 
@@ -77,14 +79,42 @@ interface EnvironmentDraft {
   readonly promoteFrom: EnvSlug | undefined;
 }
 
+interface RoleOverlayDraft {
+  readonly name?: string;
+  readonly instructions?: string;
+  readonly writeScope?: WriteScope;
+  readonly capabilities?: readonly CapabilitySlug[];
+  readonly docketTools?: boolean;
+}
+
+interface RoleRefDraft {
+  readonly roleId: RoleSlug | undefined;
+  readonly version: number | undefined;
+  readonly overlay: RoleOverlayDraft | undefined;
+  readonly detached: RoleDef | undefined;
+}
+
+interface BindingDraft {
+  readonly stage: StageSlug | undefined;
+  readonly role: RoleRefDraft | undefined;
+  readonly accounts: readonly AccountRoute[] | undefined;
+  readonly limitPolicy: LimitPolicy | undefined;
+}
+
+interface RepoFlowDraft {
+  readonly flowId: FlowSlug | undefined;
+  readonly version: number | undefined;
+  readonly stages: readonly (StageDraft | undefined)[] | undefined;
+  readonly bindings: readonly (BindingDraft | undefined)[] | undefined;
+}
+
 interface RepoDraft {
   readonly id: RepoSlug | undefined;
   readonly name: string | undefined;
   readonly budget: SpendCap | undefined;
-  readonly flowSlots: readonly (FlowSlug | undefined)[] | undefined;
-  readonly defaultFlow: FlowSlug | undefined;
+  readonly flow: RepoFlowDraft | undefined;
+  readonly defaultLimitPolicy: LimitPolicy | undefined;
   readonly commandSets: Readonly<Record<string, readonly string[]>> | undefined;
-  readonly roleOverrides: readonly RoleOverride[] | undefined;
   readonly docsRoot: string | undefined;
   readonly testGlobs: readonly string[] | undefined;
   readonly environments: readonly (EnvironmentDraft | undefined)[] | undefined;
@@ -93,7 +123,6 @@ interface RepoDraft {
 interface ProjectDraft {
   readonly id: ProjectSlug | undefined;
   readonly name: string | undefined;
-  readonly mainRepo: RepoSlug | undefined;
   readonly repoSlots: readonly (RepoSlug | undefined)[] | undefined;
   readonly budget: SpendCap | undefined;
 }
@@ -116,6 +145,26 @@ const isHookEvent = (value: unknown): value is HookEvent =>
 const addIssue = (issues: DefinitionIssue[], path: string, code: DefinitionIssueCode, message: string): void => {
   issues.push({ path, code, message });
 };
+
+// The fixed shapes (repo, project, flow, binding, role ref, overlay) reject keys they do not
+// carry — a legacy field is refused the same way as any stray key, never silently ignored.
+const REPO_KEYS: readonly string[] = ['id', 'name', 'flow', 'defaultLimitPolicy', 'commandSets', 'docsRoot', 'testGlobs', 'environments', 'budget'];
+const PROJECT_KEYS: readonly string[] = ['id', 'name', 'repos', 'budget'];
+const REPO_FLOW_KEYS: readonly string[] = ['flowId', 'version', 'stages', 'bindings'];
+const BINDING_KEYS: readonly string[] = ['stage', 'role', 'accounts', 'limitPolicy'];
+const ROLE_REF_KEYS: readonly string[] = ['roleId', 'version', 'overlay', 'detached'];
+const OVERLAY_KEYS: readonly string[] = ['name', 'instructions', 'writeScope', 'capabilities', 'docketTools'];
+const ACCOUNT_KEYS: readonly string[] = ['accountId', 'model'];
+
+const checkUnknownKeys = (issues: DefinitionIssue[], container: UnknownRecord, allowed: readonly string[], path: string): void => {
+  for (const key of Object.keys(container)) {
+    if (!allowed.includes(key)) {
+      addIssue(issues, `${path}.${key}`, 'unknown_field', `${path}.${key} is not a field of ${path}`);
+    }
+  }
+};
+
+const LIMIT_POLICIES: readonly string[] = ['wait_resume', 'switch_pool', 'fallback_account', 'ask'];
 
 const readStringField = (issues: DefinitionIssue[], container: UnknownRecord, field: string, path: string): string | undefined => {
   const value: unknown = container[field];
@@ -619,16 +668,14 @@ const parseRole = (issues: DefinitionIssue[], container: UnknownRecord, path: st
   return { id, name, instructions, writeScope, capabilitySlots, active, docketTools };
 };
 
-const parseRoleOverride = (issues: DefinitionIssue[], container: UnknownRecord, path: string): RoleOverride | undefined => {
-  const id = readSlugField<'role'>(issues, container, 'id', `${path}.id`);
-  if (id === undefined) return undefined;
-
+/** A binding overlay: the fields an overlay may set (never `id`, never `active`). */
+const parseRoleOverlay = (issues: DefinitionIssue[], container: UnknownRecord, path: string): RoleOverlayDraft | undefined => {
+  checkUnknownKeys(issues, container, OVERLAY_KEYS, path);
   const parts: {
     name?: string;
     instructions?: string;
     writeScope?: WriteScope;
     capabilities?: readonly CapabilitySlug[];
-    active?: boolean;
     docketTools?: boolean;
   } = {};
   const name = readOptionalStringField(issues, container, 'name', `${path}.name`);
@@ -647,12 +694,142 @@ const parseRoleOverride = (issues: DefinitionIssue[], container: UnknownRecord, 
       parts.capabilities = capabilitySlots.filter((slot): slot is CapabilitySlug => slot !== undefined);
     }
   }
-  const active = readOptionalBooleanField(issues, container, 'active', `${path}.active`);
-  if (active !== undefined) parts.active = active;
   const docketTools = readOptionalBooleanField(issues, container, 'docketTools', `${path}.docketTools`);
   if (docketTools !== undefined) parts.docketTools = docketTools;
+  return Object.keys(parts).length === 0 ? undefined : parts;
+};
 
-  return { id, ...parts };
+/** The overlay as the typed `RoleOverlay` — a fresh object with only the set fields. */
+const buildRoleOverlay = (draft: RoleOverlayDraft): RoleOverlay => ({
+  ...(draft.name !== undefined ? { name: draft.name } : {}),
+  ...(draft.instructions !== undefined ? { instructions: draft.instructions } : {}),
+  ...(draft.writeScope !== undefined ? { writeScope: draft.writeScope } : {}),
+  ...(draft.capabilities !== undefined ? { capabilities: [...draft.capabilities] } : {}),
+  ...(draft.docketTools !== undefined ? { docketTools: draft.docketTools } : {}),
+});
+
+/** `roleId`@`version` with an optional overlay or detached copy. */
+const parseRoleRef = (issues: DefinitionIssue[], container: UnknownRecord, path: string): RoleRefDraft | undefined => {
+  checkUnknownKeys(issues, container, ROLE_REF_KEYS, path);
+  const roleId = readSlugField<'role'>(issues, container, 'roleId', `${path}.roleId`);
+  const version = readVersionField(issues, container, `${path}.version`);
+  const overlayRaw: unknown = container['overlay'];
+  let overlay: RoleOverlayDraft | undefined;
+  if (overlayRaw !== undefined) {
+    overlay = isRecord(overlayRaw) ? parseRoleOverlay(issues, overlayRaw, `${path}.overlay`) : undefined;
+    if (!isRecord(overlayRaw)) addIssue(issues, `${path}.overlay`, 'wrong_type', `${path}.overlay must be an object`);
+  }
+  const detachedRaw: unknown = container['detached'];
+  let detached: RoleDef | undefined;
+  if (detachedRaw !== undefined) {
+    if (!isRecord(detachedRaw)) {
+      addIssue(issues, `${path}.detached`, 'wrong_type', `${path}.detached must be a role body`);
+    } else {
+      const draft = parseRole(issues, detachedRaw, `${path}.detached`);
+      detached = draft === undefined ? undefined : buildRoleDef(draft);
+    }
+  }
+  if (roleId === undefined || version === undefined) return undefined;
+  return { roleId, version, overlay, detached };
+};
+
+const buildRoleRef = (draft: RoleRefDraft): RoleRef | undefined => {
+  if (draft.roleId === undefined || draft.version === undefined) return undefined;
+  return {
+    roleId: draft.roleId,
+    version: draft.version,
+    ...(draft.overlay !== undefined ? { overlay: buildRoleOverlay(draft.overlay) } : {}),
+    ...(draft.detached !== undefined ? { detached: { ...draft.detached } } : {}),
+  };
+};
+
+/** One account of a binding's chain: a ULID plus an optional model pin. */
+const parseAccountRoute = (issues: DefinitionIssue[], value: unknown, path: string): AccountRoute | undefined => {
+  if (!isRecord(value)) {
+    addIssue(issues, path, 'wrong_type', `${path} must be an object`);
+    return undefined;
+  }
+  checkUnknownKeys(issues, value, ACCOUNT_KEYS, path);
+  const accountIdRaw: unknown = value['accountId'];
+  if (typeof accountIdRaw !== 'string') {
+    addIssue(issues, `${path}.accountId`, 'wrong_type', `${path}.accountId must be a ULID string`);
+    return undefined;
+  }
+  const accountId = parseUlid<'account'>(accountIdRaw);
+  if (!accountId.ok) {
+    addIssue(issues, `${path}.accountId`, 'wrong_type', `${path}.accountId "${accountIdRaw}" is not a ULID`);
+    return undefined;
+  }
+  const model = readOptionalStringField(issues, value, 'model', `${path}.model`);
+  return model === undefined ? { accountId: accountId.value } : { accountId: accountId.value, model };
+};
+
+/** A version number: an integer >= 1. */
+const readVersionField = (issues: DefinitionIssue[], container: UnknownRecord, path: string): number | undefined => {
+  const value: unknown = container['version'];
+  if (value === undefined) {
+    addIssue(issues, path, 'missing_field', `${path} is required`);
+    return undefined;
+  }
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {
+    addIssue(issues, path, 'wrong_type', `${path} must be an integer >= 1`);
+    return undefined;
+  }
+  return value;
+};
+
+/** One stage binding: the stage, its role ref and its ordered account chain. */
+const parseBinding = (issues: DefinitionIssue[], container: UnknownRecord, path: string): BindingDraft | undefined => {
+  checkUnknownKeys(issues, container, BINDING_KEYS, path);
+  const stage = readSlugField<'stage'>(issues, container, 'stage', `${path}.stage`);
+  const roleRaw: unknown = container['role'];
+  let role: RoleRefDraft | undefined;
+  if (roleRaw !== undefined) {
+    if (!isRecord(roleRaw)) {
+      addIssue(issues, `${path}.role`, 'wrong_type', `${path}.role must be an object`);
+    } else {
+      role = parseRoleRef(issues, roleRaw, `${path}.role`);
+    }
+  }
+  const accountsRaw: unknown = container['accounts'];
+  let accounts: readonly AccountRoute[] | undefined;
+  if (accountsRaw === undefined) {
+    addIssue(issues, `${path}.accounts`, 'missing_field', `${path}.accounts is required`);
+  } else if (!Array.isArray(accountsRaw)) {
+    addIssue(issues, `${path}.accounts`, 'wrong_type', `${path}.accounts must be an array`);
+  } else {
+    const list: AccountRoute[] = [];
+    let valid = true;
+    accountsRaw.forEach((route: unknown, index: number) => {
+      const parsed = parseAccountRoute(issues, route, `${path}.accounts[${index}]`);
+      if (parsed === undefined) valid = false;
+      else list.push(parsed);
+    });
+    if (valid) accounts = list;
+  }
+  const limitPolicyRaw: unknown = container['limitPolicy'];
+  let limitPolicy: LimitPolicy | undefined;
+  if (limitPolicyRaw !== undefined) {
+    if (typeof limitPolicyRaw !== 'string' || !LIMIT_POLICIES.includes(limitPolicyRaw)) {
+      addIssue(issues, `${path}.limitPolicy`, 'wrong_type', `${path}.limitPolicy must be one of wait_resume, switch_pool, fallback_account, ask`);
+    } else {
+      limitPolicy = limitPolicyRaw as LimitPolicy;
+    }
+  }
+  if (stage === undefined || accounts === undefined) return undefined;
+  return { stage, role, accounts, limitPolicy };
+};
+
+const buildBinding = (draft: BindingDraft): StageBinding | undefined => {
+  if (draft.stage === undefined || draft.accounts === undefined) return undefined;
+  const role = draft.role === undefined ? undefined : buildRoleRef(draft.role);
+  if (draft.role !== undefined && role === undefined) return undefined;
+  return {
+    stage: draft.stage,
+    ...(role === undefined ? {} : { role }),
+    accounts: [...draft.accounts],
+    ...(draft.limitPolicy === undefined ? {} : { limitPolicy: draft.limitPolicy }),
+  };
 };
 
 const parseEnvironment = (issues: DefinitionIssue[], container: UnknownRecord, path: string): EnvironmentDraft => {
@@ -690,13 +867,77 @@ const parseEnvironments = (issues: DefinitionIssue[], container: UnknownRecord):
   });
 };
 
+/** The repo's own flow copy: stages plus exactly one binding per stage (R-127). */
+const parseRepoFlow = (issues: DefinitionIssue[], container: UnknownRecord): RepoFlowDraft | undefined => {
+  checkUnknownKeys(issues, container, REPO_FLOW_KEYS, 'repo.flow');
+  const flowId = readSlugField<'flow'>(issues, container, 'flowId', 'repo.flow.flowId');
+  const version = readVersionField(issues, container, 'repo.flow.version');
+
+  const stagesRaw: unknown = container['stages'];
+  let stages: readonly (StageDraft | undefined)[] | undefined;
+  if (stagesRaw === undefined) {
+    addIssue(issues, 'repo.flow.stages', 'missing_field', 'repo.flow.stages is required');
+  } else if (!Array.isArray(stagesRaw)) {
+    addIssue(issues, 'repo.flow.stages', 'wrong_type', 'repo.flow.stages must be an array');
+  } else {
+    if (stagesRaw.length === 0) addIssue(issues, 'repo.flow.stages', 'empty_flow', 'repo.flow.stages must have at least one stage');
+    stages = stagesRaw.map((stage: unknown, stageIndex: number) => {
+      const stagePath = `repo.flow.stages[${stageIndex}]`;
+      if (!isRecord(stage)) {
+        addIssue(issues, stagePath, 'wrong_type', `${stagePath} must be an object`);
+        return undefined;
+      }
+      return parseStage(issues, stage, stagePath);
+    });
+  }
+
+  const bindingsRaw: unknown = container['bindings'];
+  let bindings: readonly (BindingDraft | undefined)[] | undefined;
+  if (bindingsRaw === undefined) {
+    addIssue(issues, 'repo.flow.bindings', 'missing_field', 'repo.flow.bindings is required');
+  } else if (!Array.isArray(bindingsRaw)) {
+    addIssue(issues, 'repo.flow.bindings', 'wrong_type', 'repo.flow.bindings must be an array');
+  } else {
+    bindings = bindingsRaw.map((binding: unknown, bindingIndex: number) => {
+      const bindingPath = `repo.flow.bindings[${bindingIndex}]`;
+      if (!isRecord(binding)) {
+        addIssue(issues, bindingPath, 'wrong_type', `${bindingPath} must be an object`);
+        return undefined;
+      }
+      return parseBinding(issues, binding, bindingPath);
+    });
+  }
+
+  return { flowId, version, stages, bindings };
+};
+
 const parseRepo = (issues: DefinitionIssue[], container: UnknownRecord): RepoDraft | undefined => {
+  checkUnknownKeys(issues, container, REPO_KEYS, 'repo');
   const id = readSlugField<'repo'>(issues, container, 'id', 'repo.id');
   const name = readStringField(issues, container, 'name', 'repo.name');
   const docsRoot = readStringField(issues, container, 'docsRoot', 'repo.docsRoot');
   const testGlobs = readStringArrayField(issues, container, 'testGlobs', 'repo.testGlobs');
-  const flowSlots = readSlugSlots<'flow'>(issues, container['flows'], 'repo.flows');
-  const defaultFlow = readSlugField<'flow'>(issues, container, 'defaultFlow', 'repo.defaultFlow');
+
+  const flowRaw: unknown = container['flow'];
+  let flow: RepoFlowDraft | undefined;
+  if (flowRaw === undefined) {
+    addIssue(issues, 'repo.flow', 'missing_field', 'repo.flow is required');
+  } else if (!isRecord(flowRaw)) {
+    addIssue(issues, 'repo.flow', 'wrong_type', 'repo.flow must be an object');
+  } else {
+    flow = parseRepoFlow(issues, flowRaw);
+  }
+
+  const limitPolicyRaw: unknown = container['defaultLimitPolicy'];
+  let defaultLimitPolicy: LimitPolicy | undefined;
+  if (limitPolicyRaw === undefined) {
+    addIssue(issues, 'repo.defaultLimitPolicy', 'missing_field', 'repo.defaultLimitPolicy is required');
+  } else if (typeof limitPolicyRaw !== 'string' || !LIMIT_POLICIES.includes(limitPolicyRaw)) {
+    addIssue(issues, 'repo.defaultLimitPolicy', 'wrong_type', 'repo.defaultLimitPolicy must be one of wait_resume, switch_pool, fallback_account, ask');
+  } else {
+    defaultLimitPolicy = limitPolicyRaw as LimitPolicy;
+  }
+
   const budgetRaw: unknown = container['budget'];
   const budget = budgetRaw === undefined ? undefined : parseSpendCap(issues, budgetRaw, 'repo.budget');
 
@@ -732,27 +973,7 @@ const parseRepo = (issues: DefinitionIssue[], container: UnknownRecord): RepoDra
     if (valid) commandSets = out;
   }
 
-  const overridesRaw: unknown = container['roleOverrides'];
-  let roleOverrides: readonly RoleOverride[] | undefined;
-  if (overridesRaw === undefined) {
-    addIssue(issues, 'repo.roleOverrides', 'missing_field', 'repo.roleOverrides is required');
-  } else if (!Array.isArray(overridesRaw)) {
-    addIssue(issues, 'repo.roleOverrides', 'wrong_type', 'repo.roleOverrides must be an array');
-  } else {
-    const list: RoleOverride[] = [];
-    overridesRaw.forEach((override: unknown, index: number) => {
-      const overridePath = `repo.roleOverrides[${index}]`;
-      if (!isRecord(override)) {
-        addIssue(issues, overridePath, 'wrong_type', `${overridePath} must be an object`);
-        return;
-      }
-      const parsed = parseRoleOverride(issues, override, overridePath);
-      if (parsed !== undefined) list.push(parsed);
-    });
-    roleOverrides = list;
-  }
-
-  return { id, name, budget, flowSlots, defaultFlow, commandSets, roleOverrides, docsRoot, testGlobs, environments: parseEnvironments(issues, container) };
+  return { id, name, budget, flow, defaultLimitPolicy, commandSets, docsRoot, testGlobs, environments: parseEnvironments(issues, container) };
 };
 
 /** A budget, in the project or the repo section, must be a valid SpendCap; anything else is wrong_type. */
@@ -779,13 +1000,13 @@ const parseSpendCap = (issues: DefinitionIssue[], value: unknown, path: string):
 };
 
 const parseProject = (issues: DefinitionIssue[], container: UnknownRecord): ProjectDraft => {
+  checkUnknownKeys(issues, container, PROJECT_KEYS, 'project');
   const id = readSlugField<'project'>(issues, container, 'id', 'project.id');
   const name = readStringField(issues, container, 'name', 'project.name');
-  const mainRepo = readSlugField<'repo'>(issues, container, 'mainRepo', 'project.mainRepo');
   const repoSlots = readSlugSlots<'repo'>(issues, container['repos'], 'project.repos');
   const budgetRaw: unknown = container['budget'];
   const budget = budgetRaw === undefined ? undefined : parseSpendCap(issues, budgetRaw, 'project.budget');
-  return { id, name, mainRepo, repoSlots, budget };
+  return { id, name, repoSlots, budget };
 };
 
 const parseRoles = (issues: DefinitionIssue[], input: UnknownRecord): readonly (RoleDraft | undefined)[] => {
@@ -870,6 +1091,87 @@ const parseCapabilities = (issues: DefinitionIssue[], input: UnknownRecord): rea
   });
 };
 
+/** How a stage list checks its `role` references: library flows read the roles list (with the
+ *  active rule); the repo's own flow reads the roles list plus what its bindings carry — the
+ *  binding, not the library, is the role source there (R-128). */
+interface RoleSource {
+  readonly extraIds?: ReadonlySet<string>;
+  readonly checkActive: boolean;
+}
+
+const crossCheckStages = (
+  issues: DefinitionIssue[],
+  roleDrafts: readonly (RoleDraft | undefined)[],
+  envIds: ReadonlySet<string>,
+  repo: RepoDraft | undefined,
+  stages: readonly (StageDraft | undefined)[],
+  pathOf: (stageIndex: number) => string,
+  roleSource: RoleSource,
+): void => {
+  const roleById = new Map<string, RoleDraft>();
+  roleDrafts.forEach((draft) => {
+    if (draft === undefined || draft.id === undefined) return;
+    if (!roleById.has(draft.id)) roleById.set(draft.id, draft);
+  });
+  const hasRole = (roleId: string): boolean =>
+    roleById.has(roleId) || (roleSource.extraIds?.has(roleId) ?? false);
+
+  const stageIdsAtIndex = stages.map((stage) => stage?.id);
+  const seenStageIds = new Set<string>();
+  stages.forEach((stage, stageIndex) => {
+    if (stage === undefined) return;
+    const stagePath = pathOf(stageIndex);
+    if (seenStageIds.has(stage.id)) {
+      addIssue(issues, `${stagePath}.id`, 'duplicate_id', `${stagePath}.id "${stage.id}" duplicates an earlier stage id in this flow`);
+    } else {
+      seenStageIds.add(stage.id);
+    }
+    if (stage.role !== null) {
+      if (!hasRole(stage.role)) {
+        addIssue(issues, `${stagePath}.role`, 'unknown_role', `"${stage.role}" is not a defined role`);
+      } else if (roleSource.checkActive && roleById.get(stage.role)?.active === false) {
+        addIssue(issues, `${stagePath}.role`, 'inactive_role', `role "${stage.role}" is not active`);
+      }
+    }
+    const seenGateIds = new Set<string>();
+    stage.exit.forEach((gate, gateIndex) => {
+      if (gate === undefined) return;
+      const gatePath = `${stagePath}.exit[${gateIndex}]`;
+      if (seenGateIds.has(gate.id)) {
+        addIssue(issues, `${gatePath}.id`, 'duplicate_id', `${gatePath}.id "${gate.id}" duplicates an earlier gate id in this stage`);
+      } else {
+        seenGateIds.add(gate.id);
+      }
+      if (gate.kind === 'agent_verdict' && !hasRole(gate.role)) {
+        addIssue(issues, `${gatePath}.role`, 'unknown_role', `"${gate.role}" is not a defined role`);
+      }
+      if (gate.kind === 'command' && repo !== undefined && repo.commandSets !== undefined && !(gate.commandSet in repo.commandSets)) {
+        addIssue(issues, `${gatePath}.commandSet`, 'unknown_command_set', `"${gate.commandSet}" is not defined in repo.commandSets`);
+      }
+      if (gate.kind === 'deploy' && repo !== undefined && !envIds.has(gate.environment)) {
+        addIssue(issues, `${gatePath}.environment`, 'unknown_environment', `"${gate.environment}" is not a defined environment`);
+      }
+    });
+    if (stage.reviewOf !== undefined) {
+      const target = stageIdsAtIndex.findIndex((stageId) => stageId === stage.reviewOf);
+      const targetRole = target === -1 ? undefined : stages[target]?.role;
+      if (target === -1 || target >= stageIndex || targetRole === null || targetRole === undefined) {
+        addIssue(issues, `${stagePath}.reviewOf`, 'bad_review_of', `reviewOf "${stage.reviewOf}" must name an earlier stage of this flow that has a role`);
+      }
+    }
+    if (stage.onFail !== undefined && stage.onFail.goto !== undefined) {
+      const goto = stage.onFail.goto;
+      const gotoPath = `${stagePath}.onFail.goto`;
+      const target = stageIdsAtIndex.findIndex((stageId) => stageId === goto);
+      if (target === -1) {
+        addIssue(issues, gotoPath, 'unknown_stage', `"${goto}" is not a stage of this flow`);
+      } else if (target > stageIndex) {
+        addIssue(issues, gotoPath, 'forward_goto', `onFail.goto "${goto}" must target the same stage or an earlier one`);
+      }
+    }
+  });
+};
+
 const crossCheck = (
   issues: DefinitionIssue[],
   roleDrafts: readonly (RoleDraft | undefined)[],
@@ -877,6 +1179,7 @@ const crossCheck = (
   flowDrafts: readonly (FlowDraft | undefined)[],
   repo: RepoDraft | undefined,
   project: ProjectDraft | undefined,
+  roleHistories: readonly VersionRecord<RoleDef>[] | undefined,
 ): void => {
   const roleById = new Map<string, RoleDraft>();
   const seenRoleIds = new Set<string>();
@@ -958,77 +1261,93 @@ const crossCheck = (
 
   flowDrafts.forEach((draft, flowIndex) => {
     if (draft === undefined) return;
-    const stageIdsAtIndex = draft.stages.map((stage) => stage?.id);
-    const seenStageIds = new Set<string>();
-    draft.stages.forEach((stage, stageIndex) => {
-      if (stage === undefined) return;
-      const stagePath = `flows[${flowIndex}].stages[${stageIndex}]`;
-      if (seenStageIds.has(stage.id)) {
-        addIssue(issues, `${stagePath}.id`, 'duplicate_id', `${stagePath}.id "${stage.id}" duplicates an earlier stage id in this flow`);
-      } else {
-        seenStageIds.add(stage.id);
-      }
-      if (stage.role !== null) {
-        const role = roleById.get(stage.role);
-        if (role === undefined) {
-          addIssue(issues, `${stagePath}.role`, 'unknown_role', `"${stage.role}" is not a defined role`);
-        } else if (role.active === false) {
-          addIssue(issues, `${stagePath}.role`, 'inactive_role', `role "${stage.role}" is not active`);
-        }
-      }
-      const seenGateIds = new Set<string>();
-      stage.exit.forEach((gate, gateIndex) => {
-        if (gate === undefined) return;
-        const gatePath = `${stagePath}.exit[${gateIndex}]`;
-        if (seenGateIds.has(gate.id)) {
-          addIssue(issues, `${gatePath}.id`, 'duplicate_id', `${gatePath}.id "${gate.id}" duplicates an earlier gate id in this stage`);
-        } else {
-          seenGateIds.add(gate.id);
-        }
-        if (gate.kind === 'agent_verdict' && !roleById.has(gate.role)) {
-          addIssue(issues, `${gatePath}.role`, 'unknown_role', `"${gate.role}" is not a defined role`);
-        }
-        if (gate.kind === 'command' && repo !== undefined && repo.commandSets !== undefined && !(gate.commandSet in repo.commandSets)) {
-          addIssue(issues, `${gatePath}.commandSet`, 'unknown_command_set', `"${gate.commandSet}" is not defined in repo.commandSets`);
-        }
-        if (gate.kind === 'deploy' && repo !== undefined && !envIds.has(gate.environment)) {
-          addIssue(issues, `${gatePath}.environment`, 'unknown_environment', `"${gate.environment}" is not a defined environment`);
-        }
-      });
-      if (stage.reviewOf !== undefined) {
-        const target = stageIdsAtIndex.findIndex((stageId) => stageId === stage.reviewOf);
-        const targetRole = target === -1 ? undefined : draft.stages[target]?.role;
-        if (target === -1 || target >= stageIndex || targetRole === null || targetRole === undefined) {
-          addIssue(issues, `${stagePath}.reviewOf`, 'bad_review_of', `reviewOf "${stage.reviewOf}" must name an earlier stage of this flow that has a role`);
-        }
-      }
-      if (stage.onFail !== undefined && stage.onFail.goto !== undefined) {
-        const goto = stage.onFail.goto;
-        const gotoPath = `${stagePath}.onFail.goto`;
-        const target = stageIdsAtIndex.findIndex((stageId) => stageId === goto);
-        if (target === -1) {
-          addIssue(issues, gotoPath, 'unknown_stage', `"${goto}" is not a stage of this flow`);
-        } else if (target > stageIndex) {
-          addIssue(issues, gotoPath, 'forward_goto', `onFail.goto "${goto}" must target the same stage or an earlier one`);
-        }
-      }
-    });
+    crossCheckStages(
+      issues, roleDrafts, envIds, repo, draft.stages,
+      (stageIndex) => `flows[${flowIndex}].stages[${stageIndex}]`,
+      { checkActive: true },
+    );
   });
 
   if (repo !== undefined) {
-    repo.flowSlots?.forEach((slot, index) => {
-      if (slot !== undefined && !flowIds.has(slot)) {
-        addIssue(issues, `repo.flows[${index}]`, 'unknown_flow', `"${slot}" is not a defined flow`);
-      }
-    });
-    if (repo.defaultFlow !== undefined && repo.flowSlots !== undefined && !repo.flowSlots.some((slot) => slot === repo.defaultFlow)) {
-      addIssue(issues, 'repo.defaultFlow', 'default_flow_not_enabled', `default flow "${repo.defaultFlow}" is not listed in repo.flows`);
+    const flow = repo.flow;
+    if (flow !== undefined && flow.stages !== undefined) {
+      // The roles the bindings carry join the library roles as legal stage references.
+      const bindingRoleIds = new Set<string>();
+      flow.bindings?.forEach((binding) => {
+        if (binding?.role === undefined) return;
+        if (binding.role.roleId !== undefined) bindingRoleIds.add(binding.role.roleId);
+        if (binding.role.detached?.id !== undefined) bindingRoleIds.add(binding.role.detached.id);
+      });
+      crossCheckStages(
+        issues, roleDrafts, envIds, repo, flow.stages,
+        (stageIndex) => `repo.flow.stages[${stageIndex}]`,
+        { extraIds: bindingRoleIds, checkActive: false },
+      );
     }
-    repo.roleOverrides?.forEach((override, index) => {
-      if (!roleById.has(override.id)) {
-        addIssue(issues, `repo.roleOverrides[${index}].id`, 'unknown_role', `"${override.id}" is not a defined role`);
+
+    const flowStages = flow?.stages;
+    const flowBindings = flow?.bindings;
+    if (flowStages !== undefined && flowBindings !== undefined) {
+      // R-127: exactly one binding per stage, in stage order; two for one stage duplicate_binding.
+      const seenStages = new Set<string>();
+      flowBindings.forEach((binding, index) => {
+        if (binding === undefined || binding.stage === undefined) return;
+        const path = `repo.flow.bindings[${index}].stage`;
+        if (seenStages.has(binding.stage)) {
+          addIssue(issues, path, 'duplicate_binding', `stage "${binding.stage}" has more than one binding`);
+          return;
+        }
+        seenStages.add(binding.stage);
+        const stageId = flowStages[index]?.id;
+        if (stageId !== binding.stage) {
+          addIssue(issues, path, 'binding_stage_mismatch', `binding ${index} names stage "${binding.stage}", but the flow's stage ${index} is "${stageId ?? 'absent'}"`);
+        }
+      });
+      if (flowBindings.length < flowStages.length) {
+        addIssue(issues, 'repo.flow.bindings', 'binding_stage_mismatch', 'the flow has stages without a binding');
       }
-    });
+
+      // R-128: role presence per stage (paired by stage id, never by position), and the library
+      // version a non-detached ref names.
+      flowStages.forEach((stage) => {
+        if (stage === undefined) return;
+        const index = flowBindings.findIndex((binding) => binding?.stage === stage.id);
+        if (index === -1) return;
+        const binding = flowBindings[index];
+        if (binding === undefined) return;
+        const rolePath = `repo.flow.bindings[${index}].role`;
+        if (stage.role === null) {
+          if (binding.role !== undefined) {
+            addIssue(issues, rolePath, 'role_forbidden', `stage "${stage.id}" has no role, so its binding cannot carry one`);
+          }
+        } else if (binding.role === undefined) {
+          addIssue(issues, rolePath, 'role_required', `stage "${stage.id}" has a role, so its binding must carry one`);
+        } else if (
+          binding.role.detached === undefined &&
+          roleHistories !== undefined &&
+          !roleHistories.some((record) => record.definitionId === binding.role?.roleId && record.version === binding.role?.version)
+        ) {
+          addIssue(issues, `${rolePath}.version`, 'unknown_role_version', `binding ${index} names ${binding.role.roleId}@${binding.role.version}, which the library does not carry`);
+        }
+      });
+
+      // Overlay and detached bodies live under the same capability law as role bodies.
+      flowBindings.forEach((binding, index) => {
+        const ref = binding?.role;
+        if (ref === undefined) return;
+        const overlaySlots = ref.overlay?.capabilities;
+        overlaySlots?.forEach((slot, slotIndex) => {
+          if (!capabilityIds.has(slot)) {
+            addIssue(issues, `repo.flow.bindings[${index}].role.overlay.capabilities[${slotIndex}]`, 'unknown_capability', `"${slot}" is not a defined capability`);
+          }
+        });
+        ref.detached?.capabilities.forEach((slot, slotIndex) => {
+          if (!capabilityIds.has(slot)) {
+            addIssue(issues, `repo.flow.bindings[${index}].role.detached.capabilities[${slotIndex}]`, 'unknown_capability', `"${slot}" is not a defined capability`);
+          }
+        });
+      });
+    }
 
     const seenEnvIds = new Set<string>();
     const seenOrders = new Set<number>();
@@ -1098,7 +1417,7 @@ const crossCheck = (
 
   if (project !== undefined) {
     if (project.repoSlots !== undefined && project.repoSlots.length === 0) {
-      addIssue(issues, 'project.repos', 'empty_repos', 'project.repos must list at least the main repo');
+      addIssue(issues, 'project.repos', 'empty_repos', 'project.repos must list at least one repo');
     }
     const seenRepos = new Set<string>();
     project.repoSlots?.forEach((slot, index) => {
@@ -1109,9 +1428,6 @@ const crossCheck = (
         seenRepos.add(slot);
       }
     });
-    if (project.mainRepo !== undefined && project.repoSlots !== undefined && !project.repoSlots.some((slot) => slot === project.mainRepo)) {
-      addIssue(issues, 'project.mainRepo', 'main_repo_not_listed', `main repo "${project.mainRepo}" is not listed in project.repos`);
-    }
   }
 };
 
@@ -1163,19 +1479,63 @@ const buildEnvironmentDef = (draft: EnvironmentDraft): EnvironmentDef | undefine
   };
 };
 
+const buildRoleDef = (draft: RoleDraft): RoleDef | undefined => {
+  if (
+    draft.id === undefined ||
+    draft.name === undefined ||
+    draft.instructions === undefined ||
+    draft.writeScope === undefined ||
+    draft.capabilitySlots === undefined ||
+    draft.active === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    id: draft.id,
+    name: draft.name,
+    instructions: draft.instructions,
+    writeScope: draft.writeScope,
+    capabilities: draft.capabilitySlots.filter((slot): slot is CapabilitySlug => slot !== undefined),
+    active: draft.active,
+    ...(draft.docketTools === undefined ? {} : { docketTools: draft.docketTools }),
+  };
+};
+
+const buildRepoFlow = (draft: RepoFlowDraft): RepoFlow | undefined => {
+  if (draft.flowId === undefined || draft.version === undefined || draft.stages === undefined || draft.bindings === undefined) {
+    return undefined;
+  }
+  const stages: StageDef[] = [];
+  for (const stage of draft.stages) {
+    if (stage === undefined) return undefined;
+    const built = buildStageDef(stage);
+    if (built === undefined) return undefined;
+    stages.push(built);
+  }
+  const bindings: StageBinding[] = [];
+  for (const binding of draft.bindings) {
+    if (binding === undefined) return undefined;
+    const built = buildBinding(binding);
+    if (built === undefined) return undefined;
+    bindings.push(built);
+  }
+  return { flowId: draft.flowId, version: draft.version, stages, bindings };
+};
+
 const buildRepoDef = (repo: RepoDraft): RepoDef | undefined => {
   if (
     repo.id === undefined ||
     repo.name === undefined ||
-    repo.flowSlots === undefined ||
-    repo.defaultFlow === undefined ||
+    repo.flow === undefined ||
+    repo.defaultLimitPolicy === undefined ||
     repo.commandSets === undefined ||
-    repo.roleOverrides === undefined ||
     repo.docsRoot === undefined ||
     repo.testGlobs === undefined
   ) {
     return undefined;
   }
+  const flow = buildRepoFlow(repo.flow);
+  if (flow === undefined) return undefined;
   let environments: readonly EnvironmentDef[] | undefined;
   if (repo.environments !== undefined) {
     const list: EnvironmentDef[] = [];
@@ -1190,10 +1550,9 @@ const buildRepoDef = (repo: RepoDraft): RepoDef | undefined => {
   return {
     id: repo.id,
     name: repo.name,
-    flows: repo.flowSlots.filter((slot): slot is FlowSlug => slot !== undefined),
-    defaultFlow: repo.defaultFlow,
+    flow,
+    defaultLimitPolicy: repo.defaultLimitPolicy,
     commandSets: repo.commandSets,
-    roleOverrides: repo.roleOverrides,
     docsRoot: repo.docsRoot,
     testGlobs: repo.testGlobs,
     ...(environments !== undefined ? { environments } : {}),
@@ -1202,22 +1561,45 @@ const buildRepoDef = (repo: RepoDraft): RepoDef | undefined => {
 };
 
 const buildProjectDef = (project: ProjectDraft): ProjectDef | undefined => {
-  if (project.id === undefined || project.name === undefined || project.mainRepo === undefined || project.repoSlots === undefined) {
+  if (project.id === undefined || project.name === undefined || project.repoSlots === undefined) {
     return undefined;
   }
   const repos = project.repoSlots.filter((slot): slot is RepoSlug => slot !== undefined);
   return project.budget === undefined
-    ? { id: project.id, name: project.name, mainRepo: project.mainRepo, repos }
-    : { id: project.id, name: project.name, mainRepo: project.mainRepo, repos, budget: project.budget };
+    ? { id: project.id, name: project.name, repos }
+    : { id: project.id, name: project.name, repos, budget: project.budget };
 };
 
-/** Validates untyped input (parsed YAML/JSON). All-or-nothing: any issue → err with ALL issues. */
-export function validateDefinitions(input: unknown): Result<Definitions, readonly DefinitionIssue[]> {
+/** Narrows a library history body into a RoleDef; a body that fails is simply not resolvable, so
+ *  a binding naming its version reports `unknown_role_version` — a broken old version never fails
+ *  the whole load. */
+const narrowRoleHistory = (record: VersionRecord<unknown>): VersionRecord<RoleDef> | undefined => {
+  if (!isRecord(record.body)) return undefined;
+  const scratch: DefinitionIssue[] = [];
+  const draft = parseRole(scratch, record.body, 'library.role');
+  if (draft === undefined || scratch.length > 0) return undefined;
+  const body = buildRoleDef(draft);
+  return body === undefined ? undefined : { ...record, body };
+};
+
+/** Validates untyped input (parsed YAML/JSON). All-or-nothing: any issue → err with ALL issues.
+ *  `library.roles`, when given, is the store's version history of the role library: the R-128
+ *  version check runs against it and the answer's roles become the repo flow's effective roles
+ *  (R-130). Absent, the check is skipped — never guessed — and the parsed library roles stand. */
+export function validateDefinitions(
+  input: unknown,
+  library?: { readonly roles?: readonly VersionRecord<unknown>[] },
+): Result<Definitions, readonly DefinitionIssue[]> {
   const issues: DefinitionIssue[] = [];
 
   if (!isRecord(input)) {
     return err([{ path: '', code: 'wrong_type', message: 'definitions must be an object' }]);
   }
+
+  const roleHistories =
+    library?.roles === undefined
+      ? undefined
+      : library.roles.flatMap(narrowRoleHistory).filter((record): record is VersionRecord<RoleDef> => record !== undefined);
 
   const roleDrafts = parseRoles(issues, input);
   const flowDrafts = parseFlows(issues, input);
@@ -1245,7 +1627,7 @@ export function validateDefinitions(input: unknown): Result<Definitions, readonl
     project = parseProject(issues, projectRaw);
   }
 
-  crossCheck(issues, roleDrafts, capabilityDrafts, flowDrafts, repo, project);
+  crossCheck(issues, roleDrafts, capabilityDrafts, flowDrafts, repo, project, roleHistories);
 
   if (issues.length > 0) return err(issues);
 
@@ -1258,26 +1640,8 @@ export function validateDefinitions(input: unknown): Result<Definitions, readonl
 
   const roles: RoleDef[] = [];
   for (const draft of roleDrafts) {
-    if (
-      draft === undefined ||
-      draft.id === undefined ||
-      draft.name === undefined ||
-      draft.instructions === undefined ||
-      draft.writeScope === undefined ||
-      draft.capabilitySlots === undefined ||
-      draft.active === undefined
-    ) {
-      continue;
-    }
-    roles.push({
-      id: draft.id,
-      name: draft.name,
-      instructions: draft.instructions,
-      writeScope: draft.writeScope,
-      capabilities: draft.capabilitySlots.filter((slot): slot is CapabilitySlug => slot !== undefined),
-      active: draft.active,
-      ...(draft.docketTools === undefined ? {} : { docketTools: draft.docketTools }),
-    });
+    const built = draft === undefined ? undefined : buildRoleDef(draft);
+    if (built !== undefined) roles.push(built);
   }
 
   const base: Omit<Definitions, 'repo' | 'project'> = {
@@ -1288,9 +1652,45 @@ export function validateDefinitions(input: unknown): Result<Definitions, readonl
 
   const repoDef = repo === undefined ? undefined : buildRepoDef(repo);
   const projectDef = project === undefined ? undefined : buildProjectDef(project);
+
+  // The repo-owned view (R-130): with histories the answer carries each binding's effective role,
+  // and the repo's own flow copy under its id replaces the library entry.
+  if (repoDef !== undefined && roleHistories !== undefined) {
+    const effectiveFlows = [...base.flows];
+    const ownIndex = effectiveFlows.findIndex((flow) => flow.id === repoDef.flow.flowId);
+    const name = ownIndex === -1 ? repoDef.flow.flowId : effectiveFlows[ownIndex]?.name ?? repoDef.flow.flowId;
+    const own: FlowDef = { id: repoDef.flow.flowId, name, stages: repoDef.flow.stages };
+    if (ownIndex === -1) effectiveFlows.push(own);
+    else effectiveFlows[ownIndex] = own;
+    return ok({
+      ...base,
+      roles: effectiveRoles(repoDef.flow, roleHistories),
+      flows: effectiveFlows,
+      repo: repoDef,
+      ...(projectDef !== undefined ? { project: projectDef } : {}),
+    });
+  }
+
   return ok({
     ...base,
     ...(repoDef !== undefined ? { repo: repoDef } : {}),
     ...(projectDef !== undefined ? { project: projectDef } : {}),
   });
+}
+
+/** Narrows one repo flow body — the same law the `repo.flow` file field validates under. The
+ *  api edge applies it to a `repo.saveFlow` payload; the cross-reference rules (R-127/R-128's
+ *  stage pairing, the library version check) need the merged view and stay with the caller. */
+export function parseRepoFlowValue(value: unknown): Result<RepoFlow, readonly DefinitionIssue[]> {
+  const issues: DefinitionIssue[] = [];
+  if (!isRecord(value)) {
+    return err([{ path: 'repo.flow', code: 'wrong_type', message: 'flow must be an object' }]);
+  }
+  const draft = parseRepoFlow(issues, value);
+  const built = draft === undefined ? undefined : buildRepoFlow(draft);
+  if (issues.length > 0) return err(issues);
+  if (built === undefined) {
+    return err([{ path: 'repo.flow', code: 'wrong_type', message: 'flow is not a valid repo flow' }]);
+  }
+  return ok(built);
 }

@@ -20,6 +20,21 @@ const role = (over: Obj = {}): Obj => ({
 
 const stage = (over: Obj = {}): Obj => ({ id: 'work', name: 'Work', role: 'dev', exit: [], ...over });
 
+const binding = (over: Obj = {}): Obj => ({
+  stage: 'work',
+  role: { roleId: 'dev', version: 1 },
+  accounts: [],
+  ...over,
+});
+
+const repoFlow = (over: Obj = {}): Obj => ({
+  flowId: 'main',
+  version: 1,
+  stages: [stage()],
+  bindings: [binding()],
+  ...over,
+});
+
 const flow = (over: Obj = {}): Obj => ({ id: 'main', name: 'Main', stages: [stage()], ...over });
 
 const capability = (over: Obj = {}): Obj => ({
@@ -53,10 +68,9 @@ const env = (over: Obj = {}): Obj => ({
 const repo = (over: Obj = {}): Obj => ({
   id: 'ws',
   name: 'Repo',
-  flows: ['main'],
-  defaultFlow: 'main',
+  flow: repoFlow(),
+  defaultLimitPolicy: 'wait_resume',
   commandSets: { build: ['npm run build'] },
-  roleOverrides: [],
   docsRoot: 'docs',
   testGlobs: ['**/*.test.ts'],
   ...over,
@@ -272,8 +286,27 @@ describe('validateDefinitions', () => {
       ],
       capabilities: [capability()],
       repo: repo({
-        flows: ['release'],
-        defaultFlow: 'release',
+        flow: {
+          flowId: 'release',
+          version: 1,
+          stages: [
+            { id: 'work', name: 'Work', role: 'dev', exit: [{ kind: 'command', id: 'tests', commandSet: 'build' }] },
+            {
+              id: 'ship',
+              name: 'Ship',
+              role: null,
+              exit: [
+                remoteChecksGate({ required: ['lint', 'test'] }),
+                deployGate({ id: 'deploy-stg' }),
+                deployGate({ id: 'deploy-prd', environment: 'prd' }),
+              ],
+            },
+          ],
+          bindings: [
+            { stage: 'work', role: { roleId: 'dev', version: 1 }, accounts: [] },
+            { stage: 'ship', accounts: [] },
+          ],
+        },
         commandSets: {
           build: ['npm run build'],
           'deploy-stg': ['./deploy.sh stg'],

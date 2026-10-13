@@ -26,10 +26,9 @@ const BYPASS: ProjectSlug = slugOf<'project'>('bypass');
 const MAIN: RepoSlug = slugOf<'repo'>('main');
 const ACME: RepoSlug = slugOf<'repo'>('acme');
 
-const def = (id: ProjectSlug, repos: readonly RepoSlug[] = [MAIN, ACME], main: RepoSlug = MAIN): ProjectDef => ({
+const def = (id: ProjectSlug, repos: readonly RepoSlug[] = [MAIN, ACME]): ProjectDef => ({
   id,
   name: `Project ${id}`,
-  mainRepo: main,
   repos,
   ...(id === ATOLYE ? { budget: { amountUsd: 50, warnPercent: 80 } } : {}),
 });
@@ -103,10 +102,10 @@ describe.each(suites)('project repository (%s)', (_kind, make) => {
     const { repo } = make();
     await repo.save(def(ATOLYE));
     const read = await repo.get(ATOLYE);
-    expect(read).toEqual({ id: ATOLYE, name: 'Project atolye', mainRepo: MAIN, repos: [MAIN, ACME], budget: { amountUsd: 50, warnPercent: 80 } });
+    expect(read).toEqual({ id: ATOLYE, name: 'Project atolye', repos: [MAIN, ACME], budget: { amountUsd: 50, warnPercent: 80 } });
 
     await repo.save(def(BYPASS, [MAIN]));
-    expect(await repo.get(BYPASS)).toEqual({ id: BYPASS, name: 'Project bypass', mainRepo: MAIN, repos: [MAIN] });
+    expect(await repo.get(BYPASS)).toEqual({ id: BYPASS, name: 'Project bypass', repos: [MAIN] });
   });
 
   it('remove drops the project and its membership rows', async () => {

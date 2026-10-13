@@ -150,11 +150,18 @@ const definitionsBody = (): unknown => {
     repo: {
       id: 'ws',
       name: 'Repo',
-      repos: [],
-      flows: ['standard'],
-      defaultFlow: 'standard',
+      flow: {
+        flowId: 'standard',
+        version: 1,
+        stages: standard.stages,
+        bindings: standard.stages.map((stage) => ({
+          stage: stage.id,
+          ...(stage.role === null ? {} : { role: { roleId: stage.role, version: 1 } }),
+          accounts: [],
+        })),
+      },
+      defaultLimitPolicy: 'wait_resume',
       commandSets: { tests: [TEST_COMMAND] },
-      roleOverrides: [],
       docsRoot: 'docs',
       testGlobs: [],
     },
@@ -437,11 +444,11 @@ const makeHarness = (): Harness => {
   const evidence = createFakeEvidenceChecker();
   const transports = createFakeTransportResolver();
   const checkpoints = createFakeCheckpointCommitter();
-  definitions.setProject({ id: slugOf<'project'>('ws-proj'), name: 'Project', mainRepo: slugOf<'repo'>('ws'), repos: [slugOf<'repo'>('ws')] });
+  definitions.setProject({ id: slugOf<'project'>('ws-proj'), name: 'Project', repos: [slugOf<'repo'>('ws')] });
   // Real run directories: the transports write their run-scoped config into them.
   const runDirs = createRunDirs({ dataDir: join(root, 'data') });
   const deps = createFakeDeps({ clock, log, definitions, commands, evidence, transports, checkpoints, runDirs });
-  deps.projects.save({ id: slugOf<'project'>('ws-proj'), name: 'Project', mainRepo: slugOf<'repo'>('ws'), repos: [slugOf<'repo'>('ws')] });
+  deps.projects.save({ id: slugOf<'project'>('ws-proj'), name: 'Project', repos: [slugOf<'repo'>('ws')] });
   return { deps, clock, log, definitions, commands, evidence, transports, checkpoints };
 };
 

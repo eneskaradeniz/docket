@@ -44,3 +44,4 @@ export * from './fake-transport';
 export * from './fake-update-checker';
 export * from './fake-work-order-repo';
 export * from './fake-worktree-files';
+export * from './repo-flow-fixture';

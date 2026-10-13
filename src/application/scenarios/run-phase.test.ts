@@ -18,7 +18,7 @@ import {
 } from '../../domain/index';
 
 import type { AccountRecord } from '../ports/index';
-import { createFakeDefinitionStore, createFakeDeps } from '../ports/fakes/index';
+import { createFakeDefinitionStore, createFakeDeps, repoFlowOf } from '../ports/fakes/index';
 import { dispatcherTick, runPhase } from '../services/index';
 
 const ACTOR: Actor = { kind: 'user', id: 'u-1', label: 'Operator' };
@@ -41,18 +41,19 @@ const API_REPO = slugOf<'repo'>('api');
 const WEB_REPO = slugOf<'repo'>('web');
 const ACCOUNT: AccountId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FCV');
 
+const STANDARD_FLOW = BUILTIN_FLOWS.find((flow) => flow.id === 'standard')!;
+
 const repoDefinitions = (repo: string): string =>
   JSON.stringify({
     roles: BUILTIN_ROLES,
-    flows: BUILTIN_FLOWS.filter((flow) => flow.id === 'standard'),
+    flows: [STANDARD_FLOW],
     capabilities: [],
     repo: {
       id: repo,
       name: repo,
-      flows: ['standard'],
-      defaultFlow: 'standard',
+      flow: repoFlowOf(STANDARD_FLOW),
+      defaultLimitPolicy: 'wait_resume',
       commandSets: { tests: ['npm test'] },
-      roleOverrides: [],
       docsRoot: 'docs',
       testGlobs: [],
     },
@@ -82,7 +83,7 @@ describe('run phase scenario', () => {
   it('opens one queued work order per target repo, starts both, and opens nothing the second time', async () => {
     const definitions = createFakeDefinitionStore();
     const deps = createFakeDeps({ definitions });
-    const project = { id: PROJECT, name: 'Atölye', mainRepo: API_REPO, repos: [API_REPO, WEB_REPO] };
+    const project = { id: PROJECT, name: 'Atölye', repos: [API_REPO, WEB_REPO] };
     definitions.setProject(project);
     await deps.projects.save(project);
     for (const repo of [API_REPO, WEB_REPO]) definitions.seed({ kind: 'repo', repo }, 'defs.json', repoDefinitions(repo));

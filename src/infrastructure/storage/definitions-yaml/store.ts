@@ -239,8 +239,35 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
     return { entries, problems };
   };
 
+  // The library's histories read straight off the version files; recordedAt is the file's own
+  // mtime (a version file is never rewritten, so it stays the write time), and nothing in the
+  // layout marks a version archived yet.
+  const versionsOf = async (kind: DefinitionKind, id: string): Promise<readonly VersionRecord<unknown>[]> => {
+    const records: VersionRecord<unknown>[] = [];
+    for (const versionFile of await listVersionFiles(join(config.globalRoot, LIBRARY_ROOT, kind, id))) {
+      const target = `${LIBRARY_ROOT}/${kind}/${id}/${versionFile.name}`;
+      let body: unknown;
+      try {
+        body = parseYaml(await readFile(join(config.globalRoot, target), 'utf8'), YAML_OPTIONS);
+      } catch {
+        body = undefined;
+      }
+      const { mtimeMs } = await stat(join(config.globalRoot, target));
+      records.push({
+        definitionId: id,
+        version: versionFile.version,
+        body,
+        recordedAt: mtimeMs,
+        archived: false,
+      });
+    }
+    return records;
+  };
+
   /** The pipeline behind `load` and the repo.yaml candidate: read every library file, collect
-   *  every file problem, then validate the merged definitions — never the other way round. */
+   *  every file problem, then validate the merged definitions — never the other way round. The
+   *  role histories ride along (R-128/R-130): the version check runs against them and the answer
+   *  carries the repo flow's effective roles. */
   const runDefinitionsPipeline = async (
     repoMapping: UnknownRecord | undefined,
   ): Promise<Result<Definitions, readonly DefinitionIssue[]>> => {
@@ -255,12 +282,29 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
     if (repoMapping === undefined) {
       return err([{ path: 'repo', code: 'missing_field', message: `${REPO_FILE} is required` }]);
     }
-    return validateDefinitions({
-      roles: merged['roles'] ?? [],
-      flows: merged['flows'] ?? [],
-      capabilities: merged['capabilities'] ?? [],
-      repo: repoMapping,
-    });
+    let roleIds: readonly string[];
+    try {
+      roleIds = (await readdir(join(config.globalRoot, LIBRARY_ROOT, 'roles'), { withFileTypes: true }))
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort();
+    } catch (error) {
+      if (!isMissing(error)) throw error;
+      roleIds = [];
+    }
+    const histories: VersionRecord<unknown>[] = [];
+    for (const id of roleIds) {
+      histories.push(...(await versionsOf('roles', id)));
+    }
+    return validateDefinitions(
+      {
+        roles: merged['roles'] ?? [],
+        flows: merged['flows'] ?? [],
+        capabilities: merged['capabilities'] ?? [],
+        repo: repoMapping,
+      },
+      { roles: histories },
+    );
   };
 
   /** A version candidate validates as that definition's next version: the body stands alone, the

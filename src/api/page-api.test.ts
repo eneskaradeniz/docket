@@ -13,6 +13,7 @@ import {
   createFakeDefinitionStore,
   createFakeDeps,
   createFakeEventLog,
+  repoFlowOf,
   type FakeClock,
   type FakeEventLog,
 } from '../application/ports/fakes';
@@ -40,18 +41,26 @@ const USER: Actor = { kind: 'user', id: 'operator', label: 'Operator' };
 const AGENT: Actor = { kind: 'agent', runId: ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FA1'), role: slugOf<'role'>('designer') };
 const enc = (text: string): Uint8Array => new TextEncoder().encode(text);
 
+const FLOW = {
+  id: 'mockup-flow',
+  name: 'Mockup',
+  stages: [{ id: 'design', name: 'Design', role: null, exit: [{ kind: 'page_approval', id: 'mockup-ok', label: 'Mockup approved' }] }],
+};
+
 // A work order created on this flow waits at once on its page_approval gate.
 const DEFINITIONS = {
   roles: [],
-  flows: [
-    {
-      id: 'mockup-flow',
-      name: 'Mockup',
-      stages: [{ id: 'design', name: 'Design', role: null, exit: [{ kind: 'page_approval', id: 'mockup-ok', label: 'Mockup approved' }] }],
-    },
-  ],
+  flows: [FLOW],
   capabilities: [],
-  repo: { id: 'ws', name: 'Repo', repos: [], flows: ['mockup-flow'], defaultFlow: 'mockup-flow', commandSets: {}, roleOverrides: [], docsRoot: 'docs', testGlobs: [] },
+  repo: {
+    id: 'ws',
+    name: 'Repo',
+    flow: repoFlowOf(FLOW),
+    defaultLimitPolicy: 'wait_resume',
+    commandSets: {},
+    docsRoot: 'docs',
+    testGlobs: [],
+  },
 };
 
 interface Harness {

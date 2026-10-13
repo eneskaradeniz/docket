@@ -45,18 +45,16 @@ const seedRepo = async (deps: AppDeps): Promise<void> => {
   (deps.definitions as FakeDefinitionStore).setRepoDef(REPO, {
     id: REPO,
     name: 'Acme',
-    flows: [FLOW],
-    defaultFlow: FLOW,
-    commandSets: {},
-    roleOverrides: [],
-    docsRoot: 'docs',
-    testGlobs: [],
     flow: {
       flowId: FLOW,
       version: 1,
       stages: [{ id: STAGE, name: 'Plan', role: null, exit: [] }],
-      bindings: [],
+      bindings: [{ stage: STAGE, accounts: [] }],
     },
+    defaultLimitPolicy: 'wait_resume',
+    commandSets: {},
+    docsRoot: 'docs',
+    testGlobs: [],
   });
 };
 

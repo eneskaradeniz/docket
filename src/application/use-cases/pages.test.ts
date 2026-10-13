@@ -24,6 +24,7 @@ import {
   createFakeEventLog,
   createFakePageFiles,
   createFakePageRepo,
+  repoFlowOf,
   type FakeClock,
   type FakeDefinitionStore,
   type FakeEventLog,
@@ -68,29 +69,27 @@ const SECRET_TITLE = 'Confidential login mock';
 const SECRET_BODY = '<h1>top secret body</h1>';
 const SECRET_COMMENT = 'please change the private wording';
 
+const PAGE_FLOW = {
+  id: 'page-flow',
+  name: 'Page',
+  stages: [{ id: 'research', name: 'Research', role: null, exit: [{ kind: 'page_approval', id: 'findings', label: 'Findings' }] }],
+};
+const HUMAN_FLOW = {
+  id: 'human-flow',
+  name: 'Human',
+  stages: [{ id: 'check', name: 'Check', role: null, exit: [{ kind: 'human', id: 'approve-me', label: 'Approve me' }] }],
+};
+
 const DEFINITIONS_BODY = {
   roles: [],
-  flows: [
-    {
-      id: 'page-flow',
-      name: 'Page',
-      stages: [{ id: 'research', name: 'Research', role: null, exit: [{ kind: 'page_approval', id: 'findings', label: 'Findings' }] }],
-    },
-    {
-      id: 'human-flow',
-      name: 'Human',
-      stages: [{ id: 'check', name: 'Check', role: null, exit: [{ kind: 'human', id: 'approve-me', label: 'Approve me' }] }],
-    },
-  ],
+  flows: [PAGE_FLOW, HUMAN_FLOW],
   capabilities: [],
   repo: {
     id: 'ws',
     name: 'Repo',
-    repos: [],
-    flows: ['page-flow', 'human-flow'],
-    defaultFlow: 'human-flow',
+    flow: repoFlowOf(PAGE_FLOW),
+    defaultLimitPolicy: 'wait_resume',
     commandSets: {},
-    roleOverrides: [],
     docsRoot: 'docs',
     testGlobs: [],
   },

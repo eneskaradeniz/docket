@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { BUILTIN_FLOWS, BUILTIN_ROLES, parseSlug, type Actor, type Slug } from '../domain/index';
-import { createFakeDefinitionStore, createFakeDeps } from '../application/ports/fakes/index';
+import { createFakeDefinitionStore, createFakeDeps, repoFlowOf } from '../application/ports/fakes/index';
 
 import { createApi } from './index';
 import type { RoadmapPageView } from './queries';
@@ -24,17 +24,26 @@ const PROJECT = slugOf<'project'>('atolye');
 const setup = async () => {
   const definitions = createFakeDefinitionStore();
   const deps = createFakeDeps({ definitions });
-  const project = { id: PROJECT, name: 'Atölye', mainRepo: REPO, repos: [REPO] };
+  const project = { id: PROJECT, name: 'Atölye', repos: [REPO] };
   definitions.setProject(project);
   await deps.projects.save(project);
+  const standardFlow = BUILTIN_FLOWS.find((flow) => flow.id === 'standard')!;
   definitions.seed(
     { kind: 'repo', repo: REPO },
     'defs.json',
     JSON.stringify({
       roles: BUILTIN_ROLES,
-      flows: BUILTIN_FLOWS.filter((flow) => flow.id === 'standard'),
+      flows: [standardFlow],
       capabilities: [],
-      repo: { id: 'main', name: 'main', flows: ['standard'], defaultFlow: 'standard', commandSets: { tests: ['npm test'] }, roleOverrides: [], docsRoot: 'docs', testGlobs: [] },
+      repo: {
+        id: 'main',
+        name: 'main',
+        flow: repoFlowOf(standardFlow),
+        defaultLimitPolicy: 'wait_resume',
+        commandSets: { tests: ['npm test'] },
+        docsRoot: 'docs',
+        testGlobs: [],
+      },
     }),
   );
   definitions.seed(

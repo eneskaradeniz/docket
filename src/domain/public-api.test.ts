@@ -26,7 +26,6 @@ const CONTRACT_FUNCTIONS = [
   'limitPolicyFor',
   // resolver (section 3)
   'resolve',
-  'applyRoleOverrides',
   'resolveBinding',
   'mostSharedChain',
   // gates (section 4)

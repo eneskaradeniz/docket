@@ -7,7 +7,7 @@ export interface TaskDef {
   readonly title: string;
   readonly dependsOn: readonly TaskSlug[]; // any task in the roadmap
   readonly acceptance: readonly string[];
-  readonly targets: readonly RepoSlug[]; // repos the task's work runs in; empty → [project.mainRepo] at load
+  readonly targets: readonly RepoSlug[]; // repos the task's work runs in; empty → the project's only repo (R-126)
 }
 
 export interface PhaseDef {

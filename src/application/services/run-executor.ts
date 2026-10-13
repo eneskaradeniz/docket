@@ -22,7 +22,6 @@ import type {
   WorkOrderId,
 } from '../../domain/index';
 import {
-  applyRoleOverrides,
   CHECKPOINT_MIN_INTERVAL_MS,
   decideOnLimit,
   definitionsDigest,
@@ -355,10 +354,10 @@ const definitionsRevOf = async (
   if (record === undefined || !loaded.ok) return undefined;
   const flow = loaded.value.flows.find((candidate) => candidate.id === record.flow);
   const stage = flow?.stages.find((candidate) => candidate.id === item.stage);
-  const baseRole = loaded.value.roles.find((candidate) => candidate.id === role.id);
-  if (flow === undefined || stage === undefined || baseRole === undefined) return undefined;
-  const overridden = applyRoleOverrides(baseRole, loaded.value.repo?.roleOverrides ?? []);
-  return definitionsDigest(stageBrief(flow, stage, overridden, { id: record.id, title: record.title }));
+  // The role a load answers is already the binding's effective role (R-130).
+  const effective = loaded.value.roles.find((candidate) => candidate.id === role.id);
+  if (flow === undefined || stage === undefined || effective === undefined) return undefined;
+  return definitionsDigest(stageBrief(flow, stage, effective, { id: record.id, title: record.title }));
 };
 
 /** An unpinned route with a tier runs the best model of that tier: the account's own tier table,

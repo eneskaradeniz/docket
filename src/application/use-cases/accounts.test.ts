@@ -648,16 +648,15 @@ describe('removeAccount (A-326)', () => {
   it('A-326: refuses while a repo stage binding still routes to the account', async () => {
     const h = makeVerdictHarness();
     await saveAccount(h.deps, { record: accountRecord(), actor: USER });
-    await h.deps.projects.save({ id: PIN_PROJECT, name: 'Atölye', mainRepo: PIN_REPO, repos: [PIN_REPO] });
+    h.definitions.seed({ kind: 'global' }, 'defs.json', PIN_DEFS_JSON);
+    await h.deps.projects.save({ id: PIN_PROJECT, name: 'Atölye', repos: [PIN_REPO] });
     h.definitions.setRepoDef(PIN_REPO, {
       id: PIN_REPO,
       name: 'Acme',
-      flows: [PIN_FLOW],
-      defaultFlow: PIN_FLOW,
       commandSets: {},
-      roleOverrides: [],
       docsRoot: 'docs',
       testGlobs: [],
+      defaultLimitPolicy: 'wait_resume',
       flow: {
         flowId: PIN_FLOW,
         version: 1,

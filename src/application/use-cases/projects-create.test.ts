@@ -110,7 +110,7 @@ describe('createProject validation (A-75)', () => {
     const h = createHarness((self) => {
       self.git.markWorkTree(CHECKOUT);
     });
-    await h.projects.save({ id: slugOf<'project'>('atolye'), name: 'Old', mainRepo: slugOf<'repo'>('old'), repos: [slugOf<'repo'>('old')] });
+    await h.projects.save({ id: slugOf<'project'>('atolye'), name: 'Old', repos: [slugOf<'repo'>('old')] });
     await h.repos.register({ repoId: '01ARZ3NDEKTSV4RRFFQ69G5FC01', slug: slugOf<'repo'>('atolye-2'), path: '/somewhere', fingerprint: { rootCommit: '' } });
 
     const result = await createProject(h.deps, { source: existing, name: 'Atölye', actor: ACTOR });
@@ -127,7 +127,7 @@ describe('createProject definitions (A-76)', () => {
 
     expect(result).toEqual({
       ok: true,
-      value: { id: 'calisma-alani', name: 'Çalışma Alanı', mainRepo: 'calisma-alani', repos: ['calisma-alani'] },
+      value: { id: 'calisma-alani', name: 'Çalışma Alanı', repos: ['calisma-alani'] },
     });
   });
 
@@ -146,7 +146,7 @@ describe('createProject writes (A-77)', () => {
 
     const result = await createProject(h.deps, { source: existing, name: 'Atölye', actor: ACTOR });
 
-    expect(result).toEqual({ ok: true, value: { id: 'atolye', name: 'Atölye', mainRepo: 'atolye', repos: ['atolye'] } });
+    expect(result).toEqual({ ok: true, value: { id: 'atolye', name: 'Atölye', repos: ['atolye'] } });
     expect(await globalRoleFile(h)).toBeDefined();
     expect(await h.projects.get(slugOf<'project'>('atolye'))).toBeDefined();
     expect((await h.repos.list()).find((entry) => entry.slug === slugOf<'repo'>('atolye'))?.path).toBe(CHECKOUT);

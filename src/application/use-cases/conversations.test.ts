@@ -25,6 +25,7 @@ import {
   createFakeDefinitionStore,
   createFakeDeps,
   createFakeEventLog,
+  repoFlowOf,
   type FakeAttachmentFiles,
   type FakeClock,
   type FakeDefinitionStore,
@@ -68,12 +69,21 @@ const PROJECT_SCOPE: ConversationScope = { kind: 'project', project: PROJECT };
 
 const enc = (text: string): Uint8Array => new TextEncoder().encode(text);
 
-const PROJECT_DEF: ProjectDef = { id: PROJECT, name: 'Atölye', mainRepo: REPO, repos: [REPO] };
+const PROJECT_DEF: ProjectDef = { id: PROJECT, name: 'Atölye', repos: [REPO] };
+const FLOW_B = { id: 'flow-b', name: 'Flow B', stages: [{ id: 'only', name: 'Only', role: null, exit: [{ kind: 'human', id: 'closure', label: 'Closure' }] }] };
 const DEFINITIONS_BODY = {
   roles: [],
-  flows: [{ id: 'flow-b', name: 'Flow B', stages: [{ id: 'only', name: 'Only', role: null, exit: [{ kind: 'human', id: 'closure', label: 'Closure' }] }] }],
+  flows: [FLOW_B],
   capabilities: [],
-  repo: { id: 'acme', name: 'Acme', repos: [], flows: ['flow-b'], defaultFlow: 'flow-b', commandSets: {}, roleOverrides: [], docsRoot: 'docs', testGlobs: [] },
+  repo: {
+    id: 'acme',
+    name: 'Acme',
+    flow: repoFlowOf(FLOW_B),
+    defaultLimitPolicy: 'wait_resume',
+    commandSets: {},
+    docsRoot: 'docs',
+    testGlobs: [],
+  },
 };
 
 const SECRET_TITLE = 'Confidential launch plan';

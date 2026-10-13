@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { parseSlug, parseUlid, type ActionRecord, type Actor, type AssistantAction, type DraftId, type ProjectDef, type ProposalId, type RunId, type RoleSlug, type Ulid } from '../../domain/index';
 import type { AppDeps, DefinitionScope } from '../ports';
-import { createFakeClock, createFakeDefinitionStore, createFakeDeps, createFakeEventLog, type FakeDefinitionStore } from '../ports/fakes';
+import { createFakeClock, createFakeDefinitionStore, createFakeDeps, createFakeEventLog, repoFlowOf, type FakeDefinitionStore } from '../ports/fakes';
 import { createActionApplier, createActionUndoer } from '../services';
 import { createDraft, createProposal, decideActionUseCase, grantPermission, proposeAction, startConversationUseCase, undoAction } from '../use-cases';
 
@@ -26,12 +26,21 @@ const USER: Actor = { kind: 'user', id: 'u1', label: 'Operator' };
 const AGENT: Actor = { kind: 'agent', runId: ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FR1') as RunId, role: slugOf<'role'>('planner') as RoleSlug };
 const IN_PROJECT: DefinitionScope = { kind: 'project', project: PROJECT };
 const IN_REPO: DefinitionScope = { kind: 'repo', repo: REPO };
-const PROJECT_DEF: ProjectDef = { id: PROJECT, name: 'Atölye', mainRepo: REPO, repos: [REPO] };
+const PROJECT_DEF: ProjectDef = { id: PROJECT, name: 'Atölye', repos: [REPO] };
+const FLOW_B = { id: 'flow-b', name: 'Flow B', stages: [{ id: 'only', name: 'Only', role: null, exit: [{ kind: 'human', id: 'closure', label: 'Closure' }] }] };
 const REPO_BODY = {
   roles: [],
-  flows: [{ id: 'flow-b', name: 'Flow B', stages: [{ id: 'only', name: 'Only', role: null, exit: [{ kind: 'human', id: 'closure', label: 'Closure' }] }] }],
+  flows: [FLOW_B],
   capabilities: [],
-  repo: { id: 'acme', name: 'Acme', repos: [], flows: ['flow-b'], defaultFlow: 'flow-b', commandSets: {}, roleOverrides: [], docsRoot: 'docs', testGlobs: [] },
+  repo: {
+    id: 'acme',
+    name: 'Acme',
+    flow: repoFlowOf(FLOW_B),
+    defaultLimitPolicy: 'wait_resume',
+    commandSets: {},
+    docsRoot: 'docs',
+    testGlobs: [],
+  },
 };
 const rolesFile = (name: string): string => JSON.stringify({ roles: [{ id: 'helper', name, instructions: 'help', writeScope: { kind: 'repo' }, capabilities: [], active: true }] });
 const ROADMAP_BEFORE = JSON.stringify({ phases: [] });

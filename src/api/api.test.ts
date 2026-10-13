@@ -20,6 +20,7 @@ import {
   createFakeTransportResolver,
   createFakeUpdateChecker,
   createFakeWorktrees,
+  repoFlowOf,
   type FakeCommandRunner,
   type FakeDefinitionStore,
   type FakeEventLog,
@@ -136,21 +137,18 @@ const CHANGES_FLOW_JSON = {
   ],
 };
 
-const DEFINITIONS_JSON = JSON.stringify({
-  roles: [ROLE_JSON],
-  flows: [FLOW_JSON, SHIP_FLOW_JSON, SHIP_PRD_FLOW_JSON, CHANGES_FLOW_JSON],
-  capabilities: [],
-  repo: {
+const repoBodyOf = (flowId = 'board-flow'): Record<string, unknown> => {
+  const flow = [FLOW_JSON, SHIP_FLOW_JSON, SHIP_PRD_FLOW_JSON, CHANGES_FLOW_JSON].find((candidate) => candidate.id === flowId);
+  if (flow === undefined) throw new Error(`fixture flow must exist: ${flowId}`);
+  return {
     id: REPO,
     name: 'Acme',
-    repos: [],
-    flows: ['board-flow', 'ship-flow', 'ship-prd-flow', 'changes-flow'],
-    defaultFlow: 'board-flow',
+    flow: repoFlowOf(flow),
+    defaultLimitPolicy: 'wait_resume',
     commandSets: {
       'deploy-stg': ['docket-deploy stg'],
       'deploy-prd': ['docket-deploy prd'],
     },
-    roleOverrides: [],
     docsRoot: 'docs',
     testGlobs: [],
     environments: [
@@ -172,7 +170,14 @@ const DEFINITIONS_JSON = JSON.stringify({
         promoteFrom: 'stg',
       },
     ],
-  },
+  };
+};
+
+const DEFINITIONS_JSON = JSON.stringify({
+  roles: [ROLE_JSON],
+  flows: [FLOW_JSON, SHIP_FLOW_JSON, SHIP_PRD_FLOW_JSON, CHANGES_FLOW_JSON],
+  capabilities: [],
+  repo: repoBodyOf('board-flow'),
 });
 
 interface Harness {
@@ -188,10 +193,10 @@ const createHarness = async (): Promise<Harness> => {
   const worktrees = createFakeWorktrees();
   const definitions = createFakeDefinitionStore();
   const log = createFakeEventLog();
-  definitions.setProject({ id: slugOf<'project'>(PROJECT), name: 'Project', mainRepo: slugOf<'repo'>(REPO), repos: [slugOf<'repo'>(REPO)] });
+  definitions.setProject({ id: slugOf<'project'>(PROJECT), name: 'Project', repos: [slugOf<'repo'>(REPO)] });
   definitions.seed({ kind: 'repo', repo: slugOf<'repo'>(REPO) }, 'defs.json', DEFINITIONS_JSON);
   const deps = createFakeDeps({ commands, worktrees, definitions, log });
-  await deps.projects.save({ id: slugOf<'project'>(PROJECT), name: 'Project', mainRepo: slugOf<'repo'>(REPO), repos: [slugOf<'repo'>(REPO)] });
+  await deps.projects.save({ id: slugOf<'project'>(PROJECT), name: 'Project', repos: [slugOf<'repo'>(REPO)] });
   return { deps, definitions, commands, worktrees, log };
 };
 
@@ -214,6 +219,14 @@ const seedRouting = async (h: Harness): Promise<void> => {
 };
 
 const openViaApi = async (h: Harness, title = 'Fix the login flow', flow?: string): Promise<string> => {
+  if (flow !== undefined) {
+    h.definitions.seed({ kind: 'repo', repo: slugOf<'repo'>(REPO) }, 'defs.json', JSON.stringify({
+      roles: [ROLE_JSON],
+      flows: [FLOW_JSON, SHIP_FLOW_JSON, SHIP_PRD_FLOW_JSON, CHANGES_FLOW_JSON],
+      capabilities: [],
+      repo: repoBodyOf(flow),
+    }));
+  }
   const result = await createApi(h.deps).command(ACTOR, {
     type: 'workOrder.open',
     project: PROJECT,
@@ -813,11 +826,21 @@ describe('createApi', () => {
               repo: {
                 id: slugOf<'repo'>(REPO),
                 name: 'Acme',
-                repos: [],
-                flows: [slugOf<'flow'>('ship-flow')],
-                defaultFlow: slugOf<'flow'>('ship-flow'),
+                flow: {
+                  flowId: slugOf<'flow'>('ship-flow'),
+                  version: 1,
+                  stages: [
+                    {
+                      id: slugOf<'stage'>('ship'),
+                      name: 'Ship',
+                      role: null,
+                      exit: [{ kind: 'deploy' as const, id: slugOf<'gate'>('ship-stg'), environment: slugOf<'env'>('ghost') }],
+                    },
+                  ],
+                  bindings: [{ stage: slugOf<'stage'>('ship'), accounts: [] }],
+                },
+                defaultLimitPolicy: 'wait_resume' as const,
                 commandSets: {},
-                roleOverrides: [],
                 docsRoot: 'docs',
                 testGlobs: [],
                 environments: [],

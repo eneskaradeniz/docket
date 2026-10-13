@@ -441,7 +441,11 @@ export function validateRoadmap(input: unknown, project?: ProjectDef): Result<Ro
 
   if (issues.length > 0) return err(issues);
 
-  const defaultTargets: readonly RepoSlug[] = project === undefined ? [] : [project.mainRepo];
+  // A project carries no main repo (R-126): empty targets mean the project's only repo when it
+  // lists exactly one. The multi-repo `target_required` report is the roadmap family's own issue;
+  // until then such a task keeps its empty targets and the opener refuses it.
+  const onlyRepo = project === undefined || project.repos.length !== 1 ? undefined : project.repos[0];
+  const defaultTargets: readonly RepoSlug[] = onlyRepo === undefined ? [] : [onlyRepo];
   // With zero issues every draft parsed completely, so the builders never drop an entry here.
   const phases: PhaseDef[] = [];
   for (const draft of phaseDrafts) {

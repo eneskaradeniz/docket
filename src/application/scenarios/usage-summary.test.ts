@@ -81,7 +81,7 @@ const seed = async (workOrder: WorkOrderId, project: ProjectSlug, runs: readonly
     createdAt: 1,
     createdBy: USER,
   });
-  await deps.projects.save({ id: project, name: 'Alpha', mainRepo: slugOf<'repo'>('main'), repos: [slugOf<'repo'>('main')] });
+  await deps.projects.save({ id: project, name: 'Alpha', repos: [slugOf<'repo'>('main')] });
   for (const run of runs) {
     await deps.runs.create({
       id: run.id,

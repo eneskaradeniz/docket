@@ -96,12 +96,12 @@ export interface RepoRef {
 // RepoRef is no longer declared in YAML: adapters build it from the repo checkout (git remote,
 // default branch) when a forge or remote-checks operation needs it.
 
-/** <main-repo>/.docket/project.yaml — the project layer above repos (S1). */
+/** <main-repo>/.docket/project.yaml — the project layer above repos (S1). A project carries no
+ *  roles, flows or "main repo" (D-1): its definitions are repo-owned or library-owned. */
 export interface ProjectDef {
   readonly id: ProjectSlug;
   readonly name: string;
-  readonly mainRepo: RepoSlug; // the roadmap and project.yaml live in this repo's .docket/
-  readonly repos: readonly RepoSlug[]; // at least mainRepo; unique
+  readonly repos: readonly RepoSlug[]; // unique, non-empty
   readonly budget?: SpendCap; // project spend ceiling (S5): the sum over all repos
 }
 
@@ -116,27 +116,21 @@ export interface EnvironmentDef {
   readonly promoteFrom?: EnvSlug; // same commit must have a successful deploy there first
 }
 
-/** <repo>/.docket/workspace.yaml — one repository's configuration. */
+/** <repo>/.docket/workspace.yaml — one repository's configuration. The repo owns its flow (D-1):
+ *  the `RepoFlow` copy with its stage bindings and the default limit policy. The legacy
+ *  `flows`/`defaultFlow`/`roleOverrides` fields are gone — a file still carrying them is rejected
+ *  as it would be for any unknown key. */
 export interface RepoDef {
   readonly id: RepoSlug;
   readonly name: string;
-  // Phase 7 (D-1/D-4): the repo's own flow with its stage bindings. Optional while the live
-  // shapes migrate onto it (#1012) — repos stored before Phase 7 carry none, and the legacy
-  // `flows`/`defaultFlow`/`roleOverrides` below are then the truth (read, never written — R-134).
-  readonly flow?: RepoFlow;
-  // Absent means the doc's default 'wait_resume' until #1012 makes the field required.
-  readonly defaultLimitPolicy?: LimitPolicy;
-  readonly flows: readonly FlowSlug[]; // enabled flows
-  readonly defaultFlow: FlowSlug;
+  readonly flow: RepoFlow;
+  readonly defaultLimitPolicy: LimitPolicy;
   readonly commandSets: Readonly<Record<string, readonly string[]>>; // name → shell commands, run in order
-  readonly roleOverrides: readonly RoleOverride[];
   readonly docsRoot: string; // default "docs"
   readonly testGlobs: readonly string[]; // used by WriteScope 'tests'
   readonly environments?: readonly EnvironmentDef[]; // default []
   readonly budget?: SpendCap; // repo spend limit (S5)
 }
-
-export type RoleOverride = { readonly id: RoleSlug } & Partial<Omit<RoleDef, 'id'>>;
 
 /** One finding of the definitions validators. `path` is JSON-pointer-like; the UI maps `code`
  *  to its own copy, the message is for logs. */
@@ -152,11 +146,11 @@ export type DefinitionIssueCode =
   | 'default_flow_not_enabled' | 'unknown_command_set' | 'secret_literal' | 'missing_field' | 'wrong_type'
   | 'unknown_environment' | 'missing_promote_from' | 'promote_cycle'
   | 'env_command_set_missing' | 'duplicate_env_order'
-  | 'empty_repos' | 'main_repo_not_listed' | 'bad_review_of'
+  | 'empty_repos' | 'bad_review_of' | 'unknown_field'
   // R-140: raised by the plugin and command capability checks.
   | 'plugin_cycle' | 'unknown_argument'
   // Phase 7 addendum (docs/v2/domain.md §2): raised by the repo-flow contract — `pinFlow`
-  // reports them at pin time, the `validate.ts` checks that raise them land with #1012.
+  // reports them at pin time, `validate.ts` raises them for the repo's own flow.
   | 'binding_stage_mismatch' | 'unknown_role_version' | 'role_required' | 'role_forbidden' | 'duplicate_binding';
 
 export interface Definitions {

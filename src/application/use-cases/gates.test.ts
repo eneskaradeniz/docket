@@ -39,6 +39,7 @@ import {
   type FakeEvidenceChecker,
   type FakeSecretScanner,
   type FakeWorktrees,
+  repoFlowOf,
 } from '../ports/fakes';
 
 import { approveAndDeploy } from './deploy-gate';
@@ -232,24 +233,25 @@ const DEFINITIONS_BODY = {
     },
   ],
   capabilities: [],
-  repo: {
+};
+
+/** The repo section for the flow under test: the repo owns exactly one flow (D-1), so the
+ *  harness seeds it per test with whichever flow the work order runs. */
+const repoBodyOf = (flowId: string): Record<string, unknown> => {
+  const flow = DEFINITIONS_BODY.flows.find((candidate) => candidate.id === flowId);
+  if (flow === undefined) throw new Error(`fixture flow must exist: ${flowId}`);
+  return {
     id: 'ws',
     name: 'Repo',
-    repos: [],
-    flows: [
-      'human-flow', 'two-gates', 'later-stage', 'page-flow', 'cmd-flow', 'scan-flow', 'both-flow',
-      'verdict-flow', 'remote-flow', 'remote-after-commands', 'two-remote-flow', 'deploy-mixed-flow', 'deploy-flow',
-      'changes-flow', 'changes-mixed-flow', 'changes-then-deploy',
-    ],
-    defaultFlow: 'human-flow',
+    flow: repoFlowOf(flow),
+    defaultLimitPolicy: 'wait_resume',
     commandSets: { checks: [...CHECK_COMMANDS], 'deploy-stg': ['docket-deploy stg'] },
-    roleOverrides: [],
     docsRoot: 'docs',
     testGlobs: [],
     environments: [
       { id: 'stg', name: 'Staging', order: 1, deploy: 'deploy-stg', env: {}, protected: false },
     ],
-  },
+  };
 };
 
 interface Harness {
@@ -281,6 +283,7 @@ const makeHarness = (): Harness => {
 /** Creates the work order with its `created` event, the way openWorkOrder would have. */
 const createIn = async (h: Harness, flow: string): Promise<void> => {
   const flowId = slugOf<'flow'>(flow);
+  h.definitions.seed({ kind: 'repo', repo: REPO_SLUG }, 'repo.yaml', JSON.stringify(repoBodyOf(flow)));
   await h.deps.workOrders.create({
     id: WORK_ORDER,
     project: slugOf<'project'>('proj'),

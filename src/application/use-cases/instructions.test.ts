@@ -18,6 +18,7 @@ import {
   createFakeDefinitionStore,
   createFakeInstructionFiles,
   createFakeWorkOrderRepo,
+  repoFlowOf,
   type FakeRouteKind,
 } from '../ports/fakes';
 import type { InstructionFiles } from '../ports/instruction-files';
@@ -66,14 +67,25 @@ const FLOW_JSON = {
 const REPO_JSON = {
   id: 'acme',
   name: 'Acme',
-  flows: ['standard'],
-  defaultFlow: 'standard',
+  flow: repoFlowOf(FLOW_JSON),
+  defaultLimitPolicy: 'wait_resume',
   commandSets: {},
-  roleOverrides: [],
   docsRoot: 'docs',
   testGlobs: [],
 };
 const DEFS_JSON = JSON.stringify({ roles: [ROLE_JSON], flows: [FLOW_JSON], capabilities: [], repo: REPO_JSON });
+
+const PLAN_STAGE_JSON = {
+  id: 'plan',
+  name: 'Planlama',
+  role: 'planner',
+  exit: [{ kind: 'human', id: 'plan-approval', label: 'Plan onayı' }],
+};
+const PLAN_FLOW_JSON = {
+  id: 'standard',
+  name: 'Standart',
+  stages: [PLAN_STAGE_JSON],
+};
 
 const planDefs = (): string =>
   JSON.stringify({
@@ -87,22 +99,12 @@ const planDefs = (): string =>
         active: true,
       },
     ],
-    flows: [
-      {
-        id: 'standard',
-        name: 'Standart',
-        stages: [
-          {
-            id: 'plan',
-            name: 'Planlama',
-            role: 'planner',
-            exit: [{ kind: 'human', id: 'plan-approval', label: 'Plan onayı' }],
-          },
-        ],
-      },
-    ],
+    flows: [PLAN_FLOW_JSON],
     capabilities: [],
-    repo: REPO_JSON,
+    repo: {
+      ...REPO_JSON,
+      flow: repoFlowOf(PLAN_FLOW_JSON),
+    },
   });
 
 const WORK_ORDER_RECORD = {
@@ -459,6 +461,14 @@ describe('composeRunPrompt', () => {
       ROUTE_KINDS,
       description,
     );
+    const twoStageFlow = {
+      id: 'standard',
+      name: 'Standart',
+      stages: [
+        { id: 'plan', name: 'Planlama', role: 'planner', exit: [] },
+        STAGE_JSON,
+      ],
+    };
     h.deps.definitions.seed(
       { kind: 'repo', repo: REPO },
       'defs.json',
@@ -474,18 +484,12 @@ describe('composeRunPrompt', () => {
             active: true,
           },
         ],
-        flows: [
-          {
-            id: 'standard',
-            name: 'Standart',
-            stages: [
-              { id: 'plan', name: 'Planlama', role: 'planner', exit: [] },
-              STAGE_JSON,
-            ],
-          },
-        ],
+        flows: [twoStageFlow],
         capabilities: [],
-        repo: REPO_JSON,
+        repo: {
+          ...REPO_JSON,
+          flow: repoFlowOf(twoStageFlow),
+        },
       }),
     );
 

@@ -31,7 +31,6 @@ const projectSlug = (id: string): ProjectSlug => id as ProjectSlug;
 const project = (over: Partial<ProjectDef> = {}): ProjectDef => ({
   id: projectSlug('atolye'),
   name: 'Atölye',
-  mainRepo: repoSlug('docket'),
   repos: [repoSlug('docket'), repoSlug('docs')],
   ...over,
 });
@@ -256,24 +255,32 @@ describe('validateRoadmap', () => {
     expect(issueWithCode(issues, 'unknown_repo')?.path).toBe('phases[0].tasks[0].targets[0]');
   });
 
-  it('R-47: absent or empty targets default to [project.mainRepo]; written targets survive', () => {
+  it('R-47: absent or empty targets default to the project’s only repo; written targets survive', () => {
     const value = expectOk(
       validateRoadmap(
         doc([phase('p-1', [task('t-1'), task('t-2', [], { targets: [] }), task('t-3', [], { targets: ['docs'] })])]),
         project(),
       ),
     );
-    expect(value.phases[0]?.tasks[0]?.targets).toEqual(['docket']);
-    expect(value.phases[0]?.tasks[1]?.targets).toEqual(['docket']);
+    // A two-repo project cannot pick one silently (R-126): the default stays empty until the
+    // roadmap family's `target_required` lands; the opener refuses such a task.
+    expect(value.phases[0]?.tasks[0]?.targets).toEqual([]);
+    expect(value.phases[0]?.tasks[1]?.targets).toEqual([]);
     expect(value.phases[0]?.tasks[2]?.targets).toEqual(['docs']);
+
+    const single = expectOk(
+      validateRoadmap(doc([phase('p-1', [task('t-1'), task('t-2', [], { targets: [] })])]), project({ repos: [repoSlug('docket')] })),
+    );
+    expect(single.phases[0]?.tasks[0]?.targets).toEqual(['docket']);
+    expect(single.phases[0]?.tasks[1]?.targets).toEqual(['docket']);
   });
 
-  it('R-47: changing the project mainRepo moves the default target with it', () => {
+  it('R-47: the default target follows the project’s only repo', () => {
     const input = doc([phase('p-1', [task('t-1')])]);
-    const withDocket = expectOk(validateRoadmap(input, project()));
+    const withDocket = expectOk(validateRoadmap(input, project({ repos: [repoSlug('docket')] })));
     expect(withDocket.phases[0]?.tasks[0]?.targets).toEqual(['docket']);
 
-    const withDocs = expectOk(validateRoadmap(input, project({ mainRepo: repoSlug('docs') })));
+    const withDocs = expectOk(validateRoadmap(input, project({ repos: [repoSlug('docs')] })));
     expect(withDocs.phases[0]?.tasks[0]?.targets).toEqual(['docs']);
   });
 

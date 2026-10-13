@@ -13,7 +13,6 @@ import type {
 } from '../../domain/index';
 import {
   acceptanceCriteria,
-  applyRoleOverrides,
   DEFAULT_CONTEXT_WINDOW_TOKENS,
   DEFAULT_INSTRUCTION_BUDGET_CHARS,
   definitionsDigest,
@@ -124,9 +123,9 @@ const assemblePack = async (
   // prompted, so it cannot be handed off either.
   const flow = loaded.value.flows.find((candidate) => candidate.id === record.flow);
   const stage = flow?.stages.find((candidate) => candidate.id === run.stage);
-  const baseRole = loaded.value.roles.find((candidate) => candidate.id === run.role);
-  if (flow === undefined || stage === undefined || baseRole === undefined) return err('not_found');
-  const role = applyRoleOverrides(baseRole, loaded.value.repo?.roleOverrides ?? []);
+  // The role a load answers is already the binding's effective role (R-130).
+  const role = loaded.value.roles.find((candidate) => candidate.id === run.role);
+  if (flow === undefined || stage === undefined || role === undefined) return err('not_found');
 
   // Item 1 — recomputed from the current definitions, never stored on the run (A-62); the same
   // digest comparison decides `definitionsChanged`, and a run with no recorded rev — or one whose
