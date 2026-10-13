@@ -19,7 +19,6 @@ import type {
   TransportResolver,
 } from '../../application/index';
 import { createActionApplier, createChatRunner, createChatTurnLedger } from '../../application/index';
-import { createFakeMemoryStore } from '../../application/ports/fakes/index';
 import { createMemoryAccountTestRepo } from './account-test-repo';
 import { createScratchDirs } from './scratch-dirs';
 import { createCommandRunner, createSecretScanner, redactSecrets } from '../gates/index';
@@ -38,6 +37,7 @@ import {
   createSqliteProjectRepo,
   createSqliteProposalRepo,
   createSqliteQueueRepo,
+  createSqliteMemoryStore,
   createSqliteRunRepo,
   createSqliteWorkOrderRepo,
   createSqliteRepoRegistry,
@@ -152,7 +152,7 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     attachmentFiles: createFsAttachmentFiles(config.dataDir),
     actions: createSqliteActionRepo(db),
     grants: createMemoryGrantRepo(),
-    memory: createFakeMemoryStore(),
+    memory: createSqliteMemoryStore(db),
     secrets,
     transports: config.transports,
     commands: createCommandRunner({ env: config.commandEnv }),

@@ -33,6 +33,8 @@ const SCHEMA_TABLES = [
   'conversations',
   'drafts',
   'actions',
+  'memory_proposals',
+  'memory_note_ids',
 ];
 
 const SCHEMA_INDEXES = [

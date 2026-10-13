@@ -47,6 +47,8 @@ CREATE INDEX conversations_by_updated ON conversations (updated_at);
 CREATE TABLE drafts (id TEXT PRIMARY KEY, conversation TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
 CREATE INDEX drafts_by_conversation ON drafts (conversation, id);
 CREATE TABLE actions (id TEXT PRIMARY KEY, conversation TEXT NOT NULL, status TEXT NOT NULL, proposed_at INTEGER NOT NULL, data TEXT NOT NULL);
-CREATE INDEX actions_by_conversation ON actions (conversation, status);`,
+CREATE INDEX actions_by_conversation ON actions (conversation, status);
+CREATE TABLE memory_proposals (id TEXT PRIMARY KEY, state TEXT NOT NULL, data TEXT NOT NULL);
+CREATE TABLE memory_note_ids (seq INTEGER PRIMARY KEY AUTOINCREMENT, note_id TEXT NOT NULL UNIQUE);`,
   },
 ];
