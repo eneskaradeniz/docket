@@ -9,7 +9,8 @@ export type ParsedTarget =
   | { readonly kind: DefinitionKind; readonly id: string; readonly version: number }
   | { readonly kind: 'project' }
   | { readonly kind: 'repo' }
-  | { readonly kind: 'roadmap' };
+  | { readonly kind: 'roadmap' }
+  | { readonly kind: 'repo_roadmap' };
 
 const KINDS: readonly DefinitionKind[] = ['roles', 'flows', 'capabilities', 'memory'];
 const LIBRARY_ROOT = 'library';
@@ -56,6 +57,7 @@ export function parseTarget(target: string): ParsedTarget | undefined {
     const [, slug, fileName] = parts;
     if (!isSlugSegment(slug)) return undefined;
     if (fileName === 'repo.yaml') return { kind: 'repo' };
+    if (fileName === 'roadmap.yaml') return { kind: 'repo_roadmap' };
     return undefined;
   }
 

@@ -1,10 +1,101 @@
 // roadmap/derive.ts — exact contract from docs/v2/domain.md section 10.
 // Task and phase statuses are decided over the two acyclic graphs validation guarantees
 // (task dependsOn, phase blockedBy). Memoised per call so each task and phase is decided once.
-import type { PhaseSlug, TaskSlug } from '../shared';
-import type { LinkedWorkOrder, PhaseDef, PhaseStatus, Roadmap, RoadmapView, TaskDef, TaskStatus } from './types';
+import type { PhaseSlug, RepoSlug, TaskSlug } from '../shared';
+import type {
+  LinkedWorkOrder,
+  PhaseDef,
+  PhaseItem,
+  PhaseStatus,
+  Progress,
+  RepoIssue,
+  RepoRoadmap,
+  Roadmap,
+  RoadmapView,
+  TaskDef,
+  TaskStatus,
+} from './types';
 
-export function deriveRoadmap(roadmap: Roadmap, workOrders: readonly LinkedWorkOrder[]): RoadmapView {
+const roadmapByRepo = (repoRoadmaps: readonly RepoRoadmap[]): ReadonlyMap<RepoSlug, RepoRoadmap> => {
+  const out = new Map<RepoSlug, RepoRoadmap>();
+  for (const entry of repoRoadmaps) {
+    if (!out.has(entry.repo)) out.set(entry.repo, entry);
+  }
+  return out;
+};
+
+const issueById = (roadmap: RepoRoadmap): ReadonlyMap<string, RepoIssue> => {
+  const out = new Map<string, RepoIssue>();
+  for (const issue of roadmap.issues) {
+    if (!out.has(issue.id)) out.set(issue.id, issue);
+  }
+  return out;
+};
+
+const milestoneById = (roadmap: RepoRoadmap): ReadonlySet<string> => {
+  const out = new Set<string>();
+  for (const milestone of roadmap.milestones) {
+    out.add(milestone.id);
+  }
+  return out;
+};
+
+const leafDone = (issue: RepoIssue): boolean => issue.state === 'closed';
+
+/** R-137: counts progress leaves for one phase item; unresolved refs count as one not-done leaf. */
+const progressLeavesOfItem = (
+  item: PhaseItem,
+  repos: ReadonlyMap<RepoSlug, RepoRoadmap>,
+): Progress => {
+  if (item.kind === 'manual') {
+    return { done: item.done ? 1 : 0, total: 1 };
+  }
+  const roadmap = repos.get(item.ref.repo);
+  if (roadmap === undefined) return { done: 0, total: 1 };
+  if (item.ref.kind === 'issue') {
+    const issue = issueById(roadmap).get(item.ref.id);
+    if (issue === undefined) return { done: 0, total: 1 };
+    return { done: leafDone(issue) ? 1 : 0, total: 1 };
+  }
+  const milestones = milestoneById(roadmap);
+  if (!milestones.has(item.ref.id)) return { done: 0, total: 1 };
+  const issues = roadmap.issues.filter(
+    (candidate) => candidate.milestone === item.ref.id && candidate.parent === undefined,
+  );
+  if (issues.length === 0) {
+    const milestone = roadmap.milestones.find((entry) => entry.id === item.ref.id);
+    const closed = milestone?.state === 'closed';
+    return { done: closed ? 1 : 0, total: 1 };
+  }
+  let done = 0;
+  for (const issue of issues) {
+    if (leafDone(issue)) done += 1;
+  }
+  return { done, total: issues.length };
+};
+
+/** R-137: derived progress for a phase; never stored. */
+export function deriveProgress(phase: PhaseDef, repoRoadmaps: readonly RepoRoadmap[]): Progress {
+  const items = phase.items ?? [];
+  if (items.length === 0) return { done: 0, total: 0 };
+  const repos = roadmapByRepo(repoRoadmaps);
+  let done = 0;
+  let total = 0;
+  for (const item of items) {
+    const leaves = progressLeavesOfItem(item, repos);
+    done += leaves.done;
+    total += leaves.total;
+  }
+  return { done, total };
+}
+
+const phaseHasItems = (phase: PhaseDef): boolean => phase.items !== undefined && phase.items.length > 0;
+
+export function deriveRoadmap(
+  roadmap: Roadmap,
+  workOrders: readonly LinkedWorkOrder[],
+  repoRoadmaps: readonly RepoRoadmap[] = [],
+): RoadmapView {
   const ordersByTask = new Map<string, readonly LinkedWorkOrder[]>();
   for (const order of workOrders) {
     const existing = ordersByTask.get(order.task);
@@ -27,15 +118,11 @@ export function deriveRoadmap(roadmap: Roadmap, workOrders: readonly LinkedWorkO
   const taskStatusCache = new Map<string, TaskStatus>();
   const phaseStatusCache = new Map<string, PhaseStatus>();
   const blockedCache = new Map<string, boolean>();
-  // Re-entrancy guards: a roadmap that skipped validation could be cyclic, and derive must never
-  // loop on it. A node still being derived reports a not-done status, which is the only answer
-  // its dependents and blockers would ever act on.
   const taskVisiting = new Set<string>();
   const phaseVisiting = new Set<string>();
 
   const dependencyStatus = (dep: TaskSlug): TaskStatus => {
     const def = taskById.get(dep);
-    // An unknown dependency never counts as done, so dependents stay waiting instead of crashing.
     return def === undefined ? 'waiting' : taskStatus(def);
   };
 
@@ -68,9 +155,16 @@ export function deriveRoadmap(roadmap: Roadmap, workOrders: readonly LinkedWorkO
 
   const phaseStatusOf = (id: string): PhaseStatus => {
     const def = phaseById.get(id);
-    // An unknown blocker never counts as done, so the blocked branch fires instead of crashing.
     if (def === undefined) return 'planned';
     return phaseStatus(def);
+  };
+
+  /** R-41 phase status — used when R-138 does not apply or as its fallback branch. */
+  const phaseStatusR41 = (phase: PhaseDef): PhaseStatus => {
+    if (phase.tasks.some((entry) => taskStatus(entry) === 'running')) return 'running';
+    if (phase.tasks.length > 0 && phase.tasks.every((entry) => taskStatus(entry) === 'done')) return 'done';
+    if (phaseBlocked(phase)) return 'waiting';
+    return 'planned';
   };
 
   const phaseStatus = (phase: PhaseDef): PhaseStatus => {
@@ -78,18 +172,31 @@ export function deriveRoadmap(roadmap: Roadmap, workOrders: readonly LinkedWorkO
     const cached = phaseStatusCache.get(phase.id);
     if (cached !== undefined) return cached;
     phaseVisiting.add(phase.id);
-    // First matching rule wins: running beats all-done beats blocked, so finished work is never
-    // reported as waiting even while a blocker is still open.
+
     let status: PhaseStatus;
-    if (phase.tasks.some((task) => taskStatus(task) === 'running')) {
-      status = 'running';
-    } else if (phase.tasks.length > 0 && phase.tasks.every((task) => taskStatus(task) === 'done')) {
-      status = 'done';
-    } else if (phaseBlocked(phase)) {
-      status = 'waiting';
+    if (!phaseHasItems(phase)) {
+      status = phaseStatusR41(phase);
     } else {
-      status = 'planned';
+      const progress = deriveProgress(phase, repoRoadmaps);
+      if (progress.total === 0 && phase.tasks.length === 0) {
+        status = phaseStatusR41(phase);
+      } else if (phase.tasks.some((entry) => taskStatus(entry) === 'running')) {
+        status = 'running';
+      } else if (
+        progress.total > 0 &&
+        progress.done === progress.total &&
+        (phase.tasks.length === 0 || phase.tasks.every((entry) => taskStatus(entry) === 'done'))
+      ) {
+        status = 'done';
+      } else if (progress.done > 0) {
+        status = 'running';
+      } else if (phase.tasks.length > 0 && phase.tasks.every((entry) => taskStatus(entry) === 'done') && progress.total === 0) {
+        status = 'done';
+      } else {
+        status = phaseStatusR41(phase);
+      }
     }
+
     phaseVisiting.delete(phase.id);
     phaseStatusCache.set(phase.id, status);
     return status;

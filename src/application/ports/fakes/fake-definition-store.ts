@@ -11,11 +11,12 @@ import type {
   RepoDef,
   RepoSlug,
   Result,
+  RepoRoadmap,
   Roadmap,
   RoadmapIssue,
   VersionRecord,
 } from '../../../domain/index';
-import { err, nextVersion, ok, validateDefinitions, validateRoadmap } from '../../../domain/index';
+import { err, nextVersion, ok, validateDefinitions, validateRepoRoadmap, validateRoadmap } from '../../../domain/index';
 
 import type { DefinitionFile, DefinitionKind, DefinitionScope, DefinitionStore } from '../definition-store';
 
@@ -497,6 +498,29 @@ export const createFakeDefinitionStore = (): FakeDefinitionStore => {
         return err([{ path: 'roadmap.yaml', code: 'wrong_type', message: 'roadmap.yaml must be a JSON object' }]);
       }
       return validateRoadmap(parsed.value, projectDefOf(project));
+    },
+
+    loadRepoRoadmap: async (repo: RepoSlug): Promise<Result<RepoRoadmap, readonly RoadmapIssue[]> | undefined> => {
+      const file = fixed.get(`repos/${repo}/roadmap.yaml`);
+      if (file === undefined) return undefined;
+      const parsed = parseJson(`repos/${repo}/roadmap.yaml`, file.content);
+      if (!parsed.ok) {
+        return err([{ path: 'roadmap.yaml', code: 'wrong_type', message: parsed.error.message }]);
+      }
+      if (!isRecord(parsed.value)) {
+        return err([{ path: 'roadmap.yaml', code: 'wrong_type', message: 'roadmap.yaml must be a JSON object' }]);
+      }
+      return validateRepoRoadmap(parsed.value, repo);
+    },
+
+    saveRepoRoadmap: async (repo, roadmap, expectedHash) => {
+      const target = `repos/${repo}/roadmap.yaml`;
+      const content = JSON.stringify({ milestones: roadmap.milestones, issues: roadmap.issues });
+      const current = fixed.get(target);
+      const currentHash = current === undefined ? '' : current.hash;
+      if (currentHash !== expectedHash) return err('stale');
+      fixed.set(target, { target, content, hash: contentHash(content) });
+      return ok({ hash: contentHash(content) });
     },
 
     readFile: async (targetOrScope: string | DefinitionScope, maybeTarget?: string): Promise<DefinitionFile | undefined> => {

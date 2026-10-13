@@ -6,7 +6,8 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 
 import type { DefinitionStore } from '../../../application/index';
 import type { DefinitionIssue, Definitions, ProjectDef, Result, RoadmapIssue, VersionRecord } from '../../../domain/index';
-import { err, ok, validateDefinitions, validateRoadmap } from '../../../domain/index';
+import { err, ok, parseSlug, validateDefinitions, validateRepoRoadmap, validateRoadmap } from '../../../domain/index';
+import type { RepoSlug } from '../../../domain/index';
 
 import type { DefinitionKind } from './targets';
 import { hashContent, parseTarget } from './targets';
@@ -107,6 +108,24 @@ const validateProjectMapping = (
 };
 
 /** A roadmap candidate folds into DefinitionIssues: the roadmap code travels in the message. */
+const validateRepoRoadmapCandidate = (content: string, repo: RepoSlug): Result<void, readonly DefinitionIssue[]> => {
+  let document: unknown;
+  try {
+    document = parseYaml(content, YAML_OPTIONS);
+  } catch {
+    document = undefined;
+  }
+  const result = validateRepoRoadmap(document, repo);
+  if (result.ok) return ok(undefined);
+  return err(
+    result.error.map((issue: RoadmapIssue): DefinitionIssue => ({
+      path: `roadmap.${issue.path}`,
+      code: 'wrong_type',
+      message: `${issue.code}: ${issue.message}`,
+    })),
+  );
+};
+
 const validateRoadmapCandidate = (
   content: string,
   projectDef: ProjectDef | undefined,
@@ -354,6 +373,30 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
       return validateRoadmap(parsed.value, await projectDefAt(project));
     },
 
+    loadRepoRoadmap: async (repo) => {
+      const target = `${REPOS_ROOT}/${repo}/${ROADMAP_FILE}`;
+      let text: string;
+      try {
+        text = await readFile(join(config.globalRoot, target), 'utf8');
+      } catch (error) {
+        if (isMissing(error)) return undefined;
+        throw error;
+      }
+      const parsed = parseMapping(target, text);
+      if (!parsed.ok) return err([{ path: ROADMAP_FILE, code: 'wrong_type', message: parsed.error.message }]);
+      return validateRepoRoadmap(parsed.value, repo);
+    },
+
+    saveRepoRoadmap: async (repo, roadmap, expectedHash) => {
+      const target = `${REPOS_ROOT}/${repo}/${ROADMAP_FILE}`;
+      const content = stringifyYaml(
+        { milestones: roadmap.milestones, issues: roadmap.issues },
+        YAML_OPTIONS,
+      );
+      const file = join(config.globalRoot, target);
+      return enqueue(file, () => writeAtomic(file, content, expectedHash));
+    },
+
     readFile: async (targetOrScope: string | unknown, maybeTarget?: string) => {
       const scope = typeof targetOrScope === 'string' ? undefined : (targetOrScope as { kind?: string; repo?: string; project?: string } | undefined);
       const target = typeof targetOrScope === 'string' ? targetOrScope : maybeTarget!;
@@ -439,6 +482,14 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
       }
       if (parsed !== undefined && parsed.kind === 'roadmap') {
         return validateRoadmapCandidate(content, await projectDefAt(target.split('/')[1] ?? ''));
+      }
+      if (parsed !== undefined && parsed.kind === 'repo_roadmap') {
+        const repoSlug = normalized.split('/')[1] ?? '';
+        const repoParsed = parseSlug<'repo'>(repoSlug);
+        if (!repoParsed.ok) {
+          return err([{ path: target, code: 'wrong_type', message: 'not a definition file' }]);
+        }
+        return validateRepoRoadmapCandidate(content, repoParsed.value);
       }
       if (parsed !== undefined && parsed.kind === 'project') {
         const read = parseMapping(target, content);

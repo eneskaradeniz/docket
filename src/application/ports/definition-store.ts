@@ -8,6 +8,7 @@ import type {
   DefinitionIssue,
   ProjectSlug,
   Result,
+  RepoRoadmap,
   Roadmap,
   RoadmapIssue,
   RepoSlug,
@@ -36,6 +37,14 @@ export interface DefinitionStore {
   load(repo: RepoSlug): Promise<Result<Definitions, readonly DefinitionIssue[]>>;
   /** The project's roadmap at projects/<project>/roadmap.yaml; undefined = no roadmap. */
   loadRoadmap(project: ProjectSlug): Promise<Result<Roadmap, readonly RoadmapIssue[]> | undefined>;
+  /** A repo's roadmap at repos/<repo>/roadmap.yaml; undefined = no repo roadmap file. */
+  loadRepoRoadmap(repo: RepoSlug): Promise<Result<RepoRoadmap, readonly RoadmapIssue[]> | undefined>;
+  /** Writes repos/<repo>/roadmap.yaml with the usual hash guard. */
+  saveRepoRoadmap(
+    repo: RepoSlug,
+    roadmap: RepoRoadmap,
+    expectedHash: string,
+  ): Promise<Result<{ readonly hash: string }, 'stale'>>;
   readFile(scope: DefinitionScope, target: string): Promise<DefinitionFile | undefined>;
   readFile(target: string): Promise<DefinitionFile | undefined>;
   /** Writes only if the current hash equals `expectedHash` ('' = file must not exist); a library

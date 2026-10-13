@@ -11,10 +11,11 @@ describe('parseTarget', () => {
     expect(parseTarget('library/memory/notes/v3.yaml')).toEqual({ kind: 'memory', id: 'notes', version: 3 });
   });
 
-  it('I-95: accepts projects/<slug>/project.yaml, projects/<slug>/roadmap.yaml and repos/<slug>/repo.yaml', () => {
+  it('I-95: accepts projects/<slug>/project.yaml, projects/<slug>/roadmap.yaml, repos/<slug>/repo.yaml and repos/<slug>/roadmap.yaml', () => {
     expect(parseTarget('projects/atolye/project.yaml')).toEqual({ kind: 'project' });
     expect(parseTarget('projects/atolye/roadmap.yaml')).toEqual({ kind: 'roadmap' });
     expect(parseTarget('repos/acme/repo.yaml')).toEqual({ kind: 'repo' });
+    expect(parseTarget('repos/acme/roadmap.yaml')).toEqual({ kind: 'repo_roadmap' });
   });
 
   it('I-95: rejects absolute paths', () => {
@@ -68,7 +69,7 @@ describe('parseTarget', () => {
   it('I-95: rejects files the grammar does not name in their folders', () => {
     expect(parseTarget('projects/atolye/other.yaml')).toBeUndefined();
     expect(parseTarget('repos/acme/project.yaml')).toBeUndefined();
-    expect(parseTarget('repos/acme/roadmap.yaml')).toBeUndefined();
+    expect(parseTarget('repos/acme/other.yaml')).toBeUndefined();
     expect(parseTarget('library/roles/planner/next.yaml')).toBeUndefined();
   });
 });

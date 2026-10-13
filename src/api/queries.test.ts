@@ -2058,6 +2058,50 @@ describe('roadmap.byProject', () => {
   });
 });
 
+describe('roadmap.byRepo', () => {
+  it('returns milestones and issues for a repo with a roadmap file', async () => {
+    const h = createHarness();
+    const repoRoadmap = {
+      milestones: [{ id: 'm1', title: 'M1', state: 'open', source: { kind: 'local' } }],
+      issues: [{ id: 'i1', title: 'I1', state: 'open', labels: [], source: { kind: 'local' } }],
+    };
+    h.definitions.seed(`repos/${REPO}/roadmap.yaml`, JSON.stringify(repoRoadmap));
+    const view = await createApi(h.deps).query({ type: 'roadmap.byRepo', repo: REPO });
+    expect(view).toEqual(repoRoadmap);
+  });
+});
+
+describe('roadmap.byProject progress', () => {
+  it('returns derived progress per phase with items', async () => {
+    const h = createHarness();
+    await h.deps.projects.save({ id: ROAD_PROJECT, name: 'Yol', repos: [REPO] });
+    h.definitions.seed(`repos/${REPO}/roadmap.yaml`, JSON.stringify({
+      milestones: [],
+      issues: [{ id: 'i1', title: 'I1', state: 'closed', labels: [], source: { kind: 'local' } }],
+    }));
+    h.definitions.seed(
+      { kind: 'project', project: ROAD_PROJECT },
+      FAKE_ROADMAP_TARGET,
+      JSON.stringify({
+        phases: [
+          {
+            id: 'faz-1',
+            name: 'Faz 1',
+            blockedBy: [],
+            tasks: [],
+            items: [
+              { kind: 'manual', id: 'a', title: 'A', done: true },
+              { kind: 'repo_item', ref: { repo: REPO, kind: 'issue', id: 'i1' } },
+            ],
+          },
+        ],
+      }),
+    );
+    const view = (await createApi(h.deps).query({ type: 'roadmap.byProject', project: ROAD_PROJECT })) as RoadmapPageView;
+    expect(view.phases[0]?.progress).toEqual({ done: 2, total: 2 });
+  });
+});
+
 // --- the stage-file reads resolve like every other query: the bare view on the wire ---------------
 
 describe('workOrders.stageFiles / workOrders.readStageFile — the wire shape', () => {

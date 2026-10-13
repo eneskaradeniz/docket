@@ -89,6 +89,7 @@ export const QUERY_REGISTRY: Record<Query['type'], RegistryEntry> = {
   'repo.flow': { input: 'repo: RepoSlug' },
   'project.tree': { input: 'no input' },
   'roadmap.byProject': { input: 'project: ProjectSlug' },
+  'roadmap.byRepo': { input: 'repo: RepoSlug' },
   'repo.board': { input: 'repo: RepoSlug' },
   cockpit: { input: 'project?: ProjectSlug' },
   'account.detail': { input: 'id: AccountId' },
