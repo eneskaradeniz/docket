@@ -9,7 +9,7 @@ import type {
   Result,
   TaskSlug,
 } from '../../domain/index';
-import { parseSlug, parseUlid } from '../../domain/index';
+import { isUlid, parseSlug, parseUlid } from '../../domain/index';
 
 import type { FakeDefinitionStore, FakeEventLog, FakeGitProbe, FakeProjectRepo, FakeRepoRegistry, FakeWorkOrderRepo } from '../ports/fakes';
 import {
@@ -137,6 +137,11 @@ const expectErr = (result: Result<unknown, string>, code: string): void => {
   expect(result).toEqual({ ok: false, error: code });
 };
 
+/** The machine-local entry a registration mints: repoId a ULID, fingerprint '' until the app
+ *  reads git for the folder. */
+const entryBySlug = async (h: Harness, slug: RepoSlug) =>
+  (await h.repos.list()).find((entry) => entry.slug === slug);
+
 describe('attachProject', () => {
   it('A-24: a path that is not a git work tree is not_a_repo and nothing is written', async () => {
     const h = createHarness();
@@ -182,8 +187,11 @@ describe('attachProject', () => {
 
     expect(result).toEqual({ ok: true, value: { id: PROJECT, name: 'Atölye', mainRepo: MAIN, repos: [MAIN, REPO] } });
     expect(await h.projects.get(PROJECT)).toEqual({ id: PROJECT, name: 'Atölye', mainRepo: MAIN, repos: [MAIN, REPO] });
-    expect(await h.repos.path(MAIN)).toBe(CHECKOUT);
-    expect(await h.repos.path(REPO)).toBeUndefined();
+    const entry = await entryBySlug(h, MAIN);
+    expect(entry?.path).toBe(CHECKOUT);
+    expect(entry?.fingerprint).toEqual({ rootCommit: '' });
+    expect(isUlid(entry?.repoId ?? '')).toBe(true);
+    expect(await entryBySlug(h, REPO)).toBeUndefined();
     const entries = h.log.entries();
     expect(entries.map((entry) => entry.action)).toEqual(['project.attached']);
     expect(entries[0]?.subject).toEqual({ kind: 'project', id: PROJECT });
@@ -221,8 +229,9 @@ describe('attachProject', () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(await h.repos.path(MAIN)).toBe(CHECKOUT);
-    expect(await h.repos.path(REPO)).toBe(OTHER_CHECKOUT);
+    expect((await entryBySlug(h, MAIN))?.path).toBe(CHECKOUT);
+    expect((await entryBySlug(h, REPO))?.path).toBe(OTHER_CHECKOUT);
+    expect(await h.repos.list()).toHaveLength(2);
   });
 });
 
@@ -363,23 +372,27 @@ describe('registerRepo / unregisterRepo', () => {
     expect(await h.repos.list()).toEqual([]);
   });
 
-  it('A-26: register upserts the pointer and audits repo.registered', async () => {
+  it('A-26: register upserts the entry keyed by repoId and audits repo.registered', async () => {
     const h = createHarness();
     await h.projects.save(PROJECT_DEF);
-    await h.repos.register(REPO, '/old/path');
+    await h.repos.register({ repoId: '01ARZ3NDEKTSV4RRFFQ69G5F0A1', slug: REPO, path: '/old/path', fingerprint: { rootCommit: 'sha-read-once' } });
 
     const result = await registerRepo(h.registerDeps, { project: PROJECT, repo: REPO, path: OTHER_CHECKOUT, actor: ACTOR });
 
     expect(result).toEqual({ ok: true, value: undefined });
-    expect(await h.repos.path(REPO)).toBe(OTHER_CHECKOUT);
+    // The same identity re-pointed, never a second repoId for the slug; a fingerprint already
+    // read stays — the registry never forgets what git answered.
+    expect(await h.repos.list()).toEqual([
+      { repoId: '01ARZ3NDEKTSV4RRFFQ69G5F0A1', slug: REPO, path: OTHER_CHECKOUT, fingerprint: { rootCommit: 'sha-read-once' } },
+    ]);
     expect(h.log.entries().map((entry) => entry.action)).toEqual(['repo.registered']);
     expect(h.log.entries()[0]?.subject).toEqual({ kind: 'repo', id: REPO });
   });
 
-  it('A-26: unregister refuses while a non-done work order references the repo, then removes the pointer', async () => {
+  it('A-26: unregister refuses while a non-done work order references the repo; the permanent entry and the audit stand', async () => {
     const h = createHarness();
     await h.projects.save(PROJECT_DEF);
-    await h.repos.register(REPO, OTHER_CHECKOUT);
+    await h.repos.register({ repoId: '01ARZ3NDEKTSV4RRFFQ69G5F0A2', slug: REPO, path: OTHER_CHECKOUT, fingerprint: { rootCommit: '' } });
     const id = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FCV');
     await h.workOrders.create({
       id,
@@ -392,13 +405,17 @@ describe('registerRepo / unregisterRepo', () => {
     });
 
     expectErr(await unregisterRepo(h.registerDeps, { project: PROJECT, repo: REPO, actor: ACTOR }), 'repo_in_use');
-    expect(await h.repos.path(REPO)).toBe(OTHER_CHECKOUT);
+    expect(await h.repos.list()).toHaveLength(1);
 
     await h.workOrders.appendEvent(id, { type: 'closed', at: 2_000, by: ACTOR });
     const result = await unregisterRepo(h.registerDeps, { project: PROJECT, repo: REPO, actor: ACTOR });
 
     expect(result).toEqual({ ok: true, value: undefined });
-    expect(await h.repos.path(REPO)).toBeUndefined();
+    // Registry entries are permanent machine-local truth: removal from a project is the
+    // project.yaml edit, never a registry deletion.
+    expect(await h.repos.list()).toEqual([
+      { repoId: '01ARZ3NDEKTSV4RRFFQ69G5F0A2', slug: REPO, path: OTHER_CHECKOUT, fingerprint: { rootCommit: '' } },
+    ]);
     expect(h.log.entries().map((entry) => entry.action)).toEqual(['repo.unregistered']);
     // Membership is versioned truth in project.yaml; the persisted ProjectDef is untouched.
     expect(await h.projects.get(PROJECT)).toEqual(PROJECT_DEF);

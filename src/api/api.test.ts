@@ -997,7 +997,7 @@ describe('createApi', () => {
           ['project.created', ACTOR],
           ['project.attached', ACTOR],
         ]);
-        expect(await h.deps.repos.path(slugOf<'repo'>('atolye'))).toBe('/work/atolye');
+        expect((await h.deps.repos.list()).find((entry) => entry.slug === slugOf<'repo'>('atolye'))?.path).toBe('/work/atolye');
       });
 
       it('A-79: mode blank creates the folder under parent', async () => {

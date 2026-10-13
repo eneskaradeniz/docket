@@ -1,12 +1,12 @@
 // Tests for runGit (rule I-19). Real git against throw-away repos in fs.mkdtemp folders;
 // HOME is redirected so no test ever reads or writes the user's real git config.
 import { existsSync } from 'node:fs';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { runGit } from './git';
+import { readRepoFingerprint, runGit } from './git';
 
 const IDENTITY_ARGS = ['-c', 'user.name=t', '-c', 'user.email=t@t'] as const;
 
@@ -113,5 +113,54 @@ describe('runGit', () => {
 
     const log = await runGit(dir, ['log', '-1', '--format=%an <%ae>']);
     expect(log.stdout.trim()).toBe('t <t@t>');
+  });
+});
+
+describe('readRepoFingerprint', () => {
+  /** A work tree with two commits; the first is the history's root, the second its child. */
+  const seedWorkTree = async (root: string): Promise<{ readonly rootSha: string }> => {
+    await runGit(root, ['init']);
+    await writeFile(join(root, 'a.ts'), 'l1\n', 'utf8');
+    await runGit(root, ['add', 'a.ts']);
+    expect((await runGit(root, [...IDENTITY_ARGS, 'commit', '-m', 'root'])).exitCode).toBe(0);
+    await writeFile(join(root, 'a.ts'), 'l2\n', 'utf8');
+    await runGit(root, ['add', 'a.ts']);
+    expect((await runGit(root, [...IDENTITY_ARGS, 'commit', '-m', 'second'])).exitCode).toBe(0);
+    return { rootSha: (await runGit(root, ['rev-parse', 'HEAD~1'])).stdout.trim() };
+  };
+
+  it('I-94: reads the first root commit and the normalised origin URL from a committed work tree', async () => {
+    const { rootSha } = await seedWorkTree(dir);
+    expect((await runGit(dir, ['remote', 'add', 'origin', 'https://example.com/team/acme.git'])).exitCode).toBe(0);
+
+    const read = await readRepoFingerprint(dir);
+
+    expect(read).toEqual({ rootCommit: rootSha, remote: 'https://example.com/team/acme' });
+  });
+
+  it('I-94: a subdirectory answers its top-level repo, and an ssh remote keeps its form minus .git', async () => {
+    const { rootSha } = await seedWorkTree(dir);
+    expect((await runGit(dir, ['remote', 'add', 'origin', 'git@host:team/acme.git'])).exitCode).toBe(0);
+    await mkdir(join(dir, 'src'), { recursive: true });
+
+    const read = await readRepoFingerprint(join(dir, 'src'));
+
+    expect(read).toEqual({ rootCommit: rootSha, remote: 'git@host:team/acme' });
+  });
+
+  it('I-94: a work tree without an origin remote omits the remote field', async () => {
+    const { rootSha } = await seedWorkTree(dir);
+
+    const read = await readRepoFingerprint(dir);
+
+    expect(read).toEqual({ rootCommit: rootSha });
+    expect('remote' in (read ?? {})).toBe(false);
+  });
+
+  it('I-94: undefined outside a git work tree with commits', async () => {
+    expect(await readRepoFingerprint(dir)).toBeUndefined();
+
+    expect((await runGit(dir, ['init'])).exitCode).toBe(0);
+    expect(await readRepoFingerprint(dir)).toBeUndefined();
   });
 });

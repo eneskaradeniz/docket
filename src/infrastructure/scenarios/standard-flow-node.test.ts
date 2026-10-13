@@ -283,7 +283,7 @@ describe('standard flow, headless end to end on real Node storage', () => {
       const deps = node.deps;
       const attached = await createApi(deps).command(USER, { type: 'project.attach', path: repoDir });
       expect(attached).toEqual({ ok: true, id: REPO });
-      expect(await node.repos.path(REPO)).toBe(repoDir);
+      expect((await node.repos.list()).find((entry) => entry.slug === REPO)?.path).toBe(repoDir);
 
       // One account carries every role; one scripted transport completes each run.
       await deps.accounts.save({
@@ -414,7 +414,7 @@ describe('standard flow, headless end to end on real Node storage', () => {
       const beforeClose = view;
       node.close();
       const reopened = openNodeDeps();
-      expect(await reopened.repos.list()).toEqual([{ slug: REPO, path: repoDir }]);
+      expect((await reopened.repos.list()).map((entry) => [entry.slug, entry.path])).toEqual([[REPO, repoDir]]);
 
       const detail = (await createApi(reopened.deps).query({ type: 'workOrder.detail', id })) as WorkOrderView;
       expect(detail.state).toEqual(beforeClose.state);

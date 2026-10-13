@@ -586,6 +586,30 @@ Rules (derive walks events in order; events are assumed sorted by `at`):
 - **R-23a** While `blocked`, only `unblocked` and `closed` have an effect; any other event is ignored (it belongs to the blocked period). An empty event history derives the same state as a lone `created`. Block reasons: a failed run → `"run failed"`; a failed gate → `gate "<gate>" failed: <reason>`; an unknown gate → its verdict reason.
 - **R-24** `nextAction`: `ready` → `start_run`; `gating` → `evaluate_gates` for pending non-human gates; `awaiting_human` → `await_human`; `limit_waiting` → `wait_limit`; others → `none`.
 
+### Addendum: planner stage-skip derivation (added 2026-10-13, #1047, supplements R-133)
+
+R-133 (§2 addendum, #1003) defines stage skipping as a proposal–decision pair of ledger events but
+leaves the derive step unwritten. This addendum adds that rule and the state it produces. Nothing
+above is revised: R-17…R-24 and the `WorkOrderStatus` union keep their text exactly as written; the
+skip marks are an addition to `WorkOrderState`, and the two R-133 events join `WorkOrderEvent`.
+
+- **R-144** `deriveWorkOrderState` derives `skipped` from the R-133 ledger events: a
+  `stage_skip_proposed {stages, reason}` followed by `stage_skip_decided {approved}` marks the
+  proposed stages `skipped` for this work order only when `approved` is `true`. `approved: false`,
+  or a proposal without a decision yet, changes nothing — the state derives exactly as the rules
+  above say it does, and the pinned flow never changes. A stage whose exit gates include a `deploy`
+  or `human` gate cannot be proposed at all (R-133, invariant 1); if such a proposal–decision pair
+  arrives in the ledger anyway, this rule silently ignores it and marks nothing `skipped`.
+
+```ts
+// flow/events.ts (added 2026-10-13, #1047, supplements R-133) — WorkOrderEvent gains the R-133 pair:
+//   | { readonly type: 'stage_skip_proposed'; readonly at: EpochMs; readonly stages: readonly StageSlug[]; readonly reason: string }
+//   | { readonly type: 'stage_skip_decided'; readonly at: EpochMs; readonly approved: boolean }
+
+// flow/derive.ts — WorkOrderState gains:
+//   readonly skippedStages: readonly StageSlug[];  // stages an approved proposal (R-144) skips, this work order only
+```
+
 ---
 
 ## 6. `quota/` — accounts, pools, meters, limits
