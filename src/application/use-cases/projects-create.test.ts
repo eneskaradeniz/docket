@@ -72,7 +72,6 @@ const globalRoleFile = async (h: Harness) =>
 
 /** Nothing the create flow writes exists: no project/repo file, no registration, no audit entry. */
 const expectNothingWritten = async (h: Harness, path: string): Promise<void> => {
-  expect((await h.definitions.readProjectAt(path)).ok).toBe(false);
   expect(h.definitions.repoAt(path)).toBeUndefined();
   expect(await h.projects.list()).toEqual([]);
   expect(await h.repos.list()).toEqual([]);

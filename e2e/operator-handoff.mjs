@@ -370,15 +370,8 @@ const git = (cwd, args) =>
     stdio: ['ignore', 'ignore', 'pipe'],
   });
 
-/** The throwaway repo: one commit carrying the fixtures — CLAUDE.md with the canary, AGENTS.md,
- *  and the .docket definitions of a two-stage flow (implement → review) whose worker role carries
- *  the two-step task and whose checker role carries the review question. */
-function buildRepo(repoDir, stringify, fixture) {
-  const write = (relative, value) => {
-    const target = join(repoDir, relative);
-    mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, stringify(value));
-  };
+/** The throwaway repo: one commit carrying the fixtures — CLAUDE.md with the canary, AGENTS.md. */
+function buildRepo(repoDir, fixture) {
   mkdirSync(repoDir, { recursive: true });
   try {
     git(repoDir, ['init', '--quiet', '--initial-branch=main']);
@@ -391,8 +384,18 @@ function buildRepo(repoDir, stringify, fixture) {
     `# Ground rules\n\nA throwaway repository for one operator-handoff run.\n\n${fixture.canary}\n`,
   );
   writeFileSync(join(repoDir, 'AGENTS.md'), '# Agent notes\n\nA throwaway repository for one operator-handoff run.\n');
-  write('.docket/project.yaml', { id: PROJECT, name: 'Operator handoff', mainRepo: REPO, repos: [REPO] });
-  write('.docket/repo.yaml', {
+  git(repoDir, ['add', '-A']);
+  git(repoDir, ['commit', '--quiet', '-m', 'operator-handoff seed']);
+}
+
+function seedDefinitions(dataDir, stringify, fixture) {
+  const write = (relative, value) => {
+    const target = join(dataDir, relative);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, stringify(value));
+  };
+  write(`projects/${PROJECT}/project.yaml`, { id: PROJECT, name: 'Operator handoff', mainRepo: REPO, repos: [REPO] });
+  write(`repos/${REPO}/repo.yaml`, {
     id: REPO,
     name: REPO,
     flows: ['handoff-demo'],
@@ -402,7 +405,7 @@ function buildRepo(repoDir, stringify, fixture) {
     docsRoot: 'docs',
     testGlobs: [],
   });
-  write('.docket/flows/handoff-demo.yaml', {
+  write('library/flows/handoff-demo/v1.yaml', {
     id: 'handoff-demo',
     name: 'Handoff demo',
     stages: [
@@ -410,7 +413,7 @@ function buildRepo(repoDir, stringify, fixture) {
       { id: 'review', name: 'Review', role: 'checker', reviewOf: 'implement', exit: [] },
     ],
   });
-  write('.docket/roles/worker.yaml', {
+  write('library/roles/worker/v1.yaml', {
     id: 'worker',
     name: 'Worker',
     instructions: fixture.workerText,
@@ -418,7 +421,7 @@ function buildRepo(repoDir, stringify, fixture) {
     capabilities: [],
     active: true,
   });
-  write('.docket/roles/checker.yaml', {
+  write('library/roles/checker/v1.yaml', {
     id: 'checker',
     name: 'Checker',
     instructions: CHECKER_INSTRUCTIONS,
@@ -426,8 +429,6 @@ function buildRepo(repoDir, stringify, fixture) {
     capabilities: [],
     active: true,
   });
-  git(repoDir, ['add', '-A']);
-  git(repoDir, ['commit', '--quiet', '-m', 'operator-handoff seed']);
 }
 
 async function main() {
@@ -568,7 +569,8 @@ async function main() {
       process.exit(2);
     }
 
-    buildRepo(repoDir, stringify, { canary, workerText });
+    buildRepo(repoDir, { canary });
+    seedDefinitions(dataDir, stringify, { workerText });
 
     // Discovery over the two providers only: its read-only probes (version, auth status) are the
     // only CLI calls before consent.

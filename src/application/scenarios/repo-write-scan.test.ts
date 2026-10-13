@@ -86,7 +86,6 @@ describe('I-87: no application write lands inside a registered repo folder outsi
   });
 
   it('I-87: the scan itself flags a write into a repo folder and allows one under .git/', () => {
-    expect(insideOutsideGit('/checkouts/web/.docket/repo.yaml', '/checkouts/web')).toBe(true);
     expect(insideOutsideGit('/checkouts/web/src/a.ts', '/checkouts/web')).toBe(true);
     expect(insideOutsideGit('/checkouts/web/.git/refs/heads/docket/x', '/checkouts/web')).toBe(false);
     expect(insideOutsideGit('/checkouts/webster/a.ts', '/checkouts/web')).toBe(false);

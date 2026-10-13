@@ -209,7 +209,7 @@ describe('Yeni proje page', () => {
     expect(reloads.count).toBe(1);
     expect(api.queries).toEqual([{ type: 'project.tree' }]);
     expect(store.state().done).toEqual({ target: { kind: 'board', repo: 'atolye' }, toastKey: 'newProject.created' });
-    expect(TR['newProject.created']).toBe("Proje oluşturuldu. Test komutlarını .docket/repo.yaml'a yaz; yazılana kadar test kapısı bekler.");
+    expect(TR['newProject.created']).toBe("Proje oluşturuldu. Test komutlarını ~/.docket/repos/<slug>/repo.yaml'a yaz; yazılana kadar test kapısı bekler.");
 
     store.reset();
     expect(store.state().done).toBeNull();

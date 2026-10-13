@@ -35,16 +35,10 @@ export interface FakeDefinitionStore extends DefinitionStore {
   setRepoDef(repo: RepoSlug, def: RepoDef): void;
   /** Overrides what repoPath reports; undefined marks the repo as without a checkout. */
   setRepoPath(repo: RepoSlug, path: string | undefined): void;
-  /** Seeds a project.yaml directly for readProjectAt at a specific checkout path. */
-  seedProjectAt(path: string, content: string): void;
   /** Seeds a repo.yaml directly at a specific checkout path for scaffolding assertions. */
   seedRepoAt(path: string, content: string): void;
   /** Reads back what was scaffolded/seeded at a repo path. */
   repoAt(path: string): string | undefined;
-  /** Reads and validates project.yaml at an arbitrary path (legacy test helper). */
-  readProjectAt(path: string): Promise<Result<ProjectDef, readonly DefinitionIssue[]>>;
-  /** Makes the next scaffoldProject fail with 'io_failed' — the error branch probe. */
-  failNextScaffold(): void;
   /** Makes the next `appendVersion` answer `stale` and write nothing — the deterministic
    *  stand-in for the YAML adapter's write race. */
   failNextAppendStale(): void;
@@ -130,7 +124,6 @@ export const createFakeDefinitionStore = (): FakeDefinitionStore => {
   const histories = new Map<string, VersionRecord<unknown>[]>();
   const projects: ProjectDef[] = [];
   const repoDefs = new Map<RepoSlug, RepoDef>();
-  const projectAt = new Map<string, string>();
   const repoFileAt = new Map<string, string>();
   const legacyBroken = new Map<string, string>();
   const legacyRepoWithoutSection = new Set<string>();
@@ -369,33 +362,11 @@ export const createFakeDefinitionStore = (): FakeDefinitionStore => {
 
     setRepoPath: (_repo: RepoSlug, _path: string | undefined): void => {},
 
-    seedProjectAt: (path: string, content: string): void => {
-      projectAt.set(path, content);
-    },
-
     seedRepoAt: (path: string, content: string): void => {
       repoFileAt.set(path, content);
     },
 
     repoAt: (path: string): string | undefined => repoFileAt.get(path),
-
-    readProjectAt: async (path: string): Promise<Result<ProjectDef, readonly DefinitionIssue[]>> => {
-      const content = projectAt.get(path);
-      if (content === undefined) {
-        return err([{ path: 'project.yaml', code: 'missing_field', message: 'project.yaml is required' }]);
-      }
-      const parsed = parseJson('project.yaml', content);
-      if (!parsed.ok) return err([parsed.error]);
-      if (!isRecord(parsed.value)) {
-        return err([{ path: 'project.yaml', code: 'wrong_type', message: 'project.yaml must be a JSON object' }]);
-      }
-      const validated = validateDefinitions({ roles: [], flows: [], capabilities: [], project: parsed.value });
-      return validated.ok && validated.value.project !== undefined
-        ? ok(validated.value.project)
-        : err(validated.ok ? [{ path: 'project.yaml', code: 'missing_field', message: 'project is required' }] : validated.error);
-    },
-
-    failNextScaffold: (): void => {},
 
     failNextAppendStale: (): void => {
       failAppend = true;

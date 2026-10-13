@@ -120,6 +120,10 @@ const PENDING = new Map([
   ['infrastructure:I-90', '#1057'],
   ['infrastructure:I-91', '#1057'],
   ['infrastructure:I-97', '#1057'],
+
+  // #1058 — migrations 1–11 were consolidated into a single clean schema; v1/v10 upgrade tests removed.
+  ['infrastructure:I-33', '#1058'],
+  ['infrastructure:I-93', '#1058'],
 ]);
 
 function walk(dir, acc = []) {
