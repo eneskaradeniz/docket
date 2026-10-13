@@ -76,6 +76,8 @@ export interface WorkOrderDetailRun {
   readonly startedAt: number;
   readonly endedAt?: number;
   readonly outcome?: RunOutcome;
+  readonly flowVersion?: number;
+  readonly roleVersion?: number;
 }
 
 /** One run summary of the detail reply (#969): who ran it, on what, and the folded usage —
@@ -487,6 +489,8 @@ export interface WorkOrderRunRow {
    *  estimate note for included, credits for credits. */
   readonly cost: CostDisplay | null;
   readonly usage: { readonly inputTokens: number; readonly outputTokens: number } | null;
+  readonly flowVersion: number | null;
+  readonly roleVersion: number | null;
 }
 
 /** The run code a row shows (the walk-through decision): `run_` plus the id's last four
@@ -516,6 +520,8 @@ export const runRows = (view: WorkOrderDetailView): readonly WorkOrderRunRow[] =
         summary?.usage !== undefined
           ? { inputTokens: summary.usage.inputTokens, outputTokens: summary.usage.outputTokens }
           : null,
+      flowVersion: run.flowVersion ?? null,
+      roleVersion: run.roleVersion ?? null,
     };
   });
 };

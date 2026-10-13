@@ -9,6 +9,7 @@ import type { LabelKey } from '../labels/keys';
 import type { WorkOrderRunRow } from '../stores/work-order-detail';
 import { formatClock, formatDateTime, formatDurationMs } from './detail-format';
 import { DetailUsageLine } from './detail-usage-line';
+import { RunPinnedVersionsView } from './run-pinned-versions-view';
 
 const OUTCOME_CLASS: Readonly<Record<'running' | 'succeeded' | 'failed' | 'limit' | 'cancelled', string>> = {
   running: 'text-proceed',
@@ -51,6 +52,7 @@ export function DetailRunCard({ run, locale }: DetailRunCardProps) {
           </span>
         ) : null}
       </div>
+      <RunPinnedVersionsView locale={locale} flowVersion={run.flowVersion} roleVersion={run.roleVersion} />
       {run.accountLabel !== null ? (
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[0.78125rem] text-inkdim">
           <span

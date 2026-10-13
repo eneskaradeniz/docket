@@ -9,7 +9,20 @@ import type { Command } from '../../api/commands';
 import type { AccountModelsView, Query, RoleListItem, SettingsAccountView, SettingsAccountsView, SettingsBindingView } from '../../api/queries';
 
 import { mostSharedChain } from '../../domain/index';
-import { chainEmptyKey, createRolesStore, globalChainOf, effortOptions, selectableModels, styleChoices, styleSettings, styleStanding, unboundRoleIds, workStyle } from './roles';
+import {
+  chainEmptyKey,
+  createRolesStore,
+  globalChainOf,
+  effortOptions,
+  removalActionOf,
+  selectableModels,
+  styleChoices,
+  styleSettings,
+  styleStanding,
+  unboundRoleIds,
+  workStyle,
+  type RoleListWire,
+} from './roles';
 
 type BindingSave = Extract<Command, { readonly type: 'binding.save' }>;
 
@@ -483,6 +496,40 @@ describe('A-301: the assistant binding follows the order', () => {
     expect(assistant).toHaveLength(2);
     expect(assistant[0]).toEqual({ type: 'binding.save', role: 'assistant', accounts: [{ accountId: 'a2' }, { accountId: 'a1' }] });
     expect(assistant[1]).toEqual(assistant[0]);
+  });
+});
+
+describe('U-292 / U-293: definition versions and removal', () => {
+  it('U-292: rows carry version and past versions from roles.list', async () => {
+    const wired: RoleListWire = {
+      ...ROLES[0],
+      version: 3,
+      pastVersions: [
+        { version: 2, recordedAt: 2, archived: false },
+        { version: 1, recordedAt: 1, archived: false },
+      ],
+    };
+    const base = fake();
+    const api: Fake = {
+      ...base,
+      query: async (q) => {
+        if (q.type === 'roles.list') return [wired];
+        return base.query(q);
+      },
+    };
+    const store = makeStore(api);
+    await store.load();
+    const row = store.state().rows?.[0];
+    expect(row?.version).toBe(3);
+    expect(row?.pastVersions).toHaveLength(2);
+    store.openPastVersions('developer');
+    expect(store.state().pastVersionsRole).toBe('developer');
+  });
+
+  it('U-293: removal verdict maps to delete, archive, or blocked', () => {
+    expect(removalActionOf({ kind: 'delete' })).toBe('delete');
+    expect(removalActionOf({ kind: 'archive' })).toBe('archive');
+    expect(removalActionOf({ kind: 'blocked', reasons: [] })).toBe('blocked');
   });
 });
 
