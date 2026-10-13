@@ -428,7 +428,7 @@ describe('effectiveRole', () => {
     ]);
   });
 
-  it('answers limitPolicyFor from the binding, falling back to the default', () => {
+  it("R-135: limitPolicyFor returns the stage binding's limitPolicy, else the repo's defaultLimitPolicy", () => {
     const flow = repoFlow(
       [stageDef(WORK, ROLE), stageDef(REVIEW, ROLE)],
       [binding(WORK, roleRef(ROLE, 1), undefined), binding(REVIEW, roleRef(ROLE, 1), undefined, 'fallback_account')],
