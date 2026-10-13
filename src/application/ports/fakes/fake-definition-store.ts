@@ -404,6 +404,12 @@ export const createFakeDefinitionStore = (): FakeDefinitionStore => {
       return { written, skipped };
     },
 
+    listIds: async (kind: DefinitionKind): Promise<readonly string[]> =>
+      [...histories.keys()]
+        .filter((key) => key.startsWith(`${kind}/`))
+        .map((key) => key.slice(kind.length + 1))
+        .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
+
     // The version histories live in memory keyed by kind and id. Records are replaced, never
     // edited, so a recorded body stays as it was.
     listVersions: async (kind: DefinitionKind, id: string): Promise<readonly VersionRecord<unknown>[]> =>

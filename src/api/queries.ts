@@ -64,8 +64,8 @@ export type Query =
   | { readonly type: 'chat.attachment'; readonly conversation: string; readonly id: string } // → ChatAttachmentBytesView | not_found (A-254)
   | { readonly type: 'chat.usage' } // → ChatUsageView (A-255)
   | { readonly type: 'usage.summary'; readonly workOrder?: string; readonly project?: string; readonly sinceMs?: number } // → UsageSummaryView | not_found | bad_input | invalid_id (A-280 … A-283)
-  | { readonly type: 'memory.overview' } // → MemoryOverviewView (A-348)
-  | { readonly type: 'definitions.list'; readonly kind: 'plugin' | 'mcp' | 'skill' | 'command' | 'hook' }; // → readonly DefinitionListItem[] (A-349)
+  | { readonly type: 'memory.overview' } // → MemoryOverviewView (A-349)
+  | { readonly type: 'definitions.list'; readonly kind: 'plugin' | 'mcp' | 'skill' | 'command' | 'hook' }; // → readonly DefinitionListItem[] (A-350)
 
 export interface AttentionItem {
   readonly workOrderId: string;
@@ -283,7 +283,7 @@ export interface SettingsAccountsView {
   readonly bindings: readonly SettingsBindingView[];
 }
 
-// --- memory.overview (A-348) -------------------------------------------------------------------------
+// --- memory.overview (A-349) -------------------------------------------------------------------------
 
 export interface MemoryOverviewView {
   readonly notes: readonly {
@@ -306,7 +306,7 @@ export interface MemoryOverviewView {
   readonly truncated: boolean;
 }
 
-// --- definitions.list (A-349) ------------------------------------------------------------------------
+// --- definitions.list (A-350) ------------------------------------------------------------------------
 
 export interface DefinitionListItem {
   readonly definitionId: string;

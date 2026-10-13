@@ -1,4 +1,4 @@
-// memory-api.test.ts — memory and library-definition boundary (#1072, A-348 … A-352).
+// memory-api.test.ts — memory and library-definition boundary (#1072, A-349 … A-353).
 import { describe, expect, it } from 'vitest';
 
 import type { Actor, CapabilitySlug, FlowSlug, RepoSlug, StageSlug } from '../domain/index';
@@ -61,7 +61,7 @@ const seedRepo = async (deps: AppDeps): Promise<void> => {
 };
 
 describe('memory and definitions api (#1072)', () => {
-  it('A-352: registry rows exist for every new query and command', () => {
+  it('A-353: registry rows exist for every new query and command', () => {
     expect(QUERY_REGISTRY['memory.overview'].input).toBe('no input');
     expect(QUERY_REGISTRY['definitions.list'].input).toContain('kind');
     const commands: readonly Command['type'][] = [
@@ -76,7 +76,7 @@ describe('memory and definitions api (#1072)', () => {
     }
   });
 
-  it('A-348: memory.overview lists all notes, pending proposals, auto-accept flags and global truncation', async () => {
+  it('A-349: memory.overview lists all notes, pending proposals, auto-accept flags and global truncation', async () => {
     const deps = createFakeDeps();
     const api = createApi(deps);
 
@@ -94,7 +94,7 @@ describe('memory and definitions api (#1072)', () => {
     expect(overview.proposals).toEqual([]);
   });
 
-  it('A-350: memory.acceptProposal on a non-pending proposal answers not_pending', async () => {
+  it('A-351: memory.acceptProposal on a non-pending proposal answers not_pending', async () => {
     const deps = createFakeDeps();
     const api = createApi(deps);
 
@@ -112,7 +112,24 @@ describe('memory and definitions api (#1072)', () => {
     });
   });
 
-  it('A-349: definitions.list never returns mcp env secret values', async () => {
+  it('A-350: definitions.list lists saved library capabilities without a registered repo', async () => {
+    const deps = createFakeDeps();
+    await deps.definitions.installCapabilities([
+      {
+        kind: 'command',
+        id: 'fmt-cmd' as CapabilitySlug,
+        name: 'Format',
+        template: 'npm run fmt',
+        arguments: [],
+      },
+    ]);
+    const api = createApi(deps);
+    const list = (await api.query({ type: 'definitions.list', kind: 'command' })) as readonly DefinitionListItem[];
+    expect(list).toHaveLength(1);
+    expect(list[0]?.definitionId).toBe('fmt-cmd');
+  });
+
+  it('A-350: definitions.list never returns mcp env secret values', async () => {
     const deps = createFakeDeps();
     const secretRef = 'stg-api-token-value';
     const literal = 'eu-west-1';
@@ -129,7 +146,6 @@ describe('memory and definitions api (#1072)', () => {
         },
       },
     ]);
-    await seedRepo(deps);
 
     const api = createApi(deps);
     const list = (await api.query({ type: 'definitions.list', kind: 'mcp' })) as readonly DefinitionListItem[];
@@ -145,7 +161,7 @@ describe('memory and definitions api (#1072)', () => {
     });
   });
 
-  it('A-351: definitions.save returns definition issue codes unchanged on failure', async () => {
+  it('A-352: definitions.save returns definition issue codes unchanged on failure', async () => {
     const deps = createFakeDeps();
     await seedRepo(deps);
     const api = createApi(deps);
@@ -168,7 +184,7 @@ describe('memory and definitions api (#1072)', () => {
     expect(await deps.definitions.listVersions('capabilities', 'bad-cmd')).toEqual([]);
   });
 
-  it('A-351: definitions.save appends a new library version on success', async () => {
+  it('A-352: definitions.save appends a new library version on success', async () => {
     const deps = createFakeDeps();
     await seedRepo(deps);
     const api = createApi(deps);

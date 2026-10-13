@@ -69,7 +69,7 @@ export type Command =
   | { readonly type: 'memory.rejectProposal'; readonly id: string }
   | { readonly type: 'memory.setAutoAccept'; readonly scope: 'global' | 'project' | 'repo'; readonly enabled: boolean }
   | { readonly type: 'memory.addNote'; readonly text: string; readonly scope: 'global' | 'project' | 'repo'; readonly scopeId?: string }
-  | { readonly type: 'definitions.save'; readonly kind: 'plugin' | 'mcp' | 'skill' | 'command' | 'hook'; readonly definition: unknown }; // ok → { version }; failures → definitions_invalid + issues (A-351)
+  | { readonly type: 'definitions.save'; readonly kind: 'plugin' | 'mcp' | 'skill' | 'command' | 'hook'; readonly definition: unknown }; // ok → { version }; failures → definitions_invalid + issues (A-352)
 
 /** A conversation scope on the wire: the domain's own three shapes with plain string ids. */
 export type ChatScopeInput =
@@ -136,7 +136,7 @@ export type CommandResult =
     }
   /** `roles` rides only `binding_exists`: the roles whose bindings still reference the account.
    *  `issues` rides `definitions_invalid` on bundle import (A-342).
-   *  `definitionIssues` rides `definitions_invalid` on definitions.save (A-351). */
+   *  `definitionIssues` rides `definitions_invalid` on definitions.save (A-352). */
   | {
       readonly ok: false;
       readonly code: string;

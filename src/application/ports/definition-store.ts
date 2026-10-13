@@ -67,6 +67,8 @@ export interface DefinitionStore {
     readonly written: readonly string[];
     readonly skipped: readonly string[];
   }>;
+  /** Every library definition id of a kind that has at least one version file, in id order. */
+  listIds(kind: DefinitionKind): Promise<readonly string[]>;
   /** A-343: a definition's version history in version order; empty for an unknown id. */
   listVersions(kind: DefinitionKind, id: string): Promise<readonly VersionRecord<unknown>[]>;
   /** A-343: the only library write — appends the next version and answers `stale` when a

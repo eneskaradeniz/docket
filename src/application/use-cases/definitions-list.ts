@@ -1,4 +1,4 @@
-// definitions-list.ts — library capability definitions for Settings (A-349): latest version per id,
+// definitions-list.ts — library capability definitions for Settings (A-350): latest version per id,
 // filtered by capability kind, with mcp env values never returned on the boundary.
 import type { CapabilityDef, VersionRecord } from '../../domain/index';
 
@@ -35,26 +35,12 @@ export const redactCapabilityForList = (body: unknown): unknown => {
   return { ...body, env };
 };
 
-const mergedCapabilityIds = async (deps: Pick<AppDeps, 'definitions' | 'repos'>): Promise<readonly string[]> => {
-  const ids = new Set<string>();
-  const rows = [...(await deps.repos.list())].sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
-  const seen = new Set<string>();
-  for (const row of rows) {
-    if (seen.has(row.slug)) continue;
-    seen.add(row.slug);
-    const loaded = await deps.definitions.load(row.slug);
-    if (!loaded.ok) continue;
-    for (const cap of loaded.value.capabilities) ids.add(cap.id);
-  }
-  return [...ids].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-};
-
 /** Latest version record per library capability of the requested kind; bodies redacted for the wire. */
 export async function listLibraryDefinitionsByKind(
-  deps: Pick<AppDeps, 'definitions' | 'repos'>,
+  deps: Pick<AppDeps, 'definitions'>,
   kind: LibraryCapabilityKind,
 ): Promise<readonly VersionRecord<unknown>[]> {
-  const ids = await mergedCapabilityIds(deps);
+  const ids = await deps.definitions.listIds('capabilities');
   const records: VersionRecord<unknown>[] = [];
   for (const id of ids) {
     const history = await deps.definitions.listVersions('capabilities', id);
