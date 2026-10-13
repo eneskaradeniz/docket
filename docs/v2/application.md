@@ -1963,3 +1963,16 @@ support it are gone from the code. The rule texts above stand as history.
 - **A-351** (added 2026-10-14, #1072) Commands `memory.acceptProposal` / `memory.rejectProposal` map to the memory use cases and answer `{ ok: false, code: 'not_found' | 'not_pending' }` without throwing. `memory.setAutoAccept` writes the scope's machine setting and answers `{ ok: true }`. `memory.addNote` trims text, refuses empty with `bad_input`, and creates a note with `createdBy: 'user'` through the use case.
 - **A-352** (added 2026-10-14, #1072) Command `definitions.save { kind, definition }` validates the body as a single capability through `validateDefinitions` (R-140); the command `kind` must match the body's `kind`, otherwise `bad_input`. Issues answer `{ ok: false, code: 'definitions_invalid', definitionIssues }` with the domain issue codes unchanged and nothing written. Success calls `saveVersion` for `capabilities` (D-6, A-343) and answers `{ ok: true, version }`; `stale` passes through as `{ ok: false, code: 'stale' }`.
 - **A-353** (added 2026-10-14, #1072) The boundary maps the queries and commands above onto `memoryOverview`, `listLibraryDefinitionsByKind`, and the existing memory and `saveVersion` use cases only — no business logic in `src/api/` beyond id parsing and view shaping; every new type is registered in `registry.ts`.
+
+### Addendum 2026-10-14 (#1078): saveRepoFlow rejects disconnected stage chains
+
+```ts
+// use-cases/repos.ts (A-354)
+export type SaveFlowAccountNotConnected = {
+  readonly code: 'account_not_connected';
+  readonly accounts: readonly { readonly stage: StageSlug; readonly accountId: AccountId }[];
+};
+export type SaveFlowError = 'not_found' | 'definitions_invalid' | 'stale' | SaveFlowAccountNotConnected;
+```
+
+- **A-354** (added 2026-10-14, #1078) `saveRepoFlow` refuses a flow whose stage binding names an account that is not connected: `account_not_connected` carries every offending `{ stage, accountId }` and nothing is written (connectedness is application-time only — architect decision 1 of #1013). An empty account chain and a chain whose accounts are all connected save under A-345 unchanged. The `repo.saveFlow` command maps the failure to `{ ok: false, code: 'account_not_connected', accounts }`; pins of existing work orders are never rewritten (A-325); dispatch still skips disconnected pin entries (A-325).
