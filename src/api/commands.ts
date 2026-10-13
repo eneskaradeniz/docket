@@ -33,6 +33,12 @@ export type Command =
   | { readonly type: 'settings.setDispatch'; readonly global: number; readonly perRepo: number; readonly perAccount: Readonly<Record<string, number>>; readonly mode?: 'fixed' | 'auto' } // errors: invalid_limits, unknown_account
   | { readonly type: 'quota.refresh'; readonly id?: string } // answers { ok: true } after the polls end (A-81)
   | { readonly type: 'capabilities.import'; readonly identities: readonly string[] }
+  | {
+      readonly type: 'capabilities.importMachine';
+      readonly providers: readonly string[];
+      readonly keys: readonly string[];
+      readonly secretRefs?: Readonly<Record<string, string>>;
+    }
   | { readonly type: 'page.comment'; readonly page: string; readonly version: number; readonly text: string; readonly anchor?: string } // errors: the domain's PageError codes (A-158)
   | { readonly type: 'page.requestApproval'; readonly page: string }
   | { readonly type: 'page.decide'; readonly page: string; readonly decision: 'approved' | 'rejected'; readonly version: number }
@@ -82,6 +88,14 @@ export interface CapabilityImportResultView {
   readonly reason: string | null;
 }
 
+export interface MachineImportResultView {
+  readonly key: string;
+  readonly status: 'imported' | 'rejected';
+  readonly id: string | null;
+  readonly version: number | null;
+  readonly reason: string | null;
+}
+
 /** What `roadmap.runPhase` answers (A-98): per task the work orders it opened, and the failures
  *  collected without stopping the other tasks (A-99). */
 export interface PhaseRunView {
@@ -94,6 +108,6 @@ export type CommandResult =
    *  `phaseRun` rides only `roadmap.runPhase`. The chat fields ride only their own commands:
    *  `conversation`+`turn` (chat.start), `turn` (chat.send), `attachment` (chat.attach),
    *  `workOrder`+`code` (chat.draft.confirm), `id` (chat.grant). */
-  | { readonly ok: true; readonly id?: string; readonly results?: readonly CapabilityImportResultView[]; readonly phaseRun?: PhaseRunView; readonly conversation?: string; readonly turn?: string; readonly attachment?: string; readonly workOrder?: string; readonly code?: string; readonly report?: { readonly warnings: readonly string[]; readonly renames: readonly { readonly id: string; readonly to: string }[] } }
+  | { readonly ok: true; readonly id?: string; readonly results?: readonly CapabilityImportResultView[]; readonly machineResults?: readonly MachineImportResultView[]; readonly phaseRun?: PhaseRunView; readonly conversation?: string; readonly turn?: string; readonly attachment?: string; readonly workOrder?: string; readonly code?: string; readonly report?: { readonly warnings: readonly string[]; readonly renames: readonly { readonly id: string; readonly to: string }[] } }
   /** `roles` rides only `binding_exists`: the roles whose bindings still reference the account. */
   | { readonly ok: false; readonly code: string; readonly roles?: readonly string[] };
