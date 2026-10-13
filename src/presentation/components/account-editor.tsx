@@ -34,11 +34,13 @@ import { includedReason, type AccountModelsStore, type CapScope } from '../store
 import { RECOMMENDED, settingDiffs } from '../stores/recommended';
 import { ActionButton } from './action-button';
 import { Listbox } from './listbox';
-import { MeterList } from './meter-list';
+import { MeterList, MeterNote } from './meter-list';
 import { ModelList } from './model-list';
 import { formatMeterValue } from './meter-value';
 import { SettingRow } from './setting-row';
-import { accountMeterStanding, meterListEmpty, meterListView } from '../stores/meter-list';
+import { Skeleton, SkeletonStyle, useSkeleton } from './skeleton';
+import { meterListEmpty, meterListView, type MeterFailure, type MeterListEmpty } from '../stores/meter-list';
+import { accountUsageStanding } from '../stores/account-editor';
 
 const TAB_KEY: Readonly<Record<EditorTab, LabelKey>> = {
   general: 'editor.tab.general',
@@ -75,6 +77,12 @@ export interface AccountEditorProps {
   readonly formatTime: (epochMs: number | null) => string | null;
   /** Re-reads the account's meters ("Yenile"). */
   readonly onRefresh: () => void;
+  /** Whether quota refresh is running right now (U-266). */
+  readonly refreshing?: boolean;
+  /** A failure from the latest refresh attempt, if any (U-267). */
+  readonly refreshFailure?: MeterFailure | null;
+  /** Injected clock for testing the 150 ms skeleton delay (U-266). */
+  readonly skeletonNow?: () => number;
   /** The roles that route this account — the chips on Genel (U-37). */
   readonly roleChips?: readonly { readonly id: string; readonly name: string }[];
   /** A chip's intent: Settings → Roller with that role's İnce ayar open. */
@@ -271,9 +279,42 @@ function General({
   );
 }
 
-function Usage({ account, locale, formatTime, onRefresh }: Pick<AccountEditorProps, 'account' | 'locale' | 'formatTime' | 'onRefresh'>) {
+export interface UsageProps {
+  readonly account: SettingsAccountView;
+  readonly locale: Locale;
+  readonly formatTime: (epochMs: number | null) => string | null;
+  readonly onRefresh: () => void;
+  readonly refreshing?: boolean;
+  readonly refreshFailure?: MeterFailure | null;
+  readonly skeletonNow?: () => number;
+}
+
+export function Usage({
+  account,
+  locale,
+  formatTime,
+  onRefresh,
+  refreshing = false,
+  refreshFailure = null,
+  skeletonNow,
+}: UsageProps) {
   const view = usageView(account);
   const lastRead = account.meters.length === 0 ? null : formatTime(Math.max(...account.meters.map((meter) => meter.observedAt)));
+  const { skeleton } = useSkeleton(refreshing && account.meters.length === 0, skeletonNow ?? (() => Date.now()));
+  const standing = accountUsageStanding(account, refreshing, refreshFailure);
+  const failed = refreshFailure !== null || (standing.failed && account.meters.length === 0);
+  const failure = refreshFailure ?? standing.failure ?? (standing.needsLogin ? null : 'network');
+  const failureKey: MeterListEmpty =
+    failure === 'needs_key'
+      ? 'meterList.failed.needsKey'
+      : failure === 'network'
+        ? 'meterList.failed.network'
+        : failure === 'rejected'
+          ? 'meterList.failed.rejected'
+          : standing.needsLogin
+            ? 'meterList.needsLogin'
+            : 'meterList.failed.network';
+
   return (
     <div className="grid gap-3.5">
       <Section title={t(locale, 'editor.tab.usage')}>
@@ -283,19 +324,46 @@ function Usage({ account, locale, formatTime, onRefresh }: Pick<AccountEditorPro
             {lastRead !== null ? ` ${lastRead}` : ''}
           </span>
           <span aria-hidden="true">·</span>
-          <ActionButton variant="neutral" onClick={onRefresh}>
+          <ActionButton variant="neutral" disabled={refreshing} onClick={onRefresh}>
             {t(locale, 'editor.usage.refresh')}
           </ActionButton>
         </p>
         {view.kind === 'meters' ? (
-          <MeterList
-            locale={locale}
-            view={meterListView(account.pools, account.meters)}
-            empty={meterListEmpty(accountMeterStanding(account))}
-            now={Date.now()}
-          />
+          refreshing && account.meters.length === 0 ? (
+            skeleton ? (
+              <div aria-busy="true" className="grid gap-2.5 py-1" data-usage-skeleton="">
+                <SkeletonStyle />
+                <Skeleton height="1.5rem" radius="control" width="100%" />
+                <Skeleton height="1.5rem" radius="control" width="85%" />
+              </div>
+            ) : null
+          ) : failed && !refreshing ? (
+            <div className="flex flex-wrap items-center gap-2 text-[12px] text-inkdim" data-usage-error="">
+              <MeterNote>{t(locale, failureKey)}</MeterNote>
+              <ActionButton variant="neutral" onClick={onRefresh}>
+                {t(locale, 'editor.usage.retry')}
+              </ActionButton>
+            </div>
+          ) : (
+            <div
+              aria-busy={refreshing ? true : undefined}
+              className={refreshing ? 'opacity-60 pointer-events-none transition-opacity' : undefined}
+              data-usage-busy={refreshing ? '' : undefined}
+            >
+              <MeterList
+                locale={locale}
+                view={meterListView(account.pools, account.meters)}
+                empty={refreshing ? null : meterListEmpty(standing)}
+                now={Date.now()}
+              />
+            </div>
+          )
         ) : (
-          <div className="grid gap-1" data-spend="">
+          <div
+            className={`grid gap-1 ${refreshing ? 'opacity-60 pointer-events-none transition-opacity' : ''}`}
+            data-spend=""
+            aria-busy={refreshing ? true : undefined}
+          >
             <p className="text-[13px] text-ink">
               {t(locale, 'editor.usage.spend')}{' '}
               <span className="font-mono">{view.spentUsd === null ? t(locale, 'editor.usage.spendNone') : formatMeterValue(locale, 'usd', view.spentUsd)}</span>
@@ -670,7 +738,20 @@ export function AccountEditorPanels(props: AccountEditorProps) {
             removeWarning={props.removeWarning}
           />
         ) : null}
-        {state.tab === 'usage' ? <Usage account={account} locale={locale} formatTime={props.formatTime} onRefresh={props.onRefresh} /> : null}
+        {state.tab === 'usage' ? (
+          <Usage
+            account={account}
+            locale={locale}
+            formatTime={props.formatTime}
+            onRefresh={() => {
+              props.onRefresh();
+              if (props.refreshing === undefined) void store.refreshQuota(account);
+            }}
+            refreshing={props.refreshing ?? state.refreshing}
+            refreshFailure={props.refreshFailure !== undefined ? props.refreshFailure : state.refreshFailure}
+            skeletonNow={props.skeletonNow}
+          />
+        ) : null}
         {state.tab === 'limits' ? <Limits account={account} locale={locale} store={store} /> : null}
         {state.tab === 'models' && props.models !== undefined ? (
           <Models account={account} locale={locale} models={props.models} onRefresh={props.onRefresh} />

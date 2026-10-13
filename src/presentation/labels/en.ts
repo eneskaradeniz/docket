@@ -478,6 +478,7 @@ export const EN: LabelBundle = {
   'editor.fact.secret.no': 'No key stored',
   'editor.usage.lastRead': 'Last read',
   'editor.usage.refresh': 'Refresh',
+  'editor.usage.retry': 'Try again',
   'editor.usage.spend': 'Spend this period',
   'editor.usage.spendNone': 'No spend read',
   'editor.usage.cap': 'cap',

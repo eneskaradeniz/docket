@@ -476,6 +476,7 @@ export const TR: LabelBundle = {
   'editor.fact.secret.no': 'Kayıtlı anahtar yok',
   'editor.usage.lastRead': 'Son okuma',
   'editor.usage.refresh': 'Yenile',
+  'editor.usage.retry': 'Tekrar dene',
   'editor.usage.spend': 'Bu dönemin harcaması',
   'editor.usage.spendNone': 'Harcama okunmadı',
   'editor.usage.cap': 'tavan',

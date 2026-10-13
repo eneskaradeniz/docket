@@ -20,6 +20,7 @@ import { resetLine } from './reset-line';
 import { commandResultKey, isQueryFailure } from './results';
 import { testRefusal, type TestRefusal } from './account-test';
 import type { DispatchWrite } from './dispatch-settings';
+import type { MeterFailure } from './meter-list';
 
 /** The coarse change events the api emits (docs/v2/ui.md, U-12). Notifications carry no
  *  payloads — the store re-queries. Tests inject a fake; the api's `subscribe` satisfies the
@@ -113,6 +114,10 @@ export interface SettingsState {
   readonly testing: readonly string[];
   /** The latest refusal of an account's test, by account id; cleared when its next test starts. */
   readonly testRefusals: Readonly<Record<string, TestRefusal>>;
+  /** The accounts whose quota refresh is running right now (U-266). */
+  readonly refreshing: readonly string[];
+  /** The latest quota refresh failure, by account id (U-267). */
+  readonly refreshFailures: Readonly<Record<string, MeterFailure>>;
 }
 
 export interface AccountSaveInput {
@@ -217,6 +222,8 @@ export const createSettingsStore = (deps: SettingsStoreDeps): SettingsStore => {
     removeWarning: null,
     testing: [],
     testRefusals: {},
+    refreshing: [],
+    refreshFailures: {},
   };
   const listeners = new Set<() => void>();
   // Only the newest accounts query may apply its reply.
@@ -325,7 +332,35 @@ export const createSettingsStore = (deps: SettingsStoreDeps): SettingsStore => {
       });
       await load();
     },
-    refreshQuota: (accountId) => runIntent(accountId === undefined ? { type: 'quota.refresh' } : { type: 'quota.refresh', id: accountId }),
+    refreshQuota: async (accountId) => {
+      const target = accountId ?? '*';
+      if (state.refreshing.includes(target)) {
+        return state.lastOutcome ?? { command: 'quota.refresh', result: { ok: true }, labelKey: 'success.account.save' };
+      }
+      const { [target]: _cleared, ...remainingFailures } = state.refreshFailures;
+      set({ ...state, refreshing: [...state.refreshing, target], refreshFailures: remainingFailures });
+      const command: Command = accountId === undefined ? { type: 'quota.refresh' } : { type: 'quota.refresh', id: accountId };
+      const result = await api.command(actor, command);
+      const outcome: SettingsIntentOutcome = {
+        command: 'quota.refresh',
+        result,
+        labelKey: commandResultKey('quota.refresh', result),
+      };
+      const failures = result.ok
+        ? remainingFailures
+        : {
+            ...remainingFailures,
+            [target]: (result.code === 'network' ? 'network' : result.code === 'auth' ? 'rejected' : 'network') as MeterFailure,
+          };
+      await load();
+      set({
+        ...state,
+        lastOutcome: outcome,
+        refreshing: state.refreshing.filter((id) => id !== target),
+        refreshFailures: failures,
+      });
+      return outcome;
+    },
     removeAccount: async (accountId) => {
       if (state.view === null) return notLoadedOutcome('account.remove');
       const roles = referencingRoles(state.view.bindings, accountId);

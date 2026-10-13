@@ -1830,7 +1830,6 @@ not the first line of defence.
   The check sits after the store's `already_added` decision (A-85's rule that the store, not the
   scan, decides duplicates) and before any id is taken or record is built. A candidate without
   the token override keeps P-33's shape: adoptable without a secret, `secretRef` set, empty vault.
-
 ## Phase 7 addendum: Docket AI project setup
 
 Added 2026-10-12 (#1007, implementing D-8). Implemented in #1021. Setup tools (names are fixed; they extend the chat tool set of A-204 for a conversation of kind `setup` only):
