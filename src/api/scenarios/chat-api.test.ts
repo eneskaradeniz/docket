@@ -26,6 +26,7 @@ import {
   createFakeRunDirs,
   createFakeRunTokens,
   createFakeTransportResolver,
+  repoFlowOf,
 } from '../../application/ports/fakes/index';
 
 import { createApi, type ChatWiring, type UiEvent } from '../api';
@@ -51,12 +52,21 @@ const T0 = 1_700_000_000_000;
 
 const ENDPOINT: McpEndpoint = { socketPath: '/fake-socket/docket.sock', command: 'node', args: ['mcp-child.js'], env: {} };
 
+const MAIN_FLOW = { id: 'main', name: 'Main', stages: [{ id: 'plan', name: 'Plan', role: null, exit: [{ kind: 'human', id: 'ok', label: 'Ok' }] }] };
 const defs = (repo: string): string =>
   JSON.stringify({
     roles: [],
-    flows: [{ id: 'main', name: 'Main', stages: [{ id: 'plan', name: 'Plan', role: null, exit: [{ kind: 'human', id: 'ok', label: 'Ok' }] }] }],
+    flows: [MAIN_FLOW],
     capabilities: [],
-    repo: { id: repo, name: repo, repos: [], flows: ['main'], defaultFlow: 'main', commandSets: {}, roleOverrides: [], docsRoot: 'docs', testGlobs: [] },
+    repo: {
+      id: repo,
+      name: repo,
+      flow: repoFlowOf(MAIN_FLOW),
+      defaultLimitPolicy: 'wait_resume',
+      commandSets: {},
+      docsRoot: 'docs',
+      testGlobs: [],
+    },
   });
 const ROADMAP_BEFORE = JSON.stringify({ phases: [] });
 
@@ -97,7 +107,7 @@ describe('chat api scenario', () => {
     const tokens = createFakeRunTokens();
     const runDirs = createFakeRunDirs();
     const definitions = createFakeDefinitionStore();
-    definitions.setProject({ id: ATOLYE, name: 'Atölye', mainRepo: ACME, repos: [ACME] });
+    definitions.setProject({ id: ATOLYE, name: 'Atölye', repos: [ACME] });
     definitions.seed({ kind: 'repo', repo: ACME }, 'defs.json', defs('acme'));
     definitions.seed({ kind: 'project', project: ATOLYE }, 'roadmap.yaml', ROADMAP_BEFORE);
     const transports = createFakeTransportResolver();
@@ -124,7 +134,7 @@ describe('chat api scenario', () => {
       modelCatalog: createFakeModelCatalog({ [ACCOUNT]: [MODEL] }),
       mcpEndpoint: ENDPOINT,
     });
-    await deps.projects.save({ id: ATOLYE, name: 'Atölye', mainRepo: ACME, repos: [ACME] });
+    await deps.projects.save({ id: ATOLYE, name: 'Atölye', repos: [ACME] });
     await deps.accounts.save({
       id: ACCOUNT,
       provider: 'provider-x',

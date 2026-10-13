@@ -32,7 +32,6 @@ const makeSampleBundle = (): DocketBundle => {
       project: {
         id: PROJ,
         name: 'Alpha Project',
-        mainRepo: REPO,
         repos: [REPO],
       },
       roadmap: {
@@ -60,12 +59,10 @@ const makeSampleBundle = (): DocketBundle => {
     {
       id: REPO,
       name: 'Core Repo',
-      flows: [slugOf('std')],
-      defaultFlow: slugOf('std'),
       commandSets: { test: ['npm test'] },
-      roleOverrides: [],
       docsRoot: 'docs',
       testGlobs: ['**/*.test.ts'],
+      defaultLimitPolicy: 'wait_resume',
       flow: {
         flowId: slugOf('std'),
         version: 1,

@@ -39,6 +39,27 @@ const STAGE = 'is';
 const ROLE = 'gelistirici';
 const GATE = 'onay';
 
+const ROADMAP_FLOW = {
+  id: FLOW_ID,
+  name: 'Tek aşamalı akış',
+  stages: [{ id: STAGE, name: 'İş', role: ROLE, exit: [{ kind: 'human', id: GATE, label: 'Onay' }] }],
+};
+
+const repoYamlFor = (slug: string): Record<string, unknown> => ({
+  id: slug,
+  name: slug,
+  flow: {
+    flowId: FLOW_ID,
+    version: 1,
+    stages: ROADMAP_FLOW.stages,
+    bindings: [{ stage: STAGE, role: { roleId: ROLE, version: 1 }, accounts: [] }],
+  },
+  defaultLimitPolicy: 'wait_resume',
+  commandSets: {},
+  docsRoot: 'docs',
+  testGlobs: [],
+});
+
 const dataDir = join(home, '.docket');
 mkdirSync(dataDir, { recursive: true });
 const repoPath = (slug: string): string => join(home, 'repos', slug);
@@ -85,16 +106,7 @@ for (const slug of PROJECT.repos) {
     run('git', ['init', '--quiet'], dir);
   }
   writeFileSync(join(dir, 'README.md'), `# ${slug}\n`);
-  writeYaml(dataDir, `repos/${slug}/repo.yaml`, {
-    id: slug,
-    name: slug,
-    flows: [FLOW_ID],
-    defaultFlow: FLOW_ID,
-    commandSets: {},
-    roleOverrides: [],
-    docsRoot: 'docs',
-    testGlobs: [],
-  });
+  writeYaml(dataDir, `repos/${slug}/repo.yaml`, repoYamlFor(slug));
   if (slug === PROJECT.main) writeYaml(dataDir, `projects/${PROJECT.id}/roadmap.yaml`, ROADMAP);
   run('git', [...IDENTITY, 'add', '-A'], dir);
   run('git', [...IDENTITY, 'commit', '--quiet', '-m', 'seed'], dir);
@@ -122,13 +134,7 @@ await deps.definitions.installBuiltins({
   roles: [
     { id: ROLE, name: ROLE, instructions: 'İş emrini yürüt.', writeScope: { kind: 'repo' }, capabilities: [], active: true },
   ] as unknown as RoleDef[],
-  flows: [
-    {
-      id: FLOW_ID,
-      name: 'Tek aşamalı akış',
-      stages: [{ id: STAGE, name: 'İş', role: ROLE, exit: [{ kind: 'human', id: GATE, label: 'Onay' }] }],
-    },
-  ] as unknown as FlowDef[],
+  flows: [ROADMAP_FLOW as unknown as FlowDef],
 });
 for (const slug of PROJECT.repos) {
   const attached = await attachProject(deps, { path: repoPath(slug), actor: OPERATOR });
@@ -137,7 +143,6 @@ for (const slug of PROJECT.repos) {
 await deps.projects.save({
   id: PROJECT.id as ProjectSlug,
   name: PROJECT.name,
-  mainRepo: PROJECT.main as RepoSlug,
   repos: PROJECT.repos as readonly RepoSlug[],
 });
 

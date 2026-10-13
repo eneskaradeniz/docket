@@ -230,13 +230,22 @@ try {
   vcs(['init', '--quiet']);
 }
 writeFileSync(join(repoDir, 'README.md'), `# ${PROJECT.repo}\n`);
+const PAGE_FLOW = {
+  id: 'tek-asama',
+  name: 'Tek aşamalı akış',
+  stages: [{ id: 'is', name: 'İş', role: 'gelistirici', exit: [{ kind: 'human', id: 'onay', label: 'Onay' }] }],
+};
 writeYaml(`repos/${PROJECT.repo}/repo.yaml`, {
   id: PROJECT.repo,
   name: PROJECT.repo,
-  flows: ['tek-asama'],
-  defaultFlow: 'tek-asama',
+  flow: {
+    flowId: 'tek-asama',
+    version: 1,
+    stages: PAGE_FLOW.stages,
+    bindings: [{ stage: 'is', role: { roleId: 'gelistirici', version: 1 }, accounts: [] }],
+  },
+  defaultLimitPolicy: 'wait_resume',
   commandSets: {},
-  roleOverrides: [],
   docsRoot: 'docs',
   testGlobs: [],
 });
@@ -244,13 +253,7 @@ await deps.definitions.installBuiltins({
   roles: [
     { id: 'gelistirici', name: 'gelistirici', instructions: 'İş emrini yürüt.', writeScope: { kind: 'repo' }, capabilities: [], active: true },
   ] as unknown as RoleDef[],
-  flows: [
-    {
-      id: 'tek-asama',
-      name: 'Tek aşamalı akış',
-      stages: [{ id: 'is', name: 'İş', role: 'gelistirici', exit: [{ kind: 'human', id: 'onay', label: 'Onay' }] }],
-    },
-  ] as unknown as FlowDef[],
+  flows: [PAGE_FLOW as unknown as FlowDef],
 });
 vcs(['add', '-A']);
 vcs(['-c', 'user.name=Seed', '-c', 'user.email=seed@example.invalid', 'commit', '--quiet', '-m', 'seed']);
@@ -260,7 +263,6 @@ assert(attached.ok, `the repo did not attach: ${attached.ok ? '' : attached.erro
 await deps.projects.save({
   id: PROJECT.id as ProjectSlug,
   name: PROJECT.name,
-  mainRepo: PROJECT.repo as RepoSlug,
   repos: [PROJECT.repo as RepoSlug],
 });
 const opened = await openWorkOrder(deps, {

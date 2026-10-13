@@ -4,6 +4,7 @@ import type { CapabilityDef, FlowSlug, ProjectSlug, RepoDef, RoleSlug, StageSlug
 import { parseSlug, type CapabilitySlug, type RepoSlug } from '../../../domain/index';
 
 import { createFakeDefinitionStore } from './fake-definition-store';
+import { repoFlowOf } from './repo-flow-fixture';
 
 const toRoleSlug = (s: string): RoleSlug => {
   const parsed = parseSlug<'role'>(s);
@@ -73,14 +74,19 @@ const standardFlow = (name: string): string =>
 
 const capabilityBody = JSON.stringify({ kind: 'context', id: 'docs', name: 'Docs', path: 'docs' });
 
+const STANDARD_FLOW_JSON = {
+  id: 'standard',
+  name: 'Standard',
+  stages: [{ id: 'implement', name: 'Implement', role: 'implementer', exit: [] }],
+};
+
 const repoYaml = (overrides: Record<string, unknown> = {}): string =>
   JSON.stringify({
     id: 'acme',
     name: 'Acme',
-    flows: ['standard'],
-    defaultFlow: 'standard',
+    flow: repoFlowOf(STANDARD_FLOW_JSON),
+    defaultLimitPolicy: 'wait_resume',
     commandSets: {},
-    roleOverrides: [],
     docsRoot: 'docs',
     testGlobs: [],
     ...overrides,
@@ -109,7 +115,7 @@ const invalidRoadmapFile = JSON.stringify({
   ],
 });
 
-const projectYaml = JSON.stringify({ id: 'atolye', name: 'Atölye', mainRepo: 'acme', repos: ['acme'] });
+const projectYaml = JSON.stringify({ id: 'atolye', name: 'Atölye', repos: ['acme'] });
 
 describe('createFakeDefinitionStore', () => {
   it('A-4: writeFile creates a file when expectedHash is "" and the target is absent', async () => {
@@ -177,9 +183,25 @@ describe('createFakeDefinitionStore', () => {
     store.seed('library/roles/implementer/v1.yaml', implementerRole('Implementer'));
     store.seed('library/roles/implementer/v2.yaml', implementerRole('Implementer II'));
     store.seed('library/roles/reviewer/v1.yaml', reviewerRole);
-    store.seed('library/roles/implementer/v1.yaml', implementerRole('Implementer'));
-    store.seed('library/flows/standard/v1.yaml', standardFlow('Standard'));
-    store.seed(`repos/${REPO_SLUG}/repo.yaml`, repoYaml());
+    const twoStage = {
+      id: 'standard',
+      name: 'Standard',
+      stages: [
+        { id: 'implement', name: 'Implement', role: 'implementer', exit: [] },
+        { id: 'review', name: 'Review', role: 'reviewer', exit: [] },
+      ],
+    };
+    store.seed('library/flows/standard/v1.yaml', JSON.stringify(twoStage));
+    const repoFlow = {
+      flowId: 'standard',
+      version: 1,
+      stages: twoStage.stages,
+      bindings: [
+        { stage: 'implement', role: { roleId: 'implementer', version: 2 }, accounts: [] },
+        { stage: 'review', role: { roleId: 'reviewer', version: 1 }, accounts: [] },
+      ],
+    };
+    store.seed(`repos/${REPO_SLUG}/repo.yaml`, repoYaml({ flow: repoFlow }));
 
     const loaded = await store.load(REPO_SLUG);
     expect(loaded.ok).toBe(true);
@@ -222,7 +244,7 @@ describe('createFakeDefinitionStore', () => {
     const loaded = await store.load(REPO_SLUG);
     expect(loaded.ok).toBe(false);
     if (loaded.ok) return;
-    expect(loaded.error.some((issue) => issue.code === 'default_flow_not_enabled')).toBe(true);
+    expect(loaded.error.some((issue) => issue.code === 'unknown_field')).toBe(true);
   });
 
   it('validateCandidate validates the definitions as they would be with the candidate, and writes nothing', async () => {
@@ -244,7 +266,7 @@ describe('createFakeDefinitionStore', () => {
     const invalid = await store.validateCandidate(`repos/${REPO_SLUG}/repo.yaml`, repoYaml({ defaultFlow: 'missing' }));
     expect(invalid.ok).toBe(false);
     if (invalid.ok) return;
-    expect(invalid.error.some((issue) => issue.code === 'default_flow_not_enabled')).toBe(true);
+    expect(invalid.error.some((issue) => issue.code === 'unknown_field')).toBe(true);
   });
 
   it('a library version candidate validates standalone and its id must match the folder', async () => {
@@ -260,7 +282,7 @@ describe('createFakeDefinitionStore', () => {
   it('loadRoadmap is undefined for an unknown project and for a project without a roadmap', async () => {
     const store = createFakeDefinitionStore();
     expect(await store.loadRoadmap(PROJECT_SLUG)).toBeUndefined();
-    store.setProject({ id: PROJECT_SLUG, name: 'Atölye', mainRepo: REPO_SLUG, repos: [REPO_SLUG] });
+    store.setProject({ id: PROJECT_SLUG, name: 'Atölye', repos: [REPO_SLUG] });
     expect(await store.loadRoadmap(PROJECT_SLUG)).toBeUndefined();
   });
 
@@ -277,7 +299,7 @@ describe('createFakeDefinitionStore', () => {
 
   it('loadRoadmap reports issues for an invalid roadmap', async () => {
     const store = createFakeDefinitionStore();
-    store.setProject({ id: PROJECT_SLUG, name: 'Atölye', mainRepo: REPO_SLUG, repos: [REPO_SLUG] });
+    store.setProject({ id: PROJECT_SLUG, name: 'Atölye', repos: [REPO_SLUG] });
     store.seed(`projects/${PROJECT_SLUG}/roadmap.yaml`, invalidRoadmapFile);
 
     const roadmap = await store.loadRoadmap(PROJECT_SLUG);
@@ -355,13 +377,18 @@ describe('createFakeDefinitionStore', () => {
     const typed: RepoDef = {
       id: REPO_SLUG,
       name: 'Acme',
-      flows: [toFlowSlug('standard')],
-      defaultFlow: toFlowSlug('standard'),
+      flow: {
+        flowId: toFlowSlug('standard'),
+        version: 1,
+        stages: [{ id: toStageSlug('implement'), name: 'Implement', role: toRoleSlug('implementer'), exit: [] }],
+        bindings: [
+          { stage: toStageSlug('implement'), role: { roleId: toRoleSlug('implementer'), version: 1 }, accounts: [] },
+        ],
+      },
+      defaultLimitPolicy: 'wait_resume',
       commandSets: {},
-      roleOverrides: [],
       docsRoot: 'docs',
       testGlobs: [],
-      defaultLimitPolicy: 'wait_resume',
     };
     store.setRepoDef(REPO_SLUG, typed);
 

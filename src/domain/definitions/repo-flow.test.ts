@@ -1,6 +1,6 @@
 // repo-flow.test.ts — rules R-129, R-131, R-132, R-134 from docs/v2/domain.md §2 addendum
-// (versioned definitions, work-order pinning, archive and dependency queries). R-126..R-128,
-// R-130 and R-135 belong to #1012/#1013 and are deliberately not titled here.
+// (versioned definitions, work-order pinning, archive and dependency queries), plus #1012's
+// R-11/R-130 overlay and effective-role arms. R-126..R-128 live in validate.test.ts; R-135 is #1013.
 import { describe, expect, it } from 'vitest';
 
 import type { AccountId, FlowSlug, RepoSlug, RoleSlug, Slug, StageSlug, Ulid } from '../shared';
@@ -12,6 +12,7 @@ import {
   dependantsOfAccount,
   dependantsOfRole,
   effectiveRole,
+  effectiveRoles,
   limitPolicyFor,
   nextVersion,
   pinFlow,
@@ -111,16 +112,14 @@ const reviewerLibrary = (): readonly VersionRecord<RoleDef>[] => [
   versionOf(REVIEWER, 2, roleDef(REVIEWER)),
 ];
 
-const repoDef = (id: RepoSlug, flow?: RepoFlow): RepoDef => ({
+const repoDef = (id: RepoSlug, flow: RepoFlow): RepoDef => ({
   id,
   name: id,
-  flows: [],
-  defaultFlow: FLOW,
+  flow,
+  defaultLimitPolicy: 'wait_resume',
   commandSets: {},
-  roleOverrides: [],
   docsRoot: 'docs',
   testGlobs: [],
-  ...(flow === undefined ? {} : { flow }),
 });
 
 const pinEntry = (
@@ -390,6 +389,45 @@ describe('effectiveRole', () => {
     });
   });
 
+  it('R-11: the overlay never changes id or active — set fields win, identity never does', () => {
+    const library: readonly VersionRecord<RoleDef>[] = [
+      versionOf(ROLE, 1, roleDef(ROLE, { active: false, name: 'Base', instructions: 'Base' })),
+    ];
+    const resolved = effectiveRole(
+      roleRef(ROLE, 1, {
+        overlay: { name: 'Yerel', instructions: 'Local', writeScope: { kind: 'docs' }, capabilities: [] },
+      }),
+      library,
+    );
+    expect(resolved).toEqual({
+      ok: true,
+      value: {
+        id: ROLE,
+        name: 'Yerel',
+        instructions: 'Local',
+        writeScope: { kind: 'docs' },
+        capabilities: [],
+        active: false, // never overlaid
+      },
+    });
+  });
+
+  it('R-130: effectiveRoles answers each binding’s role, first binding per role id', () => {
+    const flow = repoFlow(
+      [stageDef(WORK, ROLE), stageDef(REVIEW, REVIEWER), stageDef(MANUAL, null)],
+      [
+        binding(WORK, roleRef(ROLE, 1, { overlay: { name: 'Yerel' } }), undefined),
+        binding(REVIEW, roleRef(REVIEWER, 2), undefined),
+        binding(MANUAL, undefined, undefined),
+      ],
+    );
+    const roles = effectiveRoles(flow, [...devLibrary(), ...reviewerLibrary()]);
+    expect(roles).toEqual([
+      roleDef(ROLE, { name: 'Yerel' }), // the first binding of ROLE wins
+      roleDef(REVIEWER),
+    ]);
+  });
+
   it('answers limitPolicyFor from the binding, falling back to the default', () => {
     const flow = repoFlow(
       [stageDef(WORK, ROLE), stageDef(REVIEW, ROLE)],
@@ -496,9 +534,10 @@ describe('dependants', () => {
     expect(dependantsOfRole(REVIEWER, [repo])).toEqual([]);
     expect(dependantsOfAccount(ACCOUNT, [repo])).toEqual([{ repo: REPO, stage: REVIEW }]);
     expect(dependantsOfAccount(OTHER_ACCOUNT, [repo])).toEqual([{ repo: REPO, stage: MANUAL }]);
-    // A repo without a Phase 7 flow contributes nothing.
-    expect(dependantsOfRole(ROLE, [repoDef(OTHER_REPO)])).toEqual([]);
-    expect(dependantsOfAccount(ACCOUNT, [repoDef(OTHER_REPO)])).toEqual([]);
+    // A repo whose flow binds no role and no account contributes nothing.
+    const idle = repoDef(OTHER_REPO, repoFlow([stageDef(MANUAL, null)], [binding(MANUAL, undefined, [])]));
+    expect(dependantsOfRole(ROLE, [idle])).toEqual([]);
+    expect(dependantsOfAccount(ACCOUNT, [idle])).toEqual([]);
   });
 });
 

@@ -29,6 +29,7 @@ import {
   type FakeDefinitionStore,
   type FakeEventLog,
   type FakeWorktrees,
+  repoFlowOf,
 } from '../ports/fakes';
 
 import { approveAndDeploy } from './deploy-gate';
@@ -108,12 +109,17 @@ const DEFINITIONS_BODY = {
     },
   ],
   capabilities: [],
-  repo: {
+};
+
+/** The repo section for the flow under test — the repo owns exactly one flow (D-1). */
+const repoBodyOf = (flowId: string): Record<string, unknown> => {
+  const flow = DEFINITIONS_BODY.flows.find((candidate) => candidate.id === flowId);
+  if (flow === undefined) throw new Error(`fixture flow must exist: ${flowId}`);
+  return {
     id: 'ws',
     name: 'Repo',
-    repos: [],
-    flows: ['stg-flow', 'prd-flow', 'dev-flow', 'promote-flow', 'mixed-flow'],
-    defaultFlow: 'stg-flow',
+    flow: repoFlowOf(flow),
+    defaultLimitPolicy: 'wait_resume',
     commandSets: {
       'deploy-stg': ['docket-deploy stg'],
       'verify-stg': ['docket-verify stg'],
@@ -121,7 +127,6 @@ const DEFINITIONS_BODY = {
       'verify-prd': ['docket-verify prd'],
       'deploy-dev': ['dev-step-one', 'dev-step-two'],
     },
-    roleOverrides: [],
     docsRoot: 'docs',
     testGlobs: [],
     environments: [
@@ -153,7 +158,7 @@ const DEFINITIONS_BODY = {
         protected: false,
       },
     ],
-  },
+  };
 };
 
 interface Harness {
@@ -179,6 +184,7 @@ const makeHarness = (): Harness => {
 /** Creates the work order with its `created` event, the way openWorkOrder would have. */
 const createIn = async (h: Harness, flow: string): Promise<void> => {
   const flowId = slugOf<'flow'>(flow);
+  h.definitions.seed({ kind: 'repo', repo: REPO }, 'repo.yaml', JSON.stringify(repoBodyOf(flow)));
   await h.deps.workOrders.create({
     id: WORK_ORDER,
     project: slugOf<'project'>('proj'),
@@ -487,17 +493,33 @@ describe('approveAndDeploy', () => {
       repo: {
         id: REPO,
         name: 'Repo',
-        flows: [slugOf<'flow'>('ghost-flow')],
-        defaultFlow: slugOf<'flow'>('ghost-flow'),
+        flow: {
+          flowId: slugOf<'flow'>('ghost-flow'),
+          version: 1,
+          stages: [
+            { id: slugOf<'stage'>('ship'), name: 'Ship', role: null, exit: [{ kind: 'deploy', id: slugOf<'gate'>('ship-ghost'), environment: slugOf<'env'>('ghost') }] },
+          ],
+          bindings: [{ stage: slugOf<'stage'>('ship'), accounts: [] }],
+        },
+        defaultLimitPolicy: 'wait_resume',
         commandSets: {},
-        roleOverrides: [],
         docsRoot: 'docs',
         testGlobs: [],
         environments: [],
       },
     };
     const deps: AppDeps = { ...h.deps, definitions: { ...h.deps.definitions, load: async () => ok(ghost) } };
-    await createIn(h, 'ghost-flow');
+    const ghostFlow = slugOf<'flow'>('ghost-flow');
+    await h.deps.workOrders.create({
+      id: WORK_ORDER,
+      project: slugOf<'project'>('proj'),
+      repo: REPO,
+      flow: ghostFlow,
+      title: 'Fixture',
+      createdAt: h.clock.now(),
+      createdBy: USER,
+    });
+    await h.deps.workOrders.appendEvent(WORK_ORDER, { type: 'created', at: h.clock.now(), by: USER, flow: ghostFlow });
 
     const result = await approveAndDeploy(deps, {
       id: WORK_ORDER,

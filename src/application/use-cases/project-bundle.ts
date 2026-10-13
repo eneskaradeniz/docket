@@ -137,18 +137,13 @@ export async function exportProject(
     for (const f of loaded.value.flows) referencedFlows.add(f.id);
     for (const c of loaded.value.capabilities) referencedCaps.add(c.id);
 
-    if (repo.flow) {
-      referencedFlows.add(repo.flow.flowId);
-      for (const st of repo.flow.stages) {
-        if (st.role) referencedRoles.add(st.role);
-      }
-      for (const bd of repo.flow.bindings) {
-        if (bd.role?.roleId) referencedRoles.add(bd.role.roleId);
-      }
+    referencedFlows.add(repo.flow.flowId);
+    for (const st of repo.flow.stages) {
+      if (st.role) referencedRoles.add(st.role);
     }
-    for (const fl of repo.flows) referencedFlows.add(fl);
-    referencedFlows.add(repo.defaultFlow);
-    for (const ov of repo.roleOverrides) referencedRoles.add(ov.id);
+    for (const bd of repo.flow.bindings) {
+      if (bd.role?.roleId) referencedRoles.add(bd.role.roleId);
+    }
   }
 
   // Build library version histories (I-99)
@@ -426,13 +421,11 @@ export async function importBundle(
 
     // Remap repo slugs in project and roadmap
     const remappedRepos = projItem.project.repos.map((r: RepoSlug) => repoSlugMap.get(r) ?? r);
-    const remappedMainRepo = repoSlugMap.get(projItem.project.mainRepo) ?? projItem.project.mainRepo;
 
     const remappedProject: ProjectDef = {
       ...projItem.project,
       id: targetSlug,
       repos: remappedRepos,
-      mainRepo: remappedMainRepo,
     };
 
     let remappedRoadmap = projItem.roadmap;

@@ -44,7 +44,7 @@ const seed = async (): Promise<Seeded> => {
   const deps = createFakeDeps({ clock });
   const project = slugOf<'project'>('proj');
   const repo = slugOf<'repo'>('ws');
-  await deps.projects.save({ id: project, name: 'Mobil Uygulama', mainRepo: repo, repos: [repo] });
+  await deps.projects.save({ id: project, name: 'Mobil Uygulama', repos: [repo] });
   const flow = slugOf<'flow'>('f') as FlowSlug;
   await deps.workOrders.create({ id: WORK_ORDER, project, repo, flow, title: 't', createdAt: 1, createdBy: USER });
 

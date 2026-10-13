@@ -46,6 +46,7 @@ import {
   createFakeModelCatalog,
   createFakeRunRepo,
   createFakeWorkOrderRepo,
+  repoFlowOf,
   type FakeRouteKind,
 } from '../ports/fakes';
 
@@ -105,14 +106,14 @@ const FLOW_JSON = { id: 'standard', name: 'Standart', stages: [STAGE_JSON] };
 const REPO_JSON = {
   id: 'acme',
   name: 'Acme',
-  flows: ['standard'],
-  defaultFlow: 'standard',
+  flow: repoFlowOf(FLOW_JSON),
+  defaultLimitPolicy: 'wait_resume',
   commandSets: { check: ['npm test'] },
-  roleOverrides: [],
   docsRoot: 'docs',
   testGlobs: [],
 };
-const DEFS_JSON = JSON.stringify({ roles: [ROLE_JSON], flows: [FLOW_JSON], capabilities: [], repo: REPO_JSON });
+const GLOBAL_DEFS_JSON = JSON.stringify({ roles: [ROLE_JSON], flows: [FLOW_JSON], capabilities: [] });
+const REPO_DEFS_JSON = JSON.stringify({ repo: REPO_JSON });
 
 const WORK_ORDER_RECORD = {
   id: WORK_ORDER,
@@ -191,7 +192,8 @@ const harness = async (options: {
   const checkpoints = createFakeCheckpointCommitter({ diffs: options.diffs, bases: options.bases });
 
   const definitions = createFakeDefinitionStore();
-  definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', DEFS_JSON);
+  definitions.seed({ kind: 'global' }, 'defs.json', GLOBAL_DEFS_JSON);
+  definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', REPO_DEFS_JSON);
 
   await workOrders.create({
     ...WORK_ORDER_RECORD,

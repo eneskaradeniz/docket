@@ -269,7 +269,7 @@ export function createChatTools(deps: ChatToolDeps): ChatTools {
       source: 'docket_get project',
       name: project.name,
       repos: project.repos,
-      mainRepo: project.mainRepo,
+      mainRepo: project.repos[0],
       openWorkOrders: derived.filter((entry) => entry.state?.status !== 'done').length,
       attention: derived.filter((entry) => entry.state !== undefined && STATUS_ATTENTION.has(entry.state.status)).length,
     });

@@ -58,8 +58,8 @@ const newPage = (
 const harness = async (): Promise<AppDeps> => {
   const deps = createFakeDeps();
   const flow = slugOf<'flow'>('f') as FlowSlug;
-  await deps.projects.save({ id: MOBILE, name: 'Mobil Uygulama', mainRepo: slugOf('app'), repos: [slugOf('app')] });
-  await deps.projects.save({ id: WEB, name: 'Web Sitesi', mainRepo: slugOf('site'), repos: [slugOf('site')] });
+  await deps.projects.save({ id: MOBILE, name: 'Mobil Uygulama', repos: [slugOf('app')] });
+  await deps.projects.save({ id: WEB, name: 'Web Sitesi', repos: [slugOf('site')] });
   // Numbers are the creation rank: WO_12 is the 12th, WO_NEW the 13th.
   for (let i = 1; i <= 11; i += 1) {
     await deps.workOrders.create({ id: ulidOf(`01ARZ3NDEKTSV4RRFFQ69G6${String(i).padStart(3, '0')}`), project: MOBILE, repo: slugOf('app'), flow, title: 't', createdAt: i, createdBy: USER });

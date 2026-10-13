@@ -36,6 +36,7 @@ import {
   createFakeModelCatalog,
   createFakeWorktreeFiles,
   FAKE_ROADMAP_TARGET,
+  repoFlowOf,
 } from '../application/ports/fakes';
 
 import { createApi } from './api';
@@ -126,11 +127,9 @@ const DEFINITIONS_JSON = JSON.stringify({
   repo: {
     id: 'acme',
     name: 'Acme',
-    repos: [],
-    flows: ['board-flow', 'side-flow', 'solo-flow'],
-    defaultFlow: 'board-flow',
+    flow: repoFlowOf(FLOWS_JSON[0]),
+    defaultLimitPolicy: 'wait_resume',
     commandSets: {},
-    roleOverrides: [],
     docsRoot: 'docs',
     testGlobs: [],
   },
@@ -376,35 +375,33 @@ const RELEASE_REPO = slugOf<'repo'>('release');
 const RELEASE_FLOW = slugOf<'flow'>('release-flow');
 const WO_RELEASE = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5GB6');
 
-const RELEASE_DEFINITIONS_JSON = JSON.stringify({
-  roles: [ROLE_JSON],
-  flows: [
+const RELEASE_FLOW_DEF = {
+  id: 'release-flow',
+  name: 'Release Flow',
+  stages: [
+    { id: 'build', name: 'Build', role: 'worker', exit: [] },
     {
-      id: 'release-flow',
-      name: 'Release Flow',
-      stages: [
-        { id: 'build', name: 'Build', role: 'worker', exit: [] },
-        {
-          id: 'ship',
-          name: 'Ship',
-          role: null,
-          exit: [
-            { kind: 'human', id: 'ship-approval', label: 'Ship approval' },
-            { kind: 'deploy', id: 'deploy-prod', environment: 'prod' },
-          ],
-        },
+      id: 'ship',
+      name: 'Ship',
+      role: null,
+      exit: [
+        { kind: 'human', id: 'ship-approval', label: 'Ship approval' },
+        { kind: 'deploy', id: 'deploy-prod', environment: 'prod' },
       ],
     },
   ],
+};
+
+const RELEASE_DEFINITIONS_JSON = JSON.stringify({
+  roles: [ROLE_JSON],
+  flows: [RELEASE_FLOW_DEF],
   capabilities: [],
   repo: {
     id: 'release',
     name: 'Release',
-    repos: [],
-    flows: ['release-flow'],
-    defaultFlow: 'release-flow',
+    flow: repoFlowOf(RELEASE_FLOW_DEF),
+    defaultLimitPolicy: 'wait_resume',
     commandSets: { 'deploy-dev': ['true'], 'deploy-staging': ['true'], 'deploy-prod': ['true'] },
-    roleOverrides: [],
     docsRoot: 'docs',
     testGlobs: [],
     environments: [
@@ -598,8 +595,8 @@ describe('cockpit', () => {
 
   it('A-38: project cards carry the latest work-order status change; null when the project has none', async () => {
     const h = await seedCockpitScenario(createHarness());
-    await h.deps.projects.save({ id: slugOf<'project'>('proj'), name: 'Proj', mainRepo: REPO, repos: [REPO] });
-    await h.deps.projects.save({ id: slugOf<'project'>('empty'), name: 'Empty', mainRepo: REPO, repos: [REPO] });
+    await h.deps.projects.save({ id: slugOf<'project'>('proj'), name: 'Proj', repos: [REPO] });
+    await h.deps.projects.save({ id: slugOf<'project'>('empty'), name: 'Empty', repos: [REPO] });
 
     const view = (await createApi(h.deps).query({ type: 'cockpit' })) as CockpitView;
 
@@ -1266,7 +1263,7 @@ describe('settings surface (A-48 … A-50)', () => {
       const h = createHarness();
       const standard = { id: 'standard', name: 'Repo standard', stages: [{ id: 'review', name: 'Repo review', role: 'worker', exit: [] }] };
       h.definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', JSON.stringify({
-        roles: [ROLE_JSON], flows: [standard], capabilities: [], repo: { ...JSON.parse(DEFINITIONS_JSON).repo, flows: ['standard'], defaultFlow: 'standard' },
+        roles: [ROLE_JSON], flows: [standard], capabilities: [], repo: { ...JSON.parse(DEFINITIONS_JSON).repo, flow: repoFlowOf(standard) },
       }));
 
       const list = await roles(h, [{ slug: REPO, path: '/repos/acme' }]);
@@ -1822,8 +1819,8 @@ const RUN_P_AWAIT = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5PC5');
 
 const seedProjectScenario = async (h: Harness, project: (repo: RepoSlug) => string = () => 'proj'): Promise<Harness> => {
   h.definitions.seed({ kind: 'repo', repo: OTHER_REPO }, 'defs.json', DEFINITIONS_JSON);
-  await h.deps.projects.save({ id: PROJECT_ALPHA, name: 'Alpha', mainRepo: REPO, repos: [REPO] });
-  await h.deps.projects.save({ id: PROJECT_BETA, name: 'Beta', mainRepo: OTHER_REPO, repos: [OTHER_REPO] });
+  await h.deps.projects.save({ id: PROJECT_ALPHA, name: 'Alpha', repos: [REPO] });
+  await h.deps.projects.save({ id: PROJECT_BETA, name: 'Beta', repos: [OTHER_REPO] });
   await seedCockpitScenario(h, project);
 
   // Alpha waits with one order and finished two; beta is blocked.
@@ -1890,7 +1887,6 @@ describe('project.tree', () => {
     await h.deps.projects.save({
       id: PROJECT_ALPHA,
       name: 'Alpha',
-      mainRepo: REPO,
       repos: [REPO, OTHER_REPO],
     });
 
@@ -1968,7 +1964,7 @@ const RUN_DONE_SECOND = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5RD7');
 const seedRoadmapScenario = async (): Promise<Harness> => {
   const h = createHarness();
   h.definitions.seed({ kind: 'repo', repo: OTHER_REPO }, 'defs.json', DEFINITIONS_JSON);
-  await h.deps.projects.save({ id: ROAD_PROJECT, name: 'Yol', mainRepo: REPO, repos: [REPO, OTHER_REPO] });
+  await h.deps.projects.save({ id: ROAD_PROJECT, name: 'Yol', repos: [REPO, OTHER_REPO] });
   h.definitions.seed(
     { kind: 'project', project: ROAD_PROJECT },
     FAKE_ROADMAP_TARGET,

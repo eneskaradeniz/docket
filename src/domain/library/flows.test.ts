@@ -10,14 +10,24 @@ const flowById = (id: string): FlowDef => {
   return found;
 };
 
+/** The repo's own flow copy: a library flow's stages with one version-1 binding per stage. */
+const repoFlowOf = (flow: FlowDef): Record<string, unknown> => ({
+  flowId: flow.id,
+  version: 1,
+  stages: flow.stages,
+  bindings: flow.stages.map((stage) => ({
+    stage: stage.id,
+    ...(stage.role === null ? {} : { role: { roleId: stage.role, version: 1 } }),
+    accounts: [],
+  })),
+});
+
 const fixtureRepo = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
   id: 'builtin-fixture',
   name: 'Built-in fixture',
-  repos: [],
-  flows: ['standard', 'quick-fix', 'security-reviewed', 'research'],
-  defaultFlow: 'standard',
+  flow: repoFlowOf(flowById('standard')),
+  defaultLimitPolicy: 'wait_resume',
   commandSets: { tests: ['npm test'] },
-  roleOverrides: [],
   docsRoot: 'docs',
   testGlobs: ['**/*.test.ts'],
   ...over,
@@ -193,6 +203,12 @@ describe('the built-in library', () => {
       repo: fixtureRepo({ commandSets: {} }),
     });
     if (result.ok) throw new Error('expected err without the tests command set');
-    expect(result.error.map((issue) => issue.code)).toEqual(['unknown_command_set', 'unknown_command_set', 'unknown_command_set']);
+    // Three library flows gate on "tests"; the repo's own flow copy adds the fourth report.
+    expect(result.error.map((issue) => issue.code)).toEqual([
+      'unknown_command_set',
+      'unknown_command_set',
+      'unknown_command_set',
+      'unknown_command_set',
+    ]);
   });
 });

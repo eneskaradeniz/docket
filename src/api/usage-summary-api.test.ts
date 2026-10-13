@@ -84,8 +84,8 @@ const seedWorkOrder = (deps: ReturnType<typeof createFakeDeps>, id: WorkOrderId,
 describe('usage.summary query', () => {
   it('A-282: a project covers only its own work orders; sinceMs excludes older runs; unknown ids not_found; both or neither scope bad_input', async () => {
     const deps = createFakeDeps();
-    await deps.projects.save({ id: PROJECT_A, name: 'Alpha', mainRepo: slugOf<'repo'>('main'), repos: [slugOf<'repo'>('main')] });
-    await deps.projects.save({ id: PROJECT_B, name: 'Beta', mainRepo: slugOf<'repo'>('other'), repos: [slugOf<'repo'>('other')] });
+    await deps.projects.save({ id: PROJECT_A, name: 'Alpha', repos: [slugOf<'repo'>('main')] });
+    await deps.projects.save({ id: PROJECT_B, name: 'Beta', repos: [slugOf<'repo'>('other')] });
     await seedWorkOrder(deps, WO_A1, PROJECT_A, 1);
     await seedWorkOrder(deps, WO_A2, PROJECT_A, 2);
     await seedWorkOrder(deps, WO_B1, PROJECT_B, 3);
@@ -126,7 +126,7 @@ describe('usage.summary query', () => {
 
   it('A-291: the view carries costByKind, with an equivalent figure kept apart from reported money', async () => {
     const deps = createFakeDeps();
-    await deps.projects.save({ id: PROJECT_A, name: 'Alpha', mainRepo: slugOf<'repo'>('main'), repos: [slugOf<'repo'>('main')] });
+    await deps.projects.save({ id: PROJECT_A, name: 'Alpha', repos: [slugOf<'repo'>('main')] });
     await seedWorkOrder(deps, WO_A1, PROJECT_A, 1);
     await seedRun(deps, {
       id: RUN_A1,

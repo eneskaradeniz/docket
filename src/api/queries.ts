@@ -31,6 +31,7 @@ export type Query =
   | { readonly type: 'workOrder.changes'; readonly workOrder: string } // → WorkOrderChangesView | not_found | invalid_id
   | { readonly type: 'project.tree' }
   | { readonly type: 'repoStatus' } // → RepoStatusView[] (A-341)
+  | { readonly type: 'repo.flow'; readonly repo: string } // → RepoFlowView (A-345)
   | { readonly type: 'roadmap.byProject'; readonly project: string }
   | { readonly type: 'repo.board'; readonly repo: string }
   | { readonly type: 'cockpit'; readonly project?: string }

@@ -3,11 +3,9 @@
 // deterministic variant of that. Library histories live in a version map; the fixed project, repo
 // and roadmap files live in a target-keyed map.
 import type {
-  CapabilityDef,
   DefinitionIssue,
   Definitions,
   EpochMs,
-  FlowDef,
   ProjectDef,
   ProjectSlug,
   RepoDef,
@@ -15,7 +13,6 @@ import type {
   Result,
   Roadmap,
   RoadmapIssue,
-  RoleDef,
   VersionRecord,
 } from '../../../domain/index';
 import { err, nextVersion, ok, validateDefinitions, validateRoadmap } from '../../../domain/index';
@@ -192,6 +189,14 @@ export const createFakeDefinitionStore = (): FakeDefinitionStore => {
       .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
       .map(([, history]) => history[history.length - 1]?.body)
       .filter((body): body is unknown => body !== undefined);
+
+  /** The role library's full version histories, id order — the R-128/R-130 input `load` fills
+   *  from `listVersions`. */
+  const roleHistories = (): readonly VersionRecord<unknown>[] =>
+    [...histories.entries()]
+      .filter(([key]) => key.startsWith('roles/'))
+      .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+      .flatMap(([, history]) => history);
 
   const seedSingle = (target: string, content: string): void => {
     const version = VERSION_TARGET.exec(target);
@@ -442,50 +447,43 @@ export const createFakeDefinitionStore = (): FakeDefinitionStore => {
       for (const [brokenTarget] of legacyBroken) {
         return err([{ path: brokenTarget, code: 'wrong_type', message: `${brokenTarget} is not valid JSON` }]);
       }
+      // A typed seed replaces the file world wholesale: the merged view (effective roles, the
+      // repo's own flow copy) validates over the registered repo section.
+      const registered = repoDefs.get(repo);
       const file = fixed.get(`repos/${repo}/repo.yaml`);
-      if (file === undefined) {
-        const registered = repoDefs.get(repo);
-        if (registered !== undefined) {
-          return ok({
-            roles: currentsOf('roles') as readonly RoleDef[],
-            flows: currentsOf('flows') as readonly FlowDef[],
-            capabilities: currentsOf('capabilities') as readonly CapabilityDef[],
+      if (registered !== undefined) {
+        const validated = validateDefinitions(
+          {
+            roles: currentsOf('roles'),
+            flows: currentsOf('flows'),
+            capabilities: currentsOf('capabilities'),
             repo: registered,
-          });
-        }
-        if (legacyRepoWithoutSection.has(repo)) {
+          },
+          { roles: roleHistories() },
+        );
+        return validated.ok ? ok({ ...validated.value, repo: registered }) : validated;
+      }
+      if (file === undefined) {
+        if (legacyRepoWithoutSection.has(repo) || legacyGlobalSeeded) {
           return validateDefinitions({
             roles: currentsOf('roles'),
             flows: currentsOf('flows'),
             capabilities: currentsOf('capabilities'),
           });
         }
-        if (legacyGlobalSeeded) {
-          const registered = repoDefs.get(repo);
-          const validated = validateDefinitions({
-            roles: currentsOf('roles'),
-            flows: currentsOf('flows'),
-            capabilities: currentsOf('capabilities'),
-            ...(registered === undefined ? {} : { repo: registered }),
-          });
-          return registered !== undefined && validated.ok
-            ? ok({ ...validated.value, repo: registered })
-            : validated;
-        }
         return err([{ path: 'repo', code: 'missing_field', message: 'repo.yaml is required' }]);
       }
       const repoBody = parseBody(`repos/${repo}/repo.yaml`, file.content);
       if (!repoBody.ok) return err([repoBody.error]);
-      const validated = validateDefinitions({
-        roles: currentsOf('roles'),
-        flows: currentsOf('flows'),
-        capabilities: currentsOf('capabilities'),
-        repo: repoBody.value,
-      });
-      // A typed seed replaces the narrowed repo section wholesale; the file world still has to
-      // validate (roles and flows), so a broken merge keeps reporting its issues.
-      const registered = repoDefs.get(repo);
-      return registered !== undefined && validated.ok ? ok({ ...validated.value, repo: registered }) : validated;
+      return validateDefinitions(
+        {
+          roles: currentsOf('roles'),
+          flows: currentsOf('flows'),
+          capabilities: currentsOf('capabilities'),
+          repo: repoBody.value,
+        },
+        { roles: roleHistories() },
+      );
     },
 
     loadRoadmap: async (project: ProjectSlug): Promise<Result<Roadmap, readonly RoadmapIssue[]> | undefined> => {
@@ -667,12 +665,15 @@ export const createFakeDefinitionStore = (): FakeDefinitionStore => {
       if (repo !== null) {
         const parsed = parseBody(target, content);
         if (!parsed.ok) return err([parsed.error]);
-        const validated = validateDefinitions({
-          roles: currentsOf('roles'),
-          flows: currentsOf('flows'),
-          capabilities: currentsOf('capabilities'),
-          repo: parsed.value,
-        });
+        const validated = validateDefinitions(
+          {
+            roles: currentsOf('roles'),
+            flows: currentsOf('flows'),
+            capabilities: currentsOf('capabilities'),
+            repo: parsed.value,
+          },
+          { roles: roleHistories() },
+        );
         return validated.ok ? ok(undefined) : err(validated.error);
       }
       const scopedTarget = target.replace(/^repos\/[^/]+\//, '');

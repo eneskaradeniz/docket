@@ -16,7 +16,7 @@ import {
 } from '../../domain/index';
 
 import type { AccountRecord } from '../ports/index';
-import { createFakeDefinitionStore, createFakeDeps } from '../ports/fakes/index';
+import { createFakeDefinitionStore, createFakeDeps, repoFlowOf } from '../ports/fakes/index';
 import { advancePhases, runPhase } from '../services/index';
 import { blockWorkOrder, closeWorkOrder } from '../use-cases/index';
 
@@ -51,17 +51,26 @@ describe('unattended phase advance scenario', () => {
   it('opens B once A is done, flags a failed C without stopping B, closes the record when all is done and never starts the next phase', async () => {
     const definitions = createFakeDefinitionStore();
     const deps = createFakeDeps({ definitions });
-    const project = { id: PROJECT, name: 'Atölye', mainRepo: REPO, repos: [REPO] };
+    const project = { id: PROJECT, name: 'Atölye', repos: [REPO] };
     definitions.setProject(project);
     await deps.projects.save(project);
+    const standardFlow = BUILTIN_FLOWS.find((flow) => flow.id === 'standard')!;
     definitions.seed(
       { kind: 'repo', repo: REPO },
       'defs.json',
       JSON.stringify({
         roles: BUILTIN_ROLES,
-        flows: BUILTIN_FLOWS.filter((flow) => flow.id === 'standard'),
+        flows: [standardFlow],
         capabilities: [],
-        repo: { id: 'api', name: 'api', flows: ['standard'], defaultFlow: 'standard', commandSets: { tests: ['npm test'] }, roleOverrides: [], docsRoot: 'docs', testGlobs: [] },
+        repo: {
+          id: 'api',
+          name: 'api',
+          flow: repoFlowOf(standardFlow),
+          defaultLimitPolicy: 'wait_resume',
+          commandSets: { tests: ['npm test'] },
+          docsRoot: 'docs',
+          testGlobs: [],
+        },
       }),
     );
     definitions.seed({ kind: 'project', project: PROJECT }, 'roadmap.json', ROADMAP);

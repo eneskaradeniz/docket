@@ -381,15 +381,23 @@ for (const project of PROJECTS) {
     }
     writeFileSync(join(dir, 'README.md'), `# ${slug}\n\nSeeded repo of ${project.name}.\n`);
 
-    // The repo's definitions live in the data dir: repos/<slug>/repo.yaml (legacy shape) and the
-    // project's roadmap under projects/<id>/ — the repo folder itself carries nothing of Docket's.
+    // The repo's definitions live in the data dir: repos/<slug>/repo.yaml and the project's
+    // roadmap under projects/<id>/ — the repo folder itself carries nothing of Docket's.
     writeYaml(dataDir, `repos/${slug}/repo.yaml`, {
       id: slug,
       name: slug,
-      flows: [FLOW_ID],
-      defaultFlow: FLOW_ID,
+      flow: {
+        flowId: FLOW_ID,
+        version: 1,
+        stages: flowDefinition.stages,
+        bindings: flowDefinition.stages.map((stage) => ({
+          stage: stage.id,
+          ...(stage.role === null ? {} : { role: { roleId: stage.role, version: 1 } }),
+          accounts: [],
+        })),
+      },
+      defaultLimitPolicy: 'wait_resume',
       commandSets: {},
-      roleOverrides: [],
       docsRoot: 'docs',
       testGlobs: [],
     });
@@ -518,7 +526,6 @@ for (const project of PROJECTS) {
   await deps.projects.save({
     id: project.id as ProjectSlug,
     name: project.name,
-    mainRepo: project.main as RepoSlug,
     repos: project.repos as readonly RepoSlug[],
     ...(project.budgetUsd === undefined ? {} : { budget: { amountUsd: project.budgetUsd, warnPercent: 80 } }),
   });

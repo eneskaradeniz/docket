@@ -35,6 +35,7 @@ import {
   createFakeProjectRepo,
   createFakeRunRepo,
   createFakeWorkOrderRepo,
+  repoFlowOf,
 } from '../ports/fakes';
 
 import { blockWorkOrder, closeWorkOrder, getWorkOrder, openWorkOrder, unblockWorkOrder } from './work-orders';
@@ -55,9 +56,8 @@ const ulidOf = <B extends string>(input: string): Ulid<B> => {
 
 const REPO: RepoSlug = slugOf<'repo'>('acme');
 const PROJECT: ProjectSlug = slugOf<'project'>('atolye');
-const PROJECT_DEF: ProjectDef = { id: PROJECT, name: 'Atölye', mainRepo: REPO, repos: [REPO] };
+const PROJECT_DEF: ProjectDef = { id: PROJECT, name: 'Atölye', repos: [REPO] };
 const FLOW_A: FlowSlug = slugOf<'flow'>('flow-a');
-const FLOW_B: FlowSlug = slugOf<'flow'>('flow-b');
 const FLOW_FAIL: FlowSlug = slugOf<'flow'>('flow-fail');
 const FLOW_DISABLED: FlowSlug = slugOf<'flow'>('flow-c');
 const KNOWN_TASK: TaskSlug = slugOf<'task'>('known-task');
@@ -119,14 +119,13 @@ const FLOWS_JSON = [
   },
 ];
 
+// The repo owns exactly one flow (D-1): flow-a, the library copy with one binding per stage.
 const REPO_JSON = {
   id: 'acme',
   name: 'Acme',
-  repos: [],
-  flows: ['flow-a', 'flow-b', 'flow-fail'],
-  defaultFlow: 'flow-a',
+  flow: repoFlowOf(FLOWS_JSON[0] as { id: string; stages: readonly { id: string; role: string | null }[] }),
+  defaultLimitPolicy: 'wait_resume',
   commandSets: { 'deploy-dev': ['true'], 'deploy-staging': ['true'], 'deploy-prod': ['true'] },
-  roleOverrides: [],
   docsRoot: 'docs',
   testGlobs: [],
 };
@@ -142,9 +141,9 @@ const definitionsJson = (
   variants: {
     readonly withRepo?: boolean;
     readonly withEnvironments?: boolean;
-    readonly repoFlows?: readonly string[];
     readonly flows?: readonly string[];
-    readonly defaultFlow?: string;
+    /** The FLOWS_JSON index the repo owns (default 0: flow-a). */
+    readonly ownFlow?: number;
   } = {},
 ): string =>
   JSON.stringify({
@@ -156,8 +155,7 @@ const definitionsJson = (
       : {
           repo: {
             ...REPO_JSON,
-            flows: variants.repoFlows ?? REPO_JSON.flows,
-            defaultFlow: variants.defaultFlow ?? REPO_JSON.defaultFlow,
+            ...(variants.ownFlow === undefined ? {} : { flow: repoFlowOf(FLOWS_JSON[variants.ownFlow]) }),
             ...(variants.withEnvironments ? { environments: ENVIRONMENTS_JSON } : {}),
           },
         }),
@@ -312,7 +310,7 @@ describe('openWorkOrder', () => {
     expect(record?.title).toBe('Fix the login');
   });
 
-  it('A-5: the flow defaults to the repo defaultFlow', async () => {
+  it('A-5: the flow defaults to the repo’s own flow (repo.flow.flowId)', async () => {
     const h = createHarness();
     const id = await openedWorkOrder(h);
 
@@ -322,12 +320,12 @@ describe('openWorkOrder', () => {
     expect(events).toEqual([{ type: 'created', at: 1_000, by: ACTOR, flow: FLOW_A }]);
   });
 
-  it('A-5: an explicitly given enabled flow is used', async () => {
+  it('A-5: an explicitly given flow must name the repo’s own flow', async () => {
     const h = createHarness();
-    const id = await openedWorkOrder(h, { flow: FLOW_B });
+    const id = await openedWorkOrder(h, { flow: FLOW_A });
 
     const record = await h.workOrders.get(id);
-    expect(record?.flow).toBe(FLOW_B);
+    expect(record?.flow).toBe(FLOW_A);
   });
 
   it('A-5: an unknown flow returns unknown_flow and writes nothing', async () => {
@@ -345,7 +343,7 @@ describe('openWorkOrder', () => {
     expect(h.log.entries()).toEqual([]);
   });
 
-  it('A-5: a flow that is not enabled in the repo returns flow_not_enabled and writes nothing', async () => {
+  it('A-5: a library flow the repo does not own returns flow_not_enabled and writes nothing', async () => {
     const h = createHarness();
     const result = await openWorkOrder(h.openDeps, {
       project: PROJECT,
@@ -436,6 +434,28 @@ describe('openWorkOrder', () => {
       task: KNOWN_TASK,
       createdAt: 1_000,
       createdBy: ACTOR,
+      // A-324: every opening pins the repo's flow — one entry per stage, the effective role
+      // bodies (version 1, no overlay) and the default limit policy.
+      pin: {
+        flowId: FLOW_A,
+        flowVersion: 1,
+        stages: [
+          {
+            stage: FLOWS_JSON[0].stages[0],
+            role: ROLE_JSON,
+            roleVersion: 1,
+            accounts: [],
+            limitPolicy: 'wait_resume',
+          },
+          {
+            stage: FLOWS_JSON[0].stages[1],
+            role: ROLE_JSON,
+            roleVersion: 1,
+            accounts: [],
+            limitPolicy: 'wait_resume',
+          },
+        ],
+      },
     });
 
     expect(await h.workOrders.events(result.value)).toEqual([{ type: 'created', at: 1_000, by: ACTOR, flow: FLOW_A }]);
@@ -515,10 +535,17 @@ describe('getWorkOrder', () => {
   it('A-6: a stored flow missing from the current definitions returns unknown_flow', async () => {
     const h = createHarness();
     const id = await openedWorkOrder(h);
+    // The repo now owns flow-b and the library no longer carries flow-a: the stored flow is
+    // gone from every source the load answers.
     h.definitions.seed(
       { kind: 'repo', repo: REPO },
       'defs.json',
-      definitionsJson({ flows: ['flow-b', 'flow-fail', 'flow-c'], repoFlows: ['flow-b', 'flow-fail'], defaultFlow: 'flow-b' }),
+      JSON.stringify({
+        roles: [ROLE_JSON],
+        flows: FLOWS_JSON.filter((flow) => flow.id !== 'flow-a'),
+        capabilities: [],
+        repo: { ...REPO_JSON, flow: repoFlowOf(FLOWS_JSON[1]) },
+      }),
     );
 
     const result = await getWorkOrder(h.viewDeps, id);
@@ -581,6 +608,27 @@ describe('getWorkOrder', () => {
     expect(result.value.record.id).toBe(id);
   });
 
+/** flow-a with one extra human gate on its first stage — the "current definitions" the A-6
+ *  derivation test reseeds after the work order was opened. */
+const redefinedFlows = () => [
+  {
+    id: 'flow-a',
+    name: 'Flow A',
+    stages: [
+      {
+        id: 'plan',
+        name: 'Plan',
+        role: 'worker',
+        exit: [
+          { kind: 'human', id: 'plan-approval', label: 'Plan approval' },
+          { kind: 'human', id: 'plan-extra', label: 'Extra approval' },
+        ],
+      },
+      { id: 'implement', name: 'Implement', role: 'worker', exit: [] },
+    ],
+  },
+];
+
   it('A-6: derivation follows the current definitions, not those at open time', async () => {
     const h = createHarness();
     const id = await openedWorkOrder(h);
@@ -589,26 +637,9 @@ describe('getWorkOrder', () => {
       'defs.json',
       JSON.stringify({
         roles: [ROLE_JSON],
-        flows: [
-          {
-            id: 'flow-a',
-            name: 'Flow A',
-            stages: [
-              {
-                id: 'plan',
-                name: 'Plan',
-                role: 'worker',
-                exit: [
-                  { kind: 'human', id: 'plan-approval', label: 'Plan approval' },
-                  { kind: 'human', id: 'plan-extra', label: 'Extra approval' },
-                ],
-              },
-              { id: 'implement', name: 'Implement', role: 'worker', exit: [] },
-            ],
-          },
-        ],
+        flows: redefinedFlows(),
         capabilities: [],
-        repo: { ...REPO_JSON, flows: ['flow-a'] },
+        repo: { ...REPO_JSON, flow: repoFlowOf(redefinedFlows()[0]) },
       }),
     );
 
@@ -742,7 +773,9 @@ describe('unblockWorkOrder', () => {
   });
 
   it('A-7: a work order blocked by a failed gate (no blocked event) can be unblocked', async () => {
-    const h = createHarness();
+    const h = createHarness((definitions) => {
+      definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', definitionsJson({ ownFlow: 2 }));
+    });
     const id = await openedWorkOrder(h, { flow: FLOW_FAIL });
     await driveToGateBlock(h, id);
 
@@ -869,17 +902,14 @@ const WORKER_V1: RoleDef = {
 };
 const WORKER_V2: RoleDef = { ...WORKER_V1, instructions: 'Do the work, carefully.' };
 
-/** A Phase 7 repo: the legacy fields stay (the use case still reads them) and the repo's own
- *  flow binds the worker role at the given version. */
+/** A repo-owned flow binding the worker role at the given library version. */
 const pinnedRepoDef = (version: number, flowVersion = 4): RepoDef => ({
   id: REPO,
   name: 'Acme',
-  flows: [FLOW_A, FLOW_B, FLOW_FAIL],
-  defaultFlow: FLOW_A,
   commandSets: {},
-  roleOverrides: [],
   docsRoot: 'docs',
   testGlobs: [],
+  defaultLimitPolicy: 'fallback_account',
   flow: {
     flowId: FLOW_A,
     version: flowVersion,
@@ -893,7 +923,6 @@ const pinnedRepoDef = (version: number, flowVersion = 4): RepoDef => ({
       },
     ],
   },
-  defaultLimitPolicy: 'fallback_account',
 });
 
 describe('openWorkOrder (Phase 7 pin)', () => {
@@ -920,16 +949,6 @@ describe('openWorkOrder (Phase 7 pin)', () => {
         },
       ],
     });
-  });
-
-  it('A-324: a repo without a Phase 7 flow opens exactly as before, with no pin', async () => {
-    const h = createHarness();
-
-    const id = await openedWorkOrder(h);
-
-    const record = await h.workOrders.get(id);
-    expect(record).toBeDefined();
-    expect('pin' in (record ?? {})).toBe(false);
   });
 
   it('A-344: a pinFlow failure maps to definitions_invalid and writes nothing — no record, no event', async () => {

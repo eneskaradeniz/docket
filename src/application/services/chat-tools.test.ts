@@ -33,6 +33,7 @@ import {
   createFakeRepoFileReader,
   createFakeRunTokens,
   FAKE_ROADMAP_TARGET,
+  repoFlowOf,
   type FakeRepoFileReader,
   type FakeRunTokens,
 } from '../ports/fakes/index';
@@ -104,7 +105,15 @@ const defsFor = (repo: string): string =>
     roles: [],
     flows: [FLOW],
     capabilities: [],
-    repo: { id: repo, name: repo, repos: [], flows: ['main'], defaultFlow: 'main', commandSets: {}, roleOverrides: [], docsRoot: 'docs', testGlobs: [] },
+    repo: {
+      id: repo,
+      name: repo,
+      flow: repoFlowOf(FLOW),
+      defaultLimitPolicy: 'wait_resume',
+      commandSets: {},
+      docsRoot: 'docs',
+      testGlobs: [],
+    },
   });
 
 const message = (role: 'user' | 'assistant', refs: readonly ConversationRef[], n: number): Message => ({
@@ -158,8 +167,8 @@ const harness = async (overrides: Partial<Parameters<typeof createFakeDeps>[0]> 
   for (const repo of [ALPHA_APP, ALPHA_API, BETA_APP]) definitions.seed({ kind: 'repo', repo }, 'defs.json', defsFor(repo));
   const deps = createFakeDeps({ clock, log, runTokens: tokens, repoFiles: reader, definitions, ...overrides });
 
-  const alpha = { id: ALPHA, name: 'Alpha Uygulaması', mainRepo: ALPHA_APP, repos: [ALPHA_APP, ALPHA_API] };
-  const beta = { id: BETA, name: 'Beta', mainRepo: BETA_APP, repos: [BETA_APP] };
+  const alpha = { id: ALPHA, name: 'Alpha Uygulaması', repos: [ALPHA_APP, ALPHA_API] };
+  const beta = { id: BETA, name: 'Beta', repos: [BETA_APP] };
   for (const project of [alpha, beta]) {
     await deps.projects.save(project);
     definitions.setProject(project);

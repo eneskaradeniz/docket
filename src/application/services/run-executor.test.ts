@@ -67,6 +67,7 @@ import {
   type FakeTransport,
   type FakeTransportResolver,
   type FakeWorkOrderRepo,
+  repoFlowOf,
 } from '../ports/fakes';
 
 import {
@@ -829,7 +830,6 @@ describe('executeRun', () => {
       await h.deps.projects.save({
         id: project,
         name: 'Proj',
-        mainRepo: REPO,
         repos: [REPO],
         budget: { amountUsd: 10, warnPercent: 80 },
       });
@@ -1632,6 +1632,7 @@ describe('executeRun — spend consent', () => {
 
 // Definitions that resolve the fixture work order (flow "standard", stage "implement", role
 // "implementer") — the shape executeRun digests and buildHandoff recomputes.
+const STANDARD_FLOW = { id: 'standard', name: 'Standard', stages: [{ id: STAGE, name: 'Implement', role: ROLE.id, exit: [] }] };
 const DEFS_JSON = JSON.stringify({
   roles: [
     {
@@ -1643,15 +1644,14 @@ const DEFS_JSON = JSON.stringify({
       active: true,
     },
   ],
-  flows: [{ id: 'standard', name: 'Standard', stages: [{ id: STAGE, name: 'Implement', role: ROLE.id, exit: [] }] }],
+  flows: [STANDARD_FLOW],
   capabilities: [],
   repo: {
     id: REPO,
     name: 'WS',
-    flows: ['standard'],
-    defaultFlow: 'standard',
+    flow: repoFlowOf(STANDARD_FLOW),
+    defaultLimitPolicy: 'wait_resume',
     commandSets: {},
-    roleOverrides: [],
     docsRoot: 'docs',
     testGlobs: [],
   },

@@ -71,6 +71,7 @@ import {
   type FakeEvidenceChecker,
   type FakeRouteKind,
   type FakeTransportResolver,
+  repoFlowOf,
 } from '../../application/ports/fakes/index';
 
 // --- fixtures ---------------------------------------------------------------------------------------
@@ -136,11 +137,9 @@ const definitionsBody = (): unknown => {
     repo: {
       id: 'ws',
       name: 'Repo',
-      repos: [],
-      flows: ['standard'],
-      defaultFlow: 'standard',
+      flow: repoFlowOf(standard),
+      defaultLimitPolicy: 'wait_resume',
       commandSets: { tests: [TEST_COMMAND] },
-      roleOverrides: [],
       docsRoot: 'docs',
       testGlobs: [],
     },
@@ -265,7 +264,7 @@ const makeHarness = (): Harness => {
     read: (_cwd: string, names: readonly string[]) => repoContent.read('repo-root', names),
   };
 
-  definitions.setProject({ id: slugOf<'project'>('ws-proj'), name: 'Project', mainRepo: REPO, repos: [REPO] });
+  definitions.setProject({ id: slugOf<'project'>('ws-proj'), name: 'Project', repos: [REPO] });
   const deps = createFakeDeps({
     clock,
     log,
@@ -277,7 +276,7 @@ const makeHarness = (): Harness => {
     checkpoints: redacting,
     instructionFiles,
   });
-  deps.projects.save({ id: slugOf<'project'>('ws-proj'), name: 'Project', mainRepo: REPO, repos: [REPO] });
+  deps.projects.save({ id: slugOf<'project'>('ws-proj'), name: 'Project', repos: [REPO] });
   return { deps, clock, log, definitions, commands, evidence, transports, checkpoints };
 };
 

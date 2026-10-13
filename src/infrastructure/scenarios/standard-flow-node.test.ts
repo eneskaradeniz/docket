@@ -172,16 +172,26 @@ async function seedGlobalDefinitions(): Promise<void> {
 
 /** The repo's own definitions under the dataDir repos root. */
 async function seedRepoDefinitions(): Promise<void> {
+  const standard = BUILTIN_FLOWS.find((flow) => flow.id === 'standard');
+  if (standard === undefined) throw new Error('expected a built-in flow "standard"');
   await mkdir(join(dataDir, 'repos', 'ws'), { recursive: true });
   await writeFile(
     join(dataDir, 'repos', 'ws', 'repo.yaml'),
     stringify({
       id: 'ws',
       name: 'Repo',
-      flows: ['standard'],
-      defaultFlow: 'standard',
+      flow: {
+        flowId: 'standard',
+        version: 1,
+        stages: standard.stages,
+        bindings: standard.stages.map((stage) => ({
+          stage: stage.id,
+          ...(stage.role === null ? {} : { role: { roleId: stage.role, version: 1 } }),
+          accounts: [],
+        })),
+      },
+      defaultLimitPolicy: 'wait_resume',
       commandSets: { tests: [TEST_COMMAND] },
-      roleOverrides: [],
       docsRoot: 'docs',
       testGlobs: [],
     }),
@@ -280,7 +290,7 @@ describe('standard flow, headless end to end on real Node storage', () => {
       expect(attached.ok).toBe(true);
       if (attached.ok && attached.id !== undefined) expect(isUlid(attached.id)).toBe(true);
       expect((await node.repos.list()).find((entry) => entry.slug === REPO)?.path).toBe(repoDir);
-      await deps.projects.save({ id: slugOf<'project'>('ws'), name: 'Repo', mainRepo: REPO, repos: [REPO] });
+      await deps.projects.save({ id: slugOf<'project'>('ws'), name: 'Repo', repos: [REPO] });
 
       // One account carries every role; one scripted transport completes each run.
       await deps.accounts.save({

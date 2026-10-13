@@ -1,22 +1,11 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
-import type { RoleDef, RoleOverride } from '../definitions/index';
 import type { AccountRoute } from '../quota/index';
 import type { RoleSlug, ThinkingChoice, Tier } from '../shared/index';
 import type { Layer, Level, Resolved, RoleBinding } from './resolve';
-import { LEVEL_ORDER, applyRoleOverrides, resolve, resolveBinding } from './resolve';
+import { LEVEL_ORDER, resolve, resolveBinding } from './resolve';
 
 const asRole = (id: string): RoleSlug => id as RoleSlug;
-const asCapability = (id: string): RoleDef['capabilities'][number] => id as RoleDef['capabilities'][number];
 const asAccount = (id: string): AccountRoute['accountId'] => id as AccountRoute['accountId'];
-
-const BASE: RoleDef = {
-  id: asRole('reviewer'),
-  name: 'Reviewer',
-  instructions: 'base instructions',
-  writeScope: { kind: 'none' },
-  capabilities: [asCapability('mcp-fs')],
-  active: true,
-};
 
 function permutations<T>(items: readonly T[]): T[][] {
   if (items.length <= 1) return [[...items]];
@@ -129,88 +118,6 @@ describe('resolve', () => {
   it('Resolved and Layer have the contract shapes', () => {
     expectTypeOf<Layer<number>>().toEqualTypeOf<{ readonly level: Level; readonly value: number | undefined }>();
     expectTypeOf<Resolved<number>>().toEqualTypeOf<{ readonly value: number; readonly from: Level }>();
-  });
-});
-
-describe('applyRoleOverrides', () => {
-  it('R-81: docketTools survives the merge, an override replaces it, and an unset one stays absent', () => {
-    expect(applyRoleOverrides({ ...BASE, docketTools: false }, []).docketTools).toBe(false);
-    expect(applyRoleOverrides(BASE, [{ id: BASE.id, docketTools: false }]).docketTools).toBe(false);
-    expect('docketTools' in applyRoleOverrides(BASE, [])).toBe(false);
-  });
-
-  it('R-11: never changes id; an override with a different id is ignored entirely', () => {
-    const result = applyRoleOverrides(BASE, [
-      { id: asRole('coder'), name: 'Hijacked', instructions: 'other' },
-    ]);
-    expect(result.id).toBe(asRole('reviewer'));
-    expect(result.name).toBe('Reviewer');
-    expect(result.instructions).toBe('base instructions');
-  });
-
-  it('R-11: an override with a matching id still keeps the base id', () => {
-    const result = applyRoleOverrides(BASE, [{ id: asRole('reviewer'), name: 'Renamed' }]);
-    expect(result.id).toBe(asRole('reviewer'));
-    expect(result.name).toBe('Renamed');
-  });
-
-  it('applies overrides least-specific → most-specific: workOrder wins per field over repo (acceptance 2)', () => {
-    const repoOverride: RoleOverride = {
-      id: asRole('reviewer'),
-      name: 'Repo Name',
-      instructions: 'repo instructions',
-    };
-    const workOrderOverride: RoleOverride = {
-      id: asRole('reviewer'),
-      name: 'WorkOrder Name',
-    };
-    const result = applyRoleOverrides(BASE, [repoOverride, workOrderOverride]);
-    expect(result.id).toBe(asRole('reviewer'));
-    expect(result.name).toBe('WorkOrder Name');
-    expect(result.instructions).toBe('repo instructions');
-    // untouched fields keep the base values
-    expect(result.writeScope).toEqual({ kind: 'none' });
-    expect(result.active).toBe(true);
-  });
-
-  it('a later override wins per field; untouched fields are kept from the base', () => {
-    const first: RoleOverride = { id: asRole('reviewer'), active: false, writeScope: { kind: 'docs' } };
-    const second: RoleOverride = { id: asRole('reviewer'), active: true };
-    const result = applyRoleOverrides(BASE, [first, second]);
-    expect(result.active).toBe(true);
-    expect(result.writeScope).toEqual({ kind: 'docs' });
-    expect(result.name).toBe('Reviewer');
-    expect(result.instructions).toBe('base instructions');
-  });
-
-  it('replaces a whole field value instead of deep-merging it', () => {
-    const result = applyRoleOverrides(BASE, [
-      { id: asRole('reviewer'), writeScope: { kind: 'paths', globs: ['src/**'] } },
-    ]);
-    expect(result.writeScope).toEqual({ kind: 'paths', globs: ['src/**'] });
-  });
-
-  it('returns a structurally equal role with no overrides, as a new object', () => {
-    const result = applyRoleOverrides(BASE, []);
-    expect(result).toEqual(BASE);
-    expect(result).not.toBe(BASE);
-  });
-
-  it('does not mutate the base role or the override objects', () => {
-    const base: RoleDef = { ...BASE, capabilities: [...BASE.capabilities] };
-    const override: RoleOverride = { id: asRole('reviewer'), name: 'Renamed' };
-    const overrideSnapshot = { ...override };
-    applyRoleOverrides(base, [override]);
-    expect(base).toEqual(BASE);
-    expect(override).toEqual(overrideSnapshot);
-  });
-
-  it('ignores explicit undefined fields in an override instead of clobbering the base', () => {
-    const result = applyRoleOverrides(BASE, [
-      { id: asRole('reviewer'), name: undefined, active: false },
-    ]);
-    expect(result.name).toBe('Reviewer');
-    expect(result.active).toBe(false);
   });
 });
 

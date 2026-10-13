@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 
 import { parseSlug, parseUlid, type Actor, type ConversationId, type ProjectSlug, type RepoSlug, type RoleSlug, type RunId, type Ulid } from '../../domain/index';
 
-import { createFakeClock, createFakeDefinitionStore, createFakeDeps, createFakeEventLog, createFakeRunTokens } from '../ports/fakes/index';
+import { createFakeClock, createFakeDefinitionStore, createFakeDeps, createFakeEventLog, createFakeRunTokens, repoFlowOf } from '../ports/fakes/index';
 import { createActionApplier, createChatTurnLedger, createDocketTools, type DocketToolResponse } from '../services/index';
 import { confirmDraftUseCase, decideActionUseCase, grantPermission, revokePermission } from '../use-cases/index';
 
@@ -35,12 +35,22 @@ const FOREIGN_TURN = idOf<'run'>(32) as RunId;
 const OPERATOR: Actor = { kind: 'user', id: 'operator', label: 'Operator' };
 const AGENT: Actor = { kind: 'agent', runId: TURN, role: ROLE };
 
+const MAIN_FLOW = { id: 'main', name: 'Main', stages: [{ id: 'plan', name: 'Plan', role: null, exit: [{ kind: 'human', id: 'ok', label: 'Ok' }] }] };
+
 const defs = (repo: string): string =>
   JSON.stringify({
     roles: [],
-    flows: [{ id: 'main', name: 'Main', stages: [{ id: 'plan', name: 'Plan', role: null, exit: [{ kind: 'human', id: 'ok', label: 'Ok' }] }] }],
+    flows: [MAIN_FLOW],
     capabilities: [],
-    repo: { id: repo, name: repo, repos: [], flows: ['main'], defaultFlow: 'main', commandSets: {}, roleOverrides: [], docsRoot: 'docs', testGlobs: [] },
+    repo: {
+      id: repo,
+      name: repo,
+      flow: repoFlowOf(MAIN_FLOW),
+      defaultLimitPolicy: 'wait_resume',
+      commandSets: {},
+      docsRoot: 'docs',
+      testGlobs: [],
+    },
   });
 const ROLES_FILE = JSON.stringify({ roles: [{ id: 'helper', name: 'Helper', instructions: 'help', writeScope: { kind: 'repo' }, capabilities: [], active: true }] });
 const ROADMAP_BEFORE = JSON.stringify({ phases: [] });
@@ -52,15 +62,15 @@ describe('chat write tools scenario', () => {
     const log = createFakeEventLog();
     const tokens = createFakeRunTokens();
     const definitions = createFakeDefinitionStore();
-    definitions.setProject({ id: ATOLYE, name: 'Atölye', mainRepo: ACME, repos: [ACME] });
-    definitions.setProject({ id: WEB, name: 'Web', mainRepo: OTHER_REPO, repos: [OTHER_REPO] });
+    definitions.setProject({ id: ATOLYE, name: 'Atölye', repos: [ACME] });
+    definitions.setProject({ id: WEB, name: 'Web', repos: [OTHER_REPO] });
     definitions.seed({ kind: 'repo', repo: ACME }, 'defs.json', defs('acme'));
     definitions.seed({ kind: 'repo', repo: OTHER_REPO }, 'defs.json', defs('other'));
     definitions.seed({ kind: 'project', project: ATOLYE }, 'roadmap.yaml', ROADMAP_BEFORE);
     definitions.seed({ kind: 'project', project: ATOLYE }, 'roles/helper.yaml', ROLES_FILE);
     const deps = createFakeDeps({ clock, log, runTokens: tokens, definitions });
-    await deps.projects.save({ id: ATOLYE, name: 'Atölye', mainRepo: ACME, repos: [ACME] });
-    await deps.projects.save({ id: WEB, name: 'Web', mainRepo: OTHER_REPO, repos: [OTHER_REPO] });
+    await deps.projects.save({ id: ATOLYE, name: 'Atölye', repos: [ACME] });
+    await deps.projects.save({ id: WEB, name: 'Web', repos: [OTHER_REPO] });
     await deps.conversations.save({
       id: CONVERSATION,
       scope: { kind: 'project', project: ATOLYE },

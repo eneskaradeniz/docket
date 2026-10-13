@@ -11,6 +11,7 @@ import {
   createFakeDeps,
   createFakeRepoFileReader,
   createFakeRunTokens,
+  repoFlowOf,
 } from '../ports/fakes/index';
 import { createActionApplier, createChatTurnLedger, createDocketTools, type DocketToolResponse } from '../services/index';
 
@@ -37,12 +38,22 @@ const TURN = ulid<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FT1') as RunId;
 const RUN = ulid<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FT2') as RunId;
 const ROLE = slug<'role'>('asistan') as RoleSlug;
 
+const MAIN_FLOW = { id: 'main', name: 'Main', stages: [{ id: 'plan', name: 'Plan', role: null, exit: [{ kind: 'human', id: 'ok', label: 'Ok' }] }] };
+
 const defs = (repo: string): string =>
   JSON.stringify({
     roles: [],
-    flows: [{ id: 'main', name: 'Main', stages: [{ id: 'plan', name: 'Plan', role: null, exit: [{ kind: 'human', id: 'ok', label: 'Ok' }] }] }],
+    flows: [MAIN_FLOW],
     capabilities: [],
-    repo: { id: repo, name: repo, repos: [], flows: ['main'], defaultFlow: 'main', commandSets: {}, roleOverrides: [], docsRoot: 'docs', testGlobs: [] },
+    repo: {
+      id: repo,
+      name: repo,
+      flow: repoFlowOf(MAIN_FLOW),
+      defaultLimitPolicy: 'wait_resume',
+      commandSets: {},
+      docsRoot: 'docs',
+      testGlobs: [],
+    },
   });
 
 describe('chat read tools scenario', () => {
@@ -53,8 +64,8 @@ describe('chat read tools scenario', () => {
     definitions.seed({ kind: 'repo', repo: MOBILE_APP }, 'defs.json', defs('mobile-app'));
     definitions.seed({ kind: 'repo', repo: WEB_APP }, 'defs.json', defs('web-app'));
     const deps = createFakeDeps({ runTokens: tokens, repoFiles: reader, definitions });
-    await deps.projects.save({ id: MOBILE, name: 'Mobil', mainRepo: MOBILE_APP, repos: [MOBILE_APP] });
-    await deps.projects.save({ id: WEB, name: 'Web', mainRepo: WEB_APP, repos: [WEB_APP] });
+    await deps.projects.save({ id: MOBILE, name: 'Mobil', repos: [MOBILE_APP] });
+    await deps.projects.save({ id: WEB, name: 'Web', repos: [WEB_APP] });
     for (const [id, project, repo, title, at] of [
       [LOGIN, MOBILE, MOBILE_APP, 'Giriş ekranı', 1_000],
       [WEB_ORDER, WEB, WEB_APP, 'Web paneli', 2_000],

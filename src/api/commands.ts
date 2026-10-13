@@ -14,6 +14,7 @@ export type Command =
   | { readonly type: 'repo.register'; readonly project: string; readonly repo: string; readonly path: string }
   | { readonly type: 'repo.unregister'; readonly project: string; readonly repo: string }
   | { readonly type: 'repo.relink'; readonly repoId: string; readonly path: string } // errors: not_found, folder_not_found, fingerprint_mismatch (A-341)
+  | { readonly type: 'repo.saveFlow'; readonly repo: string; readonly flow: RepoFlowInput } // ok → { ok: true }; errors: not_found, definitions_invalid, stale (A-345)
   | { readonly type: 'workOrder.block'; readonly id: string; readonly reason: string }
   | { readonly type: 'workOrder.unblock'; readonly id: string }
   | { readonly type: 'workOrder.close'; readonly id: string }
@@ -70,6 +71,16 @@ export type Command =
   | { readonly type: 'memory.setAutoAccept'; readonly scope: 'global' | 'project' | 'repo'; readonly enabled: boolean }
   | { readonly type: 'memory.addNote'; readonly text: string; readonly scope: 'global' | 'project' | 'repo'; readonly scopeId?: string }
   | { readonly type: 'definitions.save'; readonly kind: 'plugin' | 'mcp' | 'skill' | 'command' | 'hook'; readonly definition: unknown }; // ok → { version }; failures → definitions_invalid + issues (A-352)
+
+/** A repo flow as the renderer sends it (A-345): the domain's `RepoFlow` with plain string ids
+ *  and unparsed stage/binding bodies — api.ts narrows it with the same law the file world
+ *  validates under, and the use case re-validates the merged definitions before writing. */
+export interface RepoFlowInput {
+  readonly flowId: string;
+  readonly version: number;
+  readonly stages: readonly object[];
+  readonly bindings: readonly object[];
+}
 
 /** A conversation scope on the wire: the domain's own three shapes with plain string ids. */
 export type ChatScopeInput =

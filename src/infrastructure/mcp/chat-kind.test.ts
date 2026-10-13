@@ -46,7 +46,7 @@ const setup = async (): Promise<{ readonly runToken: string; readonly chatToken:
   roots.push(dir);
   const tokens = createNodeRunTokens();
   const deps = createFakeDeps({ runTokens: tokens });
-  await deps.projects.save({ id: PROJECT, name: 'Alpha', mainRepo: slug<'repo'>('alpha-app'), repos: [slug<'repo'>('alpha-app')] });
+  await deps.projects.save({ id: PROJECT, name: 'Alpha', repos: [slug<'repo'>('alpha-app')] });
   await deps.conversations.save({
     id: CONVERSATION,
     scope: { kind: 'project', project: PROJECT },

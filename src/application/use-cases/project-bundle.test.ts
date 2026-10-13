@@ -12,6 +12,7 @@ import { createFakeClock } from '../ports/fakes/fake-clock';
 import { createFakeDeps } from '../ports/fakes/fake-deps';
 import { createFakeEventLog } from '../ports/fakes/fake-event-log';
 import { createFakeBundleStore } from '../ports/fakes/fake-bundle-store';
+import { repoFlowOf } from '../ports/fakes/repo-flow-fixture';
 import { exportProject, importBundle } from './project-bundle';
 import type { DocketBundle, MemoryNote } from '../ports/bundle-store';
 
@@ -43,7 +44,6 @@ describe('project-bundle use cases (A-342, R-8, I-86, I-91)', () => {
     await deps.projects.save({
       id: PROJ,
       name: 'Demo Project',
-      mainRepo: REPO,
       repos: [REPO],
     });
 
@@ -74,23 +74,21 @@ describe('project-bundle use cases (A-342, R-8, I-86, I-91)', () => {
       ],
     });
 
+    const standardFlowDef = {
+      id: 'standard',
+      name: 'Standard Flow',
+      stages: [{ id: 'impl', name: 'Implementation', role: 'planner', exit: [] }],
+    };
     await deps.definitions.writeFile(
       `repos/${REPO}/repo.yaml`,
       JSON.stringify({
         id: REPO,
         name: 'Demo Repo',
-        flows: [slugOf('standard')],
-        defaultFlow: slugOf('standard'),
+        flow: repoFlowOf(standardFlowDef),
+        defaultLimitPolicy: 'wait_resume',
         commandSets: { tests: ['npm test'] },
-        roleOverrides: [],
         docsRoot: 'docs',
         testGlobs: ['**/*.test.ts'],
-        flow: {
-          flowId: slugOf('standard'),
-          version: 1,
-          stages: [{ id: slugOf('impl'), name: 'Implementation', role: slugOf('planner'), exit: [] }],
-          bindings: [{ stage: slugOf('impl'), role: { roleId: slugOf('planner'), version: 1 }, accounts: [] }],
-        },
       }),
       '',
     );
@@ -164,7 +162,6 @@ describe('project-bundle use cases (A-342, R-8, I-86, I-91)', () => {
           project: {
             id: slugOf('proj-sec'),
             name: 'Security Project',
-            mainRepo: slugOf('repo-sec'),
             repos: [slugOf('repo-sec')],
           },
         },
@@ -173,10 +170,14 @@ describe('project-bundle use cases (A-342, R-8, I-86, I-91)', () => {
         {
           id: slugOf('repo-sec'),
           name: 'Security Repo',
-          flows: [slugOf('std')],
-          defaultFlow: slugOf('std'),
+          flow: {
+            flowId: slugOf('std'),
+            version: 1,
+            stages: [{ id: slugOf('impl'), name: 'Impl', role: slugOf('planner'), exit: [] }],
+            bindings: [{ stage: slugOf('impl'), role: { roleId: slugOf('planner'), version: 1 }, accounts: [] }],
+          },
+          defaultLimitPolicy: 'wait_resume',
           commandSets: {},
-          roleOverrides: [],
           docsRoot: 'docs',
           testGlobs: [],
         },
@@ -230,7 +231,6 @@ describe('project-bundle use cases (A-342, R-8, I-86, I-91)', () => {
     await deps.projects.save({
       id: slugOf('i86-proj'),
       name: 'I86 Project',
-      mainRepo: slugOf('i86-repo'),
       repos: [slugOf('i86-repo')],
     });
 
@@ -261,15 +261,19 @@ describe('project-bundle use cases (A-342, R-8, I-86, I-91)', () => {
       ],
     });
 
+    const i86Flow = {
+      id: 'std',
+      name: 'Standard',
+      stages: [{ id: 'impl', name: 'Impl', role: 'worker', exit: [] }],
+    };
     await deps.definitions.writeFile(
       `repos/i86-repo/repo.yaml`,
       JSON.stringify({
         id: slugOf('i86-repo'),
         name: 'I86 Repo',
-        flows: [slugOf('std')],
-        defaultFlow: slugOf('std'),
+        flow: repoFlowOf(i86Flow),
+        defaultLimitPolicy: 'wait_resume',
         commandSets: {},
-        roleOverrides: [],
         docsRoot: 'docs',
         testGlobs: [],
       }),

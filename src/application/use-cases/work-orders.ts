@@ -74,13 +74,15 @@ export async function openWorkOrder(
   const loaded = await deps.definitions.load(input.repo);
   if (!loaded.ok) return err('definitions_invalid');
   const repo = loaded.value.repo;
-  // Opening needs a default flow and an enabled-flow list; definitions without a repo
-  // section cannot supply either.
+  // Opening needs the repo's own flow; definitions without a repo section cannot supply it.
   if (repo === undefined) return err('definitions_invalid');
 
-  const flow = input.flow ?? repo.defaultFlow;
-  if (!loaded.value.flows.some((candidate) => candidate.id === flow)) return err('unknown_flow');
-  if (!repo.flows.includes(flow)) return err('flow_not_enabled');
+  // The repo owns exactly one flow. `input.flow`, when given, must name it; an id the library
+  // does not carry at all is `unknown_flow`, a library flow the repo does not own `flow_not_enabled`.
+  const flow = input.flow ?? repo.flow.flowId;
+  if (input.flow !== undefined && input.flow !== repo.flow.flowId) {
+    return err(loaded.value.flows.some((candidate) => candidate.id === input.flow) ? 'flow_not_enabled' : 'unknown_flow');
+  }
 
   if (input.task !== undefined) {
     // The roadmap belongs to the project and lives in its main repo's .docket.
@@ -91,28 +93,24 @@ export async function openWorkOrder(
     if (!known) return err('unknown_task');
   }
 
-  // A-324/A-344: a Phase 7 repo pins its flow at creation — self-contained, so later library
-  // edits or repo flow changes never rewrite it. A repo without a `flow` field (every repo
-  // stored before Phase 7) opens exactly as before, with no pin. A `pinFlow` failure refuses
-  // the opening with `definitions_invalid` and nothing is written.
+  // A-324/A-344: every opening pins the repo's flow — self-contained, so later library edits or
+  // repo flow changes never rewrite it. A `pinFlow` failure refuses the opening with
+  // `definitions_invalid` and nothing is written.
   const repoFlow = repo.flow;
-  let pin: FlowPin | undefined;
-  if (repoFlow !== undefined) {
-    const library: VersionRecord<RoleDef>[] = [];
-    const seenRoles = new Set<string>();
-    for (const binding of repoFlow.bindings) {
-      const ref = binding.role;
-      if (ref === undefined || ref.detached !== undefined || seenRoles.has(ref.roleId)) continue;
-      seenRoles.add(ref.roleId);
-      // The port stores library bodies untyped (A-343); the roles kind carries RoleDef bodies,
-      // narrowed by `saveVersion` before anything is written.
-      const history = (await deps.definitions.listVersions('roles', ref.roleId)) as readonly VersionRecord<RoleDef>[];
-      library.push(...history);
-    }
-    const pinned = pinFlow(repoFlow, library, repo.defaultLimitPolicy ?? 'wait_resume');
-    if (!pinned.ok) return err('definitions_invalid');
-    pin = pinned.value;
+  const library: VersionRecord<RoleDef>[] = [];
+  const seenRoles = new Set<string>();
+  for (const binding of repoFlow.bindings) {
+    const ref = binding.role;
+    if (ref === undefined || ref.detached !== undefined || seenRoles.has(ref.roleId)) continue;
+    seenRoles.add(ref.roleId);
+    // The port stores library bodies untyped (A-343); the roles kind carries RoleDef bodies,
+    // narrowed by `saveVersion` before anything is written.
+    const history = (await deps.definitions.listVersions('roles', ref.roleId)) as readonly VersionRecord<RoleDef>[];
+    library.push(...history);
   }
+  const pinned = pinFlow(repoFlow, library, repo.defaultLimitPolicy);
+  if (!pinned.ok) return err('definitions_invalid');
+  const pin: FlowPin = pinned.value;
 
   const id = deps.ids.next<'work-order'>();
   const at = deps.clock.now();
@@ -124,7 +122,7 @@ export async function openWorkOrder(
     title,
     ...(description.value !== undefined ? { description: description.value } : {}),
     ...(input.task !== undefined ? { task: input.task } : {}),
-    ...(pin !== undefined ? { pin } : {}),
+    pin,
     createdAt: at,
     createdBy: input.actor,
   });

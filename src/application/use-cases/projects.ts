@@ -78,7 +78,6 @@ export type CreateProjectError =
   | 'not_a_folder' | 'folder_exists' | 'io_failed' | 'definitions_invalid' | AttachError;
 
 const MAX_NAME_LENGTH = 80;
-const DEFAULT_FLOW = 'standard';
 
 /**
  * A-75..A-78: validates first, then writes in the contract's order. A folder this creates stays when a
@@ -109,10 +108,7 @@ export async function createProject(
     if (registered !== undefined) return err('project_exists');
   }
 
-  const defaultFlow = BUILTIN_FLOWS.find((flow) => flow.id === DEFAULT_FLOW);
-  if (defaultFlow === undefined) return err('definitions_invalid');
-
-  const project: ProjectDef = { id: slug, name, mainRepo: repoSlug, repos: [repoSlug] };
+  const project: ProjectDef = { id: slug, name, repos: [repoSlug] };
   const checked = validateDefinitions({ roles: BUILTIN_ROLES, flows: BUILTIN_FLOWS, capabilities: [], project });
   if (!checked.ok) return err('definitions_invalid');
 

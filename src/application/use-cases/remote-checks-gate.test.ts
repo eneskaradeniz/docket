@@ -24,6 +24,7 @@ import {
   createFakeDeps,
   createFakeForge,
   type FakeDefinitionStore,
+  repoFlowOf,
 } from '../ports/fakes/index';
 
 import { pollRemoteChecks } from '../index';
@@ -99,20 +100,24 @@ const DEFINITIONS_BODY = {
     },
   ],
   capabilities: [],
-  repo: {
+};
+
+/** The repo section for the flow under test — the repo owns exactly one flow (D-1). */
+const repoBodyOf = (flowId: string): Record<string, unknown> => {
+  const flow = DEFINITIONS_BODY.flows.find((candidate) => candidate.id === flowId);
+  if (flow === undefined) throw new Error(`fixture flow must exist: ${flowId}`);
+  return {
     id: 'ws',
     name: 'Repo',
-    repos: [],
-    flows: ['all-flow', 'required-flow', 'mixed-flow', 'two-stage-flow'],
-    defaultFlow: 'all-flow',
+    flow: repoFlowOf(flow),
+    defaultLimitPolicy: 'wait_resume',
     commandSets: { 'deploy-stg': ['docket-deploy stg'] },
-    roleOverrides: [],
     docsRoot: 'docs',
     testGlobs: [],
     environments: [
       { id: 'stg', name: 'Staging', order: 1, deploy: 'deploy-stg', env: {}, protected: false },
     ],
-  },
+  };
 };
 
 interface Harness {
@@ -132,6 +137,7 @@ const makeHarness = (): Harness => {
 /** Creates the work order with its `created` event, the way openWorkOrder would have. */
 const createIn = async (h: Harness, flow: string): Promise<void> => {
   const flowId = slugOf<'flow'>(flow);
+  h.definitions.seed({ kind: 'repo', repo: REPO_SLUG }, 'repo.yaml', JSON.stringify(repoBodyOf(flow)));
   await h.deps.workOrders.create({
     id: WORK_ORDER,
     project: slugOf<'project'>('proj'),

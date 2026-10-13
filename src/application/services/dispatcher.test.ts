@@ -34,6 +34,7 @@ import {
   type FakeClock,
   type FakeDefinitionStore,
 } from '../ports/fakes';
+import { repoFlowOf } from '../ports/fakes';
 
 import { createFakeModelCatalog } from '../ports/fakes/fake-model-catalog';
 import { applyLimitDecision, dispatcherTick, enqueueStage } from './dispatcher';
@@ -135,17 +136,21 @@ const DEFINITIONS_BODY = {
     },
   ],
   capabilities: [],
-  repo: {
-    id: 'ws',
+};
+
+/** The repo section for the flow under test — the repo owns exactly one flow (D-1). */
+const repoBodyOf = (flowId: string, id = 'ws'): Record<string, unknown> => {
+  const flow = DEFINITIONS_BODY.flows.find((candidate) => candidate.id === flowId);
+  if (flow === undefined) throw new Error(`fixture flow must exist: ${flowId}`);
+  return {
+    id,
     name: 'Repo',
-    repos: [],
-    flows: ['standard', 'manual', 'reviewed'],
-    defaultFlow: 'standard',
+    flow: repoFlowOf(flow),
+    defaultLimitPolicy: 'wait_resume',
     commandSets: {},
-    roleOverrides: [],
     docsRoot: 'docs',
     testGlobs: [],
-  },
+  };
 };
 
 interface Harness {
@@ -219,6 +224,7 @@ const createWorkOrder = async (
   flow = 'standard',
 ): Promise<void> => {
   const flowId = slugOf<'flow'>(flow);
+  h.definitions.seed({ kind: 'repo', repo }, 'repo.yaml', JSON.stringify(repoBodyOf(flow, repo)));
   await h.deps.workOrders.create({
     id,
     project: slugOf<'project'>('proj'),
@@ -517,8 +523,8 @@ describe('enqueueStage', () => {
     h.definitions.seed({ kind: 'global' }, 'definitions.json', JSON.stringify({
       ...DEFINITIONS_BODY,
       flows: DEFINITIONS_BODY.flows.filter((flow) => flow.id === 'standard'), // only 'standard' remains
-      repo: { ...DEFINITIONS_BODY.repo, flows: ['standard'] },
     }));
+    h.definitions.seed({ kind: 'repo', repo: REPO }, 'repo.yaml', JSON.stringify(repoBodyOf('standard')));
     const flowId = slugOf<'flow'>('manual');
     await h.deps.workOrders.create({
       id: WO1,
@@ -1139,14 +1145,12 @@ describe('dispatcherTick', () => {
     await h.deps.projects.save({
       id: PROJ,
       name: 'Proj',
-      mainRepo: REPO,
       repos: [REPO, OTHER],
       budget: { amountUsd: 10, warnPercent: 80 },
     });
     await h.deps.projects.save({
       id: OTHER_PROJ,
       name: 'Other',
-      mainRepo: FOREIGN,
       repos: [FOREIGN],
       budget: { amountUsd: 10, warnPercent: 80 },
     });
@@ -1183,23 +1187,20 @@ describe('dispatcherTick', () => {
   it('R-48: a repo limit at hard_stop holds only that repo — its sibling under the same project starts', async () => {
     const h = makeHarness();
     const PROJ = slugOf<'project'>('proj');
-    h.definitions.seed(
-      { kind: 'global' },
-      'definitions.json',
-      JSON.stringify({
-        ...DEFINITIONS_BODY,
-        repo: { ...DEFINITIONS_BODY.repo, budget: { amountUsd: 5, warnPercent: 80 } },
-      }),
-    );
     await h.deps.projects.save({
       id: PROJ,
       name: 'Proj',
-      mainRepo: REPO,
       repos: [REPO, OTHER],
       budget: { amountUsd: 100, warnPercent: 80 },
     });
     await createWorkOrder(h, WO1, REPO);
     await createWorkOrder(h, WO2, OTHER);
+    // ws alone carries a spend limit; the sibling has none.
+    h.definitions.seed(
+      { kind: 'repo', repo: REPO },
+      'repo.yaml',
+      JSON.stringify({ ...repoBodyOf('standard'), budget: { amountUsd: 5, warnPercent: 80 } }),
+    );
     await h.deps.accounts.recordSpend({
       accountId: A1,
       project: PROJ,

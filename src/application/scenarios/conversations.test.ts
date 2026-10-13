@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { parseSlug, parseUlid, type Actor, type PageId, type ProjectDef, type Ulid } from '../../domain/index';
-import { createFakeAttachmentFiles, createFakeClock, createFakeDefinitionStore, createFakeDeps, createFakeEventLog } from '../ports/fakes';
+import { createFakeAttachmentFiles, createFakeClock, createFakeDefinitionStore, createFakeDeps, createFakeEventLog, repoFlowOf } from '../ports/fakes';
 import {
   appendAssistantMessage,
   confirmDraftUseCase,
@@ -32,11 +32,20 @@ const REPO = slugOf<'repo'>('app');
 const USER: Actor = { kind: 'user', id: 'u1', label: 'Operator' };
 const PAGE: PageId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FP1');
 
+const FLOW_B = { id: 'flow-b', name: 'Flow B', stages: [{ id: 'only', name: 'Only', role: null, exit: [{ kind: 'human', id: 'closure', label: 'Closure' }] }] };
 const DEFINITIONS_BODY = {
   roles: [],
-  flows: [{ id: 'flow-b', name: 'Flow B', stages: [{ id: 'only', name: 'Only', role: null, exit: [{ kind: 'human', id: 'closure', label: 'Closure' }] }] }],
+  flows: [FLOW_B],
   capabilities: [],
-  repo: { id: 'app', name: 'App', repos: [], flows: ['flow-b'], defaultFlow: 'flow-b', commandSets: {}, roleOverrides: [], docsRoot: 'docs', testGlobs: [] },
+  repo: {
+    id: 'app',
+    name: 'App',
+    flow: repoFlowOf(FLOW_B),
+    defaultLimitPolicy: 'wait_resume',
+    commandSets: {},
+    docsRoot: 'docs',
+    testGlobs: [],
+  },
 };
 
 describe('conversations core scenario', () => {
@@ -45,7 +54,7 @@ describe('conversations core scenario', () => {
     const log = createFakeEventLog();
     const files = createFakeAttachmentFiles();
     const definitions = createFakeDefinitionStore();
-    const project: ProjectDef = { id: PROJECT, name: 'Mobile', mainRepo: REPO, repos: [REPO] };
+    const project: ProjectDef = { id: PROJECT, name: 'Mobile', repos: [REPO] };
     definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', JSON.stringify(DEFINITIONS_BODY));
     definitions.setProject(project);
     const deps = createFakeDeps({ clock, log, attachmentFiles: files, definitions });

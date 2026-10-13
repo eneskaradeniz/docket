@@ -1,6 +1,8 @@
 // The setting precedence chain: work order → repo → project → global → built-in.
-// Contract: docs/v2/domain.md section 3.
-import type { RoleDef, RoleOverride, StageDef } from '../definitions/index';
+// Contract: docs/v2/domain.md section 3. The `project` level stays for settings that remain
+// project-scoped; role, flow and capability definitions never resolve through it (R-130) —
+// they are repo-owned or library-owned.
+import type { StageDef } from '../definitions/index';
 import type { AccountRoute } from '../quota/index';
 import type { RoleSlug, ThinkingChoice, Tier } from '../shared/index';
 
@@ -36,36 +38,6 @@ export function resolve<T>(layers: readonly Layer<T>[]): Resolved<T> | undefined
     best = { value: layer.value, from: layer.level };
   }
   return best;
-}
-
-/** Field-wise merge: overrides are applied in order least-specific → most-specific.
- *  `id` is identity and never overridden; an override naming another id is skipped whole.
- *  Always returns a fresh object — the base and the overrides are never mutated or aliased. */
-export function applyRoleOverrides(base: RoleDef, overrides: readonly RoleOverride[]): RoleDef {
-  let name = base.name;
-  let instructions = base.instructions;
-  let writeScope = base.writeScope;
-  let capabilities = base.capabilities;
-  let active = base.active;
-  let docketTools = base.docketTools;
-  for (const override of overrides) {
-    if (override.id !== base.id) continue;
-    if (override.name !== undefined) name = override.name;
-    if (override.instructions !== undefined) instructions = override.instructions;
-    if (override.writeScope !== undefined) writeScope = override.writeScope;
-    if (override.capabilities !== undefined) capabilities = override.capabilities;
-    if (override.active !== undefined) active = override.active;
-    if (override.docketTools !== undefined) docketTools = override.docketTools;
-  }
-  return {
-    id: base.id,
-    name,
-    instructions,
-    writeScope,
-    capabilities,
-    active,
-    ...(docketTools === undefined ? {} : { docketTools }),
-  };
 }
 
 /** Machine-local binding of a role to an ordered chain of accounts (first = preferred). */

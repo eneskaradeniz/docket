@@ -35,6 +35,7 @@ import {
   type FakeClock,
   type FakeDefinitionStore,
   type FakeEventLog,
+  repoFlowOf,
 } from '../ports/fakes';
 import {
   createDraft,
@@ -76,12 +77,21 @@ const MINUTE = 60_000;
 const UNKNOWN_DRAFT: DraftId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FZ8');
 const UNKNOWN_PROPOSAL: ProposalId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FZ7');
 
-const PROJECT_DEF: ProjectDef = { id: PROJECT, name: 'Atölye', mainRepo: REPO, repos: [REPO] };
+const PROJECT_DEF: ProjectDef = { id: PROJECT, name: 'Atölye', repos: [REPO] };
+const FLOW_B = { id: 'flow-b', name: 'Flow B', stages: [{ id: 'only', name: 'Only', role: null, exit: [{ kind: 'human', id: 'closure', label: 'Closure' }] }] };
 const REPO_DEFINITIONS = {
   roles: [],
-  flows: [{ id: 'flow-b', name: 'Flow B', stages: [{ id: 'only', name: 'Only', role: null, exit: [{ kind: 'human', id: 'closure', label: 'Closure' }] }] }],
+  flows: [FLOW_B],
   capabilities: [],
-  repo: { id: 'acme', name: 'Acme', repos: [], flows: ['flow-b'], defaultFlow: 'flow-b', commandSets: {}, roleOverrides: [], docsRoot: 'docs', testGlobs: [] },
+  repo: {
+    id: 'acme',
+    name: 'Acme',
+    flow: repoFlowOf(FLOW_B),
+    defaultLimitPolicy: 'wait_resume',
+    commandSets: {},
+    docsRoot: 'docs',
+    testGlobs: [],
+  },
 };
 
 const rolesFile = (name: string): string =>

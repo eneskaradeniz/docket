@@ -340,7 +340,7 @@ const harness = async (options: {
     ...(options.withEndpoint === false ? {} : { mcpEndpoint: ENDPOINT }),
   });
 
-  await deps.projects.save({ id: PROJECT, name: 'Atölye', mainRepo: REPO, repos: [REPO] });
+  await deps.projects.save({ id: PROJECT, name: 'Atölye', repos: [REPO] });
   await deps.workOrders.create({
     id: WORK_ORDER,
     project: PROJECT,
@@ -1103,7 +1103,7 @@ describe('createChatRunner', () => {
     const budget = { amountUsd: 2, warnPercent: 80 };
 
     const projectSide = await harness({ script: [usage(2.5), finished('completed')] });
-    await projectSide.deps.projects.save({ id: PROJECT, name: 'Atölye', mainRepo: REPO, repos: [REPO], budget });
+    await projectSide.deps.projects.save({ id: PROJECT, name: 'Atölye', repos: [REPO], budget });
     const first = watching(projectSide.runner, CONVERSATION);
     await send(projectSide.runner, CONVERSATION, { text: 'Pahalı' });
     await first.finished;
@@ -1118,7 +1118,7 @@ describe('createChatRunner', () => {
     // A global conversation's spend carries no project, so the ceiling never sees it: the
     // project conversation still runs, while the account sum holds every chat dollar.
     const globalSide = await harness({ script: [usage(3), finished('completed')] });
-    await globalSide.deps.projects.save({ id: PROJECT, name: 'Atölye', mainRepo: REPO, repos: [REPO], budget });
+    await globalSide.deps.projects.save({ id: PROJECT, name: 'Atölye', repos: [REPO], budget });
     const GLOBAL = idOf<'conversation'>(42);
     await globalSide.conversations.save(conversationRecord(GLOBAL, { scope: { kind: 'global' } }));
     const globalWatch = watching(globalSide.runner, GLOBAL);

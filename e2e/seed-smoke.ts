@@ -72,28 +72,8 @@ run(
 );
 
 // --- the definitions, in the data dir ---------------------------------------------------------
-// repo.yaml is written by hand at repos/<slug>/ (the legacy shape the loader validates); the flow
-// and role live in the library, installed through the store once the deps exist.
 mkdirSync(join(dataDir, 'repos', REPO), { recursive: true });
 
-// The flow the whole walk rides on: a human-only review stage (its pending gate is what surfaces
-// the work order in the cockpit at boot, before any run exists), then a runnable stage whose run
-// is the one that asks.
-writeFileSync(
-  join(dataDir, 'repos', REPO, 'repo.yaml'),
-  [
-    'id: duman',
-    'name: Duman çalışma alanı',
-    'repos: []',
-    'flows: [duman-akisi]',
-    'defaultFlow: duman-akisi',
-    'commandSets: {}',
-    'roleOverrides: []',
-    'docsRoot: docs',
-    'testGlobs: []',
-    '',
-  ].join('\n'),
-);
 const ROLE_DEF: RoleDef = {
   id: ROLE,
   name: 'İşçi',
@@ -115,6 +95,45 @@ const FLOW_DEF: FlowDef = {
     { id: 'uygulama' as StageSlug, name: 'Uygulama', role: ROLE, exit: [] },
   ],
 };
+
+// The flow the whole walk rides on: a human-only review stage (its pending gate is what surfaces
+// the work order in the cockpit at boot, before any run exists), then a runnable stage whose run
+// is the one that asks.
+writeFileSync(
+  join(dataDir, 'repos', REPO, 'repo.yaml'),
+  [
+    'id: duman',
+    'name: Duman çalışma alanı',
+    'flow:',
+    '  flowId: duman-akisi',
+    '  version: 1',
+    '  stages:',
+    '    - id: inceleme',
+    '      name: İnceleme',
+    '      role: null',
+    '      exit:',
+    '        - kind: human',
+    '          id: onay',
+    '          label: İnsan onayı',
+    '    - id: uygulama',
+    '      name: Uygulama',
+    '      role: isci',
+    '      exit: []',
+    '  bindings:',
+    '    - stage: inceleme',
+    '      accounts: []',
+    '    - stage: uygulama',
+    '      role:',
+    '        roleId: isci',
+    '        version: 1',
+    '      accounts: []',
+    'defaultLimitPolicy: wait_resume',
+    'commandSets: {}',
+    'docsRoot: docs',
+    'testGlobs: []',
+    '',
+  ].join('\n'),
+);
 
 // --- the database, written through the app's own composition and use-cases ---------------------------
 const node = createNodeDeps({
@@ -143,7 +162,7 @@ await deps.definitions.installBuiltins({ roles: [ROLE_DEF], flows: [FLOW_DEF] })
 // The folder is duman-repo but the repo's slug is duman, so the entry is registered directly
 // rather than through attach (which slugs the folder name).
 await deps.repos.register({ repoId: deps.ids.next<'repo'>(), slug: REPO, path: repo, fingerprint: { rootCommit: '' } });
-await deps.projects.save({ id: PROJECT, name: 'Duman projesi', mainRepo: REPO, repos: [REPO] });
+await deps.projects.save({ id: PROJECT, name: 'Duman projesi', repos: [REPO] });
 
 // The account names the provider whose CLI definition the smoke impersonates: an ACP transport
 // with an env-var config mechanism and no auth probe, so a scripted binary is enough.

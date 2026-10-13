@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest';
 import type { Result } from '../shared';
 import { validateDefinitions } from './validate';
 import type { DefinitionIssue } from './types';
-import type { Definitions } from './types';
+import type { Definitions, RoleDef } from './types';
+import type { VersionRecord } from './repo-flow';
 
 type Obj = Record<string, unknown>;
+
+const ACCOUNT = '01ARZ3NDEKTSV4RRFFQ69G5FAV';
 
 const role = (over: Obj = {}): Obj => ({
   id: 'dev',
@@ -20,6 +23,21 @@ const gate = (over: Obj = {}): Obj => ({ kind: 'human', id: 'approve', label: 'A
 
 const stage = (over: Obj = {}): Obj => ({ id: 'work', name: 'Work', role: 'dev', exit: [], ...over });
 
+const binding = (over: Obj = {}): Obj => ({
+  stage: 'work',
+  role: { roleId: 'dev', version: 1 },
+  accounts: [{ accountId: ACCOUNT }],
+  ...over,
+});
+
+const repoFlow = (over: Obj = {}): Obj => ({
+  flowId: 'main',
+  version: 1,
+  stages: [stage()],
+  bindings: [binding()],
+  ...over,
+});
+
 const flow = (over: Obj = {}): Obj => ({ id: 'main', name: 'Main', stages: [stage()], ...over });
 
 const capability = (over: Obj = {}): Obj => ({
@@ -33,10 +51,9 @@ const capability = (over: Obj = {}): Obj => ({
 const repo = (over: Obj = {}): Obj => ({
   id: 'ws',
   name: 'Repo',
-  flows: ['main'],
-  defaultFlow: 'main',
+  flow: repoFlow(),
+  defaultLimitPolicy: 'wait_resume',
   commandSets: { build: ['npm run build'] },
-  roleOverrides: [],
   docsRoot: 'docs',
   testGlobs: ['**/*.test.ts'],
   ...over,
@@ -45,7 +62,6 @@ const repo = (over: Obj = {}): Obj => ({
 const project = (over: Obj = {}): Obj => ({
   id: 'atolye',
   name: 'Atölye',
-  mainRepo: 'docket',
   repos: ['docket', 'docs'],
   ...over,
 });
@@ -56,6 +72,11 @@ const doc = (over: Obj = {}): Obj => ({
   capabilities: [capability()],
   ...over,
 });
+
+/** A one-version library history of the seeded role, for the R-128/R-130 arms. */
+const history = (body: Obj = role()): readonly VersionRecord<RoleDef>[] => [
+  { definitionId: 'dev', version: 1, body: body as unknown as RoleDef, recordedAt: 0, archived: false },
+];
 
 const expectOk = (result: Result<Definitions, readonly DefinitionIssue[]>): Definitions => {
   if (!result.ok) throw new Error(`expected ok, got issues: ${JSON.stringify(result.error)}`);
@@ -140,10 +161,36 @@ describe('validateDefinitions', () => {
       repo: {
         id: 'main',
         name: 'Main',
-        flows: ['default'],
-        defaultFlow: 'default',
+        flow: {
+          flowId: 'default',
+          version: 1,
+          stages: [
+            {
+              id: 'build',
+              name: 'Build',
+              role: 'implementer',
+              exit: [{ kind: 'command', id: 'tests-pass', commandSet: 'build' }],
+              onFail: { goto: 'build', maxAttempts: 3 },
+            },
+            {
+              id: 'review',
+              name: 'Review',
+              role: null,
+              exit: [
+                { kind: 'human', id: 'human-review', label: 'Approve' },
+                { kind: 'agent_verdict', id: 'verdict', role: 'implementer' },
+                { kind: 'secret_scan', id: 'scan' },
+                { kind: 'page_approval', id: 'page', label: 'Page looks right' },
+              ],
+            },
+          ],
+          bindings: [
+            { stage: 'build', role: { roleId: 'implementer', version: 1 }, accounts: [{ accountId: ACCOUNT }] },
+            { stage: 'review', accounts: [] },
+          ],
+        },
+        defaultLimitPolicy: 'wait_resume',
         commandSets: { build: ['npm run build', 'npm test'] },
-        roleOverrides: [{ id: 'reviewer', active: true }],
         docsRoot: 'docs',
         testGlobs: ['**/*.test.ts'],
       },
@@ -181,7 +228,7 @@ describe('validateDefinitions', () => {
           ],
         }),
       ],
-      repo: repo({ defaultFlow: 'other' }),
+      repo: repo({ flow: repoFlow({ bindings: [binding({ stage: 'nowhere' })] }) }),
     });
 
     const issues = expectErr(validateDefinitions(input));
@@ -194,7 +241,7 @@ describe('validateDefinitions', () => {
         issue('flows[0].stages[0].role', 'unknown_role'),
         issue('flows[0].stages[0].onFail.goto', 'forward_goto'),
         issue('flows[0].stages[0].onFail.maxAttempts', 'bad_attempts'),
-        issue('repo.defaultFlow', 'default_flow_not_enabled'),
+        issue('repo.flow.bindings[0].stage', 'binding_stage_mismatch'),
       ]),
     );
   });
@@ -393,31 +440,25 @@ describe('validateDefinitions', () => {
     }
   });
 
-  it('R-9: defaultFlow must be listed in repo.flows and every listed flow must exist', () => {
-    const notListed = doc({ repo: repo({ defaultFlow: 'other' }) });
-    const notListedIssues = expectErr(validateDefinitions(notListed));
-    expect(codesOf(notListedIssues)).toEqual(['default_flow_not_enabled']);
-    expect(notListedIssues[0]?.path).toBe('repo.defaultFlow');
-
-    const ghost = doc({ repo: repo({ flows: ['main', 'ghost'] }) });
-    const ghostIssues = expectErr(validateDefinitions(ghost));
-    expect(codesOf(ghostIssues)).toEqual(['unknown_flow']);
-    expect(ghostIssues[0]?.path).toBe('repo.flows[1]');
-
-    const both = doc({ repo: repo({ flows: ['main', 'ghost'], defaultFlow: 'other' }) });
-    const bothIssues = expectErr(validateDefinitions(both));
-    expect(bothIssues).toHaveLength(2);
-    expect(bothIssues).toEqual(
-      expect.arrayContaining([
-        issue('repo.flows[1]', 'unknown_flow'),
-        issue('repo.defaultFlow', 'default_flow_not_enabled'),
-      ]),
-    );
+  it('R-9: superseded — the repo owns one flow; the legacy flows/defaultFlow fields are rejected as unknown keys', () => {
+    const legacy = doc({
+      repo: repo({
+        flows: ['main'],
+        defaultFlow: 'main',
+        roleOverrides: [],
+      }),
+    });
+    const issues = expectErr(validateDefinitions(legacy));
+    expect(issues).toEqual([
+      issue('repo.flows', 'unknown_field'),
+      issue('repo.defaultFlow', 'unknown_field'),
+      issue('repo.roleOverrides', 'unknown_field'),
+    ]);
   });
 
   it('R-46: a valid project lands in Definitions.project, with or without a budget', () => {
     const bare = expectOk(validateDefinitions(doc({ project: project() })));
-    expect(bare.project).toEqual({ id: 'atolye', name: 'Atölye', mainRepo: 'docket', repos: ['docket', 'docs'] });
+    expect(bare.project).toEqual({ id: 'atolye', name: 'Atölye', repos: ['docket', 'docs'] });
     expect('budget' in (bare.project ?? {})).toBe(false);
 
     const capped = expectOk(validateDefinitions(doc({ project: project({ budget: { amountUsd: 25, warnPercent: 80 } }) })));
@@ -429,7 +470,7 @@ describe('validateDefinitions', () => {
 
   it('R-46: repos must be non-empty (empty_repos)', () => {
     const issues = expectErr(validateDefinitions(doc({ project: project({ repos: [] }) })));
-    expect(codesOf(issues)).toEqual(['empty_repos', 'main_repo_not_listed']);
+    expect(codesOf(issues)).toEqual(['empty_repos']);
     expect(issues[0]?.path).toBe('project.repos');
   });
 
@@ -449,25 +490,34 @@ describe('validateDefinitions', () => {
     expect('docketTools' in (defs.roles[2] ?? {})).toBe(false);
   });
 
-  it('R-81: a non-boolean docketTools is wrong_type at its path, in a role and in a role override', () => {
+  it('R-81: a non-boolean docketTools is wrong_type at its path, in a role and in a binding overlay', () => {
     const inRole = expectErr(validateDefinitions(doc({ roles: [role({ docketTools: 'no' })] })));
     expect(inRole).toEqual([issue('roles[0].docketTools', 'wrong_type')]);
-    const inOverride = expectErr(
-      validateDefinitions(doc({ repo: repo({ roleOverrides: [{ id: 'dev', docketTools: 0 }] }) })),
+    const inOverlay = expectErr(
+      validateDefinitions(
+        doc({ repo: repo({ flow: repoFlow({ bindings: [binding({ role: { roleId: 'dev', version: 1, overlay: { docketTools: 0 } } })] }) }) }),
+      ),
     );
-    expect(inOverride).toEqual([issue('repo.roleOverrides[0].docketTools', 'wrong_type')]);
+    expect(inOverlay).toEqual([issue('repo.flow.bindings[0].role.overlay.docketTools', 'wrong_type')]);
   });
 
-  it('R-81: a role override may switch the tools off', () => {
-    const defs = expectOk(validateDefinitions(doc({ repo: repo({ roleOverrides: [{ id: 'dev', docketTools: false }] }) })));
-    expect(defs.repo?.roleOverrides[0]?.docketTools).toBe(false);
+  it('R-81: a binding overlay may switch the tools off', () => {
+    const defs = expectOk(
+      validateDefinitions(
+        doc({ repo: repo({ flow: repoFlow({ bindings: [binding({ role: { roleId: 'dev', version: 1, overlay: { docketTools: false } } })] }) }) }),
+      ),
+    );
+    expect(defs.repo?.flow.bindings[0]?.role?.overlay?.docketTools).toBe(false);
   });
 
-  it('R-46: mainRepo must be listed in repos (main_repo_not_listed)', () => {
-    const issues = expectErr(validateDefinitions(doc({ project: project({ mainRepo: 'ghost', repos: ['docket', 'docs'] }) })));
-    expect(codesOf(issues)).toEqual(['main_repo_not_listed']);
-    expect(issues[0]?.path).toBe('project.mainRepo');
-    expect(issues[0]?.message).toContain('ghost');
+  it('R-126: ProjectDef carries no mainRepo — the field is an unknown key, like every legacy project field', () => {
+    const issues = expectErr(validateDefinitions(doc({ project: project({ mainRepo: 'docket' }) })));
+    expect(issues).toEqual([issue('project.mainRepo', 'unknown_field')]);
+  });
+
+  it('R-126 edge: unknown project keys are rejected the same way', () => {
+    const issues = expectErr(validateDefinitions(doc({ project: project({ roles: [] }) })));
+    expect(issues).toEqual([issue('project.roles', 'unknown_field')]);
   });
 
   it('R-46: a budget that is not a valid SpendCap is wrong_type', () => {
@@ -501,10 +551,6 @@ describe('validateDefinitions', () => {
     expect(codesOf(badId)).toEqual(['invalid_slug']);
     expect(badId[0]?.path).toBe('project.id');
 
-    const badMainRepo = expectErr(validateDefinitions(doc({ project: project({ mainRepo: 'Docket' }) })));
-    expect(codesOf(badMainRepo)).toEqual(['invalid_slug']);
-    expect(badMainRepo[0]?.path).toBe('project.mainRepo');
-
     const badRepoEntry = expectErr(validateDefinitions(doc({ project: project({ repos: ['docket', 'Docs'] }) })));
     expect(codesOf(badRepoEntry)).toEqual(['invalid_slug']);
     expect(badRepoEntry[0]?.path).toBe('project.repos[1]');
@@ -514,6 +560,158 @@ describe('validateDefinitions', () => {
     const missing = expectErr(validateDefinitions(doc({ project: noRepos })));
     expect(codesOf(missing)).toEqual(['missing_field']);
     expect(missing[0]?.path).toBe('project.repos');
+  });
+
+  it('R-127: bindings hold exactly one binding per stage, in stage order', () => {
+    const missing = doc({ repo: repo({ flow: repoFlow({ bindings: [] }) }) });
+    expect(expectErr(validateDefinitions(missing))).toEqual([issue('repo.flow.bindings', 'binding_stage_mismatch')]);
+
+    const swapped = doc({
+      repo: repo({
+        flow: repoFlow({
+          stages: [stage(), stage({ id: 'check', name: 'Check', role: null })],
+          bindings: [binding({ stage: 'check', role: undefined }), binding()],
+        }),
+      }),
+    });
+    const swappedIssues = expectErr(validateDefinitions(swapped));
+    expect(codesOf(swappedIssues)).toEqual(['binding_stage_mismatch', 'binding_stage_mismatch']);
+    expect(swappedIssues[0]?.path).toBe('repo.flow.bindings[0].stage');
+    expect(swappedIssues[1]?.path).toBe('repo.flow.bindings[1].stage');
+
+    const extra = doc({
+      repo: repo({
+        flow: repoFlow({ bindings: [binding(), binding({ stage: 'ghost' })] }),
+      }),
+    });
+    const extraIssues = expectErr(validateDefinitions(extra));
+    expect(extraIssues).toEqual([issue('repo.flow.bindings[1].stage', 'binding_stage_mismatch')]);
+  });
+
+  it('R-127 edge: two bindings for one stage are duplicate_binding', () => {
+    const input = doc({
+      repo: repo({
+        flow: repoFlow({
+          stages: [stage(), stage({ id: 'check', name: 'Check', role: null })],
+          bindings: [binding(), binding({ stage: 'work' }), binding({ stage: 'check', role: undefined })],
+        }),
+      }),
+    });
+    const issues = expectErr(validateDefinitions(input));
+    expect(issues).toEqual([
+      issue('repo.flow.bindings[1].stage', 'duplicate_binding'),
+      // The duplicate pushed "check" out of stage order — both defects are reported.
+      issue('repo.flow.bindings[2].stage', 'binding_stage_mismatch'),
+    ]);
+  });
+
+  it('R-128: a human-only stage forbids a role on its binding (role_forbidden)', () => {
+    const input = doc({
+      repo: repo({
+        flow: repoFlow({
+          stages: [stage({ role: null })],
+          bindings: [binding()],
+        }),
+      }),
+    });
+    const issues = expectErr(validateDefinitions(input));
+    expect(issues).toEqual([issue('repo.flow.bindings[0].role', 'role_forbidden')]);
+  });
+
+  it('R-128: a stage with a role requires one on its binding (role_required)', () => {
+    const input = doc({ repo: repo({ flow: repoFlow({ bindings: [binding({ role: undefined })] }) }) });
+    const issues = expectErr(validateDefinitions(input));
+    expect(issues).toEqual([issue('repo.flow.bindings[0].role', 'role_required')]);
+  });
+
+  it('R-128: a non-detached ref must name an existing library version (unknown_role_version)', () => {
+    const missing = doc({ repo: repo() });
+    const missingIssues = expectErr(validateDefinitions(missing, { roles: [] }));
+    expect(missingIssues).toEqual([issue('repo.flow.bindings[0].role.version', 'unknown_role_version')]);
+
+    const wrongVersion = doc({
+      repo: repo({ flow: repoFlow({ bindings: [binding({ role: { roleId: 'dev', version: 2 } })] }) }),
+    });
+    const wrongIssues = expectErr(validateDefinitions(wrongVersion, { roles: history() }));
+    expect(wrongIssues).toEqual([issue('repo.flow.bindings[0].role.version', 'unknown_role_version')]);
+
+    const present = doc({ repo: repo() });
+    expect(validateDefinitions(present, { roles: history() }).ok).toBe(true);
+  });
+
+  it('R-128 edge: a detached ref skips the library check; no histories means no check', () => {
+    const detached = doc({
+      repo: repo({
+        flow: repoFlow({
+          bindings: [binding({ role: { roleId: 'dev', version: 9, detached: role({ id: 'local-dev' }) } })],
+        }),
+      }),
+    });
+    expect(validateDefinitions(detached, { roles: history() }).ok).toBe(true);
+
+    // Without histories the version check is skipped, never guessed.
+    expect(validateDefinitions(doc({ repo: repo() })).ok).toBe(true);
+  });
+
+  it('R-128 edge: the overlay never carries id or active — they are unknown keys', () => {
+    const withId = doc({
+      repo: repo({ flow: repoFlow({ bindings: [binding({ role: { roleId: 'dev', version: 1, overlay: { id: 'other' } } })] }) }),
+    });
+    expect(expectErr(validateDefinitions(withId))).toEqual([
+      issue('repo.flow.bindings[0].role.overlay.id', 'unknown_field'),
+    ]);
+
+    const withActive = doc({
+      repo: repo({ flow: repoFlow({ bindings: [binding({ role: { roleId: 'dev', version: 1, overlay: { active: false } } })] }) }),
+    });
+    expect(expectErr(validateDefinitions(withActive))).toEqual([
+      issue('repo.flow.bindings[0].role.overlay.active', 'unknown_field'),
+    ]);
+  });
+
+  it('R-128 edge: unknown keys in the repo section are rejected (unknown_field)', () => {
+    const issues = expectErr(validateDefinitions(doc({ repo: repo({ legacyImported: true }) })));
+    expect(issues).toEqual([issue('repo.legacyImported', 'unknown_field')]);
+  });
+
+  it('R-130: with histories the answer carries each binding’s effective role and the repo’s own flow copy', () => {
+    const overlaid = doc({
+      repo: repo({
+        flow: repoFlow({
+          bindings: [binding({ role: { roleId: 'dev', version: 1, overlay: { name: 'Yerel Dev' } } })],
+        }),
+      }),
+    });
+    const defs = expectOk(validateDefinitions(overlaid, { roles: history() }));
+
+    // Roles: the binding's R-130 effective role — the library body with the overlay applied.
+    expect(defs.roles).toEqual([
+      { id: 'dev', name: 'Yerel Dev', instructions: 'Do the work.', writeScope: { kind: 'repo' }, capabilities: [], active: true },
+    ]);
+
+    // Flows: the library list with the repo-owned flow's own stages under its id.
+    expect(defs.flows).toEqual([{ id: 'main', name: 'Main', stages: defs.repo?.flow.stages }]);
+
+    // Without histories the parsed library view stands (the version check is skipped, never guessed).
+    const plain = expectOk(validateDefinitions(overlaid));
+    expect(plain.roles).toHaveLength(1);
+    expect(plain.roles[0]?.name).toBe('Dev');
+  });
+
+  it('R-130 edge: a detached binding answers its own body; two stages binding one role answer one role', () => {
+    const input = doc({
+      repo: repo({
+        flow: repoFlow({
+          stages: [stage(), stage({ id: 'check', name: 'Check', role: null })],
+          bindings: [
+            binding({ role: { roleId: 'dev', version: 1, detached: role({ id: 'dev', name: 'Yerel Dev' }) } }),
+            binding({ stage: 'check', role: undefined }),
+          ],
+        }),
+      }),
+    });
+    const defs = expectOk(validateDefinitions(input, { roles: history() }));
+    expect(defs.roles.map((r) => r.name)).toEqual(['Yerel Dev']);
   });
 
   it('reports missing_field for absent required fields at any depth', () => {
@@ -569,6 +767,17 @@ describe('validateDefinitions', () => {
     });
     const envIssues = expectErr(validateDefinitions(envNoProtected));
     expect(envIssues).toEqual([issue('repo.environments[0].protected', 'missing_field')]);
+
+    const noFlow: Obj = { ...repo() };
+    delete noFlow.flow;
+    const flowIssues = expectErr(validateDefinitions(doc({ repo: noFlow })));
+    expect(flowIssues).toEqual([issue('repo.flow', 'missing_field')]);
+
+    const noPolicy: Obj = { ...repo() };
+    delete noPolicy.defaultLimitPolicy;
+    expect(expectErr(validateDefinitions(doc({ repo: noPolicy })))).toEqual([
+      issue('repo.defaultLimitPolicy', 'missing_field'),
+    ]);
   });
 
   it('reports wrong_type for mistyped required fields at any depth', () => {
@@ -598,13 +807,25 @@ describe('validateDefinitions', () => {
       ),
     ).toContain('wrong_type');
     expect(
-      codesOf(expectErr(validateDefinitions(doc({ capabilities: [capability({ kind: 'mcp', command: 'x', env: {} })] })))),
+      codesOf(
+        expectErr(validateDefinitions(doc({ capabilities: [capability({ kind: 'mcp', command: 'x', env: {} })] })))),
     ).toContain('missing_field');
     expect(
       codesOf(expectErr(validateDefinitions(doc({ repo: repo({ commandSets: { build: 'npm run build' } }) })))),
     ).toContain('wrong_type');
     expect(
       codesOf(expectErr(validateDefinitions(doc({ repo: repo({ commandSets: { build: [42] } }) })))),
+    ).toContain('wrong_type');
+    expect(
+      codesOf(expectErr(validateDefinitions(doc({ repo: repo({ defaultLimitPolicy: 'sometimes' }) })))),
+    ).toContain('wrong_type');
+    expect(
+      codesOf(expectErr(validateDefinitions(doc({ repo: repo({ flow: repoFlow({ version: 0 }) }) })))),
+    ).toContain('wrong_type');
+    expect(
+      codesOf(
+        expectErr(validateDefinitions(doc({ repo: repo({ flow: repoFlow({ bindings: [binding({ accounts: [{ accountId: 'nope' }] })] }) }) }))),
+      ),
     ).toContain('wrong_type');
   });
 
@@ -634,14 +855,16 @@ describe('validateDefinitions', () => {
     expect(issues[0]?.path).toBe('flows[0].stages');
   });
 
-  it('validates repo roleOverrides against known roles', () => {
-    const unknown = doc({ repo: repo({ roleOverrides: [{ id: 'ghost' }] }) });
+  it('validates binding overlay capabilities against known capabilities', () => {
+    const unknown = doc({
+      repo: repo({ flow: repoFlow({ bindings: [binding({ role: { roleId: 'dev', version: 1, overlay: { capabilities: ['missing-cap'] } } })] }) }),
+    });
     const unknownIssues = expectErr(validateDefinitions(unknown));
-    expect(codesOf(unknownIssues)).toEqual(['unknown_role']);
-    expect(unknownIssues[0]?.path).toBe('repo.roleOverrides[0].id');
+    expect(codesOf(unknownIssues)).toEqual(['unknown_capability']);
+    expect(unknownIssues[0]?.path).toBe('repo.flow.bindings[0].role.overlay.capabilities[0]');
 
     const applies = doc({
-      repo: repo({ roleOverrides: [{ id: 'dev', writeScope: { kind: 'docs' }, active: false }] }),
+      repo: repo({ flow: repoFlow({ bindings: [binding({ role: { roleId: 'dev', version: 1, overlay: { capabilities: ['sk'] } } })] }) }),
     });
     expect(validateDefinitions(applies).ok).toBe(true);
   });
