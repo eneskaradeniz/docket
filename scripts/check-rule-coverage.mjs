@@ -52,7 +52,7 @@ const PENDING = new Map([
   ['domain:R-130', '#1012'],
   ['domain:R-131', '#1011'],
   ['domain:R-132', '#1011'],
-  ['domain:R-133', '#1011'],
+  ['domain:R-133', '#1025'],
   ['domain:R-134', '#1011'],
   ['domain:R-135', '#1013'],
   ['application:A-324', '#1011'],
@@ -131,6 +131,7 @@ const PENDING = new Map([
   ['application:A-343', '#1011'],
   ['application:A-344', '#1011'],
   ['application:A-345', '#1012'],
+  ['application:A-341', '#1046'],
   ['ui:U-296', '#1010'],
 ]);
 
