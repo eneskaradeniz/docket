@@ -51,10 +51,7 @@ const PENDING = new Map([
   ['domain:R-130', '#1012'],
   ['domain:R-133', '#1025'],
   ['domain:R-135', '#1013'],
-  ['infrastructure:I-87', '#1009'],
   ['infrastructure:I-89', '#1010'],
-  ['infrastructure:I-90', '#1009'],
-  ['infrastructure:I-91', '#1010'],
   ['infrastructure:I-92', '#1009'],
 
   // #1005 — two-layer roadmap and tracker model with sync modes
@@ -111,7 +108,6 @@ const PENDING = new Map([
   ['infrastructure:I-98', '#1010'],
   ['infrastructure:I-99', '#1010'],
   ['infrastructure:I-100', '#1010'],
-  ['application:A-341', '#1009'],
   ['application:A-342', '#1010'],
   ['application:A-345', '#1012'],
   ['ui:U-296', '#1010'],

@@ -136,6 +136,9 @@ import {
   usageSummary,
   unblockWorkOrder,
   unregisterRepo,
+  importLegacy,
+  relinkRepo,
+  repoStatuses,
   undoAction,
   workOrderCodeOf,
   catalogOrEmpty,
@@ -770,6 +773,23 @@ const runCommand = async (
       );
     }
 
+    case 'repo.importLegacy': {
+      const imported = await importLegacy(
+        { clock: deps.clock, ids: deps.ids, log: deps.log, repos: deps.repos, legacyImporter: deps.legacyImporter },
+        { repoId: command.repoId, path: command.path, actor },
+      );
+      return imported.ok ? { ok: true, report: imported.value } : { ok: false, code: imported.error.code };
+    }
+
+    case 'repo.relink': {
+      return commandOf(
+        await relinkRepo(
+          { clock: deps.clock, ids: deps.ids, log: deps.log, repos: deps.repos },
+          { repoId: command.repoId, path: command.path, actor },
+        ),
+      );
+    }
+
     case 'workOrder.block': {
       const id = ulidValue<'work-order'>(command.id);
       if (id === undefined) return invalidId();
@@ -1395,6 +1415,9 @@ const runQuery = async (
       if (project === undefined && query.project !== undefined) return invalidId();
       return cockpitView(deps, project);
     }
+
+    case 'repoStatus':
+      return repoStatuses(deps);
 
     case 'project.tree':
       return projectTree(deps);

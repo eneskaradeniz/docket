@@ -23,6 +23,8 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
   'project.create': { input: "mode: 'existing' (path, name) | 'blank' (parent, name)" },
   'repo.register': { input: 'project: ProjectSlug, repo: RepoSlug, path: string' },
   'repo.unregister': { input: 'project: ProjectSlug, repo: RepoSlug' },
+  'repo.importLegacy': { input: 'repoId: string, path: string' },
+  'repo.relink': { input: 'repoId: string, path: string' },
   'workOrder.block': { input: 'id: WorkOrderId, reason: string' },
   'workOrder.unblock': { input: 'id: WorkOrderId' },
   'workOrder.close': { input: 'id: WorkOrderId' },
@@ -75,6 +77,7 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
 export const QUERY_REGISTRY: Record<Query['type'], RegistryEntry> = {
   'workOrder.detail': { input: 'id: WorkOrderId' },
   'workOrder.changes': { input: 'workOrder: WorkOrderId' },
+  'repoStatus': { input: 'no input' },
   'project.tree': { input: 'no input' },
   'roadmap.byProject': { input: 'project: ProjectSlug' },
   'repo.board': { input: 'repo: RepoSlug' },

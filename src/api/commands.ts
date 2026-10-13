@@ -11,6 +11,8 @@ export type Command =
   | { readonly type: 'project.create'; readonly mode: 'blank'; readonly parent: string; readonly name: string } // ok → { ok: true, id: <project slug> }
   | { readonly type: 'repo.register'; readonly project: string; readonly repo: string; readonly path: string }
   | { readonly type: 'repo.unregister'; readonly project: string; readonly repo: string }
+  | { readonly type: 'repo.importLegacy'; readonly repoId: string; readonly path: string } // ok → { ok: true, report }; errors: not_found, already_imported, definitions_invalid (I-90, A-341)
+  | { readonly type: 'repo.relink'; readonly repoId: string; readonly path: string } // errors: not_found, folder_not_found, fingerprint_mismatch (A-341)
   | { readonly type: 'workOrder.block'; readonly id: string; readonly reason: string }
   | { readonly type: 'workOrder.unblock'; readonly id: string }
   | { readonly type: 'workOrder.close'; readonly id: string }
@@ -93,6 +95,6 @@ export type CommandResult =
    *  `phaseRun` rides only `roadmap.runPhase`. The chat fields ride only their own commands:
    *  `conversation`+`turn` (chat.start), `turn` (chat.send), `attachment` (chat.attach),
    *  `workOrder`+`code` (chat.draft.confirm), `id` (chat.grant). */
-  | { readonly ok: true; readonly id?: string; readonly results?: readonly CapabilityImportResultView[]; readonly phaseRun?: PhaseRunView; readonly conversation?: string; readonly turn?: string; readonly attachment?: string; readonly workOrder?: string; readonly code?: string }
+  | { readonly ok: true; readonly id?: string; readonly results?: readonly CapabilityImportResultView[]; readonly phaseRun?: PhaseRunView; readonly conversation?: string; readonly turn?: string; readonly attachment?: string; readonly workOrder?: string; readonly code?: string; readonly report?: { readonly warnings: readonly string[]; readonly renames: readonly { readonly id: string; readonly to: string }[] } }
   /** `roles` rides only `binding_exists`: the roles whose bindings still reference the account. */
   | { readonly ok: false; readonly code: string; readonly roles?: readonly string[] };
