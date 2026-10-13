@@ -27,6 +27,7 @@ export * from './notifier';
 export * from './page-files';
 export * from './page-repo';
 export * from './phase-auto-run-repo';
+export * from './process-registry';
 export * from './project-repo';
 export * from './proposal-repo';
 export * from './provider-discovery';

@@ -19,7 +19,6 @@
 //   5. IPC handlers and the window last — the renderer boots only once every surface it can
 //      call already exists.
 import { app, BrowserWindow, Notification, dialog, ipcMain, safeStorage, screen } from 'electron';
-import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,10 +27,12 @@ import type { Actor, QueueItem } from '../src/domain/index';
 import { deriveWorkOrderState, foldRun } from '../src/domain/index';
 import { COMMAND_REGISTRY, QUERY_REGISTRY, createApi } from '../src/api/index';
 import type { Api, RunEventFeed, UiEvent } from '../src/api/index';
-import type { AppDeps, Notifier, PermissionBoard, TransportResolver } from '../src/application/index';
+import type { ActiveWork, AppDeps, Notifier, PermissionBoard, TransportResolver } from '../src/application/index';
 import {
+  activeWork,
   advancePhases,
   applyLimitDecision,
+  cancelActiveRuns,
   composeRunPrompt,
   createDocketTools,
   createPermissionBoard,
@@ -45,6 +46,7 @@ import type { CipherFns, NodeDeps } from '../src/infrastructure/index';
 import {
   BUILTIN_PROVIDER_DEFS,
   builtinProviderMarks,
+  configureProcessMirrorDir,
   createDesignUpdateChecker,
   createMcpEndpoint,
   createNodeDeps,
@@ -52,11 +54,15 @@ import {
   createLoginStates,
   createPathDiscovery,
   createProviderTransportFactory,
+  processRegistry,
   pruneStaleRunDirs,
+  reapOrphanedChildren,
+  registeredSpawn,
   startMcpListener,
 } from '../src/infrastructure/index';
 import type { McpListener } from '../src/infrastructure/index';
 import { createPageViewTrace } from '../src/infrastructure/index';
+import { DEFAULT_LOCALE, type Locale } from '../src/presentation/labels/t';
 import { createDevBridge, devBridgeEnabled } from './dev-bridge';
 import {
   PAGE_VIEW_CHANNEL,
@@ -64,6 +70,13 @@ import {
   createElectronPageView,
   registerPageSchemeWithElectron,
 } from './page-view';
+import {
+  QUIT_CONFIRM_ENV,
+  formatQuitDialog,
+  managedQuit,
+  quitConfirmAutoAnswer,
+} from './quit-flow';
+import { createQuitPrompt } from './quit-prompt';
 import {
   WINDOW_MIN_HEIGHT,
   WINDOW_MIN_WIDTH,
@@ -143,6 +156,10 @@ let node: NodeDeps | undefined;
 let dispatchTimer: NodeJS.Timeout | undefined;
 let quotaLifecycle: { stop(): void } | undefined;
 let mcpListener: McpListener | undefined;
+let currentBoard: PermissionBoard | undefined;
+let currentApi: (Api & RunEventFeed & { readonly quitRequested: (runs: readonly string[], chats: readonly string[]) => void }) | undefined;
+let quitting = false;
+let shutdownInProgress = false;
 
 /** One discovery pass produces the binPaths the transport factory routes by. */
 const buildTransportFactory = (
@@ -153,7 +170,7 @@ const buildTransportFactory = (
   const binPaths: Record<string, string | null> = {};
   return createPathDiscovery(
     BUILTIN_PROVIDER_DEFS,
-    (command, args, options) => spawn(command, [...args], options),
+    (command, args, options) => registeredSpawn(command, [...args], options, { kind: 'probe', label: `discovery ${command}` }),
     env,
     homedir(),
     { loginStates },
@@ -408,9 +425,11 @@ const startApp = async (): Promise<void> => {
   // The one storage seam, read before composition: setting the variable moves the whole root,
   // and the unset default stays the documented <homedir>/.docket.
   const dataDir = process.env.DOCKET_DATA_DIR ?? join(homedir(), '.docket');
+  configureProcessMirrorDir(dataDir);
+  void reapOrphanedChildren({ dataDir }).catch((error) => console.error('orphan reaper failed', error));
   const discovery = createPathDiscovery(
     BUILTIN_PROVIDER_DEFS,
-    (command, args, options) => spawn(command, [...args], options),
+    (command, args, options) => registeredSpawn(command, [...args], options, { kind: 'probe', label: `discovery ${command}` }),
     env,
     homedir(),
     { loginStates },
@@ -461,6 +480,7 @@ const startApp = async (): Promise<void> => {
   }).catch(() => undefined);
 
   const board = createPermissionBoard();
+  currentBoard = board;
   // The app's update story in one seam: the no-op checker is the default (no updater ships
   // yet), and a DOCKET_UPDATE_FAKE version string swaps in the scripted checker the design seed
   // reviews with. This line is production's only read of the variable.
@@ -477,7 +497,8 @@ const startApp = async (): Promise<void> => {
     runner: node.chatRunner,
     apply: node.docketToolExtras.applyAction,
     undo: createActionUndoer(nodeDeps),
-  });
+  }, { ack: () => quitPrompt.ack(), answer: (accept) => quitPrompt.answer(accept) });
+  currentApi = api;
   const quotaProbes = node.quota.probes; // read here: `node` is not narrowed inside the tick closure
 
   // The dev bridge (test launches only): it exists when the flag is set, the app is not packaged
@@ -577,6 +598,135 @@ app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
 
+const resolveActiveLocale = async (win?: BrowserWindow): Promise<Locale> => {
+  if (win !== undefined && !win.isDestroyed()) {
+    try {
+      const stored = await win.webContents.executeJavaScript("localStorage.getItem('docket.locale')");
+      if (stored === 'en' || stored === 'tr') return stored;
+    } catch {
+      // Best-effort read: a window still loading or destroyed falls back to app locale.
+    }
+  }
+  const appLocale = app.getLocale?.();
+  if (typeof appLocale === 'string' && appLocale.toLowerCase().startsWith('en')) {
+    return 'en';
+  }
+  return DEFAULT_LOCALE;
+};
+
+/** The native confirmation: the fallback when the window cannot show the in-app modal (U-297). */
+const askQuitNatively = async (work: ActiveWork): Promise<boolean> => {
+  const win = BrowserWindow.getFocusedWindow() ?? [...windows].find((w) => !w.isDestroyed());
+  const locale = await resolveActiveLocale(win);
+  const dialogContent = formatQuitDialog(work, locale);
+
+  const options = {
+    type: 'question' as const,
+    buttons: [dialogContent.cancelLabel, dialogContent.stopLabel],
+    defaultId: 0,
+    cancelId: 0,
+    title: dialogContent.title,
+    message: dialogContent.message,
+    detail: dialogContent.detail,
+    noLink: true,
+  };
+
+  const choice = win !== undefined && !win.isDestroyed()
+    ? await dialog.showMessageBox(win, options)
+    : await dialog.showMessageBox(options);
+
+  return choice.response === 1;
+};
+
+/** A main window for the quit modal: the open one, or a fresh one when every window is closed.
+ *  Shown and focused (a quiet test build maps it inactive instead), then given a bounded moment to
+ *  finish loading so the renderer's listener exists when the request arrives (U-294). */
+const ensureQuitWindow = async (): Promise<void> => {
+  let win = mainWindow !== undefined && !mainWindow.isDestroyed() ? mainWindow : [...windows].find((w) => !w.isDestroyed());
+  if (win === undefined) win = createWindow();
+  if (quietWindowOptions(process.env, app.isPackaged) === undefined) {
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+    app.focus({ steal: true });
+  }
+  const contents = win.webContents;
+  if (contents.isLoading()) {
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, 5_000);
+      contents.once('did-finish-load', () => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+  }
+};
+
+const quitPrompt = createQuitPrompt({
+  ensureWindow: ensureQuitWindow,
+  request: (runs, chats) => currentApi?.quitRequested(runs, chats),
+  nativeAsk: askQuitNatively,
+  delay: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+});
+
+const askQuitConfirmation = async (work: ActiveWork): Promise<boolean> => {
+  const answer = quitConfirmAutoAnswer({
+    value: process.env[QUIT_CONFIRM_ENV],
+    isPackaged: app.isPackaged,
+    dataDir: process.env.DOCKET_DATA_DIR,
+    docketHome: join(homedir(), '.docket'),
+  });
+  // The harness answer comes before any UI: no window is created, no modal is shown.
+  if (answer === 'accept') return true;
+  if (answer === 'cancel') return false;
+  return quitPrompt.ask(work);
+};
+
+app.on('before-quit', (event) => {
+  if (quitting) return;
+  event.preventDefault();
+  if (shutdownInProgress) {
+    // A second quit request while the prompt is open only brings it back to the front.
+    if (quitPrompt.open()) void quitPrompt.ask({ runs: [], chats: [] });
+    return;
+  }
+  shutdownInProgress = true;
+
+  void managedQuit({
+    work: async () => {
+      if (deps === undefined || node === undefined) return { runs: [], chats: [] };
+      return activeWork(deps, node.chatRunner);
+    },
+    ask: askQuitConfirmation,
+    registry: processRegistry,
+    cancelRuns: async () => {
+      if (deps !== undefined) {
+        await cancelActiveRuns(deps, currentBoard, () => {
+          currentApi?.workOrdersChanged();
+        });
+      }
+    },
+    quit: () => {
+      quitting = true;
+      app.quit();
+    },
+    now: () => Date.now(),
+    delay: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    log: (msg) => console.error(msg),
+  })
+    .then(() => {
+      if (!quitting) {
+        shutdownInProgress = false;
+      }
+    })
+    .catch((error) => {
+      console.error('managed quit failed', error);
+      if (!quitting) {
+        shutdownInProgress = false;
+      }
+    });
+});
+
 app.on('will-quit', (event) => {
   if (mcpListener !== undefined) {
     // The socket file goes away before the app does; will-quit fires again after app.quit().
@@ -589,4 +739,12 @@ app.on('will-quit', (event) => {
   quotaLifecycle?.stop();
   if (dispatchTimer !== undefined) clearInterval(dispatchTimer);
   node?.close();
+});
+
+app.on('quit', () => {
+  processRegistry.killAllSync();
+});
+
+process.on('exit', () => {
+  processRegistry.killAllSync();
 });

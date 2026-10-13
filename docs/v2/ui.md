@@ -1666,6 +1666,36 @@ stays on the screen below the header's meta line.
   issue's clause does not authorise; the failing number is pinned by the test so the fix must
   come through it.
 
+## Kurulum bekliyor (U-262 … U-263)
+
+Added 2026-10-12, #1028. A discovered account whose adoption needs a token — its `envOverrides`
+holds `token` — is never adopted half-set-up: until its access key is moved to the keychain the
+row is inert. This amends U-34: the key-move card no longer waits for a selection, the row's own
+status word while the switch is off is no longer "Anahtar gerekli", and U-34's "while off the row
+reads 'Anahtar gerekli' and `account.adopt` is sent without `importToken`" is superseded. The
+gate of U-35/U-42 (at least one ready account selected) stands; a pending row simply cannot be
+that account.
+
+- **U-262** Such a row reads "Kurulum bekliyor" (en "Setup pending") with the one-line reason
+  "Erişim anahtarı anahtar zincirine taşınmadı", is not selectable — neither in the wizard's
+  Hesaplar nor under Settings → Hesaplar → Eklenmemiş — and shows the key-move card before any
+  selection; its "Ekle" does nothing. Once the switch is on the row reads "Hazır" and becomes
+  selectable; turning the switch back off returns it to "Kurulum bekliyor" and drops it from the
+  selection. The moved standing is a fact about the key: it survives re-selecting the row.
+- **U-263** The wizard's finish adopts no selected row that can no longer be adopted into a
+  working account — one that is unreadable, or whose key is still not moved: a rescan that breaks
+  the row drops it from the selection, and the finish's own account list skips it in depth, so no
+  `account.adopt` is sent for it and the drafts phase writes nothing for it either.
+
+## Hesaplar scan deduplication (U-260 … U-261)
+
+Added 2026-10-12, #1027.
+
+- **U-260** Opening the wizard's Hesaplar step with an account scan already in flight starts no
+  second read: concurrent reads coalesce behind the in-flight scan.
+- **U-261** An `accounts.changed` event caused by this wizard does not show the scanning skeleton
+  again: background re-reads update without re-entering `loading`.
+
 ## Project setup permission prompt (U-272 … U-279)
 
 Added 2026-10-12 (#1007, implementing D-8). Implemented in #1023. When Docket AI requests an out-of-scope path during project setup via `docket_read_path`, the user is prompted with a native-style permission dialog. Out-of-scope permission grants are strictly session-only and read-only. Secret-shaped paths bypass the prompt and are refused automatically.
@@ -1743,3 +1773,19 @@ export interface QuitConfirmViewModel {
 - **U-293** (archive replacement and dependency disablement; added 2026-10-12, #1008, implemented in #1026) On definition rows that have been referenced in past work orders, "Arşivle" (en: "Archive") replaces "Sil" (en: "Delete") per domain R-134 (see #1003), and any Sil or Arşivle action is disabled whenever running work or active dependants exist, displaying the blocking dependants explicitly (e.g. "Bu rol 2 aşamada kullanılıyor: …" / "Çalışan iş var: …", en: "This role is used in 2 stages: …" / "Active work in progress: …") (D-6).
 - **U-294** (quit confirmation trigger conditions; added 2026-10-12, #1008, implemented in #999) When an application quit intent occurs (Cmd+Q, app menu, Dock), the quit confirmation dialog is suppressed and the application exits immediately if no user-visible work (no active runs or chat turns) is in progress, background probes alone never trigger a dialog, and closing the last window does not raise the quit confirmation (D-9, #999).
 - **U-295** (quit confirmation dialog copy and list; added 2026-10-12, #1008, implemented in #999) When active user-visible work exists upon quitting, the confirmation dialog displays title "Docket kapatılsın mı?" (en: "Quit Docket?"), body "{n} iş çalışıyor. Kapatırsan şunlar durdurulur:" (en: "{n} jobs are running. Quitting stops:"), a list showing up to 5 running work-order or chat titles followed by "+ N tane daha" (en: "+ N more") when more exist, note "Durdurulan koşular iptal edilir, sonra devam ettirilebilir." (en: "Stopped runs are cancelled and can be continued later."), and buttons "Vazgeç" (en: "Cancel", default, focused, Esc) and "Kapat ve durdur" (en: "Quit and stop") (D-9, #999).
+- **U-297** (added 2026-10-13, #999) If the renderer does not acknowledge the quit modal within 2 s, the native dialog takes over and settles the quit, while late acknowledgements or modal answers are ignored and a failing window setup also ends in the native dialog (D-9).
+
+### Project-menu export/import (added 2026-10-13, #1046; implements A-342)
+
+- **U-296** (project-menu export/import entry; added 2026-10-13, #1046, implemented in #1010) The project menu offers "Dışa aktar" (en: "Export") and "İçe aktar" (en: "Import"), and each opens a confirm dialog naming the target path before anything runs — Export: "Paket şuraya yazılacak: {path}" (en: "The bundle will be written to: {path}") naming the `~/.docket/exports/` folder, with "Dışa aktar" (en: "Export") and "Vazgeç" (en: "Cancel"); Import: after the file picker, "Şu dosya içe aktarılacak: {path}" (en: "This file will be imported: {path}") naming the picked `.docket-bundle.json` file, with the same button pair; a finished export shows the written file's absolute path, and every string lives in both label bundles, never inline in a component.
+
+## Typed meter failure and empty state reasons (U-264 … U-265)
+
+Added 2026-10-12, #1029; amends U-44.
+- **U-264** A failed quota read shows its typed reason (`meterList.failed.needsKey`, `meterList.failed.network`, `meterList.failed.rejected`), never the no-meter line. The typed failure reason outranks the presence of a usage source.
+- **U-265** The no-meter line (`meterList.noMeter`) is shown only when the provider has no usage source; an account whose usage source has not yet been read says so (`meterList.notRead`).
+## Account Usage tab states (U-266 … U-267)
+
+Added 2026-10-12, #1030; amends U-44.
+- **U-266** While a refresh runs, Yenile is disabled, previous bars remain visible under a subtle busy state if there are any, and the skeleton shows after 150 ms (U-26) when there are no bars; the no-usage message is not rendered.
+- **U-267** A failed refresh shows the reason and "Tekrar dene"; a retry re-enters the loading state.

@@ -3,13 +3,12 @@
 // (or resume), one turn per prompt, approval requests answered by the user, account rate limits
 // read at start-up and pushed as updates. Contract: docs/v2/providers.md → "Codex app-server
 // transport (P-12 … P-14)".
-import { spawn } from 'node:child_process';
 import { accessSync } from 'node:fs';
 import { StringDecoder } from 'node:string_decoder';
 import type { AgentTransport, RunHandle, RunRequest, TransportError } from '../../../../application/index';
 import type { AgentEvent, Result } from '../../../../domain/index';
 import { err, ok } from '../../../../domain/index';
-import { createSystemClock } from '../../../system/index';
+import { createSystemClock, registeredSpawn } from '../../../system/index';
 import { providerLevelOf, type ProviderDef } from '../../defs/index';
 import { buildChildEnv, writeRunConfig, type RunCapability } from '../../launch/index';
 import { mcpConfigOverrideArgs } from './config-overrides';
@@ -163,13 +162,21 @@ export function createAppServerTransport(def: ProviderDef): AgentTransport {
       // A definition that redirects no config directory has nowhere to put the run's MCP files, so
       // they travel as the CLI's own per-run overrides.
       const overrideArgs = def.config.mechanism === 'none' ? mcpConfigOverrideArgs(runConfig.mcpServers) : [];
-      const child = spawn(bin, [...launch.args, ...runConfig.args, ...overrideArgs], {
-        cwd: request.cwd,
-        env,
-        // Own process group on POSIX, so a stop can address the whole tree with one signal.
-        detached: process.platform !== 'win32',
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
+      // The registry's graceful stop lands here once the finish path below exists: a managed quit
+      // ends this run `cancelled` through the same event the handle's own stop() pushes.
+      let stopRun: () => void = () => undefined;
+      const child = registeredSpawn(
+        bin,
+        [...launch.args, ...runConfig.args, ...overrideArgs],
+        {
+          cwd: request.cwd,
+          env,
+          // Own process group on POSIX, so a stop can address the whole tree with one signal.
+          detached: process.platform !== 'win32',
+          stdio: ['pipe', 'pipe', 'pipe'],
+        },
+        { kind: 'agent', label: `${def.id} run ${request.runId}`, stop: () => stopRun() },
+      );
       if (child.stdout === null || child.stdin === null || child.stderr === null) {
         child.kill();
         return err({ code: 'spawn_failed', message: `provider ${def.id} could not be started with pipes` });
@@ -219,6 +226,21 @@ export function createAppServerTransport(def: ProviderDef): AgentTransport {
 
       const failRun = (): void => {
         finishWith({ type: 'finished', at: clock.now(), reason: 'failed' });
+      };
+
+      // The registry's graceful stop: the same denial and interrupt the handle's own stop() sends,
+      // minus the close await a quit cannot wait on.
+      stopRun = (): void => {
+        for (const [askId, entry] of [...pendingAsks]) {
+          pendingAsks.delete(askId);
+          sendResponse(entry.rawId, entry.ask.response('deny'));
+        }
+        if (threadId !== undefined && activeTurnId !== undefined && !connectionClosed) {
+          void requestRpc('turn/interrupt', { threadId, turnId: activeTurnId }).catch(() => {
+            // Teardown races the reply; the kill below settles the connection either way.
+          });
+        }
+        finishWith({ type: 'finished', at: clock.now(), reason: 'cancelled' });
       };
 
       const settlePending = (message: string): void => {

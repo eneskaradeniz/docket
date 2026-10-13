@@ -4,11 +4,12 @@
 // parameters — but runs no turn and sends no prompt, so it maps no session/update; an agent
 // request is answered method-not-found exactly as the transport answers one, so no agent is ever
 // left waiting. Contract: docs/v2/providers.md → "ACP transport (P-15 … P-17)".
-import { spawn as nodeSpawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 
 import type { Result } from '../../../../domain/index';
 import { err, ok } from '../../../../domain/index';
+
+import { registeredSpawn } from '../../../system/index';
 
 /** The protocol version and the client identity every ACP caller shares — the run transport
  * included, so an agent never sees two different Dockets. */
@@ -84,7 +85,12 @@ interface Pending {
 }
 
 export function openAcpConnection(config: AcpConnectionConfig): Result<AcpConnection, AcpConnectionError> {
-  const runSpawn = config.spawn ?? nodeSpawn;
+  // The production default registers the child (a login probe, a model listing); an injected
+  // spawn in tests stays unregistered and hermetic.
+  const runSpawn: AcpSpawn =
+    config.spawn ??
+    ((command, args, options) =>
+      registeredSpawn(command, args, { ...(options.env === undefined ? {} : { env: { ...options.env } }) }, { kind: 'probe', label: command }));
   let child: ChildProcess;
   try {
     child = runSpawn(config.command, [...config.args], {

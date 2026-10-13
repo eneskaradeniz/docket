@@ -12,6 +12,8 @@ const VARIANT_CLASS: Readonly<Record<ButtonVariant, string>> = {
   ghost: 'border-transparent bg-transparent text-inkdim hover:text-ink',
 };
 
+const DANGER_PRIMARY_CLASS = 'border-error bg-error text-bg font-semibold hover:brightness-110';
+
 const SIZE_CLASS: Readonly<Record<ButtonSize, string>> = {
   sm: 'h-[1.75rem] px-[0.625rem] text-[0.78125rem]',
   md: 'h-[2rem] px-[0.875rem] text-[0.84375rem] font-semibold',
@@ -49,6 +51,11 @@ export interface ActionButtonProps {
   readonly ariaBusy?: boolean;
   /** The accessible name of an icon-only ghost, where the glyph is hidden from the name. */
   readonly ariaLabel?: string;
+  /** A primary whose action stops or deletes work: the same fill in the error colour. Still the
+   *  primary tier (U-216) — a colour, not a fourth variant. */
+  readonly danger?: boolean;
+  /** Takes focus when it mounts: a dialog's default answer. */
+  readonly autoFocus?: boolean;
   readonly children: ReactNode;
 }
 
@@ -62,12 +69,16 @@ export function ActionButton({
   ariaControls,
   ariaBusy,
   ariaLabel,
+  danger = false,
+  autoFocus = false,
   children,
 }: ActionButtonProps) {
   const look: ButtonVariant = variant === 'ghost' && !iconOnly(children) ? 'neutral' : variant;
+  const fill = look === 'primary' && danger ? DANGER_PRIMARY_CLASS : VARIANT_CLASS[look];
   return (
     <button
       type="button"
+      autoFocus={autoFocus}
       disabled={disabled}
       onClick={onClick}
       title={title}
@@ -75,7 +86,7 @@ export function ActionButton({
       aria-expanded={ariaExpanded}
       aria-controls={ariaControls}
       aria-busy={ariaBusy === true ? true : undefined}
-      className={`inline-flex items-center justify-center gap-1.5 rounded-control border transition-[filter,background-color,color] duration-100 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-45 ${VARIANT_CLASS[look]} ${SIZE_CLASS[size]}`}
+      className={`inline-flex items-center justify-center gap-1.5 rounded-control border transition-[filter,background-color,color] duration-100 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-45 ${fill} ${SIZE_CLASS[size]}`}
     >
       {children}
     </button>

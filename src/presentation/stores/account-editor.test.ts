@@ -24,6 +24,7 @@ import {
   roleChipTarget,
   rolesOfAccount,
   usageView,
+  accountUsageStanding,
 } from './account-editor';
 import { CLOSED_SETTINGS_PANEL, settingsPanelReducer } from './settings-panel';
 
@@ -347,3 +348,69 @@ describe('Genel and the diff wording (U-29, U-30)', () => {
     expect(accountStatusTone('noData')).toBe('dim');
   });
 });
+
+describe('Account editor Usage refresh states (U-266, U-267)', () => {
+  it('U-266: while a refresh runs, standing is loading; the no-usage message is not rendered', async () => {
+    // 1. accountUsageStanding reports loading: true while refreshing
+    const standing = accountUsageStanding(ACCOUNT, true, null);
+    expect(standing.loading).toBe(true);
+
+    // 2. store.refreshQuota sets refreshing: true while running
+    let resolveCommand!: (outcome: { result: CommandResult; labelKey: 'success.account.save' }) => void;
+    const commandPromise = new Promise<{ result: CommandResult; labelKey: 'success.account.save' }>((res) => {
+      resolveCommand = res;
+    });
+    const store = createAccountEditorStore({
+      run: async () => commandPromise,
+      now: () => 1000,
+    });
+
+    const refreshPromise = store.refreshQuota(ACCOUNT);
+    expect(store.state().refreshing).toBe(true);
+    expect(store.state().refreshFailure).toBeNull();
+
+    // Calling refreshQuota again while already refreshing is a no-op
+    await store.refreshQuota(ACCOUNT);
+    expect(store.state().refreshing).toBe(true);
+
+    resolveCommand({ result: { ok: true }, labelKey: 'success.account.save' });
+    await refreshPromise;
+    expect(store.state().refreshing).toBe(false);
+    expect(store.state().refreshFailure).toBeNull();
+  });
+
+  it('U-267: a failed refresh shows the reason and "Tekrar dene"; a retry re-enters the loading state', async () => {
+    // 1. accountUsageStanding reports failed and failure code
+    const failedStanding = accountUsageStanding(ACCOUNT, false, 'network');
+    expect(failedStanding.failed).toBe(true);
+    expect(failedStanding.failure).toBe('network');
+
+    let commandOk = false;
+    let commandCode: 'network' | 'auth' = 'network';
+    const store = createAccountEditorStore({
+      run: async () => ({
+        result: commandOk ? { ok: true } : { ok: false, code: commandCode },
+        labelKey: commandOk ? 'success.account.save' : 'error.unknown',
+      }),
+      now: () => 1000,
+    });
+
+    // Run failing refresh
+    await store.refreshQuota(ACCOUNT);
+    expect(store.state().refreshing).toBe(false);
+    expect(store.state().refreshFailure).toBe('network');
+    expect(store.state().failure?.row).toBe('usage');
+
+    // Run auth failure -> maps to 'rejected'
+    commandCode = 'auth';
+    await store.refreshQuota(ACCOUNT);
+    expect(store.state().refreshFailure).toBe('rejected');
+
+    // Retrying with success re-enters loading and clears failure
+    commandOk = true;
+    await store.refreshQuota(ACCOUNT);
+    expect(store.state().refreshing).toBe(false);
+    expect(store.state().refreshFailure).toBeNull();
+  });
+});
+

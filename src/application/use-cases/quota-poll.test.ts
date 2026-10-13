@@ -354,4 +354,16 @@ describe('pollQuota', () => {
       { accountId: ACCOUNT, identityDir: null },
     ]);
   });
+
+  it('A-341: a probe error passes through its failure class unchanged and persists nothing', async () => {
+    const deps = createFakeDeps();
+    await deps.accounts.save(accountRecord());
+    const probe = scriptedProbe(err('not_logged_in'));
+
+    const result = await pollQuota(deps, resolverFor('agy', probe), { accountId: ACCOUNT });
+
+    expect(result).toEqual(err('not_logged_in'));
+    expect(await deps.accounts.meters(ACCOUNT)).toEqual([]);
+    expect(await deps.accounts.pools(ACCOUNT)).toEqual([]);
+  });
 });

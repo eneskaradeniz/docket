@@ -2,7 +2,8 @@
 // Asistan sırası → Bütçe, then straight to Anasayfa. A step with nothing to decide is skipped and
 // reads "–" in the rail (Yetenekler while its read has not finished with a candidate, U-58;
 // Asistan sırası under two selected accounts). Every choice is a draft held here: the selection
-// and its key-move switches (U-34), an account's editor draft (U-43), the spend consents (U-32),
+// and its key-move switches (U-34, U-262: a token-needing row is inert until its key is moved),
+// an account's editor draft (U-43), the spend consents (U-32),
 // the Bütçe rows' reserve choice (U-48) and the capability picks (U-59, identities until the
 // finish). Nothing is written before the finish; the finish adopts every selected account, binds
 // every role with the chosen chain and its recommended work style (complete bindings, A-49),
@@ -130,7 +131,6 @@ export interface WizardAccountRow extends CandidateRow {
   /** The provider's display name (A-67); null while discovery does not know it. */
   readonly providerName: string | null;
   readonly existing: boolean;
-  readonly importToken: boolean;
 }
 
 export interface OrderEntry {
@@ -533,9 +533,9 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
           importToken: false,
         };
       }
-      const [row] = candidateRows([entry.fact], selection.includes(entry.key) ? entry.key : null, importTokens.has(entry.key), providerFacts);
+      const [row] = candidateRows([entry.fact], selection.includes(entry.key) ? entry.key : null, importTokens, providerFacts);
       if (row === undefined) throw new Error('a listed candidate has no row');
-      return { ...row, label: entry.settings.label, providerName: nameOf(entry.base.provider), existing: false, importToken: importTokens.has(entry.key) };
+      return { ...row, label: entry.settings.label, providerName: nameOf(entry.base.provider), existing: false };
     });
 
   const selectedEntries = (): readonly Entry[] => selection.map(entryOf).filter((entry): entry is Entry => entry !== undefined);
@@ -792,9 +792,13 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
     await Promise.all(wanted.map(readQuota));
   };
 
-  const read = async (refresh: boolean): Promise<void> => {
-    loading = true;
-    publish();
+  let inFlight: Promise<void> | null = null;
+
+  const runRead = async (refresh: boolean, showLoading: boolean): Promise<void> => {
+    if (showLoading) {
+      loading = true;
+      publish();
+    }
     const candidateQuery: Query = refresh ? { type: 'accounts.candidates', fresh: true } : { type: 'accounts.candidates' };
     const [candidateReply, providerReply, accountsReply] = await Promise.all([
       api.query(candidateQuery),
@@ -807,20 +811,34 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
     if (!loaded) {
       // Accounts added earlier start chosen, and so does every ready candidate (U-42): a re-run of
       // the wizard is never stuck behind an empty selection. A candidate whose token overrides its
-      // login waits for the user's key-move decision, so it is not chosen for them.
-      const ready = candidateRows(facts, null, false, providerFacts)
+      // login reads "Kurulum bekliyor" until its key is moved (U-262), so it is not chosen for
+      // them — the first read holds no moved key yet.
+      const ready = candidateRows(facts, null, importTokens, providerFacts)
         .filter((row) => row.statusKey === 'candidates.status.ready' && row.selectable)
-        .filter((row) => facts.find((fact) => fact.sourcePath === row.id)?.envOverrides.includes('token') !== true)
         .map((row) => row.id);
       selection = [...selection, ...[...existing.map((view) => view.id), ...ready].filter((id) => !selection.includes(id))];
       loaded = true;
     }
-    // A choice that is no longer listed (added elsewhere, vanished on rescan) falls away.
+    // A choice that is no longer listed (added elsewhere, vanished on rescan) falls away, and so
+    // does one whose row can no longer be adopted — unreadable on a rescan (U-263).
     const listed = new Set(entries().map((entry) => entry.key));
-    selection = selection.filter((key) => listed.has(key));
+    const adoptable = new Set(rowsOf().filter((row) => row.selectable).map((row) => row.id));
+    selection = selection.filter((key) => listed.has(key) && adoptable.has(key));
     for (const key of [...quotas.keys()]) if (!listed.has(key)) quotas.delete(key);
-    loading = false;
+    if (showLoading) {
+      loading = false;
+    }
     publish();
+  };
+
+  /** One scan at a time: a plain ask while one runs joins it; a fresh ask waits for it, then runs (U-260). */
+  const read = (refresh: boolean, showLoading = true): Promise<void> => {
+    if (inFlight !== null) return refresh ? inFlight.then(() => read(true, showLoading)) : inFlight;
+    const current = runRead(refresh, showLoading).finally(() => {
+      inFlight = null;
+    });
+    inFlight = current;
+    return current;
   };
 
   const open = async (): Promise<void> => {
@@ -846,11 +864,12 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
   // `accounts.changed` — an adoption, a removal or a quota poll elsewhere: the lists the wizard
   // shows are read again, and a candidate's quota with them. A finish in flight, stopped on its
   // failed line or handing off owns the window: a re-read there could drop an already-adopted
-  // candidate out of the selection under the retry that must resume from it (U-49).
+  // candidate out of the selection under the retry that must resume from it (U-49). Background
+  // updates do not re-enter loading (U-261).
   deps.changes?.((change) => {
-    if (change.type !== 'accounts.changed' || !visible || !loaded || loading || finishing || finishPhase !== null || finished !== null) return;
+    if (change.type !== 'accounts.changed' || !visible || !loaded || finishing || finishPhase !== null || finished !== null) return;
     void (async () => {
-      await read(false);
+      await read(false, false);
       quotas.clear();
       if (step === 'budget' || editorWork !== null) await ensureQuotas();
       // The adopted set changed: Yetenekler's answer changes with it (U-58).
@@ -890,8 +909,11 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
     const capChosen = capsFacts.filter((fact) => !fact.imported && capabilityPicks.has(fact.identity)).map((fact) => fact.identity);
     // Every chosen entry's account id, read without writing anything: a stored account is its
     // own id, an adopted one comes from the run's memo. The accounts phase adopts only what is
-    // still missing — a retry can never produce a second copy of an account.
-    const chosen = entries().filter((candidate) => selection.includes(candidate.key));
+    // still missing — a retry can never produce a second copy of an account. Defence in depth
+    // (U-263): a selected row that cannot be adopted into a working account — unreadable, or its
+    // key still not moved — is skipped everywhere: the adoption, the chain and the drafts.
+    const adoptableKeys = new Set(rowsOf().filter((row) => row.selected && row.selectable).map((row) => row.id));
+    const chosen = entries().filter((candidate) => selection.includes(candidate.key) && adoptableKeys.has(candidate.key));
     const ids = new Map<string, string>();
     for (const entry of chosen) {
       if (entry.fact === null) ids.set(entry.key, entry.key);
@@ -994,7 +1016,7 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
         return;
       }
       const stored = isAccountsView(accountsReply) ? accountsReply.accounts.filter(isAccountView) : [];
-      for (const entry of selectedEntries()) {
+      for (const entry of chosen) {
         const id = ids.get(entry.key);
         const real = stored.find((view) => view.id === id);
         if (real === undefined) {
@@ -1100,8 +1122,6 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
       if (row === undefined || !row.selectable) return;
       if (selection.includes(key)) {
         selection = selection.filter((entry) => entry !== key);
-        // A fresh selection starts with the key-move switch off (U-34).
-        importTokens.delete(key);
       } else {
         selection = [...selection, key];
       }
@@ -1109,7 +1129,11 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
     },
     setImportToken: (key, on) => {
       if (on) importTokens.add(key);
-      else importTokens.delete(key);
+      else {
+        importTokens.delete(key);
+        // A row back to "Kurulum bekliyor" cannot stand selected (U-262).
+        selection = selection.filter((entry) => entry !== key);
+      }
       publish();
     },
     rescan: async () => {

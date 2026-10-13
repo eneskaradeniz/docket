@@ -1,6 +1,6 @@
 // Gate command execution: exactly the configured environment, own process group, bounded output tail.
-import { spawn } from 'node:child_process';
 import type { CommandRunner } from '../../application/index';
+import { registeredSpawn } from '../system/index';
 import { redactSecrets } from './secret-patterns';
 
 export interface CommandRunnerConfig {
@@ -64,12 +64,12 @@ export function createCommandRunner(config: CommandRunnerConfig): CommandRunner 
         const envValues = [...Object.values(config.env), ...Object.values(callEnv ?? {})];
         // detached: the child leads its own process group, so a timeout can signal the whole
         // tree (a gate command may spawn children of its own) rather than only the shell.
-        const child = spawn(file, args, {
+        const child = registeredSpawn(file, args, {
           cwd,
           env,
           detached: true,
           stdio: ['ignore', 'pipe', 'pipe'],
-        });
+        }, { kind: 'gate', label: `gate ${cwd}` });
 
         const chunks: Buffer[] = [];
         let settled = false;
@@ -88,7 +88,7 @@ export function createCommandRunner(config: CommandRunnerConfig): CommandRunner 
           try {
             if (isWindows) {
               // cmd.exe has no group signals; taskkill /T walks the process tree instead.
-              spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+              registeredSpawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' }, { kind: 'gate', label: 'taskkill' });
             } else {
               process.kill(-child.pid, signal); // negative pid = the whole group
             }
@@ -117,8 +117,8 @@ export function createCommandRunner(config: CommandRunnerConfig): CommandRunner 
         const onOutput = (chunk: Buffer): void => {
           chunks.push(chunk);
         };
-        child.stdout.on('data', onOutput);
-        child.stderr.on('data', onOutput);
+        child.stdout?.on('data', onOutput);
+        child.stderr?.on('data', onOutput);
         child.on('error', (error: NodeJS.ErrnoException) => {
           spawnErrorCode = error.code ?? 'unknown';
           settle();

@@ -153,8 +153,17 @@ describe('adoptAccountCandidate', () => {
     expect(result).toEqual({ ok: false, error: 'already_added' });
   });
 
-  it('P-33: adopts a compatible-endpoint candidate without a secret: https endpoint, a secretRef, empty vault', async () => {
+  it('A-323: a token-needing candidate without importToken is refused — no record, no empty secretRef', async () => {
     const h = makeHarness();
+    const result = await adoptAccountCandidate(h.deps, { sourcePath: ENDPOINT.sourcePath, label: 'GLM', actor: USER });
+    expect(result).toEqual({ ok: false, error: 'token_move_required' });
+    expect(await h.deps.accounts.list()).toEqual([]);
+    expect(h.log.entries()).toEqual([]);
+    expect(h.reads).toEqual([]);
+  });
+
+  it('P-33: adopts a compatible-endpoint candidate whose key is not an env override without a secret: https endpoint, a secretRef, empty vault', async () => {
+    const h = makeHarness([{ ...ENDPOINT, envOverrides: ['endpoint'] }]);
     const result = await adoptAccountCandidate(h.deps, { sourcePath: ENDPOINT.sourcePath, label: 'GLM', actor: USER });
     if (!result.ok) throw new Error('adoption must succeed');
     const record = await h.deps.accounts.get(result.value);
@@ -172,7 +181,7 @@ describe('adoptAccountCandidate', () => {
 
   it('stores the candidate endpointUrl verbatim, so a configured path survives adoption', async () => {
     const h = makeHarness([{ ...ENDPOINT, endpointUrl: 'https://api.example.test/api/anthropic' }]);
-    const result = await adoptAccountCandidate(h.deps, { sourcePath: ENDPOINT.sourcePath, label: 'GLM', actor: USER });
+    const result = await adoptAccountCandidate(h.deps, { sourcePath: ENDPOINT.sourcePath, label: 'GLM', importToken: true, actor: USER });
     if (!result.ok) throw new Error('adoption must succeed');
     const record = await h.deps.accounts.get(result.value);
     expect(record?.endpoint).toBe('https://api.example.test/api/anthropic');
@@ -198,7 +207,7 @@ describe('adoptAccountCandidate', () => {
     const h = makeHarness([SUBSCRIPTION, ENDPOINT, MACHINE]);
     await h.deps.candidates.get();
     const first = await adoptAccountCandidate(h.deps, { sourcePath: SUBSCRIPTION.sourcePath, label: 'A', actor: USER });
-    const second = await adoptAccountCandidate(h.deps, { sourcePath: ENDPOINT.sourcePath, label: 'B', actor: USER });
+    const second = await adoptAccountCandidate(h.deps, { sourcePath: ENDPOINT.sourcePath, label: 'B', importToken: true, actor: USER });
     const third = await adoptAccountCandidate(h.deps, { sourcePath: MACHINE.sourcePath, label: 'C', actor: USER });
     expect([first.ok, second.ok, third.ok]).toEqual([true, true, true]);
     expect(h.scans.count).toBe(1);
@@ -212,7 +221,7 @@ describe('adoptAccountCandidate', () => {
     expect(adopted.ok).toBe(true);
     expect(h.scans.count).toBe(2);
     // The new scan is remembered: the next adoption inside the window adds none.
-    const again = await adoptAccountCandidate(h.deps, { sourcePath: ENDPOINT.sourcePath, label: 'B', actor: USER });
+    const again = await adoptAccountCandidate(h.deps, { sourcePath: ENDPOINT.sourcePath, label: 'B', importToken: true, actor: USER });
     expect(again.ok).toBe(true);
     expect(h.scans.count).toBe(2);
   });
@@ -378,7 +387,7 @@ describe('createAccountCandidateList', () => {
     expect(h.scans.count).toBe(2);
     // The fresh result is the remembered one: a plain read and an adoption add no scan.
     await list.get();
-    const adopted = await adoptAccountCandidate(h.deps, { sourcePath: ENDPOINT.sourcePath, label: 'B', actor: USER });
+    const adopted = await adoptAccountCandidate(h.deps, { sourcePath: ENDPOINT.sourcePath, label: 'B', importToken: true, actor: USER });
     expect(adopted.ok).toBe(true);
     expect(h.scans.count).toBe(2);
   });

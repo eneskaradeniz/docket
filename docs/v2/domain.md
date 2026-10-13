@@ -42,6 +42,8 @@ This keeps Phase 1 issues independent and conflict-free.
 | `redaction` | — |
 | `scenarios` | every module above — **test files only**, no production code, no `index.ts` |
 
+Row amendment (added 2026-10-13, #1046): `definitions` may import from `shared`, `budget`, **and `quota`** — `RepoFlow`'s `StageBinding` (§2 addendum) references `AccountRoute` and `LimitPolicy`, and `quota → definitions` would be the cycle those types close. `LimitPolicy` and `AccountRoute` stay in `quota/`; the `scripts/check-layers.mjs` entry lands with #1011.
+
 Each module folder has an `index.ts` that re-exports its public API; `src/domain/index.ts` re-exports
 every module. Issues edit only their own module folder. Cross-module scenario tests (e.g. v1 parity)
 live in `src/domain/scenarios/` so no production module needs an extra dependency for a test.
@@ -727,6 +729,8 @@ Rules:
 Conflicts and supersessions (added 2026-10-12, #1003, D-1):
 - `LimitPolicy` and `decideOnLimit` (R-30) are UNCHANGED: no new variant; the UI word "notify" is `ask`. What is new is only where the value comes from.
 - Conflict with Phase 3.5 account settings (#372–#382, A-51): the account-level limit behaviour of the accounts/limit settings (`account.save` / `SettingsAccountView.limitPolicy`) becomes the fallback used when a run has no repo/stage context (chat, probes); inside a work-order stage run the stage value (`limitPolicyFor`) wins.
+
+Placement note (added 2026-10-13, #1046): `limitPolicyFor`'s single home is `definitions/repo-flow.ts` — the `// quota/limit-policy.ts` comment line in the code block above is superseded as its location, and R-135's rule text is unchanged. `LimitPolicy` and `AccountRoute` themselves stay in `quota/`; the module map's `definitions` row now allows importing `quota` (row amendment above).
 
 ---
 

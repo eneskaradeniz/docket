@@ -13,6 +13,7 @@ import { CAP_SCOPES, parseAmountUsd, type CapScope } from './account-models';
 import { hasModelScopedPool } from './pool-scope';
 import { RECOMMENDED, mayHaveCap, settingDiffs, type SettingDiff, type SettingKey } from './recommended';
 import type { SettingsOpenTarget } from './settings-panel';
+import { accountMeterStanding, type MeterFailure, type MeterListStanding } from './meter-list';
 
 export { CAP_SCOPES, mayHaveCap };
 
@@ -146,6 +147,22 @@ export const usageView = (account: SettingsAccountView): UsageView => {
   const spentUsd = usd.length === 0 ? null : usd.reduce((sum, meter) => sum + (meter.used ?? 0), 0);
   const cap = account.caps[0];
   return { kind: 'spend', spentUsd, cap: cap === undefined ? null : { scope: cap.scope, amountUsd: cap.amountUsd } };
+};
+
+/** The standing of an account's quota in the editor: loading while refreshing, or carrying a refresh failure (U-266, U-267). */
+export const accountUsageStanding = (
+  account: SettingsAccountView,
+  refreshing: boolean = false,
+  refreshFailure: MeterFailure | null = null,
+): MeterListStanding => {
+  const base = accountMeterStanding(account);
+  if (refreshing) {
+    return { ...base, loading: true };
+  }
+  if (refreshFailure !== null) {
+    return { ...base, failed: true, failure: refreshFailure };
+  }
+  return base;
 };
 
 export interface MeterBar {
@@ -387,6 +404,10 @@ export interface AccountEditorState {
   readonly failure: { readonly row: string; readonly labelKey: LabelKey } | null;
   readonly draft: AccountEditorDraft | null;
   readonly dirty: boolean;
+  /** Whether quota refresh is running right now (U-266). */
+  readonly refreshing: boolean;
+  /** The latest quota refresh failure, if any (U-267). */
+  readonly refreshFailure: MeterFailure | null;
 }
 
 export interface AccountEditorDraft {
@@ -421,10 +442,20 @@ export interface AccountEditorStore {
   saveDraft(account: SettingsAccountView): Promise<void>;
   discardDraft(): void;
   canClose(): boolean;
+  refreshQuota(account: SettingsAccountView): Promise<void>;
 }
 
 export const createAccountEditorStore = (deps: AccountEditorDeps): AccountEditorStore => {
-  let state: AccountEditorState = { tab: 'general', savedRow: null, savedUntil: 0, failure: null, draft: null, dirty: false };
+  let state: AccountEditorState = {
+    tab: 'general',
+    savedRow: null,
+    savedUntil: 0,
+    failure: null,
+    draft: null,
+    dirty: false,
+    refreshing: false,
+    refreshFailure: null,
+  };
   const listeners = new Set<() => void>();
   const set = (next: AccountEditorState): void => {
     state = next;
@@ -564,6 +595,18 @@ export const createAccountEditorStore = (deps: AccountEditorDeps): AccountEditor
     },
     discardDraft: () => set({ ...state, draft: null, dirty: false, failure: null }),
     canClose: () => !state.dirty,
+    refreshQuota: async (account) => {
+      if (state.refreshing) return;
+      set({ ...state, refreshing: true, refreshFailure: null });
+      const outcome = await deps.run({ type: 'quota.refresh', id: account.id });
+      if (!outcome.result.ok) {
+        const failure: MeterFailure =
+          outcome.result.code === 'network' ? 'network' : outcome.result.code === 'auth' ? 'rejected' : 'network';
+        set({ ...state, refreshing: false, refreshFailure: failure, failure: { row: 'usage', labelKey: outcome.labelKey } });
+        return;
+      }
+      set({ ...state, refreshing: false, refreshFailure: null });
+    },
   };
 };
 

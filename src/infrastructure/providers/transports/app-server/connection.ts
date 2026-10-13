@@ -4,11 +4,12 @@
 // the same initialize parameters — but, like the quota probe, it runs no thread and no turn, so
 // it answers no server request and maps no notification. Contract: docs/v2/providers.md →
 // "Codex app-server transport (P-12 … P-14)".
-import { spawn as nodeSpawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 
 import type { Result } from '../../../../domain/index';
 import { err, ok } from '../../../../domain/index';
+
+import { registeredSpawn } from '../../../system/index';
 import { isRecord } from './rate-limits';
 
 /** What this client tells the server about itself — one identity shared by every app-server
@@ -59,7 +60,10 @@ interface Pending {
 }
 
 export function openAppServerConnection(config: AppServerConnectionConfig): Result<AppServerConnection, AppServerConnectionError> {
-  const runSpawn = config.spawn ?? nodeSpawn;
+  // The production default registers the child (a model listing, a control probe); an injected
+  // spawn in tests stays unregistered and hermetic.
+  const runSpawn: AppServerSpawn =
+    config.spawn ?? ((command, args) => registeredSpawn(command, args, {}, { kind: 'probe', label: command }));
   let child: ChildProcess;
   try {
     child = runSpawn(config.command, [...config.args], {});

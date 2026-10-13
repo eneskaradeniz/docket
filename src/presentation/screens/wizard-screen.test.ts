@@ -165,8 +165,9 @@ const toBudget = async (): Promise<Setup> => {
   const store = createWizardStore({ api, actor: userActor, changes: () => () => {} });
   await store.open();
   await store.next();
-  store.select('/h/.claude-zai');
+  // The token row is "Kurulum bekliyor" until its key is moved (U-262): move first, then select.
   store.setImportToken('/h/.claude-zai', true);
+  store.select('/h/.claude-zai');
   await store.next();
   await store.next();
   expect(store.state().step).toBe('budget');

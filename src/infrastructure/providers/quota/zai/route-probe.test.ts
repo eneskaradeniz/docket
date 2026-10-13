@@ -158,4 +158,54 @@ describe('createZaiRouteProbe', () => {
     expect(result.value).toHaveLength(2);
     expect(alive.requests()).toHaveLength(1);
   });
+
+  it('P-34: an account with no secretRef reports not_logged_in', async () => {
+    const server = await pool.start({ status: 200, body: happyBody() });
+    const noSecretAccount = { ...zaiAccount(server.endpoint), secretRef: undefined };
+    const probe = createZaiRouteProbe({
+      accounts: { list: async () => [noSecretAccount] },
+      secrets: fakeVault,
+      fetch: fetch,
+      now: () => 1_790_000_000_000,
+    });
+
+    const result = await probe.poll('zai-glm', null, { accountId: null, identityDir: null });
+
+    expect(result).toEqual(err('not_logged_in'));
+    expect(server.requests()).toEqual([]);
+  });
+
+  it('P-34: an account whose secret is missing from vault reports not_logged_in', async () => {
+    const server = await pool.start({ status: 200, body: happyBody() });
+    const probe = createZaiRouteProbe({
+      accounts: { list: async () => [zaiAccount(server.endpoint)] },
+      secrets: { get: async () => undefined },
+      fetch: fetch,
+      now: () => 1_790_000_000_000,
+    });
+
+    const result = await probe.poll('zai-glm', null, { accountId: null, identityDir: null });
+
+    expect(result).toEqual(err('not_logged_in'));
+    expect(server.requests()).toEqual([]);
+  });
+
+  it('P-34: context.accountId scopes the poll to that specific account', async () => {
+    const serverA = await pool.start({ status: 200, body: happyBody() });
+    const serverB = await pool.start({ status: 200, body: happyBody() });
+    const accA = zaiAccount(serverA.endpoint, '01ARZ3NDEKTSV4RRFFQ69G5FA8');
+    const accB = zaiAccount(serverB.endpoint, '01ARZ3NDEKTSV4RRFFQ69G5FA9');
+    const probe = createZaiRouteProbe({
+      accounts: { list: async () => [accA, accB] },
+      secrets: fakeVault,
+      fetch: fetch,
+      now: () => 1_790_000_000_000,
+    });
+
+    const result = await probe.poll('zai-glm', null, { accountId: accA.id, identityDir: null });
+
+    expect(result.ok).toBe(true);
+    expect(serverA.requests()).toHaveLength(1);
+    expect(serverB.requests()).toHaveLength(0);
+  });
 });

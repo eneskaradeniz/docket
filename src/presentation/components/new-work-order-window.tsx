@@ -65,6 +65,10 @@ export interface ModalWindowProps {
   readonly dataMark: string;
   readonly scrimMark: string;
   readonly onClose: () => void;
+  /** False: a click on the scrim does nothing (a confirmation never answers from the backdrop). */
+  readonly scrimCloses?: boolean;
+  /** A confirmation-sized frame (no rail, content height). */
+  readonly compact?: boolean;
   /** Opening focuses this control instead of the frame. Absent keeps the frame focus. */
   readonly initialFocusRef?: { readonly current: HTMLElement | null };
   readonly children: ReactNode;
@@ -72,7 +76,7 @@ export interface ModalWindowProps {
 
 /** The shared dialog shell. Focus returns to the opener on every close — pointer and keyboard —
  *  because the opener is the control the operator just used. */
-export function ModalWindow({ open, label, titleId, brand, head, footer, dataMark, scrimMark, onClose, initialFocusRef, children }: ModalWindowProps) {
+export function ModalWindow({ open, label, titleId, brand, head, footer, dataMark, scrimMark, onClose, scrimCloses = true, compact = false, initialFocusRef, children }: ModalWindowProps) {
   const panelRef = useRef<HTMLElement>(null);
   const restoreRef = useRef<HTMLElement | null>(null);
   const wasOpen = useRef(false);
@@ -141,7 +145,7 @@ export function ModalWindow({ open, label, titleId, brand, head, footer, dataMar
       {...{ [scrimMark]: '' }}
       style={motionVars()}
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (scrimCloses && event.target === event.currentTarget) onClose();
       }}
       onTransitionEnd={(event) => {
         if (!open && event.target === event.currentTarget && event.propertyName === 'opacity') setMounted(false);
@@ -166,6 +170,7 @@ export function ModalWindow({ open, label, titleId, brand, head, footer, dataMar
         footer={footer}
         onKeyDown={onKeyDown}
         dataMark={dataMark}
+        compact={compact}
         className={[
           'transition-[opacity,translate,scale] [transition-timing-function:var(--motion-ease)]',
           entered

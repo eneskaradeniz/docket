@@ -30,6 +30,8 @@ export interface WindowFrameProps {
   /** A `data-*` name the frame is known by to the e2e walks — Settings marks its window so the
    *  audit and the journeys can tell it from the wizard's, which shares this frame. */
   readonly dataMark?: string;
+  /** A confirmation-sized window: one column of content-height, no rail. */
+  readonly compact?: boolean;
 }
 
 export function BrandMark({ name }: { readonly name: string }) {
@@ -43,7 +45,7 @@ export function BrandMark({ name }: { readonly name: string }) {
   );
 }
 
-export function WindowFrame({ label, brand, rail, railNote, head, children, footer, className = '', frameRef, onKeyDown, dataMark, labelledBy }: WindowFrameProps) {
+export function WindowFrame({ label, brand, rail, railNote, head, children, footer, className = '', frameRef, onKeyDown, dataMark, labelledBy, compact = false }: WindowFrameProps) {
   return (
     <section
       ref={frameRef}
@@ -54,13 +56,13 @@ export function WindowFrame({ label, brand, rail, railNote, head, children, foot
       {...(labelledBy === undefined ? { 'aria-label': label } : { 'aria-labelledby': labelledBy })}
       data-window=""
       {...(dataMark === undefined ? {} : { [dataMark]: '' })}
-      className={`relative grid h-[680px] max-h-[calc(100vh-96px)] w-[1040px] max-w-[calc(100vw-48px)] grid-cols-[200px_minmax(0,1fr)] overflow-hidden rounded-panel border border-bord bg-surface shadow-2xl outline-none ${className}`}
+      className={`relative grid ${compact ? 'h-auto max-h-[calc(100vh-96px)] w-[30rem] max-w-[calc(100vw-48px)] grid-cols-[minmax(0,1fr)]' : 'h-[680px] max-h-[calc(100vh-96px)] w-[1040px] max-w-[calc(100vw-48px)] grid-cols-[200px_minmax(0,1fr)]'} overflow-hidden rounded-panel border border-bord bg-surface shadow-2xl outline-none ${className}`}
     >
-      <nav aria-label={label} className="flex flex-col gap-[18px] overflow-y-auto border-r border-hairline bg-band px-3.5 pb-4 pt-[22px]">
+      {compact ? null : <nav aria-label={label} className="flex flex-col gap-[18px] overflow-y-auto border-r border-hairline bg-band px-3.5 pb-4 pt-[22px]">
         <BrandMark name={brand} />
         {rail}
         {railNote !== undefined ? <p className="mt-auto px-1.5 text-[12px] leading-[1.45] text-inkdim">{railNote}</p> : null}
-      </nav>
+      </nav>}
       <div className={`grid min-h-0 min-w-0 overflow-hidden ${footer === undefined ? 'grid-rows-[auto_minmax(0,1fr)]' : 'grid-rows-[auto_minmax(0,1fr)_auto]'}`}>
         <header className="px-8 pb-3.5 pt-[26px]">{head}</header>
         <div data-window-body="" className="min-h-0 overflow-y-auto px-8 pb-5 pt-1.5">
