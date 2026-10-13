@@ -210,3 +210,44 @@ export function translateCapabilities(
   const inline = inlined.length === 0 ? '' : ['Capabilities provided as instructions:', ...inlined.map(inlineLine)].join('\n');
   return { run, inline, omitted };
 }
+
+// ---- Machine import (P-60) ---------------------------------------------------------------------
+// Read-only scan of each provider's own user-level config; secret values never leave the scanner.
+
+export interface MachineCandidate {
+  readonly provider: string;
+  readonly kind: CapabilityKind;
+  readonly name: string;
+  readonly sourcePath: string;
+  readonly secretNames: readonly string[];
+}
+
+const MACHINE_KEY_SEP = '\u001e';
+
+/** Stable import key for a machine candidate; the four fields are enough to find it again on a rescan. */
+export function machineCandidateKey(candidate: MachineCandidate): string {
+  return [candidate.provider, candidate.kind, candidate.name, candidate.sourcePath].join(MACHINE_KEY_SEP);
+}
+
+export function machineCandidateFromKey(key: string): MachineCandidate | undefined {
+  const parts = key.split(MACHINE_KEY_SEP);
+  if (parts.length !== 4) return undefined;
+  const [provider, kind, name, sourcePath] = parts;
+  if (provider === '' || name === '' || sourcePath === '') return undefined;
+  if (
+    kind !== 'mcp' &&
+    kind !== 'skill' &&
+    kind !== 'hook' &&
+    kind !== 'context' &&
+    kind !== 'plugin' &&
+    kind !== 'command'
+  ) {
+    return undefined;
+  }
+  return { provider, kind, name, sourcePath, secretNames: [] };
+}
+
+/** R-66 stands for machine import too: hooks are listed but never importable. */
+export function machineCandidateImportable(candidate: MachineCandidate): boolean {
+  return candidate.kind !== 'hook';
+}

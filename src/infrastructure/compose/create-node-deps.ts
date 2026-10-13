@@ -48,7 +48,13 @@ import { createCheckpoints, createEvidenceChecker, createGitProbe, readRepoFinge
 import { createCapabilityCatalog } from '../providers/registry/index';
 import { createModelCatalog } from '../providers/catalog/index';
 import { createQuotaProbeResolver } from '../providers/quota/index';
-import { createNodeAccountScan, createNodeCapabilityScan, createNodeCredentialImporter, type LoginStates } from '../providers/discovery/index';
+import {
+  createNodeAccountScan,
+  createNodeCapabilityScan,
+  createNodeCredentialImporter,
+  createNodeMachineCapabilityScan,
+  type LoginStates,
+} from '../providers/discovery/index';
 import { createNodeRunTokens } from '../mcp/index';
 import { createNodeInstructionFiles } from './instruction-files';
 import { createFsAttachmentFiles } from './attachment-files';
@@ -120,6 +126,7 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     accounts,
     capabilities: createCapabilityCatalog(),
     capabilityDiscovery: createNodeCapabilityScan(),
+    machineCapabilityScan: createNodeMachineCapabilityScan({ env: config.commandEnv }),
     // The catalog call builds its environment from the same allowlist the transports do, so a
     // listing never sees a different child than a run of the same account would.
     modelCatalog: createModelCatalog({

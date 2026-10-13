@@ -9,6 +9,7 @@ import { createFakeAttachmentFiles } from './fake-attachment-files';
 import { createFakeBindingRepo } from './fake-binding-repo';
 import { createFakeCapabilityCatalog } from './fake-capability-catalog';
 import { createFakeCapabilityDiscovery } from './fake-capability-discovery';
+import { createFakeMachineCapabilityScan } from './fake-machine-capability-scan';
 import { createFakeCheckpointCommitter } from './fake-checkpoints';
 import { createFakeClock } from './fake-clock';
 import { createFakeCommandRunner, createFakeEvidenceChecker, createFakeSecretScanner, createFakeWorktrees } from './fake-repo-tools';
@@ -53,6 +54,7 @@ export const createFakeDeps = (overrides: Partial<AppDeps> = {}): AppDeps => ({
   accounts: createFakeAccountRepo(),
   capabilities: createFakeCapabilityCatalog(),
   capabilityDiscovery: createFakeCapabilityDiscovery(),
+  machineCapabilityScan: createFakeMachineCapabilityScan(),
   modelCatalog: createFakeModelCatalog(),
   projects: createFakeProjectRepo(),
   repos: createFakeRepoRegistry(),

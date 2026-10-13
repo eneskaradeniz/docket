@@ -66,7 +66,6 @@ const PENDING = new Map([
   ['application:A-333', '#1020'],
 
   // #1006 — agent capabilities: library, provider translation, memory, machine import
-  ['providers:P-60', '#1017'],
 
   // #1007: Docket AI project setup and read-permission scopes (#1021 application, #1023 ui)
   ['application:A-334', '#1021'],

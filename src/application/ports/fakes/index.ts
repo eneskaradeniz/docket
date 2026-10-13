@@ -8,6 +8,7 @@ export * from './fake-attachment-files';
 export * from './fake-binding-repo';
 export * from './fake-capability-catalog';
 export * from './fake-capability-discovery';
+export * from './fake-machine-capability-scan';
 export * from './fake-checkpoints';
 export * from './fake-clock';
 export * from './fake-conversation-repo';

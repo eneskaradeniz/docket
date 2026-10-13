@@ -9,6 +9,7 @@ export * from './agent-transport';
 export * from './binding-repo';
 export * from './capability-catalog';
 export * from './capability-discovery';
+export * from './machine-capability-scan';
 export * from './checkpoints';
 export * from './clock';
 export * from './conversation-repo';
