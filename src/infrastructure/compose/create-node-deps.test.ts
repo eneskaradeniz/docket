@@ -287,13 +287,13 @@ describe('createNodeDeps', () => {
     });
   });
 
-  it('I-31: uses <dataDir> as the global definitions root over the registry-backed YAML store', async () => {
-    await mkdir(join(repoDir, '.docket'), { recursive: true });
-    await writeFile(join(repoDir, '.docket', 'repo.yaml'), REPO_YAML, 'utf8');
-    await mkdir(join(dataDir, 'roles'), { recursive: true });
-    await mkdir(join(dataDir, 'flows'), { recursive: true });
-    await writeFile(join(dataDir, 'roles', 'planner.yaml'), ROLE_YAML, 'utf8');
-    await writeFile(join(dataDir, 'flows', 'standard.yaml'), FLOW_YAML, 'utf8');
+  it('I-31: uses <dataDir> as the definitions root over the registry-backed YAML store', async () => {
+    await mkdir(join(dataDir, 'repos', REPO), { recursive: true });
+    await writeFile(join(dataDir, 'repos', REPO, 'repo.yaml'), REPO_YAML, 'utf8');
+    await mkdir(join(dataDir, 'library', 'roles', 'planner'), { recursive: true });
+    await mkdir(join(dataDir, 'library', 'flows', 'standard'), { recursive: true });
+    await writeFile(join(dataDir, 'library', 'roles', 'planner', 'v1.yaml'), ROLE_YAML, 'utf8');
+    await writeFile(join(dataDir, 'library', 'flows', 'standard', 'v1.yaml'), FLOW_YAML, 'utf8');
     const node = makeNode();
     await registerRepo(node, repoDir);
 
@@ -304,7 +304,7 @@ describe('createNodeDeps', () => {
     expect(loaded.value.roles.map((role) => role.id)).toEqual([slugOf<'role'>('planner')]);
     expect(loaded.value.flows.map((flow) => flow.id)).toEqual([slugOf<'flow'>('standard')]);
     expect(loaded.value.repo?.commandSets).toEqual({ tests: ['node -e "process.exit(0)"'] });
-    const globalFile = await node.deps.definitions.readFile({ kind: 'global' }, 'roles/planner.yaml');
+    const globalFile = await node.deps.definitions.readFile('library/roles/planner/v1.yaml');
     expect(globalFile?.content).toBe(ROLE_YAML);
   });
 

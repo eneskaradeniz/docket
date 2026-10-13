@@ -12,6 +12,7 @@ import { stringify } from 'yaml';
 import {
   BUILTIN_FLOWS,
   BUILTIN_ROLES,
+  isUlid,
   parseSlug,
   parseUlid,
   type AccountId,
@@ -124,7 +125,7 @@ const openNodeDeps = (): NodeDeps => {
 beforeEach(async () => {
   scratch = await mkdtemp(join(tmpdir(), 'docket-scenario-'));
   dataDir = join(scratch, 'data');
-  repoDir = join(scratch, 'repo');
+  repoDir = join(scratch, 'ws');
   homeDir = join(scratch, 'home');
   await mkdir(homeDir, { recursive: true });
   savedEnv = new Map(ENV_KEYS.map((key) => [key, process.env[key]]));
@@ -157,29 +158,23 @@ async function seedGitRepo(): Promise<void> {
   await git(repoDir, ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-m', 'seed']);
 }
 
-/** The built-in roles and the standard flow, written as YAML files under the global root. */
+/** The built-in roles and the standard flow, written as YAML files under the global root library. */
 async function seedGlobalDefinitions(): Promise<void> {
   const standard = BUILTIN_FLOWS.find((flow) => flow.id === 'standard');
   if (standard === undefined) throw new Error('expected a built-in flow "standard"');
-  await mkdir(join(dataDir, 'roles'), { recursive: true });
   for (const role of BUILTIN_ROLES) {
-    await writeFile(join(dataDir, 'roles', `${role.id}.yaml`), stringify(role), 'utf8');
+    await mkdir(join(dataDir, 'library', 'roles', role.id), { recursive: true });
+    await writeFile(join(dataDir, 'library', 'roles', role.id, 'v1.yaml'), stringify(role), 'utf8');
   }
-  await mkdir(join(dataDir, 'flows'), { recursive: true });
-  await writeFile(join(dataDir, 'flows', 'standard.yaml'), stringify(standard), 'utf8');
+  await mkdir(join(dataDir, 'library', 'flows', 'standard'), { recursive: true });
+  await writeFile(join(dataDir, 'library', 'flows', 'standard', 'v1.yaml'), stringify(standard), 'utf8');
 }
 
-/** The repo's own definitions: a project≡repo project.yaml naming itself mainRepo, and a
- *  repo.yaml enabling standard with a command set that runs a real command. */
+/** The repo's own definitions under the dataDir repos root. */
 async function seedRepoDefinitions(): Promise<void> {
-  await mkdir(join(repoDir, '.docket'), { recursive: true });
+  await mkdir(join(dataDir, 'repos', 'ws'), { recursive: true });
   await writeFile(
-    join(repoDir, '.docket', 'project.yaml'),
-    stringify({ id: 'ws', name: 'Repo', mainRepo: 'ws', repos: ['ws'] }),
-    'utf8',
-  );
-  await writeFile(
-    join(repoDir, '.docket', 'repo.yaml'),
+    join(dataDir, 'repos', 'ws', 'repo.yaml'),
     stringify({
       id: 'ws',
       name: 'Repo',
@@ -282,8 +277,10 @@ describe('standard flow, headless end to end on real Node storage', () => {
       const node = openNodeDeps();
       const deps = node.deps;
       const attached = await createApi(deps).command(USER, { type: 'project.attach', path: repoDir });
-      expect(attached).toEqual({ ok: true, id: REPO });
+      expect(attached.ok).toBe(true);
+      if (attached.ok && attached.id !== undefined) expect(isUlid(attached.id)).toBe(true);
       expect((await node.repos.list()).find((entry) => entry.slug === REPO)?.path).toBe(repoDir);
+      await deps.projects.save({ id: slugOf<'project'>('ws'), name: 'Repo', mainRepo: REPO, repos: [REPO] });
 
       // One account carries every role; one scripted transport completes each run.
       await deps.accounts.save({
@@ -307,7 +304,7 @@ describe('standard flow, headless end to end on real Node storage', () => {
       // 1. open → plan/ready.
       const id = await openViaApi(deps, '  Ship the standard flow for real  ');
       expect(id).toBeDefined();
-      if (id === undefined) return;
+      if (id === undefined) throw new Error('work order must open for the run scenario');
       let view = await viewOf(deps, id);
       expectState(view, { status: 'ready', stage: PLAN, pendingGates: [PLAN_APPROVAL] });
       expect(view.next.kind).toBe('start_run');

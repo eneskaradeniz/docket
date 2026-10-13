@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Actor, Result } from '../../domain/index';
-import { BUILTIN_COMMAND_SET_NAMES, BUILTIN_FLOWS, BUILTIN_ROLES, parseSlug } from '../../domain/index';
+import { BUILTIN_FLOWS, BUILTIN_ROLES, parseSlug } from '../../domain/index';
 
 import type { FakeDefinitionStore, FakeEventLog, FakeGitProbe, FakeProjectRepo, FakeRepoFolders, FakeRepoRegistry } from '../ports/fakes';
 import {
@@ -130,19 +130,6 @@ describe('createProject definitions (A-76)', () => {
       ok: true,
       value: { id: 'calisma-alani', name: 'Çalışma Alanı', mainRepo: 'calisma-alani', repos: ['calisma-alani'] },
     });
-    const written = h.definitions.repoAt(CHECKOUT);
-    expect(written).toBeDefined();
-    const repo: unknown = JSON.parse(written ?? 'null');
-    expect(repo).toEqual({
-      id: 'calisma-alani',
-      name: 'Çalışma Alanı',
-      flows: BUILTIN_FLOWS.map((flow) => flow.id),
-      defaultFlow: 'standard',
-      commandSets: Object.fromEntries(BUILTIN_COMMAND_SET_NAMES.map((name) => [name, []])),
-      roleOverrides: [],
-      docsRoot: 'docs',
-      testGlobs: [],
-    });
   });
 
   it('A-76: the name is stored trimmed', async () => {
@@ -178,7 +165,6 @@ describe('createProject writes (A-77)', () => {
     expect(result.ok).toBe(true);
     expect(h.folders.created()).toEqual([`${PARENT}/atolye`]);
     expect((await h.repos.list()).find((entry) => entry.slug === slugOf<'repo'>('atolye'))?.path).toBe(`${PARENT}/atolye`);
-    expect(h.definitions.repoAt(`${PARENT}/atolye`)).toBeDefined();
   });
 
   it('A-77: blank source — createRepo errors are returned as they are and nothing else is written', async () => {
@@ -203,53 +189,21 @@ describe('createProject writes (A-77)', () => {
     await expectNothingWritten(failing, `${PARENT}/atolye`);
   });
 
-  it('A-77: an existing project.yaml is project_exists — nothing is overwritten, registered or audited', async () => {
-    const original = JSON.stringify({ id: 'mine', name: 'Mine', mainRepo: 'mine', repos: ['mine'] });
+  it('A-77: an existing project is project_exists — nothing is overwritten, registered or audited', async () => {
     const h = createHarness((self) => {
       self.git.markWorkTree(CHECKOUT);
-      self.definitions.seedProjectAt(CHECKOUT, original);
+    });
+    await h.repos.register({
+      repoId: '01ARZ3NDEKTSV4RRFFQ69G5FC01',
+      slug: slugOf<'repo'>('atolye'),
+      path: CHECKOUT,
+      fingerprint: { rootCommit: '' },
     });
 
     expectErr(await createProject(h.deps, { source: existing, name: 'Atölye', actor: ACTOR }), 'project_exists');
 
-    expect(h.definitions.repoAt(CHECKOUT)).toBeUndefined();
-    expect(await h.projects.list()).toEqual([]);
-    expect(await h.repos.list()).toEqual([]);
-    expect(h.log.entries()).toEqual([]);
-  });
-
-  it('A-77: an existing repo.yaml is docket_folder_exists — nothing is written, registered or audited', async () => {
-    const h = createHarness((self) => {
-      self.git.markWorkTree(CHECKOUT);
-      self.definitions.seedRepoAt(CHECKOUT, '{"id":"mine"}');
-    });
-
-    expectErr(await createProject(h.deps, { source: existing, name: 'Atölye', actor: ACTOR }), 'docket_folder_exists');
-
-    expect((await h.definitions.readProjectAt(CHECKOUT)).ok).toBe(false);
-    expect(h.definitions.repoAt(CHECKOUT)).toBe('{"id":"mine"}');
     expect(await h.projects.list()).toEqual([]);
     expect(h.log.entries()).toEqual([]);
-  });
-
-  it('A-77: a scaffold write failure is io_failed; a created folder stays and nothing is attached', async () => {
-    const h = createHarness((self) => {
-      self.folders.markFolder(PARENT);
-      self.git.markWorkTree(`${PARENT}/atolye`);
-      self.definitions.failNextScaffold();
-    });
-
-    expectErr(await createProject(h.deps, { source: blank, name: 'Atölye', actor: ACTOR }), 'io_failed');
-
-    expect(h.folders.created()).toEqual([`${PARENT}/atolye`]);
-    expect(await h.projects.list()).toEqual([]);
-    expect(h.log.entries()).toEqual([]);
-  });
-
-  it('A-77: attachProject errors come back as they are (a blank folder that is not a work tree)', async () => {
-    const h = createHarness((self) => self.folders.markFolder(PARENT));
-
-    expectErr(await createProject(h.deps, { source: blank, name: 'Atölye', actor: ACTOR }), 'not_a_repo');
   });
 
   it('A-77: installBuiltins never replaces a library file that already exists', async () => {
@@ -264,13 +218,13 @@ describe('createProject writes (A-77)', () => {
 });
 
 describe('createProject audit (A-78)', () => {
-  it('A-78: project.created comes first, then project.attached, with source and builtinsWritten', async () => {
+  it('A-78: project.created is recorded with source and builtinsWritten', async () => {
     const h = createHarness((self) => self.git.markWorkTree(CHECKOUT));
 
     await createProject(h.deps, { source: existing, name: 'Atölye', actor: ACTOR });
 
     const entries = h.log.entries();
-    expect(entries.map((entry) => entry.action)).toEqual(['project.created', 'project.attached']);
+    expect(entries.map((entry) => entry.action)).toEqual(['project.created']);
     expect(entries[0]?.subject).toEqual({ kind: 'project', id: 'atolye' });
     expect(entries[0]?.actor).toEqual(ACTOR);
     expect(entries[0]?.detail).toEqual({ source: 'existing', builtinsWritten: BUILTIN_ROLES.length + BUILTIN_FLOWS.length });

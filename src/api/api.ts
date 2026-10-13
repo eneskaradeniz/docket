@@ -707,18 +707,16 @@ const runCommand = async (
 
     case 'project.attach': {
       // The optional repo registrations ride along as plain slugs; one bad slug rejects the
-      // whole command before any port is touched (A-21).
-      const repos: { readonly repo: RepoSlug; readonly path: string }[] = [];
+      // whole command before any port is touched (A-21). The values themselves are the import's
+      // to consume — attach registers exactly one entry for the folder.
       for (const entry of command.repos ?? []) {
-        const repo = slugValue<'repo'>(entry.repo);
-        if (repo === undefined) return invalidId();
-        repos.push({ repo, path: entry.path });
+        if (slugValue<'repo'>(entry.repo) === undefined) return invalidId();
       }
       const attached = await attachProject(
-        { clock: deps.clock, ids: deps.ids, log: deps.log, projects: deps.projects, repos: deps.repos, definitions: deps.definitions, git: deps.git },
-        { path: command.path, repos: repos.length === 0 ? undefined : repos, actor },
+        { clock: deps.clock, ids: deps.ids, log: deps.log, repos: deps.repos, git: deps.git },
+        { path: command.path, actor },
       );
-      return attached.ok ? { ok: true, id: attached.value.id } : { ok: false, code: attached.error };
+      return attached.ok ? { ok: true, id: attached.value.repoId } : { ok: false, code: attached.error };
     }
 
     case 'project.create': {
@@ -735,7 +733,15 @@ const runCommand = async (
         { clock: deps.clock, ids: deps.ids, log: deps.log, projects: deps.projects, repos: deps.repos, definitions: deps.definitions, git: deps.git, repoFolders: deps.repoFolders },
         { source, name: command.name, actor },
       );
-      return created.ok ? { ok: true, id: created.value.id } : { ok: false, code: created.error };
+      if (!created.ok) return { ok: false, code: created.error };
+      await deps.log.append({
+        id: deps.ids.next<'audit'>(),
+        at: deps.clock.now(),
+        actor,
+        action: 'project.attached',
+        subject: { kind: 'project', id: created.value.id },
+      });
+      return { ok: true, id: created.value.id };
     }
 
     case 'repo.register': {

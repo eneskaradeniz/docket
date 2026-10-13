@@ -6,11 +6,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import type { Actor, GateDef } from '../../domain/index';
-import { BUILTIN_FLOWS, evaluateGate, parseSlug } from '../../domain/index';
+import type { Actor } from '../../domain/index';
+import { parseSlug } from '../../domain/index';
 
 import { createApi } from '../../api/index';
-import type { BoardView } from '../../api/queries';
 import { createFakeNotifier, createFakeTransportResolver } from '../../application/ports/fakes/index';
 import { createNodeDeps, type NodeDeps, type NodeDepsConfig } from '../compose/index';
 import { runGit } from '../vcs/index';
@@ -66,22 +65,14 @@ const repoSlug = (input: string) => {
   return parsed.value;
 };
 
-const standardColumns =(): readonly string[] => {
-  const standard = BUILTIN_FLOWS.find((flow) => flow.id === 'standard');
-  if (standard === undefined) throw new Error('the library must carry the standard flow');
-  return standard.stages.map((stage) => stage.id);
-};
-
-const boardOf = async (node: NodeDeps, repo: string) => {
-  const view = await createApi(node.deps).query({ type: 'repo.board', repo });
-  if (typeof view !== 'object' || view === null || !('columns' in view)) {
-    throw new Error(`board must answer: ${JSON.stringify(view)}`);
-  }
-  return view as BoardView;
+const projectSlug = (input: string) => {
+  const parsed = parseSlug<'project'>(input);
+  if (!parsed.ok) throw new Error(`fixture slug must parse: ${input}`);
+  return parsed.value;
 };
 
 describe('project.create on real Node storage', () => {
-  it('I-36: an existing git folder becomes a project from an empty data dir; the board shows the standard columns', async () => {
+  it('I-36: an existing git folder becomes a project from an empty data dir', async () => {
     const folder = join(scratch, 'Atölye');
     await mkdir(folder);
     expect((await runGit(folder, ['init', '--initial-branch=main'])).exitCode).toBe(0);
@@ -91,10 +82,10 @@ describe('project.create on real Node storage', () => {
 
     expect(created).toEqual({ ok: true, id: 'atolye' });
     expect((await node.repos.list()).find((entry) => entry.slug === repoSlug('atolye'))?.path).toBe(folder);
-    expect((await readdir(join(folder, '.docket'))).sort()).toEqual(['project.yaml', 'repo.yaml']);
-    const board = await boardOf(node, 'atolye');
-    expect(board.flow).toBe('standard');
-    expect(board.columns.map((column) => column.stage)).toEqual(standardColumns());
+    expect(await readdir(folder)).not.toContain('.docket');
+    expect(await node.deps.definitions.readFile('library/flows/standard/v1.yaml')).toBeDefined();
+    const loaded = await node.deps.definitions.load(repoSlug('atolye'));
+    expect(loaded.ok).toBe(false);
   });
 
   it('I-36: a blank project creates the folder, initialises git, and survives a reopen', async () => {
@@ -105,16 +96,16 @@ describe('project.create on real Node storage', () => {
     const created = await createApi(node.deps).command(USER, { type: 'project.create', mode: 'blank', parent, name: 'Yeni İş' });
 
     expect(created).toEqual({ ok: true, id: 'yeni-is' });
-    expect((await readdir(join(parent, 'yeni-is'))).sort()).toEqual(['.docket', '.git']);
+    expect((await readdir(join(parent, 'yeni-is'))).sort()).toEqual(['.git']);
     node.close();
     opened = undefined;
 
     const reopened = openNode();
-    const board = await boardOf(reopened, 'yeni-is');
-    expect(board.columns.map((column) => column.stage)).toEqual(standardColumns());
+    expect((await reopened.repos.list()).find((entry) => entry.slug === repoSlug('yeni-is'))?.path).toBe(join(parent, 'yeni-is'));
+    expect(await reopened.deps.projects.get(projectSlug('yeni-is'))).toBeDefined();
   });
 
-  it('A-76: the tests gate of a created repo reads unknown — an empty command set never passes', async () => {
+  it('A-76: definitions.load on a newly created repo answers repo.yaml is required until #1012', async () => {
     const parent = join(scratch, 'projects');
     await mkdir(parent);
     const node = openNode();
@@ -122,14 +113,10 @@ describe('project.create on real Node storage', () => {
 
     const loaded = await node.deps.definitions.load(repoSlug('gate-probe'));
 
-    expect(loaded.ok).toBe(true);
-    if (!loaded.ok || loaded.value.repo === undefined) return;
-    const standard = loaded.value.flows.find((flow) => flow.id === 'standard');
-    const gate: GateDef | undefined = standard?.stages.flatMap((stage) => stage.exit).find((candidate) => candidate.id === 'tests');
-    expect(gate).toBeDefined();
-    if (gate === undefined) return;
-    expect(loaded.value.repo.commandSets['tests']).toEqual([]);
-    expect(evaluateGate(gate, { commands: {} }, { commandSets: loaded.value.repo.commandSets }).status).toBe('unknown');
+    expect(loaded.ok).toBe(false);
+    if (!loaded.ok) {
+      expect(loaded.error.some((issue) => issue.code === 'missing_field' && issue.message.includes('repo.yaml'))).toBe(true);
+    }
   });
 
   it('I-36: creating over an existing project leaves its files alone and reports project_exists', async () => {

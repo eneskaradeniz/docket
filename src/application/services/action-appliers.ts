@@ -111,7 +111,11 @@ const boundProposal = async (
   const proposal = await deps.proposals.get(id);
   if (proposal === undefined) return fail('proposal_not_found');
   if (proposal.status !== 'pending') return fail('proposal_not_pending');
-  if (!sameScope(expected.scope, proposal.scope) || proposal.target !== expected.target || proposal.author.kind === 'user') return fail('proposal_mismatch');
+  const targetMatches =
+    proposal.target === expected.target ||
+    (expected.scope.kind === 'project' && proposal.target === `projects/${expected.scope.project}/${expected.target}`) ||
+    (expected.scope.kind === 'repo' && proposal.target === `repos/${expected.scope.repo}/${expected.target}`);
+  if (!sameScope(expected.scope, proposal.scope) || !targetMatches || proposal.author.kind === 'user') return fail('proposal_mismatch');
   return ok(proposal);
 };
 
@@ -230,8 +234,10 @@ const revertProposal = async (deps: ActionApplierDeps, record: Parameters<Action
   const proposal = await deps.proposals.get(record.action.proposal);
   if (proposal === undefined) return fail('undo_unavailable');
   if (proposal.status !== 'approved') return fail('proposal_not_approved');
-  // Someone edited the file since: their edit is not ours to overwrite.
-  const current = await deps.definitions.readFile(proposal.scope, proposal.target);
+  const isGrammarTarget = proposal.target.startsWith('projects/') || proposal.target.startsWith('repos/') || proposal.target.startsWith('library/');
+  const current = isGrammarTarget
+    ? await deps.definitions.readFile(proposal.target)
+    : await deps.definitions.readFile(proposal.scope, proposal.target);
   if ((current?.content ?? '') !== proposal.after) return fail('file_changed');
 
   const reverse = await createProposal(deps, { scope: proposal.scope, target: proposal.target, after: proposal.before, summary: UNDO_SUMMARY, author: UNDO_AUTHOR });

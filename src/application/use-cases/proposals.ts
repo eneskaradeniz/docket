@@ -18,7 +18,10 @@ export async function createProposal(
     readonly author: Actor;
   },
 ): Promise<Result<ProposalId, ProposeError>> {
-  const file = await deps.definitions.readFile(input.scope, input.target);
+  const isGrammar = input.target.startsWith('projects/') || input.target.startsWith('repos/') || input.target.startsWith('library/');
+  const file = isGrammar
+    ? await deps.definitions.readFile(input.target)
+    : await deps.definitions.readFile(input.scope, input.target);
   const before = file?.content ?? '';
   const baseHash = file?.hash ?? '';
   if (input.after === before) return err('no_change');
@@ -61,11 +64,16 @@ export async function decideProposalUseCase(
   const proposal = await deps.proposals.get(input.id);
   if (proposal === undefined) return err('not_found');
 
-  const file = await deps.definitions.readFile(proposal.scope, proposal.target);
+  const isGrammar = proposal.target.startsWith('projects/') || proposal.target.startsWith('repos/') || proposal.target.startsWith('library/');
+  const file = isGrammar
+    ? await deps.definitions.readFile(proposal.target)
+    : await deps.definitions.readFile(proposal.scope, proposal.target);
   const currentHash = file?.hash ?? '';
 
   if (input.decision === 'approved') {
-    const candidate = await deps.definitions.validateCandidate(proposal.scope, proposal.target, proposal.after);
+    const candidate = isGrammar
+      ? await deps.definitions.validateCandidate(proposal.target, proposal.after)
+      : await deps.definitions.validateCandidate(proposal.scope, proposal.target, proposal.after);
     if (!candidate.ok) return err('invalid_after');
   }
 
@@ -79,7 +87,9 @@ export async function decideProposalUseCase(
   }
 
   if (input.decision === 'approved') {
-    const written = await deps.definitions.writeFile(proposal.scope, proposal.target, proposal.after, proposal.baseHash);
+    const written = isGrammar
+      ? await deps.definitions.writeFile(proposal.target, proposal.after, proposal.baseHash)
+      : await deps.definitions.writeFile(proposal.scope, proposal.target, proposal.after, proposal.baseHash);
     // The file moved between the read and the write; the write guard is the last line of defence.
     if (!written.ok) {
       await deps.proposals.save({ ...proposal, status: 'stale' });

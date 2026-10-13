@@ -125,7 +125,7 @@ const createHarness = (configure?: (h: Harness) => void, withRoadmap = true): Ha
     workOrders,
     git,
     log,
-    attachDeps: { clock, ids, log, projects, repos, definitions, git },
+    attachDeps: { clock, ids, log, repos, git },
     taskDeps: { clock, ids, log, workOrders, definitions, projects },
     registerDeps: { clock, ids, log, projects, repos, workOrders },
   };
@@ -154,84 +154,37 @@ describe('attachProject', () => {
     expect(h.log.entries()).toEqual([]);
   });
 
-  it('A-24: a checkout without project.yaml is no_project_yaml', async () => {
+  it('A-24: registers one entry for the folder, minting a repoId and auditing repo.registered', async () => {
     const h = createHarness((self) => self.git.markWorkTree(CHECKOUT));
 
     const result = await attachProject(h.attachDeps, { path: CHECKOUT, actor: ACTOR });
 
-    expectErr(result, 'no_project_yaml');
-    expect(await h.projects.list()).toEqual([]);
-    expect(h.log.entries()).toEqual([]);
-  });
-
-  it('A-24: a project.yaml that fails R-46 is definitions_invalid with the issues attached nowhere', async () => {
-    const h = createHarness((self) => {
-      self.git.markWorkTree(CHECKOUT);
-      self.definitions.seedProjectAt(CHECKOUT, JSON.stringify({ id: 'atolye', name: 'Atölye', mainRepo: 'elsewhere', repos: [] }));
-    });
-
-    const result = await attachProject(h.attachDeps, { path: CHECKOUT, actor: ACTOR });
-
-    expectErr(result, 'definitions_invalid');
-    expect(await h.projects.list()).toEqual([]);
-    expect(h.log.entries()).toEqual([]);
-  });
-
-  it('A-24: a valid project.yaml saves the ProjectDef, registers the main repo, audits project.attached', async () => {
-    const h = createHarness((self) => {
-      self.git.markWorkTree(CHECKOUT);
-      self.definitions.seedProjectAt(CHECKOUT, JSON.stringify({ id: 'atolye', name: 'Atölye', mainRepo: 'main', repos: ['main', 'acme'] }));
-    });
-
-    const result = await attachProject(h.attachDeps, { path: CHECKOUT, actor: ACTOR });
-
-    expect(result).toEqual({ ok: true, value: { id: PROJECT, name: 'Atölye', mainRepo: MAIN, repos: [MAIN, REPO] } });
-    expect(await h.projects.get(PROJECT)).toEqual({ id: PROJECT, name: 'Atölye', mainRepo: MAIN, repos: [MAIN, REPO] });
-    const entry = await entryBySlug(h, MAIN);
-    expect(entry?.path).toBe(CHECKOUT);
-    expect(entry?.fingerprint).toEqual({ rootCommit: '' });
-    expect(isUlid(entry?.repoId ?? '')).toBe(true);
-    expect(await entryBySlug(h, REPO)).toBeUndefined();
-    const entries = h.log.entries();
-    expect(entries.map((entry) => entry.action)).toEqual(['project.attached']);
-    expect(entries[0]?.subject).toEqual({ kind: 'project', id: PROJECT });
-  });
-
-  it('A-24: a repos entry whose slug the project does not list is repo_not_in_project with nothing written', async () => {
-    const h = createHarness((self) => {
-      self.git.markWorkTree(CHECKOUT);
-      self.definitions.seedProjectAt(CHECKOUT, JSON.stringify({ id: 'atolye', name: 'Atölye', mainRepo: 'main', repos: ['main'] }));
-    });
-    const outsider = slugOf<'repo'>('not-listed');
-
-    const result = await attachProject(h.attachDeps, {
-      path: CHECKOUT,
-      actor: ACTOR,
-      repos: [{ repo: REPO, path: OTHER_CHECKOUT }, { repo: outsider, path: '/checkouts/outsider' }],
-    });
-
-    expectErr(result, 'repo_not_in_project');
-    expect(await h.projects.list()).toEqual([]);
-    expect(await h.repos.list()).toEqual([]);
-    expect(h.log.entries()).toEqual([]);
-  });
-
-  it('A-24: every listed repos entry is registered at its own path', async () => {
-    const h = createHarness((self) => {
-      self.git.markWorkTree(CHECKOUT);
-      self.definitions.seedProjectAt(CHECKOUT, JSON.stringify({ id: 'atolye', name: 'Atölye', mainRepo: 'main', repos: ['main', 'acme'] }));
-    });
-
-    const result = await attachProject(h.attachDeps, {
-      path: CHECKOUT,
-      actor: ACTOR,
-      repos: [{ repo: REPO, path: OTHER_CHECKOUT }],
-    });
-
     expect(result.ok).toBe(true);
-    expect((await entryBySlug(h, MAIN))?.path).toBe(CHECKOUT);
-    expect((await entryBySlug(h, REPO))?.path).toBe(OTHER_CHECKOUT);
-    expect(await h.repos.list()).toHaveLength(2);
+    if (!result.ok) return;
+    expect(result.value.slug).toBe('atolye');
+    expect(result.value.path).toBe(CHECKOUT);
+    expect(result.value.fingerprint).toEqual({ rootCommit: '' });
+    expect(isUlid(result.value.repoId)).toBe(true);
+    expect(await entryBySlug(h, slugOf<'repo'>('atolye'))).toEqual(result.value);
+    expect(await h.projects.list()).toEqual([]);
+    const entries = h.log.entries();
+    expect(entries.map((entry) => entry.action)).toEqual(['repo.registered']);
+    expect(entries[0]?.subject).toEqual({ kind: 'repo', id: 'atolye' });
+  });
+
+  it('A-24: re-registering an existing slug updates its path and keeps its repoId', async () => {
+    const h = createHarness((self) => self.git.markWorkTree(CHECKOUT));
+    const first = await attachProject(h.attachDeps, { path: CHECKOUT, actor: ACTOR });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+
+    h.git.markWorkTree('/moved/atolye');
+    const second = await attachProject(h.attachDeps, { path: '/moved/atolye', actor: ACTOR });
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    expect(second.value.repoId).toBe(first.value.repoId);
+    expect(second.value.path).toBe('/moved/atolye');
+    expect(await h.repos.list()).toHaveLength(1);
   });
 });
 

@@ -75,7 +75,10 @@ export async function proposalDetail(
   const diff = diffLines(record.before, record.after);
   let currentlyStale = false;
   if (record.status === 'pending') {
-    const file = await deps.definitions.readFile(record.scope, record.target);
+    const isGrammar = record.target.startsWith('projects/') || record.target.startsWith('repos/') || record.target.startsWith('library/');
+    const file = isGrammar
+      ? await deps.definitions.readFile(record.target)
+      : await deps.definitions.readFile(record.scope, record.target);
     currentlyStale = (file?.hash ?? '') !== record.baseHash;
   }
   return {

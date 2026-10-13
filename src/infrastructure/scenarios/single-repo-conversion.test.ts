@@ -53,9 +53,9 @@ const openNodeDeps = (): NodeDeps => {
 /** A repo folder carrying only the repo definition the board reads; no git history is needed. */
 const seedRepoFolder = async (slug: string): Promise<string> => {
   const path = join(scratch, slug);
-  await mkdir(join(path, '.docket'), { recursive: true });
+  await mkdir(join(dataDir, 'repos', slug), { recursive: true });
   await writeFile(
-    join(path, '.docket', 'repo.yaml'),
+    join(dataDir, 'repos', slug, 'repo.yaml'),
     stringify({
       id: slug,
       name: slug,
@@ -74,12 +74,12 @@ const seedRepoFolder = async (slug: string): Promise<string> => {
 const seedGlobalDefinitions = async (): Promise<void> => {
   const standard = BUILTIN_FLOWS.find((flow) => flow.id === 'standard');
   if (standard === undefined) throw new Error('expected a built-in flow "standard"');
-  await mkdir(join(dataDir, 'roles'), { recursive: true });
   for (const role of BUILTIN_ROLES) {
-    await writeFile(join(dataDir, 'roles', `${role.id}.yaml`), stringify(role), 'utf8');
+    await mkdir(join(dataDir, 'library', 'roles', role.id), { recursive: true });
+    await writeFile(join(dataDir, 'library', 'roles', role.id, 'v1.yaml'), stringify(role), 'utf8');
   }
-  await mkdir(join(dataDir, 'flows'), { recursive: true });
-  await writeFile(join(dataDir, 'flows', 'standard.yaml'), stringify(standard), 'utf8');
+  await mkdir(join(dataDir, 'library', 'flows', 'standard'), { recursive: true });
+  await writeFile(join(dataDir, 'library', 'flows', 'standard', 'v1.yaml'), stringify(standard), 'utf8');
 };
 
 /** Writes a database exactly as the first schema version left it: version-1 tables, the old

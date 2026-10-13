@@ -51,7 +51,6 @@ const PENDING = new Map([
   ['domain:R-130', '#1012'],
   ['domain:R-133', '#1025'],
   ['domain:R-135', '#1013'],
-  ['infrastructure:I-86', '#1009'],
   ['infrastructure:I-87', '#1009'],
   ['infrastructure:I-89', '#1010'],
   ['infrastructure:I-90', '#1009'],
@@ -62,7 +61,6 @@ const PENDING = new Map([
   ['domain:R-136', '#1018'],
   ['domain:R-137', '#1018'],
   ['domain:R-138', '#1018'],
-  ['domain:R-139', '#1018'],
   ['application:A-328', '#1019'],
   ['application:A-329', '#1019'],
   ['application:A-330', '#1019'],
@@ -110,8 +108,6 @@ const PENDING = new Map([
   ['ui:U-293', '#1026'],
 
   // #1046 — Phase 7 contract gaps: storage, registry, bundles, library versions (#1009–#1012 implement)
-  ['infrastructure:I-95', '#1009'],
-  ['infrastructure:I-96', '#1009'],
   ['infrastructure:I-98', '#1010'],
   ['infrastructure:I-99', '#1010'],
   ['infrastructure:I-100', '#1010'],

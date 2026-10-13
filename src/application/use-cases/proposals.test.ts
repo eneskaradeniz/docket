@@ -32,30 +32,29 @@ const slugOf = <B extends string>(input: string): Slug<B> => {
   return parsed.value;
 };
 
-const GLOBAL: DefinitionScope = { kind: 'global' };
-const TARGET = 'roles/implementer.json';
-const ABSENT_TARGET = 'roles/new-role.json';
+const REPO_SCOPE: DefinitionScope = { kind: 'repo', repo: slugOf<'repo'>('acme') };
+const TARGET = 'repos/acme/repo.yaml';
+const ABSENT_TARGET = 'repos/ghost/repo.yaml';
 const RUN_ID: RunId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FA1');
 
 const USER: Actor = { kind: 'user', id: 'user-1', label: 'Operator' };
 const AGENT: Actor = { kind: 'agent', runId: RUN_ID, role: slugOf<'role'>('reviewer') };
 
+/** A bare repo definition body — the file a repo-scope proposal edits. */
 const rolesFile = (name: string): string =>
   JSON.stringify({
-    roles: [
-      {
-        id: 'implementer',
-        name,
-        instructions: 'implement the task',
-        writeScope: { kind: 'repo' },
-        capabilities: [],
-        active: true,
-      },
-    ],
+    id: 'acme',
+    name,
+    flows: ['standard'],
+    defaultFlow: 'standard',
+    commandSets: {},
+    roleOverrides: [],
+    docsRoot: 'docs',
+    testGlobs: [],
   });
 
-/** Syntactically JSON, semantically broken: the role misses required fields. */
-const INVALID_CANDIDATE = JSON.stringify({ roles: [{ id: 'reviewer', name: 'Reviewer' }] });
+/** Syntactically JSON, semantically broken: the repo misses required fields. */
+const INVALID_CANDIDATE = JSON.stringify({ id: 'acme', name: 'Broken' });
 
 interface Harness {
   readonly deps: AppDeps;
@@ -65,9 +64,17 @@ interface Harness {
   readonly log: FakeEventLog;
 }
 
+/** The minimal library a repo.yaml candidate validates against. */
+const STANDARD_FLOW = JSON.stringify({
+  id: 'standard',
+  name: 'Standard',
+  stages: [{ id: 'plan', name: 'Plan', role: null, exit: [] }],
+});
+
 const makeHarness = (): Harness => {
   const clock = createFakeClock(1_000);
   const definitions = createFakeDefinitionStore();
+  definitions.seed('library/flows/standard/v1.yaml', STANDARD_FLOW);
   const proposals = createFakeProposalRepo();
   const log = createFakeEventLog();
   const deps = createFakeDeps({ clock, definitions, proposals, log });
@@ -75,7 +82,7 @@ const makeHarness = (): Harness => {
 };
 
 const propose = (h: Harness, after: string, target: string = TARGET) =>
-  createProposal(h.deps, { scope: GLOBAL, target, after, summary: 'Rename the role', author: USER });
+  createProposal(h.deps, { scope: REPO_SCOPE, target, after, summary: 'Rename the repo', author: USER });
 
 const idOf = async (h: Harness, after: string, target: string = TARGET): Promise<Ulid<'proposal'>> => {
   const proposed = await propose(h, after, target);
@@ -87,8 +94,10 @@ const idOf = async (h: Harness, after: string, target: string = TARGET): Promise
 const readingHash =
   (base: FakeDefinitionStore, hash: string): DefinitionStore => ({
     ...base,
-    readFile: async (scope: DefinitionScope, target: string) => {
-      const file = await base.readFile(scope, target);
+    readFile: async (targetOrScope: string | DefinitionScope, maybeTarget?: string) => {
+      const file = typeof targetOrScope === 'string'
+        ? await base.readFile(targetOrScope)
+        : await base.readFile(targetOrScope, maybeTarget!);
       return file === undefined ? undefined : { content: file.content, hash };
     },
   });
@@ -98,9 +107,9 @@ const readingHash =
 describe('createProposal', () => {
   it('A-11: stores a pending proposal with the current file as baseHash and audits proposal.created', async () => {
     const h = makeHarness();
-    h.definitions.seed(GLOBAL, TARGET, rolesFile('Implementer'));
+    h.definitions.seed(TARGET, rolesFile('Implementer'));
     const after = rolesFile('Implementer v2');
-    const current = await h.definitions.readFile(GLOBAL, TARGET);
+    const current = await h.definitions.readFile(TARGET);
     if (current === undefined) throw new Error('fixture file must be seeded');
 
     const result = await propose(h, after);
@@ -116,9 +125,9 @@ describe('createProposal', () => {
       baseHash: current.hash,
       before: rolesFile('Implementer'),
       after,
-      summary: 'Rename the role',
+      summary: 'Rename the repo',
       status: 'pending',
-      scope: GLOBAL,
+      scope: REPO_SCOPE,
     });
     expect(h.log.entries()).toHaveLength(1);
     const [audit] = h.log.entries();
@@ -146,7 +155,7 @@ describe('createProposal', () => {
 
   it('A-11: after === before → no_change, nothing stored, nothing audited', async () => {
     const h = makeHarness();
-    h.definitions.seed(GLOBAL, TARGET, rolesFile('Implementer'));
+    h.definitions.seed(TARGET, rolesFile('Implementer'));
 
     const result = await propose(h, rolesFile('Implementer'));
 
@@ -170,10 +179,10 @@ describe('createProposal', () => {
 describe('decideProposalUseCase', () => {
   it('A-12: approving a valid candidate writes the file, decides the proposal, and audits proposal.decided', async () => {
     const h = makeHarness();
-    h.definitions.seed(GLOBAL, TARGET, rolesFile('Implementer'));
+    h.definitions.seed(TARGET, rolesFile('Implementer'));
     const after = rolesFile('Implementer v2');
     const id = await idOf(h, after);
-    const baseHash = (await h.definitions.readFile(GLOBAL, TARGET))?.hash;
+    const baseHash = (await h.definitions.readFile(TARGET))?.hash;
     h.clock.advance(50);
 
     const result = await decideProposalUseCase(h.deps, { id, decision: 'approved', actor: USER });
@@ -188,14 +197,14 @@ describe('decideProposalUseCase', () => {
       baseHash,
       before: rolesFile('Implementer'),
       after,
-      summary: 'Rename the role',
+      summary: 'Rename the repo',
       status: 'approved',
       decidedBy: USER,
       decidedAt: 1_050,
-      scope: GLOBAL,
+      scope: REPO_SCOPE,
     });
     await expect(h.proposals.get(id)).resolves.toEqual(result.value);
-    const written = await h.definitions.readFile(GLOBAL, TARGET);
+    const written = await h.definitions.readFile(TARGET);
     expect(written?.content).toBe(after);
     expect(written?.hash).not.toBe(baseHash);
     expect(h.log.entries()).toHaveLength(2);
@@ -212,8 +221,8 @@ describe('decideProposalUseCase', () => {
 
   it('A-12: rejecting never touches files and skips candidate validation', async () => {
     const h = makeHarness();
-    h.definitions.seed(GLOBAL, TARGET, rolesFile('Implementer'));
-    const baseHash = (await h.definitions.readFile(GLOBAL, TARGET))?.hash;
+    h.definitions.seed(TARGET, rolesFile('Implementer'));
+    const baseHash = (await h.definitions.readFile(TARGET))?.hash;
     const id = await idOf(h, INVALID_CANDIDATE);
     h.clock.advance(50);
 
@@ -223,7 +232,7 @@ describe('decideProposalUseCase', () => {
     if (!result.ok) throw new Error('rejecting an invalid candidate must succeed');
     expect(result.value.status).toBe('rejected');
     expect(result.value.decidedBy).toEqual(USER);
-    const file = await h.definitions.readFile(GLOBAL, TARGET);
+    const file = await h.definitions.readFile(TARGET);
     expect(file?.content).toBe(rolesFile('Implementer'));
     expect(file?.hash).toBe(baseHash);
     const [, decided] = h.log.entries();
@@ -232,26 +241,26 @@ describe('decideProposalUseCase', () => {
 
   it('A-12: a file changed after proposing → stale, the proposal saved as stale, the file untouched', async () => {
     const h = makeHarness();
-    h.definitions.seed(GLOBAL, TARGET, rolesFile('Implementer'));
+    h.definitions.seed(TARGET, rolesFile('Implementer'));
     const id = await idOf(h, rolesFile('Implementer v2'));
     const changedExternally = rolesFile('Changed elsewhere');
-    h.definitions.seed(GLOBAL, TARGET, changedExternally);
+    h.definitions.seed(TARGET, changedExternally);
 
     const result = await decideProposalUseCase(h.deps, { id, decision: 'approved', actor: USER });
 
     expect(result).toEqual({ ok: false, error: 'stale' });
     const stored = await h.proposals.get(id);
     expect(stored?.status).toBe('stale');
-    const file = await h.definitions.readFile(GLOBAL, TARGET);
+    const file = await h.definitions.readFile(TARGET);
     expect(file?.content).toBe(changedExternally);
     expect(h.log.entries()).toHaveLength(1); // created only: a refused decision audits nothing
   });
 
   it('A-12: rejection succeeds even when the file changed after proposing', async () => {
     const h = makeHarness();
-    h.definitions.seed(GLOBAL, TARGET, rolesFile('Implementer'));
+    h.definitions.seed(TARGET, rolesFile('Implementer'));
     const id = await idOf(h, rolesFile('Implementer v2'));
-    h.definitions.seed(GLOBAL, TARGET, rolesFile('Changed elsewhere'));
+    h.definitions.seed(TARGET, rolesFile('Changed elsewhere'));
 
     const result = await decideProposalUseCase(h.deps, { id, decision: 'rejected', actor: USER });
 
@@ -262,7 +271,7 @@ describe('decideProposalUseCase', () => {
 
   it('A-12: an invalid candidate on approval → invalid_after and the proposal stays pending', async () => {
     const h = makeHarness();
-    h.definitions.seed(GLOBAL, TARGET, rolesFile('Implementer'));
+    h.definitions.seed(TARGET, rolesFile('Implementer'));
     const id = await idOf(h, INVALID_CANDIDATE);
 
     const result = await decideProposalUseCase(h.deps, { id, decision: 'approved', actor: USER });
@@ -271,14 +280,14 @@ describe('decideProposalUseCase', () => {
     const stored = await h.proposals.get(id);
     expect(stored?.status).toBe('pending');
     expect(stored?.decidedBy).toBeUndefined();
-    const file = await h.definitions.readFile(GLOBAL, TARGET);
+    const file = await h.definitions.readFile(TARGET);
     expect(file?.content).toBe(rolesFile('Implementer'));
     expect(h.log.entries()).toHaveLength(1);
   });
 
   it('A-12: an agent approving → self_approval and the proposal is left as it was', async () => {
     const h = makeHarness();
-    h.definitions.seed(GLOBAL, TARGET, rolesFile('Implementer'));
+    h.definitions.seed(TARGET, rolesFile('Implementer'));
     const id = await idOf(h, rolesFile('Implementer v2'));
 
     const result = await decideProposalUseCase(h.deps, { id, decision: 'approved', actor: AGENT });
@@ -286,7 +295,7 @@ describe('decideProposalUseCase', () => {
     expect(result).toEqual({ ok: false, error: 'self_approval' });
     const stored = await h.proposals.get(id);
     expect(stored?.status).toBe('pending');
-    const file = await h.definitions.readFile(GLOBAL, TARGET);
+    const file = await h.definitions.readFile(TARGET);
     expect(file?.content).toBe(rolesFile('Implementer'));
     expect(h.log.entries()).toHaveLength(1);
   });
@@ -301,11 +310,11 @@ describe('decideProposalUseCase', () => {
 
   it('A-12: deciding an already decided proposal → not_pending, whatever the file says', async () => {
     const h = makeHarness();
-    h.definitions.seed(GLOBAL, TARGET, rolesFile('Implementer'));
+    h.definitions.seed(TARGET, rolesFile('Implementer'));
     const id = await idOf(h, rolesFile('Implementer v2'));
     const first = await decideProposalUseCase(h.deps, { id, decision: 'approved', actor: USER });
     if (!first.ok) throw new Error('first decision must succeed');
-    h.definitions.seed(GLOBAL, TARGET, rolesFile('Changed afterwards'));
+    h.definitions.seed(TARGET, rolesFile('Changed afterwards'));
 
     const second = await decideProposalUseCase(h.deps, { id, decision: 'rejected', actor: USER });
 
@@ -315,7 +324,7 @@ describe('decideProposalUseCase', () => {
 
   it('A-12: validation runs before the domain decision — an agent approving an invalid candidate gets invalid_after', async () => {
     const h = makeHarness();
-    h.definitions.seed(GLOBAL, TARGET, rolesFile('Implementer'));
+    h.definitions.seed(TARGET, rolesFile('Implementer'));
     const id = await idOf(h, INVALID_CANDIDATE);
 
     const result = await decideProposalUseCase(h.deps, { id, decision: 'approved', actor: AGENT });
@@ -325,9 +334,9 @@ describe('decideProposalUseCase', () => {
 
   it('A-12: self_approval wins over staleness — an agent approving a changed file is still self_approval', async () => {
     const h = makeHarness();
-    h.definitions.seed(GLOBAL, TARGET, rolesFile('Implementer'));
+    h.definitions.seed(TARGET, rolesFile('Implementer'));
     const id = await idOf(h, rolesFile('Implementer v2'));
-    h.definitions.seed(GLOBAL, TARGET, rolesFile('Changed elsewhere'));
+    h.definitions.seed(TARGET, rolesFile('Changed elsewhere'));
 
     const result = await decideProposalUseCase(h.deps, { id, decision: 'approved', actor: AGENT });
 
@@ -338,12 +347,12 @@ describe('decideProposalUseCase', () => {
 
   it('A-12: a write that loses the hash race → stale saved and the file untouched', async () => {
     const h = makeHarness();
-    h.definitions.seed(GLOBAL, TARGET, rolesFile('Implementer'));
+    h.definitions.seed(TARGET, rolesFile('Implementer'));
     const id = await idOf(h, rolesFile('Implementer v2'));
-    const baseHash = (await h.definitions.readFile(GLOBAL, TARGET))?.hash;
+    const baseHash = (await h.definitions.readFile(TARGET))?.hash;
     // The file moves after the proposal but readFile keeps reporting the proposal's hash, so the
     // domain agrees and only writeFile's own guard catches the change.
-    h.definitions.seed(GLOBAL, TARGET, rolesFile('Changed elsewhere'));
+    h.definitions.seed(TARGET, rolesFile('Changed elsewhere'));
     const deps: AppDeps = { ...h.deps, definitions: readingHash(h.definitions, baseHash ?? '') };
 
     const result = await decideProposalUseCase(deps, { id, decision: 'approved', actor: USER });
@@ -351,7 +360,7 @@ describe('decideProposalUseCase', () => {
     expect(result).toEqual({ ok: false, error: 'stale' });
     const stored = await h.proposals.get(id);
     expect(stored?.status).toBe('stale');
-    const file = await h.definitions.readFile(GLOBAL, TARGET);
+    const file = await h.definitions.readFile(TARGET);
     expect(file?.content).toBe(rolesFile('Changed elsewhere'));
     expect(h.log.entries()).toHaveLength(1);
   });

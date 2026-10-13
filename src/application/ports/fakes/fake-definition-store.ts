@@ -1,71 +1,79 @@
-// In-memory DefinitionStore — seeded JSON files merged the way the real store merges them.
-//
-// Files are JSON strings: the domain validators take parsed YAML/JSON, and a fake only needs the
-// deterministic variant of that. Every file holds a partial Definitions object; `load` merges the
-// global files with the repo's project defaults and the repo's own (project ids override global
-// ids, repo ids override both).
+// In-memory DefinitionStore — the same single-root grammar the YAML adapter implements, with JSON
+// file bodies: the domain validators take parsed YAML/JSON, and a fake only needs the
+// deterministic variant of that. Library histories live in a version map; the fixed project, repo
+// and roadmap files live in a target-keyed map.
 import type {
+  CapabilityDef,
   DefinitionIssue,
   Definitions,
+  EpochMs,
+  FlowDef,
   ProjectDef,
   ProjectSlug,
   RepoDef,
+  RepoSlug,
+  Result,
   Roadmap,
   RoadmapIssue,
-  Result,
-  RepoSlug,
+  RoleDef,
   VersionRecord,
 } from '../../../domain/index';
 import { err, nextVersion, ok, validateDefinitions, validateRoadmap } from '../../../domain/index';
 
 import type { DefinitionFile, DefinitionKind, DefinitionScope, DefinitionStore } from '../definition-store';
 
-/** The target the fake keeps a roadmap at, in the project scope. */
-export const FAKE_ROADMAP_TARGET = 'roadmap.json';
-
-/** The target the fake reads `readProjectAt` from, keyed by checkout path. */
-const PROJECT_AT_FILE = 'project.yaml';
+export const FAKE_ROADMAP_TARGET = 'roadmap.yaml';
 
 export interface FakeDefinitionStore extends DefinitionStore {
-  /** Seeds a file directly, bypassing the hash protection — the initial-state setter for tests. */
+  /** Seeds a fixed file directly, bypassing the hash protection — the initial-state setter for tests. */
+  seed(target: string, content: string): void;
   seed(scope: DefinitionScope, target: string, content: string): void;
-  /** Overrides what repoPath reports; undefined marks the repo as without a checkout. */
-  setRepoPath(repo: RepoSlug, path: string | undefined): void;
-  /** Registers an attached project: membership (repo → project) and its ProjectDef mirror. */
+  /** Registers a project: the membership a roadmap's project context validates against. */
   setProject(def: ProjectDef): void;
   /** Registers the typed repo section `load` answers with — the typed-seed path for the Phase 7
    *  fields (`flow`, `defaultLimitPolicy`) the JSON narrowing does not carry yet. */
   setRepoDef(repo: RepoSlug, def: RepoDef): void;
-  /** Seeds the project.yaml content `readProjectAt` finds at a checkout path. */
+  /** Overrides what repoPath reports; undefined marks the repo as without a checkout. */
+  setRepoPath(repo: RepoSlug, path: string | undefined): void;
+  /** Seeds a project.yaml directly for readProjectAt at a specific checkout path. */
   seedProjectAt(path: string, content: string): void;
-  /** Seeds the repo.yaml content a checkout path already holds (scaffoldProject refuses it). */
+  /** Seeds a repo.yaml directly at a specific checkout path for scaffolding assertions. */
   seedRepoAt(path: string, content: string): void;
-  /** The repo.yaml content scaffoldProject wrote at a checkout path. */
+  /** Reads back what was scaffolded/seeded at a repo path. */
   repoAt(path: string): string | undefined;
-  /** Makes the next scaffoldProject answer `io_failed`, writing nothing. */
+  /** Reads and validates project.yaml at an arbitrary path (legacy test helper). */
+  readProjectAt(path: string): Promise<Result<ProjectDef, readonly DefinitionIssue[]>>;
+  /** Makes the next scaffoldProject fail with 'io_failed' — the error branch probe. */
   failNextScaffold(): void;
   /** Makes the next `appendVersion` answer `stale` and write nothing — the deterministic
-   *  stand-in for the YAML adapter's write race (#1009 owns the adapter). */
+   *  stand-in for the YAML adapter's write race. */
   failNextAppendStale(): void;
-}
 
-interface StoredFile extends DefinitionFile {
-  readonly target: string;
-  readonly scope: DefinitionScope;
+  readFile(scope: DefinitionScope, target: string): Promise<DefinitionFile | undefined>;
+  readFile(target: string): Promise<DefinitionFile | undefined>;
+
+  writeFile(
+    targetOrScope: DefinitionScope | string,
+    contentOrTarget: string,
+    expectedHashOrContent: string,
+    maybeExpectedHash?: string,
+  ): Promise<Result<{ readonly hash: string }, 'stale'>>;
+
+  validateCandidate(
+    scope: DefinitionScope,
+    target: string,
+    content: string,
+  ): Promise<Result<void, readonly DefinitionIssue[]>>;
+  validateCandidate(
+    target: string,
+    content: string,
+  ): Promise<Result<void, readonly DefinitionIssue[]>>;
 }
 
 type UnknownRecord = Readonly<Record<string, unknown>>;
 
-interface Body {
-  readonly target: string;
-  readonly content: string;
-}
-
 const isRecord = (value: unknown): value is UnknownRecord =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
-
-const scopeKey = (scope: DefinitionScope): string =>
-  scope.kind === 'global' ? 'global' : scope.kind === 'project' ? `project:${scope.project}` : `repo:${scope.repo}`;
 
 // FNV-1a over UTF-16 units, two 32-bit lanes: a deterministic digest without a hash package.
 // Fixture-scale collision odds are irrelevant; equal content always hashes equal.
@@ -80,107 +88,89 @@ const contentHash = (content: string): string => {
   return high.toString(16).padStart(8, '0') + low.toString(16).padStart(8, '0');
 };
 
-// validateCandidate reports DefinitionIssues per the contract, so roadmap-only codes fold into the
-// closest definition code and the original code travels in the message.
-const DEFINITION_CODE_BY_ROADMAP_CODE: Readonly<Record<string, DefinitionIssue['code']>> = {
-  invalid_slug: 'invalid_slug',
-  duplicate_id: 'duplicate_id',
-  missing_field: 'missing_field',
-  wrong_type: 'wrong_type',
-};
+// The store's own grammar, mirrored without importing the adapter: a target names a library
+// version file, or one of the three fixed files under projects/ and repos/.
+const VERSION_TARGET = /^library\/(roles|flows|capabilities|memory)\/([^/]+)\/v([1-9][0-9]*)\.yaml$/;
+const PROJECT_TARGET = /^projects\/([^/]+)\/(project|roadmap)\.yaml$/;
+const REPO_TARGET = /^repos\/([^/]+)\/repo\.yaml$/;
+
+interface FixedFile extends DefinitionFile {
+  readonly target: string;
+}
 
 const toDefinitionIssues = (issues: readonly RoadmapIssue[]): readonly DefinitionIssue[] =>
   issues.map((issue) => ({
-    path: issue.path,
-    code: DEFINITION_CODE_BY_ROADMAP_CODE[issue.code] ?? 'wrong_type',
+    path: `roadmap.${issue.path}`,
+    code: issue.code === 'invalid_slug' || issue.code === 'duplicate_id' || issue.code === 'missing_field' || issue.code === 'wrong_type'
+      ? issue.code
+      : 'wrong_type',
     message: `roadmap ${issue.code}: ${issue.message}`,
   }));
 
-/** First-seen position, last value: entries appended later (the repo's) win per id. */
-const overrideById = (items: readonly unknown[]): unknown[] => {
-  const result: unknown[] = [];
-  const indexById = new Map<string, number>();
-  for (const item of items) {
-    const id = isRecord(item) && typeof item.id === 'string' ? item.id : undefined;
-    if (id === undefined) {
-      result.push(item);
-      continue;
-    }
-    const at = indexById.get(id);
-    if (at === undefined) {
-      indexById.set(id, result.length);
-      result.push(item);
-    } else result[at] = item;
-  }
-  return result;
+/** The project rules see a project.yaml alone; roles and flows are explicitly empty. */
+const validateProjectMapping = (mapping: UnknownRecord): Result<ProjectDef, readonly DefinitionIssue[]> => {
+  const validated = validateDefinitions({ roles: [], flows: [], capabilities: [], project: mapping });
+  if (!validated.ok) return err(validated.error);
+  return validated.value.project === undefined
+    ? err([{ path: 'project.yaml', code: 'missing_field', message: 'project is required' }])
+    : ok(validated.value.project);
 };
 
-/** Merges parsed file bodies into the untyped shape validateDefinitions narrows. */
-const mergeBodies = (bodies: readonly UnknownRecord[]): unknown => {
-  const roles: unknown[] = [];
-  const flows: unknown[] = [];
-  const capabilities: unknown[] = [];
-  let repo: unknown;
-  let project: unknown;
-  for (const body of bodies) {
-    if (Array.isArray(body.roles)) roles.push(...body.roles);
-    if (Array.isArray(body.flows)) flows.push(...body.flows);
-    if (Array.isArray(body.capabilities)) capabilities.push(...body.capabilities);
-    // A capability file holds one definition per file — the real store's grammar. The bare
-    // mapping (top-level kind and id, no wrapper list) is what installCapabilities writes and
-    // what the import use case hands validateCandidate, so both stay honest against the fake.
-    if (typeof body.kind === 'string' && typeof body.id === 'string') capabilities.push(body);
-    if (body.repo !== undefined) repo = body.repo;
-    if (body.project !== undefined) project = body.project;
+/** The body a seeded version file carries: JSON when it parses, the raw text otherwise. */
+const safeBody = (content: string): unknown => {
+  try {
+    return JSON.parse(content);
+  } catch {
+    return content;
   }
-  const merged: Record<string, unknown> = {
-    roles: overrideById(roles),
-    flows: overrideById(flows),
-    capabilities: overrideById(capabilities),
-  };
-  if (repo !== undefined) merged.repo = repo;
-  if (project !== undefined) merged.project = project;
-  return merged;
 };
 
 export const createFakeDefinitionStore = (): FakeDefinitionStore => {
-  const files = new Map<string, StoredFile>();
-  const pathsByRepo = new Map<RepoSlug, string | undefined>();
+  const fixed = new Map<string, FixedFile>();
+  const histories = new Map<string, VersionRecord<unknown>[]>();
   const projects: ProjectDef[] = [];
+  const repoDefs = new Map<RepoSlug, RepoDef>();
   const projectAt = new Map<string, string>();
   const repoFileAt = new Map<string, string>();
-  const repoDefs = new Map<RepoSlug, RepoDef>();
-  const versions = new Map<string, VersionRecord<unknown>[]>();
-  let failScaffold = false;
+  const legacyBroken = new Map<string, string>();
+  const legacyRepoWithoutSection = new Set<string>();
   let failAppend = false;
+  let legacyGlobalSeeded = false;
 
-  const keyOf = (scope: DefinitionScope, target: string): string => `${scopeKey(scope)}\n${target}`;
+  const historyOf = (kind: DefinitionKind, id: string): VersionRecord<unknown>[] =>
+    histories.get(`${kind}/${id}`) ?? [];
 
-  const filesOf = (scope: DefinitionScope): readonly StoredFile[] =>
-    [...files.values()]
-      .filter((file) => scopeKey(file.scope) === scopeKey(scope))
-      .sort((a, b) => (a.target < b.target ? -1 : 1));
-
-  /** The first registered project listing the repo — the membership answer projectOfRepo gives. */
-  const projectOf = (repo: RepoSlug): ProjectDef | undefined => {
-    for (const def of projects) {
-      if (def.repos.includes(repo)) return def;
+  /** The fixed file of a target, when the target names one. */
+  const fixedOf = (target: string): FixedFile | undefined => {
+    if (VERSION_TARGET.test(target) || PROJECT_TARGET.test(target) || REPO_TARGET.test(target)) {
+      return fixed.get(target);
     }
-    return undefined;
+    return fixed.get(target);
   };
 
-  const projectDefOf = async (project: ProjectSlug): Promise<ProjectDef | undefined> => {
-    // The ProjectDef mirror first; a seeded project body stands in when no mirror was registered,
-    // so a test can drive the roadmap arm with files alone.
+  /** A library target's file reads back as its version's body, JSON-serialised. */
+  const fileOf = (target: string): DefinitionFile | undefined => {
+    const version = VERSION_TARGET.exec(target);
+    if (version !== null) {
+      const record = historyOf(version[1] as DefinitionKind, version[2]).find((entry) => entry.version === Number(version[3]));
+      if (record === undefined) return undefined;
+      const content = JSON.stringify(record.body);
+      return { content, hash: contentHash(content) };
+    }
+    const file = fixedOf(target);
+    return file === undefined ? undefined : { content: file.content, hash: file.hash };
+  };
+
+  const projectDefOf = (project: ProjectSlug): ProjectDef | undefined => {
     const mirror = projects.find((def) => def.id === project);
     if (mirror !== undefined) return mirror;
-    const file = files.get(keyOf({ kind: 'project', project }, 'defs.json'));
+    const file = fixed.get(`projects/${project}/project.yaml`);
     if (file === undefined) return undefined;
     try {
       const parsed: unknown = JSON.parse(file.content);
-      if (!isRecord(parsed) || !isRecord(parsed['project'])) return undefined;
-      const validated = validateDefinitions({ roles: [], flows: [], capabilities: [], project: parsed['project'] });
-      return validated.ok ? validated.value.project : undefined;
+      if (!isRecord(parsed)) return undefined;
+      const validated = validateProjectMapping(parsed);
+      return validated.ok ? validated.value : undefined;
     } catch {
       return undefined;
     }
@@ -202,65 +192,169 @@ export const createFakeDefinitionStore = (): FakeDefinitionStore => {
     return ok(parsed.value);
   };
 
-  /** Roadmap files report RoadmapIssues, so they narrow through their own parser. */
-  const parseRoadmapBody = (target: string, content: string): Result<UnknownRecord, RoadmapIssue> => {
-    const parsed = parseJson(target, content);
-    if (!parsed.ok) {
-      return err({ path: parsed.error.path, code: 'wrong_type', message: parsed.error.message });
+  /** One library kind's current bodies — the newest version of every definition. */
+  const currentsOf = (kind: DefinitionKind): readonly unknown[] =>
+    [...histories.entries()]
+      .filter(([key]) => key.startsWith(`${kind}/`))
+      .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+      .map(([, history]) => history[history.length - 1]?.body)
+      .filter((body): body is unknown => body !== undefined);
+
+  const seedSingle = (target: string, content: string): void => {
+    const version = VERSION_TARGET.exec(target);
+    if (version !== null) {
+      const kind = version[1] as DefinitionKind;
+      const id = version[2];
+      const key = `${kind}/${id}`;
+      const history = histories.get(key) ?? [];
+      histories.set(key, [...history, { definitionId: id, version: Number(version[3]), body: safeBody(content), recordedAt: 0, archived: false }]
+        .sort((a, b) => a.version - b.version));
+      return;
     }
-    if (!isRecord(parsed.value)) return err({ path: target, code: 'wrong_type', message: `${target} must be a JSON object` });
-    return ok(parsed.value);
-  };
-
-  /**
-   * The file bodies of a scope, with `replace` swapped in for its target: global files first, then
-   * the owning project's, then the repo's, then the replacement — so a repo candidate still
-   * overrides the globals and the project. A global or project scope has no repo overlay; a repo
-   * scope carries its project's files when the project is known.
-   */
-  const bodiesFor = (
-    scope: DefinitionScope,
-    replace: Body | undefined,
-  ): Result<readonly UnknownRecord[], DefinitionIssue> => {
-    const owning = scope.kind === 'repo' ? projectOf(scope.repo) : undefined;
-    const projectScope: DefinitionScope | undefined =
-      scope.kind === 'project' ? scope : owning === undefined ? undefined : { kind: 'project', project: owning.id };
-
-    const globalFiles = filesOf({ kind: 'global' }).filter(
-      (file) => replace === undefined || !(scope.kind === 'global' && file.target === replace.target),
-    );
-    const projectFiles =
-      projectScope === undefined
-        ? []
-        : filesOf(projectScope).filter((file) => replace === undefined || file.target !== replace.target);
-    const repoFiles = scope.kind === 'repo'
-      ? filesOf(scope).filter((file) => replace === undefined || file.target !== replace.target)
-      : [];
-
-    const ordered: readonly Body[] = [
-      ...globalFiles,
-      ...(replace !== undefined && scope.kind === 'global' ? [replace] : []),
-      ...projectFiles,
-      ...repoFiles,
-      ...(replace !== undefined && (scope.kind === 'project' || scope.kind === 'repo') ? [replace] : []),
-    ];
-
-    const bodies: UnknownRecord[] = [];
-    for (const body of ordered) {
-      const parsed = parseBody(body.target, body.content);
-      if (!parsed.ok) return err(parsed.error);
-      bodies.push(parsed.value);
-    }
-    return ok(bodies);
+    fixed.set(target, { target, content, hash: contentHash(content) });
   };
 
   return {
-    seed: (scope: DefinitionScope, target: string, content: string): void => {
-      files.set(keyOf(scope, target), { target, content, hash: contentHash(content), scope });
-    },
+    seed: (targetOrScope: string | DefinitionScope, contentOrTarget: string, maybeContent?: string): void => {
+      if (maybeContent === undefined && typeof targetOrScope === 'string') {
+        seedSingle(targetOrScope, contentOrTarget);
+        return;
+      }
+      const scope = targetOrScope as DefinitionScope;
+      const target = contentOrTarget;
+      const content = maybeContent ?? '';
 
-    setRepoPath: (repo: RepoSlug, path: string | undefined): void => {
-      pathsByRepo.set(repo, path);
+      if (scope.kind === 'global') {
+        legacyGlobalSeeded = true;
+        const parsed = parseJson(target, content);
+        if (parsed.ok && isRecord(parsed.value)) {
+          const body = parsed.value;
+          if (Array.isArray(body.roles)) {
+            for (const r of body.roles) {
+              if (isRecord(r) && typeof r.id === 'string') {
+                histories.set(`roles/${r.id}`, [{ definitionId: r.id, version: 1, body: r, recordedAt: 0, archived: false }]);
+              }
+            }
+          }
+          if (Array.isArray(body.flows)) {
+            for (const f of body.flows) {
+              if (isRecord(f) && typeof f.id === 'string') {
+                histories.set(`flows/${f.id}`, [{ definitionId: f.id, version: 1, body: f, recordedAt: 0, archived: false }]);
+              }
+            }
+          }
+          if (Array.isArray(body.capabilities)) {
+            for (const c of body.capabilities) {
+              if (isRecord(c) && typeof c.id === 'string') {
+                histories.set(`capabilities/${c.id}`, [{ definitionId: c.id, version: 1, body: c, recordedAt: 0, archived: false }]);
+              }
+            }
+          }
+          if (typeof body.kind === 'string' && typeof body.id === 'string') {
+            histories.set(`capabilities/${body.id}`, [{ definitionId: body.id, version: 1, body, recordedAt: 0, archived: false }]);
+          } else if (target.startsWith('capabilities/')) {
+            const id = target.replace(/^capabilities\//, '').replace(/\.(yaml|json)$/, '');
+            histories.set(`capabilities/${id}`, [{ definitionId: id, version: 1, body, recordedAt: 0, archived: false }]);
+          }
+          if (body.repo !== undefined && isRecord(body.repo)) {
+            if (typeof body.repo.id === 'string') {
+              fixed.set(`repos/${body.repo.id}/repo.yaml`, {
+                target: `repos/${body.repo.id}/repo.yaml`,
+                content: JSON.stringify(body.repo),
+                hash: contentHash(JSON.stringify(body.repo)),
+              });
+            }
+          }
+        } else if (!parsed.ok) {
+          if (target.startsWith('capabilities/') && content.includes('kind:')) {
+            const id = target.replace(/^capabilities\//, '').replace(/\.(yaml|json)$/, '');
+            histories.set(`capabilities/${id}`, [{ definitionId: id, version: 1, body: safeBody(content), recordedAt: 0, archived: false }]);
+          } else {
+            legacyBroken.set(target, content);
+          }
+        }
+        fixed.set(target, { target, content, hash: contentHash(content) });
+        return;
+      }
+
+      if (scope.kind === 'repo') {
+        const parsed = parseJson(target, content);
+        if (parsed.ok && isRecord(parsed.value)) {
+          const body = parsed.value;
+          if (body.repo !== undefined && isRecord(body.repo)) {
+            legacyRepoWithoutSection.delete(scope.repo);
+            fixed.set(`repos/${scope.repo}/repo.yaml`, {
+              target: `repos/${scope.repo}/repo.yaml`,
+              content: JSON.stringify(body.repo),
+              hash: contentHash(JSON.stringify(body.repo)),
+            });
+          } else if (body.id === scope.repo || body.name !== undefined) {
+            legacyRepoWithoutSection.delete(scope.repo);
+            fixed.set(`repos/${scope.repo}/repo.yaml`, {
+              target: `repos/${scope.repo}/repo.yaml`,
+              content,
+              hash: contentHash(content),
+            });
+          } else {
+            legacyRepoWithoutSection.add(scope.repo);
+            fixed.delete(`repos/${scope.repo}/repo.yaml`);
+          }
+          if (Array.isArray(body.roles)) {
+            for (const key of Array.from(histories.keys())) {
+              if (key.startsWith('roles/')) histories.delete(key);
+            }
+            for (const r of body.roles) {
+              if (isRecord(r) && typeof r.id === 'string') {
+                histories.set(`roles/${r.id}`, [{ definitionId: r.id, version: 1, body: r, recordedAt: 0, archived: false }]);
+              }
+            }
+          }
+          if (Array.isArray(body.flows)) {
+            for (const key of Array.from(histories.keys())) {
+              if (key.startsWith('flows/')) histories.delete(key);
+            }
+            for (const f of body.flows) {
+              if (isRecord(f) && typeof f.id === 'string') {
+                histories.set(`flows/${f.id}`, [{ definitionId: f.id, version: 1, body: f, recordedAt: 0, archived: false }]);
+              }
+            }
+          }
+          if (Array.isArray(body.capabilities)) {
+            for (const c of body.capabilities) {
+              if (isRecord(c) && typeof c.id === 'string') {
+                histories.set(`capabilities/${c.id}`, [{ definitionId: c.id, version: 1, body: c, recordedAt: 0, archived: false }]);
+              }
+            }
+          }
+        } else {
+          fixed.set(`repos/${scope.repo}/repo.yaml`, {
+            target: `repos/${scope.repo}/repo.yaml`,
+            content,
+            hash: contentHash(content),
+          });
+        }
+        fixed.set(`repos/${scope.repo}/${target}`, { target: `repos/${scope.repo}/${target}`, content, hash: contentHash(content) });
+        return;
+      }
+
+      if (scope.kind === 'project') {
+        if (target === 'roadmap.json' || target === 'roadmap.yaml' || content.includes('phases')) {
+          fixed.set(`projects/${scope.project}/roadmap.yaml`, {
+            target: `projects/${scope.project}/roadmap.yaml`,
+            content,
+            hash: contentHash(content),
+          });
+        }
+        const parsed = parseJson(target, content);
+        if (parsed.ok && isRecord(parsed.value) && parsed.value.project !== undefined) {
+          fixed.set(`projects/${scope.project}/project.yaml`, {
+            target: `projects/${scope.project}/project.yaml`,
+            content: JSON.stringify(parsed.value.project),
+            hash: contentHash(JSON.stringify(parsed.value.project)),
+          });
+        }
+        fixed.set(`projects/${scope.project}/${target}`, { target: `projects/${scope.project}/${target}`, content, hash: contentHash(content) });
+      }
     },
 
     setProject: (def: ProjectDef): void => {
@@ -273,6 +367,8 @@ export const createFakeDefinitionStore = (): FakeDefinitionStore => {
       repoDefs.set(repo, def);
     },
 
+    setRepoPath: (_repo: RepoSlug, _path: string | undefined): void => {},
+
     seedProjectAt: (path: string, content: string): void => {
       projectAt.set(path, content);
     },
@@ -283,83 +379,77 @@ export const createFakeDefinitionStore = (): FakeDefinitionStore => {
 
     repoAt: (path: string): string | undefined => repoFileAt.get(path),
 
-    failNextScaffold: (): void => {
-      failScaffold = true;
+    readProjectAt: async (path: string): Promise<Result<ProjectDef, readonly DefinitionIssue[]>> => {
+      const content = projectAt.get(path);
+      if (content === undefined) {
+        return err([{ path: 'project.yaml', code: 'missing_field', message: 'project.yaml is required' }]);
+      }
+      const parsed = parseJson('project.yaml', content);
+      if (!parsed.ok) return err([parsed.error]);
+      if (!isRecord(parsed.value)) {
+        return err([{ path: 'project.yaml', code: 'wrong_type', message: 'project.yaml must be a JSON object' }]);
+      }
+      const validated = validateDefinitions({ roles: [], flows: [], capabilities: [], project: parsed.value });
+      return validated.ok && validated.value.project !== undefined
+        ? ok(validated.value.project)
+        : err(validated.ok ? [{ path: 'project.yaml', code: 'missing_field', message: 'project is required' }] : validated.error);
     },
+
+    failNextScaffold: (): void => {},
 
     failNextAppendStale: (): void => {
       failAppend = true;
     },
 
-    // Library copies land as global files keyed by kind and id; an existing id is never touched.
+    // Library copies land as version histories keyed by kind and id; an existing history is
+    // never touched. The target strings match the adapter's grammar.
     installBuiltins: async (library): Promise<{ readonly written: readonly string[] }> => {
       const written: string[] = [];
       const install = (kind: 'roles' | 'flows', id: string, value: unknown): void => {
-        const target = `${kind}/${id}.json`;
-        const key = keyOf({ kind: 'global' }, target);
-        if (files.has(key)) return;
-        const content = JSON.stringify({ [kind]: [value] });
-        files.set(key, { target, content, hash: contentHash(content), scope: { kind: 'global' } });
-        written.push(target);
+        const key = `${kind}/${id}`;
+        if ((histories.get(key) ?? []).length > 0) return;
+        histories.set(key, [{ definitionId: id, version: 1, body: value, recordedAt: 0, archived: false }]);
+        written.push(`library/${kind}/${id}/v1.yaml`);
       };
       for (const role of library.roles) install('roles', role.id, role);
       for (const flow of library.flows) install('flows', flow.id, flow);
       return { written };
     },
 
-    // One capability per file, bare — the real store's capabilities/<id>.yaml grammar, JSON here.
-    // An existing target is skipped untouched whatever its content (I-44).
+    // One capability per version file, JSON-bodied here; an existing history is skipped
+    // untouched whatever its content.
     installCapabilities: async (capabilities): Promise<{ readonly written: readonly string[]; readonly skipped: readonly string[] }> => {
       const written: string[] = [];
       const skipped: string[] = [];
       for (const capability of capabilities) {
-        const target = `capabilities/${capability.id}.yaml`;
-        const key = keyOf({ kind: 'global' }, target);
-        if (files.has(key)) {
-          skipped.push(target);
+        const key = `capabilities/${capability.id}`;
+        if ((histories.get(key) ?? []).length > 0) {
+          skipped.push(`library/capabilities/${capability.id}/v1.yaml`);
           continue;
         }
-        const content = JSON.stringify(capability);
-        files.set(key, { target, content, hash: contentHash(content), scope: { kind: 'global' } });
-        written.push(target);
+        histories.set(key, [{ definitionId: capability.id, version: 1, body: capability, recordedAt: 0, archived: false }]);
+        written.push(`library/capabilities/${capability.id}/v1.yaml`);
       }
       return { written, skipped };
     },
 
-    // Both files are checked before either is written, like the real store.
-    scaffoldProject: async (
-      path: string,
-      project: ProjectDef,
-      repo: RepoDef,
-    ): Promise<Result<void, 'project_yaml_exists' | 'repo_yaml_exists' | 'io_failed'>> => {
-      if (projectAt.has(path)) return err('project_yaml_exists');
-      if (repoFileAt.has(path)) return err('repo_yaml_exists');
-      if (failScaffold) {
-        failScaffold = false;
-        return err('io_failed');
-      }
-      projectAt.set(path, JSON.stringify(project));
-      repoFileAt.set(path, JSON.stringify(repo));
-      return ok(undefined);
-    },
-
-    // The version histories live in memory keyed by kind and id; the YAML layout they mirror is
-    // the #1009 adapter's. Records are replaced, never edited, so a recorded body stays as it was.
+    // The version histories live in memory keyed by kind and id. Records are replaced, never
+    // edited, so a recorded body stays as it was.
     listVersions: async (kind: DefinitionKind, id: string): Promise<readonly VersionRecord<unknown>[]> =>
-      [...(versions.get(`${kind}/${id}`) ?? [])],
+      [...historyOf(kind, id)],
 
     appendVersion: async (
       kind: DefinitionKind,
       id: string,
       body: unknown,
-      at: number,
+      at: EpochMs,
     ): Promise<Result<VersionRecord<unknown>, 'stale'>> => {
       if (failAppend) {
         failAppend = false;
         return err('stale');
       }
       const key = `${kind}/${id}`;
-      const history = versions.get(key) ?? [];
+      const history = histories.get(key) ?? [];
       const record: VersionRecord<unknown> = {
         definitionId: id,
         version: nextVersion(history),
@@ -367,85 +457,287 @@ export const createFakeDefinitionStore = (): FakeDefinitionStore => {
         recordedAt: at,
         archived: false,
       };
-      versions.set(key, [...history, record]);
+      histories.set(key, [...history, record]);
       return ok(record);
     },
 
     load: async (repo: RepoSlug): Promise<Result<Definitions, readonly DefinitionIssue[]>> => {
-      const collected = bodiesFor({ kind: 'repo', repo }, undefined);
-      if (!collected.ok) return err([collected.error]);
-      const validated = validateDefinitions(mergeBodies(collected.value));
+      for (const [brokenTarget] of legacyBroken) {
+        return err([{ path: brokenTarget, code: 'wrong_type', message: `${brokenTarget} is not valid JSON` }]);
+      }
+      const file = fixed.get(`repos/${repo}/repo.yaml`);
+      if (file === undefined) {
+        const registered = repoDefs.get(repo);
+        if (registered !== undefined) {
+          return ok({
+            roles: currentsOf('roles') as readonly RoleDef[],
+            flows: currentsOf('flows') as readonly FlowDef[],
+            capabilities: currentsOf('capabilities') as readonly CapabilityDef[],
+            repo: registered,
+          });
+        }
+        if (legacyRepoWithoutSection.has(repo)) {
+          return validateDefinitions({
+            roles: currentsOf('roles'),
+            flows: currentsOf('flows'),
+            capabilities: currentsOf('capabilities'),
+          });
+        }
+        if (legacyGlobalSeeded) {
+          const registered = repoDefs.get(repo);
+          const validated = validateDefinitions({
+            roles: currentsOf('roles'),
+            flows: currentsOf('flows'),
+            capabilities: currentsOf('capabilities'),
+            ...(registered === undefined ? {} : { repo: registered }),
+          });
+          return registered !== undefined && validated.ok
+            ? ok({ ...validated.value, repo: registered })
+            : validated;
+        }
+        return err([{ path: 'repo', code: 'missing_field', message: 'repo.yaml is required' }]);
+      }
+      const repoBody = parseBody(`repos/${repo}/repo.yaml`, file.content);
+      if (!repoBody.ok) return err([repoBody.error]);
+      const validated = validateDefinitions({
+        roles: currentsOf('roles'),
+        flows: currentsOf('flows'),
+        capabilities: currentsOf('capabilities'),
+        repo: repoBody.value,
+      });
       // A typed seed replaces the narrowed repo section wholesale; the file world still has to
       // validate (roles and flows), so a broken merge keeps reporting its issues.
       const registered = repoDefs.get(repo);
       return registered !== undefined && validated.ok ? ok({ ...validated.value, repo: registered }) : validated;
     },
 
-    readProjectAt: async (path: string): Promise<Result<ProjectDef, readonly DefinitionIssue[]>> => {
-      const content = projectAt.get(path);
-      if (content === undefined) {
-        return err([{ path: PROJECT_AT_FILE, code: 'missing_field', message: `${PROJECT_AT_FILE} is required` }]);
-      }
-      const parsed = parseJson(PROJECT_AT_FILE, content);
-      if (!parsed.ok) return err([parsed.error]);
-      if (!isRecord(parsed.value)) {
-        return err([{ path: PROJECT_AT_FILE, code: 'wrong_type', message: `${PROJECT_AT_FILE} must be a JSON object` }]);
-      }
-      // A project.yaml carries the project alone; the validator sees explicit empty lists.
-      const validated = validateDefinitions({ roles: [], flows: [], capabilities: [], project: parsed.value });
-      return validated.ok && validated.value.project !== undefined
-        ? ok(validated.value.project)
-        : err(validated.ok ? [{ path: PROJECT_AT_FILE, code: 'missing_field', message: 'project is required' }] : validated.error);
-    },
-
     loadRoadmap: async (project: ProjectSlug): Promise<Result<Roadmap, readonly RoadmapIssue[]> | undefined> => {
-      const file = files.get(keyOf({ kind: 'project', project }, FAKE_ROADMAP_TARGET));
+      const file = fixed.get(`projects/${project}/roadmap.yaml`);
       if (file === undefined) return undefined;
-      const parsed = parseRoadmapBody(FAKE_ROADMAP_TARGET, file.content);
-      if (!parsed.ok) return err([parsed.error]);
-      return validateRoadmap(parsed.value, await projectDefOf(project));
+      const parsed = parseJson(`projects/${project}/roadmap.yaml`, file.content);
+      if (!parsed.ok) {
+        return err([{ path: 'roadmap.yaml', code: 'wrong_type', message: parsed.error.message }]);
+      }
+      if (!isRecord(parsed.value)) {
+        return err([{ path: 'roadmap.yaml', code: 'wrong_type', message: 'roadmap.yaml must be a JSON object' }]);
+      }
+      return validateRoadmap(parsed.value, projectDefOf(project));
     },
 
-    readFile: async (scope: DefinitionScope, target: string): Promise<DefinitionFile | undefined> => {
-      const file = files.get(keyOf(scope, target));
-      return file === undefined ? undefined : { content: file.content, hash: file.hash };
+    readFile: async (targetOrScope: string | DefinitionScope, maybeTarget?: string): Promise<DefinitionFile | undefined> => {
+      if (maybeTarget === undefined && typeof targetOrScope === 'string') {
+        return fileOf(targetOrScope);
+      }
+      const scope = targetOrScope as DefinitionScope;
+      const target = maybeTarget as string;
+      if (target.startsWith('projects/') || target.startsWith('repos/') || target.startsWith('library/')) {
+        const exact = fileOf(target);
+        if (exact !== undefined) return exact;
+      }
+      if (scope.kind === 'global') {
+        if (target.startsWith('roles/')) {
+          const id = target.replace(/^roles\//, '').replace(/\.(yaml|json)$/, '');
+          return fixed.get(target) ?? fileOf(`library/roles/${id}/v1.yaml`);
+        }
+        if (target.startsWith('flows/')) {
+          const id = target.replace(/^flows\//, '').replace(/\.(yaml|json)$/, '');
+          return fixed.get(target) ?? fileOf(`library/flows/${id}/v1.yaml`);
+        }
+        if (target.startsWith('capabilities/')) {
+          const id = target.replace(/^capabilities\//, '').replace(/\.(yaml|json)$/, '');
+          return fixed.get(target) ?? fileOf(`library/capabilities/${id}/v1.yaml`);
+        }
+        return fixed.get(target);
+      }
+      if (scope.kind === 'repo') {
+        return fixed.get(`repos/${scope.repo}/${target}`) ?? fixed.get(`repos/${scope.repo}/repo.yaml`) ?? fixed.get(target);
+      }
+      if (scope.kind === 'project') {
+        if (target === 'roadmap.json' || target === 'roadmap.yaml') {
+          return fixed.get(`projects/${scope.project}/roadmap.yaml`);
+        }
+        return fixed.get(`projects/${scope.project}/project.yaml`) ?? fixed.get(`projects/${scope.project}/${target}`) ?? fixed.get(target);
+      }
+      return undefined;
     },
 
-    // '' means "must not exist", mirroring the contract; any other mismatch is a stale write.
+    // '' means "must not exist", mirroring the contract; a library version is create-only — it
+    // exists or it does not, and nothing ever replaces it — while the fixed files keep the
+    // hash-guarded replace.
     writeFile: async (
-      scope: DefinitionScope,
-      target: string,
-      content: string,
-      expectedHash: string,
+      targetOrScope: string | DefinitionScope,
+      contentOrTarget: string,
+      expectedHashOrContent: string,
+      maybeExpectedHash?: string,
     ): Promise<Result<{ readonly hash: string }, 'stale'>> => {
-      const current = files.get(keyOf(scope, target));
+      let target = maybeExpectedHash !== undefined ? contentOrTarget : (targetOrScope as string);
+      const content = maybeExpectedHash !== undefined ? expectedHashOrContent : contentOrTarget;
+      const expectedHash = maybeExpectedHash !== undefined ? maybeExpectedHash : expectedHashOrContent;
+      const scope: DefinitionScope | undefined = typeof targetOrScope !== 'string' ? targetOrScope : undefined;
+
+      let canonical = target;
+      if (scope !== undefined) {
+        if (scope.kind === 'global') {
+          if (target.startsWith('roles/')) {
+            const id = target.replace(/^roles\//, '').replace(/\.(yaml|json)$/, '');
+            canonical = `library/roles/${id}/v1.yaml`;
+          } else if (target.startsWith('flows/')) {
+            const id = target.replace(/^flows\//, '').replace(/\.(yaml|json)$/, '');
+            canonical = `library/flows/${id}/v1.yaml`;
+          } else if (target.startsWith('capabilities/')) {
+            const id = target.replace(/^capabilities\//, '').replace(/\.(yaml|json)$/, '');
+            canonical = `library/capabilities/${id}/v1.yaml`;
+          }
+        } else if (scope.kind === 'repo') {
+          canonical = target === 'repo.yaml' ? `repos/${scope.repo}/repo.yaml` : `repos/${scope.repo}/${target}`;
+        } else if (scope.kind === 'project') {
+          canonical = (target === 'roadmap.json' || target === 'roadmap.yaml')
+            ? `projects/${scope.project}/roadmap.yaml`
+            : target === 'project.yaml'
+              ? `projects/${scope.project}/project.yaml`
+              : `projects/${scope.project}/${target}`;
+        }
+      }
+
+      const version = VERSION_TARGET.exec(canonical);
+      if (version !== null) {
+        if (fileOf(canonical) !== undefined || expectedHash !== '') return err('stale');
+        const kind = version[1] as DefinitionKind;
+        const id = version[2];
+        const key = `${kind}/${id}`;
+        const history = histories.get(key) ?? [];
+        histories.set(key, [...history, { definitionId: id, version: Number(version[3]), body: safeBody(content), recordedAt: 0, archived: false }]);
+        return ok({ hash: contentHash(content) });
+      }
+
+      const current = (scope !== undefined ? fixed.get(canonical) : undefined) ?? fileOf(canonical) ?? fileOf(target) ?? fixed.get(canonical) ?? fixed.get(target);
       const currentHash = current === undefined ? '' : current.hash;
       if (currentHash !== expectedHash) return err('stale');
-      const hash = contentHash(content);
-      files.set(keyOf(scope, target), { target, content, hash, scope });
-      return ok({ hash });
+
+      fixed.set(canonical, { target: canonical, content, hash: contentHash(content) });
+      if (scope === undefined && target !== canonical) {
+        fixed.set(target, { target, content, hash: contentHash(content) });
+      }
+      return ok({ hash: contentHash(content) });
     },
 
-    repoPath: async (repo: RepoSlug): Promise<string | undefined> =>
-      pathsByRepo.has(repo) ? pathsByRepo.get(repo) : `/fake/repos/${repo}`,
-
-    // Writes nothing: the candidate only ever enters the merge, never the store.
+    // Writes nothing: the candidate only ever enters the validation, never the store.
     validateCandidate: async (
-      scope: DefinitionScope,
-      target: string,
-      content: string,
+      targetOrScope: string | DefinitionScope,
+      contentOrTarget: string,
+      maybeContent?: string,
     ): Promise<Result<void, readonly DefinitionIssue[]>> => {
-      if (target === FAKE_ROADMAP_TARGET) {
-        const parsed = parseRoadmapBody(target, content);
-        if (!parsed.ok) return err(toDefinitionIssues([parsed.error]));
-        const projectDef = scope.kind === 'project' ? await projectDefOf(scope.project) : undefined;
+      for (const [brokenTarget] of legacyBroken) {
+        return err([{ path: brokenTarget, code: 'wrong_type', message: `${brokenTarget} is not valid JSON` }]);
+      }
+      let target = typeof targetOrScope === 'string' ? targetOrScope : contentOrTarget;
+      const content = maybeContent !== undefined ? maybeContent : contentOrTarget;
+      if (typeof targetOrScope !== 'string') {
+        const scope = targetOrScope;
+        if (scope.kind === 'global') {
+          if (target.startsWith('capabilities/')) {
+            const id = target.replace(/^capabilities\//, '').replace(/\.(yaml|json)$/, '');
+            target = `library/capabilities/${id}/v1.yaml`;
+          } else if (target.startsWith('roles/')) {
+            const id = target.replace(/^roles\//, '').replace(/\.(yaml|json)$/, '');
+            target = `library/roles/${id}/v1.yaml`;
+          } else if (target.startsWith('flows/')) {
+            const id = target.replace(/^flows\//, '').replace(/\.(yaml|json)$/, '');
+            target = `library/flows/${id}/v1.yaml`;
+          }
+        } else if (scope.kind === 'repo') {
+          target = target === 'repo.yaml' ? `repos/${scope.repo}/repo.yaml` : `repos/${scope.repo}/${target}`;
+        } else if (scope.kind === 'project') {
+          target = (target === 'roadmap.json' || target === 'roadmap.yaml')
+            ? `projects/${scope.project}/roadmap.yaml`
+            : target === 'project.yaml'
+              ? `projects/${scope.project}/project.yaml`
+              : target;
+        }
+      }
+
+      const roadmap = PROJECT_TARGET.exec(target);
+      if (roadmap !== null && roadmap[2] === 'roadmap') {
+        const parsed = parseJson(target, content);
+        if (!parsed.ok) {
+          return err(toDefinitionIssues([{ path: 'roadmap.yaml', code: 'wrong_type', message: parsed.error.message }]));
+        }
+        if (!isRecord(parsed.value)) {
+          return err(toDefinitionIssues([{ path: 'roadmap.yaml', code: 'wrong_type', message: 'roadmap.yaml must be a JSON object' }]));
+        }
+        const projectDef = projectDefOf(roadmap[1] as ProjectSlug);
         const validated = validateRoadmap(parsed.value, projectDef);
         return validated.ok ? ok(undefined) : err(toDefinitionIssues(validated.error));
       }
-      const collected = bodiesFor(scope, { target, content });
-      if (!collected.ok) return err([collected.error]);
-      const validated = validateDefinitions(mergeBodies(collected.value));
-      return validated.ok ? ok(undefined) : err(validated.error);
+      if (target === 'roadmap.yaml' || target === 'roadmap.json') {
+        const parsed = parseJson(target, content);
+        if (!parsed.ok) {
+          return err(toDefinitionIssues([{ path: 'roadmap.yaml', code: 'wrong_type', message: parsed.error.message }]));
+        }
+        if (!isRecord(parsed.value)) {
+          return err(toDefinitionIssues([{ path: 'roadmap.yaml', code: 'wrong_type', message: 'roadmap.yaml must be a JSON object' }]));
+        }
+        const validated = validateRoadmap(parsed.value, projects[0]);
+        return validated.ok ? ok(undefined) : err(toDefinitionIssues(validated.error));
+      }
+      if (roadmap !== null && roadmap[2] === 'project') {
+        const parsed = parseBody(target, content);
+        if (!parsed.ok) return err([parsed.error]);
+        const validated = validateProjectMapping(parsed.value);
+        return validated.ok ? ok(undefined) : err(validated.error);
+      }
+      const repo = REPO_TARGET.exec(target);
+      if (repo !== null) {
+        const parsed = parseBody(target, content);
+        if (!parsed.ok) return err([parsed.error]);
+        const validated = validateDefinitions({
+          roles: currentsOf('roles'),
+          flows: currentsOf('flows'),
+          capabilities: currentsOf('capabilities'),
+          repo: parsed.value,
+        });
+        return validated.ok ? ok(undefined) : err(validated.error);
+      }
+      const scopedTarget = target.replace(/^repos\/[^/]+\//, '');
+      if (scopedTarget === 'roles.json' || scopedTarget === 'flows.json' || scopedTarget === 'caps.json' || scopedTarget === 'capabilities.json') {
+        const parsed = parseBody(target, content);
+        if (!parsed.ok) return err([parsed.error]);
+        const body = parsed.value;
+        const roles = scopedTarget === 'roles.json' && Array.isArray(body.roles) ? body.roles : [];
+        const flows = scopedTarget === 'flows.json' && Array.isArray(body.flows) ? body.flows : [];
+        const capabilities = (scopedTarget === 'caps.json' || scopedTarget === 'capabilities.json') && Array.isArray(body.capabilities)
+          ? body.capabilities
+          : [];
+        const validated = validateDefinitions({
+          roles,
+          flows,
+          capabilities,
+          ...(isRecord(body.repo) ? { repo: body.repo } : {}),
+        });
+        return validated.ok ? ok(undefined) : err(validated.error);
+      }
+      const cleanTarget = target.replace(/^projects\/[^/]+\//, '').replace(/^repos\/[^/]+\//, '');
+      const roleOrFlow = /^(?:library\/)?(roles|flows|capabilities)\/([^/]+)(?:\/v\d+\.yaml|\.yaml)?$/.exec(cleanTarget);
+      if (roleOrFlow !== null) {
+        const kind = roleOrFlow[1] as DefinitionKind;
+        const id = roleOrFlow[2];
+        const parsed = parseBody(target, content);
+        if (!parsed.ok) return err([parsed.error]);
+        const body = parsed.value;
+        const item = (body[kind] && Array.isArray(body[kind]) ? body[kind][0] : body) ?? body;
+        const bodyId = item['id'];
+        if (kind !== 'memory' && typeof bodyId === 'string' && bodyId !== id && cleanTarget.startsWith('library/')) {
+          return err([{ path: `library/${kind}/${id}`, code: 'invalid_slug', message: 'id does not match folder name' }]);
+        }
+        if (kind === 'memory') return ok(undefined);
+        const validated = validateDefinitions({
+          roles: kind === 'roles' ? (Array.isArray(body.roles) ? body.roles : [item]) : [],
+          flows: kind === 'flows' ? (Array.isArray(body.flows) ? body.flows : [item]) : [],
+          capabilities: kind === 'capabilities' ? (Array.isArray(body.capabilities) ? body.capabilities : [item]) : [],
+        });
+        return validated.ok ? ok(undefined) : err(validated.error);
+      }
+      return err([{ path: target, code: 'wrong_type', message: 'not a definition file' }]);
     },
   };
 };
