@@ -1,9 +1,12 @@
 // definitions/validate.ts — narrows untyped (parsed YAML/JSON) input into typed Definitions.
 // Field-by-field narrowing only; every issue is collected before deciding (all-or-nothing).
 import type { SpendCap } from '../budget';
+import { commandPlaceholders } from './command-template';
 import { err, ok, parseSlug, type Result, type Slug, type CapabilitySlug, type EnvSlug, type FlowSlug, type ProjectSlug, type RepoSlug, type RoleSlug, type StageSlug, type EffortLevel, type ThinkingChoice, type Tier } from '../shared';
 import type {
   CapabilityDef,
+  CapabilityKind,
+  PluginSource,
   DefinitionIssue,
   DefinitionIssueCode,
   Definitions,
@@ -25,7 +28,6 @@ type UnknownRecord = Readonly<Record<string, unknown>>;
 const SECRET_KEY_RE = /(KEY|TOKEN|SECRET|PASSWORD)/i;
 
 type GateKind = 'human' | 'command' | 'changes' | 'agent_verdict' | 'secret_scan' | 'page_approval' | 'deploy' | 'remote_checks';
-type CapabilityKind = 'mcp' | 'skill' | 'hook' | 'context';
 type SimpleWriteScopeKind = 'none' | 'docs' | 'tests' | 'repo';
 
 // Internal parse results. Arrays keep their original indices as `undefined` slots so that
@@ -103,7 +105,7 @@ const isGateKind = (value: unknown): value is GateKind =>
   value === 'human' || value === 'command' || value === 'changes' || value === 'agent_verdict' || value === 'secret_scan' || value === 'page_approval' || value === 'deploy' || value === 'remote_checks';
 
 const isCapabilityKind = (value: unknown): value is CapabilityKind =>
-  value === 'mcp' || value === 'skill' || value === 'hook' || value === 'context';
+  value === 'mcp' || value === 'skill' || value === 'hook' || value === 'context' || value === 'plugin' || value === 'command';
 
 const isSimpleWriteScopeKind = (value: unknown): value is SimpleWriteScopeKind =>
   value === 'none' || value === 'docs' || value === 'tests' || value === 'repo';
@@ -384,6 +386,59 @@ const parseGate = (issues: DefinitionIssue[], container: UnknownRecord, path: st
   return undefined;
 };
 
+const parsePluginSource = (issues: DefinitionIssue[], value: unknown, path: string): PluginSource | undefined => {
+  if (value === undefined) {
+    addIssue(issues, path, 'missing_field', `${path} is required`);
+    return undefined;
+  }
+  if (!isRecord(value)) {
+    addIssue(issues, path, 'wrong_type', `${path} must be an object`);
+    return undefined;
+  }
+  const kind: unknown = value['kind'];
+  if (kind === 'path') {
+    const sourcePath = readStringField(issues, value, 'path', `${path}.path`);
+    return sourcePath === undefined ? undefined : { kind, path: sourcePath };
+  }
+  if (kind === 'marketplace') {
+    const marketplace = readStringField(issues, value, 'marketplace', `${path}.marketplace`);
+    const name = readStringField(issues, value, 'name', `${path}.name`);
+    return marketplace === undefined || name === undefined ? undefined : { kind, marketplace, name };
+  }
+  addIssue(issues, `${path}.kind`, kind === undefined ? 'missing_field' : 'wrong_type', `${path}.kind must be path or marketplace`);
+  return undefined;
+};
+
+const parseCommandArguments = (
+  issues: DefinitionIssue[],
+  value: unknown,
+  path: string,
+): readonly { readonly name: string; readonly required: boolean }[] | undefined => {
+  if (value === undefined) {
+    addIssue(issues, path, 'missing_field', `${path} is required`);
+    return undefined;
+  }
+  if (!Array.isArray(value)) {
+    addIssue(issues, path, 'wrong_type', `${path} must be an array`);
+    return undefined;
+  }
+  const out: { readonly name: string; readonly required: boolean }[] = [];
+  let valid = true;
+  value.forEach((item: unknown, index: number) => {
+    const itemPath = `${path}[${index}]`;
+    if (!isRecord(item)) {
+      addIssue(issues, itemPath, 'wrong_type', `${itemPath} must be an object`);
+      valid = false;
+      return;
+    }
+    const name = readStringField(issues, item, 'name', `${itemPath}.name`);
+    const required = readBooleanField(issues, item, 'required', `${itemPath}.required`);
+    if (name === undefined || required === undefined) valid = false;
+    else out.push({ name, required });
+  });
+  return valid ? out : undefined;
+};
+
 const parseCapability = (issues: DefinitionIssue[], container: UnknownRecord, path: string): CapabilityDef | undefined => {
   const kind: unknown = container['kind'];
   if (kind === undefined) {
@@ -391,7 +446,7 @@ const parseCapability = (issues: DefinitionIssue[], container: UnknownRecord, pa
     return undefined;
   }
   if (!isCapabilityKind(kind)) {
-    addIssue(issues, `${path}.kind`, 'wrong_type', `${path}.kind must be one of mcp, skill, hook, context`);
+    addIssue(issues, `${path}.kind`, 'wrong_type', `${path}.kind must be one of mcp, skill, hook, context, plugin, command`);
     return undefined;
   }
   const id = readSlugField<'capability'>(issues, container, 'id', `${path}.id`);
@@ -419,6 +474,28 @@ const parseCapability = (issues: DefinitionIssue[], container: UnknownRecord, pa
       else if (!isHookEvent(event)) addIssue(issues, `${path}.event`, 'wrong_type', `${path}.event must be one of before_tool, after_tool, after_write, run_end`);
       if (command === undefined || event === undefined || !isHookEvent(event)) return undefined;
       return { kind, id, name, event, command };
+    }
+    case 'plugin': {
+      const source = parsePluginSource(issues, container['source'], `${path}.source`);
+      const version = readOptionalStringField(issues, container, 'version', `${path}.version`);
+      const includes = readSlugSlots<'capability'>(issues, container['includes'], `${path}.includes`);
+      if (source === undefined || includes === undefined || includes.includes(undefined)) return undefined;
+      const slugs = includes.filter((slug): slug is CapabilitySlug => slug !== undefined);
+      return { kind, id, name, source, ...(version !== undefined ? { version } : {}), includes: slugs };
+    }
+    case 'command': {
+      const template = readStringField(issues, container, 'template', `${path}.template`);
+      const args = parseCommandArguments(issues, container['arguments'], `${path}.arguments`);
+      if (template === undefined || args === undefined) return undefined;
+      const declared = new Set(args.map((arg) => arg.name));
+      let complete = true;
+      for (const placeholder of commandPlaceholders(template)) {
+        if (!declared.has(placeholder)) {
+          addIssue(issues, `${path}.template`, 'unknown_argument', `${path}.template uses {{${placeholder}}} which is not declared in arguments`);
+          complete = false;
+        }
+      }
+      return complete ? { kind, id, name, template, arguments: args } : undefined;
     }
   }
   return undefined;
@@ -820,6 +897,33 @@ const crossCheck = (
       addIssue(issues, `capabilities[${index}].id`, 'duplicate_id', `capabilities[${index}].id "${draft.id}" duplicates an earlier capability id`);
     } else {
       capabilityIds.add(draft.id);
+    }
+  });
+
+  // R-140: a plugin's includes must name existing capabilities and never lead back to the plugin.
+  const includesById = new Map<string, readonly string[]>();
+  capabilityDrafts.forEach((draft) => {
+    if (draft?.kind === 'plugin' && !includesById.has(draft.id)) includesById.set(draft.id, draft.includes);
+  });
+  const reaches = (from: string, target: string, seen: Set<string>): boolean => {
+    for (const next of includesById.get(from) ?? []) {
+      if (next === target) return true;
+      if (!seen.has(next)) {
+        seen.add(next);
+        if (reaches(next, target, seen)) return true;
+      }
+    }
+    return false;
+  };
+  capabilityDrafts.forEach((draft, index) => {
+    if (draft?.kind !== 'plugin') return;
+    draft.includes.forEach((included, includeIndex) => {
+      if (!capabilityIds.has(included)) {
+        addIssue(issues, `capabilities[${index}].includes[${includeIndex}]`, 'unknown_capability', `"${included}" is not a defined capability`);
+      }
+    });
+    if (reaches(draft.id, draft.id, new Set())) {
+      addIssue(issues, `capabilities[${index}].includes`, 'plugin_cycle', `plugin "${draft.id}" includes itself, directly or through other plugins`);
     }
   });
 

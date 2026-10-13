@@ -6,8 +6,8 @@ import { describe, expect, it } from 'vitest';
 
 import { BUILTIN_PROVIDER_DEFS } from '../defs/index';
 import type { CapabilityRegistry, Evidence, GateId, ProviderRecord, RouteKindRecord, Tier } from '../../../domain/index';
-import { mergeCatalog, resolveTier, supportLevel } from '../../../domain/index';
-import { CAPABILITY_REGISTRY, FAMILY_PATTERNS, findProvider, findRouteKind } from './capability-registry';
+import { mergeCatalog, resolveTier, supportFor, supportLevel } from '../../../domain/index';
+import { CAPABILITY_REGISTRY, FAMILY_PATTERNS, findProvider, findRouteKind, TRANSLATION_TABLE } from './capability-registry';
 
 const ALL_GATES: readonly GateId[] = ['G1', 'G2', 'G3', 'G4', 'G5', 'G6'];
 
@@ -423,5 +423,39 @@ describe('route-kind billing coverage (P-40)', () => {
       else if (kind.authMode !== 'subscription') violations.push(`flat-subscription entry ${entry.id} is not a subscription kind`);
     }
     expect(violations).toEqual([]);
+  });
+});
+
+describe('translation support table (P-58)', () => {
+  const KINDS = ['mcp', 'skill', 'hook', 'context', 'plugin', 'command'] as const;
+  const rowOf = (provider: string, kind: (typeof KINDS)[number]) => supportFor(TRANSLATION_TABLE, provider, kind);
+
+  it('P-58: claude-code lists mcp, skill, hook, context and plugin native and command degraded to prompt_text', () => {
+    expect(KINDS.map((kind) => rowOf('claude-code', kind).support)).toEqual(['native', 'native', 'native', 'native', 'native', 'degraded']);
+    expect(rowOf('claude-code', 'command').degradesTo).toBe('prompt_text');
+  });
+
+  it('P-58: codex lists mcp and context native, skill degraded to context, hook unsupported, plugin unverified', () => {
+    expect(KINDS.map((kind) => rowOf('codex', kind).support)).toEqual(['native', 'degraded', 'unsupported', 'native', 'unverified', 'degraded']);
+    expect(rowOf('codex', 'skill').degradesTo).toBe('context');
+    expect(rowOf('codex', 'command').degradesTo).toBe('prompt_text');
+  });
+
+  it.each(['agy', 'copilot', 'cursor', 'opencode'])('P-58: %s is unverified for every kind except native context and degraded command', (provider) => {
+    expect(KINDS.map((kind) => rowOf(provider, kind).support)).toEqual(['unverified', 'unverified', 'unverified', 'native', 'unverified', 'degraded']);
+    expect(rowOf(provider, 'command').degradesTo).toBe('prompt_text');
+  });
+
+  it('P-58: the table has exactly one row per provider and kind, and no native row lacks a note in how', () => {
+    const keys = TRANSLATION_TABLE.map((row) => `${row.provider}/${row.kind}`);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(keys).toHaveLength(6 * KINDS.length);
+    for (const row of TRANSLATION_TABLE) {
+      if (row.support === 'native') expect(row.how.trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  it('P-58: every table provider has a capability record', () => {
+    for (const row of TRANSLATION_TABLE) expect(findProvider(row.provider)).toBeDefined();
   });
 });

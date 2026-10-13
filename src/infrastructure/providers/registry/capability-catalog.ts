@@ -6,7 +6,7 @@ import type { AuthMode } from '../../../domain/index';
 
 import { BUILTIN_PROVIDER_DEFS } from '../defs/index';
 
-import { findRouteKind, PROVIDER_INSTRUCTION_FILES } from './capability-registry';
+import { findRouteKind, PROVIDER_INSTRUCTION_FILES, TRANSLATION_TABLE } from './capability-registry';
 
 // Explicit ids, not a registry search: when later presets add more route kinds for the same
 // provider, the default an account resolves to must not silently change with the data.
@@ -22,6 +22,7 @@ const DEFAULT_ROUTE_KINDS: Readonly<Record<string, Readonly<Partial<Record<AuthM
 export const createCapabilityCatalog = (): CapabilityCatalog => ({
   routeKindOf: (account) => account.routeKind ?? DEFAULT_ROUTE_KINDS[account.provider]?.[account.authMode],
   routeKind: (id) => findRouteKind(id),
+  translationTable: () => TRANSLATION_TABLE,
   mcpSupport: (providerId) => BUILTIN_PROVIDER_DEFS.find((def) => def.id === providerId)?.capabilities.mcp ?? 'unknown',
   // Registry order: the row's own order for a provider, first appearance for the union. A provider
   // without a row has no native set — every present candidate inlines (A-54).

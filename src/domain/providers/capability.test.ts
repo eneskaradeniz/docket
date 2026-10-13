@@ -3,8 +3,10 @@
 // on synthetic records and the real data is validated in its own module.
 import { describe, expect, it } from 'vitest';
 
-import { supportLevel, thinkingOptions } from './capability';
-import type { Evidence, GateId, ModelRecord, ProviderRecord } from './capability';
+import { setupWarnings, supportFor, supportLevel, thinkingOptions, translateCapabilities } from './capability';
+import type { Evidence, GateId, ModelRecord, ProviderRecord, TranslationRow } from './capability';
+import type { CapabilityDef } from '../definitions/index';
+import type { CapabilitySlug } from '../shared/index';
 
 const scenarioEvidence = (name = 'fixture scenario'): Evidence => ({ kind: 'test', name });
 
@@ -112,5 +114,73 @@ describe('thinkingOptions (P-28)', () => {
     };
     expect(thinkingOptions(noneToMax)).toEqual(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
     expect(thinkingOptions(lowToUltra)).toEqual(['low', 'medium', 'high', 'xhigh', 'max', 'ultra']);
+  });
+});
+
+const slug = (id: string): CapabilitySlug => id as CapabilitySlug;
+const mcpCap = (id: string): CapabilityDef => ({ kind: 'mcp', id: slug(id), name: id, command: 'srv', args: [], env: {} });
+const skillCap = (id: string): CapabilityDef => ({ kind: 'skill', id: slug(id), name: id, path: `skills/${id}.md` });
+const hookCap = (id: string): CapabilityDef => ({ kind: 'hook', id: slug(id), name: id, event: 'run_end', command: 'true' });
+const commandCap = (id: string): CapabilityDef => ({
+  kind: 'command',
+  id: slug(id),
+  name: id,
+  template: 'Review {{target}}',
+  arguments: [{ name: 'target', required: true }],
+});
+
+const TABLE: readonly TranslationRow[] = [
+  { provider: 'alpha', kind: 'mcp', support: 'native', how: 'run-scoped config' },
+  { provider: 'alpha', kind: 'skill', support: 'degraded', how: 'inlined', degradesTo: 'context' },
+  { provider: 'alpha', kind: 'hook', support: 'unsupported', how: 'no hook protocol' },
+  { provider: 'alpha', kind: 'command', support: 'degraded', how: 'rendered by Docket', degradesTo: 'prompt_text' },
+];
+
+describe('translation support table', () => {
+  it('P-57: supportFor answers from the table and a missing row is unverified, never native', () => {
+    expect(supportFor(TABLE, 'alpha', 'mcp')).toBe(TABLE[0]);
+    const missing = supportFor(TABLE, 'alpha', 'plugin');
+    expect(missing.support).toBe('unverified');
+    expect(missing).toMatchObject({ provider: 'alpha', kind: 'plugin' });
+    expect(supportFor(TABLE, 'beta', 'mcp').support).toBe('unverified');
+  });
+
+  it('P-57: setupWarnings lists one warning per non-native (stage, capability) in stage order', () => {
+    const warnings = setupWarnings(
+      [
+        { stage: 'plan', provider: 'alpha', capabilities: [mcpCap('m1'), hookCap('h1')] },
+        { stage: 'work', provider: 'alpha', capabilities: [skillCap('s1'), mcpCap('m2')] },
+        { stage: 'review', provider: 'beta', capabilities: [mcpCap('m1')] },
+      ],
+      TABLE,
+    );
+    expect(warnings).toEqual([
+      { stage: 'plan', capability: 'h1', provider: 'alpha', support: 'unsupported', how: 'no hook protocol' },
+      { stage: 'work', capability: 's1', provider: 'alpha', support: 'degraded', how: 'inlined' },
+      { stage: 'review', capability: 'm1', provider: 'beta', support: 'unverified', how: expect.any(String) },
+    ]);
+  });
+});
+
+describe('per-run capability translation', () => {
+  it('P-59: native capabilities go to the run, unsupported ones are omitted and recorded', () => {
+    const result = translateCapabilities('alpha', [mcpCap('m1'), hookCap('h1')], TABLE);
+    expect(result.run.map((c) => c.id)).toEqual(['m1']);
+    expect(result.omitted).toEqual([{ capability: 'h1', provider: 'alpha', reason: 'unsupported' }]);
+    expect(result.inline).toBe('');
+  });
+
+  it('P-59: degraded capabilities are inlined as instruction text, not passed to the run', () => {
+    const result = translateCapabilities('alpha', [skillCap('s1'), commandCap('c1')], TABLE);
+    expect(result.run).toEqual([]);
+    expect(result.omitted).toEqual([]);
+    expect(result.inline).toContain('skills/s1.md');
+    expect(result.inline).toContain('Review {{target}}');
+  });
+
+  it('P-59 edge: unverified capabilities are attempted natively and a command is never passed to the run', () => {
+    const result = translateCapabilities('beta', [mcpCap('m1'), commandCap('c1')], []);
+    expect(result.run.map((c) => c.id)).toEqual(['m1']);
+    expect(result.inline).toContain('Review {{target}}');
   });
 });

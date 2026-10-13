@@ -1,8 +1,9 @@
 // The capability record contract and its pure derivations. Contract: docs/v2/provider-capabilities.md
 // sections 1–2 and 14. The registry data itself is infrastructure — provider names may not appear in
 // the domain — so every function here takes its input as a parameter and knows no provider id.
+import type { CapabilityDef, CapabilityKind } from '../definitions/index';
 import type { AuthMode } from '../quota/index';
-import type { Billing, EffortLevel, Tier } from '../shared/index';
+import type { Billing, CapabilitySlug, EffortLevel, Tier } from '../shared/index';
 import type { ProviderCapabilities } from './capabilities';
 
 // Re-exported so the capability contract keeps naming it while the limit policy reads it from
@@ -110,4 +111,102 @@ export function supportLevel(record: ProviderRecord): SupportLevel {
 
 export function thinkingOptions(model: ModelRecord): readonly EffortLevel[] {
   return model.thinking.kind === 'levels' ? model.thinking.levels : [];
+}
+
+// ---- Capability translation (P-57, P-59) -------------------------------------------------------
+// The support table is data (infrastructure registry); everything below takes it as a parameter.
+
+export type TranslationSupport = 'native' | 'degraded' | 'unsupported' | 'unverified';
+
+export interface TranslationRow {
+  readonly provider: string;
+  readonly kind: CapabilityKind;
+  readonly support: TranslationSupport;
+  readonly how: string;
+  readonly degradesTo?: CapabilityKind | 'prompt_text';
+}
+
+/** P-57: the table's row for (provider, kind); a missing row reads `unverified`, never `native`. */
+export function supportFor(table: readonly TranslationRow[], provider: string, kind: CapabilityKind): TranslationRow {
+  return (
+    table.find((row) => row.provider === provider && row.kind === kind) ?? {
+      provider,
+      kind,
+      support: 'unverified',
+      how: 'no support row recorded; unverified until a live probe',
+    }
+  );
+}
+
+export interface SetupWarning {
+  readonly stage: string;
+  readonly capability: CapabilitySlug;
+  readonly provider: string;
+  readonly support: 'degraded' | 'unsupported' | 'unverified';
+  readonly how: string;
+}
+
+/** P-57: one warning per (stage, capability) whose support is not `native`, in stage order. */
+export function setupWarnings(
+  stages: readonly { readonly stage: string; readonly provider: string; readonly capabilities: readonly CapabilityDef[] }[],
+  table: readonly TranslationRow[],
+): readonly SetupWarning[] {
+  const warnings: SetupWarning[] = [];
+  for (const { stage, provider, capabilities } of stages) {
+    for (const capability of capabilities) {
+      const row = supportFor(table, provider, capability.kind);
+      if (row.support === 'native') continue;
+      warnings.push({ stage, capability: capability.id, provider, support: row.support, how: row.how });
+    }
+  }
+  return warnings;
+}
+
+/** The run-record entry of a capability dropped from a run (`omitted_capability`). */
+export interface OmittedCapability {
+  readonly capability: CapabilitySlug;
+  readonly provider: string;
+  readonly reason: 'unsupported';
+}
+
+export interface CapabilityTranslation {
+  /** Capabilities the launch layer writes as run-scoped files/flags. */
+  readonly run: readonly CapabilityDef[];
+  /** Instruction text carrying the degraded capabilities; empty when none. */
+  readonly inline: string;
+  readonly omitted: readonly OmittedCapability[];
+}
+
+const inlineLine = (capability: CapabilityDef): string => {
+  switch (capability.kind) {
+    case 'command':
+      return `- Command "${capability.name}" (fill the {{placeholders}} from the task): ${capability.template}`;
+    case 'skill':
+    case 'context':
+      return `- ${capability.kind === 'skill' ? 'Skill' : 'Context'} "${capability.name}": read and follow ${capability.path}`;
+    default:
+      return `- ${capability.kind} "${capability.name}"`;
+  }
+};
+
+/** P-59: splits a stage's capabilities by the provider's support. `native` and `unverified` go to
+ *  the run (unverified is attempted, and shown as such by `setupWarnings`); `unsupported` is
+ *  omitted and reported; `degraded` is inlined as text. A command is a Docket-rendered prompt
+ *  template (R-141), so it is always inlined — never handed to a provider as a native command. */
+export function translateCapabilities(
+  provider: string,
+  capabilities: readonly CapabilityDef[],
+  table: readonly TranslationRow[],
+): CapabilityTranslation {
+  const run: CapabilityDef[] = [];
+  const inlined: CapabilityDef[] = [];
+  const omitted: OmittedCapability[] = [];
+  for (const capability of capabilities) {
+    const { support } = supportFor(table, provider, capability.kind);
+    if (capability.kind === 'command' || support === 'degraded') inlined.push(capability);
+    else if (support === 'unsupported') omitted.push({ capability: capability.id, provider, reason: 'unsupported' });
+    else run.push(capability);
+  }
+  const inline = inlined.length === 0 ? '' : ['Capabilities provided as instructions:', ...inlined.map(inlineLine)].join('\n');
+  return { run, inline, omitted };
 }

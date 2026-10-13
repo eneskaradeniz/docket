@@ -4,7 +4,7 @@
 // no provider can read as `full`; without usage visibility (G4) none can read as `isolated`, so
 // today only the sdk provider tops out at `isolated` and the rest stay `experimental`. Model data
 // (models, effort levels, prices) lands with the model-catalog issues; the route kinds start empty.
-import type { CapabilityRegistry, FamilyPattern, ProviderRecord, RouteKindRecord } from '../../../domain/index';
+import type { CapabilityKind, CapabilityRegistry, FamilyPattern, ProviderRecord, RouteKindRecord, TranslationRow } from '../../../domain/index';
 
 /** Family recognition as data (P-29 section 4): an unknown live id containing `contains` gets that
  * tier automatically. The Fable family has no entry on purpose — it stays unclassified (selectable,
@@ -329,6 +329,54 @@ export const PROVIDER_INSTRUCTION_FILES: readonly {
     providerId: 'opencode',
     instructionFiles: ['AGENTS.md'],
   },
+];
+
+const UNVERIFIED_HOW = 'Unverified without live probe (#1015)';
+const NATIVE_INSTRUCTIONS_HOW = 'Native instruction files (P-37)';
+const COMMAND_ROW = { kind: 'command', support: 'degraded', how: 'Docket renders template placeholders', degradesTo: 'prompt_text' } as const;
+
+/** The six kinds in a provider's rows, in table order. */
+const rowsOf = (provider: string, byKind: Readonly<Record<CapabilityKind, Omit<TranslationRow, 'provider' | 'kind'>>>): readonly TranslationRow[] =>
+  (['mcp', 'skill', 'hook', 'context', 'plugin', 'command'] as const).map((kind) => ({ provider, kind, ...byKind[kind] }));
+
+const unverified = { support: 'unverified', how: UNVERIFIED_HOW } as const;
+const command = { support: COMMAND_ROW.support, how: COMMAND_ROW.how, degradesTo: COMMAND_ROW.degradesTo } as const;
+/** A provider with no live evidence yet: everything unverified except the instruction files its
+ *  own docs name (P-37) and the Docket-rendered command. */
+const unprobed = (provider: string): readonly TranslationRow[] =>
+  rowsOf(provider, {
+    mcp: unverified,
+    skill: unverified,
+    hook: unverified,
+    context: { support: 'native', how: NATIVE_INSTRUCTIONS_HOW },
+    plugin: unverified,
+    command,
+  });
+
+/** P-58: the initial translation and support table (docs/v2/provider-capabilities.md §15). Honest, no
+ *  claim without evidence: every `native` row names its mechanism in `how`, and the live probe
+ *  (#1015) later turns `unverified` into the observed value. */
+export const TRANSLATION_TABLE: readonly TranslationRow[] = [
+  ...rowsOf('claude-code', {
+    mcp: { support: 'native', how: 'Inlined via SDK / run-scoped config' },
+    skill: { support: 'native', how: 'Run-scoped directory / SDK setting' },
+    hook: { support: 'native', how: 'Run-scoped hooks' },
+    context: { support: 'native', how: 'Native instruction files (CLAUDE.md, P-37)' },
+    plugin: { support: 'native', how: 'Unpacks package bundle to native capabilities' },
+    command,
+  }),
+  ...rowsOf('codex', {
+    mcp: { support: 'native', how: 'App-server -c mcp_servers.*' },
+    skill: { support: 'degraded', how: 'Inlined as instruction text', degradesTo: 'context' },
+    hook: { support: 'unsupported', how: 'Unsupported by app-server protocol' },
+    context: { support: 'native', how: 'Native instruction files (AGENTS.md / fallback, P-37)' },
+    plugin: { support: 'unverified', how: UNVERIFIED_HOW },
+    command,
+  }),
+  ...unprobed('agy'),
+  ...unprobed('copilot'),
+  ...unprobed('cursor'),
+  ...unprobed('opencode'),
 ];
 
 export function findProvider(id: string): ProviderRecord | undefined {
