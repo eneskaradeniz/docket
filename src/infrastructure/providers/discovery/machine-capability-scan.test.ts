@@ -132,4 +132,297 @@ describe('createMachineCapabilityScan', () => {
     }
     expect(machineCandidateKey(candidate)).toContain('claude-code');
   });
+
+  const createFs = (
+    files: Readonly<Record<string, string>>,
+    dirs: readonly string[],
+    dirEntries?: Readonly<Record<string, readonly string[]>>,
+  ): MachineScanFs => ({
+    async listEntries(dir) {
+      return dirEntries?.[dir] ?? [];
+    },
+    async listFiles(dir) {
+      return dirEntries?.[dir] ?? [];
+    },
+    async isDirectory(path) {
+      return dirs.includes(path);
+    },
+    async readText(path, maxBytes) {
+      const content = files[path];
+      if (content === undefined) return undefined;
+      if (content.length > maxBytes) return undefined;
+      return content;
+    },
+  });
+
+  it('P-60: codex scan lists MCP, skills, context files and plugins read-only without modifying files', async () => {
+    const codexRoot = `${HOME}/.codex`;
+    const toml = [
+      '[mcp_servers.db]',
+      'command = "npx db"',
+      'args = ["--stdio"]',
+      '',
+      '[mcp_servers.db.env]',
+      'API_TOKEN = "env-token-sample"',
+      'PLAIN_VAR = "plain"',
+      '',
+      '[plugins.pack-a]',
+      'enabled = true',
+    ].join('\n');
+
+    const files: Record<string, string> = {
+      [`${codexRoot}/AGENTS.md`]: '# Codex instructions\n',
+      [`${codexRoot}/config.toml`]: toml,
+      [`${codexRoot}/skills/calc.md`]: '# Calculator\n',
+    };
+    const before = JSON.stringify(files);
+    const fs = createFs(
+      files,
+      [codexRoot, `${codexRoot}/skills`],
+      { [`${codexRoot}/skills`]: ['calc.md'] },
+    );
+    const scan = createMachineCapabilityScan({ fs, homeDir: HOME });
+    const found = await scan.scan(['codex']);
+
+    expect(JSON.stringify(files)).toBe(before);
+    expect(found).toHaveLength(4);
+
+    const context = found.find((r) => r.kind === 'context');
+    expect(context).toEqual({
+      provider: 'codex',
+      kind: 'context',
+      name: 'AGENTS.md',
+      sourcePath: `${codexRoot}/AGENTS.md`,
+      secretNames: [],
+    });
+
+    const mcp = found.find((r) => r.kind === 'mcp');
+    expect(mcp).toEqual({
+      provider: 'codex',
+      kind: 'mcp',
+      name: 'db',
+      sourcePath: `${codexRoot}/config.toml`,
+      secretNames: ['API_TOKEN', 'PLAIN_VAR'],
+    });
+
+    const plugin = found.find((r) => r.kind === 'plugin');
+    expect(plugin).toEqual({
+      provider: 'codex',
+      kind: 'plugin',
+      name: 'pack-a',
+      sourcePath: `${codexRoot}/config.toml`,
+      secretNames: [],
+    });
+
+    const skill = found.find((r) => r.kind === 'skill');
+    expect(skill).toEqual({
+      provider: 'codex',
+      kind: 'skill',
+      name: 'calc',
+      sourcePath: `${codexRoot}/skills/calc.md`,
+      secretNames: [],
+    });
+
+    const serialized = JSON.stringify(found);
+    expect(serialized).not.toContain('env-token-sample');
+    expect(serialized).not.toContain('plain');
+
+    if (mcp !== undefined) {
+      const built = await scan.buildDefinition(mcp, 'codex-db', { API_TOKEN: 'ref-1', PLAIN_VAR: 'ref-2' });
+      expect(built.ok).toBe(true);
+      if (built.ok) {
+        expect(built.value).toMatchObject({
+          kind: 'mcp',
+          id: 'codex-db',
+          name: 'db',
+          command: 'npx db',
+          args: ['--stdio'],
+          env: {
+            API_TOKEN: { secretRef: 'ref-1' },
+            PLAIN_VAR: { secretRef: 'ref-2' },
+          },
+        });
+      }
+    }
+  });
+
+  it('P-60: copilot scan lists MCP, skills, context files and plugins read-only without modifying files', async () => {
+    const copilotRoot = `${HOME}/.copilot`;
+    const mcpJson = JSON.stringify({
+      mcpServers: {
+        fs: {
+          type: 'stdio',
+          command: 'node fs.js',
+          args: ['--root', '/tmp'],
+          env: { FS_SECRET: 'fs-secret-sample' },
+        },
+      },
+    });
+
+    const files: Record<string, string> = {
+      [`${copilotRoot}/copilot-instructions.md`]: '# Copilot instructions\n',
+      [`${copilotRoot}/mcp-config.json`]: mcpJson,
+      [`${copilotRoot}/skills/review.md`]: '# Code review\n',
+    };
+    const before = JSON.stringify(files);
+    const fs = createFs(
+      files,
+      [copilotRoot, `${copilotRoot}/skills`, `${copilotRoot}/plugins`],
+      {
+        [`${copilotRoot}/skills`]: ['review.md'],
+        [`${copilotRoot}/plugins`]: ['linter'],
+      },
+    );
+    const scan = createMachineCapabilityScan({ fs, homeDir: HOME });
+    const found = await scan.scan(['copilot']);
+
+    expect(JSON.stringify(files)).toBe(before);
+    expect(found).toHaveLength(4);
+
+    const context = found.find((r) => r.kind === 'context');
+    expect(context).toEqual({
+      provider: 'copilot',
+      kind: 'context',
+      name: 'copilot-instructions.md',
+      sourcePath: `${copilotRoot}/copilot-instructions.md`,
+      secretNames: [],
+    });
+
+    const mcp = found.find((r) => r.kind === 'mcp');
+    expect(mcp).toEqual({
+      provider: 'copilot',
+      kind: 'mcp',
+      name: 'fs',
+      sourcePath: `${copilotRoot}/mcp-config.json`,
+      secretNames: ['FS_SECRET'],
+    });
+
+    const plugin = found.find((r) => r.kind === 'plugin');
+    expect(plugin).toEqual({
+      provider: 'copilot',
+      kind: 'plugin',
+      name: 'linter',
+      sourcePath: `${copilotRoot}/plugins/linter`,
+      secretNames: [],
+    });
+
+    const skill = found.find((r) => r.kind === 'skill');
+    expect(skill).toEqual({
+      provider: 'copilot',
+      kind: 'skill',
+      name: 'review',
+      sourcePath: `${copilotRoot}/skills/review.md`,
+      secretNames: [],
+    });
+
+    const serialized = JSON.stringify(found);
+    expect(serialized).not.toContain('fs-secret-sample');
+
+    if (mcp !== undefined) {
+      const built = await scan.buildDefinition(mcp, 'copilot-fs', { FS_SECRET: 'vault-fs' });
+      expect(built.ok).toBe(true);
+      if (built.ok) {
+        expect(built.value).toMatchObject({
+          kind: 'mcp',
+          id: 'copilot-fs',
+          name: 'fs',
+          command: 'node fs.js',
+          args: ['--root', '/tmp'],
+          env: { FS_SECRET: { secretRef: 'vault-fs' } },
+        });
+      }
+    }
+  });
+
+  it('P-60: opencode scan lists MCP, skills, context files and plugins read-only without modifying files', async () => {
+    const opencodeRoot = `${HOME}/.config/opencode`;
+    const configJson = JSON.stringify({
+      mcp: {
+        git: {
+          type: 'local',
+          command: ['git-mcp', '--serve'],
+          env: { GH_TOKEN: 'gh-secret-sample' },
+        },
+      },
+      plugins: ['opencode-plugin-a', { package: 'opencode-plugin-b' }],
+    });
+
+    const files: Record<string, string> = {
+      [`${opencodeRoot}/AGENTS.md`]: '# OpenCode instructions\n',
+      [`${opencodeRoot}/opencode.json`]: configJson,
+      [`${opencodeRoot}/skills/deploy.md`]: '# Deploy\n',
+    };
+    const before = JSON.stringify(files);
+    const fs = createFs(
+      files,
+      [opencodeRoot, `${opencodeRoot}/skills`, `${opencodeRoot}/plugins`],
+      {
+        [`${opencodeRoot}/skills`]: ['deploy.md'],
+        [`${opencodeRoot}/plugins`]: ['custom-tool'],
+      },
+    );
+    const scan = createMachineCapabilityScan({ fs, homeDir: HOME });
+    const found = await scan.scan(['opencode']);
+
+    expect(JSON.stringify(files)).toBe(before);
+    expect(found).toHaveLength(6);
+
+    const context = found.find((r) => r.kind === 'context');
+    expect(context).toEqual({
+      provider: 'opencode',
+      kind: 'context',
+      name: 'AGENTS.md',
+      sourcePath: `${opencodeRoot}/AGENTS.md`,
+      secretNames: [],
+    });
+
+    const mcp = found.find((r) => r.kind === 'mcp');
+    expect(mcp).toEqual({
+      provider: 'opencode',
+      kind: 'mcp',
+      name: 'git',
+      sourcePath: `${opencodeRoot}/opencode.json`,
+      secretNames: ['GH_TOKEN'],
+    });
+
+    const plugins = found.filter((r) => r.kind === 'plugin');
+    expect(plugins.map((p) => p.name).sort()).toEqual(['custom-tool', 'opencode-plugin-a', 'opencode-plugin-b']);
+
+    const skill = found.find((r) => r.kind === 'skill');
+    expect(skill).toEqual({
+      provider: 'opencode',
+      kind: 'skill',
+      name: 'deploy',
+      sourcePath: `${opencodeRoot}/skills/deploy.md`,
+      secretNames: [],
+    });
+
+    const serialized = JSON.stringify(found);
+    expect(serialized).not.toContain('gh-secret-sample');
+
+    if (mcp !== undefined) {
+      const built = await scan.buildDefinition(mcp, 'opencode-git', { GH_TOKEN: 'vault-gh' });
+      expect(built.ok).toBe(true);
+      if (built.ok) {
+        expect(built.value).toMatchObject({
+          kind: 'mcp',
+          id: 'opencode-git',
+          name: 'git',
+          command: 'git-mcp',
+          args: ['--serve'],
+          env: { GH_TOKEN: { secretRef: 'vault-gh' } },
+        });
+      }
+    }
+  });
+
+  it('P-60: unevidenced providers return an empty list without error', async () => {
+    const scan = createMachineCapabilityScan({
+      fs: memoryFs({}),
+      homeDir: HOME,
+    });
+    await expect(scan.scan(['gemini'])).resolves.toEqual([]);
+    await expect(scan.scan(['gemini-cli'])).resolves.toEqual([]);
+    await expect(scan.scan(['unsupported-unknown'])).resolves.toEqual([]);
+  });
 });
