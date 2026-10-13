@@ -5,7 +5,7 @@ import type { AccountId, AccountTestClass, Actor, AccountTestOutcome, AgentEvent
 import { ACCOUNT_TEST_PROMPT, classifyAccountTest, combinedSpendStatus, err, ok } from '../../domain/index';
 
 import type { AccountTestRecord, AppDeps, RunHandle } from '../ports';
-import { spendWindow } from '../services/dispatcher';
+import { spendWindow } from '../services/spend-window';
 import { spendConsentSatisfied } from '../services/spend-consent';
 
 /** From the transport start to the deadline. */
