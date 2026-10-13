@@ -133,6 +133,9 @@ const PENDING = new Map([
   ['application:A-344', '#1011'],
   ['application:A-345', '#1012'],
   ['ui:U-296', '#1010'],
+
+  // #1047 — planner stage-skip derive rule, supplements R-133 (#1025 implements)
+  ['domain:R-144', '#1025'],
 ]);
 
 function walk(dir, acc = []) {
