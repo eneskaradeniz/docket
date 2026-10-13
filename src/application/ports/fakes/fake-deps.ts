@@ -19,7 +19,6 @@ import { createFakeGitProbe } from './fake-git-probe';
 import { createFakeIdGen } from './fake-id-gen';
 import { createFakeDispatchStatus, createFakeMachineProbe } from './fake-machine-probe';
 import { createFakeInstructionFiles } from './fake-instruction-files';
-import { createFakeLegacyImporter } from './fake-legacy-importer';
 import { createFakeModelCatalog } from './fake-model-catalog';
 import { createFakeNotifier } from './fake-notifier';
 import { createFakePageFiles } from './fake-page-files';
@@ -57,7 +56,6 @@ export const createFakeDeps = (overrides: Partial<AppDeps> = {}): AppDeps => ({
   projects: createFakeProjectRepo(),
   repos: createFakeRepoRegistry(),
   readFingerprint: async () => undefined,
-  legacyImporter: createFakeLegacyImporter(),
   bindings: createFakeBindingRepo(),
   queue: createFakeQueueRepo(),
   definitions: createFakeDefinitionStore(),

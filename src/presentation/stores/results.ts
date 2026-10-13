@@ -88,11 +88,11 @@ const FAILURE_KEYS: Readonly<Record<string, LabelKey>> = Object.fromEntries(
 
 /** Success copy is per command: the store knows which command it issued alongside the result. */
 /** The quit modal's two answers are never toasted: the window is about to close or the modal
- *  just did. They have no success line; a refusal reads like any other. The registry's import and
- *  relink commands have no screen yet either, so their copy arrives with the screen. */
-type SilentCommand = 'quit.ack' | 'quit.answer' | 'repo.importLegacy' | 'repo.relink';
+ *  just did. They have no success line; a refusal reads like any other. The registry's relink
+ *  command has no screen yet either, so its copy arrives with the screen. */
+type SilentCommand = 'quit.ack' | 'quit.answer' | 'repo.relink';
 const isSilent = (command: Command['type']): command is SilentCommand =>
-  command === 'quit.ack' || command === 'quit.answer' || command === 'repo.importLegacy' || command === 'repo.relink';
+  command === 'quit.ack' || command === 'quit.answer' || command === 'repo.relink';
 
 const SUCCESS_KEYS: Readonly<Record<Exclude<Command['type'], SilentCommand>, LabelKey>> = {
   'workOrder.open': 'success.workOrder.open',

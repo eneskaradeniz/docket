@@ -23,7 +23,7 @@ import { createMemoryAccountTestRepo } from './account-test-repo';
 import { createScratchDirs } from './scratch-dirs';
 import { createCommandRunner, createSecretScanner, redactSecrets } from '../gates/index';
 import { createKeychainVault, type CipherFns } from '../storage/keychain/index';
-import { createLegacyImporter, createYamlDefinitionStore } from '../storage/definitions-yaml/index';
+import { createYamlDefinitionStore } from '../storage/definitions-yaml/index';
 import {
   createSqliteAccountRepo,
   createSqliteAppSettingsRepo,
@@ -131,7 +131,6 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     projects,
     repos,
     readFingerprint: readRepoFingerprint,
-    legacyImporter: createLegacyImporter({ globalRoot: config.dataDir, store: definitions }),
     bindings: createSqliteBindingRepo(db),
     settings: createSqliteAppSettingsRepo(db),
     phaseAutoRuns: createSqlitePhaseAutoRunRepo(db),

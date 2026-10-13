@@ -29,13 +29,12 @@ function entryFromRow(row: DataRow): RepoRegistryEntry {
 
 export function createSqliteRepoRegistry(db: DocketDb, readFingerprint: ReadRepoFingerprint): RepoRegistry {
   const upsert = db.raw.prepare(
-    'INSERT INTO repo_registry (repo_id, slug, path, legacy_imported, data) VALUES (?, ?, ?, ?, ?) ' +
-      'ON CONFLICT (repo_id) DO UPDATE SET slug = excluded.slug, path = excluded.path, legacy_imported = excluded.legacy_imported, data = excluded.data',
+    'INSERT INTO repo_registry (repo_id, slug, path, data) VALUES (?, ?, ?, ?) ' +
+      'ON CONFLICT (repo_id) DO UPDATE SET slug = excluded.slug, path = excluded.path, data = excluded.data',
   );
 
   const write = async (entry: RepoRegistryEntry): Promise<void> => {
-    // JSON.stringify drops an absent legacyImported, so an absent optional stays absent on read.
-    upsert.run(entry.repoId, entry.slug, entry.path, entry.legacyImported === true ? 1 : 0, JSON.stringify(entry));
+    upsert.run(entry.repoId, entry.slug, entry.path, JSON.stringify(entry));
   };
 
   return {

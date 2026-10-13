@@ -1,9 +1,9 @@
-// use-cases/legacy-import.ts — the repo registry's operator-facing arms (docs/v2/application.md
-// rule A-341): the status of every registered folder, the one-time legacy import, and the relink.
-import type { Actor, DefinitionIssue, RepoSlug, Result } from '../../domain/index';
+// use-cases/repos.ts — the repo registry's operator-facing arms (docs/v2/application.md
+// rule A-341): the status of every registered folder and the relink.
+import type { Actor, RepoSlug, Result } from '../../domain/index';
 import { err, ok } from '../../domain/index';
 
-import type { AppDeps, LegacyImportReport } from '../ports/index';
+import type { AppDeps } from '../ports/index';
 
 export interface RepoStatusView {
   readonly repoId: string;
@@ -30,34 +30,6 @@ export async function repoStatuses(
     views.push({ repoId: entry.repoId, slug: entry.slug, path: entry.path, status });
   }
   return views;
-}
-
-export type ImportLegacyError =
-  | { readonly code: 'not_found' }
-  | { readonly code: 'already_imported' }
-  | { readonly code: 'definitions_invalid'; readonly issues: readonly DefinitionIssue[] };
-
-export async function importLegacy(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'repos' | 'legacyImporter'>,
-  input: { readonly repoId: string; readonly path: string; readonly actor: Actor },
-): Promise<Result<LegacyImportReport, ImportLegacyError>> {
-  const entry = await deps.repos.byRepoId(input.repoId);
-  if (entry === undefined) return err({ code: 'not_found' });
-  // The flag is the whole "never read again" guarantee: nothing is opened once it is set.
-  if (entry.legacyImported === true) return err({ code: 'already_imported' });
-
-  const imported = await deps.legacyImporter.importLegacyRepo(input.path);
-  if (!imported.ok) return err({ code: 'definitions_invalid', issues: imported.error });
-
-  await deps.repos.register({ ...entry, legacyImported: true });
-  await deps.log.append({
-    id: deps.ids.next<'audit'>(),
-    at: deps.clock.now(),
-    actor: input.actor,
-    action: 'repo.legacy_imported',
-    subject: { kind: 'repo', id: entry.slug },
-  });
-  return ok(imported.value);
 }
 
 export async function relinkRepo(

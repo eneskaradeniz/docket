@@ -136,7 +136,6 @@ import {
   usageSummary,
   unblockWorkOrder,
   unregisterRepo,
-  importLegacy,
   relinkRepo,
   repoStatuses,
   undoAction,
@@ -771,14 +770,6 @@ const runCommand = async (
           { project, repo, actor },
         ),
       );
-    }
-
-    case 'repo.importLegacy': {
-      const imported = await importLegacy(
-        { clock: deps.clock, ids: deps.ids, log: deps.log, repos: deps.repos, legacyImporter: deps.legacyImporter },
-        { repoId: command.repoId, path: command.path, actor },
-      );
-      return imported.ok ? { ok: true, report: imported.value } : { ok: false, code: imported.error.code };
     }
 
     case 'repo.relink': {

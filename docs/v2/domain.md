@@ -1384,3 +1384,7 @@ export function redactSecretShapes(text: string): string;
 ```
 
 - **R-125** (added 2026-10-12, #993) `redactSecretShapes` replaces each secret shape with `[redacted]` and leaves the surrounding text. Text that matches none of the shapes is returned unchanged. Applying it to its own output changes nothing. The same input yields the same output and the input is not modified.
+
+Addendum 2026-10-13 (#1057): the one-time legacy import is removed.
+
+- **R-134** (amended 2026-10-13, #1057) The clause "the legacy `flows`/`defaultFlow`/`roleOverrides` fields are read only by the one-time import (#1004) and are never written" is gone — nothing reads those fields anymore; the fields themselves are removed by #1012. The deletion-and-archive rules stand.

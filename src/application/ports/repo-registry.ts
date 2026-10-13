@@ -13,8 +13,6 @@ export interface RepoRegistryEntry {
   readonly slug: RepoSlug;
   readonly path: string;
   readonly fingerprint: RepoFingerprint;
-  /** Set exactly by the one-time legacy import; never travels in a bundle. */
-  readonly legacyImported?: true;
 }
 
 export interface RepoRegistry {

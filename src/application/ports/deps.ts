@@ -26,7 +26,6 @@ import type { ProjectRepo } from './project-repo';
 import type { ProposalRepo } from './proposal-repo';
 import type { QueueRepo } from './queue-repo';
 import type { RepoFolders } from './repo-folders';
-import type { LegacyImporter } from './legacy-importer';
 import type { ReadRepoFingerprint, RepoRegistry } from './repo-registry';
 import type { RunDirs } from './run-dirs';
 import type { RunRepo } from './run-repo';
@@ -51,7 +50,6 @@ export interface AppDeps {
   readonly projects: ProjectRepo;
   readonly repos: RepoRegistry;
   readonly readFingerprint: ReadRepoFingerprint;
-  readonly legacyImporter: LegacyImporter;
   readonly bindings: BindingRepo;
   readonly queue: QueueRepo;
   readonly definitions: DefinitionStore;

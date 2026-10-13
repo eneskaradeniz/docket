@@ -114,6 +114,12 @@ const PENDING = new Map([
 
   // #1047 — planner stage-skip derive rule, supplements R-133 (#1025 implements)
   ['domain:R-144', '#1025'],
+
+  // #1057 — the one-time legacy import was removed. These rules keep their dated addenda and their
+  // definitions as history, but their tests went with the code, so no test will ever carry them.
+  ['infrastructure:I-90', '#1057'],
+  ['infrastructure:I-91', '#1057'],
+  ['infrastructure:I-97', '#1057'],
 ]);
 
 function walk(dir, acc = []) {

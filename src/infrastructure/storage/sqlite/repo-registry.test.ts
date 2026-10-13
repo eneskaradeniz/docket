@@ -126,7 +126,6 @@ describe.each(suites)('repo registry (%s)', (_kind, make) => {
       slug: slug('full'),
       path: '/x/full',
       fingerprint: fingerprint('sha-root-9', 'git@host:team/full'),
-      legacyImported: true,
     });
 
     await registry.register(bare);
@@ -134,19 +133,7 @@ describe.each(suites)('repo registry (%s)', (_kind, make) => {
 
     expect(await registry.byRepoId(bare.repoId)).toStrictEqual(bare);
     expect(await registry.byRepoId(full.repoId)).toStrictEqual(full);
-    expect('legacyImported' in (await registry.byRepoId(bare.repoId) as object)).toBe(false);
-  });
-
-  it('I-97: legacyImported is rebuilt from the record on every write', async () => {
-    const { registry } = make();
-    const repoId = '01ARZ3NDEKTSV4RRFFQ69G5FR06';
-    await registry.register(entry({ repoId, legacyImported: true }));
-    expect((await registry.byRepoId(repoId))?.legacyImported).toBe(true);
-
-    // Re-registering the same identity without the flag clears it: the column is a copy of the
-    // record, never a latched bit.
-    await registry.register(entry({ repoId }));
-    expect('legacyImported' in (await registry.byRepoId(repoId) as object)).toBe(false);
+    expect((await registry.byRepoId(bare.repoId))?.fingerprint).toStrictEqual({ rootCommit: 'sha-root-1' });
   });
 
   it('I-88: relink refuses a missing folder, accepts an equal rootCommit, refuses a different one — never applied silently', async () => {
@@ -194,15 +181,15 @@ describe('repo registry (sqlite durability)', () => {
     const first = openDatabase(file);
     if (!first.ok) throw new Error('open must succeed');
     const folders = fingerprintSource();
-    await createSqliteRepoRegistry(first.value, folders.read).register(entry({ legacyImported: true }));
+    await createSqliteRepoRegistry(first.value, folders.read).register(entry({ fingerprint: fingerprint('sha-root-1', 'git@host:team/acme') }));
     first.value.close();
 
     const second = openDatabase(file);
     if (!second.ok) throw new Error('reopen must succeed');
     openDbs.push(second.value);
     const reopened = createSqliteRepoRegistry(second.value, folders.read);
-    expect(await reopened.list()).toEqual([entry({ legacyImported: true })]);
-    expect(await reopened.byRepoId(entry().repoId)).toEqual(entry({ legacyImported: true }));
+    expect(await reopened.list()).toEqual([entry({ fingerprint: fingerprint('sha-root-1', 'git@host:team/acme') })]);
+    expect(await reopened.byRepoId(entry().repoId)).toEqual(entry({ fingerprint: fingerprint('sha-root-1', 'git@host:team/acme') }));
   });
 
   it('I-8: many entries round-trip with unique identities, each repoId passing the domain pattern', async () => {
