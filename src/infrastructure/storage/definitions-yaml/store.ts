@@ -192,6 +192,18 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
     return validated.ok ? validated.value : undefined;
   };
 
+  const listLibraryIds = async (kind: DefinitionKind): Promise<readonly string[]> => {
+    try {
+      return (await readdir(join(config.globalRoot, LIBRARY_ROOT, kind), { withFileTypes: true }))
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort();
+    } catch (error) {
+      if (isMissing(error)) return [];
+      throw error;
+    }
+  };
+
   /** One library kind's current definitions: the newest version file of every id. File problems
    *  are collected, never thrown — a load answers every broken file at once. */
   const loadLibraryKind = async (
@@ -199,16 +211,7 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
   ): Promise<{ readonly entries: readonly UnknownRecord[]; readonly problems: readonly DefinitionIssue[] }> => {
     const entries: UnknownRecord[] = [];
     const problems: DefinitionIssue[] = [];
-    let ids: readonly string[];
-    try {
-      ids = (await readdir(join(config.globalRoot, LIBRARY_ROOT, kind), { withFileTypes: true }))
-        .filter((entry) => entry.isDirectory())
-        .map((entry) => entry.name)
-        .sort();
-    } catch (error) {
-      if (isMissing(error)) return { entries, problems };
-      throw error;
-    }
+    const ids = await listLibraryIds(kind);
     for (const id of ids) {
       const versions = await listVersionFiles(join(config.globalRoot, LIBRARY_ROOT, kind, id));
       const newest = versions[versions.length - 1];
@@ -463,6 +466,8 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
     // The library's histories read straight off the version files; recordedAt is the file's own
     // mtime (a version file is never rewritten, so it stays the write time), and nothing in the
     // layout marks a version archived yet.
+    listIds: (kind) => listLibraryIds(kind),
+
     listVersions: async (kind, id) => {
       const records: VersionRecord<unknown>[] = [];
       for (const versionFile of await listVersionFiles(join(config.globalRoot, LIBRARY_ROOT, kind, id))) {

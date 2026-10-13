@@ -92,9 +92,28 @@ const FAILURE_KEYS: Readonly<Record<string, LabelKey>> = Object.fromEntries(
 /** The quit modal's two answers are never toasted: the window is about to close or the modal
  *  just did. They have no success line; a refusal reads like any other. The registry's relink
  *  command has no screen yet either, so its copy arrives with the screen. */
-type SilentCommand = 'quit.ack' | 'quit.answer' | 'repo.relink' | 'project.export' | 'project.importBundle';
+type SilentCommand =
+  | 'quit.ack'
+  | 'quit.answer'
+  | 'repo.relink'
+  | 'project.export'
+  | 'project.importBundle'
+  | 'memory.acceptProposal'
+  | 'memory.rejectProposal'
+  | 'memory.setAutoAccept'
+  | 'memory.addNote'
+  | 'definitions.save';
 const isSilent = (command: Command['type']): command is SilentCommand =>
-  command === 'quit.ack' || command === 'quit.answer' || command === 'repo.relink' || command === 'project.export' || command === 'project.importBundle';
+  command === 'quit.ack'
+  || command === 'quit.answer'
+  || command === 'repo.relink'
+  || command === 'project.export'
+  || command === 'project.importBundle'
+  || command === 'memory.acceptProposal'
+  || command === 'memory.rejectProposal'
+  || command === 'memory.setAutoAccept'
+  || command === 'memory.addNote'
+  || command === 'definitions.save';
 
 const SUCCESS_KEYS: Readonly<Record<Exclude<Command['type'], SilentCommand>, LabelKey>> = {
   'workOrder.open': 'success.workOrder.open',

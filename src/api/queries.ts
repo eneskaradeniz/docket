@@ -63,7 +63,9 @@ export type Query =
   | { readonly type: 'chat.references'; readonly q: string; readonly kinds?: readonly ('work_order' | 'page' | 'project' | 'repo')[]; readonly project?: string; readonly limit?: number } // → readonly ChatReferenceView[] (A-253)
   | { readonly type: 'chat.attachment'; readonly conversation: string; readonly id: string } // → ChatAttachmentBytesView | not_found (A-254)
   | { readonly type: 'chat.usage' } // → ChatUsageView (A-255)
-  | { readonly type: 'usage.summary'; readonly workOrder?: string; readonly project?: string; readonly sinceMs?: number }; // → UsageSummaryView | not_found | bad_input | invalid_id (A-280 … A-283)
+  | { readonly type: 'usage.summary'; readonly workOrder?: string; readonly project?: string; readonly sinceMs?: number } // → UsageSummaryView | not_found | bad_input | invalid_id (A-280 … A-283)
+  | { readonly type: 'memory.overview' } // → MemoryOverviewView (A-349)
+  | { readonly type: 'definitions.list'; readonly kind: 'plugin' | 'mcp' | 'skill' | 'command' | 'hook' }; // → readonly DefinitionListItem[] (A-350)
 
 export interface AttentionItem {
   readonly workOrderId: string;
@@ -279,6 +281,39 @@ export interface SettingsBindingView {
 export interface SettingsAccountsView {
   readonly accounts: readonly SettingsAccountView[];
   readonly bindings: readonly SettingsBindingView[];
+}
+
+// --- memory.overview (A-349) -------------------------------------------------------------------------
+
+export interface MemoryOverviewView {
+  readonly notes: readonly {
+    readonly id: string;
+    readonly scope: 'global' | 'project' | 'repo';
+    readonly scopeId?: string;
+    readonly text: string;
+    readonly createdBy: 'user' | 'agent';
+    readonly active: boolean;
+  }[];
+  readonly proposals: readonly {
+    readonly id: string;
+    readonly scope: 'global' | 'project' | 'repo';
+    readonly scopeId?: string;
+    readonly text: string;
+    readonly sourceRun: string;
+    readonly state: 'pending' | 'accepted' | 'rejected';
+  }[];
+  readonly autoAccept: { readonly global: boolean; readonly project: boolean; readonly repo: boolean };
+  readonly truncated: boolean;
+}
+
+// --- definitions.list (A-350) ------------------------------------------------------------------------
+
+export interface DefinitionListItem {
+  readonly definitionId: string;
+  readonly version: number;
+  readonly recordedAt: number;
+  readonly archived: boolean;
+  readonly body: unknown;
 }
 
 // --- roles.list (A-50) -------------------------------------------------------------------------------

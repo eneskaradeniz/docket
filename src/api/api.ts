@@ -50,6 +50,7 @@ import {
   reserveClassOf,
   reserveFor,
   titleFrom,
+  validateDefinitions,
 } from '../domain/index';
 
 import type {
@@ -105,6 +106,13 @@ import {
   enqueueStage,
   exportProject,
   importBundle,
+  acceptMemoryProposalUseCase,
+  createMemoryNoteUseCase,
+  listLibraryDefinitionsByKind,
+  memoryOverview,
+  rejectMemoryProposalUseCase,
+  saveVersion,
+  setMemoryAutoAccept,
   getUpdateState,
   getWorkOrder,
   workOrderChanges,
@@ -149,6 +157,7 @@ import {
 } from '../application';
 
 import type { CapabilityImportResultView, Command, CommandResult, MachineImportResultView } from './commands';
+import type { DefinitionListItem, MemoryOverviewView } from './queries';
 import {
   CHAT_API_LIMITS,
   chatAttachmentView,
@@ -1355,6 +1364,58 @@ const runCommand = async (
       if (updates === undefined) return { ok: false, code: 'not_found' };
       return commandOf(await applyUpdate(updates));
     }
+
+    case 'memory.acceptProposal': {
+      const result = await acceptMemoryProposalUseCase(
+        { memory: deps.memory, definitions: deps.definitions, clock: deps.clock },
+        command.id,
+      );
+      return commandOf(result);
+    }
+
+    case 'memory.rejectProposal': {
+      const result = await rejectMemoryProposalUseCase({ memory: deps.memory }, command.id);
+      return commandOf(result);
+    }
+
+    case 'memory.setAutoAccept': {
+      await setMemoryAutoAccept(deps, command.scope, command.enabled);
+      return { ok: true };
+    }
+
+    case 'memory.addNote': {
+      const text = command.text.trim();
+      if (text === '') return badInput();
+      await createMemoryNoteUseCase(
+        { definitions: deps.definitions, memory: deps.memory, clock: deps.clock, ids: deps.ids },
+        {
+          text,
+          scope: command.scope,
+          ...(command.scopeId === undefined ? {} : { scopeId: command.scopeId }),
+        },
+      );
+      return { ok: true };
+    }
+
+    case 'definitions.save': {
+      const body = command.definition;
+      if (typeof body !== 'object' || body === null || Array.isArray(body)) return badInput();
+      const kindField = (body as { readonly kind?: unknown }).kind;
+      if (kindField !== command.kind) return badInput();
+      const validated = validateDefinitions({ roles: [], flows: [], capabilities: [body] });
+      if (!validated.ok) {
+        return { ok: false, code: 'definitions_invalid', definitionIssues: [...validated.error] };
+      }
+      const capability = validated.value.capabilities[0];
+      if (capability === undefined) return badInput();
+      const saved = await saveVersion(
+        { clock: deps.clock, ids: deps.ids, log: deps.log, definitions: deps.definitions },
+        { kind: 'capabilities', id: capability.id, body: capability, actor },
+      );
+      if (!saved.ok) return { ok: false, code: saved.error };
+      return { ok: true, version: saved.value.version };
+    }
+
     default:
       return { ok: false, code: 'unknown' };
   }
@@ -1641,6 +1702,21 @@ const runQuery = async (
 
     case 'chat.usage':
       return chatUsageView(deps, ASSISTANT_ROLE_ID, startOfUtcMonth(deps.clock.now()));
+
+    case 'memory.overview': {
+      return (await memoryOverview(deps)) as MemoryOverviewView;
+    }
+
+    case 'definitions.list':
+      return (await listLibraryDefinitionsByKind(deps, query.kind)).map(
+        (record): DefinitionListItem => ({
+          definitionId: record.definitionId,
+          version: record.version,
+          recordedAt: record.recordedAt,
+          archived: record.archived,
+          body: record.body,
+        }),
+      );
 
     case 'app.update': {
       // The state is already the view: plain JSON, no derivation, nothing stored.

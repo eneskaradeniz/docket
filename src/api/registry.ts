@@ -74,6 +74,11 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
   'app.update.apply': { input: 'no input' },
   'quit.ack': { input: 'no input' },
   'quit.answer': { input: 'accept: boolean' },
+  'memory.acceptProposal': { input: 'id: string' },
+  'memory.rejectProposal': { input: 'id: string' },
+  'memory.setAutoAccept': { input: 'scope: global | project | repo, enabled: boolean' },
+  'memory.addNote': { input: 'text: string, scope: global | project | repo, scopeId?: string' },
+  'definitions.save': { input: 'kind: plugin | mcp | skill | command | hook, definition: CapabilityDef-shaped object' },
 };
 
 export const QUERY_REGISTRY: Record<Query['type'], RegistryEntry> = {
@@ -113,4 +118,6 @@ export const QUERY_REGISTRY: Record<Query['type'], RegistryEntry> = {
   'chat.attachment': { input: 'conversation: ConversationId, id: AttachmentId' },
   'chat.usage': { input: 'no input' },
   'usage.summary': { input: 'workOrder?: WorkOrderId | project?: ProjectSlug (exactly one; both or neither is bad_input), sinceMs?: EpochMs' },
+  'memory.overview': { input: 'no input' },
+  'definitions.list': { input: 'kind: plugin | mcp | skill | command | hook' },
 };
