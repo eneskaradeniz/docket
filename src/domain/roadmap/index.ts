@@ -2,3 +2,4 @@
 export * from './types';
 export * from './validate';
 export * from './derive';
+export * from './sync';

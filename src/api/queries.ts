@@ -67,7 +67,8 @@ export type Query =
   | { readonly type: 'chat.usage' } // → ChatUsageView (A-255)
   | { readonly type: 'usage.summary'; readonly workOrder?: string; readonly project?: string; readonly sinceMs?: number } // → UsageSummaryView | not_found | bad_input | invalid_id (A-280 … A-283)
   | { readonly type: 'memory.overview' } // → MemoryOverviewView (A-349)
-  | { readonly type: 'definitions.list'; readonly kind: 'plugin' | 'mcp' | 'skill' | 'command' | 'hook' }; // → readonly DefinitionListItem[] (A-350)
+  | { readonly type: 'definitions.list'; readonly kind: 'plugin' | 'mcp' | 'skill' | 'command' | 'hook' } // → readonly DefinitionListItem[] (A-350)
+  | { readonly type: 'tracker.linkStatus'; readonly repo: string };
 
 export interface AttentionItem {
   readonly workOrderId: string;
