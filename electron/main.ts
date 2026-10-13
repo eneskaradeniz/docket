@@ -614,7 +614,7 @@ const resolveActiveLocale = async (win?: BrowserWindow): Promise<Locale> => {
   return DEFAULT_LOCALE;
 };
 
-/** The native confirmation: the fallback when the window cannot show the in-app modal (U-296). */
+/** The native confirmation: the fallback when the window cannot show the in-app modal (U-297). */
 const askQuitNatively = async (work: ActiveWork): Promise<boolean> => {
   const win = BrowserWindow.getFocusedWindow() ?? [...windows].find((w) => !w.isDestroyed());
   const locale = await resolveActiveLocale(win);

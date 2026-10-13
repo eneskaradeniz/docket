@@ -1,4 +1,4 @@
-// quit-prompt tests — the in-app confirmation's main-process flow with fakes (U-294, U-296): a
+// quit-prompt tests — the in-app confirmation's main-process flow with fakes (U-294, U-297): a
 // window is created when none is open, an acknowledging renderer gets the modal path and the answer
 // is unbounded, no acknowledgement within 2 s falls back to the native dialog, and a second request
 // only refocuses.
@@ -129,8 +129,8 @@ describe('quit prompt (U-294)', () => {
   });
 });
 
-describe('quit prompt fallback (U-296)', () => {
-  it('U-296: no acknowledgement within 2 s uses the native dialog, and its answer settles the quit', async () => {
+describe('quit prompt fallback (U-297)', () => {
+  it('U-297: no acknowledgement within 2 s uses the native dialog, and its answer settles the quit', async () => {
     const { prompt, clock, log } = harness({ native: true });
     const answer = prompt.ask(work);
     await flush();
@@ -141,7 +141,7 @@ describe('quit prompt fallback (U-296)', () => {
     await expect(answer).resolves.toBe(true);
   });
 
-  it('U-296: after the fallback a late acknowledgement or modal answer changes nothing', async () => {
+  it('U-297: after the fallback a late acknowledgement or modal answer changes nothing', async () => {
     const { prompt, clock } = harness({ native: false });
     const answer = prompt.ask(work);
     await flush();
@@ -151,7 +151,7 @@ describe('quit prompt fallback (U-296)', () => {
     await expect(answer).resolves.toBe(false);
   });
 
-  it('U-296: a failing window setup also ends in the native dialog', async () => {
+  it('U-297: a failing window setup also ends in the native dialog', async () => {
     const prompt = createQuitPrompt({
       ensureWindow: async () => {
         throw new Error('no window');

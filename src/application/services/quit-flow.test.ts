@@ -1,5 +1,5 @@
 // services/quit-flow tests — the quit flow's two application pieces: what counts as work in
-// flight (A-323) and the cancel-all sweep that closes what the graceful stop could not (A-324).
+// flight (A-346) and the cancel-all sweep that closes what the graceful stop could not (A-347).
 import { describe, expect, it } from 'vitest';
 
 import type {
@@ -91,7 +91,7 @@ const make = (): Harness => {
 };
 
 describe('activeWork', () => {
-  it('A-323: lists every active run with its work-order title, every conversation with a turn in flight, and nothing else', async () => {
+  it('A-346: lists every active run with its work-order title, every conversation with a turn in flight, and nothing else', async () => {
     const { deps } = make();
     await deps.workOrders.create(order('01ARZ3NDEKTSV4RRFFQ69G5FAA' as WorkOrderId, 'Kayıt katmanı'));
     await deps.workOrders.create(order('01ARZ3NDEKTSV4RRFFQ69G5FBB' as WorkOrderId, 'Bitmiş iş'));
@@ -113,7 +113,7 @@ describe('activeWork', () => {
     expect(hasUserVisibleWork(work)).toBe(true);
   });
 
-  it('A-323: no active run and no chat turn is not user-visible work, however much background runs', async () => {
+  it('A-346: no active run and no chat turn is not user-visible work, however much background runs', async () => {
     const { deps } = make();
     const empty = await activeWork(deps, chatWith(new Map()));
     expect(hasUserVisibleWork(empty)).toBe(false);
@@ -127,7 +127,7 @@ describe('activeWork', () => {
 });
 
 describe('cancelActiveRuns', () => {
-  it('A-324: closes every active run as cancelled — record, work-order event, token, board slot, audit — and signals the stores once', async () => {
+  it('A-347: closes every active run as cancelled — record, work-order event, token, board slot, audit — and signals the stores once', async () => {
     const { deps, clock, log, tokens } = make();
     await deps.workOrders.create(order('01ARZ3NDEKTSV4RRFFQ69G5FAA' as WorkOrderId, 'Kayıt katmanı'));
     await deps.runs.create(run('01ARZ3NDEKTSV4RRFFQ69G5F01', '01ARZ3NDEKTSV4RRFFQ69G5FAA' as WorkOrderId));
@@ -169,7 +169,7 @@ describe('cancelActiveRuns', () => {
     expect(audits.every((entry) => entry.at === 5_000)).toBe(true);
   });
 
-  it('A-324: a sweep with nothing active writes nothing and signals nothing', async () => {
+  it('A-347: a sweep with nothing active writes nothing and signals nothing', async () => {
     const { deps } = make();
     let changed = 0;
     const cancelled = await cancelActiveRuns(deps, undefined, () => {

@@ -1,4 +1,4 @@
-// electron/quit-prompt.ts — the in-app quit confirmation, main-process side (U-294, U-296). main.ts
+// electron/quit-prompt.ts — the in-app quit confirmation, main-process side (U-294, U-297). main.ts
 // supplies the Electron surfaces (the window, the event push, the native dialog) as functions; this
 // module owns the order: make sure a window exists and is shown, send the renderer the request,
 // wait up to two seconds for its acknowledgement, and fall back to the native dialog when none

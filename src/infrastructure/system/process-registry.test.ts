@@ -1,5 +1,5 @@
-// system/process-registry tests — the child registry the managed quit reads (I-86) and the orphan
-// reaper that cleans up after a crash (I-87). The kill surface, the clock and the sleeper are
+// system/process-registry tests — the child registry the managed quit reads (I-101) and the orphan
+// reaper that cleans up after a crash (I-102). The kill surface, the clock and the sleeper are
 // injected, so the escalation timing is measured on a fake timeline; only the spawn wrapper's
 // registration lifecycle uses real short-lived node children.
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -81,10 +81,10 @@ afterEach(() => {
   for (const child of processRegistry.list()) processRegistry.unregister(child.pid);
 });
 
-// --- the registry (I-86) ------------------------------------------------------------------------------
+// --- the registry (I-101) ------------------------------------------------------------------------------
 
 describe('createProcessRegistry', () => {
-  it('I-86: register and unregister expose exactly the live children with their group, kind and label', () => {
+  it('I-101: register and unregister expose exactly the live children with their group, kind and label', () => {
     const { registry } = makeRegistry();
     registry.register({ pid: 11, pgid: 11, kind: 'agent', label: 'provider-x run 01A', command: '/usr/local/bin/provider-x', startedAt: 5, stop: () => undefined });
     registry.register({ pid: 12, pgid: undefined, kind: 'git', label: 'git', command: 'git', startedAt: 6 });
@@ -98,7 +98,7 @@ describe('createProcessRegistry', () => {
     registry.unregister(11);
   });
 
-  it('I-86: stopAll runs each child’s own stop first, then SIGTERMs the process groups, and a child that dies needs nothing else', async () => {
+  it('I-101: stopAll runs each child’s own stop first, then SIGTERMs the process groups, and a child that dies needs nothing else', async () => {
     const kill = new FakeKill([21, 22]);
     kill.dies(-21, 'SIGTERM'); // the group dies on the graceful signal
     kill.dies(22, 'SIGTERM');
@@ -118,7 +118,7 @@ describe('createProcessRegistry', () => {
     expect(kill.signals.filter((entry) => entry.signal === 'SIGKILL')).toStrictEqual([]);
   });
 
-  it('I-86: a child that ignores SIGTERM gets SIGKILL only after the 5 s grace, and the pass is bounded', async () => {
+  it('I-101: a child that ignores SIGTERM gets SIGKILL only after the 5 s grace, and the pass is bounded', async () => {
     const kill = new FakeKill([31]);
     kill.dies(-31, 'SIGKILL'); // ignores SIGTERM, dies on SIGKILL
     const timeline = new FakeTimeline();
@@ -136,7 +136,7 @@ describe('createProcessRegistry', () => {
     expect(timeline.elapsed()).toBeGreaterThanOrEqual(PROCESS_STOP_GRACE_MS);
   });
 
-  it('I-86: a child already gone is skipped — no signal, no wait, no error — and one that never dies only times out', async () => {
+  it('I-101: a child already gone is skipped — no signal, no wait, no error — and one that never dies only times out', async () => {
     const kill = new FakeKill([41]);
     const timeline = new FakeTimeline();
     const registry = createProcessRegistry({ kill: kill.kill, now: timeline.now, delay: timeline.delay });
@@ -150,7 +150,7 @@ describe('createProcessRegistry', () => {
     expect(report.timedOut).toBe(true);
   });
 
-  it('I-86: killAllSync is a synchronous last resort that never throws, whatever kill does', () => {
+  it('I-101: killAllSync is a synchronous last resort that never throws, whatever kill does', () => {
     const kill = new FakeKill([51, 52]);
     const registry = createProcessRegistry({ kill: kill.kill });
     registry.register({ pid: 51, pgid: 51, kind: 'agent', label: 'a', command: 'a', startedAt: 1 });
@@ -162,7 +162,7 @@ describe('createProcessRegistry', () => {
     ]);
   });
 
-  it('I-86: the mirror file carries pid, group, start time and command for every live child, and drops them as they leave', () => {
+  it('I-101: the mirror file carries pid, group, start time and command for every live child, and drops them as they leave', () => {
     const dir = mkdtempSync(join(tmpdir(), 'docket-registry-'));
     const mirrorPath = () => join(dir, 'run', CHILDREN_FILE);
     const registry = createProcessRegistry({ mirrorPath });
@@ -179,10 +179,10 @@ describe('createProcessRegistry', () => {
   });
 });
 
-// --- the spawn wrapper (I-86) -------------------------------------------------------------------------
+// --- the spawn wrapper (I-101) -------------------------------------------------------------------------
 
 describe('registeredSpawn', () => {
-  it('I-86: a wrapped child registers on spawn and unregisters on close; stopAll ends a sleeping child', async () => {
+  it('I-101: a wrapped child registers on spawn and unregisters on close; stopAll ends a sleeping child', async () => {
     const before = new Set(processRegistry.list().map((child) => child.pid));
     const child = registeredSpawn(
       process.execPath,
@@ -202,7 +202,7 @@ describe('registeredSpawn', () => {
   }, 10_000);
 });
 
-// --- the reaper (I-87) --------------------------------------------------------------------------------
+// --- the reaper (I-102) --------------------------------------------------------------------------------
 
 describe('reapOrphanedChildren', () => {
   const makeReapDir = (): string => mkdtempSync(join(tmpdir(), 'docket-reap-'));
@@ -212,7 +212,7 @@ describe('reapOrphanedChildren', () => {
     writeFileSync(childrenFilePath(dir), JSON.stringify(rows), 'utf8');
   };
 
-  it('I-87: seeded cases — matching entry killed, PID-reused entry spared, dead entry dropped, file rewritten', async () => {
+  it('I-102: seeded cases — matching entry killed, PID-reused entry spared, dead entry dropped, file rewritten', async () => {
     const dir = makeReapDir();
     writeChildren(dir, [
       { pid: 81, pgid: 81, startedAt: 4_000, command: '/usr/local/bin/agent' }, // matches → killed
@@ -236,7 +236,7 @@ describe('reapOrphanedChildren', () => {
     expect(JSON.parse(readFileSync(childrenFilePath(dir), 'utf8'))).toStrictEqual([]);
   });
 
-  it('I-87: a missing or corrupt children.json is tolerated — nothing is killed, the file ends up valid', async () => {
+  it('I-102: a missing or corrupt children.json is tolerated — nothing is killed, the file ends up valid', async () => {
     const dir = makeReapDir();
     const kill = new FakeKill([91]);
     const missing = await reapOrphanedChildren({ dataDir: dir, kill: kill.kill });
@@ -251,7 +251,7 @@ describe('reapOrphanedChildren', () => {
     expect(JSON.parse(readFileSync(childrenFilePath(dir), 'utf8'))).toStrictEqual([]);
   });
 
-  it('I-87: the ps listing parses pid, start stamp (padded day included) and full command', () => {
+  it('I-102: the ps listing parses pid, start stamp (padded day included) and full command', () => {
     const listing = [
       '   PID  LSTART  COMMAND',
       ' 4242 Mon Oct 12 21:00:00 2026 /usr/local/bin/agent --run 01A',
