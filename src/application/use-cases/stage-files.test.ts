@@ -53,7 +53,7 @@ describe('stage-files', () => {
       createdBy: actor,
     };
     await deps.workOrders.create(record);
-    await deps.repos.register('repo' as RepoSlug, '/repo');
+    await deps.repos.register({ repoId: '01ARZ3NDEKTSV4RRFFQ69G5FS01', slug: 'repo' as RepoSlug, path: '/repo', fingerprint: { rootCommit: '' } });
     const worktreeRes = await deps.worktrees.ensure('repo' as RepoSlug, 'wo-1' as WorkOrderId);
     expect(worktreeRes.ok).toBe(true);
 
@@ -79,7 +79,7 @@ describe('stage-files', () => {
       createdBy: actor,
     };
     await deps.workOrders.create(record);
-    await deps.repos.register('repo' as RepoSlug, '/repo');
+    await deps.repos.register({ repoId: '01ARZ3NDEKTSV4RRFFQ69G5FS01', slug: 'repo' as RepoSlug, path: '/repo', fingerprint: { rootCommit: '' } });
     await deps.worktrees.ensure('repo' as RepoSlug, 'wo-1' as WorkOrderId);
 
     // Create > STAGE_FILES_MAX files

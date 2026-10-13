@@ -23,10 +23,10 @@ export function createSqliteProjectRepo(db: DocketDb): ProjectRepo {
       db.transaction(() => {
         db.raw
           .prepare(
-            'INSERT INTO projects (slug, name, main_repo, data) VALUES (?, ?, ?, ?) ' +
-              'ON CONFLICT (slug) DO UPDATE SET name = excluded.name, main_repo = excluded.main_repo, data = excluded.data',
+            'INSERT INTO projects (slug, name, data) VALUES (?, ?, ?) ' +
+              'ON CONFLICT (slug) DO UPDATE SET name = excluded.name, data = excluded.data',
           )
-          .run(def.id, def.name, def.mainRepo, JSON.stringify(def));
+          .run(def.id, def.name, JSON.stringify(def));
         db.raw.prepare('DELETE FROM project_repos WHERE project = ?').run(def.id);
         const insert = db.raw.prepare('INSERT INTO project_repos (project, repo) VALUES (?, ?)');
         for (const repo of def.repos) insert.run(def.id, repo);
@@ -64,7 +64,9 @@ export function createSqliteProjectRepo(db: DocketDb): ProjectRepo {
   };
 }
 
-/** The path views over the registries: which project owns a repo, and where its main repo checks out. */
+/** The path views over the registries: which project owns a repo, and where the project's first
+ *  listed repo checks out. A stored project carries no main repo, so the def's own member order
+ *  (the membership rows' insert order) is the closest reading of "the project's repo". */
 export function createSqliteProjectPaths(db: DocketDb): ProjectPaths {
   return {
     projectOf: async (repo: RepoSlug): Promise<ProjectSlug | undefined> => {
@@ -74,7 +76,10 @@ export function createSqliteProjectPaths(db: DocketDb): ProjectPaths {
 
     mainRepoPath: async (project: ProjectSlug): Promise<string | undefined> => {
       const row = db.raw
-        .prepare('SELECT p.main_repo AS main_repo, r.path AS path FROM projects p LEFT JOIN repos r ON r.slug = p.main_repo WHERE p.slug = ?')
+        .prepare(
+          'SELECT r.path AS path FROM project_repos pr JOIN repo_registry r ON r.slug = pr.repo ' +
+            'WHERE pr.project = ? ORDER BY pr.rowid ASC LIMIT 1',
+        )
         .get(project);
       if (row === undefined) return undefined;
       return typeof row.path === 'string' ? row.path : undefined;

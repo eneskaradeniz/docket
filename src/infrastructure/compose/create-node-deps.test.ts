@@ -36,6 +36,9 @@ const ulidOf = <B extends string>(input: string) => {
 };
 
 const REPO: RepoSlug = slugOf('demo');
+const REPO_ID = '01ARZ3NDEKTSV4RRFFQ69G5FD01';
+const registerRepo = (node: { readonly repos: { register(entry: unknown): Promise<void> } }, path: string): Promise<void> =>
+  node.repos.register({ repoId: REPO_ID, slug: REPO, path, fingerprint: { rootCommit: '' } });
 const RUN: RunId = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FAV');
 const WO: WorkOrderId = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FAV');
 const AUDIT = ulidOf<'audit'>('01ARZ3NDEKTSV4RRFFQ69G5FAW');
@@ -244,7 +247,7 @@ describe('createNodeDeps', () => {
     const planted = 'ghp_0123456789abcdefghijklmnopqrstuvwxyzAB';
     await writeFile(join(checkout, 'src', 'app.ts'), `const t = '${planted}';\nconst ok = 1;\n`, 'utf8');
     await writeFile(join(checkout, '.env'), 'KEY=1', 'utf8');
-    await node.repos.register(REPO, checkout);
+    await registerRepo(node, checkout);
 
     const read = await node.deps.repoFiles.read(REPO, 'src/app.ts', { from: 1, maxLines: 400, maxBytes: 65_536 });
     expect(read.ok).toBe(true);
@@ -263,8 +266,8 @@ describe('createNodeDeps', () => {
 
     expect((await stat(join(dataDir, 'docket.db'))).isFile()).toBe(true);
 
-    await node.repos.register(REPO, repoDir);
-    expect(await node.repos.list()).toEqual([{ slug: REPO, path: repoDir }]);
+    await node.repos.register({ repoId: REPO_ID, slug: REPO, path: repoDir, fingerprint: { rootCommit: '' } });
+    expect(await node.repos.list()).toEqual([{ repoId: REPO_ID, slug: REPO, path: repoDir, fingerprint: { rootCommit: '' } }]);
 
     node.close();
     await expect(node.repos.list()).rejects.toThrow();
@@ -292,7 +295,7 @@ describe('createNodeDeps', () => {
     await writeFile(join(dataDir, 'roles', 'planner.yaml'), ROLE_YAML, 'utf8');
     await writeFile(join(dataDir, 'flows', 'standard.yaml'), FLOW_YAML, 'utf8');
     const node = makeNode();
-    await node.repos.register(REPO, repoDir);
+    await registerRepo(node, repoDir);
 
     const loaded = await node.deps.definitions.load(REPO);
 
@@ -357,7 +360,7 @@ describe('createNodeDeps', () => {
   it('I-31: wires worktrees with <dataDir>/worktrees as the root', async () => {
     await initRepoWithCommit(repoDir);
     const node = makeNode();
-    await node.repos.register(REPO, repoDir);
+    await registerRepo(node, repoDir);
 
     const ensured = await node.deps.worktrees.ensure(REPO, WO);
 

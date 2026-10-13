@@ -28,6 +28,16 @@ import { openWorkOrder, type OpenError } from './work-orders';
 // A-24 names repo_not_in_project in its rule text; the union carries it for the attach flow.
 export type AttachError = 'not_a_repo' | 'no_project_yaml' | 'definitions_invalid' | 'repo_not_in_project';
 
+/** Registers one machine-local entry for the slug: a first registration mints the repoId and
+ *  records an unread fingerprint ('' until the app reads git); a re-registration re-points the
+ *  existing identity, keeping its repoId and any fingerprint already read. */
+async function registerRepoEntry(deps: Pick<AppDeps, 'ids' | 'repos'>, slug: RepoSlug, path: string): Promise<void> {
+  const existing = (await deps.repos.list()).find((entry) => entry.slug === slug);
+  await deps.repos.register(existing === undefined
+    ? { repoId: deps.ids.next<'repo'>(), slug, path, fingerprint: { rootCommit: '' } }
+    : { ...existing, path });
+}
+
 export async function attachProject(
   deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'projects' | 'repos' | 'definitions' | 'git'>,
   input: {
@@ -54,8 +64,8 @@ export async function attachProject(
   }
 
   await deps.projects.save(def);
-  await deps.repos.register(def.mainRepo, input.path);
-  for (const entry of extras) await deps.repos.register(entry.repo, entry.path);
+  await registerRepoEntry(deps, def.mainRepo, input.path);
+  for (const entry of extras) await registerRepoEntry(deps, entry.repo, entry.path);
   await deps.log.append({
     id: deps.ids.next<'audit'>(),
     at: deps.clock.now(),
@@ -155,7 +165,7 @@ export async function registerRepo(
   if (project === undefined) return err('unknown_project');
   if (!project.repos.includes(input.repo)) return err('repo_not_in_project');
 
-  await deps.repos.register(input.repo, input.path);
+  await registerRepoEntry(deps, input.repo, input.path);
   await deps.log.append({
     id: deps.ids.next<'audit'>(),
     at: deps.clock.now(),
@@ -180,7 +190,8 @@ export async function unregisterRepo(
     if (!closed) return err('repo_in_use');
   }
 
-  await deps.repos.remove(input.repo);
+  // Registry entries are permanent machine-local truth: removal from a project is the project.yaml
+  // edit (or a proposal), never a registry deletion — the entry stays for the next attach.
   await deps.log.append({
     id: deps.ids.next<'audit'>(),
     at: deps.clock.now(),

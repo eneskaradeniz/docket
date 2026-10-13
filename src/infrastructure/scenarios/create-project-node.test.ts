@@ -90,7 +90,7 @@ describe('project.create on real Node storage', () => {
     const created = await createApi(node.deps).command(USER, { type: 'project.create', mode: 'existing', path: folder, name: 'Atölye' });
 
     expect(created).toEqual({ ok: true, id: 'atolye' });
-    expect(await node.repos.path(repoSlug('atolye'))).toBe(folder);
+    expect((await node.repos.list()).find((entry) => entry.slug === repoSlug('atolye'))?.path).toBe(folder);
     expect((await readdir(join(folder, '.docket'))).sort()).toEqual(['project.yaml', 'repo.yaml']);
     const board = await boardOf(node, 'atolye');
     expect(board.flow).toBe('standard');

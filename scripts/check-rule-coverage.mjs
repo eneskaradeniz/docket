@@ -61,7 +61,6 @@ const PENDING = new Map([
   ['application:A-327', '#1011'],
   ['infrastructure:I-86', '#1009'],
   ['infrastructure:I-87', '#1009'],
-  ['infrastructure:I-88', '#1009'],
   ['infrastructure:I-89', '#1010'],
   ['infrastructure:I-90', '#1009'],
   ['infrastructure:I-91', '#1010'],
@@ -119,11 +118,8 @@ const PENDING = new Map([
   ['ui:U-293', '#1026'],
 
   // #1046 — Phase 7 contract gaps: storage, registry, bundles, library versions (#1009–#1012 implement)
-  ['infrastructure:I-93', '#1009'],
-  ['infrastructure:I-94', '#1009'],
   ['infrastructure:I-95', '#1009'],
   ['infrastructure:I-96', '#1009'],
-  ['infrastructure:I-97', '#1009'],
   ['infrastructure:I-98', '#1010'],
   ['infrastructure:I-99', '#1010'],
   ['infrastructure:I-100', '#1010'],

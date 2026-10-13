@@ -125,17 +125,18 @@ describe('createSqliteProjectPaths', () => {
   it('answers projectOf and mainRepoPath over the membership and registry tables', async () => {
     const db = openMemory();
     const projects = createSqliteProjectRepo(db);
-    const registry = createSqliteRepoRegistry(db);
+    const registry = createSqliteRepoRegistry(db, async () => undefined);
     const paths = createSqliteProjectPaths(db);
 
-    await registry.register(MAIN, join(tmp, 'main'));
-    await registry.register(ACME, join(tmp, 'acme'));
+    await registry.register({ repoId: '01ARZ3NDEKTSV4RRFFQ69G5FP01', slug: MAIN, path: join(tmp, 'main'), fingerprint: { rootCommit: '' } });
+    await registry.register({ repoId: '01ARZ3NDEKTSV4RRFFQ69G5FP02', slug: ACME, path: join(tmp, 'acme'), fingerprint: { rootCommit: '' } });
     await projects.save(def(ATOLYE));
 
     expect(await paths.projectOf(ACME)).toBe(ATOLYE);
     expect(await paths.projectOf(slugOf<'repo'>('ghost'))).toBeUndefined();
+    // A stored project has no main repo; the def's first listed member is the reading.
     expect(await paths.mainRepoPath(ATOLYE)).toBe(join(tmp, 'main'));
-    // A project whose main repo is not registered locally has no main path.
+    // A project whose repos are not registered locally has no main path.
     expect(await paths.mainRepoPath(slugOf<'project'>('ghost'))).toBeUndefined();
   });
 
@@ -143,7 +144,8 @@ describe('createSqliteProjectPaths', () => {
     const file = join(tmp, 'docket.db');
     const first = openDatabase(file);
     if (!first.ok) throw new Error('open must succeed');
-    await createSqliteRepoRegistry(first.value).register(MAIN, join(tmp, 'main'));
+    await createSqliteRepoRegistry(first.value, async () => undefined)
+      .register({ repoId: '01ARZ3NDEKTSV4RRFFQ69G5FP01', slug: MAIN, path: join(tmp, 'main'), fingerprint: { rootCommit: '' } });
     await createSqliteProjectRepo(first.value).save(def(ATOLYE));
     first.value.close();
 

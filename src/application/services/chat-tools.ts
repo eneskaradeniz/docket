@@ -276,7 +276,7 @@ export function createChatTools(deps: ChatToolDeps): ChatTools {
   };
 
   const getRepoBoard = async (access: ChatAccess, slug: RepoSlug): Promise<DocketToolResponse> => {
-    const known = (await deps.repos.path(slug)) !== undefined || (await deps.projects.projectOfRepo(slug)) !== undefined;
+    const known = (await deps.repos.list()).some((entry) => entry.slug === slug) || (await deps.projects.projectOfRepo(slug)) !== undefined;
     if (!known || !access.canRepo(slug)) return fail('forbidden');
     const all = await derive(await deps.workOrders.list({ repo: slug }));
     const shown = all.slice(0, CHAT_TOOL_LIMITS.boardItems);

@@ -1,9 +1,31 @@
-// Machine-local pointers only (S1): where each repo is cloned on this machine.
-import type { RepoSlug } from '../../domain/index';
+// The machine-local repo registry: identity is a generated repoId plus a git fingerprint, and the
+// entry maps that identity to the folder cloned on this machine. Entries are permanent — a moved
+// folder is re-pointed through relink, never removed.
+import type { RepoSlug, Result } from '../../domain/index';
+
+export interface RepoFingerprint {
+  readonly rootCommit: string;
+  readonly remote?: string;
+}
+
+export interface RepoRegistryEntry {
+  readonly repoId: string; // ULID
+  readonly slug: RepoSlug;
+  readonly path: string;
+  readonly fingerprint: RepoFingerprint;
+  /** Set exactly by the one-time legacy import; never travels in a bundle. */
+  readonly legacyImported?: true;
+}
 
 export interface RepoRegistry {
-  path(slug: RepoSlug): Promise<string | undefined>;
-  register(slug: RepoSlug, path: string): Promise<void>; // upsert; `path` absolute
-  list(): Promise<readonly { readonly slug: RepoSlug; readonly path: string }[]>; // slug asc
-  remove(slug: RepoSlug): Promise<void>;
+  /** Upserts the whole entry by repoId; a slug held by another repoId throws (the unique index). */
+  register(entry: RepoRegistryEntry): Promise<void>;
+  byRepoId(repoId: string): Promise<RepoRegistryEntry | undefined>;
+  list(): Promise<readonly RepoRegistryEntry[]>; // slug asc
+  /** Re-points the entry at a candidate folder after verifying its fingerprint; never silent. */
+  relink(repoId: string, path: string): Promise<Result<void, 'folder_not_found' | 'fingerprint_mismatch'>>;
 }
+
+/** Injected by the composition root: adapters that must read a candidate folder's fingerprint take
+ *  the reader as a parameter, so no storage module grows a git dependency. */
+export type ReadRepoFingerprint = (path: string) => Promise<RepoFingerprint | undefined>;
