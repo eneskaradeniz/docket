@@ -8,6 +8,7 @@ export * from './database';
 export * from './action-repo';
 export * from './conversation-repo';
 export * from './event-log';
+export * from './memory-store';
 export * from './project-repo';
 export * from './proposal-repo';
 export * from './queue-repo';
