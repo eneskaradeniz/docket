@@ -11,6 +11,7 @@ import type { WorkOrderRecord, WorkOrderRepo } from '../../../application/index'
 import { createFakeWorkOrderRepo } from '../../../application/ports/fakes/index';
 import type {
   Actor,
+  FlowPin,
   FlowSlug,
   StageSlug,
   TaskSlug,
@@ -63,6 +64,40 @@ const record = (id: string, createdAt: number, repo: RepoSlug = ACME): WorkOrder
 const taskedRecord = (id: string, createdAt: number, task: TaskSlug): WorkOrderRecord => ({
   ...record(id, createdAt),
   task,
+});
+
+// A-324/A-344: the Phase 7 pin rides the record's JSON blob like every other field.
+const PIN_ACCOUNT = '01ARZ3NDEKTSV4RRFFQ69G5FB2';
+const PIN_ACCOUNT_ID = (() => {
+  const parsed = parseUlid<'account'>(PIN_ACCOUNT);
+  if (!parsed.ok) throw new Error('fixture ulid must parse');
+  return parsed.value;
+})();
+
+const PIN: FlowPin = {
+  flowId: FLOW,
+  flowVersion: 4,
+  stages: [
+    {
+      stage: { id: STAGE, name: 'Implement', role: slugOf<'role'>('worker'), exit: [] },
+      role: {
+        id: slugOf<'role'>('worker'),
+        name: 'Worker',
+        instructions: 'Do the work.',
+        writeScope: { kind: 'repo' },
+        capabilities: [],
+        active: true,
+      },
+      roleVersion: 2,
+      accounts: [{ accountId: PIN_ACCOUNT_ID }],
+      limitPolicy: 'wait_resume',
+    },
+  ],
+};
+
+const pinnedRecord = (id: string, createdAt: number): WorkOrderRecord => ({
+  ...record(id, createdAt),
+  pin: PIN,
 });
 
 const createdEvent = (at: number): WorkOrderEvent => ({ type: 'created', at, by: ACTOR, flow: FLOW });
@@ -206,6 +241,16 @@ describe.each(suites)('createSqliteWorkOrderRepo (%s)', (_kind, make) => {
     await repo.appendEvent(woId(U1), createdEvent(10));
     await repo.appendEvent(woId(U1), gateEvent);
     expect(await repo.events(woId(U1))).toStrictEqual([createdEvent(10), gateEvent]);
+  });
+
+  it('I-6: the Phase 7 pin rides the record through create and reads back deep-equal; rows without one stay without', async () => {
+    const { repo } = make();
+    await repo.create(pinnedRecord(U1, 10));
+    await repo.create(record(U2, 20));
+
+    expect(await repo.get(woId(U1))).toStrictEqual(pinnedRecord(U1, 10));
+    const readBare = await repo.get(woId(U2));
+    expect('pin' in (readBare ?? {})).toBe(false);
   });
 });
 

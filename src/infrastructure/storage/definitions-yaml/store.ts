@@ -573,5 +573,14 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
         return err('io_failed');
       }
     },
+
+    // A-343 placeholders: the versioned library layout (library/<kind>/<id>/v<N>.yaml) is the
+    // YAML adapter's (#1009). No library file exists yet, so every history reads empty; the one
+    // write the layout cannot yet make refuses loudly instead of guessing a location.
+    listVersions: async () => [],
+
+    appendVersion: async () => {
+      throw new Error('library version files land with the YAML adapter (#1009)');
+    },
   };
 }

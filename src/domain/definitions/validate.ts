@@ -4,6 +4,8 @@ import type { SpendCap } from '../budget';
 import { err, ok, parseSlug, type Result, type Slug, type CapabilitySlug, type EnvSlug, type FlowSlug, type ProjectSlug, type RepoSlug, type RoleSlug, type StageSlug, type EffortLevel, type ThinkingChoice, type Tier } from '../shared';
 import type {
   CapabilityDef,
+  DefinitionIssue,
+  DefinitionIssueCode,
   Definitions,
   EnvironmentDef,
   EnvValue,
@@ -17,19 +19,6 @@ import type {
   RepoDef,
   WriteScope,
 } from './types';
-
-export interface DefinitionIssue {
-  readonly path: string; // JSON-pointer-like: "flows[0].stages[2].onFail.goto"
-  readonly code: DefinitionIssueCode;
-  readonly message: string; // English, for logs; the UI maps `code` to its own copy
-}
-export type DefinitionIssueCode =
-  | 'invalid_slug' | 'duplicate_id' | 'unknown_role' | 'inactive_role' | 'unknown_stage'
-  | 'forward_goto' | 'bad_attempts' | 'empty_flow' | 'unknown_capability' | 'unknown_flow'
-  | 'default_flow_not_enabled' | 'unknown_command_set' | 'secret_literal' | 'missing_field' | 'wrong_type'
-  | 'unknown_environment' | 'missing_promote_from' | 'promote_cycle'
-  | 'env_command_set_missing' | 'duplicate_env_order'
-  | 'empty_repos' | 'main_repo_not_listed' | 'bad_review_of';
 
 type UnknownRecord = Readonly<Record<string, unknown>>;
 

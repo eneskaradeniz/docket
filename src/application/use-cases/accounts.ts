@@ -1,8 +1,26 @@
 // use-cases/accounts.ts — exact contract from docs/v2/application.md § 2 (rules A-13, A-14, A-43,
-// A-44). Secrets cross this boundary in one direction only: into the vault. A secret is stored
-// through SecretVault.put and is never written into a record, an audit entry, or a return value.
-import type { Actor, RoleBinding, RoleSlug } from '../../domain/index';
-import { err, ok, RESERVE_MAX, type AccountId, type QuotaReserve, type Result } from '../../domain/index';
+// A-44) and the Phase 7 addendum's A-326. Secrets cross this boundary in one direction only: into
+// the vault. A secret is stored through SecretVault.put and is never written into a record, an
+// audit entry, or a return value.
+import type {
+  Actor,
+  FlowPin,
+  RemovalBlock,
+  RepoDef,
+  RepoSlug,
+  RoleBinding,
+  RoleSlug,
+} from '../../domain/index';
+import {
+  accountRemoval,
+  deriveWorkOrderState,
+  err,
+  ok,
+  RESERVE_MAX,
+  type AccountId,
+  type QuotaReserve,
+  type Result,
+} from '../../domain/index';
 
 import type { AccountRecord, AppDeps, BindingScope } from '../ports';
 
@@ -10,6 +28,13 @@ import type { AccountRecord, AppDeps, BindingScope } from '../ports';
 export interface BindingExists {
   readonly code: 'binding_exists';
   readonly roles: readonly RoleSlug[];
+}
+
+/** A-326: `accountRemoval` answered `blocked` — running work orders or repo stage bindings still
+ *  use the account. */
+export interface AccountInUse {
+  readonly code: 'account_in_use';
+  readonly reasons: readonly RemovalBlock[];
 }
 
 // A-43: `URL` normalises the protocol and host, so a non-https or unparsable endpoint reads invalid
@@ -98,10 +123,48 @@ export async function saveAccount(
   return ok(undefined);
 }
 
+/** The repos a removal verdict consults: every registered project's repos, each with the repo
+ *  section its definitions load (a repo whose flow has not landed yet contributes no stage
+ *  bindings — the transitional truth until #1012 migrates the live shapes). */
+const reposForVerdict = async (deps: Pick<AppDeps, 'definitions' | 'projects'>): Promise<readonly RepoDef[]> => {
+  const repos: RepoDef[] = [];
+  const seen = new Set<RepoSlug>();
+  for (const project of await deps.projects.list()) {
+    for (const slug of project.repos) {
+      if (seen.has(slug)) continue;
+      seen.add(slug);
+      const loaded = await deps.definitions.load(slug);
+      if (loaded.ok && loaded.value.repo !== undefined) repos.push(loaded.value.repo);
+    }
+  }
+  return repos;
+};
+
+/** Every work order's pin with its `running` flag, derived from the live flow the same way the
+ *  screens derive it. A state that cannot be derived (broken definitions, a vanished flow) reads
+ *  as not running: the pin still archives instead of blocking, and history stays readable. */
+const pinsForVerdict = async (
+  deps: Pick<AppDeps, 'definitions' | 'workOrders'>,
+): Promise<readonly { workOrder: string; running: boolean; pin: FlowPin }[]> => {
+  const pins: { workOrder: string; running: boolean; pin: FlowPin }[] = [];
+  for (const record of await deps.workOrders.list({})) {
+    if (record.pin === undefined) continue;
+    const loaded = await deps.definitions.load(record.repo);
+    const flow = loaded.ok ? loaded.value.flows.find((candidate) => candidate.id === record.flow) : undefined;
+    const running =
+      flow !== undefined && deriveWorkOrderState(flow, await deps.workOrders.events(record.id)).status === 'running';
+    pins.push({ workOrder: record.id, running, pin: record.pin });
+  }
+  return pins;
+};
+
 export async function removeAccount(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets' | 'bindings' | 'accountTests'>,
+  deps: Pick<
+    AppDeps,
+    'clock' | 'ids' | 'log' | 'accounts' | 'secrets' | 'bindings' | 'accountTests' | 'workOrders' | 'definitions' | 'projects'
+  >,
   input: { readonly id: AccountId; readonly actor: Actor },
-): Promise<Result<void, 'not_found' | BindingExists>> {
+): Promise<Result<void, 'not_found' | BindingExists | AccountInUse>> {
   const record = await deps.accounts.get(input.id);
   if (record === undefined) return err('not_found');
 
@@ -114,6 +177,11 @@ export async function removeAccount(
   }
   if (referencing.length > 0) return err({ code: 'binding_exists', roles: referencing });
 
+  // A-326: the domain verdict — running work orders' pins or repo stage bindings block the
+  // removal; otherwise it proceeds and the audit names which verdict allowed it.
+  const verdict = accountRemoval(input.id, await reposForVerdict(deps), await pinsForVerdict(deps));
+  if (verdict.kind === 'blocked') return err({ code: 'account_in_use', reasons: verdict.reasons });
+
   if (record.secretRef !== undefined) await deps.secrets.remove(record.secretRef);
   await deps.accounts.remove(input.id);
   await deps.accountTests.clear(input.id);
@@ -123,6 +191,7 @@ export async function removeAccount(
     actor: input.actor,
     action: 'account.removed',
     subject: { kind: 'account', id: input.id },
+    detail: { verdict: verdict.kind },
   });
   return ok(undefined);
 }

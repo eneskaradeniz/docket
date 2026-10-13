@@ -3,6 +3,7 @@
 import type {
   CapabilityDef,
   Definitions,
+  EpochMs,
   FlowDef,
   DefinitionIssue,
   ProjectDef,
@@ -13,7 +14,11 @@ import type {
   RoadmapIssue,
   RepoSlug,
   RoleDef,
+  VersionRecord,
 } from '../../domain/index';
+
+/** A-343: the library kinds the store versions. */
+export type DefinitionKind = 'roles' | 'flows' | 'capabilities' | 'memory';
 
 export type DefinitionScope =
   | { readonly kind: 'global' }
@@ -60,4 +65,14 @@ export interface DefinitionStore {
     project: ProjectDef,
     repo: RepoDef,
   ): Promise<Result<void, 'project_yaml_exists' | 'repo_yaml_exists' | 'io_failed'>>;
+  /** A-343: a definition's version history in version order; empty for an unknown id. */
+  listVersions(kind: DefinitionKind, id: string): Promise<readonly VersionRecord<unknown>[]>;
+  /** A-343: the only library write — appends the next version and answers `stale` when a
+   *  concurrent writer appended the same next version first (the adapter's write race). */
+  appendVersion(
+    kind: DefinitionKind,
+    id: string,
+    body: unknown,
+    at: EpochMs,
+  ): Promise<Result<VersionRecord<unknown>, 'stale'>>;
 }

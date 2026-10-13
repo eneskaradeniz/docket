@@ -4,12 +4,16 @@ import { describe, expect, it } from 'vitest';
 import type {
   Actor,
   FlowSlug,
+  RepoDef,
+  RoleDef,
   RunId,
   Slug,
   TaskSlug,
   Ulid,
   WorkOrderId,
   RepoSlug,
+  RoleSlug,
+  StageSlug,
 } from '../../domain/index';
 import { deriveWorkOrderState, err, nextAction, parseSlug, parseUlid } from '../../domain/index';
 
@@ -846,5 +850,147 @@ describe('closeWorkOrder', () => {
 
     expect(result).toEqual(err('not_found'));
     expect(h.log.entries()).toEqual([]);
+  });
+});
+
+// --- Phase 7: the work-order pin (A-324, A-325, A-344) ---------------------------------------------
+
+const WORKER: RoleSlug = slugOf<'role'>('worker');
+const PIN_STAGE: StageSlug = slugOf<'stage'>('implement');
+const PIN_ACCOUNT = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FB3');
+
+const WORKER_V1: RoleDef = {
+  id: WORKER,
+  name: 'Worker',
+  instructions: 'Do the work.',
+  writeScope: { kind: 'repo' },
+  capabilities: [],
+  active: true,
+};
+const WORKER_V2: RoleDef = { ...WORKER_V1, instructions: 'Do the work, carefully.' };
+
+/** A Phase 7 repo: the legacy fields stay (the use case still reads them) and the repo's own
+ *  flow binds the worker role at the given version. */
+const pinnedRepoDef = (version: number, flowVersion = 4): RepoDef => ({
+  id: REPO,
+  name: 'Acme',
+  flows: [FLOW_A, FLOW_B, FLOW_FAIL],
+  defaultFlow: FLOW_A,
+  commandSets: {},
+  roleOverrides: [],
+  docsRoot: 'docs',
+  testGlobs: [],
+  flow: {
+    flowId: FLOW_A,
+    version: flowVersion,
+    stages: [{ id: PIN_STAGE, name: 'Implement', role: WORKER, exit: [] }],
+    bindings: [
+      {
+        stage: PIN_STAGE,
+        role: { roleId: WORKER, version, overlay: { instructions: 'Local instructions.' } },
+        accounts: [{ accountId: PIN_ACCOUNT }],
+        limitPolicy: 'ask',
+      },
+    ],
+  },
+  defaultLimitPolicy: 'fallback_account',
+});
+
+describe('openWorkOrder (Phase 7 pin)', () => {
+  it('A-324: stores the FlowPin (via pinFlow) on the work order record at creation', async () => {
+    const h = createHarness();
+    await h.definitions.appendVersion('roles', 'worker', WORKER_V1, 900);
+    await h.definitions.appendVersion('roles', 'worker', WORKER_V2, 950);
+    h.definitions.setRepoDef(REPO, pinnedRepoDef(2));
+
+    const id = await openedWorkOrder(h);
+
+    const record = await h.workOrders.get(id);
+    expect(record?.pin).toEqual({
+      flowId: FLOW_A,
+      flowVersion: 4,
+      stages: [
+        {
+          stage: { id: PIN_STAGE, name: 'Implement', role: WORKER, exit: [] },
+          // The effective role body: v2 with the repo overlay's instructions, copied.
+          role: { ...WORKER_V2, instructions: 'Local instructions.' },
+          roleVersion: 2,
+          accounts: [{ accountId: PIN_ACCOUNT }],
+          limitPolicy: 'ask',
+        },
+      ],
+    });
+  });
+
+  it('A-324: a repo without a Phase 7 flow opens exactly as before, with no pin', async () => {
+    const h = createHarness();
+
+    const id = await openedWorkOrder(h);
+
+    const record = await h.workOrders.get(id);
+    expect(record).toBeDefined();
+    expect('pin' in (record ?? {})).toBe(false);
+  });
+
+  it('A-344: a pinFlow failure maps to definitions_invalid and writes nothing — no record, no event', async () => {
+    const h = createHarness();
+    await h.definitions.appendVersion('roles', 'worker', WORKER_V1, 900);
+    // The binding names version 7, which the library does not carry.
+    h.definitions.setRepoDef(REPO, pinnedRepoDef(7));
+
+    const result = await openWorkOrder(h.openDeps, {
+      project: PROJECT,
+      repo: REPO,
+      title: 'Fix the login flow',
+      actor: ACTOR,
+    });
+
+    expect(result).toEqual(err('definitions_invalid'));
+    expect(await h.workOrders.list({})).toEqual([]);
+    expect(h.log.entries()).toEqual([]);
+  });
+
+  it('A-325: later library edits and repo flow changes never rewrite the stored pin', async () => {
+    const h = createHarness();
+    await h.definitions.appendVersion('roles', 'worker', WORKER_V1, 900);
+    await h.definitions.appendVersion('roles', 'worker', WORKER_V2, 950);
+    h.definitions.setRepoDef(REPO, pinnedRepoDef(2));
+
+    const id = await openedWorkOrder(h);
+    const pinned = (await h.workOrders.get(id))?.pin;
+    expect(pinned).toBeDefined();
+    const snapshot = JSON.parse(JSON.stringify(pinned));
+
+    // A later library edit: v3 lands. A later repo change: the flow moves on to version 5.
+    await h.definitions.appendVersion('roles', 'worker', { ...WORKER_V2, name: 'Engineer' }, 1_400);
+    h.definitions.setRepoDef(REPO, pinnedRepoDef(3, 5));
+
+    // Reads serve the stored pin, never a re-derivation from the live repo flow.
+    expect((await h.workOrders.get(id))?.pin).toEqual(snapshot);
+    const view = await getWorkOrder(h.viewDeps, id);
+    expect(view.ok && view.value.record.pin).toEqual(snapshot);
+
+    // A work order opened after the change pins the new flow; the old one keeps its own.
+    const later = await openedWorkOrder(h);
+    const laterPin = (await h.workOrders.get(later))?.pin;
+    expect(laterPin?.flowVersion).toBe(5);
+    expect(laterPin?.stages[0].roleVersion).toBe(3);
+    expect((await h.workOrders.get(id))?.pin).toEqual(snapshot);
+  });
+
+  it('A-325: a run of the pinned stage records the pin’s flow and role versions', async () => {
+    const h = createHarness();
+    await h.definitions.appendVersion('roles', 'worker', WORKER_V1, 900);
+    await h.definitions.appendVersion('roles', 'worker', WORKER_V2, 950);
+    h.definitions.setRepoDef(REPO, pinnedRepoDef(2));
+
+    const id = await openedWorkOrder(h);
+    const pin = (await h.workOrders.get(id))?.pin;
+    expect(pin).toBeDefined();
+
+    // What a stage run/resume/retry reads: the versions of the stored pin, not the live flow.
+    const run = { ...runRecord(RUN_1, id, 1_000), stage: PIN_STAGE, flowVersion: pin?.flowVersion, roleVersion: pin?.stages[0].roleVersion ?? undefined };
+    await h.runs.create(run);
+    expect(await h.runs.get(RUN_1)).toEqual(run);
   });
 });

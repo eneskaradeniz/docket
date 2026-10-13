@@ -14,6 +14,16 @@ const CONTRACT_FUNCTIONS = [
   'isUlid',
   // definitions (section 2)
   'validateDefinitions',
+  // definitions (section 2, Phase 7 addendum — repo flows, pins, removals)
+  'nextVersion',
+  'effectiveRole',
+  'roleUpdateProposals',
+  'pinFlow',
+  'roleRemoval',
+  'accountRemoval',
+  'dependantsOfRole',
+  'dependantsOfAccount',
+  'limitPolicyFor',
   // resolver (section 3)
   'resolve',
   'applyRoleOverrides',

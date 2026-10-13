@@ -10,6 +10,7 @@ import {
   type AccountId,
   type AccountRoute,
   type Actor,
+  type FlowPin,
   type RoleBinding,
   type Slug,
   type Ulid,
@@ -20,8 +21,10 @@ import {
   createFakeCapabilityCatalog,
   createFakeClock,
   createFakeDeps,
+  createFakeDefinitionStore,
   createFakeEventLog,
   createFakeSecretVault,
+  type FakeDefinitionStore,
   type FakeEventLog,
   type FakeRouteKind,
   type FakeSecretVault,
@@ -551,5 +554,169 @@ describe('saveBinding', () => {
       expect(await saveAccount(h.deps, { record, actor: USER })).toEqual({ ok: true, value: undefined });
       expect(await h.deps.accounts.get(record.id)).toEqual(record);
     }
+  });
+});
+
+// --- removeAccount Phase 7 verdict (A-326) ---------------------------------------------------------
+
+const PIN_STAGE = slugOf<'stage'>('implement');
+const PIN_FLOW = slugOf<'flow'>('flow-a');
+const PIN_ROLE = slugOf<'role'>('worker');
+const PIN_WO = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FC0');
+const PIN_RUN = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FC1');
+const PIN_PROJECT = slugOf<'project'>('atolye');
+const PIN_REPO = slugOf<'repo'>('acme');
+
+const pinOf = (accountId: AccountId): FlowPin => ({
+  flowId: PIN_FLOW,
+  flowVersion: 1,
+  stages: [
+    {
+      stage: { id: PIN_STAGE, name: 'Implement', role: PIN_ROLE, exit: [] },
+      role: {
+        id: PIN_ROLE,
+        name: 'Worker',
+        instructions: 'Do the work.',
+        writeScope: { kind: 'repo' },
+        capabilities: [],
+        active: true,
+      },
+      roleVersion: 1,
+      accounts: [{ accountId }],
+      limitPolicy: 'wait_resume',
+    },
+  ],
+});
+
+/** A one-stage flow the pin's work order can derive `running` from. */
+const PIN_DEFS_JSON = JSON.stringify({
+  roles: [
+    { id: 'worker', name: 'Worker', instructions: 'Do the work.', writeScope: { kind: 'repo' }, capabilities: [], active: true },
+  ],
+  flows: [{ id: 'flow-a', name: 'Flow A', stages: [{ id: 'implement', name: 'Implement', role: 'worker', exit: [] }] }],
+});
+
+interface VerdictHarness extends Harness {
+  readonly definitions: FakeDefinitionStore;
+  readonly workOrders: AppDeps['workOrders'];
+}
+
+const makeVerdictHarness = (): VerdictHarness => {
+  const clock = createFakeClock(1_000);
+  const log = createFakeEventLog();
+  const secrets = createFakeSecretVault();
+  const definitions = createFakeDefinitionStore();
+  const deps = createFakeDeps({ clock, log, secrets, definitions, capabilities: createFakeCapabilityCatalog() });
+  return { deps, log, secrets, definitions, workOrders: deps.workOrders };
+};
+
+describe('removeAccount (A-326)', () => {
+  it('A-326: refuses while a running work order’s pin references the account', async () => {
+    const h = makeVerdictHarness();
+    await saveAccount(h.deps, { record: accountRecord({ secretRef: SECRET_REF }), secret: SECRET, actor: USER });
+    h.definitions.seed({ kind: 'global' }, 'defs.json', PIN_DEFS_JSON);
+    await h.workOrders.create({
+      id: PIN_WO,
+      project: PIN_PROJECT,
+      repo: PIN_REPO,
+      flow: PIN_FLOW,
+      title: 'Fix the login flow',
+      pin: pinOf(ACCOUNT),
+      createdAt: 900,
+      createdBy: USER,
+    });
+    await h.workOrders.appendEvent(PIN_WO, { type: 'created', at: 900, by: USER, flow: PIN_FLOW });
+    await h.workOrders.appendEvent(PIN_WO, {
+      type: 'run_started',
+      at: 950,
+      runId: PIN_RUN,
+      stage: PIN_STAGE,
+      attempt: 1,
+    });
+
+    const result = await removeAccount(h.deps, { id: ACCOUNT, actor: USER });
+
+    expect(result).toEqual({
+      ok: false,
+      error: { code: 'account_in_use', reasons: [{ kind: 'running_work', workOrders: [PIN_WO] }] },
+    });
+    expect(await h.deps.accounts.get(ACCOUNT)).toBeDefined();
+    expect(await h.deps.secrets.get(SECRET_REF)).toBe(SECRET);
+    expect(h.log.entries()).toHaveLength(1); // saveAccount's audit only — the refusal writes none
+  });
+
+  it('A-326: refuses while a repo stage binding still routes to the account', async () => {
+    const h = makeVerdictHarness();
+    await saveAccount(h.deps, { record: accountRecord(), actor: USER });
+    await h.deps.projects.save({ id: PIN_PROJECT, name: 'Atölye', mainRepo: PIN_REPO, repos: [PIN_REPO] });
+    h.definitions.setRepoDef(PIN_REPO, {
+      id: PIN_REPO,
+      name: 'Acme',
+      flows: [PIN_FLOW],
+      defaultFlow: PIN_FLOW,
+      commandSets: {},
+      roleOverrides: [],
+      docsRoot: 'docs',
+      testGlobs: [],
+      flow: {
+        flowId: PIN_FLOW,
+        version: 1,
+        stages: [{ id: PIN_STAGE, name: 'Implement', role: PIN_ROLE, exit: [] }],
+        bindings: [{ stage: PIN_STAGE, role: { roleId: PIN_ROLE, version: 1 }, accounts: [{ accountId: ACCOUNT }] }],
+      },
+    });
+
+    const result = await removeAccount(h.deps, { id: ACCOUNT, actor: USER });
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: 'account_in_use',
+        reasons: [{ kind: 'dependant', of: 'binding', repo: PIN_REPO, stage: PIN_STAGE }],
+      },
+    });
+    expect(await h.deps.accounts.get(ACCOUNT)).toBeDefined();
+    expect(h.log.entries()).toHaveLength(1);
+  });
+
+  it('A-326: archives otherwise, with the verdict in the audit entry', async () => {
+    const h = makeVerdictHarness();
+    await saveAccount(h.deps, { record: accountRecord({ secretRef: SECRET_REF }), secret: SECRET, actor: USER });
+    // A finished-but-not-running work order: only its created event, so the pin reads as not
+    // running and the verdict is `archive`.
+    await h.workOrders.create({
+      id: PIN_WO,
+      project: PIN_PROJECT,
+      repo: PIN_REPO,
+      flow: PIN_FLOW,
+      title: 'Fix the login flow',
+      pin: pinOf(ACCOUNT),
+      createdAt: 900,
+      createdBy: USER,
+    });
+    await h.workOrders.appendEvent(PIN_WO, { type: 'closed', at: 950, by: USER });
+
+    const result = await removeAccount(h.deps, { id: ACCOUNT, actor: USER });
+
+    expect(result).toEqual({ ok: true, value: undefined });
+    expect(await h.deps.accounts.get(ACCOUNT)).toBeUndefined();
+    expect(await h.deps.secrets.get(SECRET_REF)).toBeUndefined();
+    const audit = h.log.entries();
+    expect(audit).toHaveLength(2);
+    expect(audit[1]).toMatchObject({
+      action: 'account.removed',
+      subject: { kind: 'account', id: ACCOUNT },
+      detail: { verdict: 'archive' },
+    });
+  });
+
+  it('A-326: nothing referencing the account deletes it, and the audit says so', async () => {
+    const h = makeVerdictHarness();
+    await saveAccount(h.deps, { record: accountRecord(), actor: USER });
+
+    const result = await removeAccount(h.deps, { id: ACCOUNT, actor: USER });
+
+    expect(result).toEqual({ ok: true, value: undefined });
+    expect(h.log.entries()[1]).toMatchObject({ action: 'account.removed', detail: { verdict: 'delete' } });
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { CapabilityDef, Definitions, ProjectSlug } from '../../../domain/index';
+import type { CapabilityDef, Definitions, ProjectSlug, RepoDef } from '../../../domain/index';
 import { parseSlug, type CapabilitySlug, type RepoSlug } from '../../../domain/index';
 
 import type { DefinitionScope } from '../definition-store';
@@ -365,5 +365,79 @@ describe('installCapabilities (fake)', () => {
       JSON.stringify({ kind: 'context', id: 'other', name: 'Other', path: '/x/other.md' }),
     );
     expect(validated.ok).toBe(true);
+  });
+});
+
+describe('library version histories (fake, A-343)', () => {
+  it('listVersions answers version order and empty for an unknown id; appendVersion numbers from nextVersion', async () => {
+    const store = createFakeDefinitionStore();
+
+    expect(await store.listVersions('roles', 'dev')).toEqual([]);
+
+    const first = await store.appendVersion('roles', 'dev', { id: 'dev', name: 'Dev' }, 1_000);
+    const second = await store.appendVersion('roles', 'dev', { id: 'dev', name: 'Developer' }, 2_000);
+
+    expect(first).toEqual({
+      ok: true,
+      value: { definitionId: 'dev', version: 1, body: { id: 'dev', name: 'Dev' }, recordedAt: 1_000, archived: false },
+    });
+    expect(second).toMatchObject({ ok: true, value: { version: 2 } });
+    // A recorded body never changes when the next version lands.
+    expect(await store.listVersions('roles', 'dev')).toEqual([
+      { definitionId: 'dev', version: 1, body: { id: 'dev', name: 'Dev' }, recordedAt: 1_000, archived: false },
+      { definitionId: 'dev', version: 2, body: { id: 'dev', name: 'Developer' }, recordedAt: 2_000, archived: false },
+    ]);
+    // Histories are per kind and id.
+    expect(await store.listVersions('flows', 'dev')).toEqual([]);
+  });
+
+  it('failNextAppendStale makes the next appendVersion answer stale and write nothing', async () => {
+    const store = createFakeDefinitionStore();
+    await store.appendVersion('roles', 'dev', { id: 'dev' }, 1_000);
+
+    store.failNextAppendStale();
+    const refused = await store.appendVersion('roles', 'dev', { id: 'dev', name: 'Raced' }, 2_000);
+
+    expect(refused).toEqual({ ok: false, error: 'stale' });
+    expect(await store.listVersions('roles', 'dev')).toHaveLength(1);
+
+    const next = await store.appendVersion('roles', 'dev', { id: 'dev', name: 'Next' }, 3_000);
+    expect(next).toMatchObject({ ok: true, value: { version: 2 } });
+  });
+
+  it('setRepoDef replaces the narrowed repo section load answers, keeping file issues decisive', async () => {
+    const store = createFakeDefinitionStore();
+    const flowSlug = parseSlug<'flow'>('main');
+    if (!flowSlug.ok) throw new Error('fixture slug must parse');
+    const stageSlug = parseSlug<'stage'>('work');
+    if (!stageSlug.ok) throw new Error('fixture slug must parse');
+    const roleSlug = parseSlug<'role'>('worker');
+    if (!roleSlug.ok) throw new Error('fixture slug must parse');
+    const typed: RepoDef = {
+      id: REPO_SLUG,
+      name: 'Acme',
+      flows: [flowSlug.value],
+      defaultFlow: flowSlug.value,
+      commandSets: {},
+      roleOverrides: [],
+      docsRoot: 'docs',
+      testGlobs: [],
+      flow: {
+        flowId: flowSlug.value,
+        version: 2,
+        stages: [{ id: stageSlug.value, name: 'Work', role: roleSlug.value, exit: [] }],
+        bindings: [{ stage: stageSlug.value, role: { roleId: roleSlug.value, version: 1 }, accounts: [] }],
+      },
+      defaultLimitPolicy: 'ask',
+    };
+
+    store.setRepoDef(REPO_SLUG, typed);
+    const loaded = await store.load(REPO_SLUG);
+    expect(loaded.ok).toBe(true);
+    if (loaded.ok) expect(loaded.value.repo).toEqual(typed);
+
+    // A broken file world still reports its issues instead of the typed seed.
+    store.seed(REPO, 'defs.json', '{not json');
+    expect((await store.load(REPO_SLUG)).ok).toBe(false);
   });
 });

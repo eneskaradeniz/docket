@@ -1053,14 +1053,20 @@ const runCommand = async (
           secrets: deps.secrets,
           bindings: deps.bindings,
           accountTests: deps.accountTests,
+          workOrders: deps.workOrders,
+          definitions: deps.definitions,
+          projects: deps.projects,
         },
         { id, actor },
       );
       if (removed.ok) return { ok: true };
-      // binding_exists carries the referencing roles so the surface can name what to rebind.
+      // binding_exists carries the referencing roles so the surface can name what to rebind;
+      // account_in_use (A-326) reports its code, its reasons stay in the audit-less refusal.
       return typeof removed.error === 'string'
         ? { ok: false, code: removed.error }
-        : { ok: false, code: removed.error.code, roles: removed.error.roles };
+        : removed.error.code === 'binding_exists'
+          ? { ok: false, code: removed.error.code, roles: removed.error.roles }
+          : { ok: false, code: removed.error.code };
     }
 
     case 'account.test': {
