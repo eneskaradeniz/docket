@@ -500,7 +500,7 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
                     </ActionButton>
                   )}
                   below={(row) =>
-                    row.source.keyMoveCard ? <KeyMoveCard locale={locale} on={candidateState.importToken} onChange={(on) => candidates.setImportToken(on)} /> : null
+                    row.source.keyMoveCard ? <KeyMoveCard locale={locale} on={row.source.importToken} onChange={(on) => candidates.setImportToken(row.id, on)} /> : null
                   }
                 />
               </div>
@@ -659,6 +659,8 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
           models={models}
           formatTime={store.resetsAtLabel}
           onRefresh={() => void store.refreshQuota(openAccount.id)}
+          refreshing={state.refreshing.includes(openAccount.id) || state.refreshing.includes('*')}
+          refreshFailure={state.refreshFailures[openAccount.id] ?? null}
           roleChips={rolesOfAccount(rolesState.rows, openAccount.id)}
           onOpenRole={(roleId) => onOpenTarget(roleChipTarget(roleId))}
           providerName={providerName(openAccount.provider)}

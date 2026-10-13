@@ -240,17 +240,25 @@ export function ShellScreen({
   // same way — a back that lands on it continues back, a forward continues forward.
   const lastMoveRef = useRef<'back' | 'forward'>('back');
   const mainRef = useRef<HTMLElement>(null);
+  const wizardState = useSyncExternalStore(wizard.subscribe, wizard.state);
+  // The wizard owns the screen and the focus while it is up: the palette stays away, or it would
+  // open beneath the wizard's overlay and steal its focus. The settings panel owns the same
+  // standing while it is open.
+  const wizardUp = wizardState.visible && !wizardState.checking;
   useEffect(() => {
     void shell.load();
     // The bar's Update button reads the standing from startup, not from the panel's first open.
     void update.load();
-    // The machine scan runs once here, in the background; sections read its result from memory.
-    void candidateList.ensure();
     // The sidebar's Artifact'lar row reads its count from startup, not from the first visit.
     void library.warm();
     // The Öneriler badge reads from startup too.
     void proposals.refresh();
-  }, [shell, update, candidateList, library, proposals]);
+  }, [shell, update, library, proposals]);
+  useEffect(() => {
+    // The machine scan runs once here, in the background; while the first-run wizard checks or
+    // shows, the wizard runs the scan instead (U-260).
+    if (!wizardState.visible && !wizardState.checking) void candidateList.ensure();
+  }, [candidateList, wizardState.visible, wizardState.checking]);
   // The provider display names (A-67) the sidebar's card titles and popovers read: discovery's
   // own naming, resolved by id, null when it does not know the provider.
   const providerRows = useSyncExternalStore(candidateList.subscribe, () => candidateList.state().providers);
@@ -261,11 +269,6 @@ export function ShellScreen({
   useEffect(() => {
     if (route.name !== 'workOrder' && route.name !== 'account' && route.name !== 'page') placeRef.current = placeOf(route);
   }, [route]);
-  const wizardState = useSyncExternalStore(wizard.subscribe, wizard.state);
-  // The wizard owns the screen and the focus while it is up: the palette stays away, or it would
-  // open beneath the wizard's overlay and steal its focus. The settings panel owns the same
-  // standing while it is open.
-  const wizardUp = wizardState.visible && !wizardState.checking;
   const openPalette = useCallback(
     (origin: PaletteOrigin): void => {
       if (wizardUp || settingsPanel.open || newProjectPanel.open) return;

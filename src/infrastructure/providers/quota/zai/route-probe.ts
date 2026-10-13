@@ -30,14 +30,17 @@ export function createZaiRouteProbe(deps: ZaiRouteProbeDeps): QuotaProbe {
   const sources = new Map<string, AccountSource>();
 
   return {
-    poll: async (defId) => {
+    poll: async (defId, _binPath, context) => {
       const routeKind = findRouteKind(defId);
       if (routeKind === undefined || routeKind.quotaProbe !== 'http_monitor') return err('unknown_provider');
 
-      const riding = (await deps.accounts.list()).filter((account) => account.routeKind === defId);
+      const allRiding = await deps.accounts.list();
+      const riding = allRiding.filter(
+        (account) => account.routeKind === defId && (context?.accountId ? account.id === context.accountId : true),
+      );
       // Accounts removed meanwhile must not keep a cached source alive.
       for (const id of [...sources.keys()]) {
-        if (!riding.some((account) => account.id === id)) sources.delete(id);
+        if (!allRiding.some((account) => account.id === id)) sources.delete(id);
       }
 
       const readings: MeterReading[] = [];
@@ -45,7 +48,11 @@ export function createZaiRouteProbe(deps: ZaiRouteProbeDeps): QuotaProbe {
       for (const account of riding) {
         const endpoint = account.endpoint;
         const secretRef = account.secretRef;
-        if (endpoint === undefined || secretRef === undefined) continue;
+        if (secretRef === undefined) {
+          if (firstError === undefined) firstError = 'not_logged_in';
+          continue;
+        }
+        if (endpoint === undefined) continue;
 
         let entry = sources.get(account.id);
         if (entry === undefined || entry.endpoint !== endpoint || entry.secretRef !== secretRef) {

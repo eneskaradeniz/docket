@@ -523,7 +523,7 @@ describe('wizard store (U-35, U-42)', () => {
     expect(bundle.store.state().capabilityRejects).toEqual([]);
   });
 
-  it('U-35: Hesaplar is gated on one ready selected account; a token candidate stays "Anahtar gerekli" until the key-move switch is on; unreadable rows cannot be selected', async () => {
+  it('U-262: Hesaplar is gated on one ready selected account; a token candidate is "Kurulum bekliyor" and inert until the key-move switch is on; unreadable rows cannot be selected', async () => {
     const bundle = setup([endpoint, unreadable, claudeA]);
     await toAccounts(bundle);
     // The ready candidate starts selected; deselect it to see the gate.
@@ -535,24 +535,57 @@ describe('wizard store (U-35, U-42)', () => {
     expect(bundle.store.state().rows.find((row) => row.id === keyOf('.claude-bad'))?.selected).toBe(false);
     expect(bundle.store.state().nextEnabled).toBe(false);
 
+    // The token row waits for the key move before any selection: pending, inert, its card open.
     bundle.store.select(keyOf('.claude-zai'));
     const row = bundle.store.state().rows.find((entry) => entry.id === keyOf('.claude-zai'));
-    expect(row?.statusKey).toBe('candidates.status.key_needed');
-    expect(row?.keyMoveCard).toBe(true);
-    expect(row?.importToken).toBe(false);
+    expect(row).toMatchObject({
+      statusKey: 'candidates.status.setup_pending',
+      selectable: false,
+      selected: false,
+      keyMoveCard: true,
+      importToken: false,
+      disabledReasonKey: 'candidates.reason.setup_pending',
+    });
     expect(bundle.store.state().nextEnabled).toBe(false);
 
     bundle.store.setImportToken(keyOf('.claude-zai'), true);
+    expect(bundle.store.state().rows.find((entry) => entry.id === keyOf('.claude-zai'))?.statusKey).toBe('candidates.status.ready');
+    bundle.store.select(keyOf('.claude-zai'));
     expect(bundle.store.state().nextEnabled).toBe(true);
 
+    // Turning the switch back off returns the row to pending and drops its selection.
     bundle.store.setImportToken(keyOf('.claude-zai'), false);
-    bundle.store.select(keyOf('.claude'));
-    expect(bundle.store.state().nextEnabled).toBe(true);
+    expect(bundle.store.state().rows.find((entry) => entry.id === keyOf('.claude-zai'))?.selected).toBe(false);
+    expect(bundle.store.state().nextEnabled).toBe(false);
     // A next past a gate that is closed does nothing.
-    bundle.store.select(keyOf('.claude'));
-    bundle.store.select(keyOf('.claude-zai'));
     await bundle.store.next();
     expect(bundle.store.state().step).toBe('accounts');
+  });
+
+  it('U-263: the finish adopts no selected row that can no longer be adopted — a rescan that turns it unreadable drops it from the walk', async () => {
+    const bundle = setup([claudeA, endpoint]);
+    await toAccounts(bundle);
+    bundle.store.setImportToken(keyOf('.claude-zai'), true);
+    bundle.store.select(keyOf('.claude-zai'));
+    expect(selectedIds(bundle.store)).toEqual([keyOf('.claude'), keyOf('.claude-zai')]);
+    // The rescan can no longer read the z.ai folder: the row stays listed but not adoptable.
+    bundle.api.setCandidates([claudeA, candidate('.claude-zai', {
+      kind: 'compatible_endpoint',
+      billing: 'unknown',
+      endpointHost: 'api.z.ai',
+      envOverrides: ['token', 'endpoint'],
+      warnings: ['unreadable'],
+    })]);
+    await bundle.store.rescan();
+    expect(selectedIds(bundle.store)).toEqual([keyOf('.claude')]);
+    await bundle.store.next();
+    await bundle.store.next();
+    await bundle.store.next();
+    expect(bundle.api.commands.filter((command) => command.type === 'account.adopt')).toEqual([
+      { type: 'account.adopt', sourcePath: keyOf('.claude'), label: 'claude' },
+    ]);
+    expect(bundle.store.state().finished).toEqual({ accounts: 1 });
+    expect(bundle.store.state().finishError).toBeNull();
   });
 
   it('U-42: ready accounts start selected; one whose token overrides its login and an unreadable one do not', async () => {
@@ -642,8 +675,8 @@ describe('wizard store (U-35, U-42)', () => {
     const bundle = setup([endpoint, claudeA, claudeB]);
     await toAccounts(bundle);
     // The key-based account is chosen first, so only the ranking can put it last.
-    bundle.store.select(keyOf('.claude-zai'));
     bundle.store.setImportToken(keyOf('.claude-zai'), true);
+    bundle.store.select(keyOf('.claude-zai'));
     expect(selectedIds(bundle.store)).toEqual([keyOf('.claude-zai'), keyOf('.claude'), keyOf('.claude-b')]);
     await bundle.store.next();
     expect(bundle.store.state().step).toBe('order');
@@ -679,8 +712,8 @@ describe('wizard store (U-35, U-42)', () => {
   it('U-35: back keeps every entry — selection, key-move switch, order, an editor draft and a consent', async () => {
     const bundle = setup([claudeA, endpoint]);
     await toAccounts(bundle);
-    bundle.store.select(keyOf('.claude-zai'));
     bundle.store.setImportToken(keyOf('.claude-zai'), true);
+    bundle.store.select(keyOf('.claude-zai'));
     await bundle.store.next();
     bundle.store.moveTo(keyOf('.claude'), 1);
     await bundle.store.next();
@@ -704,8 +737,8 @@ describe('wizard store (U-35, U-42)', () => {
   it('U-42: Bütçe lists the selected accounts as Abonelikler and Kullandıkça öde, with the U-29 difference count per row', async () => {
     const bundle = setup([claudeA, endpoint]);
     await toAccounts(bundle);
-    bundle.store.select(keyOf('.claude-zai'));
     bundle.store.setImportToken(keyOf('.claude-zai'), true);
+    bundle.store.select(keyOf('.claude-zai'));
     await bundle.store.next();
     await bundle.store.next();
     const { subscriptions, payPerUse } = bundle.store.state().budget;
@@ -751,8 +784,8 @@ describe('wizard store (U-35, U-42)', () => {
     const bundle = setup([claudeA, endpoint]);
     bundle.api.setQuota({ ok: true, pools: [pool('p1', 'max', 'all')], meters: [meter('m1', 'p1', 'five_hour'), meter('m2', 'p1', 'seven_day')] });
     await toAccounts(bundle);
-    bundle.store.select(keyOf('.claude-zai'));
     bundle.store.setImportToken(keyOf('.claude-zai'), true);
+    bundle.store.select(keyOf('.claude-zai'));
     await bundle.store.next();
     await bundle.store.next();
     const asked = bundle.api.queries.filter((query) => query.type === 'accounts.candidateQuota');
@@ -790,8 +823,8 @@ describe('wizard store (U-35, U-42)', () => {
   it('U-44a: a pay-per-use row stores its cap amount and period without granting consent; the gate waits for the consent', async () => {
     const bundle = setup([endpoint]);
     await toAccounts(bundle);
-    bundle.store.select(keyOf('.claude-zai'));
     bundle.store.setImportToken(keyOf('.claude-zai'), true);
+    bundle.store.select(keyOf('.claude-zai'));
     await bundle.store.next();
     expect(bundle.store.state().step).toBe('budget');
     expect(bundle.store.setCap(keyOf('.claude-zai'), { amount: 'abc', scope: 'account_week' })).toBe(false);
@@ -805,8 +838,8 @@ describe('wizard store (U-35, U-42)', () => {
   it('U-44a: a pay-per-use account needs its spend consent with a cap before "Kurulumu bitir" is enabled', async () => {
     const bundle = setup([endpoint]);
     await toAccounts(bundle);
-    bundle.store.select(keyOf('.claude-zai'));
     bundle.store.setImportToken(keyOf('.claude-zai'), true);
+    bundle.store.select(keyOf('.claude-zai'));
     await bundle.store.next();
     expect(bundle.store.state().step).toBe('budget');
     expect(bundle.store.state().nextEnabled).toBe(false);
@@ -860,8 +893,8 @@ describe('wizard store (U-35, U-42)', () => {
   it('U-44a: finishing adopts every selected account with its draft, writes caps and consents, binds every role, then leaves for Anasayfa with the ready count', async () => {
     const bundle = setup([claudeA, endpoint]);
     await toAccounts(bundle);
-    bundle.store.select(keyOf('.claude-zai'));
     bundle.store.setImportToken(keyOf('.claude-zai'), true);
+    bundle.store.select(keyOf('.claude-zai'));
     await bundle.store.next();
     await bundle.store.next();
     await bundle.store.openEditor(keyOf('.claude'));
@@ -1091,5 +1124,42 @@ describe('wizard store (U-35, U-42)', () => {
     expect(left.visible).toBe(false);
     await bundle.store.open();
     expect(bundle.store.state().visible).toBe(false);
+  });
+
+  it('U-260: opening the Hesaplar step with a scan already in flight starts no second read', async () => {
+    const bundle = setup([claudeA]);
+    const held = bundle.api.holdQuery('accounts.candidates');
+    const opening = bundle.store.open();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // Calling open again or advancing to Hesaplar while scan is in flight starts no second read:
+    const openingAgain = bundle.store.open();
+    await bundle.store.next();
+    expect(bundle.store.state().step).toBe('accounts');
+    const queries = bundle.api.queries.filter((q) => q.type === 'accounts.candidates');
+    expect(queries).toHaveLength(1);
+    held.resolve();
+    await Promise.all([opening, openingAgain]);
+    expect(bundle.store.state().rows).toHaveLength(1);
+    const queriesAfter = bundle.api.queries.filter((q) => q.type === 'accounts.candidates');
+    expect(queriesAfter).toHaveLength(1);
+    expect(bundle.api.queries.filter((q) => q.type === 'providers.discovered')).toHaveLength(1);
+    await bundle.store.rescan();
+    expect(bundle.api.queries.filter((q) => q.type === 'accounts.candidates')).toHaveLength(2);
+    expect(bundle.api.queries.filter((q) => q.type === 'providers.discovered')).toHaveLength(2);
+  });
+
+  it('U-261: an accounts.changed caused by this wizard does not show the scanning skeleton again', async () => {
+    const bundle = setup([claudeA]);
+    await toAccounts(bundle);
+    expect(bundle.store.state().step).toBe('accounts');
+    expect(bundle.store.state().loading).toBe(false);
+    expect(bundle.store.state().rows).toHaveLength(1);
+    const beforeCount = bundle.api.queries.filter((q) => q.type === 'accounts.candidates').length;
+    bundle.api.emit({ type: 'accounts.changed' });
+    // An accounts.changed re-reads in the background without setting loading = true:
+    expect(bundle.store.state().loading).toBe(false);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(bundle.store.state().loading).toBe(false);
+    expect(bundle.api.queries.filter((q) => q.type === 'accounts.candidates').length).toBe(beforeCount + 1);
   });
 });

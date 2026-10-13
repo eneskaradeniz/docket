@@ -245,6 +245,8 @@ describe('settings store', () => {
       removeWarning: null,
       testing: [],
       testRefusals: {},
+      refreshing: [],
+      refreshFailures: {},
     });
 
     await h.store.load();
@@ -482,5 +484,35 @@ describe('settings store', () => {
     h.emitter.emit({ type: 'accounts.changed' });
     await flush();
     expect(h.api.queries.filter((q) => q.type === 'settings.accounts').length).toBe(2);
+  });
+
+  it('U-266: while refreshQuota runs, refreshing contains the target; Yenile is disabled', async () => {
+    const h = createHarness('tr');
+    await h.store.load();
+    h.api.hold('settings.accounts');
+    const refreshPromise = h.store.refreshQuota('acc-1');
+    expect(h.store.state().refreshing).toEqual(['acc-1']);
+    // Concurrent refresh for the same target is ignored
+    await h.store.refreshQuota('acc-1');
+    expect(h.store.state().refreshing).toEqual(['acc-1']);
+    h.api.release('settings.accounts', VIEW);
+    await refreshPromise;
+    expect(h.store.state().refreshing).toEqual([]);
+  });
+
+  it('U-267: when refreshQuota fails, refreshFailures holds the typed failure; retry re-enters refreshing', async () => {
+    const h = createHarness('tr');
+    await h.store.load();
+    h.api.setCommandResult({ ok: false, code: 'network' });
+    const failed = await h.store.refreshQuota('acc-1');
+    expect(failed.result.ok).toBe(false);
+    expect(h.store.state().refreshFailures['acc-1']).toBe('network');
+    expect(h.store.state().refreshing).toEqual([]);
+
+    // Retrying with success clears the failure and finishes
+    const retry = await h.store.refreshQuota('acc-1');
+    expect(retry.result.ok).toBe(true);
+    expect(h.store.state().refreshFailures['acc-1']).toBeUndefined();
+    expect(h.store.state().refreshing).toEqual([]);
   });
 });
