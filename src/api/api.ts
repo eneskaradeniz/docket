@@ -40,6 +40,7 @@ import {
   BUILTIN_ROLES,
   CONVERSATION_LIMITS,
   billingFromPools,
+  deriveProgress,
   deriveRoadmap,
   deriveWorkOrderState,
   foldRun,
@@ -110,7 +111,9 @@ import {
   acceptMemoryProposalUseCase,
   createMemoryNoteUseCase,
   listLibraryDefinitionsByKind,
+  loadRepoRoadmapsForProject,
   memoryOverview,
+  readRepoRoadmap,
   rejectMemoryProposalUseCase,
   saveVersion,
   setMemoryAutoAccept,
@@ -187,6 +190,7 @@ import type {
   Query,
   RepoNode,
   RoadmapPageView,
+  RoadmapRepoView,
   RoleListItem,
   AccountTestView,
   SettingsAccountsView,
@@ -1554,6 +1558,15 @@ const runQuery = async (
       return roadmapView(deps, project);
     }
 
+    case 'roadmap.byRepo': {
+      const repo = slugValue<'repo'>(query.repo);
+      if (repo === undefined) return invalidId();
+      const read = await readRepoRoadmap(deps, repo);
+      if (!read.ok) return { ok: false, code: read.code };
+      const view: RoadmapRepoView = { milestones: read.roadmap.milestones, issues: read.roadmap.issues };
+      return view;
+    }
+
     case 'account.detail': {
       const id = ulidValue<'account'>(query.id);
       if (id === undefined) return invalidId();
@@ -2317,7 +2330,8 @@ const roadmapView = async (
       status: entry.status as WorkOrderStatus,
       record: entry.record,
     }));
-  const view = deriveRoadmap(roadmap.value, linked);
+  const repoRoadmaps = await loadRepoRoadmapsForProject(deps, roadmap.value);
+  const view = deriveRoadmap(roadmap.value, linked, repoRoadmaps);
 
   // Each task's orders travel per its targets order, then by display number ascending — the page
   // reads a cross-repo task's rows straight off this list. A repo outside the task's targets (an
@@ -2362,6 +2376,9 @@ const roadmapView = async (
       id: phase.id,
       name: phase.name,
       status: view.phases[phase.id] ?? 'planned',
+      ...(phase.items !== undefined && phase.items.length > 0
+        ? { progress: deriveProgress(phase, repoRoadmaps) }
+        : {}),
       blockedBy: phase.blockedBy.filter((blocker) => (view.phases[blocker] ?? 'planned') !== 'done'),
       ...(autoRuns.has(phase.id) ? { autoRun: autoRuns.get(phase.id) } : {}),
       tasks: phase.tasks.map((task) => ({

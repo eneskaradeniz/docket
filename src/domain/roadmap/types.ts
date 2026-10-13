@@ -2,6 +2,46 @@
 import type { WorkOrderStatus } from '../flow';
 import type { EpochMs, PhaseSlug, ProjectSlug, RepoSlug, TaskSlug, WorkOrderId } from '../shared';
 
+export type IssueSource =
+  | { readonly kind: 'local' }
+  | { readonly kind: 'tracker'; readonly tracker: string; readonly externalId: string; readonly url?: string };
+
+export interface RepoMilestone {
+  readonly id: string;
+  readonly title: string;
+  readonly dueAt?: EpochMs;
+  readonly state: 'open' | 'closed';
+  readonly source: IssueSource;
+}
+
+export interface RepoIssue {
+  readonly id: string;
+  readonly title: string;
+  readonly body?: string;
+  readonly state: 'open' | 'closed';
+  readonly milestone?: string;
+  readonly labels: readonly string[];
+  readonly parent?: string;
+  readonly source: IssueSource;
+}
+
+export interface RepoRoadmap {
+  readonly repo: RepoSlug;
+  readonly milestones: readonly RepoMilestone[];
+  readonly issues: readonly RepoIssue[];
+}
+
+export type RepoItemRef = { readonly repo: RepoSlug; readonly kind: 'milestone' | 'issue'; readonly id: string };
+
+export type PhaseItem =
+  | { readonly kind: 'repo_item'; readonly ref: RepoItemRef }
+  | { readonly kind: 'manual'; readonly id: string; readonly title: string; readonly done: boolean };
+
+export interface Progress {
+  readonly done: number;
+  readonly total: number;
+}
+
 export interface TaskDef {
   readonly id: TaskSlug;
   readonly title: string;
@@ -15,6 +55,7 @@ export interface PhaseDef {
   readonly name: string;
   readonly blockedBy: readonly PhaseSlug[];
   readonly tasks: readonly TaskDef[];
+  readonly items?: readonly PhaseItem[];
 }
 
 export interface Roadmap {
@@ -31,7 +72,8 @@ export type RoadmapIssueCode =
   | 'cross_cycle'
   | 'missing_field'
   | 'wrong_type'
-  | 'unknown_repo';
+  | 'unknown_repo'
+  | 'target_required';
 
 export interface RoadmapIssue {
   readonly path: string;

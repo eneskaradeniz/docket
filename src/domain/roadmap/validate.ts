@@ -4,7 +4,18 @@
 // only appear when both graphs are combined.
 import type { ProjectDef } from '../definitions';
 import { err, ok, parseSlug, type PhaseSlug, type RepoSlug, type Result, type Slug, type TaskSlug } from '../shared';
-import type { PhaseDef, Roadmap, RoadmapIssue, RoadmapIssueCode, TaskDef } from './types';
+import type {
+  IssueSource,
+  PhaseDef,
+  PhaseItem,
+  RepoIssue,
+  RepoMilestone,
+  RepoRoadmap,
+  Roadmap,
+  RoadmapIssue,
+  RoadmapIssueCode,
+  TaskDef,
+} from './types';
 
 type UnknownRecord = Readonly<Record<string, unknown>>;
 
@@ -18,11 +29,22 @@ interface TaskDraft {
   readonly targetSlots: readonly (RepoSlug | undefined)[] | undefined; // undefined = targets absent
 }
 
+interface PhaseItemDraft {
+  readonly kind: 'manual' | 'repo_item' | undefined;
+  readonly manualId: string | undefined;
+  readonly manualTitle: string | undefined;
+  readonly manualDone: boolean | undefined;
+  readonly refRepo: RepoSlug | undefined;
+  readonly refKind: 'milestone' | 'issue' | undefined;
+  readonly refId: string | undefined;
+}
+
 interface PhaseDraft {
   readonly id: PhaseSlug | undefined;
   readonly name: string | undefined;
   readonly blockedBySlots: readonly (PhaseSlug | undefined)[] | undefined;
   readonly tasks: readonly (TaskDraft | undefined)[] | undefined;
+  readonly items: readonly (PhaseItemDraft | undefined)[] | undefined;
 }
 
 const isRecord = (value: unknown): value is UnknownRecord =>
@@ -127,6 +149,74 @@ const parseTask = (issues: RoadmapIssue[], container: UnknownRecord, path: strin
   targetSlots: parseTargetSlots(issues, container, path),
 });
 
+const parseIssueSource = (issues: RoadmapIssue[], container: UnknownRecord, path: string): IssueSource | undefined => {
+  const kind = readStringField(issues, container, 'kind', `${path}.kind`);
+  if (kind === undefined) return undefined;
+  if (kind === 'local') return { kind: 'local' };
+  if (kind === 'tracker') {
+    const tracker = readStringField(issues, container, 'tracker', `${path}.tracker`);
+    const externalId = readStringField(issues, container, 'externalId', `${path}.externalId`);
+    if (tracker === undefined || externalId === undefined) return undefined;
+    const urlRaw: unknown = container['url'];
+    if (urlRaw !== undefined && typeof urlRaw !== 'string') {
+      addIssue(issues, `${path}.url`, 'wrong_type', `${path}.url must be a string`);
+      return undefined;
+    }
+    return urlRaw === undefined ? { kind: 'tracker', tracker, externalId } : { kind: 'tracker', tracker, externalId, url: urlRaw };
+  }
+  addIssue(issues, `${path}.kind`, 'wrong_type', `${path}.kind must be "local" or "tracker"`);
+  return undefined;
+};
+
+const parsePhaseItem = (issues: RoadmapIssue[], container: UnknownRecord, path: string): PhaseItemDraft => {
+  const kindRaw = readStringField(issues, container, 'kind', `${path}.kind`);
+  if (kindRaw === undefined) return { kind: undefined, manualId: undefined, manualTitle: undefined, manualDone: undefined, refRepo: undefined, refKind: undefined, refId: undefined };
+  if (kindRaw === 'manual') {
+    const manualId = readStringField(issues, container, 'id', `${path}.id`);
+    const manualTitle = readStringField(issues, container, 'title', `${path}.title`);
+    const doneRaw: unknown = container['done'];
+    if (doneRaw === undefined) {
+      addIssue(issues, `${path}.done`, 'missing_field', `${path}.done is required`);
+    } else if (typeof doneRaw !== 'boolean') {
+      addIssue(issues, `${path}.done`, 'wrong_type', `${path}.done must be a boolean`);
+    }
+    return {
+      kind: 'manual',
+      manualId,
+      manualTitle,
+      manualDone: typeof doneRaw === 'boolean' ? doneRaw : undefined,
+      refRepo: undefined,
+      refKind: undefined,
+      refId: undefined,
+    };
+  }
+  if (kindRaw === 'repo_item') {
+    const refRaw: unknown = container['ref'];
+    if (!isRecord(refRaw)) {
+      addIssue(issues, `${path}.ref`, 'wrong_type', `${path}.ref must be an object`);
+      return { kind: 'repo_item', manualId: undefined, manualTitle: undefined, manualDone: undefined, refRepo: undefined, refKind: undefined, refId: undefined };
+    }
+    const refRepo = readSlugField<'repo'>(issues, refRaw, 'repo', `${path}.ref.repo`);
+    const refKindRaw = readStringField(issues, refRaw, 'kind', `${path}.ref.kind`);
+    const refKind = refKindRaw === 'milestone' || refKindRaw === 'issue' ? refKindRaw : undefined;
+    if (refKindRaw !== undefined && refKind === undefined) {
+      addIssue(issues, `${path}.ref.kind`, 'wrong_type', `${path}.ref.kind must be "milestone" or "issue"`);
+    }
+    const refId = readStringField(issues, refRaw, 'id', `${path}.ref.id`);
+    return {
+      kind: 'repo_item',
+      manualId: undefined,
+      manualTitle: undefined,
+      manualDone: undefined,
+      refRepo,
+      refKind,
+      refId,
+    };
+  }
+  addIssue(issues, `${path}.kind`, 'wrong_type', `${path}.kind must be "manual" or "repo_item"`);
+  return { kind: undefined, manualId: undefined, manualTitle: undefined, manualDone: undefined, refRepo: undefined, refKind: undefined, refId: undefined };
+};
+
 const parsePhase = (issues: RoadmapIssue[], container: UnknownRecord, path: string): PhaseDraft => {
   const id = readSlugField<'phase'>(issues, container, 'id', `${path}.id`);
   const name = readStringField(issues, container, 'name', `${path}.name`);
@@ -151,7 +241,25 @@ const parsePhase = (issues: RoadmapIssue[], container: UnknownRecord, path: stri
     });
   }
 
-  return { id, name, blockedBySlots, tasks };
+  const itemsRaw: unknown = container['items'];
+  let items: readonly (PhaseItemDraft | undefined)[] | undefined;
+  if (itemsRaw === undefined) {
+    items = undefined;
+  } else if (!Array.isArray(itemsRaw)) {
+    addIssue(issues, `${path}.items`, 'wrong_type', `${path}.items must be an array`);
+    items = undefined;
+  } else {
+    items = itemsRaw.map((item: unknown, index: number) => {
+      const itemPath = `${path}.items[${index}]`;
+      if (!isRecord(item)) {
+        addIssue(issues, itemPath, 'wrong_type', `${itemPath} must be an object`);
+        return undefined;
+      }
+      return parsePhaseItem(issues, item, itemPath);
+    });
+  }
+
+  return { id, name, blockedBySlots, tasks, items };
 };
 
 interface Cycle {
@@ -360,35 +468,72 @@ const crossCheck = (issues: RoadmapIssue[], phaseDrafts: readonly PhaseDraft[]):
   if (phaseCycles.length === 0) crossCycleCheck(issues, phaseDrafts, phaseEdges, taskEdges, taskPathById);
 };
 
-const buildTask = (draft: TaskDraft, defaultTargets: readonly RepoSlug[]): TaskDef | undefined => {
+const buildPhaseItem = (draft: PhaseItemDraft): PhaseItem | undefined => {
+  if (draft.kind === 'manual') {
+    if (draft.manualId === undefined || draft.manualTitle === undefined || draft.manualDone === undefined) return undefined;
+    return { kind: 'manual', id: draft.manualId, title: draft.manualTitle, done: draft.manualDone };
+  }
+  if (draft.kind === 'repo_item') {
+    if (draft.refRepo === undefined || draft.refKind === undefined || draft.refId === undefined) return undefined;
+    return {
+      kind: 'repo_item',
+      ref: { repo: draft.refRepo, kind: draft.refKind, id: draft.refId },
+    };
+  }
+  return undefined;
+};
+
+const buildTask = (
+  draft: TaskDraft,
+  defaultTargets: readonly RepoSlug[],
+  issues: RoadmapIssue[],
+  path: string,
+  multiRepo: boolean,
+): TaskDef | undefined => {
   if (draft.id === undefined || draft.title === undefined || draft.acceptance === undefined || draft.dependsOnSlots === undefined) {
     return undefined;
   }
   const dependsOn = draft.dependsOnSlots.filter((slot): slot is TaskSlug => slot !== undefined);
-  // R-47: absent or empty targets default to the project's main repo; without a project they stay empty.
   const written = draft.targetSlots === undefined ? [] : draft.targetSlots.filter((slot): slot is RepoSlug => slot !== undefined);
+  let targets: readonly RepoSlug[];
+  if (written.length > 0) {
+    targets = written;
+  } else if (defaultTargets.length === 1) {
+    targets = defaultTargets;
+  } else if (multiRepo) {
+    addIssue(issues, `${path}.targets`, 'target_required', `${path}.targets is required when the project lists more than one repo`);
+    return undefined;
+  } else {
+    targets = [];
+  }
   return {
     id: draft.id,
     title: draft.title,
     dependsOn,
     acceptance: draft.acceptance,
-    targets: written.length > 0 ? written : defaultTargets,
+    targets,
   };
 };
 
-const buildPhase = (draft: PhaseDraft, defaultTargets: readonly RepoSlug[]): PhaseDef | undefined => {
+const buildPhase = (draft: PhaseDraft, defaultTargets: readonly RepoSlug[], issues: RoadmapIssue[], phasePath: string, multiRepo: boolean): PhaseDef | undefined => {
   if (draft.id === undefined || draft.name === undefined || draft.tasks === undefined || draft.blockedBySlots === undefined) {
     return undefined;
   }
   const tasks: TaskDef[] = [];
-  for (const task of draft.tasks) {
-    if (task === undefined) return undefined;
-    const built = buildTask(task, defaultTargets);
-    if (built === undefined) return undefined;
-    tasks.push(built);
-  }
+  draft.tasks.forEach((task, index) => {
+    if (task === undefined) return;
+    const built = buildTask(task, defaultTargets, issues, `${phasePath}.tasks[${index}]`, multiRepo);
+    if (built !== undefined) tasks.push(built);
+  });
   const blockedBy = draft.blockedBySlots.filter((slot): slot is PhaseSlug => slot !== undefined);
-  return { id: draft.id, name: draft.name, blockedBy, tasks };
+  const builtItems: PhaseItem[] = [];
+  draft.items?.forEach((item) => {
+    if (item === undefined) return;
+    const built = buildPhaseItem(item);
+    if (built !== undefined) builtItems.push(built);
+  });
+  const phase: PhaseDef = { id: draft.id, name: draft.name, blockedBy, tasks };
+  return builtItems.length > 0 ? { ...phase, items: builtItems } : phase;
 };
 
 /** Validates untyped input (parsed YAML/JSON). All-or-nothing: any issue → err with ALL issues.
@@ -413,7 +558,7 @@ export function validateRoadmap(input: unknown, project?: ProjectDef): Result<Ro
       const path = `phases[${index}]`;
       if (!isRecord(item)) {
         addIssue(issues, path, 'wrong_type', `${path} must be an object`);
-        return { id: undefined, name: undefined, blockedBySlots: undefined, tasks: undefined };
+        return { id: undefined, name: undefined, blockedBySlots: undefined, tasks: undefined, items: undefined };
       }
       return parsePhase(issues, item, path);
     });
@@ -436,21 +581,223 @@ export function validateRoadmap(input: unknown, project?: ProjectDef): Result<Ro
           );
         });
       });
+      phase.items?.forEach((item, itemIndex) => {
+        if (item === undefined || item.kind !== 'repo_item' || item.refRepo === undefined) return;
+        if (knownRepos.has(item.refRepo)) return;
+        addIssue(
+          issues,
+          `phases[${phaseIndex}].items[${itemIndex}].ref.repo`,
+          'unknown_repo',
+          `"${item.refRepo}" is not a repo of project "${project.id}"`,
+        );
+      });
+    });
+  }
+
+  const onlyRepo = project === undefined || project.repos.length !== 1 ? undefined : project.repos[0];
+  const defaultTargets: readonly RepoSlug[] = onlyRepo === undefined ? [] : [onlyRepo];
+  const multiRepo = project !== undefined && project.repos.length > 1;
+
+  if (multiRepo) {
+    phaseDrafts.forEach((phase, phaseIndex) => {
+      phase.tasks?.forEach((task, taskIndex) => {
+        if (task === undefined) return;
+        const written = task.targetSlots === undefined ? [] : task.targetSlots.filter((slot): slot is RepoSlug => slot !== undefined);
+        if (written.length === 0) {
+          addIssue(
+            issues,
+            `phases[${phaseIndex}].tasks[${taskIndex}].targets`,
+            'target_required',
+            `phases[${phaseIndex}].tasks[${taskIndex}].targets is required when the project lists more than one repo`,
+          );
+        }
+      });
     });
   }
 
   if (issues.length > 0) return err(issues);
 
-  // A project carries no main repo (R-126): empty targets mean the project's only repo when it
-  // lists exactly one. The multi-repo `target_required` report is the roadmap family's own issue;
-  // until then such a task keeps its empty targets and the opener refuses it.
-  const onlyRepo = project === undefined || project.repos.length !== 1 ? undefined : project.repos[0];
-  const defaultTargets: readonly RepoSlug[] = onlyRepo === undefined ? [] : [onlyRepo];
-  // With zero issues every draft parsed completely, so the builders never drop an entry here.
   const phases: PhaseDef[] = [];
-  for (const draft of phaseDrafts) {
-    const built = buildPhase(draft, defaultTargets);
+  phaseDrafts.forEach((draft, phaseIndex) => {
+    const built = buildPhase(draft, defaultTargets, issues, `phases[${phaseIndex}]`, multiRepo);
     if (built !== undefined) phases.push(built);
-  }
+  });
+  if (issues.length > 0) return err(issues);
   return ok({ phases });
+}
+
+/** R-136: narrows a repo roadmap document for one repo. */
+export function validateRepoRoadmap(input: unknown, repo: RepoSlug): Result<RepoRoadmap, readonly RoadmapIssue[]> {
+  const issues: RoadmapIssue[] = [];
+  if (!isRecord(input)) {
+    return err([{ path: '', code: 'wrong_type', message: 'repo roadmap must be an object' }]);
+  }
+
+  const milestonesRaw: unknown = input['milestones'];
+  const issuesRaw: unknown = input['issues'];
+  let milestoneDrafts: readonly (UnknownRecord | undefined)[] = [];
+  let issueDrafts: readonly (UnknownRecord | undefined)[] = [];
+
+  if (milestonesRaw === undefined) {
+    addIssue(issues, 'milestones', 'missing_field', 'milestones is required');
+  } else if (!Array.isArray(milestonesRaw)) {
+    addIssue(issues, 'milestones', 'wrong_type', 'milestones must be an array');
+  } else {
+    milestoneDrafts = milestonesRaw.map((item: unknown, index: number) => {
+      const path = `milestones[${index}]`;
+      if (!isRecord(item)) {
+        addIssue(issues, path, 'wrong_type', `${path} must be an object`);
+        return undefined;
+      }
+      return item;
+    });
+  }
+
+  if (issuesRaw === undefined) {
+    addIssue(issues, 'issues', 'missing_field', 'issues is required');
+  } else if (!Array.isArray(issuesRaw)) {
+    addIssue(issues, 'issues', 'wrong_type', 'issues must be an array');
+  } else {
+    issueDrafts = issuesRaw.map((item: unknown, index: number) => {
+      const path = `issues[${index}]`;
+      if (!isRecord(item)) {
+        addIssue(issues, path, 'wrong_type', `${path} must be an object`);
+        return undefined;
+      }
+      return item;
+    });
+  }
+
+  const milestoneIds = new Set<string>();
+  const builtMilestones: RepoMilestone[] = [];
+  milestoneDrafts.forEach((row, index) => {
+    if (row === undefined) return;
+    const path = `milestones[${index}]`;
+    const id = readStringField(issues, row, 'id', `${path}.id`);
+    const title = readStringField(issues, row, 'title', `${path}.title`);
+    const stateRaw = readStringField(issues, row, 'state', `${path}.state`);
+    const state = stateRaw === 'open' || stateRaw === 'closed' ? stateRaw : undefined;
+    if (stateRaw !== undefined && state === undefined) {
+      addIssue(issues, `${path}.state`, 'wrong_type', `${path}.state must be "open" or "closed"`);
+    }
+    const sourceRaw: unknown = row['source'];
+    let source: IssueSource | undefined;
+    if (!isRecord(sourceRaw)) {
+      addIssue(issues, `${path}.source`, 'missing_field', `${path}.source is required`);
+    } else {
+      source = parseIssueSource(issues, sourceRaw, `${path}.source`);
+    }
+    const dueAtRaw: unknown = row['dueAt'];
+    let dueAt: number | undefined;
+    if (dueAtRaw !== undefined) {
+      if (typeof dueAtRaw !== 'number') {
+        addIssue(issues, `${path}.dueAt`, 'wrong_type', `${path}.dueAt must be a number`);
+      } else {
+        dueAt = dueAtRaw;
+      }
+    }
+    if (id === undefined || title === undefined || state === undefined || source === undefined) return;
+    if (milestoneIds.has(id)) {
+      addIssue(issues, `${path}.id`, 'duplicate_id', `${path}.id "${id}" duplicates an earlier milestone id`);
+      return;
+    }
+    milestoneIds.add(id);
+    builtMilestones.push(dueAt === undefined ? { id, title, state, source } : { id, title, state, source, dueAt });
+  });
+
+  const issueIds = new Set<string>();
+  const builtIssues: RepoIssue[] = [];
+  const issueParents = new Map<string, string | undefined>();
+
+  issueDrafts.forEach((row, index) => {
+    if (row === undefined) return;
+    const path = `issues[${index}]`;
+    const id = readStringField(issues, row, 'id', `${path}.id`);
+    const title = readStringField(issues, row, 'title', `${path}.title`);
+    const stateRaw = readStringField(issues, row, 'state', `${path}.state`);
+    const state = stateRaw === 'open' || stateRaw === 'closed' ? stateRaw : undefined;
+    if (stateRaw !== undefined && state === undefined) {
+      addIssue(issues, `${path}.state`, 'wrong_type', `${path}.state must be "open" or "closed"`);
+    }
+    const sourceRaw: unknown = row['source'];
+    let source: IssueSource | undefined;
+    if (!isRecord(sourceRaw)) {
+      addIssue(issues, `${path}.source`, 'missing_field', `${path}.source is required`);
+    } else {
+      source = parseIssueSource(issues, sourceRaw, `${path}.source`);
+    }
+    const labelsRaw: unknown = row['labels'];
+    let labels: readonly string[] | undefined;
+    if (labelsRaw === undefined) {
+      addIssue(issues, `${path}.labels`, 'missing_field', `${path}.labels is required`);
+    } else {
+      labels = readStringArrayField(issues, row, 'labels', `${path}.labels`);
+    }
+    const milestoneRaw: unknown = row['milestone'];
+    let milestone: string | undefined;
+    if (milestoneRaw !== undefined) {
+      if (typeof milestoneRaw !== 'string') {
+        addIssue(issues, `${path}.milestone`, 'wrong_type', `${path}.milestone must be a string`);
+      } else {
+        milestone = milestoneRaw;
+      }
+    }
+    const parentRaw: unknown = row['parent'];
+    let parent: string | undefined;
+    if (parentRaw !== undefined) {
+      if (typeof parentRaw !== 'string') {
+        addIssue(issues, `${path}.parent`, 'wrong_type', `${path}.parent must be a string`);
+      } else {
+        parent = parentRaw;
+      }
+    }
+    const bodyRaw: unknown = row['body'];
+    let body: string | undefined;
+    if (bodyRaw !== undefined && typeof bodyRaw !== 'string') {
+      addIssue(issues, `${path}.body`, 'wrong_type', `${path}.body must be a string`);
+    } else if (typeof bodyRaw === 'string') {
+      body = bodyRaw;
+    }
+    if (id === undefined || title === undefined || state === undefined || source === undefined || labels === undefined) return;
+    if (issueIds.has(id)) {
+      addIssue(issues, `${path}.id`, 'duplicate_id', `${path}.id "${id}" duplicates an earlier issue id`);
+      return;
+    }
+    issueIds.add(id);
+    issueParents.set(id, parent);
+    if (parent !== undefined && source.kind !== 'local') {
+      addIssue(issues, `${path}.source`, 'wrong_type', 'a subtask must have source.kind === "local"');
+    }
+    const built: RepoIssue = {
+      id,
+      title,
+      state: state as 'open' | 'closed',
+      labels,
+      source,
+      ...(body === undefined ? {} : { body }),
+      ...(milestone === undefined ? {} : { milestone }),
+      ...(parent === undefined ? {} : { parent }),
+    };
+    builtIssues.push(built);
+  });
+
+  builtIssues.forEach((issue, index) => {
+    const path = `issues[${index}]`;
+    if (issue.milestone !== undefined && !milestoneIds.has(issue.milestone)) {
+      addIssue(issues, `${path}.milestone`, 'unknown_phase', `"${issue.milestone}" is not a milestone in this repo roadmap`);
+    }
+    if (issue.parent !== undefined) {
+      if (!issueIds.has(issue.parent)) {
+        addIssue(issues, `${path}.parent`, 'unknown_task', `"${issue.parent}" is not an issue in this repo roadmap`);
+      } else {
+        const parentIssue = builtIssues.find((entry) => entry.id === issue.parent);
+        if (parentIssue?.parent !== undefined) {
+          addIssue(issues, `${path}.parent`, 'wrong_type', 'issue nesting is limited to one level');
+        }
+      }
+    }
+  });
+
+  if (issues.length > 0) return err(issues);
+  return ok({ repo, milestones: builtMilestones, issues: builtIssues });
 }

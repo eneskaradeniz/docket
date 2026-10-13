@@ -33,6 +33,7 @@ export type Query =
   | { readonly type: 'repoStatus' } // → RepoStatusView[] (A-341)
   | { readonly type: 'repo.flow'; readonly repo: string } // → RepoFlowView (A-345)
   | { readonly type: 'roadmap.byProject'; readonly project: string }
+  | { readonly type: 'roadmap.byRepo'; readonly repo: string }
   | { readonly type: 'repo.board'; readonly repo: string }
   | { readonly type: 'cockpit'; readonly project?: string }
   | { readonly type: 'account.detail'; readonly id: string }
@@ -144,11 +145,32 @@ export interface ProjectTreeItem {
 
 export type ProjectTree = readonly ProjectTreeItem[];
 
+export interface RoadmapRepoView {
+  readonly milestones: readonly {
+    readonly id: string;
+    readonly title: string;
+    readonly dueAt?: number;
+    readonly state: 'open' | 'closed';
+    readonly source: { readonly kind: 'local' } | { readonly kind: 'tracker'; readonly tracker: string; readonly externalId: string; readonly url?: string };
+  }[];
+  readonly issues: readonly {
+    readonly id: string;
+    readonly title: string;
+    readonly body?: string;
+    readonly state: 'open' | 'closed';
+    readonly milestone?: string;
+    readonly labels: readonly string[];
+    readonly parent?: string;
+    readonly source: { readonly kind: 'local' } | { readonly kind: 'tracker'; readonly tracker: string; readonly externalId: string; readonly url?: string };
+  }[];
+}
+
 export interface RoadmapPageView {
   readonly phases: readonly {
     readonly id: string;
     readonly name: string;
     readonly status: string;
+    readonly progress?: { readonly done: number; readonly total: number };
     /** The ids of the phases that block this one and are not done; empty otherwise (A-127). */
     readonly blockedBy: readonly string[];
     /** Present once the operator started the phase (A-109); `attention` lists work-order ids. */

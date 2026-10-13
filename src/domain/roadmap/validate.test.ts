@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { ProjectDef } from '../definitions';
 import type { ProjectSlug, RepoSlug, Result } from '../shared';
-import type { Roadmap } from './types';
+import type { RepoRoadmap, Roadmap } from './types';
 import type { RoadmapIssue } from './types';
-import { validateRoadmap } from './validate';
+import { validateRepoRoadmap, validateRoadmap } from './validate';
 
 type Obj = Record<string, unknown>;
 
@@ -40,7 +40,17 @@ const expectOk = (result: Result<Roadmap, readonly RoadmapIssue[]>): Roadmap => 
   return result.value;
 };
 
+const expectRepoOk = (result: Result<RepoRoadmap, readonly RoadmapIssue[]>): RepoRoadmap => {
+  if (!result.ok) throw new Error(`expected ok, got issues: ${JSON.stringify(result.error)}`);
+  return result.value;
+};
+
 const expectErr = (result: Result<Roadmap, readonly RoadmapIssue[]>): readonly RoadmapIssue[] => {
+  if (result.ok) throw new Error(`expected err, got ok: ${JSON.stringify(result.value)}`);
+  return result.error;
+};
+
+const expectRepoErr = (result: Result<RepoRoadmap, readonly RoadmapIssue[]>): readonly RoadmapIssue[] => {
   if (result.ok) throw new Error(`expected err, got ok: ${JSON.stringify(result.value)}`);
   return result.error;
 };
@@ -250,29 +260,39 @@ describe('validateRoadmap', () => {
     expect(validateRoadmap(doc([phase('p-1', [task('t-1', [], { targets: ['docket', 'ghost'] })])])).ok).toBe(true);
   });
 
-  it('R-139: a task ref naming a repo outside project.repos is unknown_repo', () => {
-    const issues = expectErr(validateRoadmap(doc([phase('p-1', [task('t-1', [], { targets: ['ghost'] })])]), project()));
-    expect(issueWithCode(issues, 'unknown_repo')?.path).toBe('phases[0].tasks[0].targets[0]');
-  });
-
-  it('R-47: absent or empty targets default to the project’s only repo; written targets survive', () => {
-    const value = expectOk(
+  it('R-139: project roadmap PhaseItem refs validate against project.repos, unknown repo produces unknown_repo', () => {
+    const issues = expectErr(
       validateRoadmap(
-        doc([phase('p-1', [task('t-1'), task('t-2', [], { targets: [] }), task('t-3', [], { targets: ['docs'] })])]),
+        doc([
+          phase('p-1', [], [], {
+            items: [{ kind: 'repo_item', ref: { repo: 'ghost', kind: 'issue', id: 'i1' } }],
+          }),
+        ]),
         project(),
       ),
     );
-    // A two-repo project cannot pick one silently (R-126): the default stays empty until the
-    // roadmap family's `target_required` lands; the opener refuses such a task.
-    expect(value.phases[0]?.tasks[0]?.targets).toEqual([]);
-    expect(value.phases[0]?.tasks[1]?.targets).toEqual([]);
-    expect(value.phases[0]?.tasks[2]?.targets).toEqual(['docs']);
+    expect(issueWithCode(issues, 'unknown_repo')?.path).toBe('phases[0].items[0].ref.repo');
+  });
+
+  it('R-126: empty targets in multi-repo project reports target_required; single-repo project defaults targets to that repo', () => {
+    const multi = expectErr(
+      validateRoadmap(doc([phase('p-1', [task('t-1'), task('t-2', [], { targets: [] })])]), project()),
+    );
+    expect(multi.filter((issue) => issue.code === 'target_required').map((issue) => issue.path).sort()).toEqual([
+      'phases[0].tasks[0].targets',
+      'phases[0].tasks[1].targets',
+    ]);
 
     const single = expectOk(
       validateRoadmap(doc([phase('p-1', [task('t-1'), task('t-2', [], { targets: [] })])]), project({ repos: [repoSlug('docket')] })),
     );
     expect(single.phases[0]?.tasks[0]?.targets).toEqual(['docket']);
     expect(single.phases[0]?.tasks[1]?.targets).toEqual(['docket']);
+
+    const written = expectOk(
+      validateRoadmap(doc([phase('p-1', [task('t-3', [], { targets: ['docs'] })])]), project()),
+    );
+    expect(written.phases[0]?.tasks[0]?.targets).toEqual(['docs']);
   });
 
   it('R-47: the default target follows the project’s only repo', () => {
@@ -375,5 +395,87 @@ describe('validateRoadmap', () => {
     const input = deepFreeze(structuredClone(validInput));
     expect(() => validateRoadmap(input)).not.toThrow();
     expect(validateRoadmap(input).ok).toBe(true);
+  });
+});
+
+describe('validateRepoRoadmap', () => {
+  const localSource = { kind: 'local' };
+
+  it('R-136: repo roadmap ids unique per kind, milestone/parent resolve in repo, subtask local and single-level', () => {
+    const valid = expectRepoOk(
+      validateRepoRoadmap(
+        {
+          milestones: [{ id: 'm1', title: 'M1', state: 'open', source: localSource }],
+          issues: [
+            { id: 'i1', title: 'Parent', state: 'open', labels: [], milestone: 'm1', source: localSource },
+            { id: 'i2', title: 'Sub', state: 'open', labels: [], parent: 'i1', source: localSource },
+          ],
+        },
+        repoSlug('docket'),
+      ),
+    );
+    expect(valid.repo).toBe('docket');
+    expect(valid.issues).toHaveLength(2);
+
+    const dup = expectRepoErr(
+      validateRepoRoadmap(
+        {
+          milestones: [
+            { id: 'm1', title: 'A', state: 'open', source: localSource },
+            { id: 'm1', title: 'B', state: 'open', source: localSource },
+          ],
+          issues: [],
+        },
+        repoSlug('docket'),
+      ),
+    );
+    expect(issueWithCode(dup, 'duplicate_id')).toBeDefined();
+
+    const badParent = expectRepoErr(
+      validateRepoRoadmap(
+        {
+          milestones: [],
+          issues: [{ id: 'i1', title: 'X', state: 'open', labels: [], parent: 'missing', source: localSource }],
+        },
+        repoSlug('docket'),
+      ),
+    );
+    expect(issueWithCode(badParent, 'unknown_task')).toBeDefined();
+
+    const nested = expectRepoErr(
+      validateRepoRoadmap(
+        {
+          milestones: [],
+          issues: [
+            { id: 'i1', title: 'P', state: 'open', labels: [], source: localSource },
+            { id: 'i2', title: 'Mid', state: 'open', labels: [], parent: 'i1', source: localSource },
+            { id: 'i3', title: 'Sub', state: 'open', labels: [], parent: 'i2', source: localSource },
+          ],
+        },
+        repoSlug('docket'),
+      ),
+    );
+    expect(issueWithCode(nested, 'wrong_type')).toBeDefined();
+
+    const trackerSub = expectRepoErr(
+      validateRepoRoadmap(
+        {
+          milestones: [],
+          issues: [
+            { id: 'i1', title: 'P', state: 'open', labels: [], source: localSource },
+            {
+              id: 'i2',
+              title: 'Sub',
+              state: 'open',
+              labels: [],
+              parent: 'i1',
+              source: { kind: 'tracker', tracker: 'gh', externalId: '1' },
+            },
+          ],
+        },
+        repoSlug('docket'),
+      ),
+    );
+    expect(issueWithCode(trackerSub, 'wrong_type')).toBeDefined();
   });
 });

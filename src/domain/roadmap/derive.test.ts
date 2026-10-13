@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { WorkOrderStatus } from '../flow';
 import type { PhaseSlug, RepoSlug, TaskSlug } from '../shared';
-import { deriveRoadmap } from './derive';
-import type { LinkedWorkOrder, PhaseDef, Roadmap, TaskDef } from './types';
+import { deriveProgress, deriveRoadmap } from './derive';
+import type { LinkedWorkOrder, PhaseDef, RepoRoadmap, Roadmap, TaskDef } from './types';
 
 const taskOf = (id: string): TaskSlug => id as TaskSlug;
 const phaseOf = (id: string): PhaseSlug => id as PhaseSlug;
@@ -236,6 +236,76 @@ describe('deriveRoadmap', () => {
     expect(view.tasks).toEqual({});
     expect(view.phases).toEqual({});
     expect(view.runnable).toEqual([]);
+  });
+
+  it('R-137: deriveProgress counts leaves across manual items, issue refs, and milestone expansions', () => {
+    const repoRoadmap: RepoRoadmap = {
+      repo: repoOf('docket'),
+      milestones: [{ id: 'm1', title: 'M', state: 'closed', source: { kind: 'local' } }],
+      issues: [
+        { id: 'i1', title: 'Open', state: 'open', labels: [], milestone: 'm1', source: { kind: 'local' } },
+        { id: 'i2', title: 'Done', state: 'closed', labels: [], milestone: 'm1', source: { kind: 'local' } },
+        { id: 'sub', title: 'Sub', state: 'closed', labels: [], parent: 'i1', source: { kind: 'local' } },
+        { id: 'solo', title: 'Solo', state: 'closed', labels: [], source: { kind: 'local' } },
+      ],
+    };
+    const p: PhaseDef = {
+      ...phase('p-items'),
+      items: [
+        { kind: 'manual', id: 'm1', title: 'Manual', done: true },
+        { kind: 'repo_item', ref: { repo: repoOf('docket'), kind: 'issue', id: 'solo' } },
+        { kind: 'repo_item', ref: { repo: repoOf('docket'), kind: 'milestone', id: 'm1' } },
+        { kind: 'repo_item', ref: { repo: repoOf('ghost'), kind: 'issue', id: 'x' } },
+      ],
+    };
+    const progress = deriveProgress(p, [repoRoadmap]);
+    // manual + solo issue + milestone issues i1,i2 (sub excluded) + unresolved ref
+    expect(progress).toEqual({ done: 3, total: 5 });
+
+    const emptyMilestone: RepoRoadmap = {
+      repo: repoOf('docket'),
+      milestones: [{ id: 'm-empty', title: 'E', state: 'closed', source: { kind: 'local' } }],
+      issues: [],
+    };
+    const p2: PhaseDef = {
+      ...phase('p2'),
+      items: [{ kind: 'repo_item', ref: { repo: repoOf('docket'), kind: 'milestone', id: 'm-empty' } }],
+    };
+    expect(deriveProgress(p2, [emptyMilestone])).toEqual({ done: 1, total: 1 });
+  });
+
+  it('R-138: phase status derives from Progress and tasks; preserves R-41 when items absent', () => {
+    const repoRoadmap: RepoRoadmap = {
+      repo: repoOf('docket'),
+      milestones: [],
+      issues: [{ id: 'i1', title: 'I', state: 'closed', labels: [], source: { kind: 'local' } }],
+    };
+    const withItems: Roadmap = {
+      phases: [
+        {
+          ...phase('p-1', [task('t-1')]),
+          items: [{ kind: 'repo_item', ref: { repo: repoOf('docket'), kind: 'issue', id: 'i1' } }],
+        },
+      ],
+    };
+    const doneView = deriveRoadmap(withItems, [wo('t-1', 'done')], [repoRoadmap]);
+    expect(doneView.phases['p-1']).toBe('done');
+
+    const partial: Roadmap = {
+      phases: [
+        {
+          ...phase('p-1', [task('t-1')]),
+          items: [
+            { kind: 'manual', id: 'a', title: 'A', done: true },
+            { kind: 'manual', id: 'b', title: 'B', done: false },
+          ],
+        },
+      ],
+    };
+    expect(deriveRoadmap(partial, [], []).phases['p-1']).toBe('running');
+
+    const noItems = deriveRoadmap(CHAIN, []);
+    expect(noItems.phases['p-1']).toBe('planned');
   });
 
   it('does not mutate its inputs', () => {
