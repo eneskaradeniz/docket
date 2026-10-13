@@ -34,6 +34,7 @@ export * from './memory';
 export * from './definitions-list';
 export * from './roadmap';
 export * from './setup';
+export * from './tracker-sync';
 
 export * from './phase-control';
 export * from './project-bundle';

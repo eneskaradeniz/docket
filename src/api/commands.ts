@@ -70,7 +70,20 @@ export type Command =
   | { readonly type: 'memory.rejectProposal'; readonly id: string }
   | { readonly type: 'memory.setAutoAccept'; readonly scope: 'global' | 'project' | 'repo'; readonly enabled: boolean }
   | { readonly type: 'memory.addNote'; readonly text: string; readonly scope: 'global' | 'project' | 'repo'; readonly scopeId?: string }
-  | { readonly type: 'definitions.save'; readonly kind: 'plugin' | 'mcp' | 'skill' | 'command' | 'hook'; readonly definition: unknown }; // ok → { version }; failures → definitions_invalid + issues (A-352)
+  | { readonly type: 'definitions.save'; readonly kind: 'plugin' | 'mcp' | 'skill' | 'command' | 'hook'; readonly definition: unknown } // ok → { version }; failures → definitions_invalid + issues (A-352)
+  | { readonly type: 'tracker.sync'; readonly repo: string }
+  | {
+      readonly type: 'tracker.resolveConflict';
+      readonly repo: string;
+      readonly conflict: {
+        readonly issue: string;
+        readonly field: 'title' | 'body' | 'state' | 'milestone' | 'labels';
+        readonly local: string;
+        readonly remote: string;
+        readonly detectedAt: number;
+      };
+      readonly resolution: 'keep_remote' | 'keep_local';
+    };
 
 /** A repo flow as the renderer sends it (A-345): the domain's `RepoFlow` with plain string ids
  *  and unparsed stage/binding bodies — api.ts narrows it with the same law the file world

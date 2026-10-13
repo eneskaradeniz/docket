@@ -107,3 +107,38 @@ export interface PhaseAutoRun {
   /** The phase's work orders that need a person: blocked, waiting on a human or a limit, or asking permission. */
   readonly attention: readonly WorkOrderId[];
 }
+
+export type SyncMode = 'docket_only' | 'read_only_mirror' | 'limited_write' | 'two_way';
+
+export interface TrackerPermissions {
+  readonly read: boolean;
+  readonly comment: boolean;
+  readonly transition: boolean;
+  readonly edit: boolean;
+}
+
+export interface RepoTrackerLink {
+  readonly repo: RepoSlug;
+  readonly tracker: string;
+  readonly connection: string;
+  readonly scope: string;
+  readonly mode: SyncMode;
+}
+
+export interface ExternalMilestone {
+  readonly id: string;
+  readonly title: string;
+  readonly dueAt?: EpochMs;
+  readonly state: 'open' | 'closed';
+  readonly url?: string;
+}
+
+export interface SyncConflict {
+  readonly issue: string;
+  readonly field: 'title' | 'body' | 'state' | 'milestone' | 'labels';
+  readonly local: string;
+  readonly remote: string;
+  readonly detectedAt: EpochMs;
+}
+
+export type ConflictResolution = 'keep_remote' | 'keep_local';

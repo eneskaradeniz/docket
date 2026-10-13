@@ -76,6 +76,7 @@ import type {
   QuotaTimers,
   ProviderMarks,
   UpdateChecker,
+  IssueTracker,
 } from '../application';
 import {
   ASSISTANT_ROLE_ID,
@@ -116,6 +117,10 @@ import {
   readRepoRoadmap,
   rejectMemoryProposalUseCase,
   saveVersion,
+  loadRepoTrackerLink,
+  syncRepoTracker,
+  resolveSyncConflict,
+  readTrackerLinkStatus,
   setMemoryAutoAccept,
   getUpdateState,
   getWorkOrder,
@@ -394,6 +399,7 @@ export function createApi(
   quota?: QuotaWiring,
   chat?: ChatWiring,
   quit?: QuitPromptPort,
+  tracker?: IssueTracker,
 ): Api & RunEventFeed & { readonly quota: QuotaLifecycle; readonly quitRequested: (runs: readonly string[], chats: readonly string[]) => void } {
   // One remembered scan per api instance (A-85): the candidates query and every adoption read it.
   const adopting: Adopting | undefined =
@@ -633,7 +639,7 @@ export function createApi(
           },
         },
       };
-      const result = await runCommand(tracked, actor, command, board, updates, adopting, quotaService, chatOps);
+      const result = await runCommand(tracked, actor, command, board, updates, tracker, adopting, quotaService, chatOps);
       if (appended) emit({ type: 'workOrders.changed' });
       // update.changed rides the same coarse pattern as workOrders.changed: the command answers
       // ok, the event tells every store to re-query — CommandResult carries no state payload. A
@@ -644,7 +650,7 @@ export function createApi(
       return result;
     },
     query: (query) =>
-      runQuery(deps, query, discovery, registry, board, updates, marks, adopting, candidateQuota, chat === undefined ? undefined : chat.runner),
+      runQuery(deps, query, discovery, registry, board, updates, tracker, marks, adopting, candidateQuota, chat === undefined ? undefined : chat.runner),
     subscribe: (listener) => {
       listeners.add(listener);
       return () => {
@@ -665,6 +671,7 @@ const runCommand = async (
   command: Command,
   board: Pick<PermissionBoard, 'answer'> | undefined,
   updates: UpdateChecker | undefined,
+  tracker: IssueTracker | undefined,
   adopting: Adopting | undefined,
   quotaService: QuotaService | undefined,
   chatOps: ChatOps,
@@ -1419,6 +1426,27 @@ const runCommand = async (
       return { ok: true };
     }
 
+    case 'tracker.sync': {
+      if (tracker === undefined) return { ok: false, code: 'not_found' };
+      const repo = slugValue<'repo'>(command.repo);
+      if (repo === undefined) return invalidId();
+      const link = await loadRepoTrackerLink(deps, repo);
+      if (link === undefined) return { ok: false, code: 'not_found' };
+      const synced = await syncRepoTracker({ definitions: deps.definitions, clock: deps.clock, log: deps.log, tracker }, link);
+      return synced.ok ? { ok: true, ...synced.value } : { ok: false, code: synced.error };
+    }
+
+    case 'tracker.resolveConflict': {
+      if (tracker === undefined) return { ok: false, code: 'not_found' };
+      const repo = slugValue<'repo'>(command.repo);
+      if (repo === undefined) return invalidId();
+      const resolved = await resolveSyncConflict(
+        { definitions: deps.definitions, clock: deps.clock, log: deps.log, tracker },
+        { repo, conflict: command.conflict, resolution: command.resolution },
+      );
+      return resolved.ok ? { ok: true } : { ok: false, code: resolved.error };
+    }
+
     case 'definitions.save': {
       const body = command.definition;
       if (typeof body !== 'object' || body === null || Array.isArray(body)) return badInput();
@@ -1450,6 +1478,7 @@ const runQuery = async (
   registry: RepoRegistryPort | undefined,
   board: Pick<PermissionBoard, 'answer' | 'openAsks'> | undefined,
   updates: UpdateChecker | undefined,
+  tracker: IssueTracker | undefined,
   marks: ProviderMarks | undefined,
   adopting: Adopting | undefined,
   candidateQuota: CandidateQuotaPreview | undefined,
@@ -1754,6 +1783,13 @@ const runQuery = async (
           body: record.body,
         }),
       );
+
+    case 'tracker.linkStatus': {
+      if (tracker === undefined) return { ok: false, code: 'not_found' };
+      const repo = slugValue<'repo'>(query.repo);
+      if (repo === undefined) return invalidId();
+      return readTrackerLinkStatus({ definitions: deps.definitions, clock: deps.clock, log: deps.log, tracker }, repo);
+    }
 
     case 'app.update': {
       // The state is already the view: plain JSON, no derivation, nothing stored.

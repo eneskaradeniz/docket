@@ -49,11 +49,6 @@ const PENDING = new Map([
   ['infrastructure:I-92', '#1009'],
 
   // #1005 — two-layer roadmap and tracker model with sync modes
-  ['application:A-328', '#1019'],
-  ['application:A-329', '#1019'],
-  ['application:A-330', '#1019'],
-  ['application:A-331', '#1019'],
-  ['application:A-332', '#1019'],
   ['application:A-333', '#1020'],
 
   // #1006 — agent capabilities: library, provider translation, memory, machine import
