@@ -24,6 +24,8 @@ const PORT_KEYS: readonly (keyof AppDeps)[] = [
   'bindings',
   'queue',
   'definitions',
+  'bundleStore',
+  'memory',
   'proposals',
   'pages',
   'pageFiles',
@@ -53,7 +55,6 @@ const PORT_KEYS: readonly (keyof AppDeps)[] = [
   'runTokens',
   'runDirs',
   'mcpEndpoint',
-  'memory',
 ];
 
 describe('createFakeDeps', () => {
@@ -102,6 +103,7 @@ describe('fakes barrel', () => {
       'createFakeRepoRegistry',
       'createFakeGitProbe',
       'createFakeBindingRepo',
+      'createFakeBundleStore',
       'createFakeQueueRepo',
       'createFakeDefinitionStore',
       'createFakeProposalRepo',

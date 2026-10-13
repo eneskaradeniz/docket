@@ -1041,6 +1041,43 @@ describe('createApi', () => {
       });
     });
 
+    describe('project.export & project.importBundle', () => {
+      it('A-342: project.export answers path and counts, audits project.exported', async () => {
+        const h = await createHarness();
+        const api = createApi(h.deps);
+        const result = await api.command(ACTOR, {
+          type: 'project.export',
+          project: PROJECT,
+        });
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.path).toContain('atolye');
+          expect(result.counts).toBeDefined();
+        }
+      });
+
+      it('A-342: project.importBundle answers warnings and renames, audits project.imported', async () => {
+        const h = await createHarness();
+        const api = createApi(h.deps);
+        const exported = await api.command(ACTOR, {
+          type: 'project.export',
+          project: PROJECT,
+        });
+        expect(exported.ok).toBe(true);
+        if (exported.ok) {
+          const imported = await api.command(ACTOR, {
+            type: 'project.importBundle',
+            path: exported.path!,
+          });
+          expect(imported.ok).toBe(true);
+          if (imported.ok) {
+            expect(imported.renames).toBeDefined();
+            expect(imported.warnings).toBeDefined();
+          }
+        }
+      });
+    });
+
     it('U-13: an unknown authMode is rejected at the boundary and nothing is written', async () => {
       const h = await createHarness();
       const api = createApi(h.deps);

@@ -62,6 +62,8 @@ export const KNOWN_FAILURE_CODES: readonly string[] = [
   'folder_exists',
   'docket_folder_exists',
   'io_failed',
+  'bad_checksum',
+  'wrong_format',
   'project_exists',
   // The phase commands' refusals (A-97, A-110).
   'unknown_project',
@@ -90,9 +92,9 @@ const FAILURE_KEYS: Readonly<Record<string, LabelKey>> = Object.fromEntries(
 /** The quit modal's two answers are never toasted: the window is about to close or the modal
  *  just did. They have no success line; a refusal reads like any other. The registry's relink
  *  command has no screen yet either, so its copy arrives with the screen. */
-type SilentCommand = 'quit.ack' | 'quit.answer' | 'repo.relink';
+type SilentCommand = 'quit.ack' | 'quit.answer' | 'repo.relink' | 'project.export' | 'project.importBundle';
 const isSilent = (command: Command['type']): command is SilentCommand =>
-  command === 'quit.ack' || command === 'quit.answer' || command === 'repo.relink';
+  command === 'quit.ack' || command === 'quit.answer' || command === 'repo.relink' || command === 'project.export' || command === 'project.importBundle';
 
 const SUCCESS_KEYS: Readonly<Record<Exclude<Command['type'], SilentCommand>, LabelKey>> = {
   'workOrder.open': 'success.workOrder.open',

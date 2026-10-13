@@ -51,7 +51,6 @@ const PENDING = new Map([
   ['domain:R-130', '#1012'],
   ['domain:R-133', '#1025'],
   ['domain:R-135', '#1013'],
-  ['infrastructure:I-89', '#1010'],
   ['infrastructure:I-92', '#1009'],
 
   // #1005 — two-layer roadmap and tracker model with sync modes
@@ -97,12 +96,7 @@ const PENDING = new Map([
   ['ui:U-293', '#1026'],
 
   // #1046 — Phase 7 contract gaps: storage, registry, bundles, library versions (#1009–#1012 implement)
-  ['infrastructure:I-98', '#1010'],
-  ['infrastructure:I-99', '#1010'],
-  ['infrastructure:I-100', '#1010'],
-  ['application:A-342', '#1010'],
   ['application:A-345', '#1012'],
-  ['ui:U-296', '#1010'],
 
   // #1047 — planner stage-skip derive rule, supplements R-133 (#1025 implements)
   ['domain:R-144', '#1025'],
@@ -110,7 +104,6 @@ const PENDING = new Map([
   // #1057 — the one-time legacy import was removed. These rules keep their dated addenda and their
   // definitions as history, but their tests went with the code, so no test will ever carry them.
   ['infrastructure:I-90', '#1057'],
-  ['infrastructure:I-91', '#1057'],
   ['infrastructure:I-97', '#1057'],
 
   // #1058 — migrations 1–11 were consolidated into a single clean schema; v1/v10 upgrade tests removed.

@@ -33,3 +33,4 @@ export * from './library';
 export * from './memory';
 
 export * from './phase-control';
+export * from './project-bundle';

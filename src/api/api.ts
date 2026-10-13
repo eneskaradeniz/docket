@@ -103,6 +103,8 @@ import {
   DEFAULT_MODEL_CONSENT,
   defaultBillingOf,
   enqueueStage,
+  exportProject,
+  importBundle,
   getUpdateState,
   getWorkOrder,
   workOrderChanges,
@@ -746,6 +748,26 @@ const runCommand = async (
         subject: { kind: 'project', id: created.value.id },
       });
       return { ok: true, id: created.value.id };
+    }
+
+    case 'project.export': {
+      const project = slugValue<'project'>(command.project);
+      if (project === undefined) return invalidId();
+      const exported = await exportProject(deps, { project, actor });
+      if (!exported.ok) return { ok: false, code: exported.error };
+      return { ok: true, path: exported.value.path, counts: exported.value.counts };
+    }
+
+    case 'project.importBundle': {
+      const imported = await importBundle(deps, { path: command.path, actor });
+      if (!imported.ok) {
+        return {
+          ok: false,
+          code: imported.error,
+          ...(imported.issues ? { issues: imported.issues.map((i) => i.message) } : {}),
+        };
+      }
+      return { ok: true, warnings: imported.value.warnings, renames: imported.value.renames };
     }
 
     case 'repo.register': {

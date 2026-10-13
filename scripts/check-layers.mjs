@@ -62,14 +62,15 @@ const INFRA_MODULES = {
   'storage/sqlite': ['system'],
   'storage/keychain': ['system', 'storage/sqlite'],
   'storage/definitions-yaml': ['system'],
+  'storage/bundle': [],
   vcs: ['system'],
   gates: ['system', 'vcs'],
   forge: ['system'],
   providers: ['system'],
   mcp: [],
   'pages-view': [],
-  compose: ['system', 'storage/sqlite', 'storage/keychain', 'storage/definitions-yaml', 'vcs', 'gates', 'providers', 'mcp'],
-  scenarios: ['system', 'storage/sqlite', 'storage/keychain', 'storage/definitions-yaml', 'vcs', 'gates', 'providers', 'mcp', 'compose'],
+  compose: ['system', 'storage/sqlite', 'storage/keychain', 'storage/definitions-yaml', 'storage/bundle', 'vcs', 'gates', 'providers', 'mcp'],
+  scenarios: ['system', 'storage/sqlite', 'storage/keychain', 'storage/definitions-yaml', 'storage/bundle', 'vcs', 'gates', 'providers', 'mcp', 'compose'],
 };
 // Module id per docs/v2/infrastructure.md: storage/<x> under storage/, else the first folder
 // under src/infrastructure/. The layer barrel (src/infrastructure/index.ts) is handled separately.

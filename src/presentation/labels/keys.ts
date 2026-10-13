@@ -48,6 +48,8 @@ export const LABEL_KEYS = [
   'error.folder_exists',
   'error.docket_folder_exists',
   'error.io_failed',
+  'error.bad_checksum',
+  'error.wrong_format',
   'error.project_exists',
   // Generic failure for an unknown code (U-8).
   'error.unknown',
@@ -1259,6 +1261,21 @@ export const LABEL_KEYS = [
   'launch.prefill.whatDoing',
   'launch.prefill.setup',
   'launch.prefill.fixComments',
+  // Project-menu export/import (U-296, #1010)
+  'project.menu.title',
+  'project.menu.export',
+  'project.menu.import',
+  'project.bundle.export.title',
+  'project.bundle.export.body',
+  'project.bundle.export.confirm',
+  'project.bundle.export.cancel',
+  'project.bundle.export.finished',
+  'project.bundle.import.title',
+  'project.bundle.import.body',
+  'project.bundle.import.confirm',
+  'project.bundle.import.cancel',
+  'project.bundle.import.finished',
+  'project.bundle.import.fileSelect',
 ] as const;
 
 export type LabelKey = (typeof LABEL_KEYS)[number];
