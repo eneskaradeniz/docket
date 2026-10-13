@@ -1,4 +1,4 @@
-// The "every spawn is registered" check (I-88): no production file under src/ or electron/ may
+// The "every spawn is registered" check (I-103): no production file under src/ or electron/ may
 // start a child process on its own — node:child_process is imported (for values) only by
 // system/process-registry.ts, and no raw spawn/execFile/exec/fork call survives outside it, the
 // test fixtures and the tests themselves. A new spawn site goes through `registeredSpawn` /
@@ -35,7 +35,7 @@ const isComment = (line: string): boolean => {
 };
 
 describe('spawn registration coverage', () => {
-  it('I-88: node:child_process is unreachable outside the registry — every other reference is a type-only import', () => {
+  it('I-103: node:child_process is unreachable outside the registry — every other reference is a type-only import', () => {
     const offenders: string[] = [];
     for (const base of ['src', 'electron']) {
       for (const file of walk(join(ROOT, base))) {
@@ -54,7 +54,7 @@ describe('spawn registration coverage', () => {
     expect(offenders).toStrictEqual([]);
   });
 
-  it('I-88: every production spawn seam routes its default through the registry — no file keeps a private real-spawn fallback', () => {
+  it('I-103: every production spawn seam routes its default through the registry — no file keeps a private real-spawn fallback', () => {
     // The seams that take an injected spawn (discovery, quota probes, the model catalog, the
     // control connections) call a bare `spawn(` on their parameter. Hermetic in tests is fine;
     // what must never reappear is a default defined against node's own spawn. With the module

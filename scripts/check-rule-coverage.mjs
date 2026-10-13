@@ -61,6 +61,7 @@ const PENDING = new Map([
   ['application:A-327', '#1011'],
   ['infrastructure:I-86', '#1009'],
   ['infrastructure:I-87', '#1009'],
+  ['infrastructure:I-88', '#1009'],
   ['infrastructure:I-89', '#1010'],
   ['infrastructure:I-90', '#1009'],
   ['infrastructure:I-91', '#1010'],

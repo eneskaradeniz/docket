@@ -568,6 +568,7 @@ Rules:
 - **I-92** (added 2026-10-12, #1004) Team-ready rules, revised: rules 1–4 (actor on every write, ULIDs and UTC times, storage behind ports, approvals record who) stand unchanged; rule 5 is superseded: definitions are portable by export/import (I-89, I-91), not by git. This product stays single-user; a later team server serves the same API and is out of Phase 7.
 - **I-101** (added 2026-10-13, #999) The child process registry exposes live children, runs each child's stop before bounded SIGTERM/SIGKILL escalation, skips already-gone children, provides a synchronous kill-all fallback, mirrors pid/group/start time/command in `children.json`, and registers spawned children until close.
 - **I-102** (added 2026-10-13, #999) The orphan reaper kills only a matching live process, spares PID-reused or mismatched entries, drops dead or invalid entries, rewrites a valid mirror, tolerates missing or corrupt `children.json`, and parses padded-day `ps` rows with their full commands.
+- **I-103** (added 2026-10-13, #999) No production file under src/ or electron/ reaches node:child_process outside the child process registry (type-only imports excepted), and every production spawn seam routes its default through the registry — no file keeps a private real-spawn fallback.
 
 ### Conflicts and supersessions
 
