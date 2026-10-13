@@ -5,7 +5,7 @@ import { WORK_ORDER_DESCRIPTION_MAX_CHARS, normalizeWorkOrderDescription, workOr
 const TOKEN = `sk-${'k'.repeat(32)}`;
 
 describe('normalizeWorkOrderDescription', () => {
-  it('R-123: a blank description is absent, and a description over 4000 characters is refused', () => {
+  it('R-145: a blank description is absent, and a description over 4000 characters is refused', () => {
     expect(normalizeWorkOrderDescription(undefined)).toEqual({ ok: true, value: undefined });
     for (const blank of ['', '   ', ' \n\t ']) {
       expect(normalizeWorkOrderDescription(blank)).toEqual({ ok: true, value: undefined });
@@ -17,7 +17,7 @@ describe('normalizeWorkOrderDescription', () => {
     expect(normalizeWorkOrderDescription(`${capped}y`)).toEqual({ ok: false, error: 'description_too_long' });
   });
 
-  it('R-123: secret-shaped text is redacted and the input is left unchanged', () => {
+  it('R-145: secret-shaped text is redacted and the input is left unchanged', () => {
     const raw = `  keep ${TOKEN} tail  `;
     const result = normalizeWorkOrderDescription(raw);
 
@@ -27,7 +27,7 @@ describe('normalizeWorkOrderDescription', () => {
 });
 
 describe('workOrderRequestSection', () => {
-  it('R-123: the Request section carries the title and the description; a missing description adds no section', () => {
+  it('R-145: the Request section carries the title and the description; a missing description adds no section', () => {
     expect(workOrderRequestSection('Fix the login', undefined)).toBeUndefined();
     expect(workOrderRequestSection('Fix the login', '   ')).toBeUndefined();
 
