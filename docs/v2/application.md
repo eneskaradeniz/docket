@@ -1942,3 +1942,24 @@ support it are gone from the code. The rule texts above stand as history.
 
 - **A-341** (amended 2026-10-13, #1057) The `repo.importLegacy` arm and the `repo.legacy_imported` audit action are gone: the command union no longer carries the type and the api answers it like any unknown command. `repoStatus` and `repo.relink` stand unchanged.
 - **A-24** (amended 2026-10-13, #1057) The "the one-time legacy import is offered (A-341)" sentence is gone: attaching registers the entry and offers nothing else.
+
+### Addendum 2026-10-14 (#1072): memory and library-definition queries/commands for Settings
+
+```ts
+// api/queries.ts (A-348, A-349)
+| { readonly type: 'memory.overview' }
+| { readonly type: 'definitions.list'; readonly kind: 'plugin' | 'mcp' | 'skill' | 'command' | 'hook' }
+
+// api/commands.ts (A-350, A-351)
+| { readonly type: 'memory.acceptProposal'; readonly id: string }
+| { readonly type: 'memory.rejectProposal'; readonly id: string }
+| { readonly type: 'memory.setAutoAccept'; readonly scope: MemoryScope; readonly enabled: boolean }
+| { readonly type: 'memory.addNote'; readonly text: string; readonly scope: MemoryScope; readonly scopeId?: string }
+| { readonly type: 'definitions.save'; readonly kind: 'plugin' | 'mcp' | 'skill' | 'command' | 'hook'; readonly definition: unknown }
+```
+
+- **A-348** (added 2026-10-14, #1072) Query `memory.overview` (no input) answers every recorded `MemoryNote` (latest version per id, `active` kept), every `MemoryProposal` with `state: 'pending'`, the three machine auto-accept booleans (`global`, `project`, `repo`), and `truncated` from `selectMemory` over the active global notes only (R-143, `MEMORY_INJECTION_CAP_CHARS`). The query is a read: no actor, no audit entry.
+- **A-349** (added 2026-10-14, #1072) Query `definitions.list { kind }` answers the latest `VersionRecord` of each library capability whose body kind matches — ids come from the merged capability set of every registered repo's successful `definitions.load`, in id order. An `mcp` body's `env` never carries a secret value on the wire: each key names either `{ literal }` for a non-secret literal or `{ secretRef: true }` when the stored value is a `secretRef` (R-8); the vault key itself is never returned.
+- **A-350** (added 2026-10-14, #1072) Commands `memory.acceptProposal` / `memory.rejectProposal` map to the memory use cases and answer `{ ok: false, code: 'not_found' | 'not_pending' }` without throwing. `memory.setAutoAccept` writes the scope's machine setting and answers `{ ok: true }`. `memory.addNote` trims text, refuses empty with `bad_input`, and creates a note with `createdBy: 'user'` through the use case.
+- **A-351** (added 2026-10-14, #1072) Command `definitions.save { kind, definition }` validates the body as a single capability through `validateDefinitions` (R-140); the command `kind` must match the body's `kind`, otherwise `bad_input`. Issues answer `{ ok: false, code: 'definitions_invalid', definitionIssues }` with the domain issue codes unchanged and nothing written. Success calls `saveVersion` for `capabilities` (D-6, A-343) and answers `{ ok: true, version }`; `stale` passes through as `{ ok: false, code: 'stale' }`.
+- **A-352** (added 2026-10-14, #1072) The boundary maps the queries and commands above onto `memoryOverview`, `listLibraryDefinitionsByKind`, and the existing memory and `saveVersion` use cases only — no business logic in `src/api/` beyond id parsing and view shaping; every new type is registered in `registry.ts`.

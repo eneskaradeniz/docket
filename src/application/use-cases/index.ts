@@ -31,6 +31,7 @@ export * from './capability-import';
 export * from './settings';
 export * from './library';
 export * from './memory';
+export * from './definitions-list';
 
 export * from './phase-control';
 export * from './project-bundle';

@@ -64,7 +64,12 @@ export type Command =
   /** The quit modal is on screen (answer to `quit.requested`); without it the shell falls back to the native dialog. */
   | { readonly type: 'quit.ack' }
   /** The operator's answer to the in-app quit confirmation: true = Kapat ve durdur, false = Vazgeç. */
-  | { readonly type: 'quit.answer'; readonly accept: boolean };
+  | { readonly type: 'quit.answer'; readonly accept: boolean }
+  | { readonly type: 'memory.acceptProposal'; readonly id: string }
+  | { readonly type: 'memory.rejectProposal'; readonly id: string }
+  | { readonly type: 'memory.setAutoAccept'; readonly scope: 'global' | 'project' | 'repo'; readonly enabled: boolean }
+  | { readonly type: 'memory.addNote'; readonly text: string; readonly scope: 'global' | 'project' | 'repo'; readonly scopeId?: string }
+  | { readonly type: 'definitions.save'; readonly kind: 'plugin' | 'mcp' | 'skill' | 'command' | 'hook'; readonly definition: unknown }; // ok → { version }; failures → definitions_invalid + issues (A-351)
 
 /** A conversation scope on the wire: the domain's own three shapes with plain string ids. */
 export type ChatScopeInput =
@@ -127,7 +132,15 @@ export type CommandResult =
       readonly counts?: { readonly projects: number; readonly repos: number; readonly definitions: number; readonly memoryNotes: number };
       readonly warnings?: readonly string[];
       readonly renames?: readonly { readonly id: string; readonly to: string }[];
+      readonly version?: number;
     }
   /** `roles` rides only `binding_exists`: the roles whose bindings still reference the account.
-   *  `issues` rides `definitions_invalid` on bundle import (A-342). */
-  | { readonly ok: false; readonly code: string; readonly roles?: readonly string[]; readonly issues?: readonly string[] };
+   *  `issues` rides `definitions_invalid` on bundle import (A-342).
+   *  `definitionIssues` rides `definitions_invalid` on definitions.save (A-351). */
+  | {
+      readonly ok: false;
+      readonly code: string;
+      readonly roles?: readonly string[];
+      readonly issues?: readonly string[];
+      readonly definitionIssues?: readonly { readonly path: string; readonly code: string; readonly message: string }[];
+    };

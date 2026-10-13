@@ -7,6 +7,7 @@ import {
   err,
   ok,
   rejectMemoryProposal,
+  selectMemory,
 } from '../../domain/index';
 
 import type { AppDeps } from '../ports/index';
@@ -177,6 +178,50 @@ export async function deactivateMemoryNoteUseCase(
 /**
  * Lists all active memory notes from recorded note IDs by fetching their latest version.
  */
+/** Every recorded note id's latest version, including inactive notes. */
+export async function listAllMemoryNotes(
+  deps: Pick<AppDeps, 'memory' | 'definitions'>,
+): Promise<readonly MemoryNote[]> {
+  const noteIds = await deps.memory.listNoteIds();
+  const notes: MemoryNote[] = [];
+
+  for (const id of noteIds) {
+    const versions = await deps.definitions.listVersions('memory', id);
+    if (versions.length === 0) continue;
+    const latest = versions[versions.length - 1];
+    const note = latest.body as MemoryNote;
+    if (note !== undefined) notes.push(note);
+  }
+
+  return notes;
+}
+
+export interface MemoryOverview {
+  readonly notes: readonly MemoryNote[];
+  readonly proposals: readonly MemoryProposal[];
+  readonly autoAccept: { readonly global: boolean; readonly project: boolean; readonly repo: boolean };
+  readonly truncated: boolean;
+}
+
+/** Settings memory panel: all notes, pending proposals, auto-accept flags, global injection cap flag. */
+export async function memoryOverview(
+  deps: Pick<AppDeps, 'memory' | 'definitions' | 'settings'>,
+): Promise<MemoryOverview> {
+  const notes = await listAllMemoryNotes(deps);
+  const proposals = await listMemoryProposals(deps, { state: 'pending' });
+  const global = await getMemoryAutoAccept(deps, 'global');
+  const project = await getMemoryAutoAccept(deps, 'project');
+  const repo = await getMemoryAutoAccept(deps, 'repo');
+  const activeGlobals = notes.filter((note) => note.active && note.scope === 'global');
+  const { truncated } = selectMemory(activeGlobals, {});
+  return {
+    notes,
+    proposals,
+    autoAccept: { global, project, repo },
+    truncated,
+  };
+}
+
 export async function listActiveMemoryNotes(
   deps: Pick<AppDeps, 'memory' | 'definitions'>,
 ): Promise<readonly MemoryNote[]> {
