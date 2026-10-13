@@ -103,9 +103,6 @@ const PENDING = new Map([
   ['ui:U-290', '#1025'],
   ['ui:U-291', '#1025'],
 
-  // #1046 — Phase 7 contract gaps: storage, registry, bundles, library versions (#1009–#1012 implement)
-  ['application:A-345', '#1012'],
-
   // #1047 — planner stage-skip derive rule, supplements R-133 (#1025 implements)
   ['domain:R-144', '#1025'],
 
