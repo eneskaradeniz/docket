@@ -44,9 +44,7 @@ const SECTIONS = [
 // and an id still pending after its issue closes is a review blocker. This list must be empty
 // when the phase closes.
 const PENDING = new Map([
-  ['providers:P-38', '#672'],
   ['domain:R-133', '#1025'],
-  ['infrastructure:I-92', '#1009'],
 
   // #1005 — two-layer roadmap and tracker model with sync modes
   ['application:A-328', '#1019'],
@@ -79,9 +77,6 @@ const PENDING = new Map([
   ['ui:U-291', '#1025'],
   ['ui:U-292', '#1026'],
   ['ui:U-293', '#1026'],
-
-  // #1046 — Phase 7 contract gaps: storage, registry, bundles, library versions (#1009–#1012 implement)
-  ['application:A-345', '#1012'],
 
   // #1047 — planner stage-skip derive rule, supplements R-133 (#1025 implements)
   ['domain:R-144', '#1025'],

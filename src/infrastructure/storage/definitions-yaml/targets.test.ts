@@ -72,6 +72,13 @@ describe('parseTarget', () => {
     expect(parseTarget('repos/acme/other.yaml')).toBeUndefined();
     expect(parseTarget('library/roles/planner/next.yaml')).toBeUndefined();
   });
+
+  it('I-92: rejects repo-checkout or repo-side .docket paths — definitions are portable by bundle export/import, not git', () => {
+    expect(parseTarget('.docket/repo.yaml')).toBeUndefined();
+    expect(parseTarget('checkout/.docket/repo.yaml')).toBeUndefined();
+    expect(parseTarget('repos/acme/.docket/repo.yaml')).toBeUndefined();
+    expect(parseTarget('repos/acme/repo.yaml')).toEqual({ kind: 'repo' });
+  });
 });
 
 describe('hashContent', () => {

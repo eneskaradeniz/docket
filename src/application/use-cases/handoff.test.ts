@@ -369,6 +369,29 @@ describe('buildHandoff', () => {
     expect(result.value.prompt).not.toContain('RAW-LEAK-LINE');
   });
 
+  it('P-38: a cross-provider continuation is pack-only — six assembled fields, no session ref or raw transcript', async () => {
+    const h = await harness({ note: NOTE, stageBase: STAGE_BASE, diffs: { [STAGE_BASE]: DIFF } });
+    const brief = await expectedBrief(h);
+
+    const result = await buildHandoff(h.deps, { runId: FAILED_RUN, cwd: CWD, candidates: [ROUTE_Y] });
+    if (!result.ok) throw new Error(`the pack must build: ${result.error}`);
+    const { pack, prompt } = result.value;
+
+    expect(pack.stagePrompt).toBe(brief);
+    expect(pack.instructionPlan.native).toEqual(['AGENTS.md']);
+    expect(pack.instructionPlan.inlined).toEqual([{ name: 'CLAUDE.md', content: CLAUDE_MD }]);
+    expect(pack.taskState.lastCommand).toEqual({ name: 'Edit', target: 'src/a.ts', ok: true });
+    expect(pack.codeState).toEqual(DIFF);
+    expect(pack.summary).toEqual(NOTE);
+    expect(prompt).toBe(renderHandoffPrompt(pack));
+
+    const serialized = JSON.stringify(pack);
+    expect(serialized).not.toContain('sess-LEAK-REF');
+    expect(serialized).not.toContain('RAW-LEAK-LINE');
+    expect(prompt).not.toContain('sess-LEAK-REF');
+    expect(prompt).not.toContain('RAW-LEAK-LINE');
+  });
+
   it('A-63: null windows size the pack to the fixed ceilings alone — nothing is cut under them', async () => {
     const withinCeilings = 'x'.repeat(20_000);
     const h = await harness({
