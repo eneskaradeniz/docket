@@ -1375,7 +1375,7 @@ export function normalizeWorkOrderDescription(
 export function workOrderRequestSection(title: string, description: string | undefined): string | undefined;
 ```
 
-- **R-123** (added 2026-10-12, #982) `normalizeWorkOrderDescription` trims first. `undefined`, `''` and whitespace-only become absent (`ok(undefined)`), not an error. A trimmed value longer than `WORK_ORDER_DESCRIPTION_MAX_CHARS` (4 000) is `description_too_long`; exactly 4 000 is kept. Token-shaped text is replaced with `[redacted]` and the surrounding text stays. The input is not mutated. `workOrderRequestSection` is a `## Request` section containing the title and the description when a description is present, with the same redaction; an absent or blank description returns `undefined`, so no empty section is produced.
+- **R-145** (added 2026-10-12, #982) `normalizeWorkOrderDescription` trims first. `undefined`, `''` and whitespace-only become absent (`ok(undefined)`), not an error. A trimmed value longer than `WORK_ORDER_DESCRIPTION_MAX_CHARS` (4 000) is `description_too_long`; exactly 4 000 is kept. Token-shaped text is replaced with `[redacted]` and the surrounding text stays. The input is not mutated. `workOrderRequestSection` is a `## Request` section containing the title and the description when a description is present, with the same redaction; an absent or blank description returns `undefined`, so no empty section is produced.
 
 Addendum 2026-10-12 (#993): one secret-shape rule. New module `redaction` (no imports). `flow` may import it. `redactSecretShapes` is the replacement both a work-order description and an operator note use. The shapes are unchanged.
 

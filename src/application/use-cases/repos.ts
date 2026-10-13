@@ -1,7 +1,7 @@
 // use-cases/repos.ts — the repo registry's operator-facing arms (docs/v2/application.md
-// rules A-341, A-345): the status of every registered folder, the relink, and the repo-owned
+// rules A-341, A-345, A-354): the status of every registered folder, the relink, and the repo-owned
 // flow's direct-apply save and read.
-import type { Actor, RepoFlow, RepoSlug, Result } from '../../domain/index';
+import type { AccountId, Actor, RepoFlow, RepoSlug, Result, StageSlug } from '../../domain/index';
 import { err, ok } from '../../domain/index';
 
 import type { AppDeps } from '../ports/index';
@@ -17,7 +17,14 @@ export type RepoFlowView =
   | { readonly ok: true; readonly flow: RepoFlow }
   | { readonly ok: false; readonly code: 'not_found' };
 
-export type SaveFlowError = 'not_found' | 'definitions_invalid' | 'stale';
+export type SaveFlowDisconnectedAccount = { readonly stage: StageSlug; readonly accountId: AccountId };
+
+export type SaveFlowAccountNotConnected = {
+  readonly code: 'account_not_connected';
+  readonly accounts: readonly SaveFlowDisconnectedAccount[];
+};
+
+export type SaveFlowError = 'not_found' | 'definitions_invalid' | 'stale' | SaveFlowAccountNotConnected;
 
 /** Every registry entry with what its folder reads now. A folder that reads no fingerprint is not
  *  there (or not a work tree with commits); one whose root commit differs from a stored, non-empty
@@ -69,10 +76,11 @@ export async function repoFlowView(
 
 /** A-345: applies an operator edit of the repo's flow directly — no proposal. The repo must be
  *  registered and carry a repo.yaml; the flow must pass R-127/R-128 as the merged definitions
- *  would (issues → `definitions_invalid`, nothing written); the write is the repo definition's
- *  single file, hash-guarded. Existing work orders' pins are never rewritten (A-325). */
+ *  would (issues → `definitions_invalid`, nothing written); every account named in a stage chain
+ *  must be connected (`account_not_connected`, A-354, nothing written); the write is the repo
+ *  definition's single file, hash-guarded. Existing work orders' pins are never rewritten (A-325). */
 export async function saveRepoFlow(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'repos' | 'definitions'>,
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'repos' | 'definitions' | 'accounts'>,
   input: { readonly repo: RepoSlug; readonly flow: RepoFlow; readonly actor: Actor },
 ): Promise<Result<{ readonly ok: true }, SaveFlowError>> {
   const entry = (await deps.repos.list()).find((candidate) => candidate.slug === input.repo);
@@ -84,6 +92,16 @@ export async function saveRepoFlow(
   const loaded = await deps.definitions.load(input.repo);
   const def = loaded.ok ? loaded.value.repo : undefined;
   if (def === undefined) return err('definitions_invalid');
+
+  const disconnected: SaveFlowDisconnectedAccount[] = [];
+  for (const binding of input.flow.bindings) {
+    for (const route of binding.accounts) {
+      if ((await deps.accounts.get(route.accountId)) === undefined) {
+        disconnected.push({ stage: binding.stage, accountId: route.accountId });
+      }
+    }
+  }
+  if (disconnected.length > 0) return err({ code: 'account_not_connected', accounts: disconnected });
 
   // The stored definition with only the flow replaced — the file's whole new body, validated as
   // it would load before anything is written.

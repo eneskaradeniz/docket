@@ -26,7 +26,9 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
   'repo.register': { input: 'project: ProjectSlug, repo: RepoSlug, path: string' },
   'repo.unregister': { input: 'project: ProjectSlug, repo: RepoSlug' },
   'repo.relink': { input: 'repoId: string, path: string' },
-  'repo.saveFlow': { input: 'repo: RepoSlug, flow: RepoFlow' },
+  'repo.saveFlow': {
+    input: 'repo: RepoSlug, flow: RepoFlow — errors: not_found, definitions_invalid, stale, account_not_connected (A-354)',
+  },
   'workOrder.block': { input: 'id: WorkOrderId, reason: string' },
   'workOrder.unblock': { input: 'id: WorkOrderId' },
   'workOrder.close': { input: 'id: WorkOrderId' },
