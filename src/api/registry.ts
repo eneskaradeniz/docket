@@ -82,6 +82,8 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
   'memory.setAutoAccept': { input: 'scope: global | project | repo, enabled: boolean' },
   'memory.addNote': { input: 'text: string, scope: global | project | repo, scopeId?: string' },
   'definitions.save': { input: 'kind: plugin | mcp | skill | command | hook, definition: CapabilityDef-shaped object' },
+  'tracker.sync': { input: 'repo: RepoSlug' },
+  'tracker.resolveConflict': { input: 'repo: RepoSlug, conflict: SyncConflict, resolution: keep_remote | keep_local' },
 };
 
 export const QUERY_REGISTRY: Record<Query['type'], RegistryEntry> = {
@@ -125,4 +127,5 @@ export const QUERY_REGISTRY: Record<Query['type'], RegistryEntry> = {
   'usage.summary': { input: 'workOrder?: WorkOrderId | project?: ProjectSlug (exactly one; both or neither is bad_input), sinceMs?: EpochMs' },
   'memory.overview': { input: 'no input' },
   'definitions.list': { input: 'kind: plugin | mcp | skill | command | hook' },
+  'tracker.linkStatus': { input: 'repo: RepoSlug' },
 };

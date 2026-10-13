@@ -2218,3 +2218,12 @@ describe('capabilities.candidates — the wire shape', () => {
     expect(view.candidates.find((c) => c.identity === 'mcp:db|npx db')?.imported).toBe(false);
   });
 });
+
+describe('tracker.linkStatus', () => {
+  it('answers not_found without a tracker port wired', async () => {
+    expect(await createApi(createFakeDeps()).query({ type: 'tracker.linkStatus', repo: 'acme' })).toEqual({
+      ok: false,
+      code: 'not_found',
+    });
+  });
+});
