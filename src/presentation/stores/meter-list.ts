@@ -94,7 +94,7 @@ export const meterListView = (pools: readonly SettingsPoolView[], meters: readon
 
 export { hasModelScopedPool };
 
-export type MeterFailure = 'needs_key' | 'network' | 'rejected';
+export type MeterFailure = 'needs_key' | 'network' | 'rejected' | 'not_logged_in' | 'probe_failed' | 'unknown_provider' | 'not_installed';
 
 export type MeterListEmpty =
   | 'meterList.noMeter'
@@ -103,7 +103,11 @@ export type MeterListEmpty =
   | 'meterList.notRead'
   | 'meterList.failed.needsKey'
   | 'meterList.failed.network'
-  | 'meterList.failed.rejected';
+  | 'meterList.failed.rejected'
+  | 'meterList.failed.notLoggedIn'
+  | 'meterList.failed.probe'
+  | 'meterList.failed.unknownProvider'
+  | 'meterList.failed.notInstalled';
 
 export interface MeterListStanding {
   readonly loading: boolean;
@@ -119,6 +123,10 @@ export const meterListEmpty = (standing: MeterListStanding): MeterListEmpty => {
   if (standing.failure === 'needs_key') return 'meterList.failed.needsKey';
   if (standing.failure === 'network') return 'meterList.failed.network';
   if (standing.failure === 'rejected') return 'meterList.failed.rejected';
+  if (standing.failure === 'not_logged_in') return 'meterList.failed.notLoggedIn';
+  if (standing.failure === 'probe_failed') return 'meterList.failed.probe';
+  if (standing.failure === 'unknown_provider') return 'meterList.failed.unknownProvider';
+  if (standing.failure === 'not_installed') return 'meterList.failed.notInstalled';
   if (standing.needsLogin) return 'meterList.needsLogin';
   if (standing.loading || standing.failed) return 'meterList.afterAdd';
   if (standing.hasUsageSource === true) return 'meterList.notRead';

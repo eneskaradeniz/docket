@@ -473,6 +473,7 @@ describe('settings store', () => {
     await h.store.load();
     const outcome = await h.store.refreshQuota('acc-1');
     expect(outcome.result.ok).toBe(true);
+    expect(outcome.labelKey).toBe('success.quota.refresh');
     await h.store.refreshQuota();
     expect(h.api.commands).toEqual([{ type: 'quota.refresh', id: 'acc-1' }, { type: 'quota.refresh' }]);
     expect(h.api.queries.filter((q) => q.type === 'settings.accounts').length).toBe(3);
@@ -514,5 +515,38 @@ describe('settings store', () => {
     expect(retry.result.ok).toBe(true);
     expect(h.store.state().refreshFailures['acc-1']).toBeUndefined();
     expect(h.store.state().refreshing).toEqual([]);
+  });
+
+  it.each(['not_logged_in', 'probe_failed', 'unknown_provider', 'not_installed'] as const)(
+    'U-267: refresh keeps the typed probe failure %s',
+    async (code) => {
+      const h = createHarness('tr');
+      await h.store.load();
+      h.api.setCommandResult({ ok: false, code });
+
+      await h.store.refreshQuota('acc-1');
+
+      expect(h.store.state().refreshFailures['acc-1']).toBe(code);
+    },
+  );
+
+  it('U-267: refresh maps auth to rejected', async () => {
+    const h = createHarness('tr');
+    await h.store.load();
+    h.api.setCommandResult({ ok: false, code: 'auth' });
+
+    await h.store.refreshQuota('acc-1');
+
+    expect(h.store.state().refreshFailures['acc-1']).toBe('rejected');
+  });
+
+  it('U-267: refresh maps an unknown failure code to network', async () => {
+    const h = createHarness('tr');
+    await h.store.load();
+    h.api.setCommandResult({ ok: false, code: 'unexpected_probe_failure' });
+
+    await h.store.refreshQuota('acc-1');
+
+    expect(h.store.state().refreshFailures['acc-1']).toBe('network');
   });
 });
