@@ -18,8 +18,12 @@ import { AccountsSections } from './accounts-sections';
 import { ChainEmpty } from './role-row';
 import { SettingsMenu } from './settings-menu';
 import { CapabilitiesCard, RolesUnsetBanner } from './settings-cards';
+import { AccountEditorDialog } from './account-editor-dialog';
+import { createAccountEditorStore, type EditorOutcome } from '../stores/account-editor';
+import type { SettingsAccountView } from '../../api/queries';
+import type { Command } from '../../api/commands';
 
-const SOURCES = import.meta.glob(['./settings-cards.tsx', './settings-menu.tsx', './accounts-sections.tsx', './provider-list.tsx'], {
+const SOURCES = import.meta.glob(['./settings-cards.tsx', './settings-menu.tsx', './accounts-sections.tsx', './provider-list.tsx', './account-editor.tsx', './account-editor-dialog.tsx'], {
   query: '?raw',
   import: 'default',
   eager: true,
@@ -31,6 +35,48 @@ const source = (name: string): string => {
 };
 
 const noop = (): void => undefined;
+
+const EDITOR_ACCOUNT: SettingsAccountView = {
+  id: 'editor-test',
+  provider: 'claude',
+  label: 'İş',
+  authMode: 'subscription',
+  billing: 'included',
+  plan: 'pro',
+  limitPolicy: 'ask',
+  reserve: { short: 0.1, long: 0.2 },
+  caps: [],
+  consentedModels: [],
+  routeKind: null,
+  identityDir: null,
+  endpointHost: null,
+  hasSecret: false,
+  test: null,
+  pools: [],
+  meters: [],
+};
+
+const editorHtml = (locale: 'tr' | 'en', account = EDITOR_ACCOUNT, store = createAccountEditorStore({
+  run: async (_command: Command): Promise<EditorOutcome> => ({ result: { ok: true }, labelKey: 'success.account.save' }),
+  now: () => 0,
+})): string =>
+  renderToStaticMarkup(
+    createElement(AccountEditorDialog, {
+      host: 'settings',
+      account,
+      locale,
+      store,
+      formatTime: () => null,
+      onRefresh: noop,
+      mark: null,
+      title: 'Claude · İş',
+      meta: '',
+      billing: 'included',
+      viaKey: false,
+      status: { tone: 'proceed', text: locale === 'tr' ? 'Hazır' : 'Ready' },
+      onClose: noop,
+    }),
+  );
 const menu = (locale: 'tr' | 'en' = 'tr'): string =>
   renderToStaticMarkup(createElement(SettingsMenu, { locale, section: 'accounts', onSection: noop, dot: false }));
 
@@ -41,6 +87,69 @@ describe('settings nav (U-165)', () => {
       for (const word of ['Çalışma', 'Uygulama', 'Work', 'App']) expect(out).not.toContain(`>${word}<`);
       expect(out).not.toContain('role="group"');
     }
+  });
+
+  describe('settings account editor draft contract', () => {
+    it('U-281: the footer appears only for a dirty draft and Saved follows a real save', async () => {
+      const run = async (_command: Command): Promise<EditorOutcome> => ({ result: { ok: true }, labelKey: 'success.account.save' });
+      const store = createAccountEditorStore({ run, now: () => 0 });
+      const clean = editorHtml('tr', EDITOR_ACCOUNT, store);
+      expect(clean).not.toContain('Kaydedilmemiş değişiklik');
+      expect(clean).not.toContain('>Kaydet<');
+      expect(clean).not.toContain('>Kaydedildi<');
+
+      store.setDraftPolicy(EDITOR_ACCOUNT, 'wait_resume');
+      const dirty = editorHtml('tr', EDITOR_ACCOUNT, store);
+      expect(dirty).toContain('Kaydedilmemiş değişiklik');
+      expect(dirty).toContain('>Vazgeç<');
+      expect(dirty).toContain('>Kaydet<');
+      expect(dirty).not.toContain('>Kaydedildi<');
+      expect(editorHtml('en', EDITOR_ACCOUNT, store)).toContain('Unsaved change');
+      expect(editorHtml('en', EDITOR_ACCOUNT, store)).toContain('>Cancel<');
+      expect(editorHtml('en', EDITOR_ACCOUNT, store)).toContain('>Save<');
+
+      await store.saveDraft(EDITOR_ACCOUNT);
+      expect(editorHtml('tr', EDITOR_ACCOUNT, store)).toContain('>Kaydedildi<');
+      expect(editorHtml('en', EDITOR_ACCOUNT, store)).toContain('>Saved<');
+    });
+
+    it('U-282: each differing field renders one quiet marker and reset icon, with no head reset line', () => {
+      const store = createAccountEditorStore({
+        run: async (_command: Command): Promise<EditorOutcome> => ({ result: { ok: true }, labelKey: 'success.account.save' }),
+        now: () => 0,
+      });
+      store.setTab('limits');
+      const html = editorHtml('tr', EDITOR_ACCOUNT, store);
+      const markers = html.match(/class="h-1\.5 w-1\.5 rounded-full bg-signal"/g) ?? [];
+      const resetButtons = html.match(/aria-label="Önerilen değere döndür"/g) ?? [];
+      expect(markers).toHaveLength(2);
+      expect(resetButtons).toHaveLength(2);
+      expect(html).toContain('title="Önerilen: Sıfırlanınca sürdür"');
+      expect(html).toContain('title="Önerilen: Yok"');
+      expect(html).not.toContain('ayar önerilenden farklı');
+      expect(html).not.toContain('Hepsini önerilene döndür');
+      store.setDraftPolicy(EDITOR_ACCOUNT, 'wait_resume');
+      expect(store.state().draft?.limitPolicy).toBe('wait_resume');
+      expect(store.state().dirty).toBe(true);
+    });
+
+    it('U-283: clean closing stays silent and dirty closing uses the exact bilingual confirmation actions', () => {
+      const clean = editorHtml('tr');
+      expect(clean).not.toContain('role="alertdialog"');
+      const dialogSource = SOURCES['./account-editor-dialog.tsx'];
+      expect(dialogSource).toContain("t(locale, 'editor.footer.discardPrompt')");
+      expect(dialogSource).toContain("t(locale, 'editor.footer.exitWithoutSaving')");
+      expect(dialogSource).toContain("t(locale, 'editor.footer.returnToEditing')");
+      expect(TR['editor.footer.discardPrompt']).toBe('Kaydedilmemiş değişiklikler var');
+      expect(TR['editor.footer.exitWithoutSaving']).toBe('Kaydetmeden çık');
+      expect(TR['editor.footer.returnToEditing']).toBe('Düzenlemeye dön');
+      expect(EN['editor.footer.discardPrompt']).toBe('You have unsaved changes');
+      expect(EN['editor.footer.exitWithoutSaving']).toBe('Exit without saving');
+      expect(EN['editor.footer.returnToEditing']).toBe('Return to editing');
+      expect(dialogSource).toContain('setConfirmingClose(true)');
+      expect(dialogSource).toContain('store.discardDraft()');
+      expect(dialogSource).toContain('confirmAction?.()');
+    });
   });
 
   it('U-165: the rows keep the section order, one button each, and a hairline between the groups', () => {

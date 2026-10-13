@@ -91,6 +91,49 @@ const harness = (result: CommandResult = { ok: true }) => {
 };
 
 describe('account editor', () => {
+  it('U-280: no save intent is sent before Kaydet', async () => {
+    const { store, issued } = harness();
+    store.setDraftPolicy(ACCOUNT, 'ask');
+    expect(store.state().dirty).toBe(true);
+    expect(issued).toEqual([]);
+    await store.saveDraft(ACCOUNT);
+    expect(issued).toEqual([{
+      type: 'account.save',
+      id: 'a-1',
+      provider: 'claude',
+      label: 'Work',
+      authMode: 'subscription',
+      plan: 'pro',
+      limitPolicy: 'ask',
+    }]);
+  });
+
+  it('U-281: Kaydet is disabled and the footer is hidden when the draft equals stored value', () => {
+    const { store } = harness();
+    expect(store.state().dirty).toBe(false);
+    store.setDraftPolicy(ACCOUNT, 'ask');
+    store.setDraftPolicy(ACCOUNT, 'wait_resume');
+    expect(store.state().dirty).toBe(false);
+  });
+
+  it('U-282: recommended differences expose a quiet marker and one reset intent per field', () => {
+    const { store } = harness();
+    store.setDraftPolicy(OFF, 'wait_resume');
+    expect(store.state().dirty).toBe(true);
+    expect(store.state().draft?.limitPolicy).toBe('wait_resume');
+  });
+
+  it('U-283: leaving with a dirty draft is refused until the draft is discarded or saved', async () => {
+    const { store } = harness();
+    store.setDraftPolicy(ACCOUNT, 'ask');
+    expect(store.canClose()).toBe(false);
+    store.discardDraft();
+    expect(store.canClose()).toBe(true);
+    store.setDraftPolicy(ACCOUNT, 'ask');
+    await store.saveDraft(ACCOUNT);
+    expect(store.canClose()).toBe(true);
+  });
+
   it('U-30: the editor body has four tabs in order, Genel first', () => {
     expect(EDITOR_TABS).toEqual(['general', 'usage', 'limits', 'models']);
     const { store } = harness();

@@ -1,9 +1,9 @@
 // stores/account-editor.ts — the account editor's rules (U-29, U-30, U-31) as data and pure
 // helpers: the tab model, the Genel facts (a key's standing is a boolean, never a value), the
 // Kullanım reading, the reserve zone on a bar, the reset intents as command payloads, and the
-// save-on-commit state (the "Kaydedildi" flag for 1.5 s, a failure mapped through U-8 under its
-// row). The store never touches the api: it issues commands through an injected runner, so the
-// Settings host and any later host share one body. Time is injected.
+// save state (the "Kaydedildi" flag for 1.5 s, a failure mapped through U-8 under its row) and
+// the Settings host's local draft. The store never touches the api: it issues commands through an
+// injected runner, so the Settings host and any later host share one body. Time is injected.
 import type { Command, CommandResult } from '../../api/commands';
 import type { SettingsAccountView, SettingsMeterView } from '../../api/queries';
 import type { LabelKey } from '../labels/keys';
@@ -233,7 +233,7 @@ const CAP_SCOPE_LABEL: Readonly<Record<string, LabelKey>> = {
   account_month: 'cap.scope.account_month',
 };
 
-/** A diff value (current or recommended) as the "Önerilenden farklı" line names it. */
+/** A diff value used by the recommendation marker's tooltip. */
 export const diffValueLabel = (locale: Locale, key: SettingDiff['key'], value: string | number): string => {
   const text = String(value);
   switch (key) {
@@ -402,10 +402,23 @@ export interface AccountEditorState {
   readonly savedUntil: number;
   /** The latest failure and the row it sits under; null while clean. */
   readonly failure: { readonly row: string; readonly labelKey: LabelKey } | null;
+  readonly draft: AccountEditorDraft | null;
+  readonly dirty: boolean;
   /** Whether quota refresh is running right now (U-266). */
   readonly refreshing: boolean;
   /** The latest quota refresh failure, if any (U-267). */
   readonly refreshFailure: MeterFailure | null;
+}
+
+export interface AccountEditorDraft {
+  readonly accountId: string;
+  readonly label: string;
+  readonly limitPolicy: SettingsAccountView['limitPolicy'];
+  readonly reserveShort: string;
+  readonly reserveLong: string;
+  readonly capAmount: string;
+  readonly capScope: CapScope;
+  readonly capWarn: string;
 }
 
 export interface AccountEditorStore {
@@ -422,6 +435,13 @@ export interface AccountEditorStore {
   saveCap(account: SettingsAccountView, row: 'cap' | 'warnPercent', input: CapFormInput): Promise<void>;
   reset(account: SettingsAccountView, key: SettingKey): Promise<void>;
   resetAll(account: SettingsAccountView): Promise<void>;
+  setDraftPolicy(account: SettingsAccountView, policy: SettingsAccountView['limitPolicy']): void;
+  setDraftLabel(account: SettingsAccountView, label: string): void;
+  setDraftReserve(account: SettingsAccountView, short: string, long: string): void;
+  setDraftCap(account: SettingsAccountView, input: CapFormInput): void;
+  saveDraft(account: SettingsAccountView): Promise<void>;
+  discardDraft(): void;
+  canClose(): boolean;
   refreshQuota(account: SettingsAccountView): Promise<void>;
 }
 
@@ -431,6 +451,8 @@ export const createAccountEditorStore = (deps: AccountEditorDeps): AccountEditor
     savedRow: null,
     savedUntil: 0,
     failure: null,
+    draft: null,
+    dirty: false,
     refreshing: false,
     refreshFailure: null,
   };
@@ -438,6 +460,25 @@ export const createAccountEditorStore = (deps: AccountEditorDeps): AccountEditor
   const set = (next: AccountEditorState): void => {
     state = next;
     for (const listener of [...listeners]) listener();
+  };
+  const draftFor = (account: SettingsAccountView): AccountEditorDraft => {
+    const cap = account.caps[0];
+    return {
+      accountId: account.id,
+      label: account.label,
+      limitPolicy: account.limitPolicy,
+      reserveShort: String(toPercent(account.reserve.short)),
+      reserveLong: String(toPercent(account.reserve.long)),
+      capAmount: cap === undefined ? '' : String(cap.amountUsd),
+      capScope: (cap?.scope ?? RECOMMENDED.cap.scope) as CapScope,
+      capWarn: String(cap?.warnPercent ?? RECOMMENDED.warnPercent),
+    };
+  };
+  const ensureDraft = (account: SettingsAccountView): AccountEditorDraft =>
+    state.draft?.accountId === account.id ? state.draft : draftFor(account);
+  const updateDraft = (account: SettingsAccountView, update: (draft: AccountEditorDraft) => AccountEditorDraft): void => {
+    const next = update(ensureDraft(account));
+    set({ ...state, draft: next, dirty: JSON.stringify(next) !== JSON.stringify(draftFor(account)), failure: null });
   };
 
   // Commands run in order; the first failure stops the rest and lands under `row`.
@@ -504,6 +545,56 @@ export const createAccountEditorStore = (deps: AccountEditorDeps): AccountEditor
       if (commands.length === 0) return;
       await runAll('all', commands);
     },
+    setDraftPolicy: (account, policy) => updateDraft(account, (draft) => ({ ...draft, limitPolicy: policy })),
+    setDraftLabel: (account, label) => updateDraft(account, (draft) => ({ ...draft, label })),
+    setDraftReserve: (account, short, long) => updateDraft(account, (draft) => ({ ...draft, reserveShort: short, reserveLong: long })),
+    setDraftCap: (account, input) =>
+      updateDraft(account, (draft) => ({ ...draft, capAmount: input.amount, capScope: input.scope, capWarn: input.warn })),
+    saveDraft: async (account) => {
+      const draft = state.draft;
+      if (draft === null || !state.dirty || draft.accountId !== account.id) return;
+      const commands: Command[] = [];
+      const rows: string[] = [];
+      if (draft.label.trim() !== '' && draft.label.trim() !== account.label) {
+        commands.push(labelSaveCommand(account, draft.label));
+        rows.push('label');
+      }
+      if (draft.limitPolicy !== account.limitPolicy) {
+        commands.push(policySaveCommand(account, draft.limitPolicy));
+        rows.push('limitPolicy');
+      }
+      const short = parseReservePercent(draft.reserveShort);
+      const long = parseReservePercent(draft.reserveLong);
+      if (short === null || long === null) {
+        set({ ...state, failure: { row: 'reserve', labelKey: 'editor.limits.reserve.invalid' } });
+        return;
+      }
+      if (short !== toPercent(account.reserve.short) || long !== toPercent(account.reserve.long)) {
+        commands.push(reserveSaveCommand(account, short, long));
+        rows.push('reserve');
+      }
+      if (draft.capAmount.trim() !== '' || account.caps.length > 0) {
+        const parsed = parseCapForm({ amount: draft.capAmount, scope: draft.capScope, warn: draft.capWarn });
+        if (!parsed.ok) {
+          set({ ...state, failure: { row: parsed.field === 'amount' ? 'cap' : 'warnPercent', labelKey: parsed.field === 'amount' ? 'editor.limits.cap.invalidAmount' : 'editor.limits.cap.invalidWarn' } });
+          return;
+        }
+        const stored = account.caps.find((cap) => cap.scope === parsed.scope);
+        const unchanged = account.caps.length === 1 && stored !== undefined && stored.amountUsd === parsed.amountUsd && stored.warnPercent === parsed.warnPercent;
+        if (!unchanged) {
+          commands.push(...capSaveCommands(account, parsed));
+          rows.push('cap');
+        }
+      }
+      if (commands.length === 0) {
+        set({ ...state, draft: null, dirty: false, failure: null });
+        return;
+      }
+      await runAll(rows[0] ?? 'all', commands);
+      if (state.failure === null) set({ ...state, draft: null, dirty: false, savedRow: 'draft', savedUntil: deps.now() + SAVED_FLAG_MS });
+    },
+    discardDraft: () => set({ ...state, draft: null, dirty: false, failure: null }),
+    canClose: () => !state.dirty,
     refreshQuota: async (account) => {
       if (state.refreshing) return;
       set({ ...state, refreshing: true, refreshFailure: null });

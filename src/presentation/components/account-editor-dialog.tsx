@@ -5,7 +5,7 @@
 // and offers Vazgeç and Kaydet; in Settings every change saves on commit (U-29), so the footer says
 // so and closes. Esc or a click outside closes (in the wizard that is Vazgeç); an open Listbox
 // takes the Esc first. Both hosts draw this one dialog.
-import { useEffect, useRef, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 
 import { t } from '../labels/t';
 import type { Billing } from '../stores/account-groups';
@@ -44,6 +44,8 @@ const CloseIcon = () => (
 export function AccountEditorDialog(props: AccountEditorDialogProps) {
   const { locale, store, host, onClose, onSave, onOpenView } = props;
   const state = useSyncExternalStore(store.subscribe, store.state, store.state);
+  const [confirmingClose, setConfirmingClose] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<(() => void) | null>(null);
   const tabs: readonly EditorTab[] = (props.tabs ?? EDITOR_TABS).filter((tab) => tab !== 'models' || props.models !== undefined);
   const dialog = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Partial<Record<EditorTab, HTMLButtonElement | null>>>({});
@@ -58,7 +60,7 @@ export function AccountEditorDialog(props: AccountEditorDialogProps) {
     if (event.key === 'Escape') {
       event.preventDefault();
       event.stopPropagation();
-      onClose();
+      close();
       return;
     }
     if (event.key !== 'Tab') return;
@@ -71,12 +73,21 @@ export function AccountEditorDialog(props: AccountEditorDialogProps) {
     const next = at === -1 ? (event.shiftKey ? stops.length - 1 : 0) : (at + (event.shiftKey ? -1 : 1) + stops.length) % stops.length;
     stops[next]?.focus();
   };
+  const leave = (action: () => void): void => {
+    if (host === 'settings' && !store.canClose()) {
+      setConfirmAction(() => action);
+      setConfirmingClose(true);
+      return;
+    }
+    action();
+  };
+  const close = (): void => leave(onClose);
 
   return (
     <div
       className="fixed inset-0 z-[60] grid place-items-center bg-black/60 p-5"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget) close();
       }}
       data-editor-scrim=""
     >
@@ -86,7 +97,7 @@ export function AccountEditorDialog(props: AccountEditorDialogProps) {
         aria-modal="true"
         aria-labelledby="account-editor-title"
         onKeyDown={onKeyDown}
-        className="grid h-[600px] max-h-full w-[820px] max-w-full grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-panel border border-bord bg-surface shadow-2xl"
+        className="relative grid h-[600px] max-h-full w-[820px] max-w-full grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-panel border border-bord bg-surface shadow-2xl"
         data-account-editor-dialog={host}
       >
         <header className="flex items-center gap-3 border-b border-hairline px-5 py-4">
@@ -102,7 +113,7 @@ export function AccountEditorDialog(props: AccountEditorDialogProps) {
             <StatusLamp tone={props.status.tone}>{props.status.text}</StatusLamp>
             <button
               type="button"
-              onClick={onClose}
+              onClick={close}
               aria-label={t(locale, 'settings.close')}
               title={t(locale, 'settings.close')}
               className="grid h-[30px] w-[30px] flex-none place-items-center rounded-control text-inkdim hover:bg-raised hover:text-ink"
@@ -140,33 +151,63 @@ export function AccountEditorDialog(props: AccountEditorDialogProps) {
             ))}
           </div>
           <div data-editor-body="" className="min-h-0 overflow-y-auto px-6 pb-6 pt-5">
-            <AccountEditorPanels {...props} />
+            <AccountEditorPanels {...props} draftMode={host === 'settings'} />
           </div>
         </div>
         <footer className="flex items-center gap-2 border-t border-hairline px-5 py-3">
           <span className="mr-auto flex items-center gap-3 text-[12.5px] text-inkdim">
-            {t(locale, host === 'wizard' ? 'editor.footer.draft' : 'editor.footer.saves')}
+            {host === 'wizard' ? t(locale, 'editor.footer.draft') : store.state().dirty ? t(locale, 'editor.footer.dirty') : store.isSaved('draft') ? t(locale, 'editor.footer.saved') : null}
             {host === 'settings' && onOpenView !== undefined ? (
-              <button type="button" onClick={onOpenView} className="rounded-control border border-bord bg-transparent px-2 py-0.5 text-ink hover:bg-raised">
+              <button
+                type="button"
+                onClick={() => {
+                  leave(onOpenView);
+                }}
+                className="rounded-control border border-bord bg-transparent px-2 py-0.5 text-ink hover:bg-raised"
+              >
                 {t(locale, 'editor.openView')}
               </button>
             ) : null}
           </span>
           {host === 'wizard' ? (
             <>
-              <ActionButton variant="neutral" size="md" onClick={onClose}>
+              <ActionButton variant="neutral" size="md" onClick={close}>
                 {t(locale, 'wizard.editor.cancel')}
               </ActionButton>
               <ActionButton variant="primary" size="md" onClick={() => onSave?.()}>
                 {t(locale, 'wizard.editor.save')}
               </ActionButton>
             </>
-          ) : (
-            <ActionButton variant="neutral" size="md" onClick={onClose}>
-              {t(locale, 'editor.footer.close')}
-            </ActionButton>
-          )}
+          ) : store.state().dirty ? (
+              <>
+                <ActionButton variant="neutral" size="md" onClick={() => store.discardDraft()}>
+                  {t(locale, 'editor.footer.discard')}
+                </ActionButton>
+                <ActionButton variant="primary" size="md" onClick={() => void store.saveDraft(props.account)} disabled={!store.state().dirty}>
+                  {t(locale, 'editor.footer.save')}
+                </ActionButton>
+              </>
+            ) : (
+              <ActionButton variant="neutral" size="md" onClick={close}>
+                {t(locale, 'editor.footer.close')}
+              </ActionButton>
+            )}
         </footer>
+        {confirmingClose ? (
+          <div role="alertdialog" aria-labelledby="editor-close-title" className="absolute inset-0 grid place-items-center bg-black/30 p-6">
+            <div className="grid max-w-[360px] gap-3 rounded-panel border border-bord bg-surface p-5 shadow-xl">
+              <h3 id="editor-close-title" className="m-0 text-[15px] font-bold text-ink">{t(locale, 'editor.footer.discardPrompt')}</h3>
+              <div className="flex justify-end gap-2">
+                <ActionButton variant="neutral" size="md" onClick={() => { setConfirmingClose(false); setConfirmAction(null); }}>
+                  {t(locale, 'editor.footer.returnToEditing')}
+                </ActionButton>
+                <ActionButton variant="primary" size="md" onClick={() => { store.discardDraft(); setConfirmingClose(false); confirmAction?.(); setConfirmAction(null); }}>
+                  {t(locale, 'editor.footer.exitWithoutSaving')}
+                </ActionButton>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

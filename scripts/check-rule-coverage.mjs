@@ -107,10 +107,6 @@ const PENDING = new Map([
   ['ui:U-279', '#1023'],
 
   // #1008: Phase 7 surfaces — settings, setup, repo, work orders, versions, quit
-  ['ui:U-280', '#1031'],
-  ['ui:U-281', '#1031'],
-  ['ui:U-282', '#1031'],
-  ['ui:U-283', '#1031'],
   ['ui:U-284', '#1022'],
   ['ui:U-285', '#1022'],
   ['ui:U-286', '#1023'],
