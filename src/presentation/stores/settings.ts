@@ -211,6 +211,13 @@ const refreshWarning = (warning: RemoveWarning, view: SettingsAccountsView): Rem
   return roles.length === 0 ? null : { accountId: warning.accountId, roles, onlyAccount: view.accounts.length === 1 };
 };
 
+const TYPED_REFRESH_FAILURES: ReadonlySet<string> = new Set(['not_logged_in', 'probe_failed', 'unknown_provider', 'not_installed']);
+
+const refreshFailure = (code: string): MeterFailure => {
+  if (TYPED_REFRESH_FAILURES.has(code)) return code as MeterFailure;
+  return code === 'auth' ? 'rejected' : 'network';
+};
+
 export const createSettingsStore = (deps: SettingsStoreDeps): SettingsStore => {
   const { api, changes, actor, locale, timeZone } = deps;
   const zone = timeZone ?? 'UTC';
@@ -351,7 +358,7 @@ export const createSettingsStore = (deps: SettingsStoreDeps): SettingsStore => {
         ? remainingFailures
         : {
             ...remainingFailures,
-            [target]: (result.code === 'network' ? 'network' : result.code === 'auth' ? 'rejected' : 'network') as MeterFailure,
+            [target]: refreshFailure(result.code),
           };
       await load();
       set({

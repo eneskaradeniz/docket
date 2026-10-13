@@ -305,16 +305,7 @@ export function Usage({
   const standing = accountUsageStanding(account, refreshing, refreshFailure);
   const failed = refreshFailure !== null || (standing.failed && account.meters.length === 0);
   const failure = refreshFailure ?? standing.failure ?? (standing.needsLogin ? null : 'network');
-  const failureKey: MeterListEmpty =
-    failure === 'needs_key'
-      ? 'meterList.failed.needsKey'
-      : failure === 'network'
-        ? 'meterList.failed.network'
-        : failure === 'rejected'
-          ? 'meterList.failed.rejected'
-          : standing.needsLogin
-            ? 'meterList.needsLogin'
-            : 'meterList.failed.network';
+  const failureKey: MeterListEmpty = meterListEmpty({ ...standing, failure });
 
   return (
     <div className="grid gap-3.5">
