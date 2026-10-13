@@ -10,6 +10,7 @@ import { createFakeBindingRepo } from './fake-binding-repo';
 import { createFakeBundleStore } from './fake-bundle-store';
 import { createFakeCapabilityCatalog } from './fake-capability-catalog';
 import { createFakeCapabilityDiscovery } from './fake-capability-discovery';
+import { createFakeMachineCapabilityScan } from './fake-machine-capability-scan';
 import { createFakeCheckpointCommitter } from './fake-checkpoints';
 import { createFakeClock } from './fake-clock';
 import { createFakeCommandRunner, createFakeEvidenceChecker, createFakeSecretScanner, createFakeWorktrees } from './fake-repo-tools';
@@ -20,6 +21,7 @@ import { createFakeGitProbe } from './fake-git-probe';
 import { createFakeIdGen } from './fake-id-gen';
 import { createFakeDispatchStatus, createFakeMachineProbe } from './fake-machine-probe';
 import { createFakeInstructionFiles } from './fake-instruction-files';
+import { createFakeMemoryStore } from './fake-memory-store';
 import { createFakeModelCatalog } from './fake-model-catalog';
 import { createFakeNotifier } from './fake-notifier';
 import { createFakePageFiles } from './fake-page-files';
@@ -53,6 +55,7 @@ export const createFakeDeps = (overrides: Partial<AppDeps> = {}): AppDeps => ({
   accounts: createFakeAccountRepo(),
   capabilities: createFakeCapabilityCatalog(),
   capabilityDiscovery: createFakeCapabilityDiscovery(),
+  machineCapabilityScan: createFakeMachineCapabilityScan(),
   modelCatalog: createFakeModelCatalog(),
   projects: createFakeProjectRepo(),
   repos: createFakeRepoRegistry(),
@@ -61,6 +64,7 @@ export const createFakeDeps = (overrides: Partial<AppDeps> = {}): AppDeps => ({
   queue: createFakeQueueRepo(),
   definitions: createFakeDefinitionStore(),
   bundleStore: createFakeBundleStore(),
+  memory: createFakeMemoryStore(),
   proposals: createFakeProposalRepo(),
   pages: createFakePageRepo(),
   pageFiles: createFakePageFiles(),

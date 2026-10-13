@@ -131,6 +131,7 @@ const SUCCESS_KEYS: Readonly<Record<Exclude<Command['type'], SilentCommand>, Lab
   'quota.refresh': 'success.quota.refresh',
   // The import surface is part 3; the per-identity outcomes ride `results`, the toast is neutral.
   'capabilities.import': 'success.capabilities.import',
+  'capabilities.importMachine': 'success.capabilities.import',
   // `page.decide` reads as the approval; the page screen picks the other two lines itself
   // (pageDecideKey) because only it knows the decision and the gate it saw.
   'page.comment': 'page.toast.commented',

@@ -62,7 +62,27 @@ export type CapabilityDef =
     }
   | { readonly kind: 'skill'; readonly id: CapabilitySlug; readonly name: string; readonly path: string }
   | { readonly kind: 'hook'; readonly id: CapabilitySlug; readonly name: string; readonly event: HookEvent; readonly command: string }
-  | { readonly kind: 'context'; readonly id: CapabilitySlug; readonly name: string; readonly path: string };
+  | { readonly kind: 'context'; readonly id: CapabilitySlug; readonly name: string; readonly path: string }
+  | {
+      readonly kind: 'plugin';
+      readonly id: CapabilitySlug;
+      readonly name: string;
+      readonly source: PluginSource;
+      readonly version?: string;
+      readonly includes: readonly CapabilitySlug[];
+    }
+  | {
+      readonly kind: 'command';
+      readonly id: CapabilitySlug;
+      readonly name: string;
+      readonly template: string;
+      readonly arguments: readonly { readonly name: string; readonly required: boolean }[];
+    };
+
+export type PluginSource =
+  | { readonly kind: 'path'; readonly path: string }
+  | { readonly kind: 'marketplace'; readonly marketplace: string; readonly name: string };
+export type CapabilityKind = CapabilityDef['kind'];
 
 /** A value is either literal (non-secret) or a reference to the keychain — never a secret literal. */
 export type EnvValue = { readonly literal: string } | { readonly secretRef: string };
@@ -133,6 +153,8 @@ export type DefinitionIssueCode =
   | 'unknown_environment' | 'missing_promote_from' | 'promote_cycle'
   | 'env_command_set_missing' | 'duplicate_env_order'
   | 'empty_repos' | 'main_repo_not_listed' | 'bad_review_of'
+  // R-140: raised by the plugin and command capability checks.
+  | 'plugin_cycle' | 'unknown_argument'
   // Phase 7 addendum (docs/v2/domain.md §2): raised by the repo-flow contract — `pinFlow`
   // reports them at pin time, the `validate.ts` checks that raise them land with #1012.
   | 'binding_stage_mismatch' | 'unknown_role_version' | 'role_required' | 'role_forbidden' | 'duplicate_binding';
@@ -143,4 +165,25 @@ export interface Definitions {
   readonly capabilities: readonly CapabilityDef[];
   readonly project?: ProjectDef; // present in the project scope
   readonly repo?: RepoDef;
+}
+
+// Memory types — docs/v2/domain.md §2, R-142, R-143 (#1016)
+export type MemoryScope = 'global' | 'project' | 'repo';
+
+export interface MemoryNote {
+  readonly id: string;
+  readonly scope: MemoryScope;
+  readonly scopeId?: string;
+  readonly text: string;
+  readonly createdBy: 'user' | 'agent';
+  readonly active: boolean;
+}
+
+export interface MemoryProposal {
+  readonly id: string;
+  readonly scope: MemoryScope;
+  readonly scopeId?: string;
+  readonly text: string;
+  readonly sourceRun: string;
+  readonly state: 'pending' | 'accepted' | 'rejected';
 }

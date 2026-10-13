@@ -112,6 +112,8 @@ import {
   grantPermission,
   grantSpendConsent,
   importCapabilities,
+  importMachineCapabilities,
+  machineCapabilityCandidates,
   isSourceTaken,
   listProposals,
   pinConversation,
@@ -146,7 +148,7 @@ import {
   matchIdFor,
 } from '../application';
 
-import type { CapabilityImportResultView, Command, CommandResult } from './commands';
+import type { CapabilityImportResultView, Command, CommandResult, MachineImportResultView } from './commands';
 import {
   CHAT_API_LIMITS,
   chatAttachmentView,
@@ -1052,6 +1054,25 @@ const runCommand = async (
       };
     }
 
+    case 'capabilities.importMachine': {
+      const results = await importMachineCapabilities(deps, {
+        providers: command.providers,
+        keys: command.keys,
+        ...(command.secretRefs === undefined ? {} : { secretRefs: command.secretRefs }),
+        actor,
+      });
+      return {
+        ok: true,
+        machineResults: results.map((result): MachineImportResultView => ({
+          key: result.key,
+          status: result.status,
+          id: result.status === 'imported' ? result.id : null,
+          version: result.status === 'imported' ? result.version : null,
+          reason: result.status === 'rejected' ? result.reason : null,
+        })),
+      };
+    }
+
     case 'account.adopt': {
       // Without the discovery and importer ports no candidate can be found, so the command
       // answers not_found instead of inventing an account. The command carries no kind: the
@@ -1400,6 +1421,8 @@ const runQuery = async (
       // The scan runs on every call — no remembered window (A-94): the query runs when a surface
       // opens, not on a poll, and the account store is small.
       return capabilityCandidates(deps);
+    case 'capabilities.machine':
+      return machineCapabilityCandidates(deps, { providers: query.providers });
     case 'workOrder.detail': {
       const id = ulidValue<'work-order'>(query.id);
       if (id === undefined) return invalidId();

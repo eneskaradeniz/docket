@@ -29,17 +29,15 @@ function setupHarness() {
   const clock = createFakeClock(1776090312000);
   const log = createFakeEventLog();
   const bundleStore = createFakeBundleStore();
-  const memoryNotes: (MemoryNote | { state: string })[] = [];
 
   const deps = createFakeDeps({ clock, log, bundleStore });
-  (deps as unknown as { memoryNotes: unknown[] }).memoryNotes = memoryNotes;
 
-  return { deps, clock, log, bundleStore, memoryNotes };
+  return { deps, clock, log, bundleStore };
 }
 
 describe('project-bundle use cases (A-342, R-8, I-86, I-91)', () => {
   it('A-342: project.export answers { path, counts } and audits project.exported; project.importBundle answers { warnings, renames } and audits project.imported', async () => {
-    const { deps, log, memoryNotes } = setupHarness();
+    const { deps, log, clock } = setupHarness();
 
     // 1. Seed project, repos and definitions in definition store
     await deps.projects.save({
@@ -97,17 +95,23 @@ describe('project-bundle use cases (A-342, R-8, I-86, I-91)', () => {
       '',
     );
 
-    memoryNotes.push({
+    const acceptedNote: MemoryNote = {
       id: 'mem-1',
       scope: 'project',
       scopeId: 'demo-proj',
       text: 'Project note',
       createdBy: 'user',
       active: true,
-    });
+    };
+    await deps.definitions.appendVersion('memory', acceptedNote.id, acceptedNote, clock.now());
+    await deps.memory.recordNoteId(acceptedNote.id);
     // A pending proposal that must NOT travel (R-142)
-    memoryNotes.push({
+    await deps.memory.saveProposal({
       id: 'prop-1',
+      scope: 'project',
+      scopeId: 'demo-proj',
+      text: 'Pending',
+      sourceRun: 'run-1',
       state: 'pending',
     });
 

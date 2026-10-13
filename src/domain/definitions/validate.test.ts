@@ -666,3 +666,76 @@ describe('validateDefinitions', () => {
     );
   });
 });
+
+describe('validateDefinitions — plugin and command capabilities', () => {
+  const plugin = (over: Obj = {}): Obj => ({
+    kind: 'plugin',
+    id: 'pl',
+    name: 'Plugin',
+    source: { kind: 'path', path: 'plugins/pl' },
+    includes: ['sk'],
+    ...over,
+  });
+  const command = (over: Obj = {}): Obj => ({
+    kind: 'command',
+    id: 'cmd',
+    name: 'Command',
+    template: 'Review {{target}} for {{focus}}',
+    arguments: [
+      { name: 'target', required: true },
+      { name: 'focus', required: false },
+    ],
+    ...over,
+  });
+
+  it('R-140: a plugin and a command with declared placeholders are accepted', () => {
+    const value = expectOk(
+      validateDefinitions(
+        doc({
+          capabilities: [
+            capability(),
+            plugin({ source: { kind: 'marketplace', marketplace: 'acme', name: 'pl' }, version: '1.2.0' }),
+            command(),
+          ],
+        }),
+      ),
+    );
+    expect(value.capabilities.map((c) => c.kind)).toEqual(['skill', 'plugin', 'command']);
+    expect(value.capabilities[1]).toMatchObject({ version: '1.2.0', includes: ['sk'] });
+  });
+
+  it('R-140: a plugin include naming no capability is unknown_capability', () => {
+    const issues = expectErr(validateDefinitions(doc({ capabilities: [capability(), plugin({ includes: ['sk', 'ghost'] })] })));
+    expect(issues).toEqual([issue('capabilities[1].includes[1]', 'unknown_capability')]);
+  });
+
+  it('R-140: a plugin including itself or forming a cycle is plugin_cycle', () => {
+    const self = expectErr(validateDefinitions(doc({ capabilities: [plugin({ includes: ['pl'] })] })));
+    expect(codesOf(self)).toEqual(['plugin_cycle']);
+    const cycle = expectErr(
+      validateDefinitions(
+        doc({ capabilities: [plugin({ id: 'a', includes: ['b'] }), plugin({ id: 'b', includes: ['a'] }), plugin({ id: 'c', includes: ['a'] })] }),
+      ),
+    );
+    expect(cycle).toEqual([issue('capabilities[0].includes', 'plugin_cycle'), issue('capabilities[1].includes', 'plugin_cycle')]);
+  });
+
+  it('R-140: a command placeholder missing from arguments is unknown_argument', () => {
+    const issues = expectErr(validateDefinitions(doc({ capabilities: [command({ template: 'Do {{what}} to {{target}}' })] })));
+    expect(issues).toEqual([issue('capabilities[0].template', 'unknown_argument')]);
+  });
+
+  it('R-140 edge: malformed plugin and command fields are reported, not thrown', () => {
+    const issues = expectErr(
+      validateDefinitions(
+        doc({
+          capabilities: [
+            plugin({ source: { kind: 'ftp' }, includes: 'sk' }),
+            command({ template: undefined, arguments: [{ name: 'x' }] }),
+          ],
+        }),
+      ),
+    );
+    expect(codesOf(issues)).toEqual(expect.arrayContaining(['wrong_type', 'missing_field']));
+  });
+});

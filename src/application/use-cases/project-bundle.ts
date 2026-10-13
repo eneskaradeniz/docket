@@ -30,7 +30,7 @@ import type {
 
 export type ExportProjectDeps = Pick<
   AppDeps,
-  'clock' | 'ids' | 'log' | 'projects' | 'definitions' | 'bundleStore'
+  'clock' | 'ids' | 'log' | 'projects' | 'definitions' | 'bundleStore' | 'memory'
 >;
 
 export interface ExportProjectResult {
@@ -47,7 +47,7 @@ export type ExportProjectError = 'not_found' | 'definitions_invalid' | 'io_faile
 
 export type ImportBundleDeps = Pick<
   AppDeps,
-  'clock' | 'ids' | 'log' | 'projects' | 'repos' | 'definitions' | 'bundleStore'
+  'clock' | 'ids' | 'log' | 'projects' | 'repos' | 'definitions' | 'bundleStore' | 'memory'
 >;
 
 export interface ImportBundleReport {
@@ -194,19 +194,21 @@ export async function exportProject(
     }
   }
 
-  // Accepted memory notes only (I-99, R-142)
+  // Accepted memory notes for this project only (I-99, R-142) — proposals never travel.
   const memoryNotes: MemoryNote[] = [];
-  const memorySource = (deps as unknown as { memoryNotes?: readonly unknown[] }).memoryNotes;
-  if (Array.isArray(memorySource)) {
-    for (const item of memorySource) {
-      if (typeof item === 'object' && item !== null) {
-        // Exclude pending or rejected memory proposals (R-142)
-        const maybeProp = item as { state?: string };
-        if (maybeProp.state === 'pending' || maybeProp.state === 'rejected') {
-          continue;
-        }
-        memoryNotes.push(item as MemoryNote);
-      }
+  const repoIdSet = new Set(projectDef.repos.map((r) => r as string));
+  const noteIds = await deps.memory.listNoteIds();
+  for (const id of noteIds) {
+    const versions = await deps.definitions.listVersions('memory', id);
+    if (versions.length === 0) continue;
+    const note = versions[versions.length - 1].body as MemoryNote;
+    if (note === undefined) continue;
+    const inScope =
+      note.scope === 'global' ||
+      (note.scope === 'project' && note.scopeId === projectDef.id) ||
+      (note.scope === 'repo' && note.scopeId !== undefined && repoIdSet.has(note.scopeId));
+    if (inScope) {
+      memoryNotes.push(note);
     }
   }
 
@@ -488,10 +490,7 @@ export async function importBundle(
   if (Array.isArray(bundleMemory)) {
     for (const note of bundleMemory) {
       await deps.definitions.appendVersion('memory', note.id, note, now);
-      const targetList = (deps as unknown as { memoryNotes?: unknown[] }).memoryNotes;
-      if (Array.isArray(targetList)) {
-        targetList.push(note);
-      }
+      await deps.memory.recordNoteId(note.id);
     }
   }
 

@@ -32,6 +32,7 @@ import {
   type RunOutcome,
   type Slug,
   type StageSlug,
+  type TranslationRow,
   type Ulid,
   type WorkOrderId,
   type RepoSlug,
@@ -68,7 +69,14 @@ import {
   type FakeWorkOrderRepo,
 } from '../ports/fakes';
 
-import { grantSpendConsent, revokeSpendConsent } from '../use-cases';
+import {
+  createMemoryNoteUseCase,
+  grantSpendConsent,
+  listActiveMemoryNotes,
+  listMemoryProposals,
+  revokeSpendConsent,
+  setMemoryAutoAccept,
+} from '../use-cases';
 import { dispatcherTick } from './dispatcher';
 import { executeRun, type PermissionGate } from './run-executor';
 
@@ -251,6 +259,7 @@ const harness = async (options: {
   readonly withTransport?: boolean;
   readonly models?: readonly CatalogModel[];
   readonly routeKinds?: readonly FakeRouteKind[];
+  readonly translations?: readonly TranslationRow[];
   readonly defsJson?: string;
   readonly files?: readonly { readonly name: string; readonly content: string }[];
   readonly checkpointDiffs?: Readonly<Record<string, CheckpointDiff>>;
@@ -285,7 +294,9 @@ const harness = async (options: {
     definitions,
     ...(options.files !== undefined ? { instructionFiles: createFakeInstructionFiles({ [INPUT.cwd]: options.files }) } : {}),
     ...(options.models !== undefined ? { modelCatalog: createFakeModelCatalog({ [ACCOUNT]: options.models }) } : {}),
-    ...(options.routeKinds !== undefined ? { capabilities: createFakeCapabilityCatalog(options.routeKinds) } : {}),
+    ...(options.routeKinds !== undefined || options.translations !== undefined
+      ? { capabilities: createFakeCapabilityCatalog(options.routeKinds ?? [], options.translations ?? []) }
+      : {}),
   });
 
   await workOrders.create({ ...WORK_ORDER_RECORD });
@@ -2252,5 +2263,152 @@ describe('stage output check', () => {
     const cancelled = await executeRun(command.deps, permissionGate().permissions, planInput({ kind: 'docs' }));
     expect(cancelled).toEqual({ kind: 'finished', outcome: 'cancelled' });
     expect(command.transport.requests()).toHaveLength(1);
+  });
+});
+
+describe('executeRun capability translation (P-59)', () => {
+  const mcp = {
+    kind: 'mcp',
+    id: slugOf<'capability'>('tools'),
+    name: 'Tools',
+    command: 'tools-srv',
+    args: [],
+    env: {},
+  } as const;
+  const hook = {
+    kind: 'hook',
+    id: slugOf<'capability'>('guard'),
+    name: 'Guard',
+    event: 'before_tool',
+    command: 'guard.sh',
+  } as const;
+  const skill = {
+    kind: 'skill',
+    id: slugOf<'capability'>('craft'),
+    name: 'Craft',
+    path: 'skills/craft.md',
+  } as const;
+  const TABLE: readonly TranslationRow[] = [
+    { provider: 'provider-x', kind: 'mcp', support: 'native', how: 'run-scoped config' },
+    { provider: 'provider-x', kind: 'hook', support: 'unsupported', how: 'no hook protocol' },
+    { provider: 'provider-x', kind: 'skill', support: 'degraded', how: 'inlined', degradesTo: 'context' },
+  ];
+
+  it('P-59: an unsupported capability is omitted from the run and recorded as omitted on the run record', async () => {
+    const h = await harness({ translations: TABLE });
+    await executeRun(h.deps, permissionGate().permissions, { ...INPUT, capabilities: [mcp, hook] });
+    const request = theRequest(h.transport);
+    expect(request.capabilities.map((c) => c.id)).toEqual(['tools']);
+    const [run] = await h.runs.listForWorkOrder(WORK_ORDER);
+    expect(run?.omittedCapabilities).toEqual([{ capability: 'guard', provider: 'provider-x', reason: 'unsupported' }]);
+  });
+
+  it('P-59: a degraded capability is inlined into the prompt instead of the run files', async () => {
+    const h = await harness({ translations: TABLE });
+    await executeRun(h.deps, permissionGate().permissions, { ...INPUT, capabilities: [skill] });
+    const request = theRequest(h.transport);
+    expect(request.capabilities).toEqual([]);
+    expect(request.prompt).toContain(INPUT.prompt);
+    expect(request.prompt).toContain('skills/craft.md');
+    const [run] = await h.runs.listForWorkOrder(WORK_ORDER);
+    expect(run && 'omittedCapabilities' in run).toBe(false);
+  });
+
+  it('P-59 edge: native capabilities pass through untouched and leave the prompt as composed', async () => {
+    const h = await harness({ translations: TABLE });
+    await executeRun(h.deps, permissionGate().permissions, { ...INPUT, capabilities: [mcp] });
+    const request = theRequest(h.transport);
+    expect(request.capabilities).toEqual([mcp]);
+    expect(request.prompt).toBe(INPUT.prompt);
+  });
+});
+
+describe('executeRun memory injection and proposal collection (R-142, R-143)', () => {
+  it('R-143: preflight injects active memory notes into prompt instructions', async () => {
+    const h = await harness();
+    await createMemoryNoteUseCase(h.deps, {
+      id: 'mem-global-1',
+      scope: 'global',
+      text: 'Global project rule: always write tests.',
+    });
+    await createMemoryNoteUseCase(h.deps, {
+      id: 'mem-repo-1',
+      scope: 'repo',
+      scopeId: REPO,
+      text: 'Repo-specific rule: use strict typing.',
+    });
+
+    await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    const request = theRequest(h.transport);
+    expect(request.prompt).toContain(INPUT.prompt);
+    expect(request.prompt).toContain('Global project rule: always write tests.');
+    expect(request.prompt).toContain('Repo-specific rule: use strict typing.');
+  });
+
+  it('R-143: inactive notes are ignored during preflight injection', async () => {
+    const h = await harness();
+    const note = await createMemoryNoteUseCase(h.deps, {
+      id: 'mem-inactive-1',
+      scope: 'global',
+      text: 'Do not use this deprecated guideline.',
+    });
+    // Deactivate note
+    await h.deps.definitions.appendVersion('memory', note.id, { ...note, active: false }, h.deps.clock.now());
+
+    await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    const request = theRequest(h.transport);
+    expect(request.prompt).not.toContain('Do not use this deprecated guideline.');
+  });
+
+  it('R-142: collects memory proposals at stage end as pending proposals', async () => {
+    const h = await harness({ script: [finished('completed')] });
+
+    await executeRun(h.deps, permissionGate().permissions, {
+      ...INPUT,
+      memoryProposals: [
+        { scope: 'global', text: 'Consider caching query results.' },
+        { scope: 'repo', scopeId: 'repo-a', text: 'Prefer vitest over jest.' },
+      ],
+    });
+
+    const proposals = await listMemoryProposals(h.deps);
+    expect(proposals).toHaveLength(2);
+    expect(proposals[0].state).toBe('pending');
+    expect(proposals[0].text).toBe('Consider caching query results.');
+    expect(proposals[1].state).toBe('pending');
+    expect(proposals[1].text).toBe('Prefer vitest over jest.');
+  });
+
+  it('R-142: auto-accept creates active note with createdBy: agent at stage end', async () => {
+    const h = await harness({ script: [finished('completed')] });
+    await setMemoryAutoAccept(h.deps, 'global', true);
+
+    await executeRun(h.deps, permissionGate().permissions, {
+      ...INPUT,
+      memoryProposals: [
+        { scope: 'global', text: 'Always use descriptive variable names.' },
+      ],
+    });
+
+    const active = await listActiveMemoryNotes(h.deps);
+    expect(active.some((n) => n.text === 'Always use descriptive variable names.' && n.createdBy === 'agent')).toBe(true);
+  });
+
+  it('R-142: collects proposals streamed as tool calls during run', async () => {
+    const toolCall: AgentEvent = {
+      type: 'tool_call',
+      at: 100,
+      id: 'tc-mem-1',
+      name: 'memory_proposal',
+      target: JSON.stringify({ scope: 'project', text: 'Document public APIs.' }),
+    };
+    const h = await harness({ script: [toolCall, finished('completed')] });
+
+    await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    const proposals = await listMemoryProposals(h.deps);
+    expect(proposals.some((p) => p.text === 'Document public APIs.')).toBe(true);
   });
 });

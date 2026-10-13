@@ -3,3 +3,5 @@ export * from './types';
 export * from './repo-flow';
 export * from './validate';
 export * from './candidates';
+export * from './command-template';
+export * from './memory';

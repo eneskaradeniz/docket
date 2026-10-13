@@ -3,10 +3,18 @@
 // identity never blocks the others. Docket never touches the user's files: the import writes
 // <globalRoot>/capabilities/<id>.yaml and nothing else. Every import is audited (A-95): one
 // capability.imported entry per imported capability, after the write it reports on.
-import type { Actor, CapabilityCandidate, CapabilityDef, CapabilitySlug } from '../../domain/index';
-import { candidateToDefinition, capabilitySlugOf, mergeCandidates, suffixedSlug } from '../../domain/index';
+import type { Actor, CapabilityCandidate, CapabilityDef, CapabilitySlug, MachineCandidate } from '../../domain/index';
+import {
+  candidateToDefinition,
+  capabilitySlugOf,
+  machineCandidateImportable,
+  machineCandidateKey,
+  mergeCandidates,
+  suffixedSlug,
+} from '../../domain/index';
 import type { AppDeps } from '../ports/deps';
 
+import { saveVersion } from './library';
 import { scanRawCandidates, storedIdentityOf } from './capability-candidates';
 
 export type CapabilityImportError =
@@ -116,6 +124,140 @@ export async function importCapabilities(
     } catch {
       // The import stands; the audit trail misses this entry, nothing more.
     }
+  }
+  return results;
+}
+
+export interface MachineCapabilityCandidateView {
+  readonly key: string;
+  readonly provider: string;
+  readonly kind: MachineCandidate['kind'];
+  readonly name: string;
+  readonly sourcePath: string;
+  readonly secretNames: readonly string[];
+  readonly importable: boolean;
+}
+
+export interface MachineCapabilitiesView {
+  readonly candidates: readonly MachineCapabilityCandidateView[];
+}
+
+export async function machineCapabilityCandidates(
+  deps: Pick<AppDeps, 'machineCapabilityScan'>,
+  input: { readonly providers: readonly string[] },
+): Promise<MachineCapabilitiesView> {
+  let found: readonly MachineCandidate[] = [];
+  try {
+    found = await deps.machineCapabilityScan.scan(input.providers);
+  } catch {
+    found = [];
+  }
+  const candidates = [...found]
+    .sort((a, b) => {
+      const ak = machineCandidateKey(a);
+      const bk = machineCandidateKey(b);
+      return ak < bk ? -1 : ak > bk ? 1 : 0;
+    })
+    .map(
+      (candidate): MachineCapabilityCandidateView => ({
+        key: machineCandidateKey(candidate),
+        provider: candidate.provider,
+        kind: candidate.kind,
+        name: candidate.name,
+        sourcePath: candidate.sourcePath,
+        secretNames: candidate.secretNames,
+        importable: machineCandidateImportable(candidate),
+      }),
+    );
+  return { candidates };
+}
+
+export type MachineImportError =
+  | 'not_found'
+  | 'not_importable'
+  | 'invalid_name'
+  | 'missing_command'
+  | 'missing_path'
+  | 'missing_plugin_source'
+  | 'missing_secret_ref'
+  | 'unreadable'
+  | 'definitions_invalid'
+  | 'stale';
+
+export type MachineImportResult =
+  | { readonly key: string; readonly status: 'imported'; readonly id: CapabilitySlug; readonly version: number }
+  | { readonly key: string; readonly status: 'rejected'; readonly reason: MachineImportError };
+
+export async function importMachineCapabilities(
+  deps: Pick<AppDeps, 'machineCapabilityScan' | 'definitions' | 'clock' | 'ids' | 'log'>,
+  input: {
+    readonly providers: readonly string[];
+    readonly keys: readonly string[];
+    readonly secretRefs?: Readonly<Record<string, string>>;
+    readonly actor: Actor;
+  },
+): Promise<readonly MachineImportResult[]> {
+  const secretRefs = input.secretRefs ?? {};
+  let scanned: readonly MachineCandidate[] = [];
+  try {
+    scanned = await deps.machineCapabilityScan.scan(input.providers);
+  } catch {
+    scanned = [];
+  }
+  const byKey = new Map(scanned.map((candidate) => [machineCandidateKey(candidate), candidate]));
+  const assigned = new Set<CapabilitySlug>();
+  const decided = new Map<string, MachineImportResult>();
+
+  const results: MachineImportResult[] = [];
+  for (const key of input.keys) {
+    const first = decided.get(key);
+    if (first !== undefined) {
+      results.push(first);
+      continue;
+    }
+
+    const candidate = byKey.get(key);
+    if (candidate === undefined) {
+      decided.set(key, { key, status: 'rejected', reason: 'not_found' });
+    } else if (!machineCandidateImportable(candidate)) {
+      decided.set(key, { key, status: 'rejected', reason: 'not_importable' });
+    } else {
+      const base = capabilitySlugOf(candidate.name);
+      if (!base.ok) {
+        decided.set(key, { key, status: 'rejected', reason: 'invalid_name' });
+      } else {
+        let id = base.value;
+        for (let suffix = 2; assigned.has(id); suffix += 1) id = suffixedSlug(base.value, suffix);
+        assigned.add(id);
+        const built = await deps.machineCapabilityScan.buildDefinition(candidate, id, secretRefs);
+        if (!built.ok) {
+          const reason: MachineImportError =
+            built.error === 'missing_command'
+              ? 'missing_command'
+              : built.error === 'missing_path'
+                ? 'missing_path'
+                : built.error === 'missing_plugin_source'
+                  ? 'missing_plugin_source'
+                  : built.error === 'missing_secret_ref'
+                    ? 'missing_secret_ref'
+                    : 'unreadable';
+          decided.set(key, { key, status: 'rejected', reason });
+        } else {
+          const saved = await saveVersion(deps, { kind: 'capabilities', id, body: built.value, actor: input.actor });
+          if (!saved.ok) {
+            decided.set(key, {
+              key,
+              status: 'rejected',
+              reason: saved.error === 'stale' ? 'stale' : 'definitions_invalid',
+            });
+          } else {
+            decided.set(key, { key, status: 'imported', id, version: saved.value.version });
+          }
+        }
+      }
+    }
+    const outcome = decided.get(key);
+    if (outcome !== undefined) results.push(outcome);
   }
   return results;
 }

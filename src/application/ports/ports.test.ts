@@ -24,6 +24,7 @@ import type { BindingRepo, BindingScope } from './binding-repo';
 import type { BundleStore } from './bundle-store';
 import type { CapabilityCatalog } from './capability-catalog';
 import type { CapabilityDiscovery } from './capability-discovery';
+import type { MachineCapabilityScan } from './machine-capability-scan';
 import type { CheckpointCommitter, CheckpointDiff, CheckpointError, CheckpointRef } from './checkpoints';
 import type { Clock } from './clock';
 import type { DefinitionFile, DefinitionScope, DefinitionStore } from './definition-store';
@@ -33,6 +34,7 @@ import type { GitProbe } from './git-probe';
 import type { DispatchStatusHolder, MachineProbe } from './machine-probe';
 import type { IdGen } from './id-gen';
 import type { InstructionFiles } from './instruction-files';
+import type { MemoryStore } from './memory-store';
 import type { ModelCatalog } from './model-catalog';
 import type { Notifier } from './notifier';
 import type { ProjectRepo } from './project-repo';
@@ -68,6 +70,7 @@ describe('AppDeps', () => {
     expectTypeOf<AppDeps['accounts']>().toEqualTypeOf<AccountRepo>();
     expectTypeOf<AppDeps['capabilities']>().toEqualTypeOf<CapabilityCatalog>();
     expectTypeOf<AppDeps['capabilityDiscovery']>().toEqualTypeOf<CapabilityDiscovery>();
+    expectTypeOf<AppDeps['machineCapabilityScan']>().toEqualTypeOf<MachineCapabilityScan>();
     expectTypeOf<AppDeps['modelCatalog']>().toEqualTypeOf<ModelCatalog>();
     expectTypeOf<AppDeps['projects']>().toEqualTypeOf<ProjectRepo>();
     expectTypeOf<AppDeps['repos']>().toEqualTypeOf<RepoRegistry>();
@@ -75,6 +78,7 @@ describe('AppDeps', () => {
     expectTypeOf<AppDeps['queue']>().toEqualTypeOf<QueueRepo>();
     expectTypeOf<AppDeps['definitions']>().toEqualTypeOf<DefinitionStore>();
     expectTypeOf<AppDeps['bundleStore']>().toEqualTypeOf<BundleStore>();
+    expectTypeOf<AppDeps['memory']>().toEqualTypeOf<MemoryStore>();
     expectTypeOf<AppDeps['proposals']>().toEqualTypeOf<ProposalRepo>();
     expectTypeOf<AppDeps['pages']>().toEqualTypeOf<PageRepo>();
     expectTypeOf<AppDeps['pageFiles']>().toEqualTypeOf<PageFiles>();
@@ -112,6 +116,7 @@ describe('AppDeps', () => {
       | 'accounts'
       | 'capabilities'
       | 'capabilityDiscovery'
+      | 'machineCapabilityScan'
       | 'modelCatalog'
       | 'projects'
       | 'repos'
@@ -120,6 +125,7 @@ describe('AppDeps', () => {
       | 'queue'
       | 'definitions'
       | 'bundleStore'
+      | 'memory'
       | 'proposals'
       | 'pages'
       | 'pageFiles'

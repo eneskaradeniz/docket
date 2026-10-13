@@ -30,6 +30,7 @@ export * from './capability-candidates';
 export * from './capability-import';
 export * from './settings';
 export * from './library';
+export * from './memory';
 
 export * from './phase-control';
 export * from './project-bundle';

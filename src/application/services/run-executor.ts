@@ -11,6 +11,7 @@ import type {
   EpochMs,
   LimitDecision,
   Meter,
+  MemoryScope,
   QueueItem,
   Result,
   RoleDef,
@@ -29,9 +30,11 @@ import {
   extendRollingNote,
   foldRun,
   resolveTier,
+  selectMemory,
   stageBrief,
   stageOutputScopeRoot,
   stageOutputVerdict,
+  translateCapabilities,
 } from '../../domain/index';
 
 import type { AppDeps, AuditAction, RunDir, RunHandle, RunRecord, RunRepo, TransportError } from '../ports';
@@ -39,7 +42,13 @@ import type { AppDeps, AuditAction, RunDir, RunHandle, RunRecord, RunRepo, Trans
 import { attachDocketCapability } from './mcp-attach';
 import { spendConsentSatisfied } from './spend-consent';
 import type { BoardHooks } from './permission-board';
-import { buildHandoff, commitCheckpoint } from '../use-cases/index';
+import { buildHandoff, commitCheckpoint, listActiveMemoryNotes, proposeMemory } from '../use-cases/index';
+
+export interface MemoryProposalDraft {
+  readonly scope: MemoryScope;
+  readonly scopeId?: string;
+  readonly text: string;
+}
 
 export interface ExecuteRunInput {
   readonly item: QueueItem;
@@ -47,6 +56,7 @@ export interface ExecuteRunInput {
   readonly prompt: string;
   readonly cwd: string;
   readonly capabilities: readonly CapabilityDef[];
+  readonly memoryProposals?: readonly MemoryProposalDraft[];
 }
 
 export type ExecuteOutcome =
@@ -229,6 +239,40 @@ const sealNoOutputRun = async (
   });
 };
 
+/** Collects memory proposals from input or streamed tool calls at stage end (R-142). */
+const collectMemoryProposals = async (
+  deps: ExecuteDeps,
+  input: ExecuteRunInput,
+  streamed: readonly AgentEvent[],
+  runId: RunId,
+): Promise<void> => {
+  for (const proposal of input.memoryProposals ?? []) {
+    await proposeMemory(deps, {
+      scope: proposal.scope,
+      ...(proposal.scopeId !== undefined ? { scopeId: proposal.scopeId } : {}),
+      text: proposal.text,
+      sourceRun: runId,
+    });
+  }
+  for (const event of streamed) {
+    if (event.type === 'tool_call' && (event.name === 'memory_proposal' || event.name === 'propose_memory')) {
+      try {
+        const parsed = typeof event.target === 'string' ? JSON.parse(event.target) : undefined;
+        if (parsed && typeof parsed.text === 'string' && typeof parsed.scope === 'string') {
+          await proposeMemory(deps, {
+            scope: parsed.scope,
+            ...(typeof parsed.scopeId === 'string' ? { scopeId: parsed.scopeId } : {}),
+            text: parsed.text,
+            sourceRun: runId,
+          });
+        }
+      } catch {
+        // ignore invalid JSON target
+      }
+    }
+  }
+};
+
 /** One summarised event contributes at most this many characters, ellipsis included. */
 const SUMMARY_ENTRY_LIMIT = 400;
 /** The whole summary body contributes at most this many characters. */
@@ -353,6 +397,8 @@ type ExecuteDeps = Pick<
   | 'runTokens'
   | 'runDirs'
   | 'mcpEndpoint'
+  | 'memory'
+  | 'settings'
 >;
 
 /** A-144: Docket's own MCP child, appended LAST so nothing a stored definition says can reorder
@@ -437,11 +483,29 @@ async function driveRun(
     prompt = pack.value.prompt;
   }
 
+  // R-143: selectMemory takes active notes of global scope, run's project and repo (in that order, newest last)
+  // up to MEMORY_INJECTION_CAP_CHARS without cutting notes mid-way.
+  const workOrder = await deps.workOrders.get(item.workOrderId);
+  const activeNotes = await listActiveMemoryNotes(deps);
+  const selected = selectMemory(activeNotes, {
+    project: workOrder?.project,
+    repo: item.repo,
+  });
+  if (selected.text !== '') {
+    prompt = prompt === '' ? selected.text : `${prompt}\n\n${selected.text}`;
+  }
+
   const plan = planAttempt(
     (await deps.runs.listForWorkOrder(item.workOrderId)).filter((run) => run.stage === item.stage),
   );
+  // P-59: the stage's capabilities are translated for this run's provider. What the provider
+  // cannot carry is omitted (and recorded below), what it carries only in degraded form rides the
+  // prompt as instruction text; nothing is written into the repository or the user's config.
+  const provider = (await deps.accounts.get(route.accountId))?.provider ?? '';
+  const translation = translateCapabilities(provider, input.capabilities, deps.capabilities.translationTable());
+  const withInline = (text: string): string => (translation.inline === '' ? text : `${text}\n\n${translation.inline}`);
   let sessionResume = handoffOf === undefined ? plan.resume : undefined;
-  let sessionPrompt = prompt;
+  let sessionPrompt = withInline(prompt);
 
   for (;;) {
 
@@ -460,6 +524,7 @@ async function driveRun(
     startedAt,
     autoResumesUsed: plan.autoResumesUsed,
     ...(definitionsRev !== undefined ? { definitionsRev } : {}),
+    ...(translation.omitted.length > 0 ? { omittedCapabilities: translation.omitted } : {}),
   });
   await deps.workOrders.appendEvent(item.workOrderId, {
     type: 'run_started',
@@ -521,7 +586,7 @@ async function driveRun(
     runId,
     item,
     role: input.role,
-    capabilities: input.capabilities,
+    capabilities: translation.run,
   });
   // A-151: the run-scoped provider config lives here — outside the worktree, so no checkpoint
   // commit can pick it up. Created after the token and before the first start.
@@ -562,7 +627,7 @@ async function driveRun(
   } else {
     const restart = await startAttempt(
       undefined,
-      await buildFallbackPrompt(deps.runs, plan.resumedRunId, input.prompt),
+      withInline(await buildFallbackPrompt(deps.runs, plan.resumedRunId, prompt)),
     );
     if (!restart.ok) return failAsTransport(restart.error);
     handle = restart.value;
@@ -681,6 +746,9 @@ async function driveRun(
             }
           }
           const finalOutcome = output === 'no_output' ? 'failed' : outcome;
+          if (finalOutcome === 'succeeded') {
+            await collectMemoryProposals(deps, input, streamed, runId);
+          }
           const endedAt = await endRun(deps, { runId, workOrderId: item.workOrderId, outcome: finalOutcome }, board, workOrdersChanged);
           // Two fold rules flip a completed finish to failed; the audit names the one that fired.
           // 0/0 tokens with a usage report is the empty run (the more fundamental verdict), an

@@ -35,6 +35,12 @@ export type Command =
   | { readonly type: 'settings.setDispatch'; readonly global: number; readonly perRepo: number; readonly perAccount: Readonly<Record<string, number>>; readonly mode?: 'fixed' | 'auto' } // errors: invalid_limits, unknown_account
   | { readonly type: 'quota.refresh'; readonly id?: string } // answers { ok: true } after the polls end (A-81)
   | { readonly type: 'capabilities.import'; readonly identities: readonly string[] }
+  | {
+      readonly type: 'capabilities.importMachine';
+      readonly providers: readonly string[];
+      readonly keys: readonly string[];
+      readonly secretRefs?: Readonly<Record<string, string>>;
+    }
   | { readonly type: 'page.comment'; readonly page: string; readonly version: number; readonly text: string; readonly anchor?: string } // errors: the domain's PageError codes (A-158)
   | { readonly type: 'page.requestApproval'; readonly page: string }
   | { readonly type: 'page.decide'; readonly page: string; readonly decision: 'approved' | 'rejected'; readonly version: number }
@@ -84,6 +90,14 @@ export interface CapabilityImportResultView {
   readonly reason: string | null;
 }
 
+export interface MachineImportResultView {
+  readonly key: string;
+  readonly status: 'imported' | 'rejected';
+  readonly id: string | null;
+  readonly version: number | null;
+  readonly reason: string | null;
+}
+
 /** What `roadmap.runPhase` answers (A-98): per task the work orders it opened, and the failures
  *  collected without stopping the other tasks (A-99). */
 export interface PhaseRunView {
@@ -101,6 +115,7 @@ export type CommandResult =
       readonly ok: true;
       readonly id?: string;
       readonly results?: readonly CapabilityImportResultView[];
+      readonly machineResults?: readonly MachineImportResultView[];
       readonly phaseRun?: PhaseRunView;
       readonly conversation?: string;
       readonly turn?: string;
