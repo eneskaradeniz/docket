@@ -17,7 +17,7 @@ import { dirname, join } from 'node:path';
 import assert from 'node:assert';
 import { stringify } from 'yaml';
 
-import type { Actor, GateSlug, PhaseSlug, ProjectSlug, RepoSlug, StageSlug, TaskSlug } from '../src/domain/index';
+import type { Actor, FlowDef, GateSlug, PhaseSlug, ProjectSlug, RepoSlug, RoleDef, StageSlug, TaskSlug } from '../src/domain/index';
 import { decideHumanGate } from '../src/application/use-cases/gates';
 import { attachProject } from '../src/application/use-cases/projects';
 import { openWorkOrder } from '../src/application/use-cases/work-orders';
@@ -85,7 +85,7 @@ for (const slug of PROJECT.repos) {
     run('git', ['init', '--quiet'], dir);
   }
   writeFileSync(join(dir, 'README.md'), `# ${slug}\n`);
-  writeYaml(dir, '.docket/repo.yaml', {
+  writeYaml(dataDir, `repos/${slug}/repo.yaml`, {
     id: slug,
     name: slug,
     flows: [FLOW_ID],
@@ -95,23 +95,7 @@ for (const slug of PROJECT.repos) {
     docsRoot: 'docs',
     testGlobs: [],
   });
-  writeYaml(dir, `.docket/flows/${FLOW_ID}.yaml`, {
-    id: FLOW_ID,
-    name: 'Tek aşamalı akış',
-    stages: [{ id: STAGE, name: 'İş', role: ROLE, exit: [{ kind: 'human', id: GATE, label: 'Onay' }] }],
-  });
-  writeYaml(dir, `.docket/roles/${ROLE}.yaml`, {
-    id: ROLE,
-    name: ROLE,
-    instructions: 'İş emrini yürüt.',
-    writeScope: { kind: 'repo' },
-    capabilities: [],
-    active: true,
-  });
-  if (slug === PROJECT.main) {
-    writeYaml(dir, '.docket/project.yaml', { id: PROJECT.id, name: PROJECT.name, mainRepo: PROJECT.main, repos: PROJECT.repos });
-    writeYaml(dir, '.docket/roadmap.yaml', ROADMAP);
-  }
+  if (slug === PROJECT.main) writeYaml(dataDir, `projects/${PROJECT.id}/roadmap.yaml`, ROADMAP);
   run('git', [...IDENTITY, 'add', '-A'], dir);
   run('git', [...IDENTITY, 'commit', '--quiet', '-m', 'seed'], dir);
 }
@@ -133,12 +117,29 @@ const node = createNodeDeps({
 if (!node.ok) throw new Error(`roadmap seed could not open deps: ${JSON.stringify(node.error)}`);
 const deps = node.value.deps;
 
-const attached = await attachProject(deps, {
-  path: repoPath(PROJECT.main),
-  actor: OPERATOR,
-  repos: [{ repo: 'atolye-web' as RepoSlug, path: repoPath('atolye-web') }],
+// The library flow and role every repo.yaml names, the repos in the registry, the project in the mirror.
+await deps.definitions.installBuiltins({
+  roles: [
+    { id: ROLE, name: ROLE, instructions: 'İş emrini yürüt.', writeScope: { kind: 'repo' }, capabilities: [], active: true },
+  ] as unknown as RoleDef[],
+  flows: [
+    {
+      id: FLOW_ID,
+      name: 'Tek aşamalı akış',
+      stages: [{ id: STAGE, name: 'İş', role: ROLE, exit: [{ kind: 'human', id: GATE, label: 'Onay' }] }],
+    },
+  ] as unknown as FlowDef[],
 });
-assert(attached.ok, `project did not attach: ${attached.ok ? '' : attached.error}`);
+for (const slug of PROJECT.repos) {
+  const attached = await attachProject(deps, { path: repoPath(slug), actor: OPERATOR });
+  assert(attached.ok, `repo ${slug} did not attach: ${attached.ok ? '' : attached.error}`);
+}
+await deps.projects.save({
+  id: PROJECT.id as ProjectSlug,
+  name: PROJECT.name,
+  mainRepo: PROJECT.main as RepoSlug,
+  repos: PROJECT.repos as readonly RepoSlug[],
+});
 
 const open = async (title: string, taskId: string): Promise<ReturnType<typeof deps.ids.next<'work-order'>>> => {
   clockNow += MINUTE;

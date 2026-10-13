@@ -18,7 +18,7 @@ import { dirname, join } from 'node:path';
 import assert from 'node:assert';
 import { stringify } from 'yaml';
 
-import type { Actor, ProjectSlug, RepoSlug, RoleSlug } from '../src/domain/index';
+import type { Actor, FlowDef, ProjectSlug, RepoSlug, RoleDef, RoleSlug } from '../src/domain/index';
 import { DISPATCH_MODE_KEY } from '../src/application/use-cases/settings';
 import { publishPageUseCase, publishVersion } from '../src/application/use-cases/pages';
 import { attachProject } from '../src/application/use-cases/projects';
@@ -219,7 +219,7 @@ const vcs = (args: readonly string[]): void => {
   execFileSync('git', [...args], { cwd: repoDir, stdio: 'ignore' });
 };
 const writeYaml = (relative: string, value: unknown): void => {
-  const target = join(repoDir, relative);
+  const target = join(dataDir, relative);
   mkdirSync(dirname(target), { recursive: true });
   writeFileSync(target, stringify(value));
 };
@@ -230,7 +230,7 @@ try {
   vcs(['init', '--quiet']);
 }
 writeFileSync(join(repoDir, 'README.md'), `# ${PROJECT.repo}\n`);
-writeYaml('.docket/repo.yaml', {
+writeYaml(`repos/${PROJECT.repo}/repo.yaml`, {
   id: PROJECT.repo,
   name: PROJECT.repo,
   flows: ['tek-asama'],
@@ -240,25 +240,29 @@ writeYaml('.docket/repo.yaml', {
   docsRoot: 'docs',
   testGlobs: [],
 });
-writeYaml('.docket/flows/tek-asama.yaml', {
-  id: 'tek-asama',
-  name: 'Tek aşamalı akış',
-  stages: [{ id: 'is', name: 'İş', role: 'gelistirici', exit: [{ kind: 'human', id: 'onay', label: 'Onay' }] }],
+await deps.definitions.installBuiltins({
+  roles: [
+    { id: 'gelistirici', name: 'gelistirici', instructions: 'İş emrini yürüt.', writeScope: { kind: 'repo' }, capabilities: [], active: true },
+  ] as unknown as RoleDef[],
+  flows: [
+    {
+      id: 'tek-asama',
+      name: 'Tek aşamalı akış',
+      stages: [{ id: 'is', name: 'İş', role: 'gelistirici', exit: [{ kind: 'human', id: 'onay', label: 'Onay' }] }],
+    },
+  ] as unknown as FlowDef[],
 });
-writeYaml('.docket/roles/gelistirici.yaml', {
-  id: 'gelistirici',
-  name: 'gelistirici',
-  instructions: 'İş emrini yürüt.',
-  writeScope: { kind: 'repo' },
-  capabilities: [],
-  active: true,
-});
-writeYaml('.docket/project.yaml', { id: PROJECT.id, name: PROJECT.name, mainRepo: PROJECT.repo, repos: [PROJECT.repo] });
 vcs(['add', '-A']);
 vcs(['-c', 'user.name=Seed', '-c', 'user.email=seed@example.invalid', 'commit', '--quiet', '-m', 'seed']);
 
-const attached = await attachProject(deps, { path: repoDir, actor: OPERATOR, repos: [] });
-assert(attached.ok, `the project did not attach: ${attached.ok ? '' : attached.error}`);
+const attached = await attachProject(deps, { path: repoDir, actor: OPERATOR });
+assert(attached.ok, `the repo did not attach: ${attached.ok ? '' : attached.error}`);
+await deps.projects.save({
+  id: PROJECT.id as ProjectSlug,
+  name: PROJECT.name,
+  mainRepo: PROJECT.repo as RepoSlug,
+  repos: [PROJECT.repo as RepoSlug],
+});
 const opened = await openWorkOrder(deps, {
   project: PROJECT.id as ProjectSlug,
   repo: PROJECT.repo as RepoSlug,
