@@ -69,7 +69,14 @@ import {
   type FakeWorkOrderRepo,
 } from '../ports/fakes';
 
-import { grantSpendConsent, revokeSpendConsent } from '../use-cases';
+import {
+  createMemoryNoteUseCase,
+  grantSpendConsent,
+  listActiveMemoryNotes,
+  listMemoryProposals,
+  revokeSpendConsent,
+  setMemoryAutoAccept,
+} from '../use-cases';
 import { dispatcherTick } from './dispatcher';
 import { executeRun, type PermissionGate } from './run-executor';
 
@@ -2313,5 +2320,95 @@ describe('executeRun capability translation (P-59)', () => {
     const request = theRequest(h.transport);
     expect(request.capabilities).toEqual([mcp]);
     expect(request.prompt).toBe(INPUT.prompt);
+  });
+});
+
+describe('executeRun memory injection and proposal collection (R-142, R-143)', () => {
+  it('R-143: preflight injects active memory notes into prompt instructions', async () => {
+    const h = await harness();
+    await createMemoryNoteUseCase(h.deps, {
+      id: 'mem-global-1',
+      scope: 'global',
+      text: 'Global project rule: always write tests.',
+    });
+    await createMemoryNoteUseCase(h.deps, {
+      id: 'mem-repo-1',
+      scope: 'repo',
+      scopeId: REPO,
+      text: 'Repo-specific rule: use strict typing.',
+    });
+
+    await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    const request = theRequest(h.transport);
+    expect(request.prompt).toContain(INPUT.prompt);
+    expect(request.prompt).toContain('Global project rule: always write tests.');
+    expect(request.prompt).toContain('Repo-specific rule: use strict typing.');
+  });
+
+  it('R-143: inactive notes are ignored during preflight injection', async () => {
+    const h = await harness();
+    const note = await createMemoryNoteUseCase(h.deps, {
+      id: 'mem-inactive-1',
+      scope: 'global',
+      text: 'Do not use this deprecated guideline.',
+    });
+    // Deactivate note
+    await h.deps.definitions.appendVersion('memory', note.id, { ...note, active: false }, h.deps.clock.now());
+
+    await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    const request = theRequest(h.transport);
+    expect(request.prompt).not.toContain('Do not use this deprecated guideline.');
+  });
+
+  it('R-142: collects memory proposals at stage end as pending proposals', async () => {
+    const h = await harness({ script: [finished('completed')] });
+
+    await executeRun(h.deps, permissionGate().permissions, {
+      ...INPUT,
+      memoryProposals: [
+        { scope: 'global', text: 'Consider caching query results.' },
+        { scope: 'repo', scopeId: 'repo-a', text: 'Prefer vitest over jest.' },
+      ],
+    });
+
+    const proposals = await listMemoryProposals(h.deps);
+    expect(proposals).toHaveLength(2);
+    expect(proposals[0].state).toBe('pending');
+    expect(proposals[0].text).toBe('Consider caching query results.');
+    expect(proposals[1].state).toBe('pending');
+    expect(proposals[1].text).toBe('Prefer vitest over jest.');
+  });
+
+  it('R-142: auto-accept creates active note with createdBy: agent at stage end', async () => {
+    const h = await harness({ script: [finished('completed')] });
+    await setMemoryAutoAccept(h.deps, 'global', true);
+
+    await executeRun(h.deps, permissionGate().permissions, {
+      ...INPUT,
+      memoryProposals: [
+        { scope: 'global', text: 'Always use descriptive variable names.' },
+      ],
+    });
+
+    const active = await listActiveMemoryNotes(h.deps);
+    expect(active.some((n) => n.text === 'Always use descriptive variable names.' && n.createdBy === 'agent')).toBe(true);
+  });
+
+  it('R-142: collects proposals streamed as tool calls during run', async () => {
+    const toolCall: AgentEvent = {
+      type: 'tool_call',
+      at: 100,
+      id: 'tc-mem-1',
+      name: 'memory_proposal',
+      target: JSON.stringify({ scope: 'project', text: 'Document public APIs.' }),
+    };
+    const h = await harness({ script: [toolCall, finished('completed')] });
+
+    await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    const proposals = await listMemoryProposals(h.deps);
+    expect(proposals.some((p) => p.text === 'Document public APIs.')).toBe(true);
   });
 });

@@ -24,6 +24,7 @@ export * from './id-gen';
 export * from './instruction-files';
 export * from './issue-tracker';
 export * from './model-catalog';
+export * from './memory-store';
 export * from './notifier';
 export * from './page-files';
 export * from './page-repo';

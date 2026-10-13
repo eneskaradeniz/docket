@@ -20,6 +20,7 @@ import { createFakeGitProbe } from './fake-git-probe';
 import { createFakeIdGen } from './fake-id-gen';
 import { createFakeDispatchStatus, createFakeMachineProbe } from './fake-machine-probe';
 import { createFakeInstructionFiles } from './fake-instruction-files';
+import { createFakeMemoryStore } from './fake-memory-store';
 import { createFakeModelCatalog } from './fake-model-catalog';
 import { createFakeNotifier } from './fake-notifier';
 import { createFakePageFiles } from './fake-page-files';
@@ -61,6 +62,7 @@ export const createFakeDeps = (overrides: Partial<AppDeps> = {}): AppDeps => ({
   bindings: createFakeBindingRepo(),
   queue: createFakeQueueRepo(),
   definitions: createFakeDefinitionStore(),
+  memory: createFakeMemoryStore(),
   proposals: createFakeProposalRepo(),
   pages: createFakePageRepo(),
   pageFiles: createFakePageFiles(),

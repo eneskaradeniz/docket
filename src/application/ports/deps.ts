@@ -18,6 +18,7 @@ import type { GitProbe } from './git-probe';
 import type { IdGen } from './id-gen';
 import type { InstructionFiles } from './instruction-files';
 import type { DispatchStatusHolder, MachineProbe } from './machine-probe';
+import type { MemoryStore } from './memory-store';
 import type { ModelCatalog } from './model-catalog';
 import type { Notifier } from './notifier';
 import type { PageFiles } from './page-files';
@@ -55,6 +56,7 @@ export interface AppDeps {
   readonly bindings: BindingRepo;
   readonly queue: QueueRepo;
   readonly definitions: DefinitionStore;
+  readonly memory: MemoryStore;
   readonly proposals: ProposalRepo;
   readonly pages: PageRepo;
   readonly pageFiles: PageFiles;

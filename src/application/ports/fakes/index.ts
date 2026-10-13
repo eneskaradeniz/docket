@@ -22,6 +22,7 @@ export * from './fake-id-gen';
 export * from './fake-instruction-files';
 export * from './fake-issue-tracker';
 export * from './fake-model-catalog';
+export * from './fake-memory-store';
 export * from './fake-notifier';
 export * from './fake-page-files';
 export * from './fake-page-repo';
