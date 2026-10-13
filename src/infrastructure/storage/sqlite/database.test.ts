@@ -3,85 +3,17 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { ProjectDef } from '../../../domain/index';
-import { isUlid } from '../../../domain/index';
-import { createSqliteProjectRepo } from './project-repo';
-import { createSqliteRepoRegistry } from './repo-registry';
 import { openDatabase, type DocketDb } from './database';
-import { createSqliteRunRepo } from './run-repo';
 import { MIGRATIONS } from './schema';
 
 const SUPPORTED_VERSION = MIGRATIONS.reduce((max, migration) => Math.max(max, migration.version), 0);
 
-const MIGRATION_1_SQL = [
-  'CREATE TABLE work_orders (id TEXT PRIMARY KEY, workspace TEXT NOT NULL, created_at INTEGER NOT NULL, data TEXT NOT NULL);',
-  'CREATE INDEX work_orders_by_workspace ON work_orders (workspace, created_at, id);',
-  'CREATE TABLE work_order_events (work_order_id TEXT NOT NULL REFERENCES work_orders (id), seq INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY (work_order_id, seq));',
-  'CREATE TABLE runs (id TEXT PRIMARY KEY, work_order_id TEXT NOT NULL REFERENCES work_orders (id), started_at INTEGER NOT NULL, ended_at INTEGER, data TEXT NOT NULL);',
-  'CREATE INDEX runs_by_work_order ON runs (work_order_id, started_at, id);',
-  'CREATE INDEX runs_active ON runs (started_at, id) WHERE ended_at IS NULL;',
-  'CREATE TABLE run_events (run_id TEXT NOT NULL REFERENCES runs (id), seq INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY (run_id, seq));',
-  'CREATE TABLE audit (id TEXT PRIMARY KEY, at INTEGER NOT NULL, subject_kind TEXT NOT NULL, subject_key TEXT NOT NULL, data TEXT NOT NULL);',
-  'CREATE INDEX audit_by_subject ON audit (subject_kind, subject_key, at DESC, id DESC);',
-  'CREATE TABLE accounts (id TEXT PRIMARY KEY, data TEXT NOT NULL);',
-  'CREATE TABLE pools (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, data TEXT NOT NULL);',
-  'CREATE INDEX pools_by_account ON pools (account_id);',
-  'CREATE TABLE meters (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, data TEXT NOT NULL);',
-  'CREATE INDEX meters_by_pool ON meters (pool_id);',
-  'CREATE TABLE spend (seq INTEGER PRIMARY KEY AUTOINCREMENT, account_id TEXT NOT NULL, workspace TEXT NOT NULL, work_order_id TEXT NOT NULL, at INTEGER NOT NULL, usd REAL NOT NULL);',
-  'CREATE INDEX spend_by_time ON spend (at);',
-  'CREATE TABLE bindings (level TEXT NOT NULL, scope_key TEXT NOT NULL, role TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (level, scope_key, role));',
-  'CREATE TABLE queue_items (id TEXT PRIMARY KEY, data TEXT NOT NULL);',
-  'CREATE TABLE proposals (id TEXT PRIMARY KEY, status TEXT NOT NULL, data TEXT NOT NULL);',
-  'CREATE TABLE secrets (ref TEXT PRIMARY KEY, blob BLOB NOT NULL);',
-  'CREATE TABLE workspaces (slug TEXT PRIMARY KEY, path TEXT NOT NULL);',
-].join('\n');
-
-const MIGRATION_2_SQL = [
-  'ALTER TABLE workspaces RENAME TO repos;',
-  'ALTER TABLE work_orders RENAME COLUMN workspace TO repo;',
-  'ALTER TABLE work_orders ADD COLUMN project TEXT NOT NULL DEFAULT \'\';',
-  'ALTER TABLE spend RENAME COLUMN workspace TO repo;',
-  'ALTER TABLE spend ADD COLUMN project TEXT NOT NULL DEFAULT \'\';',
-  'CREATE TABLE projects (slug TEXT PRIMARY KEY, name TEXT NOT NULL, main_repo TEXT NOT NULL, data TEXT NOT NULL);',
-  'CREATE TABLE project_repos (project TEXT NOT NULL REFERENCES projects (slug), repo TEXT NOT NULL, PRIMARY KEY (project, repo));',
-  "INSERT INTO projects (slug, name, main_repo, data)\n  SELECT slug, slug, slug, json_object('id', slug, 'name', slug, 'mainRepo', slug, 'repos', json_array(slug)) FROM repos;",
-  'INSERT INTO project_repos (project, repo) SELECT slug, slug FROM repos;',
-  'UPDATE work_orders SET project = repo;',
-  "UPDATE work_orders SET data = json_set(json_remove(data, '$.workspace'), '$.project', repo, '$.repo', repo);",
-  'UPDATE spend SET project = repo;',
-  "UPDATE bindings SET level = 'repo' WHERE level = 'workspace';",
-  'CREATE INDEX work_orders_by_project ON work_orders (project, created_at, id);',
-  'CREATE INDEX project_repos_by_repo ON project_repos (repo);',
-].join('\n');
-
-const MIGRATION_3_SQL = 'CREATE TABLE run_handoff (run_id TEXT PRIMARY KEY REFERENCES runs (id), note TEXT, stage_base TEXT);';
-
-// The pinned migration 11 (I-93): the slug-keyed repos table becomes the repoId-keyed repo_registry
-// and the projects table loses the main repo. Verbatim — the ULID expression is the contract.
-const ULID_SUBSTR = "substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 45) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 40) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 35) & 31) + 1, 1) ||\n    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 30) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 25) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 20) & 31) + 1, 1) ||\n    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 15) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 10) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 5) & 31) + 1, 1) ||\n    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 0) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 35) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 30) & 31) + 1, 1) ||\n    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 25) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 20) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 15) & 31) + 1, 1) ||\n    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 10) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 5) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 0) & 31) + 1, 1) ||\n    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 35) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 30) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 25) & 31) + 1, 1) ||\n    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 20) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 15) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 10) & 31) + 1, 1) ||\n    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 5) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 0) & 31) + 1, 1)";
-const MIGRATION_11_SQL = [
-  'CREATE TABLE repo_registry (repo_id TEXT PRIMARY KEY, slug TEXT NOT NULL, path TEXT NOT NULL, data TEXT NOT NULL);',
-  'CREATE UNIQUE INDEX repo_registry_by_slug ON repo_registry (slug);',
-  'WITH seeds AS (',
-  "  SELECT slug, path, unixepoch('now') * 1000 AS t, random() & 1099511627775 AS a, random() & 1099511627775 AS b FROM repos",
-  ')',
-  'INSERT INTO repo_registry (repo_id, slug, path, data)',
-  '  SELECT',
-  `    ${ULID_SUBSTR},`,
-  '    slug, path, \'\'',
-  '  FROM seeds;',
-  "UPDATE repo_registry SET data = json_object('repoId', repo_id, 'slug', slug, 'path', path, 'fingerprint', json_object('rootCommit', ''));",
-  'DROP TABLE repos;',
-  'ALTER TABLE projects DROP COLUMN main_repo;',
-  "UPDATE projects SET data = json_remove(data, '$.mainRepo');",
-].join('\n');
-
-const MIGRATION_1_TABLES = [
+const SCHEMA_TABLES = [
   'work_orders',
   'work_order_events',
   'runs',
   'run_events',
+  'run_handoff',
   'audit',
   'accounts',
   'pools',
@@ -91,18 +23,9 @@ const MIGRATION_1_TABLES = [
   'queue_items',
   'proposals',
   'secrets',
-  'workspaces',
-];
-
-// What the schema holds once every migration has run: migration 2 renames workspaces to repos
-// and adds the project tables; migration 3 adds the run handoff state; migration 11 replaces the
-// slug-keyed repos table with the repoId-keyed repo_registry.
-const MIGRATED_TABLES = [
-  ...MIGRATION_1_TABLES.filter((table) => table !== 'workspaces'),
   'repo_registry',
   'projects',
   'project_repos',
-  'run_handoff',
   'app_settings',
   'phase_auto_runs',
   'pages',
@@ -112,21 +35,17 @@ const MIGRATED_TABLES = [
   'actions',
 ];
 
-const MIGRATION_1_INDEXES = [
-  'work_orders_by_workspace', // SQLite keeps index names across the migration-2 renames
+const SCHEMA_INDEXES = [
+  'work_orders_by_project',
+  'work_orders_by_repo',
   'runs_by_work_order',
   'runs_active',
   'audit_by_subject',
   'pools_by_account',
   'meters_by_pool',
   'spend_by_time',
-];
-
-const MIGRATED_INDEXES = [
-  ...MIGRATION_1_INDEXES,
-  'work_orders_by_project',
-  'project_repos_by_repo',
   'repo_registry_by_slug',
+  'project_repos_by_repo',
   'pages_by_work_order',
   'pages_by_project',
   'page_comments_by_page',
@@ -216,8 +135,8 @@ describe('openDatabase', () => {
       .all();
     const tables = objects.filter((o) => o.type === 'table').map((o) => String(o.name)).sort();
     const indexes = objects.filter((o) => o.type === 'index').map((o) => String(o.name)).sort();
-    expect(tables).toStrictEqual([...MIGRATED_TABLES].sort());
-    expect(indexes).toStrictEqual([...MIGRATED_INDEXES].sort());
+    expect(tables).toStrictEqual([...SCHEMA_TABLES].sort());
+    expect(indexes).toStrictEqual([...SCHEMA_INDEXES].sort());
   });
 
   it('I-3: opening again is a no-op — migration 1 does not re-run', () => {
@@ -257,20 +176,10 @@ describe('openDatabase', () => {
 });
 
 describe('MIGRATIONS', () => {
-  it('holds migration 1 exactly as contracted', () => {
-    expect(MIGRATIONS[0]).toStrictEqual({ version: 1, sql: MIGRATION_1_SQL });
-  });
-
-  it('holds migration 2 exactly as contracted', () => {
-    expect(MIGRATIONS[1]).toStrictEqual({ version: 2, sql: MIGRATION_2_SQL });
-  });
-
-  it('holds migration 3 exactly as contracted', () => {
-    expect(MIGRATIONS[2]).toStrictEqual({ version: 3, sql: MIGRATION_3_SQL });
-  });
-
-  it('holds migration 11 exactly as contracted', () => {
-    expect(MIGRATIONS[10]).toStrictEqual({ version: 11, sql: MIGRATION_11_SQL });
+  it('holds the single version-1 schema', () => {
+    expect(MIGRATIONS).toHaveLength(1);
+    expect(MIGRATIONS[0]?.version).toBe(1);
+    expect(typeof MIGRATIONS[0]?.sql).toBe('string');
   });
 
   it('has unique, increasing versions starting at 1', () => {
@@ -355,290 +264,5 @@ describe('transaction', () => {
       }),
     ).toThrow('boom');
     expect(workOrderCount(db)).toBe(1);
-  });
-});
-
-// --- Migration 2 (I-33): the project layer over a version-1 database --------------------------------
-
-const OLD_ACTOR = { kind: 'user', id: 'u1', label: 'opener' } as const;
-
-/** A database left at version 1: migration 1 applied by hand, user_version pinned, and rows in
- *  the pre-project shapes — including a pre-rename work order (data carries $.workspace) and a
- *  post-rename one (data carries $.repo, column still `workspace`). */
-const makeVersion1Database = (path: string): void => {
-  const setup = new DatabaseSync(path);
-  setup.exec(MIGRATIONS[0]?.sql ?? '');
-  setup.exec('PRAGMA user_version = 1');
-  setup
-    .prepare("INSERT INTO workspaces (slug, path) VALUES ('acme', '/x/acme'), ('zulu', '/x/zulu')")
-    .run();
-  setup
-    .prepare("INSERT INTO work_orders (id, workspace, created_at, data) VALUES (?, ?, ?, ?)")
-    .run('01ARZ3NDEKTSV4RRFFQ69G5F101', 'acme', 5, JSON.stringify({
-      id: '01ARZ3NDEKTSV4RRFFQ69G5F101',
-      workspace: 'acme',
-      flow: 'standard',
-      title: 'Truly old',
-      createdAt: 5,
-      createdBy: OLD_ACTOR,
-    }));
-  setup
-    .prepare("INSERT INTO work_orders (id, workspace, created_at, data) VALUES (?, ?, ?, ?)")
-    .run('01ARZ3NDEKTSV4RRFFQ69G5F102', 'acme', 6, JSON.stringify({
-      id: '01ARZ3NDEKTSV4RRFFQ69G5F102',
-      repo: 'acme',
-      flow: 'standard',
-      title: 'Renamed era',
-      task: 'setup-auth',
-      createdAt: 6,
-      createdBy: OLD_ACTOR,
-    }));
-  setup
-    .prepare("INSERT INTO spend (account_id, workspace, work_order_id, at, usd) VALUES (?, ?, ?, ?, ?)")
-    .run('01ARZ3NDEKTSV4RRFFQ69G5FAA1', 'acme', '01ARZ3NDEKTSV4RRFFQ69G5F101', 10, 1.5);
-  setup
-    .prepare("INSERT INTO bindings (level, scope_key, role, data) VALUES (?, ?, ?, ?)")
-    .run('workspace', 'acme', 'worker', JSON.stringify({ role: 'worker', accounts: [] }));
-  setup
-    .prepare("INSERT INTO bindings (level, scope_key, role, data) VALUES (?, ?, ?, ?)")
-    .run('global', '', 'worker', JSON.stringify({ role: 'worker', accounts: [] }));
-  setup.close();
-};
-
-describe('Migration 2', () => {
-  it('I-33: a version-1 database migrates exactly once; every old workspace becomes a project≡repo and the records read back in the new shapes', async () => {
-    const path = join(tmp, 'old.db');
-    makeVersion1Database(path);
-
-    const migrated = openOk(path);
-    expect(pragmaValue(migrated, 'user_version')).toBe(SUPPORTED_VERSION);
-
-    // The registry reads the repoId-keyed rows migration 11 minted from the renamed table.
-    const registry = createSqliteRepoRegistry(migrated, async () => undefined);
-    const entries = await registry.list();
-    expect(entries.map((entry) => [entry.slug, entry.path])).toEqual([
-      ['acme', '/x/acme'],
-      ['zulu', '/x/zulu'],
-    ]);
-    for (const entry of entries) {
-      expect(isUlid(entry.repoId)).toBe(true);
-      expect(entry.fingerprint).toEqual({ rootCommit: '' });
-    }
-
-    // Every workspace became a project≡repo: the name is the slug itself, and migration 11's
-    // rewrite leaves the stored def without a main repo.
-    const projects = createSqliteProjectRepo(migrated);
-    const listed: readonly ProjectDef[] = await projects.list();
-    expect(listed).toEqual([
-      { id: 'acme' as never, name: 'acme', repos: ['acme' as never] },
-      { id: 'zulu' as never, name: 'zulu', repos: ['zulu' as never] },
-    ]);
-    expect((await projects.projectOfRepo('acme' as never))?.id).toBe('acme');
-
-    // Work orders carry project and repo pointing at the owning workspace, and the rewritten
-    // data deep-equals the new record shape — the renamed-era row keeps its task, the truly old
-    // one loses $.workspace.
-    const rows = migrated.raw.prepare('SELECT data FROM work_orders ORDER BY created_at ASC').all() as unknown as readonly { readonly data: string }[];
-    expect(JSON.parse(rows[0]?.data ?? '{}')).toStrictEqual({
-      id: '01ARZ3NDEKTSV4RRFFQ69G5F101',
-      project: 'acme',
-      repo: 'acme',
-      flow: 'standard',
-      title: 'Truly old',
-      createdAt: 5,
-      createdBy: OLD_ACTOR,
-    });
-    expect(JSON.parse(rows[1]?.data ?? '{}')).toStrictEqual({
-      id: '01ARZ3NDEKTSV4RRFFQ69G5F102',
-      project: 'acme',
-      repo: 'acme',
-      flow: 'standard',
-      title: 'Renamed era',
-      task: 'setup-auth',
-      createdAt: 6,
-      createdBy: OLD_ACTOR,
-    });
-    const columns = migrated.raw
-      .prepare("SELECT project, repo FROM work_orders WHERE id = '01ARZ3NDEKTSV4RRFFQ69G5F101'")
-      .get() as { readonly project: string; readonly repo: string };
-    expect(columns).toEqual({ project: 'acme', repo: 'acme' });
-
-    // Spend history survived with its project and repo attributed.
-    const spend = migrated.raw
-      .prepare('SELECT project, repo, usd FROM spend')
-      .all() as unknown as readonly { readonly project: string; readonly repo: string; readonly usd: number }[];
-    expect(spend).toEqual([{ project: 'acme', repo: 'acme', usd: 1.5 }]);
-
-    // The binding level rewrite: only the workspace-level row moved to repo.
-    const levels = migrated.raw
-      .prepare('SELECT level, scope_key FROM bindings ORDER BY level')
-      .all() as unknown as readonly { readonly level: string; readonly scope_key: string }[];
-    expect(levels).toEqual([
-      { level: 'global', scope_key: '' },
-      { level: 'repo', scope_key: 'acme' },
-    ]);
-
-    closeDb(migrated);
-
-    // Opening again is a no-op: migration 2 does not re-run (the project rows stay unique).
-    const again = openOk(path);
-    expect(pragmaValue(again, 'user_version')).toBe(SUPPORTED_VERSION);
-    expect(await createSqliteProjectRepo(again).list()).toHaveLength(2);
-    closeDb(again);
-  });
-
-  it('I-33: a database already at version 2 is a no-op, and too_new is unchanged', async () => {
-    const path = join(tmp, 'fresh.db');
-    const first = openOk(path);
-    expect(pragmaValue(first, 'user_version')).toBe(SUPPORTED_VERSION);
-    closeDb(first);
-
-    const second = openOk(path);
-    expect(pragmaValue(second, 'user_version')).toBe(SUPPORTED_VERSION);
-    closeDb(second);
-
-    const newer = join(tmp, 'newer.db');
-    const setup = new DatabaseSync(newer);
-    setup.exec(`PRAGMA user_version = ${SUPPORTED_VERSION + 1}`);
-    setup.close();
-    expect(openDatabase(newer)).toStrictEqual({
-      ok: false,
-      error: { code: 'too_new', found: SUPPORTED_VERSION + 1, supported: SUPPORTED_VERSION },
-    });
-  });
-});
-
-// --- Migration 3: the run handoff state over a version-2 database -------------------------------------
-
-/** A database left at version 2: migrations 1 and 2 applied by hand, user_version pinned, one work
- *  order and one run in place so the run_handoff foreign key has something to point at. */
-const makeVersion2Database = (path: string): void => {
-  const setup = new DatabaseSync(path);
-  setup.exec(MIGRATIONS[0]?.sql ?? '');
-  setup.exec(MIGRATIONS[1]?.sql ?? '');
-  setup.exec('PRAGMA user_version = 2');
-  setup
-    .prepare("INSERT INTO work_orders (id, project, repo, created_at, data) VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FB4', 'acme', 'acme', 1, '{}')")
-    .run();
-  setup
-    .prepare("INSERT INTO runs (id, work_order_id, started_at, data) VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FB5', '01ARZ3NDEKTSV4RRFFQ69G5FB4', 2, '{}')")
-    .run();
-  setup.close();
-};
-
-describe('Migration 3', () => {
-  it('a version-2 database gains run_handoff at version 3, exactly once, and the run repo uses it', async () => {
-    const path = join(tmp, 'v2.db');
-    makeVersion2Database(path);
-
-    const migrated = openOk(path);
-    expect(pragmaValue(migrated, 'user_version')).toBe(SUPPORTED_VERSION);
-    const table = migrated.raw
-      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'run_handoff'")
-      .get();
-    expect(table === undefined ? undefined : table.name).toBe('run_handoff');
-
-    // The repository reads and writes through the new table on the migrated database.
-    const runs = createSqliteRunRepo(migrated);
-    const runId = '01ARZ3NDEKTSV4RRFFQ69G5FB5' as never;
-    expect(await runs.handoffNote(runId)).toBeUndefined();
-    expect(await runs.stageBase(runId)).toBeUndefined();
-    await runs.saveStageBase(runId, 'sha-base-1');
-    await runs.saveHandoffNote(runId, { text: 'ozet', capped: false });
-    expect(await runs.stageBase(runId)).toBe('sha-base-1');
-    expect(await runs.handoffNote(runId)).toStrictEqual({ text: 'ozet', capped: false });
-    closeDb(migrated);
-
-    // Opening again is a no-op: migration 3 does not re-run.
-    const again = openOk(path);
-    expect(pragmaValue(again, 'user_version')).toBe(SUPPORTED_VERSION);
-    expect(await createSqliteRunRepo(again).stageBase(runId)).toBe('sha-base-1');
-    closeDb(again);
-  });
-});
-
-// --- Migration 11 (I-93): the repoId registry over a version-10 database --------------------------------
-
-/** A database left at version 10: every migration through 10 applied by hand, two repos registered
- *  and one project still carrying the main-repo shape migration 11 removes. */
-const makeVersion10Database = (path: string): void => {
-  const setup = new DatabaseSync(path);
-  for (const migration of MIGRATIONS) {
-    if (migration.version > 10) break;
-    setup.exec(migration.sql);
-  }
-  setup.exec('PRAGMA user_version = 10');
-  setup.prepare("INSERT INTO repos (slug, path) VALUES ('acme', '/x/acme'), ('zulu', '/x/zulu')").run();
-  setup
-    .prepare('INSERT INTO projects (slug, name, main_repo, data) VALUES (?, ?, ?, ?)')
-    .run(
-      'atolye',
-      'Atölye',
-      'acme',
-      JSON.stringify({ id: 'atolye', name: 'Atölye', mainRepo: 'acme', repos: ['acme', 'zulu'] }),
-    );
-  setup.prepare("INSERT INTO project_repos (project, repo) VALUES ('atolye', 'acme'), ('atolye', 'zulu')").run();
-  setup.close();
-};
-
-describe('Migration 11', () => {
-  it('I-93: migration 11 rewrites repos into the repoId-keyed repo_registry and projects lose mainRepo, in one transaction setting user_version=11; a database already at 11 is a no-op', async () => {
-    const path = join(tmp, 'v10.db');
-    makeVersion10Database(path);
-
-    const migrated = openOk(path);
-    expect(pragmaValue(migrated, 'user_version')).toBe(SUPPORTED_VERSION);
-
-    // The repos table no longer exists; repo_registry holds one minted row per old repo.
-    const reposTable = migrated.raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'repos'").get();
-    expect(reposTable).toBeUndefined();
-    const rows = migrated.raw
-      .prepare('SELECT repo_id, slug, path, data FROM repo_registry ORDER BY slug ASC')
-      .all() as unknown as readonly { readonly repo_id: string; readonly slug: string; readonly path: string; readonly data: string }[];
-    expect(rows.map((row) => [row.slug, row.path])).toEqual([
-      ['acme', '/x/acme'],
-      ['zulu', '/x/zulu'],
-    ]);
-    const repoIds = rows.map((row) => row.repo_id);
-    expect(new Set(repoIds).size).toBe(2);
-    for (const row of rows) {
-      expect(isUlid(row.repo_id)).toBe(true);
-      expect(JSON.parse(row.data)).toStrictEqual({
-        repoId: row.repo_id,
-        slug: row.slug,
-        path: row.path,
-        fingerprint: { rootCommit: '' },
-      });
-    }
-
-    // The projects table lost the column and the stored record lost $.mainRepo.
-    const columns = migrated.raw.prepare('PRAGMA table_info(projects)').all().map((column) => String((column as { readonly name: string }).name));
-    expect(columns).not.toContain('main_repo');
-
-    // The registry port reads the migrated rows as entries.
-    const registry = createSqliteRepoRegistry(migrated, async () => undefined);
-    expect(await registry.list()).toEqual([
-      { repoId: repoIds[0], slug: 'acme' as never, path: '/x/acme', fingerprint: { rootCommit: '' } },
-      { repoId: repoIds[1], slug: 'zulu' as never, path: '/x/zulu', fingerprint: { rootCommit: '' } },
-    ]);
-    closeDb(migrated);
-
-    // Opening again is a no-op: migration 11 does not re-run (the minted rows stay two).
-    const again = openOk(path);
-    expect(pragmaValue(again, 'user_version')).toBe(SUPPORTED_VERSION);
-    expect(await createSqliteRepoRegistry(again, async () => undefined).list()).toHaveLength(2);
-    closeDb(again);
-  });
-
-  it('R-126: a migrated ProjectDef carries no mainRepo', async () => {
-    const path = join(tmp, 'v10-project.db');
-    makeVersion10Database(path);
-
-    const migrated = openOk(path);
-    const listed: readonly ProjectDef[] = await createSqliteProjectRepo(migrated).list();
-
-    expect(listed).toEqual([{ id: 'atolye' as never, name: 'Atölye', repos: ['acme' as never, 'zulu' as never] }]);
-    expect('mainRepo' in (listed[0] as object)).toBe(false);
-    closeDb(migrated);
   });
 });

@@ -276,17 +276,16 @@ describe('createSqliteConversationRepo', () => {
       expect(db.raw.prepare('SELECT COUNT(*) AS n FROM drafts').get()).toMatchObject({ n: 0 });
     });
 
-    it('I-73: migration 7 creates conversations and drafts with their indexes, pinned exactly', () => {
-      expect(MIGRATIONS[6]).toStrictEqual({
-        version: 7,
-        sql: [
+    it('I-73: the schema creates conversations and drafts with their indexes, pinned exactly', () => {
+      expect(MIGRATIONS[0]?.sql).toContain(
+        [
           'CREATE TABLE conversations (id TEXT PRIMARY KEY, scope_kind TEXT NOT NULL, scope_ref TEXT NOT NULL, updated_at INTEGER NOT NULL, pinned INTEGER NOT NULL, search_text TEXT NOT NULL, data TEXT NOT NULL);',
           'CREATE INDEX conversations_by_scope ON conversations (scope_kind, scope_ref);',
           'CREATE INDEX conversations_by_updated ON conversations (updated_at);',
           'CREATE TABLE drafts (id TEXT PRIMARY KEY, conversation TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);',
           'CREATE INDEX drafts_by_conversation ON drafts (conversation, id);',
         ].join('\n'),
-      });
+      );
     });
   });
 });

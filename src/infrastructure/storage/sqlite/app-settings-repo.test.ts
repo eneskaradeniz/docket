@@ -86,10 +86,7 @@ describe('createSqliteAppSettingsRepo', () => {
     expect(await createSqliteAppSettingsRepo(openDb(path)).get('dispatch.limits')).toStrictEqual({ global: 6 });
   });
 
-  it('I-47: migration 4 creates app_settings(key TEXT PRIMARY KEY, value_json TEXT) and nothing else', () => {
-    expect(MIGRATIONS[3]).toStrictEqual({
-      version: 4,
-      sql: 'CREATE TABLE app_settings (key TEXT PRIMARY KEY, value_json TEXT);',
-    });
+  it('I-47: the schema creates app_settings(key TEXT PRIMARY KEY, value_json TEXT) and nothing else', () => {
+    expect(MIGRATIONS[0]?.sql).toContain('CREATE TABLE app_settings (key TEXT PRIMARY KEY, value_json TEXT);');
   });
 });

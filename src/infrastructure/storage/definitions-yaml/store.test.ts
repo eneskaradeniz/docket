@@ -179,10 +179,6 @@ describe('load', () => {
   });
 
   it('I-86: every definition is read and written under the ~/.docket layout', async () => {
-    // A repo-side .docket planted outside the root is invisible to the store, and the store's
-    // own answers all resolve inside the root's layout.
-    await writeYaml(besideRoot, '.docket/repo.yaml', repoDef(REPO));
-    await writeYaml(besideRoot, '.docket/roadmap.yaml', roadmapDef());
     await seedLoadableWorld();
     const store = makeStore();
     expect((await store.load(REPO)).ok).toBe(true);

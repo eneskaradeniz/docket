@@ -346,14 +346,8 @@ const git = (cwd, args) =>
     stdio: ['ignore', 'ignore', 'pipe'],
   });
 
-/** The throwaway repo: one commit carrying the .docket definitions of a one-stage flow whose only
- *  role has no capabilities. Written with the same files the real loader reads. */
-function buildRepo(repoDir, stringify) {
-  const write = (relative, value) => {
-    const target = join(repoDir, relative);
-    mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, stringify(value));
-  };
+/** The throwaway repo: one commit carrying README.md. */
+function buildRepo(repoDir) {
   mkdirSync(repoDir, { recursive: true });
   try {
     git(repoDir, ['init', '--quiet', '--initial-branch=main']);
@@ -361,8 +355,18 @@ function buildRepo(repoDir, stringify) {
     git(repoDir, ['init', '--quiet']);
   }
   writeFileSync(join(repoDir, 'README.md'), '# operator-run\n\nA throwaway repo for one real run.\n');
-  write('.docket/project.yaml', { id: 'operator-run', name: 'Operator run', mainRepo: 'operator-run-repo', repos: ['operator-run-repo'] });
-  write('.docket/repo.yaml', {
+  git(repoDir, ['add', '-A']);
+  git(repoDir, ['commit', '--quiet', '-m', 'operator-run seed']);
+}
+
+function seedDefinitions(dataDir, stringify) {
+  const write = (relative, value) => {
+    const target = join(dataDir, relative);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, stringify(value));
+  };
+  write('projects/operator-run/project.yaml', { id: 'operator-run', name: 'Operator run', mainRepo: 'operator-run-repo', repos: ['operator-run-repo'] });
+  write('repos/operator-run-repo/repo.yaml', {
     id: 'operator-run-repo',
     name: 'operator-run-repo',
     flows: ['single-run'],
@@ -372,12 +376,12 @@ function buildRepo(repoDir, stringify) {
     docsRoot: 'docs',
     testGlobs: [],
   });
-  write('.docket/flows/single-run.yaml', {
+  write('library/flows/single-run/v1.yaml', {
     id: 'single-run',
     name: 'Single run',
     stages: [{ id: 'run', name: 'Run', role: 'operator', exit: [] }],
   });
-  write('.docket/roles/operator.yaml', {
+  write('library/roles/operator/v1.yaml', {
     id: 'operator',
     name: 'Operator',
     instructions: PROMPT,
@@ -385,8 +389,6 @@ function buildRepo(repoDir, stringify) {
     capabilities: [],
     active: true,
   });
-  git(repoDir, ['add', '-A']);
-  git(repoDir, ['commit', '--quiet', '-m', 'operator-run seed']);
 }
 
 async function main() {
@@ -430,7 +432,8 @@ async function main() {
   };
 
   try {
-    buildRepo(repoDir, stringify);
+    buildRepo(repoDir);
+    seedDefinitions(dataDir, stringify);
 
     // Discovery runs over the one chosen provider only: its read-only probes (version, auth
     // status) are the only CLI calls before consent.

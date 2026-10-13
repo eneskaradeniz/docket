@@ -208,17 +208,14 @@ describe('createSqlitePageRepo', () => {
       expect(row).toMatchObject({ delivered_at: 77, version: 1, page: P1 });
     });
 
-    it('I-55: migration 6 creates pages and page_comments with their indexes, pinned exactly', () => {
-      expect(MIGRATIONS[5]).toStrictEqual({
-        version: 6,
-        sql: [
-          'CREATE TABLE pages (id TEXT PRIMARY KEY, work_order TEXT, project TEXT, data TEXT NOT NULL);',
-          'CREATE INDEX pages_by_work_order ON pages (work_order, id);',
-          'CREATE INDEX pages_by_project ON pages (project, id);',
-          'CREATE TABLE page_comments (id TEXT PRIMARY KEY, page TEXT NOT NULL, version INTEGER NOT NULL, delivered_at INTEGER, data TEXT NOT NULL);',
-          'CREATE INDEX page_comments_by_page ON page_comments (page, id);',
-        ].join('\n'),
-      });
+    it('I-55: the schema creates pages and page_comments with their indexes', () => {
+      expect(MIGRATIONS[0]?.sql).toContain(
+        'CREATE TABLE pages (id TEXT PRIMARY KEY, work_order TEXT, project TEXT, conversation TEXT, data TEXT NOT NULL);\n' +
+        'CREATE INDEX pages_by_work_order ON pages (work_order, id);\n' +
+        'CREATE INDEX pages_by_project ON pages (project, id);\n' +
+        'CREATE TABLE page_comments (id TEXT PRIMARY KEY, page TEXT NOT NULL, version INTEGER NOT NULL, delivered_at INTEGER, data TEXT NOT NULL);\n' +
+        'CREATE INDEX page_comments_by_page ON page_comments (page, id);',
+      );
     });
   });
 

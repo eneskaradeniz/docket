@@ -695,3 +695,13 @@ gone from the code; the rule texts above stand as history.
 - **I-97** (removed 2026-10-13, #1057) `RepoRegistryEntry.legacyImported` and the `legacy_imported` column are gone; migration 11 is edited in place (no data exists) and creates `repo_registry` without the column.
 - **I-86** (amended 2026-10-13, #1057) The exception clause "except through the one-time import (I-90)" is gone: the definition store never opens `<repo>/.docket/`, with no exception.
 - **I-93** (amended 2026-10-13, #1057) A migrated row no longer carries `legacy_imported = 0` — migration 11 creates `repo_registry` without the column (the in-place edit of I-97's removal); everything else in the rule stands.
+
+Addendum 2026-10-13 (#1058): repo-side `.docket/` traces are removed and definitions live
+exclusively under `~/.docket/`; SQLite migrations are consolidated into a single version-1 schema.
+The rule texts above stand untouched as history.
+
+- **I-11** (superseded by I-86/I-95, #1058) Target parsing accepts targets only under `~/.docket/` (I-95 grammar: `library/<kind>/<id>/v<N>.yaml`, `projects/<slug>/project.yaml`, `projects/<slug>/roadmap.yaml`, `repos/<slug>/repo.yaml`); repo-side reading/writing is gone.
+- **I-12** (superseded by I-86/I-95, #1058) `load(repo)` reads definitions exclusively from `~/.docket/` (`repos/<slug>/repo.yaml` and `library/`); repo-side `.docket/` reading and `ProjectPaths.mainRepoPath` are gone.
+- **I-14** (superseded by I-86/I-95, #1058) `loadRoadmap(project)` reads `~/.docket/projects/<project-slug>/roadmap.yaml`; repo-side main-repo reading/writing is gone.
+- **I-32** (superseded by I-86/I-95, #1058) Project loading reads `~/.docket/projects/<slug>/project.yaml`; repo-side `<path>/.docket/project.yaml` reading (`readProjectAt`) is gone.
+- **I-36** (superseded by I-86/I-95/I-96, #1058) Builtins install to `~/.docket/library/` (I-96); `scaffoldProject` writing repo-side `.docket/` is gone; only `RepoFolders.createRepo` stands.

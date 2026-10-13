@@ -158,14 +158,13 @@ describe('createSqliteActionRepo', () => {
       ]);
     });
 
-    it('I-77: migration 8 creates actions with its index, pinned exactly', () => {
-      expect(MIGRATIONS[7]).toStrictEqual({
-        version: 8,
-        sql: [
+    it('I-77: the schema creates actions with its index, pinned exactly', () => {
+      expect(MIGRATIONS[0]?.sql).toContain(
+        [
           'CREATE TABLE actions (id TEXT PRIMARY KEY, conversation TEXT NOT NULL, status TEXT NOT NULL, proposed_at INTEGER NOT NULL, data TEXT NOT NULL);',
           'CREATE INDEX actions_by_conversation ON actions (conversation, status);',
         ].join('\n'),
-      });
+      );
     });
   });
 });

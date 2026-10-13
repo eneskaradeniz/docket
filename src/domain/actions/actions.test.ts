@@ -212,7 +212,6 @@ describe('actions: validation (R-95, R-96, R-97)', () => {
   it('R-96: roadmap.yaml is never a definition target, in any scope, and a roadmap_edit never carries a target', () => {
     for (const scope of [{ kind: 'global' }, { kind: 'project', project: PROJECT }, { kind: 'repo', repo: 'app' }]) {
       expect(code(validateAction({ ...definitionEdit, scope, target: 'roadmap.yaml' }))).toBe('bad_action');
-      expect(code(validateAction({ ...definitionEdit, scope, target: '.docket/roadmap.yaml' }))).toBe('bad_action');
     }
     expect(validateAction({ ...roadmapEdit, target: 'flows/main.yaml' })).toEqual({ ok: true, value: roadmapEdit });
     const rebuilt = validateAction({ ...roadmapEdit, target: 'flows/main.yaml', scope: { kind: 'global' } });

@@ -107,10 +107,9 @@ describe('createSqlitePhaseAutoRunRepo', () => {
     expect(await createSqlitePhaseAutoRunRepo(openDb(path)).list()).toStrictEqual([record('atolye', 'p1', { attention: [WORK_ORDER] })]);
   });
 
-  it('I-49: migration 5 creates phase_auto_runs with primary key (project, phase) and an attention_json column', () => {
-    expect(MIGRATIONS[4]).toStrictEqual({
-      version: 5,
-      sql: 'CREATE TABLE phase_auto_runs (project TEXT NOT NULL, phase TEXT NOT NULL, state TEXT NOT NULL, started_at INTEGER NOT NULL, attention_json TEXT NOT NULL, PRIMARY KEY (project, phase));',
-    });
+  it('I-49: the schema creates phase_auto_runs with primary key (project, phase) and an attention_json column', () => {
+    expect(MIGRATIONS[0]?.sql).toContain(
+      'CREATE TABLE phase_auto_runs (project TEXT NOT NULL, phase TEXT NOT NULL, state TEXT NOT NULL, started_at INTEGER NOT NULL, attention_json TEXT NOT NULL, PRIMARY KEY (project, phase));',
+    );
   });
 });
