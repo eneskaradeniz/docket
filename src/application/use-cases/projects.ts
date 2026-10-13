@@ -1,11 +1,11 @@
 // use-cases/projects.ts — the Project & Repo layer (docs/v2/application.md rules A-24..A-26).
-// Attaching reads the project.yaml the checkout carries; membership is versioned truth that only
-// the file (or a proposal) edits — the registry and the project mirror follow it, never lead.
+// Attaching registers a machine-local registry entry and reads nothing from the folder; project
+// creation writes the library copies and the projects mirror only — the repo's own yaml arrives
+// with the legacy import or the setup proposal, never from here.
 import type {
   Actor,
   ProjectDef,
   ProjectSlug,
-  RepoDef,
   RepoSlug,
   Result,
   TaskSlug,
@@ -13,7 +13,6 @@ import type {
   WorkOrderId,
 } from '../../domain/index';
 import {
-  BUILTIN_COMMAND_SET_NAMES,
   BUILTIN_FLOWS,
   BUILTIN_ROLES,
   err,
@@ -22,11 +21,18 @@ import {
   validateDefinitions,
 } from '../../domain/index';
 
-import type { AppDeps } from '../ports/index';
+import type { AppDeps, RepoRegistryEntry } from '../ports/index';
 import { openWorkOrder, type OpenError } from './work-orders';
 
-// A-24 names repo_not_in_project in its rule text; the union carries it for the attach flow.
-export type AttachError = 'not_a_repo' | 'no_project_yaml' | 'definitions_invalid' | 'repo_not_in_project';
+// A folder that is not a git work tree is the one refusal attach itself can reach; everything
+// the folder carries arrives through the import, which attach only registers the entry for.
+export type AttachError = 'not_a_repo';
+
+/** The last path segment, pure string arithmetic — the layer owns no path module. */
+const folderNameOf = (path: string): string => {
+  const segments = path.split(/[\\/]/).filter((segment) => segment !== '');
+  return segments[segments.length - 1] ?? '';
+};
 
 /** Registers one machine-local entry for the slug: a first registration mints the repoId and
  *  records an unread fingerprint ('' until the app reads git); a re-registration re-points the
@@ -39,41 +45,28 @@ async function registerRepoEntry(deps: Pick<AppDeps, 'ids' | 'repos'>, slug: Rep
 }
 
 export async function attachProject(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'projects' | 'repos' | 'definitions' | 'git'>,
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'repos' | 'git'>,
   input: {
     readonly path: string;
     readonly actor: Actor;
-    readonly repos?: readonly { readonly repo: RepoSlug; readonly path: string }[];
   },
-): Promise<Result<ProjectDef, AttachError>> {
+): Promise<Result<RepoRegistryEntry, AttachError>> {
   if (!(await deps.git.isWorkTree(input.path))) return err('not_a_repo');
 
-  const read = await deps.definitions.readProjectAt(input.path);
-  if (!read.ok) {
-    // Only the absent file is its own answer; a broken project.yaml is a definitions failure.
-    const missing = read.error.length === 1 && read.error[0]?.path === 'project.yaml' && read.error[0]?.code === 'missing_field';
-    return err(missing ? 'no_project_yaml' : 'definitions_invalid');
-  }
-  const def = read.value;
-
-  // Every extra registration is validated before anything is written: a partial attach would
-  // leave a project pointing at checkouts the registry does not know.
-  const extras = input.repos ?? [];
-  for (const entry of extras) {
-    if (!def.repos.includes(entry.repo)) return err('repo_not_in_project');
-  }
-
-  await deps.projects.save(def);
-  await registerRepoEntry(deps, def.mainRepo, input.path);
-  for (const entry of extras) await registerRepoEntry(deps, entry.repo, entry.path);
+  const slug = slugFromName<'repo'>(folderNameOf(input.path), new Set());
+  const existing = (await deps.repos.list()).find((entry) => entry.slug === slug);
+  const entry: RepoRegistryEntry = existing === undefined
+    ? { repoId: deps.ids.next<'repo'>(), slug, path: input.path, fingerprint: { rootCommit: '' } }
+    : { ...existing, path: input.path };
+  await deps.repos.register(entry);
   await deps.log.append({
     id: deps.ids.next<'audit'>(),
     at: deps.clock.now(),
     actor: input.actor,
-    action: 'project.attached',
-    subject: { kind: 'project', id: def.id },
+    action: 'repo.registered',
+    subject: { kind: 'repo', id: slug },
   });
-  return ok(def);
+  return ok(entry);
 }
 
 export type CreateProjectSource =
@@ -90,7 +83,8 @@ const DEFAULT_FLOW = 'standard';
 /**
  * A-75..A-78: validates first, then writes in the contract's order. A folder this creates stays when a
  * later step fails (Docket never deletes a folder it showed the user), and built-in library copies in
- * the global root stay too — they are idempotent.
+ * the global root stay too — they are idempotent. No project.yaml or repo.yaml is written: the repo's
+ * definitions arrive with the setup proposal, so the interim leaves the run flow dormant by design.
  */
 export async function createProject(
   deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'projects' | 'repos' | 'definitions' | 'git' | 'repoFolders'>,
@@ -105,25 +99,21 @@ export async function createProject(
   const slug = slugFromName<'project'>(name, taken);
   const repoSlug = slugFromName<'repo'>(slug, new Set());
 
-  if (input.source.kind === 'existing' && !(await deps.git.isWorkTree(input.source.path))) return err('not_a_repo');
+  if (input.source.kind === 'existing') {
+    const source = input.source;
+    if (!(await deps.git.isWorkTree(source.path))) return err('not_a_repo');
+
+    // The folder a checkout names is already a registered repo: creating a second project over
+    // it is rejected — attaching or importing is the operation.
+    const registered = (await deps.repos.list()).find((entry) => entry.path === source.path);
+    if (registered !== undefined) return err('project_exists');
+  }
 
   const defaultFlow = BUILTIN_FLOWS.find((flow) => flow.id === DEFAULT_FLOW);
   if (defaultFlow === undefined) return err('definitions_invalid');
 
   const project: ProjectDef = { id: slug, name, mainRepo: repoSlug, repos: [repoSlug] };
-  const repo: RepoDef = {
-    id: repoSlug,
-    name,
-    flows: BUILTIN_FLOWS.map((flow) => flow.id),
-    defaultFlow: defaultFlow.id,
-    // Empty on purpose: a command gate on an empty set reads unknown and never passes, so the user
-    // writes the real commands; Docket never guesses a test command.
-    commandSets: Object.fromEntries(BUILTIN_COMMAND_SET_NAMES.map((setName) => [setName, [] as readonly string[]])),
-    roleOverrides: [],
-    docsRoot: 'docs',
-    testGlobs: [],
-  };
-  const checked = validateDefinitions({ roles: BUILTIN_ROLES, flows: BUILTIN_FLOWS, capabilities: [], project, repo });
+  const checked = validateDefinitions({ roles: BUILTIN_ROLES, flows: BUILTIN_FLOWS, capabilities: [], project });
   if (!checked.ok) return err('definitions_invalid');
 
   let path: string;
@@ -136,14 +126,8 @@ export async function createProject(
   }
 
   const installed = await deps.definitions.installBuiltins({ roles: BUILTIN_ROLES, flows: BUILTIN_FLOWS });
-  const scaffolded = await deps.definitions.scaffoldProject(path, project, repo);
-  if (!scaffolded.ok) {
-    if (scaffolded.error === 'project_yaml_exists') return err('project_exists');
-    if (scaffolded.error === 'repo_yaml_exists') return err('docket_folder_exists');
-    return err('io_failed');
-  }
-
-  // Before attachProject's own entry: the creation reads first in the history.
+  await deps.projects.save(project);
+  await registerRepoEntry(deps, repoSlug, path);
   await deps.log.append({
     id: deps.ids.next<'audit'>(),
     at: deps.clock.now(),
@@ -152,7 +136,7 @@ export async function createProject(
     subject: { kind: 'project', id: slug },
     detail: { source: input.source.kind, builtinsWritten: installed.written.length },
   });
-  return attachProject(deps, { path, actor: input.actor });
+  return ok(project);
 }
 
 export type RepoRegistrationError = 'unknown_project' | 'repo_not_in_project' | 'repo_in_use';
@@ -222,7 +206,12 @@ export async function openTaskWorkOrders(
   const task = roadmap.value.phases.flatMap((phase) => phase.tasks).find((candidate) => candidate.id === input.task);
   if (task === undefined) return err('unknown_task');
 
-  const targets = task.targets.length > 0 ? task.targets : [project.mainRepo];
+  // A task without targets means the project's only repo; a project that lists more than one
+  // cannot pick one silently, and the roadmap validator's own refusal is the roadmap model's to
+  // report — this transitional mapping answers definitions_invalid until then.
+  const onlyRepo = project.repos.length === 1 ? project.repos[0] : undefined;
+  const targets = task.targets.length > 0 ? [...task.targets] : onlyRepo === undefined ? undefined : [onlyRepo];
+  if (targets === undefined) return err('definitions_invalid');
 
   // Dry-run every opening against ports that refuse the first write: any error surfaces here,
   // before a single real work order exists (A-25's all-or-nothing). Reaching `create` means the

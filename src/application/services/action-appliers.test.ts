@@ -712,7 +712,10 @@ describe('undoing a proposal (A-194)', () => {
     const h = await makeHarness({}, (store) => ({
       ...store,
       writeFile: async (scope, target, content, expectedHash) => {
-        if (content === ROADMAP_BEFORE) store.seed(scope, target, JSON.stringify({ phases: [], race: true }));
+        if (content === ROADMAP_BEFORE) {
+          if (typeof scope === 'string') store.seed(target, JSON.stringify({ phases: [], race: true }));
+          else store.seed(scope, target, JSON.stringify({ phases: [], race: true }));
+        }
         return store.writeFile(scope, target, content, expectedHash);
       },
     }));

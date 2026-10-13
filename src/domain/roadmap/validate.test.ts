@@ -251,6 +251,11 @@ describe('validateRoadmap', () => {
     expect(validateRoadmap(doc([phase('p-1', [task('t-1', [], { targets: ['docket', 'ghost'] })])])).ok).toBe(true);
   });
 
+  it('R-139: a task ref naming a repo outside project.repos is unknown_repo', () => {
+    const issues = expectErr(validateRoadmap(doc([phase('p-1', [task('t-1', [], { targets: ['ghost'] })])]), project()));
+    expect(issueWithCode(issues, 'unknown_repo')?.path).toBe('phases[0].tasks[0].targets[0]');
+  });
+
   it('R-47: absent or empty targets default to [project.mainRepo]; written targets survive', () => {
     const value = expectOk(
       validateRoadmap(

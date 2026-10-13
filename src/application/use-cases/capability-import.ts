@@ -82,8 +82,8 @@ export async function importCapabilities(
           } else {
             // JSON is the one serialisation both stores parse — YAML's flow syntax for the real
             // store's validator, plain JSON for the fake's.
-            const target = `capabilities/${id}.yaml`;
-            const validated = await deps.definitions.validateCandidate({ kind: 'global' }, target, JSON.stringify(mapped.value));
+            const target = `library/capabilities/${id}/v1.yaml`;
+            const validated = await deps.definitions.validateCandidate(target, JSON.stringify(mapped.value));
             if (!validated.ok) {
               settle(identity, { identity, status: 'rejected', reason: 'invalid_definition' });
             } else {

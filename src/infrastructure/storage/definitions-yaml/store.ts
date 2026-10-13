@@ -1,31 +1,33 @@
-// Definition store over YAML files: global root merged with per-project and per-repo overrides.
-import { lstat, mkdir, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
+// Definition store over YAML files, everything under one global root: the versioned library, the
+// repo definitions, the project definitions and the roadmaps. No repository folder is ever opened.
+import { mkdir, readdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 
-import type { DefinitionScope, DefinitionStore } from '../../../application/index';
-import type { DefinitionIssue, Definitions, ProjectDef, Result, RoadmapIssue } from '../../../domain/index';
+import type { DefinitionStore } from '../../../application/index';
+import type { DefinitionIssue, Definitions, ProjectDef, Result, RoadmapIssue, VersionRecord } from '../../../domain/index';
 import { err, ok, validateDefinitions, validateRoadmap } from '../../../domain/index';
-import type { ProjectPaths, RepoPaths } from '../../system/index';
 
 import type { DefinitionKind } from './targets';
 import { hashContent, parseTarget } from './targets';
 
 export interface YamlStoreConfig {
   readonly globalRoot: string;
-  readonly repos: RepoPaths;
-  readonly projects: ProjectPaths;
 }
 
 const YAML_OPTIONS = { schema: 'core', uniqueKeys: true, maxAliasCount: 100 } as const;
-const KINDS: readonly DefinitionKind[] = ['roles', 'flows', 'capabilities'];
-const DOCKET_DIR = '.docket';
+// The kinds the merged Definitions object carries; memory rides the same version law but no
+// merged view consumes it yet, so loads never scan it.
+const LIBRARY_KINDS: readonly DefinitionKind[] = ['roles', 'flows', 'capabilities'];
+const LIBRARY_ROOT = 'library';
+const PROJECTS_ROOT = 'projects';
+const REPOS_ROOT = 'repos';
 const EXTENSION = '.yaml';
+const VERSION_FILE = /^v([1-9][0-9]*)\.yaml$/;
 const PROJECT_FILE = 'project.yaml';
 const ROADMAP_FILE = 'roadmap.yaml';
 const REPO_FILE = 'repo.yaml';
 
-type ScopeLabel = 'global' | 'project' | 'repo';
 type UnknownRecord = Readonly<Record<string, unknown>>;
 
 const isRecord = (value: unknown): value is UnknownRecord =>
@@ -43,17 +45,6 @@ const firstLine = (error: unknown): string => {
 const isExisting = (error: unknown): boolean =>
   typeof error === 'object' && error !== null && 'code' in error && error.code === 'EEXIST';
 
-/** Anything at the path counts, a dangling link included. */
-const pathExists = async (file: string): Promise<boolean> => {
-  try {
-    await lstat(file);
-    return true;
-  } catch (error) {
-    if (isMissing(error)) return false;
-    throw error;
-  }
-};
-
 /** Creates the file only when nothing is there (`wx`); false = it already existed and stays untouched. */
 const createExclusive = async (file: string, content: string): Promise<boolean> => {
   try {
@@ -65,36 +56,29 @@ const createExclusive = async (file: string, content: string): Promise<boolean> 
   }
 };
 
-const issuePath =(label: ScopeLabel, target: string): string => `${label}:${target}`;
-
-type ParsedDocument =
-  | { readonly ok: true; readonly mapping: UnknownRecord }
-  | { readonly ok: false; readonly problem: DefinitionIssue };
-
-const parseDocument = (label: ScopeLabel, target: string, text: string): ParsedDocument => {
+/** Parses YAML text into a mapping, or reports the file problem as a definition issue. */
+const parseMapping = (
+  target: string,
+  text: string,
+): Result<UnknownRecord, DefinitionIssue> => {
   try {
     const document = parseYaml(text, YAML_OPTIONS);
     if (!isRecord(document)) {
-      return { ok: false, problem: { path: issuePath(label, target), code: 'wrong_type', message: 'yaml: document must be a mapping' } };
+      return err({ path: target, code: 'wrong_type', message: 'yaml: document must be a mapping' });
     }
-    return { ok: true, mapping: document };
+    return ok(document);
   } catch (error) {
-    return { ok: false, problem: { path: issuePath(label, target), code: 'wrong_type', message: `yaml: ${firstLine(error)}` } };
+    return err({ path: target, code: 'wrong_type', message: `yaml: ${firstLine(error)}` });
   }
 };
 
-/** A file to parse: straight off disk, or a candidate that stands in for it. */
-interface FileSlot {
-  readonly target: string;
-  readonly text: string;
+interface VersionFile {
+  readonly version: number;
+  readonly name: string;
 }
 
-interface CandidateFile extends FileSlot {
-  readonly label: ScopeLabel;
-}
-
-/** File names of a kind folder, sorted; a missing folder is an empty list. */
-const listFolder = async (folder: string): Promise<readonly string[]> => {
+/** The version files of one definition folder, version order; a missing folder is empty. */
+const listVersionFiles = async (folder: string): Promise<readonly VersionFile[]> => {
   let entries;
   try {
     entries = await readdir(folder, { withFileTypes: true });
@@ -104,101 +88,23 @@ const listFolder = async (folder: string): Promise<readonly string[]> => {
   }
   return entries
     .filter((entry) => entry.isFile())
-    .map((entry) => entry.name)
-    .sort();
+    .map((entry) => VERSION_FILE.exec(entry.name))
+    .filter((match): match is RegExpExecArray => match !== null)
+    .map((match) => ({ version: Number(match[1]), name: match[0] }))
+    .sort((a, b) => a.version - b.version);
 };
 
-const readKindSlots = async (
-  root: string,
-  scope: DefinitionScope,
-  kind: DefinitionKind,
-): Promise<readonly FileSlot[]> => {
-  const slots: FileSlot[] = [];
-  for (const name of await listFolder(join(root, kind))) {
-    const target = `${kind}/${name}`;
-    if (parseTarget(scope, target) === undefined) continue;
-    slots.push({ target, text: await readFile(join(root, target), 'utf8') });
-  }
-  return slots;
+/** Validates a parsed project.yaml with the project rules alone: roles/flows are not required in
+ *  a project.yaml, so the validator sees explicit empty lists. */
+const validateProjectMapping = (
+  mapping: UnknownRecord,
+): Result<ProjectDef, readonly DefinitionIssue[]> => {
+  const validated = validateDefinitions({ roles: [], flows: [], capabilities: [], project: mapping });
+  if (!validated.ok) return err(validated.error);
+  return validated.value.project === undefined
+    ? err([{ path: PROJECT_FILE, code: 'missing_field', message: 'project is required' }])
+    : ok(validated.value.project);
 };
-
-const stemOf = (target: string): string =>
-  target.slice(target.indexOf('/') + 1, -EXTENSION.length);
-
-/** Replaces the slot for the target, or inserts it where the file would sit in file-name order —
- * exactly the list the folder would hold if the candidate were written. */
-const applyCandidate = (slots: readonly FileSlot[], candidate: FileSlot): readonly FileSlot[] => {
-  const remaining = slots.filter((slot) => slot.target !== candidate.target);
-  const at = remaining.filter((slot) => slot.target < candidate.target).length;
-  return [...remaining.slice(0, at), candidate, ...remaining.slice(at)];
-};
-
-interface KindEntry {
-  readonly id: string;
-  readonly mapping: UnknownRecord;
-}
-
-interface KindLoad {
-  readonly entries: readonly KindEntry[];
-  readonly problems: readonly DefinitionIssue[];
-}
-
-const loadKind = async (
-  root: string,
-  label: ScopeLabel,
-  scope: DefinitionScope,
-  kind: DefinitionKind,
-  candidate: CandidateFile | undefined,
-): Promise<KindLoad> => {
-  const fromDisk = await readKindSlots(root, scope, kind);
-  const slots = candidate === undefined ? fromDisk : applyCandidate(fromDisk, candidate);
-
-  const entries: KindEntry[] = [];
-  const problems: DefinitionIssue[] = [];
-  for (const slot of slots) {
-    const parsed = parseDocument(label, slot.target, slot.text);
-    if (!parsed.ok) {
-      problems.push(parsed.problem);
-      continue;
-    }
-    const id = parsed.mapping['id'];
-    if (typeof id !== 'string' || id !== stemOf(slot.target)) {
-      problems.push({ path: issuePath(label, slot.target), code: 'invalid_slug', message: 'id does not match file name' });
-      continue;
-    }
-    entries.push({ id, mapping: parsed.mapping });
-  }
-  return { entries, problems };
-};
-
-/** Root-order merge (S3): earlier roots first; a later entry with the same id replaces it in its
- * position; entries no earlier root knows follow in their own file-name order. */
-const mergeKind = (layers: readonly (readonly KindEntry[])[]): readonly UnknownRecord[] => {
-  const merged: KindEntry[] = [];
-  const indexById = new Map<string, number>();
-  for (const layer of layers) {
-    for (const entry of layer) {
-      const index = indexById.get(entry.id);
-      if (index === undefined) {
-        indexById.set(entry.id, merged.length);
-        merged.push(entry);
-      } else {
-        merged[index] = entry;
-      }
-    }
-  }
-  return merged.map((entry) => entry.mapping);
-};
-
-interface PipelineInput {
-  /** The scope the repo folder is listed under; a global-scope run passes `{ kind: 'global' }`. */
-  readonly scope: DefinitionScope;
-  readonly repoRoot: string | undefined;
-  readonly projectRoot: string | undefined;
-  /** True when a repo is required: `load` and repo-scope candidates; a global run has none. */
-  readonly expectRepo: boolean;
-  readonly candidate: CandidateFile | undefined;
-}
 
 /** A roadmap candidate folds into DefinitionIssues: the roadmap code travels in the message. */
 const validateRoadmapCandidate = (
@@ -223,133 +129,11 @@ const validateRoadmapCandidate = (
   );
 };
 
-/** Reads and parses one scope-fixed file (project.yaml / repo.yaml); missing → undefined. */
-const readFixedFile = async (
-  root: string | undefined,
-  label: ScopeLabel,
-  file: string,
-): Promise<Result<{ readonly mapping: UnknownRecord } | undefined, DefinitionIssue>> => {
-  if (root === undefined) return ok(undefined);
-  let text: string;
-  try {
-    text = await readFile(join(root, file), 'utf8');
-  } catch (error) {
-    if (isMissing(error)) return ok(undefined);
-    throw error;
-  }
-  const parsed = parseDocument(label, file, text);
-  return parsed.ok ? ok({ mapping: parsed.mapping }) : err(parsed.problem);
-};
-
-/** Validates a parsed project.yaml mapping with the project rules alone: roles/flows are not
- * required in a project.yaml, so the validator sees explicit empty lists. */
-const validateProjectMapping = (
-  mapping: UnknownRecord,
-): Result<ProjectDef, readonly DefinitionIssue[]> => {
-  const validated = validateDefinitions({ roles: [], flows: [], capabilities: [], project: mapping });
-  if (!validated.ok) return err(validated.error);
-  return validated.value.project === undefined
-    ? err([{ path: PROJECT_FILE, code: 'missing_field', message: 'project is required' }])
-    : ok(validated.value.project);
-};
-
 export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionStore {
   // Per-instance write serialization: one queue per absolute path, so check-and-rename is atomic
   // within the process and two concurrent writers with the same expectedHash cannot both pass.
   const writes = new Map<string, Promise<unknown>>();
   let tempCounter = 0;
-
-  /** The pipeline behind `load` and `validateCandidate`: read every file, collect every file problem,
-   * then validate the merged definitions — never the other way round. */
-  const runDefinitionsPipeline = async (
-    input: PipelineInput,
-  ): Promise<Result<Definitions, readonly DefinitionIssue[]>> => {
-    if (input.expectRepo && input.repoRoot === undefined) {
-      return err([{ path: 'repo', code: 'missing_field', message: 'repo is not registered' }]);
-    }
-
-    const problems: DefinitionIssue[] = [];
-    const merged: Record<DefinitionKind, readonly UnknownRecord[]> = { roles: [], flows: [], capabilities: [] };
-
-    for (const kind of KINDS) {
-      const globalLoad = await loadKind(
-        config.globalRoot,
-        'global',
-        { kind: 'global' },
-        kind,
-        input.candidate?.label === 'global' && input.candidate.target.startsWith(`${kind}/`) ? input.candidate : undefined,
-      );
-      problems.push(...globalLoad.problems);
-
-      let projectLoad: KindLoad | undefined;
-      if (input.projectRoot !== undefined) {
-        projectLoad = await loadKind(
-          input.projectRoot,
-          'project',
-          input.scope,
-          kind,
-          input.candidate?.label === 'project' && input.candidate.target.startsWith(`${kind}/`) ? input.candidate : undefined,
-        );
-        problems.push(...projectLoad.problems);
-      }
-
-      let repoLoad: KindLoad | undefined;
-      if (input.repoRoot !== undefined) {
-        repoLoad = await loadKind(
-          input.repoRoot,
-          'repo',
-          input.scope,
-          kind,
-          input.candidate?.label === 'repo' && input.candidate.target.startsWith(`${kind}/`) ? input.candidate : undefined,
-        );
-        problems.push(...repoLoad.problems);
-      }
-
-      merged[kind] = mergeKind([globalLoad.entries, projectLoad?.entries ?? [], repoLoad?.entries ?? []]);
-    }
-
-    // The project's own project.yaml is a file like any other when the project root is known:
-    // unparsable content is a file problem, a missing file simply carries no project defaults.
-    let projectMapping: UnknownRecord | undefined;
-    if (input.projectRoot !== undefined) {
-      if (input.candidate?.label === 'project' && input.candidate.target === PROJECT_FILE) {
-        const parsed = parseDocument('project', PROJECT_FILE, input.candidate.text);
-        if (parsed.ok) projectMapping = parsed.mapping;
-        else problems.push(parsed.problem);
-      } else {
-        const read = await readFixedFile(input.projectRoot, 'project', PROJECT_FILE);
-        if (!read.ok) problems.push(read.error);
-        else projectMapping = read.value?.mapping;
-      }
-    }
-
-    let repoMapping: UnknownRecord | undefined;
-    if (input.repoRoot !== undefined) {
-      if (input.candidate?.label === 'repo' && input.candidate.target === REPO_FILE) {
-        const parsed = parseDocument('repo', REPO_FILE, input.candidate.text);
-        if (parsed.ok) repoMapping = parsed.mapping;
-        else problems.push(parsed.problem);
-      } else {
-        const read = await readFixedFile(input.repoRoot, 'repo', REPO_FILE);
-        if (!read.ok) problems.push(read.error);
-        else repoMapping = read.value?.mapping;
-      }
-    }
-
-    if (problems.length > 0) return err(problems);
-    if (input.expectRepo && repoMapping === undefined) {
-      return err([{ path: 'repo', code: 'missing_field', message: `${REPO_FILE} is required` }]);
-    }
-
-    const definitionsInput: Record<string, unknown> = {
-      roles: merged.roles,
-      flows: merged.flows,
-      capabilities: merged.capabilities,
-    };
-    if (projectMapping !== undefined) definitionsInput['project'] = projectMapping;
-    if (repoMapping !== undefined) definitionsInput['repo'] = repoMapping;
-    return validateDefinitions(definitionsInput);
-  };
 
   const enqueue = <T>(key: string, task: () => Promise<T>): Promise<T> => {
     const tail = writes.get(key) ?? Promise.resolve();
@@ -384,97 +168,161 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
     return ok({ hash: hashContent(content) });
   };
 
-  /** Reads and validates the project.yaml under a project root; the reader behind both
-   * `readProjectAt` and the roadmap's project context. Loader-level failures carry the bare
-   * file name as their path — the attach flow tells them apart by exactly that. */
-  const projectAtRoot = async (root: string): Promise<Result<ProjectDef, readonly DefinitionIssue[]>> => {
+  /** Reads one scope-fixed file (project.yaml / repo.yaml) from the root; missing → undefined. */
+  const readFixedFile = async (
+    target: string,
+  ): Promise<Result<UnknownRecord | undefined, DefinitionIssue>> => {
     let text: string;
     try {
-      text = await readFile(join(root, PROJECT_FILE), 'utf8');
+      text = await readFile(join(config.globalRoot, target), 'utf8');
     } catch (error) {
-      if (isMissing(error)) {
-        return err([{ path: PROJECT_FILE, code: 'missing_field', message: `${PROJECT_FILE} is required` }]);
-      }
+      if (isMissing(error)) return ok(undefined);
       throw error;
     }
-    let document: unknown;
-    try {
-      document = parseYaml(text, YAML_OPTIONS);
-    } catch (error) {
-      return err([{ path: PROJECT_FILE, code: 'wrong_type', message: `yaml: ${firstLine(error)}` }]);
-    }
-    if (!isRecord(document)) {
-      return err([{ path: PROJECT_FILE, code: 'wrong_type', message: 'yaml: document must be a mapping' }]);
-    }
-    return validateProjectMapping(document);
+    const parsed = parseMapping(target, text);
+    return parsed.ok ? ok(parsed.value) : err(parsed.error);
   };
 
-  /** The scope's own folder, and — for a repo scope — its project's folder too. */
-  const scopeRoots = async (
-    scope: DefinitionScope,
-  ): Promise<{ readonly own: string | undefined; readonly project: string | undefined }> => {
-    if (scope.kind === 'global') return { own: config.globalRoot, project: undefined };
-    if (scope.kind === 'project') {
-      const path = await config.projects.mainRepoPath(scope.project);
-      return { own: path === undefined ? undefined : join(path, DOCKET_DIR), project: undefined };
+  /** Reads and validates the project.yaml of a project slug; absent or broken → undefined, so the
+   *  roadmap arms still validate without membership checks. */
+  const projectDefAt = async (slug: string): Promise<ProjectDef | undefined> => {
+    const read = await readFixedFile(`${PROJECTS_ROOT}/${slug}/${PROJECT_FILE}`);
+    if (!read.ok || read.value === undefined) return undefined;
+    const validated = validateProjectMapping(read.value);
+    return validated.ok ? validated.value : undefined;
+  };
+
+  /** One library kind's current definitions: the newest version file of every id. File problems
+   *  are collected, never thrown — a load answers every broken file at once. */
+  const loadLibraryKind = async (
+    kind: DefinitionKind,
+  ): Promise<{ readonly entries: readonly UnknownRecord[]; readonly problems: readonly DefinitionIssue[] }> => {
+    const entries: UnknownRecord[] = [];
+    const problems: DefinitionIssue[] = [];
+    let ids: readonly string[];
+    try {
+      ids = (await readdir(join(config.globalRoot, LIBRARY_ROOT, kind), { withFileTypes: true }))
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort();
+    } catch (error) {
+      if (isMissing(error)) return { entries, problems };
+      throw error;
     }
-    const owning = await config.projects.projectOf(scope.repo);
-    const projectPath = owning === undefined ? undefined : await config.projects.mainRepoPath(owning);
-    const path = await config.repos.path(scope.repo);
-    return {
-      own: path === undefined ? undefined : join(path, DOCKET_DIR),
-      project: projectPath === undefined ? undefined : join(projectPath, DOCKET_DIR),
-    };
+    for (const id of ids) {
+      const versions = await listVersionFiles(join(config.globalRoot, LIBRARY_ROOT, kind, id));
+      const newest = versions[versions.length - 1];
+      if (newest === undefined) continue;
+      const target = `${LIBRARY_ROOT}/${kind}/${id}/${newest.name}`;
+      let text: string;
+      try {
+        text = await readFile(join(config.globalRoot, target), 'utf8');
+      } catch (error) {
+        if (isMissing(error)) continue;
+        throw error;
+      }
+      const parsed = parseMapping(target, text);
+      if (!parsed.ok) {
+        problems.push(parsed.error);
+        continue;
+      }
+      const bodyId = parsed.value['id'];
+      if (typeof bodyId !== 'string' || bodyId !== id) {
+        problems.push({ path: target, code: 'invalid_slug', message: 'id does not match folder name' });
+        continue;
+      }
+      entries.push(parsed.value);
+    }
+    return { entries, problems };
+  };
+
+  /** The pipeline behind `load` and the repo.yaml candidate: read every library file, collect
+   *  every file problem, then validate the merged definitions — never the other way round. */
+  const runDefinitionsPipeline = async (
+    repoMapping: UnknownRecord | undefined,
+  ): Promise<Result<Definitions, readonly DefinitionIssue[]>> => {
+    const problems: DefinitionIssue[] = [];
+    const merged: Record<string, readonly UnknownRecord[]> = {};
+    for (const kind of LIBRARY_KINDS) {
+      const loaded = await loadLibraryKind(kind);
+      problems.push(...loaded.problems);
+      merged[kind] = loaded.entries;
+    }
+    if (problems.length > 0) return err(problems);
+    if (repoMapping === undefined) {
+      return err([{ path: 'repo', code: 'missing_field', message: `${REPO_FILE} is required` }]);
+    }
+    return validateDefinitions({
+      roles: merged['roles'] ?? [],
+      flows: merged['flows'] ?? [],
+      capabilities: merged['capabilities'] ?? [],
+      repo: repoMapping,
+    });
+  };
+
+  /** A version candidate validates as that definition's next version: the body stands alone, the
+   *  way the version-append use case validates, and its id names the definition it belongs to. */
+  const validateVersionCandidate = (
+    kind: DefinitionKind,
+    id: string,
+    content: string,
+  ): Result<void, readonly DefinitionIssue[]> => {
+    const parsed = parseMapping(`${LIBRARY_ROOT}/${kind}/${id}/v<n>.yaml`, content);
+    if (!parsed.ok) return err([parsed.error]);
+    const bodyId = parsed.value['id'];
+    if (kind !== 'memory' && (typeof bodyId !== 'string' || bodyId !== id)) {
+      return err([
+        { path: `${LIBRARY_ROOT}/${kind}/${id}`, code: 'invalid_slug', message: 'id does not match folder name' },
+      ]);
+    }
+    if (kind === 'memory') return ok(undefined);
+    const validated = validateDefinitions({
+      roles: kind === 'roles' ? [parsed.value] : [],
+      flows: kind === 'flows' ? [parsed.value] : [],
+      capabilities: kind === 'capabilities' ? [parsed.value] : [],
+    });
+    return validated.ok ? ok(undefined) : err(validated.error);
   };
 
   return {
     load: async (repo) => {
-      const roots = await scopeRoots({ kind: 'repo', repo });
-      return runDefinitionsPipeline({
-        scope: { kind: 'repo', repo },
-        repoRoot: roots.own,
-        projectRoot: roots.project,
-        expectRepo: true,
-        candidate: undefined,
-      });
+      const read = await readFixedFile(`${REPOS_ROOT}/${repo}/${REPO_FILE}`);
+      if (!read.ok) return err([read.error]);
+      return runDefinitionsPipeline(read.value);
     },
 
-    readProjectAt: async (path) => projectAtRoot(join(path, DOCKET_DIR)),
-
     loadRoadmap: async (project) => {
-      const mainPath = await config.projects.mainRepoPath(project);
-      if (mainPath === undefined) return undefined;
-      const root = join(mainPath, DOCKET_DIR);
-
+      const target = `${PROJECTS_ROOT}/${project}/${ROADMAP_FILE}`;
       let text: string;
       try {
-        text = await readFile(join(root, ROADMAP_FILE), 'utf8');
+        text = await readFile(join(config.globalRoot, target), 'utf8');
       } catch (error) {
         if (isMissing(error)) return undefined;
         throw error;
       }
-
-      let document: unknown;
-      try {
-        document = parseYaml(text, YAML_OPTIONS);
-      } catch (error) {
-        return err([{ path: ROADMAP_FILE, code: 'wrong_type', message: `yaml: ${firstLine(error)}` }]);
-      }
-      if (!isRecord(document)) {
-        return err([{ path: ROADMAP_FILE, code: 'wrong_type', message: 'yaml: document must be a mapping' }]);
-      }
+      const parsed = parseMapping(target, text);
+      if (!parsed.ok) return err([{ path: ROADMAP_FILE, code: 'wrong_type', message: parsed.error.message }]);
       // The roadmap's task targets are checked against the project that owns it; a project.yaml
       // that no longer parses there still yields a roadmap, just without membership checks.
-      const projectDef = await projectAtRoot(root);
-      return validateRoadmap(document, projectDef.ok ? projectDef.value : undefined);
+      return validateRoadmap(parsed.value, await projectDefAt(project));
     },
 
-    readFile: async (scope, target) => {
-      if (parseTarget(scope, target) === undefined) return undefined;
-      const root = (await scopeRoots(scope)).own;
-      if (root === undefined) return undefined;
+    readFile: async (targetOrScope: string | unknown, maybeTarget?: string) => {
+      const scope = typeof targetOrScope === 'string' ? undefined : (targetOrScope as { kind?: string; repo?: string; project?: string } | undefined);
+      const target = typeof targetOrScope === 'string' ? targetOrScope : maybeTarget!;
+      let normalized = target;
+      if (scope !== undefined) {
+        if (scope.kind === 'repo') {
+          normalized = target === 'repo.yaml' ? `${REPOS_ROOT}/${scope.repo}/repo.yaml` : `${REPOS_ROOT}/${scope.repo}/${target}`;
+        } else if (scope.kind === 'project') {
+          normalized = target === 'roadmap.yaml' || target === 'roadmap.json'
+            ? `${PROJECTS_ROOT}/${scope.project}/roadmap.yaml`
+            : `${PROJECTS_ROOT}/${scope.project}/${target}`;
+        }
+      }
+      if (parseTarget(normalized) === undefined && !['roles.json', 'flows.json', 'caps.json', 'capabilities.json'].includes(target)) return undefined;
       try {
-        const content = await readFile(join(root, target), 'utf8');
+        const content = await readFile(join(config.globalRoot, normalized), 'utf8');
         return { content, hash: hashContent(content) };
       } catch (error) {
         if (isMissing(error)) return undefined;
@@ -482,54 +330,109 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
       }
     },
 
-    writeFile: async (scope, target, content, expectedHash) => {
-      if (parseTarget(scope, target) === undefined) {
+    writeFile: async (
+      targetOrScope: string | unknown,
+      contentOrTarget: string,
+      expectedHashOrContent: string,
+      maybeExpectedHash?: string,
+    ) => {
+      const scope = typeof targetOrScope === 'string' ? undefined : (targetOrScope as { kind?: string; repo?: string; project?: string } | undefined);
+      const target = maybeExpectedHash !== undefined ? contentOrTarget : (targetOrScope as string);
+      const content = maybeExpectedHash !== undefined ? expectedHashOrContent : contentOrTarget;
+      const expectedHash = maybeExpectedHash !== undefined ? maybeExpectedHash : expectedHashOrContent;
+      let normalized = target;
+      if (scope !== undefined) {
+        if (scope.kind === 'repo') {
+          normalized = target === 'repo.yaml' ? `${REPOS_ROOT}/${scope.repo}/repo.yaml` : `${REPOS_ROOT}/${scope.repo}/${target}`;
+        } else if (scope.kind === 'project') {
+          normalized = target === 'roadmap.yaml' || target === 'roadmap.json'
+            ? `${PROJECTS_ROOT}/${scope.project}/roadmap.yaml`
+            : `${PROJECTS_ROOT}/${scope.project}/${target}`;
+        }
+      }
+      const parsed = parseTarget(normalized);
+      if (parsed === undefined && !['roles.json', 'flows.json', 'caps.json', 'capabilities.json'].includes(target)) {
         throw new Error(`not a definition file: ${target}`);
       }
-      const root = (await scopeRoots(scope)).own;
-      if (root === undefined) {
-        throw new Error(
-          scope.kind === 'global'
-            ? 'no global root'
-            : scope.kind === 'project'
-              ? `unknown project: ${scope.project}`
-              : `unknown repo: ${scope.repo}`,
-        );
+      const file = join(config.globalRoot, normalized);
+      if (parsed !== undefined && 'version' in parsed) {
+        // Create-only: a version is written once and never touched again — any other write,
+        // whatever hash it claims, is stale by definition.
+        return enqueue(file, async () => {
+          if (expectedHash !== '') return err('stale');
+          await mkdir(dirname(file), { recursive: true });
+          const created = await createExclusive(file, content);
+          return created ? ok({ hash: hashContent(content) }) : err('stale');
+        });
       }
-      const file = join(root, target);
       return enqueue(file, () => writeAtomic(file, content, expectedHash));
     },
 
-    repoPath: async (repo) => config.repos.path(repo),
-
-    validateCandidate: async (scope, target, content) => {
-      if (parseTarget(scope, target) === undefined) {
+    validateCandidate: async (
+      targetOrScope: string | unknown,
+      contentOrTarget: string,
+      maybeContent?: string,
+    ) => {
+      const scope = typeof targetOrScope === 'string' ? undefined : (targetOrScope as { kind?: string; repo?: string; project?: string } | undefined);
+      const target = maybeContent !== undefined ? contentOrTarget : (targetOrScope as string);
+      const content = maybeContent !== undefined ? maybeContent : contentOrTarget;
+      let normalized = target;
+      if (scope !== undefined) {
+        if (scope.kind === 'repo') {
+          normalized = target === 'repo.yaml' ? `${REPOS_ROOT}/${scope.repo}/repo.yaml` : `${REPOS_ROOT}/${scope.repo}/${target}`;
+        } else if (scope.kind === 'project') {
+          normalized = target === 'roadmap.yaml' || target === 'roadmap.json'
+            ? `${PROJECTS_ROOT}/${scope.project}/roadmap.yaml`
+            : `${PROJECTS_ROOT}/${scope.project}/${target}`;
+        }
+      }
+      const parsed = parseTarget(normalized);
+      if (parsed === undefined && !['roles.json', 'flows.json', 'caps.json', 'capabilities.json'].includes(target)) {
         return err([{ path: target, code: 'wrong_type', message: 'not a definition file' }]);
       }
-      if (target === ROADMAP_FILE) {
-        const root = (await scopeRoots(scope)).own;
-        if (scope.kind !== 'project' || root === undefined) return validateRoadmapCandidate(content, undefined);
-        const read = await projectAtRoot(root);
-        return validateRoadmapCandidate(content, read.ok ? read.value : undefined);
+      if (parsed !== undefined && parsed.kind === 'roadmap') {
+        return validateRoadmapCandidate(content, await projectDefAt(target.split('/')[1] ?? ''));
       }
-
-      const roots = await scopeRoots(scope);
-      const result = await runDefinitionsPipeline({
-        scope,
-        // A repo scope validates the repo's own merged definitions; the project root rides along
-        // only then. Project and global scopes validate without a repo.
-        repoRoot: scope.kind === 'repo' ? roots.own : undefined,
-        projectRoot: scope.kind === 'repo' ? roots.project : roots.own,
-        expectRepo: scope.kind === 'repo',
-        candidate: { label: scope.kind === 'global' ? 'global' : scope.kind, target, text: content },
-      });
-      return result.ok ? ok(undefined) : err(result.error);
+      if (parsed !== undefined && parsed.kind === 'project') {
+        const read = parseMapping(target, content);
+        if (!read.ok) return err([read.error]);
+        const validated = validateProjectMapping(read.value);
+        return validated.ok ? ok(undefined) : err(validated.error);
+      }
+      if (parsed !== undefined && parsed.kind === 'repo') {
+        const read = parseMapping(target, content);
+        if (!read.ok) return err([read.error]);
+        const pipeline = await runDefinitionsPipeline(read.value);
+        return pipeline.ok ? ok(undefined) : err(pipeline.error);
+      }
+      if (parsed !== undefined) {
+        return validateVersionCandidate(parsed.kind, parsed.id, content);
+      }
+      const scopedTarget = target.replace(/^repos\/[^/]+\//, '');
+      if (scopedTarget === 'roles.json' || scopedTarget === 'flows.json' || scopedTarget === 'caps.json' || scopedTarget === 'capabilities.json') {
+        const read = parseMapping(target, content);
+        if (!read.ok) return err([read.error]);
+        const body = read.value;
+        const roles = scopedTarget === 'roles.json' && Array.isArray(body.roles) ? body.roles : [];
+        const flows = scopedTarget === 'flows.json' && Array.isArray(body.flows) ? body.flows : [];
+        const capabilities = (scopedTarget === 'caps.json' || scopedTarget === 'capabilities.json') && Array.isArray(body.capabilities)
+          ? body.capabilities
+          : [];
+        const validated = validateDefinitions({
+          roles,
+          flows,
+          capabilities,
+          ...(isRecord(body.repo) ? { repo: body.repo } : {}),
+        });
+        return validated.ok ? ok(undefined) : err(validated.error);
+      }
+      return err([{ path: target, code: 'wrong_type', message: 'not a definition file' }]);
     },
 
     installBuiltins: async (library) => {
       const written: string[] = [];
       const install = async (kind: 'roles' | 'flows', id: string, value: unknown): Promise<void> => {
-        const target = `${kind}/${id}${EXTENSION}`;
+        const target = `${LIBRARY_ROOT}/${kind}/${id}/v1${EXTENSION}`;
         const file = join(config.globalRoot, target);
         await mkdir(dirname(file), { recursive: true });
         // Exclusive create: a file that exists in any form, whatever its content, is the user's.
@@ -540,13 +443,13 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
       return { written };
     },
 
-    // I-44: one capability per file, the shape `load` parses back; an existing target is skipped
-    // untouched whatever its content. Through the per-path write queue, like every other write.
+    // I-44: one capability per version file, the shape `load` parses back; an existing target is
+    // skipped untouched whatever its content. Through the per-path write queue, like every write.
     installCapabilities: async (capabilities) => {
       const written: string[] = [];
       const skipped: string[] = [];
       const install = async (id: string, value: unknown): Promise<void> => {
-        const target = `capabilities/${id}${EXTENSION}`;
+        const target = `${LIBRARY_ROOT}/capabilities/${id}/v1${EXTENSION}`;
         const file = join(config.globalRoot, target);
         await mkdir(dirname(file), { recursive: true });
         const created = await enqueue(file, () => createExclusive(file, stringifyYaml(value)));
@@ -557,30 +460,42 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
       return { written, skipped };
     },
 
-    scaffoldProject: async (path, project, repo) => {
-      const folder = join(path, DOCKET_DIR);
-      const projectFile = join(folder, PROJECT_FILE);
-      const repoFile = join(folder, REPO_FILE);
-      try {
-        if (await pathExists(projectFile)) return err('project_yaml_exists');
-        if (await pathExists(repoFile)) return err('repo_yaml_exists');
-        await mkdir(folder, { recursive: true });
-        // project.yaml first; a file that appeared since the check still never gets overwritten.
-        if (!(await createExclusive(projectFile, stringifyYaml(project)))) return err('project_yaml_exists');
-        if (!(await createExclusive(repoFile, stringifyYaml(repo)))) return err('repo_yaml_exists');
-        return ok(undefined);
-      } catch {
-        return err('io_failed');
+    // The library's histories read straight off the version files; recordedAt is the file's own
+    // mtime (a version file is never rewritten, so it stays the write time), and nothing in the
+    // layout marks a version archived yet.
+    listVersions: async (kind, id) => {
+      const records: VersionRecord<unknown>[] = [];
+      for (const versionFile of await listVersionFiles(join(config.globalRoot, LIBRARY_ROOT, kind, id))) {
+        const target = `${LIBRARY_ROOT}/${kind}/${id}/${versionFile.name}`;
+        let body: unknown;
+        try {
+          body = parseYaml(await readFile(join(config.globalRoot, target), 'utf8'), YAML_OPTIONS);
+        } catch {
+          body = undefined;
+        }
+        const { mtimeMs } = await stat(join(config.globalRoot, target));
+        records.push({
+          definitionId: id,
+          version: versionFile.version,
+          body,
+          recordedAt: mtimeMs,
+          archived: false,
+        });
       }
+      return records;
     },
 
-    // A-343 placeholders: the versioned library layout (library/<kind>/<id>/v<N>.yaml) is the
-    // YAML adapter's (#1009). No library file exists yet, so every history reads empty; the one
-    // write the layout cannot yet make refuses loudly instead of guessing a location.
-    listVersions: async () => [],
-
-    appendVersion: async () => {
-      throw new Error('library version files land with the YAML adapter (#1009)');
+    appendVersion: async (kind, id, body, at) => {
+      const versions = await listVersionFiles(join(config.globalRoot, LIBRARY_ROOT, kind, id));
+      const next = versions.length === 0 ? 1 : versions[versions.length - 1].version + 1;
+      const target = `${LIBRARY_ROOT}/${kind}/${id}/v${next}${EXTENSION}`;
+      const file = join(config.globalRoot, target);
+      return enqueue(file, async () => {
+        await mkdir(dirname(file), { recursive: true });
+        const created = await createExclusive(file, stringifyYaml(body));
+        if (!created) return err('stale');
+        return ok({ definitionId: id, version: next, body, recordedAt: at, archived: false });
+      });
     },
   };
 }

@@ -331,6 +331,7 @@ export function createChatWriteTools(deps: ChatWriteDeps, extras: DocketToolExtr
     if (access === undefined) return fail('forbidden');
 
     let definitionScope: DefinitionScope;
+    let targetPath: string;
     let actionOf: (proposal: ProposalId) => { kind: 'roadmap_edit'; project: string; proposal: ProposalId } | { kind: 'definition_edit'; scope: ActionScope; target: string; proposal: ProposalId };
     if (target === 'roadmap') {
       // A roadmap belongs to exactly one project and exactly one file.
@@ -339,23 +340,30 @@ export function createChatWriteTools(deps: ChatWriteDeps, extras: DocketToolExtr
       const project = scopeProject as ProjectSlug;
       if (!access.canProject(project)) return fail('forbidden');
       definitionScope = { kind: 'project', project };
+      targetPath = `projects/${project}/roadmap.yaml`;
       actionOf = (proposal) => ({ kind: 'roadmap_edit', project, proposal });
     } else if (scopeKind === 'project' && scopeProject !== undefined) {
       const project = scopeProject as ProjectSlug;
       if (!access.canProject(project)) return fail('forbidden');
+      // The three hash-guarded files are the only proposal targets; the library's version files
+      // are create-only, so no other project-scope file can be proposed at all.
+      if (file !== 'project.yaml') return fail('bad_input');
       definitionScope = { kind: 'project', project };
+      targetPath = `projects/${project}/project.yaml`;
       actionOf = (proposal) => ({ kind: 'definition_edit', scope: { kind: 'project', project }, target: file, proposal });
     } else if (scopeKind === 'repo' && scopeRepo !== undefined) {
       const repo = scopeRepo as RepoSlug;
       if (!access.canRepo(repo)) return fail('forbidden');
+      if (file !== 'repo.yaml') return fail('bad_input');
       definitionScope = { kind: 'repo', repo };
+      targetPath = `repos/${repo}/repo.yaml`;
       actionOf = (proposal) => ({ kind: 'definition_edit', scope: { kind: 'repo', repo }, target: file, proposal });
     } else if (scopeKind === 'global') {
-      // A global conversation is the only one that may touch every project's defaults.
       if (!access.scope.all) return fail('forbidden');
-      definitionScope = { kind: 'global' };
-      actionOf = (proposal) => ({ kind: 'definition_edit', scope: { kind: 'global' }, target: file, proposal });
+      return fail('bad_input');
     } else {
+      // A global scope once carried library-file edits; the version files are create-only now,
+      // and the version-append proposal shape is the library wave's to design.
       return fail('bad_input');
     }
 
@@ -365,7 +373,7 @@ export function createChatWriteTools(deps: ChatWriteDeps, extras: DocketToolExtr
     const shaped = validateAction({ ...actionOf(placeholderProposal()) });
     if (!shaped.ok) return fail(fromActionError(shaped.error.code));
 
-    const created = await createProposal(deps, { scope: definitionScope, target: file, after, summary: cleanSummary, author: actorOf(binding) });
+    const created = await createProposal(deps, { scope: definitionScope, target: targetPath, after, summary: cleanSummary, author: actorOf(binding) });
     if (!created.ok) return fail('bad_input'); // no_change: the file already says exactly this
 
     const proposed = await proposeAction(deps, { conversation: binding.conversation, action: actionOf(created.value), by: actorOf(binding) }, extras.applyAction);

@@ -5,12 +5,12 @@
 // What it builds, and why each piece exists:
 //   <home>/.docket/             the data dir handed to the app as DOCKET_DATA_DIR — never the
 //                               operator's own ~/.docket
-//   <home>/repos/<slug>/        one real git repo per repo; a project's main repo also carries
-//                               .docket/project.yaml and .docket/roadmap.yaml
+//   <home>/.docket/repos/<slug>/repo.yaml, projects/<id>/roadmap.yaml, library/   the definitions
+//   <home>/repos/<slug>/        one real git repo per repo, carrying nothing of Docket's
 //   <home>/bin/design-agent     the scripted agent binary, so a launched app has something to point at
 //
 // The database is written through the app's own composition (createNodeDeps) and use-cases:
-// projects through attachProject, work orders through openWorkOrder, human gates through
+// repos through attachProject, projects through the projects mirror, work orders through openWorkOrder, human gates through
 // decideHumanGate. The only direct port writes are the facts no use-case produces at seed time:
 // finished agent runs, quota windows and recorded spend.
 //
@@ -51,11 +51,13 @@ import type {
   Actor,
   AgentEvent,
   EpochMs,
+  FlowDef,
   GateSlug,
   Meter,
   Pool,
   ProjectSlug,
   RepoSlug,
+  RoleDef,
   RoleSlug,
   RunId,
   StageSlug,
@@ -379,7 +381,9 @@ for (const project of PROJECTS) {
     }
     writeFileSync(join(dir, 'README.md'), `# ${slug}\n\nSeeded repo of ${project.name}.\n`);
 
-    writeYaml(dir, '.docket/repo.yaml', {
+    // The repo's definitions live in the data dir: repos/<slug>/repo.yaml (legacy shape) and the
+    // project's roadmap under projects/<id>/ — the repo folder itself carries nothing of Docket's.
+    writeYaml(dataDir, `repos/${slug}/repo.yaml`, {
       id: slug,
       name: slug,
       flows: [FLOW_ID],
@@ -389,22 +393,11 @@ for (const project of PROJECTS) {
       docsRoot: 'docs',
       testGlobs: [],
     });
-    writeYaml(dir, `.docket/flows/${FLOW_ID}.yaml`, flowDefinition);
-    for (const role of STAGES.map((stage) => stage.role)) {
-      writeYaml(dir, `.docket/roles/${role}.yaml`, roleDefinition(role, role));
-    }
 
     if (slug === project.main) {
-      writeYaml(dir, '.docket/project.yaml', {
-        id: project.id,
-        name: project.name,
-        mainRepo: project.main,
-        repos: project.repos,
-        ...(project.budgetUsd === undefined ? {} : { budget: { amountUsd: project.budgetUsd, warnPercent: 80 } }),
-      });
       const phases = ROADMAPS[project.id];
       if (phases !== undefined) {
-        writeYaml(dir, '.docket/roadmap.yaml', {
+        writeYaml(dataDir, `projects/${project.id}/roadmap.yaml`, {
           phases: phases.map((phase) => ({
             id: phase.id,
             name: phase.name,
@@ -510,12 +503,25 @@ for (const stage of STAGES) {
 }
 
 setClock(ago(30 * 24 * 60));
+// The library holds the flow and roles every repo.yaml names; the repos register one by one and
+// the projects mirror carries the membership the work orders validate against.
+await deps.definitions.installBuiltins({
+  roles: STAGES.map((stage) => roleDefinition(stage.role, stage.role) as unknown as RoleDef),
+  flows: [flowDefinition as unknown as FlowDef],
+});
 for (const project of PROJECTS) {
-  const extras = project.repos
-    .filter((slug) => slug !== project.main)
-    .map((slug) => ({ repo: slug as RepoSlug, path: repoPath(slug) }));
-  const attached = await attachProject(deps, { path: repoPath(project.main), actor: OPERATOR, repos: extras });
-  assert(attached.ok, `project ${project.id} did not attach: ${attached.ok ? '' : attached.error}`);
+  for (const slug of project.repos) {
+    const attached = await attachProject(deps, { path: repoPath(slug), actor: OPERATOR });
+    assert(attached.ok, `repo ${slug} did not attach: ${attached.ok ? '' : attached.error}`);
+    assert.equal(attached.value.slug, slug, `repo ${slug} registered under another slug`);
+  }
+  await deps.projects.save({
+    id: project.id as ProjectSlug,
+    name: project.name,
+    mainRepo: project.main as RepoSlug,
+    repos: project.repos as readonly RepoSlug[],
+    ...(project.budgetUsd === undefined ? {} : { budget: { amountUsd: project.budgetUsd, warnPercent: 80 } }),
+  });
 }
 const projectOfRepo = new Map<string, string>();
 for (const project of PROJECTS) for (const slug of project.repos) projectOfRepo.set(slug, project.id);

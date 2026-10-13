@@ -23,7 +23,7 @@ const entry = (slugText: string, path: string): RepoRegistryEntry => ({
 });
 
 describe('repoPathsOf', () => {
-  it('resolves a slug to its registry entry folder and undefined for strangers', async () => {
+  it('I-18: resolves a slug to its registry entry folder and undefined for strangers', async () => {
     const registry = createFakeRepoRegistry();
     await registry.register(entry('acme', '/x/acme'));
     await registry.register(entry('zulu', '/x/zulu'));
@@ -34,7 +34,7 @@ describe('repoPathsOf', () => {
     expect(await paths.path(slug('ghost'))).toBeUndefined();
   });
 
-  it('follows a relinked entry to its new folder', async () => {
+  it('I-18: follows a relinked entry to its new folder', async () => {
     const registry = createFakeRepoRegistry(async () => ({ rootCommit: 'sha-root-1' }));
     await registry.register(entry('acme', '/x/acme'));
     const paths = repoPathsOf(registry);

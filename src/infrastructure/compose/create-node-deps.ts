@@ -33,7 +33,6 @@ import {
   createSqliteConversationRepo,
   createSqlitePageRepo,
   createSqlitePhaseAutoRunRepo,
-  createSqliteProjectPaths,
   createSqliteProjectRepo,
   createSqliteProposalRepo,
   createSqliteQueueRepo,
@@ -43,7 +42,7 @@ import {
   openDatabase,
   type OpenDbError,
 } from '../storage/sqlite/index';
-import { createMemoryDispatchStatus, createNodeMachineProbe, createSystemClock, createUlidGen, repoPathsOf, type ProjectPaths, type RandomBytes } from '../system/index';
+import { createMemoryDispatchStatus, createNodeMachineProbe, createSystemClock, createUlidGen, repoPathsOf, type RandomBytes } from '../system/index';
 import { createCheckpoints, createEvidenceChecker, createGitProbe, readRepoFingerprint, createRepoFolders, createWorktrees, createWorktreeFiles } from '../vcs/index';
 import { createCapabilityCatalog } from '../providers/registry/index';
 import { createModelCatalog } from '../providers/catalog/index';
@@ -105,13 +104,12 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
   const clock = config.clock ?? createSystemClock();
   const repos = createSqliteRepoRegistry(db, readRepoFingerprint);
   const projects = createSqliteProjectRepo(db);
-  const projectPaths: ProjectPaths = createSqliteProjectPaths(db);
-  // The store and the worktrees still resolve checkouts by slug; the registry is repoId-keyed, so
-  // they read through the transitional view until the store re-roots.
+  // The worktrees and the repo file reads resolve checkouts by slug; the registry is
+  // repoId-keyed, so they read through the slug view.
   const repoPaths = repoPathsOf(repos);
   const accounts = createSqliteAccountRepo(db);
   const secrets = createKeychainVault(db, config.cipher);
-  const definitions = createYamlDefinitionStore({ globalRoot: config.dataDir, repos: repoPaths, projects: projectPaths });
+  const definitions = createYamlDefinitionStore({ globalRoot: config.dataDir });
   const deps: AppDeps = {
     clock,
     ids: createUlidGen(clock, config.random),
@@ -161,7 +159,7 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     repoFolders: createRepoFolders(),
     // Reads go to the repo's registered main checkout, and every line is redacted with the scanner's
     // real patterns at the port boundary, like the checkpoints.
-    repoFiles: createRepoFileReader({ repoPath: (repo) => definitions.repoPath(repo), redact: redactSecrets }),
+    repoFiles: createRepoFileReader({ repoPath: (repo) => repoPaths.path(repo), redact: redactSecrets }),
     machine: createNodeMachineProbe(),
     dispatchStatus: createMemoryDispatchStatus(),
     runTokens: createNodeRunTokens(),

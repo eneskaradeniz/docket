@@ -33,7 +33,9 @@ mkdirSync(dataDir, { recursive: true });
 
 const PROJECT = 'sayfa-atolyesi' as ProjectSlug;
 const REPO = 'sayfa-api' as RepoSlug;
-const TARGET = 'flows/tek-asama.yaml';
+const TARGET = 'repos/sayfa-api/repo.yaml';
+// The action names its file relative to its scope; the proposal and the card name the full path.
+const ACTION_TARGET = 'repo.yaml';
 const HOUR = 3_600_000;
 
 // The seed's clock is a variable: the older conversation is written first, in the past.
@@ -77,17 +79,17 @@ const DRAFT_TITLE = 'Parola sıfırlama e-postaları';
 const draft = await createDraft(deps, { conversation, project: PROJECT, repo: REPO, title: DRAFT_TITLE });
 assert(draft.ok, `the draft did not save: ${draft.ok ? '' : draft.error.code}`);
 
-// The proposal changes only the flow's display name, so the new content is still a valid flow.
+// The proposal changes only the docs folder, so the new content is still a valid repo.yaml.
 const scope = { kind: 'repo', repo: REPO } as const;
-const current = await deps.definitions.readFile(scope, TARGET);
+const current = await deps.definitions.readFile(TARGET);
 assert(current !== undefined, `the seed repository has no ${TARGET}`);
-assert(current.content.includes('Tek aşamalı akış'), 'the seed flow no longer carries the name the proposal changes');
+assert(current.content.includes('docsRoot: docs'), 'the seed repo.yaml no longer carries the line the proposal changes');
 const AGENT: Actor = { kind: 'agent', runId: deps.ids.next<'run'>(), role: 'gelistirici' as RoleSlug };
-const PROPOSAL_SUMMARY = 'Akışın görünen adını güncelle';
+const PROPOSAL_SUMMARY = 'Belge klasörünü güncelle';
 const proposal = await createProposal(deps, {
   scope,
   target: TARGET,
-  after: current.content.replace('Tek aşamalı akış', 'Tek aşamalı akış (gözden geçirildi)'),
+  after: current.content.replace('docsRoot: docs', 'docsRoot: belgeler'),
   summary: PROPOSAL_SUMMARY,
   author: AGENT,
 });
@@ -96,7 +98,7 @@ assert(proposal.ok, `the proposal did not save: ${proposal.ok ? '' : proposal.er
 // No grant exists, so the action waits for the operator: the applier below is never reached.
 const proposed = await proposeAction(
   deps,
-  { conversation, action: { kind: 'definition_edit', scope, target: TARGET, proposal: proposal.value }, by: AGENT },
+  { conversation, action: { kind: 'definition_edit', scope, target: ACTION_TARGET, proposal: proposal.value }, by: AGENT },
   async () => {
     throw new Error('the seed never applies an action');
   },

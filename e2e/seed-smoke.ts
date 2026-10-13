@@ -3,11 +3,11 @@
 //
 // What it builds, and why each piece exists:
 //   <home>/                     a throwaway tree staging everything the walk needs
-//   <home>/.docket/             the launched app's data dir, handed over as DOCKET_DATA_DIR
+//   <home>/.docket/             the launched app's data dir, handed over as DOCKET_DATA_DIR; carries
+//                               repos/duman/repo.yaml and the library flow and role
 //   <home>/.docket/docket.db    seeded through the REAL createNodeDeps + use-cases/repos, so the
 //                               rows are encoded exactly the way the app writes them
-//   <home>/duman-repo/          a real git repo (the run's worktree anchors to its HEAD) carrying
-//                               the repo's YAML definitions under .docket/
+//   <home>/duman-repo/          a real git repo (the run's worktree anchors to its HEAD)
 //   <home>/bin/duman-agent      the scripted ACP agent the discovery override points at
 //
 // Determinism: a fixed clock plus a zero random source — the ULID generator is monotonic within
@@ -19,9 +19,10 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import assert from 'node:assert';
-import type { AccountId, Actor, ProjectSlug, RoleSlug, RepoSlug } from '../src/domain/index';
+import type {
+  AccountId, Actor, FlowDef, FlowSlug, GateSlug, ProjectSlug, RepoSlug, RoleDef, RoleSlug, StageSlug,
+} from '../src/domain/index';
 import { deriveWorkOrderState } from '../src/domain/index';
-import { attachProject } from '../src/application/use-cases/projects';
 import { DISPATCH_MODE_KEY } from '../src/application/use-cases/settings';
 import { openWorkOrder } from '../src/application/use-cases/work-orders';
 import { createNodeDeps } from '../src/infrastructure/compose/create-node-deps';
@@ -70,28 +71,16 @@ run(
   repo,
 );
 
-const defs = join(repo, '.docket');
-mkdirSync(join(defs, 'roles'), { recursive: true });
-mkdirSync(join(defs, 'flows'), { recursive: true });
-
-// The project layer above the repo: without it no work order can open (the project is the
-// membership authority between the work order and its repo).
-writeFileSync(
-  join(defs, 'project.yaml'),
-  [
-    'id: duman',
-    'name: Duman projesi',
-    'mainRepo: duman',
-    'repos: [duman]',
-    '',
-  ].join('\n'),
-);
+// --- the definitions, in the data dir ---------------------------------------------------------
+// repo.yaml is written by hand at repos/<slug>/ (the legacy shape the loader validates); the flow
+// and role live in the library, installed through the store once the deps exist.
+mkdirSync(join(dataDir, 'repos', REPO), { recursive: true });
 
 // The flow the whole walk rides on: a human-only review stage (its pending gate is what surfaces
 // the work order in the cockpit at boot, before any run exists), then a runnable stage whose run
 // is the one that asks.
 writeFileSync(
-  join(defs, 'repo.yaml'),
+  join(dataDir, 'repos', REPO, 'repo.yaml'),
   [
     'id: duman',
     'name: Duman çalışma alanı',
@@ -105,39 +94,27 @@ writeFileSync(
     '',
   ].join('\n'),
 );
-writeFileSync(
-  join(defs, 'roles', 'isci.yaml'),
-  [
-    'id: isci',
-    'name: İşçi',
-    'instructions: Duman testini çalıştır.',
-    'writeScope:',
-    '  kind: repo',
-    'capabilities: []',
-    'active: true',
-    '',
-  ].join('\n'),
-);
-writeFileSync(
-  join(defs, 'flows', 'duman-akisi.yaml'),
-  [
-    'id: duman-akisi',
-    'name: Duman akışı',
-    'stages:',
-    '  - id: inceleme',
-    '    name: İnceleme',
-    '    role: null',
-    '    exit:',
-    '      - kind: human',
-    '        id: onay',
-    '        label: İnsan onayı',
-    '  - id: uygulama',
-    '    name: Uygulama',
-    '    role: isci',
-    '    exit: []',
-    '',
-  ].join('\n'),
-);
+const ROLE_DEF: RoleDef = {
+  id: ROLE,
+  name: 'İşçi',
+  instructions: 'Duman testini çalıştır.',
+  writeScope: { kind: 'repo' },
+  capabilities: [],
+  active: true,
+};
+const FLOW_DEF: FlowDef = {
+  id: 'duman-akisi' as FlowSlug,
+  name: 'Duman akışı',
+  stages: [
+    {
+      id: 'inceleme' as StageSlug,
+      name: 'İnceleme',
+      role: null,
+      exit: [{ kind: 'human', id: 'onay' as GateSlug, label: 'İnsan onayı' }],
+    },
+    { id: 'uygulama' as StageSlug, name: 'Uygulama', role: ROLE, exit: [] },
+  ],
+};
 
 // --- the database, written through the app's own composition and use-cases ---------------------------
 const node = createNodeDeps({
@@ -160,10 +137,13 @@ const deps = node.value.deps;
 // The world must not depend on the host's load: pin the fixed dispatch mode.
 await deps.settings.set(DISPATCH_MODE_KEY, 'fixed');
 
-// Attach the way the app does — the use case persists the project def, registers the main repo
-// and writes the audit entry — so the rows match a real attach, not a hand-made mirror.
-const attached = await attachProject(deps, { path: repo, actor: OPERATOR });
-assert(attached.ok, `seed could not attach the project: ${attached.error}`);
+// The library first, then the repo in the registry and the project in the mirror — the rows a
+// real attach plus project creation leave behind.
+await deps.definitions.installBuiltins({ roles: [ROLE_DEF], flows: [FLOW_DEF] });
+// The folder is duman-repo but the repo's slug is duman, so the entry is registered directly
+// rather than through attach (which slugs the folder name).
+await deps.repos.register({ repoId: deps.ids.next<'repo'>(), slug: REPO, path: repo, fingerprint: { rootCommit: '' } });
+await deps.projects.save({ id: PROJECT, name: 'Duman projesi', mainRepo: REPO, repos: [REPO] });
 
 // The account names the provider whose CLI definition the smoke impersonates: an ACP transport
 // with an env-var config mechanism and no auth probe, so a scripted binary is enough.

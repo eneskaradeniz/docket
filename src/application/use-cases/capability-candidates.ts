@@ -115,26 +115,31 @@ export const definitionOfContent = (content: string): CapabilityDef | undefined 
 };
 
 /** A-92: the identity a stored target carries — `undefined` when the target is missing or its
- *  file does not parse. One target per candidate: never enumerates the store, never rescans. */
+ *  file does not parse. One target per candidate: never enumerates the store, never rescans. The
+ *  stored target is the capability's newest library version, whose body is the definition. */
 export async function storedIdentityOf(
-  definitions: Pick<AppDeps['definitions'], 'readFile'>,
+  definitions: Pick<AppDeps['definitions'], 'listVersions'>,
   id: CapabilitySlug,
 ): Promise<string | undefined> {
-  let file: { readonly content: string } | undefined;
+  let newest: unknown;
   try {
-    file = await definitions.readFile({ kind: 'global' }, `capabilities/${id}.yaml`);
+    const history = await definitions.listVersions('capabilities', id);
+    const record = history[history.length - 1];
+    if (record === undefined) return undefined;
+    newest = record.body;
   } catch {
     return undefined;
   }
-  if (file === undefined) return undefined;
-  const def = definitionOfContent(file.content);
+  const content = typeof newest === 'string' ? newest : isRecord(newest) ? JSON.stringify(newest) : undefined;
+  if (content === undefined) return undefined;
+  const def = definitionOfContent(content);
   return def === undefined ? undefined : identityOfDefinition(def);
 }
 
 /** A-92: `imported` against the global store, target-wise — the id R-67 derives from the
  *  candidate's own name; a file that exists, parses and carries the candidate's identity → true. */
 export async function isImported(
-  definitions: Pick<AppDeps['definitions'], 'readFile'>,
+  definitions: Pick<AppDeps['definitions'], 'listVersions'>,
   candidate: CapabilityCandidate,
 ): Promise<boolean> {
   const slug = capabilitySlugOf(candidate.name);
