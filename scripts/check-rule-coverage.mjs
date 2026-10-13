@@ -88,21 +88,9 @@ const PENDING = new Map([
 
   // #1006 — agent capabilities: library, provider translation, memory, machine import
 
-  // #1007: Docket AI project setup and read-permission scopes (#1023 ui)
-  ['ui:U-272', '#1023'],
-  ['ui:U-273', '#1023'],
-  ['ui:U-274', '#1023'],
-  ['ui:U-275', '#1023'],
-  ['ui:U-276', '#1023'],
-  ['ui:U-277', '#1023'],
-  ['ui:U-278', '#1023'],
-  ['ui:U-279', '#1023'],
-
   // #1008: Phase 7 surfaces — settings, setup, repo, work orders, versions, quit
   ['ui:U-284', '#1022'],
   ['ui:U-285', '#1022'],
-  ['ui:U-286', '#1023'],
-  ['ui:U-287', '#1023'],
   ['ui:U-288', '#1024'],
   ['ui:U-289', '#1024'],
   ['ui:U-290', '#1025'],
