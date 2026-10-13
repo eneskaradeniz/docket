@@ -9,6 +9,8 @@ import type {
   DispatchDecision,
   DispatchLimits,
   EpochMs,
+  FlowPin,
+  LimitPolicy,
   Meter,
   MeterId,
   Pool,
@@ -222,6 +224,7 @@ const createWorkOrder = async (
   id: WorkOrderId,
   repo: RepoSlug = REPO,
   flow = 'standard',
+  pin?: FlowPin,
 ): Promise<void> => {
   const flowId = slugOf<'flow'>(flow);
   h.definitions.seed({ kind: 'repo', repo }, 'repo.yaml', JSON.stringify(repoBodyOf(flow, repo)));
@@ -233,9 +236,24 @@ const createWorkOrder = async (
     title: `fixture ${id}`,
     createdAt: h.clock.now(),
     createdBy: USER,
+    ...(pin !== undefined ? { pin } : {}),
   });
   await h.deps.workOrders.appendEvent(id, { type: 'created', at: h.clock.now(), by: USER, flow: flowId });
 };
+
+const implementPin = (accounts: readonly AccountRoute[], limitPolicy: LimitPolicy = 'wait_resume'): FlowPin => ({
+  flowId: slugOf<'flow'>('standard'),
+  flowVersion: 1,
+  stages: [
+    {
+      stage: { id: IMPLEMENT, name: 'Implement', role: IMPLEMENTER, exit: [] },
+      role: null,
+      roleVersion: null,
+      accounts: [...accounts],
+      limitPolicy,
+    },
+  ],
+});
 
 /** A run record exactly as executeRun would have written it before it streams. */
 const createRun = async (
@@ -570,6 +588,17 @@ describe('enqueueStage', () => {
 
     expectEnqueueErr(await enqueueStage(h.deps, { id: WO1 }), 'no_account');
   });
+
+  it('enqueueStage routes from the work-order pin chain when present, skipping disconnected accounts', async () => {
+    const h = makeHarness();
+    await h.deps.accounts.save(account(A1));
+    await h.deps.accounts.save(account(A2));
+    await createWorkOrder(h, WO1, REPO, 'standard', implementPin([route(A3), route(A2, 'pinned-model'), route(A1)]));
+    await h.deps.bindings.save({ level: 'global' }, { role: IMPLEMENTER, accounts: [route(A1)] });
+
+    expect((await enqueueStage(h.deps, { id: WO1 })).ok).toBe(true);
+    expect((await queueAfter(h))[0]?.route).toEqual({ accountId: A2, model: 'pinned-model' });
+  });
 });
 
 // --- applyLimitDecision (A-17a) ----------------------------------------------------------------------
@@ -691,6 +720,25 @@ describe('applyLimitDecision', () => {
     expect(result.ok).toBe(true);
     const items = await queueAfter(h);
     expect(items[0]?.handoffOf).toBeUndefined();
+  });
+
+  it('stage fallback chain: a fallback decision enqueues the next pin-chain account with handoffOf', async () => {
+    const h = makeHarness();
+    await h.deps.accounts.save(account(A1));
+    await h.deps.accounts.save(account(A2));
+    await createWorkOrder(h, WO1, REPO, 'standard', implementPin([route(A1), route(A2, 'model-y')], 'fallback_account'));
+    await createRun(h, RUN1, WO1, route(A1));
+
+    const result = await applyLimitDecision(h.deps, {
+      runId: RUN1,
+      decision: { kind: 'fallback', route: route(A2, 'model-y') },
+    });
+
+    expect(result.ok).toBe(true);
+    const items = await queueAfter(h);
+    expect(items[0]?.route).toEqual({ accountId: A2, model: 'model-y' });
+    expect(items[0]?.handoffOf).toBe(RUN1);
+    expect(items[0]?.stage).toBe(IMPLEMENT);
   });
 
   it('A-17a: ask queues nothing; the work order stays limit_waiting for the cockpit', async () => {

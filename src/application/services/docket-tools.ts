@@ -3,13 +3,14 @@
 // (RunTokens), and a tool name belongs to an allow-set of kinds — the page tools are shared, their
 // semantics decided by the token — while everything else a request carries is never executed.
 // Every failure answers a stable code and nothing more — no message, no stack, no echo of the input.
-import type { Actor, Page, PageId, PageKind } from '../../domain/index';
+import type { Actor, ConversationId, Page, PageId, PageKind } from '../../domain/index';
 
 import type { AppDeps, RunTokenBinding, RunTokenKind } from '../ports';
 import { ackComments, pageDetail, publishPageUseCase, publishVersion, undeliveredComments } from '../use-cases/index';
 
 import { CHAT_TOOL_DEFINITIONS, createChatTools } from './chat-tools';
 import { CHAT_WRITE_TOOL_DEFINITIONS, CHAT_WRITE_TOOL_NAMES, createChatWriteTools, type DocketToolExtras } from './chat-write-tools';
+import { createSetupTools, SETUP_TOOL_NAMES, type SetupToolsContext } from './setup-tools';
 import {
   asArgs,
   entryOf,
@@ -164,8 +165,21 @@ type DocketToolDeps = Pick<
 type Args = ToolArgs;
 
 type RunBinding = Extract<RunTokenBinding, { readonly kind: 'run' }>;
+type ChatBinding = Extract<RunTokenBinding, { readonly kind: 'chat' }>;
 
-export function createDocketTools(deps: DocketToolDeps, extras: DocketToolExtras): DocketTools {
+export const SETUP_CONVERSATION_TOOL_NAMES: ReadonlySet<string> = new Set([
+  'docket_get',
+  'docket_search',
+  ...SETUP_TOOL_NAMES,
+]);
+
+export interface DocketToolSetupExtras {
+  readonly setupContextOf?: (conversation: ConversationId) => SetupToolsContext | undefined;
+}
+
+const setupKindOf = (binding: ChatBinding): 'chat' | 'setup' => binding.conversationKind ?? 'chat';
+
+export function createDocketTools(deps: DocketToolDeps, extras: DocketToolExtras & DocketToolSetupExtras): DocketTools {
   const chat = createChatTools(deps);
   const chatWrite = createChatWriteTools(deps, extras);
   // Per token, the times of the calls inside the window. Memory only, like the tokens themselves.
@@ -272,6 +286,15 @@ export function createDocketTools(deps: DocketToolDeps, extras: DocketToolExtras
       if (!kinds.has(binding.kind)) return fail('forbidden');
       try {
         if (binding.kind === 'chat') {
+          if (setupKindOf(binding) === 'setup') {
+            if (!SETUP_CONVERSATION_TOOL_NAMES.has(request.tool)) return fail('forbidden');
+            const setupCtx = extras.setupContextOf?.(binding.conversation);
+            if (setupCtx === undefined) return fail('forbidden');
+            const setup = createSetupTools(deps, setupCtx);
+            const actor: Actor = { kind: 'agent', runId: binding.turn, role: binding.role };
+            if (SETUP_TOOL_NAMES.has(request.tool)) return await setup.call(request.tool, request.args, actor);
+            return await chat.call(binding, request.tool, request.args);
+          }
           // The write tools and the shared page tools carry the chat semantics; the rest are the
           // read-only tools of A-204 … A-212.
           if (CHAT_WRITE_TOOL_NAMES.has(request.tool) || request.tool === 'page_publish' || request.tool === 'page_update') {

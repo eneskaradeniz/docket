@@ -6,10 +6,14 @@ import type {
   AccountRoute,
   Actor,
   AgentEvent,
+  Billing,
   CapabilityDef,
   EffortLevel,
   EpochMs,
+  FallbackCandidate,
+  FlowPin,
   LimitDecision,
+  LimitPolicy,
   Meter,
   MemoryScope,
   QueueItem,
@@ -18,16 +22,19 @@ import type {
   RollingNote,
   RunId,
   RunOutcome,
+  StageSlug,
   Tier,
   WorkOrderId,
 } from '../../domain/index';
 import {
   CHECKPOINT_MIN_INTERVAL_MS,
+  billingFromPools,
   decideOnLimit,
   definitionsDigest,
   effortForChoice,
   extendRollingNote,
   foldRun,
+  headroom,
   resolveTier,
   selectMemory,
   stageBrief,
@@ -36,10 +43,11 @@ import {
   translateCapabilities,
 } from '../../domain/index';
 
-import type { AppDeps, AuditAction, RunDir, RunHandle, RunRecord, RunRepo, TransportError } from '../ports';
+import type { AccountRecord, AppDeps, AuditAction, RunDir, RunHandle, RunRecord, RunRepo, TransportError } from '../ports';
 
 import { attachDocketCapability } from './mcp-attach';
-import { spendConsentSatisfied } from './spend-consent';
+import { catalogOrEmpty, matchIdFor } from './match-id';
+import { DEFAULT_MODEL_CONSENT, defaultBillingOf, spendConsentSatisfied } from './spend-consent';
 import type { BoardHooks } from './permission-board';
 import { buildHandoff, commitCheckpoint, listActiveMemoryNotes, proposeMemory } from '../use-cases/index';
 
@@ -82,6 +90,90 @@ export type WorkOrdersChangedNotify = () => void;
 const RUN_EXECUTOR_ACTOR: Actor = { kind: 'system', component: 'run-executor' };
 // LimitContext documents 3 as the default; nothing in this service's deps configures it.
 const DEFAULT_MAX_AUTO_RESUMES = 3;
+
+const pinnedStageEntry = (pin: FlowPin, stage: StageSlug): FlowPin['stages'][number] | undefined =>
+  pin.stages.find((entry) => entry.stage.id === stage);
+
+const connectedChainTail = (
+  accounts: readonly AccountRoute[],
+  current: AccountRoute,
+): readonly AccountRoute[] => {
+  const index = accounts.findIndex((route) => route.accountId === current.accountId);
+  return index < 0 ? [] : accounts.slice(index + 1);
+};
+
+const billingForRoute = async (
+  deps: Pick<AppDeps, 'accounts' | 'modelCatalog' | 'capabilities'>,
+  account: AccountRecord | undefined,
+  route: AccountRoute,
+): Promise<Billing> => {
+  if (route.model !== undefined) {
+    const catalog = await catalogOrEmpty(() => deps.modelCatalog.list(route.accountId));
+    return billingFromPools(
+      catalog.find((candidate) => candidate.id === route.model)?.billing ?? 'unknown',
+      matchIdFor(catalog, route.model),
+      await deps.accounts.pools(route.accountId),
+    );
+  }
+  return defaultBillingOf(deps.capabilities, account);
+};
+
+const consentedForRoute = (account: AccountRecord | undefined, route: AccountRoute): boolean =>
+  account?.consentedModels?.includes(route.model ?? DEFAULT_MODEL_CONSENT) ?? false;
+
+const routeHasHeadroom = async (
+  deps: Pick<AppDeps, 'accounts' | 'modelCatalog'>,
+  route: AccountRoute,
+  now: EpochMs,
+): Promise<boolean> => {
+  const catalog = await catalogOrEmpty(() => deps.modelCatalog.list(route.accountId));
+  const room = headroom(
+    await deps.accounts.pools(),
+    await deps.accounts.meters(),
+    route.accountId,
+    matchIdFor(catalog, route.model),
+    now,
+    (await deps.accounts.get(route.accountId))?.reserve,
+  );
+  return room.ok !== false;
+};
+
+const buildFallbackAccounts = async (
+  deps: Pick<AppDeps, 'accounts' | 'modelCatalog' | 'capabilities'>,
+  pin: FlowPin | undefined,
+  stage: StageSlug,
+  current: AccountRoute,
+  now: EpochMs,
+): Promise<readonly FallbackCandidate[]> => {
+  if (pin === undefined) return [];
+  const entry = pinnedStageEntry(pin, stage);
+  if (entry === undefined) return [];
+  const candidates: FallbackCandidate[] = [];
+  for (const route of connectedChainTail(entry.accounts, current)) {
+    const account = await deps.accounts.get(route.accountId);
+    if (account === undefined) continue;
+    if (!(await routeHasHeadroom(deps, route, now))) continue;
+    candidates.push({
+      route: { ...route },
+      billing: await billingForRoute(deps, account, route),
+      consented: consentedForRoute(account, route),
+    });
+  }
+  return candidates;
+};
+
+const limitPolicyForRun = async (
+  deps: Pick<AppDeps, 'accounts' | 'workOrders'>,
+  item: QueueItem,
+): Promise<LimitPolicy> => {
+  const workOrder = await deps.workOrders.get(item.workOrderId);
+  const pin = workOrder?.pin;
+  if (pin !== undefined) {
+    const entry = pinnedStageEntry(pin, item.stage);
+    if (entry !== undefined) return entry.limitPolicy;
+  }
+  return (await deps.accounts.get(item.route.accountId))?.limitPolicy ?? 'ask';
+};
 
 // The outcomes that hand the attempt back unfinished: the flow stays on the same attempt (`limit`
 // leaves `limit_waiting`, a cancelled attempt reads as if no run had started), so the next run of
@@ -698,17 +790,17 @@ async function driveRun(
       case 'limit_hit': {
         // Terminal commit first (A-57): the pack the limit triggers is built from what landed.
         await checkpoint();
-        // The executor has no role binding at hand, so no alternative pool or fallback account
-        // can be offered here; re-routing is the caller's decision to make.
+        const workOrder = await deps.workOrders.get(item.workOrderId);
+        const now = deps.clock.now();
         const decision = decideOnLimit(
           { ...event.hit, accountId: item.route.accountId, at: event.at },
           {
-            policy: (await deps.accounts.get(item.route.accountId))?.limitPolicy ?? 'ask',
+            policy: await limitPolicyForRun(deps, item),
             autoResumesUsed: plan.autoResumesUsed,
             maxAutoResumes: DEFAULT_MAX_AUTO_RESUMES,
             alternativePools: [],
-            fallbackAccounts: [],
-            now: deps.clock.now(),
+            fallbackAccounts: await buildFallbackAccounts(deps, workOrder?.pin, item.stage, item.route, now),
+            now,
           },
         );
         await endRun(deps, { runId, workOrderId: item.workOrderId, outcome: 'limit' }, board, workOrdersChanged);

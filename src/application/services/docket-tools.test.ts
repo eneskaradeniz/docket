@@ -2,7 +2,7 @@
 // MCP server (page_publish, page_update, page_comments), driven over the in-memory fakes.
 import { describe, expect, it } from 'vitest';
 
-import { parseSlug, parseUlid, type Actor, type RoleSlug, type RunId, type Ulid, type WorkOrderId } from '../../domain/index';
+import { parseSlug, parseUlid, type Actor, type ConversationId, type RoleSlug, type RunId, type Ulid, type WorkOrderId } from '../../domain/index';
 
 import type { RunTokenBinding } from '../ports';
 import {
@@ -20,6 +20,7 @@ import { commentOnPage } from '../use-cases/index';
 
 import { createActionApplier } from './action-appliers';
 import { createChatTurnLedger } from './chat-turn-ledger';
+import { SetupReadGrants } from './setup-permissions';
 import { createDocketTools, DOCKET_TOOL_LIMITS, type DocketToolResponse } from './docket-tools';
 
 const ulidOf = <B extends string>(input: string): Ulid<B> => {
@@ -366,5 +367,29 @@ describe('docket tools: page_comments', () => {
     expect(DOCKET_TOOLS_INSTRUCTIONS).toMatch(/comment/i);
     for (const tool of DOCKET_TOOL_DEFINITIONS) expect(tool.inputSchema).toMatchObject({ type: 'object' });
     expect(h.tools).toBeDefined();
+  });
+});
+
+describe('setup conversation tools', () => {
+  const CONVERSATION = ulidOf<'conversation'>('01ARZ3NDEKTSV4RRFFQ69G5FC1') as ConversationId;
+  const TURN = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FC2');
+
+  it('A-337: setup conversation restricts tool set to exactly docket_get, docket_search, docket_repo_analyze, docket_read_path, docket_setup_propose; calls outside are denied', async () => {
+    const grants = new SetupReadGrants();
+    const h = harness();
+    const setupTools = createDocketTools(h.deps, {
+      applyAction: createActionApplier(h.deps),
+      turnLedger: createChatTurnLedger(),
+      setupContextOf: () => ({
+        scope: { paths: ['/repo', '/home/.docket'], sessionOnly: true },
+        readCtx: { repoFolder: '/repo', docketHome: '/home/.docket' },
+        grants,
+        reader: { resolve: (p) => p, read: async () => ({ kind: 'dir', names: [] }) },
+      }),
+    });
+    const token = h.mint({ kind: 'chat', turn: TURN, conversation: CONVERSATION, role: ROLE, conversationKind: 'setup' });
+    expect(codeOf(await setupTools.call({ token, tool: 'docket_read_file', args: { repo: 'x', path: 'a' } }))).toBe('forbidden');
+    expect(codeOf(await setupTools.call({ token, tool: 'draft_work_order', args: { project: PROJECT, repo: 'alpha-app', title: 'T' } }))).toBe('forbidden');
+    expect(codeOf(await setupTools.call({ token, tool: 'docket_repo_analyze', args: { path: '/repo' } }))).not.toBe('forbidden');
   });
 });

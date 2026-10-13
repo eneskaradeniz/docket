@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decideProposal, type Proposal } from './proposal';
+import { decideProposal, isProjectSetupTarget, PROJECT_SETUP_PROPOSAL_TARGET, type Proposal } from './proposal';
 import type { Actor, ProposalId, RoleSlug, RunId } from '../shared';
 
 const USER: Actor = { kind: 'user', id: 'u-1' };
@@ -24,6 +24,14 @@ const baseProposal = (): Proposal => ({
   after: 'after text',
   summary: 'raise the retry limit',
   status: 'pending',
+});
+
+describe('project_setup proposals', () => {
+  it('project_setup target is recognized without widening the Proposal shape', () => {
+    expect(PROJECT_SETUP_PROPOSAL_TARGET).toBe('project_setup');
+    expect(isProjectSetupTarget('project_setup')).toBe(true);
+    expect(isProjectSetupTarget('flows/odoo.yaml')).toBe(false);
+  });
 });
 
 describe('decideProposal', () => {
