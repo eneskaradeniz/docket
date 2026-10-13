@@ -2,6 +2,7 @@
 import type {
   AccountRoute,
   AgentEvent,
+  CapabilitySlug,
   EpochMs,
   RoleSlug,
   RollingNote,
@@ -24,6 +25,13 @@ export interface RunRecord {
   readonly flowVersion?: number;
   /** R-132: the stage's role version from the same pin (null-role stages carry none). */
   readonly roleVersion?: number;
+  /** P-59: capabilities left out of this run because the provider cannot carry them
+   *  (`omitted_capability`). Stored in the record's JSON, no migration; absent when none. */
+  readonly omittedCapabilities?: readonly {
+    readonly capability: CapabilitySlug;
+    readonly provider: string;
+    readonly reason: 'unsupported';
+  }[];
   readonly startedAt: EpochMs;
   readonly endedAt?: EpochMs;
   readonly outcome?: RunOutcome;

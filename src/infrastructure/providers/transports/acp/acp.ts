@@ -175,6 +175,8 @@ export function createAcpTransport(def: ProviderDef): AgentTransport {
       const runCapabilities: RunCapability[] = [];
       for (const capability of request.capabilities) {
         if (capability.kind === 'context') continue; // context reaches the agent through the prompt, not session files
+        // plugin bundles are unpacked and commands rendered upstream (R-140, R-141); neither is a run file
+        if (capability.kind === 'plugin' || capability.kind === 'command') continue;
         if (capability.kind === 'mcp') {
           const env: Record<string, string> = {};
           for (const [name, value] of Object.entries(capability.env)) {

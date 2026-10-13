@@ -32,6 +32,7 @@ import {
   stageBrief,
   stageOutputScopeRoot,
   stageOutputVerdict,
+  translateCapabilities,
 } from '../../domain/index';
 
 import type { AppDeps, AuditAction, RunDir, RunHandle, RunRecord, RunRepo, TransportError } from '../ports';
@@ -440,8 +441,14 @@ async function driveRun(
   const plan = planAttempt(
     (await deps.runs.listForWorkOrder(item.workOrderId)).filter((run) => run.stage === item.stage),
   );
+  // P-59: the stage's capabilities are translated for this run's provider. What the provider
+  // cannot carry is omitted (and recorded below), what it carries only in degraded form rides the
+  // prompt as instruction text; nothing is written into the repository or the user's config.
+  const provider = (await deps.accounts.get(route.accountId))?.provider ?? '';
+  const translation = translateCapabilities(provider, input.capabilities, deps.capabilities.translationTable());
+  const withInline = (text: string): string => (translation.inline === '' ? text : `${text}\n\n${translation.inline}`);
   let sessionResume = handoffOf === undefined ? plan.resume : undefined;
-  let sessionPrompt = prompt;
+  let sessionPrompt = withInline(prompt);
 
   for (;;) {
 
@@ -460,6 +467,7 @@ async function driveRun(
     startedAt,
     autoResumesUsed: plan.autoResumesUsed,
     ...(definitionsRev !== undefined ? { definitionsRev } : {}),
+    ...(translation.omitted.length > 0 ? { omittedCapabilities: translation.omitted } : {}),
   });
   await deps.workOrders.appendEvent(item.workOrderId, {
     type: 'run_started',
@@ -521,7 +529,7 @@ async function driveRun(
     runId,
     item,
     role: input.role,
-    capabilities: input.capabilities,
+    capabilities: translation.run,
   });
   // A-151: the run-scoped provider config lives here — outside the worktree, so no checkpoint
   // commit can pick it up. Created after the token and before the first start.
@@ -562,7 +570,7 @@ async function driveRun(
   } else {
     const restart = await startAttempt(
       undefined,
-      await buildFallbackPrompt(deps.runs, plan.resumedRunId, input.prompt),
+      withInline(await buildFallbackPrompt(deps.runs, plan.resumedRunId, input.prompt)),
     );
     if (!restart.ok) return failAsTransport(restart.error);
     handle = restart.value;

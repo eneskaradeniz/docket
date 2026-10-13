@@ -32,6 +32,7 @@ import {
   type RunOutcome,
   type Slug,
   type StageSlug,
+  type TranslationRow,
   type Ulid,
   type WorkOrderId,
   type RepoSlug,
@@ -251,6 +252,7 @@ const harness = async (options: {
   readonly withTransport?: boolean;
   readonly models?: readonly CatalogModel[];
   readonly routeKinds?: readonly FakeRouteKind[];
+  readonly translations?: readonly TranslationRow[];
   readonly defsJson?: string;
   readonly files?: readonly { readonly name: string; readonly content: string }[];
   readonly checkpointDiffs?: Readonly<Record<string, CheckpointDiff>>;
@@ -285,7 +287,9 @@ const harness = async (options: {
     definitions,
     ...(options.files !== undefined ? { instructionFiles: createFakeInstructionFiles({ [INPUT.cwd]: options.files }) } : {}),
     ...(options.models !== undefined ? { modelCatalog: createFakeModelCatalog({ [ACCOUNT]: options.models }) } : {}),
-    ...(options.routeKinds !== undefined ? { capabilities: createFakeCapabilityCatalog(options.routeKinds) } : {}),
+    ...(options.routeKinds !== undefined || options.translations !== undefined
+      ? { capabilities: createFakeCapabilityCatalog(options.routeKinds ?? [], options.translations ?? []) }
+      : {}),
   });
 
   await workOrders.create({ ...WORK_ORDER_RECORD });
@@ -2252,5 +2256,62 @@ describe('stage output check', () => {
     const cancelled = await executeRun(command.deps, permissionGate().permissions, planInput({ kind: 'docs' }));
     expect(cancelled).toEqual({ kind: 'finished', outcome: 'cancelled' });
     expect(command.transport.requests()).toHaveLength(1);
+  });
+});
+
+describe('executeRun capability translation (P-59)', () => {
+  const mcp = {
+    kind: 'mcp',
+    id: slugOf<'capability'>('tools'),
+    name: 'Tools',
+    command: 'tools-srv',
+    args: [],
+    env: {},
+  } as const;
+  const hook = {
+    kind: 'hook',
+    id: slugOf<'capability'>('guard'),
+    name: 'Guard',
+    event: 'before_tool',
+    command: 'guard.sh',
+  } as const;
+  const skill = {
+    kind: 'skill',
+    id: slugOf<'capability'>('craft'),
+    name: 'Craft',
+    path: 'skills/craft.md',
+  } as const;
+  const TABLE: readonly TranslationRow[] = [
+    { provider: 'provider-x', kind: 'mcp', support: 'native', how: 'run-scoped config' },
+    { provider: 'provider-x', kind: 'hook', support: 'unsupported', how: 'no hook protocol' },
+    { provider: 'provider-x', kind: 'skill', support: 'degraded', how: 'inlined', degradesTo: 'context' },
+  ];
+
+  it('P-59: an unsupported capability is omitted from the run and recorded as omitted on the run record', async () => {
+    const h = await harness({ translations: TABLE });
+    await executeRun(h.deps, permissionGate().permissions, { ...INPUT, capabilities: [mcp, hook] });
+    const request = theRequest(h.transport);
+    expect(request.capabilities.map((c) => c.id)).toEqual(['tools']);
+    const [run] = await h.runs.listForWorkOrder(WORK_ORDER);
+    expect(run?.omittedCapabilities).toEqual([{ capability: 'guard', provider: 'provider-x', reason: 'unsupported' }]);
+  });
+
+  it('P-59: a degraded capability is inlined into the prompt instead of the run files', async () => {
+    const h = await harness({ translations: TABLE });
+    await executeRun(h.deps, permissionGate().permissions, { ...INPUT, capabilities: [skill] });
+    const request = theRequest(h.transport);
+    expect(request.capabilities).toEqual([]);
+    expect(request.prompt).toContain(INPUT.prompt);
+    expect(request.prompt).toContain('skills/craft.md');
+    const [run] = await h.runs.listForWorkOrder(WORK_ORDER);
+    expect(run && 'omittedCapabilities' in run).toBe(false);
+  });
+
+  it('P-59 edge: native capabilities pass through untouched and leave the prompt as composed', async () => {
+    const h = await harness({ translations: TABLE });
+    await executeRun(h.deps, permissionGate().permissions, { ...INPUT, capabilities: [mcp] });
+    const request = theRequest(h.transport);
+    expect(request.capabilities).toEqual([mcp]);
+    expect(request.prompt).toBe(INPUT.prompt);
   });
 });
