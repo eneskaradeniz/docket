@@ -14,7 +14,7 @@ export type Command =
   | { readonly type: 'repo.register'; readonly project: string; readonly repo: string; readonly path: string }
   | { readonly type: 'repo.unregister'; readonly project: string; readonly repo: string }
   | { readonly type: 'repo.relink'; readonly repoId: string; readonly path: string } // errors: not_found, folder_not_found, fingerprint_mismatch (A-341)
-  | { readonly type: 'repo.saveFlow'; readonly repo: string; readonly flow: RepoFlowInput } // ok → { ok: true }; errors: not_found, definitions_invalid, stale (A-345)
+  | { readonly type: 'repo.saveFlow'; readonly repo: string; readonly flow: RepoFlowInput } // ok → { ok: true }; errors: not_found, definitions_invalid, stale, account_not_connected (A-345, A-354)
   | { readonly type: 'workOrder.block'; readonly id: string; readonly reason: string }
   | { readonly type: 'workOrder.unblock'; readonly id: string }
   | { readonly type: 'workOrder.close'; readonly id: string }
@@ -146,12 +146,15 @@ export type CommandResult =
       readonly version?: number;
     }
   /** `roles` rides only `binding_exists`: the roles whose bindings still reference the account.
+   *  `accounts` rides only `account_not_connected` on repo.saveFlow (A-354): every disconnected
+   *  stage chain entry as `{ stage, accountId }`.
    *  `issues` rides `definitions_invalid` on bundle import (A-342).
    *  `definitionIssues` rides `definitions_invalid` on definitions.save (A-352). */
   | {
       readonly ok: false;
       readonly code: string;
       readonly roles?: readonly string[];
+      readonly accounts?: readonly { readonly stage: string; readonly accountId: string }[];
       readonly issues?: readonly string[];
       readonly definitionIssues?: readonly { readonly path: string; readonly code: string; readonly message: string }[];
     };

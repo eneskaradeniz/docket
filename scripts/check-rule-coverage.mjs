@@ -21,18 +21,50 @@
 // src/api and src/application, and the quiet-window rules whose pure function and source scan
 // live under electron/ (the shell is outside src/). Runs as part of
 // `npm run check:boundaries`.
+import { spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
+const SELF = fileURLToPath(import.meta.url);
+const DOCS_V2 = join(ROOT, 'docs', 'v2');
+
+/** Lines that define a rule: `- **X-n** (added …)`. Amended bullets are not definitions. */
+const RULE_DEFINITION_LINE_RE = /^- \*\*([A-Z]-\d+)\*\* \(added/;
+
+export function duplicateRuleDefinitionIds(text) {
+  const counts = new Map();
+  const ingest = (source) => {
+    for (const line of source.split('\n')) {
+      const m = RULE_DEFINITION_LINE_RE.exec(line);
+      if (!m) continue;
+      counts.set(m[1], (counts.get(m[1]) ?? 0) + 1);
+    }
+  };
+  if (text === undefined) {
+    for (const name of readdirSync(DOCS_V2)) {
+      if (!name.endsWith('.md')) continue;
+      ingest(readFileSync(join(DOCS_V2, name), 'utf8'));
+    }
+  } else {
+    ingest(text);
+  }
+  return [...counts.entries()].filter(([, n]) => n > 1).map(([id]) => id).sort();
+}
 
 // One entry per rule namespace: where the ids are defined and which folders carry its tests.
 const SECTIONS = [
   { name: 'domain', prefix: 'R', doc: join(ROOT, 'docs', 'v2', 'domain.md'), dirs: [join(ROOT, 'src', 'domain')] },
   { name: 'application', prefix: 'A', doc: join(ROOT, 'docs', 'v2', 'application.md'), dirs: [join(ROOT, 'src', 'application'), join(ROOT, 'src', 'api'), join(ROOT, 'src', 'presentation')] },
   { name: 'infrastructure', prefix: 'I', doc: join(ROOT, 'docs', 'v2', 'infrastructure.md'), dirs: [join(ROOT, 'src', 'infrastructure')] },
-  { name: 'providers', prefix: 'P', doc: join(ROOT, 'docs', 'v2', 'providers.md'), dirs: [join(ROOT, 'src', 'domain'), join(ROOT, 'src', 'infrastructure'), join(ROOT, 'src', 'application'), join(ROOT, 'src', 'api')] },
+  {
+    name: 'providers',
+    prefix: 'P',
+    doc: join(ROOT, 'docs', 'v2', 'providers.md'),
+    definitionDocs: [join(ROOT, 'docs', 'v2', 'providers.md'), join(ROOT, 'docs', 'v2', 'provider-capabilities.md')],
+    dirs: [join(ROOT, 'src', 'domain'), join(ROOT, 'src', 'infrastructure'), join(ROOT, 'src', 'application'), join(ROOT, 'src', 'api')],
+  },
   { name: 'domain environments', prefix: 'E', doc: join(ROOT, 'docs', 'v2', 'domain.md'), dirs: [join(ROOT, 'src', 'domain')] },
   { name: 'application environments', prefix: 'E', doc: join(ROOT, 'docs', 'v2', 'application.md'), dirs: [join(ROOT, 'src', 'application'), join(ROOT, 'src', 'api')] },
   { name: 'ui', prefix: 'U', doc: join(ROOT, 'docs', 'v2', 'ui.md'), dirs: [join(ROOT, 'src', 'presentation'), join(ROOT, 'src', 'api'), join(ROOT, 'src', 'application'), join(ROOT, 'electron')] },
@@ -44,9 +76,7 @@ const SECTIONS = [
 // and an id still pending after its issue closes is a review blocker. This list must be empty
 // when the phase closes.
 const PENDING = new Map([
-  ['providers:P-38', '#672'],
   ['domain:R-133', '#1025'],
-  ['infrastructure:I-92', '#1009'],
 
   // #1005 — two-layer roadmap and tracker model with sync modes
   ['application:A-328', '#1019'],
@@ -77,6 +107,7 @@ const PENDING = new Map([
   ['ui:U-289', '#1024'],
   ['ui:U-290', '#1025'],
   ['ui:U-291', '#1025'],
+
   // #1046 — Phase 7 contract gaps: storage, registry, bundles, library versions (#1009–#1012 implement)
   ['application:A-345', '#1012'],
 
@@ -117,9 +148,14 @@ const checkSection = (section) => {
   const failures = [];
   const docRel = relative(ROOT, section.doc);
 
-  const defined = [...new Set([...readFileSync(section.doc, 'utf8').matchAll(definedRe)].map((m) => m[1]))].sort(byRuleId);
+  const definitionSources = section.definitionDocs ?? [section.doc];
+  const defined = [
+    ...new Set(
+      definitionSources.flatMap((path) => [...readFileSync(path, 'utf8').matchAll(definedRe)].map((m) => m[1])),
+    ),
+  ].sort(byRuleId);
   if (defined.length === 0) {
-    failures.push(`no **${prefix}-n** ids found in ${docRel} — the doc or the pattern moved`);
+    failures.push(`no **${prefix}-n** ids found in ${definitionSources.map((p) => relative(ROOT, p)).join(' or ')} — the doc or the pattern moved`);
     return { failures, defined: 0, missing: [] };
   }
 
@@ -150,18 +186,35 @@ const checkSection = (section) => {
   return { failures, defined: defined.length, missing, pending: pendingIds.size };
 };
 
-let failed = false;
-for (const section of SECTIONS) {
-  const prefix = section.prefix;
-  const { failures, defined, pending } = checkSection(section);
-  if (failures.length) {
-    failed = true;
-    console.error(`rule coverage (${section.name}): ${failures[0]}`);
-    for (const failure of failures.slice(1)) console.error(failure);
-  } else if (pending > 0) {
-    console.log(`rule coverage (${section.name}) clean — ${defined} rules in ${relative(ROOT, section.doc)}, ${defined - pending} tested, ${pending} pending (PENDING list)`);
-  } else {
-    console.log(`rule coverage (${section.name}) clean — ${defined} rules in ${relative(ROOT, section.doc)} all have an it('${prefix}-n: …') test`);
+const isMain = process.argv[1] && SELF === process.argv[1];
+if (isMain) {
+  const selfTest = spawnSync(process.execPath, ['--test', join(ROOT, 'scripts/check-rule-coverage.test.mjs')], {
+    stdio: 'inherit',
+  });
+  if (selfTest.status !== 0) process.exit(selfTest.status ?? 1);
+
+  const dupes = duplicateRuleDefinitionIds();
+  if (dupes.length) {
+    console.error(`rule definitions: duplicate (added) ids in docs/v2: ${dupes.join(', ')}`);
+    console.error('each **X-n** (added …) bullet must appear once; use amended bullets or a cross-link for aliases');
+    process.exit(1);
   }
 }
-if (failed) process.exit(1);
+
+if (isMain) {
+  let failed = false;
+  for (const section of SECTIONS) {
+    const prefix = section.prefix;
+    const { failures, defined, pending } = checkSection(section);
+    if (failures.length) {
+      failed = true;
+      console.error(`rule coverage (${section.name}): ${failures[0]}`);
+      for (const failure of failures.slice(1)) console.error(failure);
+    } else if (pending > 0) {
+      console.log(`rule coverage (${section.name}) clean — ${defined} rules in ${relative(ROOT, section.doc)}, ${defined - pending} tested, ${pending} pending (PENDING list)`);
+    } else {
+      console.log(`rule coverage (${section.name}) clean — ${defined} rules in ${relative(ROOT, section.doc)} all have an it('${prefix}-n: …') test`);
+    }
+  }
+  if (failed) process.exit(1);
+}

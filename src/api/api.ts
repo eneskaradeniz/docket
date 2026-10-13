@@ -828,12 +828,17 @@ const runCommand = async (
       // (R-127/R-128 against the merged definitions) are the use case's to refuse.
       const flow = parseRepoFlowValue(command.flow);
       if (!flow.ok) return { ok: false, code: 'bad_input' };
-      return commandOf(
-        await saveRepoFlow(
-          { clock: deps.clock, ids: deps.ids, log: deps.log, repos: deps.repos, definitions: deps.definitions },
-          { repo, flow: flow.value, actor },
-        ),
+      const saved = await saveRepoFlow(
+        { clock: deps.clock, ids: deps.ids, log: deps.log, repos: deps.repos, definitions: deps.definitions, accounts: deps.accounts },
+        { repo, flow: flow.value, actor },
       );
+      if (saved.ok) return { ok: true };
+      if (typeof saved.error === 'string') return { ok: false, code: saved.error };
+      return {
+        ok: false,
+        code: saved.error.code,
+        accounts: saved.error.accounts.map((row) => ({ stage: row.stage, accountId: row.accountId })),
+      };
     }
 
     case 'workOrder.block': {
