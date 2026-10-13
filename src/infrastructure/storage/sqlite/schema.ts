@@ -106,4 +106,32 @@ CREATE INDEX actions_by_conversation ON actions (conversation, status);`,
     version: 10,
     sql: `ALTER TABLE spend ADD COLUMN conversation TEXT;`,
   },
+  {
+    // The repoId registry (I-93): the slug-keyed repos table becomes repo_registry, every row
+    // gaining a ULID minted by the SQL itself and a fingerprint record whose rootCommit stays ''
+    // until the app reads git; the projects table loses the main-repo shape.
+    version: 11,
+    sql: `CREATE TABLE repo_registry (repo_id TEXT PRIMARY KEY, slug TEXT NOT NULL, path TEXT NOT NULL, legacy_imported INTEGER NOT NULL DEFAULT 0, data TEXT NOT NULL);
+CREATE UNIQUE INDEX repo_registry_by_slug ON repo_registry (slug);
+WITH seeds AS (
+  SELECT slug, path, unixepoch('now') * 1000 AS t, random() & 1099511627775 AS a, random() & 1099511627775 AS b FROM repos
+)
+INSERT INTO repo_registry (repo_id, slug, path, legacy_imported, data)
+  SELECT
+    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 45) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 40) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 35) & 31) + 1, 1) ||
+    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 30) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 25) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 20) & 31) + 1, 1) ||
+    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 15) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 10) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 5) & 31) + 1, 1) ||
+    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 0) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 35) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 30) & 31) + 1, 1) ||
+    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 25) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 20) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 15) & 31) + 1, 1) ||
+    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 10) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 5) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 0) & 31) + 1, 1) ||
+    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 35) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 30) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 25) & 31) + 1, 1) ||
+    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 20) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 15) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 10) & 31) + 1, 1) ||
+    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 5) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 0) & 31) + 1, 1),
+    slug, path, 0, ''
+  FROM seeds;
+UPDATE repo_registry SET data = json_object('repoId', repo_id, 'slug', slug, 'path', path, 'fingerprint', json_object('rootCommit', ''));
+DROP TABLE repos;
+ALTER TABLE projects DROP COLUMN main_repo;
+UPDATE projects SET data = json_remove(data, '$.mainRepo');`,
+  },
 ];

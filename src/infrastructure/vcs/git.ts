@@ -1,5 +1,5 @@
 // Direct git subprocess execution: no shell, minimal environment, timeouts enforced.
-import type { GitProbe } from '../../application/index';
+import type { GitProbe, RepoFingerprint } from '../../application/index';
 
 import { registeredSpawn } from '../system/index';
 
@@ -89,4 +89,27 @@ export function createGitProbe(): GitProbe {
       return result.exitCode === 0 && result.stdout.trim() === 'true';
     },
   };
+}
+
+/** A folder's repo identity: the root commit of `rev-parse --show-toplevel`'s repo plus the
+ *  normalised `origin` URL when present. `undefined` when the path is not a git work tree with
+ *  commits. Normalisation trims whitespace and strips one trailing `.git` — nothing stronger, so
+ *  an ssh remote keeps its form. */
+export async function readRepoFingerprint(path: string): Promise<RepoFingerprint | undefined> {
+  const toplevel = await runGit(path, ['rev-parse', '--show-toplevel']);
+  if (toplevel.exitCode !== 0) return undefined;
+  const root = toplevel.stdout.trim();
+  if (root === '') return undefined;
+
+  const roots = await runGit(root, ['rev-list', '--max-parents=0', 'HEAD']);
+  if (roots.exitCode !== 0) return undefined;
+  // rev-list walks newest → oldest, so the last root line is the history's first commit.
+  const lines = roots.stdout.trim().split('\n');
+  const rootCommit = lines[lines.length - 1] ?? '';
+  if (rootCommit === '') return undefined;
+
+  const origin = await runGit(root, ['remote', 'get-url', 'origin']);
+  if (origin.exitCode !== 0) return { rootCommit };
+  const normalised = origin.stdout.trim().replace(/\.git$/, '');
+  return normalised === '' ? { rootCommit } : { rootCommit, remote: normalised };
 }

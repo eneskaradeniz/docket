@@ -43,8 +43,8 @@ import {
   openDatabase,
   type OpenDbError,
 } from '../storage/sqlite/index';
-import { createMemoryDispatchStatus, createNodeMachineProbe, createSystemClock, createUlidGen,type ProjectPaths, type RandomBytes } from '../system/index';
-import { createCheckpoints, createEvidenceChecker, createGitProbe, createRepoFolders, createWorktrees, createWorktreeFiles } from '../vcs/index';
+import { createMemoryDispatchStatus, createNodeMachineProbe, createSystemClock, createUlidGen, repoPathsOf, type ProjectPaths, type RandomBytes } from '../system/index';
+import { createCheckpoints, createEvidenceChecker, createGitProbe, readRepoFingerprint, createRepoFolders, createWorktrees, createWorktreeFiles } from '../vcs/index';
 import { createCapabilityCatalog } from '../providers/registry/index';
 import { createModelCatalog } from '../providers/catalog/index';
 import { createQuotaProbeResolver } from '../providers/quota/index';
@@ -103,12 +103,15 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
   const db = opened.value;
 
   const clock = config.clock ?? createSystemClock();
-  const repos = createSqliteRepoRegistry(db);
+  const repos = createSqliteRepoRegistry(db, readRepoFingerprint);
   const projects = createSqliteProjectRepo(db);
   const projectPaths: ProjectPaths = createSqliteProjectPaths(db);
+  // The store and the worktrees still resolve checkouts by slug; the registry is repoId-keyed, so
+  // they read through the transitional view until the store re-roots.
+  const repoPaths = repoPathsOf(repos);
   const accounts = createSqliteAccountRepo(db);
   const secrets = createKeychainVault(db, config.cipher);
-  const definitions = createYamlDefinitionStore({ globalRoot: config.dataDir, repos, projects: projectPaths });
+  const definitions = createYamlDefinitionStore({ globalRoot: config.dataDir, repos: repoPaths, projects: projectPaths });
   const deps: AppDeps = {
     clock,
     ids: createUlidGen(clock, config.random),
@@ -145,7 +148,7 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     transports: config.transports,
     commands: createCommandRunner({ env: config.commandEnv }),
     secretScanner: createSecretScanner(),
-    worktrees: createWorktrees({ root: join(config.dataDir, 'worktrees'), repos }),
+    worktrees: createWorktrees({ root: join(config.dataDir, 'worktrees'), repos: repoPaths }),
     worktreeFiles: createWorktreeFiles(),
     evidence: createEvidenceChecker(),
     git: createGitProbe(),

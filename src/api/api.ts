@@ -2027,7 +2027,9 @@ const cockpitView = async (deps: AppDeps, projectFilter?: ProjectSlug): Promise<
     projects.push({
       project: def.id,
       name: def.name,
-      mainRepo: def.mainRepo,
+      // A stored project carries no main repo; the view's transitional reading names the first
+      // listed one until the repo surfaces reshape it.
+      mainRepo: def.repos[0],
       repoCount: def.repos.length,
       active: own.filter((entry) => entry.status !== 'done').length,
       waiting: own.filter((entry) => entry.kind === 'permission_ask' || entry.kind === 'awaiting_human' || entry.kind === 'blocked').length,
@@ -2086,7 +2088,7 @@ const projectTree = async (deps: AppDeps): Promise<ProjectTree> => {
 
   const items: ProjectTreeItem[] = [];
   for (const def of await deps.projects.list()) {
-    const repos: RepoNode[] = def.repos.map((repo) => {
+    const repos: RepoNode[] = def.repos.map((repo, index) => {
       const own = derivedByRepo.get(repo) ?? [];
       const waiting = own.filter(
         (entry) => entry.kind === 'permission_ask' || entry.kind === 'awaiting_human' || entry.kind === 'blocked',
@@ -2095,7 +2097,8 @@ const projectTree = async (deps: AppDeps): Promise<ProjectTree> => {
       return {
         repo,
         name: repo,
-        main: repo === def.mainRepo,
+        // First listed stands in for "main" until the repo surfaces reshape the view.
+        main: index === 0,
         active: own.filter((entry) => entry.status !== 'done').length,
         running,
         waiting,
@@ -2108,7 +2111,7 @@ const projectTree = async (deps: AppDeps): Promise<ProjectTree> => {
     items.push({
       project: def.id,
       name: def.name,
-      mainRepo: def.mainRepo,
+      mainRepo: def.repos[0],
       repos,
       active: repos.reduce((sum, node) => sum + node.active, 0),
       running,

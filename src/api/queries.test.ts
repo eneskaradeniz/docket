@@ -2080,7 +2080,7 @@ describe('workOrders.stageFiles / workOrders.readStageFile — the wire shape', 
       createdAt: 1,
       createdBy: ACTOR,
     });
-    await deps.repos.register(REPO, '/repo');
+    await deps.repos.register({ repoId: '01ARZ3NDEKTSV4RRFFQ69G5FQ01', slug: REPO, path: '/repo', fingerprint: { rootCommit: '' } });
     await deps.worktrees.ensure(REPO, WO_STAGE_FILES);
     worktreeFiles.written('docs/plan.md', '# Plan');
     worktreeFiles.written('src/main.ts', 'const x = 1;\n');

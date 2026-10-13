@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { ProjectDef, RepoSlug } from '../../../domain/index';
+import type { ProjectDef } from '../../../domain/index';
+import { isUlid } from '../../../domain/index';
 import { createSqliteProjectRepo } from './project-repo';
 import { createSqliteRepoRegistry } from './repo-registry';
 import { openDatabase, type DocketDb } from './database';
@@ -56,6 +57,26 @@ const MIGRATION_2_SQL = [
 
 const MIGRATION_3_SQL = 'CREATE TABLE run_handoff (run_id TEXT PRIMARY KEY REFERENCES runs (id), note TEXT, stage_base TEXT);';
 
+// The pinned migration 11 (I-93): the slug-keyed repos table becomes the repoId-keyed repo_registry
+// and the projects table loses the main repo. Verbatim — the ULID expression is the contract.
+const ULID_SUBSTR = "substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 45) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 40) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 35) & 31) + 1, 1) ||\n    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 30) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 25) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 20) & 31) + 1, 1) ||\n    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 15) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 10) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 5) & 31) + 1, 1) ||\n    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 0) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 35) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 30) & 31) + 1, 1) ||\n    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 25) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 20) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 15) & 31) + 1, 1) ||\n    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 10) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 5) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 0) & 31) + 1, 1) ||\n    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 35) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 30) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 25) & 31) + 1, 1) ||\n    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 20) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 15) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 10) & 31) + 1, 1) ||\n    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 5) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 0) & 31) + 1, 1)";
+const MIGRATION_11_SQL = [
+  'CREATE TABLE repo_registry (repo_id TEXT PRIMARY KEY, slug TEXT NOT NULL, path TEXT NOT NULL, legacy_imported INTEGER NOT NULL DEFAULT 0, data TEXT NOT NULL);',
+  'CREATE UNIQUE INDEX repo_registry_by_slug ON repo_registry (slug);',
+  'WITH seeds AS (',
+  "  SELECT slug, path, unixepoch('now') * 1000 AS t, random() & 1099511627775 AS a, random() & 1099511627775 AS b FROM repos",
+  ')',
+  'INSERT INTO repo_registry (repo_id, slug, path, legacy_imported, data)',
+  '  SELECT',
+  `    ${ULID_SUBSTR},`,
+  '    slug, path, 0, \'\'',
+  '  FROM seeds;',
+  "UPDATE repo_registry SET data = json_object('repoId', repo_id, 'slug', slug, 'path', path, 'fingerprint', json_object('rootCommit', ''));",
+  'DROP TABLE repos;',
+  'ALTER TABLE projects DROP COLUMN main_repo;',
+  "UPDATE projects SET data = json_remove(data, '$.mainRepo');",
+].join('\n');
+
 const MIGRATION_1_TABLES = [
   'work_orders',
   'work_order_events',
@@ -74,10 +95,11 @@ const MIGRATION_1_TABLES = [
 ];
 
 // What the schema holds once every migration has run: migration 2 renames workspaces to repos
-// and adds the project tables; migration 3 adds the run handoff state.
+// and adds the project tables; migration 3 adds the run handoff state; migration 11 replaces the
+// slug-keyed repos table with the repoId-keyed repo_registry.
 const MIGRATED_TABLES = [
   ...MIGRATION_1_TABLES.filter((table) => table !== 'workspaces'),
-  'repos',
+  'repo_registry',
   'projects',
   'project_repos',
   'run_handoff',
@@ -104,6 +126,7 @@ const MIGRATED_INDEXES = [
   ...MIGRATION_1_INDEXES,
   'work_orders_by_project',
   'project_repos_by_repo',
+  'repo_registry_by_slug',
   'pages_by_work_order',
   'pages_by_project',
   'page_comments_by_page',
@@ -246,6 +269,10 @@ describe('MIGRATIONS', () => {
     expect(MIGRATIONS[2]).toStrictEqual({ version: 3, sql: MIGRATION_3_SQL });
   });
 
+  it('holds migration 11 exactly as contracted', () => {
+    expect(MIGRATIONS[10]).toStrictEqual({ version: 11, sql: MIGRATION_11_SQL });
+  });
+
   it('has unique, increasing versions starting at 1', () => {
     const versions = MIGRATIONS.map((m) => m.version);
     expect(versions[0]).toBe(1);
@@ -386,19 +413,26 @@ describe('Migration 2', () => {
     const migrated = openOk(path);
     expect(pragmaValue(migrated, 'user_version')).toBe(SUPPORTED_VERSION);
 
-    // The registry reads the renamed table.
-    const registry = createSqliteRepoRegistry(migrated);
-    expect(await registry.list()).toEqual([
-      { slug: 'acme' as RepoSlug, path: '/x/acme' },
-      { slug: 'zulu' as RepoSlug, path: '/x/zulu' },
+    // The registry reads the repoId-keyed rows migration 11 minted from the renamed table.
+    const registry = createSqliteRepoRegistry(migrated, async () => undefined);
+    const entries = await registry.list();
+    expect(entries.map((entry) => [entry.slug, entry.path])).toEqual([
+      ['acme', '/x/acme'],
+      ['zulu', '/x/zulu'],
     ]);
+    for (const entry of entries) {
+      expect(isUlid(entry.repoId)).toBe(true);
+      expect(entry.fingerprint).toEqual({ rootCommit: '' });
+      expect('legacyImported' in entry).toBe(false);
+    }
 
-    // Every workspace became a project≡repo: name and main repo are the slug itself.
+    // Every workspace became a project≡repo: the name is the slug itself, and migration 11's
+    // rewrite leaves the stored def without a main repo.
     const projects = createSqliteProjectRepo(migrated);
     const listed: readonly ProjectDef[] = await projects.list();
     expect(listed).toEqual([
-      { id: 'acme' as never, name: 'acme', mainRepo: 'acme' as never, repos: ['acme' as never] },
-      { id: 'zulu' as never, name: 'zulu', mainRepo: 'zulu' as never, repos: ['zulu' as never] },
+      { id: 'acme' as never, name: 'acme', repos: ['acme' as never] },
+      { id: 'zulu' as never, name: 'zulu', repos: ['zulu' as never] },
     ]);
     expect((await projects.projectOfRepo('acme' as never))?.id).toBe('acme');
 
@@ -521,5 +555,101 @@ describe('Migration 3', () => {
     expect(pragmaValue(again, 'user_version')).toBe(SUPPORTED_VERSION);
     expect(await createSqliteRunRepo(again).stageBase(runId)).toBe('sha-base-1');
     closeDb(again);
+  });
+});
+
+// --- Migration 11 (I-93): the repoId registry over a version-10 database --------------------------------
+
+/** A database left at version 10: every migration through 10 applied by hand, two repos registered
+ *  and one project still carrying the main-repo shape migration 11 removes. */
+const makeVersion10Database = (path: string): void => {
+  const setup = new DatabaseSync(path);
+  for (const migration of MIGRATIONS) {
+    if (migration.version > 10) break;
+    setup.exec(migration.sql);
+  }
+  setup.exec('PRAGMA user_version = 10');
+  setup.prepare("INSERT INTO repos (slug, path) VALUES ('acme', '/x/acme'), ('zulu', '/x/zulu')").run();
+  setup
+    .prepare('INSERT INTO projects (slug, name, main_repo, data) VALUES (?, ?, ?, ?)')
+    .run(
+      'atolye',
+      'Atölye',
+      'acme',
+      JSON.stringify({ id: 'atolye', name: 'Atölye', mainRepo: 'acme', repos: ['acme', 'zulu'] }),
+    );
+  setup.prepare("INSERT INTO project_repos (project, repo) VALUES ('atolye', 'acme'), ('atolye', 'zulu')").run();
+  setup.close();
+};
+
+describe('Migration 11', () => {
+  it('I-93: migration 11 rewrites repos into the repoId-keyed repo_registry and projects lose mainRepo, in one transaction setting user_version=11; a database already at 11 is a no-op', async () => {
+    const path = join(tmp, 'v10.db');
+    makeVersion10Database(path);
+
+    const migrated = openOk(path);
+    expect(pragmaValue(migrated, 'user_version')).toBe(SUPPORTED_VERSION);
+
+    // The repos table no longer exists; repo_registry holds one minted row per old repo.
+    const reposTable = migrated.raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'repos'").get();
+    expect(reposTable).toBeUndefined();
+    const rows = migrated.raw
+      .prepare('SELECT repo_id, slug, path, legacy_imported, data FROM repo_registry ORDER BY slug ASC')
+      .all() as unknown as readonly { readonly repo_id: string; readonly slug: string; readonly path: string; readonly legacy_imported: number; readonly data: string }[];
+    expect(rows.map((row) => [row.slug, row.path, row.legacy_imported])).toEqual([
+      ['acme', '/x/acme', 0],
+      ['zulu', '/x/zulu', 0],
+    ]);
+    const repoIds = rows.map((row) => row.repo_id);
+    expect(new Set(repoIds).size).toBe(2);
+    for (const row of rows) {
+      expect(isUlid(row.repo_id)).toBe(true);
+      expect(JSON.parse(row.data)).toStrictEqual({
+        repoId: row.repo_id,
+        slug: row.slug,
+        path: row.path,
+        fingerprint: { rootCommit: '' },
+      });
+    }
+
+    // The projects table lost the column and the stored record lost $.mainRepo.
+    const columns = migrated.raw.prepare('PRAGMA table_info(projects)').all().map((column) => String((column as { readonly name: string }).name));
+    expect(columns).not.toContain('main_repo');
+
+    // The registry port reads the migrated rows as entries.
+    const registry = createSqliteRepoRegistry(migrated, async () => undefined);
+    expect(await registry.list()).toEqual([
+      { repoId: repoIds[0], slug: 'acme' as never, path: '/x/acme', fingerprint: { rootCommit: '' } },
+      { repoId: repoIds[1], slug: 'zulu' as never, path: '/x/zulu', fingerprint: { rootCommit: '' } },
+    ]);
+    closeDb(migrated);
+
+    // Opening again is a no-op: migration 11 does not re-run (the minted rows stay two).
+    const again = openOk(path);
+    expect(pragmaValue(again, 'user_version')).toBe(SUPPORTED_VERSION);
+    expect(await createSqliteRepoRegistry(again, async () => undefined).list()).toHaveLength(2);
+    closeDb(again);
+  });
+
+  it('R-126: a migrated ProjectDef carries no mainRepo', async () => {
+    const path = join(tmp, 'v10-project.db');
+    makeVersion10Database(path);
+
+    const migrated = openOk(path);
+    const listed: readonly ProjectDef[] = await createSqliteProjectRepo(migrated).list();
+
+    expect(listed).toEqual([{ id: 'atolye' as never, name: 'Atölye', repos: ['acme' as never, 'zulu' as never] }]);
+    expect('mainRepo' in (listed[0] as object)).toBe(false);
+    closeDb(migrated);
+  });
+
+  it('I-97: the migration never sets legacy_imported — the legacy import does, later', async () => {
+    const path = join(tmp, 'v10-legacy.db');
+    makeVersion10Database(path);
+
+    const migrated = openOk(path);
+    const entries = await createSqliteRepoRegistry(migrated, async () => undefined).list();
+    for (const entry of entries) expect('legacyImported' in entry).toBe(false);
+    closeDb(migrated);
   });
 });

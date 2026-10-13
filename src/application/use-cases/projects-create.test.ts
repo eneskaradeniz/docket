@@ -112,7 +112,7 @@ describe('createProject validation (A-75)', () => {
       self.git.markWorkTree(CHECKOUT);
     });
     await h.projects.save({ id: slugOf<'project'>('atolye'), name: 'Old', mainRepo: slugOf<'repo'>('old'), repos: [slugOf<'repo'>('old')] });
-    await h.repos.register(slugOf<'repo'>('atolye-2'), '/somewhere');
+    await h.repos.register({ repoId: '01ARZ3NDEKTSV4RRFFQ69G5FC01', slug: slugOf<'repo'>('atolye-2'), path: '/somewhere', fingerprint: { rootCommit: '' } });
 
     const result = await createProject(h.deps, { source: existing, name: 'Atölye', actor: ACTOR });
 
@@ -163,7 +163,7 @@ describe('createProject writes (A-77)', () => {
     expect(result).toEqual({ ok: true, value: { id: 'atolye', name: 'Atölye', mainRepo: 'atolye', repos: ['atolye'] } });
     expect(await globalRoleFile(h)).toBeDefined();
     expect(await h.projects.get(slugOf<'project'>('atolye'))).toBeDefined();
-    expect(await h.repos.path(slugOf<'repo'>('atolye'))).toBe(CHECKOUT);
+    expect((await h.repos.list()).find((entry) => entry.slug === slugOf<'repo'>('atolye'))?.path).toBe(CHECKOUT);
     expect(h.folders.created()).toEqual([]);
   });
 
@@ -177,7 +177,7 @@ describe('createProject writes (A-77)', () => {
 
     expect(result.ok).toBe(true);
     expect(h.folders.created()).toEqual([`${PARENT}/atolye`]);
-    expect(await h.repos.path(slugOf<'repo'>('atolye'))).toBe(`${PARENT}/atolye`);
+    expect((await h.repos.list()).find((entry) => entry.slug === slugOf<'repo'>('atolye'))?.path).toBe(`${PARENT}/atolye`);
     expect(h.definitions.repoAt(`${PARENT}/atolye`)).toBeDefined();
   });
 
