@@ -147,6 +147,7 @@ const harness = (overrides: Partial<Parameters<typeof createFakeDeps>[0]> = {}):
   definitions.setProject({ id: BETA, name: 'Beta', mainRepo: BETA_APP, repos: [BETA_APP] });
   for (const repo of [ALPHA_APP, ALPHA_API, BETA_APP]) definitions.seed({ kind: 'repo', repo }, 'defs.json', defs(repo));
   definitions.seed({ kind: 'project', project: ALPHA }, 'roadmap.yaml', ROADMAP);
+  definitions.seed({ kind: 'project', project: ALPHA }, 'project.yaml', JSON.stringify({ name: 'Alpha', mainRepo: ALPHA_APP, repos: [ALPHA_APP, ALPHA_API] }));
   definitions.seed({ kind: 'project', project: ALPHA }, 'roles/helper.yaml', ROLES_FILE);
   const deps = createFakeDeps({ clock, log, runTokens: tokens, definitions, ...overrides });
   const ledger = createChatTurnLedger();
@@ -460,7 +461,7 @@ describe('A-220: propose_change', () => {
     const receipt = resultOf(await h.call(chat, 'propose_change', roadmapArgs(after)));
     expect(receipt).toMatchObject({ kind: 'receipt', status: 'pending_approval', source: 'operator request' });
     const proposal = await h.deps.proposals.get(receipt['proposal'] as never);
-    expect(proposal).toMatchObject({ author: AGENT, target: 'roadmap.yaml', after, status: 'pending' });
+    expect(proposal).toMatchObject({ author: AGENT, target: `projects/${ALPHA}/roadmap.yaml`, after, status: 'pending' });
     expect((await h.deps.definitions.readFile({ kind: 'project', project: ALPHA }, 'roadmap.yaml'))?.content).toBe(ROADMAP); // nothing applied yet
     expect(h.ledger.take(TURN)).toEqual([{ kind: 'proposal', proposal: receipt['proposal'], action: receipt['action'], source: 'operator request' }]);
 
@@ -469,30 +470,29 @@ describe('A-220: propose_change', () => {
     expect((await h.deps.definitions.readFile({ kind: 'project', project: ALPHA }, 'roadmap.yaml'))?.content).toBe(after);
   });
 
-  it('A-220: a definition change takes a project, repo or global scope, and the store\'s own names win', async () => {
+  it('A-220: a definition change takes a project or repo scope, and the store\'s own names win', async () => {
     const h = await setup();
     const chat = await h.chat(CONVERSATION, SCOPE_ALPHA);
-    const after = JSON.stringify({ roles: [{ id: 'helper', name: 'Renamed', instructions: 'help', writeScope: { kind: 'repo' }, capabilities: [], active: true }] });
+    const afterProject = JSON.stringify({ name: 'Alpha Renamed', mainRepo: ALPHA_APP, repos: [ALPHA_APP, ALPHA_API] });
     const receipt = resultOf(await h.call(chat, 'propose_change', {
       target: 'definition',
       scope: { kind: 'project', project: ALPHA },
-      file: 'roles/helper.yaml',
-      after,
-      summary: 'Rolü adlandır',
-      source: 'roles/helper.yaml',
+      file: 'project.yaml',
+      after: afterProject,
+      summary: 'Projeyi adlandır',
+      source: 'project.yaml',
     }));
     expect(receipt).toMatchObject({ kind: 'receipt', status: 'pending_approval' });
 
-    const global = await h.chat(GLOBAL_CONVERSATION, SCOPE_GLOBAL, OTHER_TURN);
-    const globalReceipt = resultOf(await h.call(global, 'propose_change', {
+    const repoReceipt = resultOf(await h.call(chat, 'propose_change', {
       target: 'definition',
-      scope: { kind: 'global' },
-      file: 'roles/new-role.yaml',
-      after: after.replace('helper', 'new-role'),
-      summary: 'Yeni rol',
-      source: 'operator request',
+      scope: { kind: 'repo', repo: ALPHA_APP },
+      file: 'repo.yaml',
+      after: defs(ALPHA_APP).replace('"name":"alpha-app"', '"name":"Renamed"'),
+      summary: 'Depoyu adlandır',
+      source: 'repo.yaml',
     }));
-    expect(globalReceipt).toMatchObject({ kind: 'receipt', status: 'pending_approval' });
+    expect(repoReceipt).toMatchObject({ kind: 'receipt', status: 'pending_approval' });
   });
 
   it('A-220: a global scope in a project conversation, and out-of-scope projects and repos, are forbidden', async () => {

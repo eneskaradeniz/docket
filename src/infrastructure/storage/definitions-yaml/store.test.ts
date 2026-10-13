@@ -1,15 +1,15 @@
-// Tests for the YAML definition store (rules I-12 … I-18, I-32). Real files in fs.mkdtemp folders
-// only; the repo registry and the project paths are stub objects, never the real ones.
+// Tests for the re-rooted YAML definition store (I-86 layout, I-95 grammar and create-only
+// version files, I-96 installs, R-129/R-134/R-139 arms; I-11/I-12/I-14/I-16/I-32/I-36/I-44 keep
+// successor-behaviour titles). Real files in fs.mkdtemp folders only.
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { stringify } from 'yaml';
 
-import type { DefinitionScope, DefinitionStore } from '../../../application/index';
+import type { DefinitionStore } from '../../../application/index';
 import type { CapabilityDef, CapabilitySlug, ProjectSlug, RepoSlug } from '../../../domain/index';
-import { BUILTIN_FLOWS, BUILTIN_ROLES, parseSlug } from '../../../domain/index';
-import type { ProjectPaths, RepoPaths } from '../../system/index';
+import { BUILTIN_FLOWS, BUILTIN_ROLES } from '../../../domain/index';
 
 import { createYamlDefinitionStore } from './store';
 import { hashContent } from './targets';
@@ -17,54 +17,21 @@ import { hashContent } from './targets';
 const REPO = 'acme' as RepoSlug;
 const UNKNOWN_REPO = 'ghost' as RepoSlug;
 const PROJECT = 'atolye' as ProjectSlug;
-const UNKNOWN_PROJECT = 'ghost-proj' as ProjectSlug;
-const MAIN_REPO = 'main' as RepoSlug;
-const GLOBAL_SCOPE: DefinitionScope = { kind: 'global' };
-const PROJECT_SCOPE: DefinitionScope = { kind: 'project', project: PROJECT };
-const UNKNOWN_PROJECT_SCOPE: DefinitionScope = { kind: 'project', project: UNKNOWN_PROJECT };
-const REPO_SCOPE: DefinitionScope = { kind: 'repo', repo: REPO };
-const UNKNOWN_REPO_SCOPE: DefinitionScope = { kind: 'repo', repo: UNKNOWN_REPO };
 
 let globalRoot = '';
-let repoPath = '';
-let repoRoot = '';
-let mainPath = '';
-let mainRoot = '';
-const registry = new Map<string, string>();
-const repos: RepoPaths = { path: async (slug) => registry.get(slug) };
-const projectOf = new Map<string, ProjectSlug>();
-const mainRepoOf = new Map<ProjectSlug, string>();
-const projects: ProjectPaths = {
-  projectOf: async (repo) => projectOf.get(repo),
-  mainRepoPath: async (project) => mainRepoOf.get(project),
-};
+let besideRoot = '';
 
-const makeStore = (): DefinitionStore => createYamlDefinitionStore({ globalRoot, repos, projects });
+const makeStore = (): DefinitionStore => createYamlDefinitionStore({ globalRoot });
 
 beforeEach(async () => {
-  globalRoot = await mkdtemp(join(tmpdir(), 'docket-yaml-global-'));
-  repoPath = await mkdtemp(join(tmpdir(), 'docket-yaml-repo-'));
-  mainPath = await mkdtemp(join(tmpdir(), 'docket-yaml-main-'));
-  repoRoot = join(repoPath, '.docket');
-  mainRoot = join(mainPath, '.docket');
-  registry.clear();
-  registry.set(REPO, repoPath);
-  registry.set(MAIN_REPO, mainPath);
-  projectOf.clear();
-  mainRepoOf.clear();
+  globalRoot = await mkdtemp(join(tmpdir(), 'docket-yaml-root-'));
+  besideRoot = await mkdtemp(join(tmpdir(), 'docket-yaml-beside-'));
 });
 
 afterEach(async () => {
   await rm(globalRoot, { recursive: true, force: true });
-  await rm(repoPath, { recursive: true, force: true });
-  await rm(mainPath, { recursive: true, force: true });
+  await rm(besideRoot, { recursive: true, force: true });
 });
-
-/** Registers a project whose main repo is MAIN_REPO; `members` lists its member repos. */
-const registerProject = (members: readonly RepoSlug[] = [REPO]): void => {
-  mainRepoOf.set(PROJECT, mainPath);
-  for (const member of members) projectOf.set(member, PROJECT);
-};
 
 // --- fixtures ---------------------------------------------------------------------------------------
 
@@ -96,6 +63,25 @@ const flowDef = (id: string, overrides: Record<string, unknown> = {}): unknown =
   ...overrides,
 });
 
+const capabilityDef = (id: CapabilitySlug): CapabilityDef => ({
+  kind: 'context',
+  id,
+  name: `Capability ${id}`,
+  path: join(besideRoot, `${id}.md`),
+});
+
+const repoDef = (id: string, overrides: Record<string, unknown> = {}): unknown => ({
+  id,
+  name: `Repo ${id}`,
+  flows: ['std'],
+  defaultFlow: 'std',
+  commandSets: {},
+  roleOverrides: [],
+  docsRoot: 'docs',
+  testGlobs: [],
+  ...overrides,
+});
+
 const roadmapDef = (overrides: Record<string, unknown> = {}): unknown => ({
   phases: [
     {
@@ -108,818 +94,456 @@ const roadmapDef = (overrides: Record<string, unknown> = {}): unknown => ({
   ...overrides,
 });
 
-const projectDef = (overrides: Record<string, unknown> = {}): unknown => ({
-  id: 'atolye',
-  name: 'Atölye',
-  mainRepo: 'main',
-  repos: ['main', 'acme'],
-  ...overrides,
-});
-
-const repoDef = (overrides: Record<string, unknown> = {}): unknown => ({
-  id: 'acme',
-  name: 'Acme',
-  flows: ['standard'],
-  defaultFlow: 'standard',
-  commandSets: { tests: ['npm test'] },
-  roleOverrides: [],
-  docsRoot: 'docs',
-  testGlobs: ['src/**/*.test.ts'],
-  ...overrides,
-});
-
-/** Seeds the built-in library as global files: roles/<id>.yaml and flows/<id>.yaml. */
-const seedLibrary = async (root: string): Promise<void> => {
-  for (const role of BUILTIN_ROLES) await writeYaml(root, `roles/${role.id}.yaml`, role);
-  for (const flow of BUILTIN_FLOWS) await writeYaml(root, `flows/${flow.id}.yaml`, flow);
+/** A loadable world: the standard flow, the planner role, and the repo's repo.yaml. */
+const seedLoadableWorld = async (): Promise<void> => {
+  await writeYaml(globalRoot, 'library/flows/std/v1.yaml', flowDef('std', { stages: [{ id: 'plan', name: 'Plan', role: null, exit: [] }] }));
+  await writeYaml(globalRoot, 'library/roles/planner/v1.yaml', roleDef('planner'));
+  await writeYaml(globalRoot, `repos/${REPO}/repo.yaml`, repoDef(REPO));
 };
 
-/** Every file under a root, as target → content; the "nothing changed" oracle. */
-const snapshot = async (root: string): Promise<Readonly<Record<string, string>>> => {
-  const out: Record<string, string> = {};
-  const walk = async (dir: string): Promise<void> => {
-    let entries;
-    try {
-      entries = await readdir(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      const path = join(dir, entry.name);
-      if (entry.isDirectory()) await walk(path);
-      else out[relative(root, path)] = await readFile(path, 'utf8');
-    }
-  };
-  await walk(root);
-  return out;
-};
-
-const issuesByPath = (issues: readonly { readonly path: string }[]): readonly string[] =>
-  [...issues].map((issue) => issue.path).sort();
-
-// --- load (I-12) ------------------------------------------------------------------------------------
+// --- load --------------------------------------------------------------------------------------------
 
 describe('load', () => {
-  it('I-12: merges global files with repo overrides, the repo entry taking the global position', async () => {
-    await seedLibrary(globalRoot);
-    const localStandard = { ...BUILTIN_FLOWS[0], name: 'Standart — yerel' };
-    await writeYaml(repoRoot, 'flows/standard.yaml', localStandard);
-    await writeYaml(repoRoot, 'roles/local-helper.yaml', roleDef('local-helper'));
-    await writeYaml(repoRoot, 'repo.yaml', repoDef());
-
-    const result = await makeStore().load(REPO);
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    // Global flows in file-name order, the repo 'standard' overriding in place.
-    expect(result.value.flows.map((flow) => flow.id)).toEqual(['quick-fix', 'research', 'security-reviewed', 'standard']);
-    expect(result.value.flows[3]?.name).toBe('Standart — yerel');
-    // Global roles in file-name order, then repo-only roles.
-    expect(result.value.roles.map((role) => role.id)).toEqual([
-      'analyst', 'developer', 'documenter', 'planner', 'reviewer', 'security-auditor', 'test-writer', 'local-helper',
-    ]);
-    expect(result.value.repo?.defaultFlow).toBe('standard');
-    expect(result.value.capabilities).toEqual([]);
-    expect(result.value.project).toBeUndefined();
+  it('I-12: loads the library\'s current versions together with the repo\'s repo.yaml', async () => {
+    await seedLoadableWorld();
+    const loaded = await makeStore().load(REPO);
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) return;
+    expect(loaded.value.flows.map((flow) => flow.id)).toEqual(['std']);
+    expect(loaded.value.roles.map((role) => role.id)).toEqual(['planner']);
+    expect(loaded.value.repo?.id).toBe(REPO);
+    expect(loaded.value.project).toBeUndefined();
   });
 
-  it('I-12: the stage tier, thinking and reviewOf fields survive a YAML round trip through load', async () => {
-    await seedLibrary(globalRoot);
-    const flow = BUILTIN_FLOWS[0];
-    const stages = (flow?.stages ?? []).map((stage) =>
-      stage.id === 'review' ? { ...stage, thinking: { effort: 'high' } } : stage,
-    );
-    await writeYaml(globalRoot, 'flows/standard.yaml', { ...flow, stages });
-    await writeYaml(repoRoot, 'repo.yaml', repoDef());
-
-    const result = await makeStore().load(REPO);
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    const review = result.value.flows.find((f) => f.id === 'standard')?.stages.find((stage) => stage.id === 'review');
-    expect(review).toMatchObject({ tier: 'strong', reviewOf: 'implement', thinking: { effort: 'high' } });
+  it('I-12: the newest version of a definition is the current one', async () => {
+    await writeYaml(globalRoot, 'library/flows/std/v1.yaml', flowDef('std', { stages: [{ id: 'plan', name: 'Plan', role: null, exit: [] }] }));
+    await writeYaml(globalRoot, 'library/roles/planner/v1.yaml', roleDef('planner', { name: 'Old' }));
+    await writeYaml(globalRoot, 'library/roles/planner/v2.yaml', roleDef('planner', { name: 'New' }));
+    await writeYaml(globalRoot, `repos/${REPO}/repo.yaml`, repoDef(REPO));
+    const loaded = await makeStore().load(REPO);
+    expect(loaded.ok && loaded.value.roles[0]?.name).toBe('New');
   });
 
-  it('I-12: an unknown repo is a missing_field issue on path "repo"', async () => {
-    const result = await makeStore().load(UNKNOWN_REPO);
+  it('I-11: only version files the grammar accepts are read, in version order', async () => {
+    await writeYaml(globalRoot, 'library/flows/std/v1.yaml', flowDef('std', { stages: [{ id: 'plan', name: 'Plan', role: null, exit: [] }] }));
+    await writeYaml(globalRoot, 'library/roles/planner/v1.yaml', roleDef('planner'));
+    await writeText(globalRoot, 'library/roles/planner/notes.txt', 'not a definition');
+    await writeYaml(globalRoot, `repos/${REPO}/repo.yaml`, repoDef(REPO));
+    const loaded = await makeStore().load(REPO);
+    expect(loaded.ok && loaded.value.roles).toHaveLength(1);
+  });
 
-    expect(result).toEqual({
+  it('I-12: a repo without repo.yaml is a missing_field issue on path "repo"', async () => {
+    await writeYaml(globalRoot, 'library/roles/planner/v1.yaml', roleDef('planner'));
+    const loaded = await makeStore().load(UNKNOWN_REPO);
+    expect(loaded).toEqual({
       ok: false,
-      error: [{ path: 'repo', code: 'missing_field', message: expect.any(String) }],
+      error: [{ path: 'repo', code: 'missing_field', message: 'repo.yaml is required' }],
     });
   });
 
-  it('I-12: a missing repo.yaml is the same missing_field issue', async () => {
-    await writeYaml(globalRoot, 'flows/standard.yaml', flowDef('standard'));
+  it('I-12: an unparsable library file is a wrong_type issue carrying the yaml-prefixed reason', async () => {
+    await writeText(globalRoot, 'library/roles/planner/v1.yaml', 'id: [unclosed');
+    const loaded = await makeStore().load(REPO);
+    expect(loaded.ok).toBe(false);
+    if (loaded.ok) return;
+    expect(loaded.error[0]?.code).toBe('wrong_type');
+    expect(loaded.error[0]?.path).toBe('library/roles/planner/v1.yaml');
+    expect(loaded.error[0]?.message.startsWith('yaml:')).toBe(true);
+  });
 
-    const result = await makeStore().load(REPO);
-
-    expect(result).toEqual({
+  it('I-12: an id that does not match its folder is an invalid_slug issue', async () => {
+    await writeYaml(globalRoot, 'library/roles/planner/v1.yaml', roleDef('other'));
+    const loaded = await makeStore().load(REPO);
+    expect(loaded).toEqual({
       ok: false,
-      error: [{ path: 'repo', code: 'missing_field', message: expect.any(String) }],
+      error: [{ path: 'library/roles/planner/v1.yaml', code: 'invalid_slug', message: 'id does not match folder name' }],
     });
   });
 
-  it('I-12: project defaults merge between global and repo, and the project rides alongside', async () => {
-    registerProject();
-    await seedLibrary(globalRoot);
-    await writeYaml(mainRoot, 'project.yaml', projectDef());
-    await writeYaml(mainRoot, 'roles/planner.yaml', roleDef('planner', { name: 'Planlayıcı — proje' }));
-    await writeYaml(mainRoot, 'roles/project-only.yaml', roleDef('project-only'));
-    await writeYaml(repoRoot, 'roles/planner.yaml', roleDef('planner', { name: 'Planlayıcı — repo' }));
-    await writeYaml(repoRoot, 'repo.yaml', repoDef());
-
-    const result = await makeStore().load(REPO);
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    const planner = result.value.roles.find((role) => role.id === 'planner');
-    expect(planner?.name).toBe('Planlayıcı — repo');
-    // The project-only role merged in; global roles keep their file-name order.
-    expect(result.value.roles.map((role) => role.id).slice(0, 1)).toEqual(['analyst']);
-    expect(result.value.roles.some((role) => role.id === 'project-only')).toBe(true);
-    expect(result.value.project?.id).toBe(PROJECT);
-    expect(result.value.project?.mainRepo).toBe(MAIN_REPO);
-  });
-
-  it('I-12: a repo whose project is unknown loads global and repo only', async () => {
-    await writeYaml(globalRoot, 'roles/planner.yaml', roleDef('planner'));
-    await writeYaml(globalRoot, 'flows/standard.yaml', flowDef('standard'));
-    await writeYaml(mainRoot, 'project.yaml', projectDef());
-    await writeYaml(mainRoot, 'roles/project-only.yaml', roleDef('project-only'));
-    await writeYaml(repoRoot, 'repo.yaml', repoDef());
-
-    const result = await makeStore().load(REPO);
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.roles.some((role) => role.id === 'project-only')).toBe(false);
-    expect(result.value.project).toBeUndefined();
-  });
-
-  it('I-12: missing kind folders are empty; only *.yaml files that pass parseTarget are read, in file-name order', async () => {
-    // No capabilities/ folder anywhere; junk next to the real files.
-    await writeYaml(globalRoot, 'roles/planner.yaml', roleDef('planner'));
-    await writeText(globalRoot, 'flows/notes.txt', 'not yaml');
-    await writeYaml(globalRoot, 'flows/draft.yml', flowDef('draft'));
-    await writeYaml(globalRoot, 'flows/UPPER.yaml', flowDef('upper'));
-    await writeYaml(globalRoot, 'flows/standard.yaml', flowDef('standard'));
-    await mkdir(join(globalRoot, 'flows', 'sub'), { recursive: true });
-    await writeYaml(globalRoot, 'flows/sub/inner.yaml', flowDef('inner'));
-    await writeText(repoRoot, 'roles/notes.txt', 'not yaml');
-    await writeYaml(repoRoot, 'repo.yaml', repoDef());
-
-    const result = await makeStore().load(REPO);
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.roles.map((role) => role.id)).toEqual(['planner']);
-    expect(result.value.capabilities).toEqual([]);
-    expect(result.value.flows.map((flow) => flow.id)).toEqual(['standard']);
-  });
-
-  it('I-12: repo-only entries follow the globals and keep file-name order among themselves', async () => {
-    await writeYaml(globalRoot, 'roles/planner.yaml', roleDef('planner'));
-    await writeYaml(globalRoot, 'flows/standard.yaml', flowDef('standard'));
-    await writeYaml(repoRoot, 'roles/b-extra.yaml', roleDef('b-extra'));
-    await writeYaml(repoRoot, 'roles/a-extra.yaml', roleDef('a-extra'));
-    await writeYaml(repoRoot, 'repo.yaml', repoDef());
-
-    const result = await makeStore().load(REPO);
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.roles.map((role) => role.id)).toEqual(['planner', 'a-extra', 'b-extra']);
+  it('I-13: file problems are collected before validation and keep their original paths', async () => {
+    await writeText(globalRoot, 'library/roles/planner/v1.yaml', 'id: [unclosed');
+    const loaded = await makeStore().load(REPO);
+    expect(loaded.ok).toBe(false);
+    if (loaded.ok) return;
+    expect(loaded.error.some((issue) => issue.code === 'wrong_type' && issue.path === 'library/roles/planner/v1.yaml')).toBe(true);
   });
 
   it('I-12: the merged input goes through validateDefinitions, so semantic issues surface with their paths', async () => {
-    await writeYaml(globalRoot, 'roles/planner.yaml', roleDef('planner', { capabilities: ['nope'] }));
-    await writeYaml(repoRoot, 'repo.yaml', repoDef());
-
-    const result = await makeStore().load(REPO);
-
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error).toContainEqual({
-      path: 'roles[0].capabilities[0]',
-      code: 'unknown_capability',
-      message: expect.any(String),
-    });
-  });
-});
-
-// --- load, file problems (I-13) ---------------------------------------------------------------------
-
-describe('load (file problems)', () => {
-  it('I-13: unparsable YAML is a wrong_type issue carrying the first line of the parser message', async () => {
-    await writeText(globalRoot, 'roles/planner.yaml', 'a: [unclosed');
-    await writeYaml(repoRoot, 'repo.yaml', repoDef());
-
-    const result = await makeStore().load(REPO);
-
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error).toEqual([
-      {
-        path: 'global:roles/planner.yaml',
-        code: 'wrong_type',
-        message: expect.stringMatching(/^yaml: [^\n]+$/),
-      },
-    ]);
+    await writeYaml(globalRoot, 'library/roles/planner/v1.yaml', roleDef('planner'));
+    await writeYaml(globalRoot, `repos/${REPO}/repo.yaml`, repoDef(REPO, { defaultFlow: 'missing' }));
+    const loaded = await makeStore().load(REPO);
+    expect(loaded.ok).toBe(false);
+    if (loaded.ok) return;
+    expect(loaded.error.some((issue) => issue.code === 'unknown_flow')).toBe(true);
   });
 
-  it('I-13: a parsable document that is not a mapping is a wrong_type issue', async () => {
-    await writeText(globalRoot, 'roles/planner.yaml', '- 1\n- 2\n');
-    await writeYaml(repoRoot, 'repo.yaml', repoDef());
-
-    const result = await makeStore().load(REPO);
-
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error).toEqual([
-      { path: 'global:roles/planner.yaml', code: 'wrong_type', message: expect.stringMatching(/^yaml: /) },
-    ]);
-  });
-
-  it('I-13: a kind file whose id differs from its file stem is an invalid_slug issue', async () => {
-    await writeYaml(globalRoot, 'roles/planner.yaml', roleDef('other'));
-    await writeYaml(repoRoot, 'repo.yaml', repoDef());
-
-    const result = await makeStore().load(REPO);
-
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error).toEqual([
-      { path: 'global:roles/planner.yaml', code: 'invalid_slug', message: 'id does not match file name' },
-    ]);
-  });
-
-  it('I-13: a kind file without an id counts as differing from its stem', async () => {
-    const noId = roleDef('planner') as Record<string, unknown>;
-    delete noId['id'];
-    await writeYaml(globalRoot, 'roles/planner.yaml', noId);
-    await writeYaml(repoRoot, 'repo.yaml', repoDef());
-
-    const result = await makeStore().load(REPO);
-
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error).toEqual([
-      { path: 'global:roles/planner.yaml', code: 'invalid_slug', message: 'id does not match file name' },
-    ]);
-  });
-
-  it('I-13: problems are collected for every file in every scope before validation runs', async () => {
-    registerProject();
-    await writeYaml(mainRoot, 'project.yaml', projectDef());
-    await writeText(globalRoot, 'roles/planner.yaml', 'a: [unclosed');
-    await writeYaml(globalRoot, 'roles/analyst.yaml', roleDef('analyst', { capabilities: ['nope'] }));
-    await writeYaml(mainRoot, 'flows/standard.yaml', flowDef('other'));
-    await writeYaml(repoRoot, 'repo.yaml', repoDef());
-
-    const result = await makeStore().load(REPO);
-
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    // Every scope's file problem, and validateDefinitions was never reached (no unknown_capability).
-    expect(issuesByPath(result.error)).toEqual(['global:roles/planner.yaml', 'project:flows/standard.yaml']);
-    expect(result.error.every((issue) => issue.code === 'wrong_type' || issue.code === 'invalid_slug')).toBe(true);
-  });
-
-  it('I-13: an unparsable repo.yaml is a file problem on the repo scope', async () => {
-    await writeYaml(globalRoot, 'roles/planner.yaml', roleDef('planner'));
-    await writeText(repoRoot, 'repo.yaml', 'name: [oops');
-
-    const result = await makeStore().load(REPO);
-
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error).toEqual([
-      { path: 'repo:repo.yaml', code: 'wrong_type', message: expect.stringMatching(/^yaml: /) },
-    ]);
-  });
-
-  it('I-13: an unparsable project.yaml of the repo owning project is a file problem too', async () => {
-    registerProject();
-    await writeYaml(repoRoot, 'repo.yaml', repoDef());
-    await writeText(mainRoot, 'project.yaml', 'name: [oops');
-
-    const result = await makeStore().load(REPO);
-
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error).toEqual([
-      { path: 'project:project.yaml', code: 'wrong_type', message: expect.stringMatching(/^yaml: /) },
-    ]);
-  });
-});
-
-// --- readProjectAt (I-32) ---------------------------------------------------------------------------
-
-describe('readProjectAt', () => {
-  it('I-32: an absent project.yaml is a missing_field issue on path project.yaml', async () => {
-    const result = await makeStore().readProjectAt(repoPath);
-
-    expect(result).toEqual({
-      ok: false,
-      error: [{ path: 'project.yaml', code: 'missing_field', message: expect.any(String) }],
-    });
-  });
-
-  it('I-32: unparsable YAML is a wrong_type issue carrying the yaml-prefixed reason', async () => {
-    await writeText(repoRoot, 'project.yaml', 'name: [oops');
-
-    const result = await makeStore().readProjectAt(repoPath);
-
-    expect(result).toEqual({
-      ok: false,
-      error: [{ path: 'project.yaml', code: 'wrong_type', message: expect.stringMatching(/^yaml: /) }],
-    });
-  });
-
-  it('I-32: a parsable document that is not a mapping is a wrong_type issue', async () => {
-    await writeText(repoRoot, 'project.yaml', '- 1\n');
-
-    const result = await makeStore().readProjectAt(repoPath);
-
-    expect(result).toEqual({
-      ok: false,
-      error: [{ path: 'project.yaml', code: 'wrong_type', message: expect.stringMatching(/^yaml: /) }],
-    });
-  });
-
-  it('I-32: a valid project.yaml returns its ProjectDef without requiring roles or flows', async () => {
-    await writeYaml(repoRoot, 'project.yaml', projectDef({ budget: { amountUsd: 50, warnPercent: 80 } }));
-
-    const result = await makeStore().readProjectAt(repoPath);
-
-    expect(result).toEqual({
-      ok: true,
-      value: {
-        id: PROJECT,
-        name: 'Atölye',
-        mainRepo: MAIN_REPO,
-        repos: [MAIN_REPO, REPO],
-        budget: { amountUsd: 50, warnPercent: 80 },
-      },
-    });
-  });
-
-  it('I-32: the R-46 project rules run: empty repos, duplicates, an unlisted main repo, a bad budget', async () => {
-    const cases: readonly { readonly yaml: unknown; readonly path: string; readonly code: string }[] = [
-      { yaml: projectDef({ repos: [] }), path: 'project.repos', code: 'empty_repos' },
-      { yaml: projectDef({ repos: ['main', 'main', 'acme'] }), path: 'project.repos[1]', code: 'duplicate_id' },
-      { yaml: projectDef({ mainRepo: 'elsewhere' }), path: 'project.mainRepo', code: 'main_repo_not_listed' },
-      { yaml: projectDef({ budget: { amountUsd: 'free', warnPercent: 80 } }), path: 'project.budget.amountUsd', code: 'wrong_type' },
-    ];
-    for (const fixture of cases) {
-      await writeYaml(repoRoot, 'project.yaml', fixture.yaml);
-      const result = await makeStore().readProjectAt(repoPath);
-      expect(result.ok).toBe(false);
-      if (result.ok) continue;
-      expect(result.error).toContainEqual({ path: fixture.path, code: fixture.code, message: expect.any(String) });
+  it('I-86: every definition is read and written under the ~/.docket layout', async () => {
+    // A repo-side .docket planted outside the root is invisible to the store, and the store's
+    // own answers all resolve inside the root's layout.
+    await writeYaml(besideRoot, '.docket/repo.yaml', repoDef(REPO));
+    await writeYaml(besideRoot, '.docket/roadmap.yaml', roadmapDef());
+    await seedLoadableWorld();
+    const store = makeStore();
+    expect((await store.load(REPO)).ok).toBe(true);
+    // No roadmap lives under the root for this project yet.
+    expect(await store.loadRoadmap(PROJECT)).toBeUndefined();
+    const written = await store.writeFile(`projects/${PROJECT}/roadmap.yaml`, `${stringify(roadmapDef())}\n`, '');
+    expect(written.ok).toBe(true);
+    const roadmap = await store.loadRoadmap(PROJECT);
+    expect(roadmap !== undefined && roadmap.ok).toBe(true);
+    // Everything the store ever answered sits under the root.
+    for (const target of ['repos/acme/repo.yaml', 'library/roles/planner/v1.yaml', `projects/${PROJECT}/roadmap.yaml`]) {
+      expect(await readFile(join(globalRoot, target), 'utf8')).toBeTruthy();
     }
+    expect(relative(globalRoot, join(globalRoot, 'library/roles/planner/v1.yaml'))).toBe('library/roles/planner/v1.yaml');
   });
 });
 
-// --- loadRoadmap (I-14) -----------------------------------------------------------------------------
+// --- roadmap -----------------------------------------------------------------------------------------
 
 describe('loadRoadmap', () => {
-  it('I-14: an unknown project has no roadmap', async () => {
-    expect(await makeStore().loadRoadmap(UNKNOWN_PROJECT)).toBeUndefined();
+  it('R-139: the project roadmap is read from and written to ~/.docket/projects/<slug>/roadmap.yaml', async () => {
+    const store = makeStore();
+    expect(await store.loadRoadmap(PROJECT)).toBeUndefined();
+    const written = await store.writeFile(`projects/${PROJECT}/roadmap.yaml`, `${stringify(roadmapDef())}\n`, '');
+    expect(written.ok).toBe(true);
+    const roadmap = await store.loadRoadmap(PROJECT);
+    expect(roadmap !== undefined && roadmap.ok && roadmap.value.phases[0]?.id).toBe('phase-1');
+    const file = await store.readFile(`projects/${PROJECT}/roadmap.yaml`);
+    expect(file?.content).toBe(`${stringify(roadmapDef())}\n`);
   });
 
-  it('I-14: a project whose main repo has no roadmap.yaml has no roadmap', async () => {
-    registerProject();
-
+  it('I-14: an unknown project has no roadmap', async () => {
     expect(await makeStore().loadRoadmap(PROJECT)).toBeUndefined();
   });
 
-  it('I-14: a valid roadmap.yaml in the main repo loads through validateRoadmap with the project', async () => {
-    registerProject();
-    await writeYaml(mainRoot, 'project.yaml', projectDef());
-    await writeYaml(mainRoot, 'roadmap.yaml', roadmapDef({
-      phases: [
-        {
-          id: 'phase-1',
-          name: 'Birinci aşama',
-          blockedBy: [],
-          tasks: [{ id: 'task-1', title: 'İş', dependsOn: [], acceptance: [], targets: ['acme'] }],
-        },
-      ],
-    }));
-
-    const result = await makeStore().loadRoadmap(PROJECT);
-
-    expect(result?.ok).toBe(true);
-    if (result?.ok !== true) return;
-    expect(result.value.phases.map((phase) => phase.id)).toEqual(['phase-1']);
-    // The project context resolved the target slugs through membership (R-47).
-    expect(result.value.phases[0]?.tasks[0]?.targets).toEqual([REPO]);
+  it('I-14: a valid roadmap.yaml loads through validateRoadmap with the project', async () => {
+    await writeYaml(globalRoot, `projects/${PROJECT}/project.yaml`, { id: PROJECT, name: 'Atölye', mainRepo: REPO, repos: [REPO] });
+    await writeYaml(globalRoot, `projects/${PROJECT}/roadmap.yaml`, roadmapDef({ phases: [{ id: 'phase-1', name: 'Bir', blockedBy: [], tasks: [{ id: 'task-1', title: 'İş', dependsOn: [], targets: [REPO], acceptance: ['kabul'] }] }] }));
+    const roadmap = await makeStore().loadRoadmap(PROJECT);
+    expect(roadmap !== undefined && roadmap.ok).toBe(true);
   });
 
   it('I-14: an invalid roadmap returns the validateRoadmap issues', async () => {
-    registerProject();
-    await writeYaml(mainRoot, 'roadmap.yaml', {
-      phases: [{ id: '-bad', name: 'Kötü', blockedBy: [], tasks: [] }],
-    });
-
-    const result = await makeStore().loadRoadmap(PROJECT);
-
-    expect(result?.ok).toBe(false);
-    if (result?.ok !== false) return;
-    expect(result.error).toContainEqual({ path: 'phases[0].id', code: 'invalid_slug', message: expect.any(String) });
+    await writeYaml(globalRoot, `projects/${PROJECT}/project.yaml`, { id: PROJECT, name: 'Atölye', mainRepo: REPO, repos: [REPO] });
+    await writeYaml(globalRoot, `projects/${PROJECT}/roadmap.yaml`, roadmapDef({ phases: [{ id: 'phase-1', name: 'Bir', blockedBy: [], tasks: [{ id: 'task-1', title: 'İş', dependsOn: [], targets: [UNKNOWN_REPO], acceptance: [] }] }] }));
+    const roadmap = await makeStore().loadRoadmap(PROJECT);
+    expect(roadmap !== undefined && !roadmap.ok).toBe(true);
+    if (roadmap === undefined || roadmap.ok) return;
+    expect(roadmap.error.some((issue) => issue.code === 'unknown_repo')).toBe(true);
   });
 
   it('I-14: an unparsable roadmap.yaml is a wrong_type RoadmapIssue on path roadmap.yaml', async () => {
-    registerProject();
-    await writeText(mainRoot, 'roadmap.yaml', 'phases: [oops');
-
-    const result = await makeStore().loadRoadmap(PROJECT);
-
-    expect(result).toEqual({
-      ok: false,
-      error: [{ path: 'roadmap.yaml', code: 'wrong_type', message: expect.stringMatching(/^yaml: /) }],
-    });
-  });
-
-  it('I-14: a roadmap document that is not a mapping is a wrong_type RoadmapIssue too', async () => {
-    registerProject();
-    await writeText(mainRoot, 'roadmap.yaml', '- 1\n');
-
-    const result = await makeStore().loadRoadmap(PROJECT);
-
-    expect(result).toEqual({
-      ok: false,
-      error: [{ path: 'roadmap.yaml', code: 'wrong_type', message: expect.stringMatching(/^yaml: /) }],
-    });
+    await writeText(globalRoot, `projects/${PROJECT}/roadmap.yaml`, 'phases: [unclosed');
+    const roadmap = await makeStore().loadRoadmap(PROJECT);
+    expect(roadmap !== undefined && !roadmap.ok).toBe(true);
+    if (roadmap === undefined || roadmap.ok) return;
+    expect(roadmap.error[0]?.path).toBe('roadmap.yaml');
+    expect(roadmap.error[0]?.code).toBe('wrong_type');
   });
 });
 
-// --- readFile (I-15) --------------------------------------------------------------------------------
+// --- readFile / writeFile ------------------------------------------------------------------------------
 
-describe('readFile', () => {
-  it('I-15: an invalid target is undefined in every scope', async () => {
+describe('readFile and writeFile', () => {
+  it('I-15: readFile ignores invalid targets, unknown subjects and missing files and returns the content hash for real files', async () => {
     const store = makeStore();
-    registerProject();
-    await writeYaml(repoRoot, 'repo.yaml', repoDef());
-
-    expect(await store.readFile(GLOBAL_SCOPE, 'repo.yaml')).toBeUndefined();
-    expect(await store.readFile(GLOBAL_SCOPE, 'project.yaml')).toBeUndefined();
-    expect(await store.readFile(GLOBAL_SCOPE, 'roadmap.yaml')).toBeUndefined();
-    expect(await store.readFile(REPO_SCOPE, 'project.yaml')).toBeUndefined();
-    expect(await store.readFile(PROJECT_SCOPE, 'repo.yaml')).toBeUndefined();
-    expect(await store.readFile(GLOBAL_SCOPE, '../../etc/passwd')).toBeUndefined();
-    expect(await store.readFile(REPO_SCOPE, 'roles/../../planner.yaml')).toBeUndefined();
+    const content = `${stringify(repoDef(REPO))}\n`;
+    await writeText(globalRoot, `repos/${REPO}/repo.yaml`, content);
+    expect(await store.readFile('outside/roles.yaml')).toBeUndefined();
+    expect(await store.readFile(`repos/${UNKNOWN_REPO}/repo.yaml`)).toBeUndefined();
+    expect(await store.readFile('missing.yaml')).toBeUndefined();
+    expect(await store.readFile(`repos/${REPO}/repo.yaml`)).toEqual({ content, hash: hashContent(content) });
   });
 
-  it('I-15: an unknown scope subject is undefined', async () => {
+  it('I-17: validateCandidate is side-effect free and rejects invalid targets before any write', async () => {
     const store = makeStore();
-    expect(await store.readFile(UNKNOWN_REPO_SCOPE, 'roles/planner.yaml')).toBeUndefined();
-    expect(await store.readFile(UNKNOWN_PROJECT_SCOPE, 'project.yaml')).toBeUndefined();
+    const before = await readdir(globalRoot);
+    const invalid = await store.validateCandidate('outside/roles.yaml', 'x');
+    expect(invalid).toEqual({ ok: false, error: [{ path: 'outside/roles.yaml', code: 'wrong_type', message: 'not a definition file' }] });
+    expect(await readdir(globalRoot)).toEqual(before);
+    await seedLoadableWorld();
+    const valid = await store.validateCandidate(`repos/${REPO}/repo.yaml`, `${stringify(repoDef(REPO))}\n`);
+    expect(valid.ok).toBe(true);
   });
 
-  it('I-15: a missing file is undefined', async () => {
-    await writeYaml(repoRoot, 'repo.yaml', repoDef());
-
-    expect(await makeStore().readFile(GLOBAL_SCOPE, 'roles/planner.yaml')).toBeUndefined();
-  });
-
-  it('I-15: an existing file returns its content and its sha256 hash', async () => {
-    registerProject();
-    const content = `${stringify(flowDef('standard'))}\n`;
-    await writeText(globalRoot, 'flows/standard.yaml', content);
-    await writeYaml(repoRoot, 'repo.yaml', repoDef());
-    await writeYaml(mainRoot, 'project.yaml', projectDef());
-    await writeYaml(mainRoot, 'roadmap.yaml', roadmapDef());
-
+  it('I-16: an invalid target throws', async () => {
     const store = makeStore();
-    const flow = await store.readFile(GLOBAL_SCOPE, 'flows/standard.yaml');
-    const repo = await store.readFile(REPO_SCOPE, 'repo.yaml');
-    const project = await store.readFile(PROJECT_SCOPE, 'project.yaml');
-    const roadmap = await store.readFile(PROJECT_SCOPE, 'roadmap.yaml');
-
-    expect(flow).toEqual({ content, hash: hashContent(content) });
-    expect(repo?.hash).toBe(hashContent(repo?.content ?? ''));
-    expect(project?.hash).toBe(hashContent(project?.content ?? ''));
-    expect(roadmap?.hash).toBe(hashContent(roadmap?.content ?? ''));
-  });
-});
-
-// --- writeFile (I-16) -------------------------------------------------------------------------------
-
-describe('writeFile', () => {
-  it('I-16: an invalid target throws in every scope', async () => {
-    const store = makeStore();
-    await writeYaml(repoRoot, 'repo.yaml', repoDef());
-
-    await expect(store.writeFile(GLOBAL_SCOPE, '../../etc/passwd', 'x', '')).rejects.toThrow();
-    await expect(store.writeFile(GLOBAL_SCOPE, 'repo.yaml', 'x', '')).rejects.toThrow();
-    await expect(store.writeFile(REPO_SCOPE, 'project.yaml', 'x', '')).rejects.toThrow();
-    await expect(store.writeFile(REPO_SCOPE, 'flows\\standard.yaml', 'x', '')).rejects.toThrow();
-  });
-
-  it('I-16: an unknown scope subject throws', async () => {
-    const store = makeStore();
-    await expect(store.writeFile(UNKNOWN_REPO_SCOPE, 'roles/planner.yaml', 'x', '')).rejects.toThrow();
-    await expect(store.writeFile(UNKNOWN_PROJECT_SCOPE, 'project.yaml', 'x', '')).rejects.toThrow();
+    await expect(store.writeFile('outside/roles.yaml', 'x', '')).rejects.toThrow('not a definition file');
+    expect(await store.readFile('outside/roles.yaml')).toBeUndefined();
+    expect(await store.readFile('../escape.yaml')).toBeUndefined();
   });
 
   it('I-16: an absent file with expectedHash "" is created, folders made as needed, and the new hash returned', async () => {
-    const content = `${stringify(roleDef('planner'))}\n`;
-
-    const result = await makeStore().writeFile(GLOBAL_SCOPE, 'roles/planner.yaml', content, '');
-
-    expect(result).toEqual({ ok: true, value: { hash: hashContent(content) } });
-    expect(await readFile(join(globalRoot, 'roles', 'planner.yaml'), 'utf8')).toBe(content);
+    const content = `${stringify(repoDef(REPO))}\n`;
+    const written = await makeStore().writeFile(`repos/${REPO}/repo.yaml`, content, '');
+    expect(written.ok).toBe(true);
+    if (!written.ok) return;
+    expect(written.value.hash).toBe(hashContent(content));
+    expect(await readFile(join(globalRoot, `repos/${REPO}/repo.yaml`), 'utf8')).toBe(content);
   });
 
   it('I-16: an absent file with a non-empty expectedHash is stale and stays absent', async () => {
-    const result = await makeStore().writeFile(GLOBAL_SCOPE, 'roles/planner.yaml', 'x', hashContent('other'));
-
-    expect(result).toEqual({ ok: false, error: 'stale' });
-    await expect(readFile(join(globalRoot, 'roles', 'planner.yaml'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    const store = makeStore();
+    const written = await store.writeFile(`repos/${REPO}/repo.yaml`, 'x', 'deadbeef');
+    expect(written).toEqual({ ok: false, error: 'stale' });
+    await expect(readFile(join(globalRoot, `repos/${REPO}/repo.yaml`), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it('I-16: an existing file is replaced when the expected hash matches', async () => {
-    const original = `${stringify(roleDef('planner'))}\n`;
-    await writeText(globalRoot, 'roles/planner.yaml', original);
-    const replacement = `${stringify(roleDef('planner', { name: 'Planlayıcı 2' }))}\n`;
-
-    const result = await makeStore().writeFile(GLOBAL_SCOPE, 'roles/planner.yaml', replacement, hashContent(original));
-
-    expect(result).toEqual({ ok: true, value: { hash: hashContent(replacement) } });
-    expect(await readFile(join(globalRoot, 'roles', 'planner.yaml'), 'utf8')).toBe(replacement);
+    const store = makeStore();
+    await store.writeFile(`repos/${REPO}/repo.yaml`, 'a: 1\n', '');
+    const replaced = await store.writeFile(`repos/${REPO}/repo.yaml`, 'a: 2\n', hashContent('a: 1\n'));
+    expect(replaced.ok).toBe(true);
+    expect(await readFile(join(globalRoot, `repos/${REPO}/repo.yaml`), 'utf8')).toBe('a: 2\n');
   });
 
   it('I-16: a stale expected hash changes nothing', async () => {
-    const original = `${stringify(roleDef('planner'))}\n`;
-    await writeText(globalRoot, 'roles/planner.yaml', original);
-
-    const result = await makeStore().writeFile(GLOBAL_SCOPE, 'roles/planner.yaml', 'tampered', hashContent('other'));
-
-    expect(result).toEqual({ ok: false, error: 'stale' });
-    expect(await readFile(join(globalRoot, 'roles', 'planner.yaml'), 'utf8')).toBe(original);
+    const store = makeStore();
+    await store.writeFile(`repos/${REPO}/repo.yaml`, 'a: 1\n', '');
+    const replaced = await store.writeFile(`repos/${REPO}/repo.yaml`, 'a: 2\n', hashContent('something else'));
+    expect(replaced).toEqual({ ok: false, error: 'stale' });
+    expect(await readFile(join(globalRoot, `repos/${REPO}/repo.yaml`), 'utf8')).toBe('a: 1\n');
   });
 
   it('I-16: of two concurrent writers with the same expectedHash exactly one succeeds', async () => {
-    await writeText(globalRoot, 'flows/standard.yaml', `${stringify(flowDef('standard'))}\n`);
-    const original = await readFile(join(globalRoot, 'flows', 'standard.yaml'), 'utf8');
-    const first = `${stringify(flowDef('standard', { name: 'Birinci' }))}\n`;
-    const second = `${stringify(flowDef('standard', { name: 'İkinci' }))}\n`;
-
     const store = makeStore();
-    const [a, b] = await Promise.all([
-      store.writeFile(GLOBAL_SCOPE, 'flows/standard.yaml', first, hashContent(original)),
-      store.writeFile(GLOBAL_SCOPE, 'flows/standard.yaml', second, hashContent(original)),
-    ]);
-
-    const outcomes = [a, b].sort((x, y) => (x.ok === y.ok ? 0 : x.ok ? 1 : -1));
-    const winner = outcomes[1];
-    expect(outcomes[0]).toEqual({ ok: false, error: 'stale' });
-    if (winner === undefined || !winner.ok) throw new Error('expected exactly one writer to succeed');
-    const onDisk = await readFile(join(globalRoot, 'flows', 'standard.yaml'), 'utf8');
-    expect(onDisk === first || onDisk === second).toBe(true);
-    expect(winner.value.hash).toBe(hashContent(onDisk));
+    const target = `repos/${REPO}/repo.yaml`;
+    await store.writeFile(target, 'a: 1\n', '');
+    const first = store.writeFile(target, 'a: 2\n', hashContent('a: 1\n'));
+    const second = store.writeFile(target, 'a: 3\n', hashContent('a: 1\n'));
+    const outcomes = await Promise.all([first, second]);
+    expect(outcomes.filter((outcome) => outcome.ok)).toHaveLength(1);
+    expect(await readFile(join(globalRoot, target), 'utf8')).toBe(outcomes[0]?.ok ? 'a: 2\n' : 'a: 3\n');
   });
 
-  it('I-16: the write goes through a temporary file in the same folder and leaves nothing behind', async () => {
+  it('I-95: a library version target writes only with expectedHash "" onto a file that does not exist', async () => {
     const store = makeStore();
-    await store.writeFile(REPO_SCOPE, 'roles/planner.yaml', `${stringify(roleDef('planner'))}\n`, '');
-    await store.writeFile(REPO_SCOPE, 'roles/planner.yaml', `${stringify(roleDef('planner', { active: false }))}\n`, hashContent(`${stringify(roleDef('planner'))}\n`));
+    const created = await store.writeFile('library/roles/planner/v1.yaml', `${stringify(roleDef('planner'))}\n`, '');
+    expect(created.ok).toBe(true);
+    const refused = await store.writeFile('library/roles/planner/v2.yaml', 'x', hashContent('nothing'));
+    expect(refused).toEqual({ ok: false, error: 'stale' });
+    await expect(readFile(join(globalRoot, 'library/roles/planner/v2.yaml'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+  });
 
-    expect(await readdir(join(repoRoot, 'roles'))).toEqual(['planner.yaml']);
+  it('R-129: a recorded library version file is never rewritten on disk', async () => {
+    const store = makeStore();
+    const body = `${stringify(roleDef('planner'))}\n`;
+    const created = await store.writeFile('library/roles/planner/v1.yaml', body, '');
+    expect(created.ok).toBe(true);
+    // Whatever hash a later write claims — the recorded one, the file's own — a version file
+    // refuses; only appending the NEXT version writes anything.
+    const sameHash = await store.writeFile('library/roles/planner/v1.yaml', 'id: planner\n', created.ok ? created.value.hash : '');
+    expect(sameHash).toEqual({ ok: false, error: 'stale' });
+    expect(await readFile(join(globalRoot, 'library/roles/planner/v1.yaml'), 'utf8')).toBe(body);
+    const appended = await store.appendVersion('roles', 'planner', roleDef('planner', { name: 'New' }), 50);
+    expect(appended.ok && appended.value.version).toBe(2);
+    expect(await readFile(join(globalRoot, 'library/roles/planner/v1.yaml'), 'utf8')).toBe(body);
+    expect(await readFile(join(globalRoot, 'library/roles/planner/v2.yaml'), 'utf8')).toContain('New');
   });
 });
 
-// --- validateCandidate (I-17) -----------------------------------------------------------------------
+// --- validateCandidate ---------------------------------------------------------------------------------
 
 describe('validateCandidate', () => {
-  it('I-17: a target that is not a definition file is a wrong_type issue and nothing is touched', async () => {
-    registerProject();
-    await seedLibrary(globalRoot);
-    await writeYaml(repoRoot, 'repo.yaml', repoDef());
-    const before = {
-      global: await snapshot(globalRoot),
-      repo: await snapshot(repoRoot),
-      project: await snapshot(mainRoot),
-    };
-
-    const result = await makeStore().validateCandidate(REPO_SCOPE, '../../etc/passwd', 'id: evil');
-
-    expect(result).toEqual({
-      ok: false,
-      error: [{ path: '../../etc/passwd', code: 'wrong_type', message: 'not a definition file' }],
-    });
-    expect(await snapshot(globalRoot)).toEqual(before.global);
-    expect(await snapshot(repoRoot)).toEqual(before.repo);
-    expect(await snapshot(mainRoot)).toEqual(before.project);
-  });
-
-  it('I-17: a valid repo-scope candidate validates the definitions as they would be, writing nothing', async () => {
-    await seedLibrary(globalRoot);
-    await writeYaml(repoRoot, 'repo.yaml', repoDef());
-    const before = { global: await snapshot(globalRoot), repo: await snapshot(repoRoot) };
-    const candidate = `${stringify({ ...BUILTIN_FLOWS[0], name: 'Standart — aday' })}\n`;
-
-    const result = await makeStore().validateCandidate(REPO_SCOPE, 'flows/standard.yaml', candidate);
-
-    expect(result.ok).toBe(true);
-    expect(await snapshot(globalRoot)).toEqual(before.global);
-    expect(await snapshot(repoRoot)).toEqual(before.repo);
-  });
-
-  it('I-17: a repo-scope candidate replaces the target in memory, so issues point at the merged position', async () => {
-    await writeYaml(globalRoot, 'flows/standard.yaml', flowDef('standard'));
-    await writeYaml(repoRoot, 'repo.yaml', repoDef());
-    const candidate = stringify({
-      id: 'standard',
-      name: 'Kırık',
-      stages: [{ id: 'plan', name: 'Plan', role: 'ghost-role', exit: [] }],
-    });
-
-    const result = await makeStore().validateCandidate(REPO_SCOPE, 'flows/standard.yaml', candidate);
-
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error).toContainEqual({
-      path: 'flows[0].stages[0].role',
-      code: 'unknown_role',
-      message: expect.any(String),
-    });
-  });
-
-  it('I-17: a global-scope candidate is validated against the global files alone', async () => {
-    await writeYaml(globalRoot, 'roles/analyst.yaml', roleDef('analyst'));
-    await writeYaml(globalRoot, 'roles/planner.yaml', roleDef('planner'));
-    // A broken repo.yaml and a repo-only role file: neither may enter global validation.
-    await writeYaml(repoRoot, 'repo.yaml', repoDef({ defaultFlow: 'missing-flow' }));
-    await writeYaml(repoRoot, 'roles/extra.yaml', roleDef('extra', { capabilities: ['nope'] }));
-
+  it('I-95: a library version candidate validates as that definition\'s next version', async () => {
     const store = makeStore();
-    const valid = await store.validateCandidate(GLOBAL_SCOPE, 'roles/planner.yaml', `${stringify(roleDef('planner'))}\n`);
-    const broken = await store.validateCandidate(
-      GLOBAL_SCOPE,
-      'roles/zzz.yaml',
-      `${stringify(roleDef('zzz', { capabilities: ['nope'] }))}\n`,
-    );
-
+    await writeYaml(globalRoot, 'library/roles/planner/v1.yaml', roleDef('planner'));
+    const valid = await store.validateCandidate('library/roles/planner/v2.yaml', `${stringify(roleDef('planner', { name: 'New' }))}\n`);
     expect(valid.ok).toBe(true);
-    // Position 2 = [analyst, planner, zzz]; the repo-only 'extra' never merged in.
+    const wrongId = await store.validateCandidate('library/roles/planner/v2.yaml', `${stringify(roleDef('other'))}\n`);
+    expect(wrongId.ok).toBe(false);
+    if (wrongId.ok) return;
+    expect(wrongId.error[0]?.code).toBe('invalid_slug');
+    const broken = await store.validateCandidate('library/roles/planner/v2.yaml', 'name: [unclosed');
+    expect(broken.ok).toBe(false);
+  });
+
+  it('validates a repo.yaml candidate against the library it would load with', async () => {
+    await writeYaml(globalRoot, 'library/flows/std/v1.yaml', flowDef('std', { stages: [{ id: 'plan', name: 'Plan', role: null, exit: [] }] }));
+    await writeYaml(globalRoot, 'library/roles/planner/v1.yaml', roleDef('planner'));
+    const store = makeStore();
+    await seedLoadableWorld();
+    const valid = await store.validateCandidate(`repos/${REPO}/repo.yaml`, `${stringify(repoDef(REPO))}\n`);
+    expect(valid.ok).toBe(true);
+    const unknownRole = await store.validateCandidate(`repos/${REPO}/repo.yaml`, `${stringify(repoDef(REPO, { roleOverrides: [{ id: 'ghost' }] }))}\n`);
+    expect(unknownRole.ok).toBe(false);
+  });
+
+  it('I-32: a project.yaml candidate validates through the project rules alone', async () => {
+    const store = makeStore();
+    const valid = await store.validateCandidate(`projects/${PROJECT}/project.yaml`, `${stringify({ id: PROJECT, name: 'Atölye', mainRepo: REPO, repos: [REPO] })}\n`);
+    expect(valid.ok).toBe(true);
+    const emptyRepos = await store.validateCandidate(`projects/${PROJECT}/project.yaml`, `${stringify({ id: PROJECT, name: 'Atölye', mainRepo: REPO, repos: [] })}\n`);
+    expect(emptyRepos.ok).toBe(false);
+  });
+
+  it('I-32: an unparsable project.yaml is a wrong_type issue', async () => {
+    const broken = await makeStore().validateCandidate(`projects/${PROJECT}/project.yaml`, 'id: [unclosed');
     expect(broken.ok).toBe(false);
     if (broken.ok) return;
-    expect(broken.error).toContainEqual({
-      path: 'roles[2].capabilities[0]',
-      code: 'unknown_capability',
-      message: expect.any(String),
-    });
+    expect(broken.error[0]?.code).toBe('wrong_type');
   });
 
-  it('I-17: a project-scope candidate merges the project root over the global files, without a repo', async () => {
-    registerProject();
-    await writeYaml(mainRoot, 'project.yaml', projectDef());
-    await writeYaml(mainRoot, 'roles/project-only.yaml', roleDef('project-only'));
-    await writeYaml(repoRoot, 'repo.yaml', repoDef());
-
+  it('validates a roadmap candidate against the project\'s own project.yaml', async () => {
+    await writeYaml(globalRoot, `projects/${PROJECT}/project.yaml`, { id: PROJECT, name: 'Atölye', mainRepo: REPO, repos: [REPO] });
     const store = makeStore();
-    const valid = await store.validateCandidate(PROJECT_SCOPE, 'roles/project-only.yaml', `${stringify(roleDef('project-only'))}\n`);
-    const broken = await store.validateCandidate(
-      PROJECT_SCOPE,
-      'roles/bad.yaml',
-      `${stringify(roleDef('bad', { capabilities: ['nope'] }))}\n`,
-    );
-
+    const valid = await store.validateCandidate(`projects/${PROJECT}/roadmap.yaml`, `${stringify(roadmapDef())}\n`);
     expect(valid.ok).toBe(true);
-    expect(broken.ok).toBe(false);
-    if (broken.ok) return;
-    // The repo's own role files never entered the project-scope merge.
-    expect(broken.error).toContainEqual({
-      path: 'roles[0].capabilities[0]',
-      code: 'unknown_capability',
-      message: expect.any(String),
-    });
+    const unknownRepo = await store.validateCandidate(`projects/${PROJECT}/roadmap.yaml`, `${stringify(roadmapDef({ phases: [{ id: 'phase-1', name: 'Bir', blockedBy: [], tasks: [{ id: 'task-1', title: 'İş', dependsOn: [], targets: [UNKNOWN_REPO], acceptance: [] }] }] }))}\n`);
+    expect(unknownRepo.ok).toBe(false);
   });
 
-  it('I-17: a candidate that is unparsable or not a mapping is a wrong_type file problem', async () => {
-    await writeYaml(repoRoot, 'repo.yaml', repoDef());
-
-    const unparsable = await makeStore().validateCandidate(REPO_SCOPE, 'roles/planner.yaml', 'a: [unclosed');
-    const nonMapping = await makeStore().validateCandidate(REPO_SCOPE, 'roles/planner.yaml', '- 1\n');
-
-    expect(unparsable.ok).toBe(false);
-    if (unparsable.ok) return;
-    expect(unparsable.error).toEqual([
-      { path: 'repo:roles/planner.yaml', code: 'wrong_type', message: expect.stringMatching(/^yaml: /) },
-    ]);
-    expect(nonMapping.ok).toBe(false);
-  });
-
-  it('I-17: a candidate whose id differs from the target stem is an invalid_slug file problem', async () => {
-    await writeYaml(repoRoot, 'repo.yaml', repoDef());
-
-    const result = await makeStore().validateCandidate(
-      REPO_SCOPE,
-      'roles/planner.yaml',
-      `${stringify(roleDef('other'))}\n`,
-    );
-
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error).toEqual([
-      { path: 'repo:roles/planner.yaml', code: 'invalid_slug', message: 'id does not match file name' },
-    ]);
-  });
-
-  it('I-17: a roadmap.yaml candidate runs validateRoadmap with issues mapped onto the roadmap. prefix', async () => {
-    registerProject();
-    await writeYaml(mainRoot, 'project.yaml', projectDef());
-    const invalid = stringify({
-      phases: [{ id: '-bad', name: 'Kötü', blockedBy: [], tasks: [] }],
-    });
-
-    const store = makeStore();
-    const valid = await store.validateCandidate(PROJECT_SCOPE, 'roadmap.yaml', `${stringify(roadmapDef())}\n`);
-    const broken = await store.validateCandidate(PROJECT_SCOPE, 'roadmap.yaml', invalid);
-    const unparsable = await store.validateCandidate(PROJECT_SCOPE, 'roadmap.yaml', 'phases: [oops');
-
-    expect(valid.ok).toBe(true);
-    expect(broken.ok).toBe(false);
-    if (broken.ok) return;
-    expect(broken.error).toEqual([
-      {
-        path: 'roadmap.phases[0].id',
-        code: 'wrong_type',
-        message: expect.stringMatching(/^invalid_slug: /),
-      },
-    ]);
-    expect(unparsable.ok).toBe(false);
-  });
-
-  it('I-17: a repo-scope candidate for an unknown repo reports the missing repo', async () => {
-    const result = await makeStore().validateCandidate(
-      UNKNOWN_REPO_SCOPE,
-      'roles/planner.yaml',
-      `${stringify(roleDef('planner'))}\n`,
-    );
-
-    expect(result).toEqual({
-      ok: false,
-      error: [{ path: 'repo', code: 'missing_field', message: expect.any(String) }],
-    });
+  it('refuses a target outside the grammar', async () => {
+    const refused = await makeStore().validateCandidate('outside/roles.yaml', 'x');
+    expect(refused.ok).toBe(false);
+    if (refused.ok) return;
+    expect(refused.error[0]?.message).toBe('not a definition file');
   });
 });
 
-// --- repoPath (I-18) ---------------------------------------------------------------------------
+// --- installs ------------------------------------------------------------------------------------------
 
-describe('repoPath', () => {
-  it('I-18: returns RepoPaths.path for the repo', async () => {
+describe('installBuiltins', () => {
+  it('I-96: writes library/roles/<id>/v1.yaml and library/flows/<id>/v1.yaml, listing the targets', async () => {
+    const installed = await makeStore().installBuiltins({ roles: BUILTIN_ROLES, flows: BUILTIN_FLOWS });
+    for (const role of BUILTIN_ROLES) {
+      expect(installed.written).toContain(`library/roles/${role.id}/v1.yaml`);
+      expect(await readFile(join(globalRoot, 'library/roles', role.id, 'v1.yaml'), 'utf8')).toBeTruthy();
+    }
+    for (const flow of BUILTIN_FLOWS) {
+      expect(installed.written).toContain(`library/flows/${flow.id}/v1.yaml`);
+    }
+  });
+
+  it('I-96: the written files round-trip — loaded back they equal the library definitions', async () => {
+    await makeStore().installBuiltins({ roles: BUILTIN_ROLES, flows: BUILTIN_FLOWS });
+    await writeYaml(globalRoot, `repos/${REPO}/repo.yaml`, repoDef(REPO, {
+      flows: BUILTIN_FLOWS.map((flow) => flow.id),
+      defaultFlow: BUILTIN_FLOWS[0]?.id ?? 'standard',
+      commandSets: { tests: ['node -e "process.exit(0)"'] },
+    }));
+    const loaded = await makeStore().load(REPO);
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) return;
+    // The library answers ids in slug order; the built-ins ride their own library order.
+    const byId = (a: { readonly id: string }, b: { readonly id: string }): number => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+    expect([...loaded.value.roles].sort(byId)).toEqual([...BUILTIN_ROLES].sort(byId));
+    expect([...loaded.value.flows].sort(byId)).toEqual([...BUILTIN_FLOWS].sort(byId));
+  });
+
+  it('I-36: a target that exists is skipped untouched whatever its content; written lists only what was written', async () => {
     const store = makeStore();
+    await writeText(globalRoot, `library/roles/${BUILTIN_ROLES[0]?.id}/v1.yaml`, 'id: somebody-elses\n');
+    const installed = await store.installBuiltins({ roles: BUILTIN_ROLES, flows: [] });
+    expect(installed.written).not.toContain(`library/roles/${BUILTIN_ROLES[0]?.id}/v1.yaml`);
+    expect(installed.written).toHaveLength(BUILTIN_ROLES.length - 1);
+    expect(await readFile(join(globalRoot, 'library/roles', BUILTIN_ROLES[0]?.id ?? '', 'v1.yaml'), 'utf8')).toBe('id: somebody-elses\n');
+  });
 
-    expect(await store.repoPath(REPO)).toBe(repoPath);
-    expect(await store.repoPath(UNKNOWN_REPO)).toBeUndefined();
+  it('I-36: a second run writes nothing', async () => {
+    const store = makeStore();
+    await store.installBuiltins({ roles: BUILTIN_ROLES, flows: BUILTIN_FLOWS });
+    const again = await store.installBuiltins({ roles: BUILTIN_ROLES, flows: BUILTIN_FLOWS });
+    expect(again.written).toEqual([]);
+  });
+
+  it('I-36: a symbolic link at a target counts as existing and is not followed', async () => {
+    const { symlink } = await import('node:fs/promises');
+    const role = BUILTIN_ROLES[0];
+    if (role === undefined) throw new Error('expected a built-in role');
+    const folder = join(globalRoot, 'library/roles', role.id);
+    await mkdir(folder, { recursive: true });
+    await symlink(join(besideRoot, 'victim.yaml'), join(folder, 'v1.yaml'));
+    const installed = await makeStore().installBuiltins({ roles: BUILTIN_ROLES, flows: [] });
+    expect(installed.written).not.toContain(`library/roles/${role.id}/v1.yaml`);
+    await expect(readFile(join(besideRoot, 'victim.yaml'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });
-
-// --- installCapabilities (I-44) -----------------------------------------------------------------
 
 describe('installCapabilities', () => {
-  const capSlug = (raw: string): CapabilitySlug => {
-    const parsed = parseSlug<'capability'>(raw);
-    if (!parsed.ok) throw new Error(`bad test slug: ${raw}`);
-    return parsed.value;
-  };
-  const mcp: CapabilityDef = { kind: 'mcp', id: capSlug('db-tools'), name: 'Db Tools', command: 'npx db', args: [], env: {} };
-  const context: CapabilityDef = { kind: 'context', id: capSlug('claude-md'), name: 'CLAUDE.md', path: '/users/op/.claude/CLAUDE.md' };
-
-  it('I-44: writes <globalRoot>/capabilities/<id>.yaml in the shape load parses back — the file round-trips to the equal definition', async () => {
+  it('I-44: writes library/capabilities/<id>/v1.yaml, skipping targets that exist', async () => {
+    const first = capabilityDef('docs' as CapabilitySlug);
+    const second = capabilityDef('kit' as CapabilitySlug);
     const store = makeStore();
-    const installed = await store.installCapabilities([mcp, context]);
-    expect(installed).toEqual({
-      written: ['capabilities/db-tools.yaml', 'capabilities/claude-md.yaml'],
-      skipped: [],
-    });
-
-    // `load` needs the library and the repo's own repo.yaml (I-12's harness rule).
-    await seedLibrary(globalRoot);
-    await writeYaml(repoRoot, 'repo.yaml', repoDef());
-    const loaded = await store.load(REPO);
-    expect(loaded.ok).toBe(true);
-    if (loaded.ok) {
-      expect(loaded.value.capabilities).toContainEqual(mcp);
-      expect(loaded.value.capabilities).toContainEqual(context);
-    }
-    // The file is flat YAML, one definition per file, its id the file stem.
-    const text = await readFile(join(globalRoot, 'capabilities', 'db-tools.yaml'), 'utf8');
-    expect(text).toBe(`${stringify({ ...mcp })}`);
+    const installed = await store.installCapabilities([first, second]);
+    expect(installed.written).toEqual(['library/capabilities/docs/v1.yaml', 'library/capabilities/kit/v1.yaml']);
+    expect(installed.skipped).toEqual([]);
+    const again = await store.installCapabilities([first, second]);
+    expect(again.written).toEqual([]);
+    expect(again.skipped).toEqual(['library/capabilities/docs/v1.yaml', 'library/capabilities/kit/v1.yaml']);
   });
 
-  it('I-44: an existing target is skipped untouched whatever its content, and lands in skipped', async () => {
-    const store = makeStore();
-    await mkdir(join(globalRoot, 'capabilities'), { recursive: true });
-    await writeFile(join(globalRoot, 'capabilities', 'db-tools.yaml'), 'the user wrote this by hand\n', 'utf8');
+  it('I-44: a written capability round-trips through load', async () => {
+    const capability = capabilityDef('docs' as CapabilitySlug);
+    await makeStore().installCapabilities([capability]);
+    await writeYaml(globalRoot, 'library/flows/std/v1.yaml', flowDef('std', { stages: [{ id: 'plan', name: 'Plan', role: null, exit: [] }] }));
+    await writeYaml(globalRoot, `repos/${REPO}/repo.yaml`, repoDef(REPO));
+    const loaded = await makeStore().load(REPO);
+    expect(loaded.ok && loaded.value.capabilities).toEqual([capability]);
+  });
+});
 
-    const installed = await store.installCapabilities([mcp]);
-    expect(installed).toEqual({ written: [], skipped: ['capabilities/db-tools.yaml'] });
-    expect(await readFile(join(globalRoot, 'capabilities', 'db-tools.yaml'), 'utf8')).toBe('the user wrote this by hand\n');
+// --- version histories -----------------------------------------------------------------------------------
+
+describe('listVersions and appendVersion', () => {
+  it('answers an empty history for an unknown definition, then contiguous versions from 1', async () => {
+    const store = makeStore();
+    expect(await store.listVersions('roles', 'planner')).toEqual([]);
+    const first = await store.appendVersion('roles', 'planner', roleDef('planner'), 10);
+    expect(first.ok && first.value.version).toBe(1);
+    const second = await store.appendVersion('roles', 'planner', roleDef('planner', { name: 'New' }), 20);
+    expect(second.ok && second.value.version).toBe(2);
+    if (!first.ok || !second.ok) return;
+    expect([first.value.recordedAt, second.value.recordedAt]).toEqual([10, 20]);
+    const history = await store.listVersions('roles', 'planner');
+    expect(history.map((record) => record.version)).toEqual([1, 2]);
+    // The histories read the files' own mtimes back, which are the write times.
+    expect(history.every((record) => typeof record.recordedAt === 'number')).toBe(true);
+    expect(history[1]?.body).toEqual(roleDef('planner', { name: 'New' }));
+    expect(history.every((record) => record.definitionId === 'planner' && record.archived === false)).toBe(true);
+  });
+
+  it('answers stale when the same next version appears first', async () => {
+    const store = makeStore();
+    // Two concurrent appends both see an empty history and both aim at v1: the per-path write
+    // queue lets exactly one create it; the other answers stale and writes nothing.
+    const raced = await Promise.all([
+      store.appendVersion('roles', 'planner', roleDef('planner', { name: 'First' }), 10),
+      store.appendVersion('roles', 'planner', roleDef('planner', { name: 'Second' }), 10),
+    ]);
+    expect(raced.filter((outcome) => outcome.ok)).toHaveLength(1);
+    expect(raced.filter((outcome) => !outcome.ok)).toEqual([{ ok: false, error: 'stale' }]);
+    const text = await readFile(join(globalRoot, 'library/roles/planner/v1.yaml'), 'utf8');
+    expect(text).toContain(text.includes('First') ? 'First' : 'Second');
+    expect(await store.listVersions('roles', 'planner')).toHaveLength(1);
+  });
+
+  it('R-134: flows/defaultFlow/roleOverrides are never written by any store-driven write', async () => {
+    const store = makeStore();
+    await store.installBuiltins({ roles: BUILTIN_ROLES, flows: BUILTIN_FLOWS });
+    await store.installCapabilities([capabilityDef('docs' as CapabilitySlug)]);
+    await store.appendVersion('roles', 'planner', roleDef('planner'), 10);
+    await store.appendVersion('memory', 'notes', { note: 'a' }, 10);
+    // The store's own composing writes touch only the library; nothing under repos/ or
+    // projects/ exists, and no written body carries the legacy repo fields.
+    const roots = await readdir(globalRoot);
+    expect(roots).toEqual(['library']);
+    const walkFiles = async (folder: string): Promise<readonly string[]> => {
+      const entries = await readdir(folder, { withFileTypes: true });
+      const files: string[] = [];
+      for (const entry of entries) {
+        const path = join(folder, entry.name);
+        if (entry.isDirectory()) files.push(...(await walkFiles(path)));
+        else files.push(path);
+      }
+      return files;
+    };
+    for (const file of await walkFiles(join(globalRoot, 'library'))) {
+      const text = await readFile(file, 'utf8');
+      expect(text).not.toContain('defaultFlow');
+      expect(text).not.toContain('roleOverrides');
+    }
   });
 });

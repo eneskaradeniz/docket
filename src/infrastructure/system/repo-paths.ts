@@ -1,4 +1,4 @@
-// The narrow path views other adapters need from the registries.
+// The narrow path view other adapters need from the registry.
 import type { RepoRegistry } from '../../application/index';
 import type { ProjectSlug, RepoSlug } from '../../domain/index';
 
@@ -12,8 +12,8 @@ export interface ProjectPaths {
   projectOf(repo: RepoSlug): Promise<ProjectSlug | undefined>;
 }
 
-/** The slug→folder view over the repoId-keyed registry: the transitional reader the YAML store and
- *  the worktrees keep until the store re-roots under the global root alone. */
+/** The slug→folder view over the repoId-keyed registry: the reader the worktrees and the repo
+ *  file reads keep — the definition store no longer resolves checkouts at all. */
 export function repoPathsOf(repos: RepoRegistry): RepoPaths {
   return {
     path: async (slug: RepoSlug): Promise<string | undefined> =>

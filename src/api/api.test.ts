@@ -1030,7 +1030,7 @@ describe('createApi', () => {
 
       it('A-79: an unknown mode is rejected at the edge and no port is called', async () => {
         const h = create();
-        const spies = [vi.spyOn(h.deps.definitions, 'installBuiltins'), vi.spyOn(h.deps.definitions, 'scaffoldProject'), vi.spyOn(h.deps.repoFolders, 'createRepo'), vi.spyOn(h.deps.log, 'append')];
+        const spies = [vi.spyOn(h.deps.definitions, 'installBuiltins'), vi.spyOn(h.deps.repoFolders, 'createRepo'), vi.spyOn(h.deps.log, 'append')];
 
         // The wire carries a plain string; the cast stands in for a hostile payload.
         const hostile = { type: 'project.create', mode: 'clone', path: '/work/atolye', name: 'Atölye' } as unknown as Command;
