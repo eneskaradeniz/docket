@@ -1,11 +1,12 @@
-// use-cases/repos.test.ts — rules A-341 and A-345 (repo status, relink, flow save/read) with the ports faked.
+// use-cases/repos.test.ts — rules A-341, A-345, and A-354 (repo status, relink, flow save/read) with the ports faked.
 import { describe, expect, it } from 'vitest';
 
-import type { Actor, FlowSlug, RepoFlow, RepoSlug, RoleSlug, StageSlug } from '../../domain/index';
-import { err, ok, parseSlug } from '../../domain/index';
+import type { Actor, FlowSlug, RepoDef, RepoFlow, RepoSlug, RoleDef, StageSlug, Ulid } from '../../domain/index';
+import { err, ok, parseSlug, parseUlid } from '../../domain/index';
 
-import type { DefinitionScope, RepoRegistryEntry } from '../ports/index';
+import type { AccountRecord, DefinitionScope, RepoRegistryEntry } from '../ports/index';
 import {
+  createFakeAccountRepo,
   createFakeDefinitionStore,
   createFakeDeps,
   createFakeEventLog,
@@ -23,7 +24,7 @@ const slug = (input: string): RepoSlug => {
   return parsed.value;
 };
 
-const roleSlug = (input: string): RoleSlug => {
+const roleSlug = (input: string) => {
   const parsed = parseSlug<'role'>(input);
   if (!parsed.ok) throw new Error(`fixture slug must parse: ${input}`);
   return parsed.value;
@@ -38,6 +39,12 @@ const flowSlug = (input: string): FlowSlug => {
 const stageSlug = (input: string): StageSlug => {
   const parsed = parseSlug<'stage'>(input);
   if (!parsed.ok) throw new Error(`fixture slug must parse: ${input}`);
+  return parsed.value;
+};
+
+const ulidOf = <B extends string>(input: string): Ulid<B> => {
+  const parsed = parseUlid<B>(input);
+  if (!parsed.ok) throw new Error(`fixture ulid must parse: ${input}`);
   return parsed.value;
 };
 
@@ -120,11 +127,11 @@ const FLOW_DEF = {
   stages: [{ id: stageSlug('implement'), name: 'Implement', role: roleSlug('worker'), exit: [] }],
 };
 
-const WORKER_ROLE = {
+const WORKER_ROLE: RoleDef = {
   id: roleSlug('worker'),
   name: 'Worker',
   instructions: 'Ship it.',
-  writeScope: { kind: 'repo' as const },
+  writeScope: { kind: 'repo' },
   capabilities: [],
   active: true,
 };
@@ -239,5 +246,140 @@ describe('A-345: repo.saveFlow and repo.flow', () => {
       }),
     ).toEqual(err('stale'));
     expect(h.log.entries()).toEqual([]);
+  });
+});
+
+const SAVE_REPO: RepoSlug = slug('acme');
+const STAGE: StageSlug = stageSlug('implement');
+const CONNECTED = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FB3');
+const MISSING_A = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FB4');
+const MISSING_B = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FB5');
+
+const WORKER: RoleDef = {
+  id: roleSlug('worker'),
+  name: 'Worker',
+  instructions: 'Work.',
+  writeScope: { kind: 'repo' },
+  capabilities: [],
+  active: true,
+};
+
+const baseFlow = (): RepoFlow => ({
+  flowId: flowSlug('flow-a'),
+  version: 1,
+  stages: [{ id: STAGE, name: 'Implement', role: WORKER.id, exit: [] }],
+  bindings: [
+    {
+      stage: STAGE,
+      role: { roleId: WORKER.id, version: 1 },
+      accounts: [],
+    },
+  ],
+});
+
+const flowWithAccounts = (accounts: readonly Ulid<'account'>[]): RepoFlow => ({
+  ...baseFlow(),
+  bindings: [
+    {
+      stage: STAGE,
+      role: { roleId: WORKER.id, version: 1 },
+      accounts: accounts.map((accountId) => ({ accountId })),
+    },
+  ],
+});
+
+const accountRecord = (id: Ulid<'account'>): AccountRecord => ({
+  id,
+  provider: 'provider-a',
+  label: 'Work',
+  authMode: 'subscription',
+  limitPolicy: 'wait_resume',
+  caps: [],
+});
+
+const saveHarness = async (withConnected = false) => {
+  const repos = createFakeRepoRegistry();
+  await repos.register({
+    repoId: '01HZX0000000000000000000A1',
+    slug: SAVE_REPO,
+    path: '/c/acme',
+    fingerprint: { rootCommit: '' },
+  });
+  const definitions = createFakeDefinitionStore();
+  await definitions.appendVersion('roles', 'worker', WORKER, 900);
+  const repoDef: RepoDef = {
+    id: SAVE_REPO,
+    name: 'Acme',
+    commandSets: {},
+    docsRoot: 'docs',
+    testGlobs: [],
+    defaultLimitPolicy: 'wait_resume',
+    flow: baseFlow(),
+  };
+  definitions.setRepoDef(SAVE_REPO, repoDef);
+  await definitions.writeFile({ kind: 'repo', repo: SAVE_REPO }, 'repo.yaml', JSON.stringify(repoDef), '');
+  const accounts = createFakeAccountRepo();
+  if (withConnected) await accounts.save(accountRecord(CONNECTED));
+  const log = createFakeEventLog();
+  const deps = createFakeDeps({ repos, definitions, accounts, log });
+  return { deps, definitions, log, repoDef };
+};
+
+describe('A-354: saveRepoFlow', () => {
+  it('A-354: saveRepoFlow rejects a stage chain naming an unconnected account', async () => {
+    const { deps, log, repoDef, definitions } = await saveHarness(false);
+    const flow = flowWithAccounts([MISSING_A]);
+
+    const result = await saveRepoFlow(deps, { repo: SAVE_REPO, flow, actor: ACTOR });
+
+    expect(result).toEqual({
+      ok: false,
+      error: { code: 'account_not_connected', accounts: [{ stage: STAGE, accountId: MISSING_A }] },
+    });
+    const loaded = await definitions.load(SAVE_REPO);
+    expect(loaded.ok && loaded.value.repo?.flow).toEqual(repoDef.flow);
+    expect(log.entries()).toEqual([]);
+  });
+
+  it('A-354: lists every offending stage and account and writes nothing', async () => {
+    const { deps, log } = await saveHarness(false);
+    const review = stageSlug('review');
+    const flow: RepoFlow = {
+      ...baseFlow(),
+      stages: [
+        { id: STAGE, name: 'Implement', role: WORKER.id, exit: [] },
+        { id: review, name: 'Review', role: WORKER.id, exit: [] },
+      ],
+      bindings: [
+        { stage: STAGE, role: { roleId: WORKER.id, version: 1 }, accounts: [{ accountId: MISSING_A }] },
+        { stage: review, role: { roleId: WORKER.id, version: 1 }, accounts: [{ accountId: MISSING_B }] },
+      ],
+    };
+
+    const result = await saveRepoFlow(deps, { repo: SAVE_REPO, flow, actor: ACTOR });
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: 'account_not_connected',
+        accounts: [
+          { stage: STAGE, accountId: MISSING_A },
+          { stage: review, accountId: MISSING_B },
+        ],
+      },
+    });
+    expect(log.entries()).toEqual([]);
+  });
+
+  it('A-354: an empty chain and all-connected chains save exactly as before', async () => {
+    const empty = await saveHarness(false);
+    const emptyFlow = flowWithAccounts([]);
+    expect(await saveRepoFlow(empty.deps, { repo: SAVE_REPO, flow: emptyFlow, actor: ACTOR })).toEqual(ok({ ok: true }));
+    expect(empty.log.entries().map((entry) => entry.action)).toEqual(['repo.flow_saved']);
+
+    const connected = await saveHarness(true);
+    const withAccount = flowWithAccounts([CONNECTED]);
+    expect(await saveRepoFlow(connected.deps, { repo: SAVE_REPO, flow: withAccount, actor: ACTOR })).toEqual(ok({ ok: true }));
+    expect(connected.log.entries().map((entry) => entry.action)).toEqual(['repo.flow_saved']);
   });
 });
