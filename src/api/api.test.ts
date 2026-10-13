@@ -28,7 +28,7 @@ import {
   type FakeWorktrees,
 } from '../application/ports/fakes';
 
-import { createApi, type UiEvent } from './api';
+import { createApi, type QuitPromptPort, type UiEvent } from './api';
 import type { Command } from './commands';
 
 function slugOf<B extends string>(input: string): Slug<B> {
@@ -332,6 +332,13 @@ describe('createApi', () => {
         expect(await api.command(ACTOR, command)).toEqual({ ok: false, code: 'invalid_id' });
       }
       for (const spy of spies) expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('answers unknown for an unrecognized command type', async () => {
+      const h = await createHarness();
+      const api = createApi(h.deps);
+      const result = await api.command(ACTOR, { type: 'stage.start' } as unknown as Command);
+      expect(result).toEqual({ ok: false, code: 'unknown' });
     });
 
     it('A-21: an invalid gate slug in gate.decide is rejected before any port call', async () => {
@@ -1713,6 +1720,29 @@ describe('createApi', () => {
         { type: 'run.updated', runId },
         { type: 'workOrders.changed' },
       ]);
+    });
+  });
+
+  describe('quit confirmation', () => {
+    const quitApi = (port?: QuitPromptPort) =>
+      createApi(createFakeDeps(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, port);
+
+    it('U-294: quitRequested pushes quit.requested with the titles, and nothing else', () => {
+      const api = quitApi();
+      const seen: UiEvent[] = [];
+      api.subscribe((event) => seen.push(event));
+      api.quitRequested(['Fatura raporu'], ['Önbellek']);
+      expect(seen).toEqual([{ type: 'quit.requested', runs: ['Fatura raporu'], chats: ['Önbellek'] }]);
+    });
+
+    it('U-294: quit.ack and quit.answer reach the shell port; without a port they are not_found', async () => {
+      const calls: string[] = [];
+      const api = quitApi({ ack: () => calls.push('ack'), answer: (accept) => calls.push(`answer:${String(accept)}`) });
+      expect(await api.command(ACTOR, { type: 'quit.ack' })).toEqual({ ok: true });
+      expect(await api.command(ACTOR, { type: 'quit.answer', accept: true })).toEqual({ ok: true });
+      expect(await api.command(ACTOR, { type: 'quit.answer', accept: false })).toEqual({ ok: true });
+      expect(calls).toEqual(['ack', 'answer:true', 'answer:false']);
+      expect(await quitApi().command(ACTOR, { type: 'quit.answer', accept: true })).toEqual({ ok: false, code: 'not_found' });
     });
   });
 

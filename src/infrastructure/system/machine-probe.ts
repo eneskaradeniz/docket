@@ -1,11 +1,12 @@
 // The machine's load as the OS reports it, plus the in-memory holder of the dispatcher's last
 // status (I-50, I-51). The OS calls are injected so tests never read the real machine.
-import { execFile } from 'node:child_process';
 import { cpus, freemem, loadavg, platform, totalmem } from 'node:os';
 
 import type { MachineSample } from '../../domain/index';
 
 import type { DispatchStatus, DispatchStatusHolder, MachineProbe } from '../../application/index';
+
+import { registeredExecFile } from './process-registry';
 
 export interface MachineOs {
   readonly platform: string;
@@ -21,10 +22,10 @@ const SYSCTL_TIMEOUT_MS = 2_000;
 
 const readSysctlLevel = (): Promise<string> =>
   new Promise((resolve, reject) => {
-    execFile('sysctl', ['-n', 'kern.memorystatus_level'], { timeout: SYSCTL_TIMEOUT_MS }, (error, stdout) => {
+    registeredExecFile('sysctl', ['-n', 'kern.memorystatus_level'], { timeout: SYSCTL_TIMEOUT_MS }, (error, stdout) => {
       if (error !== null) reject(error);
       else resolve(stdout);
-    });
+    }, { kind: 'probe', label: 'sysctl (memory status)' });
   });
 
 const nodeOs = (): MachineOs => ({

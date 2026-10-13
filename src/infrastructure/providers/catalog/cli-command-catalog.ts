@@ -6,14 +6,19 @@
 // trailing parenthesised word names the row's effort variant where it names a level at all. Only
 // the spawn function is injected; every failure is a Result, never a throw, and no error message
 // quotes the output — it could carry values the child saw.
-import { spawn as nodeSpawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 
 import type { AccountRecord } from '../../../application/index';
 import type { EffortLevel, LiveModel, Result } from '../../../domain/index';
 import { err, ok } from '../../../domain/index';
+import { registeredSpawn } from '../../system/index';
 import { effortOfProviderLevel, type LevelNames } from '../defs/provider-def';
 import type { CatalogError } from './model-catalog';
+
+// The production default registers the listing child; the injected spawns of tests stay
+// unregistered and hermetic.
+const realSpawn: CliModelSpawn = (command, args, options) =>
+  registeredSpawn(command, args, { timeout: options.timeout }, { kind: 'probe', label: `models ${command}` });
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
@@ -165,7 +170,7 @@ export async function listCliCommandRouteModels(
     return err({ code: 'unsupported', message: 'the models command needs a login and none is confirmed' });
   }
   const outcome = await runModelsCommand(
-    config.spawn ?? nodeSpawn,
+    config.spawn ?? realSpawn,
     config.command ?? launch.command,
     launch.args,
     config.timeoutMs ?? DEFAULT_TIMEOUT_MS,

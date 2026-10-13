@@ -192,7 +192,17 @@ export type UiEvent =
   | { readonly type: 'accounts.changed' }
   | { readonly type: 'chat.turn'; readonly conversation: string; readonly turn: string; readonly phase: 'started' | 'finished'; readonly outcome?: string }
   | { readonly type: 'chat.delta'; readonly conversation: string; readonly turn: string; readonly text: string }
-  | { readonly type: 'chat.notice'; readonly conversation: string; readonly turn: string; readonly code: string };
+  | { readonly type: 'chat.notice'; readonly conversation: string; readonly turn: string; readonly code: string }
+  /** The shell asks the window to confirm a quit (U-294): the titles of what would stop — the
+   *  second payload exception beside `chat.delta`, because the modal lists them. */
+  | { readonly type: 'quit.requested'; readonly runs: readonly string[]; readonly chats: readonly string[] };
+
+/** The quit confirmation's receiving end, supplied by the shell: `ack` says the modal is up,
+ *  `answer` carries the operator's choice. */
+export interface QuitPromptPort {
+  ack(): void;
+  answer(accept: boolean): void;
+}
 
 export interface Api {
   command(actor: Actor, command: Command): Promise<CommandResult>;
@@ -361,7 +371,8 @@ export function createApi(
   adoption?: AccountAdoption,
   quota?: QuotaWiring,
   chat?: ChatWiring,
-): Api & RunEventFeed & { readonly quota: QuotaLifecycle } {
+  quit?: QuitPromptPort,
+): Api & RunEventFeed & { readonly quota: QuotaLifecycle; readonly quitRequested: (runs: readonly string[], chats: readonly string[]) => void } {
   // One remembered scan per api instance (A-85): the candidates query and every adoption read it.
   const adopting: Adopting | undefined =
     adoption === undefined ? undefined : { ...adoption, candidates: createAccountCandidateList(deps.clock, adoption.discovery) };
@@ -576,7 +587,15 @@ export function createApi(
 
   return {
     quota: { start: () => quotaService?.start(), stop: () => quotaService?.stop() },
+    quitRequested: (runs, chats) => emit({ type: 'quit.requested', runs, chats }),
     command: async (actor, command) => {
+      // The quit confirmation's two answers touch no state: they go straight to the shell's port.
+      if (command.type === 'quit.ack' || command.type === 'quit.answer') {
+        if (quit === undefined) return { ok: false, code: 'not_found' };
+        if (command.type === 'quit.ack') quit.ack();
+        else quit.answer(command.accept === true);
+        return { ok: true };
+      }
       // workOrders.changed fires for a command that appended to the work order event log — the log
       // the board, cockpit and detail views derive from. The append is observed through a
       // per-command view, so the ports stay untouched for every other caller; the emission follows
@@ -1270,6 +1289,8 @@ const runCommand = async (
       if (updates === undefined) return { ok: false, code: 'not_found' };
       return commandOf(await applyUpdate(updates));
     }
+    default:
+      return { ok: false, code: 'unknown' };
   }
 };
 

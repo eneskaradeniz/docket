@@ -51,7 +51,11 @@ export type Command =
   | { readonly type: 'chat.grant'; readonly conversation: string; readonly classes: readonly string[]; readonly minutes: number } // ok → { id } (A-262)
   | { readonly type: 'chat.revoke'; readonly grant: string }
   | { readonly type: 'app.update.check' }
-  | { readonly type: 'app.update.apply' };
+  | { readonly type: 'app.update.apply' }
+  /** The quit modal is on screen (answer to `quit.requested`); without it the shell falls back to the native dialog. */
+  | { readonly type: 'quit.ack' }
+  /** The operator's answer to the in-app quit confirmation: true = Kapat ve durdur, false = Vazgeç. */
+  | { readonly type: 'quit.answer'; readonly accept: boolean };
 
 /** A conversation scope on the wire: the domain's own three shapes with plain string ids. */
 export type ChatScopeInput =

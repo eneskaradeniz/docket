@@ -1,7 +1,7 @@
 // Direct git subprocess execution: no shell, minimal environment, timeouts enforced.
-import { spawn } from 'node:child_process';
-
 import type { GitProbe } from '../../application/index';
+
+import { registeredSpawn } from '../system/index';
 
 export interface GitResult {
   readonly exitCode: number;
@@ -34,7 +34,7 @@ export function runGit(
   const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   return new Promise<GitResult>((resolve, reject) => {
     // shell: false — every argument reaches the git binary verbatim.
-    const child = spawn('git', [...args], { cwd, env: buildGitEnv(), shell: false, windowsHide: true });
+    const child = registeredSpawn('git', [...args], { cwd, env: buildGitEnv(), shell: false, windowsHide: true }, { kind: 'git', label: `git ${args[0] ?? ''}`.trim() });
     let stdout = '';
     let stderr = '';
     let timedOut = false;
@@ -52,12 +52,12 @@ export function runGit(
       child.kill('SIGKILL');
     }, timeoutMs);
 
-    child.stdout.setEncoding('utf8');
-    child.stderr.setEncoding('utf8');
-    child.stdout.on('data', (chunk: string) => {
+    child.stdout?.setEncoding('utf8');
+    child.stderr?.setEncoding('utf8');
+    child.stdout?.on('data', (chunk: string) => {
       stdout += chunk;
     });
-    child.stderr.on('data', (chunk: string) => {
+    child.stderr?.on('data', (chunk: string) => {
       stderr += chunk;
     });
 

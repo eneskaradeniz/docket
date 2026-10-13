@@ -68,6 +68,8 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
   'chat.revoke': { input: 'grant: GrantId' },
   'app.update.check': { input: 'no input' },
   'app.update.apply': { input: 'no input' },
+  'quit.ack': { input: 'no input' },
+  'quit.answer': { input: 'accept: boolean' },
 };
 
 export const QUERY_REGISTRY: Record<Query['type'], RegistryEntry> = {

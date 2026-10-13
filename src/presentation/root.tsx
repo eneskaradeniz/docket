@@ -33,6 +33,8 @@ import { t } from './labels/t';
 import { fill } from './components/chat-style';
 import { createProviderMarksStore } from './stores/provider-marks';
 import { createUpdateStore } from './stores/update';
+import { createQuitPromptStore, type QuitPromptStore } from './stores/quit-prompt';
+import { QuitDialog } from './components/quit-dialog';
 import { createNewProjectStore } from './stores/new-project';
 import { createWizardStore } from './stores/wizard';
 import { createPageListStore, createPageViewHost, createPageViewerStore, type PageViewPort } from './stores/page-viewer';
@@ -62,14 +64,20 @@ const USER: Actor = { kind: 'user', id: 'user-1', label: 'Operator' };
 /** The root component: it subscribes to the locale store, so a selection in the settings' language
  *  control re-renders the shell with the swapped bundle — the flip stays in memory, never a
  *  reload (U-9). */
-function App({ localeStore, ...screens }: Omit<ShellScreenProps, 'locale'> & { readonly localeStore: LocaleStore }) {
+function App({ localeStore, quit, ...screens }: Omit<ShellScreenProps, 'locale'> & { readonly localeStore: LocaleStore; readonly quit: QuitPromptStore }) {
   const locale = useSyncExternalStore(localeStore.subscribe, localeStore.current);
   // The document's language follows the locale (A10): assistive tech must hear the UI's language,
   // and the Turkish suffixes (ı İ ş ğ) must reach the mono voice through the right locale.
   useEffect(() => {
     document.documentElement.lang = locale;
   }, [locale]);
-  return <ShellScreen {...screens} localeStore={localeStore} locale={locale} />;
+  return (
+    <>
+      <ShellScreen {...screens} localeStore={localeStore} locale={locale} />
+      {/* The quit confirmation (U-294): a modal in this window, raised by the shell's request. */}
+      <QuitDialog store={quit} locale={locale} />
+    </>
+  );
 }
 
 const mount = document.getElementById('root');
@@ -145,6 +153,8 @@ if (mount !== null) {
   const shell = createShellStore({ api, changes });
   // The app's own newer version — the title bar's button and the panel's Güncelleme section.
   const update = createUpdateStore({ api, changes, actor: USER });
+  // Subscribes at once: the shell's quit request may arrive any time after load.
+  const quit = createQuitPromptStore({ api, changes, actor: USER });
   // The sidebar's tree (U-15) and accounts frame (U-16) mirror their queries; the sort choice
   // persists where the locale choice does.
   const tree = createProjectTreeStore({ api, changes, now: () => Date.now(), persistence: window.localStorage });
@@ -169,6 +179,7 @@ if (mount !== null) {
       <ErrorBoundary locale={locale.current}>
         <App
           localeStore={locale}
+          quit={quit}
           themeStore={theme}
           candidates={candidates}
           candidateList={candidateList}

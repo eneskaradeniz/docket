@@ -705,6 +705,13 @@ export const LABEL_KEYS = [
   'success.binding.save',
   'success.app.update.check',
   'success.app.update.apply',
+  // The native quit confirmation (electron raises the dialog; the copy lives here, U-295).
+  'quit.title',
+  'quit.body',
+  'quit.note',
+  'quit.more',
+  'quit.cancel',
+  'quit.stop',
   'error.empty_chain',
   'error.unknown_project',
   'error.no_roadmap',
