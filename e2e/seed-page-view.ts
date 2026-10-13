@@ -318,34 +318,41 @@ const note = await publishPageUseCase(deps, {
 assert(note.ok, `the note page did not publish: ${note.ok ? '' : note.error.code}`);
 const notePageId = note.value.id;
 
-// The Öneriler journey's proposals (J-17), all on the repo's own definition files: a pending one the
-// operator approves, one whose target file then moves (so it is stale) and one already rejected.
+// The Öneriler journey's proposals (J-17), all on hash-guarded files: a pending and a rejected one on
+// the repo's repo.yaml, and one on the project's project.yaml whose file then moves (so it is stale).
 // The assistant wrote them; the operator decides, so the self-approval rule never applies.
 const REPO_SCOPE = { kind: 'repo', repo: PROJECT.repo as RepoSlug } as const;
-const ROLE_FILE = 'roles/gelistirici.yaml';
-const FLOW_FILE = 'flows/tek-asama.yaml';
-const roleFile = await deps.definitions.readFile(REPO_SCOPE, ROLE_FILE);
-const flowFile = await deps.definitions.readFile(REPO_SCOPE, FLOW_FILE);
-assert(roleFile !== undefined && flowFile !== undefined, 'the seeded definition files are missing');
-const LINE = /^instructions:.*$/m;
+const REPO_FILE = `repos/${PROJECT.repo}/repo.yaml`;
+const PROJECT_FILE = `projects/${PROJECT.id}/project.yaml`;
+const repoFile = await deps.definitions.readFile(REPO_FILE);
+assert(repoFile !== undefined, 'the seeded repo.yaml is missing');
+const projectFileWritten = await deps.definitions.writeFile(
+  PROJECT_FILE,
+  stringify({ id: PROJECT.id, name: PROJECT.name, repos: [PROJECT.repo] }),
+  '',
+);
+assert(projectFileWritten.ok, 'the seeded project.yaml could not be written');
+const projectFile = await deps.definitions.readFile(PROJECT_FILE);
+assert(projectFile !== undefined, 'the seeded project.yaml is missing');
+const LINE = /^docsRoot:.*$/m;
 const NAME = /^name: .*$/m;
-const removedLine = roleFile.content.match(LINE)?.[0];
-assert(removedLine !== undefined && NAME.test(flowFile.content), 'the seeded definitions lost the lines the proposals change');
-const addedLine = 'instructions: İş emrini yürüt ve sonucu özetle.';
+const removedLine = repoFile.content.match(LINE)?.[0];
+assert(removedLine !== undefined && NAME.test(projectFile.content), 'the seeded definitions lost the lines the proposals change');
+const addedLine = 'docsRoot: belgeler';
 
 const pendingProposal = await createProposal(deps, {
   scope: REPO_SCOPE,
-  target: ROLE_FILE,
-  after: roleFile.content.replace(LINE, addedLine),
-  summary: 'Geliştirici rolüne özet adımı ekle',
+  target: REPO_FILE,
+  after: repoFile.content.replace(LINE, addedLine),
+  summary: 'Belge klasörünü belgeler yap',
   author: AGENT,
 });
 assert(pendingProposal.ok, 'the pending proposal was not created');
 const rejectedProposal = await createProposal(deps, {
   scope: REPO_SCOPE,
-  target: ROLE_FILE,
-  after: roleFile.content.replace(LINE, 'instructions: Yalnızca testleri yaz.'),
-  summary: 'Geliştirici rolünü testlerle sınırla',
+  target: REPO_FILE,
+  after: repoFile.content.replace(LINE, 'docsRoot: dokumanlar'),
+  summary: 'Belge klasörünü dokumanlar yap',
   author: AGENT,
 });
 assert(rejectedProposal.ok, 'the rejected proposal was not created');
@@ -353,20 +360,20 @@ const rejected = await decideProposalUseCase(deps, { id: rejectedProposal.value,
 assert(rejected.ok, 'the proposal was not rejected');
 const staleProposal = await createProposal(deps, {
   scope: REPO_SCOPE,
-  target: FLOW_FILE,
-  after: flowFile.content.replace(NAME, 'name: Tek aşamalı akış, gözden geçirilmiş'),
-  summary: 'Akışın adını güncelle',
+  target: PROJECT_FILE,
+  after: projectFile.content.replace(NAME, 'name: Sayfa Atölyesi, gözden geçirilmiş'),
+  summary: 'Projenin adını güncelle',
   author: AGENT,
 });
 assert(staleProposal.ok, 'the stale proposal was not created');
-// The flow file changes after the proposal was written: the proposal no longer fits it.
-const moved = await deps.definitions.writeFile(REPO_SCOPE, FLOW_FILE, flowFile.content.replace(NAME, 'name: Tek aşamalı akış, elle değişti'), flowFile.hash);
-assert(moved.ok, 'the flow file could not be moved under the stale proposal');
+// The project file changes after the proposal was written: the proposal no longer fits it.
+const moved = await deps.definitions.writeFile(PROJECT_FILE, projectFile.content.replace(NAME, 'name: Sayfa Atölyesi, elle değişti'), projectFile.hash);
+assert(moved.ok, 'the project file could not be moved under the stale proposal');
 
 // On disk in the version directory, but not a recorded file of the version.
 writeFileSync(join(dataDir, 'pages', pageId, 'v1', 'secret'), 'TOP SECRET');
 
 node.value.close();
 console.log(
-  `SEED=${JSON.stringify({ home, dataDir, pageId, project: PROJECT.name, workOrderTitle: WORK_ORDER_TITLE, notePageId, noteTitle: NOTE_TITLE, removedLine: OLD_LINE, addedLine: NEW_LINE, proposals: { pending: pendingProposal.value, stale: staleProposal.value, rejected: rejectedProposal.value, pendingSummary: 'Geliştirici rolüne özet adımı ekle', removedLine, addedLine } })}`,
+  `SEED=${JSON.stringify({ home, dataDir, pageId, project: PROJECT.name, workOrderTitle: WORK_ORDER_TITLE, notePageId, noteTitle: NOTE_TITLE, removedLine: OLD_LINE, addedLine: NEW_LINE, proposals: { pending: pendingProposal.value, stale: staleProposal.value, rejected: rejectedProposal.value, pendingSummary: 'Belge klasörünü belgeler yap', removedLine, addedLine } })}`,
 );

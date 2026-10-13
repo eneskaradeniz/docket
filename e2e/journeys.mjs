@@ -630,9 +630,9 @@ for (const [sizeName, theme] of combos) {
     // The import's own evidence: the definition file exists in the data dir. The yaml stores the
     // candidate's own fields — kind, name, command — the identity is derived from (R-62), so the
     // assertion reads those, not a literal identity string.
-    const capsDir = join(handle.seed.dataDir, 'capabilities');
+    const capsDir = join(handle.seed.dataDir, 'library', 'capabilities');
     const files = readdirSync(capsDir);
-    const wrote = files.includes('fetch.yaml') && readFileSync(join(capsDir, 'fetch.yaml'), 'utf8').includes('command: npx');
+    const wrote = files.includes('fetch') && readFileSync(join(capsDir, 'fetch', 'v1.yaml'), 'utf8').includes('command: npx');
     assert(wrote, `capabilities.import left no definition for the shared capability (${files.join(', ')})`);
     console.log(`  ok   ${title}`);
     appendJourney({ id: title, status: 'ok', steps });
@@ -1442,7 +1442,7 @@ for (const [sizeName, theme] of combos) {
     const tableText = (await feed.locator('table').textContent()) ?? '';
     for (const part of ['Hesap A', '62%', '—']) assert(tableText.includes(part), `the table must show "${part}", saw "${tableText}"`);
     const proposalCard = feed.locator('[data-chat-card="proposal"]');
-    await proposalCard.getByText('Tek aşamalı akış (gözden geçirildi)').waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await proposalCard.getByText('docsRoot: belgeler').waitFor({ state: 'visible', timeout: SCAN_WAIT });
     assert(((await proposalCard.textContent()) ?? '').includes(`Kaynak: ${seed.target}`), 'the proposal card names its source');
     // A toast shown while the panel is open sits beside it, never over its header.
     const overlap = await page.evaluate(() => {
