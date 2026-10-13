@@ -2,6 +2,11 @@ import { err, ok, type Actor, type EpochMs, type ProposalId, type Result } from 
 
 export type ProposalStatus = 'pending' | 'approved' | 'rejected' | 'stale';
 
+/** Target for a multi-file project setup diff; the `after` field holds a serialized `SetupProposal`. */
+export const PROJECT_SETUP_PROPOSAL_TARGET = 'project_setup';
+
+export const isProjectSetupTarget = (target: string): boolean => target === PROJECT_SETUP_PROPOSAL_TARGET;
+
 export interface Proposal {
   readonly id: ProposalId;
   readonly author: Actor;
