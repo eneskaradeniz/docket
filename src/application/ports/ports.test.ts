@@ -21,6 +21,7 @@ import type { AccountTestRepo } from './account-test-repo';
 import type { AppSettingsRepo } from './app-settings-repo';
 import type { PhaseAutoRunRepo } from './phase-auto-run-repo';
 import type { BindingRepo, BindingScope } from './binding-repo';
+import type { BundleStore } from './bundle-store';
 import type { CapabilityCatalog } from './capability-catalog';
 import type { CapabilityDiscovery } from './capability-discovery';
 import type { CheckpointCommitter, CheckpointDiff, CheckpointError, CheckpointRef } from './checkpoints';
@@ -73,6 +74,7 @@ describe('AppDeps', () => {
     expectTypeOf<AppDeps['bindings']>().toEqualTypeOf<BindingRepo>();
     expectTypeOf<AppDeps['queue']>().toEqualTypeOf<QueueRepo>();
     expectTypeOf<AppDeps['definitions']>().toEqualTypeOf<DefinitionStore>();
+    expectTypeOf<AppDeps['bundleStore']>().toEqualTypeOf<BundleStore>();
     expectTypeOf<AppDeps['proposals']>().toEqualTypeOf<ProposalRepo>();
     expectTypeOf<AppDeps['pages']>().toEqualTypeOf<PageRepo>();
     expectTypeOf<AppDeps['pageFiles']>().toEqualTypeOf<PageFiles>();
@@ -117,6 +119,7 @@ describe('AppDeps', () => {
       | 'bindings'
       | 'queue'
       | 'definitions'
+      | 'bundleStore'
       | 'proposals'
       | 'pages'
       | 'pageFiles'
@@ -195,6 +198,7 @@ describe('AppDeps', () => {
     expectTypeOf<Application.Worktrees>().toEqualTypeOf<Worktrees>();
     expectTypeOf<Application.WorktreeFiles>().toEqualTypeOf<WorktreeFiles>();
     expectTypeOf<Application.Notifier>().toEqualTypeOf<Notifier>();
+    expectTypeOf<Application.BundleStore>().toEqualTypeOf<BundleStore>();
     expectTypeOf<Application.AppDeps>().toEqualTypeOf<AppDeps>();
   });
 });

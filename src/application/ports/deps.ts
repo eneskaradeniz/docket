@@ -6,6 +6,7 @@ import type { TransportResolver } from './agent-transport';
 import type { AppSettingsRepo } from './app-settings-repo';
 import type { AttachmentFiles } from './attachment-files';
 import type { BindingRepo } from './binding-repo';
+import type { BundleStore } from './bundle-store';
 import type { CapabilityCatalog } from './capability-catalog';
 import type { CapabilityDiscovery } from './capability-discovery';
 import type { CheckpointCommitter } from './checkpoints';
@@ -53,6 +54,7 @@ export interface AppDeps {
   readonly bindings: BindingRepo;
   readonly queue: QueueRepo;
   readonly definitions: DefinitionStore;
+  readonly bundleStore: BundleStore;
   readonly proposals: ProposalRepo;
   readonly pages: PageRepo;
   readonly pageFiles: PageFiles;

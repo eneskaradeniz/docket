@@ -35,6 +35,8 @@ import { createProviderMarksStore } from './stores/provider-marks';
 import { createUpdateStore } from './stores/update';
 import { createQuitPromptStore, type QuitPromptStore } from './stores/quit-prompt';
 import { QuitDialog } from './components/quit-dialog';
+import { createProjectBundleStore, type ProjectBundleStore } from './stores/project-bundle';
+import { ProjectBundleDialog } from './components/project-bundle-dialog';
 import { createNewProjectStore } from './stores/new-project';
 import { createWizardStore } from './stores/wizard';
 import { createPageListStore, createPageViewHost, createPageViewerStore, type PageViewPort } from './stores/page-viewer';
@@ -64,7 +66,7 @@ const USER: Actor = { kind: 'user', id: 'user-1', label: 'Operator' };
 /** The root component: it subscribes to the locale store, so a selection in the settings' language
  *  control re-renders the shell with the swapped bundle — the flip stays in memory, never a
  *  reload (U-9). */
-function App({ localeStore, quit, ...screens }: Omit<ShellScreenProps, 'locale'> & { readonly localeStore: LocaleStore; readonly quit: QuitPromptStore }) {
+function App({ localeStore, quit, projectBundle, ...screens }: Omit<ShellScreenProps, 'locale'> & { readonly localeStore: LocaleStore; readonly quit: QuitPromptStore; readonly projectBundle: ProjectBundleStore }) {
   const locale = useSyncExternalStore(localeStore.subscribe, localeStore.current);
   // The document's language follows the locale (A10): assistive tech must hear the UI's language,
   // and the Turkish suffixes (ı İ ş ğ) must reach the mono voice through the right locale.
@@ -76,6 +78,8 @@ function App({ localeStore, quit, ...screens }: Omit<ShellScreenProps, 'locale'>
       <ShellScreen {...screens} localeStore={localeStore} locale={locale} />
       {/* The quit confirmation (U-294): a modal in this window, raised by the shell's request. */}
       <QuitDialog store={quit} locale={locale} />
+      {/* The project bundle export/import confirmation dialog (U-296). */}
+      <ProjectBundleDialog store={projectBundle} locale={locale} />
     </>
   );
 }
@@ -155,6 +159,7 @@ if (mount !== null) {
   const update = createUpdateStore({ api, changes, actor: USER });
   // Subscribes at once: the shell's quit request may arrive any time after load.
   const quit = createQuitPromptStore({ api, changes, actor: USER });
+  const projectBundle = createProjectBundleStore({ api, actor: USER });
   // The sidebar's tree (U-15) and accounts frame (U-16) mirror their queries; the sort choice
   // persists where the locale choice does.
   const tree = createProjectTreeStore({ api, changes, now: () => Date.now(), persistence: window.localStorage });
@@ -180,6 +185,7 @@ if (mount !== null) {
         <App
           localeStore={locale}
           quit={quit}
+          projectBundle={projectBundle}
           themeStore={theme}
           candidates={candidates}
           candidateList={candidateList}

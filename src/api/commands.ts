@@ -9,6 +9,8 @@ export type Command =
   | { readonly type: 'project.attach'; readonly path: string; readonly repos?: readonly { readonly repo: string; readonly path: string }[] }
   | { readonly type: 'project.create'; readonly mode: 'existing'; readonly path: string; readonly name: string }
   | { readonly type: 'project.create'; readonly mode: 'blank'; readonly parent: string; readonly name: string } // ok → { ok: true, id: <project slug> }
+  | { readonly type: 'project.export'; readonly project: string } // ok → { path, counts } (A-342)
+  | { readonly type: 'project.importBundle'; readonly path: string } // ok → { warnings, renames } (A-342)
   | { readonly type: 'repo.register'; readonly project: string; readonly repo: string; readonly path: string }
   | { readonly type: 'repo.unregister'; readonly project: string; readonly repo: string }
   | { readonly type: 'repo.relink'; readonly repoId: string; readonly path: string } // errors: not_found, folder_not_found, fingerprint_mismatch (A-341)
@@ -93,7 +95,24 @@ export type CommandResult =
   /** `results` rides only `capabilities.import`: one row per requested identity, in input order.
    *  `phaseRun` rides only `roadmap.runPhase`. The chat fields ride only their own commands:
    *  `conversation`+`turn` (chat.start), `turn` (chat.send), `attachment` (chat.attach),
-   *  `workOrder`+`code` (chat.draft.confirm), `id` (chat.grant). */
-  | { readonly ok: true; readonly id?: string; readonly results?: readonly CapabilityImportResultView[]; readonly phaseRun?: PhaseRunView; readonly conversation?: string; readonly turn?: string; readonly attachment?: string; readonly workOrder?: string; readonly code?: string; readonly report?: { readonly warnings: readonly string[]; readonly renames: readonly { readonly id: string; readonly to: string }[] } }
-  /** `roles` rides only `binding_exists`: the roles whose bindings still reference the account. */
-  | { readonly ok: false; readonly code: string; readonly roles?: readonly string[] };
+   *  `workOrder`+`code` (chat.draft.confirm), `id` (chat.grant).
+   *  `path`+`counts` ride `project.export`, `warnings`+`renames` ride `project.importBundle` (A-342). */
+  | {
+      readonly ok: true;
+      readonly id?: string;
+      readonly results?: readonly CapabilityImportResultView[];
+      readonly phaseRun?: PhaseRunView;
+      readonly conversation?: string;
+      readonly turn?: string;
+      readonly attachment?: string;
+      readonly workOrder?: string;
+      readonly code?: string;
+      readonly report?: { readonly warnings: readonly string[]; readonly renames: readonly { readonly id: string; readonly to: string }[] };
+      readonly path?: string;
+      readonly counts?: { readonly projects: number; readonly repos: number; readonly definitions: number; readonly memoryNotes: number };
+      readonly warnings?: readonly string[];
+      readonly renames?: readonly { readonly id: string; readonly to: string }[];
+    }
+  /** `roles` rides only `binding_exists`: the roles whose bindings still reference the account.
+   *  `issues` rides `definitions_invalid` on bundle import (A-342). */
+  | { readonly ok: false; readonly code: string; readonly roles?: readonly string[]; readonly issues?: readonly string[] };

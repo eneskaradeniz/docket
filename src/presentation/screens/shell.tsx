@@ -88,6 +88,7 @@ import { PageViewerScreen } from './page-viewer';
 import { RoadmapScreen } from './roadmap';
 import { SettingsPanel, type SettingsSection } from './settings';
 import { WizardScreen } from './wizard';
+import type { ProjectBundleStore } from '../stores/project-bundle';
 
 export interface ShellScreenProps {
   readonly shell: ShellStore;
@@ -135,6 +136,7 @@ export interface ShellScreenProps {
   readonly locale: Locale;
   /** The machine's zone, for the account view's reset times; tests pass 'UTC'. */
   readonly timeZone: string;
+  readonly projectBundle?: ProjectBundleStore;
 }
 
 /** Where the shell can be. Routes carry only ids; the screens load their own data. The roadmap
@@ -209,6 +211,7 @@ export function ShellScreen({
   providerList,
   locale,
   timeZone,
+  projectBundle,
 }: ShellScreenProps) {
   const state = useSyncExternalStore(shell.subscribe, shell.state);
   // The sidebar's Artifact'lar count (U-84): the library store's unfiltered read, loaded at startup.
@@ -583,6 +586,7 @@ export function ShellScreen({
             onOpenProject={(project) => navigate({ name: 'roadmap', project })}
             onOpenRepo={(_project, repo) => navigate({ name: 'board', repo })}
             onNewProject={openNewProject}
+            projectBundle={projectBundle}
           />
 
           <SidebarAccounts
@@ -631,6 +635,7 @@ export function ShellScreen({
               locale={locale}
               onOpenRepo={(repo) => navigate({ name: 'board', repo })}
               onOpenWorkOrder={openWorkOrder}
+              projectBundle={projectBundle}
             />
           ) : null}
           {route.name === 'account' ? (

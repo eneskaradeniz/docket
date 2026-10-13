@@ -6,6 +6,7 @@ export * from './fake-action-repo';
 export * from './fake-app-settings-repo';
 export * from './fake-attachment-files';
 export * from './fake-binding-repo';
+export * from './fake-bundle-store';
 export * from './fake-capability-catalog';
 export * from './fake-capability-discovery';
 export * from './fake-checkpoints';

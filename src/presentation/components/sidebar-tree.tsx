@@ -18,6 +18,8 @@ import {
 import { ACTIVE_CLASS, ACTIVE_SOFT_CLASS } from './active-state';
 import { SIDEBAR_HEADER_BUTTON } from './sidebar-header-button';
 import { Skeleton, SkeletonReveal, SkeletonStyle, useSkeleton } from './skeleton';
+import { ProjectMenu } from './project-menu';
+import type { ProjectBundleStore } from '../stores/project-bundle';
 
 export interface SidebarTreeProps {
   readonly store: ProjectTreeStore;
@@ -29,6 +31,7 @@ export interface SidebarTreeProps {
   readonly onOpenRepo: (project: string, repo: string) => void;
   /** The header's "+": the Yeni proje page (U-40). */
   readonly onNewProject: () => void;
+  readonly projectBundle?: ProjectBundleStore;
 }
 
 const DOT_CLASS: Readonly<Record<RepoNode['status'], string>> = {
@@ -169,7 +172,7 @@ const TreeRowSkeleton = () => (
   </div>
 );
 
-export function SidebarTree({ store, selection, locale, onOpenProject, onOpenRepo, onNewProject }: SidebarTreeProps) {
+export function SidebarTree({ store, selection, locale, onOpenProject, onOpenRepo, onNewProject, projectBundle }: SidebarTreeProps) {
   const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   const rows = projectRows(orderTree(state.tree, state.sort, state.usedAt));
   // Only a tree with nothing to show can carry a skeleton (U-26); a re-query over the standing
@@ -203,6 +206,9 @@ export function SidebarTree({ store, selection, locale, onOpenProject, onOpenRep
         >
           <PlusIcon />
         </button>
+        {projectBundle ? (
+          <ProjectMenu locale={locale} store={projectBundle} project={selection.project?.id} />
+        ) : null}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto" aria-busy={skeleton ? 'true' : undefined}>

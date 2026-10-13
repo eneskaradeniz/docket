@@ -7,6 +7,7 @@ export * from './app-settings-repo';
 export * from './attachment-files';
 export * from './agent-transport';
 export * from './binding-repo';
+export * from './bundle-store';
 export * from './capability-catalog';
 export * from './capability-discovery';
 export * from './checkpoints';

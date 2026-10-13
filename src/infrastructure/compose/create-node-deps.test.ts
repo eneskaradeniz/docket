@@ -512,4 +512,12 @@ describe('createNodeDeps', () => {
     expect(JSON.stringify(candidates)).not.toContain(sentinel);
     node.close();
   });
+
+  it('I-31: wires bundleStore under exports/ in the data directory', async () => {
+    const node = makeNode();
+    expect(node.deps.bundleStore).toBeDefined();
+    expect(typeof node.deps.bundleStore.export).toBe('function');
+    expect(typeof node.deps.bundleStore.read).toBe('function');
+    node.close();
+  });
 });

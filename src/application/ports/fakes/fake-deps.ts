@@ -7,6 +7,7 @@ import { createFakeActionRepo, createFakeGrantRepo } from './fake-action-repo';
 import { createFakeAppSettingsRepo } from './fake-app-settings-repo';
 import { createFakeAttachmentFiles } from './fake-attachment-files';
 import { createFakeBindingRepo } from './fake-binding-repo';
+import { createFakeBundleStore } from './fake-bundle-store';
 import { createFakeCapabilityCatalog } from './fake-capability-catalog';
 import { createFakeCapabilityDiscovery } from './fake-capability-discovery';
 import { createFakeCheckpointCommitter } from './fake-checkpoints';
@@ -59,6 +60,7 @@ export const createFakeDeps = (overrides: Partial<AppDeps> = {}): AppDeps => ({
   bindings: createFakeBindingRepo(),
   queue: createFakeQueueRepo(),
   definitions: createFakeDefinitionStore(),
+  bundleStore: createFakeBundleStore(),
   proposals: createFakeProposalRepo(),
   pages: createFakePageRepo(),
   pageFiles: createFakePageFiles(),

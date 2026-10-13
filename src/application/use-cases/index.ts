@@ -32,3 +32,4 @@ export * from './settings';
 export * from './library';
 
 export * from './phase-control';
+export * from './project-bundle';

@@ -24,6 +24,7 @@ import { createScratchDirs } from './scratch-dirs';
 import { createCommandRunner, createSecretScanner, redactSecrets } from '../gates/index';
 import { createKeychainVault, type CipherFns } from '../storage/keychain/index';
 import { createYamlDefinitionStore } from '../storage/definitions-yaml/index';
+import { createFsBundleStore } from '../storage/bundle/index';
 import {
   createSqliteAccountRepo,
   createSqliteAppSettingsRepo,
@@ -165,6 +166,7 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     dispatchStatus: createMemoryDispatchStatus(),
     runTokens: createNodeRunTokens(),
     runDirs: createRunDirs({ dataDir: config.dataDir }),
+    bundleStore: createFsBundleStore(join(config.dataDir, 'exports')),
     mcpEndpoint: config.mcpEndpoint,
   };
 

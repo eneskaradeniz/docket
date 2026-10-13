@@ -21,6 +21,8 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
   'roadmap.resumePhase': { input: 'project: ProjectSlug, phase: PhaseSlug' },
   'project.attach': { input: 'path: string, repos?: { repo: RepoSlug, path: string }[]' },
   'project.create': { input: "mode: 'existing' (path, name) | 'blank' (parent, name)" },
+  'project.export': { input: 'project: ProjectSlug' },
+  'project.importBundle': { input: 'path: string' },
   'repo.register': { input: 'project: ProjectSlug, repo: RepoSlug, path: string' },
   'repo.unregister': { input: 'project: ProjectSlug, repo: RepoSlug' },
   'repo.relink': { input: 'repoId: string, path: string' },

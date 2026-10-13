@@ -4,6 +4,7 @@ export * from './system/index';
 export * from './storage/sqlite/index';
 export * from './storage/keychain/index';
 export * from './storage/definitions-yaml/index';
+export * from './storage/bundle/index';
 export * from './vcs/index';
 export * from './gates/index';
 export * from './forge/index';

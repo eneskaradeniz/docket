@@ -24,6 +24,8 @@ import {
 import { failureKey } from '../stores/results';
 import { toast } from '../stores/toasts';
 import { formatWorkOrderCode } from '../stores/work-order-code';
+import { ProjectMenu } from '../components/project-menu';
+import type { ProjectBundleStore } from '../stores/project-bundle';
 
 export interface RoadmapScreenProps {
   readonly store: RoadmapStore;
@@ -35,6 +37,7 @@ export interface RoadmapScreenProps {
   /** A sub-row's repo tag opens that repo's board; the code opens the work order's detail. */
   readonly onOpenRepo: (repo: string) => void;
   readonly onOpenWorkOrder: (workOrderId: string) => void;
+  readonly projectBundle?: ProjectBundleStore;
 }
 
 interface TaskView {
@@ -396,7 +399,7 @@ const TaskRow = ({
   );
 };
 
-export function RoadmapScreen({ store, project, name, locale, onOpenRepo, onOpenWorkOrder }: RoadmapScreenProps) {
+export function RoadmapScreen({ store, project, name, locale, onOpenRepo, onOpenWorkOrder, projectBundle }: RoadmapScreenProps) {
   const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   useEffect(() => {
     void store.load(project);
@@ -412,6 +415,11 @@ export function RoadmapScreen({ store, project, name, locale, onOpenRepo, onOpen
             {name}
           </h1>
           <span className="flex-none whitespace-nowrap text-[0.78125rem] text-inkdim">{t(locale, 'roadmap.title')}</span>
+          {projectBundle ? (
+            <div className="ml-auto flex items-center">
+              <ProjectMenu locale={locale} store={projectBundle} project={project} />
+            </div>
+          ) : null}
         </div>
         <p className="text-xs text-inkdim">{t(locale, 'roadmap.caption')}</p>
         <RoadmapLaunchers project={project} />
