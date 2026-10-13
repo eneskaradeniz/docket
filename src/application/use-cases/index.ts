@@ -3,6 +3,7 @@ export * from './work-orders';
 export * from './work-order-changes';
 export * from './gates';
 export * from './routing';
+export * from './legacy-import';
 export * from './projects';
 export * from './proposals';
 export * from './proposal-views';

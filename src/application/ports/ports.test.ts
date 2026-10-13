@@ -113,6 +113,8 @@ describe('AppDeps', () => {
       | 'modelCatalog'
       | 'projects'
       | 'repos'
+      | 'readFingerprint'
+      | 'legacyImporter'
       | 'bindings'
       | 'queue'
       | 'definitions'
