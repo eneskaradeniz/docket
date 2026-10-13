@@ -269,8 +269,21 @@ export async function enqueueStage(
   const stageDef = flow.stages.find((candidate) => candidate.id === next.stage);
   const routing = stageDef === undefined ? {} : stageRouting(stageDef, routed.value.binding);
 
-  // A review stage prefers an account on another provider than the one that wrote the work.
+  // A pinned work order routes from its stored stage chain when it names connected accounts;
+  // an empty pin chain or none left connected falls back to the live binding (A-325).
   let chain: readonly AccountRoute[] = routed.value.chain;
+  if (record.pin !== undefined) {
+    const pinned = record.pin.stages.find((entry) => entry.stage.id === next.stage);
+    if (pinned !== undefined && pinned.accounts.length > 0) {
+      const connected: AccountRoute[] = [];
+      for (const route of pinned.accounts) {
+        if ((await deps.accounts.get(route.accountId)) !== undefined) connected.push({ ...route });
+      }
+      if (connected.length > 0) chain = connected;
+    }
+  }
+
+  // A review stage prefers an account on another provider than the one that wrote the work.
   let sameProviderReview = false;
   if (stageDef?.reviewOf !== undefined) {
     const reviewed = await lastSucceededRun(deps, input.id, stageDef.reviewOf);

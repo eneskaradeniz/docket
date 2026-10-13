@@ -588,6 +588,35 @@ describe('validateDefinitions', () => {
     expect(extraIssues).toEqual([issue('repo.flow.bindings[1].stage', 'binding_stage_mismatch')]);
   });
 
+  it('rejects malformed account routes in StageBinding.accounts', () => {
+    const notArray = doc({ repo: repo({ flow: repoFlow({ bindings: [binding({ accounts: 'nope' })] }) }) });
+    expect(codesOf(expectErr(validateDefinitions(notArray)))).toContain('wrong_type');
+
+    const badEntry = doc({
+      repo: repo({ flow: repoFlow({ bindings: [binding({ accounts: [{ accountId: 'nope' }, 42] })] }) }),
+    });
+    const issues = expectErr(validateDefinitions(badEntry));
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        issue('repo.flow.bindings[0].accounts[0].accountId', 'wrong_type'),
+        issue('repo.flow.bindings[0].accounts[1]', 'wrong_type'),
+      ]),
+    );
+
+    const badModel = doc({
+      repo: repo({
+        flow: repoFlow({
+          bindings: [
+            binding({
+              accounts: [{ accountId: '01ARZ3NDEKTSV4RRFFQ69G5FAA', model: 7 }],
+            }),
+          ],
+        }),
+      }),
+    });
+    expect(codesOf(expectErr(validateDefinitions(badModel)))).toContain('wrong_type');
+  });
+
   it('R-127 edge: two bindings for one stage are duplicate_binding', () => {
     const input = doc({
       repo: repo({

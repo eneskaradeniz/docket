@@ -46,7 +46,6 @@ const SECTIONS = [
 const PENDING = new Map([
   ['providers:P-38', '#672'],
   ['domain:R-133', '#1025'],
-  ['domain:R-135', '#1013'],
   ['infrastructure:I-92', '#1009'],
 
   // #1005 — two-layer roadmap and tracker model with sync modes

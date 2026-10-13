@@ -20,6 +20,7 @@ import {
   type CostKind,
   type EpochMs,
   type FlowDef,
+  type FlowPin,
   type LimitClass,
   type LimitPolicy,
   type Meter,
@@ -262,6 +263,7 @@ const harness = async (options: {
   readonly routeKinds?: readonly FakeRouteKind[];
   readonly translations?: readonly TranslationRow[];
   readonly defsJson?: string;
+  readonly pin?: FlowPin;
   readonly files?: readonly { readonly name: string; readonly content: string }[];
   readonly checkpointDiffs?: Readonly<Record<string, CheckpointDiff>>;
   readonly checkpointBases?: Readonly<Record<string, string>>;
@@ -300,7 +302,7 @@ const harness = async (options: {
       : {}),
   });
 
-  await workOrders.create({ ...WORK_ORDER_RECORD });
+  await workOrders.create({ ...WORK_ORDER_RECORD, ...(options.pin !== undefined ? { pin: options.pin } : {}) });
   if (options.withAccount !== false) await accounts.save(accountRecord(options.limitPolicy ?? 'wait_resume'));
   if (options.pools !== undefined) await accounts.savePools(ACCOUNT, options.pools);
   for (const meter of options.meters ?? []) await accounts.saveMeter(meter);
@@ -912,6 +914,57 @@ describe('executeRun', () => {
 
     expect(outcome).toEqual({ kind: 'limit', decision: { kind: 'ask', reason: 'policy' } });
     expect((await theRun(h.runs)).outcome).toBe('limit');
+  });
+
+  const stagePin = (
+    limitPolicy: LimitPolicy,
+    accounts: readonly { readonly accountId: AccountId; readonly model?: string }[],
+  ): FlowPin => ({
+    flowId: slugOf<'flow'>('standard'),
+    flowVersion: 1,
+    stages: [
+      {
+        stage: { id: STAGE, name: 'Implement', role: ROLE.id, exit: [] },
+        role: ROLE,
+        roleVersion: 1,
+        accounts: accounts.map((entry) =>
+          entry.model === undefined ? { accountId: entry.accountId } : { accountId: entry.accountId, model: entry.model },
+        ),
+        limitPolicy,
+      },
+    ],
+  });
+
+  it('A-17: the pinned stage limit policy wins over the account default on limit_hit', async () => {
+    const h = await harness({
+      limitPolicy: 'wait_resume',
+      pin: stagePin('ask', [{ accountId: ACCOUNT }]),
+      script: [limitHit({ class: 'window_exhausted', resetsAt: at(60_000) })],
+    });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'limit', decision: { kind: 'ask', reason: 'policy' } });
+  });
+
+  it('A-17: subsequent pinned-chain accounts with headroom become fallback candidates', async () => {
+    const accountB: AccountId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FBA');
+    const h = await harness({
+      pin: stagePin('fallback_account', [{ accountId: ACCOUNT }, { accountId: accountB }]),
+      script: [limitHit({ class: 'fair_use' })],
+    });
+    await h.accounts.save({
+      id: accountB,
+      provider: 'provider-x',
+      label: 'Backup',
+      authMode: 'subscription',
+      limitPolicy: 'wait_resume',
+      caps: [],
+    });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'limit', decision: { kind: 'fallback', route: { accountId: accountB } } });
   });
 
   it('A-17: a hit on an account with no record has no policy to follow and asks', async () => {
