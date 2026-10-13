@@ -9,6 +9,9 @@ import { t, type Locale } from '../labels/t';
 import type { LabelKey } from '../labels/keys';
 import {
   chainEmptyKey,
+  removalActionOf,
+  removalBlockNote,
+  removalLabelAction,
   selectableModels,
   styleChoices,
   styleStanding,
@@ -20,6 +23,9 @@ import {
   type Thinking,
   type Tier,
 } from '../stores/roles';
+import { PastVersionsModal } from './past-versions-modal';
+import { RemovalActionButton } from './removal-action-button';
+import { VersionBadge } from './version-badge';
 import { SAVED_FLAG_MS } from '../stores/account-editor';
 import type { WorkStyle } from '../stores/recommended';
 import { billingTagKey } from '../stores/account-groups';
@@ -341,7 +347,8 @@ export interface RoleRowProps {
 
 /** One role: work style, the recommendation line, the amber review line and İnce ayar. */
 export function RoleRowView({ row, store, locale, markFor, fineTuneOpen = false }: RoleRowProps) {
-  const state = useSyncExternalStore(store.subscribe, store.state);
+  const state = useSyncExternalStore(store.subscribe, store.state, store.state);
+  const pastOpen = state.pastVersionsRole === row.id;
   const saved = useSavedFlag(store, row.id);
   const failure = state.failure?.row === row.id ? state.failure.labelKey : undefined;
   // The fine-tune needs the chain's catalogs for pins and exact efforts; one query per account.
@@ -353,11 +360,50 @@ export function RoleRowView({ row, store, locale, markFor, fineTuneOpen = false 
   useEffect(() => {
     if (fineTuneOpen) document.querySelector(`[data-role-finetune="${CSS.escape(row.id)}"]`)?.scrollIntoView({ block: 'center' });
   }, [fineTuneOpen, row.id]);
+  const removalAction = removalActionOf(row.removal);
+  const blockNote = removalBlockNote(
+    locale,
+    row.removal,
+    row.dependantStages.map((stage) => ({
+      flow: stage.flow,
+      flowName: stage.flowName,
+      stage: stage.stage,
+      stageName: stage.stageName,
+      tier: null,
+      thinking: null,
+      reviewOf: null,
+      sameProviderReview: false,
+    })),
+  );
   return (
+    <>
     <SettingRow
       locale={locale}
       title={row.name}
       saved={saved}
+      below={
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <span className="flex flex-wrap items-center gap-2">
+            <VersionBadge locale={locale} version={row.version} />
+            <button
+              type="button"
+              role="button"
+              className="h-8 rounded-control border border-bord px-2.5 text-[12px] text-ink hover:bg-raised"
+              aria-label={t(locale, 'definition.pastVersions.trigger')}
+              onClick={() => store.openPastVersions(row.id)}
+            >
+              {t(locale, 'definition.pastVersions.trigger')}
+            </button>
+          </span>
+          <RemovalActionButton
+            locale={locale}
+            action={removalAction}
+            labelAction={removalLabelAction(row.removal)}
+            blockNote={blockNote}
+            onAction={() => void store.removeDefinition(row.id)}
+          />
+        </div>
+      }
       {...(row.differs ? { differsFrom: t(locale, STYLE_KEY[row.recommended]), onReset: () => void store.resetStyle(row.id) } : {})}
       {...(failure !== undefined ? { failure: t(locale, failure) } : {})}
       {...(row.sameProviderReview ? { note: t(locale, 'roles.review.sameProvider') } : {})}
@@ -379,5 +425,14 @@ export function RoleRowView({ row, store, locale, markFor, fineTuneOpen = false 
         children: <FineTune row={row} store={store} locale={locale} markFor={markFor} />,
       }}
     />
+    <PastVersionsModal
+      open={pastOpen}
+      locale={locale}
+      roleName={row.name}
+      currentVersion={row.version}
+      versions={row.pastVersions}
+      onClose={() => store.closePastVersions()}
+    />
+    </>
   );
 }

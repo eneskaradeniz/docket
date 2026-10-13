@@ -102,8 +102,6 @@ const PENDING = new Map([
   ['ui:U-289', '#1024'],
   ['ui:U-290', '#1025'],
   ['ui:U-291', '#1025'],
-  ['ui:U-292', '#1026'],
-  ['ui:U-293', '#1026'],
 
   // #1047 — planner stage-skip derive rule, supplements R-133 (#1025 implements)
   ['domain:R-144', '#1025'],

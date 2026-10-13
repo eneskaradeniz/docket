@@ -1276,6 +1276,22 @@ export const LABEL_KEYS = [
   'project.bundle.import.cancel',
   'project.bundle.import.finished',
   'project.bundle.import.fileSelect',
+  // Definition versions, archive and blockers (U-292, U-293, #1026)
+  'definition.version.badge',
+  'definition.pastVersions.trigger',
+  'definition.pastVersions.title',
+  'definition.pastVersions.empty',
+  'definition.action.delete',
+  'definition.action.archive',
+  'definition.blocked.runningWork',
+  'definition.blocked.stageCount',
+  'definition.blocked.stageEntry',
+  'definition.blocked.more',
+  'definition.blocked.noteLabel',
+  'detail.run.pinnedVersions',
+  'detail.run.flowVersion',
+  'detail.run.roleVersion',
+  'common.close',
 ] as const;
 
 export type LabelKey = (typeof LABEL_KEYS)[number];
