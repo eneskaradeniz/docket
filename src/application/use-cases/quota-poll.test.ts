@@ -355,7 +355,7 @@ describe('pollQuota', () => {
     ]);
   });
 
-  it('A-341: a probe error passes through its failure class unchanged and persists nothing', async () => {
+  it('A-348: a probe error passes through its failure class unchanged and persists nothing', async () => {
     const deps = createFakeDeps();
     await deps.accounts.save(accountRecord());
     const probe = scriptedProbe(err('not_logged_in'));
