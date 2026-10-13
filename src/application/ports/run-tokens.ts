@@ -20,6 +20,8 @@ export type RunTokenBinding =
       readonly turn: RunId;
       readonly conversation: ConversationId;
       readonly role: RoleSlug;
+      /** When `'setup'`, only the five setup conversation tools are allowed (A-337). */
+      readonly conversationKind?: 'chat' | 'setup';
     };
 
 export type RunTokenKind = RunTokenBinding['kind'];
