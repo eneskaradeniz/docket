@@ -32,6 +32,7 @@ import type { GitProbe } from './git-probe';
 import type { DispatchStatusHolder, MachineProbe } from './machine-probe';
 import type { IdGen } from './id-gen';
 import type { InstructionFiles } from './instruction-files';
+import type { MemoryStore } from './memory-store';
 import type { ModelCatalog } from './model-catalog';
 import type { Notifier } from './notifier';
 import type { ProjectRepo } from './project-repo';
@@ -73,6 +74,7 @@ describe('AppDeps', () => {
     expectTypeOf<AppDeps['bindings']>().toEqualTypeOf<BindingRepo>();
     expectTypeOf<AppDeps['queue']>().toEqualTypeOf<QueueRepo>();
     expectTypeOf<AppDeps['definitions']>().toEqualTypeOf<DefinitionStore>();
+    expectTypeOf<AppDeps['memory']>().toEqualTypeOf<MemoryStore>();
     expectTypeOf<AppDeps['proposals']>().toEqualTypeOf<ProposalRepo>();
     expectTypeOf<AppDeps['pages']>().toEqualTypeOf<PageRepo>();
     expectTypeOf<AppDeps['pageFiles']>().toEqualTypeOf<PageFiles>();
@@ -117,6 +119,7 @@ describe('AppDeps', () => {
       | 'bindings'
       | 'queue'
       | 'definitions'
+      | 'memory'
       | 'proposals'
       | 'pages'
       | 'pageFiles'

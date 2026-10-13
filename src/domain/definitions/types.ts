@@ -166,3 +166,24 @@ export interface Definitions {
   readonly project?: ProjectDef; // present in the project scope
   readonly repo?: RepoDef;
 }
+
+// Memory types — docs/v2/domain.md §2, R-142, R-143 (#1016)
+export type MemoryScope = 'global' | 'project' | 'repo';
+
+export interface MemoryNote {
+  readonly id: string;
+  readonly scope: MemoryScope;
+  readonly scopeId?: string;
+  readonly text: string;
+  readonly createdBy: 'user' | 'agent';
+  readonly active: boolean;
+}
+
+export interface MemoryProposal {
+  readonly id: string;
+  readonly scope: MemoryScope;
+  readonly scopeId?: string;
+  readonly text: string;
+  readonly sourceRun: string;
+  readonly state: 'pending' | 'accepted' | 'rejected';
+}
