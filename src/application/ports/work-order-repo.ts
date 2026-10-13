@@ -3,6 +3,7 @@ import type {
   Actor,
   EpochMs,
   FlowSlug,
+  FlowPin,
   ProjectSlug,
   TaskSlug,
   WorkOrderEvent,
@@ -19,6 +20,9 @@ export interface WorkOrderRecord {
   /** Absent when the operator wrote none, and on every row stored before the field existed. */
   readonly description?: string;
   readonly task?: TaskSlug;
+  /** A-324/A-344: the pinned flow and role definitions, stored at creation. Absent on rows
+   *  stored before Phase 7 and on work orders opened against a repo without a Phase 7 flow. */
+  readonly pin?: FlowPin;
   readonly createdAt: EpochMs;
   readonly createdBy: Actor;
 }

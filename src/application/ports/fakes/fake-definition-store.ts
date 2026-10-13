@@ -14,10 +14,11 @@ import type {
   RoadmapIssue,
   Result,
   RepoSlug,
+  VersionRecord,
 } from '../../../domain/index';
-import { err, ok, validateDefinitions, validateRoadmap } from '../../../domain/index';
+import { err, nextVersion, ok, validateDefinitions, validateRoadmap } from '../../../domain/index';
 
-import type { DefinitionFile, DefinitionScope, DefinitionStore } from '../definition-store';
+import type { DefinitionFile, DefinitionKind, DefinitionScope, DefinitionStore } from '../definition-store';
 
 /** The target the fake keeps a roadmap at, in the project scope. */
 export const FAKE_ROADMAP_TARGET = 'roadmap.json';
@@ -32,6 +33,9 @@ export interface FakeDefinitionStore extends DefinitionStore {
   setRepoPath(repo: RepoSlug, path: string | undefined): void;
   /** Registers an attached project: membership (repo → project) and its ProjectDef mirror. */
   setProject(def: ProjectDef): void;
+  /** Registers the typed repo section `load` answers with — the typed-seed path for the Phase 7
+   *  fields (`flow`, `defaultLimitPolicy`) the JSON narrowing does not carry yet. */
+  setRepoDef(repo: RepoSlug, def: RepoDef): void;
   /** Seeds the project.yaml content `readProjectAt` finds at a checkout path. */
   seedProjectAt(path: string, content: string): void;
   /** Seeds the repo.yaml content a checkout path already holds (scaffoldProject refuses it). */
@@ -40,6 +44,9 @@ export interface FakeDefinitionStore extends DefinitionStore {
   repoAt(path: string): string | undefined;
   /** Makes the next scaffoldProject answer `io_failed`, writing nothing. */
   failNextScaffold(): void;
+  /** Makes the next `appendVersion` answer `stale` and write nothing — the deterministic
+   *  stand-in for the YAML adapter's write race (#1009 owns the adapter). */
+  failNextAppendStale(): void;
 }
 
 interface StoredFile extends DefinitionFile {
@@ -142,7 +149,10 @@ export const createFakeDefinitionStore = (): FakeDefinitionStore => {
   const projects: ProjectDef[] = [];
   const projectAt = new Map<string, string>();
   const repoFileAt = new Map<string, string>();
+  const repoDefs = new Map<RepoSlug, RepoDef>();
+  const versions = new Map<string, VersionRecord<unknown>[]>();
   let failScaffold = false;
+  let failAppend = false;
 
   const keyOf = (scope: DefinitionScope, target: string): string => `${scopeKey(scope)}\n${target}`;
 
@@ -259,6 +269,10 @@ export const createFakeDefinitionStore = (): FakeDefinitionStore => {
       else projects[existing] = { ...def, repos: [...def.repos] };
     },
 
+    setRepoDef: (repo: RepoSlug, def: RepoDef): void => {
+      repoDefs.set(repo, def);
+    },
+
     seedProjectAt: (path: string, content: string): void => {
       projectAt.set(path, content);
     },
@@ -271,6 +285,10 @@ export const createFakeDefinitionStore = (): FakeDefinitionStore => {
 
     failNextScaffold: (): void => {
       failScaffold = true;
+    },
+
+    failNextAppendStale: (): void => {
+      failAppend = true;
     },
 
     // Library copies land as global files keyed by kind and id; an existing id is never touched.
@@ -325,10 +343,42 @@ export const createFakeDefinitionStore = (): FakeDefinitionStore => {
       return ok(undefined);
     },
 
+    // The version histories live in memory keyed by kind and id; the YAML layout they mirror is
+    // the #1009 adapter's. Records are replaced, never edited, so a recorded body stays as it was.
+    listVersions: async (kind: DefinitionKind, id: string): Promise<readonly VersionRecord<unknown>[]> =>
+      [...(versions.get(`${kind}/${id}`) ?? [])],
+
+    appendVersion: async (
+      kind: DefinitionKind,
+      id: string,
+      body: unknown,
+      at: number,
+    ): Promise<Result<VersionRecord<unknown>, 'stale'>> => {
+      if (failAppend) {
+        failAppend = false;
+        return err('stale');
+      }
+      const key = `${kind}/${id}`;
+      const history = versions.get(key) ?? [];
+      const record: VersionRecord<unknown> = {
+        definitionId: id,
+        version: nextVersion(history),
+        body,
+        recordedAt: at,
+        archived: false,
+      };
+      versions.set(key, [...history, record]);
+      return ok(record);
+    },
+
     load: async (repo: RepoSlug): Promise<Result<Definitions, readonly DefinitionIssue[]>> => {
       const collected = bodiesFor({ kind: 'repo', repo }, undefined);
       if (!collected.ok) return err([collected.error]);
-      return validateDefinitions(mergeBodies(collected.value));
+      const validated = validateDefinitions(mergeBodies(collected.value));
+      // A typed seed replaces the narrowed repo section wholesale; the file world still has to
+      // validate (roles and flows), so a broken merge keeps reporting its issues.
+      const registered = repoDefs.get(repo);
+      return registered !== undefined && validated.ok ? ok({ ...validated.value, repo: registered }) : validated;
     },
 
     readProjectAt: async (path: string): Promise<Result<ProjectDef, readonly DefinitionIssue[]>> => {

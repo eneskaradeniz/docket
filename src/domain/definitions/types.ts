@@ -1,6 +1,8 @@
 // definitions/types.ts — exact contract from docs/v2/domain.md section 2.
 import type { SpendCap } from '../budget';
+import type { LimitPolicy } from '../quota';
 import type { CapabilitySlug, EnvSlug, FlowSlug, GateSlug, ProjectSlug, RepoSlug, RoleSlug, StageSlug, ThinkingChoice, Tier } from '../shared';
+import type { RepoFlow } from './repo-flow';
 
 export type WriteScope =
   | { readonly kind: 'none' } // read-only role
@@ -98,6 +100,12 @@ export interface EnvironmentDef {
 export interface RepoDef {
   readonly id: RepoSlug;
   readonly name: string;
+  // Phase 7 (D-1/D-4): the repo's own flow with its stage bindings. Optional while the live
+  // shapes migrate onto it (#1012) — repos stored before Phase 7 carry none, and the legacy
+  // `flows`/`defaultFlow`/`roleOverrides` below are then the truth (read, never written — R-134).
+  readonly flow?: RepoFlow;
+  // Absent means the doc's default 'wait_resume' until #1012 makes the field required.
+  readonly defaultLimitPolicy?: LimitPolicy;
   readonly flows: readonly FlowSlug[]; // enabled flows
   readonly defaultFlow: FlowSlug;
   readonly commandSets: Readonly<Record<string, readonly string[]>>; // name → shell commands, run in order
@@ -109,6 +117,25 @@ export interface RepoDef {
 }
 
 export type RoleOverride = { readonly id: RoleSlug } & Partial<Omit<RoleDef, 'id'>>;
+
+/** One finding of the definitions validators. `path` is JSON-pointer-like; the UI maps `code`
+ *  to its own copy, the message is for logs. */
+export interface DefinitionIssue {
+  readonly path: string; // JSON-pointer-like: "flows[0].stages[2].onFail.goto"
+  readonly code: DefinitionIssueCode;
+  readonly message: string; // English, for logs; the UI maps `code` to its own copy
+}
+
+export type DefinitionIssueCode =
+  | 'invalid_slug' | 'duplicate_id' | 'unknown_role' | 'inactive_role' | 'unknown_stage'
+  | 'forward_goto' | 'bad_attempts' | 'empty_flow' | 'unknown_capability' | 'unknown_flow'
+  | 'default_flow_not_enabled' | 'unknown_command_set' | 'secret_literal' | 'missing_field' | 'wrong_type'
+  | 'unknown_environment' | 'missing_promote_from' | 'promote_cycle'
+  | 'env_command_set_missing' | 'duplicate_env_order'
+  | 'empty_repos' | 'main_repo_not_listed' | 'bad_review_of'
+  // Phase 7 addendum (docs/v2/domain.md §2): raised by the repo-flow contract — `pinFlow`
+  // reports them at pin time, the `validate.ts` checks that raise them land with #1012.
+  | 'binding_stage_mismatch' | 'unknown_role_version' | 'role_required' | 'role_forbidden' | 'duplicate_binding';
 
 export interface Definitions {
   readonly roles: readonly RoleDef[];

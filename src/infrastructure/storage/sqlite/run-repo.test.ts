@@ -252,6 +252,20 @@ describe.each(suites)('createSqliteRunRepo (%s)', (_kind, make) => {
     expect((await repo.get(runId(R1)))?.definitionsRev).toBe('rev-7f3a');
   });
 
+  it('I-6: the Phase 7 pin versions ride the record; rows without them stay without', async () => {
+    const { repo } = make();
+    const pinned: RunRecord = { ...record(R1, WO1, 10), flowVersion: 4, roleVersion: 2 };
+    await repo.create(pinned);
+    await repo.create(record(R2, WO1, 20));
+
+    expect(await repo.get(runId(R1))).toStrictEqual(pinned);
+    expect((await repo.get(runId(R1)))?.flowVersion).toBe(4);
+    expect((await repo.get(runId(R1)))?.roleVersion).toBe(2);
+    const readBare = await repo.get(runId(R2));
+    expect('flowVersion' in (readBare ?? {})).toBe(false);
+    expect('roleVersion' in (readBare ?? {})).toBe(false);
+  });
+
   it('I-5: the handoff note and the stage base save, overwrite and answer independently', async () => {
     const { repo } = make();
     await repo.create(record(R1, WO1, 10));

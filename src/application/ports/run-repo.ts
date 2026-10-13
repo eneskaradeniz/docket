@@ -19,6 +19,11 @@ export interface RunRecord {
   readonly role: RoleSlug;
   readonly route: AccountRoute;
   readonly definitionsRev?: string; // revision marker of the definitions the stage prompt was computed from; drives A-62's changed-note
+  /** R-132: the flow version of the work order's pin this run executes. Absent on runs stored
+   *  before Phase 7 and on runs of work orders opened without a pin. */
+  readonly flowVersion?: number;
+  /** R-132: the stage's role version from the same pin (null-role stages carry none). */
+  readonly roleVersion?: number;
   readonly startedAt: EpochMs;
   readonly endedAt?: EpochMs;
   readonly outcome?: RunOutcome;

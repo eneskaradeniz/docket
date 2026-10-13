@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Result } from '../shared';
-import { validateDefinitions, type DefinitionIssue } from './validate';
+import { validateDefinitions } from './validate';
+import type { DefinitionIssue } from './types';
 import type { Definitions } from './types';
 
 type Obj = Record<string, unknown>;

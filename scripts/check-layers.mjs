@@ -30,10 +30,12 @@ const PACKAGE_ALLOW = {
   infrastructure: () => true,
   presentation: (spec) => spec === 'react' || spec.startsWith('react/') || spec === 'react-dom' || spec.startsWith('react-dom/'),
 };
-// Module dependency map inside src/domain (docs/v2/domain.md).
+// Module dependency map inside src/domain (docs/v2/domain.md, with the 2026-10-13 row amendment:
+// definitions may also import quota — RepoFlow's StageBinding references AccountRoute and
+// LimitPolicy, and quota → definitions would be the cycle those types close).
 const DOMAIN_MODULES = {
   shared: [],
-  definitions: ['shared', 'budget'],
+  definitions: ['shared', 'budget', 'quota'],
   quota: ['shared'],
   budget: ['shared'],
   proposal: ['shared'],

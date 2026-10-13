@@ -25,7 +25,8 @@ export type AuditAction =
   | 'page.published' | 'page.versioned' | 'page.commented' | 'page.approval_requested' | 'page.approval_decided'
   | 'conversation.started' | 'conversation.deleted' | 'conversation.pinned' | 'conversation.draft_confirmed' | 'conversation.draft_dropped'
   | 'chat.turn_started' | 'chat.turn_finished'
-  | 'action.proposed' | 'action.applied' | 'action.rejected' | 'action.failed' | 'action.undone' | 'grant.created' | 'grant.revoked';
+  | 'action.proposed' | 'action.applied' | 'action.rejected' | 'action.failed' | 'action.undone' | 'grant.created' | 'grant.revoked'
+  | 'library.version_created';
 
 export type AuditSubject =
   | { readonly kind: 'work_order'; readonly id: WorkOrderId }
@@ -38,7 +39,8 @@ export type AuditSubject =
   | { readonly kind: 'project'; readonly id: ProjectSlug }
   | { readonly kind: 'repo'; readonly id: RepoSlug }
   | { readonly kind: 'capability'; readonly id: CapabilitySlug }
-  | { readonly kind: 'settings'; readonly id: 'dispatch' };
+  | { readonly kind: 'settings'; readonly id: 'dispatch' }
+  | { readonly kind: 'definition'; readonly id: string }; // a library definition (A-343); detail carries its kind
 
 export interface AuditEntry {
   readonly id: Ulid<'audit'>;

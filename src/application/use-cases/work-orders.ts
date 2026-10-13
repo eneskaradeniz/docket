@@ -8,19 +8,31 @@ import type {
   EnvironmentDef,
   FlowAction,
   FlowDef,
+  FlowPin,
   FlowSlug,
   ProjectSlug,
   Result,
+  RoleDef,
   RoleSlug,
   RunId,
   StageSlug,
   TaskSlug,
+  VersionRecord,
   WorkOrderEvent,
   WorkOrderId,
   WorkOrderState,
   RepoSlug,
 } from '../../domain/index';
-import { billingFromPools, deriveWorkOrderState, err, foldRun, nextAction, normalizeWorkOrderDescription, ok } from '../../domain/index';
+import {
+  billingFromPools,
+  deriveWorkOrderState,
+  err,
+  foldRun,
+  nextAction,
+  normalizeWorkOrderDescription,
+  ok,
+  pinFlow,
+} from '../../domain/index';
 
 import type { AccountRecord, AppDeps, RunRecord, WorkOrderRecord } from '../ports';
 import { catalogOrEmpty } from '../services/match-id';
@@ -79,6 +91,29 @@ export async function openWorkOrder(
     if (!known) return err('unknown_task');
   }
 
+  // A-324/A-344: a Phase 7 repo pins its flow at creation — self-contained, so later library
+  // edits or repo flow changes never rewrite it. A repo without a `flow` field (every repo
+  // stored before Phase 7) opens exactly as before, with no pin. A `pinFlow` failure refuses
+  // the opening with `definitions_invalid` and nothing is written.
+  const repoFlow = repo.flow;
+  let pin: FlowPin | undefined;
+  if (repoFlow !== undefined) {
+    const library: VersionRecord<RoleDef>[] = [];
+    const seenRoles = new Set<string>();
+    for (const binding of repoFlow.bindings) {
+      const ref = binding.role;
+      if (ref === undefined || ref.detached !== undefined || seenRoles.has(ref.roleId)) continue;
+      seenRoles.add(ref.roleId);
+      // The port stores library bodies untyped (A-343); the roles kind carries RoleDef bodies,
+      // narrowed by `saveVersion` before anything is written.
+      const history = (await deps.definitions.listVersions('roles', ref.roleId)) as readonly VersionRecord<RoleDef>[];
+      library.push(...history);
+    }
+    const pinned = pinFlow(repoFlow, library, repo.defaultLimitPolicy ?? 'wait_resume');
+    if (!pinned.ok) return err('definitions_invalid');
+    pin = pinned.value;
+  }
+
   const id = deps.ids.next<'work-order'>();
   const at = deps.clock.now();
   await deps.workOrders.create({
@@ -89,6 +124,7 @@ export async function openWorkOrder(
     title,
     ...(description.value !== undefined ? { description: description.value } : {}),
     ...(input.task !== undefined ? { task: input.task } : {}),
+    ...(pin !== undefined ? { pin } : {}),
     createdAt: at,
     createdBy: input.actor,
   });
