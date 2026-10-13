@@ -20,7 +20,6 @@ const PORT_KEYS: readonly (keyof AppDeps)[] = [
   'projects',
   'repos',
   'readFingerprint',
-  'legacyImporter',
   'bindings',
   'queue',
   'definitions',

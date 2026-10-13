@@ -114,7 +114,6 @@ describe('AppDeps', () => {
       | 'projects'
       | 'repos'
       | 'readFingerprint'
-      | 'legacyImporter'
       | 'bindings'
       | 'queue'
       | 'definitions'

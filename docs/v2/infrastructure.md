@@ -685,3 +685,13 @@ Conflicts and supersessions (added 2026-10-13, #1046):
 
 - **I-36** (`installBuiltins`/`scaffoldProject` flat paths): superseded by I-96 — `<globalRoot>/roles|flows/<id>.yaml` becomes `library/<kind>/<id>/v1.yaml` and `scaffoldProject`'s `.docket` arm is superseded by the `project_setup` proposal (A-338); the round-trip law, skip-if-exists and `createRepo` stand.
 - **I-44** (flat capabilities path): superseded by I-96 — `<globalRoot>/capabilities/<id>.yaml` becomes `library/capabilities/<id>/v1.yaml`; the round-trip law and skip-if-exists stand.
+
+Addendum 2026-10-13 (#1057): the one-time legacy import is removed. Docket has no users and
+starts from scratch, so the import machinery and everything that exists only to support it are
+gone from the code; the rule texts above stand as history.
+
+- **I-90** (removed 2026-10-13, #1057) The one-time import of repo-side `.docket/` is gone: no `LegacyImporter` port, no `importLegacyRepo` adapter, no `repo.importLegacy` command. Nothing in Docket reads `<repo>/.docket/` anymore.
+- **I-91** (removed 2026-10-13, #1057) The rename arm is gone with the legacy import (I-90); the rule's never-overwrite and all-or-nothing stance now lives only in `project.importBundle` (A-342).
+- **I-97** (removed 2026-10-13, #1057) `RepoRegistryEntry.legacyImported` and the `legacy_imported` column are gone; migration 11 is edited in place (no data exists) and creates `repo_registry` without the column.
+- **I-86** (amended 2026-10-13, #1057) The exception clause "except through the one-time import (I-90)" is gone: the definition store never opens `<repo>/.docket/`, with no exception.
+- **I-93** (amended 2026-10-13, #1057) A migrated row no longer carries `legacy_imported = 0` — migration 11 creates `repo_registry` without the column (the in-place edit of I-97's removal); everything else in the rule stands.

@@ -22,7 +22,6 @@ export * from './machine-probe';
 export * from './id-gen';
 export * from './instruction-files';
 export * from './issue-tracker';
-export * from './legacy-importer';
 export * from './model-catalog';
 export * from './notifier';
 export * from './page-files';

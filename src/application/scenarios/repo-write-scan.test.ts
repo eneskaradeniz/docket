@@ -3,19 +3,17 @@
 // use cases run, and no recorded path may sit inside a registered folder outside `.git/`.
 import { describe, expect, it } from 'vitest';
 
-import type { Actor, DefinitionIssue } from '../../domain/index';
-import { err, ok } from '../../domain/index';
+import type { Actor } from '../../domain/index';
 
 import type { AppDeps } from '../ports/index';
 import {
   createFakeDefinitionStore,
   createFakeDeps,
   createFakeGitProbe,
-  createFakeLegacyImporter,
   createFakeRepoFolders,
   createFakeRepoRegistry,
 } from '../ports/fakes/index';
-import { attachProject, createProject, importLegacy, relinkRepo } from '../use-cases/index';
+import { attachProject, createProject, relinkRepo } from '../use-cases/index';
 
 const ACTOR: Actor = { kind: 'user', id: 'u-1', label: 'Operator' };
 const WRITE_SHAPED = /^(write|save|install|append|create|put|remove|delete|stage|commit|checkpoint|scaffold|seed)/;
@@ -58,11 +56,9 @@ describe('I-87: no application write lands inside a registered repo folder outsi
     const writes: string[] = [];
     const git = createFakeGitProbe();
     const repos = createFakeRepoRegistry();
-    const legacyImporter = createFakeLegacyImporter();
     const base = createFakeDeps({
       git,
       repos,
-      legacyImporter,
       definitions: createFakeDefinitionStore(),
       repoFolders: createFakeRepoFolders(),
     });
@@ -70,16 +66,11 @@ describe('I-87: no application write lands inside a registered repo folder outsi
     git.markWorkTree('/checkouts/web');
     repos.markFingerprint('/checkouts/moved', { rootCommit: 'aaa' });
 
-    // Attach registers a folder; import, a refused import and relink all run against it.
+    // Attach registers a folder; relink runs against it.
     const attached = await attachProject(deps, { path: '/checkouts/web', actor: ACTOR });
     expect(attached.ok).toBe(true);
     if (!attached.ok) return;
     const { repoId } = attached.value;
-    const issues: readonly DefinitionIssue[] = [{ path: 'repo', code: 'missing_field', message: 'x' }];
-    legacyImporter.setResult(err(issues));
-    await importLegacy(deps, { repoId, path: '/checkouts/web', actor: ACTOR });
-    legacyImporter.setResult(ok({ warnings: [], renames: [] }));
-    await importLegacy(deps, { repoId, path: '/checkouts/web', actor: ACTOR });
     await relinkRepo(deps, { repoId, path: '/checkouts/moved', actor: ACTOR });
     // A blank project creates the user's own folder and installs the library under the data root.
     await createProject(deps, { source: { kind: 'blank', parent: '/work' }, name: 'Atölye', actor: ACTOR });

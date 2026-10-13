@@ -23,7 +23,6 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
   'project.create': { input: "mode: 'existing' (path, name) | 'blank' (parent, name)" },
   'repo.register': { input: 'project: ProjectSlug, repo: RepoSlug, path: string' },
   'repo.unregister': { input: 'project: ProjectSlug, repo: RepoSlug' },
-  'repo.importLegacy': { input: 'repoId: string, path: string' },
   'repo.relink': { input: 'repoId: string, path: string' },
   'workOrder.block': { input: 'id: WorkOrderId, reason: string' },
   'workOrder.unblock': { input: 'id: WorkOrderId' },

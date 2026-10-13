@@ -1934,3 +1934,11 @@ texts above stand as history, the sentences named here are superseded:
 - **A-50** (added 2026-10-13, #1046; supersedes the rule's sources sentence) `roles.list` reads two sources: the library's versioned role histories (R-129 — the current version of each definition) and every registered repo's `RepoFlow` bindings (a binding's `RoleRef` with its `detached` copy or `overlay`, D-4 — the `roleOverrides` wording is out); the ordering, `stages` and `sameProviderReview` sentences stand.
 - **A-76** (added 2026-10-13, #1046; supersedes the rule's written shape) A new project's definitions are written by the `project_setup` proposal (A-338) into `~/.docket/projects/<slug>/project.yaml` and `~/.docket/repos/<slug>/repo.yaml` (I-95): `project` = `{ id, name, repos: [slug], budget? }` (no `mainRepo`, R-126) and `repo` carries `flow: RepoFlow` and `defaultLimitPolicy` (no `flows`/`defaultFlow`/`roleOverrides`, D-1); the empty-command-sets stance stands.
 - **A-77** (added 2026-10-13, #1046; supersedes the rule's write order) The write order is: source `blank` → `repoFolders.createRepo` (the arm stands, I-96); then the setup proposal path (A-338) creates the definitions and the registry registration (I-94) — the `installBuiltins`, `scaffoldProject` and `attachProject` steps are superseded; a failure after `createRepo` still leaves the new folder in place, and a refusal writes no audit entry (A-78's audit stands).
+
+### Addendum 2026-10-13 (#1057): the one-time legacy import is removed
+
+Docket has no users and starts from scratch; the import and everything that exists only to
+support it are gone from the code. The rule texts above stand as history.
+
+- **A-341** (amended 2026-10-13, #1057) The `repo.importLegacy` arm and the `repo.legacy_imported` audit action are gone: the command union no longer carries the type and the api answers it like any unknown command. `repoStatus` and `repo.relink` stand unchanged.
+- **A-24** (amended 2026-10-13, #1057) The "the one-time legacy import is offered (A-341)" sentence is gone: attaching registers the entry and offers nothing else.

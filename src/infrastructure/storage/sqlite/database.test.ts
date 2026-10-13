@@ -61,15 +61,15 @@ const MIGRATION_3_SQL = 'CREATE TABLE run_handoff (run_id TEXT PRIMARY KEY REFER
 // and the projects table loses the main repo. Verbatim — the ULID expression is the contract.
 const ULID_SUBSTR = "substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 45) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 40) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 35) & 31) + 1, 1) ||\n    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 30) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 25) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 20) & 31) + 1, 1) ||\n    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 15) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 10) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 5) & 31) + 1, 1) ||\n    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((t >> 0) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 35) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 30) & 31) + 1, 1) ||\n    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 25) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 20) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 15) & 31) + 1, 1) ||\n    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 10) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 5) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((a >> 0) & 31) + 1, 1) ||\n    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 35) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 30) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 25) & 31) + 1, 1) ||\n    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 20) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 15) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 10) & 31) + 1, 1) ||\n    substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 5) & 31) + 1, 1) || substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((b >> 0) & 31) + 1, 1)";
 const MIGRATION_11_SQL = [
-  'CREATE TABLE repo_registry (repo_id TEXT PRIMARY KEY, slug TEXT NOT NULL, path TEXT NOT NULL, legacy_imported INTEGER NOT NULL DEFAULT 0, data TEXT NOT NULL);',
+  'CREATE TABLE repo_registry (repo_id TEXT PRIMARY KEY, slug TEXT NOT NULL, path TEXT NOT NULL, data TEXT NOT NULL);',
   'CREATE UNIQUE INDEX repo_registry_by_slug ON repo_registry (slug);',
   'WITH seeds AS (',
   "  SELECT slug, path, unixepoch('now') * 1000 AS t, random() & 1099511627775 AS a, random() & 1099511627775 AS b FROM repos",
   ')',
-  'INSERT INTO repo_registry (repo_id, slug, path, legacy_imported, data)',
+  'INSERT INTO repo_registry (repo_id, slug, path, data)',
   '  SELECT',
   `    ${ULID_SUBSTR},`,
-  '    slug, path, 0, \'\'',
+  '    slug, path, \'\'',
   '  FROM seeds;',
   "UPDATE repo_registry SET data = json_object('repoId', repo_id, 'slug', slug, 'path', path, 'fingerprint', json_object('rootCommit', ''));",
   'DROP TABLE repos;',
@@ -423,7 +423,6 @@ describe('Migration 2', () => {
     for (const entry of entries) {
       expect(isUlid(entry.repoId)).toBe(true);
       expect(entry.fingerprint).toEqual({ rootCommit: '' });
-      expect('legacyImported' in entry).toBe(false);
     }
 
     // Every workspace became a project≡repo: the name is the slug itself, and migration 11's
@@ -594,11 +593,11 @@ describe('Migration 11', () => {
     const reposTable = migrated.raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'repos'").get();
     expect(reposTable).toBeUndefined();
     const rows = migrated.raw
-      .prepare('SELECT repo_id, slug, path, legacy_imported, data FROM repo_registry ORDER BY slug ASC')
-      .all() as unknown as readonly { readonly repo_id: string; readonly slug: string; readonly path: string; readonly legacy_imported: number; readonly data: string }[];
-    expect(rows.map((row) => [row.slug, row.path, row.legacy_imported])).toEqual([
-      ['acme', '/x/acme', 0],
-      ['zulu', '/x/zulu', 0],
+      .prepare('SELECT repo_id, slug, path, data FROM repo_registry ORDER BY slug ASC')
+      .all() as unknown as readonly { readonly repo_id: string; readonly slug: string; readonly path: string; readonly data: string }[];
+    expect(rows.map((row) => [row.slug, row.path])).toEqual([
+      ['acme', '/x/acme'],
+      ['zulu', '/x/zulu'],
     ]);
     const repoIds = rows.map((row) => row.repo_id);
     expect(new Set(repoIds).size).toBe(2);
@@ -640,16 +639,6 @@ describe('Migration 11', () => {
 
     expect(listed).toEqual([{ id: 'atolye' as never, name: 'Atölye', repos: ['acme' as never, 'zulu' as never] }]);
     expect('mainRepo' in (listed[0] as object)).toBe(false);
-    closeDb(migrated);
-  });
-
-  it('I-97: the migration never sets legacy_imported — the legacy import does, later', async () => {
-    const path = join(tmp, 'v10-legacy.db');
-    makeVersion10Database(path);
-
-    const migrated = openOk(path);
-    const entries = await createSqliteRepoRegistry(migrated, async () => undefined).list();
-    for (const entry of entries) expect('legacyImported' in entry).toBe(false);
     closeDb(migrated);
   });
 });

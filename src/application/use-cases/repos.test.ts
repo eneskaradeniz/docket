@@ -1,14 +1,13 @@
-// use-cases/legacy-import.test.ts — rule A-341 (repoStatus, repo.importLegacy, repo.relink) over the
-// I-90 import, with the ports faked.
+// use-cases/repos.test.ts — rule A-341 (repoStatus, repo.relink) with the ports faked.
 import { describe, expect, it } from 'vitest';
 
 import type { Actor, RepoSlug } from '../../domain/index';
 import { err, ok, parseSlug } from '../../domain/index';
 
 import type { RepoRegistryEntry } from '../ports/index';
-import { createFakeDeps, createFakeEventLog, createFakeLegacyImporter, createFakeRepoRegistry } from '../ports/fakes';
+import { createFakeDeps, createFakeEventLog, createFakeRepoRegistry } from '../ports/fakes';
 
-import { importLegacy, relinkRepo, repoStatuses } from './legacy-import';
+import { relinkRepo, repoStatuses } from './repos';
 
 const ACTOR: Actor = { kind: 'user', id: 'u-1', label: 'Operator' };
 const slug = (input: string): RepoSlug => {
@@ -27,10 +26,9 @@ const entry = (overrides: Partial<RepoRegistryEntry> = {}): RepoRegistryEntry =>
 
 const harness = () => {
   const repos = createFakeRepoRegistry();
-  const legacyImporter = createFakeLegacyImporter();
   const log = createFakeEventLog();
-  const deps = createFakeDeps({ repos, legacyImporter, log });
-  return { deps, repos, legacyImporter, log };
+  const deps = createFakeDeps({ repos, log });
+  return { deps, repos, log };
 };
 
 describe('A-341: repoStatus', () => {
@@ -60,53 +58,6 @@ describe('A-341: repoStatus', () => {
     await h.repos.register(entry({ fingerprint: { rootCommit: '' } }));
     const statuses = await repoStatuses({ ...h.deps, readFingerprint: async () => ({ rootCommit: 'bbb' }) });
     expect(statuses.map((view) => view.status)).toEqual(['ok']);
-  });
-});
-
-describe('A-341: repo.importLegacy', () => {
-  it('A-341: an unknown repoId is not_found and nothing is read', async () => {
-    const h = harness();
-    const result = await importLegacy(h.deps, { repoId: 'missing', path: '/checkouts/web', actor: ACTOR });
-    expect(result).toEqual(err({ code: 'not_found' }));
-    expect(h.legacyImporter.imported()).toEqual([]);
-    expect(h.log.entries()).toEqual([]);
-  });
-
-  it('A-341: the import sets legacyImported on the entry, answers the report and audits repo.legacy_imported', async () => {
-    const h = harness();
-    await h.repos.register(entry());
-    h.legacyImporter.setResult(ok({ warnings: ['w'], renames: [{ id: 'web', to: 'web-2' }] }));
-
-    const result = await importLegacy(h.deps, { repoId: entry().repoId, path: '/checkouts/web', actor: ACTOR });
-
-    expect(result).toEqual(ok({ warnings: ['w'], renames: [{ id: 'web', to: 'web-2' }] }));
-    expect(h.legacyImporter.imported()).toEqual(['/checkouts/web']);
-    expect((await h.repos.byRepoId(entry().repoId))?.legacyImported).toBe(true);
-    expect(h.log.entries().map((logged) => [logged.action, logged.subject])).toEqual([
-      ['repo.legacy_imported', { kind: 'repo', id: 'web' }],
-    ]);
-  });
-
-  it('I-90: a legacyImported repo\'s .docket is never read again (already_imported)', async () => {
-    const h = harness();
-    await h.repos.register(entry({ legacyImported: true }));
-    const result = await importLegacy(h.deps, { repoId: entry().repoId, path: '/checkouts/web', actor: ACTOR });
-    expect(result).toEqual(err({ code: 'already_imported' }));
-    expect(h.legacyImporter.imported()).toEqual([]);
-    expect(h.log.entries()).toEqual([]);
-  });
-
-  it('A-341: an invalid legacy folder is definitions_invalid with its issues; the entry stays unmarked and nothing is audited', async () => {
-    const h = harness();
-    await h.repos.register(entry());
-    const issues = [{ path: 'repo.defaultFlow', code: 'unknown_flow' as const, message: 'x' }];
-    h.legacyImporter.setResult(err(issues));
-
-    const result = await importLegacy(h.deps, { repoId: entry().repoId, path: '/checkouts/web', actor: ACTOR });
-
-    expect(result).toEqual(err({ code: 'definitions_invalid', issues }));
-    expect('legacyImported' in ((await h.repos.byRepoId(entry().repoId)) as object)).toBe(false);
-    expect(h.log.entries()).toEqual([]);
   });
 });
 

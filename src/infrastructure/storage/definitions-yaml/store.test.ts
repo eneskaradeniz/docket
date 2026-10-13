@@ -198,6 +198,37 @@ describe('load', () => {
     }
     expect(relative(globalRoot, join(globalRoot, 'library/roles/planner/v1.yaml'))).toBe('library/roles/planner/v1.yaml');
   });
+
+  it('I-87: no store write lands inside a registered repo folder — every write target stays under the global root', async () => {
+    // A repo folder beside the root stands in for a registered checkout: the store's whole write
+    // surface runs, and the folder's tree must come back byte-identical.
+    const repoFolder = join(besideRoot, 'checkout');
+    await writeText(repoFolder, '.git/HEAD', 'ref: refs/heads/main\n');
+    await writeText(repoFolder, 'README.md', 'mine\n');
+    const walkFiles = async (folder: string): Promise<readonly string[]> => {
+      const entries = await readdir(folder, { withFileTypes: true });
+      const files: string[] = [];
+      for (const entry of entries) {
+        const path = join(folder, entry.name);
+        if (entry.isDirectory()) files.push(...(await walkFiles(path)));
+        else files.push(path);
+      }
+      return files;
+    };
+    const snapshot = async (): Promise<readonly (readonly [string, string])[]> =>
+      Promise.all((await walkFiles(repoFolder)).map(async (file) => [file, await readFile(file, 'utf8')] as const));
+    const before = await snapshot();
+
+    const store = makeStore();
+    await store.installBuiltins({ roles: BUILTIN_ROLES, flows: BUILTIN_FLOWS });
+    await store.installCapabilities([capabilityDef('docs' as CapabilitySlug)]);
+    await store.appendVersion('roles', 'planner', roleDef('planner'), 10);
+    await store.appendVersion('memory', 'notes', { note: 'a' }, 10);
+    const written = await store.writeFile(`repos/${REPO}/repo.yaml`, `${stringify(repoDef(REPO))}\n`, '');
+    expect(written.ok).toBe(true);
+
+    expect(await snapshot()).toEqual(before);
+  });
 });
 
 // --- roadmap -----------------------------------------------------------------------------------------
