@@ -8,6 +8,7 @@ import type { AttachmentFiles } from './attachment-files';
 import type { BindingRepo } from './binding-repo';
 import type { CapabilityCatalog } from './capability-catalog';
 import type { CapabilityDiscovery } from './capability-discovery';
+import type { MachineCapabilityScan } from './machine-capability-scan';
 import type { CheckpointCommitter } from './checkpoints';
 import type { Clock } from './clock';
 import type { ConversationRepo } from './conversation-repo';
@@ -46,6 +47,7 @@ export interface AppDeps {
   readonly accounts: AccountRepo;
   readonly capabilities: CapabilityCatalog;
   readonly capabilityDiscovery: CapabilityDiscovery;
+  readonly machineCapabilityScan: MachineCapabilityScan;
   readonly modelCatalog: ModelCatalog;
   readonly projects: ProjectRepo;
   readonly repos: RepoRegistry;

@@ -23,6 +23,7 @@ import type { PhaseAutoRunRepo } from './phase-auto-run-repo';
 import type { BindingRepo, BindingScope } from './binding-repo';
 import type { CapabilityCatalog } from './capability-catalog';
 import type { CapabilityDiscovery } from './capability-discovery';
+import type { MachineCapabilityScan } from './machine-capability-scan';
 import type { CheckpointCommitter, CheckpointDiff, CheckpointError, CheckpointRef } from './checkpoints';
 import type { Clock } from './clock';
 import type { DefinitionFile, DefinitionScope, DefinitionStore } from './definition-store';
@@ -67,6 +68,7 @@ describe('AppDeps', () => {
     expectTypeOf<AppDeps['accounts']>().toEqualTypeOf<AccountRepo>();
     expectTypeOf<AppDeps['capabilities']>().toEqualTypeOf<CapabilityCatalog>();
     expectTypeOf<AppDeps['capabilityDiscovery']>().toEqualTypeOf<CapabilityDiscovery>();
+    expectTypeOf<AppDeps['machineCapabilityScan']>().toEqualTypeOf<MachineCapabilityScan>();
     expectTypeOf<AppDeps['modelCatalog']>().toEqualTypeOf<ModelCatalog>();
     expectTypeOf<AppDeps['projects']>().toEqualTypeOf<ProjectRepo>();
     expectTypeOf<AppDeps['repos']>().toEqualTypeOf<RepoRegistry>();
@@ -110,6 +112,7 @@ describe('AppDeps', () => {
       | 'accounts'
       | 'capabilities'
       | 'capabilityDiscovery'
+      | 'machineCapabilityScan'
       | 'modelCatalog'
       | 'projects'
       | 'repos'

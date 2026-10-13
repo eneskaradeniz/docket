@@ -14,8 +14,12 @@ import { createFakeClock } from '../ports/fakes/fake-clock';
 import { createFakeDefinitionStore } from '../ports/fakes/fake-definition-store';
 import { createFakeEventLog } from '../ports/fakes/fake-event-log';
 import { createFakeIdGen } from '../ports/fakes/fake-id-gen';
+import { createFakeDeps } from '../ports/fakes/fake-deps';
 
-import { importCapabilities } from './capability-import';
+import { machineCandidateKey } from '../../domain/index';
+import { createFakeMachineCapabilityScan } from '../ports/fakes/fake-machine-capability-scan';
+
+import { importCapabilities, importMachineCapabilities, machineCapabilityCandidates } from './capability-import';
 
 const USER: Actor = { kind: 'user', id: 'user-1', label: 'Operator' };
 const ACCT_A = '01ARZ3NDEKTSV4RRFFQ69G5FAV' as AccountId;
@@ -262,6 +266,76 @@ describe('importCapabilities', () => {
     const second = await importCapabilities(h.deps, { identities: ['context:CLAUDE.md'], actor: USER });
     expect(second).toEqual([{ identity: 'context:CLAUDE.md', status: 'already_present', id: 'claude-md' }]);
     expect(h.log.entries()).toHaveLength(1); // already_present appends nothing either
+  });
+
+  it('machine import: hooks are marked not importable in the query view', async () => {
+    const scan = createFakeMachineCapabilityScan();
+    scan.seed([
+      { provider: 'claude-code', kind: 'hook', name: 'fmt', sourcePath: '/cfg/settings.json', secretNames: [] },
+      { provider: 'claude-code', kind: 'context', name: 'CLAUDE.md', sourcePath: '/cfg/CLAUDE.md', secretNames: [] },
+    ]);
+    const deps = createFakeDeps({ machineCapabilityScan: scan });
+    const view = await machineCapabilityCandidates(deps, { providers: ['claude-code'] });
+    const hook = view.candidates.find((row) => row.kind === 'hook');
+    const context = view.candidates.find((row) => row.kind === 'context');
+    expect(hook?.importable).toBe(false);
+    expect(context?.importable).toBe(true);
+  });
+
+  it('machine import: importing an mcp candidate invokes saveVersion as version 1 with secretRef', async () => {
+    const scan = createFakeMachineCapabilityScan();
+    const candidate = {
+      provider: 'claude-code',
+      kind: 'mcp' as const,
+      name: 'Db Tools',
+      sourcePath: '/cfg/.claude.json',
+      secretNames: ['API_TOKEN'],
+    };
+    scan.seed([candidate]);
+    scan.seedDefinition(candidate, {
+      kind: 'mcp',
+      id: 'db-tools' as CapabilitySlug,
+      name: 'Db Tools',
+      command: 'npx db',
+      args: [],
+      env: { API_TOKEN: { secretRef: 'stg-token' } },
+    });
+    const deps = createFakeDeps({ machineCapabilityScan: scan });
+    const key = machineCandidateKey(candidate);
+    const results = await importMachineCapabilities(deps, {
+      providers: ['claude-code'],
+      keys: [key],
+      secretRefs: { API_TOKEN: 'stg-token' },
+      actor: USER,
+    });
+    expect(results).toEqual([{ key, status: 'imported', id: 'db-tools', version: 1 }]);
+    const history = await deps.definitions.listVersions('capabilities', 'db-tools');
+    expect(history).toHaveLength(1);
+    expect(history[0]?.version).toBe(1);
+    expect(history[0]?.body).toMatchObject({
+      kind: 'mcp',
+      env: { API_TOKEN: { secretRef: 'stg-token' } },
+    });
+  });
+
+  it('machine import: a hook key is rejected as not_importable', async () => {
+    const scan = createFakeMachineCapabilityScan();
+    const candidate = {
+      provider: 'claude-code',
+      kind: 'hook' as const,
+      name: 'fmt',
+      sourcePath: '/cfg/settings.json',
+      secretNames: [],
+    };
+    scan.seed([candidate]);
+    const deps = createFakeDeps({ machineCapabilityScan: scan });
+    const key = machineCandidateKey(candidate);
+    const results = await importMachineCapabilities(deps, {
+      providers: ['claude-code'],
+      keys: [key],
+      actor: USER,
+    });
+    expect(results).toEqual([{ key, status: 'rejected', reason: 'not_importable' }]);
   });
 
   it('A-95: an audit append failure does not fail or roll back the import', async () => {
