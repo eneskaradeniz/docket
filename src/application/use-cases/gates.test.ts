@@ -362,7 +362,7 @@ describe('decideHumanGate', () => {
 
     expect(result).toEqual({
       ok: true,
-      value: { status: 'done', stage: null, attempt: 1, pendingGates: [] },
+      value: { status: 'done', stage: null, attempt: 1, pendingGates: [], skippedStages: [] },
     });
     const events = await eventsOf(h);
     expect(events).toHaveLength(2);
@@ -404,6 +404,7 @@ describe('decideHumanGate', () => {
         stage: slugOf('check'),
         attempt: 2,
         pendingGates: [slugOf('approve-me')],
+        skippedStages: [],
       },
     });
     const events = await eventsOf(h);
@@ -471,7 +472,7 @@ describe('decideHumanGate', () => {
 
     expect(result).toEqual({
       ok: true,
-      value: { status: 'done', stage: null, attempt: 1, pendingGates: [] },
+      value: { status: 'done', stage: null, attempt: 1, pendingGates: [], skippedStages: [] },
     });
     const events = await eventsOf(h);
     expect(events[1]).toMatchObject({ type: 'gate_evaluated', gate: 'findings', verdict: { status: 'passed' } });
@@ -637,7 +638,7 @@ describe('evaluateMachineGates', () => {
 
     expect(result).toEqual({
       ok: true,
-      value: { status: 'done', stage: null, attempt: 1, pendingGates: [] },
+      value: { status: 'done', stage: null, attempt: 1, pendingGates: [], skippedStages: [] },
     });
     expect(h.commands.calls()).toEqual(CHECK_COMMANDS.map((command) => ({
       cwd: WORKTREE_PATH,
@@ -688,7 +689,7 @@ describe('evaluateMachineGates', () => {
 
     expect(result).toEqual({
       ok: true,
-      value: { status: 'done', stage: null, attempt: 1, pendingGates: [] },
+      value: { status: 'done', stage: null, attempt: 1, pendingGates: [], skippedStages: [] },
     });
     expect(h.scanner.calls()).toEqual([WORKTREE_PATH]);
     const events = await eventsOf(h);
@@ -722,7 +723,7 @@ describe('evaluateMachineGates', () => {
 
     expect(result).toEqual({
       ok: true,
-      value: { status: 'done', stage: null, attempt: 1, pendingGates: [] },
+      value: { status: 'done', stage: null, attempt: 1, pendingGates: [], skippedStages: [] },
     });
     const events = await eventsOf(h);
     expect(events).toHaveLength(5);
@@ -744,6 +745,7 @@ describe('evaluateMachineGates', () => {
         stage: slugOf('review'),
         attempt: 1,
         pendingGates: ['review-verdict', 'review-approval'],
+        skippedStages: [],
       },
     });
     expect(await eventsOf(h)).toHaveLength(3);
@@ -786,7 +788,7 @@ describe('evaluateMachineGates', () => {
 
     expect(result).toEqual({
       ok: true,
-      value: { status: 'done', stage: null, attempt: 1, pendingGates: [] },
+      value: { status: 'done', stage: null, attempt: 1, pendingGates: [], skippedStages: [] },
     });
     expect(asked).toEqual([REPO]);
     expect(seen).toEqual([{ repo: REPO, ref: BRANCH_REF }]);
@@ -812,7 +814,7 @@ describe('evaluateMachineGates', () => {
 
     expect(result).toEqual({
       ok: true,
-      value: { status: 'gating', stage: slugOf('verify'), attempt: 1, pendingGates: ['ci'] },
+      value: { status: 'gating', stage: slugOf('verify'), attempt: 1, pendingGates: ['ci'], skippedStages: [] },
     });
     expect(asked).toHaveLength(0);
     expect(seen).toHaveLength(0);
@@ -833,7 +835,7 @@ describe('evaluateMachineGates', () => {
 
     expect(result).toEqual({
       ok: true,
-      value: { status: 'gating', stage: slugOf('build'), attempt: 1, pendingGates: ['deploy-stg'] },
+      value: { status: 'gating', stage: slugOf('build'), attempt: 1, pendingGates: ['deploy-stg'], skippedStages: [] },
     });
     expect(h.commands.calls()).toHaveLength(3); // the command gate's set ran; no deploy command did
     expect(asked).toHaveLength(0);
@@ -856,7 +858,7 @@ describe('evaluateMachineGates', () => {
 
     expect(result).toEqual({
       ok: true,
-      value: { status: 'done', stage: null, attempt: 1, pendingGates: [] },
+      value: { status: 'done', stage: null, attempt: 1, pendingGates: [], skippedStages: [] },
     });
     const events = await eventsOf(h);
     expect(events).toHaveLength(5);
@@ -878,7 +880,7 @@ describe('evaluateMachineGates', () => {
 
     expect(result).toEqual({
       ok: true,
-      value: { status: 'done', stage: null, attempt: 1, pendingGates: [] },
+      value: { status: 'done', stage: null, attempt: 1, pendingGates: [], skippedStages: [] },
     });
     expect(asked).toEqual([REPO, REPO]);
     expect(seen).toEqual([{ repo: REPO, ref: BRANCH_REF }, { repo: REPO, ref: BRANCH_REF }]);
@@ -902,7 +904,7 @@ describe('evaluateMachineGates', () => {
 
     expect(result).toEqual({
       ok: true,
-      value: { status: 'gating', stage: slugOf('verify'), attempt: 1, pendingGates: ['ci'] },
+      value: { status: 'gating', stage: slugOf('verify'), attempt: 1, pendingGates: ['ci'], skippedStages: [] },
     });
     expect(asked).toEqual([REPO]); // polled exactly once — the dispatcher re-polls later
     expect(seen).toHaveLength(1);
@@ -922,7 +924,7 @@ describe('evaluateMachineGates', () => {
 
     expect(result).toEqual({
       ok: true,
-      value: { status: 'gating', stage: slugOf('verify'), attempt: 1, pendingGates: ['ci'] },
+      value: { status: 'gating', stage: slugOf('verify'), attempt: 1, pendingGates: ['ci'], skippedStages: [] },
     });
     expect(asked).toEqual([REPO]);
     expect(await eventsOf(h)).toHaveLength(3);
@@ -959,7 +961,7 @@ describe('evaluateMachineGates', () => {
 
     expect(result).toEqual({
       ok: true,
-      value: { status: 'done', stage: null, attempt: 1, pendingGates: [] },
+      value: { status: 'done', stage: null, attempt: 1, pendingGates: [], skippedStages: [] },
     });
     const events = await eventsOf(h);
     expect(events).toHaveLength(4);
@@ -984,7 +986,7 @@ describe('evaluateMachineGates', () => {
 
     expect(result).toEqual({
       ok: true,
-      value: { status: 'gating', stage: slugOf('build'), attempt: 1, pendingGates: ['changes', 'run-checks', 'secrets'] },
+      value: { status: 'gating', stage: slugOf('build'), attempt: 1, pendingGates: ['changes', 'run-checks', 'secrets'], skippedStages: [] },
     });
     // Only created + run_started + run_finished: a zero is not a verdict (R-61), and the long
     // test run waits behind the operator's attestation.
@@ -1005,7 +1007,7 @@ describe('evaluateMachineGates', () => {
 
     expect(result).toEqual({
       ok: true,
-      value: { status: 'done', stage: null, attempt: 1, pendingGates: [] },
+      value: { status: 'done', stage: null, attempt: 1, pendingGates: [], skippedStages: [] },
     });
     expect(h.commands.calls()).toHaveLength(CHECK_COMMANDS.length);
     const events = await eventsOf(h);
@@ -1060,7 +1062,7 @@ describe('attestNoChanges', () => {
 
     expect(result).toEqual({
       ok: true,
-      value: { status: 'done', stage: null, attempt: 1, pendingGates: [] },
+      value: { status: 'done', stage: null, attempt: 1, pendingGates: [], skippedStages: [] },
     });
     const events = await eventsOf(h);
     expect(events[3]).toEqual({
@@ -1094,7 +1096,7 @@ describe('attestNoChanges', () => {
 
     expect(result).toEqual({
       ok: true,
-      value: { status: 'ready', stage: slugOf('build'), attempt: 2, pendingGates: ['changes', 'run-checks', 'secrets'] },
+      value: { status: 'ready', stage: slugOf('build'), attempt: 2, pendingGates: ['changes', 'run-checks', 'secrets'], skippedStages: [] },
     });
     const events = await eventsOf(h);
     expect(events[3]).toMatchObject({ gate: 'changes', verdict: { status: 'failed', reason: 'no changes' } });
@@ -1163,7 +1165,7 @@ describe('attestNoChanges', () => {
     const gated = await evaluateMachineGates(h.deps, { id: WORK_ORDER });
     expect(gated).toEqual({
       ok: true,
-      value: { status: 'gating', stage: slugOf('build'), attempt: 1, pendingGates: ['deploy-stg'] },
+      value: { status: 'gating', stage: slugOf('build'), attempt: 1, pendingGates: ['deploy-stg'], skippedStages: [] },
     });
 
     const result = await attestNoChanges(h.deps, {
@@ -1223,7 +1225,7 @@ describe('GateContext environments (E-18)', () => {
     // the work order instead of recording the deployment and advancing it.
     expect(result).toEqual({
       ok: true,
-      value: { status: 'done', stage: null, attempt: 1, pendingGates: [] },
+      value: { status: 'done', stage: null, attempt: 1, pendingGates: [], skippedStages: [] },
     });
     const events = await eventsOf(h);
     expect(events).toHaveLength(5);
@@ -1252,7 +1254,7 @@ describe('submitAgentVerdict', () => {
 
     expect(result).toEqual({
       ok: true,
-      value: { status: 'awaiting_human', stage: slugOf('review'), attempt: 1, pendingGates: ['review-approval'] },
+      value: { status: 'awaiting_human', stage: slugOf('review'), attempt: 1, pendingGates: ['review-approval'], skippedStages: [] },
     });
     const events = await eventsOf(h);
     expect(events).toHaveLength(4);

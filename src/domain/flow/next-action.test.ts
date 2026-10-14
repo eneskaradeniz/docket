@@ -44,6 +44,7 @@ const state = (status: WorkOrderState['status'], stage: string | null, attempt: 
   stage: stage === null ? null : stageOf(stage),
   attempt,
   pendingGates: pendingGates.map(gateOf),
+  skippedStages: [],
 });
 
 const action = (s: WorkOrderState): FlowAction => nextAction(FLOW, s);

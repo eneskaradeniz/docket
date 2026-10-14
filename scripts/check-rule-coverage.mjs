@@ -76,7 +76,6 @@ const SECTIONS = [
 // and an id still pending after its issue closes is a review blocker. This list must be empty
 // when the phase closes.
 const PENDING = new Map([
-  ['domain:R-133', '#1025'],
 
   // #1005 — two-layer roadmap and tracker model with sync modes
   ['application:A-333', '#1020'],
@@ -88,11 +87,7 @@ const PENDING = new Map([
   ['ui:U-285', '#1022'],
   ['ui:U-288', '#1024'],
   ['ui:U-289', '#1024'],
-  ['ui:U-290', '#1025'],
-  ['ui:U-291', '#1025'],
-
   // #1047 — planner stage-skip derive rule, supplements R-133 (#1025 implements)
-  ['domain:R-144', '#1025'],
 
   // #1057 — the one-time legacy import was removed. These rules keep their dated addenda and their
   // definitions as history, but their tests went with the code, so no test will ever carry them.

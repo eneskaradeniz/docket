@@ -1,9 +1,6 @@
 // components/new-work-order-window.tsx — the new-work-order dialog and the shared modal shell the
-// Telefon window uses too. The shell is a Window: focus moves in on open and stays trapped, Esc
-// and the scrim and the close control all close it, and focus returns to the control that opened
-// it. Reduced motion is a fade only. A typed title is kept for the session; an empty one is not,
-// so closing never asks. Every open selects `standard` when the project lists it, otherwise the
-// first flow it does list — the same id the command sends.
+// Telefon window uses too. U-290: fixed read-only flow strip, no flow selector. U-291: planner
+// stage-skip card when a proposal is supplied.
 import { useEffect, useLayoutEffect, useReducer, useRef, useState, type ReactNode } from 'react';
 
 import type { CreateOutcome } from '../stores/board';
@@ -13,15 +10,20 @@ import {
   defaultFlow,
   flowChoices,
   openedWorkOrderForm,
+  workOrderCreateIntent,
   workOrderDraft,
   workOrderFormReducer,
   workOrderOpenToast,
   type FlowOption,
+  type PinnedFlowView,
+  type StageSkipProposalCard,
 } from '../stores/work-order-window';
 import { t, type Locale } from '../labels/t';
 import { ActionButton } from './action-button';
 import { BoardLaunchers } from './launcher-rows';
+import { FlowStrip } from './flow-strip';
 import { MOTION, motionVars } from './motion';
+import { StageSkipProposalCardView } from './stage-skip-proposal-card';
 import { WindowFrame, WindowTitle } from './window-frame';
 
 const INPUT_CLASS =
@@ -34,8 +36,6 @@ const CloseIcon = () => (
   </svg>
 );
 
-/** Flips to true only once `active` has survived a painted frame, so the enter transition has a
- *  hidden start state to chase. */
 function usePaintedFlip(active: boolean): boolean {
   const [flipped, setFlipped] = useState(false);
   useEffect(() => {
@@ -65,17 +65,12 @@ export interface ModalWindowProps {
   readonly dataMark: string;
   readonly scrimMark: string;
   readonly onClose: () => void;
-  /** False: a click on the scrim does nothing (a confirmation never answers from the backdrop). */
   readonly scrimCloses?: boolean;
-  /** A confirmation-sized frame (no rail, content height). */
   readonly compact?: boolean;
-  /** Opening focuses this control instead of the frame. Absent keeps the frame focus. */
   readonly initialFocusRef?: { readonly current: HTMLElement | null };
   readonly children: ReactNode;
 }
 
-/** The shared dialog shell. Focus returns to the opener on every close — pointer and keyboard —
- *  because the opener is the control the operator just used. */
 export function ModalWindow({ open, label, titleId, brand, head, footer, dataMark, scrimMark, onClose, scrimCloses = true, compact = false, initialFocusRef, children }: ModalWindowProps) {
   const panelRef = useRef<HTMLElement>(null);
   const restoreRef = useRef<HTMLElement | null>(null);
@@ -97,8 +92,6 @@ export function ModalWindow({ open, label, titleId, brand, head, footer, dataMar
     const panel = panelRef.current;
     if (!open || !mounted || panel === null) return;
     if (panel.contains(document.activeElement)) return;
-    // The field is not in the document on the render where `open` flips — the frame mounts
-    // afterwards. Focusing here is the moment the frame would otherwise take focus.
     const start = initialFocusRef?.current ?? null;
     if (start !== null) start.focus();
     else panel.focus();
@@ -172,7 +165,7 @@ export function ModalWindow({ open, label, titleId, brand, head, footer, dataMar
         dataMark={dataMark}
         compact={compact}
         className={[
-          'transition-[opacity,translate,scale] [transition-timing-function:var(--motion-ease)]',
+          'w-[32.5rem] max-w-[calc(100vw-4rem)] transition-[opacity,translate,scale] [transition-timing-function:var(--motion-ease)]',
           entered
             ? 'opacity-100 translate-y-0 scale-100 duration-[var(--motion-open-panel)] delay-[var(--motion-open-panel-delay)]'
             : 'opacity-0 translate-y-[var(--motion-open-rise)] scale-[var(--motion-open-scale)] duration-[var(--motion-close)]',
@@ -190,10 +183,16 @@ export interface NewWorkOrderWindowProps {
   readonly locale: Locale;
   readonly projectName: string;
   readonly flows: readonly FlowOption[];
+  readonly pinnedFlow: PinnedFlowView | null;
+  readonly skipProposal: StageSkipProposalCard | null;
   readonly launchProject: string | null;
   readonly onClose: () => void;
   readonly onCreated: (title: string) => void;
-  readonly onCreate: (intent: { readonly title: string; readonly flow: string }) => Promise<CreateOutcome>;
+  readonly onCreate: (intent: {
+    readonly title: string;
+    readonly description: string;
+    readonly flow: string;
+  }) => Promise<CreateOutcome>;
 }
 
 export function NewWorkOrderWindow({
@@ -201,6 +200,8 @@ export function NewWorkOrderWindow({
   locale,
   projectName,
   flows,
+  pinnedFlow,
+  skipProposal,
   launchProject,
   onClose,
   onCreated,
@@ -208,21 +209,20 @@ export function NewWorkOrderWindow({
 }: NewWorkOrderWindowProps) {
   const options = flowChoices(flows);
   const optionKey = options.map((option) => option.id).join('\n');
-  const [form, dispatch] = useReducer(workOrderFormReducer, openedWorkOrderForm(workOrderDraft.read(), options));
+  const session = workOrderDraft.read();
+  const [form, dispatch] = useReducer(workOrderFormReducer, openedWorkOrderForm(session, options));
   const titleRef = useRef<HTMLInputElement>(null);
-  // The shown value is the one the command sends. A flow the list does not contain falls back to
-  // the same default a fresh open would pick, never to an id that is not an option.
   const selected = options.some((option) => option.id === form.flow) ? form.flow : defaultFlow(options);
+  const flowReady = pinnedFlow !== null && pinnedFlow.stages.length > 0;
+  const createDisabled = form.title.trim() === '' || !flowReady || form.submitting;
 
-  // `optionKey` stands in for the list: `options` is a new array on every board render, and
-  // depending on it would wipe a selection the operator had just made.
   useLayoutEffect(() => {
     if (!open) return;
     dispatch({ type: 'open', draft: workOrderDraft.read(), options });
   }, [open, optionKey]);
 
   const dismiss = (): void => {
-    workOrderDraft.remember(form.title);
+    workOrderDraft.remember(form.title, form.description);
     onClose();
   };
 
@@ -236,13 +236,14 @@ export function NewWorkOrderWindow({
       dispatch({ type: 'invalid', field: 'flow_required' });
       return;
     }
-    void onCreate({ title, flow: selected }).then((outcome) => {
+    dispatch({ type: 'submitting' });
+    const intent = workOrderCreateIntent(form, selected, skipProposal);
+    void onCreate({ title: intent.title, description: intent.description, flow: intent.flow }).then((outcome) => {
+      dispatch({ type: 'submit_done' });
       if (!outcome.ok && 'validation' in outcome) {
         dispatch({ type: 'invalid', field: outcome.validation });
         return;
       }
-      // Success and a command refusal both leave through the command-result table. A refusal
-      // keeps the window up so the same sentence can sit beside the field.
       toastOutcome(locale, workOrderOpenToast(outcome));
       if (outcome.ok) {
         workOrderDraft.clear();
@@ -277,17 +278,20 @@ export function NewWorkOrderWindow({
     <>
       <span className="inline-flex [&>button]:h-8">
         <ActionButton variant="neutral" size="md" onClick={dismiss}>
-          {t(locale, 'workOrder.new.cancel')}
+          {t(locale, 'workOrder.cancel')}
         </ActionButton>
       </span>
       <BoardLaunchers project={launchProject} onLaunch={dismiss} />
       <span className="ml-auto inline-flex [&>button]:h-8">
-        <ActionButton variant="primary" size="md" disabled={options.length === 0} onClick={submit}>
-          {t(locale, 'workOrder.new.open')}
+        <ActionButton variant="primary" size="md" disabled={createDisabled} onClick={submit}>
+          {form.submitting ? '…' : t(locale, 'workOrder.create')}
         </ActionButton>
       </span>
     </>
   );
+
+  const stageLabels =
+    pinnedFlow === null ? [] : pinnedFlow.stages.map((stage) => ({ id: stage.stageId, name: stage.stageName }));
 
   return (
     <ModalWindow
@@ -302,7 +306,7 @@ export function NewWorkOrderWindow({
       onClose={dismiss}
       initialFocusRef={titleRef}
     >
-      <div className="grid max-w-[36rem] gap-4">
+      <div className="grid gap-4">
         <p className="text-[13px] text-ink">
           <span className={LABEL_CLASS}>{t(locale, 'workOrder.new.project')}</span>
           <span className="mt-1 block text-[14px]">{projectName}</span>
@@ -311,10 +315,12 @@ export function NewWorkOrderWindow({
           <span className={LABEL_CLASS}>{t(locale, 'workOrder.new.titleLabel')}</span>
           <input
             ref={titleRef}
+            role="textbox"
+            aria-label={t(locale, 'workOrder.new.titleLabel')}
             value={form.title}
             onChange={(event) => {
               dispatch({ type: 'title', value: event.target.value });
-              workOrderDraft.remember(event.target.value);
+              workOrderDraft.remember(event.target.value, form.description);
             }}
             onKeyDown={(event) => {
               if (event.key === 'Enter') {
@@ -332,29 +338,34 @@ export function NewWorkOrderWindow({
           ) : null}
         </label>
         <label className="grid gap-1">
-          <span className={LABEL_CLASS}>{t(locale, 'workOrder.new.flowLabel')}</span>
-          <select
-            value={selected}
-            onChange={(event) => dispatch({ type: 'flow', value: event.target.value })}
-            className={INPUT_CLASS}
-          >
-            {options.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.name}
-              </option>
-            ))}
-          </select>
-          {options.length === 0 ? (
-            <p role="alert" className="text-[12px] text-error">
-              {t(locale, 'workOrder.new.noFlow')}
-            </p>
-          ) : null}
-          {form.fieldError === 'flow_required' ? (
-            <p role="alert" className="text-[12px] text-error">
-              {t(locale, 'validate.flow_required')}
-            </p>
-          ) : null}
+          <span className={LABEL_CLASS}>{t(locale, 'workOrder.new.descriptionLabel')}</span>
+          <textarea
+            role="textbox"
+            aria-label={t(locale, 'workOrder.new.descriptionLabel')}
+            value={form.description}
+            onChange={(event) => {
+              dispatch({ type: 'description', value: event.target.value });
+              workOrderDraft.remember(form.title, event.target.value);
+            }}
+            rows={3}
+            className={`${INPUT_CLASS} min-h-[4.5rem] resize-y py-1.5`}
+          />
         </label>
+        {flowReady && pinnedFlow !== null ? (
+          <FlowStrip locale={locale} flow={pinnedFlow} skippedStageIds={form.skippedStageIds} />
+        ) : (
+          <p role="alert" className="text-[12px] text-error">{t(locale, 'workOrder.new.noFlow')}</p>
+        )}
+        {skipProposal !== null && form.skipDecision === null ? (
+          <StageSkipProposalCardView
+            locale={locale}
+            proposal={skipProposal}
+            stageLabels={stageLabels}
+            decided={false}
+            onSkip={() => dispatch({ type: 'skip_approve', stages: skipProposal.stages })}
+            onDoNotSkip={() => dispatch({ type: 'skip_reject' })}
+          />
+        ) : null}
         {form.failure !== null ? (
           <p role="alert" className="text-[13px] text-error">
             {t(locale, failureKey(form.failure))}

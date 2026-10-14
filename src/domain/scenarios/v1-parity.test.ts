@@ -71,7 +71,10 @@ const gateOn = (stage: string, gate: string, evidence: GateEvidence, at: EpochMs
   verdict: evaluateGate(gateOfStage(stage, gate), evidence, CTX),
 });
 
-const derive = (events: readonly WorkOrderEvent[]) => deriveWorkOrderState(standard(), events);
+const derive = (events: readonly WorkOrderEvent[]) => {
+  const { skippedStages: _skip, ...state } = deriveWorkOrderState(standard(), events);
+  return state;
+};
 
 // Shared prefixes, so each row reads as the delta that makes it interesting.
 const PLAN_RUN_SUCCEEDED: readonly WorkOrderEvent[] = [created(), runStarted('plan'), runFinished('succeeded')];
