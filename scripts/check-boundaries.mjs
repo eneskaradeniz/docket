@@ -41,6 +41,14 @@ const agentVendorViolations = (root = ROOT) => {
 const isTestFile = (name) => /\.test\.tsx?$/.test(name);
 const isSourceFile = (name) => /\.(ts|tsx)$/.test(name);
 
+// Components built ahead of their wiring, held by name so the guard stays honest while they wait.
+// The list must be empty when the phase closes; #1123 wires these two and empties it — an entry
+// whose file gains a non-test importer or stops existing fails the check so it cannot go stale.
+const ORPHAN_ALLOWLIST = new Map([
+  ['src/presentation/components/past-versions-modal.tsx', '#1123'],
+  ['src/presentation/components/removal-action-button.tsx', '#1123'],
+]);
+
 /** The relative module specifiers one source file imports (`./x`, `../y`); package imports and
  *  type-only syntax carry no path to resolve. */
 const relativeImportsOf = (text) =>
@@ -74,16 +82,31 @@ const statOrNull = (p) => {
 
 /** Component files no non-test presentation file imports — the orphan guard's answer, as paths
  *  relative to the root. A non-test file under src/presentation/components/ that nothing renders
- *  belongs to no screen and fails the check; tests are free importers, never saviours. */
+ *  belongs to no screen and fails the check; tests are free importers, never saviours. Files the
+ *  allowlist holds by name pass while their wiring issue stays open. */
 export const orphanComponents = (root = ROOT) => {
   const componentsDir = join(root, 'src', 'presentation', 'components');
   const imported = importedPresentationFiles(root);
   return readdirSync(componentsDir)
     .filter((name) => isSourceFile(name) && !isTestFile(name))
     .map((name) => join(componentsDir, name))
-    .filter((file) => !imported.has(file))
+    .filter((file) => !imported.has(file) && !ORPHAN_ALLOWLIST.has(relative(root, file)))
     .map((file) => relative(root, file))
     .sort();
+};
+
+/** The allowlist's own honesty: an entry passes only while its file exists AND still has no
+ *  non-test importer — a wired component must shed its entry in the same PR, and a renamed or
+ *  deleted one must not leave a stale name behind. */
+export const orphanAllowlistProblems = (root = ROOT) => {
+  const imported = importedPresentationFiles(root);
+  const problems = [];
+  for (const [rel, issue] of ORPHAN_ALLOWLIST) {
+    const file = join(root, rel);
+    if (!statOrNull(file)?.isFile()) problems.push(`${rel} is allowlisted (${issue}) but does not exist — fix ORPHAN_ALLOWLIST`);
+    else if (imported.has(file)) problems.push(`${rel} is allowlisted (${issue}) but has a non-test importer — remove it from ORPHAN_ALLOWLIST`);
+  }
+  return problems;
 };
 
 const isMain = process.argv[1] && SELF === process.argv[1];
@@ -109,6 +132,12 @@ if (isMain) {
     console.log('\nwire them into a screen, or delete the component and its tests');
     process.exit(1);
   }
-  console.log('[ ok ] no orphan components under src/presentation/components/');
+  const allowlistProblems = orphanAllowlistProblems();
+  if (allowlistProblems.length) {
+    console.log('[FAIL] orphan allowlist is stale:');
+    for (const problem of allowlistProblems) console.log(`  ${problem}`);
+    process.exit(1);
+  }
+  console.log(`[ ok ] no orphan components under src/presentation/components/ (${ORPHAN_ALLOWLIST.size} allowlisted, must be empty when the phase closes)`);
   console.log('boundary checks clean');
 }
