@@ -8,7 +8,11 @@ import { ActionButton } from '../components/action-button';
 import { HomeLaunchers } from '../components/launcher-rows';
 import { PanelOverlay } from '../components/panel-overlay';
 import { PermissionPrompt } from '../components/permission-prompt';
+import { SetupAddRepoChooser } from '../components/setup-add-repo-chooser';
+import { SetupCopyFrom } from '../components/setup-copy-from';
+import { SetupImportRepos } from '../components/setup-import-repos';
 import { SetupProposalDiff } from '../components/setup-proposal-diff';
+import { SetupRepoList, SetupSummary } from '../components/setup-summary';
 import { WindowTitle } from '../components/window-frame';
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
@@ -80,7 +84,31 @@ const CloseIcon = () => (
 export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, onOpenAccounts, onOpenMcp }: NewProjectPanelProps) {
   const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   const threadFocusRef = useRef<HTMLDivElement>(null);
-  const { form, failure, done, proposal, permission, screen, connectedProvider, mcpRunning, busy, reasonKey, secretNotices, ai } = state;
+  const {
+    form,
+    failure,
+    done,
+    proposal,
+    permission,
+    permissionRepoLabel,
+    screen,
+    connectedProvider,
+    mcpRunning,
+    busy,
+    reasonKey,
+    secretNotices,
+    ai,
+    addedRepos,
+    importQueue,
+    importMode,
+    importLoading,
+    importOverflow,
+    importParent,
+    copySourceId,
+    copyTargetPath,
+    copyErrorKey,
+    importSkippedTotal,
+  } = state;
 
   useEffect(() => {
     if (open) void store.refreshProvider();
@@ -125,16 +153,20 @@ export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, 
 
   // On the AI screen the footer's primary mirrors the thread's own action: starting the
   // conversation before one exists, sending while it runs.
+  const multiScreen = screen === 'summary' || screen === 'repo_list' || screen === 'add_chooser' || screen === 'copy_from' || screen === 'import_batch';
   const primaryLabel =
-    screen === 'proposal'
-      ? 'setup.proposal.accept'
-      : screen === 'ai'
-        ? ai.conversation === null
-          ? 'setup.ai.start'
-          : 'setup.ai.send'
-        : 'newProject.create';
+    screen === 'summary'
+      ? 'setup.multi.summary.openProject'
+      : screen === 'proposal'
+        ? 'setup.proposal.accept'
+        : screen === 'ai'
+          ? ai.conversation === null
+            ? 'setup.ai.start'
+            : 'setup.ai.send'
+          : 'newProject.create';
   const primaryAction = (): void => {
-    if (screen === 'proposal') void store.acceptProposal();
+    if (screen === 'summary') void store.openProjectFromSummary();
+    else if (screen === 'proposal') void store.acceptProposal();
     else if (screen === 'form') void store.submit();
     else if (screen === 'ai') {
       if (ai.conversation === null) void store.startAi();
@@ -142,18 +174,30 @@ export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, 
     }
   };
   const primaryDisabled =
-    screen === 'proposal'
-      ? busy || proposal === null
-      : screen === 'ai'
-        ? ai.conversation === null
-          ? form.repoPath.trim() === '' || busy
-          : ai.draft.trim() === '' || ai.turn !== null || busy
-        : reasonKey !== null || busy;
+    screen === 'summary'
+      ? busy
+      : screen === 'proposal'
+        ? busy || proposal === null
+        : screen === 'ai'
+          ? ai.conversation === null
+            ? form.repoPath.trim() === '' || busy
+            : ai.draft.trim() === '' || ai.turn !== null || busy
+          : reasonKey !== null || busy;
 
-  const footer = (
+  const footer = multiScreen && screen !== 'summary' ? undefined : (
     <>
-      <ActionButton variant="neutral" size="md" onClick={screen === 'proposal' ? () => store.discardProposal() : onClose}>
-        {t(locale, screen === 'proposal' ? 'setup.proposal.discard' : 'newProject.cancel')}
+      <ActionButton
+        variant="neutral"
+        size="md"
+        onClick={
+          screen === 'proposal'
+            ? () => store.discardProposal()
+            : screen === 'summary'
+              ? () => store.showAddChooser()
+              : onClose
+        }
+      >
+        {t(locale, screen === 'proposal' ? 'setup.proposal.discard' : screen === 'summary' ? 'setup.multi.summary.addMore' : 'newProject.cancel')}
       </ActionButton>
       <span aria-live="polite" className={`ml-auto flex min-w-0 items-center gap-2 ${NOTE_CLASS} text-inkdim`}>
         {busy ? <span className="truncate">{t(locale, 'setup.loading')}</span> : null}
@@ -171,6 +215,8 @@ export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, 
       </span>
     </>
   );
+
+  const pendingImport = importQueue.filter((row) => row.status === 'ready' || row.status === 'review').length;
 
   const methodChooser = (
     <div role="group" aria-label={t(locale, 'setup.method.group')} className="grid gap-2" data-setup-method="">
@@ -389,12 +435,80 @@ export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, 
               onToggle={(section) => store.toggleSection(section)}
             />
           ) : null}
+          {screen === 'summary' ? (
+            <SetupSummary
+              locale={locale}
+              added={addedRepos}
+              skipped={importSkippedTotal}
+              pending={pendingImport}
+              busy={busy}
+              onOpenProject={() => void store.openProjectFromSummary()}
+              onAddRepo={() => store.showAddChooser()}
+              onViewList={() => store.showRepoList()}
+            />
+          ) : null}
+          {screen === 'repo_list' ? (
+            <SetupRepoList
+              locale={locale}
+              repos={addedRepos}
+              busy={busy}
+              onAddRepo={() => store.showAddChooser()}
+              onFinish={() => void store.openProjectFromSummary()}
+              onBack={() => store.backFromMulti()}
+            />
+          ) : null}
+          {screen === 'add_chooser' ? (
+            <SetupAddRepoChooser
+              locale={locale}
+              connectedProvider={connectedProvider}
+              mcpRunning={mcpRunning}
+              onPick={(path) => store.pickPath(path)}
+              onOpenAccounts={onOpenAccounts}
+              onOpenMcp={onOpenMcp}
+              onBack={() => store.backFromMulti()}
+            />
+          ) : null}
+          {screen === 'copy_from' ? (
+            <SetupCopyFrom
+              locale={locale}
+              sources={addedRepos}
+              sourceId={copySourceId}
+              targetPath={copyTargetPath}
+              busy={busy}
+              errorKey={copyErrorKey}
+              onSource={(id) => store.setCopySource(id)}
+              onTarget={(path) => store.setCopyTarget(path)}
+              onContinue={() => void store.loadCopyProposal()}
+              onBack={() => store.backFromMulti()}
+            />
+          ) : null}
+          {screen === 'import_batch' ? (
+            <SetupImportRepos
+              locale={locale}
+              mode={importMode}
+              parentPath={importParent}
+              loading={importLoading}
+              overflow={importOverflow}
+              rows={importQueue}
+              busy={busy}
+              onMode={(mode) => store.setImportMode(mode)}
+              onParent={(path) => store.setImportParent(path)}
+              onPickFolders={() => void store.pickImportFolders()}
+              onScan={() => void store.scanImportParent()}
+              onReview={(path) => store.reviewImportRow(path)}
+              onApprove={(path) => void store.approveImportRow(path)}
+              onApproveAll={() => void store.approveAllImport()}
+              onToSummary={() => store.continueImportToSummary()}
+              onBack={() => store.backFromMulti()}
+            />
+          ) : null}
         </div>
       </PanelOverlay>
       <PermissionPrompt
         open={permission !== null}
         prompt={permission}
         locale={locale}
+        repoLabel={permissionRepoLabel}
         onDeny={() => store.denyPermission()}
         onAllow={() => store.allowPermission()}
         returnFocusRef={threadFocusRef}

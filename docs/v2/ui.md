@@ -1827,6 +1827,10 @@ Added 2026-10-14, #1106; amends U-288.
 Added 2026-10-14, #1120; implements A-380/A-381 (docs/v2/application.md).
 - **U-314** (added 2026-10-14, #1120) The MCP menu's first row is the built-in Docket entry of decision 1, 2 and 3; it has no remove, archive, rename or edit control; "Geri yükle" shows a busy state and then the inline result; the status is announced politely.
 - **U-315** (added 2026-10-14, #1120) "Docket AI ile kur" is disabled with the sentence of decision 4 while the status is not `running`; the sentence is a button to the built-in row; copy lives in the TR and EN bundles, every sentence at most 8 words (U-178).
+- **U-316** (added 2026-10-14, #1103) After the first confirm the panel shows the summary (counters, "Projeyi aç" primary, "Depo ekle" secondary); the "Depo listesi" lists only Eklendi repos with the four-state vocabulary; the Docket AI permission dialog carries the "Depo: &lt;ad&gt;" badge.
+- **U-317** (added 2026-10-14, #1103) "Depo ekle" opens the five-card chooser (Docket AI ile kur, Hızlı, Ayrıntılı, Başka depodan kopyala, Var olan depoları bağla) in the U-286 card language; Docket AI is disabled with its reason line as in U-286 and U-315.
+- **U-318** (added 2026-10-14, #1103) Copy-from: a source select of Eklendi repos only, the new folder (picker or typed), a region summarising what is and is not copied, then the ordinary proposal diff with the "kopyalandı" badge on copied groups; errors map to one-line sentences.
+- **U-319** (added 2026-10-14, #1103) Import: modes "Çoklu klasör seç" and "Üst klasörden bul"; the queue shows the four states with per-row "İncele"/"Onayla"; "Hepsini onayla" only when no row is Gözden geçir; the overflow alert uses `role="alert"`; a failing row never blocks the others; loading uses `aria-busy`.
 
 ## Native folder picker (U-326)
 

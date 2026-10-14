@@ -6,3 +6,4 @@ export * from './repo-paths';
 export * from './noop-update-checker';
 export * from './design-update-checker';
 export * from './process-registry';
+export * from './repo-scanner';

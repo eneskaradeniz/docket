@@ -69,6 +69,8 @@ export type Query =
   // read ask of a setup conversation.
   | { readonly type: 'setup.draft' } // → { draft: { id, repoPath, mode, updatedAt } | null } (A-359)
   | { readonly type: 'setup.read.pending'; readonly conversation: string } // → { ask: { path, reason } | null, secrets: number } | not_found (A-358)
+  | { readonly type: 'repos.discover'; readonly parent: string } // → { found: DiscoveredRepo[]; truncated: boolean } | not_found | not_a_directory | unreadable (A-382)
+  | { readonly type: 'setup.copyProposal'; readonly project: string; readonly source: string; readonly path: string } // → SetupProposal | source_not_in_project | folder_not_found | not_a_git_repo (A-383)
   // The standing of Docket's own MCP listener (A-380): names only — no secret, no token.
   | { readonly type: 'mcp.status' }; // → McpStatusView (A-380)
 
