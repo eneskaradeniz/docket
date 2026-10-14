@@ -15,6 +15,11 @@ export const FAMILY_PATTERNS: readonly FamilyPattern[] = [
   { contains: 'haiku', tier: 'fast' },
 ];
 
+/** MCP server names still visible outside run-scoped delivery after isolation (probe #1015 C6); names only, never values. Built-ins are listed, not treated as ambient leaks. */
+export const AMBIENT_MCP_REMAINING_NAMES: Readonly<Partial<Record<string, readonly string[]>>> = {
+  codex: ['codex_apps'],
+};
+
 export const CAPABILITY_REGISTRY = {
   providers: [
     {
@@ -374,7 +379,9 @@ export const TRANSLATION_TABLE: readonly TranslationRow[] = [
   ...rowsOf('claude-code', {
     mcp: {
       support: 'native',
-      how: probeHow('Run-scoped MCP config via --mcp-config with ambient settings off via --setting-sources ""'),
+      how: probeHow(
+        'Run-scoped MCP via inline mcpServers with --strict-mcp-config when MCP is delivered (ambient settings off via settingSources: [])',
+      ),
     },
     skill: {
       support: 'native',
@@ -395,7 +402,10 @@ export const TRANSLATION_TABLE: readonly TranslationRow[] = [
     command,
   }),
   ...rowsOf('codex', {
-    mcp: { support: 'native', how: 'App-server -c mcp_servers.*' },
+    mcp: {
+      support: 'native',
+      how: 'App-server --ignore-user-config when MCP is delivered, then -c mcp_servers.* overrides',
+    },
     skill: {
       support: 'native',
       how: probeHow('Run-scoped skills under .agents/skills in the run directory'),
