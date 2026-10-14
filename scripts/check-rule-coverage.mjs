@@ -94,6 +94,12 @@ const PENDING = new Map([
   // #1106 — the orphan guard deleted the dead role-row tree; U-175's subject (the global
   // "Asistan sırası" empty card) went with the code and no test will ever carry it.
   ['ui:U-175', '#1106'],
+
+  // #1108 — the dead stage-file read queries were removed (U-231's changes list had replaced their
+  // card); the rules keep their definitions and dated addenda as history, their tests went with the code.
+  ['application:A-88', '#1108'],
+  ['application:A-89', '#1108'],
+  ['ui:U-57', '#1108'],
 ]);
 
 function walk(dir, acc = []) {

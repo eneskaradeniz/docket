@@ -8,9 +8,7 @@ import type {
   ProviderMark,
   QuotaProbeError,
   RepoStatusView,
-  StageFilesView,
   WorkOrderChangesView,
-  WorktreeFilePreview,
 } from '../application';
 import type { ChatScopeInput } from './commands';
 
@@ -24,7 +22,7 @@ export type {
   ChatScopeView,
   ChatUsageView,
 } from './chat-views';
-export type { AccountTestView, RepoStatusView, ProposalDetailView, ProposalListItem, StageFilesView, WorkOrderChangesView, WorktreeFilePreview };
+export type { AccountTestView, RepoStatusView, ProposalDetailView, ProposalListItem, WorkOrderChangesView };
 
 export type Query =
   | { readonly type: 'workOrder.detail'; readonly id: string }
@@ -50,8 +48,6 @@ export type Query =
   | { readonly type: 'run.events'; readonly runId: string }
   | { readonly type: 'permissions.open' }
   | { readonly type: 'app.update' }
-  | { readonly type: 'workOrders.stageFiles'; readonly id: string }
-  | { readonly type: 'workOrders.readStageFile'; readonly id: string; readonly path: string }
   | { readonly type: 'capabilities.candidates' } // no fresh: no cache (A-94)
   | { readonly type: 'capabilities.machine'; readonly providers: readonly string[] } // P-60: on-demand machine scan
   | { readonly type: 'proposals.list'; readonly status?: ProposalStatus } // → readonly ProposalListItem[] (A-128, A-129)

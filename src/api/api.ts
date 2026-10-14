@@ -150,7 +150,6 @@ import {
   pausePhase,
   resumePhase,
   openWorkOrder,
-  readStageFile,
   registerRepo,
   removeAccount,
   removeAccountCap,
@@ -162,7 +161,6 @@ import {
   saveBinding,
   dispatchSettingsView,
   setDispatchLimits,
-  stageFiles,
   usageSummary,
   unblockWorkOrder,
   unregisterRepo,
@@ -1626,18 +1624,6 @@ const runQuery = async (
   setup: SetupConversations | undefined,
 ): Promise<unknown> => {
   switch (query.type) {
-    case 'workOrders.stageFiles': {
-      const id = ulidValue<'work-order'>(query.id);
-      if (id === undefined) return invalidId();
-      const res = await stageFiles(deps, id);
-      return res.ok ? res.value : { ok: false, code: res.error };
-    }
-    case 'workOrders.readStageFile': {
-      const id = ulidValue<'work-order'>(query.id);
-      if (id === undefined) return invalidId();
-      const res = await readStageFile(deps, { id, path: query.path });
-      return res.ok ? res.value : { ok: false, code: res.error };
-    }
     case 'proposals.list':
       return listProposals(deps, query.status === undefined ? {} : { status: query.status });
     case 'proposal.detail': {

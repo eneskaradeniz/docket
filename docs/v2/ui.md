@@ -750,6 +750,11 @@ container.
   list heading, the truncated-list note, the truncated-preview note — and a failed read shows the
   failure code's label, never the raw code.
 
+Addendum 2026-10-14 (#1108): the paragraph above is superseded whole. The #972 note in the U-223
+section already took the card — U-231's read-only changes list replaced it — and this change removes
+the two queries the text names, `workOrders.stageFiles` and `workOrders.readStageFile`, dead since no
+presentation code called them. The rule text stands as history.
+
 ## Wizard Yetenekler — the capability step (U-58 … U-60)
 
 - **U-58** (setup wizard; amends U-35 through U-35a; added 2026-10-09, #860) Yetenekler reads

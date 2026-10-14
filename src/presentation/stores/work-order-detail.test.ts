@@ -902,22 +902,6 @@ describe('stage strip order (U-19)', () => {
   });
 });
 
-// --- U-57: the stage-files card left with #972's changes list (U-231); the queries stay for their
-// other readers, the detail renders no per-file preview ----------------------------------------------
-
-describe('stage files superseded (U-57)', () => {
-  it('U-57: the store carries no stage-files state and no per-file read — the card is U-231\'s list now', async () => {
-    const api = fakeApi(detailReply(AWAITING_PLAN));
-    const store = createStore(api);
-    await store.load(WO_ID);
-    // No stage-files query rides the detail load; the changes read (U-231) is the one that does.
-    expect(api.queries).not.toContainEqual({ type: 'workOrders.stageFiles', id: WO_ID });
-    expect(api.queries).toContainEqual({ type: 'workOrder.changes', workOrder: WO_ID });
-    expect(store.state()).not.toHaveProperty('stageFiles');
-    expect(store).not.toHaveProperty('readStageFile');
-  });
-});
-
 // --- U-224: the stage strip ----------------------------------------------------------------------------
 
 describe('stage strip (U-224)', () => {
