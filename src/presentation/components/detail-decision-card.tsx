@@ -11,10 +11,12 @@ import { t, type Locale } from '../labels/t';
 import { ActionButton } from './action-button';
 import { StateBadge } from './state-badge';
 import { InlineDialog } from './detail-dialog';
+import { formatDurationMs } from './detail-format';
 import type {
   DecisionZone,
   DeployApproveInput,
   GateView,
+  IntentOutcome,
   WorkOrderAskView,
 } from '../stores/work-order-detail';
 
@@ -48,6 +50,10 @@ export interface DecisionZoneProps {
   readonly onAttest: (gate: string, noChangeNeeded: boolean) => void;
   readonly onAnswer: (ask: WorkOrderAskView, decision: 'allow' | 'deny') => void;
   readonly onDeployApprove: (input: DeployApproveInput) => void;
+  /** Stops the live run (U-302); the card reads the outcome to place the calm line. */
+  readonly onStop: (runId: string) => Promise<IntentOutcome>;
+  /** Sends the live run a steering note (U-303); bad_input keeps the note dialog open. */
+  readonly onSteer: (runId: string, note: string) => Promise<IntentOutcome>;
   readonly onEnqueue: () => void;
   /** The failed card's “İş emrini kapat…” asks the screen for its confirm dialog. */
   readonly onCloseRequest: () => void;
@@ -352,6 +358,129 @@ function FailedCard({
   );
 }
 
+/** The running card (U-301): the quiet line, the stage and the elapsed time of the live run,
+ *  and the two secondary doors. The stop confirm (U-302) and the steer note (U-303) are the
+ *  card's own inline dialogs — the same A3 trap the reject box uses. Nothing is optimistic
+ *  here: the card leaves only when the work order's changed event shows the ended run, and a
+ *  stop that lands late says so with the calm line. */
+function RunningCard({
+  runId,
+  stageName,
+  startedAt,
+  locale,
+  onStop,
+  onSteer,
+}: {
+  readonly runId: string;
+  readonly stageName: string;
+  readonly startedAt: number;
+  readonly locale: Locale;
+  readonly onStop: DecisionZoneProps['onStop'];
+  readonly onSteer: DecisionZoneProps['onSteer'];
+}) {
+  const [stopping, setStopping] = useState(false);
+  const [steering, setSteering] = useState(false);
+  const [note, setNote] = useState('');
+  const [noteRejected, setNoteRejected] = useState(false);
+  const [alreadyEnded, setAlreadyEnded] = useState(false);
+  const elapsed = formatDurationMs(locale, Math.max(Date.now() - startedAt, 0));
+  const sendNote = (): void => {
+    void onSteer(runId, note).then((outcome) => {
+      // Only the field's own verdict keeps the dialog open (U-303); anything else is the toast's.
+      if (!outcome.result.ok && outcome.result.code === 'bad_input') setNoteRejected(true);
+      else {
+        setSteering(false);
+        setNote('');
+      }
+    });
+  };
+  return (
+    <li data-decision-card="running" className="grid min-w-0 gap-3 rounded-card border border-hairline bg-surface px-5 py-4">
+      <p className="m-0 flex flex-wrap items-baseline gap-x-2 text-[0.8125rem] text-inkdim">
+        <span className="font-semibold text-ink">{t(locale, 'detail.stop.card')}</span>
+        <span>{stageName}</span>
+        <span>{t(locale, 'detail.meta.duration').replace('{n}', elapsed)}</span>
+      </p>
+      {/* U-304: both doors are the secondary outline — there is no danger token, the confirm
+          dialog carries the weight. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <ActionButton variant="neutral" onClick={() => setStopping(true)}>
+          {t(locale, 'detail.stop.open')}
+        </ActionButton>
+        <ActionButton
+          variant="neutral"
+          onClick={() => {
+            setNoteRejected(false);
+            setSteering(true);
+          }}
+        >
+          {t(locale, 'detail.steer.open')}
+        </ActionButton>
+      </div>
+      {alreadyEnded ? (
+        <p className="m-0 text-[0.78125rem] text-inkdim">{t(locale, 'detail.stop.alreadyEnded')}</p>
+      ) : null}
+      <InlineDialog active={stopping} onClose={() => setStopping(false)}>
+        {stopping ? (
+          <div data-detail-stop className="grid gap-2 border-t border-hairline pt-3">
+            <p className="m-0 text-[0.8125rem] font-semibold text-ink">{t(locale, 'detail.stop.title')}</p>
+            <p className="m-0 text-[0.8125rem] text-inkdim">{t(locale, 'detail.stop.body')}</p>
+            <div className="flex gap-2">
+              <ActionButton
+                variant="primary"
+                size="md"
+                onClick={() => {
+                  setStopping(false);
+                  void onStop(runId).then((outcome) => {
+                    if (!outcome.result.ok && outcome.result.code === 'not_active') setAlreadyEnded(true);
+                  });
+                }}
+              >
+                {t(locale, 'detail.stop.confirm')}
+              </ActionButton>
+              <ActionButton onClick={() => setStopping(false)}>{t(locale, 'detail.action.cancel')}</ActionButton>
+            </div>
+          </div>
+        ) : null}
+      </InlineDialog>
+      <InlineDialog active={steering} onClose={() => setSteering(false)}>
+        {steering ? (
+          <div data-detail-steer className="grid gap-2 border-t border-hairline pt-3">
+            <label htmlFor={`steer-${runId}`} className="text-[0.8125rem] font-semibold text-ink">
+              {t(locale, 'detail.steer.noteLabel')}
+            </label>
+            <textarea
+              id={`steer-${runId}`}
+              rows={3}
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+              onKeyDown={(event) => {
+                // Enter sends, Shift+Enter adds a line — the reject box's own grammar.
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
+                  sendNote();
+                }
+              }}
+              placeholder={t(locale, 'detail.steer.notePlaceholder')}
+              className="min-h-[4.5rem] w-full resize-y rounded-control border border-bord bg-raised px-3 py-2 text-[0.8125rem] text-ink placeholder:text-inkdim focus:border-signal"
+            />
+            {noteRejected ? (
+              <p role="alert" className="m-0 text-[0.78125rem] text-error">
+                {t(locale, 'detail.steer.error')}
+              </p>
+            ) : null}
+            <p className="m-0 text-[0.75rem] text-inkdim">{t(locale, 'detail.steer.hint')}</p>
+            <div className="flex gap-2">
+              <ActionButton onClick={sendNote}>{t(locale, 'detail.steer.send')}</ActionButton>
+              <ActionButton onClick={() => setSteering(false)}>{t(locale, 'detail.action.cancel')}</ActionButton>
+            </div>
+          </div>
+        ) : null}
+      </InlineDialog>
+    </li>
+  );
+}
+
 /** The start card: the stage's own door into the run. */
 function StartCard({
   stageName,
@@ -425,6 +554,18 @@ export function DecisionZoneCards(props: DecisionZoneProps) {
                     onOpenFailedRun={props.onOpenFailedRun}
                     onEnqueue={props.onEnqueue}
                     onCloseRequest={props.onCloseRequest}
+                  />
+                );
+              case 'running':
+                return (
+                  <RunningCard
+                    key={`running:${card.runId}`}
+                    runId={card.runId}
+                    stageName={card.stageName}
+                    startedAt={card.startedAt}
+                    locale={locale}
+                    onStop={props.onStop}
+                    onSteer={props.onSteer}
                   />
                 );
               case 'start':

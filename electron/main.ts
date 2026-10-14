@@ -27,7 +27,7 @@ import type { Actor, QueueItem } from '../src/domain/index';
 import { deriveWorkOrderState, foldRun } from '../src/domain/index';
 import { COMMAND_REGISTRY, QUERY_REGISTRY, createApi } from '../src/api/index';
 import type { Api, RunEventFeed, UiEvent } from '../src/api/index';
-import type { ActiveWork, AppDeps, Notifier, PermissionBoard, TransportResolver } from '../src/application/index';
+import type { ActiveWork, AppDeps, Notifier, PermissionBoard, RunControl, TransportResolver } from '../src/application/index';
 import {
   activeWork,
   advancePhases,
@@ -36,6 +36,7 @@ import {
   composeRunPrompt,
   createDocketTools,
   createPermissionBoard,
+  createRunControl,
   createTrackerSyncService,
   dispatcherTick,
   evaluateMachineGates,
@@ -223,9 +224,10 @@ const discoveredTransports = (
 
 /** Drives one dispatcher-started queue item to completion: definitions give the stage's role and
  *  capabilities, composeRunPrompt builds the run's prompt (the Docket layers plus the instruction
- *  files this route's provider does not read natively), the worktree gives the cwd, and the board
- *  is both the permission gate and the run's registry. */
-const runStartedItem = async (api: Api & RunEventFeed, board: PermissionBoard, item: QueueItem): Promise<void> => {
+ *  files this route's provider does not read natively), the worktree gives the cwd, the board
+ *  is both the permission gate and the run's registry, and the run control is the live-handle
+ *  registry `run.stop` and `run.steer` reach. */
+const runStartedItem = async (api: Api & RunEventFeed, board: PermissionBoard, runControl: RunControl, item: QueueItem): Promise<void> => {
   if (deps === undefined) return;
   try {
     // A started item is already gone from the queue, so every refusal below is loud: the work
@@ -277,6 +279,7 @@ const runStartedItem = async (api: Api & RunEventFeed, board: PermissionBoard, i
       board,
       api.runUpdated,
       api.workOrdersChanged,
+      runControl,
     );
 
     if (outcome.kind === 'limit') {
@@ -480,6 +483,9 @@ const startApp = async (): Promise<void> => {
 
   const board = createPermissionBoard();
   currentBoard = board;
+  // The live-handle registry rides beside the board (A-361): in-process state, never a port, and
+  // the only route run.stop / run.steer commands have to a still-running agent.
+  const runControl = createRunControl();
   // The app's update story in one seam: the no-op checker is the default (no updater ships
   // yet), and a DOCKET_UPDATE_FAKE version string swaps in the scripted checker the design seed
   // reviews with. This line is production's only read of the variable.
@@ -496,7 +502,7 @@ const startApp = async (): Promise<void> => {
     runner: node.chatRunner,
     apply: node.docketToolExtras.applyAction,
     undo: createActionUndoer(nodeDeps),
-  }, { ack: () => quitPrompt.ack(), answer: (accept) => quitPrompt.answer(accept) }, node.trackers, node.setupContexts);
+  }, { ack: () => quitPrompt.ack(), answer: (accept) => quitPrompt.answer(accept) }, node.trackers, node.setupContexts, runControl);
   currentApi = api;
   const quotaProbes = node.quota.probes; // read here: `node` is not narrowed inside the tick closure
 
@@ -572,7 +578,7 @@ const startApp = async (): Promise<void> => {
     // before this tick's start decision; a failure is logged and never blocks the dispatcher.
     // The limits are read per tick so a settings change applies without a restart.
     void advancePhases(nodeDeps).catch((error) => console.error('phase advance failed', error)).then(() => resolveDispatchLimits(nodeDeps, (error) => console.error('machine probe failed', error))).then((limits) => dispatcherTick(nodeDeps, { limits, probes: quotaProbes }, (item) => {
-      void runStartedItem(api, board, item);
+      void runStartedItem(api, board, runControl, item);
     })).catch((error) => console.error('dispatcher tick failed', error)).finally(() => {
       dispatching = false;
     });
