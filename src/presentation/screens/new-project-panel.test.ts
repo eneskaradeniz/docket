@@ -63,7 +63,7 @@ describe('the Proje ekle panel', () => {
     expect(html).toContain('data-new-project-scrim');
     expect(html).toContain('role="dialog"');
     expect(html).toContain('aria-modal="true"');
-    expect(html).toContain(`aria-label="${TR['newProject.title']}"`);
+    expect(html).toContain(`aria-label="${TR['setup.title']}"`);
   });
 
   it('U-183: the head carries the close control and the overlay wires Esc, the scrim and the focus return', () => {
@@ -78,13 +78,11 @@ describe('the Proje ekle panel', () => {
 
   it('U-185: the approved page content stands inside the panel — cards, fields, footer', () => {
     const html = draw(true);
-    for (const card of ['together', 'existing', 'clone', 'blank']) expect(html).toContain(`data-card="${card}"`);
-    expect(html).toContain('data-new-project-form="existing"');
-    expect(html).toContain(TR['newProject.folder']);
-    expect(html).toContain(TR['newProject.name']);
+    for (const card of ['docket_ai', 'quick', 'detailed', 'import']) expect(html).toContain(`data-card="${card}"`);
+    expect(html).toContain(TR['setup.method.group']);
+    expect(html).toContain(TR['setup.quick.title']);
     expect(html).toContain(TR['newProject.cancel']);
     expect(html).toContain(TR['newProject.create']);
-    expect(html).toContain(TR['newProject.gate.folder']);
     expect(html).toContain(TR['newProject.copy'].replaceAll("'", '&#x27;'));
   });
 

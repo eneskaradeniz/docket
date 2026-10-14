@@ -17,7 +17,8 @@ import type {
   SettingsAccountsView,
   SettingsBindingView,
 } from '../../api/queries';
-import { mostSharedChain, type Actor } from '../../domain/index';
+import { mostSharedChain, type Actor, type RemovalBlock, type RemovalVerdict, type RepoSlug, type StageSlug } from '../../domain/index';
+import { t, type Locale } from '../labels/t';
 import type { LabelKey } from '../labels/keys';
 import { SAVED_FLAG_MS } from './account-editor';
 import { recommendedWorkStyle, type WorkStyle } from './recommended';
@@ -96,9 +97,100 @@ export interface StageView {
   readonly thinking: Thinking | null;
 }
 
+export interface DefinitionVersionView {
+  readonly version: number;
+  readonly recordedAt: number;
+  readonly archived: boolean;
+}
+
+/** The roles.list wire may carry pre-evaluated removal and version fields (#1026 architect). */
+export type RoleListWire = RoleListItem & {
+  readonly version?: number;
+  readonly removal?: RemovalVerdict;
+  readonly pastVersions?: readonly DefinitionVersionView[];
+};
+
+export interface RemovalBlockNote {
+  readonly short: string;
+  readonly full: string;
+}
+
+const BLOCKER_CAP = 3;
+
+export const removalActionOf = (verdict: RemovalVerdict): 'delete' | 'archive' | 'blocked' =>
+  verdict.kind === 'blocked' ? 'blocked' : verdict.kind === 'archive' ? 'archive' : 'delete';
+
+/** The Sil / Arşivle label while blocked still names the action that would apply (U-293). */
+export const removalLabelAction = (verdict: RemovalVerdict): 'delete' | 'archive' => {
+  if (verdict.kind === 'archive') return 'archive';
+  if (verdict.kind === 'delete') return 'delete';
+  if (verdict.reasons.some((reason) => reason.kind === 'dependant')) return 'delete';
+  return 'archive';
+};
+
+/** Stage lines for a dependant block, preferring the list item's human names. */
+export const stageLinesForRole = (stages: RoleListItem['stages']): readonly string[] =>
+  stages.map((stage) => `${stage.flowName} (${stage.stageName})`);
+
+/** Up to three visible blockers; the full list is the accessible description (architect #1026). */
+export const removalBlockNote = (
+  locale: Locale,
+  verdict: RemovalVerdict,
+  stages: RoleListItem['stages'],
+): RemovalBlockNote | null => {
+  if (verdict.kind !== 'blocked') return null;
+  const parts: string[] = [];
+  for (const reason of verdict.reasons) {
+    if (reason.kind === 'running_work') {
+      parts.push(t(locale, 'definition.blocked.runningWork'));
+      continue;
+    }
+    const match = stages.find((stage) => stage.flow === reason.repo && (reason.stage === undefined || stage.stage === reason.stage));
+    parts.push(
+      match === undefined
+        ? t(locale, 'definition.blocked.stageEntry').replace('{repo}', reason.repo).replace('{stage}', reason.stage ?? '')
+        : t(locale, 'definition.blocked.stageEntry').replace('{repo}', match.flowName).replace('{stage}', match.stageName),
+    );
+  }
+  if (parts.length === 0) return null;
+  const stageOnly = verdict.reasons.every((reason) => reason.kind === 'dependant');
+  const head =
+    stageOnly && parts.length > 0
+      ? t(locale, 'definition.blocked.stageCount').replace('{n}', String(parts.length))
+      : '';
+  const visible = parts.slice(0, BLOCKER_CAP);
+  const hidden = parts.length - visible.length;
+  const inline = visible.join(', ');
+  const more = hidden > 0 ? t(locale, 'definition.blocked.more').replace('{n}', String(hidden)) : '';
+  const short =
+    stageOnly && head.length > 0
+      ? `${head}: ${inline}${more.length > 0 ? ` ${more}` : ''}`
+      : `${inline}${more.length > 0 ? ` ${more}` : ''}`;
+  const full = stageOnly && head.length > 0 ? `${head}: ${parts.join(', ')}` : parts.join(', ');
+  return { short, full };
+};
+
+const defaultRemoval = (role: RoleListItem): RemovalVerdict => {
+  if (role.stages.length === 0) return { kind: 'delete' };
+  return {
+    kind: 'blocked',
+    reasons: role.stages.map(
+      (stage): RemovalBlock => ({
+        kind: 'dependant',
+        of: 'stage',
+        repo: stage.flow as RepoSlug,
+        stage: stage.stage as StageSlug,
+      }),
+    ),
+  };
+};
+
 export interface RoleRow {
   readonly id: string;
   readonly name: string;
+  readonly version: number;
+  readonly pastVersions: readonly DefinitionVersionView[];
+  readonly removal: RemovalVerdict;
   readonly tier: Tier | null;
   readonly thinking: Thinking | null;
   readonly style: RoleWorkStyle;
@@ -109,6 +201,13 @@ export interface RoleRow {
   /** The exact efforts the chain's selectable models declare (empty until catalogs load). */
   readonly efforts: readonly string[];
   readonly stages: readonly StageView[];
+  /** Every repo stage that binds this role — for removal blockers (U-293). */
+  readonly dependantStages: readonly {
+    readonly flow: string;
+    readonly flowName: string;
+    readonly stage: string;
+    readonly stageName: string;
+  }[];
   readonly sameProviderReview: boolean;
 }
 
@@ -125,6 +224,7 @@ export interface RoleAccount {
 export interface RolesState {
   readonly loading: boolean;
   readonly rows: readonly RoleRow[] | null;
+  readonly pastVersionsRole: string | null;
   readonly accounts: readonly RoleAccount[];
   /** Asistan sırası: account ids, the chain most roles share. */
   readonly globalChain: readonly string[];
@@ -177,7 +277,7 @@ export const bindingCommand = (
 type ChainMode = 'all' | 'own';
 
 const buildRows = (
-  roles: readonly RoleListItem[],
+  roles: readonly RoleListWire[],
   bindings: readonly SettingsBindingView[],
   globalChain: readonly string[],
   overrides: Readonly<Record<string, ChainMode>>,
@@ -201,6 +301,9 @@ const buildRows = (
     return {
       id: role.id,
       name: role.name,
+      version: role.version ?? 1,
+      pastVersions: role.pastVersions ?? [],
+      removal: role.removal ?? defaultRemoval(role),
       tier,
       thinking,
       style,
@@ -212,6 +315,12 @@ const buildRows = (
       stages: role.stages
         .filter((stage) => stage.tier !== null || stage.thinking !== null)
         .map((stage) => ({ flowName: stage.flowName, stageName: stage.stageName, tier: stage.tier, thinking: stage.thinking })),
+      dependantStages: role.stages.map((stage) => ({
+        flow: stage.flow,
+        flowName: stage.flowName,
+        stage: stage.stage,
+        stageName: stage.stageName,
+      })),
       sameProviderReview: role.stages.some((stage) => stage.sameProviderReview),
     };
   });
@@ -226,6 +335,9 @@ export interface RolesStoreDeps {
 
 export interface RolesStore {
   load(): Promise<void>;
+  openPastVersions(role: string): void;
+  closePastVersions(): void;
+  removeDefinition(role: string): Promise<void>;
   /** Models of one account (consent standing included), for pins and efforts. */
   loadModels(accountId: string): Promise<void>;
   /** Asistan sırası: move the account at `from` by `delta` (±1); saves every listed role. */
@@ -251,8 +363,8 @@ export interface RolesStore {
 
 export const createRolesStore = (deps: RolesStoreDeps): RolesStore => {
   const { api, actor } = deps;
-  let state: RolesState = { loading: false, rows: null, accounts: [], globalChain: [], unsetCount: 0, catalogs: {}, failure: null };
-  let roles: readonly RoleListItem[] = [];
+  let state: RolesState = { loading: false, rows: null, pastVersionsRole: null, accounts: [], globalChain: [], unsetCount: 0, catalogs: {}, failure: null };
+  let roles: readonly RoleListWire[] = [];
   let bindings: readonly SettingsBindingView[] = [];
   let overrides: Readonly<Record<string, ChainMode>> = {};
   const pendingModels = new Set<string>();
@@ -281,7 +393,7 @@ export const createRolesStore = (deps: RolesStoreDeps): RolesStore => {
       set({ ...state, loading: false });
       return;
     }
-    roles = rolesReply as readonly RoleListItem[];
+    roles = rolesReply as readonly RoleListWire[];
     const view = settingsReply as SettingsAccountsView;
     bindings = view.bindings;
     rebuild({
@@ -438,6 +550,24 @@ export const createRolesStore = (deps: RolesStoreDeps): RolesStore => {
     setTier: (role, tier) => saveRole(role, { tier }),
     setThinking: (role, thinking) => saveRole(role, { thinking }),
     isSaved: (row) => savedRow === row && deps.now() < savedUntil,
+    openPastVersions: (role) => set({ ...state, pastVersionsRole: role }),
+    closePastVersions: () => set({ ...state, pastVersionsRole: null }),
+    removeDefinition: async (role) => {
+      const row = rowOf(role);
+      if (row === undefined) return;
+      const action = removalActionOf(row.removal);
+      if (action === 'blocked') return;
+      const command =
+        action === 'archive'
+          ? ({ type: 'definitions.archive', kind: 'roles', id: role } as unknown as Command)
+          : ({ type: 'definitions.delete', kind: 'roles', id: role } as unknown as Command);
+      const result = await api.command(actor, command);
+      if (!result.ok) {
+        set({ ...state, failure: { row: role, labelKey: commandResultKey(command.type, result) } });
+        return;
+      }
+      await load();
+    },
     state: () => state,
     subscribe: (listener) => {
       listeners.add(listener);

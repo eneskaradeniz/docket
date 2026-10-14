@@ -79,24 +79,9 @@ const PENDING = new Map([
   ['domain:R-133', '#1025'],
 
   // #1005 — two-layer roadmap and tracker model with sync modes
-  ['application:A-328', '#1019'],
-  ['application:A-329', '#1019'],
-  ['application:A-330', '#1019'],
-  ['application:A-331', '#1019'],
-  ['application:A-332', '#1019'],
   ['application:A-333', '#1020'],
 
   // #1006 — agent capabilities: library, provider translation, memory, machine import
-
-  // #1007: Docket AI project setup and read-permission scopes (#1023 ui)
-  ['ui:U-272', '#1023'],
-  ['ui:U-273', '#1023'],
-  ['ui:U-274', '#1023'],
-  ['ui:U-275', '#1023'],
-  ['ui:U-276', '#1023'],
-  ['ui:U-277', '#1023'],
-  ['ui:U-278', '#1023'],
-  ['ui:U-279', '#1023'],
 
   // #1008: Phase 7 surfaces — settings, setup, repo, work orders, versions, quit
   ['ui:U-284', '#1022'],
@@ -105,8 +90,6 @@ const PENDING = new Map([
   ['ui:U-287', '#1023'],
   ['ui:U-290', '#1025'],
   ['ui:U-291', '#1025'],
-  ['ui:U-292', '#1026'],
-  ['ui:U-293', '#1026'],
 
   // #1047 — planner stage-skip derive rule, supplements R-133 (#1025 implements)
   ['domain:R-144', '#1025'],

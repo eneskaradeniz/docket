@@ -501,9 +501,9 @@ for (const [sizeName, theme] of combos) {
     const plus = page.locator('nav').getByRole('button', { name: 'Yeni proje', exact: true }).first();
     const firstStep = async () => {
       await panel.waitFor({ state: 'visible', timeout: WAIT });
-      await panel.locator('[data-new-project-form="existing"]').waitFor({ state: 'visible', timeout: WAIT });
+      await panel.locator('[data-setup-method]').waitFor({ state: 'visible', timeout: WAIT });
       assert.equal(await panel.getAttribute('role'), 'dialog', 'the panel is a dialog');
-      assert.equal(await panel.locator('[data-card="existing"]').getAttribute('aria-pressed'), 'true', 'the first step selects Var olan klasör');
+      await panel.locator('[data-card="quick"]').waitFor({ state: 'visible', timeout: WAIT });
     };
     // The pointer opens it over the current screen, which stays underneath.
     await plus.click({ timeout: WAIT });
