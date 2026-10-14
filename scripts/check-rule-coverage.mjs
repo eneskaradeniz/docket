@@ -82,24 +82,19 @@ const PENDING = new Map([
   // #1008: Phase 7 surfaces — settings, setup, repo, work orders, versions, quit
   // #1047 — planner stage-skip derive rule, supplements R-133 (#1025 implements)
 
-  // #1057 — the one-time legacy import was removed. These rules keep their dated addenda and their
-  // definitions as history, but their tests went with the code, so no test will ever carry them.
-  ['infrastructure:I-90', '#1057'],
-  ['infrastructure:I-97', '#1057'],
+]);
 
-  // #1058 — migrations 1–11 were consolidated into a single clean schema; v1/v10 upgrade tests removed.
-  ['infrastructure:I-33', '#1058'],
-  ['infrastructure:I-93', '#1058'],
-
-  // #1106 — the orphan guard deleted the dead role-row tree; U-175's subject (the global
-  // "Asistan sırası" empty card) went with the code and no test will ever carry it.
-  ['ui:U-175', '#1106'],
-
-  // #1108 — the dead stage-file read queries were removed (U-231's changes list had replaced their
-  // card); the rules keep their definitions and dated addenda as history, their tests went with the code.
-  ['application:A-88', '#1108'],
-  ['application:A-89', '#1108'],
-  ['ui:U-57', '#1108'],
+// Rules whose implementing code and tests were removed while the definition and dated addenda stay
+// in the docs as history; a retired id is exempt from needing an it('X-n: …') title.
+const RETIRED = new Map([
+  ['infrastructure:I-90', { issue: '#1057', reason: 'The one-time legacy import was removed and its test went with the code.' }],
+  ['infrastructure:I-97', { issue: '#1057', reason: 'The one-time legacy import was removed and its test went with the code.' }],
+  ['infrastructure:I-33', { issue: '#1058', reason: 'Migrations 1–11 were consolidated into a single clean schema and the v1/v10 upgrade tests were removed.' }],
+  ['infrastructure:I-93', { issue: '#1058', reason: 'Migrations 1–11 were consolidated into a single clean schema and the v1/v10 upgrade tests were removed.' }],
+  ['ui:U-175', { issue: '#1106', reason: 'The orphan guard deleted the dead role-row tree and the global empty assistant-order card went with the code.' }],
+  ['application:A-88', { issue: '#1108', reason: 'The dead stage-file read queries were removed and their tests went with the code.' }],
+  ['application:A-89', { issue: '#1108', reason: 'The dead stage-file read queries were removed and their tests went with the code.' }],
+  ['ui:U-57', { issue: '#1108', reason: 'The dead stage-file read queries were removed and their tests went with the code.' }],
 ]);
 
 function walk(dir, acc = []) {
@@ -118,7 +113,13 @@ const byRuleId = (a, b) => {
   return na - nb || (la < lb ? -1 : la > lb ? 1 : 0);
 };
 
-const checkSection = (section) => {
+const sectionEntries = (map, sectionName) =>
+  [...map]
+    .filter(([key]) => key.startsWith(`${sectionName}:`))
+    .map(([key, value]) => [key.slice(sectionName.length + 1), value]);
+
+/** @param {{ pending?: Map, retired?: Map, defined?: string[], covered?: Set<string> }} overrides */
+export const checkSection = (section, overrides = {}) => {
   const prefix = section.prefix;
   const definedRe = new RegExp(`\\*\\*(${prefix}-\\d+[a-z]?)\\*\\*`, 'g');
   const testedRe = new RegExp(`\\bit\\(\\s*['"]${prefix}-(\\d+[a-z]?):`, 'g');
@@ -126,42 +127,60 @@ const checkSection = (section) => {
   const failures = [];
   const docRel = relative(ROOT, section.doc);
 
+  const pendingMap = overrides.pending ?? PENDING;
+  const retiredMap = overrides.retired ?? RETIRED;
+
   const definitionSources = section.definitionDocs ?? [section.doc];
-  const defined = [
-    ...new Set(
-      definitionSources.flatMap((path) => [...readFileSync(path, 'utf8').matchAll(definedRe)].map((m) => m[1])),
-    ),
-  ].sort(byRuleId);
+  const defined =
+    overrides.defined ??
+    [
+      ...new Set(
+        definitionSources.flatMap((path) => [...readFileSync(path, 'utf8').matchAll(definedRe)].map((m) => m[1])),
+      ),
+    ].sort(byRuleId);
   if (defined.length === 0) {
     failures.push(`no **${prefix}-n** ids found in ${definitionSources.map((p) => relative(ROOT, p)).join(' or ')} — the doc or the pattern moved`);
     return { failures, defined: 0, missing: [] };
   }
 
-  const covered = new Set();
-  for (const dir of section.dirs) {
-    for (const file of walk(dir)) {
-      for (const m of readFileSync(file, 'utf8').matchAll(testedRe)) covered.add(`${prefix}-${m[1]}`);
+  const covered = overrides.covered ?? new Set();
+  if (!overrides.covered) {
+    for (const dir of section.dirs) {
+      for (const file of walk(dir)) {
+        for (const m of readFileSync(file, 'utf8').matchAll(testedRe)) covered.add(`${prefix}-${m[1]}`);
+      }
     }
   }
-  if (covered.size === 0) {
-    failures.push(`no it('${prefix}-n: …') titles found under ${section.dirs.map((dir) => relative(ROOT, dir)).join(' or ')} — no rule can be covered`);
-    return { failures, defined: defined.length, missing: defined };
-  }
 
-  const pending = [...PENDING].filter(([key]) => key.startsWith(`${section.name}:`)).map(([key, issue]) => [key.slice(section.name.length + 1), issue]);
+  const pending = sectionEntries(pendingMap, section.name).map(([id, issue]) => [id, issue]);
   const pendingIds = new Set(pending.map(([id]) => id));
   for (const [id, issue] of pending) {
     if (!defined.includes(id)) failures.push(`${id} is listed as pending (${issue}) but not defined in ${docRel} — fix PENDING`);
     if (covered.has(id)) failures.push(`${id} is listed as pending (${issue}) but already has a test — remove it from PENDING in the same PR`);
   }
 
-  const missing = defined.filter((id) => !covered.has(id) && !pendingIds.has(id));
+  const retired = sectionEntries(retiredMap, section.name);
+  const retiredIds = new Set(retired.map(([id]) => id));
+  for (const [id, entry] of retired) {
+    const issue = entry?.issue ?? '';
+    if (!issue) failures.push(`${id} is listed as retired but has no issue — fix RETIRED`);
+    if (!entry?.reason?.trim()) failures.push(`${id} is listed as retired but has no reason — fix RETIRED`);
+    if (!defined.includes(id)) failures.push(`${id} is listed as retired (${issue}) but not defined in ${docRel} — fix RETIRED`);
+    if (covered.has(id)) failures.push(`${id} is listed as retired (${issue}) but has a test — remove the test or remove it from RETIRED`);
+  }
+
+  if (covered.size === 0 && !overrides.covered) {
+    failures.push(`no it('${prefix}-n: …') titles found under ${section.dirs.map((dir) => relative(ROOT, dir)).join(' or ')} — no rule can be covered`);
+    return { failures, defined: defined.length, missing: defined };
+  }
+
+  const missing = defined.filter((id) => !covered.has(id) && !pendingIds.has(id) && !retiredIds.has(id));
   if (missing.length) {
     failures.push(`${missing.length} of ${defined.length} rules defined in ${docRel} have no test titled after them:`);
     for (const id of missing) failures.push(`  ${id}`);
     failures.push(`add an it('${prefix}-n: …') in the owning module's colocated test file, or fix the title of the test that meant to carry the rule`);
   }
-  return { failures, defined: defined.length, missing, pending: pendingIds.size };
+  return { failures, defined: defined.length, missing, pending: pendingIds.size, retired: retiredIds.size };
 };
 
 const isMain = process.argv[1] && SELF === process.argv[1];
@@ -183,16 +202,19 @@ if (isMain) {
   let failed = false;
   for (const section of SECTIONS) {
     const prefix = section.prefix;
-    const { failures, defined, pending } = checkSection(section);
+    const { failures, defined, pending, retired } = checkSection(section);
     if (failures.length) {
       failed = true;
       console.error(`rule coverage (${section.name}): ${failures[0]}`);
       for (const failure of failures.slice(1)) console.error(failure);
     } else if (pending > 0) {
-      console.log(`rule coverage (${section.name}) clean — ${defined} rules in ${relative(ROOT, section.doc)}, ${defined - pending} tested, ${pending} pending (PENDING list)`);
+      console.log(`rule coverage (${section.name}) clean — ${defined} rules in ${relative(ROOT, section.doc)}, ${defined - pending - (retired ?? 0)} tested, ${pending} pending (PENDING list)`);
+    } else if ((retired ?? 0) > 0) {
+      console.log(`rule coverage (${section.name}) clean — ${defined} rules in ${relative(ROOT, section.doc)}, ${defined - (retired ?? 0)} tested, ${retired} retired (RETIRED list)`);
     } else {
       console.log(`rule coverage (${section.name}) clean — ${defined} rules in ${relative(ROOT, section.doc)} all have an it('${prefix}-n: …') test`);
     }
   }
   if (failed) process.exit(1);
+  if (PENDING.size === 0) console.log('rule coverage: PENDING empty');
 }
