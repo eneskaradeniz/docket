@@ -27,7 +27,8 @@ export type AuditAction =
   | 'chat.turn_started' | 'chat.turn_finished'
   | 'action.proposed' | 'action.applied' | 'action.rejected' | 'action.failed' | 'action.undone' | 'grant.created' | 'grant.revoked'
   | 'library.version_created' | 'library.definition_archived' | 'library.definition_deleted'
-  | 'repo.relinked' | 'repo.flow_saved' | 'project.exported' | 'project.imported';
+  | 'repo.relinked' | 'repo.flow_saved' | 'project.exported' | 'project.imported'
+  | 'git.pushed' | 'pr.opened' | 'pr.merged' | 'branch.deleted';
 
 export type AuditSubject =
   | { readonly kind: 'work_order'; readonly id: WorkOrderId }

@@ -37,6 +37,10 @@ export interface FakeWorktrees extends Worktrees {
   markExisting(repo: RepoSlug, workOrderId: WorkOrderId): void;
   /** How many times `ensure` ran. A read that must not create a worktree stays at zero. */
   ensureCalls(): number;
+  /** Sets the head `branchHead` answers for that work order; an unset one answers no_branch. */
+  setBranchHead(repo: RepoSlug, workOrderId: WorkOrderId, head: string): void;
+  /** Scripts release outcomes for that work order, consumed in order. */
+  scriptRelease(repo: RepoSlug, workOrderId: WorkOrderId, outcome: 'released' | 'branch_not_merged' | 'no_repo' | 'git_failed'): void;
 }
 
 /** Must match `MEMORY_PROPOSAL_SCAN_PREFIX` in `services/docket-tools.ts` (A-356). */
@@ -123,6 +127,8 @@ const worktreePath = (repo: RepoSlug, workOrderId: WorkOrderId): string => `/fak
 export const createFakeWorktrees = (): FakeWorktrees => {
   const withoutRepo = new Set<RepoSlug>();
   const listed = new Set<string>();
+  const heads = new Map<string, string>();
+  const releaseScripts = new Map<string, ('released' | 'branch_not_merged' | 'no_repo' | 'git_failed')[]>();
   let ensures = 0;
   const keyOf = (repo: RepoSlug, workOrderId: WorkOrderId): string => `${repo}/${workOrderId}`;
   return {
@@ -133,6 +139,13 @@ export const createFakeWorktrees = (): FakeWorktrees => {
       listed.add(keyOf(repo, workOrderId));
     },
     ensureCalls: (): number => ensures,
+    setBranchHead: (repo: RepoSlug, workOrderId: WorkOrderId, head: string): void => {
+      heads.set(keyOf(repo, workOrderId), head);
+    },
+    scriptRelease: (repo: RepoSlug, workOrderId: WorkOrderId, outcome: 'released' | 'branch_not_merged' | 'no_repo' | 'git_failed'): void => {
+      const key = keyOf(repo, workOrderId);
+      releaseScripts.set(key, [...(releaseScripts.get(key) ?? []), outcome]);
+    },
     ensure: async (repo: RepoSlug, workOrderId: WorkOrderId): Promise<Result<{ readonly path: string }, 'no_repo'>> => {
       ensures += 1;
       return withoutRepo.has(repo)
@@ -141,5 +154,18 @@ export const createFakeWorktrees = (): FakeWorktrees => {
     },
     existing: async (repo: RepoSlug, workOrderId: WorkOrderId): Promise<{ readonly path: string } | undefined> =>
       withoutRepo.has(repo) || !listed.has(keyOf(repo, workOrderId)) ? undefined : { path: worktreePath(repo, workOrderId) },
+    branchHead: async (repo: RepoSlug, workOrderId: WorkOrderId): Promise<Result<string, 'no_repo' | 'no_branch'>> => {
+      if (withoutRepo.has(repo)) return { ok: false, error: 'no_repo' };
+      const head = heads.get(keyOf(repo, workOrderId));
+      return head === undefined ? { ok: false, error: 'no_branch' } : { ok: true, value: head };
+    },
+    release: async (repo: RepoSlug, workOrderId: WorkOrderId): Promise<Result<'released' | 'branch_not_merged', 'no_repo' | 'git_failed'>> => {
+      const key = keyOf(repo, workOrderId);
+      const scripted = releaseScripts.get(key)?.shift();
+      if (scripted === 'no_repo') return { ok: false, error: 'no_repo' };
+      if (scripted === 'git_failed') return { ok: false, error: 'git_failed' };
+      // Without a script the release succeeds: the happy path is the default, like ensure's.
+      return { ok: true, value: scripted === 'branch_not_merged' ? 'branch_not_merged' : 'released' };
+    },
   };
 };

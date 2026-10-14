@@ -19,4 +19,10 @@ export type WorkOrderEvent =
       readonly outputTail?: string }
   | { readonly type: 'stage_skip_proposed'; readonly at: EpochMs; readonly stages: readonly StageSlug[]; readonly reason: string }
   | { readonly type: 'stage_skip_decided'; readonly at: EpochMs; readonly approved: boolean }
+  // The git lifecycle pair the operator's actions append (R-160 … R-164). They never move the
+  // machine fold; deriveGitLifecycle walks them beside it.
+  | { readonly type: 'branch_pushed'; readonly at: EpochMs; readonly branch: string; readonly head: string }
+  | { readonly type: 'pr_opened'; readonly at: EpochMs; readonly number: number; readonly url: string; readonly head: string; readonly base: string }
+  | { readonly type: 'pr_merged'; readonly at: EpochMs; readonly number: number }
+  | { readonly type: 'branch_released'; readonly at: EpochMs }
   | { readonly type: 'closed'; readonly at: EpochMs; readonly by: Actor };

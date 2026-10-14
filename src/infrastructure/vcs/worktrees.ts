@@ -3,9 +3,9 @@ import { mkdir, realpath } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import type { Worktrees } from '../../application/index';
-import { err, ok, type Result, type WorkOrderId } from '../../domain/index';
+import { err, ok, workOrderBranch, type Result, type WorkOrderId } from '../../domain/index';
 import type { RepoPaths } from '../system/index';
-import { runGit } from './git';
+import { branchHead as headOf, runGit } from './git';
 
 export interface WorktreesConfig {
   readonly root: string; // root = <dataDir>/worktrees
@@ -27,8 +27,9 @@ async function resolvedPath(path: string): Promise<string> {
   }
 }
 
+/** The domain owns the one naming rule; this is the worktree-side spelling of it. */
 export function worktreeBranch(id: WorkOrderId): string {
-  return 'docket/wo-' + id.toLowerCase();
+  return workOrderBranch(id);
 }
 
 export function createWorktrees(config: WorktreesConfig): Worktrees {
@@ -110,6 +111,33 @@ export function createWorktrees(config: WorktreesConfig): Worktrees {
       })();
       creating.set(key, creation);
       return creation;
+    },
+
+    async branchHead(repo, id) {
+      const checkout = await config.repos.path(repo);
+      if (checkout === undefined) return err('no_repo');
+      const head = await headOf(checkout, workOrderBranch(id));
+      return head === undefined ? err('no_branch') : ok(head);
+    },
+
+    async release(repo, id) {
+      const checkout = await config.repos.path(repo);
+      if (checkout === undefined) return err('no_repo');
+
+      const path = join(config.root, repo, id);
+      // An unlisted worktree is already gone from git's books; only the branch may remain.
+      if (await isListed(checkout, path)) {
+        const removed = await runGit(checkout, ['worktree', 'remove', path]);
+        if (removed.exitCode !== 0) return err('git_failed');
+      }
+
+      // `-d`, never `-D`: an unmerged branch is a typed refusal, not data loss. The BASE ref is
+      // never touched, so the commit the worktree started from stays reachable either way.
+      // Commands run under LC_ALL=C, so the refusal message is the one matched here.
+      const deleted = await runGit(checkout, ['branch', '-d', workOrderBranch(id)]);
+      if (deleted.exitCode === 0) return ok('released');
+      if (deleted.stderr.includes('not fully merged')) return ok('branch_not_merged');
+      return err('git_failed');
     },
   };
 }

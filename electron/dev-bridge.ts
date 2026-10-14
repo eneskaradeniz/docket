@@ -197,6 +197,14 @@ export const workOrderEventSummary = (event: WorkOrderEvent): string => {
       return `skip proposed ${event.stages.join(', ')}`;
     case 'stage_skip_decided':
       return event.approved ? 'skip approved' : 'skip rejected';
+    case 'branch_pushed':
+      return `pushed ${event.branch} ${event.head.slice(0, 8)}`;
+    case 'pr_opened':
+      return `pr opened #${event.number} ${event.head} → ${event.base}`;
+    case 'pr_merged':
+      return `pr merged #${event.number}`;
+    case 'branch_released':
+      return 'branch released';
     case 'closed':
       return 'closed';
   }

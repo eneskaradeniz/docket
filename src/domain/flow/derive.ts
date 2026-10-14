@@ -3,6 +3,7 @@
 import type { FlowDef, GateDef, StageDef } from '../definitions';
 import type { GateVerdict } from '../gates';
 import type { GateSlug, StageSlug } from '../shared';
+import { deriveGitLifecycle, type GitBranchState, type GitPrState } from './git-lifecycle';
 import type { WorkOrderEvent } from './events';
 
 export type WorkOrderStatus =
@@ -22,6 +23,10 @@ export interface WorkOrderState {
   readonly blockedReason?: string;
   /** Stages an approved planner skip proposal marks skipped for this work order only (R-144). */
   readonly skippedStages: readonly StageSlug[];
+  /** The git lifecycle fields (R-160 … R-164): present only once their ledger event folded in. */
+  readonly branch?: GitBranchState;
+  readonly pr?: GitPrState;
+  readonly released?: true;
 }
 
 /** R-133 invariant 1: deploy and human exit gates cannot be proposed for skipping. */
@@ -57,7 +62,9 @@ export const deriveSkippedStages = (flow: FlowDef, events: readonly WorkOrderEve
 
 export function deriveWorkOrderState(flow: FlowDef, events: readonly WorkOrderEvent[]): WorkOrderState {
   const folded = toState(flow, events.reduce((acc, event) => step(flow, acc, event), initial(flow)));
-  return { ...folded, skippedStages: deriveSkippedStages(flow, events) };
+  // The skip marks and the git lifecycle live beside the machine fold, never inside it: a log
+  // without either kind of event derives exactly the state the rules above describe.
+  return { ...folded, skippedStages: deriveSkippedStages(flow, events), ...deriveGitLifecycle(events) };
 }
 
 const RUN_FAILED_REASON = 'run failed';
@@ -230,6 +237,12 @@ const step = (flow: FlowDef, acc: Acc, event: WorkOrderEvent): Acc => {
     case 'stage_skip_proposed':
     case 'stage_skip_decided':
       // R-144: skip marks live beside the machine state; the fold above stays R-17…R-24.
+      return acc;
+    case 'branch_pushed':
+    case 'pr_opened':
+    case 'pr_merged':
+    case 'branch_released':
+      // R-160 … R-164: the git lifecycle lives beside the machine state the same way.
       return acc;
     case 'closed':
       return doneAcc(acc.stageIndex, acc.attempt, acc.entries);
