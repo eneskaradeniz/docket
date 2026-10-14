@@ -683,6 +683,51 @@ const redefinedFlows = () => [
     expect(result.value.runs.map((run) => run.startedAt)).toEqual([10, 20, 30]);
     expect(result.value.runs.every((run) => run.workOrderId === id)).toBe(true);
   });
+
+  it('A-379: the detail read starts no poll and writes no event — the rows are a read of what the dispatcher recorded', async () => {
+    const h = createHarness();
+    const ciFlow = {
+      id: 'ci-flow',
+      name: 'CI',
+      stages: [
+        { id: 'verify', name: 'Verify', role: null, exit: [{ kind: 'remote_checks', id: 'ci', required: 'all', timeoutMinutes: 10 }] },
+      ],
+    };
+    h.definitions.seed(
+      { kind: 'repo', repo: REPO },
+      'defs.json',
+      JSON.stringify({ roles: [ROLE_JSON], flows: [ciFlow], capabilities: [], repo: { ...REPO_JSON, flow: repoFlowOf(ciFlow) } }),
+    );
+    const opened = await openWorkOrder(h.openDeps, { project: PROJECT, repo: REPO, title: 'CI rows', actor: ACTOR });
+    if (!opened.ok) throw new Error('open must succeed');
+    // The dispatcher's own poll already recorded one evaluation with its evidence.
+    await h.workOrders.appendEvent(opened.value, {
+      type: 'gate_evaluated',
+      at: 1_050,
+      stage: slugOf<'stage'>('verify'),
+      gate: slugOf<'gate'>('ci'),
+      verdict: { status: 'passed' },
+      remoteChecks: { checks: [{ name: 'lint', status: 'passed' }] },
+    });
+    const recorded = await h.workOrders.events(opened.value);
+
+    const view = await getWorkOrder(h.viewDeps, opened.value);
+
+    expect(view.ok).toBe(true);
+    if (!view.ok) return;
+    // The read reaches no forge and appends nothing: the stream is exactly what the dispatcher left.
+    expect(await h.workOrders.events(opened.value)).toEqual(recorded);
+    // And the rows are that recorded fact verbatim, not a fresh poll's answer.
+    expect(view.value.gates).toEqual([
+      {
+        gate: slugOf<'gate'>('ci'),
+        stage: slugOf<'stage'>('verify'),
+        verdict: { status: 'passed' },
+        at: 1_050,
+        checks: [{ name: 'lint', status: 'passed' }],
+      },
+    ]);
+  });
 });
 
 describe('blockWorkOrder', () => {
