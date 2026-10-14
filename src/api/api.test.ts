@@ -18,6 +18,7 @@ import {
   createFakeRepoFolders,
   createFakeTransport,
   createFakeTransportResolver,
+  createParkedFakeTransport,
   createFakeUpdateChecker,
   createFakeWorktrees,
   repoFlowOf,
@@ -1807,55 +1808,6 @@ describe('createApi', () => {
   });
 
   describe('run.stop / run.steer (A-361 … A-365)', () => {
-    /** A transport whose stream parks after the session starts and ends only when stop() is
-     *  called — the port's own contract for a stop (I-30): the stream finishes with
-     *  `finished { reason: 'cancelled' }`. `stopHolds` keeps the stream parked across the stop
-     *  (the repeated-command window of A-362). */
-    const createParkedTransport = (options?: { readonly stopHolds?: boolean; readonly log?: FakeEventLog }) => {
-      const steers: string[] = [];
-      let stopCount = 0;
-      const auditsAtStop: readonly number[] = [];
-      const transport: AgentTransport = {
-        start: async () => {
-          let released: (() => void) | undefined;
-          const stopped = new Promise<void>((resolve) => {
-            released = resolve;
-          });
-          const stream = async function* (): AsyncGenerator<AgentEvent, void> {
-            yield { type: 'session_started', at: 1_600, sessionRef: 'sess-parked' };
-            await stopped;
-            yield { type: 'finished', at: 2_000, reason: 'cancelled' };
-          };
-          return {
-            ok: true,
-            value: {
-              events: stream(),
-              answerPermission: () => {},
-              steer: (note: string) => {
-                steers.push(note);
-              },
-              stop: async () => {
-                stopCount += 1;
-                // What the audit trail held when the handle was touched — A-362's "before".
-                if (options?.log !== undefined) {
-                  (auditsAtStop as number[]).push(
-                    options.log.entries().filter((entry) => entry.action === 'run.stopped').length,
-                  );
-                }
-                if (options?.stopHolds !== true) released?.();
-              },
-            },
-          };
-        },
-      };
-      return {
-        transport,
-        steers: (): readonly string[] => [...steers],
-        stopCount: (): number => stopCount,
-        auditsAtStop: (): readonly number[] => [...auditsAtStop],
-      };
-    };
-
     /** The composition wiring of electron/main.ts, verbatim: the registry beside the board, the
      *  executor attaching into it, the api reading it. */
     const runControlApi = (h: Harness, runControl: ReturnType<typeof createRunControl>) =>
@@ -1917,7 +1869,7 @@ describe('createApi', () => {
 
     it('A-362: run.stop on a live run — the audit lands before the handle, the end path writes the rest', async () => {
       const h = await createHarness();
-      const parked = createParkedTransport({ log: h.log });
+      const parked = createParkedFakeTransport({ log: h.log });
       const runControl = createRunControl();
       const api = runControlApi(h, runControl);
       const workOrderId = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5F20');
@@ -1982,7 +1934,7 @@ describe('createApi', () => {
 
     it('A-362: a repeated stop while the run is still live is an ok no-op', async () => {
       const h = await createHarness();
-      const parked = createParkedTransport({ stopHolds: true });
+      const parked = createParkedFakeTransport({ stopHolds: true });
       const runControl = createRunControl();
       const api = runControlApi(h, runControl);
       const runId = await startLiveRun(h, parked.transport, runControl, ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5F30'), ulidOf<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5F31'));
@@ -2066,7 +2018,7 @@ describe('createApi', () => {
 
     it('A-364: run.steer forwards the trimmed note, audits it, and emits exactly one run.updated', async () => {
       const h = await createHarness();
-      const parked = createParkedTransport();
+      const parked = createParkedFakeTransport();
       const runControl = createRunControl();
       const api = runControlApi(h, runControl);
       const workOrderId = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5F50');
@@ -2090,7 +2042,7 @@ describe('createApi', () => {
 
     it('A-364: an empty, whitespace-only or oversized note answers bad_input and reaches nothing', async () => {
       const h = await createHarness();
-      const parked = createParkedTransport();
+      const parked = createParkedFakeTransport();
       const runControl = createRunControl();
       const api = runControlApi(h, runControl);
       const runId = await startLiveRun(h, parked.transport, runControl, ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5F60'), ulidOf<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5F61'));
@@ -2116,7 +2068,7 @@ describe('createApi', () => {
 
     it('A-365: the boundary speaks for the operator it received — a payload actor field is never read', async () => {
       const h = await createHarness();
-      const parked = createParkedTransport();
+      const parked = createParkedFakeTransport();
       const runControl = createRunControl();
       const api = runControlApi(h, runControl);
       const runId = await startLiveRun(h, parked.transport, runControl, ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5F70'), ulidOf<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5F71'));
