@@ -1,12 +1,12 @@
-// Tests for runGit (rule I-19). Real git against throw-away repos in fs.mkdtemp folders;
-// HOME is redirected so no test ever reads or writes the user's real git config.
+// Tests for runGit (rule I-19) and branchHead (A-369). Real git against throw-away repos in
+// fs.mkdtemp folders; HOME is redirected so no test ever reads or writes the user's real git config.
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { readRepoFingerprint, runGit } from './git';
+import { branchHead, readRepoFingerprint, runGit } from './git';
 
 const IDENTITY_ARGS = ['-c', 'user.name=t', '-c', 'user.email=t@t'] as const;
 
@@ -162,5 +162,32 @@ describe('readRepoFingerprint', () => {
 
     expect((await runGit(dir, ['init'])).exitCode).toBe(0);
     expect(await readRepoFingerprint(dir)).toBeUndefined();
+  });
+});
+
+describe('branchHead', () => {
+  /** A work tree with one commit on `main`, the shape every branchHead test starts from. */
+  const seedMainBranch = async (): Promise<void> => {
+    expect((await runGit(dir, ['init', '-b', 'main'])).exitCode).toBe(0);
+    await writeFile(join(dir, 'file.txt'), 'seed\n', 'utf8');
+    await runGit(dir, ['add', 'file.txt']);
+    expect((await runGit(dir, [...IDENTITY_ARGS, 'commit', '-m', 'seed'])).exitCode).toBe(0);
+  };
+
+  it('A-369: answers the head commit of a branch that exists in the checkout', async () => {
+    await seedMainBranch();
+    const expected = (await runGit(dir, ['rev-parse', 'refs/heads/main'])).stdout.trim();
+
+    await expect(branchHead(dir, 'main')).resolves.toBe(expected);
+  });
+
+  it('A-369: a branch the checkout does not have answers undefined, not an error', async () => {
+    await seedMainBranch();
+
+    await expect(branchHead(dir, 'docket/wo-missing')).resolves.toBeUndefined();
+  });
+
+  it('A-369: a path that is not a git work tree answers undefined', async () => {
+    await expect(branchHead(dir, 'main')).resolves.toBeUndefined();
   });
 });

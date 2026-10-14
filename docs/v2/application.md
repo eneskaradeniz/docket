@@ -903,6 +903,7 @@ export function pollRemoteChecks(
 - **E-17** Append one `gate_evaluated` event with the `remoteChecks` evidence. `pending` → do not append (gate stays pending, re-polled by the dispatcher later).
 - **E-18** `evaluateMachineGates` (updated A-9): after processing existing `command`/`secret_scan` gates, also process pending `remote_checks` gates by calling `pollRemoteChecks` — only when the input carries `remote: { readonly forges: ForgeResolver; readonly repo: RepoRef; readonly branchRef: string }` (a new optional field of `evaluateMachineGates`' input); without it they are left pending. Every `GateContext` built by a use case includes `environments` from the repo definition. `deploy` gates are **not** evaluated by `evaluateMachineGates` — they require explicit human approval via `approveAndDeploy`.
 - **E-19** The Phase 2c headless acceptance scenario extends the standard flow with an environment stage: `deploy-stg` → `deploy-prd` (protected, `promoteFrom: stg`), with the fake forge returning all-green checks for a `remote_checks` gate.
+- Correction (added 2026-10-14, #1144) to E-14 … E-18: the "re-polled by the dispatcher later" of E-17 names the **remote-checks sweep** — the composition root's dedicated poll service (`REMOTE_CHECKS_POLL_MS` = 60 000, A-370), not the dispatcher's own tick, and until #1144 no production caller re-polled at all.
 
 ### App update — query, intents, event
 
@@ -2075,3 +2076,21 @@ No screen needed a raw slug/path enumeration: the sidebar's `project.tree` (A-27
 with richer status and `repoStatus` (A-341) covers registry health. The `repos.list` query member,
 its registry entry and api handler are removed; A-32 and A-41 now cite the `project.tree` precedent
 in place of the deleted query name.
+
+### Addendum 2026-10-14 (#1144): wiring the remote-checks poll into production (GI-1)
+
+The headless half of the CI-check detail: production resolves a `Forge` for registered repos and
+the composition root re-polls pending `remote_checks` gates, so E-14 … E-18 hold outside tests.
+Everything here is read-only — no production path pushes, opens or merges anything (that is GI-2).
+
+```ts
+// infrastructure/forge/repo-forge-resolver.ts (A-368, I-104)
+export function createRepoForgeResolver(deps: Pick<AppDeps, 'repos' | 'commands'>): ForgeResolver;
+// compose/create-node-deps.ts (A-368)
+readonly forgeResolver?: (deps: AppDeps) => ForgeResolver;   // NodeDepsConfig, the trackerResolver pattern
+readonly forges: ForgeResolver;                              // NodeDeps
+```
+
+- **A-368** (added 2026-10-14, #1144) `createRepoForgeResolver` resolves a repo's `Forge` from its registry row: the row's fingerprint remote must be a github.com URL (the gh adapter's own remote grammar) and the gh CLI must be present and authenticated — probed once per process, then cached (15 s bound per probe command). Everything else — unknown repo, another host, a missing or unauthenticated gh — resolves `undefined` silently. `createNodeDeps` exposes the resolver as `NodeDeps.forges` through the injected `forgeResolver` factory; absent config answers undefined for every repo, which is exactly the pre-forge behaviour.
+- **A-369** (added 2026-10-14, #1144) The composition root passes `evaluateMachineGates` its `remote` input (`forges`, the repo's `RepoRef`, `branchRef`) both after a run finishes and from the sweep — and only when the work order's current stage actually waits on a pending `remote_checks` gate, because the branch lookup and the resolver's gh probe cost real commands. `branchRef` is the head sha of the worktree branch (`refs/heads/docket/wo-<id>` per `worktreeBranch(id)`), read in the repo's registered checkout; a branch that cannot be resolved leaves the gate pending — the evaluation never fails for it.
+- **A-370** (added 2026-10-14, #1144) The re-poll sweep runs on its own timer (`REMOTE_CHECKS_POLL_MS` = 60 000, the quota-timers pattern — not the 5 s dispatch tick) and is non-reentrant; each pass walks the work orders, and every one holding a pending `remote_checks` gate gets one `evaluateMachineGates` call with the same `remote` input. At most one poll is in flight per gate (the post-run call and the sweep share one in-flight set keyed by work order); a poll that errors leaves the gate pending for the next pass; and nothing at all is written while the gate's checks are still `pending` (E-17).

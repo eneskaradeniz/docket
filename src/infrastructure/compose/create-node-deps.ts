@@ -11,6 +11,7 @@ import type {
   CommandRunner,
   CredentialImporter,
   DocketToolExtras,
+  ForgeResolver,
   DocketToolSetupExtras,
   McpEndpoint,
   McpListenerControl,
@@ -95,6 +96,8 @@ export interface NodeDepsConfig {
   readonly commands?: CommandRunner;
   /** Builds the per-repo tracker resolver; the shell passes createRepoTrackerResolver from forge. */
   readonly trackerResolver?: (deps: AppDeps) => IssueTrackerResolver;
+  /** Builds the per-repo forge resolver; the shell passes createRepoForgeResolver from forge. */
+  readonly forgeResolver?: (deps: AppDeps) => ForgeResolver;
 }
 
 export interface NodeDeps {
@@ -122,6 +125,9 @@ export interface NodeDeps {
   readonly setupContexts: SetupConversations;
   /** Resolves the IssueTracker for a registered repo from tracker.yaml (github + gh auth only). */
   readonly trackers: IssueTrackerResolver;
+  /** Resolves the Forge for a registered repo (github.com remote + gh auth only); the gate polls
+   *  read through it, and it never reaches a write member in this composition. */
+  readonly forges: ForgeResolver;
   close(): void;
 }
 
@@ -235,6 +241,7 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
   };
   const chatRunner = createChatRunner(deps, { turnLedger: docketToolExtras.turnLedger, setupContexts });
   const trackers = config.trackerResolver?.(deps) ?? { forRepo: async () => undefined };
+  const forges = config.forgeResolver?.(deps) ?? { forRepo: async () => undefined };
   return ok({
     deps,
     quota,
@@ -246,6 +253,7 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     chatRunner,
     setupContexts,
     trackers,
+    forges,
     adoption: { discovery: accountDiscovery, importer: credentialImporter },
     close: (): void => db.close(),
   });
