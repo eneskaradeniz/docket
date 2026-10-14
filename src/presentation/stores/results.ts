@@ -104,6 +104,8 @@ type SilentCommand =
   | 'memory.setAutoAccept'
   | 'memory.addNote'
   | 'definitions.save'
+  | 'definitions.archive'
+  | 'definitions.delete'
   | 'tracker.sync'
   | 'tracker.resolveConflict';
 const isSilent = (command: Command['type']): command is SilentCommand =>
@@ -118,6 +120,8 @@ const isSilent = (command: Command['type']): command is SilentCommand =>
   || command === 'memory.setAutoAccept'
   || command === 'memory.addNote'
   || command === 'definitions.save'
+  || command === 'definitions.archive'
+  || command === 'definitions.delete'
   || command === 'tracker.sync'
   || command === 'tracker.resolveConflict';
 

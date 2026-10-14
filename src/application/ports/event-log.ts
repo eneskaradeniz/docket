@@ -26,7 +26,8 @@ export type AuditAction =
   | 'conversation.started' | 'conversation.deleted' | 'conversation.pinned' | 'conversation.draft_confirmed' | 'conversation.draft_dropped'
   | 'chat.turn_started' | 'chat.turn_finished'
   | 'action.proposed' | 'action.applied' | 'action.rejected' | 'action.failed' | 'action.undone' | 'grant.created' | 'grant.revoked'
-  | 'library.version_created' | 'repo.relinked' | 'repo.flow_saved' | 'project.exported' | 'project.imported';
+  | 'library.version_created' | 'library.definition_archived' | 'library.definition_deleted'
+  | 'repo.relinked' | 'repo.flow_saved' | 'project.exported' | 'project.imported';
 
 export type AuditSubject =
   | { readonly kind: 'work_order'; readonly id: WorkOrderId }

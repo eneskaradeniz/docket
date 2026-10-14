@@ -88,4 +88,8 @@ export interface DefinitionStore {
     body: unknown,
     at: EpochMs,
   ): Promise<Result<VersionRecord<unknown>, 'stale'>>;
+  /** Marks the definition archived: it drops from active lists but `listVersions` stays readable (R-134). */
+  archiveLibrary(kind: DefinitionKind, id: string): Promise<Result<void, 'not_found'>>;
+  /** Removes every version of an unreferenced definition (R-134 `delete`). */
+  removeLibrary(kind: DefinitionKind, id: string): Promise<Result<void, 'not_found'>>;
 }

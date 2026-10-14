@@ -1,6 +1,6 @@
 // api/queries.ts — the read side of the boundary. Exact contract: docs/v2/application.md § 4.
 // Plain JSON-serialisable shapes only; ids travel as strings and are parsed in api.ts.
-import type { ModelMatcher, PageKind, ProposalStatus, UsageSummary, WasteFinding } from '../domain/index';
+import type { ModelMatcher, PageKind, ProposalStatus, RemovalVerdict, UsageSummary, WasteFinding } from '../domain/index';
 import type {
   AccountTestView,
   ProposalDetailView,
@@ -338,6 +338,7 @@ export interface DefinitionListItem {
   readonly recordedAt: number;
   readonly archived: boolean;
   readonly body: unknown;
+  readonly removal: RemovalVerdict;
 }
 
 // --- roles.list (A-50) -------------------------------------------------------------------------------
@@ -345,6 +346,13 @@ export interface DefinitionListItem {
 export interface RoleListItem {
   readonly id: string;
   readonly name: string;
+  readonly version: number;
+  readonly removal: RemovalVerdict;
+  readonly pastVersions: readonly {
+    readonly version: number;
+    readonly recordedAt: number;
+    readonly archived: boolean;
+  }[];
   readonly stages: readonly {
     readonly flow: string;
     readonly flowName: string;

@@ -17,7 +17,7 @@ import type {
   SettingsAccountsView,
   SettingsBindingView,
 } from '../../api/queries';
-import { mostSharedChain, type Actor, type RemovalBlock, type RemovalVerdict, type RepoSlug, type StageSlug } from '../../domain/index';
+import { mostSharedChain, type Actor, type RemovalVerdict } from '../../domain/index';
 import { t, type Locale } from '../labels/t';
 import type { LabelKey } from '../labels/keys';
 import { SAVED_FLAG_MS } from './account-editor';
@@ -103,12 +103,8 @@ export interface DefinitionVersionView {
   readonly archived: boolean;
 }
 
-/** The roles.list wire may carry pre-evaluated removal and version fields (#1026 architect). */
-export type RoleListWire = RoleListItem & {
-  readonly version?: number;
-  readonly removal?: RemovalVerdict;
-  readonly pastVersions?: readonly DefinitionVersionView[];
-};
+/** The roles.list wire carries pre-evaluated removal and version fields (#1026 architect). */
+export type RoleListWire = RoleListItem;
 
 export interface RemovalBlockNote {
   readonly short: string;
@@ -168,21 +164,6 @@ export const removalBlockNote = (
       : `${inline}${more.length > 0 ? ` ${more}` : ''}`;
   const full = stageOnly && head.length > 0 ? `${head}: ${parts.join(', ')}` : parts.join(', ');
   return { short, full };
-};
-
-const defaultRemoval = (role: RoleListItem): RemovalVerdict => {
-  if (role.stages.length === 0) return { kind: 'delete' };
-  return {
-    kind: 'blocked',
-    reasons: role.stages.map(
-      (stage): RemovalBlock => ({
-        kind: 'dependant',
-        of: 'stage',
-        repo: stage.flow as RepoSlug,
-        stage: stage.stage as StageSlug,
-      }),
-    ),
-  };
 };
 
 export interface RoleRow {
@@ -301,9 +282,9 @@ const buildRows = (
     return {
       id: role.id,
       name: role.name,
-      version: role.version ?? 1,
-      pastVersions: role.pastVersions ?? [],
-      removal: role.removal ?? defaultRemoval(role),
+      version: role.version,
+      pastVersions: role.pastVersions,
+      removal: role.removal,
       tier,
       thinking,
       style,
@@ -557,10 +538,10 @@ export const createRolesStore = (deps: RolesStoreDeps): RolesStore => {
       if (row === undefined) return;
       const action = removalActionOf(row.removal);
       if (action === 'blocked') return;
-      const command =
+      const command: Command =
         action === 'archive'
-          ? ({ type: 'definitions.archive', kind: 'roles', id: role } as unknown as Command)
-          : ({ type: 'definitions.delete', kind: 'roles', id: role } as unknown as Command);
+          ? { type: 'definitions.archive', kind: 'roles', id: role }
+          : { type: 'definitions.delete', kind: 'roles', id: role };
       const result = await api.command(actor, command);
       if (!result.ok) {
         set({ ...state, failure: { row: role, labelKey: commandResultKey(command.type, result) } });

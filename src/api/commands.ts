@@ -71,6 +71,8 @@ export type Command =
   | { readonly type: 'memory.setAutoAccept'; readonly scope: 'global' | 'project' | 'repo'; readonly enabled: boolean }
   | { readonly type: 'memory.addNote'; readonly text: string; readonly scope: 'global' | 'project' | 'repo'; readonly scopeId?: string }
   | { readonly type: 'definitions.save'; readonly kind: 'plugin' | 'mcp' | 'skill' | 'command' | 'hook'; readonly definition: unknown } // ok → { version }; failures → definitions_invalid + issues (A-352)
+  | { readonly type: 'definitions.archive'; readonly kind: 'roles'; readonly id: string } // ok → { ok: true }; blocked → { ok: false, code: 'blocked', reasons } (A-355)
+  | { readonly type: 'definitions.delete'; readonly kind: 'roles'; readonly id: string } // ok → { ok: true }; blocked → { ok: false, code: 'blocked', reasons } (A-355)
   | { readonly type: 'tracker.sync'; readonly repo: string }
   | {
       readonly type: 'tracker.resolveConflict';
@@ -162,7 +164,8 @@ export type CommandResult =
    *  `accounts` rides only `account_not_connected` on repo.saveFlow (A-354): every disconnected
    *  stage chain entry as `{ stage, accountId }`.
    *  `issues` rides `definitions_invalid` on bundle import (A-342).
-   *  `definitionIssues` rides `definitions_invalid` on definitions.save (A-352). */
+   *  `definitionIssues` rides `definitions_invalid` on definitions.save (A-352).
+   *  `reasons` rides `blocked` on definitions.archive / definitions.delete (A-355). */
   | {
       readonly ok: false;
       readonly code: string;
@@ -170,4 +173,5 @@ export type CommandResult =
       readonly accounts?: readonly { readonly stage: string; readonly accountId: string }[];
       readonly issues?: readonly string[];
       readonly definitionIssues?: readonly { readonly path: string; readonly code: string; readonly message: string }[];
+      readonly reasons?: readonly { readonly kind: string; readonly workOrders?: readonly string[]; readonly of?: string; readonly repo?: string; readonly stage?: string }[];
     };

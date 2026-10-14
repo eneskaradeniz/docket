@@ -111,7 +111,11 @@ import {
   importBundle,
   acceptMemoryProposalUseCase,
   createMemoryNoteUseCase,
+  archiveDefinition,
+  deleteDefinition,
   listLibraryDefinitionsByKind,
+  roleRemovalVerdict,
+  roleVersionFields,
   loadRepoRoadmapsForProject,
   memoryOverview,
   readRepoRoadmap,
@@ -1452,6 +1456,46 @@ const runCommand = async (
       return resolved.ok ? { ok: true } : { ok: false, code: resolved.error };
     }
 
+    case 'definitions.archive': {
+      if (command.kind !== 'roles') return badInput();
+      const role = slugValue<'role'>(command.id);
+      if (role === undefined) return invalidId();
+      const archived = await archiveDefinition(
+        {
+          clock: deps.clock,
+          ids: deps.ids,
+          log: deps.log,
+          definitions: deps.definitions,
+          projects: deps.projects,
+          workOrders: deps.workOrders,
+        },
+        { kind: 'roles', id: role, actor },
+      );
+      if (archived.ok) return { ok: true };
+      if (typeof archived.error === 'string') return { ok: false, code: archived.error };
+      return { ok: false, code: archived.error.code, reasons: [...archived.error.reasons] };
+    }
+
+    case 'definitions.delete': {
+      if (command.kind !== 'roles') return badInput();
+      const role = slugValue<'role'>(command.id);
+      if (role === undefined) return invalidId();
+      const removed = await deleteDefinition(
+        {
+          clock: deps.clock,
+          ids: deps.ids,
+          log: deps.log,
+          definitions: deps.definitions,
+          projects: deps.projects,
+          workOrders: deps.workOrders,
+        },
+        { kind: 'roles', id: role, actor },
+      );
+      if (removed.ok) return { ok: true };
+      if (typeof removed.error === 'string') return { ok: false, code: removed.error };
+      return { ok: false, code: removed.error.code, reasons: [...removed.error.reasons] };
+    }
+
     case 'definitions.save': {
       const body = command.definition;
       if (typeof body !== 'object' || body === null || Array.isArray(body)) return badInput();
@@ -1786,6 +1830,7 @@ const runQuery = async (
           recordedAt: record.recordedAt,
           archived: record.archived,
           body: record.body,
+          removal: { kind: 'delete' },
         }),
       );
 
@@ -1963,8 +2008,8 @@ const rolesListView = async (
     { roles: BUILTIN_ROLES, flows: BUILTIN_FLOWS },
   ];
   const seenRepos = new Set<string>();
-  const rows = registry === undefined ? [] : [...(await registry.list())].sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
-  for (const row of rows) {
+  const registryRows = registry === undefined ? [] : [...(await registry.list())].sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
+  for (const row of registryRows) {
     if (seenRepos.has(row.slug)) continue;
     seenRepos.add(row.slug);
     const loaded = await deps.definitions.load(row.slug);
@@ -2022,9 +2067,23 @@ const rolesListView = async (
     }
   }
 
-  return [...names.keys()]
-    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
-    .map((id) => ({ id, name: names.get(id) ?? id, stages: stages.get(id) ?? [] }));
+  const ids = [...names.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const list: RoleListItem[] = [];
+  for (const id of ids) {
+    const roleSlug = slugValue<'role'>(id);
+    const versionFields = await roleVersionFields(deps, id);
+    const removal =
+      roleSlug === undefined ? { kind: 'delete' as const } : await roleRemovalVerdict(deps, roleSlug);
+    list.push({
+      id,
+      name: names.get(id) ?? id,
+      version: versionFields.version,
+      pastVersions: versionFields.pastVersions,
+      removal,
+      stages: stages.get(id) ?? [],
+    });
+  }
+  return list;
 };
 
 /** Attention kinds in the order the cockpit shows them (A-22): what a human can answer fastest first. */
