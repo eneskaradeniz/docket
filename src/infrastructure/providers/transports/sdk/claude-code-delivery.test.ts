@@ -11,10 +11,12 @@ import {
   createFakeSecretVault,
 } from '../../../../application/ports/fakes/index';
 import type { AccountRecord, RunHandle, RunRequest, TransportError } from '../../../../application/index';
-import type { Result } from '../../../../domain/index';
+import type { AgentEvent, Result } from '../../../../domain/index';
 import {
   parseSlug,
   parseUlid,
+  setupWarnings,
+  translateCapabilities,
   type AccountId,
   type CapabilityDef,
   type EpochMs,
@@ -23,6 +25,7 @@ import {
   type RunId,
 } from '../../../../domain/index';
 import { createSdkTransport, type QueryFn } from './transport';
+import { TRANSLATION_TABLE } from '../../registry/capability-registry';
 
 const START_AT: EpochMs = 1770000000000;
 
@@ -694,4 +697,180 @@ describe('claude-code SDK capability delivery (CC-1 … CC-8)', () => {
     if (pluginPath === undefined) throw new Error('expected plugin path');
     await expect(access(pluginPath)).rejects.toThrow();
   });
+});
+
+/** The text of every user message the transport queued on the prompt stream, in order. */
+async function userPromptText(call: CapturedCall): Promise<string> {
+  let text = '';
+  for await (const message of call.prompt as AsyncIterable<{ readonly message: { readonly content: unknown } }>) {
+    const content = message.message.content;
+    if (typeof content === 'string') text += content;
+  }
+  return text;
+}
+
+const pathPluginCap = (id: string, path: string, name = id): CapabilityDef => ({
+  kind: 'plugin',
+  id: slugOf<'capability'>(id),
+  name,
+  source: { kind: 'path', path },
+  includes: [],
+});
+
+describe('claude-code SDK plugin-kind and command-kind delivery (CC-9 … CC-12)', () => {
+  it('CC-9: a path plugin rides plugins[{type:local,path,skipMcpDiscovery:true}] listed after the docket-run plugin', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'docket-cc9-'));
+    const skillSource = join(cwd, 'skill.md');
+    await writeFile(skillSource, '# cc9 skill\n', 'utf8');
+    const pluginRoot = await mkdtemp(join(tmpdir(), 'docket-cc9-plugin-'));
+    await writeFile(join(pluginRoot, 'plugin.json'), '{"name":"user-plugin"}\n', 'utf8');
+
+    // The user plugin sorts before the skill by id; the bundled run plugin is still delivered first.
+    const call = await runCaptured(
+      {
+        runId: RUN_ID,
+        cwd,
+        runDir: cwd,
+        role: ROLE_DEF,
+        route: { accountId: ACCOUNT },
+        prompt: 'work',
+        capabilities: [pathPluginCap('user-plugin', pluginRoot), {
+          kind: 'skill',
+          id: slugOf<'capability'>('z-skill'),
+          name: 'cc9-skill',
+          path: skillSource,
+        }],
+      },
+      account('subscription'),
+    );
+
+    expect(call.options.plugins).toHaveLength(2);
+    const [runPlugin, userPlugin] = call.options.plugins ?? [];
+    expect(userPlugin).toEqual({ type: 'local', path: pluginRoot, skipMcpDiscovery: true });
+    expect(runPlugin?.type).toBe('local');
+    expect(runPlugin?.skipMcpDiscovery).toBe(true);
+    // The run plugin is the bundled directory under the run dir (removed on finish, so identity
+    // is asserted by path, not by reading its manifest back after the drain).
+    expect(runPlugin?.path.startsWith(join(cwd, 'cc-run-plugin-'))).toBe(true);
+  });
+
+  it('CC-10: a marketplace plugin is never lost silently — typed start error or setup warning (P-57/P-58)', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'docket-cc10-'));
+    const marketplacePlugin: CapabilityDef = {
+      kind: 'plugin',
+      id: slugOf<'capability'>('market-plugin'),
+      name: 'market-plugin',
+      source: { kind: 'marketplace', marketplace: 'acme', name: 'market-plugin' },
+      includes: [],
+    };
+
+    // Surface the loss must take (P-57: a non-native capability warns; a dropped one errors typed).
+    const warnings = setupWarnings(
+      [{ stage: 'implement', provider: 'claude-code', capabilities: [marketplacePlugin] }],
+      TRANSLATION_TABLE,
+    );
+
+    const accounts = createFakeAccountRepo();
+    await accounts.save(account('subscription'));
+    const { query, calls } = scriptedQuery(async function* () {
+      yield successResult();
+    });
+    const transport = createSdkTransport({
+      clock: createFakeClock(START_AT),
+      accounts,
+      secrets: createFakeSecretVault(),
+      baseEnv: {},
+      query,
+    });
+    const started = await transport.start({
+      runId: RUN_ID,
+      cwd,
+      runDir: cwd,
+      role: ROLE_DEF,
+      route: { accountId: ACCOUNT },
+      prompt: 'work',
+      capabilities: [marketplacePlugin],
+    });
+    const events: AgentEvent[] = [];
+    if (started.ok) for await (const event of started.value.events) events.push(event);
+
+    // Actual behaviour today, asserted as a fact: the marketplace plugin reaches no plugins entry.
+    const delivered = JSON.stringify(started.ok ? (calls[0]?.options.plugins ?? []) : []);
+    expect(delivered).not.toContain('acme');
+
+    const surfaced =
+      !started.ok ||
+      warnings.length > 0 ||
+      events.some((event) => event.type === 'error' && event.message.includes('market-plugin'));
+    expect(surfaced).toBe(true);
+  });
+
+  it('CC-11: a command rides the effective prompt as instruction text — the template appears exactly once, its placeholders stay placeholders for the agent to fill, and Docket substitutes nothing (P-58, R-141 addendum)', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'docket-cc11-'));
+    const command: CapabilityDef = {
+      kind: 'command',
+      id: slugOf<'capability'>('deploy-note'),
+      name: 'deploy-note',
+      template: 'Deploy the {{service}} service to {{env}}.',
+      arguments: [
+        { name: 'service', required: true },
+        { name: 'env', required: false },
+      ],
+    };
+
+    // The executor's own composition (P-59): the command is inlined into the session prompt and
+    // only translation.run reaches the transport, so the effective prompt is what must carry it.
+    const translation = translateCapabilities('claude-code', [command], TRANSLATION_TABLE);
+    const sessionPrompt = translation.inline === '' ? 'work' : `work\n\n${translation.inline}`;
+    const call = await runCaptured(
+      {
+        runId: RUN_ID,
+        cwd,
+        runDir: cwd,
+        role: ROLE_DEF,
+        route: { accountId: ACCOUNT },
+        prompt: sessionPrompt,
+        capabilities: translation.run,
+      },
+      account('subscription'),
+    );
+
+    const carried = `${await userPromptText(call)}\n${systemAppend(call.options) ?? ''}`;
+    // Agent-filled semantics: the template rides exactly once as instruction text, the placeholder
+    // names stay visible in it, and there is no Docket-side substitution to check for — no argument
+    // input path exists yet, so a rendered value here would be a claim the product does not make.
+    expect(carried.match(/Deploy the/gu) ?? []).toHaveLength(1);
+    expect(carried).toContain('fill the {{placeholders}}');
+    expect(carried).toContain('Deploy the {{service}} service to {{env}}.');
+    expect(translation.run).toEqual([]);
+  });
+
+  it('CC-12: two path plugins sharing a plugin name are both handed to the CLI as separate local plugins', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'docket-cc12-'));
+    const first = await mkdtemp(join(tmpdir(), 'docket-cc12-a-'));
+    const second = await mkdtemp(join(tmpdir(), 'docket-cc12-b-'));
+    await writeFile(join(first, 'plugin.json'), '{"name":"same-name"}\n', 'utf8');
+    await writeFile(join(second, 'plugin.json'), '{"name":"same-name"}\n', 'utf8');
+
+    const call = await runCaptured(
+      {
+        runId: RUN_ID,
+        cwd,
+        runDir: cwd,
+        role: ROLE_DEF,
+        route: { accountId: ACCOUNT },
+        prompt: 'work',
+        capabilities: [pathPluginCap('dup-a', first, 'same-name'), pathPluginCap('dup-b', second, 'same-name')],
+      },
+      account('subscription'),
+    );
+
+    // From the code: no dedupe and no warning exist — the CLI receives both and decides alone.
+    expect(call.options.plugins).toHaveLength(2);
+    expect((call.options.plugins ?? []).map((plugin) => plugin.path)).toEqual([first, second]);
+  });
+
+  it.todo(
+    'CC-12 LIVE: observe the CLI/SDK behaviour when two local plugins share a manifest name (error, dedupe, or shadowing)',
+  );
 });
