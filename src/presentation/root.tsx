@@ -165,8 +165,9 @@ if (mount !== null) {
   const tree = createProjectTreeStore({ api, changes, now: () => Date.now(), persistence: window.localStorage });
   // The wizard re-reads its lists on `accounts.changed`; the sidebar tree needs nothing from it.
   const wizard = createWizardStore({ api, actor: USER, changes });
-  // The Yeni proje page (U-40) reloads the tree the same way: a creation appends no event.
-  const newProject = createNewProjectStore({ api, actor: USER, reloadTree: () => tree.load() });
+  // The Yeni proje page (U-40) reloads the tree the same way: a creation appends no event. Its
+  // Docket AI thread reads the setup surface's own push events (setup.read.ask, the turn events).
+  const newProject = createNewProjectStore({ api, actor: USER, changes, reloadTree: () => tree.load() });
   const accountsFrame = createAccountsFrameStore({ api, changes });
   // The provider marks every account badge reads: one query, kept for the session (A-41).
   const marks = createProviderMarksStore({ api });

@@ -26,11 +26,14 @@ import {
   disclosureExpanded,
   failureOf,
   folderName,
+  hasDraft,
   permissionAfterDeny,
   readRequestKind,
   resetSessionDisclosure,
+  START_FORM,
   toggleDisclosure,
   type NewProjectStore,
+  type SetupChange,
 } from './new-project';
 
 const actor: Actor = { kind: 'user', id: 'user-1' };
@@ -271,5 +274,202 @@ describe('setup helpers retained', () => {
 
   it('project_exists still offers attach on import path', () => {
     expect(failureOf('project_exists', true).offerAttach).toBe(true);
+  });
+});
+
+// --- the Docket AI thread (A-357 … A-360) ---------------------------------------------------------------
+
+const CONVERSATION = '01ARZ3NDEKTSV4RRFFQ69G5FC9';
+
+interface AiOptions {
+  readonly accounts?: unknown;
+  readonly draft?: unknown;
+  readonly conversation?: unknown;
+  readonly pending?: unknown;
+  readonly proposals?: unknown;
+  readonly proposalDetail?: unknown;
+  readonly startResult?: CommandResult;
+}
+
+interface AiHarness {
+  readonly api: Fake;
+  readonly store: NewProjectStore;
+  readonly emit: (change: SetupChange) => void;
+  setPending: (pending: unknown) => void;
+}
+
+const aiSetup = (options: AiOptions = {}): AiHarness => {
+  const commands: Command[] = [];
+  const replies = new Map<string, CommandResult>();
+  if (options.startResult !== undefined) replies.set('setup.ai.start', options.startResult);
+  const emitListeners = new Set<(change: SetupChange) => void>();
+  const live: { pending: unknown } = { pending: options.pending ?? { ask: null, secrets: 0 } };
+  const answers: Readonly<Record<string, unknown | (() => unknown)>> = {
+    'settings.accounts': options.accounts ?? { accounts: [{ id: 'a' }], bindings: [] },
+    'setup.draft': options.draft ?? { draft: null },
+    'setup.read.pending': (): unknown => live.pending,
+    'chat.conversation': options.conversation ?? {
+      id: CONVERSATION,
+      messages: [
+        { id: 'm1', role: 'user', text: 'Bu repoyu kur', refs: [], attachments: [], artifacts: [], sources: [] },
+        { id: 'm2', role: 'assistant', text: 'Baktım, öneriyi hazırlıyorum.', refs: [], attachments: [], artifacts: [], sources: [] },
+      ],
+    },
+    'proposals.list': options.proposals ?? [],
+    'proposal.detail': options.proposalDetail ?? { ok: false, code: 'not_found' },
+    'project.tree': oneRepoTree,
+  };
+  const api: Fake = {
+    commands,
+    queries: [],
+    accounts: answers['settings.accounts'],
+    reply: (type, result) => replies.set(type, result),
+    query: (query) => {
+      const answer = answers[query.type];
+      return Promise.resolve(typeof answer === 'function' ? answer() : answer === undefined ? oneRepoTree : answer);
+    },
+    command: (_actor, command) => {
+      commands.push(command);
+      return Promise.resolve(replies.get(command.type) ?? { ok: true, conversation: CONVERSATION });
+    },
+  };
+  const store = createNewProjectStore({
+    api,
+    actor,
+    changes: (listener) => {
+      emitListeners.add(listener);
+      return () => emitListeners.delete(listener);
+    },
+    reloadTree: async () => undefined,
+  });
+  return {
+    api,
+    store,
+    emit: (change) => {
+      for (const listener of emitListeners) listener(change);
+    },
+    setPending: (pending) => {
+      live.pending = pending;
+    },
+  };
+};
+
+const drawAi = (store: NewProjectStore, locale: 'tr' | 'en' = 'tr'): string =>
+  renderToStaticMarkup(
+    createElement(NewProjectPanel, {
+      open: true,
+      origin: 'pointer',
+      store,
+      locale,
+      onClose: () => undefined,
+      onDone: () => undefined,
+    }),
+  );
+
+describe('the Docket AI setup thread', () => {
+  it('U-286: the AI entry starts from the repo folder and renders the live thread of the started conversation', async () => {
+    const { api, store } = aiSetup();
+    await store.refreshProvider();
+    store.pickPath('docket_ai');
+    store.setRepoPath('/Users/e/acme');
+    const html = drawAi(store);
+    expect(html).toContain('data-setup-ai-start=""');
+    expect(html).toContain(TR['setup.ai.start']);
+
+    await store.startAi();
+    expect(api.commands).toContainEqual({ type: 'setup.ai.start', repoPath: '/Users/e/acme' });
+    expect(store.state().ai.conversation).toBe(CONVERSATION);
+    const live = drawAi(store);
+    expect(live).not.toContain('data-setup-ai-start=""');
+    expect(live).toContain('data-setup-thread=""');
+    expect(live).toContain('Bu repoyu kur');
+    expect(live).toContain('Baktım, öneriyi hazırlıyorum.');
+    expect(live).toContain('data-setup-composer=""');
+  });
+
+  it('U-286: a refused start shows the surface failure line, the entry stays honest', async () => {
+    const { store } = aiSetup({ startResult: { ok: false, code: 'no_provider' } });
+    await store.refreshProvider();
+    store.pickPath('docket_ai');
+    store.setRepoPath('/Users/e/acme');
+    await store.startAi();
+    expect(store.state().ai.conversation).toBeNull();
+    expect(store.state().ai.failure).toBe('setup.ai.noProvider');
+    expect(drawAi(store)).toContain(TR['setup.ai.noProvider']);
+  });
+
+  it('U-275: an ask event opens exactly one prompt whose answer commands the server; a secret count shows the notice', async () => {
+    const { api, store, emit, setPending } = aiSetup({ pending: { ask: { path: '/Users/e/notes/plan.md', reason: 'read the migration plan' }, secrets: 0 } });
+    await store.refreshProvider();
+    store.pickPath('docket_ai');
+    store.setRepoPath('/Users/e/acme');
+    await store.startAi();
+
+    emit({ type: 'setup.read.ask', conversation: CONVERSATION });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(store.state().permission).toEqual({ path: '/Users/e/notes/plan.md', reason: 'read the migration plan' });
+    emit({ type: 'setup.read.ask', conversation: CONVERSATION });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(store.state().permission?.path).toBe('/Users/e/notes/plan.md');
+
+    store.allowPermission();
+    expect(store.state().permission).toBeNull();
+    expect(api.commands).toContainEqual({ type: 'setup.read.answer', conversation: CONVERSATION, path: '/Users/e/notes/plan.md', allow: true });
+
+    setPending({ ask: { path: '/Users/e/other.md', reason: 'r' }, secrets: 1 });
+    emit({ type: 'setup.read.ask', conversation: CONVERSATION });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(store.state().secretNotices).toBe(1);
+    expect(drawAi(store)).toContain(TR['setup.permission.secretNotice']);
+  });
+
+  it('U-286: the agent’s proposal opens the identical diff and Accept decides it server-side', async () => {
+    const proposal = buildSetupProposal('Acme', '/Users/e/acme');
+    const { api, store, emit } = aiSetup({
+      proposals: [{ id: 'P1', target: 'project_setup', status: 'pending' }],
+      proposalDetail: { id: 'P1', target: 'project_setup', status: 'pending', after: JSON.stringify(proposal) },
+    });
+    await store.refreshProvider();
+    store.pickPath('docket_ai');
+    store.setRepoPath('/Users/e/acme');
+    await store.startAi();
+
+    emit({ type: 'chat.turn', conversation: CONVERSATION, turn: 'T1', phase: 'finished', outcome: 'completed' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(store.state().screen).toBe('proposal');
+    expect(store.state().proposalId).toBe('P1');
+    expect(store.state().proposal?.project.name).toBe('Acme');
+    expect(drawAi(store)).toContain('data-setup-proposal=""');
+
+    store.discardProposal();
+    expect(api.commands).toContainEqual({ type: 'proposal.decide', id: 'P1', decision: 'rejected' });
+    expect(store.state().screen).toBe('ai');
+    expect(store.state().proposal).toBeNull();
+    expect(store.state().done).toBeNull();
+
+    emit({ type: 'chat.turn', conversation: CONVERSATION, turn: 'T2', phase: 'finished', outcome: 'completed' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(store.state().proposalId).toBe('P1');
+    await store.acceptProposal();
+    expect(api.commands).toContainEqual({ type: 'proposal.decide', id: 'P1', decision: 'approved' });
+    expect(store.state().done).toMatchObject({ toastKey: 'newProject.created' });
+  });
+
+  it('U-286: a persisted draft offers the resume card and resume re-registers onto its conversation', async () => {
+    const { api, store } = aiSetup({ draft: { draft: { id: '01ARZ3NDEKTSV4RRFFQ69G5FD1', repoPath: '/Users/e/acme', mode: 'ai', updatedAt: 9 } } });
+    await store.refreshProvider();
+    expect(store.state().resumable).toEqual({ id: '01ARZ3NDEKTSV4RRFFQ69G5FD1', repoPath: '/Users/e/acme' });
+    expect(hasDraft(START_FORM, 'choose', null, store.state().resumable)).toBe(true);
+    expect(drawAi(store)).toContain('data-card="resume"');
+
+    store.resumeDraft();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(api.commands).toContainEqual({
+      type: 'setup.ai.start',
+      repoPath: '/Users/e/acme',
+      draft: '01ARZ3NDEKTSV4RRFFQ69G5FD1',
+    });
+    expect(store.state().ai.conversation).toBe(CONVERSATION);
+    expect(store.state().screen).toBe('ai');
   });
 });
