@@ -490,6 +490,7 @@ export const LABEL_KEYS = [
   'cockpit.queued.queue',
   'cockpit.queued.limit',
   'cockpit.queued.limitAt',
+  'cockpit.queued.consent',
   'cockpit.closed.merged',
   'cockpit.closed.cancelled',
   'cockpit.card.lastActivity',

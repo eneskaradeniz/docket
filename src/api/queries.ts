@@ -102,7 +102,7 @@ export interface CockpitView {
     readonly stageIndex?: number;
     readonly stageCount?: number;
     readonly queued?: boolean;
-    readonly queuedReason?: 'limit' | 'queue';
+    readonly queuedReason?: 'limit' | 'queue' | 'consent';
     readonly limitResetsAt?: number | null;
   }[];
   /** K-4:B — cockpit cards; one per attached project, always the full list (A-28). */

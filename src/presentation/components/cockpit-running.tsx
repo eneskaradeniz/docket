@@ -36,6 +36,8 @@ function StageStrip({ index, count }: { readonly index: number; readonly count: 
 }
 
 const queuedNote = (run: CockpitView['running'][number], locale: Locale): string => {
+  // A-384: the consent wait names the door the operator already knows — Ayarlar › Hesaplar.
+  if (run.queuedReason === 'consent') return t(locale, 'cockpit.queued.consent');
   if (run.queuedReason !== 'limit') return t(locale, 'cockpit.queued.queue');
   const at = run.limitResetsAt;
   return at === null || at === undefined

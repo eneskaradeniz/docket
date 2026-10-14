@@ -39,7 +39,7 @@ import {
 import { repoFlowOf } from '../ports/fakes';
 
 import { createFakeModelCatalog } from '../ports/fakes/fake-model-catalog';
-import { applyLimitDecision, dispatcherTick, enqueueStage } from './dispatcher';
+import { appendStartRefused, applyLimitDecision, applyRefusedStart, dispatcherTick, enqueueStage } from './dispatcher';
 
 // --- fixtures ---------------------------------------------------------------------------------------
 
@@ -798,6 +798,8 @@ describe('dispatcherTick', () => {
     const h = makeHarness();
     await createWorkOrder(h, WO1);
     await createWorkOrder(h, WO2);
+    await h.deps.accounts.save(account(A1));
+    await h.deps.accounts.save(account(A2));
     const first = queueItem(Q1, WO1, route(A1), { enqueuedAt: 1_000 });
     const second = queueItem(Q2, WO2, route(A2), { enqueuedAt: 1_100 });
     await h.deps.queue.put(first);
@@ -820,6 +822,8 @@ describe('dispatcherTick', () => {
     await createWorkOrder(h, WO1);
     await createWorkOrder(h, WO2);
     await createWorkOrder(h, WO3);
+    await h.deps.accounts.save(account(A1));
+    await h.deps.accounts.save(account(A2));
     await h.deps.queue.put(queueItem(Q1, WO1, route(A1), { enqueuedAt: 1_000 }));
     await h.deps.queue.put(queueItem(Q2, WO2, route(A2), { enqueuedAt: 1_100 }));
     await h.deps.queue.put(queueItem(Q3, WO3, route(A1), { enqueuedAt: 1_200 }));
@@ -842,6 +846,7 @@ describe('dispatcherTick', () => {
     const h = makeHarness();
     await createWorkOrder(h, WO1);
     await createWorkOrder(h, WO2);
+    await h.deps.accounts.save(account(A2));
     await h.deps.accounts.save(account(A1, [{ scope: 'account_day', cap: { amountUsd: 10, warnPercent: 80 } }]));
     await h.deps.accounts.recordSpend({
       project: slugOf<'project'>('proj'),
@@ -1013,7 +1018,9 @@ describe('dispatcherTick', () => {
   it('A-20: without catalog knowledge an alias model keeps matching as itself and is not blocked', async () => {
     const h = makeHarness();
     await createWorkOrder(h, WO1);
-    await h.deps.accounts.save(account(A1));
+    // The pinned alias bills as unknown without the catalog, so the account must carry its
+    // consent and a cap for the start gate (R-150) to let it through.
+    await h.deps.accounts.save({ ...account(A1, [{ scope: 'account_day', cap: { amountUsd: 10, warnPercent: 80 } }]), consentedModels: ['opus'] });
     await h.deps.accounts.savePools(A1, [opusPool(POOL1, A1)]);
     await h.deps.accounts.saveMeter(meter(METER1, POOL1, 1_000));
     await h.deps.queue.put(queueItem(Q1, WO1, route(A1, 'opus')));
@@ -1026,7 +1033,7 @@ describe('dispatcherTick', () => {
   it('A-20: a catalog failure never blocks dispatch; the model stands in as the match id', async () => {
     const h = makeHarness();
     await createWorkOrder(h, WO1);
-    await h.deps.accounts.save(account(A1));
+    await h.deps.accounts.save({ ...account(A1, [{ scope: 'account_day', cap: { amountUsd: 10, warnPercent: 80 } }]), consentedModels: ['opus'] });
     await h.deps.accounts.savePools(A1, [opusPool(POOL1, A1)]);
     await h.deps.accounts.saveMeter(meter(METER1, POOL1, 1_000));
     await h.deps.queue.put(queueItem(Q1, WO1, route(A1, 'opus')));
@@ -1078,7 +1085,7 @@ describe('dispatcherTick', () => {
   it('A-20: unknown headroom does not block — the transport learns the truth on start', async () => {
     const h = makeHarness();
     await createWorkOrder(h, WO1);
-    await h.deps.accounts.save(account(A1));
+    await h.deps.accounts.save({ ...account(A1, [{ scope: 'account_day', cap: { amountUsd: 10, warnPercent: 80 } }]), consentedModels: ['model-x'] });
     await h.deps.accounts.savePools(A1, [pool(POOL1, A1)]); // a pool but no meters → no data
     await h.deps.queue.put(queueItem(Q1, WO1, route(A1, 'model-x')));
 
@@ -1116,6 +1123,7 @@ describe('dispatcherTick', () => {
     const h = makeHarness();
     await createWorkOrder(h, WO1, REPO);
     await createWorkOrder(h, WO4, OTHER);
+    await h.deps.accounts.save(account(A1));
     await createRun(h, RUN1, WO4, route(A2));
     await h.deps.queue.put(queueItem(Q1, WO1, route(A1)));
 
@@ -1161,6 +1169,8 @@ describe('dispatcherTick', () => {
     const h = makeHarness();
     await createWorkOrder(h, WO1);
     await createWorkOrder(h, WO2);
+    await h.deps.accounts.save(account(A1));
+    await h.deps.accounts.save(account(A2));
     await h.deps.queue.put(queueItem(Q1, WO1, route(A1), { priority: 0, enqueuedAt: 1_000 }));
     await h.deps.queue.put(queueItem(Q2, WO2, route(A2), { priority: 5, enqueuedAt: 2_000 }));
 
@@ -1176,6 +1186,7 @@ describe('dispatcherTick', () => {
 
   it('A-20: an active run whose work order no longer exists cannot be attributed to a repo and counts nowhere', async () => {
     const h = makeHarness();
+    await h.deps.accounts.save(account(A1));
     await createRun(h, RUN1, WO4, route(A1)); // no work order record behind it
     await createWorkOrder(h, WO1);
     await h.deps.queue.put(queueItem(Q1, WO1, route(A1)));
@@ -1190,6 +1201,7 @@ describe('dispatcherTick', () => {
     const PROJ = slugOf<'project'>('proj');
     const OTHER_PROJ = slugOf<'project'>('other-proj');
     const FOREIGN: RepoSlug = slugOf('foreign');
+    await h.deps.accounts.save(account(A1));
     await h.deps.projects.save({
       id: PROJ,
       name: 'Proj',
@@ -1235,6 +1247,7 @@ describe('dispatcherTick', () => {
   it('R-48: a repo limit at hard_stop holds only that repo — its sibling under the same project starts', async () => {
     const h = makeHarness();
     const PROJ = slugOf<'project'>('proj');
+    await h.deps.accounts.save(account(A1));
     await h.deps.projects.save({
       id: PROJ,
       name: 'Proj',
@@ -1276,6 +1289,114 @@ describe('dispatcherTick', () => {
 
     expect(result).toStrictEqual({ decisions: [], started: [] });
     expect(recorder.items).toStrictEqual([]);
+  });
+});
+
+// --- spend consent gates the start (R-150 through A-20; refusals leave a trace, A-384) ---------------
+
+describe('dispatcherTick spend consent', () => {
+  const DAY_CAP = { scope: 'account_day' as const, cap: { amountUsd: 10, warnPercent: 80 } };
+
+  it('A-384: an unconsented item waits with reason consent, stays queued and starts no run', async () => {
+    const h = makeHarness();
+    await createWorkOrder(h, WO1);
+    await h.deps.accounts.save(account(A1));
+    // A pinned model the catalog does not list bills as unknown, which is never assumed free.
+    await h.deps.queue.put(queueItem(Q1, WO1, route(A1, 'model-x')));
+    const recorder = startRecorder();
+
+    const result = await dispatcherTick(h.deps, { limits: LIMITS() }, recorder.callback);
+
+    expect(result.decisions).toStrictEqual([{ item: Q1, kind: 'wait', reason: 'consent' }]);
+    expect(result.started).toStrictEqual([]);
+    expect(recorder.items).toStrictEqual([]);
+    expect((await queueAfter(h)).map((item) => item.id)).toStrictEqual([Q1]);
+    expect(await h.deps.runs.listActive()).toStrictEqual([]);
+  });
+
+  it('A-384: a consented item starts', async () => {
+    const h = makeHarness();
+    await createWorkOrder(h, WO1);
+    await h.deps.accounts.save({ ...account(A1, [DAY_CAP]), consentedModels: ['model-x'] });
+    await h.deps.queue.put(queueItem(Q1, WO1, route(A1, 'model-x')));
+
+    const result = await dispatcherTick(h.deps, { limits: LIMITS() }, startRecorder().callback);
+
+    expect(result.decisions).toStrictEqual([{ item: Q1, kind: 'start' }]);
+    expect(result.started).toStrictEqual([Q1]);
+  });
+
+  it('A-384: consent granted between ticks starts the item on the next tick', async () => {
+    const h = makeHarness();
+    await createWorkOrder(h, WO1);
+    await h.deps.accounts.save(account(A1));
+    await h.deps.queue.put(queueItem(Q1, WO1, route(A1, 'model-x')));
+    const recorder = startRecorder();
+
+    const waiting = await dispatcherTick(h.deps, { limits: LIMITS() }, recorder.callback);
+    expect(waiting.decisions).toStrictEqual([{ item: Q1, kind: 'wait', reason: 'consent' }]);
+    expect(waiting.started).toStrictEqual([]);
+
+    // The operator records the consent and a cap in Ayarlar › Hesaplar; nothing else moves.
+    await h.deps.accounts.save({ ...account(A1, [DAY_CAP]), consentedModels: ['model-x'] });
+    const granted = await dispatcherTick(h.deps, { limits: LIMITS() }, recorder.callback);
+
+    expect(granted.decisions).toStrictEqual([{ item: Q1, kind: 'start' }]);
+    expect(granted.started).toStrictEqual([Q1]);
+    expect(await queueAfter(h)).toStrictEqual([]);
+  });
+});
+
+// --- refused starts never drop the item silently (A-384) ----------------------------------------------
+
+describe('applyRefusedStart', () => {
+  it('A-384: a race consent refusal re-queues the item verbatim and appends the typed event', async () => {
+    const h = makeHarness();
+    await createWorkOrder(h, WO1);
+    const item = queueItem(Q1, WO1, route(A1, 'model-x'));
+
+    await applyRefusedStart(h.deps, { item, reason: 'needs_spend_consent' });
+
+    expect(await queueAfter(h)).toStrictEqual([item]);
+    expect((await h.deps.workOrders.events(WO1)).at(-1)).toStrictEqual({
+      type: 'start_refused',
+      at: h.clock.now(),
+      stage: IMPLEMENT,
+      reason: 'needs_spend_consent',
+    });
+  });
+
+  it('A-384: a handoff refusal parks — the queue stays empty — and appends the typed event', async () => {
+    const h = makeHarness();
+    await createWorkOrder(h, WO1);
+    const item = queueItem(Q1, WO1, route(A1, 'model-x'));
+
+    await applyRefusedStart(h.deps, { item, reason: 'handoff_failed' });
+
+    expect(await queueAfter(h)).toStrictEqual([]);
+    const events = await h.deps.workOrders.events(WO1);
+    expect(events.at(-1)).toMatchObject({ type: 'start_refused', reason: 'handoff_failed' });
+    // Parked needs no state of its own: the work order keeps the state it had before the start.
+    const loaded = await h.deps.definitions.load(REPO);
+    if (!loaded.ok) throw new Error('definitions must load');
+    const flow = loaded.value.flows.find((candidate) => candidate.id === slugOf<'flow'>('standard'));
+    if (flow === undefined) throw new Error('flow must exist');
+    expect(deriveWorkOrderState(flow, events).status).toBe('ready');
+  });
+
+  it('A-384: every start-wiring pre-check failure appends its typed start_refused event', async () => {
+    const h = makeHarness();
+    await createWorkOrder(h, WO1);
+    const item = queueItem(Q1, WO1, route(A1, 'model-x'));
+
+    for (const reason of ['definitions_failed', 'role_missing', 'worktree_failed', 'prompt_failed'] as const) {
+      await appendStartRefused(h.deps, { item, reason });
+    }
+
+    const reasons = (await h.deps.workOrders.events(WO1)).flatMap((event) =>
+      event.type === 'start_refused' ? [event.reason] : [],
+    );
+    expect(reasons).toStrictEqual(['definitions_failed', 'role_missing', 'worktree_failed', 'prompt_failed']);
   });
 });
 

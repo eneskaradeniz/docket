@@ -61,6 +61,7 @@ interface SnapshotInit {
   readonly limits?: DispatchLimits;
   readonly headroom?: Readonly<Record<string, Headroom>>;
   readonly spend?: Readonly<Record<string, SpendStatus>>;
+  readonly consent?: Readonly<Record<string, 'ok' | 'needed'>>;
 }
 
 const snapshotOf = (init: SnapshotInit = {}): DispatchSnapshot => ({
@@ -69,6 +70,7 @@ const snapshotOf = (init: SnapshotInit = {}): DispatchSnapshot => ({
   limits: init.limits ?? LIMITS,
   headroom: init.headroom ?? {},
   spend: init.spend ?? {},
+  consent: init.consent ?? {},
 });
 
 const startFor = (item: QueueItem): DispatchDecision => ({ item: item.id, kind: 'start' });
@@ -281,17 +283,54 @@ describe('decideDispatch', () => {
     expect('until' in decisions[0]).toBe(false);
   });
 
-  it('R-34: the wait reasons are exactly the seven contract members', () => {
+  it('R-34: the wait reasons are exactly the eight contract members', () => {
     type ContractWaitReasons =
       | 'not_before'
       | 'work_order_busy'
       | 'global_limit'
       | 'repo_limit'
       | 'account_limit'
+      | 'consent'
       | 'quota'
       | 'budget';
     const exact: UnionIsExactly<WaitReason, ContractWaitReasons> = true;
     expect(exact).toBe(true);
+  });
+
+  // --- R-150: an unconsented route waits for consent ----------------------------------------------
+
+  it('R-150: an item whose route is not spend-consented waits with consent and is not started', () => {
+    const item = itemOf({ id: qid(1), workOrderId: woid('10') });
+
+    expect(decideDispatch([item], snapshotOf({ consent: { [qid(1)]: 'needed' } }))).toEqual([waitFor(item, 'consent')]);
+  });
+
+  it('R-150: a consented item starts', () => {
+    const item = itemOf({ id: qid(1), workOrderId: woid('10') });
+
+    expect(decideDispatch([item], snapshotOf({ consent: { [qid(1)]: 'ok' } }))).toEqual([startFor(item)]);
+  });
+
+  it('R-150: absent readiness never blocks — the executor still gates the start itself', () => {
+    const item = itemOf({ id: qid(1), workOrderId: woid('10') });
+
+    expect(decideDispatch([item], snapshotOf())).toEqual([startFor(item)]);
+  });
+
+  it('R-150: consent precedes the budget and quota reasons', () => {
+    const item = itemOf({ id: qid(1), workOrderId: woid('10') });
+
+    const decisions = decideDispatch(
+      [item],
+      snapshotOf({
+        consent: { [qid(1)]: 'needed' },
+        spend: { [qid(1)]: 'hard_stop' },
+        headroom: { [qid(1)]: { ok: false, blockedBy: [meterId('M0')], earliestRelief: NOW + HOUR } },
+      }),
+    );
+
+    expect(decisions).toEqual([waitFor(item, 'consent')]);
+    expect('until' in decisions[0]).toBe(false);
   });
 
   // --- R-35: starts inside this call consume capacity ------------------------------------------

@@ -21,6 +21,17 @@ export const remoteChecksEvidence = (
     .map((check) => ({ name: check.name, status: check.status })),
 });
 
+/** A-384: why a run start never happened — the executor's own refusal codes plus the start
+ *  wiring's pre-check failures. The event is an audit fact for the operator; it never moves the
+ *  state machine, and rendering it on a screen is a later concern. */
+export type StartRefusalCode =
+  | 'needs_spend_consent'
+  | 'handoff_failed'
+  | 'definitions_failed'
+  | 'role_missing'
+  | 'worktree_failed'
+  | 'prompt_failed';
+
 /** The append-only history a work order's state is derived from. Events are facts; derive
  *  walks them in order and assumes they are sorted by `at`. */
 export type WorkOrderEvent =
@@ -38,6 +49,7 @@ export type WorkOrderEvent =
       readonly approvedBy: Actor;
       readonly result: 'success' | 'failed';
       readonly outputTail?: string }
+  | { readonly type: 'start_refused'; readonly at: EpochMs; readonly stage: StageSlug; readonly reason: StartRefusalCode }
   | { readonly type: 'stage_skip_proposed'; readonly at: EpochMs; readonly stages: readonly StageSlug[]; readonly reason: string }
   | { readonly type: 'stage_skip_decided'; readonly at: EpochMs; readonly approved: boolean }
   // The git lifecycle pair the operator's actions append (R-160 … R-164). They never move the

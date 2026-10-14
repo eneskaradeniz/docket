@@ -8,6 +8,7 @@ import type {
   AgentEvent,
   Billing,
   CapabilityDef,
+  ConsentReadiness,
   EffortLevel,
   EpochMs,
   FallbackCandidate,
@@ -470,6 +471,17 @@ const routeForTier = async (
   const model = resolveTier(item.tier, await deps.modelCatalog.list(item.route.accountId), tierModels);
   if (model === undefined) return { route: item.route, resolved: undefined };
   return { route: { ...item.route, model }, resolved: { model, tier: item.tier } };
+};
+
+/** R-150: the queue-side consent read — the tier resolved and the P-40 predicate applied exactly
+ *  as `driveRun` applies them, in one function so the dispatcher, the cockpit view and the run
+ *  start can never disagree and race a start into a refusal. */
+export const itemConsent = async (
+  deps: Pick<AppDeps, 'accounts' | 'modelCatalog' | 'capabilities'>,
+  item: QueueItem,
+): Promise<ConsentReadiness> => {
+  const { route } = await routeForTier(deps, item);
+  return (await spendConsentSatisfied(deps, route.accountId, route.model)) ? 'ok' : 'needed';
 };
 
 type ExecuteDeps = Pick<

@@ -234,6 +234,10 @@ const step = (flow: FlowDef, acc: Acc, event: WorkOrderEvent): Acc => {
       // The attempt is an audit fact; the verdict that moves the gate arrives as its own
       // gate_evaluated event, so the record itself must never shift the fold.
       return acc;
+    case 'start_refused':
+      // A-384: the refusal says a start never happened, so there is no state to leave — the
+      // work order keeps whatever it had, and the queue or the operator carries it forward.
+      return acc;
     case 'stage_skip_proposed':
     case 'stage_skip_decided':
       // R-144: skip marks live beside the machine state; the fold above stays R-17…R-24.
