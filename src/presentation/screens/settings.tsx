@@ -5,7 +5,9 @@
 // SettingRow per role with a work-style Listbox; Görünüm is the wizard's two rows; Sağlayıcılar keeps
 // U-38's rows in the same card style; Yetenekler is one dashed empty state until the capability
 // source lands. ✎ opens the AccountEditor dialog (components/account-editor-dialog.tsx), which saves
-// on commit here (U-29). ✕, Esc or a click on the backdrop closes the panel; focus moves in on open,
+// on commit here (U-29). Depo ayarları (U-310) composes the #1024 repo store and its three
+// components behind the same save bar and discard confirm the agent sections use. ✕, Esc or a
+// click on the backdrop closes the panel; focus moves in on open,
 // is trapped while open, and returns to the opener on a keyboard-opened close only (the palette's one
 // rule). Secret values have no surface — account names only — and every user-visible string arrives
 // through a label key (U-1).
@@ -25,8 +27,12 @@ import { ActionButton } from '../components/action-button';
 import { SettingsLaunchers } from '../components/launcher-rows';
 import { AppearanceRows } from '../components/appearance-rows';
 import { ConcurrencySection } from '../components/concurrency-section';
+import { FlowStageStrip } from '../components/flow-stage-strip';
 import { KeyMoveCard } from '../components/key-move-card';
+import { LimitPolicySection } from '../components/limit-policy-section';
 import { MOTION, motionVars } from '../components/motion';
+import { ModalWindow } from '../components/new-work-order-window';
+import { OverlayEditor } from '../components/overlay-editor';
 import { ProviderList } from '../components/provider-list';
 import { ProviderMark } from '../components/provider-mark';
 import { SettingRow, SettingRows } from '../components/setting-row';
@@ -69,7 +75,7 @@ import {
   isAgentCapabilitySection,
   type AgentCapabilitiesStore,
 } from '../stores/agent-capabilities';
-import { builtinRoleLibrary } from '../stores/repo-settings';
+import { builtinRoleLibrary, flowDraftState } from '../stores/repo-settings';
 import type { SettingsStore } from '../stores/settings';
 import { failureKey } from '../stores/results';
 import type { ProviderMarksStore } from '../stores/provider-marks';
@@ -132,6 +138,7 @@ const SECTION_KEY: Readonly<Record<SettingsSection, LabelKey>> = {
   accounts: 'settings.section.accounts',
   concurrency: 'settings.section.concurrency',
   providers: 'settings.section.providers',
+  repo: 'settings.section.repo',
   memory: 'settings.section.memory',
   roles: 'settings.section.roles',
   plugins: 'settings.section.plugins',
@@ -147,6 +154,7 @@ const SECTION_HINT_KEY: Readonly<Record<SettingsSection, LabelKey>> = {
   accounts: 'settings.hint.accounts',
   concurrency: 'settings.hint.concurrency',
   providers: 'settings.hint.providers',
+  repo: 'settings.hint.repo',
   memory: 'settings.hint.memory',
   roles: 'settings.hint.roles',
   plugins: 'settings.hint.plugins',
@@ -227,13 +235,13 @@ function usePaintedFlip(active: boolean): boolean {
 const MOTION_STYLE = motionVars();
 
 export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _fineTune, onOpenTarget, onSection, onBack, onEscape, onClose, candidateDot: candidateDotMirror, candidates, providers, models, themeStore, store, marks, roles, update, locale, localeStore, onEnterSubPage, onOpenAccount }: SettingsPanelProps) {
-  const state = useSyncExternalStore(store.subscribe, store.state);
-  const candidateState = useSyncExternalStore(candidates.subscribe, candidates.state);
+  const state = useSyncExternalStore(store.subscribe, store.state, store.state);
+  const candidateState = useSyncExternalStore(candidates.subscribe, candidates.state, candidates.state);
   // The marks land once, after the first paint; the subscription turns them into a re-render.
-  useSyncExternalStore(marks.subscribe, marks.state);
+  useSyncExternalStore(marks.subscribe, marks.state, marks.state);
   // The update standing is the shell's to load (the title bar reads it from startup); the panel
   // only subscribes.
-  const updateState = useSyncExternalStore(update.subscribe, update.state);
+  const updateState = useSyncExternalStore(update.subscribe, update.state, update.state);
   // Every intent's report — the panel's own, the Eklenmemiş adoption's, the update apply's —
   // leaves as the one toast (U-50), once per outcome so a reopened panel never repeats it.
   const lastOutcome = state.lastOutcome;
@@ -263,7 +271,7 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
   }, [open, section, providers]);
 
   const view = state.view;
-  const rolesState = useSyncExternalStore(roles.subscribe, roles.state);
+  const rolesState = useSyncExternalStore(roles.subscribe, roles.state, roles.state);
   // The Roller rows load whenever the section is on screen, and for the role chips on an
   // account's Genel tab.
   useEffect(() => {
@@ -280,28 +288,42 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
       }),
     [store],
   );
-  const agentState = useSyncExternalStore(agentCapabilities.subscribe, agentCapabilities.state);
+  const agentState = useSyncExternalStore(agentCapabilities.subscribe, agentCapabilities.state, agentCapabilities.state);
   useEffect(() => {
     if (open && isAgentCapabilitySection(section)) {
       agentCapabilities.setSection(section);
       void agentCapabilities.load();
     }
   }, [open, section, agentCapabilities]);
-  const [pendingSection, setPendingSection] = useState<SettingsSection | 'close' | null>(null);
-  const tryLeaveAgent = (next: SettingsSection | 'close'): boolean => {
-    if (!isAgentCapabilitySection(section)) {
-      if (next === 'close') onClose();
-      else onSection(next);
-      return true;
+  // Depo ayarları (U-310): the repo store rides the settings store; every arrival re-reads the
+  // tree and the flow, like the agent sections re-read their own view.
+  const repo = store.repoSettings;
+  const repoState = useSyncExternalStore(repo.subscribe, repo.state, repo.state);
+  useEffect(() => {
+    if (open && section === 'repo') void repo.load();
+  }, [open, section, repo]);
+  // A leave a dirty draft stopped: the discard dialog holds the go that fires on confirmation.
+  const [pendingLeave, setPendingLeave] = useState<{ readonly go: () => void } | null>(null);
+  /** One leave path for every section: a clean draft goes, a dirty one stops at the discard
+   *  dialog (U-283) — whatever asked, the menu, the ×, the scrim, a repo tab or Esc. */
+  const tryLeave = (go: () => void): boolean => {
+    if (isAgentCapabilitySection(section)) {
+      if (agentCapabilities.closeSubview() && agentCapabilities.requestLeave()) {
+        go();
+        return true;
+      }
+      setPendingLeave({ go });
+      return false;
     }
-    if (agentCapabilities.closeSubview() && agentCapabilities.requestLeave()) {
-      if (next === 'close') onClose();
-      else onSection(next);
-      return true;
+    if (section === 'repo' && !repo.requestLeave()) {
+      setPendingLeave({ go });
+      return false;
     }
-    setPendingSection(next);
-    return false;
+    go();
+    return true;
   };
+  const tryLeaveSection = (next: SettingsSection | 'close'): boolean =>
+    tryLeave(next === 'close' ? onClose : () => onSection(next));
   // The dismissal of a remove warning is panel-transient (the store exposes no dismiss intent):
   // keyed by the account it was about, so a fresh warning for the same account re-shows the card.
   const [warningDismissedFor, setWarningDismissedFor] = useState<string | null>(null);
@@ -331,7 +353,7 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
 
   // The Eşzamanlılık form: one store per panel life, over the settings store's own reads and writes.
   const dispatch = useMemo(() => createDispatchSettingsStore({ read: store.readDispatch, write: store.writeDispatch }), [store]);
-  const dispatchState = useSyncExternalStore(dispatch.subscribe, dispatch.state);
+  const dispatchState = useSyncExternalStore(dispatch.subscribe, dispatch.state, dispatch.state);
 
   const panelRef = useRef<HTMLElement>(null);
   // Where focus stood before the panel opened — the panel gives it back on close, unless the
@@ -440,14 +462,20 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
       event.preventDefault();
       if (isAgentCapabilitySection(section)) {
         if (!agentCapabilities.closeSubview()) {
-          setPendingSection('close');
+          setPendingLeave({ go: onEscape });
           return;
         }
         if (!agentCapabilities.requestLeave()) {
-          setPendingSection('close');
+          setPendingLeave({ go: onEscape });
           return;
         }
         agentCapabilities.confirmDiscardLeave();
+      } else if (section === 'repo') {
+        if (!repo.requestLeave()) {
+          setPendingLeave({ go: onEscape });
+          return;
+        }
+        repo.confirmDiscardLeave();
       }
       onEscape();
     } else if (event.key === 'Tab') {
@@ -484,7 +512,7 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
     <SettingsMenu
       locale={locale}
       section={section}
-      onSection={(next) => (isAgentCapabilitySection(section) ? tryLeaveAgent(next) : onSection(next))}
+      onSection={tryLeaveSection}
       dot={candidateDot(candidateState, candidateDotMirror)}
     />
   );
@@ -499,7 +527,7 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
       ) : null}
       <button
         type="button"
-        onClick={() => tryLeaveAgent('close')}
+        onClick={() => tryLeaveSection('close')}
         aria-label={t(locale, 'settings.close')}
         title={t(locale, 'settings.close')}
         className={`${section === 'concurrency' && dispatchState.justSaved ? '' : 'ml-auto '}grid h-[30px] w-[30px] flex-none place-items-center rounded-control text-inkdim hover:bg-raised hover:text-ink`}
@@ -627,6 +655,156 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
     </div>
   );
 
+  // Depo ayarları (U-310, U-311): the #1024 store and components composed as one screen — the
+  // region carries the accessible name, the store carries the draft, and this file only wires the
+  // four states and the save bar. One repo draws no repo navigation (U-288); several draw the
+  // top tab bar, and a dirty draft stops a tab move at the discard dialog like any other leave.
+  const repoDirty = flowDraftState(repoState.stored, repoState.draft).isDirty;
+  const repoLoaded = repoState.stored !== null && repoState.draft !== null;
+  const repoDetachTitle = t(locale, 'repoSettings.detach.confirm.title');
+  const repoSection = (
+    <section role="region" aria-label={t(locale, 'repoSettings.title')} data-repo-settings aria-busy={repoState.loading ? true : undefined} className="grid content-start gap-2">
+      {!repoState.singleRepo && repoState.repos.length > 1 ? (
+        <div role="tablist" aria-label={t(locale, 'repoSettings.repos.label')} className="flex flex-wrap gap-1.5">
+          {repoState.repos.map((tab) => (
+            <button
+              key={tab.repo}
+              type="button"
+              role="tab"
+              aria-selected={tab.repo === repoState.repo}
+              onClick={() => {
+                if (tab.repo !== repoState.repo) tryLeave(() => void repo.selectRepo(tab.repo));
+              }}
+              className={[
+                'h-8 rounded-control border px-3 text-[13px]',
+                tab.repo === repoState.repo ? 'border-signal bg-raised text-ink' : 'border-hairline bg-surface text-inkdim hover:bg-raised',
+              ].join(' ')}
+            >
+              {tab.name}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {repoState.loading || (!repoLoaded && repoState.problem === null) ? (
+        <div role="status" data-repo-loading className="rounded-card border border-hairline bg-surface px-3 py-4">
+          <p className="m-0 mb-3 text-[13px] text-inkdim">{t(locale, 'repoSettings.loading')}</p>
+          <ol role="list" aria-hidden="true" className="m-0 flex list-none flex-wrap gap-2 p-0">
+            {[0, 1, 2, 3].map((tile) => (
+              <li key={tile} className="h-16 w-[11.25rem] animate-pulse rounded-card border border-hairline bg-sunk" />
+            ))}
+          </ol>
+        </div>
+      ) : repoState.problem === 'no_repo' ? (
+        <div data-repo-empty className="rounded-card border border-hairline bg-surface px-3 py-6 text-center">
+          <h3 className="m-0 text-[13px] font-bold text-ink">{t(locale, 'repoSettings.empty.title')}</h3>
+          <p className="m-0 mt-1 text-[13px] text-inkdim">{t(locale, 'repoSettings.empty.guidance')}</p>
+          <div className="mt-3">
+            <ActionButton variant="primary" size="sm" onClick={onClose}>
+              {t(locale, 'repoSettings.empty.link')}
+            </ActionButton>
+          </div>
+        </div>
+      ) : !repoLoaded && repoState.problem !== null ? (
+        <div role="alert" data-repo-error className="rounded-card border border-error/40 bg-surface px-3 py-4">
+          <h3 className="m-0 text-[13px] font-bold text-error">{t(locale, 'repoSettings.error.title')}</h3>
+          <p className="m-0 mt-1 text-[13px] text-error">{t(locale, failureKey(repoState.problem))}</p>
+          <div className="mt-3">
+            <ActionButton variant="neutral" size="sm" onClick={() => void repo.load()}>
+              {t(locale, 'action.retry')}
+            </ActionButton>
+          </div>
+        </div>
+      ) : (
+        <>
+          <FlowStageStrip
+            locale={locale}
+            flow={repoState.draft}
+            activeStage={repoState.activeStage}
+            accountLabels={repoState.accountLabels}
+            library={repoState.library}
+            onSelect={(stage) => repo.selectStage(stage)}
+          />
+          <OverlayEditor
+            locale={locale}
+            flow={repoState.draft}
+            stage={repoState.activeStage}
+            library={repoState.library}
+            proposals={repo.proposals()}
+            proposalBlocked={repoState.activeStage === null ? [] : repo.proposalBlocked(repoState.activeStage)}
+            onInstructions={(stage, text) => repo.setOverlayInstructions(stage, text)}
+            onDetach={(stage) => repo.requestDetach(stage)}
+            onApplyProposal={(stage) => repo.applyProposal(stage)}
+            onClearOverlayField={(stage, field) => repo.clearOverlayField(stage, field)}
+            relinkStage={repoState.relinkStage}
+            relinkNotice={repoState.relinkNotice}
+            onRequestRelink={(stage) => repo.requestRelink(stage)}
+            onCancelRelink={() => repo.cancelRelink()}
+            onConfirmRelink={(version, keep) => repo.confirmRelink(version, keep)}
+          />
+          <LimitPolicySection
+            locale={locale}
+            flow={repoState.draft}
+            stage={repoState.activeStage}
+            defaultPolicy={repoState.defaultLimitPolicy}
+            onSelect={(stage, policy) => repo.setStageLimitPolicy(stage, policy)}
+            onReset={(stage) => repo.resetStageLimitPolicy(stage)}
+          />
+        </>
+      )}
+      {repoLoaded && repoState.problem !== null ? (
+        <div role="alert" className="rounded-card border border-error/40 bg-surface px-3 py-2 text-[13px] text-error">
+          {t(locale, failureKey(repoState.problem))}
+        </div>
+      ) : null}
+      {repoDirty || repoState.justSaved ? (
+        <div role="toolbar" aria-label={t(locale, 'repoSettings.saveBar.label')} data-repo-save-bar className="sticky bottom-0 flex flex-wrap items-center gap-2 rounded-card border border-hairline bg-panel px-3 py-2">
+          <span className="text-[13px] text-ink">{t(locale, repoState.justSaved ? 'repoSettings.saveBar.saved' : 'repoSettings.saveBar.unsaved')}</span>
+          <span className="ml-auto inline-flex gap-2">
+            <ActionButton variant="neutral" size="sm" onClick={() => repo.cancelDraft()}>
+              {t(locale, 'repoSettings.saveBar.cancel')}
+            </ActionButton>
+            <ActionButton variant="primary" size="sm" disabled={!repoDirty || repoState.saving} onClick={() => void repo.save()}>
+              {t(locale, 'repoSettings.saveBar.save')}
+            </ActionButton>
+          </span>
+        </div>
+      ) : null}
+      {/* The detach confirm (U-288): the same modal shell the re-link dialog rides, so the focus
+          trap, Esc and the focus return are that shell's contract. */}
+      <ModalWindow
+        open={repoState.detachStage !== null}
+        label={repoDetachTitle}
+        titleId="repo-detach-title"
+        brand={repoDetachTitle}
+        dataMark="data-repo-detach-dialog"
+        scrimMark="data-repo-detach-scrim"
+        compact
+        onClose={() => repo.cancelDetach()}
+        head={
+          <div id="repo-detach-title" className="min-w-0">
+            <WindowTitle title={repoDetachTitle} />
+          </div>
+        }
+        footer={
+          <>
+            <span className="ml-auto inline-flex [&>button]:h-8">
+              <ActionButton variant="neutral" size="md" autoFocus onClick={() => repo.cancelDetach()}>
+                {t(locale, 'repoSettings.detach.cancel')}
+              </ActionButton>
+            </span>
+            <span className="inline-flex [&>button]:h-8">
+              <ActionButton variant="primary" size="md" onClick={() => repo.confirmDetach()}>
+                {t(locale, 'repoSettings.detach')}
+              </ActionButton>
+            </span>
+          </>
+        }
+      >
+        <p className="m-0 text-[13px] text-ink">{t(locale, 'repoSettings.detach.confirm.body')}</p>
+      </ModalWindow>
+    </section>
+  );
+
   return (
     <>
       <div
@@ -634,7 +812,7 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
         style={MOTION_STYLE}
         // A press that begins on the scrim itself (never on the panel it wraps) closes.
         onMouseDown={(event) => {
-          if (event.target === event.currentTarget) tryLeaveAgent('close');
+          if (event.target === event.currentTarget) tryLeaveSection('close');
         }}
         onTransitionEnd={(event) => {
           // The scrim's own fade ends last on close (the panel leaves first) — that is the
@@ -699,6 +877,7 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
             />
           ) : null}
           {section === 'providers' ? <ProviderList store={providers} marks={marks} locale={locale} /> : null}
+          {section === 'repo' ? repoSection : null}
           {section === 'appearance' ? <AppearanceRows locale={locale} localeStore={localeStore} themeStore={themeStore} /> : null}
           {section === 'update' ? updateSection : null}
         </WindowFrame>
@@ -754,14 +933,14 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
           onClose={closeEditor}
         />
       ) : null}
-      {agentState.confirmDiscard || pendingSection !== null ? (
-        <div role="dialog" aria-modal="true" aria-labelledby="agent-discard-title" className="fixed inset-0 z-[60] grid place-items-center bg-bg/60 p-6">
+      {agentState.confirmDiscard || repoState.confirmDiscard || pendingLeave !== null ? (
+        <div role="dialog" aria-modal="true" aria-labelledby="settings-discard-title" className="fixed inset-0 z-[60] grid place-items-center bg-bg/60 p-6">
           <div className="w-[min(100%,28rem)] rounded-panel border border-hairline bg-panel p-4">
-            <h3 id="agent-discard-title" className="m-0 text-[15px] font-bold text-ink">
+            <h3 id="settings-discard-title" className="m-0 text-[15px] font-bold text-ink">
               {t(locale, 'repoSettings.discard.title')}
             </h3>
             <div className="mt-4 flex justify-end gap-2">
-              <ActionButton variant="neutral" size="sm" onClick={() => { agentCapabilities.cancelDiscardLeave(); setPendingSection(null); }}>
+              <ActionButton variant="neutral" size="sm" onClick={() => { agentCapabilities.cancelDiscardLeave(); repo.cancelDiscardLeave(); setPendingLeave(null); }}>
                 {t(locale, 'repoSettings.discard.stay')}
               </ActionButton>
               <ActionButton
@@ -769,10 +948,10 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
                 size="sm"
                 onClick={() => {
                   agentCapabilities.confirmDiscardLeave();
-                  const next = pendingSection;
-                  setPendingSection(null);
-                  if (next === 'close') onClose();
-                  else if (next !== null) onSection(next);
+                  repo.confirmDiscardLeave();
+                  const held = pendingLeave;
+                  setPendingLeave(null);
+                  held?.go();
                 }}
               >
                 {t(locale, 'repoSettings.discard.exit')}

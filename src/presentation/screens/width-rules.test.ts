@@ -155,7 +155,6 @@ const SETTINGS_SECTION_SOURCES = [
   'settings-menu.tsx',
   'account-groups.tsx',
   'accounts-scanning.tsx',
-  'role-row.tsx',
   'setting-row.tsx',
   'concurrency-section.tsx',
   'provider-list.tsx',
