@@ -678,6 +678,47 @@ describe('work-order detail store', () => {
     await idle.load(WO_ID);
     expect(idlePane.attached).toEqual([]);
   });
+
+  it('U-299: stopRun issues run.stop for the named run and refreshes; success toasts the stop request', async () => {
+    const api = fakeApi(detailReplyWithRuns(stateAt(STAGE_BUILD, [], 'running'), [{ id: ACTIVE_RUN_ID, stage: 'build', attempt: 1, startedAt: 5_000 }]));
+    const store = createStore(api);
+    await store.load(WO_ID);
+
+    const outcome = await store.stopRun(ACTIVE_RUN_ID);
+
+    expect(api.commands).toEqual([{ type: 'run.stop', runId: ACTIVE_RUN_ID }]);
+    // The intent refreshes the detail: the card leaves only when the reload shows the ended run.
+    expect(api.queries.filter((query) => query.type === 'workOrder.detail')).toHaveLength(2);
+    expect(outcome).toEqual({ command: 'run.stop', result: { ok: true }, labelKey: 'detail.stop.success' });
+  });
+
+  it('U-299: a not_active stop maps to the calm line, not a failure word', async () => {
+    const api = fakeApi(detailReplyWithRuns(stateAt(STAGE_BUILD, [], 'running'), [{ id: ACTIVE_RUN_ID, stage: 'build', attempt: 1, startedAt: 5_000 }]));
+    api.setCommandResult({ ok: false, code: 'not_active' });
+    const store = createStore(api);
+    await store.load(WO_ID);
+
+    const outcome = await store.stopRun(ACTIVE_RUN_ID);
+
+    expect(outcome.result).toEqual({ ok: false, code: 'not_active' });
+    expect(outcome.labelKey).toBe('detail.stop.alreadyEnded');
+  });
+
+  it('U-300: steerRun issues run.steer with the note verbatim — no second validation in the store', async () => {
+    const api = fakeApi(detailReplyWithRuns(stateAt(STAGE_BUILD, [], 'running'), [{ id: ACTIVE_RUN_ID, stage: 'build', attempt: 1, startedAt: 5_000 }]));
+    const store = createStore(api);
+    await store.load(WO_ID);
+
+    const outcome = await store.steerRun(ACTIVE_RUN_ID, '  dosyalara bak  ');
+
+    expect(api.commands).toEqual([{ type: 'run.steer', runId: ACTIVE_RUN_ID, note: '  dosyalara bak  ' }]);
+    expect(outcome).toEqual({ command: 'run.steer', result: { ok: true }, labelKey: 'detail.steer.success' });
+    // A bad note stays the field's own verdict: the U-8 copy for it is the generic failure line.
+    api.setCommandResult({ ok: false, code: 'bad_input' });
+    const rejected = await store.steerRun(ACTIVE_RUN_ID, '');
+    expect(rejected.result).toEqual({ ok: false, code: 'bad_input' });
+    expect(rejected.labelKey).toBe('error.unknown');
+  });
 });
 
 // --- U-223: one badge word per state ------------------------------------------------------------------
@@ -882,6 +923,57 @@ describe('decision zone (U-226)', () => {
     expect(gateWaitingCount({ kind: 'quiet', done: false })).toBe(0);
     expect(gateWaitingCount({ kind: 'cards', cards: [{ kind: 'start', stageName: 'Plan' }] })).toBe(0);
     expect(gateWaitingCount({ kind: 'cards', cards: [{ kind: 'failed', retry: true }] })).toBe(0);
+    // The running card (U-298) is not a gate waiting either — it waits on the run, not a person.
+    expect(
+      gateWaitingCount({ kind: 'cards', cards: [{ kind: 'running', runId: RUN_ID, stageName: 'Build', startedAt: 100 }] }),
+    ).toBe(0);
+  });
+
+  // --- U-298: the running card -------------------------------------------------------------------------
+
+  it('U-298: a live run of the current stage is exactly one running card naming it', () => {
+    const live: readonly WorkOrderDetailRun[] = [
+      { id: ACTIVE_RUN_ID, stage: 'build', attempt: 1, startedAt: 5_000 },
+    ];
+    expect(zoneFor(stateAt(STAGE_BUILD, [], 'running'), live)).toEqual({
+      kind: 'cards',
+      cards: [{ kind: 'running', runId: ACTIVE_RUN_ID, stageName: 'Build', startedAt: 5_000 }],
+    });
+  });
+
+  it('U-298: no card when no run is live — a stale running standing and limit_waiting alike stay quiet', () => {
+    // The running status without a live run in the view: a stale read, an orphaned record.
+    expect(zoneFor(stateAt(STAGE_BUILD, [], 'running'), [])).toEqual({ kind: 'quiet', done: false });
+    const ended: readonly WorkOrderDetailRun[] = [
+      { id: RUN_ID, stage: 'build', attempt: 1, startedAt: 1_000, endedAt: 2_000, outcome: 'succeeded' },
+    ];
+    expect(zoneFor(stateAt(STAGE_BUILD, [], 'running'), ended)).toEqual({ kind: 'quiet', done: false });
+    // limit_waiting runs hold no live handle: quiet is enough (the architect's decision 4).
+    const waiting: readonly WorkOrderDetailRun[] = [
+      { id: ACTIVE_RUN_ID, stage: 'build', attempt: 1, startedAt: 5_000 },
+    ];
+    expect(zoneFor(stateAt(STAGE_BUILD, [], 'limit_waiting'), waiting)).toEqual({ kind: 'quiet', done: false });
+  });
+
+  it('U-298: with two live runs the newest one is the card — the run the live pane mounts', () => {
+    const two: readonly WorkOrderDetailRun[] = [
+      { id: RUN_ID, stage: 'build', attempt: 1, startedAt: 1_000 },
+      { id: ACTIVE_RUN_ID, stage: 'build', attempt: 1, startedAt: 9_000 },
+    ];
+    expect(zoneFor(stateAt(STAGE_BUILD, [], 'running'), two)).toEqual({
+      kind: 'cards',
+      cards: [{ kind: 'running', runId: ACTIVE_RUN_ID, stageName: 'Build', startedAt: 9_000 }],
+    });
+  });
+
+  it('U-298: the running card appears in no other standing — the two doors belong to the live run alone', () => {
+    for (const standing of ['ready', 'gating', 'awaiting_human', 'done', 'limit_waiting'] as const) {
+      const zone = zoneFor(stateAt(STAGE_BUILD, [], standing), [{ id: ACTIVE_RUN_ID, stage: 'build', attempt: 1, startedAt: 5_000 }]);
+      expect(
+        zone.kind === 'cards' && zone.cards.some((card) => card.kind === 'running'),
+        `${standing} never shows the running card`,
+      ).toBe(false);
+    }
   });
 });
 

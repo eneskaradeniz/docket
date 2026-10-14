@@ -59,12 +59,12 @@ describe('labels', () => {
     }
   });
 
-  it('U-228: the trailing “…” marks only the two controls that open a further step (label-bundle scan)', () => {
+  it('U-228: the trailing “…” marks only the controls that open a further step (label-bundle scan)', () => {
     // “Yükleniyor…” is progress punctuation, not a control; every dotted CONTROL opens a further
-    // step (the reject box, the close confirmation).
+    // step (the reject box, the close confirmation, the stop confirm and the steer note dialogs).
     const dotted = Object.entries(TR)
       .filter(([key, value]) => key.startsWith('detail.') && value.endsWith('…') && key !== 'detail.loading')
       .map(([key]) => key);
-    expect(dotted.sort()).toEqual(['detail.close.open', 'detail.zone.rejectOpen']);
+    expect(dotted.sort()).toEqual(['detail.close.open', 'detail.steer.open', 'detail.stop.open', 'detail.zone.rejectOpen']);
   });
 });

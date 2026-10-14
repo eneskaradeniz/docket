@@ -1,5 +1,6 @@
 // Services barrel.
 export * from './run-executor';
+export * from './run-control';
 export * from './dispatcher';
 export * from './permission-board';
 export * from './match-id';

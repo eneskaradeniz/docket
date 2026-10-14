@@ -241,6 +241,11 @@ export interface WorkOrderDetailStore {
   enqueue(): Promise<IntentOutcome>;
   answerPermission(input: PermissionAnswerInput): Promise<IntentOutcome>;
   approveDeploy(input: DeployApproveInput): Promise<IntentOutcome>;
+  /** Stops the live run (`run.stop`, U-299) — a request: the card itself leaves only when the
+   *  work order's changed event shows the ended run. */
+  stopRun(runId: string): Promise<IntentOutcome>;
+  /** Sends the live run a steering note (`run.steer`, U-300). */
+  steerRun(runId: string, note: string): Promise<IntentOutcome>;
   /** Closes the work order (`workOrder.close`) — the ⋯ menu's one item (U-226). */
   closeWorkOrder(): Promise<IntentOutcome>;
   subscribe(listener: () => void): () => void;
@@ -385,17 +390,20 @@ export type DecisionCard =
   | { readonly kind: 'deploy'; readonly gate: GateView }
   | { readonly kind: 'permission'; readonly ask: WorkOrderAskView }
   | { readonly kind: 'start'; readonly stageName: string }
-  | { readonly kind: 'failed'; readonly retry: boolean };
+  | { readonly kind: 'failed'; readonly retry: boolean }
+  | { readonly kind: 'running'; readonly runId: string; readonly stageName: string; readonly startedAt: number };
 
 export type DecisionZone =
   | { readonly kind: 'quiet'; readonly done: boolean }
   | { readonly kind: 'cards'; readonly cards: readonly DecisionCard[] };
 
-/** The cards the zone holds for this standing (U-226's matrix). A permission ask outranks every
- *  gate standing; a failure outranks the start action; the decidable gates of the current stage
- *  (human, page, changes, deploy) each carry their own card, stacked 12 px apart (U-227). The
- *  failed card's retry flag is the fold's own verdict: a `ready` re-entry only happens while the
- *  on-fail budget had attempts left (R-21), a block is the budget spent. */
+/** The cards the zone holds for this standing (U-226's matrix, U-298's running case). A
+ *  permission ask outranks every standing; a live run is exactly one running card — the quiet
+ *  line, the stage, the duration, and the two secondary doors; a failure outranks the start
+ *  action; the decidable gates of the current stage (human, page, changes, deploy) each carry
+ *  their own card, stacked 12 px apart (U-227). The failed card's retry flag is the fold's own
+ *  verdict: a `ready` re-entry only happens while the on-fail budget had attempts left (R-21),
+ *  a block is the budget spent. */
 export const decisionZone = (
   stages: readonly StageGates[],
   view: WorkOrderDetailView,
@@ -403,6 +411,19 @@ export const decisionZone = (
 ): DecisionZone => {
   if (asks.length > 0) {
     return { kind: 'cards', cards: asks.map((ask) => ({ kind: 'permission' as const, ask })) };
+  }
+  // U-298: the running case names the newest live run — the same run the live pane mounts. A
+  // `running` standing without a live run in the view (a stale read, an orphaned record) and a
+  // `limit_waiting` one alike stay quiet: there is nothing to stop and no handle to steer.
+  if (view.state.status === 'running') {
+    const live = newestActiveRun(view);
+    if (live !== undefined) {
+      const stage = stages.find((candidate) => candidate.current);
+      return {
+        kind: 'cards',
+        cards: [{ kind: 'running', runId: live.id, stageName: stage?.name ?? '', startedAt: live.startedAt }],
+      };
+    }
   }
   if (view.state.status === 'blocked') {
     return { kind: 'cards', cards: [{ kind: 'failed', retry: false }] };
@@ -594,14 +615,15 @@ const asksFor = (
   return rows.filter((row) => ownRuns.has(row.runId)).map(toAskView);
 };
 
-/** The work order's newest still-active run — the one the live pane mounts for. */
-const newestActiveRun = (view: WorkOrderDetailView): string | undefined => {
+/** The work order's newest still-active run — the one the live pane mounts for and the running
+ *  card names (U-298). */
+const newestActiveRun = (view: WorkOrderDetailView): WorkOrderDetailRun | undefined => {
   let newest: WorkOrderDetailRun | undefined;
   for (const run of view.runs) {
     if (run.endedAt !== undefined) continue;
     if (newest === undefined || run.startedAt > newest.startedAt) newest = run;
   }
-  return newest?.id;
+  return newest;
 };
 
 export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): WorkOrderDetailStore => {
@@ -708,7 +730,7 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     if (freshAsks.length > 0) void loadAutoAllowed(freshAsks);
     // A run still going is mounted into the live pane; the pane itself ignores a repeat attach.
     const active = newestActiveRun(view);
-    if (active !== undefined) void pane.attach(active);
+    if (active !== undefined) void pane.attach(active.id);
   };
 
   // Gate decisions move the work order and runs move its state, so both event kinds trigger the
@@ -726,12 +748,23 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     return { command, result, labelKey: commandResultKey(command, result) };
   };
 
-  const runIntent = async (command: Command, successKey?: LabelKey): Promise<IntentOutcome> => {
+  /** A failure code this surface words itself, when the U-8 copy would say the wrong sentence —
+   *  the stop's calm "already ended" line (U-299) is the one such override. */
+  const runIntent = async (
+    command: Command,
+    successKey?: LabelKey,
+    failureKeys?: Readonly<Record<string, LabelKey>>,
+  ): Promise<IntentOutcome> => {
     const result = await api.command(actor, command);
     const outcome: IntentOutcome = {
       command: command.type,
       result,
-      labelKey: result.ok && successKey !== undefined ? successKey : commandResultKey(command.type, result),
+      labelKey:
+        result.ok && successKey !== undefined
+          ? successKey
+          : !result.ok && failureKeys !== undefined && failureKeys[result.code] !== undefined
+            ? failureKeys[result.code]
+            : commandResultKey(command.type, result),
     };
     set({ ...state, lastOutcome: outcome });
     // The detail mirrors its own mutation: the next query shows the command's effect.
@@ -784,6 +817,20 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
         askId: input.askId,
         decision: input.decision,
       });
+    },
+    stopRun: (runId) => {
+      // Runs, not work orders, are what a stop reaches — no loaded view needed. The not_active
+      // answer is the calm line (U-299), not a failure word: the run ended on its own first.
+      return runIntent(
+        { type: 'run.stop', runId },
+        undefined,
+        { not_active: 'detail.stop.alreadyEnded' },
+      );
+    },
+    steerRun: (runId, note) => {
+      // The note travels verbatim; the api bounds it and answers bad_input, which the note
+      // dialog shows inline (U-300) — the store adds no second validation.
+      return runIntent({ type: 'run.steer', runId, note });
     },
     approveDeploy: (input) => {
       if (workOrderId === null) return Promise.resolve(notLoadedOutcome('deploy.approve'));

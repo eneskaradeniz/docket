@@ -323,6 +323,8 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
                 onAttest={(gate, noChangeNeeded) => void store.attestNoChanges({ gate, noChangeNeeded })}
                 onAnswer={answer}
                 onDeployApprove={(input) => void store.approveDeploy(input)}
+                onStop={(runId) => store.stopRun(runId)}
+                onSteer={(runId, note) => store.steerRun(runId, note)}
                 onEnqueue={() => void store.enqueue()}
                 onCloseRequest={() => setCloseConfirm(true)}
                 onReviewChanges={() => scrollTo('[data-detail-files]')}

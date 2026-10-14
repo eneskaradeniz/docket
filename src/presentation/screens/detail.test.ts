@@ -32,6 +32,7 @@ const RAW = import.meta.glob(
     '../components/detail-strip.tsx',
     '../components/detail-decision-card.tsx',
     '../components/detail-skip-link.tsx',
+    '../stores/work-order-detail.ts',
     '../labels/tr.ts',
     '../labels/en.ts',
     '../../../e2e/layout-audit.mjs',
@@ -125,6 +126,13 @@ const MULTI: WorkOrderDetailView = {
  *  the live pane rides beside it — the standing a real asking run leaves on its own detail. */
 const ASKING: WorkOrderDetailView = {
   ...READY,
+  runs: [{ id: '01ARZ3NDEKTSV4RRFFQ69G5FA0', stage: STAGE_PLAN, attempt: 1, startedAt: 0 }],
+};
+
+/** A live run of the current stage — the running card's standing (U-298). */
+const RUNNING: WorkOrderDetailView = {
+  ...READY,
+  state: { status: 'running', stage: STAGE_PLAN, attempt: 1, pendingGates: [], skippedStages: [] },
   runs: [{ id: '01ARZ3NDEKTSV4RRFFQ69G5FA0', stage: STAGE_PLAN, attempt: 1, startedAt: 0 }],
 };
 
@@ -328,6 +336,64 @@ describe('work-order detail screen — the decision zone (U-4, U-226)', () => {
     // The short run code, never the raw ULID (the walk-through decision).
     expect(html).toContain('run_5fe7'.slice(0, 4));
     expect(html).not.toContain('01ARZ3NDEKTSV4RRFFQ69G5FE77</code>');
+  });
+
+  it('U-298: a live run is one running card — the quiet line, the stage, the duration, the two doors', async () => {
+    const html = await draw(RUNNING);
+
+    const stackAt = html.indexOf('data-decision-stack');
+    expect(stackAt).toBeGreaterThan(-1);
+    const stack = html.slice(stackAt, stackAt + 6000);
+    expect(stack).toContain('Koşu sürüyor');
+    expect(stack).toContain('Plan');
+    // The existing duration formatting (the header's own key), not a new one.
+    expect(stack).toContain('Süre ');
+    expect(stack).toContain('Durdur…');
+    expect(stack).toContain('Yönlendir…');
+    expect(stack.match(/data-decision-card="running"/g)).toHaveLength(1);
+  });
+
+  it('U-298: no live run, no card — a stale running standing renders neither door', async () => {
+    const stale: WorkOrderDetailView = { ...RUNNING, runs: [] };
+    const html = await draw(stale);
+
+    expect(html).not.toContain('Durdur…');
+    expect(html).not.toContain('Yönlendir…');
+    expect(html).not.toContain('Koşu sürüyor');
+  });
+
+  it('U-299/U-300: both dialogs are the A3 inline traps; the stop confirm issues run.stop, the note dialog sends on Enter', async () => {
+    await draw(RUNNING);
+    const card = source('detail-decision-card.tsx');
+
+    // The stop confirm: focus trap, Esc, focus return — the DetailDialog tests pin the trap
+    // itself; the card only owes its two InlineDialogs and its copy keys.
+    expect(card).toContain('data-detail-stop');
+    expect(card).toContain('detail.stop.title');
+    expect(card).toContain('detail.stop.body');
+    expect(card).toContain('detail.stop.confirm');
+    expect(card).toContain("onStop(runId)");
+    // The calm line the not_active answer renders (U-299), never an optimistic card removal.
+    expect(card).toContain('detail.stop.alreadyEnded');
+    // The steer note: multiline textarea, Enter sends and Shift+Enter adds a line, the inline
+    // bad_input error, the dialog that stays open.
+    expect(card).toContain('data-detail-steer');
+    expect(card).toContain('detail.steer.noteLabel');
+    expect(card).toContain('detail.steer.error');
+    expect(card).toMatch(/key === 'Enter' && !event\.shiftKey/);
+    expect(card).toContain('sendNote()');
+  });
+
+  it('U-301: the two doors are the secondary outline — no primary fill, no new hue on the card', async () => {
+    const html = await draw(RUNNING);
+
+    const cardAt = html.indexOf('data-decision-card="running"');
+    const card = html.slice(cardAt, html.indexOf('</li>', cardAt));
+    expect(card).not.toContain('bg-signal');
+    expect(card).not.toContain('bg-error');
+    // The results still map through U-8: the store's outcome keys are the standard ones.
+    const store = source('work-order-detail.ts');
+    expect(store).toContain("commandResultKey(command.type, result)");
   });
 });
 
@@ -547,9 +613,32 @@ describe('work-order detail screen — accessibility (A1, A5, A6, A7)', () => {
 
   it('U-238: no inline copy — the screen\'s own source carries no Turkish UI word', async () => {
     const screen = source('detail.tsx');
-    for (const word of ['Onayla', 'Reddet', 'Vazgeç', 'Kapat', 'Bitti', 'Şu an', 'Sırada', 'Bekliyor', 'Aşamayı']) {
+    for (const word of ['Onayla', 'Reddet', 'Vazgeç', 'Kapat', 'Bitti', 'Şu an', 'Sırada', 'Bekliyor', 'Aşamayı', 'Durdur', 'Yönlendir', 'Koşu', 'Gönder']) {
       expect(screen, `the word ${word} must live in a label bundle`).not.toContain(`>${word}`);
       expect(screen).not.toContain(`'${word}`);
+    }
+  });
+
+  it('U-302: the stop and steer copy lives in both bundles — the prototype\'s fixed words, never inline', async () => {
+    const tr = source('tr.ts');
+    const en = source('en.ts');
+    for (const key of [
+      'detail.stop.card', 'detail.stop.open', 'detail.stop.title', 'detail.stop.body', 'detail.stop.confirm',
+      'detail.stop.success', 'detail.stop.alreadyEnded', 'detail.steer.open', 'detail.steer.noteLabel',
+      'detail.steer.notePlaceholder', 'detail.steer.hint', 'detail.steer.error', 'detail.steer.send',
+      'detail.steer.success',
+    ]) {
+      expect(tr, `tr:${key}`).toContain(`'${key}'`);
+      expect(en, `en:${key}`).toContain(`'${key}'`);
+    }
+    // The prototype's own word list, fixed.
+    expect(tr).toContain("'detail.stop.open': 'Durdur…'");
+    expect(tr).toContain("'detail.steer.open': 'Yönlendir…'");
+    // The decision card carries none of it inline.
+    const card = source('detail-decision-card.tsx');
+    for (const word of ['Durdur', 'Yönlendir', 'Koşu sürüyor', 'Gönder', 'zaten bitti']) {
+      expect(card, `the word ${word} must live in a label bundle`).not.toContain(`>${word}`);
+      expect(card).not.toContain(`'${word}`);
     }
   });
 });

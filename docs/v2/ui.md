@@ -1801,3 +1801,12 @@ Added 2026-10-12, #1029; amends U-44.
 Added 2026-10-12, #1030; amends U-44.
 - **U-266** While a refresh runs, Yenile is disabled, previous bars remain visible under a subtle busy state if there are any, and the skeleton shows after 150 ms (U-26) when there are no bars; the no-usage message is not rendered.
 - **U-267** A failed refresh shows the reason and "Tekrar dene"; a retry re-enters the loading state.
+
+## Running-card stop and steer (U-298 … U-302)
+
+Added 2026-10-14, #1110; extends U-226's decision-zone matrix and implements A-361 … A-365.
+- **U-298** While the work order's active run is live (status `running` and the view still holds a run without `endedAt`), the decision zone carries exactly one card: the quiet "Koşu sürüyor" line, the current stage's name, and the existing duration formatting (`detail.meta.duration`) — with the secondary `Durdur…` and `Yönlendir…` doors. No card when no run is live (a stale `running` standing, all runs ended) and none in `limit_waiting` (no live handle; the quiet state is enough).
+- **U-299** `Durdur…` opens the A3 inline confirm dialog (`InlineDialog`: focus trap, Esc, focus return; the trailing "…" because a further step opens). Confirm issues `run.stop`; the card stays until `workOrders.changed` shows the ended run — no optimistic removal. A `not_active` answer renders the calm "Koşu zaten bitti" line in the card (`detail.stop.alreadyEnded`) and refreshes.
+- **U-300** `Yönlendir…` opens a note dialog: multiline textarea, `Gönder` secondary button; Enter sends and Shift+Enter adds a line (the reject-box precedent). An empty or oversized note answers `bad_input`, which renders as the inline field error and the dialog stays open; anything else closes it and leaves the reporting to the toast.
+- **U-301** Both results map through U-8 (`commandResultKey`); no new tokens, no new hues — the two doors are secondary outline buttons, the confirm dialog carries the weight (there is no danger token on the card).
+- **U-302** Copy: every `detail.stop.*` / `detail.steer.*` key exists in tr and en (Durdur / Yönlendir fixed from the prototype's own list); no inline strings in `detail.tsx` or the decision card (scan).

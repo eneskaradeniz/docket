@@ -72,6 +72,7 @@ import type {
   DiscoveredProvider,
   PermissionBoard,
   ProviderDiscovery,
+  RunControl,
   QuotaProbeResolver,
   QuotaService,
   QuotaTimers,
@@ -174,6 +175,7 @@ import {
   workOrderCodeOf,
   catalogOrEmpty,
   matchIdFor,
+  STEER_NOTE_MAX_CHARS,
 } from '../application';
 
 import type { CapabilityImportResultView, Command, CommandResult, MachineImportResultView } from './commands';
@@ -407,7 +409,8 @@ const commandOf = <E extends string>(outcome: Result<unknown, E>): CommandResult
  *  marks source rides the same pattern: without it there are no provider marks to report, so
  *  `providers.marks` answers not_found instead of inventing an empty record. The adoption ports
  *  are the last of the set: without them `accounts.candidates` and `account.adopt` answer
- *  not_found. */
+ *  not_found. The run control joins the board's own pattern (A-361): without it no run is live,
+ *  so `run.stop` and `run.steer` answer not_found instead of inventing a registry. */
 export function createApi(
   deps: AppDeps,
   board?: Pick<PermissionBoard, 'answer' | 'openAsks'>,
@@ -421,6 +424,7 @@ export function createApi(
   quit?: QuitPromptPort,
   tracker?: IssueTracker | IssueTrackerResolver,
   setup?: SetupConversations,
+  runControl?: Pick<RunControl, 'stop' | 'steer' | 'active'>,
 ): Api & RunEventFeed & { readonly quota: QuotaLifecycle; readonly quitRequested: (runs: readonly string[], chats: readonly string[]) => void } {
   const trackerForRepo = async (repo: RepoSlug): Promise<IssueTracker | undefined> => {
     if (tracker === undefined) return undefined;
@@ -673,8 +677,12 @@ export function createApi(
           },
         },
       };
-      const result = await runCommand(tracked, actor, command, board, updates, trackerForRepo, adopting, quotaService, chatOps, setup);
+      const result = await runCommand(tracked, actor, command, board, runControl, updates, trackerForRepo, adopting, quotaService, chatOps, setup);
       if (appended) emit({ type: 'workOrders.changed' });
+      // A-364: a steered run says so on the run's own channel — the live pane and the running
+      // card re-query on it; the work order's fold is untouched, so workOrders.changed stays
+      // silent here. A stop announces nothing (A-362): the executor's end path speaks.
+      if (result.ok && command.type === 'run.steer') emit({ type: 'run.updated', runId: command.runId });
       // update.changed rides the same coarse pattern as workOrders.changed: the command answers
       // ok, the event tells every store to re-query — CommandResult carries no state payload. A
       // refused apply (not_available) changed nothing, so it stays silent.
@@ -704,6 +712,7 @@ const runCommand = async (
   actor: Actor,
   command: Command,
   board: Pick<PermissionBoard, 'answer'> | undefined,
+  runControl: Pick<RunControl, 'stop' | 'steer' | 'active'> | undefined,
   updates: UpdateChecker | undefined,
   trackerForRepo: (repo: RepoSlug) => Promise<IssueTracker | undefined>,
   adopting: Adopting | undefined,
@@ -1027,6 +1036,49 @@ const runCommand = async (
       if (board === undefined) return { ok: false, code: 'not_found' };
       const answered = board.answer(command.askId, command.decision);
       return answered.ok ? { ok: true } : { ok: false, code: answered.error };
+    }
+
+    // A-362/A-363: the error paths are pure reads — an unknown id and a run no registry holds
+    // write nothing at all — and only a run the record knows and the registry holds as live gets
+    // its one audit entry, before the handle is touched. The transport's own finished event then
+    // flows through the executor's end path; this command writes nothing else.
+    case 'run.stop': {
+      const runId = ulidValue<'run'>(command.runId);
+      if (runId === undefined) return invalidId();
+      if (runControl === undefined) return { ok: false, code: 'not_found' };
+      if ((await deps.runs.get(runId)) === undefined) return { ok: false, code: 'not_found' };
+      if (!runControl.active().includes(runId)) return { ok: false, code: 'not_active' };
+      await deps.log.append({
+        id: deps.ids.next<'audit'>(),
+        at: deps.clock.now(),
+        actor,
+        action: 'run.stopped',
+        subject: { kind: 'run', id: runId },
+      });
+      return commandOf(runControl.stop(runId));
+    }
+
+    // A-364: the note is bounded at the edge exactly as the registry bounds it, so an unusable
+    // note writes nothing; one audit carries the trimmed note (operator text, never an
+    // environment value), the handle gets a further user message, and the run.updated the
+    // wrapper emits is the only event — no work-order append, no fold change.
+    case 'run.steer': {
+      const runId = ulidValue<'run'>(command.runId);
+      if (runId === undefined) return invalidId();
+      if (runControl === undefined) return { ok: false, code: 'not_found' };
+      const note = command.note.trim();
+      if (note.length < 1 || note.length > STEER_NOTE_MAX_CHARS) return badInput();
+      if ((await deps.runs.get(runId)) === undefined) return { ok: false, code: 'not_found' };
+      if (!runControl.active().includes(runId)) return { ok: false, code: 'not_active' };
+      await deps.log.append({
+        id: deps.ids.next<'audit'>(),
+        at: deps.clock.now(),
+        actor,
+        action: 'run.steered',
+        subject: { kind: 'run', id: runId },
+        detail: { note },
+      });
+      return commandOf(runControl.steer(runId, note));
     }
 
     case 'deploy.approve': {

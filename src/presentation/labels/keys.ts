@@ -136,6 +136,22 @@ export const LABEL_KEYS = [
   'detail.close.body',
   'detail.close.confirm',
   'detail.action.cancel',
+  // The running card's stop and steer doors (U-298 … U-302): card line, confirm dialog, calm
+  // line, success toast; the steer note dialog, its field error and hint.
+  'detail.stop.card',
+  'detail.stop.open',
+  'detail.stop.title',
+  'detail.stop.body',
+  'detail.stop.confirm',
+  'detail.stop.success',
+  'detail.stop.alreadyEnded',
+  'detail.steer.open',
+  'detail.steer.noteLabel',
+  'detail.steer.notePlaceholder',
+  'detail.steer.hint',
+  'detail.steer.error',
+  'detail.steer.send',
+  'detail.steer.success',
   // The header's quiet meta line and the duration formatter's parts.
   'detail.meta.opened',
   'detail.meta.duration',
