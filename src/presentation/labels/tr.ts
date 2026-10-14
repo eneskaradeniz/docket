@@ -434,6 +434,7 @@ export const TR: LabelBundle = {
   'cockpit.queued.queue': 'sırada',
   'cockpit.queued.limit': 'limit dolu',
   'cockpit.queued.limitAt': 'limit dolu, açılış',
+  'cockpit.queued.consent': 'Harcama onayı bekliyor — Ayarlar › Hesaplar',
   'cockpit.closed.merged': 'birleştirildi',
   'cockpit.closed.cancelled': 'iptal edildi',
   'cockpit.card.lastActivity': 'son hareket',

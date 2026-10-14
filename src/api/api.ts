@@ -116,6 +116,7 @@ import {
   enqueueStage,
   exportProject,
   importBundle,
+  itemConsent,
   acceptMemoryProposalUseCase,
   createMemoryNoteUseCase,
   archiveDefinition,
@@ -2599,6 +2600,9 @@ const cockpitView = async (deps: AppDeps, projectFilter?: ProjectSlug): Promise<
         (await deps.accounts.get(item.route.accountId))?.reserve,
       );
       const limit = room.ok === false;
+      // A-384: the consent read explains the wait before any quota reading, mirroring the check
+      // order the dispatcher's own rule applies.
+      const consent = await itemConsent(deps, item);
       running.push({
         workOrderId: item.workOrderId,
         number,
@@ -2610,7 +2614,7 @@ const cockpitView = async (deps: AppDeps, projectFilter?: ProjectSlug): Promise<
         stageIndex,
         stageCount,
         queued: true,
-        queuedReason: limit ? 'limit' : 'queue',
+        queuedReason: consent === 'needed' ? 'consent' : limit ? 'limit' : 'queue',
         limitResetsAt: limit ? room.earliestRelief ?? null : null,
       });
     }

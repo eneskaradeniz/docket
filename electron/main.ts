@@ -33,7 +33,9 @@ import type { DocketToolRequest, DocketToolResponse } from '../src/application/i
 import {
   activeWork,
   advancePhases,
+  appendStartRefused,
   applyLimitDecision,
+  applyRefusedStart,
   cancelActiveRuns,
   composeRunPrompt,
   createDocketTools,
@@ -277,8 +279,10 @@ const discoveredTransports = (
 const runStartedItem = async (api: Api & RunEventFeed, board: PermissionBoard, runControl: RunControl, item: QueueItem): Promise<void> => {
   if (deps === undefined) return;
   try {
-    // A started item is already gone from the queue, so every refusal below is loud: the work
-    // order keeps its prior state and the operator can re-enqueue the stage.
+    // A started item is already gone from the queue, so every refusal below is loud: the console
+    // line plus the typed start_refused event (A-384), while the work order keeps its prior
+    // state. A work order that no longer exists is the one refusal with nowhere to append the
+    // event, so its trace stays the console line alone.
     const record = await deps.workOrders.get(item.workOrderId);
     if (record === undefined) {
       console.error(`cannot run queue item ${item.id}: its work order is gone`);
@@ -287,16 +291,19 @@ const runStartedItem = async (api: Api & RunEventFeed, board: PermissionBoard, r
     const loaded = await deps.definitions.load(record.repo);
     if (!loaded.ok) {
       console.error(`cannot run queue item ${item.id}: definitions did not load`);
+      await appendStartRefused(deps, { item, reason: 'definitions_failed' });
       return;
     }
     const role = roleForStageRun(record, loaded.value, item.stage);
     if (role === undefined) {
       console.error(`cannot run queue item ${item.id}: its stage has no runnable role`);
+      await appendStartRefused(deps, { item, reason: 'role_missing' });
       return;
     }
     const worktree = await deps.worktrees.ensure(record.repo, record.id);
     if (!worktree.ok) {
       console.error(`cannot run queue item ${item.id}: no worktree (${worktree.error})`);
+      await appendStartRefused(deps, { item, reason: 'worktree_failed' });
       return;
     }
     const capabilities = loaded.value.capabilities.filter((capability) =>
@@ -316,6 +323,7 @@ const runStartedItem = async (api: Api & RunEventFeed, board: PermissionBoard, r
     });
     if (!composed.ok) {
       console.error(`cannot run queue item ${item.id}: prompt composition failed (${composed.error})`);
+      await appendStartRefused(deps, { item, reason: 'prompt_failed' });
       return;
     }
 
@@ -328,6 +336,14 @@ const runStartedItem = async (api: Api & RunEventFeed, board: PermissionBoard, r
       api.workOrdersChanged,
       runControl,
     );
+
+    if (outcome.kind === 'refused') {
+      // A-384 safety net: the tick's consent read can still lose a race to the executor's own,
+      // so the refusal re-queues (a handoff failure parks) instead of dropping the item, and the
+      // typed event keeps the trace.
+      await applyRefusedStart(deps, { item, reason: outcome.error });
+      return;
+    }
 
     if (outcome.kind === 'limit') {
       // The executor ends the run before reporting the decision, so the last run of this stage

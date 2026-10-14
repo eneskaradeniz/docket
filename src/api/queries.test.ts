@@ -568,6 +568,7 @@ describe('cockpit', () => {
 
   it('A-37: a queued row blocked by quota reads limit with the earliest reset; other waits read queue', async () => {
     const h = await seedCockpitScenario(createHarness());
+    await h.deps.accounts.save(accountRecord(ACCOUNT, 'Main'));
     await h.deps.accounts.savePools(ACCOUNT, [
       { id: QUEUE_POOL, accountId: ACCOUNT, label: 'allowance', kind: 'allowance', appliesTo: 'all' },
     ]);
@@ -582,7 +583,9 @@ describe('cockpit', () => {
       observedAt: 1_000,
       source: 'pushed',
     });
-    // Routes to an account with no quota data at all: waiting, but not for a limit.
+    // Routes to an existing subscription account with no quota data at all: waiting, but not
+    // for a limit. The bare account's row is gone with its record, so its wait is the consent
+    // one — a route with no account can never pass the start gate.
     await h.deps.queue.put(queueItem(QUEUE_LIMITED, WO_READY, PLAN, 6_000));
     await h.deps.queue.put(queueItem(QUEUE_BARE, WO_AWAIT_EARLY, IMPLEMENT, 6_500, REPO, { accountId: ACCOUNT_BARE }));
 
@@ -590,8 +593,24 @@ describe('cockpit', () => {
 
     const byWorkOrder = new Map(view.running.map((row) => [row.workOrderId, row]));
     expect(byWorkOrder.get(WO_READY)).toMatchObject({ queued: true, queuedReason: 'limit', limitResetsAt: 9_000 });
-    expect(byWorkOrder.get(WO_AWAIT_EARLY)).toMatchObject({ queued: true, queuedReason: 'queue', limitResetsAt: null });
+    expect(byWorkOrder.get(WO_AWAIT_EARLY)).toMatchObject({ queued: true, queuedReason: 'consent', limitResetsAt: null });
     expect(view.running.filter((row) => row.queued === false).every((row) => row.queuedReason === undefined && row.limitResetsAt === null)).toBe(true);
+  });
+
+  it('A-384: a queued item whose route is not spend-consented reads the consent wait', async () => {
+    const h = await seedCockpitScenario(createHarness());
+    await h.deps.accounts.save(accountRecord(ACCOUNT, 'Main'));
+    // A pinned model the catalog does not list bills as unknown, and the account has neither a
+    // recorded consent nor a cap — the row must say it waits for the operator, not for a limit.
+    await h.deps.queue.put({
+      ...queueItem(QUEUE_BARE, WO_READY, PLAN, 6_000),
+      route: { accountId: ACCOUNT, model: 'model-x' },
+    });
+
+    const view = (await createApi(h.deps).query({ type: 'cockpit' })) as CockpitView;
+
+    const byWorkOrder = new Map(view.running.map((row) => [row.workOrderId, row]));
+    expect(byWorkOrder.get(WO_READY)).toMatchObject({ queued: true, queuedReason: 'consent', limitResetsAt: null });
   });
 
   it('A-38: project cards carry the latest work-order status change; null when the project has none', async () => {

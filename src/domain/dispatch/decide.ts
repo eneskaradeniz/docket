@@ -38,7 +38,13 @@ export interface DispatchSnapshot {
   readonly limits: DispatchLimits;
   readonly headroom: Readonly<Record<string, Headroom>>; // QueueItemId → headroom for its route
   readonly spend: Readonly<Record<string, SpendStatus>>; // QueueItemId → combined spend status
+  /** QueueItemId → whether the item's resolved route passed the spend-consent gate (R-150). */
+  readonly consent: Readonly<Record<string, ConsentReadiness>>;
 }
+
+/** R-150: the queue-side consent read, computed by the application from the executor's own
+ *  predicate so the two can never disagree and race a start into a refusal. */
+export type ConsentReadiness = 'ok' | 'needed';
 
 export type WaitReason =
   | 'not_before'
@@ -46,6 +52,7 @@ export type WaitReason =
   | 'global_limit'
   | 'repo_limit'
   | 'account_limit'
+  | 'consent'
   | 'quota'
   | 'budget';
 
@@ -104,6 +111,14 @@ export function decideDispatch(queue: readonly QueueItem[], snapshot: DispatchSn
     const accountCap: number | undefined = snapshot.limits.perAccount[item.route.accountId];
     if (accountCap !== undefined && (accountLoad.get(item.route.accountId) ?? 0) >= accountCap) {
       decisions.push(wait(item.id, 'account_limit'));
+      continue;
+    }
+    // R-150: an unconsented route never reaches a start. The check sits before the spend and
+    // quota readings because the executor applies the same gate first, so the wait reason names
+    // consent whenever both would hold. Absent readiness never blocks: the executor still refuses
+    // an unconsented start, and the refusal's safety net re-queues the item.
+    if (snapshot.consent[item.id] === 'needed') {
+      decisions.push(wait(item.id, 'consent'));
       continue;
     }
     if (snapshot.spend[item.id] === 'hard_stop') {

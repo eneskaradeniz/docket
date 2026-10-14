@@ -6,6 +6,8 @@ import type {
   AccountId,
   CatalogModel,
   AccountRoute,
+  ChainEntry,
+  ConsentReadiness,
   DispatchDecision,
   DispatchLimits,
   DispatchSnapshot,
@@ -20,13 +22,14 @@ import type {
   RunningRun,
   ScopedSpend,
   SpendStatus,
-  WorkOrderId,
   StageSlug,
-  ChainEntry,
+  StartRefusalCode,
+  WorkOrderId,
 } from '../../domain/index';
 import { combinedSpendStatus, decideDispatch, deriveWorkOrderState, err, headroom, nextAction, ok, orderForReview, stageRouting } from '../../domain/index';
 
 import { catalogOrEmpty, matchIdFor } from './match-id';
+import { itemConsent } from './run-executor';
 import { spendWindow } from './spend-window';
 import type { AccountRecord, AppDeps, QuotaProbeResolver, RunRecord } from '../ports/index';
 import { pollQuota, resolveRoute, type RouteError } from '../use-cases/index';
@@ -135,7 +138,11 @@ export async function dispatcherTick(
 
   const headroomByItem: Record<string, Headroom> = {};
   const spendByItem: Record<string, SpendStatus> = {};
+  const consentByItem: Record<string, ConsentReadiness> = {};
   for (const item of queue) {
+    // R-150: the same gate the executor applies first, read here so an unconsented item waits
+    // visibly instead of losing a start-and-refuse race.
+    consentByItem[item.id] = await itemConsent(deps, item);
     headroomByItem[item.id] = headroom(
       pools,
       meters,
@@ -180,6 +187,7 @@ export async function dispatcherTick(
     limits: config.limits,
     headroom: headroomByItem,
     spend: spendByItem,
+    consent: consentByItem,
   };
   const decisions = decideDispatch(queue, snapshot);
 
@@ -244,6 +252,33 @@ export async function applyLimitDecision(
     await deps.runs.update(run.id, { autoResumesUsed: run.autoResumesUsed + 1 });
   }
   return ok({ queued });
+}
+
+/** A-384: the durable trace of a start that never happened — one typed event on the work order,
+ *  appended for an executor refusal and a start-wiring pre-check failure alike. */
+export async function appendStartRefused(
+  deps: Pick<AppDeps, 'clock' | 'workOrders'>,
+  input: { readonly item: QueueItem; readonly reason: StartRefusalCode },
+): Promise<void> {
+  await deps.workOrders.appendEvent(input.item.workOrderId, {
+    type: 'start_refused',
+    at: deps.clock.now(),
+    stage: input.item.stage,
+    reason: input.reason,
+  });
+}
+
+/** A-384: a refusal from the executor is never a silent drop. A consent refusal puts the item back
+ *  exactly as it was — the next tick then holds it with wait reason `consent` (R-150) until consent
+ *  is granted, so the retry cannot loop. A handoff failure parks instead: the queue stays empty
+ *  the way a limit `ask` leaves it, because a failing handoff pack would fail again every tick;
+ *  the typed event is the operator's trace of where the item went. */
+export async function applyRefusedStart(
+  deps: Pick<AppDeps, 'clock' | 'queue' | 'workOrders'>,
+  input: { readonly item: QueueItem; readonly reason: StartRefusalCode },
+): Promise<void> {
+  if (input.reason === 'needs_spend_consent') await deps.queue.put(input.item);
+  await appendStartRefused(deps, input);
 }
 
 export async function enqueueStage(

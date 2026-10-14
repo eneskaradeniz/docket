@@ -435,6 +435,7 @@ export const EN: LabelBundle = {
   'cockpit.queued.queue': 'queued',
   'cockpit.queued.limit': 'limit full',
   'cockpit.queued.limitAt': 'limit full, reopens',
+  'cockpit.queued.consent': 'Waiting for spend consent — Settings › Accounts',
   'cockpit.closed.merged': 'merged',
   'cockpit.closed.cancelled': 'cancelled',
   'cockpit.card.lastActivity': 'last activity',

@@ -193,6 +193,8 @@ export const workOrderEventSummary = (event: WorkOrderEvent): string => {
       return 'unblocked';
     case 'deployment_attempted':
       return `deploy ${event.environment} ${event.result}`;
+    case 'start_refused':
+      return `start refused ${event.reason} (${event.stage})`;
     case 'stage_skip_proposed':
       return `skip proposed ${event.stages.join(', ')}`;
     case 'stage_skip_decided':
