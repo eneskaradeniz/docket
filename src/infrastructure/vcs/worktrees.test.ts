@@ -285,6 +285,85 @@ describe('createWorktrees', () => {
       expect(await worktrees.existing(ACME, woId(U1))).toEqual({ path: worktreeOf(U1) });
     });
   });
+
+  describe('branchHead', () => {
+    it('I-105: answers the work order branch head, and no_branch once the branch is gone', async () => {
+      await initRepo(repoDir);
+      const base = await commitFile(repoDir, 'a.ts', 'l1\n');
+      const worktrees = createWorktrees({ root: rootDir, repos: pathsOf({ acme: repoDir }) });
+      await worktrees.ensure(ACME, woId(U1));
+      await commitFile(worktreeOf(U1), 'w.ts', 'work\n');
+      const head = (await git(worktreeOf(U1), ['rev-parse', 'HEAD'])).trim();
+      expect(head).not.toBe(base); // the worktree really moved past the base
+
+      expect(await worktrees.branchHead(ACME, woId(U1))).toEqual({ ok: true, value: head });
+
+      // The branch is checked out in the worktree, so it can only disappear once that is gone.
+      await git(repoDir, ['worktree', 'remove', worktreeOf(U1)]);
+      await git(repoDir, ['branch', '-D', worktreeBranch(woId(U1))]);
+      expect(await worktrees.branchHead(ACME, woId(U1))).toEqual({ ok: false, error: 'no_branch' });
+    });
+
+    it('I-105: an unknown repo errs with no_repo', async () => {
+      const worktrees = createWorktrees({ root: rootDir, repos: pathsOf({}) });
+      expect(await worktrees.branchHead(ACME, woId(U1))).toEqual({ ok: false, error: 'no_repo' });
+    });
+  });
+
+  describe('release', () => {
+    it('I-105: removes the worktree, deletes the branch with -d, keeps the base ref', async () => {
+      await initRepo(repoDir);
+      const base = await commitFile(repoDir, 'a.ts', 'l1\n');
+      const worktrees = createWorktrees({ root: rootDir, repos: pathsOf({ acme: repoDir }) });
+      const id = woId(U1);
+      await worktrees.ensure(ACME, id);
+      await commitFile(worktreeOf(U1), 'w.ts', 'work\n');
+      // The branch must be merged for -d to let it go: the human step has happened.
+      await git(repoDir, ['merge', worktreeBranch(id)]);
+
+      const result = await worktrees.release(ACME, id);
+
+      expect(result).toEqual({ ok: true, value: 'released' });
+      const listed = await listedWorktrees(repoDir);
+      expect(listed.map((path) => path)).not.toContain(await realIfExists(worktreeOf(U1)));
+      const branch = await runGit(repoDir, ['rev-parse', '--verify', '--quiet', `refs/heads/${worktreeBranch(id)}`]);
+      expect(branch.exitCode).not.toBe(0);
+      expect((await git(repoDir, ['rev-parse', `${BASE_REF_PREFIX}${U1}`])).trim()).toBe(base);
+    });
+
+    it('I-105: an unmerged branch answers branch_not_merged and the branch survives', async () => {
+      await initRepo(repoDir);
+      await commitFile(repoDir, 'a.ts', 'l1\n');
+      const worktrees = createWorktrees({ root: rootDir, repos: pathsOf({ acme: repoDir }) });
+      const id = woId(U1);
+      await worktrees.ensure(ACME, id);
+      const head = await commitFile(worktreeOf(U1), 'w.ts', 'work\n'); // never merged
+
+      const result = await worktrees.release(ACME, id);
+
+      expect(result).toEqual({ ok: true, value: 'branch_not_merged' });
+      expect((await git(repoDir, ['rev-parse', `refs/heads/${worktreeBranch(id)}`])).trim()).toBe(head);
+    });
+
+    it('I-105: a worktree that refuses removal (a dirty tree) errs with git_failed', async () => {
+      await initRepo(repoDir);
+      await commitFile(repoDir, 'a.ts', 'l1\n');
+      const worktrees = createWorktrees({ root: rootDir, repos: pathsOf({ acme: repoDir }) });
+      const id = woId(U1);
+      await worktrees.ensure(ACME, id);
+      await writeFile(join(worktreeOf(U1), 'dirty.ts'), 'uncommitted\n', 'utf8');
+
+      const result = await worktrees.release(ACME, id);
+
+      expect(result).toEqual({ ok: false, error: 'git_failed' });
+      expect((await listedWorktrees(repoDir)).length).toBe(2); // checkout and the worktree remain
+    });
+
+    it('I-105: an unknown repo errs with no_repo', async () => {
+      const worktrees = createWorktrees({ root: rootDir, repos: pathsOf({}) });
+      expect(await worktrees.release(ACME, woId(U1))).toEqual({ ok: false, error: 'no_repo' });
+    });
+  });
 });
 
 describe('worktreeBranch', () => {

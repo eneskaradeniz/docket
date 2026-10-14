@@ -610,6 +610,56 @@ skip marks are an addition to `WorkOrderState`, and the two R-133 events join `W
 //   readonly skippedStages: readonly StageSlug[];  // stages an approved proposal (R-144) skips, this work order only
 ```
 
+### Addendum: the git lifecycle fold (added 2026-10-14, #1145, GI-2)
+
+The four operator git actions (#1145) append their own ledger events, and the work order's git
+state derives from them exactly the way the skip marks derive from the R-133 pair: beside the
+machine fold, never inside it. Nothing above is revised — R-17…R-24 keep their text and the four
+events are no-ops in the machine fold; a log without them derives the state the rules above
+describe, with none of the new fields present.
+
+```ts
+// flow/events.ts (added 2026-10-14, #1145) — WorkOrderEvent gains the git lifecycle quartet:
+//   | { readonly type: 'branch_pushed';   readonly at: EpochMs; readonly branch: string; readonly head: string }
+//   | { readonly type: 'pr_opened';       readonly at: EpochMs; readonly number: number; readonly url: string; readonly head: string; readonly base: string }
+//   | { readonly type: 'pr_merged';       readonly at: EpochMs; readonly number: number }
+//   | { readonly type: 'branch_released'; readonly at: EpochMs }
+
+// flow/git-lifecycle.ts — the fold and the one naming rule:
+export interface GitBranchState { readonly name: string; readonly head: string; readonly pushedAt: EpochMs }
+export interface GitPrState { readonly number: number; readonly url: string; readonly head: string; readonly base: string; readonly merged: boolean }
+export interface GitLifecycleState { readonly branch?: GitBranchState; readonly pr?: GitPrState; readonly released?: true }
+export const workOrderBranch = (id: WorkOrderId): string;  // 'docket/wo-' + id, lower case
+export function deriveGitLifecycle(events: readonly WorkOrderEvent[]): GitLifecycleState;
+
+// flow/derive.ts — WorkOrderState gains the lifecycle as optional fields, present only once their
+// event folded in:
+//   readonly branch?: GitBranchState; readonly pr?: GitPrState; readonly released?: true;
+```
+
+Rules (an event in an order a rule forbids is silently ignored — the refusal belongs to the writer
+that would have appended it, never to the fold):
+- **R-160** (added 2026-10-14, #1145) `pr_opened` folds in only over a prior `branch_pushed` whose
+  `branch` equals the event's `head`; with no pushed branch, or a pushed branch under another
+  name, the event is ignored and no pull request appears.
+- **R-161** (added 2026-10-14, #1145) A second `pr_opened` while a pull request is open (`merged`
+  false) is ignored — the state holds the first pull request, never a replacement. Once the open
+  pull request merged, a later `pr_opened` over the pushed branch opens the next cycle.
+- **R-162** (added 2026-10-14, #1145) `pr_merged` folds in only when its `number` equals the open
+  pull request's number; with no pull request, a different number, or an already-merged one, the
+  event is ignored and `merged` stays as it was.
+- **R-163** (added 2026-10-14, #1145) `branch_released` folds in only after a `pr_merged`; with no
+  pull request or an unmerged one the event is ignored and nothing is released. The release keeps
+  the branch and pull request it closed over — `released` is an added mark, not an erasure.
+- **R-164** (added 2026-10-14, #1145) After a `branch_released` folded in, every later git
+  lifecycle event — of all four kinds — is ignored: the release closed the lifecycle, and the
+  state stays exactly as the release froze it.
+- **R-165** (added 2026-10-14, #1145) `deriveWorkOrderState` merges `deriveGitLifecycle`'s fields
+  beside the machine state the way R-144 merges the skip marks: the four events are no-ops in the
+  R-17…R-24 fold, and a log without them carries none of the three fields. `workOrderBranch` is
+  the one naming rule — the ledger's `branch_pushed` events, the push action and the worktree
+  port all derive the branch name from it, never from their own spelling.
+
 ---
 
 ## 6. `quota/` — accounts, pools, meters, limits
@@ -1408,4 +1458,4 @@ export function relinkRole(
 - **R-146** (added 2026-10-14, #1104) `relinkRole` is pure. A ref without `detached` is `not_detached`; a `version` absent from the role's library history is `unknown_role_version`. The result keeps `roleId`, sets `version`, has no `detached`. With `keep: 'library'` it has no overlay. With `keep: 'overlay'` its overlay holds exactly the `OVERLAY_FIELDS` whose value differs (by `sameValue`) between the detached body and the library body at `version`, and is omitted when none differ. For `keep: 'overlay'`, `effectiveRole(result)` equals the detached body in every field except `id` and `active`. Inputs are never mutated.
 - **R-147** (added 2026-10-14, #1103) `copyFromRepo` copies exactly flow (bindings, roles by reference, overlays), default limit policy and command sets; docs root and test globs come from `detected`; no path of the source appears in the result; `copiedPaths` lists the copied top-level fields; inputs are never mutated.
 - **R-148** (added 2026-10-14, #1103) `planImport` orders found repos alphabetically by name (case-insensitive, then path); non-git folders, paths already in the project and duplicate paths become skipped rows with their reason and never count toward `max`; the first `max` remaining rows are queued; `overflow` is the number of remaining rows beyond `max`; the function is pure and deterministic.
-- **R-165** (added 2026-10-14, #1146) A `gate_evaluated` event may carry `remoteChecks: { checks }` — the matched check list a `remote_checks` verdict was reduced from. The field is written only by a `remote_checks` verdict: `remoteChecksEvidence` builds it from at most the first `REMOTE_CHECKS_EVENT_MAX` (30) checks in forge order, each check name and one of the six `CheckRunStatus` words — no url, no environment value. Events without the field — every one recorded before it existed — fold exactly as before: the fold reads only the verdict.
+- **R-166** (added 2026-10-14, #1146) A `gate_evaluated` event may carry `remoteChecks: { checks }` — the matched check list a `remote_checks` verdict was reduced from. The field is written only by a `remote_checks` verdict: `remoteChecksEvidence` builds it from at most the first `REMOTE_CHECKS_EVENT_MAX` (30) checks in forge order, each check name and one of the six `CheckRunStatus` words — no url, no environment value. Events without the field — every one recorded before it existed — fold exactly as before: the fold reads only the verdict.

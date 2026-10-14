@@ -6,7 +6,7 @@
 import { err, ok, type Result } from '../../domain/index';
 
 import type { AppDeps, McpListenerRestartError, McpListenerState } from '../ports';
-import { DOCKET_TOOL_DEFINITIONS_BY_KIND } from '../services/docket-tools';
+import { MCP_DOCKET_TOOL_NAMES_BY_KIND } from './mcp-docket-tool-names';
 
 export interface McpStatusView {
   readonly state: 'running' | 'stopped';
@@ -35,8 +35,8 @@ const viewOf = (standing: McpListenerState, rolesWithout: readonly string[]): Mc
   state: standing.state,
   ...(standing.state === 'stopped' ? { reason: standing.reason } : {}),
   tools: {
-    run: DOCKET_TOOL_DEFINITIONS_BY_KIND.run.map((tool) => tool.name),
-    chat: DOCKET_TOOL_DEFINITIONS_BY_KIND.chat.map((tool) => tool.name),
+    run: MCP_DOCKET_TOOL_NAMES_BY_KIND.run,
+    chat: MCP_DOCKET_TOOL_NAMES_BY_KIND.chat,
   },
   rolesWithout,
 });

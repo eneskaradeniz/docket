@@ -526,7 +526,7 @@ describe('pollRemoteChecks', () => {
     });
   });
 
-  it('R-165: the recorded evidence carries the matched checks, capped at the first 30 in forge order', async () => {
+  it('R-166: the recorded evidence carries the matched checks, capped at the first 30 in forge order', async () => {
     const h = makeHarness();
     await createIn(h, 'all-flow');
     const many = Array.from({ length: 32 }, (_, index) => check(`check-${index}`, 'passed'));

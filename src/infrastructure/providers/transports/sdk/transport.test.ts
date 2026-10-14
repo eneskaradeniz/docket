@@ -650,6 +650,7 @@ describe('createSdkTransport', () => {
       expect(options?.resume).toBeUndefined();
       expect(options?.pathToClaudeCodeExecutable).toBeUndefined();
       expect(options?.mcpServers).toEqual({});
+      expect(options?.strictMcpConfig).toBeUndefined();
     });
 
     it('I-28: mcp capabilities become stdio servers with literal and vault-resolved env values', async () => {
@@ -689,6 +690,7 @@ describe('createSdkTransport', () => {
           env: { LITERAL_FLAG: 'on', SEARCH_TOKEN: 'mcp-token-value' },
         },
       });
+      expect(calls[0]?.options.strictMcpConfig).toBe(true);
     });
 
     it('I-28: an mcp env secret reference the vault cannot resolve fails with not_logged_in', async () => {

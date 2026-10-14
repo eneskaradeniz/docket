@@ -154,7 +154,7 @@ export async function pollRemoteChecks(
     stage: current.stage,
     gate: input.gate,
     verdict: evaluateGate(remoteGate, evidence, gateContext(definitions)),
-    // R-165: the matched checks the verdict was reduced from — the detail's check rows read them.
+    // R-166: the matched checks the verdict was reduced from — the detail's check rows read them.
     remoteChecks: remoteChecksEvidence(matched.map((check) => ({ name: check.name, status: check.status }))),
   };
   await deps.workOrders.appendEvent(input.id, event);

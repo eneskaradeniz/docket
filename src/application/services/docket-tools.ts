@@ -6,14 +6,14 @@
 import type { Actor, ConversationId, MemoryScope, Page, PageId, PageKind } from '../../domain/index';
 
 import type { AppDeps, RunTokenBinding, RunTokenKind } from '../ports';
+import { proposeMemory } from '../use-cases/memory';
 import {
   ackComments,
   pageDetail,
-  proposeMemory,
   publishPageUseCase,
   publishVersion,
   undeliveredComments,
-} from '../use-cases/index';
+} from '../use-cases/pages';
 
 import { CHAT_TOOL_DEFINITIONS, createChatTools } from './chat-tools';
 import { CHAT_WRITE_TOOL_DEFINITIONS, CHAT_WRITE_TOOL_NAMES, createChatWriteTools, type DocketToolExtras } from './chat-write-tools';

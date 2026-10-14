@@ -109,8 +109,8 @@ describe('WorkOrderEvent', () => {
   });
 });
 
-describe('remoteChecks evidence (R-165)', () => {
-  it('R-165: the evidence keeps the first 30 checks in forge order, name and status only', () => {
+describe('remoteChecks evidence (R-166)', () => {
+  it('R-166: the evidence keeps the first 30 checks in forge order, name and status only', () => {
     const checks = Array.from({ length: REMOTE_CHECKS_EVENT_MAX + 2 }, (_, index) => ({
       name: `check-${index}`,
       status: 'passed' as const,
@@ -126,7 +126,7 @@ describe('remoteChecks evidence (R-165)', () => {
     expect(Object.keys(evidence.checks[0]).sort()).toEqual(['name', 'status']);
   });
 
-  it('R-165: an event without remoteChecks folds exactly as one with it', () => {
+  it('R-166: an event without remoteChecks folds exactly as one with it', () => {
     const flow: FlowDef = {
       id: FLOW,
       name: 'Standard',

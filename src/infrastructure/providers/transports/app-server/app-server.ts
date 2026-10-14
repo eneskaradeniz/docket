@@ -10,7 +10,7 @@ import type { AgentEvent, Result } from '../../../../domain/index';
 import { err, ok } from '../../../../domain/index';
 import { createSystemClock, registeredSpawn } from '../../../system/index';
 import { providerLevelOf, type ProviderDef } from '../../defs/index';
-import { buildChildEnv, writeRunConfig, type RunCapability } from '../../launch/index';
+import { buildChildEnv, codexRunIsolationArgv, writeRunConfig, type RunCapability } from '../../launch/index';
 import { materializeCodexNativeCapabilities } from './codex-native-delivery';
 import { codexProjectTrustOverrideArgs, mcpConfigOverrideArgs } from './config-overrides';
 import { TRANSLATION_TABLE } from '../../registry/capability-registry';
@@ -170,6 +170,7 @@ export function createAppServerTransport(def: ProviderDef): AgentTransport {
       // they travel as the CLI's own per-run overrides.
       const codexTrustArgs =
         def.id === 'codex' ? codexProjectTrustOverrideArgs([request.runDir]) : [];
+      const codexIsolationArgs = def.id === 'codex' ? codexRunIsolationArgv() : [];
       const overrideArgs =
         def.config.mechanism === 'none'
           ? [...mcpConfigOverrideArgs(runConfig.mcpServers), ...codexTrustArgs]
@@ -179,7 +180,7 @@ export function createAppServerTransport(def: ProviderDef): AgentTransport {
       let stopRun: () => void = () => undefined;
       const child = registeredSpawn(
         bin,
-        [...launch.args, ...runConfig.args, ...overrideArgs],
+        [...codexIsolationArgs, ...launch.args, ...runConfig.args, ...overrideArgs],
         {
           cwd: request.cwd,
           env,

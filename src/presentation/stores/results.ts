@@ -117,6 +117,12 @@ type SilentCommand =
   | 'setup.ai.start'
   | 'setup.read.answer'
   | 'setup.apply'
+  // The git lifecycle's doors arrive with their detail screen (GI-4); until then the commands
+  // have no surface to toast onto.
+  | 'workOrder.push'
+  | 'workOrder.openPr'
+  | 'workOrder.mergePr'
+  | 'workOrder.releaseBranch'
   // The built-in MCP row words its own restore result inline (U-314).
   | 'mcp.restore';
 const isSilent = (command: Command['type']): command is SilentCommand =>
@@ -140,6 +146,10 @@ const isSilent = (command: Command['type']): command is SilentCommand =>
   || command === 'setup.ai.start'
   || command === 'setup.read.answer'
   || command === 'setup.apply'
+  || command === 'workOrder.push'
+  || command === 'workOrder.openPr'
+  || command === 'workOrder.mergePr'
+  || command === 'workOrder.releaseBranch'
   || command === 'mcp.restore';
 
 const SUCCESS_KEYS: Readonly<Record<Exclude<Command['type'], SilentCommand>, LabelKey>> = {

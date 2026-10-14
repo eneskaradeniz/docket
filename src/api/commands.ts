@@ -23,6 +23,13 @@ export type Command =
   | { readonly type: 'workOrder.unblock'; readonly id: string }
   | { readonly type: 'workOrder.close'; readonly id: string }
   | { readonly type: 'workOrder.enqueue'; readonly id: string }
+  // The work order's git lifecycle (GI-2): push the branch, open its pull request, merge it (the
+  // human step — a command, never a side effect), release the branch and worktree. All four speak
+  // for the operator like every other command: no actor field exists on the wire (A-376).
+  | { readonly type: 'workOrder.push'; readonly id: string } // errors: not_found, no_repo, forge_unavailable, forge_error (A-371)
+  | { readonly type: 'workOrder.openPr'; readonly id: string; readonly base: string; readonly title?: string } // ok → { pr } (A-372); errors: bad_input, not_pushed, pr_exists (answers the stored ref), forge_error
+  | { readonly type: 'workOrder.mergePr'; readonly id: string; readonly number: number } // errors: not_found (also a stale number — the explicit-approval pin), forge_error (A-373)
+  | { readonly type: 'workOrder.releaseBranch'; readonly id: string } // errors: branch_not_merged, no_repo, git_failed (A-374)
   | { readonly type: 'gate.decide'; readonly workOrderId: string; readonly gate: string; readonly decision: 'approved' | 'rejected'; readonly note?: string }
   | { readonly type: 'gate.attest'; readonly workOrderId: string; readonly gate: string; readonly noChangeNeeded: boolean } // answers when the changes gate's attestation is recorded
   | { readonly type: 'proposal.decide'; readonly id: string; readonly decision: 'approved' | 'rejected' }
@@ -178,6 +185,9 @@ export type CommandResult =
       readonly version?: number;
       /** Rides only `mcp.restore` (A-381): the standing the restart ended with. */
       readonly status?: McpStatusView;
+      /** Rides only `workOrder.openPr` (A-372): the pull request that was opened, or — on
+       *  `pr_exists` — the stored one the refusal answers with. */
+      readonly pr?: { readonly number: number; readonly url: string };
     }
   /** `roles` rides only `binding_exists`: the roles whose bindings still reference the account.
    *  `accounts` rides only `account_not_connected` on repo.saveFlow (A-354): every disconnected
@@ -185,6 +195,8 @@ export type CommandResult =
    *  `issues` rides `definitions_invalid` on bundle import (A-342).
    *  `definitionIssues` rides `definitions_invalid` on definitions.save (A-352).
    *  `reasons` rides `blocked` on definitions.archive / definitions.delete (A-355).
+   *  `pr` rides `pr_exists` on workOrder.openPr (A-372): the stored pull request the refusal
+   *  answers with.
    *  `error` rides only `mcp.restore` (A-381): its typed refusal instead of a `code`. */
   | {
       readonly ok: false;
@@ -194,5 +206,6 @@ export type CommandResult =
       readonly issues?: readonly string[];
       readonly definitionIssues?: readonly { readonly path: string; readonly code: string; readonly message: string }[];
       readonly reasons?: readonly { readonly kind: string; readonly workOrders?: readonly string[]; readonly of?: string; readonly repo?: string; readonly stage?: string }[];
+      readonly pr?: { readonly number: number; readonly url: string };
       readonly error?: 'endpoint_unavailable' | 'listener_failed' | 'script_missing';
     };

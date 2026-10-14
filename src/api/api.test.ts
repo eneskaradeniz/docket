@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Actor, AgentEvent, RoleDef, RunId, Slug, Ulid } from '../domain/index';
 import { ok, parseSlug, parseUlid } from '../domain/index';
 
-import type { AgentTransport, AppDeps, UpdateChecker, UpdateState } from '../application';
+import type { AgentTransport, AppDeps, Forge, ForgeResolver, UpdateChecker, UpdateState } from '../application';
 import { createPermissionBoard, createRunControl, executeRun } from '../application';
 import {
   createFakeCapabilityCatalog,
@@ -15,9 +15,11 @@ import {
   createFakeDefinitionStore,
   createFakeDeps,
   createFakeEventLog,
+  createFakeForge,
   createFakeGitProbe,
   createFakeMcpListenerControl,
   createFakeRepoFolders,
+  createFakeRepoRegistry,
   createFakeTransport,
   createFakeTransportResolver,
   createParkedFakeTransport,
@@ -2285,6 +2287,181 @@ describe('createApi', () => {
       const api = updateApi();
       expect(await api.command(ACTOR, { type: 'app.update.check' })).toEqual({ ok: false, code: 'not_found' });
       expect(await api.command(ACTOR, { type: 'app.update.apply' })).toEqual({ ok: false, code: 'not_found' });
+    });
+  });
+
+  // --- the git lifecycle commands (GI-2, A-371 … A-377) ---------------------------------------------
+
+  describe('workOrder.push / openPr / mergePr / releaseBranch', () => {
+    const WORK_ORDER_ID = '01ARZ3NDEKTSV4RRFFQ69G5FAV';
+
+    /** The deps the git actions read: the standard harness plus a registry row whose remote the
+     *  forge resolver routes by. */
+    const gitHarness = async (): Promise<Harness> => {
+      const h = await createHarness();
+      const repos = createFakeRepoRegistry();
+      void repos.register({
+        repoId: '1',
+        slug: slugOf<'repo'>(REPO),
+        path: '/repo/acme',
+        fingerprint: { rootCommit: 'root', remote: 'https://github.com/octo/acme.git' },
+      });
+      const deps = { ...h.deps, repos };
+      return { ...h, deps };
+    };
+
+    /** The api as the composition root wires it for git: the resolver in the last seat. */
+    const gitApi = (h: Harness, forge: Forge | undefined) => {
+      const resolver: ForgeResolver = { forRepo: async () => forge };
+      return createApi(
+        h.deps, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        undefined, undefined, undefined, undefined, undefined, resolver,
+      );
+    };
+
+    const seedWorkOrder = async (h: Harness, events: readonly string[] = []): Promise<void> => {
+      const id = ulidOf<'work-order'>(WORK_ORDER_ID);
+      await h.deps.workOrders.create({
+        id,
+        project: slugOf<'project'>(PROJECT),
+        repo: slugOf<'repo'>(REPO),
+        flow: slugOf<'flow'>('board-flow'),
+        title: 'Ship it',
+        createdAt: 1_000,
+        createdBy: ACTOR,
+      });
+      await h.deps.workOrders.appendEvent(id, { type: 'created', at: 1_000, by: ACTOR, flow: slugOf<'flow'>('board-flow') });
+      const branch = `docket/wo-${WORK_ORDER_ID.toLowerCase()}`;
+      for (const kind of events) {
+        if (kind === 'pushed') {
+          await h.deps.workOrders.appendEvent(id, { type: 'branch_pushed', at: 1_100, branch, head: 'a1' });
+        }
+        if (kind === 'opened') {
+          await h.deps.workOrders.appendEvent(id, {
+            type: 'pr_opened', at: 1_200, number: 3, url: 'https://forge.fake/acme/pull/3', head: branch, base: 'main',
+          });
+        }
+        if (kind === 'merged') {
+          await h.deps.workOrders.appendEvent(id, { type: 'pr_merged', at: 1_300, number: 3 });
+        }
+      }
+      h.worktrees.markExisting(slugOf<'repo'>(REPO), id);
+      h.worktrees.setBranchHead(slugOf<'repo'>(REPO), id, 'a1');
+    };
+
+    it('A-371: push lands one audit for the operator the api names, and announces workOrders.changed', async () => {
+      const h = await gitHarness();
+      await seedWorkOrder(h);
+      const forge = createFakeForge();
+      const api = gitApi(h, forge);
+      const seen: UiEvent[] = [];
+      api.subscribe((event) => seen.push(event));
+
+      const result = await api.command(ACTOR, { type: 'workOrder.push', id: WORK_ORDER_ID });
+
+      expect(result).toEqual({ ok: true });
+      expect(forge.pushed).toEqual([`docket/wo-${WORK_ORDER_ID.toLowerCase()}`]);
+      expect(h.log.entries()).toEqual([
+        expect.objectContaining({ action: 'git.pushed', actor: ACTOR, subject: { kind: 'work_order', id: ulidOf<'work-order'>(WORK_ORDER_ID) } }),
+      ]);
+      expect(seen).toContainEqual({ type: 'workOrders.changed' });
+    });
+
+    it('A-371: a malformed id answers invalid_id and an unknown one not_found, both without writes', async () => {
+      const h = await gitHarness();
+      await seedWorkOrder(h);
+      const api = gitApi(h, createFakeForge());
+
+      expect(await api.command(ACTOR, { type: 'workOrder.push', id: 'not-a-ulid' })).toEqual({ ok: false, code: 'invalid_id' });
+      expect(await api.command(ACTOR, { type: 'workOrder.push', id: UNKNOWN_WORK_ORDER })).toEqual({ ok: false, code: 'not_found' });
+      expect(h.log.entries()).toEqual([]);
+    });
+
+    it('A-371: without a wired resolver the push answers forge_unavailable after its validations', async () => {
+      const h = await gitHarness();
+      await seedWorkOrder(h);
+      const api = gitApi(h, undefined);
+
+      expect(await api.command(ACTOR, { type: 'workOrder.push', id: WORK_ORDER_ID })).toEqual({
+        ok: false,
+        code: 'forge_unavailable',
+      });
+      expect(h.log.entries()).toEqual([]);
+    });
+
+    it('A-377: an unusable base or title answers bad_input before any lookup', async () => {
+      const h = await gitHarness();
+      await seedWorkOrder(h);
+      const forge = createFakeForge();
+      const api = gitApi(h, forge);
+
+      expect(await api.command(ACTOR, { type: 'workOrder.openPr', id: WORK_ORDER_ID, base: '   ' })).toEqual({ ok: false, code: 'bad_input' });
+      expect(await api.command(ACTOR, { type: 'workOrder.openPr', id: WORK_ORDER_ID, base: 'main'.repeat(64) })).toEqual({ ok: false, code: 'bad_input' });
+      expect(await api.command(ACTOR, { type: 'workOrder.openPr', id: WORK_ORDER_ID, base: 'main', title: 'x'.repeat(256) })).toEqual({ ok: false, code: 'bad_input' });
+
+      expect(forge.opened).toEqual([]);
+      expect(h.log.entries()).toEqual([]);
+    });
+
+    it('A-372: openPr answers the opened ref, a repeated open answers pr_exists with the stored one', async () => {
+      const h = await gitHarness();
+      await seedWorkOrder(h, ['pushed']);
+      const forge = createFakeForge();
+      const api = gitApi(h, forge);
+
+      const opened = await api.command(ACTOR, { type: 'workOrder.openPr', id: WORK_ORDER_ID, base: 'main' });
+      expect(opened).toEqual({ ok: true, pr: { number: 1, url: 'https://forge.fake/acme/pull/1' } });
+
+      // The state now holds PR 1: a second open answers the stored ref, never a second PR.
+      const repeated = await api.command(ACTOR, { type: 'workOrder.openPr', id: WORK_ORDER_ID, base: 'main' });
+      expect(repeated).toEqual({ ok: false, code: 'pr_exists', pr: { number: 1, url: 'https://forge.fake/acme/pull/1' } });
+      expect(forge.opened).toHaveLength(1);
+    });
+
+    it('A-373: mergePr through the api records the merge; a stale number is not_found with no audit', async () => {
+      const h = await gitHarness();
+      await seedWorkOrder(h, ['pushed', 'opened']);
+      const forge = createFakeForge({ seedPullRequests: 3 });
+      const api = gitApi(h, forge);
+
+      expect(await api.command(ACTOR, { type: 'workOrder.mergePr', id: WORK_ORDER_ID, number: 9 })).toEqual({ ok: false, code: 'not_found' });
+      expect(h.log.entries()).toEqual([]);
+
+      expect(await api.command(ACTOR, { type: 'workOrder.mergePr', id: WORK_ORDER_ID, number: 3 })).toEqual({ ok: true });
+      expect(h.log.entries()).toEqual([expect.objectContaining({ action: 'pr.merged', detail: { number: 3 } })]);
+    });
+
+    it('A-374: releaseBranch answers branch_not_merged while no merge folded in', async () => {
+      const h = await gitHarness();
+      await seedWorkOrder(h, ['pushed', 'opened']);
+      const api = gitApi(h, createFakeForge());
+
+      expect(await api.command(ACTOR, { type: 'workOrder.releaseBranch', id: WORK_ORDER_ID })).toEqual({
+        ok: false,
+        code: 'branch_not_merged',
+      });
+      expect(h.log.entries()).toEqual([]);
+    });
+
+    it('A-376: the commands carry no actor field and every audit names the operator the api received', async () => {
+      const h = await gitHarness();
+      await seedWorkOrder(h);
+      const api = gitApi(h, createFakeForge());
+
+      // The wire shapes have no actor to send (the Command union is compile-checked); what a
+      // command CAN prove is that the audits name the api's own actor — the single operator.
+      expect(await api.command(ACTOR, { type: 'workOrder.push', id: WORK_ORDER_ID })).toEqual({ ok: true });
+      expect(await api.command(ACTOR, { type: 'workOrder.openPr', id: WORK_ORDER_ID, base: 'main' })).toEqual({
+        ok: true,
+        pr: { number: 1, url: 'https://forge.fake/acme/pull/1' },
+      });
+      expect(await api.command(ACTOR, { type: 'workOrder.mergePr', id: WORK_ORDER_ID, number: 1 })).toEqual({ ok: true });
+
+      expect(h.log.entries().map((entry) => [entry.action, entry.actor])).toEqual([
+        ['git.pushed', ACTOR],
+        ['pr.opened', ACTOR],
+        ['pr.merged', ACTOR],
+      ]);
     });
   });
 });

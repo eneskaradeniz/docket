@@ -632,12 +632,14 @@ const startApp = async (): Promise<void> => {
   // The repo registry rides beside deps (NodeDeps exposes it); the api reads it for
   // `repos.list`, the enumeration the switcher and the wizard's re-appear guard live on. The
   // defs' marks ride the same way (P-25): the api reads them for `providers.marks`, the query
-  // every account badge resolves its mark through.
+  // every account badge resolves its mark through. The forge resolver joins the set (GI-2): the
+  // git lifecycle commands resolve their repo's forge through it, and stay forge_unavailable
+  // wherever it stays silent.
   const api = createApi(nodeDeps, board, discovery, node.repos, updates, builtinProviderMarks, node.adoption, node.quota, {
     runner: node.chatRunner,
     apply: node.docketToolExtras.applyAction,
     undo: createActionUndoer(nodeDeps),
-  }, { ack: () => quitPrompt.ack(), answer: (accept) => quitPrompt.answer(accept) }, node.trackers, node.setupContexts, runControl);
+  }, { ack: () => quitPrompt.ack(), answer: (accept) => quitPrompt.answer(accept) }, node.trackers, node.setupContexts, runControl, node.forges);
   currentApi = api;
   const quotaProbes = node.quota.probes; // read here: `node` is not narrowed inside the tick closure
 
