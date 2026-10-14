@@ -15,7 +15,6 @@ import { groupAccountRows, type GroupProvider } from '../stores/account-groups';
 import { SETTINGS_SECTIONS } from '../stores/settings-panel';
 import { AccountGroups, type AccountRowView } from './account-groups';
 import { AccountsSections } from './accounts-sections';
-import { ChainEmpty } from './role-row';
 import { SettingsMenu } from './settings-menu';
 import { RolesUnsetBanner } from './settings-cards';
 import { AccountEditorDialog } from './account-editor-dialog';
@@ -299,20 +298,6 @@ describe('Roller banner and empty cards (U-172 … U-175)', () => {
   it('U-174: Asistan sırası carries one short line', () => {
     expect(TR['roles.chain.purpose']).toBe('Hesaplar bu sırayla denenir.');
     expect(EN['roles.chain.purpose'].split(/\s+/).length).toBeLessThanOrEqual(8);
-  });
-
-  it("U-175: no account at all is a card with the title, one line and Hesaplar'a git", () => {
-    const out = renderToStaticMarkup(createElement(ChainEmpty, { locale: 'tr', accountCount: 0, onOpenAccounts: noop }));
-    expect(out).toContain('data-empty-card="roles-chain"');
-    expect(out).toContain('>Henüz hesap yok<');
-    expect(out).toContain('>Hesaplar&#x27;a git<');
-    expect(out).not.toContain('Önce Hesaplar bölümünden');
-  });
-
-  it('U-175: accounts without a chain is a card without the jump button', () => {
-    const out = renderToStaticMarkup(createElement(ChainEmpty, { locale: 'tr', accountCount: 2, onOpenAccounts: noop }));
-    expect(out).toContain('data-empty-card="roles-chain"');
-    expect(out).not.toContain('<button');
   });
 });
 

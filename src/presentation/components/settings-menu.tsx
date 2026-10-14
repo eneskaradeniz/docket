@@ -9,6 +9,7 @@ const SECTION_KEY: Readonly<Record<SettingsSection, LabelKey>> = {
   accounts: 'settings.section.accounts',
   concurrency: 'settings.section.concurrency',
   providers: 'settings.section.providers',
+  repo: 'settings.section.repo',
   memory: 'settings.section.memory',
   roles: 'settings.section.roles',
   plugins: 'settings.section.plugins',

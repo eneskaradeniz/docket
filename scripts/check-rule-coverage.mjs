@@ -90,6 +90,10 @@ const PENDING = new Map([
   // #1058 — migrations 1–11 were consolidated into a single clean schema; v1/v10 upgrade tests removed.
   ['infrastructure:I-33', '#1058'],
   ['infrastructure:I-93', '#1058'],
+
+  // #1106 — the orphan guard deleted the dead role-row tree; U-175's subject (the global
+  // "Asistan sırası" empty card) went with the code and no test will ever carry it.
+  ['ui:U-175', '#1106'],
 ]);
 
 function walk(dir, acc = []) {
