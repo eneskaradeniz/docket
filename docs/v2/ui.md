@@ -1822,6 +1822,12 @@ Added 2026-10-14, #1106; amends U-288.
 - **U-310** (added 2026-10-14, #1106; amends U-288) Settings has the section `repo` ("Depo ayarları") in the work group; opening it shows the #1024 screen contract: Akış, Roller, Limit politikası, save bar, discard confirm. It is reachable from the Settings menu and by keyboard like every other section.
 - **U-311** (added 2026-10-14, #1106) With no repository the section shows the empty state with guidance and a link to project setup; while loading it shows skeleton tiles; a failed `repo.flow` shows the error card with a retry button. All copy lives in the TR and EN bundles, every sentence at most 8 words (U-178).
 
+## Repository relink banner (U-312 … U-313)
+
+Added 2026-10-14, #1109; uses `repoStatus` and `repo.relink` (A-341) and `docket.pickFolders` (U-326).
+- **U-312** (added 2026-10-14, #1109) The section "Depo ayarları" shows a status banner per repo whose `repoStatus` is not `ok`, with the actions of decision 2; it is announced politely, keyboard reachable, and disappears once the status is `ok`.
+- **U-313** (added 2026-10-14, #1109) `repo.relink` errors map to the sentences of decision 4; `fingerprint_mismatch` never relinks.
+
 ## The built-in Docket MCP row (U-314, U-315)
 
 Added 2026-10-14, #1120; implements A-380/A-381 (docs/v2/application.md).
