@@ -13,6 +13,7 @@ import type { RoadmapPageView } from '../../api/queries';
 import { t, type Locale } from '../labels/t';
 import { InlineLink, Prose } from '../components/inline-link';
 import { RoadmapLaunchers } from '../components/launcher-rows';
+import { RoadmapRepoLayer } from '../components/roadmap-repo-layer';
 import {
   phaseControl,
   phaseRunCounts,
@@ -130,6 +131,8 @@ const BUTTON = `h-7 flex-none whitespace-nowrap rounded-control border px-3 text
 const BUTTON_SECONDARY = `${BUTTON} border-bord text-ink hover:bg-raised disabled:pointer-events-none disabled:border-hairline disabled:bg-raised disabled:text-inkdim`;
 const BUTTON_PRIMARY = `${BUTTON} border-signal bg-signal text-signal-ink disabled:pointer-events-none disabled:opacity-60`;
 
+const LAYER_TAB = `h-8 rounded-control border px-3 text-[0.8125rem] font-semibold ${FOCUS}`;
+
 const CHIP = 'inline-flex h-5 flex-none items-center gap-2 rounded-full border px-2 font-mono text-[0.6875rem] leading-none';
 
 /** A status chip: a lamp and its word. `lit` is the amber ring-and-fill of work in motion. */
@@ -157,6 +160,7 @@ const PhaseCard = ({
   expanded,
   onOpenRepo,
   onOpenWorkOrder,
+  highlightPhase,
 }: {
   readonly view: RoadmapPageView;
   readonly phase: RoadmapPhase;
@@ -168,6 +172,7 @@ const PhaseCard = ({
   readonly expanded: readonly string[];
   readonly onOpenRepo: (repo: string) => void;
   readonly onOpenWorkOrder: (workOrderId: string) => void;
+  readonly highlightPhase: string | null;
 }) => {
   const done = phase.tasks.filter((task) => task.status === 'done').length;
   const control = phaseControl(view, phase);
@@ -180,7 +185,10 @@ const PhaseCard = ({
   );
 
   return (
-    <section data-phase={phase.id} className={`overflow-hidden rounded-card border bg-surface ${phase.autoRun?.state === 'running' ? 'border-bord' : 'border-hairline'}`}>
+    <section
+      data-phase={phase.id}
+      className={`overflow-hidden rounded-card border bg-surface ${phase.autoRun?.state === 'running' ? 'border-bord' : 'border-hairline'} ${phase.id === highlightPhase ? 'border-signal' : ''}`}
+    >
       {/* One grid for both header rows: chevron · name · count + button, the status row under the
           name. The toggle is a real button whose overlay makes the whole header clickable without
           nesting the controls inside it. */}
@@ -406,6 +414,8 @@ export function RoadmapScreen({ store, project, name, locale, onOpenRepo, onOpen
   }, [store, project]);
 
   const view = state.view;
+  const selectedRepo = state.selectedRepo;
+  const repoSlice = selectedRepo === null ? undefined : state.repoSlices[selectedRepo];
 
   return (
     <div className="grid gap-4">
@@ -425,6 +435,27 @@ export function RoadmapScreen({ store, project, name, locale, onOpenRepo, onOpen
         <RoadmapLaunchers project={project} />
       </header>
 
+      <div role="tablist" aria-label={t(locale, 'roadmap.layer.label')} className="flex flex-wrap gap-1.5" data-roadmap-layer-tabs>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={state.layer === 'project'}
+          onClick={() => store.setLayer('project')}
+          className={`${LAYER_TAB} ${state.layer === 'project' ? 'border-signal bg-raised text-ink' : 'border-hairline bg-surface text-inkdim hover:bg-raised'}`}
+        >
+          {t(locale, 'roadmap.layer.project')}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={state.layer === 'repo'}
+          onClick={() => store.setLayer('repo')}
+          className={`${LAYER_TAB} ${state.layer === 'repo' ? 'border-signal bg-raised text-ink' : 'border-hairline bg-surface text-inkdim hover:bg-raised'}`}
+        >
+          {t(locale, 'roadmap.layer.repo')}
+        </button>
+      </div>
+
       {state.loading && view === null && state.problem === null ? (
         <p className="font-mono text-[0.6875rem] uppercase tracking-[0.04em] text-inkdim">{t(locale, 'roadmap.loading')}</p>
       ) : null}
@@ -435,7 +466,20 @@ export function RoadmapScreen({ store, project, name, locale, onOpenRepo, onOpen
         </div>
       ) : null}
 
-      {view !== null ? (
+      {state.layer === 'repo' && view !== null && selectedRepo !== null && repoSlice !== undefined ? (
+        <RoadmapRepoLayer
+          store={store}
+          locale={locale}
+          projectView={view}
+          repos={state.repos}
+          selectedRepo={selectedRepo}
+          slice={repoSlice}
+          openMilestones={state.openMilestones}
+          expandedIssues={state.expandedIssues}
+        />
+      ) : null}
+
+      {state.layer === 'project' && view !== null ? (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(23.75rem,1fr))] gap-4">
           {view.phases.map((phase) => (
             <PhaseCard
@@ -450,6 +494,7 @@ export function RoadmapScreen({ store, project, name, locale, onOpenRepo, onOpen
               expanded={state.expanded}
               onOpenRepo={onOpenRepo}
               onOpenWorkOrder={onOpenWorkOrder}
+              highlightPhase={state.highlightPhase}
             />
           ))}
         </div>

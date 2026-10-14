@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import type { Api } from '../../api/api';
-import type { RoadmapPageView } from '../../api/queries';
+import type { Query, RoadmapPageView } from '../../api/queries';
 import { t, type Locale } from '../labels/t';
 import { createRoadmapStore, type RoadmapStore } from '../stores/roadmap';
 import { formatWorkOrderCode } from '../stores/work-order-code';
@@ -63,9 +63,35 @@ const PHASES: readonly Phase[] = [
 
 const VIEW: RoadmapPageView = { phases: PHASES, runnable: ['t5', 't6'] };
 
+const SINGLE_TREE = [
+  {
+    project: 'antero',
+    name: 'Antero',
+    mainRepo: 'api',
+    repos: [{ repo: 'api', name: 'api', main: true, active: 0, running: 0, waiting: 0, status: 'idle' as const }],
+    active: 0,
+    running: 0,
+    waiting: 0,
+    status: 'idle' as const,
+  },
+];
+
+const apiOf = (handlers: {
+  readonly project?: unknown;
+  readonly tree?: unknown;
+  readonly repo?: (repo: string) => unknown;
+}): Pick<Api, 'query' | 'command'> => ({
+  query: (query) => {
+    if (query.type === 'project.tree') return Promise.resolve(handlers.tree ?? SINGLE_TREE);
+    if (query.type === 'roadmap.byProject') return Promise.resolve(handlers.project ?? VIEW);
+    if (query.type === 'roadmap.byRepo') return Promise.resolve(handlers.repo?.(query.repo) ?? { ok: false, code: 'not_found' });
+    return Promise.resolve({ ok: false, code: 'not_found' });
+  },
+  command: () => Promise.resolve({ ok: true }),
+});
+
 const loaded = async (): Promise<RoadmapStore> => {
-  const api: Pick<Api, 'query' | 'command'> = { query: () => Promise.resolve(VIEW), command: () => Promise.resolve({ ok: true }) };
-  const store = createRoadmapStore({ api, changes: () => () => undefined });
+  const store = createRoadmapStore({ api: apiOf({}), changes: () => () => undefined });
   await store.load('antero');
   return store;
 };
@@ -207,5 +233,148 @@ describe('roadmap page — header geometry (U-67)', () => {
     expect(SOURCE).toContain('aria-expanded={open}');
     expect(SOURCE).toContain('focus-visible:outline');
     expect(SOURCE).toContain('motion-reduce:transition-none');
+  });
+});
+
+describe('roadmap page — layer tabs (U-324)', () => {
+  it('U-324: the page opens on Proje katmanı; Depo katmanı does not reload the project query', async () => {
+    const queries: Query[] = [];
+    const api: Pick<Api, 'query' | 'command'> = {
+      query: (query) => {
+        queries.push(query);
+        return apiOf({}).query(query);
+      },
+      command: () => Promise.resolve({ ok: true }),
+    };
+    const store = createRoadmapStore({ api, changes: () => () => undefined });
+    await store.load('antero');
+    const html = render(store);
+    expect(html).toContain('>Proje katmanı<');
+    expect(html).toContain('>Depo katmanı<');
+    expect(html).toContain('data-phase="p1"');
+
+    store.setLayer('repo');
+    for (let i = 0; i < 5; i += 1) await Promise.resolve();
+    store.setLayer('project');
+    await Promise.resolve();
+
+    expect(queries.filter((q) => q.type === 'roadmap.byProject')).toHaveLength(1);
+  });
+
+  it('U-324: one repo omits the depo tab bar; two repos draw it', async () => {
+    const repoView = {
+      milestones: [{ id: 'm1', title: 'M1', state: 'open', source: { kind: 'local' } }],
+      issues: [],
+    };
+    const store = createRoadmapStore({
+      api: apiOf({ tree: SINGLE_TREE, repo: () => repoView }),
+      changes: () => () => undefined,
+    });
+    await store.load('antero');
+    store.setLayer('repo');
+    for (let i = 0; i < 5; i += 1) await Promise.resolve();
+    expect(render(store)).not.toContain('Depo seçimi');
+
+    const multiTree = [
+      {
+        project: 'antero',
+        name: 'Antero',
+        mainRepo: 'api',
+        repos: [
+          { repo: 'api', name: 'api', main: true, active: 0, running: 0, waiting: 0, status: 'idle' as const },
+          { repo: 'web', name: 'web', main: false, active: 0, running: 0, waiting: 0, status: 'idle' as const },
+        ],
+        active: 0,
+        running: 0,
+        waiting: 0,
+        status: 'idle' as const,
+      },
+    ];
+    const multi = createRoadmapStore({
+      api: apiOf({ tree: multiTree, repo: () => repoView }),
+      changes: () => () => undefined,
+    });
+    await multi.load('antero');
+    multi.setLayer('repo');
+    for (let i = 0; i < 5; i += 1) await Promise.resolve();
+    expect(render(multi)).toContain('Depo seçimi');
+  });
+});
+
+describe('roadmap page — repository layer (U-325)', () => {
+  const projectWithLink: RoadmapPageView = {
+    phases: [
+      {
+        id: 'faz-1',
+        name: 'Faz 1 · Çekirdek',
+        status: 'planned',
+        blockedBy: [],
+        items: [{ kind: 'repo_item', ref: { repo: 'api', kind: 'issue', id: 'i1' } }],
+        tasks: [],
+      },
+    ],
+    runnable: [],
+  };
+
+  const repoPopulated = {
+    milestones: [{ id: 'm1', title: 'M1', state: 'open', source: { kind: 'local' } }],
+    issues: [
+      { id: 'i1', title: 'Ana iş', state: 'open', milestone: 'm1', labels: [], source: { kind: 'local' } },
+      { id: 's1', title: 'Alt görev', state: 'open', parent: 'i1', labels: [], source: { kind: 'local' } },
+      { id: 's2', title: 'Derin alt', state: 'open', parent: 's1', labels: [], source: { kind: 'local' } },
+    ],
+  };
+
+  const loadRepo = async (project: RoadmapPageView, repo: unknown): Promise<RoadmapStore> => {
+    const store = createRoadmapStore({
+      api: apiOf({ project, repo: () => repo }),
+      changes: () => () => undefined,
+    });
+    await store.load('antero');
+    store.setLayer('repo');
+    for (let i = 0; i < 5; i += 1) await Promise.resolve();
+    return store;
+  };
+
+  it('U-325: lists milestones and issues; subtasks stay one level deep', async () => {
+    const store = await loadRepo(projectWithLink, repoPopulated);
+    store.toggleRepoIssue('i1');
+    const html = render(store);
+    expect(html).toContain('data-milestone="m1"');
+    expect(html).toContain('Ana iş');
+    expect(html).toContain('yerel alt görev');
+    expect(html).not.toContain('Derin alt');
+  });
+
+  it('U-325: a phase badge jumps to the project layer and highlights that phase', async () => {
+    const store = await loadRepo(projectWithLink, repoPopulated);
+    const before = render(store);
+    expect(before).toContain('Faz: Faz 1 · Çekirdek');
+    const match = before.match(/Faz: Faz 1 · Çekirdek/);
+    expect(match).not.toBeNull();
+    store.jumpToPhase('faz-1');
+    const after = render(store);
+    expect(after).toContain('data-phase="faz-1"');
+    expect(after).toContain('border-signal');
+    expect(after).not.toContain('data-milestone=');
+  });
+
+  it('U-325: not_found shows Bu depoda yol haritası yok without an action button', async () => {
+    const html = render(await loadRepo(projectWithLink, { ok: false, code: 'not_found' }));
+    expect(html).toContain('Bu depoda yol haritası yok');
+    expect(html).not.toContain('>Tekrar dene<');
+    expect(html).not.toContain('Kaydet');
+  });
+
+  it('U-325: empty repo roadmap shows the empty card', async () => {
+    const html = render(await loadRepo(projectWithLink, { milestones: [], issues: [] }));
+    expect(html).toContain('Bu depoda henüz kilometre taşı veya iş yok.');
+  });
+
+  it('U-325: the repository layer is read-only — no run or save controls', async () => {
+    const html = render(await loadRepo(projectWithLink, repoPopulated));
+    expect(html).not.toContain('Fazı çalıştır');
+    expect(html).not.toContain('>Kaydet<');
+    expect(html).not.toContain('>Başlat<');
   });
 });

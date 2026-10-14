@@ -97,7 +97,9 @@ const harness = (view: RoadmapPageView): Harness => {
   const api: Pick<Api, 'query' | 'command'> = {
     query: (query) => {
       queries.push(query);
-      return Promise.resolve(view);
+      if (query.type === 'project.tree') return Promise.resolve([]);
+      if (query.type === 'roadmap.byProject') return Promise.resolve(view);
+      return Promise.resolve({ ok: false, code: 'not_found' });
     },
     command: (_actor, command) => {
       commands.push(command);
@@ -161,7 +163,7 @@ describe('roadmap run controls — confirmation (U-64)', () => {
     expect(h.store.state().panel).toBeNull();
     expect(h.store.state().view).toBe(before);
     expect(h.commands).toEqual([]);
-    expect(h.queries).toHaveLength(1);
+    expect(h.queries.filter((q) => q.type === 'roadmap.byProject')).toHaveLength(1);
   });
 
   it('U-64: Başlat sends exactly one roadmap.runPhase for the phase and closes the panel', async () => {
@@ -279,7 +281,7 @@ describe('roadmap run controls — result feedback (U-66)', () => {
     await h.store.runPhase('faz-2');
     h.reply({ ok: false, code: 'not_running' });
     await h.store.pausePhase('faz-1');
-    expect(h.queries).toHaveLength(3);
+    expect(h.queries.filter((q) => q.type === 'roadmap.byProject')).toHaveLength(3);
   });
 
   it('U-66: a second command while one is in flight is ignored', async () => {

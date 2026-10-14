@@ -166,12 +166,18 @@ export interface RoadmapRepoView {
   }[];
 }
 
+export type RoadmapPhaseItemView =
+  | { readonly kind: 'repo_item'; readonly ref: { readonly repo: string; readonly kind: 'milestone' | 'issue'; readonly id: string } }
+  | { readonly kind: 'manual'; readonly id: string; readonly title: string; readonly done: boolean };
+
 export interface RoadmapPageView {
   readonly phases: readonly {
     readonly id: string;
     readonly name: string;
     readonly status: string;
     readonly progress?: { readonly done: number; readonly total: number };
+    /** Repo milestones and issues this phase links to (R-137); read-only on the roadmap page. */
+    readonly items?: readonly RoadmapPhaseItemView[];
     /** The ids of the phases that block this one and are not done; empty otherwise (A-127). */
     readonly blockedBy: readonly string[];
     /** Present once the operator started the phase (A-109); `attention` lists work-order ids. */

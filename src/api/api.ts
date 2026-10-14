@@ -2625,7 +2625,17 @@ const roadmapView = async (
       name: phase.name,
       status: view.phases[phase.id] ?? 'planned',
       ...(phase.items !== undefined && phase.items.length > 0
-        ? { progress: deriveProgress(phase, repoRoadmaps) }
+        ? {
+            progress: deriveProgress(phase, repoRoadmaps),
+            items: phase.items.map((item) =>
+              item.kind === 'manual'
+                ? { kind: 'manual' as const, id: item.id, title: item.title, done: item.done }
+                : {
+                    kind: 'repo_item' as const,
+                    ref: { repo: item.ref.repo, kind: item.ref.kind, id: item.ref.id },
+                  },
+            ),
+          }
         : {}),
       blockedBy: phase.blockedBy.filter((blocker) => (view.phases[blocker] ?? 'planned') !== 'done'),
       ...(autoRuns.has(phase.id) ? { autoRun: autoRuns.get(phase.id) } : {}),

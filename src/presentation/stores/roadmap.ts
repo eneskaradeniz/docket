@@ -6,7 +6,7 @@
 // phase shows, the one open panel (confirmation or attention), and the three phase commands with
 // the notices their outcomes become; the page refetches after every command.
 import type { Api } from '../../api/api';
-import type { Query, RoadmapPageView } from '../../api/queries';
+import type { ProjectTree, Query, RoadmapPageView, RoadmapRepoView } from '../../api/queries';
 import type { Actor } from '../../domain/index';
 import type { LabelKey } from '../labels/keys';
 import { failureKey, isQueryFailure } from './results';
@@ -40,6 +40,19 @@ export interface RoadmapStoreDeps {
 }
 
 export type RoadmapPhase = RoadmapPageView['phases'][number];
+
+export type RoadmapLayer = 'project' | 'repo';
+
+export interface RoadmapRepoTab {
+  readonly repo: string;
+  readonly name: string;
+}
+
+export interface RepoRoadmapSlice {
+  readonly loading: boolean;
+  readonly view: RoadmapRepoView | null;
+  readonly problem: string | null;
+}
 
 /** The page's one open panel: a phase's start confirmation or its attention list (U-64). */
 export interface RoadmapPanel {
@@ -114,10 +127,30 @@ export interface RoadmapState {
   readonly panel: RoadmapPanel | null;
   /** The phase whose command is in flight: a second command waits for the reply. */
   readonly pending: string | null;
+  /** Project layer or repository layer (U-324); switching does not reload the other. */
+  readonly layer: RoadmapLayer;
+  /** The project's repos from `project.tree`; the first is selected by default (U-324). */
+  readonly repos: readonly RoadmapRepoTab[];
+  readonly selectedRepo: string | null;
+  /** Per-repo `roadmap.byRepo` slices, cached for the session (U-324). */
+  readonly repoSlices: Readonly<Record<string, RepoRoadmapSlice>>;
+  /** Open milestone sections in the repo layer; defaults to all open on first load. */
+  readonly openMilestones: readonly string[];
+  /** Expanded parent issues (local subtasks) in the repo layer. */
+  readonly expandedIssues: readonly string[];
+  /** Scroll/highlight target after a phase badge jump (U-325). */
+  readonly highlightPhase: string | null;
 }
 
 export interface RoadmapStore {
   load(project: string): Promise<void>;
+  setLayer(layer: RoadmapLayer): void;
+  selectRepo(repo: string): void;
+  loadRepo(repo: string): Promise<void>;
+  toggleMilestone(id: string): void;
+  toggleRepoIssue(id: string): void;
+  jumpToPhase(phaseId: string): void;
+  clearHighlight(): void;
   /** Flip a phase's collapse; disclosure survives re-queries, not a project change. */
   togglePhase(id: string): void;
   /** Flip a cross-repo task's expansion; disclosure survives re-queries, not a project change. */
@@ -142,7 +175,22 @@ export const createRoadmapStore = (deps: RoadmapStoreDeps): RoadmapStore => {
   const { api, changes } = deps;
   const actor = deps.actor ?? OPERATOR;
 
-  const initial: RoadmapState = { loading: false, view: null, problem: null, openPhases: [], expanded: [], panel: null, pending: null };
+  const initial: RoadmapState = {
+    loading: false,
+    view: null,
+    problem: null,
+    openPhases: [],
+    expanded: [],
+    panel: null,
+    pending: null,
+    layer: 'project',
+    repos: [],
+    selectedRepo: null,
+    repoSlices: {},
+    openMilestones: [],
+    expandedIssues: [],
+    highlightPhase: null,
+  };
   let state: RoadmapState = initial;
   // The project the store is bound to: change events re-query it, and opening another project
   // resets the disclosure to a fresh entry (first phase open, nothing expanded).
@@ -150,10 +198,55 @@ export const createRoadmapStore = (deps: RoadmapStoreDeps): RoadmapStore => {
   const listeners = new Set<() => void>();
   // Only the newest attempt may apply its reply, as in the cockpit store.
   let attempts = 0;
+  let repoAttempts = 0;
 
   const set = (next: RoadmapState): void => {
     state = next;
     for (const listener of [...listeners]) listener();
+  };
+
+  const reposOfProject = (tree: ProjectTree, target: string): readonly RoadmapRepoTab[] => {
+    const project = tree.find((entry) => entry.project === target);
+    if (project === undefined) return [];
+    return project.repos.map((node) => ({ repo: node.repo, name: node.name }));
+  };
+
+  const loadRepo = async (repo: string): Promise<void> => {
+    const attempt = repoAttempts + 1;
+    repoAttempts = attempt;
+    const prior = state.repoSlices[repo];
+    set({
+      ...state,
+      repoSlices: {
+        ...state.repoSlices,
+        [repo]: { loading: true, view: prior?.view ?? null, problem: null },
+      },
+    });
+    const reply: unknown = await api.query({ type: 'roadmap.byRepo', repo } satisfies Query);
+    if (attempt !== repoAttempts) return;
+    if (isQueryFailure(reply)) {
+      set({
+        ...state,
+        repoSlices: {
+          ...state.repoSlices,
+          [repo]: { loading: false, view: null, problem: reply.code },
+        },
+      });
+      return;
+    }
+    const view = reply as RoadmapRepoView;
+    const openMilestones =
+      state.openMilestones.length > 0
+        ? state.openMilestones
+        : view.milestones.map((milestone) => milestone.id);
+    set({
+      ...state,
+      openMilestones,
+      repoSlices: {
+        ...state.repoSlices,
+        [repo]: { loading: false, view, problem: null },
+      },
+    });
   };
 
   const load = async (target: string): Promise<void> => {
@@ -171,18 +264,28 @@ export const createRoadmapStore = (deps: RoadmapStoreDeps): RoadmapStore => {
       expanded: freshProject ? [] : state.expanded,
       panel: freshProject ? null : state.panel,
       pending: freshProject ? null : state.pending,
+      layer: freshProject ? 'project' : state.layer,
+      repos: freshProject ? [] : state.repos,
+      selectedRepo: freshProject ? null : state.selectedRepo,
+      repoSlices: freshProject ? {} : state.repoSlices,
+      openMilestones: freshProject ? [] : state.openMilestones,
+      expandedIssues: freshProject ? [] : state.expandedIssues,
+      highlightPhase: freshProject ? null : state.highlightPhase,
     });
+    const treeReply: unknown = await api.query({ type: 'project.tree' } satisfies Query);
+    const repos = Array.isArray(treeReply) ? reposOfProject(treeReply as ProjectTree, target) : [];
+    const selectedRepo = repos[0]?.repo ?? null;
     const reply: unknown = await api.query({ type: 'roadmap.byProject', project: target } satisfies Query);
     if (attempt !== attempts) return;
     if (isQueryFailure(reply)) {
       // The problem state replaces the page: an empty roadmap must not pretend health (U-17).
-      set({ ...state, loading: false, view: null, problem: reply.code });
+      set({ ...state, loading: false, view: null, problem: reply.code, repos, selectedRepo });
       return;
     }
     // The contract of the roadmap query: a reply that is not a failure is a RoadmapPageView.
     const view = reply as RoadmapPageView;
     const openPhases = state.openPhases.length > 0 ? state.openPhases : [view.phases[0]?.id].filter((id) => id !== undefined);
-    set({ ...state, loading: false, view, problem: null, openPhases });
+    set({ ...state, loading: false, view, problem: null, openPhases, repos, selectedRepo });
   };
 
   const phaseName = (phase: string): string => state.view?.phases.find((entry) => entry.id === phase)?.name ?? phase;
@@ -236,6 +339,45 @@ export const createRoadmapStore = (deps: RoadmapStoreDeps): RoadmapStore => {
 
   return {
     load,
+    setLayer: (layer) => {
+      if (layer === state.layer) return;
+      set({ ...state, layer });
+      if (layer === 'repo' && state.selectedRepo !== null) {
+        const slice = state.repoSlices[state.selectedRepo];
+        if (slice === undefined || (slice.view === null && slice.problem === null && !slice.loading)) {
+          void loadRepo(state.selectedRepo);
+        }
+      }
+    },
+    selectRepo: (repo) => {
+      if (repo === state.selectedRepo) return;
+      set({ ...state, selectedRepo: repo, openMilestones: [], expandedIssues: [] });
+      void loadRepo(repo);
+    },
+    loadRepo,
+    toggleMilestone: (id) => {
+      const open = state.openMilestones.includes(id);
+      set({
+        ...state,
+        openMilestones: open ? state.openMilestones.filter((entry) => entry !== id) : [...state.openMilestones, id],
+      });
+    },
+    toggleRepoIssue: (id) => {
+      const open = state.expandedIssues.includes(id);
+      set({
+        ...state,
+        expandedIssues: open ? state.expandedIssues.filter((entry) => entry !== id) : [...state.expandedIssues, id],
+      });
+    },
+    jumpToPhase: (phaseId) => {
+      set({
+        ...state,
+        layer: 'project',
+        highlightPhase: phaseId,
+        openPhases: state.openPhases.includes(phaseId) ? state.openPhases : [...state.openPhases, phaseId],
+      });
+    },
+    clearHighlight: () => set({ ...state, highlightPhase: null }),
     togglePhase: (id) => {
       const open = state.openPhases.includes(id);
       set({

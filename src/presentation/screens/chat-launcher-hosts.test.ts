@@ -42,7 +42,14 @@ const within = (element: ReturnType<typeof createElement>): string =>
 describe('roadmap host', () => {
   const VIEW: RoadmapPageView = { phases: [], runnable: [] };
   const draw = async (wrap: boolean): Promise<string> => {
-    const api: Pick<Api, 'query' | 'command'> = { query: () => Promise.resolve(VIEW), command: () => Promise.resolve({ ok: true }) };
+    const api: Pick<Api, 'query' | 'command'> = {
+      query: (query) => {
+        if (query.type === 'project.tree') return Promise.resolve([]);
+        if (query.type === 'roadmap.byProject') return Promise.resolve(VIEW);
+        return Promise.resolve({ ok: false, code: 'not_found' });
+      },
+      command: () => Promise.resolve({ ok: true }),
+    };
     const store = createRoadmapStore({ api, changes: () => () => undefined });
     await store.load('antero');
     const screen = createElement(RoadmapScreen, { store, project: 'antero', name: 'Antero Başlığı', locale: 'tr', onOpenRepo: () => undefined, onOpenWorkOrder: () => undefined });

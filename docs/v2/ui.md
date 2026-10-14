@@ -1830,3 +1830,9 @@ Added 2026-10-14, #1110; extends U-226's decision-zone matrix and implements A-3
 - **U-303** `Yönlendir…` opens a note dialog: multiline textarea, `Gönder` secondary button; Enter sends and Shift+Enter adds a line (the reject-box precedent). An empty or oversized note answers `bad_input`, which renders as the inline field error and the dialog stays open; anything else closes it and leaves the reporting to the toast.
 - **U-304** Both results map through U-8 (`commandResultKey`); no new tokens, no new hues — the two doors are secondary outline buttons, the confirm dialog carries the weight (there is no danger token on the card).
 - **U-305** Copy: every `detail.stop.*` / `detail.steer.*` key exists in tr and en (Durdur / Yönlendir fixed from the prototype's own list); no inline strings in `detail.tsx` or the decision card (scan).
+
+## Roadmap repository layer (U-324 … U-325)
+
+Added 2026-10-14, #1115.
+- **U-324** (added 2026-10-14, #1115) The roadmap page has the tabs "Proje katmanı" and "Depo katmanı"; the repo tab bar appears only with several repos and the first repo is selected by default; selecting a tab never reloads the other layer.
+- **U-325** (added 2026-10-14, #1115) The repo layer lists milestones, issues, local subtasks (one level) and "Faz: …" badges that jump to the project layer; it is read-only; the six states of decision 6 render as described; copy lives in the TR and EN bundles, at most 8 words per sentence.
