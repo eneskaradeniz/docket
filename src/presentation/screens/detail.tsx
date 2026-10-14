@@ -15,10 +15,11 @@
 // the strip says its states in words (A6), and short windows pin the decision bar at the bottom
 // while the content's padding grows by its height (the prototype's IntersectionObserver rule).
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import type { DeployGateView, GateView, StageGates } from '../stores/work-order-detail';
+import type { DeployGateView, GateChecksGroup, GateView, StageGates } from '../stores/work-order-detail';
 import {
   decisionZone,
   detailBadge,
+  gateCheckGroups,
   newestFailedRunOf,
   runRows,
   stripSegments,
@@ -78,6 +79,23 @@ const GATE_STATUS_KEY: Readonly<Record<GateView['status'], LabelKey>> = {
   upcoming: 'gate.state.upcoming',
 };
 
+/** The six forge statuses a check row can say (U-342), one word each. */
+const CHECK_STATUS_KEY: Readonly<Record<string, LabelKey>> = {
+  queued: 'check.status.queued',
+  running: 'check.status.running',
+  passed: 'check.status.passed',
+  failed: 'check.status.failed',
+  cancelled: 'check.status.cancelled',
+  skipped: 'check.status.skipped',
+};
+
+/** A verdict history row's word (the fold's own history, not the standing). */
+const VERDICT_KEY: Readonly<Record<string, LabelKey>> = {
+  passed: 'gate.state.passed',
+  failed: 'run.outcome.failed',
+  pending: 'gate.state.pending',
+};
+
 /** The stage row's standing word: done behind the work order, the current stage running or
  *  waiting, upcoming ahead of it. */
 const stageStandingKey = (stage: StageGates, done: boolean, running: boolean): LabelKey =>
@@ -110,6 +128,100 @@ function GateRow({ gate, locale }: { readonly gate: GateView; readonly locale: L
   );
 }
 
+/** The expanded check fold (U-341…U-343): per remote_checks gate, the standing word, the quiet
+ *  pending line beside the last recorded checks (name + status word, plain text — no url seam
+ *  exists, so nothing here poses as a link), and the verdict history under it, newest last. */
+export function GateChecksBody({ locale, groups }: { readonly locale: Locale; readonly groups: readonly GateChecksGroup[] }) {
+  return (
+    <div data-detail-checks-expanded className="grid gap-3">
+      {groups.map((group) => {
+        const passed = group.checks.filter((check) => check.status === 'passed').length;
+        return (
+          <div key={group.gate} className="grid gap-1.5 rounded-card border border-hairline bg-raised px-3 py-2">
+            <div className="flex min-w-0 flex-wrap items-baseline gap-2">
+              <span className="text-[0.84375rem] font-semibold text-ink">{t(locale, 'gate.kind.remote_checks')}</span>
+              <code className="truncate font-mono text-[0.6875rem] text-inkdim" title={group.gate}>{group.gate}</code>
+              <span
+                className={`ml-auto text-[0.78125rem] ${
+                  group.standing === 'pending' ? 'font-semibold text-signal-soft' : group.standing === 'passed' ? 'text-proceed' : 'text-inkdim'
+                }`}
+              >
+                {t(locale, GATE_STATUS_KEY[group.standing])}
+              </span>
+            </div>
+            {group.standing === 'pending' ? (
+              // U-342: the quiet "bekliyor" line — a promise of nothing, never a spinner.
+              <p className="m-0 text-[0.78125rem] text-inkdim">{t(locale, 'detail.checks.pending')}</p>
+            ) : null}
+            {group.checks.length > 0 ? (
+              <>
+                <p className="m-0 font-mono text-[0.6875rem] text-inkdim">
+                  {t(locale, 'detail.checks.count').replace('{p}', String(passed)).replace('{n}', String(group.checks.length))}
+                </p>
+                <ul role="list" className="m-0 grid list-none gap-1 p-0">
+                  {group.checks.map((check) => (
+                    <li key={check.name} className="flex min-w-0 items-baseline justify-between gap-2">
+                      <span className="truncate font-mono text-[0.75rem] text-ink" title={check.name}>{check.name}</span>
+                      <span
+                        className={`text-[0.75rem] ${
+                          check.status === 'passed' ? 'text-proceed' : check.status === 'failed' ? 'text-error' : 'text-inkdim'
+                        }`}
+                      >
+                        {t(locale, CHECK_STATUS_KEY[check.status] ?? 'detail.checks.unknown')}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+            {group.history.length > 0 ? (
+              <ul role="list" className="m-0 grid list-none gap-0.5 p-0">
+                {group.history.map((row, index) => (
+                  <li key={`${row.at}-${index}`} className="font-mono text-[0.6875rem] text-inkdim">
+                    {formatDateTime(locale, row.at)} · {t(locale, VERDICT_KEY[row.status] ?? 'detail.checks.unknown')}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** The collapsed-by-default check fold (U-341): one line under the usage fold, expanded by the
+ *  toggle, the body inside. */
+function GateChecksSection({ locale, groups }: { readonly locale: Locale; readonly groups: readonly GateChecksGroup[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const anyPending = groups.some((group) => group.standing === 'pending');
+  return (
+    <section aria-label={t(locale, 'detail.checks.heading')} data-detail-checks className="rounded-card border border-hairline bg-surface">
+      <div className="flex min-w-0 items-center px-3 py-2">
+        <button
+          type="button"
+          data-detail-checks-toggle
+          aria-expanded={expanded}
+          aria-label={t(locale, 'detail.checks.foldLabel')}
+          onClick={() => setExpanded((open) => !open)}
+          className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 rounded-control px-1 py-1 text-left hover:bg-raised"
+        >
+          <span className="font-mono text-[0.6875rem] text-inkdim" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+          <span className="text-[0.78125rem] font-semibold text-ink">{t(locale, 'detail.checks.heading')}</span>
+          {anyPending ? (
+            <span className="text-[0.78125rem] text-signal-soft">{t(locale, 'detail.checks.pending')}</span>
+          ) : null}
+        </button>
+      </div>
+      {expanded ? (
+        <div className="border-t border-hairline px-3 py-3">
+          <GateChecksBody locale={locale} groups={groups} />
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onBack, pages, onOpenPage }: WorkOrderDetailScreenProps) {
   const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   // The close confirmation's own little dialog (A3) — the ⋯ menu and the failed card both open it.
@@ -136,6 +248,9 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
   const parallel =
     zone?.kind === 'cards' && zone.cards.filter((card) => card.kind === 'approve').length >= 2;
   const rows = view === null ? [] : runRows(view);
+  // The CI check fold (U-341): remote_checks gates only, from the stages the store already
+  // derived and the rows the reply carried.
+  const checkGroups = view === null ? [] : gateCheckGroups(state.stages, view.gates);
   const livePaneVisible = view !== null && view.runs.some((run) => run.endedAt === undefined);
   const running = view !== null && (view.state.status === 'running' || view.state.status === 'limit_waiting');
   // The environments the flow's deploy gates actually target, in flow order, deduplicated —
@@ -297,6 +412,8 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
             money={workOrderUsageMoney(view)}
             onRetry={() => void store.reloadUsageSummary()}
           />
+
+          {checkGroups.length > 0 ? <GateChecksSection locale={locale} groups={checkGroups} /> : null}
 
           {/* The close confirmation (A3): focus moves in, Tab is trapped, Esc returns to the menu
               button — the ⋯ menu stays the named opener. */}

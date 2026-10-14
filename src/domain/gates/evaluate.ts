@@ -33,9 +33,12 @@ export interface GateEvidence {
   };
 }
 
+/** A forge check run's own word for itself — the six statuses a `remote_checks` gate matches. */
+export type CheckRunStatus = 'queued' | 'running' | 'passed' | 'failed' | 'cancelled' | 'skipped';
+
 export interface CheckRunResult {
   readonly name: string;
-  readonly status: 'queued' | 'running' | 'passed' | 'failed' | 'cancelled' | 'skipped';
+  readonly status: CheckRunStatus;
 }
 
 export type GateEvaluator<K extends GateDef['kind']> = (

@@ -21,9 +21,11 @@ import type { LivePaneStore } from '../stores/live-pane';
 import { createPageListStore } from '../stores/page-viewer';
 import {
   createWorkOrderDetailStore,
+  gateCheckGroups,
+  type StageGates,
   type WorkOrderDetailView,
 } from '../stores/work-order-detail';
-import { WorkOrderDetailScreen } from './detail';
+import { GateChecksBody, WorkOrderDetailScreen } from './detail';
 
 const RAW = import.meta.glob(
   [
@@ -842,5 +844,111 @@ describe('work-order detail screen — accessibility (A1, A5, A6, A7)', () => {
       expect(card, `the word ${word} must live in a label bundle`).not.toContain(`>${word}`);
       expect(card).not.toContain(`'${word}`);
     }
+  });
+});
+
+/** The stage list the store derives for a view — what the screen's fold reads. */
+const stagesOf = async (view: WorkOrderDetailView): Promise<readonly StageGates[]> => {
+  const api = fakeApi(view);
+  const store = createWorkOrderDetailStore({ api, changes: () => () => {}, actor: ACTOR, pane: fakePane() });
+  await store.load(WO_ID);
+  return store.state().stages;
+};
+
+describe('work-order detail screen — the CI check fold (U-341 … U-343)', () => {
+  const GATE_CI = slugOf<'gate'>('ci');
+
+  /** One verify stage behind a remote_checks gate — the flow the check fold reads. */
+  const CI_FLOW: FlowDef = {
+    id: slugOf<'flow'>('ci-flow'),
+    name: 'CI Flow',
+    stages: [
+      { id: STAGE_CHECK, name: 'Check', role: null, exit: [{ kind: 'remote_checks', id: GATE_CI, required: 'all', timeoutMinutes: 10 }] },
+    ],
+  };
+
+  /** A gating work order whose gate holds a legacy evaluation (no recorded checks) and a newer
+   *  one with three checks — the standing the fold shows after a re-run. */
+  const CI_GATING: WorkOrderDetailView = {
+    ...READY,
+    record: { ...READY.record, flow: 'ci-flow' },
+    state: { status: 'gating', stage: STAGE_CHECK, attempt: 2, pendingGates: [GATE_CI], skippedStages: [] },
+    next: { kind: 'evaluate_gates', stage: STAGE_CHECK, gates: [GATE_CI] },
+    flow: CI_FLOW,
+    gates: [
+      { gate: 'ci', stage: 'check', verdict: { status: 'failed', reason: 'remote check failed: lint' }, at: 1_700_000_000_000, checks: [] },
+      {
+        gate: 'ci',
+        stage: 'check',
+        verdict: { status: 'passed' },
+        at: 1_700_000_360_000,
+        checks: [
+          { name: 'build-linux', status: 'passed' },
+          { name: 'lint', status: 'failed' },
+          { name: 'test', status: 'skipped' },
+        ],
+      },
+    ],
+  };
+
+  it('U-341: the fold sits under the strip and the usage fold, collapsed by default', async () => {
+    const html = await draw(CI_GATING);
+    const stripAt = html.indexOf('data-detail-strip');
+    const usageAt = html.indexOf('data-detail-wo-usage');
+    const checksAt = html.indexOf('data-detail-checks');
+    const decisionAt = html.indexOf('id="detail-expected"');
+    expect(checksAt).toBeGreaterThan(usageAt);
+    expect(usageAt).toBeGreaterThan(stripAt);
+    expect(decisionAt).toBeGreaterThan(checksAt);
+    expect(html.slice(checksAt, checksAt + 800)).toContain('aria-expanded="false"');
+    expect(html).toContain('Kontroller');
+    expect(html).not.toContain('data-detail-checks-expanded');
+  });
+
+  it('U-342: the rows render from the fixture detail — newest recorded checks, name and status word', async () => {
+    const groups = gateCheckGroups(await stagesOf(CI_GATING), CI_GATING.gates);
+    const html = renderToStaticMarkup(createElement(GateChecksBody, { locale: 'tr', groups }));
+    expect(html).toContain('1/3 geçti');
+    expect(html).toContain('build-linux');
+    expect(html).toContain('geçti');
+    expect(html).toContain('başarısız');
+    expect(html).toContain('atlandı');
+    // The verdict history rides along, newest last — the legacy row then the recorded one.
+    const historyWords = ['Başarısız', 'Geçti'];
+    for (const word of historyWords) expect(html).toContain(word);
+  });
+
+  it('U-342: a pending gate with no recorded rows keeps the quiet line and no count', async () => {
+    const pendingOnly: WorkOrderDetailView = { ...CI_GATING, gates: [] };
+    const html = await draw(pendingOnly);
+    const checksAt = html.indexOf('data-detail-checks');
+    expect(checksAt).toBeGreaterThan(-1);
+    expect(html.slice(checksAt, checksAt + 800)).toContain('bekliyor');
+    const groups = gateCheckGroups(await stagesOf(pendingOnly), pendingOnly.gates);
+    const body = renderToStaticMarkup(createElement(GateChecksBody, { locale: 'tr', groups }));
+    expect(body).toContain('bekliyor');
+    expect(body).not.toContain('geçti</span>');
+  });
+
+  it('U-342: a flow without remote_checks gates renders no fold at all', async () => {
+    const html = await draw(AWAITING_HUMAN);
+    expect(html).not.toContain('data-detail-checks');
+  });
+
+  it('U-343: the EN bundle words the fold and the check names stay plain text — no url seam poses as a link', async () => {
+    const groups = gateCheckGroups(await stagesOf(CI_GATING), CI_GATING.gates);
+    const html = renderToStaticMarkup(createElement(GateChecksBody, { locale: 'en', groups }));
+    expect(html).toContain('1/3 passed');
+    expect(html).toContain('skipped');
+    expect(html).toContain('failed');
+    expect(html).not.toContain('<a ');
+    expect(html).not.toContain('<button');
+  });
+
+  it('a failed detail load shows the retry line and the fold never renders half', async () => {
+    const html = await draw({ ok: false, code: 'not_found' } as unknown as WorkOrderDetailView);
+    expect(html).toContain('data-detail-problem');
+    expect(html).toContain('Yeniden dene');
+    expect(html).not.toContain('data-detail-checks');
   });
 });

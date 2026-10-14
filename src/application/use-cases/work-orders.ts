@@ -4,12 +4,16 @@ import type {
   AccountId,
   Actor,
   Billing,
+  CheckRunStatus,
   CostByKind,
   EnvironmentDef,
+  EpochMs,
   FlowAction,
   FlowDef,
   FlowPin,
   FlowSlug,
+  GateSlug,
+  GateVerdict,
   ProjectSlug,
   Result,
   RoleDef,
@@ -32,6 +36,7 @@ import {
   normalizeWorkOrderDescription,
   ok,
   pinFlow,
+  REMOTE_CHECKS_EVENT_MAX,
 } from '../../domain/index';
 
 import type { AccountRecord, AppDeps, RunRecord, WorkOrderRecord } from '../ports';
@@ -170,7 +175,28 @@ export interface WorkOrderView {
   readonly flow: FlowDef;
   /** The repo section's environments (protected, promoteFrom), same reason as `flow`. */
   readonly environments: readonly EnvironmentDef[];
+  /** The remote_checks gates' evaluation rows (A-378): a pure read of what the dispatcher
+   *  already recorded — nothing here starts a poll. */
+  readonly gates: readonly WorkOrderGateRow[];
 }
+
+/** One check of a gate's recorded evidence. `url` rides the contract but is never written —
+ *  the series decided the evidence records no url yet, so a later field needs no migration. */
+export interface WorkOrderGateCheck {
+  readonly name: string;
+  readonly status: CheckRunStatus;
+  readonly url?: string;
+}
+
+/** One `gate_evaluated` row of a `remote_checks` gate, verbatim from the event stream. */
+export interface WorkOrderGateRow {
+  readonly gate: GateSlug;
+  readonly stage: StageSlug;
+  readonly verdict?: GateVerdict;
+  readonly at: EpochMs;
+  readonly checks: readonly WorkOrderGateCheck[];
+}
+
 export type ViewError = 'not_found' | 'definitions_invalid' | 'unknown_flow';
 
 const runBillingOf = (billing: Billing): RunBilling => (billing === 'metered' ? 'pay_per_use' : billing);
@@ -247,6 +273,46 @@ export async function workOrderRunSummaries(
   return summaries;
 }
 
+/** The `remote_checks` gates of the flow by slug — the only evaluations the check rows show. */
+const remoteChecksGates = (flow: FlowDef): ReadonlySet<GateSlug> => {
+  const gates = new Set<GateSlug>();
+  for (const stage of flow.stages) {
+    for (const gate of stage.exit) {
+      if (gate.kind === 'remote_checks') gates.add(gate.id);
+    }
+  }
+  return gates;
+};
+
+/** A-378: the evaluation rows of the flow's `remote_checks` gates, in event order (newest last),
+ *  keeping the newest `REMOTE_CHECKS_EVENT_MAX` rows per gate; each row's checks are its event's
+ *  recorded evidence, so an evaluation from before the field existed shows no checks. */
+export const workOrderGateRows = (
+  flow: FlowDef,
+  events: readonly WorkOrderEvent[],
+): readonly WorkOrderGateRow[] => {
+  const remote = remoteChecksGates(flow);
+  const rows: WorkOrderGateRow[] = [];
+  const totals = new Map<GateSlug, number>();
+  for (const event of events) {
+    if (event.type !== 'gate_evaluated' || !remote.has(event.gate)) continue;
+    rows.push({
+      gate: event.gate,
+      stage: event.stage,
+      verdict: event.verdict,
+      at: event.at,
+      checks: (event.remoteChecks?.checks ?? []).map((check) => ({ name: check.name, status: check.status })),
+    });
+    totals.set(event.gate, (totals.get(event.gate) ?? 0) + 1);
+  }
+  const seen = new Map<GateSlug, number>();
+  return rows.filter((row) => {
+    const position = seen.get(row.gate) ?? 0;
+    seen.set(row.gate, position + 1);
+    return position >= (totals.get(row.gate) ?? 0) - REMOTE_CHECKS_EVENT_MAX;
+  });
+};
+
 export async function getWorkOrder(
   deps: Pick<AppDeps, 'workOrders' | 'runs' | 'definitions'>,
   id: WorkOrderId,
@@ -260,7 +326,8 @@ export async function getWorkOrder(
   if (flow === undefined) return err('unknown_flow');
 
   // Everything below is derived per read from the current definitions; none of it is stored.
-  const state = deriveWorkOrderState(flow, await deps.workOrders.events(id));
+  const events = await deps.workOrders.events(id);
+  const state = deriveWorkOrderState(flow, events);
   const runs = await deps.runs.listForWorkOrder(id);
   return ok({
     record,
@@ -269,6 +336,7 @@ export async function getWorkOrder(
     runs,
     flow,
     environments: loaded.value.repo?.environments ?? [],
+    gates: workOrderGateRows(flow, events),
   });
 }
 

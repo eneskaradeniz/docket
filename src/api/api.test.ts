@@ -140,8 +140,17 @@ const CHANGES_FLOW_JSON = {
   ],
 };
 
+/** One verify stage behind a remote_checks gate — the flow the detail's CI check rows read. */
+const CI_FLOW_JSON = {
+  id: 'ci-flow',
+  name: 'CI',
+  stages: [
+    { id: 'verify', name: 'Verify', role: null, exit: [{ kind: 'remote_checks', id: 'ci', required: 'all', timeoutMinutes: 10 }] },
+  ],
+};
+
 const repoBodyOf = (flowId = 'board-flow'): Record<string, unknown> => {
-  const flow = [FLOW_JSON, SHIP_FLOW_JSON, SHIP_PRD_FLOW_JSON, CHANGES_FLOW_JSON].find((candidate) => candidate.id === flowId);
+  const flow = [FLOW_JSON, SHIP_FLOW_JSON, SHIP_PRD_FLOW_JSON, CHANGES_FLOW_JSON, CI_FLOW_JSON].find((candidate) => candidate.id === flowId);
   if (flow === undefined) throw new Error(`fixture flow must exist: ${flowId}`);
   return {
     id: REPO,
@@ -178,7 +187,7 @@ const repoBodyOf = (flowId = 'board-flow'): Record<string, unknown> => {
 
 const DEFINITIONS_JSON = JSON.stringify({
   roles: [ROLE_JSON],
-  flows: [FLOW_JSON, SHIP_FLOW_JSON, SHIP_PRD_FLOW_JSON, CHANGES_FLOW_JSON],
+  flows: [FLOW_JSON, SHIP_FLOW_JSON, SHIP_PRD_FLOW_JSON, CHANGES_FLOW_JSON, CI_FLOW_JSON],
   capabilities: [],
   repo: repoBodyOf('board-flow'),
 });
@@ -225,7 +234,7 @@ const openViaApi = async (h: Harness, title = 'Fix the login flow', flow?: strin
   if (flow !== undefined) {
     h.definitions.seed({ kind: 'repo', repo: slugOf<'repo'>(REPO) }, 'defs.json', JSON.stringify({
       roles: [ROLE_JSON],
-      flows: [FLOW_JSON, SHIP_FLOW_JSON, SHIP_PRD_FLOW_JSON, CHANGES_FLOW_JSON],
+      flows: [FLOW_JSON, SHIP_FLOW_JSON, SHIP_PRD_FLOW_JSON, CHANGES_FLOW_JSON, CI_FLOW_JSON],
       capabilities: [],
       repo: repoBodyOf(flow),
     }));
@@ -2163,6 +2172,49 @@ describe('createApi', () => {
       expect(detail).toMatchObject({
         runSummaries: [{ runId, canSteer: false }],
       });
+    });
+  });
+
+  describe('workOrder.detail gate rows (A-378)', () => {
+    it('A-378: detail carries the remote_checks evaluation rows, newest last, capped at the newest 30 per gate', async () => {
+      const h = await createHarness();
+      const id = await openViaApi(h, 'CI rows', 'ci-flow');
+      const workOrderId = ulidOf<'work-order'>(id);
+      const stage = slugOf<'stage'>('verify');
+      const gate = slugOf<'gate'>('ci');
+      // A legacy evaluation — recorded before the evidence field existed — stays history with no
+      // checks; the recorded rows carry their own evidence.
+      await h.deps.workOrders.appendEvent(workOrderId, {
+        type: 'gate_evaluated',
+        at: 1_000,
+        stage,
+        gate,
+        verdict: { status: 'failed', reason: 'remote check failed: lint' },
+      });
+      for (let index = 0; index < 32; index += 1) {
+        await h.deps.workOrders.appendEvent(workOrderId, {
+          type: 'gate_evaluated',
+          at: 1_100 + index,
+          stage,
+          gate,
+          verdict: { status: 'passed' },
+          remoteChecks: { checks: [{ name: `check-${index}`, status: index % 2 === 0 ? 'passed' : 'failed' }] },
+        });
+      }
+
+      const detail = await createApi(h.deps).query({ type: 'workOrder.detail', id });
+      const gates = (detail as { readonly gates: readonly unknown[] }).gates;
+      // The newest 30 of the 33 rows; the legacy row and the two oldest recorded ones fall away.
+      expect(gates).toHaveLength(30);
+      expect(gates[0]).toMatchObject({ gate: 'ci', at: 1_102, checks: [{ name: 'check-2', status: 'passed' }] });
+      expect(gates[29]).toMatchObject({ gate: 'ci', at: 1_131, checks: [{ name: 'check-31', status: 'failed' }] });
+    });
+
+    it('A-378: a detail without remote_checks evaluations carries an empty gates list', async () => {
+      const h = await createHarness();
+      const id = await openViaApi(h, 'No CI yet');
+      const detail = await createApi(h.deps).query({ type: 'workOrder.detail', id });
+      expect(detail).toMatchObject({ gates: [] });
     });
   });
 
