@@ -20,6 +20,7 @@ import type {
   FlowDef,
   FlowAction,
   GateSlug,
+  GitLifecycleState,
   RunOutcome,
   Slug,
   StageSlug,
@@ -28,6 +29,8 @@ import type {
 import { parseSlug } from '../../domain/index';
 
 import type { LivePaneStore } from './live-pane';
+import { TR } from '../labels/tr';
+import { EN } from '../labels/en';
 import {
   createWorkOrderDetailStore,
   decisionZone,
@@ -35,6 +38,7 @@ import {
   formatRunCode,
   gateCheckGroups,
   gateWaitingCount,
+  gitCard,
   isFailedStanding,
   lastMessageOf,
   newestFailedRunOf,
@@ -44,6 +48,7 @@ import {
   type DetailChange,
   type DetailChangeSignal,
   type GateChecksGroup,
+  type GitBaseRead,
   type StageGates,
   type WorkOrderDetailRun,
   type WorkOrderGateRow,
@@ -213,6 +218,7 @@ interface FakeApi extends Pick<Api, 'query' | 'command'> {
   setChanges(reply: unknown): void;
   setRunEvents(reply: unknown): void;
   setUsageSummary(reply: unknown): void;
+  setGitBase(reply: unknown): void;
   setCommandResult(result: CommandResult): void;
 }
 
@@ -240,6 +246,7 @@ const fakeApi = (initialReply: unknown): FakeApi => {
   let changesReply: unknown = null;
   let runEventsReply: unknown = null;
   let usageSummaryReply: unknown = EMPTY_USAGE;
+  let gitBaseReply: unknown = null;
   let commandResult: CommandResult = { ok: true };
   return {
     queries,
@@ -259,6 +266,9 @@ const fakeApi = (initialReply: unknown): FakeApi => {
     setUsageSummary: (next) => {
       usageSummaryReply = next;
     },
+    setGitBase: (next) => {
+      gitBaseReply = next;
+    },
     setCommandResult: (next) => {
       commandResult = next;
     },
@@ -268,6 +278,7 @@ const fakeApi = (initialReply: unknown): FakeApi => {
       if (query.type === 'workOrder.changes') return Promise.resolve(changesReply);
       if (query.type === 'run.events') return Promise.resolve(runEventsReply);
       if (query.type === 'usage.summary') return Promise.resolve(usageSummaryReply);
+      if (query.type === 'workOrder.gitBase') return Promise.resolve(gitBaseReply);
       return Promise.resolve(reply);
     },
     command: (_actor, command) => {
@@ -350,6 +361,7 @@ describe('work-order detail store', () => {
       autoAllowed: 0,
       usageSummary: null,
       usageSummaryFailed: false,
+      gitBase: null,
     });
     const loading = store.load(WO_ID);
     expect(store.state().loading).toBe(true);
@@ -1406,5 +1418,183 @@ describe('gateCheckGroups — the CI check fold (U-341 … U-343)', () => {
     const passed = gateCheckGroups(passedStages, [{ gate: 'ci', stage: 'verify', verdict: { status: 'passed' }, at: 3_000, checks: [] }]);
     expect(passed).toHaveLength(1);
     expect(gateCheckGroups(passedStages, [])).toEqual([]);
+  });
+});
+
+// --- U-344 … U-349: the git doors --------------------------------------------------------------------
+
+describe('git doors (U-344 … U-349)', () => {
+  const BRANCH = { name: `docket/wo-${WO_ID.toLowerCase()}`, head: 'a1b2c3d4', pushedAt: 5_000 };
+  const PR = { number: 7, url: 'https://forge.example/atolye/pull/7', head: BRANCH.name, base: 'main', merged: false };
+  const NO_FORGE: GitBaseRead = { ok: false, code: 'forge_unavailable' };
+
+  /** The door of one kind off a view's lifecycle, worktree standing (the changes read's own
+   *  fact) and forge read. */
+  const doorOf = (git: GitLifecycleState | undefined, gitBase: GitBaseRead | null, kind: 'push' | 'openPr' | 'merge' | 'release', hasWorktree = true) => {
+    const view: WorkOrderDetailView = { ...detailReply(AT_BUILD), ...(git === undefined ? {} : { git }) };
+    return gitCard(view, gitBase, hasWorktree)?.doors.find((door) => door.kind === kind);
+  };
+
+  it('U-344: released work orders and worktree-less ones carry no card; the branch line is the deterministic name until the ledger names it', () => {
+    const view = detailReply(AT_BUILD);
+    // A worktree stands and nothing git has happened yet: the card with the deterministic name.
+    const fresh = gitCard(view, null, true);
+    expect(fresh).not.toBeNull();
+    expect(fresh?.branch).toBe(BRANCH.name);
+    // The ledger's own push name is the same rule's recorded word — it wins once one folded in.
+    expect(gitCard({ ...view, git: { branch: BRANCH } }, null, true)?.branch).toBe(BRANCH.name);
+    // No working copy: nothing to push from, no card.
+    expect(gitCard(view, null, false)).toBeNull();
+    // Released: the lifecycle closed; the closed work shows no git card.
+    const released = gitCard({ ...view, git: { branch: BRANCH, pr: { ...PR, merged: true }, released: true } }, null, true);
+    expect(released).toBeNull();
+    // A reply older than the field reads as the empty lifecycle, never as a crash.
+    expect(gitCard(view, null, true)?.pr).toBeNull();
+  });
+
+  it('U-345: Gönder closes with its one reason line exactly while the forge is missing', () => {
+    // Unknown (the read has not landed), a healthy forge and a transient forge failure all keep
+    // the door open — only a missing forge is a missing forge; the command words the rest.
+    expect(doorOf(undefined, null, 'push')?.available).toBe(true);
+    expect(doorOf(undefined, { ok: true, base: 'main' }, 'push')?.available).toBe(true);
+    expect(doorOf(undefined, { ok: false, code: 'forge_error' }, 'push')?.available).toBe(true);
+    const missing = doorOf(undefined, NO_FORGE, 'push');
+    expect(missing?.available).toBe(false);
+    expect(missing?.reasonKey).toBe('detail.git.push.noForge');
+  });
+
+  it('U-345: push issues workOrder.push and success announces the pushed branch', async () => {
+    const api = fakeApi({ ...detailReply(AT_BUILD), git: { branch: BRANCH } });
+    const store = createStore(api);
+    await store.load(WO_ID);
+    const outcome = await store.push();
+    expect(api.commands).toContainEqual({ type: 'workOrder.push', id: WO_ID });
+    expect(outcome.labelKey).toBe('detail.git.push.success');
+    expect(TR['detail.git.push.success']).toBe('Dal gönderildi.');
+    // The intent refreshes the detail query like every other.
+    expect(api.queries.filter((query) => query.type === 'workOrder.detail')).toHaveLength(2);
+  });
+
+  it('U-346: the PR door follows the lifecycle — a pushed branch with no open PR', () => {
+    // Never pushed: closed with the push-first line.
+    const unpushed = doorOf(undefined, null, 'openPr');
+    expect(unpushed?.available).toBe(false);
+    expect(unpushed?.reasonKey).toBe('detail.git.openPr.noBranch');
+    // Pushed, no PR: open. A merged PR is not an open one — a second PR may follow.
+    expect(doorOf({ branch: BRANCH }, null, 'openPr')?.available).toBe(true);
+    expect(doorOf({ branch: BRANCH, pr: { ...PR, merged: true } }, null, 'openPr')?.available).toBe(true);
+    // An open PR closes it; the card shows that PR instead.
+    const open = doorOf({ branch: BRANCH, pr: PR }, null, 'openPr');
+    expect(open?.available).toBe(false);
+    expect(open?.reasonKey).toBe('detail.git.openPr.exists');
+  });
+
+  it('U-346: the gitBase read rides the binding once and prefill or hint follows its standing', async () => {
+    const api = fakeApi({ ...detailReply(AT_BUILD), git: { branch: BRANCH } });
+    api.setGitBase({ ok: true, base: 'trunk' });
+    const store = createStore(api);
+    await store.load(WO_ID);
+    expect(api.queries).toContainEqual({ type: 'workOrder.gitBase', id: WO_ID });
+    expect(store.state().gitBase).toEqual({ ok: true, base: 'trunk' });
+    // A refresh of the same binding does not reach the forge again.
+    await store.load(WO_ID);
+    expect(api.queries.filter((query) => query.type === 'workOrder.gitBase')).toHaveLength(1);
+    // A failed read keeps its code — the dialog's empty-with-hint standing reads it.
+    const failing = fakeApi({ ...detailReply(AT_BUILD), git: { branch: BRANCH } });
+    failing.setGitBase({ ok: false, code: 'forge_error' });
+    const other = createStore(failing);
+    await other.load(WO_ID);
+    expect(other.state().gitBase).toEqual({ ok: false, code: 'forge_error' });
+  });
+
+  it('U-346: openPr carries base and the optional title verbatim; success confirms the open', async () => {
+    const api = fakeApi({ ...detailReply(AT_BUILD), git: { branch: BRANCH } });
+    const store = createStore(api);
+    await store.load(WO_ID);
+    const outcome = await store.openPr({ base: ' trunk ', title: ' Ship it ' });
+    expect(api.commands).toContainEqual({ type: 'workOrder.openPr', id: WO_ID, base: ' trunk ', title: ' Ship it ' });
+    expect(outcome.labelKey).toBe('detail.git.openPr.success');
+    const bare = await store.openPr({ base: 'main' });
+    expect(api.commands).toContainEqual({ type: 'workOrder.openPr', id: WO_ID, base: 'main' });
+    expect(bare.labelKey).toBe('detail.git.openPr.success');
+  });
+
+  it('U-346: pr_exists is never an error toast — the refresh shows the stored PR on the card', async () => {
+    const api = fakeApi({ ...detailReply(AT_BUILD), git: { branch: BRANCH } });
+    const store = createStore(api);
+    await store.load(WO_ID);
+    api.setCommandResult({ ok: false, code: 'pr_exists', pr: { number: PR.number, url: PR.url } });
+    const outcome = await store.openPr({ base: 'main' });
+    expect(outcome.result.code).toBe('pr_exists');
+    // No outcome was published, so no toast fires; the ledger's stored PR is already a fact the
+    // re-query can show — the refresh ran for exactly that.
+    expect(store.state().lastOutcome).toBeNull();
+    expect(api.queries.filter((query) => query.type === 'workOrder.detail')).toHaveLength(2);
+  });
+
+  it('U-347: the merge door stands exactly while an open PR does', () => {
+    expect(doorOf({ branch: BRANCH }, null, 'merge')?.available).toBe(false);
+    expect(doorOf({ branch: BRANCH, pr: PR }, null, 'merge')?.available).toBe(true);
+    const merged = doorOf({ branch: BRANCH, pr: { ...PR, merged: true } }, null, 'merge');
+    expect(merged?.available).toBe(false);
+    expect(merged?.reasonKey).toBe('detail.git.noOpenPr');
+  });
+
+  it('U-347: mergePr carries the number the dialog restated; a stale number is the typed refusal', async () => {
+    const api = fakeApi({ ...detailReply(AT_BUILD), git: { branch: BRANCH, pr: PR } });
+    const store = createStore(api);
+    await store.load(WO_ID);
+    await store.mergePr(7);
+    expect(api.commands).toContainEqual({ type: 'workOrder.mergePr', id: WO_ID, number: 7 });
+    // The stale dialog: the number on screen is not the ledger's — nothing merges.
+    api.setCommandResult({ ok: false, code: 'not_found' });
+    const stale = await store.mergePr(9);
+    expect(api.commands).toContainEqual({ type: 'workOrder.mergePr', id: WO_ID, number: 9 });
+    expect(stale.labelKey).toBe('error.not_found');
+  });
+
+  it('U-347: no optimistic merge — the card follows the refreshed query alone', async () => {
+    const api = fakeApi({ ...detailReply(AT_BUILD), git: { branch: BRANCH, pr: PR } });
+    const store = createStore(api);
+    await store.load(WO_ID);
+    await store.mergePr(7);
+    // The reply still says open: only the next query's word moves the card, never the click.
+    expect(store.state().view?.git?.pr?.merged).toBe(false);
+  });
+
+  it('U-348: the release door waits for the merge; branch_not_merged words the refusal', () => {
+    const unmerged = doorOf({ branch: BRANCH, pr: PR }, null, 'release');
+    expect(unmerged?.available).toBe(false);
+    expect(unmerged?.reasonKey).toBe('detail.git.notMerged');
+    expect(doorOf({ branch: BRANCH, pr: { ...PR, merged: true } }, null, 'release')?.available).toBe(true);
+  });
+
+  it('U-348: releaseBranch issues the command; the refusal reads the calm line', async () => {
+    const api = fakeApi({ ...detailReply(AT_BUILD), git: { branch: BRANCH, pr: { ...PR, merged: true } } });
+    const store = createStore(api);
+    await store.load(WO_ID);
+    const outcome = await store.releaseBranch();
+    expect(api.commands).toContainEqual({ type: 'workOrder.releaseBranch', id: WO_ID });
+    expect(outcome.labelKey).toBe('detail.git.release.success');
+    api.setCommandResult({ ok: false, code: 'branch_not_merged' });
+    const refused = await store.releaseBranch();
+    expect(refused.labelKey).toBe('error.branch_not_merged');
+    expect(TR['error.branch_not_merged']).toBe('Dal birleştirilmedi; silinemez.');
+    expect(EN['error.branch_not_merged']).not.toBe(TR['error.branch_not_merged']);
+  });
+
+  it('U-349: the doors hold their fixed order and every closed door says one quiet line within eight words', () => {
+    const model = gitCard(detailReply(AT_BUILD), null, true);
+    expect(model?.doors.map((door) => door.kind)).toEqual(['push', 'openPr', 'merge', 'release']);
+    for (const door of model?.doors ?? []) {
+      if (door.available) continue;
+      expect(door.reasonKey, `${door.kind} carries its reason`).toBeDefined();
+      const key = door.reasonKey;
+      if (key === undefined) continue;
+      for (const bundle of [TR, EN]) {
+        const words = bundle[key].split(/\s+/).filter((word) => word.length > 0).length;
+        expect(words, `${key} in the bundle stays within eight words`).toBeLessThanOrEqual(8);
+      }
+    }
   });
 });

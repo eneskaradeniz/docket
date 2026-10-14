@@ -188,6 +188,7 @@ const fakeApi = (
   pages: readonly PageListItem[] = [],
   runEvents: unknown = null,
   usage: unknown = BASE_USAGE,
+  gitBase: unknown = null,
 ): Pick<Api, 'query' | 'command'> => ({
   query: (query: Query) => {
     if (query.type === 'pages.list') return Promise.resolve(pages);
@@ -195,6 +196,7 @@ const fakeApi = (
     if (query.type === 'workOrder.changes') return Promise.resolve(changes);
     if (query.type === 'run.events') return Promise.resolve(runEvents);
     if (query.type === 'usage.summary') return Promise.resolve(usage);
+    if (query.type === 'workOrder.gitBase') return Promise.resolve(gitBase);
     return Promise.resolve(reply);
   },
   command: (_actor: Actor, _command: Command): Promise<CommandResult> =>
@@ -218,8 +220,9 @@ const draw = async (
   pages: readonly PageListItem[] = [],
   runEvents: unknown = null,
   usage: unknown = BASE_USAGE,
+  gitBase: unknown = null,
 ): Promise<string> => {
-  const api = fakeApi(view, asks, changes, pages, runEvents, usage);
+  const api = fakeApi(view, asks, changes, pages, runEvents, usage, gitBase);
   const store = createWorkOrderDetailStore({
     api,
     changes: () => () => {},
@@ -950,5 +953,136 @@ describe('work-order detail screen — the CI check fold (U-341 … U-343)', () 
     expect(html).toContain('data-detail-problem');
     expect(html).toContain('Yeniden dene');
     expect(html).not.toContain('data-detail-checks');
+  });
+});
+
+describe('work-order detail screen — the git doors (U-344 … U-349)', () => {
+  const BRANCH = { name: `docket/wo-${WO_ID.toLowerCase()}`, head: 'a1b2c3d4', pushedAt: 1_700_000_000_000 };
+  const PR = { number: 7, url: 'https://forge.example/atolye/pull/7', head: BRANCH.name, base: 'main', merged: false };
+  const WORKTREE = { state: 'ready', files: [], truncated: false };
+  const NO_WORKTREE = { state: 'no_worktree', files: [], truncated: false };
+
+  const GIT_PUSHED: WorkOrderDetailView = { ...READY, git: { branch: BRANCH } };
+  const GIT_PR: WorkOrderDetailView = { ...READY, git: { branch: BRANCH, pr: PR } };
+
+  it('U-344: the card stands on a worktree and shows the branch as selectable text, never a control', async () => {
+    const html = await draw(GIT_PUSHED, [], WORKTREE);
+    const cardAt = html.indexOf('data-decision-card="git"');
+    expect(cardAt).toBeGreaterThan(-1);
+    const card = html.slice(cardAt, html.indexOf('</section>', cardAt));
+    expect(card).toContain('<code');
+    expect(card).toContain(BRANCH.name);
+    // The branch line itself is not the opening of any control.
+    const branchAt = card.indexOf(BRANCH.name);
+    const opening = card.slice(0, branchAt).lastIndexOf('<');
+    expect(card.slice(opening).startsWith('<code')).toBe(true);
+  });
+
+  it('U-344: a released work order and a worktree-less one show no card', async () => {
+    const released: WorkOrderDetailView = {
+      ...GIT_PR,
+      git: { branch: BRANCH, pr: { ...PR, merged: true }, released: true },
+    };
+    expect((await draw(released, [], WORKTREE)).indexOf('data-decision-card="git"')).toBe(-1);
+    expect((await draw(GIT_PUSHED, [], NO_WORKTREE)).indexOf('data-decision-card="git"')).toBe(-1);
+  });
+
+  it('U-345: a missing forge disables Gönder with its reason line; a standing forge keeps it open', async () => {
+    const missing = await draw(GIT_PUSHED, [], WORKTREE, [], null, BASE_USAGE, { ok: false, code: 'forge_unavailable' });
+    const rowAt = missing.indexOf('data-git-door="push"');
+    expect(rowAt).toBeGreaterThan(-1);
+    const row = missing.slice(rowAt, missing.indexOf('</li>', rowAt));
+    expect(row).toContain('disabled=""');
+    expect(row).toContain('Depo için forge tanımlı değil.');
+    // The forge read landed healthy: the door stands and says nothing.
+    const healthy = await draw(GIT_PUSHED, [], WORKTREE, [], null, BASE_USAGE, { ok: true, base: 'main' });
+    const openAt = healthy.indexOf('data-git-door="push"');
+    const openRow = healthy.slice(openAt, healthy.indexOf('</li>', openAt));
+    expect(openRow).not.toContain('disabled=""');
+    expect(openRow).not.toContain('Depo için forge tanımlı değil.');
+  });
+
+  it('U-346: the PR row shows the number and url as plain text — no link seam poses as one', async () => {
+    const html = await draw(GIT_PR, [], WORKTREE);
+    const cardAt = html.indexOf('data-decision-card="git"');
+    const card = html.slice(cardAt, html.indexOf('</section>', cardAt));
+    expect(card).toContain('#7');
+    expect(card).toContain(PR.url);
+    expect(card).not.toContain('<a ');
+  });
+
+  it('U-347: the merge confirm restates the PR it captured — Vazgeç is the first stop, the number travels, nothing is optimistic', async () => {
+    await draw(GIT_PR, [], WORKTREE);
+    const card = source('detail-decision-card.tsx');
+    expect(card).toContain('data-detail-git-merge');
+    const dialogAt = card.indexOf('data-detail-git-merge');
+    const dialog = card.slice(dialogAt, dialogAt + 2600);
+    // Vazgeç precedes the confirm in the trap's walk — the dialog's default focus is the
+    // refusal, never the merge itself.
+    const cancelAt = dialog.indexOf("t(locale, 'detail.action.cancel')");
+    const confirmAt = dialog.indexOf("t(locale, 'detail.git.merge.confirm')");
+    expect(cancelAt).toBeGreaterThan(-1);
+    expect(confirmAt).toBeGreaterThan(cancelAt);
+    // No stop inside the dialog focuses itself.
+    expect(dialog).not.toContain('autoFocus');
+    // The confirm carries the number the dialog showed — the captured target, not a fresh read.
+    expect(card).toContain('setMergeTarget({ number: pr.number, head: pr.head, base: pr.base }');
+    expect(card).toContain('void props.onMerge(target.number);');
+    // The failed-check warning line the pinned decision asks for — quiet, never a block.
+    expect(card).toContain('detail.git.merge.warning');
+    expect(card).toContain('failedChecks');
+  });
+
+  it('U-348: the release confirm mirrors the merge one — Vazgeç first, the branch restated', async () => {
+    await draw(GIT_PR, [], WORKTREE);
+    const card = source('detail-decision-card.tsx');
+    expect(card).toContain('data-detail-git-release');
+    const dialogAt = card.indexOf('data-detail-git-release');
+    const dialog = card.slice(dialogAt, dialogAt + 2200);
+    const cancelAt = dialog.indexOf("t(locale, 'detail.action.cancel')");
+    const confirmAt = dialog.indexOf("t(locale, 'detail.git.release')");
+    expect(cancelAt).toBeGreaterThan(-1);
+    expect(confirmAt).toBeGreaterThan(cancelAt);
+    expect(dialog).not.toContain('autoFocus');
+  });
+
+  it('U-349: the doors read in their fixed order with one quiet line per closed door', async () => {
+    // Nothing git has happened yet: every door after Gönder is closed with its one quiet line.
+    const html = await draw(READY, [], WORKTREE);
+    const order = ['push', 'openPr', 'merge', 'release'].map((kind) => html.indexOf(`data-git-door="${kind}"`));
+    for (const at of order) expect(at).toBeGreaterThan(-1);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(html).toContain('Önce dalı gönderin.');
+    expect(html).toContain('Açık PR yok.');
+    expect(html).toContain('PR birleştirilmedi.');
+  });
+
+  it('U-349: the doors\' copy lives in both bundles — never inline in the card or the screen', async () => {
+    const tr = source('tr.ts');
+    const en = source('en.ts');
+    for (const key of [
+      'detail.git.branchLabel', 'detail.git.prLabel', 'detail.git.prMerged', 'detail.git.push',
+      'detail.git.push.noForge', 'detail.git.push.success', 'detail.git.openPr', 'detail.git.openPr.success',
+      'detail.git.openPr.noBranch', 'detail.git.openPr.exists', 'detail.git.openPr.baseLabel',
+      'detail.git.openPr.basePlaceholder', 'detail.git.openPr.baseHint', 'detail.git.openPr.titleLabel',
+      'detail.git.openPr.titlePlaceholder', 'detail.git.openPr.error', 'detail.git.mergeOpen',
+      'detail.git.merge.title', 'detail.git.merge.body', 'detail.git.merge.warning', 'detail.git.merge.confirm',
+      'detail.git.merge.success', 'detail.git.noOpenPr', 'detail.git.release', 'detail.git.release.title',
+      'detail.git.release.body', 'detail.git.release.success', 'detail.git.notMerged',
+    ]) {
+      expect(tr, `tr:${key}`).toContain(`'${key}'`);
+      expect(en, `en:${key}`).toContain(`'${key}'`);
+    }
+    // The issue's own door words, fixed.
+    expect(tr).toContain("'detail.git.push': 'Gönder'");
+    expect(tr).toContain("'detail.git.openPr': 'PR aç'");
+    expect(tr).toContain("'detail.git.mergeOpen': 'Birleştir…'");
+    expect(tr).toContain("'detail.git.release': 'Dalı sil'");
+    // The card and the screen carry none of it inline.
+    const card = source('detail-decision-card.tsx');
+    for (const word of ['Gönder', 'PR aç', 'Birleştir', 'Dalı sil', 'Vazgeç']) {
+      expect(card, `the word ${word} must live in a label bundle`).not.toContain(`>${word}`);
+      expect(card).not.toContain(`'${word}`);
+    }
   });
 });

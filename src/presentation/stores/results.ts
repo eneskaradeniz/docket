@@ -85,6 +85,16 @@ export const KNOWN_FAILURE_CODES: readonly string[] = [
   'comment_too_long',
   'unknown_version',
   'stale_version',
+  // The git lifecycle doors' refusals (GI-2, A-371 … A-374).
+  'bad_input',
+  'released',
+  'no_branch',
+  'not_pushed',
+  'pr_exists',
+  'forge_unavailable',
+  'forge_error',
+  'branch_not_merged',
+  'git_failed',
 ];
 
 const FAILURE_KEYS: Readonly<Record<string, LabelKey>> = Object.fromEntries(
@@ -117,12 +127,6 @@ type SilentCommand =
   | 'setup.ai.start'
   | 'setup.read.answer'
   | 'setup.apply'
-  // The git lifecycle's doors arrive with their detail screen (GI-4); until then the commands
-  // have no surface to toast onto.
-  | 'workOrder.push'
-  | 'workOrder.openPr'
-  | 'workOrder.mergePr'
-  | 'workOrder.releaseBranch'
   // The built-in MCP row words its own restore result inline (U-314).
   | 'mcp.restore';
 const isSilent = (command: Command['type']): command is SilentCommand =>
@@ -146,10 +150,6 @@ const isSilent = (command: Command['type']): command is SilentCommand =>
   || command === 'setup.ai.start'
   || command === 'setup.read.answer'
   || command === 'setup.apply'
-  || command === 'workOrder.push'
-  || command === 'workOrder.openPr'
-  || command === 'workOrder.mergePr'
-  || command === 'workOrder.releaseBranch'
   || command === 'mcp.restore';
 
 const SUCCESS_KEYS: Readonly<Record<Exclude<Command['type'], SilentCommand>, LabelKey>> = {
@@ -158,6 +158,12 @@ const SUCCESS_KEYS: Readonly<Record<Exclude<Command['type'], SilentCommand>, Lab
   'workOrder.unblock': 'success.workOrder.unblock',
   'workOrder.close': 'success.workOrder.close',
   'workOrder.enqueue': 'success.workOrder.enqueue',
+  // The git doors' confirmations (GI-4, U-345 … U-348): each names its own news — the pushed
+  // branch, the open PR, the merge, the release.
+  'workOrder.push': 'detail.git.push.success',
+  'workOrder.openPr': 'detail.git.openPr.success',
+  'workOrder.mergePr': 'detail.git.merge.success',
+  'workOrder.releaseBranch': 'detail.git.release.success',
   'task.open': 'success.task.open',
   // The roadmap page words its phase toasts itself (stores/roadmap.ts); these are the plain copy.
   // (The run copy carries a {phase} placeholder only the page fills, so it keeps the plain line.)

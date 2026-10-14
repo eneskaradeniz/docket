@@ -21,11 +21,14 @@ import type {
   FlowDef,
   GateDef,
   GateSlug,
+  GitLifecycleState,
+  GitPrState,
   RunOutcome,
   StageSlug,
+  WorkOrderId,
   WorkOrderState,
 } from '../../domain/index';
-import { costDisplay } from '../../domain/index';
+import { costDisplay, workOrderBranch } from '../../domain/index';
 import type { LabelKey } from '../labels/keys';
 import type { LivePaneStore } from './live-pane';
 import { commandResultKey, isQueryFailure } from './results';
@@ -127,6 +130,9 @@ export interface WorkOrderDetailView {
   readonly runSummaries?: readonly WorkOrderRunSummary[];
   /** The remote_checks gates' evaluation rows (#1146, A-378); absent on an older reply. */
   readonly gates?: readonly WorkOrderGateRow[];
+  /** The git lifecycle fold (#1167, A-390): branch, pull request and release marks as the
+   *  reply's own derived state — never re-derived here from events; absent on an older reply. */
+  readonly git?: GitLifecycleState;
 }
 
 /** A permission ask shown in the decision zone, fed from `permissions.open` and scoped to the
@@ -222,7 +228,16 @@ export interface WorkOrderDetailState {
   readonly usageSummary: UsageSummaryView | null;
   /** True when the latest `usage.summary` read failed; the detail view stays on screen. */
   readonly usageSummaryFailed: boolean;
+  /** The forge default-branch read (A-391); null before the first reply or on a reply the guard
+   *  cannot read — the PR dialog's prefill and the push door's reason both read it. */
+  readonly gitBase: GitBaseRead | null;
 }
+
+/** The `workOrder.gitBase` reply narrowed (A-391): the default branch on success, the typed code
+ *  on failure. */
+export type GitBaseRead =
+  | { readonly ok: true; readonly base: string }
+  | { readonly ok: false; readonly code: string };
 
 export interface GateDecideInput {
   readonly gate: string;
@@ -250,6 +265,13 @@ export interface DeployApproveInput {
   readonly confirmedEnvironment?: string;
 }
 
+/** The PR dialog's fields (U-346): the base is required, the title optional — the use case
+ *  falls back to the work order's own title. Both travel verbatim. */
+export interface GitOpenPrInput {
+  readonly base: string;
+  readonly title?: string;
+}
+
 export interface WorkOrderDetailStore {
   /** The live pane this store mounts for the work order's newest active run. */
   readonly pane: LivePaneStore;
@@ -267,6 +289,17 @@ export interface WorkOrderDetailStore {
   steerRun(runId: string, note: string): Promise<IntentOutcome>;
   /** Closes the work order (`workOrder.close`) — the ⋯ menu's one item (U-226). */
   closeWorkOrder(): Promise<IntentOutcome>;
+  /** Pushes the work order's branch (`workOrder.push`, U-345); the door itself words the
+   *  missing-forge reason, so the command's own refusal only answers the late cases. */
+  push(): Promise<IntentOutcome>;
+  /** Opens the pull request (`workOrder.openPr`, U-346) — base and the optional title travel
+   *  verbatim; the api bounds them. */
+  openPr(input: GitOpenPrInput): Promise<IntentOutcome>;
+  /** Merges the pull request (`workOrder.mergePr`, U-347) — the number the confirm dialog
+   *  restated travels verbatim; a stale number is the typed refusal, never a wrong merge. */
+  mergePr(number: number): Promise<IntentOutcome>;
+  /** Releases the branch and worktree (`workOrder.releaseBranch`, U-348). */
+  releaseBranch(): Promise<IntentOutcome>;
   /** Re-reads `usage.summary` for the loaded work order (the usage line's retry). */
   reloadUsageSummary(): Promise<void>;
   subscribe(listener: () => void): () => void;
@@ -666,6 +699,74 @@ export const gateCheckGroups = (
   return groups;
 };
 
+// --- U-344 … U-349: the git doors -------------------------------------------------------------------
+
+/** One door of the git card: its standing and, when it is closed, the one quiet line that says
+ *  why (U-345, U-349). */
+export interface GitDoor {
+  readonly kind: 'push' | 'openPr' | 'merge' | 'release';
+  readonly available: boolean;
+  /** Present only on a closed door — the reason line the card renders beside it. */
+  readonly reasonKey?: LabelKey;
+}
+
+/** The git card's model: the branch line, the pull request the ledger holds and the four doors
+ *  in their fixed order (U-344, U-349). */
+export interface GitCardModel {
+  readonly branch: string;
+  readonly pr: GitPrState | null;
+  readonly doors: readonly GitDoor[];
+}
+
+/** The doors' matrix (U-344 … U-349): the card stands only while a worktree holds and the
+ *  lifecycle is open — a released work order shows no card; the branch line is the naming rule's
+ *  deterministic `docket/wo-<id>` word until the ledger's own push names it; every door's
+ *  availability derives from the lifecycle state the reply carried (A-390), never from events
+ *  re-derived here. The push door alone reads the forge: a missing forge is a standing the card
+ *  can know (the gitBase read's own code), a failed forge call is not — the command words it. */
+export const gitCard = (
+  view: WorkOrderDetailView,
+  gitBase: GitBaseRead | null,
+  hasWorktree: boolean,
+): GitCardModel | null => {
+  const git = view.git;
+  if (git?.released === true) return null;
+  if (!hasWorktree) return null;
+  const pr = git?.pr ?? null;
+  const openPr = pr !== null && !pr.merged;
+  const pushBlocked = gitBase !== null && !gitBase.ok && gitBase.code === 'forge_unavailable';
+  return {
+    branch: git?.branch?.name ?? workOrderBranch(view.record.id as WorkOrderId),
+    pr,
+    doors: [
+      {
+        kind: 'push',
+        available: !pushBlocked,
+        ...(pushBlocked ? { reasonKey: 'detail.git.push.noForge' as LabelKey } : {}),
+      },
+      {
+        kind: 'openPr',
+        available: git?.branch !== undefined && !openPr,
+        ...(git?.branch === undefined
+          ? { reasonKey: 'detail.git.openPr.noBranch' as LabelKey }
+          : openPr
+            ? { reasonKey: 'detail.git.openPr.exists' as LabelKey }
+            : {}),
+      },
+      {
+        kind: 'merge',
+        available: openPr,
+        ...(!openPr ? { reasonKey: 'detail.git.noOpenPr' as LabelKey } : {}),
+      },
+      {
+        kind: 'release',
+        available: pr?.merged === true,
+        ...(pr?.merged !== true ? { reasonKey: 'detail.git.notMerged' as LabelKey } : {}),
+      },
+    ],
+  };
+};
+
 /** The failed card's one mono line: the failed run's last spoken answer — the trailing run of
  *  `text` events, concatenated in arrival order. A run that said nothing has no line; the card
  *  shows the run's short code alone. */
@@ -722,6 +823,14 @@ const isChangesView = (value: unknown): value is WorkOrderChangesView => {
   );
 };
 
+/** The gitBase reply's success arm (A-391): `{ ok: true, base }` and nothing else — a reply the
+ *  guard cannot read leaves the state unread, never a wrong prefill. */
+const isGitBaseView = (value: unknown): value is { readonly ok: true; readonly base: string } => {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as { readonly ok?: unknown; readonly base?: unknown };
+  return candidate.ok === true && typeof candidate.base === 'string';
+};
+
 /** The asks section shows only the loaded work order's own asks — a run id the view knows is
  *  the one honest link the open-asks read carries. */
 const asksFor = (
@@ -759,6 +868,7 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     autoAllowed: 0,
     usageSummary: null,
     usageSummaryFailed: false,
+    gitBase: null,
   };
   // The work order the store is bound to: change events re-query it, intents act on it.
   let workOrderId: string | null = null;
@@ -792,6 +902,19 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     if (isQueryFailure(reply)) return;
     if (!isChangesView(reply)) return;
     set({ ...state, changes: reply });
+  };
+
+  /** The forge default-branch read (A-391) rides the binding, not every refresh: it reaches the
+   *  forge host, and the repo's wiring changes far more rarely than the work order does. A
+   *  failed read keeps its code — the PR dialog words the empty-with-hint standing, the push
+   *  door words the missing-forge reason. */
+  let gitBaseFor: string | null = null;
+  const loadGitBase = async (id: string): Promise<void> => {
+    const reply: unknown = await api.query({ type: 'workOrder.gitBase', id } satisfies Query);
+    // A binding that moved on while the read was out leaves its answer for the next one.
+    if (workOrderId !== id) return;
+    if (isQueryFailure(reply)) set({ ...state, gitBase: { ok: false, code: reply.code } });
+    else if (isGitBaseView(reply)) set({ ...state, gitBase: { ok: true, base: reply.base } });
   };
 
   /** The failed standing's one-line quote: the failed run's own last words, read once per
@@ -845,6 +968,10 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     void loadAsks();
     void loadChanges(id);
     void loadUsageSummary(id, attempt);
+    if (gitBaseFor !== id) {
+      gitBaseFor = id;
+      void loadGitBase(id);
+    }
     const reply: unknown = await detailRead;
     if (attempt !== attempts) return;
     if (isQueryFailure(reply)) {
@@ -894,6 +1021,7 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     successKey?: LabelKey,
     failureKeys?: Readonly<Record<string, LabelKey>>,
     quietFailure?: (code: string) => boolean,
+    quietRefresh?: (code: string) => boolean,
   ): Promise<IntentOutcome> => {
     const result = await api.command(actor, command);
     const outcome: IntentOutcome = {
@@ -909,8 +1037,13 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     // A quiet failure belongs to the caller's own surface, not the screen's: it is returned for
     // that surface to word (the note dialog's inline error, U-303) and never published as the
     // lastOutcome — so no toast fires and no refresh runs, because a refused command changed
-    // nothing the next query could show.
-    if (quietFailure !== undefined && !result.ok && quietFailure(result.code)) return outcome;
+    // nothing the next query could show. The one exception is a refusal that answers a fact the
+    // ledger already holds (openPr's pr_exists answers the stored pull request): the re-query
+    // shows it even though no toast fires.
+    if (quietFailure !== undefined && !result.ok && quietFailure(result.code)) {
+      if (quietRefresh !== undefined && quietRefresh(result.code) && workOrderId !== null) await load(workOrderId);
+      return outcome;
+    }
     set({ ...state, lastOutcome: outcome });
     // The detail mirrors its own mutation: the next query shows the command's effect.
     if (workOrderId !== null) await load(workOrderId);
@@ -1017,6 +1150,35 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     closeWorkOrder: () => {
       if (workOrderId === null) return Promise.resolve(notLoadedOutcome('workOrder.close'));
       return runIntent({ type: 'workOrder.close', id: workOrderId }, 'success.workOrder.close');
+    },
+    push: () => {
+      if (workOrderId === null) return Promise.resolve(notLoadedOutcome('workOrder.push'));
+      return runIntent({ type: 'workOrder.push', id: workOrderId }, 'detail.git.push.success');
+    },
+    openPr: (input) => {
+      if (workOrderId === null) return Promise.resolve(notLoadedOutcome('workOrder.openPr'));
+      return runIntent(
+        {
+          type: 'workOrder.openPr',
+          id: workOrderId,
+          base: input.base,
+          ...(input.title !== undefined ? { title: input.title } : {}),
+        },
+        'detail.git.openPr.success',
+        undefined,
+        // pr_exists answers the stored pull request the refusal carries: never an error toast —
+        // the quiet refresh puts that PR's line on the card (U-346).
+        (code) => code === 'pr_exists',
+        (code) => code === 'pr_exists',
+      );
+    },
+    mergePr: (number) => {
+      if (workOrderId === null) return Promise.resolve(notLoadedOutcome('workOrder.mergePr'));
+      return runIntent({ type: 'workOrder.mergePr', id: workOrderId, number }, 'detail.git.merge.success');
+    },
+    releaseBranch: () => {
+      if (workOrderId === null) return Promise.resolve(notLoadedOutcome('workOrder.releaseBranch'));
+      return runIntent({ type: 'workOrder.releaseBranch', id: workOrderId }, 'detail.git.release.success');
     },
     reloadUsageSummary: async () => {
       if (workOrderId === null) return;

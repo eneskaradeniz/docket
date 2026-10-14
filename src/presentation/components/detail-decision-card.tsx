@@ -8,6 +8,7 @@
 // already-allowed asks into one line.
 import { useState } from 'react';
 import { t, type Locale } from '../labels/t';
+import type { LabelKey } from '../labels/keys';
 import { ActionButton } from './action-button';
 import { StateBadge } from './state-badge';
 import { InlineDialog } from './detail-dialog';
@@ -16,6 +17,10 @@ import type {
   DecisionZone,
   DeployApproveInput,
   GateView,
+  GitBaseRead,
+  GitCardModel,
+  GitDoor,
+  GitOpenPrInput,
   IntentOutcome,
   WorkOrderAskView,
 } from '../stores/work-order-detail';
@@ -510,6 +515,205 @@ function StartCard({
         </ActionButton>
       </div>
     </li>
+  );
+}
+
+/** The door labels in the card's fixed order (U-349). */
+const GIT_DOOR_LABEL: Readonly<Record<GitDoor['kind'], LabelKey>> = {
+  push: 'detail.git.push',
+  openPr: 'detail.git.openPr',
+  merge: 'detail.git.mergeOpen',
+  release: 'detail.git.release',
+};
+
+export interface GitDoorsCardProps {
+  readonly model: GitCardModel;
+  readonly locale: Locale;
+  /** The forge default-branch read (A-391): the PR dialog's prefill on success, its visible
+   *  hint on failure — the operator can always type a base. */
+  readonly gitBase: GitBaseRead | null;
+  /** The names of the remote checks currently failing (GI-3's rows) — the merge confirm's quiet
+   *  warning line; it never blocks the human's decision (decision 5). */
+  readonly failedChecks: readonly string[];
+  readonly onPush: () => Promise<IntentOutcome>;
+  readonly onOpenPr: (input: GitOpenPrInput) => Promise<IntentOutcome>;
+  readonly onMerge: (number: number) => Promise<IntentOutcome>;
+  readonly onRelease: () => Promise<IntentOutcome>;
+}
+
+/** The git doors card (U-344 … U-349): the branch line as selectable text, the pull request the
+ *  ledger holds as plain text, and the four doors in their fixed order — every closed door says
+ *  its one quiet line. The merge confirm is the explicit human step's own surface (İ1): it
+ *  restates the PR number, head and base it captured when it opened, Vazgeç is the first stop so
+ *  the refusal owns the default focus, and the confirm carries the captured number — a stale
+ *  dialog can only ever be refused, never merge the wrong PR. Nothing here is optimistic: the
+ *  card follows `workOrders.changed` alone. */
+export function GitDoorsCard(props: GitDoorsCardProps) {
+  const { model, locale } = props;
+  const [prForm, setPrForm] = useState(false);
+  const [base, setBase] = useState('');
+  const [title, setTitle] = useState('');
+  const [prRejected, setPrRejected] = useState(false);
+  const [mergeTarget, setMergeTarget] = useState<{ readonly number: number; readonly head: string; readonly base: string } | null>(null);
+  const [releaseTarget, setReleaseTarget] = useState<string | null>(null);
+
+  const openPrForm = (): void => {
+    // The prefill is the read's own word; a failed read leaves the field empty with its hint.
+    setBase(props.gitBase !== null && props.gitBase.ok ? props.gitBase.base : '');
+    setTitle('');
+    setPrRejected(false);
+    setPrForm(true);
+  };
+  const sendPr = (): void => {
+    void props.onOpenPr({ base, ...(title.trim() !== '' ? { title } : {}) }).then((outcome) => {
+      // Only the field's own verdict keeps the dialog open (the steer note's grammar); anything
+      // else — an opened PR, the stored one a pr_exists answers — leaves the reporting to the
+      // card and the toast.
+      if (!outcome.result.ok && outcome.result.code === 'bad_input') setPrRejected(true);
+      else setPrForm(false);
+    });
+  };
+
+  return (
+    <section
+      data-decision-card="git"
+      aria-label={t(locale, 'detail.git.branchLabel')}
+      className="grid min-w-0 gap-3 rounded-card border border-hairline bg-surface px-5 py-4"
+    >
+      {/* U-344: the branch line is selectable text, never a control. */}
+      <p className="m-0 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 text-[0.8125rem] text-inkdim">
+        <span className="font-semibold text-ink">{t(locale, 'detail.git.branchLabel')}</span>
+        <code className="min-w-0 font-mono text-[0.75rem] text-ink [overflow-wrap:anywhere]">{model.branch}</code>
+      </p>
+      {model.pr !== null ? (
+        <p className="m-0 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 text-[0.8125rem] text-inkdim">
+          <span className="font-semibold text-ink">{t(locale, 'detail.git.prLabel')}</span>
+          <span className="min-w-0 font-mono text-[0.75rem] text-ink [overflow-wrap:anywhere]">
+            #{model.pr.number} · {model.pr.url}
+          </span>
+          {model.pr.merged ? <span className="text-[0.75rem] text-proceed">{t(locale, 'detail.git.prMerged')}</span> : null}
+        </p>
+      ) : null}
+      <ul className="m-0 grid list-none gap-2 p-0">
+        {model.doors.map((door) => (
+          <li key={door.kind} data-git-door={door.kind} className="flex min-w-0 flex-wrap items-center gap-2">
+            <ActionButton
+              variant="neutral"
+              disabled={!door.available}
+              onClick={() => {
+                if (door.kind === 'push') void props.onPush();
+                else if (door.kind === 'openPr') openPrForm();
+                else if (door.kind === 'merge') {
+                  const pr = model.pr;
+                  // The capture is the restatement: the dialog freezes what it will send.
+                  if (pr !== null) setMergeTarget({ number: pr.number, head: pr.head, base: pr.base });
+                } else setReleaseTarget(model.branch);
+              }}
+            >
+              {t(locale, GIT_DOOR_LABEL[door.kind])}
+            </ActionButton>
+            {!door.available && door.reasonKey !== undefined ? (
+              <span className="text-[0.78125rem] text-inkdim">{t(locale, door.reasonKey)}</span>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+      <InlineDialog active={prForm} onClose={() => setPrForm(false)}>
+        {prForm ? (
+          <div data-detail-git-pr className="grid gap-2 border-t border-hairline pt-3">
+            <label htmlFor="git-pr-base" className="text-[0.8125rem] font-semibold text-ink">
+              {t(locale, 'detail.git.openPr.baseLabel')}
+            </label>
+            <input
+              id="git-pr-base"
+              value={base}
+              onChange={(event) => setBase(event.target.value)}
+              placeholder={t(locale, 'detail.git.openPr.basePlaceholder')}
+              className={INPUT_CLASS}
+            />
+            {props.gitBase !== null && !props.gitBase.ok ? (
+              <p className="m-0 text-[0.78125rem] text-inkdim">{t(locale, 'detail.git.openPr.baseHint')}</p>
+            ) : null}
+            <label htmlFor="git-pr-title" className="text-[0.8125rem] font-semibold text-ink">
+              {t(locale, 'detail.git.openPr.titleLabel')}
+            </label>
+            <input
+              id="git-pr-title"
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder={t(locale, 'detail.git.openPr.titlePlaceholder')}
+              className={INPUT_CLASS}
+            />
+            {prRejected ? (
+              <p role="alert" className="m-0 text-[0.78125rem] text-error">
+                {t(locale, 'detail.git.openPr.error')}
+              </p>
+            ) : null}
+            <div className="flex gap-2">
+              <ActionButton onClick={() => setPrForm(false)}>{t(locale, 'detail.action.cancel')}</ActionButton>
+              <ActionButton variant="primary" size="md" disabled={base.trim() === ''} onClick={sendPr}>
+                {t(locale, 'detail.git.openPr')}
+              </ActionButton>
+            </div>
+          </div>
+        ) : null}
+      </InlineDialog>
+      <InlineDialog active={mergeTarget !== null} onClose={() => setMergeTarget(null)}>
+        {mergeTarget !== null ? (
+          <div data-detail-git-merge className="grid gap-2 border-t border-hairline pt-3">
+            <p className="m-0 text-[0.8125rem] font-semibold text-ink">{t(locale, 'detail.git.merge.title')}</p>
+            <p className="m-0 font-mono text-[0.75rem] text-inkdim [overflow-wrap:anywhere]">
+              #{mergeTarget.number} · {mergeTarget.head} → {mergeTarget.base}
+            </p>
+            {props.failedChecks.length > 0 ? (
+              <p className="m-0 text-[0.78125rem] text-inkdim">
+                {t(locale, 'detail.git.merge.warning').replace('{names}', props.failedChecks.join(', '))}
+              </p>
+            ) : null}
+            <p className="m-0 text-[0.8125rem] text-inkdim">{t(locale, 'detail.git.merge.body')}</p>
+            {/* Vazgeç comes first on purpose: the trap focuses the first stop, so the refusal —
+                not the merge — is the dialog's default answer (İ1). */}
+            <div className="flex gap-2">
+              <ActionButton onClick={() => setMergeTarget(null)}>{t(locale, 'detail.action.cancel')}</ActionButton>
+              <ActionButton
+                variant="primary"
+                size="md"
+                onClick={() => {
+                  const target = mergeTarget;
+                  setMergeTarget(null);
+                  // The command carries the number this dialog showed, nothing fresher.
+                  void props.onMerge(target.number);
+                }}
+              >
+                {t(locale, 'detail.git.merge.confirm')}
+              </ActionButton>
+            </div>
+          </div>
+        ) : null}
+      </InlineDialog>
+      <InlineDialog active={releaseTarget !== null} onClose={() => setReleaseTarget(null)}>
+        {releaseTarget !== null ? (
+          <div data-detail-git-release className="grid gap-2 border-t border-hairline pt-3">
+            <p className="m-0 text-[0.8125rem] font-semibold text-ink">{t(locale, 'detail.git.release.title')}</p>
+            <p className="m-0 font-mono text-[0.75rem] text-inkdim [overflow-wrap:anywhere]">{releaseTarget}</p>
+            <p className="m-0 text-[0.8125rem] text-inkdim">{t(locale, 'detail.git.release.body')}</p>
+            <div className="flex gap-2">
+              <ActionButton onClick={() => setReleaseTarget(null)}>{t(locale, 'detail.action.cancel')}</ActionButton>
+              <ActionButton
+                variant="primary"
+                size="md"
+                onClick={() => {
+                  setReleaseTarget(null);
+                  void props.onRelease();
+                }}
+              >
+                {t(locale, 'detail.git.release')}
+              </ActionButton>
+            </div>
+          </div>
+        ) : null}
+      </InlineDialog>
+    </section>
   );
 }
 
