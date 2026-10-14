@@ -126,18 +126,33 @@ export interface TranslationRow {
   readonly support: TranslationSupport;
   readonly how: string;
   readonly degradesTo?: CapabilityKind | 'prompt_text';
+  /** R-149: the source kinds this row delivers (today only a plugin row carries it); absent = every
+   *  source kind, so behaviour stays unchanged for rows that do not care. */
+  readonly sourceKinds?: readonly string[];
 }
 
-/** P-57: the table's row for (provider, kind); a missing row reads `unverified`, never `native`. */
-export function supportFor(table: readonly TranslationRow[], provider: string, kind: CapabilityKind): TranslationRow {
-  return (
+/** P-57: the table's row for (provider, kind); a missing row reads `unverified`, never `native`.
+ *  R-149: a row that declares `sourceKinds` answers `unsupported` for a source kind it does not
+ *  list — no `degradesTo`, and the `how` names the kind — because a run never installs or edits
+ *  the user's plugin state (P-44), so a source kind needing such an install is not deliverable. */
+export function supportFor(
+  table: readonly TranslationRow[],
+  provider: string,
+  kind: CapabilityKind,
+  sourceKind?: string,
+): TranslationRow {
+  const row =
     table.find((row) => row.provider === provider && row.kind === kind) ?? {
       provider,
       kind,
-      support: 'unverified',
+      support: 'unverified' as const,
       how: 'no support row recorded; unverified until a live probe',
-    }
-  );
+    };
+  if (row.sourceKinds === undefined || sourceKind === undefined || row.sourceKinds.includes(sourceKind)) {
+    return row;
+  }
+  const { degradesTo: _lesser, ...rest } = row;
+  return { ...rest, support: 'unsupported', how: `${row.how} — source kind ${sourceKind} is not delivered` };
 }
 
 export interface SetupWarning {
@@ -156,7 +171,7 @@ export function setupWarnings(
   const warnings: SetupWarning[] = [];
   for (const { stage, provider, capabilities } of stages) {
     for (const capability of capabilities) {
-      const row = supportFor(table, provider, capability.kind);
+      const row = supportFor(table, provider, capability.kind, sourceKindOf(capability));
       if (row.support === 'native') continue;
       warnings.push({ stage, capability: capability.id, provider, support: row.support, how: row.how });
     }
@@ -191,10 +206,16 @@ const inlineLine = (capability: CapabilityDef): string => {
   }
 };
 
+/** The source kind a support lookup is keyed by (R-149): a plugin's own source kind, nothing for
+ *  every other capability kind. */
+const sourceKindOf = (capability: CapabilityDef): string | undefined =>
+  capability.kind === 'plugin' ? capability.source.kind : undefined;
+
 /** P-59: splits a stage's capabilities by the provider's support. `native` and `unverified` go to
  *  the run (unverified is attempted, and shown as such by `setupWarnings`); `unsupported` is
- *  omitted and reported; `degraded` is inlined as text. A command is a Docket-rendered prompt
- *  template (R-141), so it is always inlined — never handed to a provider as a native command. */
+ *  omitted and reported; `degraded` is inlined as text. A command is a prompt template the agent
+ *  fills from the task (R-141 addendum), so it is always inlined as instruction text — never
+ *  handed to a provider as a native command. */
 export function translateCapabilities(
   provider: string,
   capabilities: readonly CapabilityDef[],
@@ -204,7 +225,7 @@ export function translateCapabilities(
   const inlined: CapabilityDef[] = [];
   const omitted: OmittedCapability[] = [];
   for (const capability of capabilities) {
-    const { support } = supportFor(table, provider, capability.kind);
+    const { support } = supportFor(table, provider, capability.kind, sourceKindOf(capability));
     if (capability.kind === 'command' || support === 'degraded') inlined.push(capability);
     else if (support === 'unsupported') omitted.push({ capability: capability.id, provider, reason: 'unsupported' });
     else run.push(capability);

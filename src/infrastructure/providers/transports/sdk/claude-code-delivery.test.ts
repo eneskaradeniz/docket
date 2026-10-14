@@ -15,7 +15,6 @@ import type { AgentEvent, Result } from '../../../../domain/index';
 import {
   parseSlug,
   parseUlid,
-  renderCommand,
   setupWarnings,
   translateCapabilities,
   type AccountId,
@@ -806,7 +805,7 @@ describe('claude-code SDK plugin-kind and command-kind delivery (CC-9 … CC-12)
     expect(surfaced).toBe(true);
   });
 
-  it('CC-11: a command rides the effective prompt exactly once with placeholders resolved; an unresolved placeholder is a typed error, never literal braces (P-58, R-141)', async () => {
+  it('CC-11: a command rides the effective prompt as instruction text — the template appears exactly once, its placeholders stay placeholders for the agent to fill, and Docket substitutes nothing (P-58, R-141 addendum)', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'docket-cc11-'));
     const command: CapabilityDef = {
       kind: 'command',
@@ -837,22 +836,13 @@ describe('claude-code SDK plugin-kind and command-kind delivery (CC-9 … CC-12)
     );
 
     const carried = `${await userPromptText(call)}\n${systemAppend(call.options) ?? ''}`;
+    // Agent-filled semantics: the template rides exactly once as instruction text, the placeholder
+    // names stay visible in it, and there is no Docket-side substitution to check for — no argument
+    // input path exists yet, so a rendered value here would be a claim the product does not make.
     expect(carried.match(/Deploy the/gu) ?? []).toHaveLength(1);
-    expect(carried).not.toContain('{{');
-
-    // A required argument without a value is already a typed error at render time.
-    const missingRequired = renderCommand(
-      { ...(command as Extract<CapabilityDef, { kind: 'command' }>), template: 'Deploy the {{service}} service.' },
-      {},
-    );
-    expect(missingRequired.ok).toBe(false);
-
-    // An undeclared placeholder must fail the same way, not silently empty or ride as braces.
-    const unknownPlaceholder = renderCommand(
-      { ...(command as Extract<CapabilityDef, { kind: 'command' }>), template: 'Deploy the {{service}} service to {{region}}.' },
-      { service: 'billing' },
-    );
-    expect(unknownPlaceholder.ok).toBe(false);
+    expect(carried).toContain('fill the {{placeholders}}');
+    expect(carried).toContain('Deploy the {{service}} service to {{env}}.');
+    expect(translation.run).toEqual([]);
   });
 
   it('CC-12: two path plugins sharing a plugin name are both handed to the CLI as separate local plugins', async () => {

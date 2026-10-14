@@ -19,7 +19,7 @@ import type {
   Tier,
   TranslationRow,
 } from '../../../domain/index';
-import { mergeCatalog, resolveTier, setupWarnings, supportFor, supportLevel } from '../../../domain/index';
+import { mergeCatalog, resolveTier, setupWarnings, supportFor, supportLevel, translateCapabilities } from '../../../domain/index';
 
 const slugOf = <B extends string>(input: string): Slug<B> => input as Slug<B>;
 import { CAPABILITY_REGISTRY, FAMILY_PATTERNS, findProvider, findRouteKind, TRANSLATION_TABLE } from './capability-registry';
@@ -44,7 +44,19 @@ const parseP58DocTable = async (): Promise<readonly TranslationRow[]> => {
       degradesToRaw.length === 0
         ? undefined
         : (degradesToRaw as TranslationRow['degradesTo']);
-    rows.push({ provider, kind, support, how, ...(degradesTo === undefined ? {} : { degradesTo }) });
+    const sourceKindsRaw = cells[6]?.replace(/^`|`$/gu, '') ?? '';
+    const sourceKinds =
+      sourceKindsRaw.length === 0
+        ? undefined
+        : sourceKindsRaw.split(',').map((kind) => kind.trim());
+    rows.push({
+      provider,
+      kind,
+      support,
+      how,
+      ...(degradesTo === undefined ? {} : { degradesTo }),
+      ...(sourceKinds === undefined ? {} : { sourceKinds }),
+    });
   }
   return rows;
 };
@@ -586,5 +598,67 @@ describe('translation support table (P-58)', () => {
 
   it('P-58: every table provider has a capability record', () => {
     for (const row of TRANSLATION_TABLE) expect(findProvider(row.provider)).toBeDefined();
+  });
+});
+
+describe('plugin source kinds (R-149)', () => {
+  const pathPlugin = {
+    kind: 'plugin' as const,
+    id: slugOf<'capability'>('bundled'),
+    name: 'bundled',
+    source: { kind: 'path' as const, path: '/library/plugins/bundled' },
+    includes: [],
+  };
+  const marketPlugin = {
+    kind: 'plugin' as const,
+    id: slugOf<'capability'>('acme-tool'),
+    name: 'acme-tool',
+    source: { kind: 'marketplace' as const, marketplace: 'acme', name: 'tool' },
+    includes: [],
+  };
+
+  it('R-149: claude-code and codex deliver only path plugins — a marketplace plugin warns at setup (P-57) and is omitted from the run (P-59)', () => {
+    // A run never installs or edits the user's plugin state (P-44), so a marketplace plugin — whose
+    // delivery would be exactly such an install — is unsupported on these providers.
+    expect(supportFor(TRANSLATION_TABLE, 'claude-code', 'plugin', 'path').support).toBe('native');
+    expect(supportFor(TRANSLATION_TABLE, 'codex', 'plugin', 'path').support).toBe('native');
+    for (const provider of ['claude-code', 'codex']) {
+      const row = supportFor(TRANSLATION_TABLE, provider, 'plugin', 'marketplace');
+      expect(row.support, provider).toBe('unsupported');
+      expect(row.degradesTo, provider).toBeUndefined();
+      expect(row.how, provider).toContain('source kind marketplace is not delivered');
+    }
+    const warnings = setupWarnings(
+      [
+        { stage: 'work', provider: 'claude-code', capabilities: [pathPlugin, marketPlugin] },
+        { stage: 'review', provider: 'codex', capabilities: [pathPlugin, marketPlugin] },
+      ],
+      TRANSLATION_TABLE,
+    );
+    expect(warnings).toEqual([
+      {
+        stage: 'work',
+        capability: 'acme-tool',
+        provider: 'claude-code',
+        support: 'unsupported',
+        how: supportFor(TRANSLATION_TABLE, 'claude-code', 'plugin', 'marketplace').how,
+      },
+      {
+        stage: 'review',
+        capability: 'acme-tool',
+        provider: 'codex',
+        support: 'unsupported',
+        how: supportFor(TRANSLATION_TABLE, 'codex', 'plugin', 'marketplace').how,
+      },
+    ]);
+    const translation = translateCapabilities('claude-code', [pathPlugin, marketPlugin], TRANSLATION_TABLE);
+    expect(translation.run.map((c) => c.id)).toEqual(['bundled']);
+    expect(translation.omitted).toEqual([{ capability: 'acme-tool', provider: 'claude-code', reason: 'unsupported' }]);
+  });
+
+  it('R-149: the two plugin rows are the table’s only sourceKinds declarations, and both list exactly path', () => {
+    const declared = TRANSLATION_TABLE.filter((row) => row.sourceKinds !== undefined);
+    expect(declared.map((row) => `${row.provider}/${row.kind}`)).toEqual(['claude-code/plugin', 'codex/plugin']);
+    expect(declared.every((row) => row.sourceKinds?.length === 1 && row.sourceKinds[0] === 'path')).toBe(true);
   });
 });

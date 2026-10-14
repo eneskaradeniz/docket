@@ -291,8 +291,8 @@ honest `unverified` status where live evidence is lacking. The real-run probe #1
 // providers — translation and support table (data, in the capability registry)
 export type CapabilityKind = CapabilityDef['kind'];
 export type TranslationSupport = 'native' | 'degraded' | 'unsupported' | 'unverified';
-export interface TranslationRow { readonly provider: string; readonly kind: CapabilityKind; readonly support: TranslationSupport; readonly how: string; readonly degradesTo?: CapabilityKind | 'prompt_text' }
-export function supportFor(table: readonly TranslationRow[], provider: string, kind: CapabilityKind): TranslationRow;   // missing row → { support: 'unverified' }
+export interface TranslationRow { readonly provider: string; readonly kind: CapabilityKind; readonly support: TranslationSupport; readonly how: string; readonly degradesTo?: CapabilityKind | 'prompt_text'; readonly sourceKinds?: readonly string[] }   // sourceKinds (R-149): the source kinds this row delivers; absent = every source kind
+export function supportFor(table: readonly TranslationRow[], provider: string, kind: CapabilityKind, sourceKind?: string): TranslationRow;   // missing row → { support: 'unverified' }; a sourceKind a sourceKinds row does not list → { support: 'unsupported' }, no degradesTo, how naming the source kind
 export interface SetupWarning { readonly stage: string; readonly capability: CapabilitySlug; readonly provider: string; readonly support: 'degraded' | 'unsupported' | 'unverified'; readonly how: string }
 export function setupWarnings(stages: readonly { stage: string; provider: string; capabilities: readonly CapabilityDef[] }[], table: readonly TranslationRow[]): readonly SetupWarning[];
 
@@ -304,44 +304,44 @@ export interface MachineCandidate { readonly provider: string; readonly kind: Ca
 
 The initial table recorded as data in the capability registry (`registry/capability-registry.ts`). Honest, no claim without evidence — real-run probe #1015 later turns `unverified` into the observed value:
 
-| Provider | Kind | Support | How / Mechanism | Degrades To |
-| --- | --- | --- | --- | --- |
-| `claude-code` | `mcp` | `native` | Run-scoped MCP via inline mcpServers with strictMcpConfig on every run (settingSources: []) probe #1015, 2026-10-14 | |
-| `claude-code` | `skill` | `native` | Per-run local plugin dir with skills/*/SKILL.md and skills: all probe #1015, 2026-10-14 | |
-| `claude-code` | `hook` | `native` | Inline settings.hooks on the SDK settings option probe #1015, 2026-10-14 | |
-| `claude-code` | `context` | `native` | systemPrompt.append once for role + context (no CLAUDE.md write) probe #1015, 2026-10-14 | |
-| `claude-code` | `plugin` | `native` | plugins[{type:local,path,skipMcpDiscovery}] probe #1015, 2026-10-14 | |
-| `claude-code` | `command` | `degraded` | Docket renders template placeholders | `prompt_text` |
-| `codex` | `mcp` | `native` | App-server --ignore-user-config on every run, then -c mcp_servers.* overrides when MCP is delivered | |
-| `codex` | `skill` | `native` | Run-scoped skills under .agents/skills in the run directory probe #1015, 2026-10-14 | |
-| `codex` | `hook` | `unsupported` | Hooks were not evidenced after trying a .codex/hooks.json file and a -c hooks override probe #1015, 2026-10-14 | |
-| `codex` | `context` | `native` | Native instruction files (AGENTS.md / fallback, P-37) | |
-| `codex` | `plugin` | `native` | Run-scoped plugin bundle under .codex/plugins with plugin.json probe #1015, 2026-10-14 | |
-| `codex` | `command` | `degraded` | Docket renders template placeholders | `prompt_text` |
-| `agy` | `mcp` | `unsupported` | Run-scoped MCP via --mcp-config was not evidenced because agy --help does not list --mcp-config probe #1015, 2026-10-14 | |
-| `agy` | `skill` | `unsupported` | Workspace skills under .gemini/skills or .agy/skills in the run directory were not evidenced probe #1015, 2026-10-14 | |
-| `agy` | `hook` | `unverified` | No hook mechanism named by agy --help or the repo docs (P-58/P-60); nothing to attempt without inventing a format probe #1015, 2026-10-14 | |
-| `agy` | `context` | `native` | Native instruction files (P-37) | |
-| `agy` | `plugin` | `unverified` | Plugin management is CLI-owned ambient state (agy plugin); no run-scoped plugin delivery found in agy --help or the repo docs probe #1015, 2026-10-14 | |
-| `agy` | `command` | `degraded` | Docket renders template placeholders | `prompt_text` |
-| `copilot` | `mcp` | `unverified` | Unverified without live probe (#1015) | |
-| `copilot` | `skill` | `unverified` | Unverified without live probe (#1015) | |
-| `copilot` | `hook` | `unverified` | Unverified without live probe (#1015) | |
-| `copilot` | `context` | `native` | Native instruction files (P-37) | |
-| `copilot` | `plugin` | `unverified` | Unverified without live probe (#1015) | |
-| `copilot` | `command` | `degraded` | Docket renders template placeholders | `prompt_text` |
-| `cursor` | `mcp` | `native` | Run-scoped MCP server on the ACP session/new.mcpServers field (def-verified launch; tool listing is nondeterministic) probe #1015, 2026-10-14 | |
-| `cursor` | `skill` | `degraded` | Project rule at .cursor/rules carrying the skill instruction; not a documented skill kind probe #1015, 2026-10-14 | `context` |
-| `cursor` | `hook` | `unsupported` | Run-scoped .cursor/hooks.json with a UserPromptSubmit command hook was not evidenced (help names no hook format) probe #1015, 2026-10-14 | |
-| `cursor` | `context` | `native` | Native instruction file AGENTS.md in the run cwd (P-37) probe #1015, 2026-10-14 | |
-| `cursor` | `plugin` | `unsupported` | Documented --plugin-dir flag pointing at a fixture plugin bundle was not evidenced probe #1015, 2026-10-14 | |
-| `cursor` | `command` | `degraded` | Docket renders template placeholders | `prompt_text` |
-| `opencode` | `mcp` | `unsupported` | Run-scoped config tree via OPENCODE_CONFIG_DIR with opencode.json mcp block was not evidenced probe #1015, 2026-10-14 | |
-| `opencode` | `skill` | `native` | Skill directory under the same OPENCODE_CONFIG_DIR tree (skills/, P-60 addendum) probe #1015, 2026-10-14 | |
-| `opencode` | `hook` | `unverified` | No hook kind documented in opencode --help, the repo docs (P-60 addendum names none) or the def; the CLI event surface is the plugin API, probed as C4 probe #1015, 2026-10-14 | |
-| `opencode` | `context` | `native` | Native instruction file AGENTS.md in the run cwd with OPENCODE_DISABLE_CLAUDE_CODE=1 (P-37) probe #1015, 2026-10-14 | |
-| `opencode` | `plugin` | `unsupported` | JS plugin in the config tree plugin directory whose module load appends the marker line was not evidenced probe #1015, 2026-10-14 | |
-| `opencode` | `command` | `degraded` | Docket renders template placeholders | `prompt_text` |
+| Provider | Kind | Support | How / Mechanism | Degrades To | Source Kinds |
+| --- | --- | --- | --- | --- | --- |
+| `claude-code` | `mcp` | `native` | Run-scoped MCP via inline mcpServers with strictMcpConfig on every run (settingSources: []) probe #1015, 2026-10-14 | | |
+| `claude-code` | `skill` | `native` | Per-run local plugin dir with skills/*/SKILL.md and skills: all probe #1015, 2026-10-14 | | |
+| `claude-code` | `hook` | `native` | Inline settings.hooks on the SDK settings option probe #1015, 2026-10-14 | | |
+| `claude-code` | `context` | `native` | systemPrompt.append once for role + context (no CLAUDE.md write) probe #1015, 2026-10-14 | | |
+| `claude-code` | `plugin` | `native` | plugins[{type:local,path,skipMcpDiscovery}] probe #1015, 2026-10-14 | | `path` |
+| `claude-code` | `command` | `degraded` | Template delivered as instruction text; the agent fills the placeholders | `prompt_text` | |
+| `codex` | `mcp` | `native` | App-server --ignore-user-config on every run, then -c mcp_servers.* overrides when MCP is delivered | | |
+| `codex` | `skill` | `native` | Run-scoped skills under .agents/skills in the run directory probe #1015, 2026-10-14 | | |
+| `codex` | `hook` | `unsupported` | Hooks were not evidenced after trying a .codex/hooks.json file and a -c hooks override probe #1015, 2026-10-14 | | |
+| `codex` | `context` | `native` | Native instruction files (AGENTS.md / fallback, P-37) | | |
+| `codex` | `plugin` | `native` | Run-scoped plugin bundle under .codex/plugins with plugin.json probe #1015, 2026-10-14 | | `path` |
+| `codex` | `command` | `degraded` | Template delivered as instruction text; the agent fills the placeholders | `prompt_text` | |
+| `agy` | `mcp` | `unsupported` | Run-scoped MCP via --mcp-config was not evidenced because agy --help does not list --mcp-config probe #1015, 2026-10-14 | | |
+| `agy` | `skill` | `unsupported` | Workspace skills under .gemini/skills or .agy/skills in the run directory were not evidenced probe #1015, 2026-10-14 | | |
+| `agy` | `hook` | `unverified` | No hook mechanism named by agy --help or the repo docs (P-58/P-60); nothing to attempt without inventing a format probe #1015, 2026-10-14 | | |
+| `agy` | `context` | `native` | Native instruction files (P-37) | | |
+| `agy` | `plugin` | `unverified` | Plugin management is CLI-owned ambient state (agy plugin); no run-scoped plugin delivery found in agy --help or the repo docs probe #1015, 2026-10-14 | | |
+| `agy` | `command` | `degraded` | Template delivered as instruction text; the agent fills the placeholders | `prompt_text` | |
+| `copilot` | `mcp` | `unverified` | Unverified without live probe (#1015) | | |
+| `copilot` | `skill` | `unverified` | Unverified without live probe (#1015) | | |
+| `copilot` | `hook` | `unverified` | Unverified without live probe (#1015) | | |
+| `copilot` | `context` | `native` | Native instruction files (P-37) | | |
+| `copilot` | `plugin` | `unverified` | Unverified without live probe (#1015) | | |
+| `copilot` | `command` | `degraded` | Template delivered as instruction text; the agent fills the placeholders | `prompt_text` | |
+| `cursor` | `mcp` | `native` | Run-scoped MCP server on the ACP session/new.mcpServers field (def-verified launch; tool listing is nondeterministic) probe #1015, 2026-10-14 | | |
+| `cursor` | `skill` | `degraded` | Project rule at .cursor/rules carrying the skill instruction; not a documented skill kind probe #1015, 2026-10-14 | `context` | |
+| `cursor` | `hook` | `unsupported` | Run-scoped .cursor/hooks.json with a UserPromptSubmit command hook was not evidenced (help names no hook format) probe #1015, 2026-10-14 | | |
+| `cursor` | `context` | `native` | Native instruction file AGENTS.md in the run cwd (P-37) probe #1015, 2026-10-14 | | |
+| `cursor` | `plugin` | `unsupported` | Documented --plugin-dir flag pointing at a fixture plugin bundle was not evidenced probe #1015, 2026-10-14 | | |
+| `cursor` | `command` | `degraded` | Template delivered as instruction text; the agent fills the placeholders | `prompt_text` | |
+| `opencode` | `mcp` | `unsupported` | Run-scoped config tree via OPENCODE_CONFIG_DIR with opencode.json mcp block was not evidenced probe #1015, 2026-10-14 | | |
+| `opencode` | `skill` | `native` | Skill directory under the same OPENCODE_CONFIG_DIR tree (skills/, P-60 addendum) probe #1015, 2026-10-14 | | |
+| `opencode` | `hook` | `unverified` | No hook kind documented in opencode --help, the repo docs (P-60 addendum names none) or the def; the CLI event surface is the plugin API, probed as C4 probe #1015, 2026-10-14 | | |
+| `opencode` | `context` | `native` | Native instruction file AGENTS.md in the run cwd with OPENCODE_DISABLE_CLAUDE_CODE=1 (P-37) probe #1015, 2026-10-14 | | |
+| `opencode` | `plugin` | `unsupported` | JS plugin in the config tree plugin directory whose module load appends the marker line was not evidenced probe #1015, 2026-10-14 | | |
+| `opencode` | `command` | `degraded` | Template delivered as instruction text; the agent fills the placeholders | `prompt_text` | |
 
 ### Rules (P-57 … P-60)
 
@@ -353,6 +353,7 @@ The initial table recorded as data in the capability registry (`registry/capabil
 - **P-58 amendment (2026-10-14, probe #1015, #1164)** Claude-code SDK delivery: `strictMcpConfig` and inline `disableClaudeAiConnectors: true` on every run; skills via a per-run local plugin directory with `skills: 'all'`; hooks via inline `settings.hooks`; context and role instructions via `systemPrompt.append` only (no `CLAUDE.md` write); plugin bundles via `plugins[{type:local,path,skipMcpDiscovery}]`.
 - **P-58 amendment (2026-10-14, probe #1015, #1156)** `codex` passes `--ignore-user-config` on every app-server run (not only when run-scoped MCP is delivered); run MCP still travels as `-c mcp_servers.*` overrides when delivered (`codex_apps` unchanged).
 - **P-58 amendment (2026-10-14, probe #1015, #1175)** Claude-code run plugin: `plugin.json` names the bundle `docket-run`; each materialized `SKILL.md` carries YAML frontmatter with `name` and `description` (existing frontmatter is kept and only missing keys are added); skills are invoked as `docket-run:<skill-name>`.
+- **P-58 amendment (2026-10-14, #1184)** Plugin source kinds (R-149) and command semantics (R-141 addendum): the `claude-code` and `codex` `plugin` rows declare `sourceKinds: ['path']` — a run never installs or edits the user's plugin state (P-44), so a `marketplace` plugin reads `unsupported` for those providers and the P-57 setup warning and the P-59 omission record fire. Every `command` row's how now reads "Template delivered as instruction text; the agent fills the placeholders": the template rides the effective prompt with its `{{placeholders}}` for the agent to fill from the task, and Docket substitutes nothing (no argument input path exists yet; `renderCommand` stays unwired for a future explicit-arguments path).
 - **P-59** (added 2026-10-12, #1006) Translation is per provider and per run: a stage's role capabilities are translated into the run-scoped files/flags the provider's launch rules already use (P-7 addendum for run-scoped files, the MCP child launch rules); a capability whose support is `unsupported` is omitted from the run and recorded in the run record as `omitted_capability`; `degraded` capabilities are inlined as instruction text; no translation ever writes into the repository (D-5) or the user's own provider config.
 - **P-60** (added 2026-10-12, #1006) Machine import is read-only: a scan lists `MachineCandidate`s per provider from that provider's own user-level config locations; it never writes there, never copies a secret value (only `secretNames`; at import the user is asked to store the value in the keychain, the definition then holds `{secretRef}`); it supersedes nothing in R-62…R-67 — the existing `CapabilityCandidate` for mcp/skill/context stays and this adds plugin and hook candidates: hook candidates are listed but still not importable (R-66's note, 2026-10-11, stands).
 - **P-60 addendum (2026-10-14, #1067)** Evidenced user-level machine scan locations:

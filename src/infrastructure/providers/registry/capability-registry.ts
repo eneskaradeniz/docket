@@ -354,7 +354,7 @@ export const PROVIDER_INSTRUCTION_FILES: readonly {
 
 const UNVERIFIED_HOW = 'Unverified without live probe (#1015)';
 const NATIVE_INSTRUCTIONS_HOW = 'Native instruction files (P-37)';
-const COMMAND_ROW = { kind: 'command', support: 'degraded', how: 'Docket renders template placeholders', degradesTo: 'prompt_text' } as const;
+const COMMAND_ROW = { kind: 'command', support: 'degraded', how: 'Template delivered as instruction text; the agent fills the placeholders', degradesTo: 'prompt_text' } as const;
 const PROBE_EVIDENCE_SUFFIX = 'probe #1015, 2026-10-14';
 const probeHow = (sentence: string): string => `${sentence} ${PROBE_EVIDENCE_SUFFIX}`;
 
@@ -400,6 +400,9 @@ export const TRANSLATION_TABLE: readonly TranslationRow[] = [
     plugin: {
       support: 'native',
       how: probeHow('plugins[{type:local,path,skipMcpDiscovery}]'),
+      // R-149: a run never installs or edits the user's plugin state (P-44), so only a local path
+      // bundle is deliverable — a marketplace plugin reads unsupported for this provider.
+      sourceKinds: ['path'],
     },
     command,
   }),
@@ -422,6 +425,8 @@ export const TRANSLATION_TABLE: readonly TranslationRow[] = [
     plugin: {
       support: 'native',
       how: probeHow('Run-scoped plugin bundle under .codex/plugins with plugin.json'),
+      // R-149: same rule as claude-code — only a local path bundle is deliverable (P-44).
+      sourceKinds: ['path'],
     },
     command,
   }),

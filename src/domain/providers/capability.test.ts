@@ -128,6 +128,10 @@ const commandCap = (id: string): CapabilityDef => ({
   template: 'Review {{target}}',
   arguments: [{ name: 'target', required: true }],
 });
+const pluginCap = (
+  id: string,
+  source: { kind: 'path'; path: string } | { kind: 'marketplace'; marketplace: string; name: string },
+): CapabilityDef => ({ kind: 'plugin', id: slug(id), name: id, source, includes: [] });
 
 const TABLE: readonly TranslationRow[] = [
   { provider: 'alpha', kind: 'mcp', support: 'native', how: 'run-scoped config' },
@@ -182,5 +186,58 @@ describe('per-run capability translation', () => {
     const result = translateCapabilities('beta', [mcpCap('m1'), commandCap('c1')], []);
     expect(result.run.map((c) => c.id)).toEqual(['m1']);
     expect(result.inline).toContain('Review {{target}}');
+  });
+});
+
+describe('source-kind keyed support (R-149)', () => {
+  const PLUGIN_TABLE: readonly TranslationRow[] = [
+    { provider: 'gamma', kind: 'plugin', support: 'native', how: 'local plugin dirs', sourceKinds: ['path'] },
+    { provider: 'delta', kind: 'plugin', support: 'degraded', how: 'inlined bundle text', degradesTo: 'context', sourceKinds: ['path', 'git'] },
+  ];
+  const pathPlugin = pluginCap('bundled', { kind: 'path', path: 'library/plugins/bundled' });
+  const marketPlugin = pluginCap('acme-tool', { kind: 'marketplace', marketplace: 'acme', name: 'tool' });
+
+  it('R-149: a listed source kind answers the row itself; an unlisted one answers unsupported with a how naming it', () => {
+    expect(supportFor(PLUGIN_TABLE, 'gamma', 'plugin', 'path')).toBe(PLUGIN_TABLE[0]);
+    expect(supportFor(PLUGIN_TABLE, 'gamma', 'plugin', 'marketplace')).toEqual({
+      provider: 'gamma',
+      kind: 'plugin',
+      support: 'unsupported',
+      how: 'local plugin dirs — source kind marketplace is not delivered',
+      sourceKinds: ['path'],
+    });
+  });
+
+  it('R-149: a row without sourceKinds ignores the source kind, and a declared row without a given source kind answers itself', () => {
+    expect(supportFor(TABLE, 'alpha', 'mcp', 'marketplace')).toBe(TABLE[0]);
+    expect(supportFor(PLUGIN_TABLE, 'gamma', 'plugin')).toBe(PLUGIN_TABLE[0]);
+  });
+
+  it('R-149: an unsupported source kind drops degradesTo — the capability is not delivered in a lesser form', () => {
+    const row = supportFor(PLUGIN_TABLE, 'delta', 'plugin', 'ftp');
+    expect(row.support).toBe('unsupported');
+    expect(row.degradesTo).toBeUndefined();
+    expect(row.how).toBe('inlined bundle text — source kind ftp is not delivered');
+    expect(supportFor(PLUGIN_TABLE, 'delta', 'plugin', 'git').degradesTo).toBe('context');
+  });
+
+  it('R-149: setupWarnings and translateCapabilities pass a plugin capability’s source kind', () => {
+    const warnings = setupWarnings(
+      [{ stage: 'work', provider: 'gamma', capabilities: [pathPlugin, marketPlugin] }],
+      PLUGIN_TABLE,
+    );
+    expect(warnings).toEqual([
+      {
+        stage: 'work',
+        capability: 'acme-tool',
+        provider: 'gamma',
+        support: 'unsupported',
+        how: 'local plugin dirs — source kind marketplace is not delivered',
+      },
+    ]);
+    const translation = translateCapabilities('gamma', [pathPlugin, marketPlugin], PLUGIN_TABLE);
+    expect(translation.run.map((c) => c.id)).toEqual(['bundled']);
+    expect(translation.omitted).toEqual([{ capability: 'acme-tool', provider: 'gamma', reason: 'unsupported' }]);
+    expect(translation.inline).toBe('');
   });
 });
