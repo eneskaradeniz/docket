@@ -2195,3 +2195,7 @@ Addendum 2026-10-14 (#1167): the git lifecycle read on the detail and the forge'
   at the edge. A pure read: no audit entry, no ledger event, and no `run.updated` or
   `workOrders.changed` is emitted. `RepoRef.defaultBranch` stays whatever GI-2 left it; the
   branch comes from the forge host itself (I-106), never a local guess.
+
+Addendum 2026-10-14 (#1188): route model ids normalized at the api edge before enqueue or save. Rule A-389.
+
+- **A-389** (added 2026-10-14, #1188) Where a command accepts a model id for an account route — `binding.save` (every role, including assistant), `account.consent.grant`, `account.consent.revoke`, `account.test` (when a model is given), and `repo.saveFlow` (each pinned model in a stage chain) — the id is normalized through that account's merged catalog before any write: a catalog row id is kept; an id equal to a row's `resolvedId` is rewritten to that row's id (the alias); anything else answers `unknown_model` with the route's valid catalog ids in `validModelIds` and nothing is saved. When the catalog list is empty the id is accepted unchanged (the list is not authoritative yet). `invalid_model` on consent remains for an empty string only.
