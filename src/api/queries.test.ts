@@ -50,7 +50,6 @@ import type {
   ProjectTree,
   RoadmapPageView,
   SettingsAccountsView,
-  RepoListItem,
   RoleListItem,
 } from './queries';
 import { RUN_EVENTS_TAIL_LIMIT } from './queries';
@@ -1632,49 +1631,12 @@ describe('providers.marks', () => {
   });
 });
 
-// --- repos.list ----------------------------------------------------------------------------------
-
 /** The registry's read side as the tests drive it: rows in slug order, exactly the machine
  *  registry's reply. */
 const createFakeRegistry = (
   rows: readonly { readonly slug: RepoSlug; readonly path: string }[],
 ): RepoRegistryPort => ({
   list: async () => rows,
-});
-
-describe('repos.list', () => {
-  it('lists every repo the machine knows, read straight off the registry', async () => {
-    const h = createHarness();
-    const registry = createFakeRegistry([
-      { slug: REPO, path: '/repos/acme' },
-      { slug: BROKEN_REPO, path: '/repos/bozuk' },
-    ]);
-
-    const view = (await createApi(h.deps, undefined, undefined, registry).query({
-      type: 'repos.list',
-    })) as RepoListItem[];
-
-    expect(view).toEqual([
-      { id: 'acme', path: '/repos/acme' },
-      { id: 'bozuk', path: '/repos/bozuk' },
-    ]);
-  });
-
-  it('returns an empty list when the machine knows no repo', async () => {
-    const h = createHarness();
-
-    const view = (await createApi(h.deps, undefined, undefined, createFakeRegistry([])).query({
-      type: 'repos.list',
-    })) as RepoListItem[];
-
-    expect(view).toEqual([]);
-  });
-
-  it('reports not_found without a registry port instead of throwing', async () => {
-    const h = createHarness();
-
-    expect(await createApi(h.deps).query({ type: 'repos.list' })).toEqual({ ok: false, code: 'not_found' });
-  });
 });
 
 // --- run.events ----------------------------------------------------------------------------------------

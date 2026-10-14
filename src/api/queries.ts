@@ -38,7 +38,6 @@ export type Query =
   | { readonly type: 'account.detail'; readonly id: string }
   | { readonly type: 'account.models'; readonly accountId: string; readonly refresh?: boolean }
   | { readonly type: 'project.spend'; readonly project: string }
-  | { readonly type: 'repos.list' }
   | { readonly type: 'settings.accounts'; readonly catalog?: 'read' | 'skip' }
   | { readonly type: 'roles.list' }
   | { readonly type: 'providers.discovered' }
@@ -216,16 +215,6 @@ export interface BoardView {
   readonly flow: string;
   readonly columns: readonly BoardColumn[];
   readonly done: readonly { readonly id: string; readonly number: number; readonly title: string }[];
-}
-
-// --- repos.list --------------------------------------------------------------------------------
-
-/** A repo this machine knows: the registry's row with the slug as a plain string id. `path`
- *  is the checkout root the registry holds — the fact that makes the row machine-local rather than
- *  merely a repo some work order once named. */
-export interface RepoListItem {
-  readonly id: string;
-  readonly path: string;
 }
 
 // --- settings.accounts (U-13) -----------------------------------------------------------------------

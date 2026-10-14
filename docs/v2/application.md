@@ -930,7 +930,7 @@ export function applyUpdate(updates: UpdateChecker): Promise<Result<void, 'not_a
 Rules:
 - **A-32** `app.update` answers the composed checker's `state()` verbatim — no derivation, no
   stored copy. With no checker composed the query answers `{ ok: false, code: 'not_found' }` (the
-  registry-less `repos.list` precedent): absence is never invented into "you are current".
+  registry-less `project.tree` precedent): absence is never invented into "you are current".
 - **A-33** `app.update.check` maps onto `checkForUpdates`: the checker re-checks, the command
   answers `{ ok: true }`, and the api emits one `update.changed` after it — `CommandResult` carries
   no payload, so the new state travels out-of-band, through the event and the re-query it triggers
@@ -959,7 +959,7 @@ Rules:
 - **A-41** `providers.marks` answers the composed marks source verbatim — def id →
   `{ viewBox, path, fillRule }`, `null` when the provider has none. No derivation, no stored
   copy. With no source composed the query answers `{ ok: false, code: 'not_found' }` (the
-  registry-less `repos.list` precedent): absence is never invented into an empty record.
+  registry-less `project.tree` precedent): absence is never invented into an empty record.
 - **A-42** A mark travels with its fill rule: the query answers a source mark's `fillRule`
   byte-identical and never assumes `nonzero` — the same `d` renders differently under the two
   rules, so the rule is the mark's data, not the renderer's guess.
@@ -2054,3 +2054,10 @@ export interface RunControl {
 - **A-363** (added 2026-10-14, #1110) Unknown run id → `not_found`; a run this process attached and has since detached (ended) → `not_active`; a malformed id → `invalid_id` (A-21). All three leave every store unchanged and write no audit entry.
 - **A-364** (added 2026-10-14, #1110) `run.steer`: the note is trimmed, then must be 1…`STEER_NOTE_MAX_CHARS` (2000) characters — else `bad_input` before any lookup. Only a live run is steerable (`not_found`/`not_active` as A-363); success calls `steer(note)` with the trimmed text (a further user message, I-28), writes one audit `run.steered` carrying the note at the same bound (operator text is recordable; never an environment value or secret), and emits exactly one `run.updated { runId }`. The command appends no work-order event and changes no fold.
 - **A-365** (added 2026-10-14, #1110) The api boundary speaks for the operator (single user), like every other command: `run.stop` and `run.steer` carry no actor field, and the audit entries name the actor the api itself received.
+
+### Addendum 2026-10-14 (#1111): remove `repos.list` query
+
+No screen needed a raw slug/path enumeration: the sidebar's `project.tree` (A-27) lists every repo
+with richer status and `repoStatus` (A-341) covers registry health. The `repos.list` query member,
+its registry entry and api handler are removed; A-32 and A-41 now cite the `project.tree` precedent
+in place of the deleted query name.
