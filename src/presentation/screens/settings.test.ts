@@ -146,7 +146,7 @@ describe('Account editor Usage panel states (U-266, U-267)', () => {
   });
 });
 
-// ——— Depo ayarları (U-301, U-302, U-283, U-288) ————————————————————————————————————————————
+// ——— Depo ayarları (U-310, U-311, U-283, U-288) ————————————————————————————————————————————
 // The real SettingsPanel over the real stores and a fake api: the assertions read the wiring
 // itself — the region, the three groups, the save bar, the four states, and the dialogs — so a
 // component that stops being rendered fails here, not only in its own colocated test.
@@ -262,8 +262,8 @@ const populatedWorld = (): PanelWorld => {
   return world;
 };
 
-describe('Depo ayarları on the real panel (U-301, U-302)', () => {
-  it('U-301: the section renders the region with its three groups and the overlay editor — no save bar while clean', async () => {
+describe('Depo ayarları on the real panel (U-310, U-311)', () => {
+  it('U-310: the section renders the region with its three groups and the overlay editor — no save bar while clean', async () => {
     const { store, html } = populatedWorld();
     await store.repoSettings.load();
     const out = html();
@@ -281,7 +281,7 @@ describe('Depo ayarları on the real panel (U-301, U-302)', () => {
     expect(out).not.toContain('data-repo-save-bar');
   });
 
-  it('U-301: an overlay edit raises the save bar with Vazgeç / Kaydet; Kaydet is disabled only when clean', async () => {
+  it('U-310: an overlay edit raises the save bar with Vazgeç / Kaydet; Kaydet is disabled only when clean', async () => {
     const { store, html } = populatedWorld();
     await store.repoSettings.load();
     store.repoSettings.setOverlayInstructions(stage('implement'), 'Another tweak.');
@@ -297,7 +297,7 @@ describe('Depo ayarları on the real panel (U-301, U-302)', () => {
     expect(clean).not.toContain('data-repo-save-bar');
   });
 
-  it('U-301: Detach asks through a modal dialog with its own title and confirm action', async () => {
+  it('U-310: Detach asks through a modal dialog with its own title and confirm action', async () => {
     const { store, html } = populatedWorld();
     await store.repoSettings.load();
     store.repoSettings.requestDetach(stage('implement'));
@@ -308,7 +308,7 @@ describe('Depo ayarları on the real panel (U-301, U-302)', () => {
     expect(out).toContain('Bu depo kendi kopyasını yönetir.');
   });
 
-  it('U-302: no repository shows the empty state with guidance and the project-setup link', async () => {
+  it('U-311: no repository shows the empty state with guidance and the project-setup link', async () => {
     const { store, html } = panelOver((query) => {
       if (query.type === 'project.tree') return treeOf([]);
       return { ok: false, code: 'not_found' };
@@ -322,7 +322,7 @@ describe('Depo ayarları on the real panel (U-301, U-302)', () => {
     expect(out).not.toContain('aria-label="Akış"');
   });
 
-  it('U-302: while the flow loads the section shows skeleton tiles and no groups', () => {
+  it('U-311: while the flow loads the section shows skeleton tiles and no groups', () => {
     const { store, html } = panelOver(() => new Promise(() => undefined));
     void store.repoSettings.load();
     const out = html();
@@ -333,7 +333,7 @@ describe('Depo ayarları on the real panel (U-301, U-302)', () => {
     expect(out).not.toContain('data-repo-empty');
   });
 
-  it('U-302: a failed repo.flow shows the error card with a retry action', async () => {
+  it('U-311: a failed repo.flow shows the error card with a retry action', async () => {
     const { store, html } = panelOver((query) => {
       if (query.type === 'project.tree') return treeOf(['web']);
       if (query.type === 'repo.flow') return { ok: false, code: 'not_found' };

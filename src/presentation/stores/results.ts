@@ -150,6 +150,10 @@ const SUCCESS_KEYS: Readonly<Record<Exclude<Command['type'], SilentCommand>, Lab
   'gate.attest': 'success.gate.attestNoChange',
   'proposal.decide': 'success.proposal.decide',
   'permission.answer': 'success.permission.answer',
+  // The stop is a request, the steer a delivery — the ended run and the steered pane arrive on
+  // their own channels (A-362, A-364); the toast only says the command landed.
+  'run.stop': 'detail.stop.success',
+  'run.steer': 'detail.steer.success',
   'deploy.approve': 'success.deploy.approve',
   'account.save': 'success.account.save',
   'account.adopt': 'success.account.adopt',

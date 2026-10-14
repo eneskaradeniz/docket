@@ -97,7 +97,7 @@ describe('settings sections (U-28)', () => {
     expect(SETTINGS_MENU.find((group) => group.id === 'work')?.sections).not.toContain('roles');
   });
 
-  it("U-301: Depo ayarları sits in the Çalışma group right after Sağlayıcılar and opens by name like every other section", () => {
+  it("U-310: Depo ayarları sits in the Çalışma group right after Sağlayıcılar and opens by name like every other section", () => {
     const work = SETTINGS_MENU.find((group) => group.id === 'work')?.sections ?? [];
     expect(work.indexOf('repo')).toBe(work.indexOf('providers') + 1);
     const opened = settingsPanelReducer(CLOSED_SETTINGS_PANEL, { type: 'open', origin: 'pointer', section: 'repo' });

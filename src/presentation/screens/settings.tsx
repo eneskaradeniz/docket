@@ -5,7 +5,7 @@
 // SettingRow per role with a work-style Listbox; Görünüm is the wizard's two rows; Sağlayıcılar keeps
 // U-38's rows in the same card style; Yetenekler is one dashed empty state until the capability
 // source lands. ✎ opens the AccountEditor dialog (components/account-editor-dialog.tsx), which saves
-// on commit here (U-29). Depo ayarları (U-301) composes the #1024 repo store and its three
+// on commit here (U-29). Depo ayarları (U-310) composes the #1024 repo store and its three
 // components behind the same save bar and discard confirm the agent sections use. ✕, Esc or a
 // click on the backdrop closes the panel; focus moves in on open,
 // is trapped while open, and returns to the opener on a keyboard-opened close only (the palette's one
@@ -295,7 +295,7 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
       void agentCapabilities.load();
     }
   }, [open, section, agentCapabilities]);
-  // Depo ayarları (U-301): the repo store rides the settings store; every arrival re-reads the
+  // Depo ayarları (U-310): the repo store rides the settings store; every arrival re-reads the
   // tree and the flow, like the agent sections re-read their own view.
   const repo = store.repoSettings;
   const repoState = useSyncExternalStore(repo.subscribe, repo.state, repo.state);
@@ -655,7 +655,7 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
     </div>
   );
 
-  // Depo ayarları (U-301, U-302): the #1024 store and components composed as one screen — the
+  // Depo ayarları (U-310, U-311): the #1024 store and components composed as one screen — the
   // region carries the accessible name, the store carries the draft, and this file only wires the
   // four states and the save bar. One repo draws no repo navigation (U-288); several draw the
   // top tab bar, and a dirty draft stops a tab move at the discard dialog like any other leave.

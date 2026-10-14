@@ -14,7 +14,7 @@ export type SettingsPanelOrigin = PaletteOrigin;
 
 /** The panel's sections: Çalışma — accounts, concurrency, providers, repo; Ajan yetenekleri — the
  *  seven capability kinds; Uygulama — appearance (Dil and Tema) and update. Telefon is its own
- *  window. `repo` is the per-repo flow/roles/limit screen (U-301); `roles` stays the library's. */
+ *  window. `repo` is the per-repo flow/roles/limit screen (U-310); `roles` stays the library's. */
 export type SettingsSection =
   | 'accounts'
   | 'concurrency'

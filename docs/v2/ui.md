@@ -1815,9 +1815,18 @@ Added 2026-10-14, #1104; amends U-288.
 - **U-299** (added 2026-10-14, #1104) The action opens a modal confirm dialog (`role="dialog"`, `aria-modal="true"`, focus trap, Esc cancels, focus returns to the row). It has a version select (default latest), a choice between "Yerel değişiklikleri tut" (default) and "Kütüphane sürümünü kullan", and the list of fields that become overlay (labels, not keys) when the first choice is selected. Buttons: "Vazgeç" (default, focused) and "Bağla".
 - **U-300** (added 2026-10-14, #1104) After "Bağla" the draft changes and the row shows the version badge and, if newer versions exist, the usual "Yeni sürüm var" row; a polite live region announces "Rol kütüphaneye bağlandı". Nothing is saved before Kaydet. All copy lives in the TR and EN bundles, every sentence at most 8 words (U-178).
 
-## Settings repository section (U-301 … U-302)
+## Settings repository section (U-310 … U-311)
 
 Added 2026-10-14, #1106; amends U-288.
 - U-288 amendment (2026-10-14, #1106): the #1024 screen contract is reached from Settings — the section `repo` ("Depo ayarları", en: "Repository settings") in the `work` group after `providers`; the `roles` section stays the library roles menu (U-284).
-- **U-301** (added 2026-10-14, #1106; amends U-288) Settings has the section `repo` ("Depo ayarları") in the work group; opening it shows the #1024 screen contract: Akış, Roller, Limit politikası, save bar, discard confirm. It is reachable from the Settings menu and by keyboard like every other section.
-- **U-302** (added 2026-10-14, #1106) With no repository the section shows the empty state with guidance and a link to project setup; while loading it shows skeleton tiles; a failed `repo.flow` shows the error card with a retry button. All copy lives in the TR and EN bundles, every sentence at most 8 words (U-178).
+- **U-310** (added 2026-10-14, #1106; amends U-288) Settings has the section `repo` ("Depo ayarları") in the work group; opening it shows the #1024 screen contract: Akış, Roller, Limit politikası, save bar, discard confirm. It is reachable from the Settings menu and by keyboard like every other section.
+- **U-311** (added 2026-10-14, #1106) With no repository the section shows the empty state with guidance and a link to project setup; while loading it shows skeleton tiles; a failed `repo.flow` shows the error card with a retry button. All copy lives in the TR and EN bundles, every sentence at most 8 words (U-178).
+
+## Running-card stop and steer (U-301 … U-305)
+
+Added 2026-10-14, #1110; extends U-226's decision-zone matrix and implements A-361 … A-365. (Numbered after #1104's U-298 … U-300 landed on main first.)
+- **U-301** While the work order's active run is live (status `running` and the view still holds a run without `endedAt`), the decision zone carries exactly one card: the quiet "Koşu sürüyor" line, the current stage's name, and the existing duration formatting (`detail.meta.duration`) — with the secondary `Durdur…` and `Yönlendir…` doors. No card when no run is live (a stale `running` standing, all runs ended) and none in `limit_waiting` (no live handle; the quiet state is enough).
+- **U-302** `Durdur…` opens the A3 inline confirm dialog (`InlineDialog`: focus trap, Esc, focus return; the trailing "…" because a further step opens). Confirm issues `run.stop`; the card stays until `workOrders.changed` shows the ended run — no optimistic removal. A `not_active` answer renders the calm "Koşu zaten bitti" line in the card (`detail.stop.alreadyEnded`) and refreshes.
+- **U-303** `Yönlendir…` opens a note dialog: multiline textarea, `Gönder` secondary button; Enter sends and Shift+Enter adds a line (the reject-box precedent). An empty or oversized note answers `bad_input`, which renders as the inline field error and the dialog stays open; anything else closes it and leaves the reporting to the toast.
+- **U-304** Both results map through U-8 (`commandResultKey`); no new tokens, no new hues — the two doors are secondary outline buttons, the confirm dialog carries the weight (there is no danger token on the card).
+- **U-305** Copy: every `detail.stop.*` / `detail.steer.*` key exists in tr and en (Durdur / Yönlendir fixed from the prototype's own list); no inline strings in `detail.tsx` or the decision card (scan).

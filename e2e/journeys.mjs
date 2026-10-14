@@ -2152,7 +2152,7 @@ for (const [sizeName, theme] of combos) {
     ]);
     await shot('eklentiler');
 
-    // Depo ayarları (U-301): the region and its three groups render on the real shell — the
+    // Depo ayarları (U-310): the region and its three groups render on the real shell — the
     // roadmap world holds one project with two repos, so the top tab bar shows too — and the
     // walk from the click to the groups must stay free of console and page errors.
     {
