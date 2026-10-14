@@ -210,7 +210,12 @@ const setup = async (): Promise<Harness> => {
 
 describe('A-213: tool ownership by kind', () => {
   it('A-213: run lists its three page tools; chat lists exactly the nine tools in order', () => {
-    expect(DOCKET_TOOL_DEFINITIONS_BY_KIND.run.map((tool) => tool.name)).toEqual(['page_publish', 'page_update', 'page_comments']);
+    expect(DOCKET_TOOL_DEFINITIONS_BY_KIND.run.map((tool) => tool.name)).toEqual([
+      'page_publish',
+      'page_update',
+      'page_comments',
+      'propose_memory',
+    ]);
     expect(DOCKET_TOOL_DEFINITIONS_BY_KIND.chat.map((tool) => tool.name)).toEqual([
       'docket_get',
       'docket_search',

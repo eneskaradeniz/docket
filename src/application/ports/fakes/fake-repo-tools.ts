@@ -1,5 +1,5 @@
 // In-memory machine-side ports — scripted commands, scans, evidence and worktrees.
-import type { Result, WorkOrderId, RepoSlug } from '../../../domain/index';
+import { redactSecretShapes, type Result, type RepoSlug, type WorkOrderId } from '../../../domain/index';
 
 import type { CommandResult, CommandRunner, EvidenceChecker, SecretScanner, Worktrees } from '../repo-tools';
 
@@ -38,6 +38,9 @@ export interface FakeWorktrees extends Worktrees {
   /** How many times `ensure` ran. A read that must not create a worktree stays at zero. */
   ensureCalls(): number;
 }
+
+/** Must match `MEMORY_PROPOSAL_SCAN_PREFIX` in `services/docket-tools.ts` (A-356). */
+const MEMORY_PROPOSAL_SCAN_PREFIX = '\0docket:memory-proposal-scan\0';
 
 const SUCCESS: CommandResult = { exitCode: 0, durationMs: 0, outputTail: '' };
 
@@ -92,6 +95,10 @@ export const createFakeSecretScanner = (): FakeSecretScanner => {
     },
     scan: async (cwd: string): Promise<{ readonly findings: number }> => {
       scanned.push(cwd);
+      if (cwd.startsWith(MEMORY_PROPOSAL_SCAN_PREFIX)) {
+        const text = cwd.slice(MEMORY_PROPOSAL_SCAN_PREFIX.length);
+        return { findings: redactSecretShapes(text) !== text ? 1 : 0 };
+      }
       return { findings };
     },
     calls: (): readonly string[] => [...scanned],

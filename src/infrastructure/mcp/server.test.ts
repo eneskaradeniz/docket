@@ -56,7 +56,7 @@ describe('createMcpServer', () => {
 
   it('I-56: tools/list answers the three tools with name, description and a JSON-schema object', async () => {
     const [reply] = (await send(echoCall, { jsonrpc: '2.0', id: 3, method: 'tools/list' })) as { result: { tools: { name: string }[] } }[];
-    expect(reply?.result.tools.map((tool) => tool.name)).toEqual(['page_publish', 'page_update', 'page_comments']);
+    expect(reply?.result.tools.map((tool) => tool.name)).toEqual(['page_publish', 'page_update', 'page_comments', 'propose_memory']);
     expect(reply?.result.tools).toEqual(
       DOCKET_TOOL_DEFINITIONS.map((tool) => ({ name: tool.name, description: tool.description, inputSchema: tool.inputSchema })),
     );
@@ -143,14 +143,14 @@ describe('createMcpServer by token kind', () => {
       DOCKET_TOOL_DEFINITIONS_BY_KIND.chat.map((tool) => ({ name: tool.name, description: tool.description, inputSchema: tool.inputSchema })),
     );
     const run = await asKind('run', { jsonrpc: '2.0', id: 1, method: 'tools/list' });
-    expect(run.result.tools?.map((tool) => tool.name)).toEqual(['page_publish', 'page_update', 'page_comments']);
+    expect(run.result.tools?.map((tool) => tool.name)).toEqual(['page_publish', 'page_update', 'page_comments', 'propose_memory']);
     expect((await asKind('chat', { jsonrpc: '2.0', id: 2, method: 'initialize' })).result.instructions).toBe(DOCKET_CHAT_TOOLS_INSTRUCTIONS);
     expect((await asKind('run', { jsonrpc: '2.0', id: 2, method: 'initialize' })).result.instructions).toBe(DOCKET_TOOLS_INSTRUCTIONS);
   });
 
   it('I-80: without a kind the server lists the run tools, as before', async () => {
     const plain = await asKind(undefined, { jsonrpc: '2.0', id: 1, method: 'tools/list' });
-    expect(plain.result.tools?.map((tool) => tool.name)).toEqual(['page_publish', 'page_update', 'page_comments']);
+    expect(plain.result.tools?.map((tool) => tool.name)).toEqual(['page_publish', 'page_update', 'page_comments', 'propose_memory']);
   });
 
   it('I-80: the list is only a listing: tools/call hands any name to the app, which decides by the token', async () => {

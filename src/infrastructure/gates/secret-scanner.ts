@@ -7,6 +7,9 @@ import type { SecretScanner } from '../../application/index';
 import { BASE_REF_PREFIX, runGit } from '../vcs/index';
 import { findSecrets } from './secret-patterns';
 
+/** Must match `MEMORY_PROPOSAL_SCAN_PREFIX` in `services/docket-tools.ts` (A-356). */
+const MEMORY_PROPOSAL_SCAN_PREFIX = '\0docket:memory-proposal-scan\0';
+
 const ONE_MIB = 1024 * 1024;
 const NUL_PROBE_BYTES = 8192;
 const BRANCH_PREFIX = 'docket/wo-';
@@ -58,6 +61,9 @@ async function readScannableText(absolutePath: string): Promise<string | undefin
 export function createSecretScanner(): SecretScanner {
   return {
     scan: async (cwd: string) => {
+      if (cwd.startsWith(MEMORY_PROPOSAL_SCAN_PREFIX)) {
+        return { findings: findSecrets(cwd.slice(MEMORY_PROPOSAL_SCAN_PREFIX.length)).length };
+      }
       const inside = await runGit(cwd, ['rev-parse', '--is-inside-work-tree']);
       if (inside.exitCode !== 0 || inside.stdout.trim() !== 'true') {
         throw new Error('not a git work tree');
