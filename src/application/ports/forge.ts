@@ -43,6 +43,9 @@ export interface Forge {
     Result<{ readonly state: 'open' | 'merged' | 'closed'; readonly mergeable?: boolean }, ForgeError>
   >;
   checks(repo: RepoRef, ref: string): Promise<Result<readonly CheckRun[], ForgeError>>;
+  /** The repository's default branch as the host itself answers it — the pull-request base
+   *  prefill's only source; no local guess ever rides a RepoRef. */
+  defaultBranch(repo: RepoRef): Promise<Result<string, ForgeError>>;
   mergePullRequest(repo: RepoRef, number: number): Promise<Result<void, ForgeError>>;
 }
 

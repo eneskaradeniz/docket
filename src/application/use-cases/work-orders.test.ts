@@ -15,7 +15,7 @@ import type {
   RoleSlug,
   StageSlug,
 } from '../../domain/index';
-import { deriveWorkOrderState, err, nextAction, parseSlug, parseUlid } from '../../domain/index';
+import { deriveWorkOrderState, err, nextAction, parseSlug, parseUlid, workOrderBranch } from '../../domain/index';
 
 import type { ProjectDef, ProjectSlug } from '../../domain/index';
 import type { RunRecord } from '../ports';
@@ -609,6 +609,50 @@ describe('getWorkOrder', () => {
     expect(result.value.state.blockedReason).toBe('waiting on upstream');
     expect(result.value.next).toEqual(nextAction(flow, expectedState));
     expect(result.value.record.id).toBe(id);
+  });
+
+  it('A-390: a work order without git events carries an empty git lifecycle — nothing invented', async () => {
+    const h = createHarness();
+    const id = await openedWorkOrder(h);
+
+    const result = await getWorkOrder(h.viewDeps, id);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.value.git).toEqual({});
+  });
+
+  it('A-390: git follows branch_pushed / pr_opened / pr_merged / branch_released event sequences', async () => {
+    const h = createHarness();
+    const id = await openedWorkOrder(h);
+    const branch = workOrderBranch(id);
+
+    await h.workOrders.appendEvent(id, { type: 'branch_pushed', at: 1_100, branch, head: 'a1' });
+    const pushed = await getWorkOrder(h.viewDeps, id);
+    expect(pushed.ok).toBe(true);
+    if (!pushed.ok) return;
+    expect(pushed.value.git).toEqual({ branch: { name: branch, head: 'a1', pushedAt: 1_100 } });
+
+    await h.workOrders.appendEvent(id, {
+      type: 'pr_opened', at: 1_200, number: 3, url: 'https://forge.fake/acme/pull/3', head: branch, base: 'main',
+    });
+    const opened = await getWorkOrder(h.viewDeps, id);
+    expect(opened.ok).toBe(true);
+    if (!opened.ok) return;
+    expect(opened.value.git.pr).toEqual({ number: 3, url: 'https://forge.fake/acme/pull/3', head: branch, base: 'main', merged: false });
+
+    await h.workOrders.appendEvent(id, { type: 'pr_merged', at: 1_300, number: 3 });
+    const merged = await getWorkOrder(h.viewDeps, id);
+    expect(merged.ok).toBe(true);
+    if (!merged.ok) return;
+    expect(merged.value.git.pr?.merged).toBe(true);
+    expect(merged.value.git.released).toBeUndefined();
+
+    await h.workOrders.appendEvent(id, { type: 'branch_released', at: 1_400 });
+    const released = await getWorkOrder(h.viewDeps, id);
+    expect(released.ok).toBe(true);
+    if (!released.ok) return;
+    expect(released.value.git.released).toBe(true);
   });
 
 /** flow-a with one extra human gate on its first stage — the "current definitions" the A-6

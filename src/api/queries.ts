@@ -26,8 +26,9 @@ export type { AccountTestView, RepoStatusView, ProposalDetailView, ProposalListI
 export type { McpStatusView } from '../application';
 
 export type Query =
-  | { readonly type: 'workOrder.detail'; readonly id: string } // → detail view incl. gates rows (A-378, A-379) | not_found | invalid_id
+  | { readonly type: 'workOrder.detail'; readonly id: string } // → detail view incl. gates rows (A-378, A-379) and git (A-390) | not_found | invalid_id
   | { readonly type: 'workOrder.changes'; readonly workOrder: string } // → WorkOrderChangesView | not_found | invalid_id
+  | { readonly type: 'workOrder.gitBase'; readonly id: string } // → { ok: true, base } | not_found | forge_unavailable | forge_error | invalid_id (A-391)
   | { readonly type: 'project.tree' }
   | { readonly type: 'repoStatus' } // → RepoStatusView[] (A-341)
   | { readonly type: 'repo.flow'; readonly repo: string } // → RepoFlowView (A-345)

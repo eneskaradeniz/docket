@@ -1,9 +1,15 @@
 // In-memory Forge — happy-path remote: recorded pushes and opened pull requests,
-// the checks list given at creation, and merge state tracked per pull request.
+// the checks list given at creation, and merge state tracked per pull request. The default
+// branch answers 'main' unless a test names another or asks for the error path.
 import type { CheckRun, Forge, ForgeError } from '../forge';
 
 export const createFakeForge = (
-  opts?: { readonly checks?: readonly CheckRun[]; readonly seedPullRequests?: number },
+  opts?: {
+    readonly checks?: readonly CheckRun[];
+    readonly seedPullRequests?: number;
+    readonly defaultBranch?: string;
+    readonly defaultBranchError?: ForgeError;
+  },
 ): Forge & {
   readonly pushed: readonly string[];
   readonly opened: readonly { readonly head: string; readonly base: string; readonly title: string }[];
@@ -44,6 +50,11 @@ export const createFakeForge = (
     },
 
     checks: async () => ({ ok: true, value: [...checks] }),
+
+    defaultBranch: async () =>
+      opts?.defaultBranchError !== undefined
+        ? { ok: false, error: opts.defaultBranchError }
+        : { ok: true, value: opts?.defaultBranch ?? 'main' },
 
     mergePullRequest: async (_repo, number) => {
       if (number < 1 || number > openedPullRequests.length) return notFound();

@@ -145,6 +145,16 @@ const toPrState = (state: string): 'open' | 'merged' | 'closed' | undefined =>
 const toMergeable = (value: string): boolean | undefined =>
   value === 'MERGEABLE' ? true : value === 'CONFLICTING' ? false : undefined;
 
+// gh answers the repository's default branch as a ref object, or null for a repository with no
+// branch yet. Anything but a record with a non-empty name is malformed: an empty string would
+// prefill the pull-request base with nothing, so it fails whole instead.
+const parseDefaultBranch = (output: string): Result<string, ForgeError> => {
+  const parsed = parseJson(output);
+  const ref = parsed?.['defaultBranchRef'];
+  const name = isRecord(ref) ? readString(ref, 'name') : undefined;
+  return name !== undefined && name !== '' ? ok(name) : err('unknown');
+};
+
 // `capabilities` is a synchronous property but the probe runs commands, so it happens once here,
 // at creation: presence is `gh --version` succeeding, authentication `gh auth status` doing so.
 // The port carries no issue-tracker members, so no capability is promised for issues.
@@ -233,6 +243,17 @@ export async function createGhForge(repo: string, runner: CommandRunner): Promis
       const outcome = await runner.run(repo, command, GH_TIMEOUT_MS);
       if (outcome.exitCode !== 0) return err(classify(outcome.exitCode, outcome.outputTail));
       return parseCheckRuns(outcome.outputTail);
+    },
+
+    // A read beside the actions: the base prefill asks the host which branch the repository
+    // merges into, the same way a person reading the repo page would.
+    defaultBranch: async (repoRef) => {
+      const target = ownerRepo(repoRef.remote);
+      if (target === undefined) return err('unknown');
+      const command = `gh repo view --repo ${shellQuote(`${target.owner}/${target.name}`)} --json defaultBranchRef`;
+      const outcome = await runner.run(repo, command, GH_TIMEOUT_MS);
+      if (outcome.exitCode !== 0) return err(classify(outcome.exitCode, outcome.outputTail));
+      return parseDefaultBranch(outcome.outputTail);
     },
 
     // The only merge path. Plain --merge, never --auto: an automatic merge is a decision the

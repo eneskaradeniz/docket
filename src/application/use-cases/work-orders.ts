@@ -14,7 +14,9 @@ import type {
   FlowSlug,
   GateSlug,
   GateVerdict,
+  GitLifecycleState,
   ProjectSlug,
+  RepoRef,
   Result,
   RoleDef,
   RoleSlug,
@@ -29,6 +31,7 @@ import type {
 } from '../../domain/index';
 import {
   billingFromPools,
+  deriveGitLifecycle,
   deriveWorkOrderState,
   err,
   foldRun,
@@ -39,7 +42,7 @@ import {
   REMOTE_CHECKS_EVENT_MAX,
 } from '../../domain/index';
 
-import type { AccountRecord, AppDeps, RunRecord, WorkOrderRecord } from '../ports';
+import type { AccountRecord, AppDeps, ForgeResolver, RunRecord, WorkOrderRecord } from '../ports';
 import { catalogOrEmpty } from '../services/match-id';
 import { defaultBillingOf } from '../services/spend-consent';
 
@@ -178,6 +181,9 @@ export interface WorkOrderView {
   /** The remote_checks gates' evaluation rows (A-378): a pure read of what the dispatcher
    *  already recorded — nothing here starts a poll. */
   readonly gates: readonly WorkOrderGateRow[];
+  /** The git lifecycle fold (A-390): branch, pull request and release marks derived purely from
+   *  the work order's events; a work order without git events carries the empty fold. */
+  readonly git: GitLifecycleState;
 }
 
 /** One check of a gate's recorded evidence. `url` rides the contract but is never written —
@@ -337,7 +343,31 @@ export async function getWorkOrder(
     flow,
     environments: loaded.value.repo?.environments ?? [],
     gates: workOrderGateRows(flow, events),
+    git: deriveGitLifecycle(events),
   });
+}
+
+export type GitBaseError = 'not_found' | 'forge_unavailable' | 'forge_error';
+
+/** The forge's default branch for the work order's repo (A-391) — the pull-request base
+ *  prefill's read. The routing mirrors the git actions' resolver walk (registry row → resolver),
+ *  but this is a pure read: no audit, no event, no announcement. */
+export async function workOrderGitBase(
+  deps: Pick<AppDeps, 'workOrders' | 'repos'>,
+  forges: ForgeResolver,
+  id: WorkOrderId,
+): Promise<Result<string, GitBaseError>> {
+  const record = await deps.workOrders.get(id);
+  if (record === undefined) return err('not_found');
+  // A repo the registry does not list, or a row without a remote, has no forge to ask — exactly
+  // the routing the git actions use, so the prefill never sees a forge the push would not.
+  const entry = (await deps.repos.list()).find((row) => row.slug === record.repo);
+  if (entry === undefined || entry.fingerprint.remote === undefined) return err('forge_unavailable');
+  const repo: RepoRef = { id: entry.slug, remote: entry.fingerprint.remote, defaultBranch: '' };
+  const forge = await forges.forRepo(repo);
+  if (forge === undefined) return err('forge_unavailable');
+  const branch = await forge.defaultBranch(repo);
+  return branch.ok ? ok(branch.value) : err('forge_error');
 }
 
 export type ControlError = 'not_found' | 'already_done' | 'not_blocked';
