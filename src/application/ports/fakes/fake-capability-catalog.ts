@@ -17,6 +17,8 @@ export interface FakeRouteKind {
   readonly instructionFiles?: readonly string[];
   /** The provider's `mcp` capability; absent reads as unknown. */
   readonly mcp?: boolean | 'unknown';
+  /** Whether the provider's transport accepts a steering note; absent reads as unknown. */
+  readonly steering?: boolean | 'unknown';
   readonly quotaProbe?:'sdk_usage' | 'rate_limit_events' | 'http_monitor' | 'provider_query' | 'none';
 }
 
@@ -43,6 +45,8 @@ export const createFakeCapabilityCatalog = (
         };
   },
   mcpSupport: (providerId) => routeKinds.find((kind) => kind.provider === providerId && kind.mcp !== undefined)?.mcp ?? 'unknown',
+  steeringSupport: (providerId) =>
+    routeKinds.find((kind) => kind.provider === providerId && kind.steering !== undefined)?.steering ?? 'unknown',
   // Registry order: the scripted kind order is the registry order, first appearance wins the union.
   nativeInstructionFiles: (providerId) =>
     routeKinds.filter((kind) => kind.provider === providerId).flatMap((kind) => kind.instructionFiles ?? []),

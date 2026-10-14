@@ -9,6 +9,7 @@ import { ok, parseSlug, parseUlid } from '../domain/index';
 import type { AgentTransport, AppDeps, UpdateChecker, UpdateState } from '../application';
 import { createPermissionBoard, createRunControl, executeRun } from '../application';
 import {
+  createFakeCapabilityCatalog,
   createFakeCapabilityDiscovery,
   createFakeCommandRunner,
   createFakeDefinitionStore,
@@ -1809,6 +1810,31 @@ describe('createApi', () => {
   });
 
   describe('run.stop / run.steer (A-361 … A-365)', () => {
+    const STEER_CATALOG = createFakeCapabilityCatalog([
+      { id: 'anthropic-subscription', provider: 'claude-code', authMode: 'subscription', steering: true },
+      { id: 'copilot-subscription', provider: 'copilot', authMode: 'subscription', steering: false },
+    ]);
+
+    const harnessWithSteerCatalog = async (): Promise<Harness> => {
+      const h = await createHarness();
+      return { ...h, deps: { ...h.deps, capabilities: STEER_CATALOG } };
+    };
+
+    const seedSteerableRouting = async (h: Harness, provider = 'claude-code'): Promise<void> => {
+      await h.deps.accounts.save({
+        id: ACCOUNT,
+        provider,
+        label: 'Main',
+        authMode: 'subscription',
+        limitPolicy: 'wait_resume',
+        caps: [],
+      });
+      await h.deps.bindings.save(
+        { level: 'global' },
+        { role: slugOf<'role'>('worker'), accounts: [{ accountId: ACCOUNT }] },
+      );
+    };
+
     /** The composition wiring of electron/main.ts, verbatim: the registry beside the board, the
      *  executor attaching into it, the api reading it. */
     const runControlApi = (h: Harness, runControl: ReturnType<typeof createRunControl>) =>
@@ -1824,8 +1850,9 @@ describe('createApi', () => {
       runControl: ReturnType<typeof createRunControl>,
       workOrderId: Ulid<'work-order'>,
       queueItemId: Ulid<'queue-item'>,
+      provider = 'claude-code',
     ): Promise<RunId> => {
-      await seedRouting(h);
+      await seedSteerableRouting(h, provider);
       const transports = createFakeTransportResolver();
       transports.register(ACCOUNT, transport);
       await h.deps.workOrders.create({
@@ -2017,8 +2044,33 @@ describe('createApi', () => {
       expect(h.log.entries().length).toBe(auditsBefore);
     });
 
+    it('A-366: run.steer on a non-steerable provider answers unsupported and writes nothing', async () => {
+      const h = await harnessWithSteerCatalog();
+      const parked = createParkedFakeTransport();
+      const runControl = createRunControl();
+      const api = runControlApi(h, runControl);
+      const workOrderId = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5F52');
+      const runId = await startLiveRun(
+        h,
+        parked.transport,
+        runControl,
+        workOrderId,
+        ulidOf<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5F53'),
+        'copilot',
+      );
+      const seen: UiEvent[] = [];
+      api.subscribe((event) => seen.push(event));
+      const auditsBefore = h.log.entries().length;
+
+      expect(await api.command(ACTOR, { type: 'run.steer', runId, note: 'notu' })).toEqual({ ok: false, code: 'unsupported' });
+
+      expect(parked.steers()).toEqual([]);
+      expect(h.log.entries().length).toBe(auditsBefore);
+      expect(seen).toEqual([]);
+    });
+
     it('A-364: run.steer forwards the trimmed note, audits it, and emits exactly one run.updated', async () => {
-      const h = await createHarness();
+      const h = await harnessWithSteerCatalog();
       const parked = createParkedFakeTransport();
       const runControl = createRunControl();
       const api = runControlApi(h, runControl);
@@ -2042,7 +2094,7 @@ describe('createApi', () => {
     });
 
     it('A-364: an empty, whitespace-only or oversized note answers bad_input and reaches nothing', async () => {
-      const h = await createHarness();
+      const h = await harnessWithSteerCatalog();
       const parked = createParkedFakeTransport();
       const runControl = createRunControl();
       const api = runControlApi(h, runControl);
@@ -2068,7 +2120,7 @@ describe('createApi', () => {
     });
 
     it('A-365: the boundary speaks for the operator it received — a payload actor field is never read', async () => {
-      const h = await createHarness();
+      const h = await harnessWithSteerCatalog();
       const parked = createParkedFakeTransport();
       const runControl = createRunControl();
       const api = runControlApi(h, runControl);
@@ -2082,6 +2134,35 @@ describe('createApi', () => {
       const audits = await h.log.list({ kind: 'run', id: runId }, 20);
       expect(audits.some((entry) => entry.action === 'run.steered' && entry.actor === ACTOR)).toBe(true);
       expect(parked.steers()).toEqual(['notu']);
+    });
+
+    it('A-367: workOrder.detail runSummaries carry canSteer from the account provider', async () => {
+      const h = await harnessWithSteerCatalog();
+      await seedSteerableRouting(h, 'copilot');
+      const api = createApi(h.deps);
+      const opened = await api.command(ACTOR, {
+        type: 'workOrder.open',
+        project: PROJECT,
+        repo: REPO,
+        title: 'Steer probe',
+      });
+      if (!opened.ok || opened.id === undefined) throw new Error('fixture open must succeed');
+      const runId = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5F80');
+      await h.deps.runs.create({
+        id: runId,
+        workOrderId: ulidOf<'work-order'>(opened.id),
+        stage: slugOf<'stage'>('plan'),
+        attempt: 1,
+        role: slugOf<'role'>('worker'),
+        startedAt: 1,
+        route: { accountId: ACCOUNT },
+        autoResumesUsed: 0,
+      });
+
+      const detail = await api.query({ type: 'workOrder.detail', id: opened.id });
+      expect(detail).toMatchObject({
+        runSummaries: [{ runId, canSteer: false }],
+      });
     });
   });
 

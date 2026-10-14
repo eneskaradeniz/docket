@@ -344,6 +344,12 @@ Design and evidence: [provider-capabilities.md](provider-capabilities.md), one s
 - **P-40** Every route and model has billing `included | metered | unknown`; `unknown` is never assumed free and shows `?`; tier resolution and limit-driven switches never pick a non-included model; a non-included model runs only with the user's consent and a spend cap (`needs_spend_consent` otherwise).
 - **P-46** A handoff continuation (P-38) never starts on a route whose model billing is `unknown` without the user's consent and a spend cap on the account: the continuation run passes the same preflight as any run (`needs_spend_consent`), and an automatic fallback treats an `unknown`-billing candidate exactly like a `metered` one — skipped. The pack changes the provider, never the money boundary (P-40).
 
+### Mid-run steering (P-61)
+
+Added 2026-10-14, #1124.
+
+- **P-61** (added 2026-10-14, #1124) The capability registry records `steering` per provider, following its transport (sdk and app-server `steerable`; acp and stream-json `not_steerable`); absent reads `unknown`; exposed through `CapabilityCatalog.steeringSupport`.
+
 ### Capability translation, support table and machine import (added 2026-10-12, #1006, D-4, D-7; P-57 … P-60)
 
 Design and evidence: [provider-capabilities.md §15](provider-capabilities.md#15-capability-translation-and-support-table-p-57).

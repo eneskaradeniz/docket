@@ -192,6 +192,7 @@ describe('work order detail reads', () => {
       account: { id: ACCOUNT, label: 'Plan', provider: 'plan-prov' },
       model: 'fast-1',
       billing: 'included',
+      canSteer: 'unknown',
       usage: { inputTokens: 11, outputTokens: 5, cachedInputTokens: 3, costByKind: { reported: 0.75 } },
     });
     expect(rows[1]).not.toHaveProperty('usage');
@@ -228,6 +229,7 @@ describe('work order detail reads', () => {
         account: { id: GONE, label: GONE, provider: 'unknown' },
         model: 'fast-1',
         billing: 'unknown',
+        canSteer: 'unknown',
       },
     ]);
   });

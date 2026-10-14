@@ -30,7 +30,7 @@ export type Command =
   // Stopping and steering the live run of a stage (A-361 … A-365). Both speak for the operator
   // like every other command — no actor field exists on the wire.
   | { readonly type: 'run.stop'; readonly runId: string } // errors: not_found (unknown id), not_active (no live run) (A-362, A-363)
-  | { readonly type: 'run.steer'; readonly runId: string; readonly note: string } // errors: bad_input (note), not_found, not_active (A-364)
+  | { readonly type: 'run.steer'; readonly runId: string; readonly note: string } // errors: bad_input (note), not_found, not_active (A-364), unsupported (A-366)
   | { readonly type: 'deploy.approve'; readonly workOrderId: string; readonly gate: string; readonly commit: string; readonly confirmedEnvironment?: string }
   | { readonly type: 'account.save'; readonly id?: string; readonly provider: string; readonly label: string; readonly authMode: string; readonly plan?: string; readonly reserve?: { readonly short?: number; readonly long?: number }; readonly limitPolicy?: string }
   | { readonly type: 'account.adopt'; readonly sourcePath: string; readonly label: string; readonly importToken?: boolean }

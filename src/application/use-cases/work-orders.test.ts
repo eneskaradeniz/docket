@@ -28,17 +28,20 @@ import type {
   FakeWorkOrderRepo,
 } from '../ports/fakes';
 import {
+  createFakeAccountRepo,
+  createFakeCapabilityCatalog,
   createFakeClock,
   createFakeDefinitionStore,
   createFakeEventLog,
   createFakeIdGen,
+  createFakeModelCatalog,
   createFakeProjectRepo,
   createFakeRunRepo,
   createFakeWorkOrderRepo,
   repoFlowOf,
 } from '../ports/fakes';
 
-import { blockWorkOrder, closeWorkOrder, getWorkOrder, openWorkOrder, unblockWorkOrder } from './work-orders';
+import { blockWorkOrder, closeWorkOrder, getWorkOrder, openWorkOrder, unblockWorkOrder, workOrderRunSummaries } from './work-orders';
 
 const ACTOR: Actor = { kind: 'user', id: 'u-1' };
 
@@ -1011,5 +1014,43 @@ describe('openWorkOrder (Phase 7 pin)', () => {
     const run = { ...runRecord(RUN_1, id, 1_000), stage: PIN_STAGE, flowVersion: pin?.flowVersion, roleVersion: pin?.stages[0].roleVersion ?? undefined };
     await h.runs.create(run);
     expect(await h.runs.get(RUN_1)).toEqual(run);
+  });
+});
+
+describe('workOrderRunSummaries canSteer (A-367)', () => {
+  const ACCOUNT_LIVE = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FC0');
+  const ACCOUNT_GONE = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FC1');
+  const WO = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FC2');
+
+  it('A-367: canSteer follows steeringSupport; a gone account reads unknown', async () => {
+    const accounts = createFakeAccountRepo();
+    await accounts.save({
+      id: ACCOUNT_LIVE,
+      provider: 'cursor',
+      label: 'Cursor',
+      authMode: 'subscription',
+      limitPolicy: 'wait_resume',
+      caps: [],
+    });
+    const capabilities = createFakeCapabilityCatalog([
+      { id: 'cursor-subscription', provider: 'cursor', authMode: 'subscription', steering: false },
+    ]);
+    const runs = createFakeRunRepo();
+    await runs.create({
+      ...runRecord(RUN_1, WO, 10),
+      route: { accountId: ACCOUNT_LIVE },
+    });
+    await runs.create({
+      ...runRecord(RUN_2, WO, 20),
+      route: { accountId: ACCOUNT_GONE },
+    });
+
+    const rows = await workOrderRunSummaries(
+      { runs, accounts, capabilities, modelCatalog: createFakeModelCatalog() },
+      await runs.listForWorkOrder(WO),
+    );
+
+    expect(rows.find((row) => row.runId === RUN_1)?.canSteer).toBe(false);
+    expect(rows.find((row) => row.runId === RUN_2)?.canSteer).toBe('unknown');
   });
 });

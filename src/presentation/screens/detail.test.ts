@@ -135,6 +135,17 @@ const RUNNING: WorkOrderDetailView = {
   ...READY,
   state: { status: 'running', stage: STAGE_PLAN, attempt: 1, pendingGates: [], skippedStages: [] },
   runs: [{ id: '01ARZ3NDEKTSV4RRFFQ69G5FA0', stage: STAGE_PLAN, attempt: 1, startedAt: 0 }],
+  runSummaries: [
+    {
+      runId: '01ARZ3NDEKTSV4RRFFQ69G5FA0',
+      stage: STAGE_PLAN,
+      attempt: 1,
+      role: 'planner',
+      account: { id: 'acc-1', label: 'Main', provider: 'claude-code' },
+      billing: 'included',
+      canSteer: true,
+    },
+  ],
 };
 
 // No break opportunity, ~170 characters — the ask card names the asking work order by its title,
@@ -363,6 +374,33 @@ describe('work-order detail screen — the decision zone (U-4, U-226)', () => {
     // The short run code, never the raw ULID (the walk-through decision).
     expect(html).toContain('run_5fe7'.slice(0, 4));
     expect(html).not.toContain('01ARZ3NDEKTSV4RRFFQ69G5FE77</code>');
+  });
+
+  it('U-340: a non-steerable run keeps Durdur enabled, disables Yönlendir, and shows the reason line', async () => {
+    const base = RUNNING.runSummaries?.[0];
+    if (base === undefined) throw new Error('RUNNING fixture must carry a run summary');
+    const view: WorkOrderDetailView = {
+      ...RUNNING,
+      runSummaries: [{ ...base, canSteer: false }],
+    };
+    const html = await draw(view);
+    const cardAt = html.indexOf('data-decision-card="running"');
+    const card = html.slice(cardAt, html.indexOf('</li>', cardAt));
+    expect(card).toContain('Durdur…');
+    expect(card).toContain('Yönlendir…');
+    expect(card).toContain('disabled');
+    expect(card).toContain('Bu koşunun aktarımı yönlendirme notu taşımaz; not gönderilemez.');
+  });
+
+  it('U-340: an unknown canSteer verdict disables Yönlendir with the same reason line', async () => {
+    const base = RUNNING.runSummaries?.[0];
+    if (base === undefined) throw new Error('RUNNING fixture must carry a run summary');
+    const view: WorkOrderDetailView = {
+      ...RUNNING,
+      runSummaries: [{ ...base, canSteer: 'unknown' }],
+    };
+    const html = await draw(view);
+    expect(html).toContain('Bu koşunun aktarımı yönlendirme notu taşımaz; not gönderilemez.');
   });
 
   it('U-301: a live run is one running card — the quiet line, the stage, the duration, the two doors', async () => {

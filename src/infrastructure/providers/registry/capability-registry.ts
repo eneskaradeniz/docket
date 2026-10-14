@@ -22,6 +22,8 @@ export const CAPABILITY_REGISTRY = {
       // The CLI keeps its machine login in its own config directory, so the isolation proof is the
       // launch that never points the config directory at the run directory.
       providerId: 'claude-code',
+      // The sdk transport delivers a mid-run steering note (P-61).
+      steering: 'steerable',
       isolation: { kind: 'test', name: 'P-44: a subscription launch never points the config directory at the run directory, whatever the ambient environment carries' },
       gates: {
         G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
@@ -37,6 +39,8 @@ export const CAPABILITY_REGISTRY = {
       // No isolation evidence on purpose (P-44): the CLI keeps its login under its own home, so
       // the home is left alone and the CLI reads its own configuration; the cap holds.
       providerId: 'codex',
+      // The app-server transport delivers a mid-run steering note (P-61).
+      steering: 'steerable',
       gates: {
         G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
         G2: { kind: 'test', name: 'P-12: the run opens with initialize → thread/start → turn/start and maps the turn stream to AgentEvents' },
@@ -51,6 +55,8 @@ export const CAPABILITY_REGISTRY = {
       // config-dir override and no login location, so HOME is left alone (a run-scoped home could
       // cut the CLI off from its login) and the CLI reads its own configuration; the cap holds.
       providerId: 'agy',
+      // The stream-json transport does not carry a steering note (P-61).
+      steering: 'not_steerable',
       gates: {
         G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
         G2: { kind: 'test', name: 'P-11: the text turn fixture maps to session_started, one text, usage and a completed finished' },
@@ -63,6 +69,8 @@ export const CAPABILITY_REGISTRY = {
       // (COPILOT_HOME) is also where its stored login lives, so neither HOME nor that variable is
       // ever redirected or named and the CLI reads its own configuration; the cap holds.
       providerId: 'copilot',
+      // The acp transport does not carry a steering note (P-61).
+      steering: 'not_steerable',
       gates: {
         G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
         G2: { kind: 'test', name: 'P-15: initialize → session/new (carrying the run-scoped config) → session/prompt; session/update maps to AgentEvents and an unknown update kind becomes a raw event, never an error' },
@@ -76,6 +84,8 @@ export const CAPABILITY_REGISTRY = {
       // run-scoped home could cut the CLI off from its login) and the CLI reads its own
       // configuration; the cap holds.
       providerId: 'cursor',
+      // The acp transport does not carry a steering note (P-61).
+      steering: 'not_steerable',
       gates: {
         G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
         G2: { kind: 'test', name: 'P-15: initialize → session/new (carrying the run-scoped config) → session/prompt; session/update maps to AgentEvents and an unknown update kind becomes a raw event, never an error' },
@@ -85,6 +95,8 @@ export const CAPABILITY_REGISTRY = {
     },
     {
       providerId: 'opencode',
+      // The acp transport does not carry a steering note (P-61).
+      steering: 'not_steerable',
       isolation: { kind: 'test', name: 'P-8: the opencode launch environment is exactly the config dir plus the documented Claude-compatibility switch' },
       gates: {
         G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },

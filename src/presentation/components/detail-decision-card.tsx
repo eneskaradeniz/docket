@@ -367,6 +367,7 @@ function RunningCard({
   runId,
   stageName,
   startedAt,
+  canSteer,
   locale,
   onStop,
   onSteer,
@@ -374,6 +375,7 @@ function RunningCard({
   readonly runId: string;
   readonly stageName: string;
   readonly startedAt: number;
+  readonly canSteer: boolean | 'unknown';
   readonly locale: Locale;
   readonly onStop: DecisionZoneProps['onStop'];
   readonly onSteer: DecisionZoneProps['onSteer'];
@@ -384,6 +386,7 @@ function RunningCard({
   const [noteRejected, setNoteRejected] = useState(false);
   const [alreadyEnded, setAlreadyEnded] = useState(false);
   const elapsed = formatDurationMs(locale, Math.max(Date.now() - startedAt, 0));
+  const steerDisabled = canSteer !== true;
   const sendNote = (): void => {
     void onSteer(runId, note).then((outcome) => {
       // Only the field's own verdict keeps the dialog open (U-303); anything else is the toast's.
@@ -409,6 +412,7 @@ function RunningCard({
         </ActionButton>
         <ActionButton
           variant="neutral"
+          disabled={steerDisabled}
           onClick={() => {
             setNoteRejected(false);
             setSteering(true);
@@ -417,6 +421,9 @@ function RunningCard({
           {t(locale, 'detail.steer.open')}
         </ActionButton>
       </div>
+      {steerDisabled ? (
+        <p className="m-0 text-[0.78125rem] text-inkdim">{t(locale, 'detail.steer.unsupported')}</p>
+      ) : null}
       {alreadyEnded ? (
         <p className="m-0 text-[0.78125rem] text-inkdim">{t(locale, 'detail.stop.alreadyEnded')}</p>
       ) : null}
@@ -563,6 +570,7 @@ export function DecisionZoneCards(props: DecisionZoneProps) {
                     runId={card.runId}
                     stageName={card.stageName}
                     startedAt={card.startedAt}
+                    canSteer={card.canSteer}
                     locale={locale}
                     onStop={props.onStop}
                     onSteer={props.onSteer}
