@@ -413,10 +413,88 @@ export const TRANSLATION_TABLE: readonly TranslationRow[] = [
     },
     command,
   }),
-  ...unprobed('agy'),
+  ...rowsOf('agy', {
+    mcp: {
+      support: 'unsupported',
+      how: probeHow('Run-scoped MCP via --mcp-config was not evidenced because agy --help does not list --mcp-config'),
+    },
+    skill: {
+      support: 'unsupported',
+      how: probeHow('Workspace skills under .gemini/skills or .agy/skills in the run directory were not evidenced'),
+    },
+    hook: {
+      support: 'unverified',
+      how: probeHow(
+        'No hook mechanism named by agy --help or the repo docs (P-58/P-60); nothing to attempt without inventing a format',
+      ),
+    },
+    context: { support: 'native', how: NATIVE_INSTRUCTIONS_HOW },
+    plugin: {
+      support: 'unverified',
+      how: probeHow(
+        'Plugin management is CLI-owned ambient state (agy plugin); no run-scoped plugin delivery found in agy --help or the repo docs',
+      ),
+    },
+    command,
+  }),
   ...unprobed('copilot'),
-  ...unprobed('cursor'),
-  ...unprobed('opencode'),
+  ...rowsOf('cursor', {
+    mcp: {
+      support: 'native',
+      how: probeHow(
+        'Run-scoped MCP server on the ACP session/new.mcpServers field (def-verified launch; tool listing is nondeterministic)',
+      ),
+    },
+    skill: {
+      support: 'degraded',
+      how: probeHow('Project rule at .cursor/rules carrying the skill instruction; not a documented skill kind'),
+      degradesTo: 'context',
+    },
+    hook: {
+      support: 'unsupported',
+      how: probeHow(
+        'Run-scoped .cursor/hooks.json with a UserPromptSubmit command hook was not evidenced (help names no hook format)',
+      ),
+    },
+    context: {
+      support: 'native',
+      how: probeHow('Native instruction file AGENTS.md in the run cwd (P-37)'),
+    },
+    plugin: {
+      support: 'unsupported',
+      how: probeHow('Documented --plugin-dir flag pointing at a fixture plugin bundle was not evidenced'),
+    },
+    command,
+  }),
+  ...rowsOf('opencode', {
+    mcp: {
+      support: 'unsupported',
+      how: probeHow(
+        'Run-scoped config tree via OPENCODE_CONFIG_DIR with opencode.json mcp block was not evidenced',
+      ),
+    },
+    skill: {
+      support: 'native',
+      how: probeHow('Skill directory under the same OPENCODE_CONFIG_DIR tree (skills/, P-60 addendum)'),
+    },
+    hook: {
+      support: 'unverified',
+      how: probeHow(
+        'No hook kind documented in opencode --help, the repo docs (P-60 addendum names none) or the def; the CLI event surface is the plugin API, probed as C4',
+      ),
+    },
+    context: {
+      support: 'native',
+      how: probeHow('Native instruction file AGENTS.md in the run cwd with OPENCODE_DISABLE_CLAUDE_CODE=1 (P-37)'),
+    },
+    plugin: {
+      support: 'unsupported',
+      how: probeHow(
+        'JS plugin in the config tree plugin directory whose module load appends the marker line was not evidenced',
+      ),
+    },
+    command,
+  }),
 ];
 
 export function findProvider(id: string): ProviderRecord | undefined {
