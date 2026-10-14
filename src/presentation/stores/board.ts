@@ -10,6 +10,11 @@ import type { Api } from '../../api/api';
 import type { BoardView, ProjectTree, Query } from '../../api/queries';
 import type { Actor } from '../../domain/index';
 import { isQueryFailure } from './results';
+import {
+  runWorkOrderCreate,
+  type WorkOrderWindowCreateOutcome,
+  type WorkOrderWindowCreateRequest,
+} from './work-order-window';
 
 /** Same coarse events the cockpit listens to (docs/v2/ui.md, U-12); the wiring lands with U-12,
  *  tests inject a fake, so the type lives here until then. */
@@ -217,6 +222,7 @@ export interface BoardStore {
   load(repo: string): Promise<void>;
   state(): BoardState;
   create(intent: CreateIntent): Promise<CreateOutcome>;
+  createFromWindow(request: WorkOrderWindowCreateRequest): Promise<WorkOrderWindowCreateOutcome>;
   /** Switches the board's standing and persists the choice for this repo (U-18). */
   setViewMode(repo: string, mode: BoardViewMode): void;
   /** Flips a list group open/closed and persists the choice for this repo (U-18); an empty
@@ -331,6 +337,20 @@ export const createBoardStore = (deps: BoardStoreDeps): BoardStore => {
       // The board mirrors its own mutation: the next query shows the opened work order.
       if (repo !== null) void load(repo);
       return { ok: true, id: result.id };
+    },
+    createFromWindow: async (request) => {
+      if (repo === null) return { ok: false, code: 'not_loaded' };
+      return runWorkOrderCreate(
+        {
+          api,
+          actor,
+          onOpened: () => {
+            if (repo !== null) void load(repo);
+          },
+        },
+        repo,
+        request,
+      );
     },
   };
 };

@@ -25,6 +25,7 @@ export function PhoneWindow({ open, locale, onClose }: PhoneWindowProps) {
   return (
     <ModalWindow
       open={open}
+      compact
       label={t(locale, 'phone.title')}
       titleId={titleId}
       brand={t(locale, 'phone.title')}

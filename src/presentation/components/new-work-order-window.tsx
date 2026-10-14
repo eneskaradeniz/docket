@@ -3,7 +3,6 @@
 // stage-skip card when a proposal is supplied.
 import { useEffect, useLayoutEffect, useReducer, useRef, useState, type ReactNode } from 'react';
 
-import type { CreateOutcome } from '../stores/board';
 import { failureKey } from '../stores/results';
 import { toastOutcome } from '../stores/toasts';
 import {
@@ -11,13 +10,16 @@ import {
   flowChoices,
   openedWorkOrderForm,
   workOrderCreateIntent,
+  workOrderCreateToasts,
   workOrderDraft,
   workOrderFormReducer,
-  workOrderOpenToast,
   type FlowOption,
   type PinnedFlowView,
   type StageSkipProposalCard,
+  type WorkOrderCreateMode,
+  type WorkOrderWindowCreateOutcome,
 } from '../stores/work-order-window';
+import { fill } from './chat-style';
 import { t, type Locale } from '../labels/t';
 import { ActionButton } from './action-button';
 import { BoardLaunchers } from './launcher-rows';
@@ -165,7 +167,8 @@ export function ModalWindow({ open, label, titleId, brand, head, footer, dataMar
         dataMark={dataMark}
         compact={compact}
         className={[
-          'w-[32.5rem] max-w-[calc(100vw-4rem)] transition-[opacity,translate,scale] [transition-timing-function:var(--motion-ease)]',
+          compact ? '' : 'w-[32.5rem] max-w-[calc(100vw-4rem)]',
+          'transition-[opacity,translate,scale] [transition-timing-function:var(--motion-ease)]',
           entered
             ? 'opacity-100 translate-y-0 scale-100 duration-[var(--motion-open-panel)] delay-[var(--motion-open-panel-delay)]'
             : 'opacity-0 translate-y-[var(--motion-open-rise)] scale-[var(--motion-open-scale)] duration-[var(--motion-close)]',
@@ -192,7 +195,8 @@ export interface NewWorkOrderWindowProps {
     readonly title: string;
     readonly description: string;
     readonly flow: string;
-  }) => Promise<CreateOutcome>;
+    readonly mode: WorkOrderCreateMode;
+  }) => Promise<WorkOrderWindowCreateOutcome>;
 }
 
 export function NewWorkOrderWindow({
@@ -226,7 +230,7 @@ export function NewWorkOrderWindow({
     onClose();
   };
 
-  const submit = (): void => {
+  const submit = (mode: WorkOrderCreateMode): void => {
     const title = form.title.trim();
     if (title === '') {
       dispatch({ type: 'invalid', field: 'title_required' });
@@ -238,14 +242,16 @@ export function NewWorkOrderWindow({
     }
     dispatch({ type: 'submitting' });
     const intent = workOrderCreateIntent(form, selected, skipProposal);
-    void onCreate({ title: intent.title, description: intent.description, flow: intent.flow }).then((outcome) => {
+    void onCreate({ title: intent.title, description: intent.description, flow: intent.flow, mode }).then((outcome) => {
       dispatch({ type: 'submit_done' });
       if (!outcome.ok && 'validation' in outcome) {
         dispatch({ type: 'invalid', field: outcome.validation });
         return;
       }
-      toastOutcome(locale, workOrderOpenToast(outcome));
       if (outcome.ok) {
+        for (const toast of workOrderCreateToasts(outcome)) {
+          toastOutcome(locale, toast);
+        }
         workOrderDraft.clear();
         dispatch({ type: 'created', options });
         onCreated(title);
@@ -276,15 +282,16 @@ export function NewWorkOrderWindow({
 
   const footer = (
     <>
-      <span className="inline-flex [&>button]:h-8">
-        <ActionButton variant="neutral" size="md" onClick={dismiss}>
-          {t(locale, 'workOrder.cancel')}
-        </ActionButton>
-      </span>
       <BoardLaunchers project={launchProject} onLaunch={dismiss} />
-      <span className="ml-auto inline-flex [&>button]:h-8">
-        <ActionButton variant="primary" size="md" disabled={createDisabled} onClick={submit}>
-          {form.submitting ? '…' : t(locale, 'workOrder.create')}
+      <span className="ml-auto inline-flex flex-wrap items-center justify-end gap-2 [&>button]:h-8">
+        <ActionButton variant="neutral" size="md" onClick={dismiss}>
+          {t(locale, 'workOrder.new.cancel')}
+        </ActionButton>
+        <ActionButton variant="neutral" size="md" disabled={createDisabled} onClick={() => submit('open')}>
+          {form.submitting ? '…' : t(locale, 'workOrder.new.open')}
+        </ActionButton>
+        <ActionButton variant="primary" size="md" disabled={createDisabled} onClick={() => submit('open_and_start')}>
+          {form.submitting ? '…' : t(locale, 'workOrder.new.openAndStart')}
         </ActionButton>
       </span>
     </>
@@ -296,6 +303,7 @@ export function NewWorkOrderWindow({
   return (
     <ModalWindow
       open={open}
+      compact
       label={t(locale, 'workOrder.new.title')}
       titleId={titleId}
       brand={t(locale, 'workOrder.new.title')}
@@ -325,7 +333,7 @@ export function NewWorkOrderWindow({
             onKeyDown={(event) => {
               if (event.key === 'Enter') {
                 event.preventDefault();
-                submit();
+                submit('open');
               }
             }}
             placeholder={t(locale, 'workOrder.new.titlePlaceholder')}
@@ -347,12 +355,20 @@ export function NewWorkOrderWindow({
               dispatch({ type: 'description', value: event.target.value });
               workOrderDraft.remember(form.title, event.target.value);
             }}
-            rows={3}
-            className={`${INPUT_CLASS} min-h-[4.5rem] resize-y py-1.5`}
+            rows={4}
+            className={`${INPUT_CLASS} resize-y py-1.5`}
           />
+          <p className="text-[12px] text-inkdim">{t(locale, 'workOrder.new.descriptionHint')}</p>
         </label>
         {flowReady && pinnedFlow !== null ? (
-          <FlowStrip locale={locale} flow={pinnedFlow} skippedStageIds={form.skippedStageIds} />
+          <div className="grid gap-1.5">
+            <FlowStrip locale={locale} flow={pinnedFlow} skippedStageIds={form.skippedStageIds} />
+            {pinnedFlow.humanGateCount !== null ? (
+              <p className="text-[12px] text-inkdim">
+                {fill(t(locale, 'workOrder.flowStrip.gateCount'), { count: pinnedFlow.humanGateCount })}
+              </p>
+            ) : null}
+          </div>
         ) : (
           <p role="alert" className="text-[12px] text-error">{t(locale, 'workOrder.new.noFlow')}</p>
         )}
