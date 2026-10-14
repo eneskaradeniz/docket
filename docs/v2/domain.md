@@ -870,8 +870,10 @@ export interface DispatchSnapshot {
   readonly limits: DispatchLimits;
   readonly headroom: Readonly<Record<string, Headroom>>;          // QueueItemId → headroom for its route
   readonly spend: Readonly<Record<string, SpendStatus>>;          // QueueItemId → combined spend status
+  readonly consent: Readonly<Record<string, ConsentReadiness>>;   // QueueItemId → spend-consent gate read (R-150)
 }
-export type WaitReason = 'not_before' | 'work_order_busy' | 'global_limit' | 'repo_limit' | 'account_limit' | 'quota' | 'budget';
+export type ConsentReadiness = 'ok' | 'needed';                   // the queue-side spend-consent read (R-150)
+export type WaitReason = 'not_before' | 'work_order_busy' | 'global_limit' | 'repo_limit' | 'account_limit' | 'consent' | 'quota' | 'budget';
 export type DispatchDecision =
   | { readonly item: QueueItemId; readonly kind: 'start' }
   | { readonly item: QueueItemId; readonly kind: 'wait'; readonly reason: WaitReason; readonly until?: EpochMs };
@@ -882,6 +884,7 @@ Rules:
 - **R-33** Items are considered by `priority` desc, then `enqueuedAt` asc, then `id` asc. Output has one decision per queue item, in that order.
 - **R-34** Checks in this order, first failing wins: `notBefore > now` (`until` = notBefore) → a run for the same work order is running or already started in this decision → global limit → repo limit → account limit → spend `hard_stop` (`budget`; a project-ceiling stop waits every item of that project — R-48) → headroom `ok:false` (`quota`, `until` = earliestRelief) → headroom `'unknown'` is allowed (does **not** wait; the transport will learn) → `start`.
 - **R-35** Starting an item counts toward the limits for the items after it in the same call.
+- **R-150** (added 2026-10-14, #1187) An item whose snapshot consent readiness is `needed` — the executor's own spend-consent gate would refuse its route — waits with reason `consent` and is never started; an absent readiness never blocks. The check runs after the limit checks and before the budget and quota readings. Granting consent makes the next tick start the item.
 
 ---
 
