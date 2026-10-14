@@ -71,11 +71,3 @@ export function RolesUnsetBanner({ locale, count, onApply }: { readonly locale: 
   );
 }
 
-/** Yetenekler: the discovery is not built yet; the card says so across the full width. */
-export function CapabilitiesCard({ locale }: { readonly locale: Locale }) {
-  return (
-    <div data-capabilities-empty="">
-      <EmptyCard mark="capabilities" title={t(locale, 'settings.capabilities.soonTitle')} line={t(locale, 'settings.capabilities.soonBody')} />
-    </div>
-  );
-}

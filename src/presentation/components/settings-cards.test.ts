@@ -17,13 +17,13 @@ import { AccountGroups, type AccountRowView } from './account-groups';
 import { AccountsSections } from './accounts-sections';
 import { ChainEmpty } from './role-row';
 import { SettingsMenu } from './settings-menu';
-import { CapabilitiesCard, RolesUnsetBanner } from './settings-cards';
+import { RolesUnsetBanner } from './settings-cards';
 import { AccountEditorDialog } from './account-editor-dialog';
 import { createAccountEditorStore, type EditorOutcome } from '../stores/account-editor';
 import type { SettingsAccountView } from '../../api/queries';
 import type { Command } from '../../api/commands';
 
-const SOURCES = import.meta.glob(['./settings-cards.tsx', './settings-menu.tsx', './accounts-sections.tsx', './provider-list.tsx', './account-editor.tsx', './account-editor-dialog.tsx'], {
+const SOURCES = import.meta.glob(['./settings-cards.tsx', './settings-menu.tsx', './capability-section.tsx', './accounts-sections.tsx', './provider-list.tsx', './account-editor.tsx', './account-editor-dialog.tsx'], {
   query: '?raw',
   import: 'default',
   eager: true,
@@ -81,11 +81,13 @@ const menu = (locale: 'tr' | 'en' = 'tr'): string =>
   renderToStaticMarkup(createElement(SettingsMenu, { locale, section: 'accounts', onSection: noop, dot: false }));
 
 describe('settings nav (U-165)', () => {
-  it('U-165: no group title in either language, no labelled group', () => {
+  it('U-165: no group title is drawn; the agent group is named only for assistive tech', () => {
     for (const locale of ['tr', 'en'] as const) {
       const out = menu(locale);
       for (const word of ['Çalışma', 'Uygulama', 'Work', 'App']) expect(out).not.toContain(`>${word}<`);
-      expect(out).not.toContain('role="group"');
+      const agentLabel = locale === 'tr' ? 'Ajan yetenekleri' : 'Agent capabilities';
+      expect(out).toContain(`aria-label="${agentLabel}"`);
+      expect(out).not.toContain(`>${agentLabel}<`);
     }
   });
 
@@ -155,7 +157,8 @@ describe('settings nav (U-165)', () => {
   it('U-165: the rows keep the section order, one button each, and a hairline between the groups', () => {
     const out = menu();
     const labels = SETTINGS_SECTIONS.map((section) => TR[`settings.section.${section}` as LabelKey]);
-    const positions = labels.map((label) => out.indexOf(`>${label}<`));
+    const htmlLabel = (label: string): string => label.replace(/'/g, '&#x27;');
+    const positions = labels.map((label) => out.indexOf(`>${htmlLabel(label)}<`));
     expect(positions.every((position) => position >= 0)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
     expect((out.match(/<button/g) ?? []).length).toBe(SETTINGS_SECTIONS.length);
@@ -313,13 +316,12 @@ describe('Roller banner and empty cards (U-172 … U-175)', () => {
   });
 });
 
-describe('Yetenekler and the audit (U-176, U-180)', () => {
-  it('U-176: the discovery block is a card with icon, title and one line — and no width cap', () => {
-    const out = renderToStaticMarkup(createElement(CapabilitiesCard, { locale: 'tr' }));
-    expect(out).toContain('data-capabilities-empty');
-    expect(out).toContain('>Yetenek keşfi hazırlanıyor<');
-    expect(out).toContain('<svg');
-    expect(out).not.toContain('max-w');
+describe('Ajan yetenekleri and the audit (U-176, U-180)', () => {
+  it('U-176: an empty capability kind is a card with exactly one action and no width cap', () => {
+    const text = source('capability-section.tsx');
+    expect(text).toContain('mark={`capabilities-${section}`}');
+    expect(text).toContain('capabilities.import.action');
+    expect(text).not.toContain('max-w');
   });
 
   it('U-180: the Sağlayıcılar empty state is a card, the plain line is gone', () => {
@@ -345,9 +347,38 @@ const NEW_KEYS = [
   'accounts.unadded.empty.line',
   'providers.empty',
   'providers.empty.line',
-  'settings.capabilities.soonTitle',
-  'settings.capabilities.soonBody',
+  'capabilities.empty.memory.title',
+  'capabilities.empty.memory.line',
+  'capabilities.empty.roles.title',
+  'capabilities.empty.roles.line',
+  'capabilities.empty.plugins.title',
+  'capabilities.empty.plugins.line',
+  'capabilities.empty.mcp.title',
+  'capabilities.empty.mcp.line',
+  'capabilities.empty.skills.title',
+  'capabilities.empty.skills.line',
+  'capabilities.empty.commands.title',
+  'capabilities.empty.commands.line',
+  'capabilities.empty.hooks.title',
+  'capabilities.empty.hooks.line',
+  'capabilities.empty.createAction',
+  'capabilities.memory.autoAccept.purpose',
+  'capabilities.memory.truncated',
+  'capabilities.import.action',
+  'capabilities.import.manual',
+  'capabilities.import.added',
+  'capabilities.warning.degraded',
+  'capabilities.warning.unsupported',
+  'capabilities.warning.unverified',
+  'settings.hint.memory',
+  'settings.hint.plugins',
+  'settings.hint.mcp',
+  'settings.hint.skills',
+  'settings.hint.commands',
+  'settings.hint.hooks',
 ] as const satisfies readonly LabelKey[];
+
+const U178_EXCEPTIONS = ['capabilities.import.secretNotice'] as const satisfies readonly LabelKey[];
 
 describe('copy and measure (U-178, U-179)', () => {
   it('U-178: every sentence of the new copy is at most 8 words, in both languages', () => {
@@ -357,6 +388,13 @@ describe('copy and measure (U-178, U-179)', () => {
           expect(sentence.trim().split(/\s+/).length, `${key}: ${sentence}`).toBeLessThanOrEqual(8);
         }
       }
+    }
+  });
+
+  it('U-178: capabilities.import.secretNotice is the only U-285 exception — 10 words in English', () => {
+    expect(EN['capabilities.import.secretNotice'].split(/\s+/).length).toBe(10);
+    for (const key of U178_EXCEPTIONS) {
+      expect(TR[key].length).toBeGreaterThan(0);
     }
   });
 

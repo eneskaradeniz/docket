@@ -2063,7 +2063,20 @@ for (const [sizeName, theme] of combos) {
   // answers, so the match anchors on the section word itself — scoped to the menu's own nav, where
   // the roles card's "Hesaplar'a git" (its apostrophe fails the anchor) cannot collide anyway.
   const section = (name) => panel.locator('nav').last().getByRole('button', { name: new RegExp(`^${name}(?:\\s|$)`) });
-  const SECTIONS = ['Hesaplar', 'Roller', 'Yetenekler', 'Eşzamanlılık', 'Sağlayıcılar', 'Görünüm', 'Güncelleme'];
+  const SECTIONS = [
+    'Hesaplar',
+    'Eşzamanlılık',
+    'Sağlayıcılar',
+    'Hafıza',
+    'Roller',
+    'Eklentiler',
+    'MCP',
+    "Skill'ler",
+    'Komutlar',
+    "Hook'lar",
+    'Görünüm',
+    'Güncelleme',
+  ];
   /** The widest direct child of the body against the body's content box (its width minus padding). */
   const fill = () =>
     body.evaluate((el) => {
@@ -2081,7 +2094,7 @@ for (const [sizeName, theme] of combos) {
     const slug = label.toLowerCase().replace(/[^a-z0-9ğüşıöç]+/g, '-').replace(/^-|-$/g, '');
     await page.screenshot({ path: join(OUT, `J-19-${stepNo}-${slug}.png`) });
   };
-  const title = 'J-19: Ayarlar kartları: menüde grup başlığı yok, Hesaplar açılırları, Roller ve Yetenekler kartları, her bölüm tam genişlikte';
+  const title = 'J-19: Ayarlar kartları: menüde grup başlığı yok, Hesaplar açılırları, Hafıza ve Roller kütüphanesi, her bölüm tam genişlikte';
   total += 1;
   try {
     await page.getByRole('button', { name: 'Ayarlar', exact: true }).first().click({ timeout: WAIT });
@@ -2115,29 +2128,28 @@ for (const [sizeName, theme] of combos) {
     await panel.locator('#accounts-unadded-body').waitFor({ state: 'visible', timeout: WAIT });
     await shot('hesaplar');
 
-    // Roller: repository settings (Akış, overlay, limit policy) replace the global chain editor.
+    // Hafıza: scope switcher and memory section surface.
+    await section('Hafıza').click({ timeout: WAIT });
+    await panel.locator('[data-memory-section]').waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await shot('hafiza');
+
+    // Roller: the global role library (not per-repo flow settings).
     await section('Roller').click({ timeout: WAIT });
-    const repoSettings = panel.locator('[data-repo-settings]');
-    await repoSettings.waitFor({ state: 'visible', timeout: SCAN_WAIT });
-    assert.equal(await repoSettings.getAttribute('role'), 'region', 'repo settings is a named region');
-    assert((await repoSettings.getAttribute('aria-label'))?.includes('Depo ayarları'), 'repo settings region label');
-    await page.waitForFunction(
-      () => {
-        const root = document.querySelector('[data-repo-settings]');
-        if (root === null) return false;
-        if (root.querySelector('[role="alert"]') !== null) return false;
-        return root.querySelector('[role="group"]') !== null;
-      },
-      undefined,
-      { timeout: SCAN_WAIT },
-    );
-    await repoSettings.getByRole('group', { name: 'Akış' }).waitFor({ state: 'visible', timeout: WAIT });
+    const rolesEmpty = panel.locator('[data-empty-card="capabilities-roles"]');
+    const rolesRows = panel.locator('[data-setting-row]');
+    await Promise.race([
+      rolesEmpty.waitFor({ state: 'visible', timeout: SCAN_WAIT }),
+      rolesRows.first().waitFor({ state: 'visible', timeout: SCAN_WAIT }),
+    ]);
     await shot('roller');
 
-    // Yetenekler: the discovery card.
-    await section('Yetenekler').click({ timeout: WAIT });
-    await panel.locator('[data-capabilities-empty]').waitFor({ state: 'visible', timeout: WAIT });
-    await shot('yetenekler');
+    // Eklentiler: empty card or import action.
+    await section('Eklentiler').click({ timeout: WAIT });
+    await Promise.race([
+      panel.locator('[data-empty-card="capabilities-plugins"]').waitFor({ state: 'visible', timeout: SCAN_WAIT }),
+      panel.locator('[data-setting-row]').first().waitFor({ state: 'visible', timeout: SCAN_WAIT }),
+    ]);
+    await shot('eklentiler');
 
     // Every section fills the width: the widest block of the body is at least 90 % of its content box.
     for (const name of SECTIONS) {
