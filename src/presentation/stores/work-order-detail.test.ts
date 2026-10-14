@@ -713,11 +713,34 @@ describe('work-order detail store', () => {
 
     expect(api.commands).toEqual([{ type: 'run.steer', runId: ACTIVE_RUN_ID, note: '  dosyalara bak  ' }]);
     expect(outcome).toEqual({ command: 'run.steer', result: { ok: true }, labelKey: 'detail.steer.success' });
-    // A bad note stays the field's own verdict: the U-8 copy for it is the generic failure line.
+  });
+
+  it('U-303: an empty or oversized note is the field\'s quiet verdict — inline error, no toast, no refresh', async () => {
+    const api = fakeApi(detailReplyWithRuns(stateAt(STAGE_BUILD, [], 'running'), [{ id: ACTIVE_RUN_ID, stage: 'build', attempt: 1, startedAt: 5_000 }]));
     api.setCommandResult({ ok: false, code: 'bad_input' });
-    const rejected = await store.steerRun(ACTIVE_RUN_ID, '');
-    expect(rejected.result).toEqual({ ok: false, code: 'bad_input' });
-    expect(rejected.labelKey).toBe('error.unknown');
+    const store = createStore(api);
+    await store.load(WO_ID);
+    const queriesBefore = api.queries.length;
+    const outcomeBefore = store.state().lastOutcome;
+
+    // Both unusable shapes travel verbatim; the api answers bad_input for each.
+    const empty = await store.steerRun(ACTIVE_RUN_ID, '');
+    const oversized = await store.steerRun(ACTIVE_RUN_ID, 'x'.repeat(2001));
+    expect(api.commands).toEqual([
+      { type: 'run.steer', runId: ACTIVE_RUN_ID, note: '' },
+      { type: 'run.steer', runId: ACTIVE_RUN_ID, note: 'x'.repeat(2001) },
+    ]);
+    for (const rejected of [empty, oversized]) {
+      expect(rejected.result).toEqual({ ok: false, code: 'bad_input' });
+      // The returned outcome words the field's own copy, so the dialog's inline error and the
+      // outcome say the same sentence.
+      expect(rejected.labelKey).toBe('detail.steer.error');
+    }
+    // Quiet means quiet: nothing is published as the screen's lastOutcome (no toast fires — an
+    // unmapped code would otherwise ride the U-8 generic arm as a red "unexpected error"), and
+    // no refresh runs, because a refused command changed nothing the next query could show.
+    expect(store.state().lastOutcome).toBe(outcomeBefore);
+    expect(api.queries.length).toBe(queriesBefore);
   });
 });
 

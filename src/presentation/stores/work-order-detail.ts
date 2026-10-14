@@ -754,6 +754,7 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     command: Command,
     successKey?: LabelKey,
     failureKeys?: Readonly<Record<string, LabelKey>>,
+    quietFailure?: (code: string) => boolean,
   ): Promise<IntentOutcome> => {
     const result = await api.command(actor, command);
     const outcome: IntentOutcome = {
@@ -766,6 +767,11 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
             ? failureKeys[result.code]
             : commandResultKey(command.type, result),
     };
+    // A quiet failure belongs to the caller's own surface, not the screen's: it is returned for
+    // that surface to word (the note dialog's inline error, U-303) and never published as the
+    // lastOutcome — so no toast fires and no refresh runs, because a refused command changed
+    // nothing the next query could show.
+    if (quietFailure !== undefined && !result.ok && quietFailure(result.code)) return outcome;
     set({ ...state, lastOutcome: outcome });
     // The detail mirrors its own mutation: the next query shows the command's effect.
     if (workOrderId !== null) await load(workOrderId);
@@ -829,8 +835,15 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     },
     steerRun: (runId, note) => {
       // The note travels verbatim; the api bounds it and answers bad_input, which the note
-      // dialog shows inline (U-303) — the store adds no second validation.
-      return runIntent({ type: 'run.steer', runId, note });
+      // dialog words as its own inline error (U-303) — the store adds no second validation, and
+      // the field's verdict is quiet: an unmapped code would otherwise ride the U-8 generic
+      // arm and toast a red "unexpected error" for an empty note.
+      return runIntent(
+        { type: 'run.steer', runId, note },
+        undefined,
+        { bad_input: 'detail.steer.error' },
+        (code) => code === 'bad_input',
+      );
     },
     approveDeploy: (input) => {
       if (workOrderId === null) return Promise.resolve(notLoadedOutcome('deploy.approve'));

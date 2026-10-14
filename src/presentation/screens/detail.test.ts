@@ -382,6 +382,11 @@ describe('work-order detail screen — the decision zone (U-4, U-226)', () => {
     expect(card).toContain('detail.steer.error');
     expect(card).toMatch(/key === 'Enter' && !event\.shiftKey/);
     expect(card).toContain('sendNote()');
+    // U-303's dialog contract, pinned on the classification itself: the bad_input branch marks
+    // the field error and ONLY the other branch closes — a bad note never dismisses the dialog.
+    expect(card).toMatch(
+      /if \(!outcome\.result\.ok && outcome\.result\.code === 'bad_input'\) setNoteRejected\(true\);\s*\n\s*else \{\s*\n\s*setSteering\(false\);/,
+    );
   });
 
   it('U-304: the two doors are the secondary outline — no primary fill, no new hue on the card', async () => {
