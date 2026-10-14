@@ -2034,6 +2034,11 @@ Addendum 2026-10-14 (#1113): `project.spend` billing for the roadmap header. Rul
 
 - **A-388** (added 2026-10-14, #1113) `project.spend` also answers `billing` as the project's active accounts' billing kinds aggregated: `pay_per_use` when every active account bills per use, `included` when none does, `mixed` otherwise, `none` when the project has no active account; `totalUsd`, `perRepo` and `cap` are unchanged; active accounts are the distinct account ids from bindings at global, project and repo scopes that apply to the project and still exist, billing each account the way `settings.accounts` does.
 
+Addendum 2026-10-14 (#1114): repository tracker link commands — `tracker.link` and `tracker.unlink` (UI rules U-320 … U-323 in docs/v2/ui.md).
+
+- **A-385** (added 2026-10-14, #1114) `tracker.link` validates a non-empty `scope`, a known `mode` and a known `tracker`, fills `connection` with the adapter's default connection id, upserts the repo's `RepoTrackerLink`, probes permissions once and answers `ok`; it never starts a sync and never reads or returns a secret; typed errors as listed.
+- **A-386** (added 2026-10-14, #1114) `tracker.unlink` removes only the repo's link: mirrored issues, subtasks, notes and recorded conflicts stay; a second call answers `ok`.
+
 Addendum 2026-10-14 (#1110): stop and steer a running stage — the live-handle registry
 (`application/services/run-control.ts`, the permission-board pattern), the commands `run.stop`
 and `run.steer`, and the executor's attach/detach wiring. Rules A-361 … A-365.

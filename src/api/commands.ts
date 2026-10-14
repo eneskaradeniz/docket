@@ -1,5 +1,6 @@
 // api/commands.ts — the write side of the boundary. Exact contract: docs/v2/application.md § 4.
 // Plain JSON-serialisable shapes only; ids travel as strings and are parsed in api.ts (A-21).
+import type { SyncMode } from '../domain/index';
 import type { McpStatusView } from './queries';
 
 export type Command =
@@ -84,6 +85,8 @@ export type Command =
   | { readonly type: 'definitions.save'; readonly kind: 'plugin' | 'mcp' | 'skill' | 'command' | 'hook'; readonly definition: unknown } // ok → { version }; failures → definitions_invalid + issues (A-352)
   | { readonly type: 'definitions.archive'; readonly kind: 'roles'; readonly id: string } // ok → { ok: true }; blocked → { ok: false, code: 'blocked', reasons } (A-355)
   | { readonly type: 'definitions.delete'; readonly kind: 'roles'; readonly id: string } // ok → { ok: true }; blocked → { ok: false, code: 'blocked', reasons } (A-355)
+  | { readonly type: 'tracker.link'; readonly repo: string; readonly tracker: 'github'; readonly scope: string; readonly mode: SyncMode }
+  | { readonly type: 'tracker.unlink'; readonly repo: string }
   | { readonly type: 'tracker.sync'; readonly repo: string }
   | {
       readonly type: 'tracker.resolveConflict';

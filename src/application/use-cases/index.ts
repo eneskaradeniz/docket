@@ -38,6 +38,7 @@ export * from './setup';
 export * from './repos-discover';
 export * from './setup-copy-proposal';
 export * from './tracker-sync';
+export * from './tracker-link';
 
 export * from './phase-control';
 export * from './project-bundle';

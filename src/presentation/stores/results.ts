@@ -109,6 +109,8 @@ type SilentCommand =
   | 'definitions.save'
   | 'definitions.archive'
   | 'definitions.delete'
+  | 'tracker.link'
+  | 'tracker.unlink'
   | 'tracker.sync'
   | 'tracker.resolveConflict'
   // The setup conversation's own panel words its outcomes; neither command toasts.
@@ -131,6 +133,8 @@ const isSilent = (command: Command['type']): command is SilentCommand =>
   || command === 'definitions.save'
   || command === 'definitions.archive'
   || command === 'definitions.delete'
+  || command === 'tracker.link'
+  || command === 'tracker.unlink'
   || command === 'tracker.sync'
   || command === 'tracker.resolveConflict'
   || command === 'setup.ai.start'

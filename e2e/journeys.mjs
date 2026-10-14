@@ -1,4 +1,5 @@
 // e2e/journeys.mjs — `npm run test:journeys`. J-1 … J-21 of docs/v2/ui.md → "Verifying the shell",
+// #1114 operator scenario (Depo ayarları › İş takibi) is covered by unit/UI tests until a seed step lands.
 // driven through the BUILT app on the design seed (e2e/seed-design.ts). Every step asserts visible
 // text and saves a screenshot to e2e/.out/journeys/, and every outcome lands in the structured
 // report (e2e/report.mjs) as it is printed.

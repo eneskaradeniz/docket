@@ -86,6 +86,8 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
   'definitions.save': { input: 'kind: plugin | mcp | skill | command | hook, definition: CapabilityDef-shaped object' },
   'definitions.archive': { input: 'kind: roles, id: string' },
   'definitions.delete': { input: 'kind: roles, id: string' },
+  'tracker.link': { input: 'repo: RepoSlug, tracker: github, scope: string, mode: SyncMode' },
+  'tracker.unlink': { input: 'repo: RepoSlug' },
   'tracker.sync': { input: 'repo: RepoSlug' },
   'tracker.resolveConflict': { input: 'repo: RepoSlug, conflict: SyncConflict, resolution: keep_remote | keep_local' },
   'setup.ai.start': { input: 'repoPath: string, draft?: string — errors: no_provider, bad_input, not_found (A-357), mcp_down (A-381)' },

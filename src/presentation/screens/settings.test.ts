@@ -272,6 +272,7 @@ const populatedWorld = (): PanelWorld => {
     if (query.type === 'repo.flow') return { ok: true, flow: sampleFlow() };
     if (query.type === 'settings.accounts') return { accounts: [], bindings: [] };
     if (query.type === 'repoStatus') return repoStatusOk('web');
+    if (query.type === 'tracker.linkStatus') return { ok: false, code: 'not_found' };
     return { ok: false, code: 'not_found' };
   });
   return world;
@@ -287,6 +288,7 @@ describe('Depo ayarları on the real panel (U-310, U-311)', () => {
     expect(out).toContain('aria-label="Akış"');
     expect(out).toContain('aria-label="Roller"');
     expect(out).toContain('aria-label="Limit politikası"');
+    expect(out).toContain('aria-label="İş takibi"');
     // The stage strip carries the stage and its role; the overlay editor is reachable (its
     // textarea and the Ayır action render).
     expect(out).toContain('>Implement<');
