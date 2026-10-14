@@ -23,12 +23,20 @@ import {
   FILE_MAX_BYTES,
   fileVerdict,
   GLOBAL_PLACE,
+  imageAttachmentsInConversation,
+  imageDataUrlOf,
+  IMAGE_PREVIEW_CACHE_MAX,
+  IMAGE_PREVIEW_MAX_IN_FLIGHT,
+  isPreviewImageFile,
+  touchPreviewCache,
+  type ChatChange,
+  type ImageEnlargeItem,
+  type ImagePreviewSlot,
   placeScope,
   REF_LIMIT,
   sameScope,
   stripAtToken,
   trayKindOf,
-  type ChatChange,
   type ChatNote,
   type ChatPlace,
   type ChatScopeInput,
@@ -115,6 +123,12 @@ export interface ChatStore {
   attachScreen(): void;
   addFiles(files: readonly ChatFileInput[]): void;
   removeFile(id: string): void;
+  watchAttachmentPreview(id: string): void;
+  retryAttachmentPreview(id: string): void;
+  openImageEnlarge(id: string): void;
+  closeImageEnlarge(): void;
+  clearImageEnlargeReturn(): void;
+  stepImageEnlarge(delta: number): void;
   // history
   openHistory(): void;
   closeHistory(): void;
@@ -188,8 +202,15 @@ export const createChatStore = (deps: ChatStoreDeps): ChatStore => {
     alert: false,
     now: now(),
     focusTick: 0,
+    previews: {},
+    previewOrder: [],
+    trayPreviews: {},
+    imageEnlarge: null,
+    imageEnlargeReturn: null,
   };
   const listeners = new Set<() => void>();
+  let previewQueue: string[] = [];
+  let previewInflight = 0;
   // Only the newest read of each kind may land: a slow reply must not overwrite a fresher one.
   let conversationSeq = 0;
   let historySeq = 0;
@@ -281,12 +302,29 @@ export const createChatStore = (deps: ChatStoreDeps): ChatStore => {
 
   // --- resetting ---------------------------------------------------------------------------------------
 
+  const clearPreviewLoads = (): void => {
+    previewQueue = [];
+    previewInflight = 0;
+  };
+
+  const previewPatch = (patch: Partial<ChatState>): void => {
+    set({
+      previews: {},
+      previewOrder: [],
+      trayPreviews: {},
+      imageEnlarge: null,
+      imageEnlargeReturn: null,
+      ...patch,
+    });
+    clearPreviewLoads();
+  };
+
   /** A different conversation begins: the old one's view and live state go, the draft stays. */
   const resetConversation = (patch: Partial<ChatState> = {}): void => {
     conversationSeq += 1;
     starting = false;
     early = [];
-    set({
+    previewPatch({
       conversation: null,
       detail: null,
       turn: null,
@@ -301,6 +339,68 @@ export const createChatStore = (deps: ChatStoreDeps): ChatStore => {
       ...patch,
     });
     syncTicker();
+  };
+
+  const setPreviewSlot = (id: string, slot: ImagePreviewSlot): void => {
+    const order = slot.status === 'ready' ? touchPreviewCache(state.previewOrder, id, IMAGE_PREVIEW_CACHE_MAX) : state.previewOrder;
+    const merged = { ...state.previews, [id]: slot };
+    const previews = Object.fromEntries(Object.entries(merged).filter(([key]) => order.includes(key)));
+    set({ previews, previewOrder: order });
+  };
+
+  const pumpPreviewQueue = (): void => {
+    while (previewInflight < IMAGE_PREVIEW_MAX_IN_FLIGHT && previewQueue.length > 0) {
+      const id = previewQueue.shift();
+      if (id === undefined) break;
+      const known = state.previews[id];
+      if (known?.status === 'ready' || known?.status === 'loading') continue;
+      previewInflight += 1;
+      setPreviewSlot(id, { status: 'loading' });
+      void loadAttachmentPreview(id);
+    }
+  };
+
+  const loadAttachmentPreview = async (id: string): Promise<void> => {
+    const conversation = state.conversation;
+    if (conversation === null) {
+      previewInflight = Math.max(0, previewInflight - 1);
+      pumpPreviewQueue();
+      return;
+    }
+    const reply = await api.query({ type: 'chat.attachment', conversation, id } satisfies Query);
+    previewInflight = Math.max(0, previewInflight - 1);
+    if (state.conversation !== conversation) {
+      pumpPreviewQueue();
+      return;
+    }
+    if (isQueryFailure(reply) || typeof reply !== 'object' || reply === null || !('base64' in reply) || !('name' in reply)) {
+      setPreviewSlot(id, { status: 'failed' });
+      pumpPreviewQueue();
+      return;
+    }
+    const name = String((reply as { name: string }).name);
+    const base64 = String((reply as { base64: string }).base64);
+    const dataUrl = imageDataUrlOf(name, base64);
+    if (dataUrl === null) {
+      setPreviewSlot(id, { status: 'failed' });
+      pumpPreviewQueue();
+      return;
+    }
+    setPreviewSlot(id, { status: 'ready', dataUrl });
+    pumpPreviewQueue();
+  };
+
+  const enlargeItemsOf = (): readonly ImageEnlargeItem[] => {
+    const messages = state.detail?.messages ?? [];
+    const listed = imageAttachmentsInConversation(messages);
+    const items: ImageEnlargeItem[] = [];
+    for (const attachment of listed) {
+      const trayUrl = state.trayPreviews[attachment.id];
+      const slot = state.previews[attachment.id];
+      const dataUrl = trayUrl ?? (slot?.status === 'ready' ? slot.dataUrl : undefined);
+      if (dataUrl !== undefined) items.push({ id: attachment.id, name: attachment.name, dataUrl });
+    }
+    return items;
   };
 
   // --- events ------------------------------------------------------------------------------------------
@@ -466,7 +566,12 @@ export const createChatStore = (deps: ChatStoreDeps): ChatStore => {
       return;
     }
     const item: TrayItem = { id: result.attachment, name: file.name, kind: trayKindOf(ext) };
-    set({ uploading: state.uploading - 1, tray: [...state.tray, item] });
+    const trayUrl = isPreviewImageFile(file.name, item.kind) ? imageDataUrlOf(file.name, file.base64) : null;
+    set({
+      uploading: state.uploading - 1,
+      tray: [...state.tray, item],
+      ...(trayUrl === null ? {} : { trayPreviews: { ...state.trayPreviews, [result.attachment]: trayUrl } }),
+    });
   };
 
   const addRefChip = (chip: RefChip): boolean => {
@@ -529,6 +634,10 @@ export const createChatStore = (deps: ChatStoreDeps): ChatStore => {
     },
     escape: () => {
       if (!state.open) return false;
+      if (state.imageEnlarge !== null) {
+        store.closeImageEnlarge();
+        return true;
+      }
       if (state.scopePop) set({ scopePop: false });
       else if (state.menu !== null) store.closeMenu();
       else if (state.permOpen) set({ permOpen: false });
@@ -654,7 +763,39 @@ export const createChatStore = (deps: ChatStoreDeps): ChatStore => {
         }
       }
     },
-    removeFile: (id) => set({ tray: state.tray.filter((item) => item.id !== id) }),
+    removeFile: (id) => {
+      const { [id]: _removed, ...trayPreviews } = state.trayPreviews;
+      set({ tray: state.tray.filter((item) => item.id !== id), trayPreviews });
+    },
+
+    watchAttachmentPreview: (id) => {
+      if (state.conversation === null) return;
+      const slot = state.previews[id];
+      if (slot?.status === 'ready' || slot?.status === 'loading') return;
+      if (previewQueue.includes(id)) return;
+      previewQueue = [...previewQueue, id];
+      pumpPreviewQueue();
+    },
+    retryAttachmentPreview: (id) => {
+      const previews = Object.fromEntries(Object.entries(state.previews).filter(([key]) => key !== id));
+      set({ previews, previewOrder: state.previewOrder.filter((entry) => entry !== id) });
+      previewQueue = previewQueue.filter((entry) => entry !== id);
+      store.watchAttachmentPreview(id);
+    },
+    openImageEnlarge: (id) => {
+      const items = enlargeItemsOf();
+      const index = items.findIndex((item) => item.id === id);
+      if (index < 0) return;
+      set({ imageEnlarge: { items, index }, imageEnlargeReturn: id });
+    },
+    closeImageEnlarge: () => set({ imageEnlarge: null }),
+    clearImageEnlargeReturn: () => set({ imageEnlargeReturn: null }),
+    stepImageEnlarge: (delta) => {
+      const open = state.imageEnlarge;
+      if (open === null || open.items.length === 0) return;
+      const index = (open.index + delta + open.items.length) % open.items.length;
+      set({ imageEnlarge: { ...open, index } });
+    },
 
     openHistory: () => {
       set({ view: 'history', menu: null, scopePop: false, permOpen: false });
@@ -681,7 +822,7 @@ export const createChatStore = (deps: ChatStoreDeps): ChatStore => {
         return;
       }
       const scope = scopeOfView(reply.scope);
-      set({
+      previewPatch({
         view: 'chat',
         conversation: reply.id,
         scope,

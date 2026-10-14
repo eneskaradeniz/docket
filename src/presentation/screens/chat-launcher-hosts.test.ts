@@ -46,13 +46,22 @@ describe('roadmap host', () => {
       query: (query) => {
         if (query.type === 'project.tree') return Promise.resolve([]);
         if (query.type === 'roadmap.byProject') return Promise.resolve(VIEW);
+        if (query.type === 'project.spend') return Promise.resolve({ totalUsd: 0, perRepo: [], billing: 'none' });
         return Promise.resolve({ ok: false, code: 'not_found' });
       },
       command: () => Promise.resolve({ ok: true }),
     };
     const store = createRoadmapStore({ api, changes: () => () => undefined });
     await store.load('antero');
-    const screen = createElement(RoadmapScreen, { store, project: 'antero', name: 'Antero Başlığı', locale: 'tr', onOpenRepo: () => undefined, onOpenWorkOrder: () => undefined });
+    const screen = createElement(RoadmapScreen, {
+      store,
+      project: 'antero',
+      name: 'Antero Başlığı',
+      locale: 'tr',
+      onOpenRepo: () => undefined,
+      onOpenWorkOrder: () => undefined,
+      onOpenBudget: () => undefined,
+    });
     return wrap ? within(screen) : renderToStaticMarkup(screen);
   };
 

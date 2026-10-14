@@ -8,6 +8,9 @@ import {
   atQueryOf,
   chatPlaceOf,
   fileVerdict,
+  imageDataUrlOf,
+  isPreviewImageFile,
+  touchPreviewCache,
   groupConversations,
   minutesLeft,
   noticeOf,
@@ -145,6 +148,32 @@ describe('the @ trigger (U-109)', () => {
     expect(stripAtToken('bak @İE-00')).toBe('bak');
     expect(stripAtToken('@gir')).toBe('');
     expect(stripAtToken('a b')).toBe('a b');
+  });
+});
+
+describe('image previews (U-331)', () => {
+  it('U-331: only png, jpg, jpeg and webp are preview images; pdf and text stay chips', () => {
+    expect(isPreviewImageFile('a.png', 'image')).toBe(true);
+    expect(isPreviewImageFile('a.jpg', 'image')).toBe(true);
+    expect(isPreviewImageFile('a.jpeg', 'image')).toBe(true);
+    expect(isPreviewImageFile('a.webp', 'image')).toBe(true);
+    expect(isPreviewImageFile('a.pdf', 'pdf')).toBe(false);
+    expect(isPreviewImageFile('a.md', 'text')).toBe(false);
+    expect(isPreviewImageFile('a.png', 'text')).toBe(false);
+  });
+
+  it('U-331: the preview cache keeps at most 20 decoded ids', () => {
+    let order: readonly string[] = [];
+    for (let n = 0; n < 25; n += 1) order = touchPreviewCache(order, `I${n}`, 20);
+    expect(order).toHaveLength(20);
+    expect(order[0]).toBe('I5');
+    expect(order[19]).toBe('I24');
+  });
+
+  it('U-331: a data URL is built only for the three image mime types', () => {
+    expect(imageDataUrlOf('x.png', 'ab')).toBe('data:image/png;base64,ab');
+    expect(imageDataUrlOf('x.jpg', 'ab')).toBe('data:image/jpeg;base64,ab');
+    expect(imageDataUrlOf('x.gif', 'ab')).toBeNull();
   });
 });
 

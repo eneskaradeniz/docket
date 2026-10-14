@@ -746,6 +746,7 @@ describe('attachments (U-110)', () => {
     await flush();
     expect(store.state().tray[0]?.kind).toBe('image');
     expect(store.state().note?.key).toBe('chat.file.image');
+    expect(store.state().trayPreviews.A2).toBe('data:image/png;base64,aGk=');
   });
 
   it('U-110: a video, an unknown type and the sixth file are refused with their sentences and no upload', async () => {
@@ -1027,7 +1028,103 @@ describe('failure sentences (U-115)', () => {
   });
 });
 
+describe('image attachment previews (U-331, U-332)', () => {
+  it('U-331: at most four attachment loads are in flight at once', async () => {
+    const { store, b } = make();
+    b.onQuery('chat.conversation', () =>
+      conversation('C1', {
+        messages: [
+          message('M1', {
+            role: 'user',
+            attachments: Array.from({ length: 6 }, (_, n) => ({ id: `A${n}`, name: `f${n}.png`, type: 'image', bytes: 10 })),
+          }),
+        ],
+      }),
+    );
+    let inflight = 0;
+    let maxInflight = 0;
+    b.onQuery('chat.attachment', () => {
+      inflight += 1;
+      maxInflight = Math.max(maxInflight, inflight);
+      return new Promise(() => undefined);
+    });
+    await store.openConversation('C1');
+    for (let n = 0; n < 6; n += 1) store.watchAttachmentPreview(`A${n}`);
+    await flush();
+    expect(maxInflight).toBeLessThanOrEqual(4);
+    expect(Object.values(store.state().previews).filter((slot) => slot.status === 'loading').length).toBeLessThanOrEqual(4);
+  });
+
+  it('U-331: a new conversation drops the decoded preview cache', async () => {
+    const { store, b } = make();
+    b.onQuery('chat.conversation', () =>
+      conversation('C1', {
+        messages: [message('M1', { role: 'user', attachments: [{ id: 'A1', name: 'f.png', type: 'image', bytes: 10 }] })],
+      }),
+    );
+    b.onQuery('chat.attachment', () => ({ name: 'f.png', type: 'image', base64: 'aGk=' }));
+    await store.openConversation('C1');
+    store.watchAttachmentPreview('A1');
+    await flush();
+    await flush();
+    expect(store.state().previews.A1?.status).toBe('ready');
+    await store.newConversation();
+    expect(store.state().previews).toEqual({});
+    expect(store.state().previewOrder).toEqual([]);
+  });
+
+  it('U-332: the enlarge dialog lists only ready images and steps between them', async () => {
+    const { store, b } = make();
+    const view = conversation('C1', {
+      messages: [
+        message('M1', {
+          role: 'user',
+          attachments: [
+            { id: 'A1', name: 'one.png', type: 'image', bytes: 1 },
+            { id: 'A2', name: 'two.png', type: 'image', bytes: 2 },
+          ],
+        }),
+      ],
+    });
+    b.onQuery('chat.conversation', () => view);
+    b.onQuery('chat.attachment', (q) => {
+      const id = (q as { id: string }).id;
+      return { name: `${id}.png`, type: 'image', base64: 'aGk=' };
+    });
+    await store.openConversation('C1');
+    store.watchAttachmentPreview('A1');
+    store.watchAttachmentPreview('A2');
+    await flush();
+    await flush();
+    store.openImageEnlarge('A1');
+    expect(store.state().imageEnlarge?.items).toHaveLength(2);
+    store.stepImageEnlarge(1);
+    expect(store.state().imageEnlarge?.index).toBe(1);
+    store.closeImageEnlarge();
+    expect(store.state().imageEnlarge).toBeNull();
+  });
+});
+
 describe('the Esc ladder (U-117)', () => {
+  it('U-117: the enlarge dialog closes before the scope pop', async () => {
+    const { store, b } = make();
+    b.onQuery('chat.conversation', () =>
+      conversation('C1', {
+        messages: [message('M1', { role: 'user', attachments: [{ id: 'A1', name: 'one.png', type: 'image', bytes: 1 }] })],
+      }),
+    );
+    b.onQuery('chat.attachment', () => ({ name: 'one.png', type: 'image', base64: 'aGk=' }));
+    store.open();
+    await store.openConversation('C1');
+    store.watchAttachmentPreview('A1');
+    await flush();
+    await flush();
+    store.openImageEnlarge('A1');
+    expect(store.escape()).toBe(true);
+    expect(store.state().imageEnlarge).toBeNull();
+    expect(store.state().open).toBe(true);
+  });
+
   it('U-117: scope pop, then the menu, then the permission dialog, then the history, then the panel', () => {
     const { store } = make();
     store.open();

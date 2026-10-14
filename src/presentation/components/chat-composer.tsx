@@ -22,8 +22,10 @@ import {
   type RefChip,
 } from '../stores/chat-model';
 import type { ChatFileInput, ChatStore } from '../stores/chat-store';
+import { ChatImagePreview } from './chat-image-preview';
 import { ChatIcon, refIcon } from './chat-icons';
-import { BUTTON, BUTTON_PRIMARY, FLOATING, FOCUS, ICON_BUTTON, MENU_DESC, MENU_OPTION, MENU_TITLE, REF_CHIP, THUMB, fill } from './chat-style';
+import { BUTTON, BUTTON_PRIMARY, FLOATING, FOCUS, ICON_BUTTON, MENU_DESC, MENU_OPTION, MENU_TITLE, REF_CHIP, fill } from './chat-style';
+import { isPreviewImageFile } from '../stores/chat-model';
 
 const ACCEPT = '.png,.jpg,.jpeg,.webp,.md,.txt,.log,.csv,.json,.pdf';
 const PERM_CLASSES = ['open_work_order', 'roadmap_edit', 'definition_edit', 'setting_change'] as const;
@@ -76,13 +78,19 @@ function Tray({ state, store, locale }: { readonly state: ChatState; readonly st
         </span>
       ))}
       {state.tray.map((file) =>
-        file.kind === 'image' ? (
-          <span key={file.id} className={`${THUMB} h-9 w-12`}>
-            <span className="truncate">{file.name}</span>
-            <button type="button" className={REMOVE} aria-label={fill(t(locale, 'chat.file.remove'), { name: file.name })} onClick={() => store.removeFile(file.id)}>
-              ×
-            </button>
-          </span>
+        isPreviewImageFile(file.name, file.kind) ? (
+          <ChatImagePreview
+            key={file.id}
+            id={file.id}
+            name={file.name}
+            kind={file.kind}
+            state={state}
+            store={store}
+            locale={locale}
+            variant="tray"
+            removeLabel={fill(t(locale, 'chat.file.remove'), { name: file.name })}
+            onRemove={() => store.removeFile(file.id)}
+          />
         ) : (
           <span key={file.id} className={REF_CHIP}>
             <ChatIcon name="file" className="h-3.5 w-3.5 flex-none text-inkdim" />

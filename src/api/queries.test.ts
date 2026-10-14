@@ -33,6 +33,7 @@ import {
   createFakeCapabilityDiscovery,
   createFakeDefinitionStore,
   createFakeDeps,
+  createFakeRepoScanner,
   createFakeMcpListenerControl,
   createFakeModelCatalog,
   FAKE_ROADMAP_TARGET,
@@ -2182,6 +2183,36 @@ describe('tracker.linkStatus', () => {
 });
 
 // --- Docket's own MCP standing (A-380) -----------------------------------------------------------------
+
+describe('repos.discover', () => {
+  it('A-382: returns found repos and truncated from the scanner', async () => {
+    const scanner = createFakeRepoScanner();
+    const deps = createFakeDeps({ repoScanner: scanner });
+    scanner.set('/parent', {
+      ok: true,
+      value: [{ name: 'a', path: '/parent/a', isGit: true }],
+    });
+    const api = createApi(deps);
+    const view = await api.query({ type: 'repos.discover', parent: '/parent' });
+    expect(view).toEqual({ found: [{ name: 'a', path: '/parent/a', isGit: true }], truncated: false });
+  });
+
+  it('A-382: not_a_directory surfaces as a query failure', async () => {
+    const scanner = createFakeRepoScanner();
+    const deps = createFakeDeps({ repoScanner: scanner });
+    scanner.set('/file', { ok: false, error: 'not_a_directory' });
+    const view = await createApi(deps).query({ type: 'repos.discover', parent: '/file' });
+    expect(view).toEqual({ ok: false, code: 'not_a_directory' });
+  });
+});
+
+describe('setup.copyProposal', () => {
+  it('A-383: invalid project id is rejected at the boundary', async () => {
+    const api = createApi(createFakeDeps());
+    const view = await api.query({ type: 'setup.copyProposal', project: 'NOT VALID', source: 'a', path: '/tmp' });
+    expect(view).toEqual({ ok: false, code: 'invalid_id' });
+  });
+});
 
 describe('mcp.status', () => {
   it('A-380: answers the control\'s standing with the per-kind tool names and the opted-out roles', async () => {

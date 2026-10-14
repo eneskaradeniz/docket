@@ -1833,6 +1833,16 @@ Added 2026-10-14, #1109; uses `repoStatus` and `repo.relink` (A-341) and `docket
 Added 2026-10-14, #1120; implements A-380/A-381 (docs/v2/application.md).
 - **U-314** (added 2026-10-14, #1120) The MCP menu's first row is the built-in Docket entry of decision 1, 2 and 3; it has no remove, archive, rename or edit control; "Geri yükle" shows a busy state and then the inline result; the status is announced politely.
 - **U-315** (added 2026-10-14, #1120) "Docket AI ile kur" is disabled with the sentence of decision 4 while the status is not `running`; the sentence is a button to the built-in row; copy lives in the TR and EN bundles, every sentence at most 8 words (U-178).
+- **U-316** (added 2026-10-14, #1103) After the first confirm the panel shows the summary (counters, "Projeyi aç" primary, "Depo ekle" secondary); the "Depo listesi" lists only Eklendi repos with the four-state vocabulary; the Docket AI permission dialog carries the "Depo: &lt;ad&gt;" badge.
+- **U-317** (added 2026-10-14, #1103) "Depo ekle" opens the five-card chooser (Docket AI ile kur, Hızlı, Ayrıntılı, Başka depodan kopyala, Var olan depoları bağla) in the U-286 card language; Docket AI is disabled with its reason line as in U-286 and U-315.
+- **U-318** (added 2026-10-14, #1103) Copy-from: a source select of Eklendi repos only, the new folder (picker or typed), a region summarising what is and is not copied, then the ordinary proposal diff with the "kopyalandı" badge on copied groups; errors map to one-line sentences.
+- **U-319** (added 2026-10-14, #1103) Import: modes "Çoklu klasör seç" and "Üst klasörden bul"; the queue shows the four states with per-row "İncele"/"Onayla"; "Hepsini onayla" only when no row is Gözden geçir; the overflow alert uses `role="alert"`; a failing row never blocks the others; loading uses `aria-busy`.
+
+## Project spend in the roadmap header (U-329, U-330)
+
+Added 2026-10-14, #1113; uses `project.spend` (A-388).
+- **U-329** (added 2026-10-14, #1113) The project header shows the meter, the counter or nothing by decision 1, with loading, error, no ceiling, below the ceiling, above `warnPercent` and over the ceiling; "Depo kırılımı" opens the per-repo list when something is drawn; money appears only for pay-per-use accounts.
+- **U-330** (added 2026-10-14, #1113) At `hard_stop` "Fazı çalıştır" is disabled with "Proje tavanı aşıldı" (en: "Project cap reached") as a button to the budget setting; copy at most 8 words per sentence, TR and EN bundles only.
 
 ## Native folder picker (U-326)
 
@@ -1859,3 +1869,9 @@ Added 2026-10-14, #1115.
 Added 2026-10-14, #1112.
 - **U-327** (added 2026-10-14, #1112) The detail shows the collapsed usage line of decision 2 under the stage strip; it expands (`aria-expanded`) to waste findings, the missing-usage line and the stage breakdown; the decision card is never pushed out of view by it in the compact window.
 - **U-328** (added 2026-10-14, #1112) Money follows decision 4 (pay-per-use only, subscription never, ⓘ note for the equivalent, no combined total); a failed load shows the retry line; copy at most 8 words per sentence, TR and EN bundles only.
+
+## Chat image preview (U-331 … U-332)
+
+Added 2026-10-14, #1116; uses `chat.attachment` (A-254) and `chat.attach` (A-259).
+- **U-331** (added 2026-10-14, #1116) png, jpg/jpeg and webp attachments render a small `data:` preview loaded lazily (viewport only, at most 4 at a time, at most 20 cached); all other types stay chips; nothing is rendered as HTML; the tray previews only after validation; the four states of decision 4 render as described.
+- **U-332** (added 2026-10-14, #1116) The enlarge dialog follows decision 5 (modal semantics, focus to Kapat, ←/→ between images, Esc closes only the dialog and restores focus); copy at most 8 words per sentence, TR and EN bundles only.
