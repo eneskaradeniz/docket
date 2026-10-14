@@ -20,3 +20,4 @@ export * from './assistant-role';
 export * from './chat-runner';
 export * from './operator-feedback';
 export * from './quit-flow';
+export * from './stage-run-role';
