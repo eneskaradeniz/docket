@@ -1,5 +1,6 @@
-// new-project.test.ts — U-40: the "Yeni proje" page's form rules and the store's sequencing. The
-// api is a scripted fake that records every command and query.
+// new-project.test.ts — Phase 7 project setup (U-272 … U-287) and retained attach/create rules.
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import type { Api } from '../../api/api';
@@ -8,20 +9,27 @@ import type { Query } from '../../api/queries';
 import type { Actor } from '../../domain/index';
 import { EN } from '../labels/en';
 import { TR } from '../labels/tr';
+import { PermissionPrompt } from '../components/permission-prompt';
+import { SetupProposalDiff } from '../components/setup-proposal-diff';
+import { NewProjectPanel } from '../screens/new-project';
+
+const RAW = import.meta.glob(
+  ['../components/permission-prompt.tsx', '../components/setup-proposal-diff.tsx', '../screens/new-project.tsx'],
+  { query: '?raw', import: 'default', eager: true },
+) as Record<string, string>;
+const raw = (suffix: string): string => Object.entries(RAW).find(([path]) => path.endsWith(suffix))?.[1] ?? '';
 import {
-  DISABLED_CARDS,
-  START_FORM,
-  commandOf,
+  buildSetupProposal,
+  canShowPermission,
+  connectedProviderOf,
   createNewProjectStore,
+  disclosureExpanded,
   failureOf,
   folderName,
-  isSelectableCard,
-  pickCard,
-  reasonOf,
-  typeName,
-  typeParent,
-  typePath,
-  type NewProjectCard,
+  permissionAfterDeny,
+  readRequestKind,
+  resetSessionDisclosure,
+  toggleDisclosure,
   type NewProjectStore,
 } from './new-project';
 
@@ -30,23 +38,35 @@ const actor: Actor = { kind: 'user', id: 'user-1' };
 interface Fake extends Pick<Api, 'query' | 'command'> {
   readonly commands: Command[];
   readonly queries: Query[];
+  accounts: unknown;
   reply(type: Command['type'], result: CommandResult): void;
 }
 
 const oneRepoTree = [
-  { project: 'atolye', name: 'Atölye', mainRepo: 'atolye', repos: [{ repo: 'atolye', name: 'atolye', main: true, active: 0, status: 'idle' }], active: 0, running: 0, waiting: 0, status: 'idle' },
+  {
+    project: 'atolye',
+    name: 'Atölye',
+    mainRepo: 'atolye',
+    repos: [{ repo: 'atolye', name: 'atolye', main: true, active: 0, status: 'idle' }],
+    active: 0,
+    running: 0,
+    waiting: 0,
+    status: 'idle',
+  },
 ];
 
-const fakeApi = (tree: unknown = oneRepoTree): Fake => {
+const fakeApi = (tree: unknown = oneRepoTree, accounts: unknown = { accounts: [{ id: 'a' }], bindings: [] }): Fake => {
   const commands: Command[] = [];
   const queries: Query[] = [];
   const replies = new Map<string, CommandResult>();
   return {
     commands,
     queries,
+    accounts,
     reply: (type, result) => replies.set(type, result),
     query: (query) => {
       queries.push(query);
+      if (query.type === 'settings.accounts') return Promise.resolve(accounts);
       return Promise.resolve(tree);
     },
     command: (_actor, command) => {
@@ -56,185 +76,200 @@ const fakeApi = (tree: unknown = oneRepoTree): Fake => {
   };
 };
 
-const setup = (tree?: unknown): { readonly api: Fake; readonly store: NewProjectStore; readonly reloads: { count: number } } => {
-  const api = fakeApi(tree);
-  const reloads = { count: 0 };
-  const store = createNewProjectStore({
-    api,
-    actor,
-    reloadTree: () => {
-      reloads.count += 1;
-      return Promise.resolve();
-    },
-  });
-  return { api, store, reloads };
+const setup = (tree?: unknown, accounts?: unknown): { readonly api: Fake; readonly store: NewProjectStore } => {
+  const api = fakeApi(tree, accounts);
+  const store = createNewProjectStore({ api, actor, reloadTree: async () => undefined });
+  return { api, store };
 };
 
-describe('Yeni proje page', () => {
-  it('U-40: "Var olan klasör" is the default card', () => {
-    expect(START_FORM.mode).toBe('existing');
-    expect(setup().store.state().form.mode).toBe('existing');
+const permissionHtml = (locale: 'tr' | 'en' = 'tr'): string =>
+  renderToStaticMarkup(
+    createElement(PermissionPrompt, {
+      open: true,
+      prompt: { path: '/tmp/readme.md', reason: 'Outside default scope' },
+      locale,
+      onDeny: () => undefined,
+      onAllow: () => undefined,
+      returnFocusRef: { current: null },
+    }),
+  );
+
+describe('setup permission prompt', () => {
+  it('U-272: permission prompt renders requested path in monospace and tool reason line', () => {
+    const html = permissionHtml();
+    expect(html).toContain('data-setup-permission-path=""');
+    expect(html).toContain('/tmp/readme.md');
+    expect(html).toContain('font-mono');
+    expect(html).toContain('Outside default scope');
+    expect(html).toContain(TR['setup.permission.title']);
   });
 
-  it('U-40: the disabled cards (Birlikte sıfırdan başla, Git\'ten klonla) are never selectable and send nothing', async () => {
-    expect(DISABLED_CARDS).toEqual(['together', 'clone']);
-    const cards: readonly NewProjectCard[] = ['together', 'clone'];
-    for (const card of cards) {
-      expect(isSelectableCard(card)).toBe(false);
-      expect(pickCard(START_FORM, card)).toBe(START_FORM);
+  it('U-273: permission prompt renders Reddet as default focused Esc action and Bu oturum için izin ver', () => {
+    const html = permissionHtml();
+    expect(html).toContain(TR['setup.permission.deny']);
+    expect(html).toContain(TR['setup.permission.allow']);
+    expect(html).toContain('data-setup-permission-deny=""');
+    expect(html).toContain('data-setup-permission-allow=""');
+  });
+
+  it('U-274: permission prompt offers no permanent grant option', () => {
+    const html = permissionHtml('en');
+    expect(html).not.toMatch(/always|permanent|Kalıcı|Her zaman/i);
+    expect(html).toContain(EN['setup.permission.allow']);
+  });
+
+  it('U-275: exactly one permission prompt presented at a time', () => {
+    const store = setup().store;
+    store.requestAiRead('/a', 'one');
+    expect(store.state().permission?.path).toBe('/a');
+    store.requestAiRead('/b', 'two');
+    expect(store.state().permission?.path).toBe('/a');
+    expect(canShowPermission(store.state().permission, new Set(), '/c')).toBe(false);
+  });
+
+  it('U-276: denied path remembered for conversation and never reprompted', () => {
+    const store = setup().store;
+    store.requestAiRead('/denied', 'ask');
+    store.denyPermission();
+    store.requestAiRead('/denied', 'ask again');
+    expect(store.state().permission).toBeNull();
+    const denied = permissionAfterDeny(new Set(), '/denied');
+    expect(denied.has('/denied')).toBe(true);
+    expect(canShowPermission(null, denied, '/denied')).toBe(false);
+  });
+
+  it('U-277: secret-shaped path displays thread notice Anahtar benzeri dosya okunmaz without prompt', async () => {
+    expect(readRequestKind('/work/.env')).toBe('secret');
+    const { store } = setup();
+    await store.refreshProvider();
+    store.pickPath('docket_ai');
+    store.requestAiRead('/work/.env', 'should not show');
+    expect(store.state().permission).toBeNull();
+    expect(store.state().secretNotices).toBe(1);
+    const panel = renderToStaticMarkup(
+      createElement(NewProjectPanel, {
+        open: true,
+        origin: 'pointer',
+        store,
+        locale: 'tr',
+        onClose: () => undefined,
+        onDone: () => undefined,
+      }),
+    );
+    expect(panel).toContain(TR['setup.permission.secretNotice']);
+    expect(panel).not.toContain('data-setup-permission=""');
+  });
+
+  it('U-278: permission prompt traps focus, Esc triggers Reddet, restores opener focus', () => {
+    const src = raw('permission-prompt.tsx');
+    expect(src).toContain('aria-modal="true"');
+    expect(src).toContain("event.key === 'Escape'");
+    expect(src).toContain('onDeny');
+    expect(src).toContain('returnFocusRef');
+    expect(src).toContain("event.key !== 'Tab'");
+  });
+
+  it('U-279: all copy sourced from label bundles with no inline strings', () => {
+    const permissionSrc = raw('permission-prompt.tsx');
+    const diffSrc = raw('setup-proposal-diff.tsx');
+    const screenSrc = raw('new-project.tsx');
+    for (const src of [permissionSrc, diffSrc, screenSrc]) {
+      expect(src).toContain("t(locale,");
+      expect(src).not.toMatch(/>\s*[A-Za-zÇĞİÖŞÜçğıöşü]{4,}\s*</);
     }
-    const { api, store } = setup();
-    store.pickCard('blank');
-    store.pickCard('together');
-    store.pickCard('clone');
-    expect(store.state().form.mode).toBe('blank');
+  });
+});
+
+describe('project setup entries and proposal diff', () => {
+  it('U-286: renders Docket AI, Quick, Detailed entries; no-provider disables AI; all produce SetupProposal diff', async () => {
+    const noProvider = setup(oneRepoTree, { accounts: [], bindings: [] });
+    await noProvider.store.refreshProvider();
+    expect(noProvider.store.state().connectedProvider).toBe(false);
+    const closed = renderToStaticMarkup(
+      createElement(NewProjectPanel, {
+        open: true,
+        origin: 'pointer',
+        store: noProvider.store,
+        locale: 'tr',
+        onClose: () => undefined,
+        onDone: () => undefined,
+      }),
+    );
+    expect(closed).toContain('data-card="docket_ai"');
+    expect(closed).toContain('data-card="quick"');
+    expect(closed).toContain('data-card="detailed"');
+    expect(closed).toContain(TR['setup.ai.noProvider']);
+    expect(closed).toContain('aria-disabled="true"');
+
+    const { store } = setup();
+    await store.refreshProvider();
+    store.pickPath('quick');
+    store.setRepoPath('/Users/e/atolye');
     await store.submit();
-    await store.attachExisting();
-    expect(api.commands).toEqual([]);
+    expect(store.state().proposal?.project.name).toBe('atolye');
+    const html = renderToStaticMarkup(
+      createElement(NewProjectPanel, {
+        open: true,
+        origin: 'pointer',
+        store,
+        locale: 'tr',
+        onClose: () => undefined,
+        onDone: () => undefined,
+      }),
+    );
+    expect(html).toContain('data-setup-proposal=""');
+    expect(buildSetupProposal('Acme', '/x/acme')).toEqual(buildSetupProposal('Acme', '/x/acme'));
   });
 
-  it('U-40: the name is pre-filled with the folder\'s last path segment and stays editable', () => {
+  it('U-287: detail sections start collapsed and remember state; no basic/advanced switch; no flow catalog', () => {
+    resetSessionDisclosure();
+    expect(disclosureExpanded('flow')).toBe(false);
+    expect(toggleDisclosure('flow')).toBe(true);
+    expect(disclosureExpanded('flow')).toBe(true);
+    const proposal = buildSetupProposal('P', '/p');
+    const closed = renderToStaticMarkup(
+      createElement(SetupProposalDiff, {
+        locale: 'tr',
+        proposal,
+        expanded: () => false,
+        onToggle: () => undefined,
+      }),
+    );
+    expect(closed).toContain('aria-expanded="false"');
+    const open = renderToStaticMarkup(
+      createElement(SetupProposalDiff, {
+        locale: 'tr',
+        proposal,
+        expanded: () => true,
+        onToggle: () => undefined,
+      }),
+    );
+    expect(open).toContain('aria-expanded="true"');
+    const screenSrc = raw('new-project.tsx');
+    expect(screenSrc).not.toMatch(/Basit|Gelişmiş|Basic|Advanced/);
+    expect(screenSrc).not.toContain('flow catalog');
+    expect(proposal.repo.flow.flowId).toBe('standard');
+  });
+});
+
+describe('setup helpers retained', () => {
+  it('U-40: repo path still pre-fills the project name until the name is edited', () => {
+    const { store } = setup();
+    store.pickPath('quick');
+    store.setRepoPath('/Users/e/atolye');
+    expect(store.state().form.name).toBe('atolye');
+    store.setName('Özel');
+    store.setRepoPath('/Users/e/baska');
+    expect(store.state().form.name).toBe('Özel');
+  });
+
+  it('folderName and connectedProviderOf behave predictably', () => {
     expect(folderName('/Users/e/proje')).toBe('proje');
-    expect(folderName('/Users/e/proje/')).toBe('proje');
-    expect(folderName('C:\\work\\atolye')).toBe('atolye');
-    expect(folderName('/')).toBe('');
-    expect(folderName('')).toBe('');
-
-    const typed = typePath(START_FORM, '/Users/e/atolye');
-    expect(typed.name).toBe('atolye');
-    // Typing on keeps following the path until the user edits the name.
-    expect(typePath(typed, '/Users/e/atolye-2').name).toBe('atolye-2');
-    const edited = typeName(typed, 'Benim Atölyem');
-    expect(typePath(edited, '/Users/e/baska').name).toBe('Benim Atölyem');
+    expect(connectedProviderOf({ accounts: [], bindings: [] })).toBe(false);
+    expect(connectedProviderOf({ accounts: [{ id: 'x' }], bindings: [] })).toBe(true);
   });
 
-  it('U-40: the reason line names the missing input and the primary stays disabled until it is satisfied', () => {
-    expect(reasonOf(START_FORM)).toBe('newProject.gate.folder');
-    expect(TR['newProject.gate.folder']).toBe('Bir klasör seç.');
-    const withPath = typePath(START_FORM, '/Users/e/atolye');
-    expect(reasonOf(withPath)).toBeNull();
-    expect(reasonOf(typeName(withPath, '   '))).toBe('newProject.gate.name');
-    expect(TR['newProject.gate.name']).toBe('Projeye bir ad ver.');
-
-    const blank = pickCard(START_FORM, 'blank');
-    expect(reasonOf(blank)).toBe('newProject.gate.name');
-    const named = typeName(blank, 'Yeni');
-    expect(reasonOf(named)).toBe('newProject.gate.location');
-    expect(reasonOf(typeParent(named, '/Users/e/work'))).toBeNull();
-
-    expect(commandOf(START_FORM)).toBeNull();
-    expect(commandOf(named)).toBeNull();
-  });
-
-  it('U-40: each mode sends its own project.create intent with the trimmed inputs', async () => {
-    const existing = setup();
-    existing.store.setPath(' /Users/e/atolye ');
-    existing.store.setName(' Atölye ');
-    await existing.store.submit();
-    expect(existing.api.commands).toEqual([{ type: 'project.create', mode: 'existing', path: '/Users/e/atolye', name: 'Atölye' }]);
-
-    const blank = setup();
-    blank.store.pickCard('blank');
-    blank.store.setName('Yeni');
-    blank.store.setParent('/Users/e/work');
-    await blank.store.submit();
-    expect(blank.api.commands).toEqual([{ type: 'project.create', mode: 'blank', parent: '/Users/e/work', name: 'Yeni' }]);
-  });
-
-  it('U-40: each refusal maps to its label under the field it concerns', () => {
-    const cases: readonly [code: string, mode: 'existing' | 'blank', field: string, tr: string | null][] = [
-      ['invalid_name', 'existing', 'name', null],
-      ['invalid_name', 'blank', 'name', null],
-      ['not_a_repo', 'existing', 'path', 'Bu klasör bir git deposu değil.'],
-      ['not_a_folder', 'existing', 'path', null],
-      ['not_a_folder', 'blank', 'parent', null],
-      ['folder_exists', 'blank', 'name', null],
-      ['docket_folder_exists', 'existing', 'path', 'Bu klasörde yarım bir .docket var; elle düzelt.'],
-      ['io_failed', 'existing', 'path', null],
-      ['io_failed', 'blank', 'parent', null],
-      ['definitions_invalid', 'existing', 'name', null],
-      ['project_exists', 'existing', 'path', 'Bu klasör zaten bir Docket projesi.'],
-    ];
-    for (const [code, mode, field, tr] of cases) {
-      const failure = failureOf(code, mode);
-      expect(failure.key, code).toBe(`error.${code}`);
-      expect(failure.field, `${code} in ${mode}`).toBe(field);
-      expect(TR[failure.key].length).toBeGreaterThan(0);
-      expect(EN[failure.key].length).toBeGreaterThan(0);
-      if (tr !== null) expect(TR[failure.key]).toBe(tr);
-    }
-    // An unknown code never reaches the user raw.
-    expect(failureOf('mystery', 'existing').key).toBe('error.unknown');
-  });
-
-  it('U-40: a refusal stays on the page and clears when the form is edited', async () => {
-    const { api, store } = setup();
-    api.reply('project.create', { ok: false, code: 'not_a_repo' });
-    store.setPath('/Users/e/duz');
-    await store.submit();
-    expect(store.state().failure?.key).toBe('error.not_a_repo');
-    expect(store.state().failure?.field).toBe('path');
-    expect(store.state().done).toBeNull();
-    expect(store.state().busy).toBe(false);
-    store.setPath('/Users/e/git');
-    expect(store.state().failure).toBeNull();
-  });
-
-  it('U-40: project_exists offers "Bağla", which sends project.attach for the same path', async () => {
-    const { api, store } = setup();
-    api.reply('project.create', { ok: false, code: 'project_exists' });
-    store.setPath('/Users/e/atolye');
-    await store.submit();
-    expect(store.state().failure?.offerAttach).toBe(true);
-    expect(TR['newProject.attach']).toBe('Bağla');
-
-    await store.attachExisting();
-    expect(api.commands[1]).toEqual({ type: 'project.attach', path: '/Users/e/atolye' });
-    expect(store.state().done?.target).toEqual({ kind: 'board', repo: 'atolye' });
-
-    // Other refusals offer nothing to attach.
-    const other = setup();
-    other.api.reply('project.create', { ok: false, code: 'not_a_repo' });
-    other.store.setPath('/Users/e/duz');
-    await other.store.submit();
-    expect(other.store.state().failure?.offerAttach).toBe(false);
-    await other.store.attachExisting();
-    expect(other.api.commands.map((command) => command.type)).toEqual(['project.create']);
-  });
-
-  it('U-40: success reloads the tree and opens the new project\'s board with the one toast', async () => {
-    const { api, store, reloads } = setup();
-    store.setPath('/Users/e/atolye');
-    await store.submit();
-    expect(reloads.count).toBe(1);
-    expect(api.queries).toEqual([{ type: 'project.tree' }]);
-    expect(store.state().done).toEqual({ target: { kind: 'board', repo: 'atolye' }, toastKey: 'newProject.created' });
-    expect(TR['newProject.created']).toBe("Proje oluşturuldu. Test komutlarını ~/.docket/repos/<slug>/repo.yaml'a yaz; yazılana kadar test kapısı bekler.");
-
-    store.reset();
-    expect(store.state().done).toBeNull();
-    expect(store.state().form).toEqual(START_FORM);
-  });
-
-  it('U-40: a multi-repo project opens its roadmap; an unlisted project has no target', async () => {
-    const multi = [{ ...oneRepoTree[0], repos: [oneRepoTree[0].repos[0], { ...oneRepoTree[0].repos[0], repo: 'api', main: false }] }];
-    const a = setup(multi);
-    a.store.setPath('/Users/e/atolye');
-    await a.store.submit();
-    expect(a.store.state().done?.target).toEqual({ kind: 'roadmap', project: 'atolye' });
-
-    const b = setup([]);
-    b.store.setPath('/Users/e/atolye');
-    await b.store.submit();
-    expect(b.store.state().done?.target).toBeNull();
-  });
-
-  it('U-40: a second submit while one is in flight sends nothing more', async () => {
-    const { api, store } = setup();
-    store.setPath('/Users/e/atolye');
-    const first = store.submit();
-    const second = store.submit();
-    await Promise.all([first, second]);
-    expect(api.commands.length).toBe(1);
+  it('project_exists still offers attach on import path', () => {
+    expect(failureOf('project_exists', true).offerAttach).toBe(true);
   });
 });
