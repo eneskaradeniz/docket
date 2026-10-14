@@ -170,8 +170,7 @@ export function createAppServerTransport(def: ProviderDef): AgentTransport {
       // they travel as the CLI's own per-run overrides.
       const codexTrustArgs =
         def.id === 'codex' ? codexProjectTrustOverrideArgs([request.runDir]) : [];
-      const deliversRunScopedMcp = Object.keys(runConfig.mcpServers).length > 0;
-      const codexIsolationArgs = def.id === 'codex' ? codexRunIsolationArgv(deliversRunScopedMcp) : [];
+      const codexIsolationArgs = def.id === 'codex' ? codexRunIsolationArgv() : [];
       const overrideArgs =
         def.config.mechanism === 'none'
           ? [...mcpConfigOverrideArgs(runConfig.mcpServers), ...codexTrustArgs]
