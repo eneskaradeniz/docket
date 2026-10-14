@@ -78,9 +78,6 @@ const SECTIONS = [
 const PENDING = new Map([
   ['domain:R-133', '#1025'],
 
-  // #1005 — two-layer roadmap and tracker model with sync modes
-  ['application:A-333', '#1020'],
-
   // #1006 — agent capabilities: library, provider translation, memory, machine import
 
   // #1007: Docket AI project setup and read-permission scopes (#1023 ui)
