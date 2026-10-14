@@ -82,8 +82,6 @@ const PENDING = new Map([
   // #1008: Phase 7 surfaces — settings, setup, repo, work orders, versions, quit
   ['ui:U-284', '#1022'],
   ['ui:U-285', '#1022'],
-  ['ui:U-288', '#1024'],
-  ['ui:U-289', '#1024'],
   // #1047 — planner stage-skip derive rule, supplements R-133 (#1025 implements)
 
   // #1057 — the one-time legacy import was removed. These rules keep their dated addenda and their
