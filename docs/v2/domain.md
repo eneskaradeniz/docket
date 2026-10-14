@@ -79,6 +79,8 @@ export type ProjectSlug = Slug<'project'>;
 export type PhaseSlug = Slug<'phase'>;
 export type TaskSlug = Slug<'task'>;
 export type EnvSlug = Slug<'env'>;
+/** Names a deciding rule set (D-10): 'permission-rules', 'gate-auto' — never free-form. (added 2026-10-15, #1191) */
+export type PolicyId = Slug<'policy'>;
 
 /** Runtime identifiers: ULID, 26 chars Crockford base32 (0-9 A-H J K M N P-T V-Z), uppercase. */
 export type Ulid<B extends string> = Branded<string, B>;
@@ -116,11 +118,26 @@ export type ThinkingChoice =
 /** A model class a route resolves to a concrete model (P-29); shared for the same reason. */
 export type Tier = 'strong' | 'balanced' | 'fast';
 
+// shared/autonomy.ts — the autonomy scale and the user-only carve-out (added 2026-10-15, #1191, D-10)
+export const AUTONOMY_LEVELS = ['manual', 'balanced', 'auto'] as const;
+export type AutonomyLevel = (typeof AUTONOMY_LEVELS)[number];
+/** The closed carve-out (D-10 answers 1 and 3): the `deploy` and `page_approval` gate kinds, the
+ *  merge action (a forge merge and a local merge alike) and the delete action — no `policy` actor
+ *  decides any of them at any level. */
+export const USER_ONLY_GATES = ['deploy', 'merge', 'delete', 'page_approval'] as const;
+export type UserOnlyGate = (typeof USER_ONLY_GATES)[number];
+
 // shared/actor.ts
 export type Actor =
   | { readonly kind: 'user'; readonly id: string; readonly label?: string }
   | { readonly kind: 'agent'; readonly runId: RunId; readonly role: RoleSlug }
-  | { readonly kind: 'system'; readonly component: string };
+  | { readonly kind: 'system'; readonly component: string }
+  // The autonomy arm (added 2026-10-15, #1191, D-10): a named rule set that decided on the user's
+  // behalf under a resolved level. Nothing else about the actor is free-form — the policy id names
+  // the deciding rule set, the level is the one in force when it decided. No code creates this
+  // actor yet (the D-10 split issues implement it); every exhaustive switch over `Actor` gains the
+  // case — the list of doc locations that enumerate actors sits in the autonomy addendum.
+  | { readonly kind: 'policy'; readonly policy: PolicyId; readonly level: AutonomyLevel };
 ```
 
 Rules:
@@ -523,6 +540,7 @@ Rules:
 - **R-16** `unknown` never counts as passed anywhere in the domain.
 - **E-6** `deploy`: the gate's environment missing from `ctx.environments` (or `environments` absent) → `unknown`. Missing evidence → `pending`. `deployment.result === 'success'` → `passed`. `deployment.result === 'failed'` → `failed` with the environment id in the reason.
 - **E-7** A `deploy` gate always requires a user approval in the evidence (`deployment.approvedBy` must be `kind: 'user'`). Without it → `pending`. This enforces invariant 1.
+- **E-7** (amended 2026-10-15, #1191, D-10) A `policy` actor is never an accepted `deployment.approvedBy`: the approval stays `user`-only at every autonomy level — `deploy` sits in `USER_ONLY_GATES` (R-168). The rule above is otherwise unchanged; invariant 1 stands.
 - **E-8** For a `protected` environment, `deployment.confirmedEnvironment` must equal the gate's `environment` (the user typed the environment id to confirm); absent or different → `pending`. (Docket is single-user: a rule requiring a *different* approver would make protected environments undeployable. A second-approver option arrives with team mode.)
 - **E-9** `remote_checks`: `status === 'all_passed'` → `passed`; `status === 'has_failure'` → `failed` naming the first failed check; `status === 'timeout'` → `failed` with reason `timeout`; `status === 'pending'` → `pending`.
 - **E-10** `deployment_attempted` event is appended exactly once per deploy-gate evaluation, carrying the redacted `outputTail` (same redaction as command gates: no env values, no secrets).
@@ -1471,3 +1489,64 @@ export function relinkRole(
 - **R-148** (added 2026-10-14, #1103) `planImport` orders found repos alphabetically by name (case-insensitive, then path); non-git folders, paths already in the project and duplicate paths become skipped rows with their reason and never count toward `max`; the first `max` remaining rows are queued; `overflow` is the number of remaining rows beyond `max`; the function is pure and deterministic.
 - **R-149** (added 2026-10-14, #1184) Capability support is looked up per (provider, kind, source kind) when a row declares `sourceKinds`: a `TranslationRow` may carry `sourceKinds?: readonly string[]` (absent = every source kind, behaviour unchanged); `supportFor(table, provider, kind, sourceKind?)` answers such a row `unsupported` — no `degradesTo`, the `how` naming the source kind — when the given source kind is not listed, and the row itself otherwise. `setupWarnings` and `translateCapabilities` pass a plugin capability's `source.kind`, so an undeliverable source kind fires the P-57 setup warning and lands in the P-59 omission record instead of being dropped silently.
 - **R-166** (added 2026-10-14, #1146) A `gate_evaluated` event may carry `remoteChecks: { checks }` — the matched check list a `remote_checks` verdict was reduced from. The field is written only by a `remote_checks` verdict: `remoteChecksEvidence` builds it from at most the first `REMOTE_CHECKS_EVENT_MAX` (30) checks in forge order, each check name and one of the six `CheckRunStatus` words — no url, no environment value. Events without the field — every one recorded before it existed — fold exactly as before: the fold reads only the verdict.
+
+### Addendum: autonomy levels and the policy actor (added 2026-10-15, #1191, D-10)
+
+D-10 ([decisions-phase7.md](decisions-phase7.md)) adds three autonomy levels resolved down the
+definition chain, and a `policy` actor that may decide some things on the user's behalf under them.
+This addendum is the whole contract — no code exists for any of it yet; every rule names the D-10
+split issue (2/5…5/5) that implements it. `manual` is the default and is exactly today's behaviour,
+so until an implementing issue lands, everything behaves as `manual` whatever a definition carries.
+
+```ts
+// definitions/autonomy.ts (added 2026-10-15, #1191, D-10)
+/** Starting or escalating to `auto` requires a spend cap governing the work order and an explicit
+ *  onFail (with its maxAttempts) on every stage of the pinned flow; the refusal is typed, never silent. */
+export type AutoLevelError = 'auto_requires_spend_cap' | 'auto_requires_max_attempts';
+export function checkAutoLevel(
+  input: { readonly cap: SpendCap | undefined; readonly flow: FlowDef },
+): Result<void, AutoLevelError>;
+
+// resolver/ — the chain read (D-10's resolution order is LEVEL_ORDER unchanged)
+export interface ResolvedAutonomy { readonly level: AutonomyLevel; readonly source: Level }
+export function resolveAutonomy(layers: readonly Layer<AutonomyLevel>[]): ResolvedAutonomy;
+
+// definitions/types.ts — ProjectDef and RepoDef gain, beside `budget?: SpendCap`:
+//   readonly autonomy?: AutonomyLevel;
+```
+
+Rules:
+- **R-167** (added 2026-10-15, #1191, D-10) `resolveAutonomy(layers)` walks `LEVEL_ORDER` — work order > repo > project > global — and answers the first defined level with its `source` level for display; nothing defined anywhere → `{ level: 'manual', source: 'builtin' }`. Until the risk-rule table lands (D-10 issue 4/5), a defined `balanced` answers `{ level: 'manual', source: <the layer that set balanced> }` — the level is not offered and resolves as `manual`; a defined `auto` is returned as `auto`. The function is pure: the same layers always give the same answer and the inputs are never mutated. Implementing issue: D-10 2/5.
+- **R-168** (added 2026-10-15, #1191, D-10) `USER_ONLY_GATES` is the closed carve-out `deploy ∪ merge ∪ delete ∪ page_approval` (shared/autonomy.ts): the `deploy` and `page_approval` gate kinds, the merge action — a forge merge and a local merge alike (D-10 answer 1) — and the delete action. No `policy` actor decides any of them at any level, whatever the level-semantics table licenses elsewhere; they stay with the user (invariant 1; E-7, E-11, A-373). The constant is the single named contract: every check that must refuse a policy decision reads it, never its own copy of the list. Implementing issue: D-10 2/5.
+- **R-169** (added 2026-10-15, #1191, D-10) `checkAutoLevel({ cap, flow })`, in this fixed order: `cap === undefined` → `err('auto_requires_spend_cap')`; else any stage of `flow` without `onFail` → `err('auto_requires_max_attempts')`; else `ok`. An `onFail`'s inner `maxAttempts` keeps R-6's law (integer 1..10) — what `auto` demands is that the bound is written, never implicit. The check runs wherever a level becomes or starts as `auto` (A-395), never for `manual` or `balanced`; it is pure and never mutates its input. Implementing issue: D-10 2/5.
+- **R-170** (added 2026-10-15, #1191, D-10) A level change applies only to decisions made after it: gate verdicts already appended, stage skips already decided (the R-133/R-144 pair) and permission asks already answered keep their effect; the new level governs every decision from the moment it resolves (D-10 answer 5). The rule constrains every consumer of a resolved level — it adds no event, no field and no fold change; the ledger stays as it is. Implementing issue: D-10 2/5.
+- **R-171** (added 2026-10-15, #1191, D-10) `ProjectDef` and `RepoDef` gain `autonomy?: AutonomyLevel` (absent on definitions stored before the field existed). A present value outside `AUTONOMY_LEVELS` is `wrong_type` — the typed validation error at the file the value came from (`projects/<slug>/project.yaml`, `repos/<slug>/repo.yaml`; I-107), never silently dropped and never read as `manual`. An absent value inherits down R-167's chain. Implementing issue: D-10 2/5.
+- **R-172** (added 2026-10-15, #1191, D-10) What a level licenses is exactly the table below, and nothing else: a decision class the resolved level does not license stays human-decided, and an arm whose implementing D-10 issue has not landed behaves as `manual` until it does. No definition, field or actor widens the table. Implementing issue: D-10 4/5 (the table completes with the risk rules).
+
+**Level semantics** (normative; one table — D-10):
+
+| Level ↓ · decision class → | Tool-permission ask | Reversible `human` gate | Stage skip | `SpendCap` / `maxAttempts` |
+| --- | --- | --- | --- | --- |
+| `manual` (default; exactly today's behaviour) | Nothing is auto-decided — every ask waits for the user | The user decides | The R-133 proposal–decision pair, human-decided | Not required by the level |
+| `balanced` | May be auto-allowed by deterministic rules only — the risk-rule table lands in D-10 issue 4/5; until it exists `balanced` is not offered and resolves as `manual` (R-167) | The user decides | The user decides (D-10 answer 4) | Not required by the level |
+| `auto` | May be auto-allowed by the same deterministic rules (D-10 issue 2/5) | Decidable by a `policy` actor (`gate-auto`) for `human` gates outside `USER_ONLY_GATES` (the A-8 amendment; D-10 issue 3/5) | Only after D-10 issue 5/5 — until then human-decided at every level (D-10 answer 4) | Both mandatory — starting or escalating to `auto` without them is R-169/A-395's typed refusal |
+
+**Why `project` participates in the chain.** D-1/D-4 removed the project level for roles, flows and
+capabilities (R-130: "the level stays in `Level` for settings that remain project-scoped"). Autonomy
+is exactly such a setting — a policy field resolved per work order, not a definition — so its chain
+is the full `LEVEL_ORDER`: work order > repo > project > global > builtin. No role, flow or
+capability layer returns; R-130's own sentence is what reserves the project level for this use.
+
+**Where `Actor` is enumerated** — every exhaustive switch over `Actor` gains a `policy` case. The
+existing doc locations that enumerate actors:
+
+- `README.md` → Glossary "Actor" row (`user`, `agent`, or `system`) — architect file; gains `policy` with the first implementing D-10 issue.
+- [architecture.md](architecture.md) → Team-ready rule 1 ("Every write carries an `Actor` (`user` / `agent` / `system`)") — architect file; same.
+- §1 `shared/actor.ts` — the union itself (this addendum adds the arm).
+- R-78 `decideApproval` ("an agent or system actor can neither approve nor reject") — a `policy` actor can neither (page approval sits in `USER_ONLY_GATES`, R-168); the arm is named when records first carry policy actors (D-10 issue 3/5).
+- R-98 `newGrant`, E-11, and the application's "must be `user`" checks (A-166 addendum, A-180, A-181) — safe by construction: a `policy` actor is not a `user`, so every such check already refuses it; listed so the case is not forgotten.
+- A-129 (labels by actor kind) and A-202 (provenance kinds) — gain a `policy` arm when records first carry policy actors (D-10 issue 3/5).
+
+The application-side contracts of the same decision are A-394 … A-396
+([application.md](application.md) → autonomy addendum); the storage homes and the serialization law
+are the autonomy addendum of [infrastructure.md](infrastructure.md) (I-107).
