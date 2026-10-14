@@ -1863,3 +1863,9 @@ Added 2026-10-14, #1110; extends U-226's decision-zone matrix and implements A-3
 Added 2026-10-14, #1115.
 - **U-324** (added 2026-10-14, #1115) The roadmap page has the tabs "Proje katmanı" and "Depo katmanı"; the repo tab bar appears only with several repos and the first repo is selected by default; selecting a tab never reloads the other layer.
 - **U-325** (added 2026-10-14, #1115) The repo layer lists milestones, issues, local subtasks (one level) and "Faz: …" badges that jump to the project layer; it is read-only; the six states of decision 6 render as described; copy lives in the TR and EN bundles, at most 8 words per sentence.
+
+## Chat image preview (U-331 … U-332)
+
+Added 2026-10-14, #1116; uses `chat.attachment` (A-254) and `chat.attach` (A-259).
+- **U-331** (added 2026-10-14, #1116) png, jpg/jpeg and webp attachments render a small `data:` preview loaded lazily (viewport only, at most 4 at a time, at most 20 cached); all other types stay chips; nothing is rendered as HTML; the tray previews only after validation; the four states of decision 4 render as described.
+- **U-332** (added 2026-10-14, #1116) The enlarge dialog follows decision 5 (modal semantics, focus to Kapat, ←/→ between images, Esc closes only the dialog and restores focus); copy at most 8 words per sentence, TR and EN bundles only.
