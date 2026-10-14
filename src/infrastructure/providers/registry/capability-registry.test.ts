@@ -2,12 +2,52 @@
 // ids stay unique, route kinds name existing providers, and every built-in definition has a
 // record. Gate evidence names real tests of this repository — cited by exact `it(...)` title;
 // keeping that true is a review duty, so the validity check here is structural, not textual.
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { BUILTIN_PROVIDER_DEFS } from '../defs/index';
-import type { CapabilityRegistry, Evidence, GateId, ProviderRecord, RouteKindRecord, Tier } from '../../../domain/index';
-import { mergeCatalog, resolveTier, supportFor, supportLevel } from '../../../domain/index';
+import type {
+  CapabilityKind,
+  CapabilityRegistry,
+  Evidence,
+  GateId,
+  ProviderRecord,
+  RouteKindRecord,
+  Slug,
+  Tier,
+  TranslationRow,
+} from '../../../domain/index';
+import { mergeCatalog, resolveTier, setupWarnings, supportFor, supportLevel } from '../../../domain/index';
+
+const slugOf = <B extends string>(input: string): Slug<B> => input as Slug<B>;
 import { CAPABILITY_REGISTRY, FAMILY_PATTERNS, findProvider, findRouteKind, TRANSLATION_TABLE } from './capability-registry';
+
+const DOC_TABLE_PATH = join(fileURLToPath(new URL('../../../../docs/v2/provider-capabilities.md', import.meta.url)));
+
+const parseP58DocTable = async (): Promise<readonly TranslationRow[]> => {
+  const markdown = await readFile(DOC_TABLE_PATH, 'utf8');
+  const section = markdown.split('### Initial translation and support table (P-58)')[1]?.split('### Rules (P-57')[0];
+  if (section === undefined) throw new Error('P-58 doc table section missing');
+  const rows: TranslationRow[] = [];
+  for (const line of section.split('\n')) {
+    if (!line.startsWith('| `')) continue;
+    const cells = line.split('|').map((cell) => cell.trim());
+    if (cells.length < 6) continue;
+    const provider = cells[1]?.replace(/^`|`$/gu, '') ?? '';
+    const kind = cells[2]?.replace(/^`|`$/gu, '') as CapabilityKind;
+    const support = cells[3]?.replace(/^`|`$/gu, '') as TranslationRow['support'];
+    const how = cells[4]?.replace(/^`|`$/gu, '') ?? '';
+    const degradesToRaw = cells[5]?.replace(/^`|`$/gu, '') ?? '';
+    const degradesTo =
+      degradesToRaw.length === 0
+        ? undefined
+        : (degradesToRaw as TranslationRow['degradesTo']);
+    rows.push({ provider, kind, support, how, ...(degradesTo === undefined ? {} : { degradesTo }) });
+  }
+  return rows;
+};
 
 const ALL_GATES: readonly GateId[] = ['G1', 'G2', 'G3', 'G4', 'G5', 'G6'];
 
@@ -435,10 +475,48 @@ describe('translation support table (P-58)', () => {
     expect(rowOf('claude-code', 'command').degradesTo).toBe('prompt_text');
   });
 
-  it('P-58: codex lists mcp and context native, skill degraded to context, hook unsupported, plugin unverified', () => {
-    expect(KINDS.map((kind) => rowOf('codex', kind).support)).toEqual(['native', 'degraded', 'unsupported', 'native', 'unverified', 'degraded']);
-    expect(rowOf('codex', 'skill').degradesTo).toBe('context');
+  it('P-58: codex lists mcp, context, skill and plugin native, hook unsupported, command degraded', () => {
+    expect(KINDS.map((kind) => rowOf('codex', kind).support)).toEqual(['native', 'native', 'unsupported', 'native', 'native', 'degraded']);
+    expect(rowOf('codex', 'skill').degradesTo).toBeUndefined();
     expect(rowOf('codex', 'command').degradesTo).toBe('prompt_text');
+    expect(rowOf('codex', 'skill').how).toContain('probe #1015, 2026-10-14');
+    expect(rowOf('codex', 'plugin').how).toContain('probe #1015, 2026-10-14');
+  });
+
+  it('P-58: the registry table matches provider-capabilities.md §15 row for row', async () => {
+    const docRows = await parseP58DocTable();
+    expect(docRows).toEqual(TRANSLATION_TABLE);
+  });
+
+  it('P-57: codex setup warnings skip native skill and plugin and still warn for hook', () => {
+    const skill = { kind: 'skill' as const, id: slugOf<'capability'>('craft'), name: 'craft', path: 'skills/craft.md' };
+    const plugin = {
+      kind: 'plugin' as const,
+      id: slugOf<'capability'>('bundle'),
+      name: 'bundle',
+      source: { kind: 'path' as const, path: '/library/plugins/bundle' },
+      includes: [],
+    };
+    const hook = {
+      kind: 'hook' as const,
+      id: slugOf<'capability'>('guard'),
+      name: 'Guard',
+      event: 'before_tool' as const,
+      command: 'guard.sh',
+    };
+    const warnings = setupWarnings(
+      [{ stage: 'work', provider: 'codex', capabilities: [skill, plugin, hook] }],
+      TRANSLATION_TABLE,
+    );
+    expect(warnings).toEqual([
+      {
+        stage: 'work',
+        capability: 'guard',
+        provider: 'codex',
+        support: 'unsupported',
+        how: rowOf('codex', 'hook').how,
+      },
+    ]);
   });
 
   it.each(['agy', 'copilot', 'cursor', 'opencode'])('P-58: %s is unverified for every kind except native context and degraded command', (provider) => {

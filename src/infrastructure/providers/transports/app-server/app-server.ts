@@ -11,7 +11,9 @@ import { err, ok } from '../../../../domain/index';
 import { createSystemClock, registeredSpawn } from '../../../system/index';
 import { providerLevelOf, type ProviderDef } from '../../defs/index';
 import { buildChildEnv, writeRunConfig, type RunCapability } from '../../launch/index';
-import { mcpConfigOverrideArgs } from './config-overrides';
+import { materializeCodexNativeCapabilities } from './codex-native-delivery';
+import { codexProjectTrustOverrideArgs, mcpConfigOverrideArgs } from './config-overrides';
+import { TRANSLATION_TABLE } from '../../registry/capability-registry';
 import { describeApprovalRequest, type ApprovalAsk } from './approvals';
 import { INITIALIZE_PARAMS } from './connection';
 import { isRecord, rateLimitEvents } from './rate-limits';
@@ -144,6 +146,9 @@ export function createAppServerTransport(def: ProviderDef): AgentTransport {
 
       const effortValue = providerLevelOf(def.levelNames, request.effort);
       const effortField = def.effortArg?.kind === 'request-field' ? def.effortArg.name : undefined;
+      if (def.id === 'codex') {
+        await materializeCodexNativeCapabilities(request.runDir, request.capabilities, TRANSLATION_TABLE);
+      }
       const runConfig = await writeRunConfig(request.runDir, def, runCapabilities);
       const launch = def.buildLaunch({
         prompt: request.prompt,
@@ -163,7 +168,12 @@ export function createAppServerTransport(def: ProviderDef): AgentTransport {
 
       // A definition that redirects no config directory has nowhere to put the run's MCP files, so
       // they travel as the CLI's own per-run overrides.
-      const overrideArgs = def.config.mechanism === 'none' ? mcpConfigOverrideArgs(runConfig.mcpServers) : [];
+      const codexTrustArgs =
+        def.id === 'codex' ? codexProjectTrustOverrideArgs([request.runDir]) : [];
+      const overrideArgs =
+        def.config.mechanism === 'none'
+          ? [...mcpConfigOverrideArgs(runConfig.mcpServers), ...codexTrustArgs]
+          : [];
       // The registry's graceful stop lands here once the finish path below exists: a managed quit
       // ends this run `cancelled` through the same event the handle's own stop() pushes.
       let stopRun: () => void = () => undefined;

@@ -303,17 +303,17 @@ The initial table recorded as data in the capability registry (`registry/capabil
 
 | Provider | Kind | Support | How / Mechanism | Degrades To |
 | --- | --- | --- | --- | --- |
-| `claude-code` | `mcp` | `native` | Inlined via SDK / run-scoped config | |
-| `claude-code` | `skill` | `native` | Run-scoped directory / SDK setting | |
-| `claude-code` | `hook` | `native` | Run-scoped hooks | |
-| `claude-code` | `context` | `native` | Native instruction files (`CLAUDE.md`, P-37) | |
-| `claude-code` | `plugin` | `native` | Unpacks package bundle to native capabilities | |
+| `claude-code` | `mcp` | `native` | Run-scoped MCP config via --mcp-config with ambient settings off via --setting-sources "" probe #1015, 2026-10-14 | |
+| `claude-code` | `skill` | `native` | Run-scoped skills under .claude/skills in the project directory probe #1015, 2026-10-14 | |
+| `claude-code` | `hook` | `native` | Run-scoped hooks via an explicit --settings file probe #1015, 2026-10-14 | |
+| `claude-code` | `context` | `native` | Native instruction file CLAUDE.md in the run cwd (P-37) probe #1015, 2026-10-14 | |
+| `claude-code` | `plugin` | `native` | Plugin bundle unpacked into native run-scoped MCP, skills, and hooks probe #1015, 2026-10-14 | |
 | `claude-code` | `command` | `degraded` | Docket renders template placeholders | `prompt_text` |
-| `codex` | `mcp` | `native` | App-server `-c mcp_servers.*` | |
-| `codex` | `context` | `native` | Native instruction files (`AGENTS.md` / fallback, P-37) | |
-| `codex` | `skill` | `degraded` | Inlined as instruction text | `context` |
-| `codex` | `hook` | `unsupported` | Unsupported by app-server protocol | |
-| `codex` | `plugin` | `unverified` | Unverified without live probe (#1015) | |
+| `codex` | `mcp` | `native` | App-server -c mcp_servers.* | |
+| `codex` | `skill` | `native` | Run-scoped skills under .agents/skills in the run directory probe #1015, 2026-10-14 | |
+| `codex` | `hook` | `unsupported` | Hooks were not evidenced after trying a .codex/hooks.json file and a -c hooks override probe #1015, 2026-10-14 | |
+| `codex` | `context` | `native` | Native instruction files (AGENTS.md / fallback, P-37) | |
+| `codex` | `plugin` | `native` | Run-scoped plugin bundle under .codex/plugins with plugin.json probe #1015, 2026-10-14 | |
 | `codex` | `command` | `degraded` | Docket renders template placeholders | `prompt_text` |
 | `agy` | `mcp` | `unverified` | Unverified without live probe (#1015) | |
 | `agy` | `skill` | `unverified` | Unverified without live probe (#1015) | |
@@ -344,6 +344,7 @@ The initial table recorded as data in the capability registry (`registry/capabil
 
 - **P-57** (added 2026-10-12, #1006) `supportFor` answers from the table; a missing row is `unverified`; `setupWarnings` returns one warning per (stage, capability) whose support is not `native`, in stage order; the UI shows them at setup time and before a run starts; `unverified` is shown as such, never as `native`.
 - **P-58** (added 2026-10-12, #1006) The table's initial content (data in the registry; honest, no claim without evidence — the real-run probe #1015 later turns `unverified` into the observed value): for provider `claude-code` (stream-json/SDK): mcp native, skill native, hook native, context native, plugin native, command degraded→prompt_text; for `codex`: mcp native, context native, skill degraded→context, hook unsupported, plugin unverified, command degraded→prompt_text; for `agy`, `copilot`, `cursor`, `opencode`: every kind `unverified` except context (native: instruction files, P-37) and command (degraded→prompt_text).
+- **P-58 amendment (2026-10-14, probe #1015, #1141)** Real-run probe #1015 updates the solid rows: `claude-code` mcp/skill/hook/context/plugin `how` lines name the evidenced mechanism; `codex` skill and plugin become `native` (run-dir `.agents/skills` and `.codex/plugins`); `codex` hook stays `unsupported` with `how` citing the failed hook attempts.
 - **P-59** (added 2026-10-12, #1006) Translation is per provider and per run: a stage's role capabilities are translated into the run-scoped files/flags the provider's launch rules already use (P-7 addendum for run-scoped files, the MCP child launch rules); a capability whose support is `unsupported` is omitted from the run and recorded in the run record as `omitted_capability`; `degraded` capabilities are inlined as instruction text; no translation ever writes into the repository (D-5) or the user's own provider config.
 - **P-60** (added 2026-10-12, #1006) Machine import is read-only: a scan lists `MachineCandidate`s per provider from that provider's own user-level config locations; it never writes there, never copies a secret value (only `secretNames`; at import the user is asked to store the value in the keychain, the definition then holds `{secretRef}`); it supersedes nothing in R-62…R-67 — the existing `CapabilityCandidate` for mcp/skill/context stays and this adds plugin and hook candidates: hook candidates are listed but still not importable (R-66's note, 2026-10-11, stands).
 - **P-60 addendum (2026-10-14, #1067)** Evidenced user-level machine scan locations:

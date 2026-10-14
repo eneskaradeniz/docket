@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { BUILTIN_PROVIDER_DEFS } from '../../defs/index';
 import { writeRunConfig } from '../../launch/index';
-import { mcpConfigOverrideArgs } from './config-overrides';
+import { codexProjectTrustOverrideArgs, mcpConfigOverrideArgs } from './config-overrides';
 
 const codex = BUILTIN_PROVIDER_DEFS.find((def) => def.id === 'codex');
 
@@ -36,6 +36,13 @@ describe('codex keeps the CLI login (P-44)', () => {
     expect(mcpConfigOverrideArgs({ a: { command: 'c', args: [], env: {} } })).toEqual([
       '-c', 'mcp_servers."a".command="c"',
       '-c', 'mcp_servers."a".args=[]',
+    ]);
+  });
+
+  it('P-59: codex project trust rides a -c override for the run directory', () => {
+    expect(codexProjectTrustOverrideArgs(['/tmp/run-a'])).toEqual([
+      '-c',
+      'projects."/tmp/run-a".trust_level="trusted"',
     ]);
   });
 });

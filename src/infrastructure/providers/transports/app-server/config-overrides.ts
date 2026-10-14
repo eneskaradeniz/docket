@@ -12,6 +12,15 @@ const tomlInlineTable = (entries: Readonly<Record<string, string>>): string =>
     .map(([name, value]) => `${tomlString(name)}=${tomlString(value)}`)
     .join(',')}}`;
 
+/** Trusts a throw-away project directory for one invocation so run-scoped skills and plugins load. */
+export function codexProjectTrustOverrideArgs(projectDirs: readonly string[]): readonly string[] {
+  const args: string[] = [];
+  for (const dir of [...projectDirs].sort()) {
+    args.push('-c', `projects.${tomlString(dir)}.trust_level=${tomlString('trusted')}`);
+  }
+  return args;
+}
+
 export function mcpConfigOverrideArgs(mcpServers: Readonly<Record<string, WrittenMcpServer>>): readonly string[] {
   const args: string[] = [];
   for (const id of Object.keys(mcpServers).sort()) {

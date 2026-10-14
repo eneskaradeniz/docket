@@ -334,6 +334,8 @@ export const PROVIDER_INSTRUCTION_FILES: readonly {
 const UNVERIFIED_HOW = 'Unverified without live probe (#1015)';
 const NATIVE_INSTRUCTIONS_HOW = 'Native instruction files (P-37)';
 const COMMAND_ROW = { kind: 'command', support: 'degraded', how: 'Docket renders template placeholders', degradesTo: 'prompt_text' } as const;
+const PROBE_EVIDENCE_SUFFIX = 'probe #1015, 2026-10-14';
+const probeHow = (sentence: string): string => `${sentence} ${PROBE_EVIDENCE_SUFFIX}`;
 
 /** The six kinds in a provider's rows, in table order. */
 const rowsOf = (provider: string, byKind: Readonly<Record<CapabilityKind, Omit<TranslationRow, 'provider' | 'kind'>>>): readonly TranslationRow[] =>
@@ -358,19 +360,45 @@ const unprobed = (provider: string): readonly TranslationRow[] =>
  *  (#1015) later turns `unverified` into the observed value. */
 export const TRANSLATION_TABLE: readonly TranslationRow[] = [
   ...rowsOf('claude-code', {
-    mcp: { support: 'native', how: 'Inlined via SDK / run-scoped config' },
-    skill: { support: 'native', how: 'Run-scoped directory / SDK setting' },
-    hook: { support: 'native', how: 'Run-scoped hooks' },
-    context: { support: 'native', how: 'Native instruction files (CLAUDE.md, P-37)' },
-    plugin: { support: 'native', how: 'Unpacks package bundle to native capabilities' },
+    mcp: {
+      support: 'native',
+      how: probeHow('Run-scoped MCP config via --mcp-config with ambient settings off via --setting-sources ""'),
+    },
+    skill: {
+      support: 'native',
+      how: probeHow('Run-scoped skills under .claude/skills in the project directory'),
+    },
+    hook: {
+      support: 'native',
+      how: probeHow('Run-scoped hooks via an explicit --settings file'),
+    },
+    context: {
+      support: 'native',
+      how: probeHow('Native instruction file CLAUDE.md in the run cwd (P-37)'),
+    },
+    plugin: {
+      support: 'native',
+      how: probeHow('Plugin bundle unpacked into native run-scoped MCP, skills, and hooks'),
+    },
     command,
   }),
   ...rowsOf('codex', {
     mcp: { support: 'native', how: 'App-server -c mcp_servers.*' },
-    skill: { support: 'degraded', how: 'Inlined as instruction text', degradesTo: 'context' },
-    hook: { support: 'unsupported', how: 'Unsupported by app-server protocol' },
+    skill: {
+      support: 'native',
+      how: probeHow('Run-scoped skills under .agents/skills in the run directory'),
+    },
+    hook: {
+      support: 'unsupported',
+      how: probeHow(
+        'Hooks were not evidenced after trying a .codex/hooks.json file and a -c hooks override',
+      ),
+    },
     context: { support: 'native', how: 'Native instruction files (AGENTS.md / fallback, P-37)' },
-    plugin: { support: 'unverified', how: UNVERIFIED_HOW },
+    plugin: {
+      support: 'native',
+      how: probeHow('Run-scoped plugin bundle under .codex/plugins with plugin.json'),
+    },
     command,
   }),
   ...unprobed('agy'),
