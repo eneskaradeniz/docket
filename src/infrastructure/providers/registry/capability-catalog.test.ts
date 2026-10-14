@@ -2,10 +2,115 @@
 // that name no route kind, and the fixed surface saveAccount validates endpoints against.
 import { describe, expect, it } from 'vitest';
 
+import { composeRunPrompt } from '../../../application/use-cases/instructions';
+import type { AccountId, AccountRoute, RepoSlug, WorkOrderId } from '../../../domain/index';
+import { parseSlug, parseUlid } from '../../../domain/index';
+import type { AccountRecord } from '../../../application/ports';
+import {
+  createFakeAccountRepo,
+  createFakeDefinitionStore,
+  createFakeInstructionFiles,
+  createFakeWorkOrderRepo,
+  repoFlowOf,
+} from '../../../application/ports/fakes';
 import { BUILTIN_PROVIDER_DEFS } from '../defs/index';
 import { CAPABILITY_REGISTRY } from './capability-registry';
 import { createCapabilityCatalog } from './capability-catalog';
 import { findRouteKind } from './capability-registry';
+
+const slugOf = <B extends string>(input: string) => {
+  const parsed = parseSlug<B>(input);
+  if (!parsed.ok) throw new Error(`fixture slug must parse: ${input}`);
+  return parsed.value;
+};
+
+const ulidOf = <B extends string>(input: string) => {
+  const parsed = parseUlid<B>(input);
+  if (!parsed.ok) throw new Error(`fixture ulid must parse: ${input}`);
+  return parsed.value;
+};
+
+const REPO: RepoSlug = slugOf<'repo'>('acme');
+const WORK_ORDER: WorkOrderId = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FAV');
+const CWD = '/wt/acme';
+const CLAUDE_MARKER = 'P37-CLAUDE-INLINE-MARKER-1165';
+const CLAUDE_MD = `# Repo rules\n\n${CLAUDE_MARKER}`;
+
+const accountRecord = (id: AccountId, provider: string): AccountRecord => ({
+  id,
+  provider,
+  label: provider,
+  authMode: 'subscription',
+  limitPolicy: 'wait_resume',
+  caps: [],
+});
+
+const ROUTE = (accountId: AccountId): AccountRoute => ({ accountId });
+
+const FLOW_JSON = {
+  id: 'standard',
+  name: 'Standart',
+  stages: [{ id: 'implement', name: 'Implement', role: 'worker', exit: [] }],
+};
+const REPO_JSON = {
+  id: 'acme',
+  name: 'Acme',
+  flow: repoFlowOf(FLOW_JSON),
+  defaultLimitPolicy: 'wait_resume',
+  commandSets: {},
+  docsRoot: 'docs',
+  testGlobs: [],
+};
+const DEFS_JSON = JSON.stringify({
+  roles: [
+    {
+      id: 'worker',
+      name: 'Worker',
+      instructions: 'Ship it.',
+      writeScope: { kind: 'repo' },
+      capabilities: [],
+      active: true,
+    },
+  ],
+  flows: [FLOW_JSON],
+  capabilities: [],
+  repo: REPO_JSON,
+});
+
+const seedPromptDeps = async (provider: string, accountId: AccountId) => {
+  const accounts = createFakeAccountRepo();
+  await accounts.save(accountRecord(accountId, provider));
+  const definitions = createFakeDefinitionStore();
+  definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', DEFS_JSON);
+  const workOrders = createFakeWorkOrderRepo();
+  await workOrders.create({
+    id: WORK_ORDER,
+    project: slugOf<'project'>('atolye'),
+    repo: REPO,
+    flow: slugOf<'flow'>('standard'),
+    title: 'P-37 registry prompt',
+    createdAt: 1,
+    createdBy: { kind: 'user', id: 'u1', label: 'Op' },
+  });
+  return {
+    definitions,
+    workOrders,
+    accounts,
+    capabilities: createCapabilityCatalog(),
+    instructionFiles: createFakeInstructionFiles({ [CWD]: [{ name: 'CLAUDE.md', content: CLAUDE_MD }] }),
+  };
+};
+
+const countOccurrences = (haystack: string, needle: string): number => {
+  let count = 0;
+  let index = 0;
+  while (true) {
+    const at = haystack.indexOf(needle, index);
+    if (at === -1) return count;
+    count += 1;
+    index = at + needle.length;
+  }
+};
 
 describe('createCapabilityCatalog', () => {
   it('A-44: an absent routeKind resolves to the provider defaults for the authMode', () => {
@@ -76,11 +181,8 @@ describe('createCapabilityCatalog', () => {
     // The documented sets, each cited to the CLI's own documentation in the data rows. claude-code
     // names its automatic project memory per P-37 — it lives outside the repo, so it never matches
     // a repo file and is never an inline candidate.
-    expect(catalog.nativeInstructionFiles('claude-code')).toEqual([
-      'CLAUDE.md',
-      'CLAUDE.local.md',
-      '~/.claude/projects/<project>/memory/',
-    ]);
+    expect(catalog.nativeInstructionFiles('claude-code')).toEqual(['~/.claude/projects/<project>/memory/']);
+    expect(catalog.nativeInstructionFiles('claude-code')).not.toContain('CLAUDE.md');
     // opencode reads AGENTS.md natively and does not read a repo CLAUDE.md — the handoff
     // scenario's Y leg; cursor reads both root files natively.
     expect(catalog.nativeInstructionFiles('opencode')).toEqual(['AGENTS.md']);
@@ -103,11 +205,46 @@ describe('createCapabilityCatalog', () => {
   it('P-37: instructionFileNames is the deduplicated union of the rows in registry order', () => {
     const names = createCapabilityCatalog().instructionFileNames();
 
-    expect(names.slice(0, 3)).toEqual(['CLAUDE.md', 'CLAUDE.local.md', '~/.claude/projects/<project>/memory/']);
-    expect(names[3]).toBe('AGENTS.md');
+    expect(names[0]).toBe('~/.claude/projects/<project>/memory/');
+    expect(names).toContain('CLAUDE.md');
+    expect(names).toContain('AGENTS.md');
     expect(new Set(names).size).toBe(names.length);
     for (const expected of ['AGENTS.override.md', 'GEMINI.md', '.github/copilot-instructions.md']) {
       expect(names).toContain(expected);
     }
+  });
+
+  it('P-37 (#1165): claude-code inlines repo CLAUDE.md once in the effective prompt', async () => {
+    const accountId = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5CC1');
+    const deps = await seedPromptDeps('claude-code', accountId);
+    const composed = await composeRunPrompt(deps, {
+      repo: REPO,
+      workOrderId: WORK_ORDER,
+      cwd: CWD,
+      stage: slugOf<'stage'>('implement'),
+      role: slugOf<'role'>('worker'),
+      route: ROUTE(accountId),
+    });
+    if (!composed.ok) throw new Error(composed.error);
+    expect(composed.value.plan.native).toEqual(['~/.claude/projects/<project>/memory/']);
+    expect(composed.value.plan.inlined.map((file) => file.name)).toEqual(['CLAUDE.md']);
+    expect(countOccurrences(composed.value.prompt, CLAUDE_MARKER)).toBe(1);
+  });
+
+  it('P-37 (#1165): copilot still reads CLAUDE.md natively — present file is not inlined', async () => {
+    const accountId = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5CP1');
+    const deps = await seedPromptDeps('copilot', accountId);
+    const composed = await composeRunPrompt(deps, {
+      repo: REPO,
+      workOrderId: WORK_ORDER,
+      cwd: CWD,
+      stage: slugOf<'stage'>('implement'),
+      role: slugOf<'role'>('worker'),
+      route: ROUTE(accountId),
+    });
+    if (!composed.ok) throw new Error(composed.error);
+    expect(deps.capabilities.nativeInstructionFiles('copilot')).toContain('CLAUDE.md');
+    expect(composed.value.plan.inlined.map((file) => file.name)).not.toContain('CLAUDE.md');
+    expect(composed.value.prompt).not.toContain(CLAUDE_MARKER);
   });
 });

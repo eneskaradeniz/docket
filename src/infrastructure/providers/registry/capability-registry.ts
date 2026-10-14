@@ -313,11 +313,12 @@ export const PROVIDER_INSTRUCTION_FILES: readonly {
   readonly instructionFiles: readonly string[];
 }[] = [
   {
-    // Its own docs: CLAUDE.md with the project-local and user-level variants. The automatic project
+    // Docket runs with settingSources []: repo CLAUDE.md and CLAUDE.local.md are not loaded by the
+    // CLI — P-37 inlines them (systemPrompt.append on the context row). The automatic project
     // memory loads even with every setting source off, so the row names it per P-37 — it lives
     // outside the repo and never matches a repo file, hence never an inline candidate.
     providerId: 'claude-code',
-    instructionFiles: ['CLAUDE.md', 'CLAUDE.local.md', '~/.claude/projects/<project>/memory/'],
+    instructionFiles: ['~/.claude/projects/<project>/memory/'],
   },
   {
     // Its own docs: AGENTS.md plus the override companion, walked root→cwd; a global ~/.codex/
