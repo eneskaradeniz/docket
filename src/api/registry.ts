@@ -106,7 +106,6 @@ export const QUERY_REGISTRY: Record<Query['type'], RegistryEntry> = {
   'account.detail': { input: 'id: AccountId' },
   'account.models': { input: 'accountId: AccountId, refresh?: boolean' },
   'project.spend': { input: 'project: ProjectSlug' },
-  'repos.list': { input: 'no input' },
   'settings.accounts': { input: "catalog?: 'read' | 'skip'" },
   'settings.dispatch': { input: 'no input' },
   'roles.list': { input: 'no input' },

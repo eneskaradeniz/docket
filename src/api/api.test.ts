@@ -2095,7 +2095,7 @@ describe('createApi', () => {
       const api = updateApi(createFakeUpdateChecker(error));
       await expect(api.query({ type: 'app.update' })).resolves.toEqual(error);
 
-      // No checker composed: the query invents no state — the registry-less repos.list precedent.
+      // No checker composed: the query invents no state — the optional-port not_found precedent.
       await expect(updateApi().query({ type: 'app.update' })).resolves.toEqual({ ok: false, code: 'not_found' });
     });
 

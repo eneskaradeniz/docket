@@ -215,7 +215,6 @@ import type {
   SettingsBindingView,
   SettingsMeterView,
   SettingsPoolView,
-  RepoListItem,
 } from './queries';
 import { RUN_EVENTS_TAIL_LIMIT } from './queries';
 
@@ -402,9 +401,8 @@ const commandOf = <E extends string>(outcome: Result<unknown, E>): CommandResult
  *  Without one no ask can be open, so `permission.answer` answers not_found instead of throwing
  *  and `permissions.open` answers not_found instead of inventing an empty board. The discovery
  *  port is passed the same way: it is composed beside AppDeps at the root, and without it no
- *  provider can be reported, so `providers.discovered` answers not_found too. The repo
- *  registry joins them: without it no repo can be enumerated, so `repos.list` answers
- *  not_found as well. The update checker completes the set: without it no update state exists,
+ *  provider can be reported, so `providers.discovered` answers not_found too. The update
+ *  checker completes the set: without it no update state exists,
  *  so `app.update` and its intents answer not_found instead of inventing "you are current". The
  *  marks source rides the same pattern: without it there are no provider marks to report, so
  *  `providers.marks` answers not_found instead of inventing an empty record. The adoption ports
@@ -1810,9 +1808,6 @@ const runQuery = async (
       return boardView(deps, repo);
     }
 
-    case 'repos.list':
-      return repoList(registry);
-
     case 'settings.accounts':
       return settingsAccountsView(deps, query.catalog);
 
@@ -2044,17 +2039,6 @@ const discoveredProviders = async (
     collected.push(result);
   });
   return collected;
-};
-
-/** The machine's known repos, read straight off the registry: the rows are already plain
- *  JSON, only the branded slug travels as its string. No registry, no enumeration — the query
- *  answers not_found instead of inventing an empty machine. */
-const repoList = async (
-  registry: RepoRegistryPort | undefined,
-): Promise<readonly RepoListItem[] | QueryFailure> => {
-  if (registry === undefined) return { ok: false, code: 'not_found' };
-  const rows = await registry.list();
-  return rows.map((row) => ({ id: row.slug, path: row.path }));
 };
 
 const poolView = (pool: Pool): SettingsPoolView => ({
