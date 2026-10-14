@@ -133,6 +133,18 @@ export interface WorkOrderDetailView {
   /** The git lifecycle fold (#1167, A-390): branch, pull request and release marks as the
    *  reply's own derived state — never re-derived here from events; absent on an older reply. */
   readonly git?: GitLifecycleState;
+  /** The repo context (#1178, A-392): the registered folder's standing, the owning project's
+   *  own name and its other-repo count; absent on an older reply reads as ok — the context
+   *  line and the git card's cause line simply stay quiet. */
+  readonly repoContext?: WorkOrderDetailRepoContext;
+}
+
+/** The repo context the detail reply carries, narrowed to what the presentation reads (A-392). */
+export interface WorkOrderDetailRepoContext {
+  readonly path: string;
+  readonly status: 'ok' | 'folder_not_found' | 'relink_offered' | 'unregistered';
+  readonly project: { readonly slug: string; readonly name: string };
+  readonly siblingCount: number;
 }
 
 /** A permission ask shown in the decision zone, fed from `permissions.open` and scoped to the
@@ -715,15 +727,30 @@ export interface GitDoor {
 export interface GitCardModel {
   readonly branch: string;
   readonly pr: GitPrState | null;
+  /** Present only while the repo context answers a not-ok standing (U-351): the one visible
+   *  cause every closed door shares — the card stands to say it. */
+  readonly repoReasonKey?: LabelKey;
   readonly doors: readonly GitDoor[];
 }
+
+/** The one cause line each not-ok repo standing words (U-351) — the same sentence the header's
+ *  context line repeats, so one copy set serves both places (U-352). */
+export const repoStatusReasonKey = (status: Exclude<WorkOrderDetailRepoContext['status'], 'ok'>): LabelKey =>
+  status === 'relink_offered'
+    ? 'detail.git.repo.relinkOffered'
+    : status === 'folder_not_found'
+      ? 'detail.git.repo.folderNotFound'
+      : 'detail.git.repo.unregistered';
 
 /** The doors' matrix (U-344 … U-349): the card stands only while a worktree holds and the
  *  lifecycle is open — a released work order shows no card; the branch line is the naming rule's
  *  deterministic `docket/wo-<id>` word until the ledger's own push names it; every door's
  *  availability derives from the lifecycle state the reply carried (A-390), never from events
  *  re-derived here. The push door alone reads the forge: a missing forge is a standing the card
- *  can know (the gitBase read's own code), a failed forge call is not — the command words it. */
+ *  can know (the gitBase read's own code), a failed forge call is not — the command words it.
+ *  A not-ok repo context (U-351) overrides both gates: the card stands even without a working
+ *  copy, every door is closed, and the doors' own lifecycle reasons stay unsaid — they would
+ *  name the wrong cause for doors the repo's own standing closed. */
 export const gitCard = (
   view: WorkOrderDetailView,
   gitBase: GitBaseRead | null,
@@ -731,6 +758,20 @@ export const gitCard = (
 ): GitCardModel | null => {
   const git = view.git;
   if (git?.released === true) return null;
+  const repoStatus = view.repoContext?.status ?? 'ok';
+  if (repoStatus !== 'ok') {
+    return {
+      branch: git?.branch?.name ?? workOrderBranch(view.record.id as WorkOrderId),
+      pr: git?.pr ?? null,
+      repoReasonKey: repoStatusReasonKey(repoStatus),
+      doors: [
+        { kind: 'push', available: false },
+        { kind: 'openPr', available: false },
+        { kind: 'merge', available: false },
+        { kind: 'release', available: false },
+      ],
+    };
+  }
   if (!hasWorktree) return null;
   const pr = git?.pr ?? null;
   const openPr = pr !== null && !pr.merged;

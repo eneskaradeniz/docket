@@ -45,6 +45,7 @@ import {
 import type { AccountRecord, AppDeps, ForgeResolver, RunRecord, WorkOrderRecord } from '../ports';
 import { catalogOrEmpty } from '../services/match-id';
 import { defaultBillingOf } from '../services/spend-consent';
+import { repoEntryStatus } from './repos';
 
 export type OpenError =
   | 'definitions_invalid'
@@ -178,6 +179,10 @@ export interface WorkOrderView {
   readonly flow: FlowDef;
   /** The repo section's environments (protected, promoteFrom), same reason as `flow`. */
   readonly environments: readonly EnvironmentDef[];
+  /** The repo context (A-392): the registered folder's standing, the owning project's own name
+   *  and the project's repos beside this one — the detail's quiet context line and the git
+   *  card's not-ok cause both read it. */
+  readonly repoContext: WorkOrderRepoContext;
   /** The remote_checks gates' evaluation rows (A-378): a pure read of what the dispatcher
    *  already recorded — nothing here starts a poll. */
   readonly gates: readonly WorkOrderGateRow[];
@@ -204,6 +209,39 @@ export interface WorkOrderGateRow {
 }
 
 export type ViewError = 'not_found' | 'definitions_invalid' | 'unknown_flow';
+
+/** The repo standing of a work order's repo (A-392): `ok`, the two not-ok standings the
+ *  registry's own status read words (`folder_not_found`, `relink_offered`), and `unregistered`
+ *  for a repo the registry does not list — the typed equivalent of a relink standing, so the
+ *  detail says a cause instead of failing. */
+export type WorkOrderRepoStatus = 'ok' | 'folder_not_found' | 'relink_offered' | 'unregistered';
+
+/** The small repo context the detail reads (A-392): the registered folder's path and standing,
+ *  the owning project's slug and name, and how many other repos the project holds. */
+export interface WorkOrderRepoContext {
+  readonly path: string;
+  readonly status: WorkOrderRepoStatus;
+  readonly project: { readonly slug: ProjectSlug; readonly name: string };
+  readonly siblingCount: number;
+}
+
+/** A-392: the repo context, derived per read from the registry row, the folder's current
+ *  fingerprint and the project record. A repo the registry does not list carries the empty path
+ *  and the `unregistered` standing; a project that no longer loads names itself by its slug and
+ *  counts no siblings — the read never fails the detail and never re-points a row. */
+const repoContextOf = async (
+  deps: Pick<AppDeps, 'repos' | 'readFingerprint' | 'projects'>,
+  record: WorkOrderRecord,
+): Promise<WorkOrderRepoContext> => {
+  const project = await deps.projects.get(record.project);
+  const entry = (await deps.repos.list()).find((row) => row.slug === record.repo);
+  return {
+    path: entry?.path ?? '',
+    status: entry === undefined ? 'unregistered' : repoEntryStatus(entry, await deps.readFingerprint(entry.path)),
+    project: { slug: record.project, name: project?.name ?? record.project },
+    siblingCount: project === undefined ? 0 : project.repos.filter((repo) => repo !== record.repo).length,
+  };
+};
 
 const runBillingOf = (billing: Billing): RunBilling => (billing === 'metered' ? 'pay_per_use' : billing);
 
@@ -320,7 +358,7 @@ export const workOrderGateRows = (
 };
 
 export async function getWorkOrder(
-  deps: Pick<AppDeps, 'workOrders' | 'runs' | 'definitions'>,
+  deps: Pick<AppDeps, 'workOrders' | 'runs' | 'definitions' | 'repos' | 'readFingerprint' | 'projects'>,
   id: WorkOrderId,
 ): Promise<Result<WorkOrderView, ViewError>> {
   const record = await deps.workOrders.get(id);
@@ -342,6 +380,7 @@ export async function getWorkOrder(
     runs,
     flow,
     environments: loaded.value.repo?.environments ?? [],
+    repoContext: await repoContextOf(deps, record),
     gates: workOrderGateRows(flow, events),
     git: deriveGitLifecycle(events),
   });

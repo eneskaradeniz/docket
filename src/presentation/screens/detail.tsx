@@ -22,6 +22,7 @@ import {
   gateCheckGroups,
   gitCard,
   newestFailedRunOf,
+  repoStatusReasonKey,
   runRows,
   stripSegments,
   workOrderUsageMoney,
@@ -409,6 +410,22 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
                 </span>
               ) : null}
             </p>
+            {/* The quiet repo context line (U-350): the owning project, the registered folder
+                and the sibling count — plain text, no control. While the repo is not ok the
+                line words the same cause sentence the git card carries (U-353: words, never a
+                colour alone). An older reply without the field renders no line at all. */}
+            {view.repoContext !== undefined ? (
+              <p data-detail-repo-context className="m-0 flex flex-wrap gap-x-5 gap-y-1 font-mono text-[0.6875rem] text-inkdim">
+                <span>{t(locale, 'detail.repo.project').replace('{name}', view.repoContext.project.name)}</span>
+                <code className="min-w-0 truncate" title={view.repoContext.path}>{view.repoContext.path}</code>
+                {view.repoContext.siblingCount > 0 ? (
+                  <span>{t(locale, 'detail.repo.siblings').replace('{n}', String(view.repoContext.siblingCount))}</span>
+                ) : null}
+                {view.repoContext.status !== 'ok' ? (
+                  <span>{t(locale, repoStatusReasonKey(view.repoContext.status))}</span>
+                ) : null}
+              </p>
+            ) : null}
             {/* The chat launcher row keeps its U-131 door on this screen — the prototype's
                 header carries no row of its own, but the standing-scoped questions are the
                 screen's own behaviour, not decoration. */}

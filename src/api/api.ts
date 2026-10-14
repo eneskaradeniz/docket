@@ -1941,7 +1941,14 @@ const runQuery = async (
       const id = ulidValue<'work-order'>(query.id);
       if (id === undefined) return invalidId();
       const view = await getWorkOrder(
-        { workOrders: deps.workOrders, runs: deps.runs, definitions: deps.definitions },
+        {
+          workOrders: deps.workOrders,
+          runs: deps.runs,
+          definitions: deps.definitions,
+          repos: deps.repos,
+          readFingerprint: deps.readFingerprint,
+          projects: deps.projects,
+        },
         id,
       );
       if (!view.ok) return { ok: false, code: view.error };

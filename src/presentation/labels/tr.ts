@@ -217,6 +217,13 @@ export const TR: LabelBundle = {
   'detail.git.release.body': 'Yerel dal ve çalışma kopyası silinir.',
   'detail.git.release.success': 'Dal silindi.',
   'detail.git.notMerged': 'PR birleştirilmedi.',
+  // The repo context (U-350 … U-353): the header's quiet line and the git card's one cause
+  // sentence share this copy — one set words both places.
+  'detail.git.repo.folderNotFound': 'Depo klasörü bulunamadı.',
+  'detail.git.repo.relinkOffered': 'Bu klasör aynı depo değil; yeniden bağlayın.',
+  'detail.git.repo.unregistered': 'Depo bu makinede kayıtlı değil.',
+  'detail.repo.project': 'Proje: {name}',
+  'detail.repo.siblings': '{n} depo daha',
   'check.status.queued': 'sırada',
   'check.status.running': 'çalışıyor',
   'check.status.passed': 'geçti',

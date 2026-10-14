@@ -2199,3 +2199,18 @@ Addendum 2026-10-14 (#1167): the git lifecycle read on the detail and the forge'
 Addendum 2026-10-14 (#1188): route model ids normalized at the api edge before enqueue or save. Rule A-389.
 
 - **A-389** (added 2026-10-14, #1188) Where a command accepts a model id for an account route — `binding.save` (every role, including assistant), `account.consent.grant`, `account.consent.revoke`, `account.test` (when a model is given), and `repo.saveFlow` (each pinned model in a stage chain) — the id is normalized through that account's merged catalog before any write: a catalog row id is kept; an id equal to a row's `resolvedId` is rewritten to that row's id (the alias); anything else answers `unknown_model` with the route's valid catalog ids in `validModelIds` and nothing is saved. When the catalog list is empty the id is accepted unchanged (the list is not authoritative yet). `invalid_model` on consent remains for an empty string only.
+
+Addendum 2026-10-14 (#1178): the repo context on the work-order detail (#1001's multi-repo
+awareness item). Rules A-392, A-393; the UI rules are U-350 … U-353 (docs/v2/ui.md).
+
+- **A-392** (added 2026-10-14, #1178) `workOrder.detail` gains `repoContext`: the work order's
+  registered folder (`path`), its standing against the folder's current fingerprint (`status`:
+  `ok`, `folder_not_found`, `relink_offered` — the `repoStatuses` rule read for this one repo —
+  or `unregistered` when the registry holds no row for the slug, the relink-standing equivalent
+  that keeps the read total), the owning project's `{ slug, name }` (the stored name; a project
+  that no longer loads names itself by its slug) and `siblingCount`, the project's repos other
+  than the work order's own. An unregistered repo carries `path: ''`; nothing here re-points a
+  registry row or invents a path.
+- **A-393** (added 2026-10-14, #1178) The repo context is a pure read exactly like A-379's
+  rows: no audit entry, no ledger event, no `workOrders.changed` announcement, and no write of
+  any kind reaches the registry, the project store or the definitions.
