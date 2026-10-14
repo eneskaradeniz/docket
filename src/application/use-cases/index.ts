@@ -31,6 +31,7 @@ export * from './settings';
 export * from './library';
 export * from './memory';
 export * from './definitions-list';
+export * from './mcp-docket-tool-names';
 export * from './mcp-status';
 export * from './definition-removal';
 export * from './roadmap';
