@@ -7,10 +7,13 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { parseSlug, parseUlid, type Actor, type RunId, type WorkOrderId, type RepoSlug } from '../../domain/index';
+import { parseSlug, parseUlid, type Actor, type RunId, type WorkOrderId, type RepoSlug, type RepoRef } from '../../domain/index';
 import type { DiscoveredProvider } from '../../application/index';
+import { evaluateMachineGates } from '../../application/index';
+import type { CheckRun, Forge } from '../../application/index';
 import {
   createFakeClock,
+  createFakeForge,
   createFakeNotifier,
   createFakeTransportResolver,
   type FakeNotifier,
@@ -18,7 +21,7 @@ import {
 import type { CipherFns } from '../storage/keychain/index';
 import { MIGRATIONS } from '../storage/sqlite/index';
 import type { RandomBytes } from '../system/index';
-import { runGit } from '../vcs/index';
+import { branchHead, runGit, worktreeBranch } from '../vcs/index';
 import { createApi } from '../../api/index';
 import { TRACKER_LINK_TARGET } from '../../application/use-cases/tracker-sync';
 import { createNodeDeps, type NodeDeps, type NodeDepsConfig } from './create-node-deps';
@@ -121,6 +124,74 @@ const REPO_YAML = [
 
 // Environment keys these tests overwrite; every test gets its original value back.
 const ENV_KEYS = ['PATH', 'HOME'] as const;
+
+// The remote-checks fixtures (E-18's flow shape): one worker stage whose only exit gate is a
+// remote_checks gate the composed forge resolver must poll.
+const WORKER_ROLE_YAML = [
+  'id: worker',
+  'name: Worker',
+  'instructions: Do the work.',
+  'writeScope:',
+  '  kind: repo',
+  'capabilities: []',
+  'active: true',
+  '',
+].join('\n');
+
+const REMOTE_FLOW_YAML = [
+  'id: remote',
+  'name: Remote',
+  'stages:',
+  '  - id: verify',
+  '    name: Verify',
+  '    role: worker',
+  '    exit:',
+  '      - kind: remote_checks',
+  '        id: ci',
+  '        required: all',
+  '        timeoutMinutes: 10',
+  '',
+].join('\n');
+
+const REMOTE_REPO_YAML = [
+  'id: demo',
+  'name: Demo',
+  'flow:',
+  '  flowId: remote',
+  '  version: 1',
+  '  stages:',
+  '    - id: verify',
+  '      name: Verify',
+  '      role: worker',
+  '      exit:',
+  '        - kind: remote_checks',
+  '          id: ci',
+  '          required: all',
+  '          timeoutMinutes: 10',
+  '  bindings:',
+  '    - stage: verify',
+  '      role:',
+  '        roleId: worker',
+  '        version: 1',
+  '      accounts: []',
+  'defaultLimitPolicy: wait_resume',
+  'commandSets: {}',
+  'docsRoot: docs',
+  'testGlobs: []',
+  '',
+].join('\n');
+
+/** A fake forge whose every checks poll is recorded, so a test sees the ref it was polled with. */
+const trackingFakeForge = (checks: readonly CheckRun[], polls: string[]): Forge => {
+  const base = createFakeForge({ checks });
+  return {
+    ...base,
+    checks: async (repo: Parameters<Forge['checks']>[0], ref: string) => {
+      polls.push(ref);
+      return base.checks(repo, ref);
+    },
+  };
+};
 
 let scratch = '';
 let dataDir = '';
@@ -558,6 +629,74 @@ describe('createNodeDeps', () => {
     const api = createApi(node.deps, undefined, undefined, node.repos, undefined, undefined, undefined, undefined, undefined, undefined, node.trackers);
     const synced = await api.command(USER, { type: 'tracker.sync', repo: REPO });
     expect(synced).toEqual({ ok: true, syncedIssues: 0, syncedMilestones: 0, conflicts: [] });
+    node.close();
+  });
+
+  // A-368/A-369: the composed forge resolver reaches evaluateMachineGates over the real
+  // repositories — a pending remote_checks gate polls through it, running checks leave the gate
+  // pending with no event, and concluded checks evaluate it exactly once.
+  it('A-369: a composed forge resolver polls a pending remote_checks gate — running checks keep it pending, passed checks evaluate it', async () => {
+    await initRepoWithCommit(repoDir);
+    const polls: string[] = [];
+    let forge = trackingFakeForge([{ name: 'lint', status: 'running' }], polls);
+    // The fake clock keeps the gate inside its timeout window: the E-16 deadline is measured from
+    // the events' timestamps, which the system clock would read as decades ago.
+    const node = makeNode({ clock: createFakeClock(10), forgeResolver: () => ({ forRepo: async () => forge }) });
+
+    await mkdir(join(dataDir, 'repos', REPO), { recursive: true });
+    await writeFile(join(dataDir, 'repos', REPO, 'repo.yaml'), REMOTE_REPO_YAML, 'utf8');
+    await mkdir(join(dataDir, 'library', 'roles', 'worker'), { recursive: true });
+    await mkdir(join(dataDir, 'library', 'flows', 'remote'), { recursive: true });
+    await writeFile(join(dataDir, 'library', 'roles', 'worker', 'v1.yaml'), WORKER_ROLE_YAML, 'utf8');
+    await writeFile(join(dataDir, 'library', 'flows', 'remote', 'v1.yaml'), REMOTE_FLOW_YAML, 'utf8');
+    await registerRepo(node, repoDir);
+
+    // The composed resolver hands the injected forge to the repo's ref (A-368).
+    const repoRef: RepoRef = { id: REPO, remote: 'https://github.com/octo/demo.git', defaultBranch: 'main' };
+    expect(await node.forges.forRepo(repoRef)).toBe(forge);
+
+    await node.deps.workOrders.create({
+      id: WO,
+      project: slugOf<'project'>('proj'),
+      repo: REPO,
+      flow: slugOf<'flow'>('remote'),
+      title: 'remote gate',
+      createdAt: 5,
+      createdBy: USER,
+    });
+    await node.deps.workOrders.appendEvent(WO, { type: 'created', at: 5, by: USER, flow: slugOf<'flow'>('remote') });
+    await node.deps.workOrders.appendEvent(WO, { type: 'run_started', at: 6, runId: RUN, stage: slugOf<'stage'>('verify'), attempt: 1 });
+    await node.deps.workOrders.appendEvent(WO, { type: 'run_finished', at: 7, runId: RUN, outcome: 'succeeded' });
+
+    // The branch ref exactly the way the composition root derives it: the worktree branch's head
+    // sha, read in the registered checkout (A-369).
+    await node.deps.worktrees.ensure(REPO, WO);
+    const branchRef = await branchHead(repoDir, worktreeBranch(WO));
+    if (branchRef === undefined) throw new Error('fixture worktree branch must resolve');
+
+    const pending = await evaluateMachineGates(node.deps, {
+      id: WO,
+      remote: { forges: node.forges, repo: repoRef, branchRef },
+    });
+    expect(pending).toEqual({
+      ok: true,
+      value: { status: 'gating', stage: slugOf<'stage'>('verify'), attempt: 1, pendingGates: [slugOf<'gate'>('ci')], skippedStages: [] },
+    });
+    expect(await node.deps.workOrders.events(WO)).toHaveLength(3); // nothing written while checks run
+    expect(polls).toEqual([branchRef]);
+
+    forge = trackingFakeForge([{ name: 'lint', status: 'passed' }], polls);
+    const concluded = await evaluateMachineGates(node.deps, {
+      id: WO,
+      remote: { forges: node.forges, repo: repoRef, branchRef },
+    });
+    expect(concluded).toEqual({
+      ok: true,
+      value: { status: 'done', stage: null, attempt: 1, pendingGates: [], skippedStages: [] },
+    });
+    const events = await node.deps.workOrders.events(WO);
+    expect(events).toHaveLength(4);
+    expect(events[3]).toMatchObject({ type: 'gate_evaluated', gate: slugOf<'gate'>('ci'), verdict: { status: 'passed' } });
     node.close();
   });
 

@@ -947,6 +947,78 @@ describe('evaluateMachineGates', () => {
     expect(result.value.blockedReason).toBe('gate "ci" failed: remote check failed: lint');
   });
 
+  // --- the production wiring's rules (A-368 … A-370) -------------------------------------------------
+
+  it('A-368: a resolver answering undefined leaves the gate pending exactly like a missing remote input', async () => {
+    const h = makeHarness();
+    await createIn(h, 'remote-flow');
+    await runSucceededIn(h, slugOf('verify'));
+    const { resolver, asked } = resolverFor(undefined);
+
+    const result = await evaluateMachineGates(h.deps, {
+      id: WORK_ORDER,
+      remote: { forges: resolver, repo: REPO, branchRef: BRANCH_REF },
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: { status: 'gating', stage: slugOf('verify'), attempt: 1, pendingGates: ['ci'], skippedStages: [] },
+    });
+    expect(asked).toEqual([REPO]); // the silent-undefined contract was actually exercised
+    expect(await eventsOf(h)).toHaveLength(3);
+  });
+
+  it('A-369: the branchRef is polled verbatim and a branch-shaped miss never fails the evaluation', async () => {
+    const h = makeHarness();
+    await createIn(h, 'remote-flow');
+    await runSucceededIn(h, slugOf('verify'));
+    const branchShapedRef = '0000000000000000000000000000000000000000';
+    const { forge, seen } = trackingForge([check('lint', 'passed')]);
+    const { resolver } = resolverFor(forge);
+
+    const result = await evaluateMachineGates(h.deps, {
+      id: WORK_ORDER,
+      remote: { forges: resolver, repo: REPO, branchRef: branchShapedRef },
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: { status: 'done', stage: null, attempt: 1, pendingGates: [], skippedStages: [] },
+    });
+    expect(seen).toEqual([{ repo: REPO, ref: branchShapedRef }]); // the resolved sha, untouched
+  });
+
+  it('A-370: a re-poll with the same remote input concludes a gate an earlier pass left pending', async () => {
+    const h = makeHarness();
+    await createIn(h, 'remote-flow');
+    await runSucceededIn(h, slugOf('verify'));
+    const remoteOf = (resolver: ReturnType<typeof resolverFor>['resolver']) => ({
+      forges: resolver,
+      repo: REPO,
+      branchRef: BRANCH_REF,
+    });
+
+    // The run's own pass: the checks are still running, so nothing is written.
+    await evaluateMachineGates(h.deps, {
+      id: WORK_ORDER,
+      remote: remoteOf(resolverFor(trackingForge([check('lint', 'running')]).forge).resolver),
+    });
+    expect(await eventsOf(h)).toHaveLength(3);
+
+    // The sweep's pass: the same remote input, the forge now reporting the checks concluded.
+    const concluded = await evaluateMachineGates(h.deps, {
+      id: WORK_ORDER,
+      remote: remoteOf(resolverFor(trackingForge([check('lint', 'passed')]).forge).resolver),
+    });
+    expect(concluded).toEqual({
+      ok: true,
+      value: { status: 'done', stage: null, attempt: 1, pendingGates: [], skippedStages: [] },
+    });
+    const events = await eventsOf(h);
+    expect(events).toHaveLength(4);
+    expect(events[3]).toMatchObject({ type: 'gate_evaluated', gate: slugOf('ci'), verdict: { status: 'passed' } });
+  });
+
   // --- A-96: the changes gate's machine-measured evidence -------------------------------------------
 
   it('A-96: a changes gate passes on a diff that counts files, reading the base by the work order id', async () => {

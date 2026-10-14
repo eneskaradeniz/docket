@@ -24,8 +24,9 @@ const PROBE_TIMEOUT_MS = 15_000;
 const shellQuote = (value: string): string => `'${value.split("'").join(`'\\''`)}'`;
 
 // Reads OWNER/REPO out of a github.com remote URL (https, ssh:// or git@ form) for `--repo`;
-// remotes on other hosts belong to other forges, so they are not mistaken for this one.
-const GITHUB_REMOTE = /^(?:https:\/\/github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)([^\/]+)\/(.+?)(?:\.git)?\/?$/;
+// remotes on other hosts belong to other forges, so they are not mistaken for this one. The
+// resolver reuses this grammar to decide which rows are this adapter's at all.
+export const GITHUB_REMOTE = /^(?:https:\/\/github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)([^\/]+)\/(.+?)(?:\.git)?\/?$/;
 
 const ownerRepo = (remote: string): { readonly owner: string; readonly name: string } | undefined => {
   const match = GITHUB_REMOTE.exec(remote);

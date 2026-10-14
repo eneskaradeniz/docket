@@ -79,6 +79,16 @@ export function runGit(
   });
 }
 
+/** The head commit of a branch in a checkout, or undefined when the branch (or the work tree) is
+ *  absent: the remote-checks poll reads the checks of that one sha, never a name that could move
+ *  under it between the poll and the forge's answer. */
+export async function branchHead(cwd: string, branch: string): Promise<string | undefined> {
+  const result = await runGit(cwd, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]);
+  if (result.exitCode !== 0) return undefined;
+  const sha = result.stdout.trim();
+  return sha === '' ? undefined : sha;
+}
+
 /** The GitProbe port over the same direct-git discipline: a checkout answers
  *  `rev-parse --is-inside-work-tree` with exit 0 and `true`; everything else — a bare
  *  repository, a missing folder, a non-repo — is not a work tree. */

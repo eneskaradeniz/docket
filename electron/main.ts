@@ -24,11 +24,11 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type { Actor, QueueItem } from '../src/domain/index';
+import type { Actor, QueueItem, WorkOrderId } from '../src/domain/index';
 import { deriveWorkOrderState, err, foldRun, ok } from '../src/domain/index';
 import { COMMAND_REGISTRY, QUERY_REGISTRY, createApi } from '../src/api/index';
 import type { Api, RunEventFeed, UiEvent } from '../src/api/index';
-import type { ActiveWork, AppDeps, McpEndpoint, McpListenerControl, McpListenerState, Notifier, PermissionBoard, RunControl, TransportResolver } from '../src/application/index';
+import type { ActiveWork, AppDeps, ForgeResolver, McpEndpoint, McpListenerControl, McpListenerState, Notifier, PermissionBoard, RunControl, TransportResolver, WorkOrderRecord } from '../src/application/index';
 import type { DocketToolRequest, DocketToolResponse } from '../src/application/index';
 import {
   activeWork,
@@ -51,10 +51,12 @@ import type { CipherFns, NodeDeps } from '../src/infrastructure/index';
 import {
   BUILTIN_PROVIDER_DEFS,
   builtinProviderMarks,
+  branchHead,
   configureProcessMirrorDir,
   createDesignUpdateChecker,
   createMcpEndpoint,
   createNodeDeps,
+  createRepoForgeResolver,
   createRepoTrackerResolver,
   createNoopUpdateChecker,
   createLoginStates,
@@ -66,6 +68,7 @@ import {
   reapOrphanedChildren,
   registeredSpawn,
   startMcpListener,
+  worktreeBranch,
 } from '../src/infrastructure/index';
 import type { McpListener } from '../src/infrastructure/index';
 import { createPageViewTrace } from '../src/infrastructure/index';
@@ -106,6 +109,11 @@ registerPageSchemeWithElectron();
 /** The dispatcher polls: queue items arrive from commands and scheduled resumes, and neither can
  *  push into this process, so a short cadence is the whole scheduler. */
 const DISPATCH_INTERVAL_MS = 5_000;
+
+/** The remote-checks re-poll cadence (A-370): its own slower timer, never the dispatch tick — a
+ *  pending CI gate is re-read once a minute, and the dispatcher's five-second loop stays free of
+ *  forge round-trips. */
+const REMOTE_CHECKS_POLL_MS = 60_000;
 
 /** Gate commands and agent CLIs receive an allowlisted environment, never the full parent one:
  *  an allowlist cannot leak a credential variable it never named. Discovery reads the parent
@@ -193,6 +201,7 @@ const loginStates = createLoginStates();
 
 let node: NodeDeps | undefined;
 let dispatchTimer: NodeJS.Timeout | undefined;
+let remoteChecksTimer: unknown;
 let quotaLifecycle: { stop(): void } | undefined;
 let trackerSyncLifecycle: { stop(): void } | undefined;
 let mcpListener: McpListener | undefined;
@@ -333,11 +342,92 @@ const runStartedItem = async (api: Api & RunEventFeed, board: PermissionBoard, r
     }
 
     // A finished attempt may leave machine gates pending; evaluating them here is what lets the
-    // flow advance without a human round-trip. `not_gating` is a no-op answer, and remote_checks
-    // gates stay pending — no forge is wired into the shell yet.
-    await evaluateMachineGates(deps, { id: item.workOrderId });
+    // flow advance without a human round-trip. `not_gating` is a no-op answer. Remote-checks gates
+    // poll only when the stage truly waits on one and no sweep already holds this work order —
+    // otherwise the gate stays pending for the sweep's next pass.
+    const forges = node === undefined ? undefined : node.forges;
+    const remote =
+      forges === undefined || remoteChecksInFlight.has(item.workOrderId)
+        ? undefined
+        : await remoteInputOf(deps, forges, record);
+    if (remote === undefined) {
+      await evaluateMachineGates(deps, { id: item.workOrderId });
+    } else {
+      await evaluateWithRemote(deps, remote, item.workOrderId);
+    }
   } catch (error) {
     console.error(`queue item ${item.id} crashed its run loop`, error);
+  }
+};
+
+// --- remote-checks polling (A-369, A-370) ------------------------------------------------------------
+
+/** E-18's optional remote input, in the use case's own shape. */
+type RemoteGateInput = NonNullable<Parameters<typeof evaluateMachineGates>[1]['remote']>;
+
+/** Work orders whose remote-checks evaluation is running right now (A-370): the post-run call and
+ *  the sweep share this set, so one gate is never polled twice in flight. */
+const remoteChecksInFlight = new Set<WorkOrderId>();
+
+/** E-18's remote input for a work order, or undefined when there is nothing to poll: the branch
+ *  lookup and the resolver's gh probe cost real commands, so they run only for a stage that truly
+ *  waits on a pending remote_checks gate. A worktree branch that cannot be resolved also answers
+ *  undefined — the gate stays pending for a later pass instead of failing the evaluation. */
+const remoteInputOf = async (
+  deps: AppDeps,
+  forges: ForgeResolver,
+  record: WorkOrderRecord,
+): Promise<RemoteGateInput | undefined> => {
+  const entry = (await deps.repos.list()).find((row) => row.slug === record.repo);
+  if (entry === undefined || entry.fingerprint.remote === undefined) return undefined;
+  const loaded = await deps.definitions.load(record.repo);
+  if (!loaded.ok) return undefined;
+  const flow = loaded.value.flows.find((candidate) => candidate.id === record.flow);
+  if (flow === undefined) return undefined;
+  const state = deriveWorkOrderState(flow, await deps.workOrders.events(record.id));
+  if (state.status !== 'gating' || state.stage === null) return undefined;
+  const stage = flow.stages.find((candidate) => candidate.id === state.stage);
+  const waitsOnRemoteChecks = stage?.exit.some(
+    (gate) => gate.kind === 'remote_checks' && state.pendingGates.includes(gate.id),
+  );
+  if (waitsOnRemoteChecks !== true) return undefined;
+  const branchRef = await branchHead(entry.path, worktreeBranch(record.id));
+  if (branchRef === undefined) return undefined;
+  return {
+    forges,
+    branchRef,
+    repo: {
+      id: entry.slug,
+      remote: entry.fingerprint.remote,
+      // The checks call routes by the remote URL alone; the default branch belongs to the pull
+      // request prefill, which reads it from the forge host itself, so no local guess lands here.
+      defaultBranch: '',
+    },
+  };
+};
+
+/** One remote-carrying evaluation under the shared in-flight guard; typed errors are answers (the
+ *  gate simply stays pending), only a crash is loud. */
+const evaluateWithRemote = async (deps: AppDeps, remote: RemoteGateInput, id: WorkOrderId): Promise<void> => {
+  remoteChecksInFlight.add(id);
+  try {
+    await evaluateMachineGates(deps, { id, remote });
+  } catch (error) {
+    console.error(`remote-checks poll for ${id} crashed`, error);
+  } finally {
+    remoteChecksInFlight.delete(id);
+  }
+};
+
+/** One sweep pass (A-370): every work order whose stage still waits on a remote_checks gate gets
+ *  the same evaluation the run's end made, so a check that concluded since then advances the gate
+ *  without a human round-trip. Nothing is written while the checks are still pending (E-17). */
+const sweepRemoteChecks = async (deps: AppDeps, forges: ForgeResolver): Promise<void> => {
+  for (const record of await deps.workOrders.list({})) {
+    if (remoteChecksInFlight.has(record.id)) continue;
+    const remote = await remoteInputOf(deps, forges, record);
+    if (remote === undefined) continue;
+    await evaluateWithRemote(deps, remote, record.id);
   }
 };
 
@@ -492,6 +582,7 @@ const startApp = async (): Promise<void> => {
     // scanner must still be listed as a machine-login candidate (P-53).
     providerDiscovery: discovery,
     trackerResolver: createRepoTrackerResolver,
+    forgeResolver: createRepoForgeResolver,
   });
   if (!opened.ok) {
     dialog.showErrorBox('Docket', `Storage could not be opened: ${JSON.stringify(opened.error)}`);
@@ -642,6 +733,22 @@ const startApp = async (): Promise<void> => {
       dispatching = false;
     });
   }, DISPATCH_INTERVAL_MS);
+
+  // The remote-checks sweep (A-370): its own timer, started through the same injected timers the
+  // quota schedule uses, and non-reentrant like the dispatcher's tick — an overlapping pass would
+  // re-derive the same work orders the first is still walking. The forge resolver is read here:
+  // `node` is not narrowed inside the timer closure (the quotaProbes line above, same reason).
+  const nodeForges = node.forges;
+  let sweepingRemoteChecks = false;
+  remoteChecksTimer = node.quota.timers.setInterval(() => {
+    if (sweepingRemoteChecks) return;
+    sweepingRemoteChecks = true;
+    void sweepRemoteChecks(nodeDeps, nodeForges)
+      .catch((error) => console.error('remote-checks sweep failed', error))
+      .finally(() => {
+        sweepingRemoteChecks = false;
+      });
+  }, REMOTE_CHECKS_POLL_MS);
 
   createWindow();
   // Quota is read without a run: once now for every account, then on the interval (P-49).
@@ -811,6 +918,7 @@ app.on('will-quit', (event) => {
   quotaLifecycle?.stop();
   trackerSyncLifecycle?.stop();
   if (dispatchTimer !== undefined) clearInterval(dispatchTimer);
+  node?.quota.timers.clearInterval(remoteChecksTimer);
   node?.close();
 });
 
