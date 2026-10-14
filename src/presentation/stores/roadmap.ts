@@ -6,7 +6,7 @@
 // phase shows, the one open panel (confirmation or attention), and the three phase commands with
 // the notices their outcomes become; the page refetches after every command.
 import type { Api } from '../../api/api';
-import type { ProjectTree, Query, RoadmapPageView, RoadmapRepoView } from '../../api/queries';
+import type { ProjectSpendView, ProjectTree, Query, RoadmapPageView, RoadmapRepoView } from '../../api/queries';
 import type { Actor } from '../../domain/index';
 import type { LabelKey } from '../labels/keys';
 import { failureKey, isQueryFailure } from './results';
@@ -76,7 +76,7 @@ export interface RoadmapNotice {
 export interface PhaseControl {
   readonly chip: 'done' | 'running' | 'paused' | null;
   readonly button: 'run' | 'run-disabled' | 'pause' | 'resume' | null;
-  readonly hint: 'blocked' | 'paused' | null;
+  readonly hint: 'blocked' | 'paused' | 'cap' | null;
   /** The names of the phases that block this one (U-68), in the roadmap's order. */
   readonly blockedBy: readonly string[];
   readonly attention: number;
@@ -95,7 +95,11 @@ export const phaseRunCounts = (view: RoadmapPageView, phase: RoadmapPhase): { re
 /** The state mapping (U-63): the view's phase status plus its optional autoRun record decide the
  *  chip, the button and the hint. Done wins over everything; a paused or running record wins
  *  over the status underneath; the attention count rides along in every case. */
-export const phaseControl = (view: RoadmapPageView, phase: RoadmapPhase): PhaseControl => {
+export const phaseControl = (
+  view: RoadmapPageView,
+  phase: RoadmapPhase,
+  options?: { readonly projectCapHardStop?: boolean },
+): PhaseControl => {
   const attention = phase.autoRun?.attention.length ?? 0;
   const none: readonly string[] = [];
   if (phase.status === 'done') return { chip: 'done', button: null, hint: null, blockedBy: none, attention };
@@ -107,6 +111,9 @@ export const phaseControl = (view: RoadmapPageView, phase: RoadmapPhase): PhaseC
   }
   if (phase.status === 'running') return { chip: 'running', button: null, hint: null, blockedBy: none, attention };
   if (phase.status === 'planned' && runnableTasks(view, phase).length > 0) {
+    if (options?.projectCapHardStop === true) {
+      return { chip: null, button: 'run-disabled', hint: 'cap', blockedBy: none, attention };
+    }
     return { chip: null, button: 'run', hint: null, blockedBy: none, attention };
   }
   return { chip: null, button: null, hint: null, blockedBy: none, attention };
@@ -140,6 +147,10 @@ export interface RoadmapState {
   readonly expandedIssues: readonly string[];
   /** Scroll/highlight target after a phase badge jump (U-325). */
   readonly highlightPhase: string | null;
+  readonly spendLoading: boolean;
+  readonly spend: ProjectSpendView | null;
+  readonly spendProblem: string | null;
+  readonly spendRepoOpen: boolean;
 }
 
 export interface RoadmapStore {
@@ -155,6 +166,9 @@ export interface RoadmapStore {
   togglePhase(id: string): void;
   /** Flip a cross-repo task's expansion; disclosure survives re-queries, not a project change. */
   toggleTask(id: string): void;
+  /** Flip the per-repo spend breakdown under the header meter (U-329). */
+  toggleSpendRepo(): void;
+  reloadSpend(): Promise<void>;
   /** Open a phase's start confirmation (U-64): the card opens, any other panel closes. */
   askRun(phase: string): void;
   /** Flip a phase's attention list; opening it closes a confirmation. */
@@ -190,6 +204,10 @@ export const createRoadmapStore = (deps: RoadmapStoreDeps): RoadmapStore => {
     openMilestones: [],
     expandedIssues: [],
     highlightPhase: null,
+    spendLoading: false,
+    spend: null,
+    spendProblem: null,
+    spendRepoOpen: false,
   };
   let state: RoadmapState = initial;
   // The project the store is bound to: change events re-query it, and opening another project
@@ -271,21 +289,46 @@ export const createRoadmapStore = (deps: RoadmapStoreDeps): RoadmapStore => {
       openMilestones: freshProject ? [] : state.openMilestones,
       expandedIssues: freshProject ? [] : state.expandedIssues,
       highlightPhase: freshProject ? null : state.highlightPhase,
+      spendLoading: true,
+      spend: freshProject ? null : state.spend,
+      spendProblem: null,
+      spendRepoOpen: freshProject ? false : state.spendRepoOpen,
     });
     const treeReply: unknown = await api.query({ type: 'project.tree' } satisfies Query);
     const repos = Array.isArray(treeReply) ? reposOfProject(treeReply as ProjectTree, target) : [];
     const selectedRepo = repos[0]?.repo ?? null;
-    const reply: unknown = await api.query({ type: 'roadmap.byProject', project: target } satisfies Query);
+    const [reply, spendReply]: [unknown, unknown] = await Promise.all([
+      api.query({ type: 'roadmap.byProject', project: target } satisfies Query),
+      api.query({ type: 'project.spend', project: target } satisfies Query),
+    ]);
     if (attempt !== attempts) return;
+    const spendFailed = isQueryFailure(spendReply);
+    const spendPatch = {
+      spendLoading: false,
+      spend: spendFailed ? state.spend : (spendReply as ProjectSpendView),
+      spendProblem: spendFailed ? spendReply.code : null,
+    };
     if (isQueryFailure(reply)) {
       // The problem state replaces the page: an empty roadmap must not pretend health (U-17).
-      set({ ...state, loading: false, view: null, problem: reply.code, repos, selectedRepo });
+      set({ ...state, loading: false, view: null, problem: reply.code, repos, selectedRepo, ...spendPatch });
       return;
     }
     // The contract of the roadmap query: a reply that is not a failure is a RoadmapPageView.
     const view = reply as RoadmapPageView;
     const openPhases = state.openPhases.length > 0 ? state.openPhases : [view.phases[0]?.id].filter((id) => id !== undefined);
-    set({ ...state, loading: false, view, problem: null, openPhases, repos, selectedRepo });
+    set({ ...state, loading: false, view, problem: null, openPhases, repos, selectedRepo, ...spendPatch });
+  };
+
+  const reloadSpend = async (): Promise<void> => {
+    const target = project;
+    if (target === null) return;
+    set({ ...state, spendLoading: true, spendProblem: null });
+    const spendReply: unknown = await api.query({ type: 'project.spend', project: target } satisfies Query);
+    if (isQueryFailure(spendReply)) {
+      set({ ...state, spendLoading: false, spendProblem: spendReply.code });
+      return;
+    }
+    set({ ...state, spendLoading: false, spend: spendReply as ProjectSpendView, spendProblem: null });
   };
 
   const phaseName = (phase: string): string => state.view?.phases.find((entry) => entry.id === phase)?.name ?? phase;
@@ -331,10 +374,9 @@ export const createRoadmapStore = (deps: RoadmapStoreDeps): RoadmapStore => {
   };
 
   changes((change) => {
-    // Only work-order changes move a task's status; run events belong to the cockpit.
-    if (change.type !== 'workOrders.changed') return;
     if (project === null) return;
-    void load(project);
+    if (change.type === 'workOrders.changed') void load(project);
+    else if (change.type === 'accounts.changed') void reloadSpend();
   });
 
   return {
@@ -392,6 +434,8 @@ export const createRoadmapStore = (deps: RoadmapStoreDeps): RoadmapStore => {
         expanded: open ? state.expanded.filter((entry) => entry !== id) : [...state.expanded, id],
       });
     },
+    toggleSpendRepo: () => set({ ...state, spendRepoOpen: !state.spendRepoOpen }),
+    reloadSpend,
     askRun: (phase) => {
       set({
         ...state,

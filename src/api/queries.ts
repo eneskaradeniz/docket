@@ -206,6 +206,7 @@ export interface ProjectSpendView {
   readonly totalUsd: number;
   readonly perRepo: readonly { readonly repo: string; readonly usd: number }[];
   readonly cap?: { readonly amountUsd: number; readonly warnPercent: number };
+  readonly billing: 'pay_per_use' | 'included' | 'mixed' | 'none';
 }
 
 export interface BoardColumn {

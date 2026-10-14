@@ -76,14 +76,18 @@ const SINGLE_TREE = [
   },
 ];
 
+const DEFAULT_SPEND = { totalUsd: 0, perRepo: [], billing: 'none' as const };
+
 const apiOf = (handlers: {
   readonly project?: unknown;
   readonly tree?: unknown;
+  readonly spend?: unknown;
   readonly repo?: (repo: string) => unknown;
 }): Pick<Api, 'query' | 'command'> => ({
   query: (query) => {
     if (query.type === 'project.tree') return Promise.resolve(handlers.tree ?? SINGLE_TREE);
     if (query.type === 'roadmap.byProject') return Promise.resolve(handlers.project ?? VIEW);
+    if (query.type === 'project.spend') return Promise.resolve(handlers.spend ?? DEFAULT_SPEND);
     if (query.type === 'roadmap.byRepo') return Promise.resolve(handlers.repo?.(query.repo) ?? { ok: false, code: 'not_found' });
     return Promise.resolve({ ok: false, code: 'not_found' });
   },
@@ -105,6 +109,7 @@ const render = (store: RoadmapStore, locale: Locale = 'tr'): string =>
       locale,
       onOpenRepo: () => undefined,
       onOpenWorkOrder: () => undefined,
+      onOpenBudget: () => undefined,
     }),
   );
 
@@ -376,5 +381,41 @@ describe('roadmap page — repository layer (U-325)', () => {
     expect(html).not.toContain('Fazı çalıştır');
     expect(html).not.toContain('>Kaydet<');
     expect(html).not.toContain('>Başlat<');
+  });
+});
+
+describe('roadmap page — project spend (U-329, U-330)', () => {
+  it('U-329: a capped project draws the meter; subscription-only draws nothing', async () => {
+    const withSpend = createRoadmapStore({
+      api: apiOf({
+        spend: { totalUsd: 42.5, perRepo: [{ repo: 'api', usd: 42.5 }], billing: 'pay_per_use', cap: { amountUsd: 120, warnPercent: 80 } },
+      }),
+      changes: () => () => undefined,
+    });
+    await withSpend.load('antero');
+    const html = render(withSpend);
+    expect(html).toContain('data-project-spend');
+    expect(html).toContain('role="meter"');
+    expect(html).toContain('Depo kırılımı');
+
+    const hidden = createRoadmapStore({
+      api: apiOf({ spend: { totalUsd: 0, perRepo: [], billing: 'included' } }),
+      changes: () => () => undefined,
+    });
+    await hidden.load('antero');
+    expect(render(hidden)).not.toContain('data-project-spend');
+  });
+
+  it('U-330: at hard_stop Fazı çalıştır is disabled with Proje tavanı aşıldı', async () => {
+    const store = createRoadmapStore({
+      api: apiOf({
+        spend: { totalUsd: 120, perRepo: [], billing: 'pay_per_use', cap: { amountUsd: 120, warnPercent: 80 } },
+      }),
+      changes: () => () => undefined,
+    });
+    await store.load('antero');
+    const html = render(store);
+    expect(card(html, 'p5')).toMatch(/<button[^>]*disabled=""[^>]*>Fazı çalıştır<\/button>/);
+    expect(html).toContain('Proje tavanı aşıldı');
   });
 });
