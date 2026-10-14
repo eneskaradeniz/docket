@@ -263,7 +263,7 @@ describe('compact work-order and phone windows (U-251 … U-256)', () => {
   it('U-251: the compact frame has no rail, caps width at 640px, and both dialogs use it', () => {
     const frame = source('window-frame.tsx');
     expect(frame).toContain('compact ? null : <nav');
-    expect(frame).toContain('max-w-[min(calc(40rem-2px),calc(100vw-2rem-2px))]');
+    expect(frame).toContain('w-[min(640px,calc(100vw-32px))]');
     expect(source('new-work-order-window.tsx')).toContain('compact');
     expect(source('phone-window.tsx')).toContain('compact');
     const workHtml = workOrder();
