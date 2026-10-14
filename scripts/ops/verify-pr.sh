@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
 # verify-pr.sh — Mechanical PR verification for Docket
 # Usage: verify-pr.sh <pr> [--ui] [--dry-run] [--allow-busy]
+
+# A silent exit looks like "no result" to merge-pr.sh; every early failure must be loud.
+trap 'rc=$?; echo "Aborting: verify-pr.sh line $LINENO failed (rc $rc)" >&2' ERR
 
 pr=""; ui_flag=0; dry_run=0; allow_busy=0
 
@@ -32,9 +35,11 @@ sha7="${head_oid:0:7}"
 
 ui_mode=$ui_flag
 if [ "$ui_mode" -eq 0 ]; then
+  # sed drains the whole stream; head -n 1 closes the pipe after line 1, jq dies on
+  # SIGPIPE (rc 141) and pipefail aborts the script with no output at all.
   has_ui=$(printf '%s' "$pr_json" | jq -r '
     .files[]?.path | select(startswith("src/presentation/") or startswith("electron/") or startswith("e2e/"))
-  ' | head -n 1)
+  ' | sed -n '1p')
   [ -n "$has_ui" ] && ui_mode=1
 fi
 
@@ -48,26 +53,27 @@ if [ "$ui_mode" -eq 1 ] && [ "$allow_busy" -eq 0 ]; then
   if ps -Ao pid,comm,args | awk -v self="$$" '
     NR > 1 && $1 != self {
       cmd = $2; sub(/^.*\//, "", cmd)
-      if (cmd ~ /^(claude-glm|agy-worker|copilot-worker|agy)$/) exit 1
+      if (cmd ~ /^(claude-glm|agy-worker|copilot-worker|agy)$/) busy = 1
       if (cmd ~ /^(sh|bash|zsh)$/) {
         for (i = 4; i <= NF; i++) {
           if ($i ~ /^-/) continue
           script = $i; sub(/^.*\//, "", script)
-          if (script ~ /^(claude-glm|agy-worker|copilot-worker|agy)$/) exit 1
+          if (script ~ /^(claude-glm|agy-worker|copilot-worker|agy)$/) busy = 1
           break
         }
       }
     }
+    END { if (busy) exit 1 }
   '; then :; else
     echo "BUSY"
     exit 3
   fi
 fi
 
-main_checkout=$(git worktree list --porcelain | awk '$1=="worktree"{print $2; exit}')
+main_checkout=$(git worktree list --porcelain | awk '$1=="worktree" && !seen { print $2; seen = 1 }')
 wt=$(git worktree list --porcelain | awk -v target="refs/heads/$head_ref" -v oid="$head_oid" -v main="$main_checkout" '
   $1 == "worktree" { cur = $2 }
-  ($1 == "branch" && $2 == target) || ($1 == "HEAD" && $2 == oid && cur != main) { print cur; exit }
+  (($1 == "branch" && $2 == target) || ($1 == "HEAD" && $2 == oid && cur != main)) && !done { print cur; done = 1 }
 ')
 
 if [ -z "$wt" ] || [ ! -d "$wt" ]; then
@@ -125,7 +131,7 @@ fi
 behind="no"
 [ "$merge_state" = "BEHIND" ] && behind="yes"
 
-if echo "$pr" | grep -Eq '^[0-9]+$'; then
+if printf '%s\n' "$pr" | grep -E '^[0-9]+$' >/dev/null; then
   pr_arg="--argjson pr $pr"
 else
   pr_arg="--arg pr $pr"
