@@ -1801,3 +1801,11 @@ Added 2026-10-12, #1029; amends U-44.
 Added 2026-10-12, #1030; amends U-44.
 - **U-266** While a refresh runs, Yenile is disabled, previous bars remain visible under a subtle busy state if there are any, and the skeleton shows after 150 ms (U-26) when there are no bars; the no-usage message is not rendered.
 - **U-267** A failed refresh shows the reason and "Tekrar dene"; a retry re-enters the loading state.
+
+## Re-link a detached role to the library (U-298 … U-300)
+
+Added 2026-10-14, #1104; amends U-288.
+- U-288 amendment (2026-10-14, #1104): the "Ayır" action shows only on a binding that is not detached; a detached binding shows "Kütüphaneye bağla" in its place (U-298).
+- **U-298** (added 2026-10-14, #1104; amends U-288) A role row whose binding is detached shows "Kütüphaneye bağla" (en: "Re-link to library") in place of "Ayır". It is disabled with the visible reason line "Rol kütüphanede yok" (en: "Role is not in the library") when the library holds no version of that role.
+- **U-299** (added 2026-10-14, #1104) The action opens a modal confirm dialog (`role="dialog"`, `aria-modal="true"`, focus trap, Esc cancels, focus returns to the row). It has a version select (default latest), a choice between "Yerel değişiklikleri tut" (default) and "Kütüphane sürümünü kullan", and the list of fields that become overlay (labels, not keys) when the first choice is selected. Buttons: "Vazgeç" (default, focused) and "Bağla".
+- **U-300** (added 2026-10-14, #1104) After "Bağla" the draft changes and the row shows the version badge and, if newer versions exist, the usual "Yeni sürüm var" row; a polite live region announces "Rol kütüphaneye bağlandı". Nothing is saved before Kaydet. All copy lives in the TR and EN bundles, every sentence at most 8 words (U-178).

@@ -2,11 +2,12 @@
 // local draft over repo.flow, save through repo.saveFlow, proposals from roleUpdateProposals.
 import type { Api } from '../../api/api';
 import type { ProjectTree, ProjectTreeItem, Query, SettingsAccountsView } from '../../api/queries';
-import type { Actor, LimitPolicy, RepoFlow, RoleDef, RoleOverlay, StageSlug, VersionRecord } from '../../domain/index';
+import type { Actor, LimitPolicy, RepoFlow, RoleDef, RoleOverlay, RelinkKeep, StageSlug, VersionRecord } from '../../domain/index';
 import {
   BUILTIN_ROLES,
   effectiveRole,
   limitPolicyFor,
+  relinkRole,
   roleUpdateProposals,
   type RoleUpdateProposal,
 } from '../../domain/index';
@@ -115,6 +116,10 @@ export interface RepoSettingsState {
   readonly library: readonly VersionRecord<RoleDef>[];
   readonly activeStage: StageSlug | null;
   readonly detachStage: StageSlug | null;
+  /** The stage whose re-link confirm dialog stands open (U-299); null when closed. */
+  readonly relinkStage: StageSlug | null;
+  /** The stage whose re-link the polite region last announced (U-300); null before the first one. */
+  readonly relinkNotice: StageSlug | null;
   readonly confirmDiscard: boolean;
   readonly saving: boolean;
   readonly justSaved: boolean;
@@ -132,6 +137,9 @@ export interface RepoSettingsStore {
   requestDetach(stage: StageSlug): void;
   cancelDetach(): void;
   confirmDetach(): void;
+  requestRelink(stage: StageSlug): void;
+  cancelRelink(): void;
+  confirmRelink(version: number, keep: RelinkKeep): void;
   applyProposal(stage: StageSlug): void;
   clearOverlayField(stage: StageSlug, field: keyof RoleOverlay): void;
   cancelDraft(): void;
@@ -200,6 +208,8 @@ export const createRepoSettingsStore = (deps: RepoSettingsStoreDeps): RepoSettin
     library: [],
     activeStage: null,
     detachStage: null,
+    relinkStage: null,
+    relinkNotice: null,
     confirmDiscard: false,
     saving: false,
     justSaved: false,
@@ -243,6 +253,8 @@ export const createRepoSettingsStore = (deps: RepoSettingsStoreDeps): RepoSettin
       defaultLimitPolicy: RECOMMENDED.limitPolicy,
       accountLabels: accountLabelMap(accounts),
       detachStage: null,
+      relinkStage: null,
+      relinkNotice: null,
     });
   };
 
@@ -321,6 +333,28 @@ export const createRepoSettingsStore = (deps: RepoSettingsStoreDeps): RepoSettin
       });
       publish({ ...state, draft: next, detachStage: null, justSaved: false });
     },
+    requestRelink: (stage) => {
+      publish({ ...state, relinkStage: stage, relinkNotice: null });
+    },
+    cancelRelink: () => {
+      publish({ ...state, relinkStage: null });
+    },
+    confirmRelink: (version, keep) => {
+      const stage = state.relinkStage;
+      if (stage === null || state.draft === null) return;
+      const ref = state.draft.bindings.find((row) => row.stage === stage)?.role;
+      if (ref === undefined) {
+        publish({ ...state, relinkStage: null });
+        return;
+      }
+      const relinked = relinkRole(ref, state.library, version, keep);
+      if (!relinked.ok) {
+        publish({ ...state, relinkStage: null });
+        return;
+      }
+      const next = updateBinding(state.draft, stage, (binding) => ({ ...binding, role: relinked.value }));
+      publish({ ...state, draft: next, relinkStage: null, relinkNotice: stage, justSaved: false });
+    },
     applyProposal: (stage) => {
       if (state.draft === null) return;
       const proposal = roleUpdateProposals(state.draft, state.library).find((row) => row.stage === stage);
@@ -355,7 +389,7 @@ export const createRepoSettingsStore = (deps: RepoSettingsStoreDeps): RepoSettin
     },
     cancelDraft: () => {
       if (state.stored === null) return;
-      publish({ ...state, draft: cloneRepoFlow(state.stored), justSaved: false, confirmDiscard: false });
+      publish({ ...state, draft: cloneRepoFlow(state.stored), justSaved: false, confirmDiscard: false, relinkNotice: null });
     },
     save: async () => {
       if (state.repo === null || state.draft === null || state.stored === null) return;
