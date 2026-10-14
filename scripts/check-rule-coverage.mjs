@@ -90,6 +90,12 @@ const PENDING = new Map([
   // #1058 — migrations 1–11 were consolidated into a single clean schema; v1/v10 upgrade tests removed.
   ['infrastructure:I-33', '#1058'],
   ['infrastructure:I-93', '#1058'],
+
+  // #1108 — the dead stage-file read queries were removed (U-231's changes list had replaced their
+  // card); the rules keep their definitions and dated addenda as history, their tests went with the code.
+  ['application:A-88', '#1108'],
+  ['application:A-89', '#1108'],
+  ['ui:U-57', '#1108'],
 ]);
 
 function walk(dir, acc = []) {
