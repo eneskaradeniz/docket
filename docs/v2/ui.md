@@ -1828,6 +1828,14 @@ Added 2026-10-14, #1109; uses `repoStatus` and `repo.relink` (A-341) and `docket
 - **U-312** (added 2026-10-14, #1109) The section "Depo ayarları" shows a status banner per repo whose `repoStatus` is not `ok`, with the actions of decision 2; it is announced politely, keyboard reachable, and disappears once the status is `ok`.
 - **U-313** (added 2026-10-14, #1109) `repo.relink` errors map to the sentences of decision 4; `fingerprint_mismatch` never relinks.
 
+## Repository issue tracking (U-320 … U-323)
+
+Added 2026-10-14, #1114; implements A-385/A-386 and uses `tracker.linkStatus`, `tracker.link`, `tracker.unlink`, `tracker.sync` and `tracker.resolveConflict`.
+- **U-320** (added 2026-10-14, #1114) "İş takibi" is the fourth group of "Depo ayarları" with the seven states of decision 2; it is a `role="group"` named "İş takibi".
+- **U-321** (added 2026-10-14, #1114) The four mode cards, the "önerilen" badge, the differs dot with reset, and the clamp banner with reason, permission badges and "Etkin kip" badge (A-329).
+- **U-322** (added 2026-10-14, #1114) Link and mode change apply through the section's own "Uygula", unlink through the confirm dialog (`role="dialog"`, `aria-modal`, focus trap, Esc cancels, focus returns); none of them dirties the shared Kaydet bar; errors map to one-line sentences.
+- **U-323** (added 2026-10-14, #1114) "Şimdi eşitle" and the conflicts list with "Uzaktakini tut" / "Yereli tut"; each resolution re-reads `tracker.linkStatus`; copy at most 8 words per sentence, TR and EN bundles only.
+
 ## The built-in Docket MCP row (U-314, U-315)
 
 Added 2026-10-14, #1120; implements A-380/A-381 (docs/v2/application.md).

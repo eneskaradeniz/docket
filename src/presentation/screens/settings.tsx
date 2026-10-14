@@ -30,6 +30,7 @@ import { ConcurrencySection } from '../components/concurrency-section';
 import { FlowStageStrip } from '../components/flow-stage-strip';
 import { KeyMoveCard } from '../components/key-move-card';
 import { LimitPolicySection } from '../components/limit-policy-section';
+import { TrackerLinkSection } from '../components/tracker-link-section';
 import { MOTION, motionVars } from '../components/motion';
 import { ModalWindow } from '../components/new-work-order-window';
 import { OverlayEditor } from '../components/overlay-editor';
@@ -71,6 +72,7 @@ import type { ThemeStore } from '../stores/theme';
 import { toastOutcome } from '../stores/toasts';
 import type { Api } from '../../api/api';
 import type { Actor } from '../../domain/index';
+import { parseSlug } from '../../domain/index';
 import {
   createAgentCapabilitiesStore,
   isAgentCapabilitySection,
@@ -315,6 +317,8 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
   // tree and the flow, like the agent sections re-read their own view.
   const repo = store.repoSettings;
   const repoState = useSyncExternalStore(repo.subscribe, repo.state, repo.state);
+  const trackerLink = store.trackerLink;
+  const trackerLinkState = useSyncExternalStore(trackerLink.subscribe, trackerLink.state, trackerLink.state);
   const repoRelinkOwned = useMemo(
     () =>
       createRepoRelinkStatusStore({
@@ -335,6 +339,12 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
       void repoRelink.load(slugs);
     }
   }, [open, section, repoRelink, repoState.repos]);
+  useEffect(() => {
+    if (open && section === 'repo' && repoState.repo !== null) {
+      const slug = parseSlug<'repo'>(repoState.repo);
+      if (slug.ok) void trackerLink.load(slug.value);
+    }
+  }, [open, section, trackerLink, repoState.repo]);
   // A leave a dirty draft stopped: the discard dialog holds the go that fires on confirmation.
   const [pendingLeave, setPendingLeave] = useState<{ readonly go: () => void } | null>(null);
   /** One leave path for every section: a clean draft goes, a dirty one stops at the discard
@@ -797,6 +807,7 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
             onSelect={(stage, policy) => repo.setStageLimitPolicy(stage, policy)}
             onReset={(stage) => repo.resetStageLimitPolicy(stage)}
           />
+          <TrackerLinkSection locale={locale} store={trackerLink} state={trackerLinkState} />
         </>
       )}
       {repoLoaded && repoState.problem !== null ? (

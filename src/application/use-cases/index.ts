@@ -36,6 +36,7 @@ export * from './definition-removal';
 export * from './roadmap';
 export * from './setup';
 export * from './tracker-sync';
+export * from './tracker-link';
 
 export * from './phase-control';
 export * from './project-bundle';

@@ -2027,6 +2027,11 @@ Rules A-380 … A-381; the UI rules are U-314 and U-315 (docs/v2/ui.md).
 - **A-380** (added 2026-10-14, #1120) `mcp.status` answers from `McpListenerControl.status()` plus the tool-name constants and the roles with `docketTools === false`; it never starts anything and never reads a secret or a token.
 - **A-381** (added 2026-10-14, #1120) `mcp.restore` calls `restart()` once; success answers the new status; each failure maps to its typed error; it changes no role, no library entry and no run, and a second call after success is a no-op that answers `ok`.
 
+Addendum 2026-10-14 (#1114): repository tracker link commands — `tracker.link` and `tracker.unlink` (UI rules U-320 … U-323 in docs/v2/ui.md).
+
+- **A-385** (added 2026-10-14, #1114) `tracker.link` validates a non-empty `scope`, a known `mode` and a known `tracker`, fills `connection` with the adapter's default connection id, upserts the repo's `RepoTrackerLink`, probes permissions once and answers `ok`; it never starts a sync and never reads or returns a secret; typed errors as listed.
+- **A-386** (added 2026-10-14, #1114) `tracker.unlink` removes only the repo's link: mirrored issues, subtasks, notes and recorded conflicts stay; a second call answers `ok`.
+
 Addendum 2026-10-14 (#1110): stop and steer a running stage — the live-handle registry
 (`application/services/run-control.ts`, the permission-board pattern), the commands `run.stop`
 and `run.steer`, and the executor's attach/detach wiring. Rules A-361 … A-365.

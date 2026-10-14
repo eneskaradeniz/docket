@@ -133,6 +133,8 @@ import {
   syncRepoTracker,
   resolveSyncConflict,
   readTrackerLinkStatus,
+  linkRepoTracker,
+  unlinkRepoTracker,
   setMemoryAutoAccept,
   getUpdateState,
   getWorkOrder,
@@ -1578,6 +1580,36 @@ const runCommand = async (
         },
       );
       return { ok: true };
+    }
+
+    case 'tracker.link': {
+      const repo = slugValue<'repo'>(command.repo);
+      if (repo === undefined) return invalidId();
+      const mode = command.mode;
+      if (
+        mode !== 'docket_only'
+        && mode !== 'read_only_mirror'
+        && mode !== 'limited_write'
+        && mode !== 'two_way'
+      ) {
+        return badInput();
+      }
+      if (command.tracker !== 'github') return badInput();
+      const scope = command.scope.trim();
+      if (scope === '') return badInput();
+      const linked = await linkRepoTracker(
+        { definitions: deps.definitions, repos: deps.repos, commands: deps.commands },
+        { repo, tracker: 'github', scope: command.scope, mode },
+        trackerForRepo,
+      );
+      return linked.ok ? { ok: true } : { ok: false, code: linked.error };
+    }
+
+    case 'tracker.unlink': {
+      const repo = slugValue<'repo'>(command.repo);
+      if (repo === undefined) return invalidId();
+      const unlinked = await unlinkRepoTracker({ definitions: deps.definitions, repos: deps.repos }, repo);
+      return unlinked.ok ? { ok: true } : { ok: false, code: unlinked.error };
     }
 
     case 'tracker.sync': {
