@@ -99,7 +99,7 @@ const MULTI_FLOW: FlowDef = {
 
 const READY: WorkOrderDetailView = {
   record: { id: WO_ID, repo: 'atolye', flow: 'plan-flow', title: 'Fixture', createdAt: 1_700_000_000_000 },
-  state: { status: 'ready', stage: STAGE_PLAN, attempt: 1, pendingGates: [GATE_PLAN_APPROVAL] },
+  state: { status: 'ready', stage: STAGE_PLAN, attempt: 1, pendingGates: [GATE_PLAN_APPROVAL], skippedStages: [] },
   next: { kind: 'start_run', stage: STAGE_PLAN, role: slugOf<'role'>('planner'), attempt: 1 },
   number: 1,
   runs: [],
@@ -109,14 +109,14 @@ const READY: WorkOrderDetailView = {
 
 const AWAITING_HUMAN: WorkOrderDetailView = {
   ...READY,
-  state: { status: 'awaiting_human', stage: STAGE_CHECK, attempt: 1, pendingGates: [GATE_SIGN_OFF] },
+  state: { status: 'awaiting_human', stage: STAGE_CHECK, attempt: 1, pendingGates: [GATE_SIGN_OFF], skippedStages: [] },
   next: { kind: 'await_human', stage: STAGE_CHECK, gates: [GATE_SIGN_OFF] },
 };
 
 const MULTI: WorkOrderDetailView = {
   ...READY,
   record: { ...READY.record, flow: 'multi-flow' },
-  state: { status: 'awaiting_human', stage: STAGE_CHECK, attempt: 1, pendingGates: [GATE_SIGN_OFF, GATE_SECURITY] },
+  state: { status: 'awaiting_human', stage: STAGE_CHECK, attempt: 1, pendingGates: [GATE_SIGN_OFF, GATE_SECURITY], skippedStages: [] },
   next: { kind: 'await_human', stage: STAGE_CHECK, gates: [GATE_SIGN_OFF, GATE_SECURITY] },
   flow: MULTI_FLOW,
 };
@@ -279,7 +279,7 @@ describe('work-order detail screen — the decision zone (U-4, U-226)', () => {
     const pending = await draw({
       ...READY,
       record: { ...READY.record, flow: 'implement-flow' },
-      state: { status: 'gating', stage: STAGE_CHECK, attempt: 1, pendingGates: [slugOf<'gate'>('changes')] },
+      state: { status: 'gating', stage: STAGE_CHECK, attempt: 1, pendingGates: [slugOf<'gate'>('changes')], skippedStages: [] },
       next: { kind: 'evaluate_gates', stage: STAGE_CHECK, gates: [slugOf<'gate'>('changes')] },
       flow,
     });
@@ -313,7 +313,7 @@ describe('work-order detail screen — the decision zone (U-4, U-226)', () => {
   it('U-226: the failed standing quotes the run\'s own last words and offers the retry', async () => {
     const failed: WorkOrderDetailView = {
       ...READY,
-      state: { status: 'ready', stage: STAGE_PLAN, attempt: 2, pendingGates: [GATE_PLAN_APPROVAL] },
+      state: { status: 'ready', stage: STAGE_PLAN, attempt: 2, pendingGates: [GATE_PLAN_APPROVAL], skippedStages: [] },
       next: { kind: 'start_run', stage: STAGE_PLAN, role: slugOf<'role'>('planner'), attempt: 2 },
       runs: [
         { id: '01ARZ3NDEKTSV4RRFFQ69G5FE77', stage: STAGE_PLAN, attempt: 1, startedAt: 100, endedAt: 200, outcome: 'failed' },

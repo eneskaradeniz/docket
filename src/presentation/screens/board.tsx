@@ -18,7 +18,7 @@ import { SkeletonReveal, useSkeleton } from '../components/skeleton';
 import type { BoardStore } from '../stores/board';
 import { kanbanColumns, listGroups } from '../stores/board';
 import { failureKey } from '../stores/results';
-import { boardFlowChoices, focusTarget } from '../stores/work-order-window';
+import { boardFlowChoices, focusTarget, pinnedFlowFromColumns } from '../stores/work-order-window';
 
 export interface BoardScreenProps {
   readonly store: BoardStore;
@@ -147,6 +147,12 @@ export function BoardScreen({ store, repo, locale, onOpenWorkOrder, roadmapProje
       locale={locale}
       projectName={projectName}
       flows={boardFlowChoices(view?.flow ?? null)}
+      pinnedFlow={
+        view === null
+          ? null
+          : pinnedFlowFromColumns(view.flow, 1, view.columns.map((column) => ({ stage: column.stage, name: column.name })))
+      }
+      skipProposal={null}
       launchProject={launchProject}
       onClose={() => setCreateOpen(false)}
       onCreated={setFocusTitle}

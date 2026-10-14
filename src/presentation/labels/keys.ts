@@ -395,6 +395,15 @@ export const LABEL_KEYS = [
   'workOrder.new.open',
   'workOrder.new.cancel',
   'workOrder.new.close',
+  'workOrder.new.descriptionLabel',
+  'workOrder.flowStrip.label',
+  'workOrder.flowStrip.version',
+  'workOrder.skipProposal.title',
+  'workOrder.skipProposal.skip',
+  'workOrder.skipProposal.doNotSkip',
+  'workOrder.skipProposal.skippedBadge',
+  'workOrder.create',
+  'workOrder.cancel',
   // Board screen, U-18: the view segment, the header's rule and shortcuts, the Kanban grammar
   // and the list view's rail.
   'board.view.aria',

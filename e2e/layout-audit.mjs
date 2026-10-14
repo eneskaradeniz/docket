@@ -548,7 +548,7 @@ async function dialogWindowsCheck(target) {
   const workActions = work === null ? [] : work.actions.map((action) => action.name);
   const workVisible =
     work !== null &&
-    ['Aç', 'Vazgeç'].every((name) => work.actions.some((action) => action.name.includes(name) && action.inView)) &&
+    ['Oluştur', 'Vazgeç'].every((name) => work.actions.some((action) => action.name.includes(name) && action.inView)) &&
     work.actions.some((action) => action.name.includes('Tarif et') && action.inView);
   await page.keyboard.press('Escape');
   await page.locator(selectors.newWorkOrder).waitFor({ state: 'detached', timeout: 4000 });
