@@ -87,14 +87,6 @@ const PENDING = new Map([
   ['ui:U-285', '#1022'],
   ['ui:U-288', '#1024'],
   ['ui:U-289', '#1024'],
-<<<<<<< HEAD
-  ['ui:U-292', '#1026'],
-  ['ui:U-293', '#1026'],
-=======
-  ['ui:U-290', '#1025'],
-  ['ui:U-291', '#1025'],
->>>>>>> origin/main
-
   // #1047 — planner stage-skip derive rule, supplements R-133 (#1025 implements)
 
   // #1057 — the one-time legacy import was removed. These rules keep their dated addenda and their
