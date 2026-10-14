@@ -13,6 +13,24 @@ Decided with the operator on 2026-10-12; architect-owned; supersedes by referenc
 7. **D-7**: Agent capabilities (memory, roles, plugins, MCP, skills, commands, hooks) are separate library menus under "Agent capabilities"; plugins are first-class packages; commands are rendered by Docket; memory is propose-and-approve; capability import from the machine is read-only and never copies secret values.
 8. **D-8**: Setup: Docket AI (needs a connected provider; read scope = the repo folder +  ~/.docket , other paths asked per path, session-only, read-only), Quick, or Detailed — all end in the same proposal diff; no flow catalog, starting points are copies.
 9. **D-9**: Managed quit (#999).
+10. **D-10**: Autonomy levels and bypass — accepted 2026-10-14 with the operator; lifts the #1001 deferral listed below. Three levels on the work order — **manual** (default; exactly today's behaviour), **balanced** (low-risk asks auto-allowed by deterministic rules), **auto** (runs in the background; `human` gates and machine-gate-only stage skips decidable by a policy actor; `SpendCap` and `maxAttempts` become mandatory) — with defaults resolved down the existing definition chain (work order > repo > project > global > builtin); the levels govern only tool-permission asks and reversible gates/stage skips — merge, deploy, delete and `page_approval` stay human at every level, so İ1 is untouched. A signed-policy auto-merge stays rejected: a signature is a standing trust grant nobody asked for; revisit only with team mode's second approver or an explicit operator decision that rewrites İ1 itself.
+
+   Decisions on the open questions:
+
+   1. A local merge (no forge/remote) is irreversible under İ1 — same rule, same operator confirm door as a forge merge.
+   2. Where the autonomy setting lives is not fixed here; the contracts issue of the split resolves it under D-5 (no Docket file is ever written into a repository).
+   3. `page_approval` is closed to the policy actor at every level; the user-only carve-out is deploy ∪ merge ∪ delete ∪ `page_approval` — nothing else.
+   4. The stage-skip policy arm lands in the last issue of the split; until it ships, stage skipping stays human-decided at every level.
+   5. A level change applies only to future decisions; decisions already made (gate verdicts, skips, answered asks) stay valid.
+   6. Balanced does not ship until the risk-rule table exists; it gates both the risk-rule issue below and any UI that offers the level.
+
+   Split into issues, in order, all after GI-1…GI-4 (the merge doors define what "irreversible" concretely means):
+
+   1. Contracts — policy `Actor` variant `{ kind: 'policy'; policy; level }`, autonomy field + chain-resolution semantics, level semantics, `A-8`/`E-7` wording (docs-only).
+   2. Axis-1 permission policy — `decidePermission`, the deliberate `providers.md` sentence replacing "never auto-approved", executor/board wiring, `autoDecided[]` surfacing.
+   3. Policy actor on `human` gates with records (`gate_evaluated` gains `approvedByPolicy`; the detail shows auto-approval rows) — `page_approval` untouched.
+   4. Risk-rule table — what "low-risk" means; gates Balanced's ship.
+   5. Stage-skip policy arm — last, after the `R-144` derive (PR #1049).
 
 ## Supersessions
 
@@ -34,7 +52,7 @@ Unverified locations: none (all cited locations verified via grep against `docs/
 
 - **Security gates**: dependency audit, SAST command sets, security-auditor role and findings report page → split to Phase 9 (#1000).
 - **Other trackers**: Bitbucket, Azure Boards, Jira, Odoo Project tracker adapters → Phase 9 (#226).
-- **Work-order detail Phase B**: stop and steer a running stage, git actions from detail (commit/PR/merge), CI check details, autonomy levels and bypass → #1001.
+- **Work-order detail Phase B**: stop and steer a running stage, git actions from detail (commit/PR/merge), CI check details → #1001 (autonomy levels and bypass: decided as **D-10**, no longer deferred).
 
 ## Reading order for implementers
 
