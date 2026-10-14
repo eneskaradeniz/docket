@@ -48,6 +48,7 @@ import {
   executeRun,
   resolveDispatchLimits,
   roleForStageRun,
+  sweepOrphanedRuns,
 } from '../src/application/index';
 import type { CipherFns, NodeDeps } from '../src/infrastructure/index';
 import {
@@ -747,6 +748,14 @@ const startApp = async (): Promise<void> => {
   if (devBridge !== undefined) {
     ipcMain.handle('docket:dev', (_event, op: unknown, args: unknown) => devBridge.call(op, args));
   }
+
+  // Runs a previous instance left open — anything but the managed quit closed them; a SIGTERM or
+  // a crash skipped it — are swept closed before the first dispatcher tick (A-400), so no orphan
+  // holds a concurrency slot or an unanswerable permission ask. Awaited, never fired and
+  // forgotten: a later sweep could race the first tick into counting an orphan. A sweep that
+  // fails logs and boots on; the rows then wait for the next launch, exactly as before the rule.
+  await sweepOrphanedRuns(nodeDeps, runControl, board, () => currentApi?.workOrdersChanged())
+    .catch((error) => console.error('boot run sweep failed', error));
 
   // The dispatcher loop: each tick may start queued items; each started item then runs to
   // completion on its own, so one slow agent never delays the next tick.

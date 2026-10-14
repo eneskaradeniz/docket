@@ -2221,3 +2221,28 @@ awareness item). Rules A-392, A-393; the UI rules are U-350 … U-353 (docs/v2/u
 - **A-393** (added 2026-10-14, #1178) The repo context is a pure read exactly like A-379's
   rows: no audit entry, no ledger event, no `workOrders.changed` announcement, and no write of
   any kind reaches the registry, the project store or the definitions.
+
+Addendum 2026-10-15 (#1194): the boot sweep for orphaned open runs (from #1193 — an unclean exit
+left `ended_at IS NULL` rows running forever, holding dispatcher slots with unanswerable asks).
+Rule A-400; the domain fold it lands on is R-18 (a cancelled run leaves the attempt as if no run
+had started). No new work-order state and no new outcome: the existing interrupted/cancelled
+vocabulary expresses the closure, and the audit detail's `reason` separates it from a quit
+(`app_quit`) and any other cancel.
+
+- **A-400** (added 2026-10-15, #1194) At startup, before the first dispatcher tick,
+  `sweepOrphanedRuns` (use-cases/boot-sweep.ts) closes every run record with no `endedAt` that
+  has no live process in this instance, with the same writes the managed quit's `cancelActiveRuns`
+  makes: the record's `endedAt`/`outcome: cancelled`, one typed `run_finished` work-order event
+  per closed run, the run token revoked, the board entry dropped (any open ask of that run is
+  cleared), and one `run.finished` audit entry whose detail carries
+  `{ outcome: 'cancelled', reason: 'startup_sweep' }`; `workOrders.changed` is announced once
+  after the last append. The queue and limit effects need no write of their own — the limits
+  count `listActive()` rows, so the closed record frees its global/repo/account slots. The sweep
+  is idempotent (a second call finds nothing open and writes nothing) and never touches a run
+  whose handle is live in this instance (`RunControl.active()` is the exclusion input). After the
+  sweep the work order's next action is whatever the machinery gives a cancelled run: R-18 folds
+  `run_finished`/`cancelled` back to `ready` at the same attempt (`awaiting_human` for a
+  null-role stage), and a later tick may dispatch it again. The call site is electron/main.ts
+  `startApp`, awaited before the dispatch timer exists — a sweep placed after the first tick
+  could race it into counting an orphan — and a failed sweep logs and lets the app boot (the
+  rows then wait for the next launch, exactly as before this rule).
