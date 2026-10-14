@@ -18,8 +18,8 @@ import type {
 import { deriveWorkOrderState, err, nextAction, parseSlug, parseUlid, workOrderBranch } from '../../domain/index';
 
 import type { ProjectDef, ProjectSlug } from '../../domain/index';
-import type { RunRecord } from '../ports';
-import type { FakeProjectRepo } from '../ports/fakes';
+import type { ReadRepoFingerprint, RepoFingerprint, RepoRegistryEntry, RunRecord } from '../ports';
+import type { FakeProjectRepo, FakeRepoRegistry } from '../ports/fakes';
 import type {
   FakeClock,
   FakeDefinitionStore,
@@ -36,6 +36,7 @@ import {
   createFakeIdGen,
   createFakeModelCatalog,
   createFakeProjectRepo,
+  createFakeRepoRegistry,
   createFakeRunRepo,
   createFakeWorkOrderRepo,
   repoFlowOf,
@@ -185,6 +186,10 @@ interface Harness {
   readonly runs: FakeRunRepo;
   readonly definitions: FakeDefinitionStore;
   readonly projects: FakeProjectRepo;
+  readonly repos: FakeRepoRegistry;
+  /** The folder fingerprints the harness's reader answers; a path absent from the map reads
+   *  undefined — the folder_not_found standing. */
+  readonly fingerprints: Map<string, RepoFingerprint>;
   readonly openDeps: Parameters<typeof openWorkOrder>[0];
   readonly viewDeps: Parameters<typeof getWorkOrder>[0];
   readonly blockDeps: Parameters<typeof blockWorkOrder>[0];
@@ -199,6 +204,9 @@ const createHarness = (configure?: (definitions: FakeDefinitionStore) => void, w
   const runs = createFakeRunRepo();
   const definitions = createFakeDefinitionStore();
   const projects = createFakeProjectRepo();
+  const fingerprints = new Map<string, RepoFingerprint>();
+  const readFingerprint: ReadRepoFingerprint = async (path) => fingerprints.get(path);
+  const repos = createFakeRepoRegistry(readFingerprint);
   definitions.setProject(PROJECT_DEF);
   void projects.save(PROJECT_DEF);
   definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', definitionsJson());
@@ -212,8 +220,10 @@ const createHarness = (configure?: (definitions: FakeDefinitionStore) => void, w
     runs,
     definitions,
     projects,
+    repos,
+    fingerprints,
     openDeps: { clock, ids, log, workOrders, definitions, projects },
-    viewDeps: { workOrders, runs, definitions },
+    viewDeps: { workOrders, runs, definitions, projects, repos, readFingerprint },
     blockDeps: { clock, ids, log, workOrders },
     unblockDeps: { clock, ids, log, workOrders, definitions },
   };
@@ -771,6 +781,130 @@ const redefinedFlows = () => [
         checks: [{ name: 'lint', status: 'passed' }],
       },
     ]);
+  });
+});
+
+describe('workOrder.repoContext', () => {
+  const PATH = '/clones/acme';
+  const REPO_ID = '01ARZ3NDEKTSV4RRFFQ69G5FR1';
+  const FOLDER_READ: RepoFingerprint = { rootCommit: 'commit-a', remote: 'git@forge.example:acme.git' };
+
+  const registerRow = async (h: Harness, rootCommit: string): Promise<void> => {
+    const entry: RepoRegistryEntry = { repoId: REPO_ID, slug: REPO, path: PATH, fingerprint: { rootCommit } };
+    await h.repos.register(entry);
+  };
+
+  /** Opens the fixture work order with its repo registered and its folder readable — the ok
+   *  standing unless the stored root commit or the folder's own read says otherwise. */
+  const openWithRepo = async (h: Harness, storedRootCommit = 'commit-a'): Promise<WorkOrderId> => {
+    await registerRow(h, storedRootCommit);
+    h.fingerprints.set(PATH, FOLDER_READ);
+    return openedWorkOrder(h);
+  };
+
+  it('A-392: a registered repo whose folder reads its own root commit is ok — path, project and no siblings', async () => {
+    const h = createHarness();
+    const id = await openWithRepo(h);
+
+    const view = await getWorkOrder(h.viewDeps, id);
+
+    expect(view.ok).toBe(true);
+    if (!view.ok) return;
+    expect(view.value.repoContext).toEqual({
+      path: PATH,
+      status: 'ok',
+      project: { slug: PROJECT, name: 'Atölye' },
+      siblingCount: 0,
+    });
+  });
+
+  it('A-392: a multi-repo project counts only the repos beside the work order’s own', async () => {
+    const h = createHarness();
+    await h.projects.save({
+      id: PROJECT,
+      name: 'Atölye',
+      repos: [REPO, slugOf<'repo'>('beta'), slugOf<'repo'>('gamma')],
+    });
+    const id = await openWithRepo(h);
+
+    const view = await getWorkOrder(h.viewDeps, id);
+
+    if (!view.ok) return;
+    expect(view.value.repoContext?.siblingCount).toBe(2);
+  });
+
+  it('A-392: a folder whose root commit differs is relink_offered, a folder that reads nothing is folder_not_found', async () => {
+    const h = createHarness();
+    const moved = await openWithRepo(h, 'commit-old');
+    const movedView = await getWorkOrder(h.viewDeps, moved);
+    expect(movedView.ok).toBe(true);
+    if (!movedView.ok) return;
+    expect(movedView.value.repoContext?.status).toBe('relink_offered');
+    // The path stays the registered one — the read never re-points a row (A-341's discipline).
+    expect(movedView.value.repoContext?.path).toBe(PATH);
+
+    const gone = createHarness();
+    await registerRow(gone, 'commit-a');
+    const goneId = await openedWorkOrder(gone);
+    const goneView = await getWorkOrder(gone.viewDeps, goneId);
+    expect(goneView.ok).toBe(true);
+    if (!goneView.ok) return;
+    expect(goneView.value.repoContext?.status).toBe('folder_not_found');
+  });
+
+  it('A-392: a stored empty root commit never offers a relink — an unscanned row reads ok', async () => {
+    const h = createHarness();
+    await registerRow(h, '');
+    h.fingerprints.set(PATH, FOLDER_READ);
+    const id = await openedWorkOrder(h);
+
+    const view = await getWorkOrder(h.viewDeps, id);
+
+    if (!view.ok) return;
+    expect(view.value.repoContext?.status).toBe('ok');
+  });
+
+  it('A-392: a repo the registry does not list answers unregistered with an empty path — never an exception', async () => {
+    const h = createHarness();
+    const id = await openedWorkOrder(h);
+
+    const view = await getWorkOrder(h.viewDeps, id);
+
+    expect(view.ok).toBe(true);
+    if (!view.ok) return;
+    expect(view.value.repoContext).toEqual({
+      path: '',
+      status: 'unregistered',
+      project: { slug: PROJECT, name: 'Atölye' },
+      siblingCount: 0,
+    });
+  });
+
+  it('A-392: a project that no longer loads names itself by its slug and counts no siblings', async () => {
+    const h = createHarness();
+    const id = await openWithRepo(h);
+    await h.projects.remove(PROJECT);
+
+    const view = await getWorkOrder(h.viewDeps, id);
+
+    if (!view.ok) return;
+    expect(view.value.repoContext?.project).toEqual({ slug: PROJECT, name: PROJECT });
+    expect(view.value.repoContext?.siblingCount).toBe(0);
+  });
+
+  it('A-393: the repo context read appends no audit entry, no work-order event and re-points no registry row', async () => {
+    const h = createHarness();
+    const id = await openWithRepo(h, 'commit-old');
+    const auditsBefore = h.log.entries().length;
+    const eventsBefore = await h.workOrders.events(id);
+    const rowsBefore = await h.repos.list();
+
+    const view = await getWorkOrder(h.viewDeps, id);
+
+    expect(view.ok).toBe(true);
+    expect(h.log.entries()).toHaveLength(auditsBefore);
+    expect(await h.workOrders.events(id)).toEqual(eventsBefore);
+    expect(await h.repos.list()).toEqual(rowsBefore);
   });
 });
 
