@@ -152,7 +152,7 @@ describe('I-69: preload pageView', () => {
   it('I-69: nothing else about pages is on the bridge', async () => {
     await import('./preload');
     const docket = harness.exposed.get('docket') as Record<string, unknown>;
-    expect(Object.keys(docket).sort()).toEqual(['command', 'pageView', 'query', 'subscribe']);
+    expect(Object.keys(docket).sort()).toEqual(['command', 'pageView', 'pickFolders', 'query', 'subscribe']);
     expect([...harness.exposed.keys()].sort()).toEqual(['docket', 'docketDev']);
   });
 });

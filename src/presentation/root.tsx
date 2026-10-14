@@ -42,9 +42,20 @@ import { createWizardStore } from './stores/wizard';
 import { createPageListStore, createPageViewHost, createPageViewerStore, type PageViewPort } from './stores/page-viewer';
 import { createWorkOrderDetailStore } from './stores/work-order-detail';
 
+export type PickFoldersOptions = {
+  readonly multiple?: boolean;
+};
+
+export type PickFoldersResult =
+  | { readonly canceled: true }
+  | { readonly canceled: false; readonly paths: readonly string[]; readonly truncated?: true };
+
 /** Exactly the surface the preload exposes under `window.docket` — the api's members, reached
  *  only through their types; no bridge implementation ever lives in this layer. */
-export type DocketBridge = Pick<Api, 'command' | 'query' | 'subscribe'> & { readonly pageView: PageViewPort };
+export type DocketBridge = Pick<Api, 'command' | 'query' | 'subscribe'> & {
+  readonly pageView: PageViewPort;
+  readonly pickFolders: (options?: PickFoldersOptions) => Promise<PickFoldersResult>;
+};
 
 /**
  * The bridge handle, read off the window with a local cast rather than a global Window

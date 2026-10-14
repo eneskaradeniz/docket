@@ -9,9 +9,14 @@ import type { IpcRendererEvent } from 'electron';
 import type { Actor } from '../src/domain/index';
 import type { Api, CommandResult, UiEvent } from '../src/api/index';
 
+import type { PickFoldersOptions, PickFoldersResult } from './pick-folders';
+
 /** `Pick<Api>` keeps the bridge exactly the transport-free contract — the same shape a later HTTP
  *  transport would serve. `CommandResult` is named here only because invoke's return is untyped. */
-export type DocketBridge = Pick<Api, 'command' | 'query' | 'subscribe'> & { readonly pageView: PageViewBridge };
+export type DocketBridge = Pick<Api, 'command' | 'query' | 'subscribe'> & {
+  readonly pageView: PageViewBridge;
+  readonly pickFolders: (options?: PickFoldersOptions) => Promise<PickFoldersResult>;
+};
 
 export interface PageViewBounds {
   readonly x: number;
@@ -78,6 +83,8 @@ const bridge: DocketBridge = {
       subscribers.delete(listener);
     };
   },
+
+  pickFolders: (options) => ipcRenderer.invoke('docket:pick-folders', options),
 };
 
 contextBridge.exposeInMainWorld('docket', bridge);
