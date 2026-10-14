@@ -33,3 +33,6 @@ e2e/.out/
 
 # Playwright MCP console logs and snapshots written while the UI is walked.
 .playwright-mcp/
+
+# Graphify knowledge graph output (local; rebuilt by CLI).
+graphify-out/
