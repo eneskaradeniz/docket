@@ -866,7 +866,14 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
             <CapabilitySection locale={locale} section="roles" store={agentCapabilities} marks={marks} active={open} />
           ) : null}
           {section === 'plugins' || section === 'mcp' || section === 'skills' || section === 'commands' || section === 'hooks' ? (
-            <CapabilitySection locale={locale} section={section} store={agentCapabilities} marks={marks} active={open} />
+            <CapabilitySection
+              locale={locale}
+              section={section}
+              store={agentCapabilities}
+              marks={marks}
+              active={open}
+              onOpenRoles={() => tryLeaveSection('roles')}
+            />
           ) : null}
           {section === 'concurrency' ? (
             <ConcurrencySection

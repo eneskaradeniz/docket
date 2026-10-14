@@ -19,15 +19,17 @@
 //   5. IPC handlers and the window last — the renderer boots only once every surface it can
 //      call already exists.
 import { app, BrowserWindow, Notification, dialog, ipcMain, safeStorage, screen } from 'electron';
+import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { Actor, QueueItem } from '../src/domain/index';
-import { deriveWorkOrderState, foldRun } from '../src/domain/index';
+import { deriveWorkOrderState, err, foldRun, ok } from '../src/domain/index';
 import { COMMAND_REGISTRY, QUERY_REGISTRY, createApi } from '../src/api/index';
 import type { Api, RunEventFeed, UiEvent } from '../src/api/index';
-import type { ActiveWork, AppDeps, Notifier, PermissionBoard, RunControl, TransportResolver } from '../src/application/index';
+import type { ActiveWork, AppDeps, McpEndpoint, McpListenerControl, McpListenerState, Notifier, PermissionBoard, RunControl, TransportResolver } from '../src/application/index';
+import type { DocketToolRequest, DocketToolResponse } from '../src/application/index';
 import {
   activeWork,
   advancePhases,
@@ -58,6 +60,7 @@ import {
   createLoginStates,
   createPathDiscovery,
   createProviderTransportFactory,
+  mcpScriptPath,
   processRegistry,
   pruneStaleRunDirs,
   reapOrphanedChildren,
@@ -148,6 +151,32 @@ const electronNotifier = (): Notifier => ({
   },
 });
 
+/** The MCP listener's control (A-380, A-381), built around the listener this file already starts:
+ *  the standing is what `mcpListener` says, with the bundle script's absence named when it is why
+ *  a restart cannot even be attempted. A restart while listening is a no-op — a run keeps the
+ *  connection it started with — and a real restart only ever starts the socket again. */
+const createListenerControl = (
+  endpoint: McpEndpoint,
+  scriptAt: string,
+  toolsOf: () => ((request: DocketToolRequest) => Promise<DocketToolResponse>) | undefined,
+): McpListenerControl => {
+  const stopped = (reason: 'listener_down' | 'script_missing'): McpListenerState => ({ state: 'stopped', reason });
+  return {
+    status: (): McpListenerState =>
+      mcpListener !== undefined ? { state: 'running' } : existsSync(scriptAt) ? stopped('listener_down') : stopped('script_missing'),
+    restart: async () => {
+      if (mcpListener !== undefined) return ok({ state: 'running' as const });
+      if (!existsSync(scriptAt)) return err('script_missing' as const);
+      const handler = toolsOf();
+      if (handler === undefined) return err('listener_failed' as const);
+      const listening = await startMcpListener({ socketPath: endpoint.socketPath, handler });
+      if (!listening.ok) return err('listener_failed' as const);
+      mcpListener = listening.value;
+      return ok({ state: 'running' as const });
+    },
+  };
+};
+
 /** Set as soon as createNodeDeps succeeds; every later reader (the lazy transport resolver, the
  *  run loop) runs strictly after that point. */
 let deps: AppDeps | undefined;
@@ -161,6 +190,8 @@ let dispatchTimer: NodeJS.Timeout | undefined;
 let quotaLifecycle: { stop(): void } | undefined;
 let trackerSyncLifecycle: { stop(): void } | undefined;
 let mcpListener: McpListener | undefined;
+/** The tool dispatch the MCP listener serves; set once the node deps exist, before any socket. */
+let mcpTools: ((request: DocketToolRequest) => Promise<DocketToolResponse>) | undefined;
 let currentBoard: PermissionBoard | undefined;
 let currentApi: (Api & RunEventFeed & { readonly quitRequested: (runs: readonly string[], chats: readonly string[]) => void }) | undefined;
 let quitting = false;
@@ -436,11 +467,16 @@ const startApp = async (): Promise<void> => {
     { loginStates },
   );
 
+  // The child a run's CLI launches is this very executable run as Node, on the script built
+  // beside this bundle; the endpoint is plain data, the socket is opened below. The control
+  // around that socket is what `mcp.status` reads and `mcp.restore` drives (A-380, A-381).
+  const mcpEndpoint = createMcpEndpoint({ dataDir, platform: process.platform, execPath: process.execPath, mainDir: here });
+  const mcpControl = createListenerControl(mcpEndpoint, mcpScriptPath(here), () => mcpTools);
+
   const opened = createNodeDeps({
     dataDir,
-    // The child a run's CLI launches is this very executable run as Node, on the script built
-    // beside this bundle; the endpoint is plain data, the socket is opened below.
-    mcpEndpoint: createMcpEndpoint({ dataDir, platform: process.platform, execPath: process.execPath, mainDir: here }),
+    mcpEndpoint,
+    mcpListener: mcpControl,
     cipher: safeStorageCipher(),
     transports: discoveredTransports(baseEnv, env),
     notifier: electronNotifier(),
@@ -461,16 +497,18 @@ const startApp = async (): Promise<void> => {
   deps = nodeDeps;
 
   // Docket's own MCP socket, created at startup (a stale file of a dead instance is removed there)
-  // and removed at shutdown. A failure to listen is loud but not fatal: runs go on without
-  // working page tools, and their child reports `app_unreachable`.
-  if (nodeDeps.mcpEndpoint !== undefined) {
+  // and removed at shutdown. The boot start rides the same repair path the row's "Geri yükle"
+  // presses; a failure to listen is loud but not fatal: runs go on without working page tools,
+  // and their child reports `app_unreachable`. The unpackaged-only DOCKET_MCP_DOWN hook boots
+  // with the listener deliberately down, so the row's stopped face and its repair can be walked.
+  mcpTools = (() => {
     const tools = createDocketTools(nodeDeps, node.docketToolExtras);
-    const listening = await startMcpListener({
-      socketPath: nodeDeps.mcpEndpoint.socketPath,
-      handler: (request) => tools.call(request),
-    });
-    if (listening.ok) mcpListener = listening.value;
-    else console.error(`docket MCP listener did not start (${listening.error})`);
+    return (request: DocketToolRequest) => tools.call(request);
+  })();
+  const bootDown = !app.isPackaged && process.env.DOCKET_MCP_DOWN === '1';
+  if (!bootDown) {
+    const started = await mcpControl.restart();
+    if (!started.ok) console.error(`docket MCP listener did not start (${started.error})`);
   }
 
   // Run directories a crash or a kill left behind (older than a day) are pruned best effort;

@@ -6,6 +6,7 @@ import type { Command, CommandResult } from '../../api/commands';
 import type {
   CapabilityCandidateView,
   DefinitionListItem,
+  McpStatusView,
   MemoryOverviewView,
   Query,
   RoleListItem,
@@ -106,6 +107,13 @@ export type CreateDraft =
 
 export type AgentView = 'list' | 'import' | 'create';
 
+/** The restore refusal sentences (U-314): the stopped reasons in restart vocabulary. */
+export const MCP_RESTORE_ERROR_KEY: Readonly<Record<'endpoint_unavailable' | 'listener_failed' | 'script_missing', LabelKey>> = {
+  endpoint_unavailable: 'capabilities.mcp.reason.no_endpoint',
+  listener_failed: 'capabilities.mcp.reason.listener_down',
+  script_missing: 'capabilities.mcp.reason.script_missing',
+};
+
 export interface AgentCapabilitiesState {
   readonly section: AgentCapabilitySection | null;
   readonly loaded: boolean;
@@ -128,6 +136,11 @@ export interface AgentCapabilitiesState {
   readonly createDraft: CreateDraft | null;
   readonly confirmDiscard: boolean;
   readonly saving: boolean;
+  /** The built-in Docket row's standing (U-314); null until the MCP section first reads it. */
+  readonly mcp: McpStatusView | null;
+  readonly mcpBusy: boolean;
+  /** The one inline result line of "Geri yükle": restored, or the typed refusal sentence. */
+  readonly mcpResult: LabelKey | null;
 }
 
 export interface AgentCapabilitiesStore {
@@ -150,6 +163,7 @@ export interface AgentCapabilitiesStore {
   importCandidates(identities: readonly string[]): Promise<void>;
   setCreateDraft(draft: CreateDraft): void;
   saveCreate(): Promise<void>;
+  restoreMcp(): Promise<void>;
   cancelCreate(): void;
   rowWarning(kind: CapabilityKind): LabelKey | null;
   rowWarningProviders(kind: CapabilityKind): string;
@@ -194,6 +208,9 @@ const initialState = (): AgentCapabilitiesState => ({
   createDraft: null,
   confirmDiscard: false,
   saving: false,
+  mcp: null,
+  mcpBusy: false,
+  mcpResult: null,
 });
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -504,6 +521,10 @@ export const createAgentCapabilitiesStore = (deps: AgentCapabilitiesDeps): Agent
         });
         return;
       }
+      // The MCP section's first row is the built-in standing (U-314); a failed read keeps the
+      // last good one instead of blanking the row.
+      const mcpReply: unknown = section === 'mcp' ? await deps.api.query({ type: 'mcp.status' } satisfies Query) : null;
+      const mcp = section !== 'mcp' ? state.mcp : isQueryFailure(mcpReply) ? state.mcp : (mcpReply as McpStatusView);
       publish({
         ...state,
         loading: false,
@@ -513,6 +534,7 @@ export const createAgentCapabilitiesStore = (deps: AgentCapabilitiesDeps): Agent
         providerNames: names,
         definitions: defs.definitions,
         capabilityKinds: defs.kinds,
+        mcp,
         ...tree,
       });
     },
@@ -654,6 +676,27 @@ export const createAgentCapabilitiesStore = (deps: AgentCapabilitiesDeps): Agent
     },
     cancelCreate: () => {
       publish({ ...state, createDraft: null, view: 'list' });
+    },
+    // The built-in row's one repair (U-314, A-381): one command, then the fresh standing and the
+    // inline result line — "Geri yüklendi" or the typed refusal's own sentence. A success carries
+    // its own standing; a refusal re-reads, because a refused restart may still have changed it.
+    restoreMcp: async () => {
+      if (state.mcpBusy) return;
+      publish({ ...state, mcpBusy: true, mcpResult: null });
+      const result = await deps.runCommand({ type: 'mcp.restore' });
+      const refusal = !result.ok && result.error !== undefined ? MCP_RESTORE_ERROR_KEY[result.error] : undefined;
+      let standing = state.mcp;
+      if (result.ok && result.status !== undefined) standing = result.status;
+      else {
+        const reply: unknown = await deps.api.query({ type: 'mcp.status' } satisfies Query);
+        if (!isQueryFailure(reply)) standing = reply as McpStatusView;
+      }
+      publish({
+        ...state,
+        mcpBusy: false,
+        mcp: standing,
+        mcpResult: result.ok ? 'capabilities.mcp.restored' : (refusal ?? 'error.unknown'),
+      });
     },
     rowWarning: (kind) => warningForKind(kind, state.installedProviders, state.providerNames)?.key ?? null,
     rowWarningProviders: (kind) => warningForKind(kind, state.installedProviders, state.providerNames)?.providers ?? '',

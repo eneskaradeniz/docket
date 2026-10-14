@@ -1822,6 +1822,12 @@ Added 2026-10-14, #1106; amends U-288.
 - **U-310** (added 2026-10-14, #1106; amends U-288) Settings has the section `repo` ("Depo ayarları") in the work group; opening it shows the #1024 screen contract: Akış, Roller, Limit politikası, save bar, discard confirm. It is reachable from the Settings menu and by keyboard like every other section.
 - **U-311** (added 2026-10-14, #1106) With no repository the section shows the empty state with guidance and a link to project setup; while loading it shows skeleton tiles; a failed `repo.flow` shows the error card with a retry button. All copy lives in the TR and EN bundles, every sentence at most 8 words (U-178).
 
+## The built-in Docket MCP row (U-314, U-315)
+
+Added 2026-10-14, #1120; implements A-380/A-381 (docs/v2/application.md).
+- **U-314** (added 2026-10-14, #1120) The MCP menu's first row is the built-in Docket entry of decision 1, 2 and 3; it has no remove, archive, rename or edit control; "Geri yükle" shows a busy state and then the inline result; the status is announced politely.
+- **U-315** (added 2026-10-14, #1120) "Docket AI ile kur" is disabled with the sentence of decision 4 while the status is not `running`; the sentence is a button to the built-in row; copy lives in the TR and EN bundles, every sentence at most 8 words (U-178).
+
 ## Running-card stop and steer (U-301 … U-305)
 
 Added 2026-10-14, #1110; extends U-226's decision-zone matrix and implements A-361 … A-365. (Numbered after #1104's U-298 … U-300 landed on main first.)

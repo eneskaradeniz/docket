@@ -20,6 +20,7 @@ import { createFakeEventLog } from './fake-event-log';
 import { createFakeGitProbe } from './fake-git-probe';
 import { createFakeIdGen } from './fake-id-gen';
 import { createFakeDispatchStatus, createFakeMachineProbe } from './fake-machine-probe';
+import { createFakeMcpListenerControl } from './fake-mcp-listener-control';
 import { createFakeInstructionFiles } from './fake-instruction-files';
 import { createFakeMemoryStore } from './fake-memory-store';
 import { createFakeModelCatalog } from './fake-model-catalog';
@@ -94,5 +95,7 @@ export const createFakeDeps = (overrides: Partial<AppDeps> = {}): AppDeps => ({
   runTokens: createFakeRunTokens(),
   runDirs: createFakeRunDirs(),
   mcpEndpoint: undefined,
+  // Running by default: an unrelated use-case test must not see Docket's tools as down.
+  mcpListener: createFakeMcpListenerControl(),
   ...overrides,
 });

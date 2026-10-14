@@ -33,6 +33,7 @@ import type { ReadRepoFingerprint, RepoRegistry } from './repo-registry';
 import type { RunDirs } from './run-dirs';
 import type { RunRepo } from './run-repo';
 import type { RepoFileReader } from './repo-file-reader';
+import type { McpListenerControl } from './mcp-listener-control';
 import type { McpEndpoint, RunTokens } from './run-tokens';
 import type { ScratchDirs } from './scratch-dirs';
 import type { SecretVault } from './secret-vault';
@@ -90,4 +91,6 @@ export interface AppDeps {
   readonly runDirs: RunDirs;
   /** How Docket's own MCP child is launched; undefined when this shell runs none. */
   readonly mcpEndpoint: McpEndpoint | undefined;
+  /** The standing of Docket's own MCP listener and its one repair (A-380, A-381). */
+  readonly mcpListener: McpListenerControl;
 }

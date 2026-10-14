@@ -1,5 +1,7 @@
 // api/commands.ts — the write side of the boundary. Exact contract: docs/v2/application.md § 4.
 // Plain JSON-serialisable shapes only; ids travel as strings and are parsed in api.ts (A-21).
+import type { McpStatusView } from './queries';
+
 export type Command =
   | { readonly type: 'workOrder.open'; readonly project: string; readonly repo: string; readonly title: string; readonly description?: string; readonly flow?: string; readonly task?: string }
   | { readonly type: 'task.open'; readonly project: string; readonly task: string }
@@ -68,7 +70,7 @@ export type Command =
   | { readonly type: 'app.update.apply' }
   // The Docket AI setup conversation (A-357 … A-359): one command starts it, one answers its read
   // asks; the messages themselves ride `chat.send` unchanged.
-  | { readonly type: 'setup.ai.start'; readonly repoPath: string; readonly draft?: string } // ok → { conversation } (A-357); no_provider (A-340)
+  | { readonly type: 'setup.ai.start'; readonly repoPath: string; readonly draft?: string } // ok → { conversation } (A-357); no_provider (A-340), mcp_down (A-381)
   | { readonly type: 'setup.read.answer'; readonly conversation: string; readonly path: string; readonly allow: boolean } // ok → { ok: true } (A-358)
   /** The quit modal is on screen (answer to `quit.requested`); without it the shell falls back to the native dialog. */
   | { readonly type: 'quit.ack' }
@@ -93,7 +95,10 @@ export type Command =
         readonly detectedAt: number;
       };
       readonly resolution: 'keep_remote' | 'keep_local';
-    };
+    }
+  // Restarts Docket's own MCP listener when it is down and answers the fresh standing; the
+  // failure side carries `error`, not `code` (A-381).
+  | { readonly type: 'mcp.restore' }; // ok → { status: McpStatusView } | { ok: false, error: 'endpoint_unavailable' | 'listener_failed' | 'script_missing' } (A-381)
 
 /** A repo flow as the renderer sends it (A-345): the domain's `RepoFlow` with plain string ids
  *  and unparsed stage/binding bodies — api.ts narrows it with the same law the file world
@@ -167,13 +172,16 @@ export type CommandResult =
       readonly warnings?: readonly string[];
       readonly renames?: readonly { readonly id: string; readonly to: string }[];
       readonly version?: number;
+      /** Rides only `mcp.restore` (A-381): the standing the restart ended with. */
+      readonly status?: McpStatusView;
     }
   /** `roles` rides only `binding_exists`: the roles whose bindings still reference the account.
    *  `accounts` rides only `account_not_connected` on repo.saveFlow (A-354): every disconnected
    *  stage chain entry as `{ stage, accountId }`.
    *  `issues` rides `definitions_invalid` on bundle import (A-342).
    *  `definitionIssues` rides `definitions_invalid` on definitions.save (A-352).
-   *  `reasons` rides `blocked` on definitions.archive / definitions.delete (A-355). */
+   *  `reasons` rides `blocked` on definitions.archive / definitions.delete (A-355).
+   *  `error` rides only `mcp.restore` (A-381): its typed refusal instead of a `code`. */
   | {
       readonly ok: false;
       readonly code: string;
@@ -182,4 +190,5 @@ export type CommandResult =
       readonly issues?: readonly string[];
       readonly definitionIssues?: readonly { readonly path: string; readonly code: string; readonly message: string }[];
       readonly reasons?: readonly { readonly kind: string; readonly workOrders?: readonly string[]; readonly of?: string; readonly repo?: string; readonly stage?: string }[];
+      readonly error?: 'endpoint_unavailable' | 'listener_failed' | 'script_missing';
     };

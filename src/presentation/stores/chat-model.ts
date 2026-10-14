@@ -334,6 +334,7 @@ const CHAT_FAILURES: readonly string[] = [
   'grant_revoked',
   'bad_class',
   'conversation_full',
+  'mcp_down',
 ];
 
 /** The failure sentence for a chat command's code (U-115); a code the UI does not know reads as the

@@ -88,8 +88,9 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
   'definitions.delete': { input: 'kind: roles, id: string' },
   'tracker.sync': { input: 'repo: RepoSlug' },
   'tracker.resolveConflict': { input: 'repo: RepoSlug, conflict: SyncConflict, resolution: keep_remote | keep_local' },
-  'setup.ai.start': { input: 'repoPath: string, draft?: string — errors: no_provider, bad_input, not_found (A-357)' },
+  'setup.ai.start': { input: 'repoPath: string, draft?: string — errors: no_provider, bad_input, not_found (A-357), mcp_down (A-381)' },
   'setup.read.answer': { input: 'conversation: ConversationId, path: string, allow: boolean (A-358)' },
+  'mcp.restore': { input: 'no input — ok → { status: McpStatusView }, error: endpoint_unavailable | listener_failed | script_missing (A-381)' },
 };
 
 export const QUERY_REGISTRY: Record<Query['type'], RegistryEntry> = {
@@ -134,4 +135,5 @@ export const QUERY_REGISTRY: Record<Query['type'], RegistryEntry> = {
   'tracker.linkStatus': { input: 'repo: RepoSlug' },
   'setup.draft': { input: 'no input (A-359)' },
   'setup.read.pending': { input: 'conversation: ConversationId (A-358)' },
+  'mcp.status': { input: 'no input → McpStatusView (A-380)' },
 };

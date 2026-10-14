@@ -55,6 +55,7 @@ const PORT_KEYS: readonly (keyof AppDeps)[] = [
   'runTokens',
   'runDirs',
   'mcpEndpoint',
+  'mcpListener',
 ];
 
 describe('createFakeDeps', () => {

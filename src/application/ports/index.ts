@@ -21,6 +21,7 @@ export * from './event-log';
 export * from './forge';
 export * from './git-probe';
 export * from './machine-probe';
+export * from './mcp-listener-control';
 export * from './id-gen';
 export * from './instruction-files';
 export * from './issue-tracker';

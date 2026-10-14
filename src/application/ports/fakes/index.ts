@@ -19,6 +19,7 @@ export * from './fake-event-log';
 export * from './fake-forge';
 export * from './fake-git-probe';
 export * from './fake-machine-probe';
+export * from './fake-mcp-listener-control';
 export * from './fake-id-gen';
 export * from './fake-instruction-files';
 export * from './fake-issue-tracker';

@@ -23,6 +23,7 @@ export type {
   ChatUsageView,
 } from './chat-views';
 export type { AccountTestView, RepoStatusView, ProposalDetailView, ProposalListItem, WorkOrderChangesView };
+export type { McpStatusView } from '../application';
 
 export type Query =
   | { readonly type: 'workOrder.detail'; readonly id: string }
@@ -68,7 +69,9 @@ export type Query =
   // The Docket AI setup reads (A-358, A-359): the newest draft for the resume card, the pending
   // read ask of a setup conversation.
   | { readonly type: 'setup.draft' } // → { draft: { id, repoPath, mode, updatedAt } | null } (A-359)
-  | { readonly type: 'setup.read.pending'; readonly conversation: string }; // → { ask: { path, reason } | null, secrets: number } | not_found (A-358)
+  | { readonly type: 'setup.read.pending'; readonly conversation: string } // → { ask: { path, reason } | null, secrets: number } | not_found (A-358)
+  // The standing of Docket's own MCP listener (A-380): names only — no secret, no token.
+  | { readonly type: 'mcp.status' }; // → McpStatusView (A-380)
 
 export interface AttentionItem {
   readonly workOrderId: string;

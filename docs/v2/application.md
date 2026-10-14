@@ -2017,6 +2017,14 @@ keyed by conversation id), the commands `setup.ai.start` and `setup.read.answer`
 - **A-360** (added 2026-10-14, #1097) `proposal.decide` routes a `project_setup` proposal (A-338) through `decideProjectSetupProposal` instead of the file-backed path: approval writes `projects/<slug>/project.yaml` and `repos/<slug>/repo.yaml` (A-76) and answers `{ ok: true, id }`; rejection writes nothing and keeps the setup draft; `not_found`, `not_pending`, `stale`, `self_approval` and `invalid_after` pass through under their own codes. The boundary maps the setup surface onto `canStartDocketAiSetup`, the registry and the existing use cases only — id parsing and view shaping stay its whole job (A-353), and every new command and query is registered in `registry.ts`.
 - **A-213** addendum (added 2026-10-14, #1097; supersedes the chat list's closed shape only) `DOCKET_TOOL_DEFINITIONS_BY_KIND.chat` now carries the three setup tools — `docket_repo_analyze`, `docket_read_path`, `docket_setup_propose` — after the nine, because a setup token IS a chat token narrowed by `conversationKind` (A-337, A-358) and the listing is the only way the setup agent sees its own tools. The listing is still only a listing: the dispatch admits the three only for a setup conversation, and a plain chat token's call answers `forbidden` exactly as before; the run kind's list, the order of the nine and every other sentence of A-213 stand.
 
+Addendum 2026-10-14 (#1120): the built-in Docket MCP row — the `McpListenerControl` port (the
+standing of Docket's own MCP listener and its one repair, implemented by the Electron composition
+around the listener it already starts), the query `mcp.status` and the command `mcp.restore`.
+Rules A-380 … A-381; the UI rules are U-314 and U-315 (docs/v2/ui.md).
+
+- **A-380** (added 2026-10-14, #1120) `mcp.status` answers from `McpListenerControl.status()` plus the tool-name constants and the roles with `docketTools === false`; it never starts anything and never reads a secret or a token.
+- **A-381** (added 2026-10-14, #1120) `mcp.restore` calls `restart()` once; success answers the new status; each failure maps to its typed error; it changes no role, no library entry and no run, and a second call after success is a no-op that answers `ok`.
+
 Addendum 2026-10-14 (#1110): stop and steer a running stage — the live-handle registry
 (`application/services/run-control.ts`, the permission-board pattern), the commands `run.stop`
 and `run.steer`, and the executor's attach/detach wiring. Rules A-361 … A-365.

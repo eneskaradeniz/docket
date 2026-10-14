@@ -1000,6 +1000,9 @@ describe('failure sentences (U-115)', () => {
     ];
     for (const code of codes) expect(chatFailureKey(code), code).toMatch(/^chat\.error\./);
     expect(chatFailureKey('something_new')).toBe('error.unknown');
+    // A turn that cannot start because Docket's own MCP is down carries the entry's own sentence
+    // (U-315), never the generic line.
+    expect(chatFailureKey('mcp_down')).toBe('chat.error.mcp_down');
   });
 
   it('U-115: every failing command leaves a note — draft, pin, delete, cancel, decide, undo, grant, revoke, attach', async () => {

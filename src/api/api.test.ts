@@ -15,6 +15,7 @@ import {
   createFakeDeps,
   createFakeEventLog,
   createFakeGitProbe,
+  createFakeMcpListenerControl,
   createFakeRepoFolders,
   createFakeTransport,
   createFakeTransportResolver,
@@ -2217,5 +2218,26 @@ describe('capabilities.import', () => {
   it('A-94: an empty identities call is ok with no rows and no writes', async () => {
     const { api } = await seededApi();
     expect(await api.command(ACTOR, { type: 'capabilities.import', identities: [] })).toEqual({ ok: true, results: [] });
+  });
+});
+
+// --- Docket's own MCP repair (A-381) -------------------------------------------------------------------
+
+describe('mcp.restore', () => {
+  it('A-381: success answers the fresh status, and a second call after success is a no-op that answers ok', async () => {
+    const control = createFakeMcpListenerControl({ state: 'stopped', reason: 'listener_down' });
+    const api = createApi(createFakeDeps({ mcpListener: control }));
+    const first = await api.command(ACTOR, { type: 'mcp.restore' });
+    const second = await api.command(ACTOR, { type: 'mcp.restore' });
+    expect(first).toMatchObject({ ok: true, status: { state: 'running' } });
+    expect(second).toMatchObject({ ok: true, status: { state: 'running' } });
+    expect(control.restarts()).toBe(1);
+  });
+
+  it('A-381: each refusal keeps its typed error on the failure side', async () => {
+    const control = createFakeMcpListenerControl({ state: 'stopped', reason: 'script_missing' });
+    control.failWith('script_missing');
+    const result = await createApi(createFakeDeps({ mcpListener: control })).command(ACTOR, { type: 'mcp.restore' });
+    expect(result).toStrictEqual({ ok: false, code: 'script_missing', error: 'script_missing' });
   });
 });
