@@ -147,8 +147,6 @@ export function roleUpdateProposals(  flow: RepoFlow,
   return proposals;
 }
 
-/** What a work order records at creation: the flow and every stage's effective role, accounts
- *  and limit policy, copied so later library or repo edits never reach it. */
 export type RelinkError = 'not_detached' | 'unknown_role_version';
 
 export type RelinkKeep = 'overlay' | 'library';
