@@ -705,3 +705,8 @@ The rule texts above stand untouched as history.
 - **I-14** (superseded by I-86/I-95, #1058) `loadRoadmap(project)` reads `~/.docket/projects/<project-slug>/roadmap.yaml`; repo-side main-repo reading/writing is gone.
 - **I-32** (superseded by I-86/I-95, #1058) Project loading reads `~/.docket/projects/<slug>/project.yaml`; repo-side `<path>/.docket/project.yaml` reading (`readProjectAt`) is gone.
 - **I-36** (superseded by I-86/I-95/I-96, #1058) Builtins install to `~/.docket/library/` (I-96); `scaffoldProject` writing repo-side `.docket/` is gone; only `RepoFolders.createRepo` stands.
+
+Addendum 2026-10-14 (#1097): the setup conversation's adapters and its listing.
+
+- **I-80** addendum (added 2026-10-14, #1097) The chat kind's `tools/list` now carries the three setup tools after the nine (A-213's same-day addendum) — a setup token is a chat token narrowed by `conversationKind`, so the listing is the only way the setup agent sees its own tools. The run kind's list, the instructions and "the listing is only a listing" all stand; the dispatch refuses the three for a plain chat token.
+- **I-83** addendum (added 2026-10-14, #1097) `createNodeDeps` also builds the setup registry (`createSetupContexts` over the fs draft store `createSetupDraftFiles` at `<dataDir>/setup/` and the `createSetupPathReader` reader), hands it to `docketToolExtras.setupContextOf` and to the chat runner's extras, and exposes it as `NodeDeps.setupContexts` for the api's setup surface; `electron/main.ts` passes it to `createApi` beside the chat wiring. The draft store's `newest()` scans the folder, skipping a corrupt or foreign file.

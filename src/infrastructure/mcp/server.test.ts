@@ -128,6 +128,8 @@ describe('createMcpServer by token kind', () => {
 
   it('I-80: a chat-kind server lists the chat tools (the read tools first) with the chat instructions, a run-kind one the three page tools', async () => {
     const chat = await asKind('chat', { jsonrpc: '2.0', id: 1, method: 'tools/list' });
+    // The three setup tools trail the nine (A-213's 2026-10-14 addendum): a setup token is a chat
+    // token narrowed by conversationKind, so the chat kind's listing carries them.
     expect(chat.result.tools?.map((tool) => tool.name)).toEqual([
       'docket_get',
       'docket_search',
@@ -138,6 +140,9 @@ describe('createMcpServer by token kind', () => {
       'draft_work_order',
       'propose_change',
       'propose_setting',
+      'docket_repo_analyze',
+      'docket_read_path',
+      'docket_setup_propose',
     ]);
     expect(chat.result.tools).toEqual(
       DOCKET_TOOL_DEFINITIONS_BY_KIND.chat.map((tool) => ({ name: tool.name, description: tool.description, inputSchema: tool.inputSchema })),

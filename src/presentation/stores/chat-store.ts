@@ -324,6 +324,9 @@ export const createChatStore = (deps: ChatStoreDeps): ChatStore => {
       set({ notice: change.code });
       return;
     }
+    // The one member left with a conversation of its own is the setup surface's ask; a chat
+    // conversation never receives it, and this guard keeps the narrowing honest anyway.
+    if (change.type !== 'chat.turn') return;
     if (change.phase === 'started') {
       set({ turn: change.turn, streamed: '' });
       return;

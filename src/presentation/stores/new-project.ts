@@ -1,17 +1,35 @@
 // stores/new-project.ts — Phase 7 project setup (U-286, U-287, U-272 … U-279): three entry paths
-// and import converge on one SetupProposal review; permission prompts are session-only. Import and
-// create still map to the existing project commands until the setup proposal api lands (#1021).
+// and import converge on one SetupProposal review; permission prompts are session-only. The Docket
+// AI path runs a live setup conversation (A-357 … A-360): the folder entry starts it, the thread
+// rides the chat queries and events, an ask opens the one prompt, and the proposal the agent made
+// opens the identical diff screen.
 import type { Api } from '../../api/api';
 import type { Command, CommandResult } from '../../api/commands';
 import type { ProjectTreeItem, Query, SettingsAccountsView } from '../../api/queries';
 import type { Actor, FlowDef, LimitPolicy, RepoFlow, SetupWarning } from '../../domain/index';
 import { BUILTIN_FLOWS } from '../../domain/index';
 import type { LabelKey } from '../labels/keys';
+import { chatFailureKey } from './chat-model';
 import { commandResultKey, isQueryFailure } from './results';
 
 export type SetupPathMode = 'docket_ai' | 'quick' | 'detailed';
 
 export type SetupEntryPath = SetupPathMode | 'import';
+
+/** The api's push events the setup thread reads; the other members ride the same channel and are
+ *  ignored (U-12 — the union mirrors the channel so `subscribe` satisfies the signal as-is). */
+export type SetupChange =
+  | { readonly type: 'workOrders.changed' }
+  | { readonly type: 'run.updated'; readonly runId: string }
+  | { readonly type: 'update.changed' }
+  | { readonly type: 'accounts.changed' }
+  | { readonly type: 'chat.turn'; readonly conversation: string; readonly turn: string; readonly phase: 'started' | 'finished'; readonly outcome?: string }
+  | { readonly type: 'chat.delta'; readonly conversation: string; readonly turn: string; readonly text: string }
+  | { readonly type: 'chat.notice'; readonly conversation: string; readonly turn: string; readonly code: string }
+  | { readonly type: 'setup.read.ask'; readonly conversation: string }
+  | { readonly type: 'quit.requested'; readonly runs: readonly string[]; readonly chats: readonly string[] };
+
+export type SetupChangeSignal = (listener: (change: SetupChange) => void) => () => void;
 
 export type SetupDetailSection = 'flow' | 'roles' | 'limits' | 'commands';
 
@@ -148,8 +166,92 @@ export const reasonOf = (form: NewProjectForm, screen: SetupScreen): LabelKey | 
   return null;
 };
 
-export const hasDraft = (form: NewProjectForm, screen: SetupScreen, proposal: SetupProposal | null): boolean =>
-  screen !== 'choose' || proposal !== null || form.path !== null || form.repoPath.trim() !== '';
+export const hasDraft = (
+  form: NewProjectForm,
+  screen: SetupScreen,
+  proposal: SetupProposal | null,
+  resumable: ResumableDraft | null = null,
+): boolean => screen !== 'choose' || proposal !== null || form.path !== null || form.repoPath.trim() !== '' || resumable !== null;
+
+/** The resume card's fact (A-359): the newest persisted setup draft, or null. */
+export interface ResumableDraft {
+  readonly id: string;
+  readonly repoPath: string;
+}
+
+export const resumableOf = (view: unknown): ResumableDraft | null => {
+  if (isQueryFailure(view) || typeof view !== 'object' || view === null) return null;
+  const draft = (view as { readonly draft?: unknown }).draft;
+  if (draft === null || draft === undefined) return null;
+  if (typeof draft !== 'object') return null;
+  const { id, repoPath } = draft as { readonly id?: unknown; readonly repoPath?: unknown };
+  return typeof id === 'string' && typeof repoPath === 'string' && id !== '' && repoPath !== '' ? { id, repoPath } : null;
+};
+
+/** One row of the setup thread: a stored message reduced to what the thread shows. */
+export interface SetupThreadMessage {
+  readonly id: string;
+  readonly role: 'user' | 'assistant';
+  readonly text: string;
+}
+
+/** The chat conversation view's messages as thread rows; a failure or a foreign shape answers []. */
+export const threadOf = (view: unknown): readonly SetupThreadMessage[] => {
+  if (isQueryFailure(view) || typeof view !== 'object' || view === null) return [];
+  const messages = (view as { readonly messages?: unknown }).messages;
+  if (!Array.isArray(messages)) return [];
+  return messages.flatMap((message): SetupThreadMessage[] => {
+    if (typeof message !== 'object' || message === null) return [];
+    const { id, role, text } = message as { readonly id?: unknown; readonly role?: unknown; readonly text?: unknown };
+    if (typeof id !== 'string' || typeof text !== 'string' || (role !== 'user' && role !== 'assistant')) return [];
+    return [{ id, role, text }];
+  });
+};
+
+/** The pending-proposal read of the setup surface (A-357): the ask and the secret count, or null. */
+export interface SetupPendingRead {
+  readonly ask: { readonly path: string; readonly reason: string } | null;
+  readonly secrets: number;
+}
+
+export const pendingOf = (view: unknown): SetupPendingRead | null => {
+  if (isQueryFailure(view) || typeof view !== 'object' || view === null) return null;
+  const ask = (view as { readonly ask?: unknown }).ask;
+  const secrets = (view as { readonly secrets?: unknown }).secrets;
+  if (typeof secrets !== 'number') return null;
+  if (ask === null) return { ask: null, secrets };
+  if (typeof ask !== 'object' || ask === null) return null;
+  const { path, reason } = ask as { readonly path?: unknown; readonly reason?: unknown };
+  return typeof path === 'string' && typeof reason === 'string' ? { ask: { path, reason }, secrets } : null;
+};
+
+/** The newest pending project_setup row of a proposals.list reply, or null. */
+export const setupProposalRowOf = (view: unknown): { readonly id: string; readonly target: string } | null => {
+  if (isQueryFailure(view) || !Array.isArray(view)) return null;
+  const row = view.find(
+    (entry): entry is { readonly id: string; readonly target: string } =>
+      typeof entry === 'object' && entry !== null && (entry as { readonly target?: unknown }).target === 'project_setup',
+  );
+  return row ?? null;
+};
+
+/** The stored proposal body (a JSON SetupProposal) parsed back into the diff screen's shape. */
+export const setupProposalOf = (after: string): SetupProposal | null => {
+  try {
+    const parsed = JSON.parse(after) as SetupProposal;
+    if (
+      typeof parsed !== 'object' ||
+      parsed === null ||
+      typeof parsed.project?.name !== 'string' ||
+      typeof parsed.repo?.id !== 'string'
+    ) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+};
 
 export const connectedProviderOf = (view: unknown): boolean => {
   if (isQueryFailure(view)) return false;
@@ -219,6 +321,19 @@ export interface NewProjectDone {
   readonly toastKey: LabelKey;
 }
 
+/** The Docket AI thread's own state (A-357 … A-359): the conversation id once started, its stored
+ *  messages, the live turn's streamed text and id, the composer's draft, the start failure. */
+export interface SetupAiState {
+  readonly conversation: string | null;
+  readonly messages: readonly SetupThreadMessage[];
+  readonly streamed: string;
+  readonly turn: string | null;
+  readonly draft: string;
+  readonly failure: LabelKey | null;
+}
+
+export const START_AI: SetupAiState = { conversation: null, messages: [], streamed: '', turn: null, draft: '', failure: null };
+
 export interface NewProjectState {
   readonly screen: SetupScreen;
   readonly form: NewProjectForm;
@@ -227,6 +342,10 @@ export interface NewProjectState {
   readonly reasonKey: LabelKey | null;
   readonly failure: NewProjectFailure | null;
   readonly proposal: SetupProposal | null;
+  /** The server-side proposal the AI agent made, when the diff on screen is one (A-360). */
+  readonly proposalId: string | null;
+  readonly resumable: ResumableDraft | null;
+  readonly ai: SetupAiState;
   readonly permission: SetupPermissionPrompt | null;
   readonly deniedPaths: readonly string[];
   readonly secretNotices: number;
@@ -236,6 +355,7 @@ export interface NewProjectState {
 export interface NewProjectStoreDeps {
   readonly api: Pick<Api, 'query' | 'command'>;
   readonly actor: Actor;
+  readonly changes?: SetupChangeSignal;
   readonly reloadTree?: () => Promise<void>;
 }
 
@@ -255,6 +375,9 @@ export interface NewProjectStore {
   requestAiRead(path: string, reason: string): void;
   denyPermission(): void;
   allowPermission(): void;
+  startAi(resume?: ResumableDraft): Promise<void>;
+  setAiDraft(text: string): void;
+  sendAi(): Promise<void>;
   toggleSection(section: SetupDetailSection): void;
   attachExisting(): Promise<void>;
   submit(): Promise<void>;
@@ -269,9 +392,13 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
   let busy = false;
   let failure: NewProjectFailure | null = null;
   let proposal: SetupProposal | null = null;
+  let proposalId: string | null = null;
+  let resumable: ResumableDraft | null = null;
+  let ai: SetupAiState = START_AI;
   let permission: SetupPermissionPrompt | null = null;
   let deniedPaths = new Set<string>();
   let secretNotices = 0;
+  let secretsSeen = 0;
   let done: NewProjectDone | null = null;
   let snapshot: NewProjectState | null = null;
   const listeners = new Set<() => void>();
@@ -290,6 +417,9 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
     reasonKey: reasonOf(form, screen),
     failure,
     proposal,
+    proposalId,
+    resumable,
+    ai,
     permission,
     deniedPaths: [...deniedPaths],
     secretNotices,
@@ -301,6 +431,131 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
     failure = null;
     publish();
   };
+
+  // --- the Docket AI thread (A-357 … A-359) --------------------------------------------------------------
+
+  /** The stored conversation as thread rows; a failed read keeps the last good thread. */
+  const reloadThread = async (): Promise<void> => {
+    if (ai.conversation === null) return;
+    ai = { ...ai, messages: threadOf(await api.query({ type: 'chat.conversation', id: ai.conversation })) };
+    publish();
+  };
+
+  /** The pending read of the setup surface: an ask opens the one prompt (U-272, U-275), a secret
+   *  count the thread has not shown yet becomes its one-line notice (U-277). */
+  const refreshPending = async (): Promise<void> => {
+    if (ai.conversation === null) return;
+    const pending = pendingOf(await api.query({ type: 'setup.read.pending', conversation: ai.conversation }));
+    if (pending === null) return;
+    if (pending.secrets > secretsSeen) {
+      secretNotices += pending.secrets - secretsSeen;
+      secretsSeen = pending.secrets;
+    }
+    if (pending.ask !== null && canShowPermission(permission, deniedPaths, pending.ask.path)) {
+      permission = { path: pending.ask.path, reason: pending.ask.reason };
+    }
+    publish();
+  };
+
+  /** The newest pending project_setup proposal the agent made becomes the diff on screen (A-360). */
+  const pollProposal = async (): Promise<void> => {
+    const row = setupProposalRowOf(await api.query({ type: 'proposals.list', status: 'pending' }));
+    if (row === null) return;
+    const detail: unknown = await api.query({ type: 'proposal.detail', id: row.id });
+    if (isQueryFailure(detail) || typeof detail !== 'object' || detail === null) return;
+    const parsed = setupProposalOf(String((detail as { readonly after?: unknown }).after ?? ''));
+    if (parsed === null) return;
+    proposal = parsed;
+    proposalId = row.id;
+    screen = 'proposal';
+    publish();
+  };
+
+  /** A finished setup writes the definitions; the panel lands on the new project like every path. */
+  const finishAi = async (): Promise<void> => {
+    const slug = proposal === null ? '' : slugOf(proposal.repo.id);
+    await deps.reloadTree?.();
+    const tree: unknown = await api.query({ type: 'project.tree' });
+    done = { target: targetOf(tree, slug), toastKey: 'newProject.created' };
+    resetSessionDisclosure();
+    form = START_FORM;
+    screen = 'choose';
+    proposal = null;
+    proposalId = null;
+    ai = START_AI;
+    permission = null;
+    publish();
+  };
+
+  /** A start refusal in the surface's own words: the entry's own no-provider line, the chat
+   *  vocabulary for the rest. */
+  const aiFailureKey = (code: string): LabelKey => (code === 'no_provider' ? 'setup.ai.noProvider' : chatFailureKey(code));
+
+  const startAi = async (resume?: ResumableDraft): Promise<void> => {
+    if (busy) return;
+    busy = true;
+    failure = null;
+    ai = { ...ai, failure: null };
+    publish();
+    const repoPath = (resume === undefined ? form.repoPath : resume.repoPath).trim();
+    const result = await api.command(actor, { type: 'setup.ai.start', repoPath, ...(resume === undefined ? {} : { draft: resume.id }) });
+    busy = false;
+    if (!result.ok || result.conversation === undefined) {
+      ai = { ...ai, failure: result.ok ? 'error.unknown' : aiFailureKey(result.code) };
+      publish();
+      return;
+    }
+    ai = { conversation: result.conversation, messages: [], streamed: '', turn: null, draft: '', failure: null };
+    screen = 'ai';
+    publish();
+    await reloadThread();
+    await refreshPending();
+    await pollProposal();
+  };
+
+  const sendAi = async (): Promise<void> => {
+    const conversation = ai.conversation;
+    const text = ai.draft.trim();
+    if (conversation === null || text === '' || busy || ai.turn !== null) return;
+    ai = { ...ai, draft: '' };
+    publish();
+    const result = await api.command(actor, { type: 'chat.send', conversation, text });
+    if (!result.ok) {
+      ai = { ...ai, failure: aiFailureKey(result.code) };
+      publish();
+      return;
+    }
+    await reloadThread();
+  };
+
+  // The push events of the setup surface: an ask opens the prompt, the turn events feed the thread.
+  deps.changes?.((change) => {
+    if (change.type !== 'setup.read.ask' && change.type !== 'chat.turn' && change.type !== 'chat.delta' && change.type !== 'chat.notice') return;
+    if (ai.conversation === null || change.conversation !== ai.conversation) return;
+    if (change.type === 'setup.read.ask') {
+      void refreshPending();
+      return;
+    }
+    if (change.type === 'chat.turn' && change.phase === 'started') {
+      ai = { ...ai, turn: change.turn, streamed: '', failure: null };
+      publish();
+      return;
+    }
+    if (change.type === 'chat.delta') {
+      ai = { ...ai, streamed: ai.streamed + change.text };
+      publish();
+      return;
+    }
+    // chat.turn finished: the stored messages now stand where the streamed text was, and the
+    // agent's proposal — if it made one — becomes the diff on screen.
+    ai = { ...ai, turn: null, streamed: '' };
+    publish();
+    void (async () => {
+      await reloadThread();
+      await refreshPending();
+      await pollProposal();
+    })();
+  });
 
   const finish = async (result: Extract<CommandResult, { readonly ok: true }>, toastKey: LabelKey): Promise<void> => {
     await deps.reloadTree?.();
@@ -338,9 +593,13 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
       busy = false;
       failure = null;
       proposal = null;
+      proposalId = null;
+      resumable = null;
+      ai = START_AI;
       permission = null;
       deniedPaths = new Set();
       secretNotices = 0;
+      secretsSeen = 0;
       sessionGrants.clear();
       done = null;
       publish();
@@ -348,9 +607,16 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
     refreshProvider: async () => {
       const reply: unknown = await api.query({ type: 'settings.accounts', catalog: 'skip' } satisfies Query);
       connectedProvider = connectedProviderOf(reply);
+      // The persisted draft decides the resume card (A-340, A-359); a missing surface answers
+      // nothing and the card simply stays away.
+      resumable = resumableOf(await api.query({ type: 'setup.draft' }));
       publish();
     },
     resumeDraft: () => {
+      if (resumable !== null) {
+        void startAi(resumable);
+        return;
+      }
       if (proposal !== null) screen = 'proposal';
       else if (form.path === 'docket_ai') screen = 'ai';
       else if (form.path !== null) screen = 'form';
@@ -378,12 +644,36 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
       publish();
     },
     discardProposal: () => {
+      if (proposalId !== null) {
+        // The agent's proposal (A-360): rejection writes nothing and keeps the draft; the thread
+        // stands open for the next round.
+        const rejected = proposalId;
+        proposalId = null;
+        proposal = null;
+        screen = 'ai';
+        publish();
+        void api.command(actor, { type: 'proposal.decide', id: rejected, decision: 'rejected' });
+        return;
+      }
       proposal = null;
       screen = form.path === null ? 'choose' : 'form';
       publish();
     },
     acceptProposal: async () => {
       if (proposal === null || busy) return;
+      if (proposalId !== null) {
+        busy = true;
+        publish();
+        const decided = await api.command(actor, { type: 'proposal.decide', id: proposalId, decision: 'approved' });
+        busy = false;
+        if (!decided.ok) {
+          failure = failureOf(decided.code, false, 'proposal.decide');
+          publish();
+          return;
+        }
+        await finishAi();
+        return;
+      }
       const name = proposal.project.name;
       const path = form.repoPath.trim();
       if (form.path === 'import') {
@@ -410,19 +700,35 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
     denyPermission: () => {
       if (permission === null) return;
       deniedPaths = new Set(permissionAfterDeny(deniedPaths, permission.path));
+      const answered = ai.conversation;
+      const refused = permission.path;
       permission = null;
       publish();
+      // The denied path is remembered for the conversation (U-276): the agent's retry is a typed
+      // refusal, never a second prompt.
+      if (answered !== null) void api.command(actor, { type: 'setup.read.answer', conversation: answered, path: refused, allow: false });
     },
     allowPermission: () => {
       if (permission === null) return;
       sessionGrants.add(permission.path);
+      const answered = ai.conversation;
+      const granted = permission.path;
       permission = null;
       publish();
+      // A live setup conversation records the grant server-side (A-335, A-358); the agent's
+      // retry then passes through it.
+      if (answered !== null) void api.command(actor, { type: 'setup.read.answer', conversation: answered, path: granted, allow: true });
     },
     toggleSection: (section) => {
       toggleDisclosure(section);
       publish();
     },
+    startAi,
+    setAiDraft: (text) => {
+      ai = { ...ai, draft: text };
+      publish();
+    },
+    sendAi,
     attachExisting: async () => {
       if (failure === null || !failure.offerAttach) return;
       await run({ type: 'project.attach', path: form.repoPath.trim() }, true);

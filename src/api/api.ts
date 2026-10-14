@@ -45,6 +45,7 @@ import {
   deriveWorkOrderState,
   foldRun,
   headroom,
+  isProjectSetupTarget,
   orderForReview,
   parseRepoFlowValue,
   parseSlug,
@@ -77,6 +78,7 @@ import type {
   ProviderMarks,
   UpdateChecker,
   IssueTracker,
+  SetupConversations,
 } from '../application';
 import {
   ASSISTANT_ROLE_ID,
@@ -87,6 +89,7 @@ import {
   attachProject,
   attestNoChanges,
   blockWorkOrder,
+  canStartDocketAiSetup,
   capabilityCandidates,
   checkForUpdates,
   closeWorkOrder,
@@ -98,6 +101,7 @@ import {
   createProject,
   decideActionUseCase,
   decideHumanGate,
+  decideProjectSetupProposal,
   commentOnPage,
   pinPage,
   decidePageApproval,
@@ -225,6 +229,9 @@ export type UiEvent =
   | { readonly type: 'chat.turn'; readonly conversation: string; readonly turn: string; readonly phase: 'started' | 'finished'; readonly outcome?: string }
   | { readonly type: 'chat.delta'; readonly conversation: string; readonly turn: string; readonly text: string }
   | { readonly type: 'chat.notice'; readonly conversation: string; readonly turn: string; readonly code: string }
+  /** A Docket AI setup conversation recorded a read ask (A-358): the conversation id only — the
+   *  store re-queries `setup.read.pending` on receipt, like every coarse event. */
+  | { readonly type: 'setup.read.ask'; readonly conversation: string }
   /** The shell asks the window to confirm a quit (U-294): the titles of what would stop — the
    *  second payload exception beside `chat.delta`, because the modal lists them. */
   | { readonly type: 'quit.requested'; readonly runs: readonly string[]; readonly chats: readonly string[] };
@@ -338,6 +345,14 @@ const slugValue = <B extends string>(input: string): Slug<B> | undefined => {
   return parsed.ok ? parsed.value : undefined;
 };
 
+/** The conversation id a persisted setup draft carries in its answers (A-359): the resume path's
+ *  one fact. Anything else shaped differently simply holds no conversation to reopen. */
+const conversationOfDraft = (answers: unknown): string | undefined => {
+  if (typeof answers !== 'object' || answers === null || Array.isArray(answers)) return undefined;
+  const conversation = (answers as { readonly conversation?: unknown }).conversation;
+  return typeof conversation === 'string' ? conversation : undefined;
+};
+
 /** undefined = the input is not a valid ULID; the caller answers with invalid_id and runs nothing. */
 const ulidValue = <B extends string>(input: string): Ulid<B> | undefined => {
   const parsed = parseUlid<B>(input);
@@ -405,6 +420,7 @@ export function createApi(
   chat?: ChatWiring,
   quit?: QuitPromptPort,
   tracker?: IssueTracker | IssueTrackerResolver,
+  setup?: SetupConversations,
 ): Api & RunEventFeed & { readonly quota: QuotaLifecycle; readonly quitRequested: (runs: readonly string[], chats: readonly string[]) => void } {
   const trackerForRepo = async (repo: RepoSlug): Promise<IssueTracker | undefined> => {
     if (tracker === undefined) return undefined;
@@ -481,6 +497,12 @@ export function createApi(
     for (const off of runnerSubs.values()) off();
     runnerSubs.clear();
   };
+
+  // The setup registry's asks reach the push channel as one coarse event per ask (A-358): the id
+  // only, exactly like every other member — the panel re-queries on receipt.
+  if (setup !== undefined) {
+    setup.subscribeAsk((conversation) => emit({ type: 'setup.read.ask', conversation }));
+  }
 
   /** Reads the uploads a send references. The bytes come back as the use case's own input, so the
    *  append writes them once under the ids it mints; the pending copies then go away — but only
@@ -651,7 +673,7 @@ export function createApi(
           },
         },
       };
-      const result = await runCommand(tracked, actor, command, board, updates, trackerForRepo, adopting, quotaService, chatOps);
+      const result = await runCommand(tracked, actor, command, board, updates, trackerForRepo, adopting, quotaService, chatOps, setup);
       if (appended) emit({ type: 'workOrders.changed' });
       // update.changed rides the same coarse pattern as workOrders.changed: the command answers
       // ok, the event tells every store to re-query — CommandResult carries no state payload. A
@@ -662,7 +684,7 @@ export function createApi(
       return result;
     },
     query: (query) =>
-      runQuery(deps, query, discovery, registry, board, updates, trackerForRepo, marks, adopting, candidateQuota, chat === undefined ? undefined : chat.runner),
+      runQuery(deps, query, discovery, registry, board, updates, trackerForRepo, marks, adopting, candidateQuota, chat === undefined ? undefined : chat.runner, setup),
     subscribe: (listener) => {
       listeners.add(listener);
       return () => {
@@ -687,6 +709,7 @@ const runCommand = async (
   adopting: Adopting | undefined,
   quotaService: QuotaService | undefined,
   chatOps: ChatOps,
+  setup: SetupConversations | undefined,
 ): Promise<CommandResult> => {
   switch (command.type) {
     case 'workOrder.open': {
@@ -942,6 +965,17 @@ const runCommand = async (
     case 'proposal.decide': {
       const id = ulidValue<'proposal'>(command.id);
       if (id === undefined) return invalidId();
+      // A project_setup proposal is not a file target: it carries the SetupProposal itself and is
+      // decided by its own executor (A-338, A-360) — approval writes the definitions, rejection
+      // writes nothing and keeps the setup draft.
+      const record = await deps.proposals.get(id);
+      if (record !== undefined && isProjectSetupTarget(record.target)) {
+        const decided = await decideProjectSetupProposal(
+          { clock: deps.clock, ids: deps.ids, log: deps.log, proposals: deps.proposals, definitions: deps.definitions },
+          { id, decision: command.decision, actor },
+        );
+        return decided.ok ? { ok: true, id } : { ok: false, code: decided.error };
+      }
       const decided = await decideProposalUseCase(
         { clock: deps.clock, ids: deps.ids, log: deps.log, proposals: deps.proposals, definitions: deps.definitions },
         { id, decision: command.decision, actor },
@@ -1406,6 +1440,53 @@ const runCommand = async (
       return { ok: true };
     }
 
+    // The Docket AI setup conversation (A-357): the server side of the entry gate, the conversation
+    // shell (the `chat.start` pattern — no message rides this command) and the context registration
+    // the tool dispatch and the runner then read.
+    case 'setup.ai.start': {
+      if (setup === undefined) return { ok: false, code: 'not_found' };
+      const repoPath = command.repoPath.trim();
+      if (repoPath === '' || !repoPath.startsWith('/')) return badInput();
+      const allowed = await canStartDocketAiSetup(deps);
+      if (!allowed.ok) return { ok: false, code: allowed.error };
+      let conversation: ConversationId | undefined;
+      let draftId: string | undefined;
+      if (command.draft !== undefined) {
+        const draft = await setup.draftOf(command.draft);
+        if (draft === undefined) return { ok: false, code: 'not_found' };
+        const stored = conversationOfDraft(draft.answers);
+        const parsed = stored === undefined ? undefined : ulidValue<'conversation'>(stored);
+        // A resume needs the stored conversation to still exist; a shell for a dead one is never
+        // registered, so the answer is the boundary's own not_found.
+        if (parsed === undefined || (await deps.conversations.get(parsed)) === undefined) return { ok: false, code: 'not_found' };
+        conversation = parsed;
+        draftId = draft.id;
+      } else {
+        conversation = deps.ids.next<'conversation'>();
+        const now = deps.clock.now();
+        await deps.conversations.save({
+          id: conversation,
+          scope: { kind: 'global' },
+          title: '',
+          createdAt: now,
+          updatedAt: now,
+          pinned: false,
+          messages: [],
+        });
+      }
+      setup.register({ conversation, repoPath, ...(draftId === undefined ? {} : { draftId }) });
+      return { ok: true, conversation };
+    }
+
+    case 'setup.read.answer': {
+      if (setup === undefined) return { ok: false, code: 'not_found' };
+      const conversation = ulidValue<'conversation'>(command.conversation);
+      if (conversation === undefined) return badInput();
+      if (command.path.trim() === '') return badInput();
+      const answered = setup.answer(conversation, command.path, command.allow === true);
+      return answered ? { ok: true } : { ok: false, code: 'not_found' };
+    }
+
     case 'app.update.apply': {
       if (updates === undefined) return { ok: false, code: 'not_found' };
       return commandOf(await applyUpdate(updates));
@@ -1542,6 +1623,7 @@ const runQuery = async (
   adopting: Adopting | undefined,
   candidateQuota: CandidateQuotaPreview | undefined,
   chatRunner: Pick<ChatRunner, 'active'> | undefined,
+  setup: SetupConversations | undefined,
 ): Promise<unknown> => {
   switch (query.type) {
     case 'workOrders.stageFiles': {
@@ -1850,6 +1932,28 @@ const runQuery = async (
       const port = await trackerForRepo(repo);
       if (port === undefined) return { ok: false, code: 'not_found' };
       return readTrackerLinkStatus({ definitions: deps.definitions, clock: deps.clock, log: deps.log, tracker: port }, repo);
+    }
+
+    // --- the Docket AI setup reads (A-358, A-359) ------------------------------------------------------------
+
+    case 'setup.draft': {
+      if (setup === undefined) return { ok: false, code: 'not_found' };
+      const draft = await setup.newestDraft();
+      return {
+        draft:
+          draft === undefined
+            ? null
+            : { id: draft.id, repoPath: draft.repoPath, mode: draft.mode, updatedAt: draft.updatedAt },
+      };
+    }
+
+    case 'setup.read.pending': {
+      if (setup === undefined) return { ok: false, code: 'not_found' };
+      const conversation = ulidValue<'conversation'>(query.conversation);
+      if (conversation === undefined) return badInput();
+      const context = setup.contextOf(conversation);
+      if (context === undefined) return { ok: false, code: 'not_found' };
+      return { ask: context.ask === null ? null : { path: context.ask.path, reason: context.ask.reason }, secrets: context.secrets };
     }
 
     case 'app.update': {

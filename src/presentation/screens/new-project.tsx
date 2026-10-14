@@ -1,5 +1,7 @@
 // screens/new-project.tsx — Phase 7 "Proje ekle" panel (U-286, U-287, U-272 … U-279): three setup
-// entries, import, proposal diff, and the setup permission dialog. Hosted in panel-overlay (U-181).
+// entries, import, proposal diff, and the setup permission dialog. The Docket AI entry runs the
+// live setup conversation (A-357 … A-360): the repo-folder input starts it, the thread rides the
+// chat queries and events, an ask opens the one prompt, the agent's proposal opens the diff.
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 
 import { ActionButton } from '../components/action-button';
@@ -10,6 +12,7 @@ import { SetupProposalDiff } from '../components/setup-proposal-diff';
 import { WindowTitle } from '../components/window-frame';
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
+import { noticeTextKey } from '../stores/chat-model';
 import {
   disclosureExpanded,
   hasDraft,
@@ -17,6 +20,7 @@ import {
   type NewProjectField,
   type NewProjectStore,
   type SetupEntryPath,
+  type SetupThreadMessage,
 } from '../stores/new-project';
 import type { NewProjectPanelOrigin } from '../stores/new-project-panel';
 
@@ -41,6 +45,30 @@ const PATH_CARDS: readonly { readonly path: SetupEntryPath; readonly title: Labe
   { path: 'detailed', title: 'setup.detailed.title', desc: 'setup.detailed.desc' },
 ];
 
+const WRAP = 'whitespace-pre-wrap [overflow-wrap:anywhere]';
+
+/** A stored thread line as text: a notice key becomes the locale's sentence, anything else stays
+ *  the message's own data — rendered as a React text node, never as markup. */
+const shownThreadText = (text: string, locale: Locale): string => {
+  const key = noticeTextKey(text);
+  return key === null ? text : t(locale, key);
+};
+
+function ThreadRow({ message, locale }: { readonly message: SetupThreadMessage; readonly locale: Locale }) {
+  if (message.role === 'user') {
+    return (
+      <div data-setup-row="user" className={`${WRAP} justify-self-end rounded-panel bg-raised px-3 py-2 text-[0.8125rem] leading-[1.25rem] text-ink`}>
+        {shownThreadText(message.text, locale)}
+      </div>
+    );
+  }
+  return (
+    <div data-setup-row="assistant" className={`${WRAP} text-[0.8125rem] leading-[1.25rem] text-ink`}>
+      {shownThreadText(message.text, locale)}
+    </div>
+  );
+}
+
 const CloseIcon = () => (
   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true" className="block h-4 w-4">
     <path d="m4 4 8 8M12 4 4 12" />
@@ -50,7 +78,7 @@ const CloseIcon = () => (
 export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, onOpenAccounts }: NewProjectPanelProps) {
   const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   const threadFocusRef = useRef<HTMLDivElement>(null);
-  const { form, failure, done, proposal, permission, screen, connectedProvider, busy, reasonKey, secretNotices } = state;
+  const { form, failure, done, proposal, permission, screen, connectedProvider, busy, reasonKey, secretNotices, ai } = state;
 
   useEffect(() => {
     if (open) void store.refreshProvider();
@@ -93,13 +121,32 @@ export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, 
     </div>
   );
 
+  // On the AI screen the footer's primary mirrors the thread's own action: starting the
+  // conversation before one exists, sending while it runs.
   const primaryLabel =
-    screen === 'proposal' ? 'setup.proposal.accept' : screen === 'form' ? 'newProject.create' : 'newProject.create';
+    screen === 'proposal'
+      ? 'setup.proposal.accept'
+      : screen === 'ai'
+        ? ai.conversation === null
+          ? 'setup.ai.start'
+          : 'setup.ai.send'
+        : 'newProject.create';
   const primaryAction = (): void => {
     if (screen === 'proposal') void store.acceptProposal();
     else if (screen === 'form') void store.submit();
+    else if (screen === 'ai') {
+      if (ai.conversation === null) void store.startAi();
+      else void store.sendAi();
+    }
   };
-  const primaryDisabled = screen === 'proposal' ? busy || proposal === null : reasonKey !== null || busy;
+  const primaryDisabled =
+    screen === 'proposal'
+      ? busy || proposal === null
+      : screen === 'ai'
+        ? ai.conversation === null
+          ? form.repoPath.trim() === '' || busy
+          : ai.draft.trim() === '' || ai.turn !== null || busy
+        : reasonKey !== null || busy;
 
   const footer = (
     <>
@@ -125,7 +172,7 @@ export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, 
 
   const methodChooser = (
     <div role="group" aria-label={t(locale, 'setup.method.group')} className="grid gap-2" data-setup-method="">
-      {hasDraft(form, screen, proposal) ? (
+      {hasDraft(form, screen, proposal, state.resumable) ? (
         <button
           type="button"
           data-card="resume"
@@ -237,6 +284,69 @@ export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, 
       {secretNotices > 0 ? (
         <p className={`${NOTE_CLASS} text-error`} data-setup-secret-notice="">{t(locale, 'setup.permission.secretNotice')}</p>
       ) : null}
+      {ai.failure !== null ? (
+        <p role="alert" className={`${NOTE_CLASS} text-error`} data-setup-ai-failure="">{t(locale, ai.failure)}</p>
+      ) : null}
+      {ai.conversation === null ? (
+        <div className="grid gap-2" data-setup-ai-start="">
+          <label className="grid gap-2">
+            <span className={LABEL_CLASS}>{t(locale, 'newProject.folder')}</span>
+            <input
+              autoFocus
+              value={form.repoPath}
+              onChange={(event) => store.setRepoPath(event.target.value)}
+              placeholder={t(locale, 'newProject.folder.placeholder')}
+              className={`${INPUT_CLASS} font-mono`}
+            />
+          </label>
+          {errorUnder('path')}
+          <ActionButton
+            variant="primary"
+            size="md"
+            disabled={form.repoPath.trim() === '' || busy}
+            onClick={() => void store.startAi()}
+          >
+            {t(locale, busy ? 'setup.loading' : 'setup.ai.start')}
+          </ActionButton>
+        </div>
+      ) : (
+        <div className="grid gap-2" data-setup-ai-live="">
+          <div aria-live="polite" className="grid max-h-[18rem] gap-3 overflow-auto" data-setup-thread="">
+            {ai.messages.map((message) => (
+              <ThreadRow key={message.id} message={message} locale={locale} />
+            ))}
+            {ai.streamed !== '' ? (
+              <div data-setup-row="assistant" className={`${WRAP} text-[0.8125rem] leading-[1.25rem] text-ink`}>{ai.streamed}</div>
+            ) : null}
+            {ai.turn !== null ? (
+              <span role="status" aria-label={t(locale, 'chat.busy')} className="inline-flex gap-1 py-2">
+                <i className="h-1.5 w-1.5 rounded-full bg-inkdim opacity-60 motion-safe:animate-pulse" />
+                <i className="h-1.5 w-1.5 rounded-full bg-inkdim opacity-60 motion-safe:animate-pulse [animation-delay:150ms]" />
+                <i className="h-1.5 w-1.5 rounded-full bg-inkdim opacity-60 motion-safe:animate-pulse [animation-delay:300ms]" />
+              </span>
+            ) : null}
+          </div>
+          <form
+            className="flex items-center gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void store.sendAi();
+            }}
+          >
+            <input
+              value={ai.draft}
+              onChange={(event) => store.setAiDraft(event.target.value)}
+              placeholder={t(locale, 'setup.ai.placeholder')}
+              aria-label={t(locale, 'setup.ai.placeholder')}
+              className={INPUT_CLASS}
+              data-setup-composer=""
+            />
+            <ActionButton variant="primary" size="md" disabled={ai.draft.trim() === '' || ai.turn !== null || busy} onClick={() => void store.sendAi()}>
+              {t(locale, 'setup.ai.send')}
+            </ActionButton>
+          </form>
+        </div>
+      )}
     </div>
   );
 

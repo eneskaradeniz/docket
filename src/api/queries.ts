@@ -68,7 +68,11 @@ export type Query =
   | { readonly type: 'usage.summary'; readonly workOrder?: string; readonly project?: string; readonly sinceMs?: number } // → UsageSummaryView | not_found | bad_input | invalid_id (A-280 … A-283)
   | { readonly type: 'memory.overview' } // → MemoryOverviewView (A-349)
   | { readonly type: 'definitions.list'; readonly kind: 'plugin' | 'mcp' | 'skill' | 'command' | 'hook' } // → readonly DefinitionListItem[] (A-350)
-  | { readonly type: 'tracker.linkStatus'; readonly repo: string };
+  | { readonly type: 'tracker.linkStatus'; readonly repo: string }
+  // The Docket AI setup reads (A-358, A-359): the newest draft for the resume card, the pending
+  // read ask of a setup conversation.
+  | { readonly type: 'setup.draft' } // → { draft: { id, repoPath, mode, updatedAt } | null } (A-359)
+  | { readonly type: 'setup.read.pending'; readonly conversation: string }; // → { ask: { path, reason } | null, secrets: number } | not_found (A-358)
 
 export interface AttentionItem {
   readonly workOrderId: string;
