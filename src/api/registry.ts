@@ -96,8 +96,6 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
 export const QUERY_REGISTRY: Record<Query['type'], RegistryEntry> = {
   'workOrder.detail': { input: 'id: WorkOrderId' },
   'workOrder.changes': { input: 'workOrder: WorkOrderId' },
-  'workOrders.stageFiles': { input: 'id: WorkOrderId' },
-  'workOrders.readStageFile': { input: 'id: WorkOrderId, path: string' },
   'repoStatus': { input: 'no input' },
   'repo.flow': { input: 'repo: RepoSlug' },
   'project.tree': { input: 'no input' },

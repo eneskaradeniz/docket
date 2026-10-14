@@ -32,7 +32,6 @@ export * from './library';
 export * from './memory';
 export * from './definitions-list';
 export * from './mcp-status';
-export * from './stage-files';
 export * from './definition-removal';
 export * from './roadmap';
 export * from './setup';
