@@ -241,10 +241,10 @@ export interface WorkOrderDetailStore {
   enqueue(): Promise<IntentOutcome>;
   answerPermission(input: PermissionAnswerInput): Promise<IntentOutcome>;
   approveDeploy(input: DeployApproveInput): Promise<IntentOutcome>;
-  /** Stops the live run (`run.stop`, U-299) — a request: the card itself leaves only when the
+  /** Stops the live run (`run.stop`, U-302) — a request: the card itself leaves only when the
    *  work order's changed event shows the ended run. */
   stopRun(runId: string): Promise<IntentOutcome>;
-  /** Sends the live run a steering note (`run.steer`, U-300). */
+  /** Sends the live run a steering note (`run.steer`, U-303). */
   steerRun(runId: string, note: string): Promise<IntentOutcome>;
   /** Closes the work order (`workOrder.close`) — the ⋯ menu's one item (U-226). */
   closeWorkOrder(): Promise<IntentOutcome>;
@@ -397,7 +397,7 @@ export type DecisionZone =
   | { readonly kind: 'quiet'; readonly done: boolean }
   | { readonly kind: 'cards'; readonly cards: readonly DecisionCard[] };
 
-/** The cards the zone holds for this standing (U-226's matrix, U-298's running case). A
+/** The cards the zone holds for this standing (U-226's matrix, U-301's running case). A
  *  permission ask outranks every standing; a live run is exactly one running card — the quiet
  *  line, the stage, the duration, and the two secondary doors; a failure outranks the start
  *  action; the decidable gates of the current stage (human, page, changes, deploy) each carry
@@ -412,7 +412,7 @@ export const decisionZone = (
   if (asks.length > 0) {
     return { kind: 'cards', cards: asks.map((ask) => ({ kind: 'permission' as const, ask })) };
   }
-  // U-298: the running case names the newest live run — the same run the live pane mounts. A
+  // U-301: the running case names the newest live run — the same run the live pane mounts. A
   // `running` standing without a live run in the view (a stale read, an orphaned record) and a
   // `limit_waiting` one alike stay quiet: there is nothing to stop and no handle to steer.
   if (view.state.status === 'running') {
@@ -616,7 +616,7 @@ const asksFor = (
 };
 
 /** The work order's newest still-active run — the one the live pane mounts for and the running
- *  card names (U-298). */
+ *  card names (U-301). */
 const newestActiveRun = (view: WorkOrderDetailView): WorkOrderDetailRun | undefined => {
   let newest: WorkOrderDetailRun | undefined;
   for (const run of view.runs) {
@@ -749,7 +749,7 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
   };
 
   /** A failure code this surface words itself, when the U-8 copy would say the wrong sentence —
-   *  the stop's calm "already ended" line (U-299) is the one such override. */
+   *  the stop's calm "already ended" line (U-302) is the one such override. */
   const runIntent = async (
     command: Command,
     successKey?: LabelKey,
@@ -820,7 +820,7 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     },
     stopRun: (runId) => {
       // Runs, not work orders, are what a stop reaches — no loaded view needed. The not_active
-      // answer is the calm line (U-299), not a failure word: the run ended on its own first.
+      // answer is the calm line (U-302), not a failure word: the run ended on its own first.
       return runIntent(
         { type: 'run.stop', runId },
         undefined,
@@ -829,7 +829,7 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     },
     steerRun: (runId, note) => {
       // The note travels verbatim; the api bounds it and answers bad_input, which the note
-      // dialog shows inline (U-300) — the store adds no second validation.
+      // dialog shows inline (U-303) — the store adds no second validation.
       return runIntent({ type: 'run.steer', runId, note });
     },
     approveDeploy: (input) => {

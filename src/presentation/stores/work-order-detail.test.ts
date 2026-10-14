@@ -679,7 +679,7 @@ describe('work-order detail store', () => {
     expect(idlePane.attached).toEqual([]);
   });
 
-  it('U-299: stopRun issues run.stop for the named run and refreshes; success toasts the stop request', async () => {
+  it('U-302: stopRun issues run.stop for the named run and refreshes; success toasts the stop request', async () => {
     const api = fakeApi(detailReplyWithRuns(stateAt(STAGE_BUILD, [], 'running'), [{ id: ACTIVE_RUN_ID, stage: 'build', attempt: 1, startedAt: 5_000 }]));
     const store = createStore(api);
     await store.load(WO_ID);
@@ -692,7 +692,7 @@ describe('work-order detail store', () => {
     expect(outcome).toEqual({ command: 'run.stop', result: { ok: true }, labelKey: 'detail.stop.success' });
   });
 
-  it('U-299: a not_active stop maps to the calm line, not a failure word', async () => {
+  it('U-302: a not_active stop maps to the calm line, not a failure word', async () => {
     const api = fakeApi(detailReplyWithRuns(stateAt(STAGE_BUILD, [], 'running'), [{ id: ACTIVE_RUN_ID, stage: 'build', attempt: 1, startedAt: 5_000 }]));
     api.setCommandResult({ ok: false, code: 'not_active' });
     const store = createStore(api);
@@ -704,7 +704,7 @@ describe('work-order detail store', () => {
     expect(outcome.labelKey).toBe('detail.stop.alreadyEnded');
   });
 
-  it('U-300: steerRun issues run.steer with the note verbatim — no second validation in the store', async () => {
+  it('U-303: steerRun issues run.steer with the note verbatim — no second validation in the store', async () => {
     const api = fakeApi(detailReplyWithRuns(stateAt(STAGE_BUILD, [], 'running'), [{ id: ACTIVE_RUN_ID, stage: 'build', attempt: 1, startedAt: 5_000 }]));
     const store = createStore(api);
     await store.load(WO_ID);
@@ -923,15 +923,15 @@ describe('decision zone (U-226)', () => {
     expect(gateWaitingCount({ kind: 'quiet', done: false })).toBe(0);
     expect(gateWaitingCount({ kind: 'cards', cards: [{ kind: 'start', stageName: 'Plan' }] })).toBe(0);
     expect(gateWaitingCount({ kind: 'cards', cards: [{ kind: 'failed', retry: true }] })).toBe(0);
-    // The running card (U-298) is not a gate waiting either — it waits on the run, not a person.
+    // The running card (U-301) is not a gate waiting either — it waits on the run, not a person.
     expect(
       gateWaitingCount({ kind: 'cards', cards: [{ kind: 'running', runId: RUN_ID, stageName: 'Build', startedAt: 100 }] }),
     ).toBe(0);
   });
 
-  // --- U-298: the running card -------------------------------------------------------------------------
+  // --- U-301: the running card -------------------------------------------------------------------------
 
-  it('U-298: a live run of the current stage is exactly one running card naming it', () => {
+  it('U-301: a live run of the current stage is exactly one running card naming it', () => {
     const live: readonly WorkOrderDetailRun[] = [
       { id: ACTIVE_RUN_ID, stage: 'build', attempt: 1, startedAt: 5_000 },
     ];
@@ -941,7 +941,7 @@ describe('decision zone (U-226)', () => {
     });
   });
 
-  it('U-298: no card when no run is live — a stale running standing and limit_waiting alike stay quiet', () => {
+  it('U-301: no card when no run is live — a stale running standing and limit_waiting alike stay quiet', () => {
     // The running status without a live run in the view: a stale read, an orphaned record.
     expect(zoneFor(stateAt(STAGE_BUILD, [], 'running'), [])).toEqual({ kind: 'quiet', done: false });
     const ended: readonly WorkOrderDetailRun[] = [
@@ -955,7 +955,7 @@ describe('decision zone (U-226)', () => {
     expect(zoneFor(stateAt(STAGE_BUILD, [], 'limit_waiting'), waiting)).toEqual({ kind: 'quiet', done: false });
   });
 
-  it('U-298: with two live runs the newest one is the card — the run the live pane mounts', () => {
+  it('U-301: with two live runs the newest one is the card — the run the live pane mounts', () => {
     const two: readonly WorkOrderDetailRun[] = [
       { id: RUN_ID, stage: 'build', attempt: 1, startedAt: 1_000 },
       { id: ACTIVE_RUN_ID, stage: 'build', attempt: 1, startedAt: 9_000 },
@@ -966,7 +966,7 @@ describe('decision zone (U-226)', () => {
     });
   });
 
-  it('U-298: the running card appears in no other standing — the two doors belong to the live run alone', () => {
+  it('U-301: the running card appears in no other standing — the two doors belong to the live run alone', () => {
     for (const standing of ['ready', 'gating', 'awaiting_human', 'done', 'limit_waiting'] as const) {
       const zone = zoneFor(stateAt(STAGE_BUILD, [], standing), [{ id: ACTIVE_RUN_ID, stage: 'build', attempt: 1, startedAt: 5_000 }]);
       expect(

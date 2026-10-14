@@ -16,6 +16,7 @@ import {
   limitPolicyFor,
   nextVersion,
   pinFlow,
+  relinkRole,
   roleRemoval,
   roleUpdateProposals,
   type FlowPin,
@@ -437,6 +438,91 @@ describe('effectiveRole', () => {
     expect(limitPolicyFor(flow, REVIEW, 'wait_resume')).toBe('fallback_account');
     // A stage without a binding reads the default — the same answer an unknown stage gets.
     expect(limitPolicyFor(flow, MANUAL, 'ask')).toBe('ask');
+  });
+});
+
+describe('relinkRole', () => {
+  // A repo-owned copy with local edits over v1: name, write scope and capabilities moved,
+  // instructions and docketTools untouched.
+  const detachedBody = (): RoleDef =>
+    roleDef(ROLE, {
+      name: 'Repo Hero',
+      writeScope: { kind: 'docs' },
+      capabilities: [slugOf<'capability'>('git')],
+    });
+
+  it('R-146: refuses a ref without detached and a version the role does not carry', () => {
+    expect(relinkRole(roleRef(ROLE, 1), devLibrary(), 3, 'overlay')).toEqual({ ok: false, error: 'not_detached' });
+    expect(relinkRole(roleRef(ROLE, 1, { detached: detachedBody() }), devLibrary(), 99, 'library')).toEqual({
+      ok: false,
+      error: 'unknown_role_version',
+    });
+    // A version another role carries is still unknown for this role's history.
+    expect(relinkRole(roleRef(ROLE, 1, { detached: detachedBody() }), reviewerLibrary(), 2, 'overlay')).toEqual({
+      ok: false,
+      error: 'unknown_role_version',
+    });
+  });
+
+  it('R-146: keeps roleId, sets version and drops detached; library keep carries no overlay', () => {
+    const relinked = relinkRole(roleRef(ROLE, 2, { detached: detachedBody() }), devLibrary(), 3, 'library');
+    expect(relinked).toEqual({ ok: true, value: { roleId: ROLE, version: 3 } });
+    // An older version may be chosen just the same.
+    const older = relinkRole(roleRef(ROLE, 3, { detached: detachedBody() }), devLibrary(), 2, 'library');
+    expect(older).toEqual({ ok: true, value: { roleId: ROLE, version: 2 } });
+  });
+
+  it('R-146: overlay keep holds exactly the differing fields, arrays compared whole', () => {
+    const relinked = relinkRole(roleRef(ROLE, 1, { detached: detachedBody() }), devLibrary(), 1, 'overlay');
+    // v1 differs from the detached body in name, writeScope and capabilities; instructions match.
+    expect(relinked).toEqual({
+      ok: true,
+      value: { roleId: ROLE, version: 1, overlay: { name: 'Repo Hero', writeScope: { kind: 'docs' }, capabilities: [slugOf<'capability'>('git')] } },
+    });
+    // An equal array field is not held: same contents, different identity.
+    const arrayLibrary: readonly VersionRecord<RoleDef>[] = [
+      versionOf(ROLE, 1, roleDef(ROLE, { capabilities: [slugOf<'capability'>('git')] })),
+    ];
+    const sameArrays = relinkRole(
+      roleRef(ROLE, 1, { detached: roleDef(ROLE, { capabilities: [slugOf<'capability'>('git')] }) }),
+      arrayLibrary,
+      1,
+      'overlay',
+    );
+    expect(sameArrays).toEqual({ ok: true, value: { roleId: ROLE, version: 1 } });
+  });
+
+  it('R-146: a detached body equal to the library version yields no overlay', () => {
+    const relinked = relinkRole(roleRef(ROLE, 2, { detached: devLibrary()[1].body }), devLibrary(), 2, 'overlay');
+    expect(relinked).toEqual({ ok: true, value: { roleId: ROLE, version: 2 } });
+  });
+
+  it('R-146: overlay keep keeps the effective role equal to the detached body except id and active', () => {
+    // The library body at v1 is inactive; the detached copy says active.
+    const library: readonly VersionRecord<RoleDef>[] = [
+      versionOf(ROLE, 1, roleDef(ROLE, { active: false })),
+      versionOf(ROLE, 2, roleDef(ROLE, { instructions: 'Do the work, carefully.', active: false })),
+    ];
+    const detached = roleDef(ROLE, { name: 'Repo Hero', instructions: 'Local words.', active: true });
+    const relinked = relinkRole(roleRef(ROLE, 2, { detached }), library, 1, 'overlay');
+    expect(relinked.ok).toBe(true);
+    if (!relinked.ok) return;
+    const effective = effectiveRole(relinked.value, library);
+    expect(effective).toEqual({ ok: true, value: roleDef(ROLE, { name: 'Repo Hero', instructions: 'Local words.', active: false }) });
+    // The two allowed exceptions, spelled out: identity and activity come from the library body.
+    expect(effective.ok && effective.value.id).toBe(ROLE);
+    expect(effective.ok && effective.value.active).toBe(false);
+  });
+
+  it('R-146: never mutates the ref or the library', () => {
+    const ref = roleRef(ROLE, 1, { detached: detachedBody() });
+    const refSnapshot = JSON.parse(JSON.stringify(ref)) as RoleRef;
+    const library = devLibrary();
+    const librarySnapshot = JSON.parse(JSON.stringify(library)) as VersionRecord<RoleDef>[];
+    relinkRole(ref, library, 3, 'overlay');
+    relinkRole(ref, library, 1, 'library');
+    expect(ref).toEqual(refSnapshot);
+    expect(library).toEqual(librarySnapshot);
   });
 });
 

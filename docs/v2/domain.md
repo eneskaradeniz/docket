@@ -1388,3 +1388,21 @@ export function redactSecretShapes(text: string): string;
 Addendum 2026-10-13 (#1057): the one-time legacy import is removed.
 
 - **R-134** (amended 2026-10-13, #1057) The clause "the legacy `flows`/`defaultFlow`/`roleOverrides` fields are read only by the one-time import (#1004) and are never written" is gone — nothing reads those fields anymore; the fields themselves are removed by #1012. The deletion-and-archive rules stand.
+
+Addendum 2026-10-14 (#1104): re-linking a detached role. Domain and frontend only — the re-linked
+binding enters the repo-settings draft and is saved by the existing repo save (`repo.saveFlow`);
+no new command or query. `definitions/repo-flow.ts` gains the pure function.
+
+```ts
+// definitions/repo-flow.ts — exported through the definitions index (added 2026-10-14, #1104)
+export type RelinkError = 'not_detached' | 'unknown_role_version';
+export type RelinkKeep = 'overlay' | 'library';
+export function relinkRole(
+  ref: RoleRef,
+  library: readonly VersionRecord<RoleDef>[],
+  version: number,
+  keep: RelinkKeep,
+): Result<RoleRef, RelinkError>;
+```
+
+- **R-146** (added 2026-10-14, #1104) `relinkRole` is pure. A ref without `detached` is `not_detached`; a `version` absent from the role's library history is `unknown_role_version`. The result keeps `roleId`, sets `version`, has no `detached`. With `keep: 'library'` it has no overlay. With `keep: 'overlay'` its overlay holds exactly the `OVERLAY_FIELDS` whose value differs (by `sameValue`) between the detached body and the library body at `version`, and is omitted when none differ. For `keep: 'overlay'`, `effectiveRole(result)` equals the detached body in every field except `id` and `active`. Inputs are never mutated.

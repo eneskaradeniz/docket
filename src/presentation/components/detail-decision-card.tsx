@@ -50,9 +50,9 @@ export interface DecisionZoneProps {
   readonly onAttest: (gate: string, noChangeNeeded: boolean) => void;
   readonly onAnswer: (ask: WorkOrderAskView, decision: 'allow' | 'deny') => void;
   readonly onDeployApprove: (input: DeployApproveInput) => void;
-  /** Stops the live run (U-299); the card reads the outcome to place the calm line. */
+  /** Stops the live run (U-302); the card reads the outcome to place the calm line. */
   readonly onStop: (runId: string) => Promise<IntentOutcome>;
-  /** Sends the live run a steering note (U-300); bad_input keeps the note dialog open. */
+  /** Sends the live run a steering note (U-303); bad_input keeps the note dialog open. */
   readonly onSteer: (runId: string, note: string) => Promise<IntentOutcome>;
   readonly onEnqueue: () => void;
   /** The failed card's “İş emrini kapat…” asks the screen for its confirm dialog. */
@@ -358,8 +358,8 @@ function FailedCard({
   );
 }
 
-/** The running card (U-298): the quiet line, the stage and the elapsed time of the live run,
- *  and the two secondary doors. The stop confirm (U-299) and the steer note (U-300) are the
+/** The running card (U-301): the quiet line, the stage and the elapsed time of the live run,
+ *  and the two secondary doors. The stop confirm (U-302) and the steer note (U-303) are the
  *  card's own inline dialogs — the same A3 trap the reject box uses. Nothing is optimistic
  *  here: the card leaves only when the work order's changed event shows the ended run, and a
  *  stop that lands late says so with the calm line. */
@@ -386,7 +386,7 @@ function RunningCard({
   const elapsed = formatDurationMs(locale, Math.max(Date.now() - startedAt, 0));
   const sendNote = (): void => {
     void onSteer(runId, note).then((outcome) => {
-      // Only the field's own verdict keeps the dialog open (U-300); anything else is the toast's.
+      // Only the field's own verdict keeps the dialog open (U-303); anything else is the toast's.
       if (!outcome.result.ok && outcome.result.code === 'bad_input') setNoteRejected(true);
       else {
         setSteering(false);
@@ -401,7 +401,7 @@ function RunningCard({
         <span>{stageName}</span>
         <span>{t(locale, 'detail.meta.duration').replace('{n}', elapsed)}</span>
       </p>
-      {/* U-301: both doors are the secondary outline — there is no danger token, the confirm
+      {/* U-304: both doors are the secondary outline — there is no danger token, the confirm
           dialog carries the weight. */}
       <div className="flex flex-wrap items-center gap-2">
         <ActionButton variant="neutral" onClick={() => setStopping(true)}>

@@ -129,7 +129,7 @@ const ASKING: WorkOrderDetailView = {
   runs: [{ id: '01ARZ3NDEKTSV4RRFFQ69G5FA0', stage: STAGE_PLAN, attempt: 1, startedAt: 0 }],
 };
 
-/** A live run of the current stage — the running card's standing (U-298). */
+/** A live run of the current stage — the running card's standing (U-301). */
 const RUNNING: WorkOrderDetailView = {
   ...READY,
   state: { status: 'running', stage: STAGE_PLAN, attempt: 1, pendingGates: [], skippedStages: [] },
@@ -338,7 +338,7 @@ describe('work-order detail screen — the decision zone (U-4, U-226)', () => {
     expect(html).not.toContain('01ARZ3NDEKTSV4RRFFQ69G5FE77</code>');
   });
 
-  it('U-298: a live run is one running card — the quiet line, the stage, the duration, the two doors', async () => {
+  it('U-301: a live run is one running card — the quiet line, the stage, the duration, the two doors', async () => {
     const html = await draw(RUNNING);
 
     const stackAt = html.indexOf('data-decision-stack');
@@ -353,7 +353,7 @@ describe('work-order detail screen — the decision zone (U-4, U-226)', () => {
     expect(stack.match(/data-decision-card="running"/g)).toHaveLength(1);
   });
 
-  it('U-298: no live run, no card — a stale running standing renders neither door', async () => {
+  it('U-301: no live run, no card — a stale running standing renders neither door', async () => {
     const stale: WorkOrderDetailView = { ...RUNNING, runs: [] };
     const html = await draw(stale);
 
@@ -362,7 +362,7 @@ describe('work-order detail screen — the decision zone (U-4, U-226)', () => {
     expect(html).not.toContain('Koşu sürüyor');
   });
 
-  it('U-299/U-300: both dialogs are the A3 inline traps; the stop confirm issues run.stop, the note dialog sends on Enter', async () => {
+  it('U-302/U-303: both dialogs are the A3 inline traps; the stop confirm issues run.stop, the note dialog sends on Enter', async () => {
     await draw(RUNNING);
     const card = source('detail-decision-card.tsx');
 
@@ -373,7 +373,7 @@ describe('work-order detail screen — the decision zone (U-4, U-226)', () => {
     expect(card).toContain('detail.stop.body');
     expect(card).toContain('detail.stop.confirm');
     expect(card).toContain("onStop(runId)");
-    // The calm line the not_active answer renders (U-299), never an optimistic card removal.
+    // The calm line the not_active answer renders (U-302), never an optimistic card removal.
     expect(card).toContain('detail.stop.alreadyEnded');
     // The steer note: multiline textarea, Enter sends and Shift+Enter adds a line, the inline
     // bad_input error, the dialog that stays open.
@@ -384,7 +384,7 @@ describe('work-order detail screen — the decision zone (U-4, U-226)', () => {
     expect(card).toContain('sendNote()');
   });
 
-  it('U-301: the two doors are the secondary outline — no primary fill, no new hue on the card', async () => {
+  it('U-304: the two doors are the secondary outline — no primary fill, no new hue on the card', async () => {
     const html = await draw(RUNNING);
 
     const cardAt = html.indexOf('data-decision-card="running"');
@@ -619,7 +619,7 @@ describe('work-order detail screen — accessibility (A1, A5, A6, A7)', () => {
     }
   });
 
-  it('U-302: the stop and steer copy lives in both bundles — the prototype\'s fixed words, never inline', async () => {
+  it('U-305: the stop and steer copy lives in both bundles — the prototype\'s fixed words, never inline', async () => {
     const tr = source('tr.ts');
     const en = source('en.ts');
     for (const key of [

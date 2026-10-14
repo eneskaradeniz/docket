@@ -10,7 +10,7 @@ import { parseSlug } from '../../domain/index';
 import { FlowStageStrip } from '../components/flow-stage-strip';
 import { LimitPolicySection } from '../components/limit-policy-section';
 import { OverlayEditor } from '../components/overlay-editor';
-import { roleUpdateProposals } from '../../domain/index';
+import { effectiveRole, roleUpdateProposals } from '../../domain/index';
 import {
   createRepoSettingsStore,
   flowDraftState,
@@ -182,6 +182,11 @@ describe('U-288: repo settings flow and roles', () => {
         onDetach: () => {},
         onApplyProposal: () => {},
         onClearOverlayField: () => {},
+        relinkStage: null,
+        relinkNotice: null,
+        onRequestRelink: () => {},
+        onCancelRelink: () => {},
+        onConfirmRelink: () => {},
       }),
     );
     expect(html).toContain('v1');
@@ -211,6 +216,11 @@ describe('U-288: repo settings flow and roles', () => {
         onDetach: () => {},
         onApplyProposal: () => {},
         onClearOverlayField: () => {},
+        relinkStage: null,
+        relinkNotice: null,
+        onRequestRelink: () => {},
+        onCancelRelink: () => {},
+        onConfirmRelink: () => {},
       }),
     );
     expect(html).toContain('Yeni sürüm var');
@@ -275,5 +285,59 @@ describe('U-289: repo limit policy and save controls', () => {
     );
     expect(html).toContain('rounded-full bg-signal');
     expect(html).toContain('aria-label="Önerilen değere döndür"');
+  });
+});
+
+describe('re-link a detached role to the library (U-298 … U-300)', () => {
+  /** The sample flow after Ayır: the binding owns its copy with a local instructions edit. */
+  const detachedSample = (): RepoFlow => {
+    const flow = sampleFlow();
+    const binding = flow.bindings[0];
+    if (binding === undefined || binding.role === undefined) throw new Error('sample binding');
+    const detached: RoleDef = { ...WORKER, instructions: 'Local tweak.' };
+    return {
+      ...flow,
+      bindings: [{ ...binding, role: { ...binding.role, version: 1, detached } }],
+    };
+  };
+
+  it('U-300: requestRelink opens, cancelRelink closes, confirmRelink rewires the draft only', async () => {
+    const { store, api } = storeWith(detachedSample(), singleRepoTree);
+    await store.load('web');
+    const before = store.state().draft?.bindings[0]?.role?.detached;
+    expect(before?.instructions).toBe('Local tweak.');
+
+    store.requestRelink(stage('implement'));
+    expect(store.state().relinkStage).toBe(stage('implement'));
+    store.cancelRelink();
+    expect(store.state().relinkStage).toBeNull();
+    expect(store.state().draft?.bindings[0]?.role?.detached).toBeDefined();
+
+    store.requestRelink(stage('implement'));
+    store.confirmRelink(1, 'overlay');
+    expect(store.state().relinkStage).toBeNull();
+    const ref = store.state().draft?.bindings[0]?.role;
+    expect(ref?.detached).toBeUndefined();
+    expect(ref?.version).toBe(1);
+    expect(ref?.overlay).toEqual({ instructions: 'Local tweak.' });
+    // Lossless: the effective role of the draft binding equals the previous detached body.
+    if (ref === undefined) throw new Error('relinked ref');
+    expect(effectiveRole(ref, libraryV1)).toEqual({ ok: true, value: before });
+    // Nothing is saved before Kaydet: the stored flow is untouched and no command left.
+    expect(store.state().stored?.bindings[0]?.role?.detached).toBeDefined();
+    expect(api.commands).toHaveLength(0);
+    expect(flowDraftState(store.state().stored, store.state().draft).isDirty).toBe(true);
+  });
+
+  it('U-300: the library keep drops the overlay and the notice names the stage', async () => {
+    const { store } = storeWith(detachedSample(), singleRepoTree);
+    await store.load('web');
+    store.requestRelink(stage('implement'));
+    store.confirmRelink(2, 'library');
+    const ref = store.state().draft?.bindings[0]?.role;
+    expect(ref?.detached).toBeUndefined();
+    expect(ref?.version).toBe(2);
+    expect(ref?.overlay).toBeUndefined();
+    expect(store.state().relinkNotice).toBe(stage('implement'));
   });
 });
