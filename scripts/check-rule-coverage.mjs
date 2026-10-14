@@ -77,9 +77,6 @@ const SECTIONS = [
 // when the phase closes.
 const PENDING = new Map([
 
-  // #1005 — two-layer roadmap and tracker model with sync modes
-  ['application:A-333', '#1020'],
-
   // #1006 — agent capabilities: library, provider translation, memory, machine import
 
   // #1008: Phase 7 surfaces — settings, setup, repo, work orders, versions, quit

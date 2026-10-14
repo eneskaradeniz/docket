@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ExternalItem, IssueTracker, TrackerError } from '../issue-tracker';
 
+import { createContractFakeTracker, trackerAdapterContract } from '../tracker-adapter-contract.test';
 import { createFakeTracker } from './fake-issue-tracker';
 
 const item = (overrides?: Partial<ExternalItem>): ExternalItem => ({
@@ -172,4 +173,8 @@ describe('createFakeTracker', () => {
     if (!failed.ok) expect(failed.error).toBe('not_found');
     expect(tracker.items).toEqual([item()]);
   });
+});
+
+describe('A-333: fake-issue-tracker passes trackerAdapterContract', () => {
+  trackerAdapterContract(createContractFakeTracker);
 });
