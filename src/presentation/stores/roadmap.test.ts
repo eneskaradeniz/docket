@@ -48,22 +48,45 @@ const view: RoadmapPageView = {
   runnable: ['mobil-bildirim'],
 };
 
+const TREE = [
+  {
+    project: 'antero',
+    name: 'Antero',
+    mainRepo: 'antreo-api',
+    repos: [
+      { repo: 'antreo-api', name: 'antreo-api', main: true, active: 0, running: 0, waiting: 0, status: 'idle' as const },
+      { repo: 'antreo-mobile', name: 'antreo-mobile', main: false, active: 0, running: 0, waiting: 0, status: 'idle' as const },
+    ],
+    active: 0,
+    running: 0,
+    waiting: 0,
+    status: 'idle' as const,
+  },
+];
+
 interface FakeRoadmapApi extends Pick<Api, 'query' | 'command'> {
   readonly queries: Query[];
   setReply(reply: unknown): void;
+  setRepoReply(repo: string, reply: unknown): void;
 }
 
 /** Query calls are recorded; the reply is swappable mid-test. */
 const fakeRoadmapApi = (initial: unknown): FakeRoadmapApi => {
   const queries: Query[] = [];
   let reply: unknown = initial;
+  const repoReplies = new Map<string, unknown>();
   return {
     queries,
     setReply: (next) => {
       reply = next;
     },
+    setRepoReply: (repo, next) => {
+      repoReplies.set(repo, next);
+    },
     query: (query) => {
       queries.push(query);
+      if (query.type === 'project.tree') return Promise.resolve(TREE);
+      if (query.type === 'roadmap.byRepo') return Promise.resolve(repoReplies.get(query.repo) ?? { ok: false, code: 'not_found' });
       return Promise.resolve(reply);
     },
     // The U-17 cases never issue a command.
@@ -98,7 +121,7 @@ describe('roadmap store (U-17)', () => {
     const store = createRoadmapStore({ api, changes: fakeChanges().signal });
     await store.load('antero');
 
-    expect(api.queries).toEqual([{ type: 'roadmap.byProject', project: 'antero' }]);
+    expect(api.queries).toEqual([{ type: 'project.tree' }, { type: 'roadmap.byProject', project: 'antero' }]);
     const state = store.state();
     expect(state.problem).toBeNull();
     expect(state.view?.phases).toHaveLength(2);
@@ -129,10 +152,7 @@ describe('roadmap store (U-17)', () => {
     changes.emit({ type: 'workOrders.changed' });
     await flush();
 
-    expect(api.queries).toEqual([
-      { type: 'roadmap.byProject', project: 'antero' },
-      { type: 'roadmap.byProject', project: 'antero' },
-    ]);
+    expect(api.queries.filter((q) => q.type === 'roadmap.byProject')).toHaveLength(2);
     expect(store.state().openPhases).toEqual(['faz-1', 'faz-2']);
     expect(store.state().expanded).toEqual(['mobil-login']);
   });
@@ -146,7 +166,7 @@ describe('roadmap store (U-17)', () => {
     changes.emit({ type: 'run.updated', runId: 'run-1' });
     await flush();
 
-    expect(api.queries).toHaveLength(1);
+    expect(api.queries.filter((q) => q.type === 'roadmap.byProject')).toHaveLength(1);
   });
 
   it('U-17: expanding a cross-repo task is session state; another project resets both kinds', async () => {
@@ -158,10 +178,7 @@ describe('roadmap store (U-17)', () => {
 
     await store.load('docket');
 
-    expect(api.queries).toEqual([
-      { type: 'roadmap.byProject', project: 'antero' },
-      { type: 'roadmap.byProject', project: 'docket' },
-    ]);
+    expect(api.queries.filter((q) => q.type === 'roadmap.byProject').map((q) => q.project)).toEqual(['antero', 'docket']);
     expect(store.state().openPhases).toEqual(['faz-1']);
     expect(store.state().expanded).toEqual([]);
   });
@@ -175,5 +192,29 @@ describe('roadmap store (U-17)', () => {
     expect(state.view).toBeNull();
     expect(state.problem).toBe('not_found');
     expect(state.loading).toBe(false);
+  });
+});
+
+describe('roadmap store — repository layer (U-324)', () => {
+  it('U-324: switching layer loads byRepo once; returning to project does not re-query byProject', async () => {
+    const api = fakeRoadmapApi(view);
+    api.setRepoReply('antreo-api', {
+      milestones: [{ id: 'm1', title: 'M1', state: 'open', source: { kind: 'local' } }],
+      issues: [],
+    });
+    const store = createRoadmapStore({ api, changes: fakeChanges().signal });
+    await store.load('antero');
+    const before = api.queries.length;
+
+    store.setLayer('repo');
+    await flush();
+    store.setLayer('project');
+    await flush();
+
+    expect(api.queries.filter((q) => q.type === 'roadmap.byRepo')).toHaveLength(1);
+    expect(api.queries.filter((q) => q.type === 'roadmap.byProject')).toHaveLength(1);
+    expect(api.queries.length).toBeGreaterThan(before);
+    expect(store.state().layer).toBe('project');
+    expect(store.state().selectedRepo).toBe('antreo-api');
   });
 });

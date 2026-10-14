@@ -1542,6 +1542,8 @@ Addendum 2026-10-10 (#881) — machine-aware dispatch. New ports: `MachineProbe 
 
 - **A-127** (added 2026-10-10, #882) Each phase entry of `roadmap.byProject` carries `blockedBy: readonly string[]`: the ids of the roadmap's blocking phases for that phase whose derived status is not `done`, in the order the roadmap lists them; empty when nothing blocks it or every blocker is done. It is a read-only projection of `PhaseDef.blockedBy` and the derived phase statuses; no other field of the query or any command changes.
 
+Addendum 2026-10-14 (#1115) — phase items on `roadmap.byProject`. When a phase lists items in the project roadmap, its entry may carry `items?: readonly RoadmapPhaseItemView[]` (absent when the phase has none): `{ kind: 'manual', id, title, done }` or `{ kind: 'repo_item', ref: { repo, kind: 'milestone' | 'issue', id } }`, read-only for repo-layer phase-link badges; together with `progress` (R-137) and no extra fields on those views.
+
 ## 11. Proposal queries (added 2026-10-10, #890)
 
 - **A-128** (added 2026-10-10, #890) Query `proposals.list { status? }` answers `ProposalListItem[]`. With a `status` filter only that status is listed, newest `createdAt` first; without one, pending proposals come first and then the rest, each group newest first. Equal times are ordered by id descending, so the order is total.

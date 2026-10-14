@@ -202,6 +202,8 @@ for (const [sizeName, theme] of combos) {
   await journey('J-4', 'project row → roadmap → expand a cross-repo task → its work order opens the detail', async () => {
     await treeRow('Antero');
     await see('Yol haritası');
+    await see('Proje katmanı');
+    await see('Depo katmanı');
     await shot('roadmap');
     await click('Mobil login');
     await see('İE-0026');
