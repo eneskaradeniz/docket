@@ -411,6 +411,13 @@ export type DefinitionIssueCode =
 
 Conflicts and supersessions (added 2026-10-12, #1006, D-7): Glossary "Capability — MCP, skill, hook, context" grows by plugin and command; "capabilities attached to roles" now also arrive through plugins; Phase 3.5 account-scoped capability candidates (R-62…R-67, #850–#866) stay as the import mechanism.
 
+### Addendum: corrections to the repo contract snippets above (added 2026-10-14, #1180)
+
+The snippets printed earlier in this section predate the 2026-10-12 addenda and read as current contracts; two corrections, each dated here without rewriting the text above (added 2026-10-14, #1180):
+
+- The `ProjectDef` and `RepoDef` snippets above are historical: the current contract is the D-1 shapes of the repo-owned-flows addendum above — `ProjectDef` is `{ id, name, repos, budget? }` with no `mainRepo` and no roles or flows, and `RepoDef` has `flow: RepoFlow` and `defaultLimitPolicy` in place of `flows`, `defaultFlow`, and `roleOverrides` (added 2026-10-14, #1180).
+- The `RepoRef` note above is likewise stale: adapters build `RepoRef` from the registry fingerprint captured at register or relink, with `defaultBranch: ''`; the default branch is read from the forge host when an operation needs it (added 2026-10-14, #1180). Known limitation, recorded here and deliberately not designed away in this change: a remote rename on the same folder never triggers relink, so the stored fingerprint remote can go stale (added 2026-10-14, #1180).
+
 ---
 
 ## 3. `resolver/` — the precedence chain
