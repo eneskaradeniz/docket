@@ -72,6 +72,12 @@ import { createPageViewTrace } from '../src/infrastructure/index';
 import { DEFAULT_LOCALE, type Locale } from '../src/presentation/labels/t';
 import { createDevBridge, devBridgeEnabled } from './dev-bridge';
 import {
+  buildPickFoldersOpenDialogOptions,
+  folderPickerDialogTitle,
+  parsePickFoldersRequest,
+  shapePickFoldersResult,
+} from './pick-folders';
+import {
   PAGE_VIEW_CHANNEL,
   PAGE_VIEW_CLOSED_CHANNEL,
   createElectronPageView,
@@ -600,6 +606,21 @@ const startApp = async (): Promise<void> => {
   });
 
   registerIpc(api);
+  ipcMain.handle('docket:pick-folders', async (_event, options: unknown) => {
+    const { multiple } = parsePickFoldersRequest(options);
+    const win =
+      BrowserWindow.getFocusedWindow() ??
+      (mainWindow !== undefined && !mainWindow.isDestroyed()
+        ? mainWindow
+        : [...windows].find((w) => !w.isDestroyed()));
+    const locale = await resolveActiveLocale(win);
+    const dialogOptions = buildPickFoldersOpenDialogOptions(multiple, folderPickerDialogTitle(locale));
+    const result =
+      win !== undefined && !win.isDestroyed()
+        ? await dialog.showOpenDialog(win, dialogOptions)
+        : await dialog.showOpenDialog(dialogOptions);
+    return shapePickFoldersResult(result.canceled, result.filePaths);
+  });
   if (devBridge !== undefined) {
     ipcMain.handle('docket:dev', (_event, op: unknown, args: unknown) => devBridge.call(op, args));
   }

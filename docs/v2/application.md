@@ -2025,6 +2025,11 @@ Rules A-380 … A-381; the UI rules are U-314 and U-315 (docs/v2/ui.md).
 - **A-380** (added 2026-10-14, #1120) `mcp.status` answers from `McpListenerControl.status()` plus the tool-name constants and the roles with `docketTools === false`; it never starts anything and never reads a secret or a token.
 - **A-381** (added 2026-10-14, #1120) `mcp.restore` calls `restart()` once; success answers the new status; each failure maps to its typed error; it changes no role, no library entry and no run, and a second call after success is a no-op that answers `ok`.
 
+Addendum 2026-10-14 (#1129): the preload bridge's native folder picker — `docket.pickFolders` on
+`window.docket`, `ipcMain.handle('docket:pick-folders', …)` and `electron/pick-folders.ts`. Rule A-384.
+
+- **A-384** (added 2026-10-14, #1129) `docket.pickFolders({ multiple? })` opens the native folder dialog on the focused window and answers `{ canceled: true }` or `{ canceled: false, paths, truncated? }`; paths are absolute and capped at 50; the handler never reads the folders and never logs the paths; the renderer cannot choose the title or the default path.
+
 Addendum 2026-10-14 (#1110): stop and steer a running stage — the live-handle registry
 (`application/services/run-control.ts`, the permission-board pattern), the commands `run.stop`
 and `run.steer`, and the executor's attach/detach wiring. Rules A-361 … A-365.
