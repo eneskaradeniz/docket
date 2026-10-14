@@ -1,7 +1,9 @@
 // forge/repo-forge-resolver.test.ts — rules A-368 and I-104: the per-repo Forge resolver answers
 // only for github.com remotes with an authenticated gh CLI, probes once, and stays silent
-// (undefined) everywhere else. The last test holds the issue's read-only line: no production path
-// calls a forge write member.
+// (undefined) everywhere else. The last two tests hold the read-only line as the git-actions
+// issue (GI-2) left it: the git-actions use case is the one production module licensed to call a
+// forge write member, mergePullRequest from it alone, and every other file under src/ or
+// electron/ still calls none.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -82,7 +84,7 @@ describe('createRepoForgeResolver', () => {
   });
 });
 
-// --- the read-only line (acceptance 4) -------------------------------------------------------------
+// --- the read-only line (acceptance 4, held until GI-2 gave it its one caller) ---------------------
 
 /** Every non-test TypeScript file under src/ and electron/, the trees a production path lives in. */
 const productionFiles = (root: string, acc: string[] = []): string[] => {
@@ -96,11 +98,24 @@ const productionFiles = (root: string, acc: string[] = []): string[] => {
 
 const WRITE_MEMBERS = /\.pushBranch\(|\.openPullRequest\(|\.mergePullRequest\(/;
 
+/** The one production module the git-actions issue (GI-2) licensed to call a forge write member. */
+const GIT_ACTIONS = join(process.cwd(), 'src', 'application', 'use-cases', 'git-actions.ts');
+
 describe('forge write members stay uncalled in production', () => {
-  it('I-104: no production file under src/ or electron/ calls a forge write member', () => {
+  it('I-104: no production file under src/ or electron/ but the git-actions use case calls a forge write member', () => {
     const offenders = productionFiles(join(process.cwd(), 'src'))
       .concat(productionFiles(join(process.cwd(), 'electron')))
+      .filter((file) => file !== GIT_ACTIONS)
       .filter((file) => WRITE_MEMBERS.test(readFileSync(file, 'utf8')));
     expect(offenders).toEqual([]);
+  });
+
+  it('holds the merge invariant (A-373): mergePullRequest is called from exactly one place', () => {
+    // Whichever production file dares call forge.mergePullRequest besides the git-actions use
+    // case breaks the explicit-approval pin — nothing else may merge on any path.
+    const callers = productionFiles(join(process.cwd(), 'src'))
+      .concat(productionFiles(join(process.cwd(), 'electron')))
+      .filter((file) => /\.mergePullRequest\(/.test(readFileSync(file, 'utf8')));
+    expect(callers).toEqual([GIT_ACTIONS]);
   });
 });

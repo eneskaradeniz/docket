@@ -610,6 +610,56 @@ skip marks are an addition to `WorkOrderState`, and the two R-133 events join `W
 //   readonly skippedStages: readonly StageSlug[];  // stages an approved proposal (R-144) skips, this work order only
 ```
 
+### Addendum: the git lifecycle fold (added 2026-10-14, #1145, GI-2)
+
+The four operator git actions (#1145) append their own ledger events, and the work order's git
+state derives from them exactly the way the skip marks derive from the R-133 pair: beside the
+machine fold, never inside it. Nothing above is revised — R-17…R-24 keep their text and the four
+events are no-ops in the machine fold; a log without them derives the state the rules above
+describe, with none of the new fields present.
+
+```ts
+// flow/events.ts (added 2026-10-14, #1145) — WorkOrderEvent gains the git lifecycle quartet:
+//   | { readonly type: 'branch_pushed';   readonly at: EpochMs; readonly branch: string; readonly head: string }
+//   | { readonly type: 'pr_opened';       readonly at: EpochMs; readonly number: number; readonly url: string; readonly head: string; readonly base: string }
+//   | { readonly type: 'pr_merged';       readonly at: EpochMs; readonly number: number }
+//   | { readonly type: 'branch_released'; readonly at: EpochMs }
+
+// flow/git-lifecycle.ts — the fold and the one naming rule:
+export interface GitBranchState { readonly name: string; readonly head: string; readonly pushedAt: EpochMs }
+export interface GitPrState { readonly number: number; readonly url: string; readonly head: string; readonly base: string; readonly merged: boolean }
+export interface GitLifecycleState { readonly branch?: GitBranchState; readonly pr?: GitPrState; readonly released?: true }
+export const workOrderBranch = (id: WorkOrderId): string;  // 'docket/wo-' + id, lower case
+export function deriveGitLifecycle(events: readonly WorkOrderEvent[]): GitLifecycleState;
+
+// flow/derive.ts — WorkOrderState gains the lifecycle as optional fields, present only once their
+// event folded in:
+//   readonly branch?: GitBranchState; readonly pr?: GitPrState; readonly released?: true;
+```
+
+Rules (an event in an order a rule forbids is silently ignored — the refusal belongs to the writer
+that would have appended it, never to the fold):
+- **R-160** (added 2026-10-14, #1145) `pr_opened` folds in only over a prior `branch_pushed` whose
+  `branch` equals the event's `head`; with no pushed branch, or a pushed branch under another
+  name, the event is ignored and no pull request appears.
+- **R-161** (added 2026-10-14, #1145) A second `pr_opened` while a pull request is open (`merged`
+  false) is ignored — the state holds the first pull request, never a replacement. Once the open
+  pull request merged, a later `pr_opened` over the pushed branch opens the next cycle.
+- **R-162** (added 2026-10-14, #1145) `pr_merged` folds in only when its `number` equals the open
+  pull request's number; with no pull request, a different number, or an already-merged one, the
+  event is ignored and `merged` stays as it was.
+- **R-163** (added 2026-10-14, #1145) `branch_released` folds in only after a `pr_merged`; with no
+  pull request or an unmerged one the event is ignored and nothing is released. The release keeps
+  the branch and pull request it closed over — `released` is an added mark, not an erasure.
+- **R-164** (added 2026-10-14, #1145) After a `branch_released` folded in, every later git
+  lifecycle event — of all four kinds — is ignored: the release closed the lifecycle, and the
+  state stays exactly as the release froze it.
+- **R-165** (added 2026-10-14, #1145) `deriveWorkOrderState` merges `deriveGitLifecycle`'s fields
+  beside the machine state the way R-144 merges the skip marks: the four events are no-ops in the
+  R-17…R-24 fold, and a log without them carries none of the three fields. `workOrderBranch` is
+  the one naming rule — the ledger's `branch_pushed` events, the push action and the worktree
+  port all derive the branch name from it, never from their own spelling.
+
 ---
 
 ## 6. `quota/` — accounts, pools, meters, limits

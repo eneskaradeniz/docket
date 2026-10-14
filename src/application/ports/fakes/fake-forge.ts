@@ -3,7 +3,7 @@
 import type { CheckRun, Forge, ForgeError } from '../forge';
 
 export const createFakeForge = (
-  opts?: { readonly checks?: readonly CheckRun[] },
+  opts?: { readonly checks?: readonly CheckRun[]; readonly seedPullRequests?: number },
 ): Forge & {
   readonly pushed: readonly string[];
   readonly opened: readonly { readonly head: string; readonly base: string; readonly title: string }[];
@@ -12,6 +12,10 @@ export const createFakeForge = (
   const checks: readonly CheckRun[] = [...(opts?.checks ?? [])];
   const pushedBranches: string[] = [];
   const openedPullRequests: { readonly head: string; readonly base: string; readonly title: string }[] = [];
+  // Pre-opened pull requests, so a ledger that already holds PR #n can merge it (the merge tests).
+  for (let number = 1; number <= (opts?.seedPullRequests ?? 0); number += 1) {
+    openedPullRequests.push({ head: `seed/${number}`, base: 'main', title: `Seeded ${number}` });
+  }
   const mergedNumbers = new Set<number>();
 
   const notFound = (): { readonly ok: false; readonly error: ForgeError } => ({ ok: false, error: 'not_found' });

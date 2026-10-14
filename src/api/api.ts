@@ -70,6 +70,7 @@ import type {
   CredentialImporter,
   BindingScope,
   DiscoveredProvider,
+  ForgeResolver,
   PermissionBoard,
   ProviderDiscovery,
   RunControl,
@@ -181,6 +182,11 @@ import {
   workOrderCodeOf,
   catalogOrEmpty,
   matchIdFor,
+  mergeWorkOrderPr,
+  openWorkOrderPr,
+  PR_TEXT_MAX_CHARS,
+  pushWorkOrderBranch,
+  releaseWorkOrderBranch,
   STEER_NOTE_MAX_CHARS,
 } from '../application';
 
@@ -403,6 +409,22 @@ const pageCommandOf = (outcome: Result<unknown, { readonly code: string }>): Com
 const commandOf = <E extends string>(outcome: Result<unknown, E>): CommandResult =>
   outcome.ok ? { ok: true } : { ok: false, code: outcome.error };
 
+/** A resolver that stays silent: without forge wiring every git action answers
+ *  `forge_unavailable` once its own validations pass — never a silent success. */
+const SILENT_FORGES: ForgeResolver = { forRepo: async () => undefined };
+
+/** The ports the git lifecycle actions read, picked once so all four handlers share one seam. */
+const gitDeps = (
+  deps: AppDeps,
+): Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'repos' | 'worktrees'> => ({
+  clock: deps.clock,
+  ids: deps.ids,
+  log: deps.log,
+  workOrders: deps.workOrders,
+  repos: deps.repos,
+  worktrees: deps.worktrees,
+});
+
 /** The board is passed separately, like the executor's gate: it is in-process state, not a port.
  *  Without one no ask can be open, so `permission.answer` answers not_found instead of throwing
  *  and `permissions.open` answers not_found instead of inventing an empty board. The discovery
@@ -429,6 +451,7 @@ export function createApi(
   tracker?: IssueTracker | IssueTrackerResolver,
   setup?: SetupConversations,
   runControl?: Pick<RunControl, 'stop' | 'steer' | 'active'>,
+  forges?: ForgeResolver,
 ): Api & RunEventFeed & { readonly quota: QuotaLifecycle; readonly quitRequested: (runs: readonly string[], chats: readonly string[]) => void } {
   const trackerForRepo = async (repo: RepoSlug): Promise<IssueTracker | undefined> => {
     if (tracker === undefined) return undefined;
@@ -684,7 +707,7 @@ export function createApi(
           },
         },
       };
-      const result = await runCommand(tracked, actor, command, board, runControl, updates, trackerForRepo, adopting, quotaService, chatOps, setup);
+      const result = await runCommand(tracked, actor, command, board, runControl, updates, trackerForRepo, adopting, quotaService, chatOps, setup, forges ?? SILENT_FORGES);
       if (appended) emit({ type: 'workOrders.changed' });
       // A-364: a steered run says so on the run's own channel — the live pane and the running
       // card re-query on it; the work order's fold is untouched, so workOrders.changed stays
@@ -726,6 +749,7 @@ const runCommand = async (
   quotaService: QuotaService | undefined,
   chatOps: ChatOps,
   setup: SetupConversations | undefined,
+  forges: ForgeResolver,
 ): Promise<CommandResult> => {
   switch (command.type) {
     case 'workOrder.open': {
@@ -969,6 +993,59 @@ const runCommand = async (
         { id },
       );
       return queued.ok ? { ok: true, id: queued.value } : { ok: false, code: queued.error };
+    }
+
+    // The git lifecycle commands (GI-2). Every one of them speaks for the operator the api's own
+    // actor names (A-376); the pull request text is bounded at the edge exactly as the steer note
+    // is, so an unusable base or title writes nothing (A-372, A-377). Without a wired forge
+    // resolver every action answers forge_unavailable after its own validations — never a silent
+    // success.
+    case 'workOrder.push': {
+      const id = ulidValue<'work-order'>(command.id);
+      if (id === undefined) return invalidId();
+      return commandOf(
+        await pushWorkOrderBranch(gitDeps(deps), forges, { id, actor }),
+      );
+    }
+
+    case 'workOrder.openPr': {
+      const id = ulidValue<'work-order'>(command.id);
+      if (id === undefined) return invalidId();
+      const base = command.base.trim();
+      if (base === '' || base.length > PR_TEXT_MAX_CHARS) return badInput();
+      const trimmedTitle = command.title?.trim();
+      if (trimmedTitle !== undefined && trimmedTitle !== '' && trimmedTitle.length > PR_TEXT_MAX_CHARS) {
+        return badInput();
+      }
+      const opened = await openWorkOrderPr(gitDeps(deps), forges, {
+        id,
+        base,
+        ...(trimmedTitle === undefined || trimmedTitle === '' ? {} : { title: trimmedTitle }),
+        actor,
+      });
+      if (opened.ok) return { ok: true, pr: opened.value };
+      return typeof opened.error === 'string'
+        ? { ok: false, code: opened.error }
+        : { ok: false, code: opened.error.code, pr: opened.error.pr };
+    }
+
+    case 'workOrder.mergePr': {
+      const id = ulidValue<'work-order'>(command.id);
+      if (id === undefined) return invalidId();
+      return commandOf(
+        await mergeWorkOrderPr(gitDeps(deps), forges, { id, number: command.number, actor }),
+      );
+    }
+
+    case 'workOrder.releaseBranch': {
+      const id = ulidValue<'work-order'>(command.id);
+      if (id === undefined) return invalidId();
+      return commandOf(
+        await releaseWorkOrderBranch(
+          { clock: deps.clock, ids: deps.ids, log: deps.log, workOrders: deps.workOrders, worktrees: deps.worktrees },
+          { id, actor },
+        ),
+      );
     }
 
     case 'gate.decide': {

@@ -2099,3 +2099,76 @@ readonly forges: ForgeResolver;                              // NodeDeps
 - **A-368** (added 2026-10-14, #1144) `createRepoForgeResolver` resolves a repo's `Forge` from its registry row: the row's fingerprint remote must be a github.com URL (the gh adapter's own remote grammar) and the gh CLI must be present and authenticated — probed once per process, then cached (15 s bound per probe command). Everything else — unknown repo, another host, a missing or unauthenticated gh — resolves `undefined` silently. `createNodeDeps` exposes the resolver as `NodeDeps.forges` through the injected `forgeResolver` factory; absent config answers undefined for every repo, which is exactly the pre-forge behaviour.
 - **A-369** (added 2026-10-14, #1144) The composition root passes `evaluateMachineGates` its `remote` input (`forges`, the repo's `RepoRef`, `branchRef`) both after a run finishes and from the sweep — and only when the work order's current stage actually waits on a pending `remote_checks` gate, because the branch lookup and the resolver's gh probe cost real commands. `branchRef` is the head sha of the worktree branch (`refs/heads/docket/wo-<id>` per `worktreeBranch(id)`), read in the repo's registered checkout; a branch that cannot be resolved leaves the gate pending — the evaluation never fails for it.
 - **A-370** (added 2026-10-14, #1144) The re-poll sweep runs on its own timer (`REMOTE_CHECKS_POLL_MS` = 60 000, the quota-timers pattern — not the 5 s dispatch tick) and is non-reentrant; each pass walks the work orders, and every one holding a pending `remote_checks` gate gets one `evaluateMachineGates` call with the same `remote` input. At most one poll is in flight per gate (the post-run call and the sweep share one in-flight set keyed by work order); a poll that errors leaves the gate pending for the next pass; and nothing at all is written while the gate's checks are still `pending` (E-17).
+
+### Addendum 2026-10-14 (#1145): the work-order git actions (GI-2)
+
+The writing half the CI-check detail waited for: four operator commands — push the work order's
+branch, open its pull request, merge it (the human step, a command never a side effect), release
+the branch and worktree. Each action follows one pinned order of effects: validate → one audit
+entry (`git.pushed`, `pr.opened`, `pr.merged`, `branch.deleted`) → the forge/vcs call → on success
+the R-160…R-164 ledger event → `workOrders.changed`. A refusal before the call writes nothing; a
+forge failure after the audit appends no ledger event — the audit is the fact that the operator
+commanded the action, the refusal is the forge's answer.
+
+```ts
+// api/commands.ts (A-371 … A-374)
+| { readonly type: 'workOrder.push'; readonly id: string }
+| { readonly type: 'workOrder.openPr'; readonly id: string; readonly base: string; readonly title?: string }
+| { readonly type: 'workOrder.mergePr'; readonly id: string; readonly number: number }
+| { readonly type: 'workOrder.releaseBranch'; readonly id: string }
+// CommandResult's `pr?: { number, url }` rides workOrder.openPr's success and its pr_exists refusal.
+
+// application/use-cases/git-actions.ts
+export const PR_TEXT_MAX_CHARS = 255;
+export function pushWorkOrderBranch(deps, forges: ForgeResolver, input: { id; actor }): Promise<Result<void, PushBranchError>>;
+export function openWorkOrderPr(deps, forges: ForgeResolver, input: { id; base; title?; actor }): Promise<Result<PullRequestRef, OpenPrError>>;
+export function mergeWorkOrderPr(deps, forges: ForgeResolver, input: { id; number; actor }): Promise<Result<void, MergePrError>>;
+export function releaseWorkOrderBranch(deps, input: { id; actor }): Promise<Result<void, ReleaseBranchError>>;
+
+// application/ports/repo-tools.ts — the Worktrees port gains (the release contract is I-105):
+branchHead(repo: RepoSlug, workOrderId: WorkOrderId): Promise<Result<string, 'no_repo' | 'no_branch'>>;
+release(repo: RepoSlug, workOrderId: WorkOrderId): Promise<Result<'released' | 'branch_not_merged', 'no_repo' | 'git_failed'>>;
+```
+
+- **A-371** (added 2026-10-14, #1145) `workOrder.push`: an unknown id answers `not_found`; a work
+  order with no listed worktree answers `no_repo` (its branch would publish the base commit and
+  nothing else); a branch that cannot be resolved answers `no_branch`; a repo row without a remote
+  or a silent resolver answers `forge_unavailable` — all four before any write. The validated push
+  writes one audit `git.pushed` (detail: the branch name), pushes `docket/wo-<id>`
+  (`workOrderBranch`, R-165) through the resolved forge, and on success appends `branch_pushed
+  {branch, head}` with the head read before the call; a forge failure answers `forge_error` and
+  appends nothing. Push runs no commit of its own: checkpoint commits already commit the worktree
+  at every run boundary (A-57, the #1145 decision), so the push travels the committed head.
+- **A-372** (added 2026-10-14, #1145) `workOrder.openPr`: requires a prior push (`not_pushed`
+  otherwise); a repeated open while the state's pull request is unmerged answers the typed
+  `pr_exists` **with the stored ref** (CommandResult's `pr` rider) and opens no second PR. The
+  validated open writes one audit `pr.opened` (detail: base and, when given, the title), opens the
+  pull request head = the pushed branch, base = the operator's input, title = the operator's title
+  or else the work order's own, body = the stored description or empty, and appends `pr_opened
+  {number, url, head, base}`. The answer carries the ref as `{ pr }`.
+- **A-373** (added 2026-10-14, #1145) `workOrder.mergePr` is the only merge path: it runs only
+  with the state's own open pull request, and only when the command's `number` equals it — a
+  stale or absent number answers `not_found` **before any forge call** (the number the operator
+  saw is the explicit approval pin). The audit `pr.merged` (detail: the number) is written before
+  the forge call; success appends `pr_merged {number}`. A grep-level test holds the invariant:
+  no production file but this use case calls `mergePullRequest`.
+- **A-374** (added 2026-10-14, #1145) `workOrder.releaseBranch`: answers `branch_not_merged`
+  while no `pr_merged` has folded in (R-163 at the command level — no override path in this
+  issue) and `released` after a release already folded in, both without a write. The validated
+  release writes one audit `branch.deleted` (detail: the branch name), then `Worktrees.release`
+  (I-105): worktree removed, branch deleted with `-d` only, BASE ref kept; a git-level unmerged
+  refusal answers `branch_not_merged` and appends no event.
+- **A-375** (added 2026-10-14, #1145) Records carry no environment values or secrets: the
+  pull-request title is operator/agent text exactly like a steer note — recordable, and
+  redacted through `redactSecretShapes` (R-145's token shapes) before it reaches the forge call,
+  the audit detail or the ledger. The base branch is a git ref name, never free text.
+- **A-376** (added 2026-10-14, #1145) The four commands carry no actor field, exactly like
+  `run.stop`/`run.steer` (A-365): the api boundary speaks for the operator, and every audit entry
+  names the actor the api itself received. A released work order answers `released` on push, open
+  and merge alike (R-164 at the command level), with nothing written.
+- **A-377** (added 2026-10-14, #1145) Base-branch resolution: the operator's base is validated
+  at the api edge — trimmed, then non-empty and at most `PR_TEXT_MAX_CHARS` (255) characters,
+  else `bad_input` before any lookup (the steer-note discipline); a title, when given, is bounded
+  the same way. The prefill is the remote's default branch read from the forge host itself
+  (`gh repo view --json defaultBranchRef`, the #1145 decision) — the UI (GI-4) prefills and the
+  operator edits; no local default-branch guess rides a RepoRef, and I-20 is not extended.

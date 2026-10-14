@@ -33,6 +33,13 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
   'workOrder.unblock': { input: 'id: WorkOrderId' },
   'workOrder.close': { input: 'id: WorkOrderId' },
   'workOrder.enqueue': { input: 'id: WorkOrderId' },
+  'workOrder.push': { input: 'id: WorkOrderId — errors: not_found, no_repo, forge_unavailable, forge_error (A-371)' },
+  'workOrder.openPr': {
+    input:
+      'id: WorkOrderId, base: string (trimmed, 1…255 chars), title?: string (trimmed, ≤ 255) — ok → { pr }; errors: bad_input, not_pushed, pr_exists (answers the stored ref), forge_error (A-372, A-377)',
+  },
+  'workOrder.mergePr': { input: 'id: WorkOrderId, number: number (the PR the operator saw) — errors: not_found (also a stale number), forge_error (A-373)' },
+  'workOrder.releaseBranch': { input: 'id: WorkOrderId — errors: branch_not_merged, no_repo, git_failed (A-374)' },
   'gate.decide': { input: 'workOrderId: WorkOrderId, gate: GateSlug, decision: approved|rejected, note?: string' },
   'gate.attest': { input: 'workOrderId: WorkOrderId, gate: GateSlug, noChangeNeeded: boolean' },
   'proposal.decide': { input: 'id: ProposalId, decision: approved|rejected' },

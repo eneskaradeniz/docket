@@ -25,4 +25,10 @@ export interface Worktrees {
   ensure(repo: RepoSlug, workOrderId: WorkOrderId): Promise<Result<{ readonly path: string }, 'no_repo'>>;
   /** The worktree path when one is already listed. Never creates a worktree, a branch or a ref. */
   existing(repo: RepoSlug, workOrderId: WorkOrderId): Promise<{ readonly path: string } | undefined>;
+  /** The head commit of the work order's branch (docket/wo-<id>) in the repo checkout —
+   *  `no_branch` when the branch is gone. Never creates anything. */
+  branchHead(repo: RepoSlug, workOrderId: WorkOrderId): Promise<Result<string, 'no_repo' | 'no_branch'>>;
+  /** `git worktree remove` then `git branch -d docket/wo-<id>` in the repo checkout — `-d`, never
+   *  `-D`, so an unmerged branch is a typed refusal, not data loss. The BASE ref stays. */
+  release(repo: RepoSlug, workOrderId: WorkOrderId): Promise<Result<'released' | 'branch_not_merged', 'no_repo' | 'git_failed'>>;
 }
