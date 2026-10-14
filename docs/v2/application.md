@@ -2069,6 +2069,11 @@ export interface RunControl {
 - **A-364** (added 2026-10-14, #1110) `run.steer`: the note is trimmed, then must be 1…`STEER_NOTE_MAX_CHARS` (2000) characters — else `bad_input` before any lookup. Only a live run is steerable (`not_found`/`not_active` as A-363); success calls `steer(note)` with the trimmed text (a further user message, I-28), writes one audit `run.steered` carrying the note at the same bound (operator text is recordable; never an environment value or secret), and emits exactly one `run.updated { runId }`. The command appends no work-order event and changes no fold.
 - **A-365** (added 2026-10-14, #1110) The api boundary speaks for the operator (single user), like every other command: `run.stop` and `run.steer` carry no actor field, and the audit entries name the actor the api itself received.
 
+Addendum 2026-10-14 (#1124): steer only when the provider transport supports it — rules A-366, A-367.
+
+- **A-366** (added 2026-10-14, #1124) `run.steer` answers `unsupported` for a run whose provider's transport is not steerable: after A-363's identity/liveness reads, before any audit; no audit entry, no `run.updated`, the handle is never called.
+- **A-367** (added 2026-10-14, #1124) `workOrder.detail`'s run summaries carry `canSteer` per run (`boolean | 'unknown'`).
+
 ### Addendum 2026-10-14 (#1111): remove `repos.list` query
 
 No screen needed a raw slug/path enumeration: the sidebar's `project.tree` (A-27) lists every repo

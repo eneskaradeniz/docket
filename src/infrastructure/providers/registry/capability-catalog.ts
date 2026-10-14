@@ -6,7 +6,13 @@ import type { AuthMode } from '../../../domain/index';
 
 import { BUILTIN_PROVIDER_DEFS } from '../defs/index';
 
-import { findRouteKind, PROVIDER_INSTRUCTION_FILES, TRANSLATION_TABLE } from './capability-registry';
+import { CAPABILITY_REGISTRY, findRouteKind, PROVIDER_INSTRUCTION_FILES, TRANSLATION_TABLE } from './capability-registry';
+
+const steeringSupportOf = (providerId: string): boolean | 'unknown' => {
+  const record = CAPABILITY_REGISTRY.providers.find((entry) => entry.providerId === providerId);
+  if (record === undefined || record.steering === undefined) return 'unknown';
+  return record.steering === 'steerable';
+};
 
 // Explicit ids, not a registry search: when later presets add more route kinds for the same
 // provider, the default an account resolves to must not silently change with the data.
@@ -24,6 +30,7 @@ export const createCapabilityCatalog = (): CapabilityCatalog => ({
   routeKind: (id) => findRouteKind(id),
   translationTable: () => TRANSLATION_TABLE,
   mcpSupport: (providerId) => BUILTIN_PROVIDER_DEFS.find((def) => def.id === providerId)?.capabilities.mcp ?? 'unknown',
+  steeringSupport: steeringSupportOf,
   // Registry order: the row's own order for a provider, first appearance for the union. A provider
   // without a row has no native set — every present candidate inlines (A-54).
   nativeInstructionFiles: (providerId) =>

@@ -130,6 +130,7 @@ export const EN: LabelBundle = {
   'detail.steer.notePlaceholder': 'A short note for the running agent',
   'detail.steer.hint': 'Enter sends, Shift+Enter adds a line.',
   'detail.steer.error': 'The note is empty or too long.',
+  'detail.steer.unsupported': "This run's transport carries no steering note; it cannot be sent.",
   'detail.steer.send': 'Send',
   'detail.steer.success': 'Steering note sent.',
   'detail.meta.opened': 'opened {n}',

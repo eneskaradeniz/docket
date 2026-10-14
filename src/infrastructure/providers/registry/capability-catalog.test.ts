@@ -88,6 +88,18 @@ describe('createCapabilityCatalog', () => {
     expect(catalog.nativeInstructionFiles('never-heard-of')).toEqual([]);
   });
 
+  it('P-61: steeringSupport follows the registry per provider; an unknown provider reads unknown', () => {
+    const catalog = createCapabilityCatalog();
+
+    expect(catalog.steeringSupport('claude-code')).toBe(true);
+    expect(catalog.steeringSupport('codex')).toBe(true);
+    expect(catalog.steeringSupport('agy')).toBe(false);
+    expect(catalog.steeringSupport('copilot')).toBe(false);
+    expect(catalog.steeringSupport('cursor')).toBe(false);
+    expect(catalog.steeringSupport('opencode')).toBe(false);
+    expect(catalog.steeringSupport('never-heard-of')).toBe('unknown');
+  });
+
   it('P-37: instructionFileNames is the deduplicated union of the rows in registry order', () => {
     const names = createCapabilityCatalog().instructionFileNames();
 

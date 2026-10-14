@@ -1094,8 +1094,13 @@ const runCommand = async (
       if (runControl === undefined) return { ok: false, code: 'not_found' };
       const note = command.note.trim();
       if (note.length < 1 || note.length > STEER_NOTE_MAX_CHARS) return badInput();
-      if ((await deps.runs.get(runId)) === undefined) return { ok: false, code: 'not_found' };
+      const run = await deps.runs.get(runId);
+      if (run === undefined) return { ok: false, code: 'not_found' };
       if (!runControl.active().includes(runId)) return { ok: false, code: 'not_active' };
+      const account = await deps.accounts.get(run.route.accountId);
+      if (account === undefined || deps.capabilities.steeringSupport(account.provider) !== true) {
+        return { ok: false, code: 'unsupported' };
+      }
       await deps.log.append({
         id: deps.ids.next<'audit'>(),
         at: deps.clock.now(),

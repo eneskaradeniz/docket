@@ -78,6 +78,17 @@ describe('capability registry as data (P-27)', () => {
     expect(CAPABILITY_REGISTRY.providers.length).toBeGreaterThan(0);
     expect(CAPABILITY_REGISTRY.routeKinds.length).toBeGreaterThan(0);
   });
+
+  it('P-61: the six launch providers pin steering from their transport', () => {
+    const steeringOf = (providerId: string): string | undefined =>
+      CAPABILITY_REGISTRY.providers.find((provider) => provider.providerId === providerId)?.steering;
+    expect(steeringOf('claude-code')).toBe('steerable');
+    expect(steeringOf('codex')).toBe('steerable');
+    expect(steeringOf('agy')).toBe('not_steerable');
+    expect(steeringOf('copilot')).toBe('not_steerable');
+    expect(steeringOf('cursor')).toBe('not_steerable');
+    expect(steeringOf('opencode')).toBe('not_steerable');
+  });
 });
 
 describe('capability registry validity (P-28)', () => {

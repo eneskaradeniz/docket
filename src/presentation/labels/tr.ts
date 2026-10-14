@@ -129,6 +129,7 @@ export const TR: LabelBundle = {
   'detail.steer.notePlaceholder': 'Koşuya iletilen kısa not',
   'detail.steer.hint': 'Enter gönderir, Shift+Enter alt satır ekler.',
   'detail.steer.error': 'Not boş ya da çok uzun.',
+  'detail.steer.unsupported': 'Bu koşunun aktarımı yönlendirme notu taşımaz; not gönderilemez.',
   'detail.steer.send': 'Gönder',
   'detail.steer.success': 'Yönlendirme notu gönderildi.',
   'detail.meta.opened': 'açılış {n}',

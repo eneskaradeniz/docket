@@ -150,6 +150,7 @@ export const LABEL_KEYS = [
   'detail.steer.notePlaceholder',
   'detail.steer.hint',
   'detail.steer.error',
+  'detail.steer.unsupported',
   'detail.steer.send',
   'detail.steer.success',
   // The header's quiet meta line and the duration formatter's parts.

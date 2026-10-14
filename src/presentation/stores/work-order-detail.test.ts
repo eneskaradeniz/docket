@@ -151,9 +151,29 @@ const detailReply = (state: WorkOrderState): WorkOrderDetailView => ({
   environments: ENVIRONMENTS,
 });
 
-const detailReplyWithRuns = (state: WorkOrderState, runs: readonly WorkOrderDetailRun[]): WorkOrderDetailView => ({
+const defaultRunSummary = (
+  run: WorkOrderDetailRun,
+  canSteer: boolean | 'unknown' = true,
+): WorkOrderRunSummary => ({
+  runId: run.id,
+  stage: run.stage,
+  attempt: run.attempt,
+  role: 'worker',
+  account: { id: 'acc-1', label: 'Main', provider: 'claude-code' },
+  billing: 'included',
+  ...(run.endedAt === undefined ? { canSteer } : {}),
+});
+
+const detailReplyWithRuns = (
+  state: WorkOrderState,
+  runs: readonly WorkOrderDetailRun[],
+  runSummaries?: readonly WorkOrderRunSummary[],
+): WorkOrderDetailView => ({
   ...detailReply(state),
   runs,
+  runSummaries:
+    runSummaries ??
+    runs.filter((run) => run.endedAt === undefined).map((run) => defaultRunSummary(run)),
 });
 
 /** The stage list the fixture flow yields for a state — the same derivation the store applies
@@ -971,7 +991,7 @@ describe('decision zone (U-226)', () => {
     expect(gateWaitingCount({ kind: 'cards', cards: [{ kind: 'failed', retry: true }] })).toBe(0);
     // The running card (U-301) is not a gate waiting either — it waits on the run, not a person.
     expect(
-      gateWaitingCount({ kind: 'cards', cards: [{ kind: 'running', runId: RUN_ID, stageName: 'Build', startedAt: 100 }] }),
+      gateWaitingCount({ kind: 'cards', cards: [{ kind: 'running', runId: RUN_ID, stageName: 'Build', startedAt: 100, canSteer: true }] }),
     ).toBe(0);
   });
 
@@ -983,7 +1003,7 @@ describe('decision zone (U-226)', () => {
     ];
     expect(zoneFor(stateAt(STAGE_BUILD, [], 'running'), live)).toEqual({
       kind: 'cards',
-      cards: [{ kind: 'running', runId: ACTIVE_RUN_ID, stageName: 'Build', startedAt: 5_000 }],
+      cards: [{ kind: 'running', runId: ACTIVE_RUN_ID, stageName: 'Build', startedAt: 5_000, canSteer: true }],
     });
   });
 
@@ -1008,7 +1028,21 @@ describe('decision zone (U-226)', () => {
     ];
     expect(zoneFor(stateAt(STAGE_BUILD, [], 'running'), two)).toEqual({
       kind: 'cards',
-      cards: [{ kind: 'running', runId: ACTIVE_RUN_ID, stageName: 'Build', startedAt: 9_000 }],
+      cards: [{ kind: 'running', runId: ACTIVE_RUN_ID, stageName: 'Build', startedAt: 9_000, canSteer: true }],
+    });
+  });
+
+  it('U-340: canSteer false or unknown still yields a running card carrying that verdict', () => {
+    const live: readonly WorkOrderDetailRun[] = [{ id: ACTIVE_RUN_ID, stage: 'build', attempt: 1, startedAt: 5_000 }];
+    const notSteerable = detailReplyWithRuns(stateAt(STAGE_BUILD, [], 'running'), live, [defaultRunSummary(live[0], false)]);
+    expect(decisionZone(stagesFor(FLOW, notSteerable.state), notSteerable, [])).toEqual({
+      kind: 'cards',
+      cards: [{ kind: 'running', runId: ACTIVE_RUN_ID, stageName: 'Build', startedAt: 5_000, canSteer: false }],
+    });
+    const unknown = detailReplyWithRuns(stateAt(STAGE_BUILD, [], 'running'), live, [defaultRunSummary(live[0], 'unknown')]);
+    expect(decisionZone(stagesFor(FLOW, unknown.state), unknown, [])).toEqual({
+      kind: 'cards',
+      cards: [{ kind: 'running', runId: ACTIVE_RUN_ID, stageName: 'Build', startedAt: 5_000, canSteer: 'unknown' }],
     });
   });
 

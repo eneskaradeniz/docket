@@ -38,7 +38,7 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
   'proposal.decide': { input: 'id: ProposalId, decision: approved|rejected' },
   'permission.answer': { input: 'runId: RunId, askId: string, decision: allow|deny' },
   'run.stop': { input: 'runId: RunId — errors: not_found, not_active (A-362, A-363)' },
-  'run.steer': { input: 'runId: RunId, note: string (trimmed, 1…2000 chars) — errors: bad_input, not_found, not_active (A-364)' },
+  'run.steer': { input: 'runId: RunId, note: string (trimmed, 1…2000 chars) — errors: bad_input, not_found, not_active (A-364), unsupported (A-366)' },
   'deploy.approve': { input: 'workOrderId: WorkOrderId, gate: GateSlug, commit: string, confirmedEnvironment?: EnvSlug' },
   'account.save': {
     input:

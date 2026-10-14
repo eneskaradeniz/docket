@@ -155,6 +155,9 @@ export interface RunSummaryView {
     readonly cachedInputTokens: number;
     readonly costByKind: CostByKind;
   };
+  /** Whether this run's transport takes a steering note (A-367); `unknown` for a gone account
+   *  or a provider the registry does not describe. */
+  readonly canSteer: boolean | 'unknown';
 }
 
 export interface WorkOrderView {
@@ -213,6 +216,8 @@ export async function workOrderRunSummaries(
     const folded = foldRun(events);
     const costByKind: CostByKind =
       folded.costUsd === undefined ? {} : { [folded.costKind ?? 'unspecified']: folded.costUsd };
+    const canSteer: boolean | 'unknown' =
+      account === undefined ? 'unknown' : deps.capabilities.steeringSupport(account.provider);
     summaries.push({
       runId: run.id,
       stage: run.stage,
@@ -223,6 +228,7 @@ export async function workOrderRunSummaries(
         label: account === undefined ? run.route.accountId : account.label,
         provider: account === undefined ? 'unknown' : account.provider,
       },
+      canSteer,
       ...(run.route.model === undefined ? {} : { model: run.route.model }),
       billing,
       // A run that never sent a usage event has no usage, even when the fold's counters are zero.

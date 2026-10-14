@@ -8,12 +8,15 @@ file, so each rule moves into `providers.md` together with its tests when it is 
 Vocabulary: a **provider** is an agent CLI (one definition). An **account** is a credential of a
 provider. A **route** is an account plus a model (and, for compatible endpoints, an endpoint). Two
 routes of one provider can differ in models, thinking, quota and cost, so capabilities attach to the
-route, not to the provider alone.
+route, not to the provider alone. **Steering (P-61)** is recorded on the provider row because each
+provider's transport is fixed in its definition today (every route kind of one provider rides the
+same transport).
 
 ## 1. The capability record (P-27)
 - One data file is the single source of truth: `src/infrastructure/providers/registry/capability-registry.ts`, plain `as const` data checked with `satisfies` against the domain types. The types and the pure derivations live in `src/domain/providers/capability.ts` (domain rules: no npm packages, no Node builtins, no classes). The data sits in infrastructure because vendor names are banned outside `src/infrastructure/providers/`; an application port `CapabilityCatalog` exposes route kinds to `saveAccount`.
 - It holds, per provider: `planned` (manual flag), the six promotion gates (section 2) each with
-  evidence, and its route kinds. Per route kind: auth mode, endpoint host (preset only), identity
+  evidence, optional `steering` (`steerable` | `not_steerable`; absent reads `unknown` through
+  `CapabilityCatalog.steeringSupport`), and its route kinds. Per route kind: auth mode, endpoint host (preset only), identity
   source, `tierModels`, cost kind, quota probe kind, model source, `liveIsAuthoritative` (a plan-scoped
   live list hides the registry models it does not contain). Per model: `id`, `family`, `tier`,
   `thinking`, `contextWindow?`, `retired?`, `billing?` (`included`, `metered` or `unknown`; see P-40).

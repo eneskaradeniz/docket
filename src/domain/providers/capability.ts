@@ -39,6 +39,8 @@ export interface ProviderRecord {
   readonly isolation?: Evidence;
   /** Recorded operator-gate run ids on the real CLI; without one, `full` is unreachable. */
   readonly operatorRuns?: readonly string[];
+  /** Whether the provider's transport takes a steering note mid-run (P-61); absent = unknown. */
+  readonly steering?: 'steerable' | 'not_steerable';
 }
 
 export interface ModelRecord {

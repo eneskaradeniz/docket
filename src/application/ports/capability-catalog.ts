@@ -23,6 +23,9 @@ export interface CapabilityCatalog {
   /** Whether the provider's CLI can attach an MCP server (its capability record's `mcp`);
    *  `'unknown'` for a provider the registry does not describe. */
   mcpSupport(providerId: string): boolean | 'unknown';
+  /** Whether the provider's transport takes a steering note mid-run (P-61); `'unknown'` for a
+   *  provider the registry does not describe. */
+  steeringSupport(providerId: string): boolean | 'unknown';
   /** The capability translation and support table (P-57, P-58): data the translator reads. */
   translationTable(): readonly TranslationRow[];
   /** The instruction-file names one provider reads natively, registry order (P-37). */

@@ -97,6 +97,8 @@ export interface WorkOrderRunSummary {
     readonly cachedInputTokens: number;
     readonly costByKind: CostByKind;
   };
+  /** Whether the run's transport accepts a steering note; absent on an older reply reads as unknown. */
+  readonly canSteer?: boolean | 'unknown';
 }
 
 export interface WorkOrderDetailView {
@@ -430,7 +432,13 @@ export type DecisionCard =
   | { readonly kind: 'permission'; readonly ask: WorkOrderAskView }
   | { readonly kind: 'start'; readonly stageName: string }
   | { readonly kind: 'failed'; readonly retry: boolean }
-  | { readonly kind: 'running'; readonly runId: string; readonly stageName: string; readonly startedAt: number };
+  | {
+      readonly kind: 'running';
+      readonly runId: string;
+      readonly stageName: string;
+      readonly startedAt: number;
+      readonly canSteer: boolean | 'unknown';
+    };
 
 export type DecisionZone =
   | { readonly kind: 'quiet'; readonly done: boolean }
@@ -458,9 +466,10 @@ export const decisionZone = (
     const live = newestActiveRun(view);
     if (live !== undefined) {
       const stage = stages.find((candidate) => candidate.current);
+      const canSteer = view.runSummaries?.find((summary) => summary.runId === live.id)?.canSteer ?? 'unknown';
       return {
         kind: 'cards',
-        cards: [{ kind: 'running', runId: live.id, stageName: stage?.name ?? '', startedAt: live.startedAt }],
+        cards: [{ kind: 'running', runId: live.id, stageName: stage?.name ?? '', startedAt: live.startedAt, canSteer }],
       };
     }
   }
@@ -901,7 +910,7 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
       return runIntent(
         { type: 'run.steer', runId, note },
         undefined,
-        { bad_input: 'detail.steer.error' },
+        { bad_input: 'detail.steer.error', unsupported: 'detail.steer.unsupported' },
         (code) => code === 'bad_input',
       );
     },
