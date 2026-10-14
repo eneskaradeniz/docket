@@ -64,8 +64,9 @@ describe('new work order window (U-290, U-291)', () => {
     expect(html).not.toContain('<select');
     expect(html).toContain(t('tr', 'workOrder.flowStrip.label'));
     expect(html).toContain('role="region"');
-    expect(html).toContain(t('tr', 'workOrder.create'));
-    expect(html).toContain(t('tr', 'workOrder.cancel'));
+    expect(html).toContain(t('tr', 'workOrder.new.open'));
+    expect(html).toContain(t('tr', 'workOrder.new.openAndStart'));
+    expect(html).toContain(t('tr', 'workOrder.new.cancel'));
   });
 
   it('U-290: flow strip displays pinned flow and role versions', () => {

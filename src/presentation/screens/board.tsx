@@ -156,7 +156,14 @@ export function BoardScreen({ store, repo, locale, onOpenWorkOrder, roadmapProje
       launchProject={launchProject}
       onClose={() => setCreateOpen(false)}
       onCreated={setFocusTitle}
-      onCreate={(intent) => store.create({ repo, title: intent.title, flow: intent.flow })}
+      onCreate={(intent) =>
+        store.createFromWindow({
+          title: intent.title,
+          description: intent.description,
+          flow: intent.flow,
+          mode: intent.mode,
+        })
+      }
     />
     </>
   );

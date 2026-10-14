@@ -11,13 +11,18 @@ import {
   boardFlowChoices,
   defaultFlow,
   focusTarget,
+  humanGateCountForFlowId,
   openedWorkOrderForm,
   pinnedFlowFromColumns,
+  runWorkOrderCreate,
   STANDARD_FLOW,
+  workOrderCreateToasts,
   workOrderDraft,
   workOrderFormReducer,
+  workOrderOpenFields,
   workOrderOpenToast,
 } from '../stores/work-order-window';
+import { fill } from './chat-style';
 import { ChatLauncherContext } from './chat-launcher';
 import { NewWorkOrderWindow } from './new-work-order-window';
 import { PhoneWindow } from './phone-window';
@@ -32,6 +37,7 @@ const RAW = import.meta.glob(
     '../screens/shell.tsx',
     '../stores/settings-panel.ts',
     '../../../e2e/journeys.mjs',
+    './window-frame.tsx',
     '../../../e2e/layout-audit.mjs',
     '../../../e2e/layout-rules.mjs',
   ],
@@ -87,8 +93,9 @@ describe('new work order window (U-245, U-246, U-247)', () => {
     expect(html).toContain('<input');
     expect(html).not.toContain('<select');
     expect(html).toContain(t('tr', 'workOrder.flowStrip.label'));
-    expect(html).toContain(t('tr', 'workOrder.create'));
-    expect(html).toContain(t('tr', 'workOrder.cancel'));
+    expect(html).toContain(t('tr', 'workOrder.new.open'));
+    expect(html).toContain(t('tr', 'workOrder.new.openAndStart'));
+    expect(html).toContain(t('tr', 'workOrder.new.cancel'));
     expect(html).toContain(t('tr', 'launch.describe'));
     expect(html).toContain('Kadife Odoo');
     const board = source('board.tsx');
@@ -179,7 +186,7 @@ describe('new work order window (U-245, U-246, U-247)', () => {
     // The window publishes that notice; it does not invent the success sentence itself.
     const windowSource = source('new-work-order-window.tsx');
     expect(windowSource).toContain('toastOutcome(');
-    expect(windowSource).toContain('workOrderOpenToast(');
+    expect(windowSource).toContain('workOrderCreateToasts(');
     expect(windowSource).not.toContain("t(locale, 'success.workOrder.open')");
     expect(windowSource).not.toContain('flowToOpen');
   });
@@ -249,6 +256,76 @@ describe('window contract (U-249)', () => {
     expect(modal).toContain("event.key === 'Tab'");
     expect(modal).toContain('.focus()');
     expect(modal).toContain('restoreRef');
+  });
+});
+
+describe('compact work-order and phone windows (U-251 … U-256)', () => {
+  it('U-251: the compact frame has no rail, caps width at 640px, and both dialogs use it', () => {
+    const frame = source('window-frame.tsx');
+    expect(frame).toContain('compact ? null : <nav');
+    expect(frame).toContain('max-w-[min(calc(40rem-2px),calc(100vw-2rem-2px))]');
+    expect(source('new-work-order-window.tsx')).toContain('compact');
+    expect(source('phone-window.tsx')).toContain('compact');
+    const workHtml = workOrder();
+    expect(workHtml).not.toContain('grid-cols-[200px');
+  });
+
+  it('U-252: the work-order window shows project, title, description, flow strip, and four footer actions with one primary', () => {
+    const html = workOrder();
+    expect(html).toContain('Kadife Odoo');
+    expect(html).toContain(t('tr', 'workOrder.new.titleLabel'));
+    expect(html).toContain(t('tr', 'workOrder.new.descriptionLabel'));
+    expect(html).toContain(t('tr', 'workOrder.flowStrip.label'));
+    expect(html).toContain(t('tr', 'launch.describe'));
+    expect(html).toContain(t('tr', 'workOrder.new.cancel'));
+    expect(html).toContain(t('tr', 'workOrder.new.open'));
+    expect(html).toContain(t('tr', 'workOrder.new.openAndStart'));
+    expect(source('new-work-order-window.tsx').match(/variant="primary"/g)?.length).toBe(1);
+  });
+
+  it('U-253: the flow strip lists stages in order and shows the human-gate count', () => {
+    const html = workOrder();
+    const count = humanGateCountForFlowId('standard');
+    expect(count).not.toBeNull();
+    expect(html).toContain('Plan');
+    expect(html).toContain(fill(t('tr', 'workOrder.flowStrip.gateCount'), { count: count ?? 0 }));
+  });
+
+  it('U-254: open and start keeps the order when enqueue fails and surfaces the enqueue toast', async () => {
+    const commands: { type: string }[] = [];
+    const outcome = await runWorkOrderCreate(
+      {
+        api: {
+          query: async (query) => (query.type === 'project.tree' ? [{ project: 'kadife', repos: [{ repo: 'kadife-odoo', main: true }] }] : null),
+          command: async (_actor, command) => {
+            commands.push(command);
+            if (command.type === 'workOrder.open') return { ok: true, id: 'wo-9' };
+            return { ok: false, code: 'not_ready' };
+          },
+        },
+        actor: { kind: 'user', id: 'operator' },
+        onOpened: () => undefined,
+      },
+      'kadife-odoo',
+      { title: 'Deneme', description: '', flow: 'standard', mode: 'open_and_start' },
+    );
+    expect(outcome).toEqual({ ok: true, id: 'wo-9', startFailed: 'not_ready' });
+    expect(commands.map((command) => command.type)).toEqual(['workOrder.open', 'workOrder.enqueue']);
+    const toasts = workOrderCreateToasts(outcome);
+    expect(toasts).toHaveLength(2);
+    expect(toasts[1]?.result).toEqual({ ok: false, code: 'not_ready' });
+  });
+
+  it('U-255: an empty description is omitted from the open command fields', () => {
+    expect(workOrderOpenFields('Kapı', '   ', 'standard')).toEqual({ title: 'Kapı', flow: 'standard' });
+    expect(workOrderOpenFields('Kapı', 'hedef', 'standard')).toEqual({ title: 'Kapı', flow: 'standard', description: 'hedef' });
+  });
+
+  it('U-256: the Telefon window uses the compact frame and keeps the dialog contract', () => {
+    const html = phone();
+    expect(html).toContain('role="dialog"');
+    expect(source('phone-window.tsx')).toContain('compact');
+    expect(source('new-work-order-window.tsx')).toContain('restoreRef');
   });
 });
 
