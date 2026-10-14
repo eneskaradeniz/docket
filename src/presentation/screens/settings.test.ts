@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import type { Api } from '../../api/api';
+import type { Command, CommandResult } from '../../api/commands';
 import type { ProjectTree, Query, SettingsAccountView } from '../../api/queries';
 import type { Actor, RepoFlow, StageSlug } from '../../domain/index';
 import { parseSlug } from '../../domain/index';
@@ -17,6 +18,7 @@ import { createRolesStore } from '../stores/roles';
 import { createSettingsStore, type SettingsStore } from '../stores/settings';
 import { createThemeStore } from '../stores/theme';
 import { createUpdateStore } from '../stores/update';
+import { createRepoRelinkStatusStore, type RepoRelinkStatusStore } from '../stores/repo-relink-status';
 import { SettingsPanel, SETTINGS_SECTIONS } from './settings';
 
 // The panel reaches its bridge through `window.docket`; the node test world has no window, so a
@@ -202,16 +204,25 @@ const treeOf = (repos: readonly string[]): ProjectTree =>
 
 interface PanelWorld {
   readonly store: SettingsStore;
+  readonly repoRelink: RepoRelinkStatusStore;
   readonly html: () => string;
 }
 
 /** The panel and every store it takes, over one fake api — `answer` decides the world the repo
  *  section lands in (populated, loading, error or empty) by answering the three queries. */
-const panelOver = (answer: (query: Query) => unknown): PanelWorld => {
+const panelOver = (
+  answer: (query: Query) => unknown,
+  command: (cmd: Command) => Promise<CommandResult> = async () => ({ ok: true }),
+): PanelWorld => {
   const api: Pick<Api, 'query' | 'command'> = {
     query: async (query) => answer(query),
-    command: async () => ({ ok: true }),
+    command: async (_actor, cmd) => command(cmd),
   };
+  const repoRelink = createRepoRelinkStatusStore({
+    api,
+    actor: ACTOR,
+    pickFolders: async () => ({ canceled: true }),
+  });
   const store = createSettingsStore({ api, changes, actor: ACTOR, locale: () => 'tr' });
   const candidates = createCandidatesStore({ api, actor: ACTOR });
   const providers = createProvidersStore({ api });
@@ -247,16 +258,20 @@ const panelOver = (answer: (query: Query) => unknown): PanelWorld => {
         update,
         locale: 'tr',
         localeStore,
+        repoRelink,
       }),
     );
-  return { store, html };
+  return { store, repoRelink, html };
 };
+
+const repoStatusOk = (slug: string) => [{ repoId: '01HZX0000000000000000000A1', slug, path: `/c/${slug}`, status: 'ok' as const }];
 
 const populatedWorld = (): PanelWorld => {
   const world = panelOver((query) => {
     if (query.type === 'project.tree') return treeOf(['web']);
     if (query.type === 'repo.flow') return { ok: true, flow: sampleFlow() };
     if (query.type === 'settings.accounts') return { accounts: [], bindings: [] };
+    if (query.type === 'repoStatus') return repoStatusOk('web');
     return { ok: false, code: 'not_found' };
   });
   return world;
@@ -367,6 +382,7 @@ describe('Depo ayarları on the real panel (U-310, U-311)', () => {
     const single = panelOver((query) => {
       if (query.type === 'project.tree') return treeOf(['web']);
       if (query.type === 'repo.flow') return { ok: true, flow: sampleFlow() };
+      if (query.type === 'repoStatus') return repoStatusOk('web');
       return { ok: false, code: 'not_found' };
     });
     await single.store.repoSettings.load();
@@ -375,6 +391,7 @@ describe('Depo ayarları on the real panel (U-310, U-311)', () => {
     const multi = panelOver((query) => {
       if (query.type === 'project.tree') return treeOf(['api', 'mobile']);
       if (query.type === 'repo.flow') return { ok: true, flow: sampleFlow() };
+      if (query.type === 'repoStatus') return [...repoStatusOk('api'), ...repoStatusOk('mobile')];
       return { ok: false, code: 'not_found' };
     });
     await multi.store.repoSettings.load();
@@ -383,5 +400,72 @@ describe('Depo ayarları on the real panel (U-310, U-311)', () => {
     expect(out).toContain('aria-label="Depo"');
     expect(out.match(/role="tab"/g)?.length).toBe(2);
     expect(out).toContain('aria-selected="true"');
+  });
+});
+
+describe('Depo ayarları relink banner (U-312, U-313)', () => {
+  const repoQuery = (status: 'folder_not_found' | 'relink_offered' | 'ok') => (query: Query) => {
+    if (query.type === 'project.tree') return treeOf(['web']);
+    if (query.type === 'repo.flow') return { ok: true, flow: sampleFlow() };
+    if (query.type === 'repoStatus') {
+      if (status === 'ok') return repoStatusOk('web');
+      return [{ repoId: '01HZX0000000000000000000A1', slug: 'web', path: '/c/web', status }];
+    }
+    return { ok: false, code: 'not_found' };
+  };
+
+  it('U-312: folder_not_found draws a polite banner with Klasörü seç', async () => {
+    const { store, repoRelink, html } = panelOver(repoQuery('folder_not_found'));
+    await store.repoSettings.load();
+    await repoRelink.load(['web']);
+    const broken = html();
+    expect(broken).toContain('data-repo-relink-banner');
+    expect(broken).toContain('role="status"');
+    expect(broken).toContain('aria-live="polite"');
+    expect(broken).toContain('Klasör bulunamadı');
+    expect(broken).toContain('>Klasörü seç<');
+  });
+
+  it('U-312: every repo ok draws no relink banner', async () => {
+    const { store, repoRelink, html } = panelOver(repoQuery('ok'));
+    await store.repoSettings.load();
+    await repoRelink.load(['web']);
+    expect(html()).not.toContain('data-repo-relink-banner');
+  });
+
+  it('U-312: relink_offered shows the path and both relink actions', async () => {
+    const { store, repoRelink, html } = panelOver(repoQuery('relink_offered'));
+    await store.repoSettings.load();
+    await repoRelink.load(['web']);
+    const out = html();
+    expect(out).toContain('Taşınmış olabilir');
+    expect(out).toContain('/c/web');
+    expect(out).toContain('>Bu klasörü bağla<');
+    expect(out).toContain('>Başka klasör seç<');
+  });
+
+  it('U-313: fingerprint_mismatch from repo.relink shows Bu klasör aynı depo değil on the banner', async () => {
+    const { store, repoRelink, html } = panelOver(
+      repoQuery('folder_not_found'),
+      async (cmd) => (cmd.type === 'repo.relink' ? { ok: false, code: 'fingerprint_mismatch' } : { ok: true }),
+    );
+    await store.repoSettings.load();
+    await repoRelink.load(['web']);
+    await repoRelink.relinkAtPath('01HZX0000000000000000000A1', '/other');
+    const out = html();
+    expect(out).toContain('Bu klasör aynı depo değil');
+    expect(out).toContain('data-repo-relink-banner');
+  });
+
+  it('U-313: folder_not_found from repo.relink shows Klasör bulunamadı on the banner', async () => {
+    const { store, repoRelink, html } = panelOver(
+      repoQuery('folder_not_found'),
+      async (cmd) => (cmd.type === 'repo.relink' ? { ok: false, code: 'folder_not_found' } : { ok: true }),
+    );
+    await store.repoSettings.load();
+    await repoRelink.load(['web']);
+    await repoRelink.relinkAtPath('01HZX0000000000000000000A1', '/gone');
+    const out = html();
+    expect(out.match(/Klasör bulunamadı/g)?.length).toBeGreaterThan(1);
   });
 });

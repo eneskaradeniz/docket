@@ -2186,6 +2186,7 @@ for (const [sizeName, theme] of combos) {
           ),
           repoRegion.locator('[data-repo-empty]').waitFor({ state: 'visible', timeout: SCAN_WAIT }),
         ]);
+        assert((await repoRegion.locator('[data-repo-relink-banner]').count()) === 0, 'relink banner must stay hidden while every repo is ok (U-312)');
       } finally {
         page.off('console', onConsole);
         page.off('pageerror', onPageError);
