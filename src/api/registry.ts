@@ -90,6 +90,7 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
   'tracker.resolveConflict': { input: 'repo: RepoSlug, conflict: SyncConflict, resolution: keep_remote | keep_local' },
   'setup.ai.start': { input: 'repoPath: string, draft?: string — errors: no_provider, bad_input, not_found (A-357), mcp_down (A-381)' },
   'setup.read.answer': { input: 'conversation: ConversationId, path: string, allow: boolean (A-358)' },
+  'setup.apply': { input: 'project: ProjectSlug, path: string, proposal: SetupProposal — errors: invalid_id, not_found, bad_input, folder_not_found, not_a_git_repo, definitions_invalid, stale (A-387)' },
   'mcp.restore': { input: 'no input — ok → { status: McpStatusView }, error: endpoint_unavailable | listener_failed | script_missing (A-381)' },
 };
 
@@ -135,4 +136,6 @@ export const QUERY_REGISTRY: Record<Query['type'], RegistryEntry> = {
   'setup.draft': { input: 'no input (A-359)' },
   'setup.read.pending': { input: 'conversation: ConversationId (A-358)' },
   'mcp.status': { input: 'no input → McpStatusView (A-380)' },
+  'repos.discover': { input: 'parent: string — errors: not_found, not_a_directory, unreadable (A-382)' },
+  'setup.copyProposal': { input: 'project: ProjectSlug, source: RepoSlug, path: string — errors: source_not_in_project, folder_not_found, not_a_git_repo, definitions_invalid (A-383)' },
 };

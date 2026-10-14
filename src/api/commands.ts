@@ -14,6 +14,7 @@ export type Command =
   | { readonly type: 'project.export'; readonly project: string } // ok → { path, counts } (A-342)
   | { readonly type: 'project.importBundle'; readonly path: string } // ok → { warnings, renames } (A-342)
   | { readonly type: 'repo.register'; readonly project: string; readonly repo: string; readonly path: string }
+  | { readonly type: 'setup.apply'; readonly project: string; readonly path: string; readonly proposal: unknown }
   | { readonly type: 'repo.unregister'; readonly project: string; readonly repo: string }
   | { readonly type: 'repo.relink'; readonly repoId: string; readonly path: string } // errors: not_found, folder_not_found, fingerprint_mismatch (A-341)
   | { readonly type: 'repo.saveFlow'; readonly repo: string; readonly flow: RepoFlowInput } // ok → { ok: true }; errors: not_found, definitions_invalid, stale, account_not_connected (A-345, A-354)

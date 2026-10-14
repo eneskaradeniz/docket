@@ -35,6 +35,8 @@ export * from './mcp-status';
 export * from './definition-removal';
 export * from './roadmap';
 export * from './setup';
+export * from './repos-discover';
+export * from './setup-copy-proposal';
 export * from './tracker-sync';
 
 export * from './phase-control';

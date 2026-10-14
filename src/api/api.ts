@@ -153,7 +153,11 @@ import {
   pausePhase,
   resumePhase,
   openWorkOrder,
+  buildSetupProposal,
+  setupApply,
   registerRepo,
+  reposDiscover,
+  setupCopyProposal,
   removeAccount,
   removeAccountCap,
   routeChanged,
@@ -849,6 +853,25 @@ const runCommand = async (
           { project, repo, path: command.path, actor },
         ),
       );
+    }
+
+    case 'setup.apply': {
+      const project = slugValue<'project'>(command.project);
+      if (project === undefined) return invalidId();
+      if (typeof command.path !== 'string' || command.path.trim() === '') return badInput();
+      if ((await deps.projects.get(project)) === undefined) return { ok: false, code: 'not_found' };
+      try {
+        buildSetupProposal(command.proposal);
+      } catch {
+        return badInput();
+      }
+      const applied = await setupApply(deps, {
+        project,
+        path: command.path.trim(),
+        answers: command.proposal,
+        actor,
+      });
+      return applied.ok ? { ok: true } : { ok: false, code: applied.error };
     }
 
     case 'repo.unregister': {
@@ -2008,6 +2031,22 @@ const runQuery = async (
       const context = setup.contextOf(conversation);
       if (context === undefined) return { ok: false, code: 'not_found' };
       return { ask: context.ask === null ? null : { path: context.ask.path, reason: context.ask.reason }, secrets: context.secrets };
+    }
+
+    case 'repos.discover': {
+      if (typeof query.parent !== 'string' || query.parent.trim() === '') return badInput();
+      const discovered = await reposDiscover(deps, query.parent.trim());
+      return discovered.ok ? discovered.value : { ok: false, code: discovered.error };
+    }
+
+    case 'setup.copyProposal': {
+      const project = slugValue<'project'>(query.project);
+      if (project === undefined) return invalidId();
+      const source = slugValue<'repo'>(query.source);
+      if (source === undefined) return invalidId();
+      if (typeof query.path !== 'string' || query.path.trim() === '') return badInput();
+      const copied = await setupCopyProposal(deps, { project, source, path: query.path.trim() });
+      return copied.ok ? copied.value : { ok: false, code: copied.error };
     }
 
     case 'app.update': {

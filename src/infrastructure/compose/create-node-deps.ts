@@ -50,7 +50,7 @@ import {
   openDatabase,
   type OpenDbError,
 } from '../storage/sqlite/index';
-import { createMemoryDispatchStatus, createNodeMachineProbe, createSystemClock, createUlidGen, repoPathsOf, type RandomBytes } from '../system/index';
+import { createMemoryDispatchStatus, createNodeMachineProbe, createRepoScanner, createSystemClock, createUlidGen, repoPathsOf, type RandomBytes } from '../system/index';
 import { createCheckpoints, createEvidenceChecker, createGitProbe, readRepoFingerprint, createRepoFolders, createWorktrees, createWorktreeFiles } from '../vcs/index';
 import { createCapabilityCatalog } from '../providers/registry/index';
 import { createModelCatalog } from '../providers/catalog/index';
@@ -189,6 +189,7 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     accountTests: createMemoryAccountTestRepo(),
     scratch: createScratchDirs(),
     repoFolders: createRepoFolders(),
+    repoScanner: createRepoScanner(),
     // Reads go to the repo's registered main checkout, and every line is redacted with the scanner's
     // real patterns at the port boundary, like the checkpoints.
     repoFiles: createRepoFileReader({ repoPath: (repo) => repoPaths.path(repo), redact: redactSecrets }),

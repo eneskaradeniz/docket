@@ -14,7 +14,15 @@ import { SetupProposalDiff } from '../components/setup-proposal-diff';
 import { NewProjectPanel } from '../screens/new-project';
 
 const RAW = import.meta.glob(
-  ['../components/permission-prompt.tsx', '../components/setup-proposal-diff.tsx', '../screens/new-project.tsx'],
+  [
+    '../components/permission-prompt.tsx',
+    '../components/setup-proposal-diff.tsx',
+    '../components/setup-summary.tsx',
+    '../components/setup-add-repo-chooser.tsx',
+    '../components/setup-copy-from.tsx',
+    '../components/setup-import-repos.tsx',
+    '../screens/new-project.tsx',
+  ],
   { query: '?raw', import: 'default', eager: true },
 ) as Record<string, string>;
 const raw = (suffix: string): string => Object.entries(RAW).find(([path]) => path.endsWith(suffix))?.[1] ?? '';
@@ -513,7 +521,8 @@ describe('the Docket AI setup thread', () => {
     expect(store.state().proposalId).toBe('P1');
     await store.acceptProposal();
     expect(api.commands).toContainEqual({ type: 'proposal.decide', id: 'P1', decision: 'approved' });
-    expect(store.state().done).toMatchObject({ toastKey: 'newProject.created' });
+    expect(store.state().screen).toBe('summary');
+    expect(store.state().done).toBeNull();
   });
 
   it('U-286: a persisted draft offers the resume card and resume re-registers onto its conversation', async () => {
@@ -532,5 +541,90 @@ describe('the Docket AI setup thread', () => {
     });
     expect(store.state().ai.conversation).toBe(CONVERSATION);
     expect(store.state().screen).toBe('ai');
+  });
+});
+
+const drawPanel = (store: NewProjectStore, locale: 'tr' | 'en' = 'tr'): string =>
+  renderToStaticMarkup(
+    createElement(NewProjectPanel, {
+      open: true,
+      origin: 'pointer',
+      store,
+      locale,
+      onClose: () => undefined,
+      onDone: () => undefined,
+    }),
+  );
+
+describe('multi-repo setup (U-316 … U-319)', () => {
+  it('U-316: first accept opens the summary and the permission dialog can show the repo badge', async () => {
+    const { api, store } = setup();
+    store.pickPath('quick');
+    store.setRepoPath('/Users/e/acme');
+    store.setName('Acme');
+    await store.submit();
+    api.reply('project.create', { ok: true, id: 'acme' });
+    api.reply('setup.apply', { ok: true });
+    await store.acceptProposal();
+    expect(store.state().screen).toBe('summary');
+    const html = drawPanel(store);
+    expect(html).toContain('data-setup-summary=""');
+    expect(html).toContain(TR['setup.multi.summary.openProject']);
+    const perm = renderToStaticMarkup(
+      createElement(PermissionPrompt, {
+        open: true,
+        prompt: { path: '/tmp/x', reason: 'Need schema' },
+        locale: 'tr',
+        repoLabel: 'acme',
+        onDeny: () => undefined,
+        onAllow: () => undefined,
+        returnFocusRef: { current: null },
+      }),
+    );
+    expect(perm).toContain(TR['setup.permission.repoPrefix']);
+    expect(perm).toContain('acme');
+  });
+
+  it('U-317: Depo ekle chooser renders five method cards including copy and import', () => {
+    const { store } = setup();
+    store.showAddChooser();
+    const html = drawPanel(store);
+    expect(html).toContain('data-setup-add-chooser=""');
+    expect(html).toContain('data-card="copy_from"');
+    expect(html).toContain('data-card="import_multi"');
+    expect(html).toContain(TR['setup.multi.copy.title']);
+    expect(html).toContain(TR['setup.multi.batch.title']);
+  });
+
+  it('U-318: copy-from screen lists copied and not-copied regions', () => {
+    const { store } = setup();
+    store.showAddChooser();
+    store.pickPath('copy_from');
+    const html = drawPanel(store);
+    expect(html).toContain('data-setup-copy-from=""');
+    expect(html).toContain(TR['setup.multi.copy.copiedHead']);
+    expect(html).toContain(TR['setup.multi.copy.notCopiedHead']);
+  });
+
+  it('U-319: import batch exposes both modes and a queue with approve actions', async () => {
+    const { api, store } = setup();
+    store.showAddChooser();
+    store.pickPath('import_multi');
+    const html = drawPanel(store);
+    expect(html).toContain('data-setup-import=""');
+    expect(html).toContain('data-import-mode="multi"');
+    expect(html).toContain('data-import-mode="parent"');
+    const prior = api.query.bind(api);
+    api.query = (query) => {
+      if (query.type === 'repos.discover') {
+        return Promise.resolve({ found: [{ name: 'beta', path: '/parent/beta', isGit: true }], truncated: false });
+      }
+      return prior(query);
+    };
+    store.setImportParent('/parent');
+    await store.scanImportParent();
+    const queued = drawPanel(store);
+    expect(queued).toContain('data-setup-import-queue=""');
+    expect(queued).toContain(TR['setup.multi.batch.approveOne']);
   });
 });

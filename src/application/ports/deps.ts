@@ -29,6 +29,7 @@ import type { ProjectRepo } from './project-repo';
 import type { ProposalRepo } from './proposal-repo';
 import type { QueueRepo } from './queue-repo';
 import type { RepoFolders } from './repo-folders';
+import type { RepoScanner } from './repo-scanner';
 import type { ReadRepoFingerprint, RepoRegistry } from './repo-registry';
 import type { RunDirs } from './run-dirs';
 import type { RunRepo } from './run-repo';
@@ -82,6 +83,7 @@ export interface AppDeps {
   readonly phaseAutoRuns: PhaseAutoRunRepo;
   readonly scratch: ScratchDirs;
   readonly repoFolders: RepoFolders;
+  readonly repoScanner: RepoScanner;
   /** Read-only text files of registered repos (the assistant's docket_read_file). */
   readonly repoFiles: RepoFileReader;
   readonly worktreeFiles: WorktreeFiles;
