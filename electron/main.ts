@@ -36,6 +36,7 @@ import {
   composeRunPrompt,
   createDocketTools,
   createPermissionBoard,
+  createTrackerSyncService,
   dispatcherTick,
   evaluateMachineGates,
   createActionUndoer,
@@ -51,6 +52,7 @@ import {
   createDesignUpdateChecker,
   createMcpEndpoint,
   createNodeDeps,
+  createRepoTrackerResolver,
   createNoopUpdateChecker,
   createLoginStates,
   createPathDiscovery,
@@ -156,6 +158,7 @@ const loginStates = createLoginStates();
 let node: NodeDeps | undefined;
 let dispatchTimer: NodeJS.Timeout | undefined;
 let quotaLifecycle: { stop(): void } | undefined;
+let trackerSyncLifecycle: { stop(): void } | undefined;
 let mcpListener: McpListener | undefined;
 let currentBoard: PermissionBoard | undefined;
 let currentApi: (Api & RunEventFeed & { readonly quitRequested: (runs: readonly string[], chats: readonly string[]) => void }) | undefined;
@@ -443,6 +446,7 @@ const startApp = async (): Promise<void> => {
     // The same discovery the settings query runs: an installed provider without a directory
     // scanner must still be listed as a machine-login candidate (P-53).
     providerDiscovery: discovery,
+    trackerResolver: createRepoTrackerResolver,
   });
   if (!opened.ok) {
     dialog.showErrorBox('Docket', `Storage could not be opened: ${JSON.stringify(opened.error)}`);
@@ -492,7 +496,7 @@ const startApp = async (): Promise<void> => {
     runner: node.chatRunner,
     apply: node.docketToolExtras.applyAction,
     undo: createActionUndoer(nodeDeps),
-  }, { ack: () => quitPrompt.ack(), answer: (accept) => quitPrompt.answer(accept) });
+  }, { ack: () => quitPrompt.ack(), answer: (accept) => quitPrompt.answer(accept) }, node.trackers);
   currentApi = api;
   const quotaProbes = node.quota.probes; // read here: `node` is not narrowed inside the tick closure
 
@@ -578,6 +582,14 @@ const startApp = async (): Promise<void> => {
   // Quota is read without a run: once now for every account, then on the interval (P-49).
   quotaLifecycle = api.quota;
   api.quota.start();
+  const trackerSync = createTrackerSyncService(
+    nodeDeps,
+    node.trackers,
+    node.quota.timers,
+    (repo, code) => console.error(`tracker sync failed (${repo}: ${code})`),
+  );
+  trackerSyncLifecycle = trackerSync;
+  trackerSync.start();
 };
 
 void app.whenReady().then(() => {
@@ -732,6 +744,7 @@ app.on('will-quit', (event) => {
     return;
   }
   quotaLifecycle?.stop();
+  trackerSyncLifecycle?.stop();
   if (dispatchTimer !== undefined) clearInterval(dispatchTimer);
   node?.close();
 });

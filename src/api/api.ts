@@ -94,6 +94,7 @@ import {
   createAccountCandidateList,
   createCandidateQuotaPreview,
   createQuotaService,
+  type IssueTrackerResolver,
   createProject,
   decideActionUseCase,
   decideHumanGate,
@@ -403,8 +404,15 @@ export function createApi(
   quota?: QuotaWiring,
   chat?: ChatWiring,
   quit?: QuitPromptPort,
-  tracker?: IssueTracker,
+  tracker?: IssueTracker | IssueTrackerResolver,
 ): Api & RunEventFeed & { readonly quota: QuotaLifecycle; readonly quitRequested: (runs: readonly string[], chats: readonly string[]) => void } {
+  const trackerForRepo = async (repo: RepoSlug): Promise<IssueTracker | undefined> => {
+    if (tracker === undefined) return undefined;
+    if (typeof (tracker as IssueTrackerResolver).forRepo === 'function') {
+      return (tracker as IssueTrackerResolver).forRepo(repo);
+    }
+    return tracker as IssueTracker;
+  };
   // One remembered scan per api instance (A-85): the candidates query and every adoption read it.
   const adopting: Adopting | undefined =
     adoption === undefined ? undefined : { ...adoption, candidates: createAccountCandidateList(deps.clock, adoption.discovery) };
@@ -643,7 +651,7 @@ export function createApi(
           },
         },
       };
-      const result = await runCommand(tracked, actor, command, board, updates, tracker, adopting, quotaService, chatOps);
+      const result = await runCommand(tracked, actor, command, board, updates, trackerForRepo, adopting, quotaService, chatOps);
       if (appended) emit({ type: 'workOrders.changed' });
       // update.changed rides the same coarse pattern as workOrders.changed: the command answers
       // ok, the event tells every store to re-query — CommandResult carries no state payload. A
@@ -654,7 +662,7 @@ export function createApi(
       return result;
     },
     query: (query) =>
-      runQuery(deps, query, discovery, registry, board, updates, tracker, marks, adopting, candidateQuota, chat === undefined ? undefined : chat.runner),
+      runQuery(deps, query, discovery, registry, board, updates, trackerForRepo, marks, adopting, candidateQuota, chat === undefined ? undefined : chat.runner),
     subscribe: (listener) => {
       listeners.add(listener);
       return () => {
@@ -675,7 +683,7 @@ const runCommand = async (
   command: Command,
   board: Pick<PermissionBoard, 'answer'> | undefined,
   updates: UpdateChecker | undefined,
-  tracker: IssueTracker | undefined,
+  trackerForRepo: (repo: RepoSlug) => Promise<IssueTracker | undefined>,
   adopting: Adopting | undefined,
   quotaService: QuotaService | undefined,
   chatOps: ChatOps,
@@ -1436,21 +1444,23 @@ const runCommand = async (
     }
 
     case 'tracker.sync': {
-      if (tracker === undefined) return { ok: false, code: 'not_found' };
       const repo = slugValue<'repo'>(command.repo);
       if (repo === undefined) return invalidId();
       const link = await loadRepoTrackerLink(deps, repo);
       if (link === undefined) return { ok: false, code: 'not_found' };
-      const synced = await syncRepoTracker({ definitions: deps.definitions, clock: deps.clock, log: deps.log, tracker }, link);
+      const port = await trackerForRepo(repo);
+      if (port === undefined) return { ok: false, code: 'not_found' };
+      const synced = await syncRepoTracker({ definitions: deps.definitions, clock: deps.clock, log: deps.log, tracker: port }, link);
       return synced.ok ? { ok: true, ...synced.value } : { ok: false, code: synced.error };
     }
 
     case 'tracker.resolveConflict': {
-      if (tracker === undefined) return { ok: false, code: 'not_found' };
       const repo = slugValue<'repo'>(command.repo);
       if (repo === undefined) return invalidId();
+      const port = await trackerForRepo(repo);
+      if (port === undefined) return { ok: false, code: 'not_found' };
       const resolved = await resolveSyncConflict(
-        { definitions: deps.definitions, clock: deps.clock, log: deps.log, tracker },
+        { definitions: deps.definitions, clock: deps.clock, log: deps.log, tracker: port },
         { repo, conflict: command.conflict, resolution: command.resolution },
       );
       return resolved.ok ? { ok: true } : { ok: false, code: resolved.error };
@@ -1527,7 +1537,7 @@ const runQuery = async (
   registry: RepoRegistryPort | undefined,
   board: Pick<PermissionBoard, 'answer' | 'openAsks'> | undefined,
   updates: UpdateChecker | undefined,
-  tracker: IssueTracker | undefined,
+  trackerForRepo: (repo: RepoSlug) => Promise<IssueTracker | undefined>,
   marks: ProviderMarks | undefined,
   adopting: Adopting | undefined,
   candidateQuota: CandidateQuotaPreview | undefined,
@@ -1835,10 +1845,11 @@ const runQuery = async (
       );
 
     case 'tracker.linkStatus': {
-      if (tracker === undefined) return { ok: false, code: 'not_found' };
       const repo = slugValue<'repo'>(query.repo);
       if (repo === undefined) return invalidId();
-      return readTrackerLinkStatus({ definitions: deps.definitions, clock: deps.clock, log: deps.log, tracker }, repo);
+      const port = await trackerForRepo(repo);
+      if (port === undefined) return { ok: false, code: 'not_found' };
+      return readTrackerLinkStatus({ definitions: deps.definitions, clock: deps.clock, log: deps.log, tracker: port }, repo);
     }
 
     case 'app.update': {

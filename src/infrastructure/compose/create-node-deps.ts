@@ -8,6 +8,7 @@ import type {
   AppDeps,
   ChatRunner,
   Clock,
+  CommandRunner,
   CredentialImporter,
   DocketToolExtras,
   McpEndpoint,
@@ -18,6 +19,7 @@ import type {
   RepoRegistry,
   TransportResolver,
 } from '../../application/index';
+import type { IssueTrackerResolver } from '../../application/services/tracker-sync-service';
 import { createActionApplier, createChatRunner, createChatTurnLedger } from '../../application/index';
 import { createMemoryAccountTestRepo } from './account-test-repo';
 import { createScratchDirs } from './scratch-dirs';
@@ -81,6 +83,10 @@ export interface NodeDepsConfig {
   /** How the app launches its own MCP child (the shell knows its executable and the built script);
    * absent = no run is given Docket's tools. */
   readonly mcpEndpoint?: McpEndpoint;
+  /** Injected command runner for tests; production uses createCommandRunner from commandEnv. */
+  readonly commands?: CommandRunner;
+  /** Builds the per-repo tracker resolver; the shell passes createRepoTrackerResolver from forge. */
+  readonly trackerResolver?: (deps: AppDeps) => IssueTrackerResolver;
 }
 
 export interface NodeDeps {
@@ -101,6 +107,8 @@ export interface NodeDeps {
   /** The chat turn runner, built on the same ledger the write tools fill; the api slice (6e-5)
    *  exposes it, nothing here starts a turn on its own. */
   readonly chatRunner: ChatRunner;
+  /** Resolves the IssueTracker for a registered repo from tracker.yaml (github + gh auth only). */
+  readonly trackers: IssueTrackerResolver;
   close(): void;
 }
 
@@ -155,7 +163,7 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     memory: createSqliteMemoryStore(db),
     secrets,
     transports: config.transports,
-    commands: createCommandRunner({ env: config.commandEnv }),
+    commands: config.commands ?? createCommandRunner({ env: config.commandEnv }),
     secretScanner: createSecretScanner(),
     worktrees: createWorktrees({ root: join(config.dataDir, 'worktrees'), repos: repoPaths }),
     worktreeFiles: createWorktreeFiles(),
@@ -201,6 +209,7 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
   // same ledger instance the write tools fill, so one turn's effects meet one message.
   const docketToolExtras: DocketToolExtras = { applyAction: createActionApplier(deps), turnLedger: createChatTurnLedger() };
   const chatRunner = createChatRunner(deps, { turnLedger: docketToolExtras.turnLedger });
+  const trackers = config.trackerResolver?.(deps) ?? { forRepo: async () => undefined };
   return ok({
     deps,
     quota,
@@ -210,6 +219,7 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     credentialImporter,
     docketToolExtras,
     chatRunner,
+    trackers,
     adoption: { discovery: accountDiscovery, importer: credentialImporter },
     close: (): void => db.close(),
   });
