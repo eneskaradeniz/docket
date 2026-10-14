@@ -41,6 +41,7 @@ export const KNOWN_FAILURE_CODES: readonly string[] = [
   'binding_exists',
   // The spend-consent commands' refusals (application use-cases/spend-consent.ts).
   'invalid_model',
+  'unknown_model',
   'invalid_cap',
   // A-45: a reserve share outside 0..0.95.
   'invalid_reserve',

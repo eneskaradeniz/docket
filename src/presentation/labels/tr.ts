@@ -25,6 +25,7 @@ export const TR: LabelBundle = {
   'error.invalid_after': 'Teklifin geçerlilik zamanı geçersiz.',
   'error.binding_exists': 'Hesap bir rol bağlantısında kullanılıyor; önce bağlantıyı güncelleyin.',
   'error.invalid_model': 'Model geçersiz.',
+  'error.unknown_model': 'Bu model hesabın rotasında yok.',
   'error.invalid_cap': 'Harcama üst sınırı geçersiz.',
   'error.cap_required': 'Bir model onaylıyken son harcama üst sınırı kaldırılamaz; önce onayı geri çekin.',
   'error.not_a_deploy_gate': 'Bu kapı bir dağıtım kapısı değil.',

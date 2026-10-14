@@ -146,6 +146,9 @@ export async function prepareClaudeCodeSdkDelivery(
   }
 
   for (const plugin of pluginCaps) {
+    // A non-path plugin is already unsupported in translation (R-149: the setup warning fires and
+    // the omission is recorded there), so it never reaches the run list this loop sees; skipping it
+    // here is the second line of defence, not the place the loss is surfaced.
     if (plugin.source.kind !== 'path') continue;
     plugins.push({ type: 'local', path: plugin.source.path, skipMcpDiscovery });
   }
