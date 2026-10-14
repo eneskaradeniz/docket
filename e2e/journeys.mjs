@@ -190,6 +190,7 @@ for (const [sizeName, theme] of combos) {
     await button('Liste');
     await click('Swagger staging testi');
     await see('Bu aşamada senden beklenen');
+    await page.locator('[data-detail-wo-usage]').waitFor({ state: 'visible', timeout: SCAN_WAIT });
     await shot('detail');
     await button('Onayla');
     await see('Onaylandı');

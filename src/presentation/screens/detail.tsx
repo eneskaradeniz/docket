@@ -22,6 +22,7 @@ import {
   newestFailedRunOf,
   runRows,
   stripSegments,
+  workOrderUsageMoney,
   type WorkOrderAskView,
   type WorkOrderDetailStore,
 } from '../stores/work-order-detail';
@@ -39,6 +40,7 @@ import { DetailFiles } from '../components/detail-files';
 import { DetailRunCard } from '../components/detail-run-card';
 import { DetailRowMenu } from '../components/detail-row-menu';
 import { DetailSkipLink } from '../components/detail-skip-link';
+import { DetailWorkOrderUsage } from '../components/detail-work-order-usage';
 import { InlineDialog } from '../components/detail-dialog';
 import { Skeleton, SkeletonStyle } from '../components/skeleton';
 import { formatDateTime, formatDurationMs } from '../components/detail-format';
@@ -286,6 +288,15 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
           </header>
 
           <DetailStrip segments={segments} locale={locale} />
+
+          <DetailWorkOrderUsage
+            locale={locale}
+            flow={view.flow}
+            usage={state.usageSummary}
+            usageFailed={state.usageSummaryFailed}
+            money={workOrderUsageMoney(view)}
+            onRetry={() => void store.reloadUsageSummary()}
+          />
 
           {/* The close confirmation (A3): focus moves in, Tab is trapped, Esc returns to the menu
               button — the ⋯ menu stays the named opener. */}

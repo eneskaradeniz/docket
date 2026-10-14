@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Api } from '../../api/api';
 import type { Command, CommandResult } from '../../api/commands';
-import type { Query } from '../../api/queries';
+import type { Query, UsageSummaryView } from '../../api/queries';
 import type {
   Actor,
   AgentEvent,
@@ -39,6 +39,7 @@ import {
   newestFailedRunOf,
   runRows,
   stripSegments,
+  workOrderUsageMoney,
   type DetailChange,
   type DetailChangeSignal,
   type WorkOrderDetailRun,
@@ -187,8 +188,23 @@ interface FakeApi extends Pick<Api, 'query' | 'command'> {
   setAsks(reply: unknown): void;
   setChanges(reply: unknown): void;
   setRunEvents(reply: unknown): void;
+  setUsageSummary(reply: unknown): void;
   setCommandResult(result: CommandResult): void;
 }
+
+const EMPTY_USAGE: UsageSummaryView = {
+  summary: {
+    runs: 0,
+    tokens: 0,
+    inputTokens: 0,
+    cachedInputTokens: 0,
+    cacheRatio: 0,
+    planningShare: 0,
+    byStage: [],
+  },
+  findings: [],
+  runsWithoutUsage: 0,
+};
 
 /** The detail query, the open-asks query, the changes read and the run-event tail are answered
  *  separately; every call is recorded. */
@@ -199,6 +215,7 @@ const fakeApi = (initialReply: unknown): FakeApi => {
   let asksReply: unknown = [];
   let changesReply: unknown = null;
   let runEventsReply: unknown = null;
+  let usageSummaryReply: unknown = EMPTY_USAGE;
   let commandResult: CommandResult = { ok: true };
   return {
     queries,
@@ -215,6 +232,9 @@ const fakeApi = (initialReply: unknown): FakeApi => {
     setRunEvents: (next) => {
       runEventsReply = next;
     },
+    setUsageSummary: (next) => {
+      usageSummaryReply = next;
+    },
     setCommandResult: (next) => {
       commandResult = next;
     },
@@ -223,6 +243,7 @@ const fakeApi = (initialReply: unknown): FakeApi => {
       if (query.type === 'permissions.open') return Promise.resolve(asksReply);
       if (query.type === 'workOrder.changes') return Promise.resolve(changesReply);
       if (query.type === 'run.events') return Promise.resolve(runEventsReply);
+      if (query.type === 'usage.summary') return Promise.resolve(usageSummaryReply);
       return Promise.resolve(reply);
     },
     command: (_actor, command) => {
@@ -303,6 +324,8 @@ describe('work-order detail store', () => {
       changes: null,
       lastErrorLine: null,
       autoAllowed: 0,
+      usageSummary: null,
+      usageSummaryFailed: false,
     });
     const loading = store.load(WO_ID);
     expect(store.state().loading).toBe(true);
@@ -1119,6 +1142,53 @@ describe('run rows (U-229, U-230)', () => {
   it('the run code is the id\'s last four characters on the run_ prefix, lowercase', () => {
     expect(formatRunCode('01ARZ3NDEKTSV4RRFFQ69G5FA0')).toBe('run_5fa0');
     expect(formatRunCode('01ARZ3NDEKTSV4RRFFQ69G5FB1')).toBe('run_5fb1');
+  });
+});
+
+describe('work-order usage summary (#1112)', () => {
+  it('U-327: load issues usage.summary for the work order and keeps the detail on a failed read', async () => {
+    const api = fakeApi(detailReply(AT_BUILD));
+    const store = createStore(api);
+    await store.load(WO_ID);
+    expect(api.queries.some((query) => query.type === 'usage.summary' && query.workOrder === WO_ID)).toBe(true);
+    expect(store.state().usageSummary).toEqual(EMPTY_USAGE);
+    expect(store.state().usageSummaryFailed).toBe(false);
+
+    api.setUsageSummary({ ok: false, code: 'io_failed' });
+    await store.reloadUsageSummary();
+    expect(store.state().usageSummaryFailed).toBe(true);
+    expect(store.state().view).not.toBeNull();
+  });
+
+  it('U-328: workOrderUsageMoney splits pay-per-use money from subscription equivalent', () => {
+    const view: WorkOrderDetailView = {
+      ...detailReply(AT_BUILD),
+      runSummaries: [
+        {
+          runId: 'r-pay',
+          stage: STAGE_BUILD,
+          attempt: 1,
+          role: 'builder',
+          account: { id: 'a', label: 'Pay', provider: 'p' },
+          billing: 'pay_per_use',
+          usage: { inputTokens: 1, outputTokens: 1, cachedInputTokens: 0, costByKind: { reported: 2 } },
+        },
+        {
+          runId: 'r-sub',
+          stage: STAGE_BUILD,
+          attempt: 1,
+          role: 'builder',
+          account: { id: 'b', label: 'Sub', provider: 'p' },
+          billing: 'included',
+          usage: { inputTokens: 1, outputTokens: 1, cachedInputTokens: 0, costByKind: { equivalent: 3 } },
+        },
+      ],
+    };
+    expect(workOrderUsageMoney(view)).toEqual({
+      payPerUseUsd: 2,
+      payPerUseEstimate: false,
+      includedEquivalentUsd: 3,
+    });
   });
 });
 

@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Api } from '../../api/api';
 import type { Command, CommandResult } from '../../api/commands';
-import type { OpenAskView, PageListItem, Query } from '../../api/queries';
+import type { OpenAskView, PageListItem, Query, UsageSummaryView } from '../../api/queries';
 import type { Actor, FlowDef, Slug } from '../../domain/index';
 import { parseSlug } from '../../domain/index';
 
@@ -32,6 +32,7 @@ const RAW = import.meta.glob(
     '../components/detail-strip.tsx',
     '../components/detail-decision-card.tsx',
     '../components/detail-skip-link.tsx',
+    '../components/detail-work-order-usage.tsx',
     '../stores/work-order-detail.ts',
     '../labels/tr.ts',
     '../labels/en.ts',
@@ -143,6 +144,29 @@ const LONG_TITLE =
 
 const ASK_ROW: OpenAskView = { runId: '01ARZ3NDEKTSV4RRFFQ69G5FA0', askId: 'ask-1', since: 0, title: LONG_TITLE };
 
+const BASE_USAGE: UsageSummaryView = {
+  summary: {
+    runs: 2,
+    tokens: 15_500,
+    inputTokens: 12_400,
+    cachedInputTokens: 6_200,
+    cacheRatio: 0.5,
+    planningShare: 0.1,
+    byStage: [
+      {
+        stage: STAGE_CHECK,
+        runs: 2,
+        maxAttempt: 1,
+        tokens: 15_500,
+        inputTokens: 12_400,
+        cachedInputTokens: 6_200,
+      },
+    ],
+  },
+  findings: [],
+  runsWithoutUsage: 0,
+};
+
 /** The detail query and the open-asks query are answered separately, both from one scripted reply. */
 const fakeApi = (
   reply: unknown,
@@ -150,12 +174,14 @@ const fakeApi = (
   changes: unknown = null,
   pages: readonly PageListItem[] = [],
   runEvents: unknown = null,
+  usage: unknown = BASE_USAGE,
 ): Pick<Api, 'query' | 'command'> => ({
   query: (query: Query) => {
     if (query.type === 'pages.list') return Promise.resolve(pages);
     if (query.type === 'permissions.open') return Promise.resolve(asks);
     if (query.type === 'workOrder.changes') return Promise.resolve(changes);
     if (query.type === 'run.events') return Promise.resolve(runEvents);
+    if (query.type === 'usage.summary') return Promise.resolve(usage);
     return Promise.resolve(reply);
   },
   command: (_actor: Actor, _command: Command): Promise<CommandResult> =>
@@ -178,8 +204,9 @@ const draw = async (
   changes: unknown = null,
   pages: readonly PageListItem[] = [],
   runEvents: unknown = null,
+  usage: unknown = BASE_USAGE,
 ): Promise<string> => {
-  const api = fakeApi(view, asks, changes, pages, runEvents);
+  const api = fakeApi(view, asks, changes, pages, runEvents, usage);
   const store = createWorkOrderDetailStore({
     api,
     changes: () => () => {},
@@ -577,6 +604,138 @@ describe('work-order detail screen — Sayfalar and the approval\'s page link', 
     const html = await draw(AWAITING_HUMAN, [], CHANGES_READY, [PAGE_ROW]);
     const stack = html.slice(html.indexOf('data-decision-stack'), html.indexOf('data-decision-stack') + 6000);
     expect(stack).toContain('Giriş ekranı taslağı');
+  });
+});
+
+describe('work-order detail screen — usage summary (U-327, U-328)', () => {
+  it('U-327: the usage fold sits under the strip and above the decision zone, collapsed by default', async () => {
+    const html = await draw(AWAITING_HUMAN, [], CHANGES_READY);
+    const stripAt = html.indexOf('data-detail-strip');
+    const usageAt = html.indexOf('data-detail-wo-usage');
+    const decisionAt = html.indexOf('id="detail-expected"');
+    expect(stripAt).toBeGreaterThan(-1);
+    expect(usageAt).toBeGreaterThan(stripAt);
+    expect(decisionAt).toBeGreaterThan(usageAt);
+    expect(html).toContain('12,4k girdi · 3,1k çıktı');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain('Senden onay bekleniyor');
+  });
+
+  it('U-327: waste findings show the amber dot and “israf var” while collapsed', async () => {
+    const usage: UsageSummaryView = {
+      ...BASE_USAGE,
+      findings: [{ rule: 'R-112', kind: 'planning_heavy', values: { share: 0.4, runs: 5 } }],
+    };
+    const html = await draw(AWAITING_HUMAN, [], CHANGES_READY, [], null, usage);
+    expect(html).toContain('israf var');
+    expect(html).not.toContain('data-detail-wo-usage-expanded');
+  });
+
+  it('U-327: runs without usage and waste copy are wired in the expanded panel', async () => {
+    const component = source('detail-work-order-usage.tsx');
+    expect(component).toContain('detail.usage.noUsageRuns');
+    expect(component).toContain('detail.usage.waste.planning');
+    expect(component).toContain('data-detail-wo-usage-expanded');
+  });
+
+  it('U-328: pay-per-use-only shows Kullandıkça-öde and never the subscription ⓘ', async () => {
+    const view: WorkOrderDetailView = {
+      ...AWAITING_HUMAN,
+      runSummaries: [
+        {
+          runId: '01ARZ3NDEKTSV4RRFFQ69G5FD55',
+          stage: STAGE_CHECK,
+          attempt: 1,
+          role: 'builder',
+          account: { id: 'a-1', label: 'Pay', provider: 'p' },
+          billing: 'pay_per_use',
+          usage: { inputTokens: 100, outputTokens: 50, cachedInputTokens: 0, costByKind: { reported: 4.2 } },
+        },
+      ],
+    };
+    const html = await draw(view);
+    expect(html).toContain('Kullandıkça-öde:');
+    expect(html).toContain('$4,20');
+    expect(html).not.toContain('data-detail-wo-estimate');
+  });
+
+  it('U-328: subscription-only shows the ⓘ control, never a dollar on the usage line', async () => {
+    const view: WorkOrderDetailView = {
+      ...AWAITING_HUMAN,
+      runSummaries: [
+        {
+          runId: '01ARZ3NDEKTSV4RRFFQ69G5FD55',
+          stage: STAGE_CHECK,
+          attempt: 1,
+          role: 'builder',
+          account: { id: 'a-1', label: 'Sub', provider: 'p' },
+          billing: 'included',
+          usage: { inputTokens: 100, outputTokens: 50, cachedInputTokens: 0, costByKind: { equivalent: 1.84 } },
+        },
+      ],
+    };
+    const html = await draw(view);
+    const usage = html.slice(html.indexOf('data-detail-wo-usage'), html.indexOf('data-detail-wo-usage') + 1200);
+    expect(usage).toContain('data-detail-wo-estimate');
+    expect(usage).toContain('API karşılığı bilgisi');
+    expect(usage).not.toContain('$');
+  });
+
+  it('U-328: mixed billing shows both pay-per-use money and the subscription ⓘ, never one combined total', async () => {
+    const view: WorkOrderDetailView = {
+      ...AWAITING_HUMAN,
+      runSummaries: [
+        {
+          runId: 'r1',
+          stage: STAGE_CHECK,
+          attempt: 1,
+          role: 'builder',
+          account: { id: 'a', label: 'Pay', provider: 'p' },
+          billing: 'pay_per_use',
+          usage: { inputTokens: 1, outputTokens: 1, cachedInputTokens: 0, costByKind: { reported: 1 } },
+        },
+        {
+          runId: 'r2',
+          stage: STAGE_CHECK,
+          attempt: 1,
+          role: 'builder',
+          account: { id: 'b', label: 'Sub', provider: 'p' },
+          billing: 'included',
+          usage: { inputTokens: 1, outputTokens: 1, cachedInputTokens: 0, costByKind: { equivalent: 2 } },
+        },
+      ],
+    };
+    const html = await draw(view);
+    expect(html).toContain('Kullandıkça-öde:');
+    expect(html).toContain('data-detail-wo-estimate');
+    expect(html).not.toContain('Kullandıkça-öde: $3');
+  });
+
+  it('U-328: a failed usage read shows Kullanım okunamadı with retry and leaves the decision card', async () => {
+    const html = await draw(AWAITING_HUMAN, [], CHANGES_READY, [], null, { ok: false, code: 'io_failed' });
+    expect(html).toContain('Kullanım okunamadı');
+    expect(html).toContain('Tekrar dene');
+    expect(html).toContain('Senden onay bekleniyor');
+  });
+
+  it('U-328: the ⓘ note is a focusable control with aria-expanded (keyboard contract)', async () => {
+    const view: WorkOrderDetailView = {
+      ...AWAITING_HUMAN,
+      runSummaries: [
+        {
+          runId: '01ARZ3NDEKTSV4RRFFQ69G5FD55',
+          stage: STAGE_CHECK,
+          attempt: 1,
+          role: 'builder',
+          account: { id: 'a-1', label: 'Sub', provider: 'p' },
+          billing: 'included',
+          usage: { inputTokens: 1, outputTokens: 1, cachedInputTokens: 0, costByKind: { equivalent: 1 } },
+        },
+      ],
+    };
+    const html = await draw(view);
+    expect(html).toMatch(/data-detail-wo-estimate[^>]*aria-expanded="false"/);
+    expect(source('detail-work-order-usage.tsx')).toContain('role="note"');
   });
 });
 
