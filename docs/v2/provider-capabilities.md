@@ -315,11 +315,11 @@ The initial table recorded as data in the capability registry (`registry/capabil
 | `codex` | `context` | `native` | Native instruction files (AGENTS.md / fallback, P-37) | |
 | `codex` | `plugin` | `native` | Run-scoped plugin bundle under .codex/plugins with plugin.json probe #1015, 2026-10-14 | |
 | `codex` | `command` | `degraded` | Docket renders template placeholders | `prompt_text` |
-| `agy` | `mcp` | `unverified` | Unverified without live probe (#1015) | |
-| `agy` | `skill` | `unverified` | Unverified without live probe (#1015) | |
-| `agy` | `hook` | `unverified` | Unverified without live probe (#1015) | |
+| `agy` | `mcp` | `unsupported` | Run-scoped MCP via --mcp-config was not evidenced because agy --help does not list --mcp-config probe #1015, 2026-10-14 | |
+| `agy` | `skill` | `unsupported` | Workspace skills under .gemini/skills or .agy/skills in the run directory were not evidenced probe #1015, 2026-10-14 | |
+| `agy` | `hook` | `unverified` | No hook mechanism named by agy --help or the repo docs (P-58/P-60); nothing to attempt without inventing a format probe #1015, 2026-10-14 | |
 | `agy` | `context` | `native` | Native instruction files (P-37) | |
-| `agy` | `plugin` | `unverified` | Unverified without live probe (#1015) | |
+| `agy` | `plugin` | `unverified` | Plugin management is CLI-owned ambient state (agy plugin); no run-scoped plugin delivery found in agy --help or the repo docs probe #1015, 2026-10-14 | |
 | `agy` | `command` | `degraded` | Docket renders template placeholders | `prompt_text` |
 | `copilot` | `mcp` | `unverified` | Unverified without live probe (#1015) | |
 | `copilot` | `skill` | `unverified` | Unverified without live probe (#1015) | |
@@ -327,17 +327,17 @@ The initial table recorded as data in the capability registry (`registry/capabil
 | `copilot` | `context` | `native` | Native instruction files (P-37) | |
 | `copilot` | `plugin` | `unverified` | Unverified without live probe (#1015) | |
 | `copilot` | `command` | `degraded` | Docket renders template placeholders | `prompt_text` |
-| `cursor` | `mcp` | `unverified` | Unverified without live probe (#1015) | |
-| `cursor` | `skill` | `unverified` | Unverified without live probe (#1015) | |
-| `cursor` | `hook` | `unverified` | Unverified without live probe (#1015) | |
-| `cursor` | `context` | `native` | Native instruction files (P-37) | |
-| `cursor` | `plugin` | `unverified` | Unverified without live probe (#1015) | |
+| `cursor` | `mcp` | `native` | Run-scoped MCP server on the ACP session/new.mcpServers field (def-verified launch; tool listing is nondeterministic) probe #1015, 2026-10-14 | |
+| `cursor` | `skill` | `degraded` | Project rule at .cursor/rules carrying the skill instruction; not a documented skill kind probe #1015, 2026-10-14 | `context` |
+| `cursor` | `hook` | `unsupported` | Run-scoped .cursor/hooks.json with a UserPromptSubmit command hook was not evidenced (help names no hook format) probe #1015, 2026-10-14 | |
+| `cursor` | `context` | `native` | Native instruction file AGENTS.md in the run cwd (P-37) probe #1015, 2026-10-14 | |
+| `cursor` | `plugin` | `unsupported` | Documented --plugin-dir flag pointing at a fixture plugin bundle was not evidenced probe #1015, 2026-10-14 | |
 | `cursor` | `command` | `degraded` | Docket renders template placeholders | `prompt_text` |
-| `opencode` | `mcp` | `unverified` | Unverified without live probe (#1015) | |
-| `opencode` | `skill` | `unverified` | Unverified without live probe (#1015) | |
-| `opencode` | `hook` | `unverified` | Unverified without live probe (#1015) | |
-| `opencode` | `context` | `native` | Native instruction files (P-37) | |
-| `opencode` | `plugin` | `unverified` | Unverified without live probe (#1015) | |
+| `opencode` | `mcp` | `unsupported` | Run-scoped config tree via OPENCODE_CONFIG_DIR with opencode.json mcp block was not evidenced probe #1015, 2026-10-14 | |
+| `opencode` | `skill` | `native` | Skill directory under the same OPENCODE_CONFIG_DIR tree (skills/, P-60 addendum) probe #1015, 2026-10-14 | |
+| `opencode` | `hook` | `unverified` | No hook kind documented in opencode --help, the repo docs (P-60 addendum names none) or the def; the CLI event surface is the plugin API, probed as C4 probe #1015, 2026-10-14 | |
+| `opencode` | `context` | `native` | Native instruction file AGENTS.md in the run cwd with OPENCODE_DISABLE_CLAUDE_CODE=1 (P-37) probe #1015, 2026-10-14 | |
+| `opencode` | `plugin` | `unsupported` | JS plugin in the config tree plugin directory whose module load appends the marker line was not evidenced probe #1015, 2026-10-14 | |
 | `opencode` | `command` | `degraded` | Docket renders template placeholders | `prompt_text` |
 
 ### Rules (P-57 … P-60)
@@ -345,6 +345,7 @@ The initial table recorded as data in the capability registry (`registry/capabil
 - **P-57** (added 2026-10-12, #1006) `supportFor` answers from the table; a missing row is `unverified`; `setupWarnings` returns one warning per (stage, capability) whose support is not `native`, in stage order; the UI shows them at setup time and before a run starts; `unverified` is shown as such, never as `native`.
 - **P-58** (added 2026-10-12, #1006) The table's initial content (data in the registry; honest, no claim without evidence — the real-run probe #1015 later turns `unverified` into the observed value): for provider `claude-code` (stream-json/SDK): mcp native, skill native, hook native, context native, plugin native, command degraded→prompt_text; for `codex`: mcp native, context native, skill degraded→context, hook unsupported, plugin unverified, command degraded→prompt_text; for `agy`, `copilot`, `cursor`, `opencode`: every kind `unverified` except context (native: instruction files, P-37) and command (degraded→prompt_text).
 - **P-58 amendment (2026-10-14, probe #1015, #1141)** Real-run probe #1015 updates the solid rows: `claude-code` mcp/skill/hook/context/plugin `how` lines name the evidenced mechanism; `codex` skill and plugin become `native` (run-dir `.agents/skills` and `.codex/plugins`); `codex` hook stays `unsupported` with `how` citing the failed hook attempts.
+- **P-58 amendment (2026-10-14, probe #1015, #1149)** Real-run probe #1015 updates `cursor` (mcp native with nondeterministic listing, skill degraded→context via project rule, hook and plugin unsupported), `opencode` (mcp and plugin unsupported, skill native under the config dir, hook unverified), and `agy` (mcp and skill unsupported, hook and plugin unverified); `copilot` stays unverified until the probe reruns.
 - **P-59** (added 2026-10-12, #1006) Translation is per provider and per run: a stage's role capabilities are translated into the run-scoped files/flags the provider's launch rules already use (P-7 addendum for run-scoped files, the MCP child launch rules); a capability whose support is `unsupported` is omitted from the run and recorded in the run record as `omitted_capability`; `degraded` capabilities are inlined as instruction text; no translation ever writes into the repository (D-5) or the user's own provider config.
 - **P-60** (added 2026-10-12, #1006) Machine import is read-only: a scan lists `MachineCandidate`s per provider from that provider's own user-level config locations; it never writes there, never copies a secret value (only `secretNames`; at import the user is asked to store the value in the keychain, the definition then holds `{secretRef}`); it supersedes nothing in R-62…R-67 — the existing `CapabilityCandidate` for mcp/skill/context stays and this adds plugin and hook candidates: hook candidates are listed but still not importable (R-66's note, 2026-10-11, stands).
 - **P-60 addendum (2026-10-14, #1067)** Evidenced user-level machine scan locations:

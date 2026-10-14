@@ -519,7 +519,47 @@ describe('translation support table (P-58)', () => {
     ]);
   });
 
-  it.each(['agy', 'copilot', 'cursor', 'opencode'])('P-58: %s is unverified for every kind except native context and degraded command', (provider) => {
+  it('P-58: agy lists mcp and skill unsupported, hook and plugin unverified, context native, command degraded', () => {
+    expect(KINDS.map((kind) => rowOf('agy', kind).support)).toEqual([
+      'unsupported',
+      'unsupported',
+      'unverified',
+      'native',
+      'unverified',
+      'degraded',
+    ]);
+    expect(rowOf('agy', 'command').degradesTo).toBe('prompt_text');
+    expect(rowOf('agy', 'mcp').how).toContain('probe #1015, 2026-10-14');
+  });
+
+  it('P-58: cursor lists mcp native, skill degraded to context, hook and plugin unsupported, context native, command degraded', () => {
+    expect(KINDS.map((kind) => rowOf('cursor', kind).support)).toEqual([
+      'native',
+      'degraded',
+      'unsupported',
+      'native',
+      'unsupported',
+      'degraded',
+    ]);
+    expect(rowOf('cursor', 'skill').degradesTo).toBe('context');
+    expect(rowOf('cursor', 'command').degradesTo).toBe('prompt_text');
+    expect(rowOf('cursor', 'mcp').how).toContain('nondeterministic');
+  });
+
+  it('P-58: opencode lists mcp unsupported, skill native, hook unverified, plugin unsupported, context native, command degraded', () => {
+    expect(KINDS.map((kind) => rowOf('opencode', kind).support)).toEqual([
+      'unsupported',
+      'native',
+      'unverified',
+      'native',
+      'unsupported',
+      'degraded',
+    ]);
+    expect(rowOf('opencode', 'skill').how).toContain('probe #1015, 2026-10-14');
+    expect(rowOf('opencode', 'command').degradesTo).toBe('prompt_text');
+  });
+
+  it.each(['copilot'])('P-58: %s is unverified for every kind except native context and degraded command', (provider) => {
     expect(KINDS.map((kind) => rowOf(provider, kind).support)).toEqual(['unverified', 'unverified', 'unverified', 'native', 'unverified', 'degraded']);
     expect(rowOf(provider, 'command').degradesTo).toBe('prompt_text');
   });
