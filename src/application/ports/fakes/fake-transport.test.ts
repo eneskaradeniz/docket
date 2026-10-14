@@ -1,11 +1,31 @@
 import { describe, expect, it } from 'vitest';
 
-import type { AgentEvent, RoleDef } from '../../../domain/index';
-import { parseSlug, parseUlid, type AccountId, type RunId } from '../../../domain/index';
+import {
+  parseSlug,
+  parseUlid,
+  type AccountId,
+  type AgentEvent,
+  type EpochMs,
+  type QueueItem,
+  type RoleDef,
+  type RunId,
+  type WorkOrderId,
+} from '../../../domain/index';
 
 import type { RunHandle, RunRequest, TransportError } from '../agent-transport';
+import { createRunControl } from '../../services/run-control';
+import { executeRun } from '../../services/run-executor';
 
-import { createFakeTransport, createFakeTransportResolver } from './fake-transport';
+import {
+  createFakeAccountRepo,
+  createFakeClock,
+  createFakeDeps,
+  createFakeRunRepo,
+  createFakeTransport,
+  createFakeTransportResolver,
+  createFakeWorkOrderRepo,
+  createParkedFakeTransport,
+} from './index';
 
 const U1 = '01ARZ3NDEKTSV4RRFFQ69G5FAV';
 const U2 = '01ARZ3NDEKTSV4RRFFQ69G5FAW';
@@ -187,6 +207,7 @@ describe('createFakeTransport', () => {
     handle.steer('focus on tests');
     await handle.stop();
 
+    expect(nextEvent(await events.next())).toEqual({ type: 'finished', at: 2, reason: 'cancelled' });
     expect(await events.next()).toEqual({ done: true, value: undefined });
     expect(transport.steers()).toEqual(['focus on tests']);
     expect(transport.stopCount()).toBe(1);
@@ -207,7 +228,83 @@ describe('createFakeTransport', () => {
     expect(advanced).toBe(false);
 
     await handle.stop();
-    expect(await nextPromise).toEqual({ done: true, value: undefined });
+    expect(nextEvent(await nextPromise)).toEqual({ type: 'finished', at: 2, reason: 'cancelled' });
+    expect(await events.next()).toEqual({ done: true, value: undefined });
+  });
+
+  it('I-30: stop() ends the stream with finished cancelled and executeRun closes the run as cancelled', async () => {
+    const T0: EpochMs = 1_700_000_000_000;
+    const workOrderParsed = parseUlid<'work-order'>(U1);
+    if (!workOrderParsed.ok) throw new Error('fixture ulid must parse');
+    const workOrderId: WorkOrderId = workOrderParsed.value;
+    const accountId: AccountId = accountIdOf(U2);
+    const repo = slugOf<'repo'>('ws');
+    const role: RoleDef = ROLE;
+    const queueItemParsed = parseUlid<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5FAD');
+    if (!queueItemParsed.ok) throw new Error('fixture ulid must parse');
+    const item: QueueItem = {
+      id: queueItemParsed.value,
+      workOrderId,
+      repo,
+      stage: slugOf<'stage'>('implement'),
+      route: { accountId },
+      priority: 0,
+      enqueuedAt: T0,
+    };
+    const clock = createFakeClock(T0);
+    const workOrders = createFakeWorkOrderRepo();
+    const runs = createFakeRunRepo();
+    const accounts = createFakeAccountRepo();
+    const transports = createFakeTransportResolver();
+    const parked = createParkedFakeTransport();
+    transports.register(accountId, parked.transport);
+    const deps = createFakeDeps({ clock, workOrders, runs, accounts, transports });
+    await workOrders.create({
+      id: workOrderId,
+      project: slugOf<'project'>('proj'),
+      repo,
+      flow: slugOf<'flow'>('standard'),
+      title: 'Stop me',
+      createdAt: T0,
+      createdBy: { kind: 'user', id: 'user-1', label: 'Operator' },
+    });
+    await accounts.save({
+      id: accountId,
+      provider: 'provider-x',
+      label: 'Main',
+      authMode: 'subscription',
+      limitPolicy: 'wait_resume',
+      caps: [],
+    });
+    const runControl = createRunControl();
+    void executeRun(
+      deps,
+      { onAsk: async () => 'allow' },
+      { item, role, prompt: 'work', cwd: `/wt/${repo}/${workOrderId}`, capabilities: [] },
+      undefined,
+      undefined,
+      undefined,
+      runControl,
+    );
+    let runId: RunId | undefined;
+    for (let at = 0; at < 200; at += 1) {
+      const active = (await runs.listForWorkOrder(workOrderId)).filter((run) => run.endedAt === undefined);
+      const candidate = active[active.length - 1];
+      if (candidate !== undefined && parked.transport.requests().length > 0 && runControl.active().includes(candidate.id)) {
+        runId = candidate.id;
+        break;
+      }
+      await Promise.resolve();
+    }
+    if (runId === undefined) throw new Error('the run never became live');
+
+    expect(runControl.stop(runId)).toEqual({ ok: true, value: runId });
+    for (let at = 0; at < 200; at += 1) {
+      if ((await runs.get(runId))?.endedAt !== undefined) break;
+      await Promise.resolve();
+    }
+    expect(await runs.get(runId)).toMatchObject({ outcome: 'cancelled' });
+    expect(parked.stopCount()).toBe(1);
   });
 
   it('A-1: satisfies AgentTransport and records every start request', async () => {
