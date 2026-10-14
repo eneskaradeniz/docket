@@ -9,6 +9,8 @@ import type { Api } from '../api/index';
 import type { Actor } from '../domain/index';
 import { ErrorBoundary } from './components/error-boundary';
 import { ShellScreen, type ShellScreenProps } from './screens/shell';
+import { StorageOpenErrorScreen } from './screens/storage-open-error';
+import { parseStorageOpenBoot, storageOpenCopy } from './storage-open-error';
 import { createAccountsFrameStore } from './stores/accounts-frame';
 import { createAccountModelsStore } from './stores/account-models';
 import { createRolesStore } from './stores/roles';
@@ -97,6 +99,22 @@ function App({ localeStore, quit, projectBundle, ...screens }: Omit<ShellScreenP
 
 const mount = document.getElementById('root');
 if (mount !== null) {
+  const storageBoot = parseStorageOpenBoot(window.location.search);
+  if (storageBoot !== null) {
+    const locale = createLocaleStore(window.localStorage);
+    const theme = createThemeStore(window.localStorage, mediaSchemeSource(window));
+    const applyTheme = (): void => {
+      document.documentElement.dataset.theme = theme.resolved();
+    };
+    applyTheme();
+    theme.subscribe(applyTheme);
+    const copy = storageOpenCopy(locale.current(), storageBoot);
+    createRoot(mount).render(
+      <React.StrictMode>
+        <StorageOpenErrorScreen copy={copy} />
+      </React.StrictMode>,
+    );
+  } else {
   const api = bridge();
   const changes = api.subscribe;
   const locale = createLocaleStore(window.localStorage);
@@ -234,4 +252,5 @@ if (mount !== null) {
       </ErrorBoundary>
     </React.StrictMode>,
   );
+  }
 }

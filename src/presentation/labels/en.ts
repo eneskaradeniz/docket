@@ -249,6 +249,16 @@ export const EN: LabelBundle = {
   'shell.nav.forward': 'Forward ⌘]',
   'shell.wordmark': 'Docket',
   'shell.search': 'Search ⌘K',
+  'storageOpen.dataDir': 'Data directory',
+  'storageOpen.dbFile': 'Database file',
+  'storageOpen.instruction':
+    'Quit the app and move or rename the database file, then open the app again. The file stays on disk — the app will not delete or move it for you.',
+  'storageOpen.oldSchema.body':
+    'This database was created under the app’s older schema numbering. This version cannot open it; your data remains in the file.',
+  'storageOpen.oldSchema.title': 'Database is not compatible with this version',
+  'storageOpen.tooNew.body':
+    'This database was created or upgraded with a newer app than the one you are running. Update the app, or back up and move the database file aside.',
+  'storageOpen.tooNew.title': 'Database is from a newer app',
   'nav.home': 'Home',
   'nav.cockpit': 'Cockpit',
   'nav.search': 'Search',

@@ -248,6 +248,16 @@ export const TR: LabelBundle = {
   'shell.nav.forward': 'İleri ⌘]',
   'shell.wordmark': 'Docket',
   'shell.search': 'Ara ⌘K',
+  'storageOpen.dataDir': 'Veri klasörü',
+  'storageOpen.dbFile': 'Veritabanı dosyası',
+  'storageOpen.instruction':
+    'Uygulamayı kapatın ve veritabanı dosyasını başka bir konuma taşıyın veya yeniden adlandırın, sonra uygulamayı yeniden açın. Dosya burada kalır; uygulama onu silmez veya taşımaz.',
+  'storageOpen.oldSchema.body':
+    'Bu veritabanı, uygulamanın eski şema numaralandırmasıyla oluşturulmuş. Bu sürüm onu açamaz; verileriniz dosyada duruyor.',
+  'storageOpen.oldSchema.title': 'Veritabanı bu sürümle uyumlu değil',
+  'storageOpen.tooNew.body':
+    'Bu veritabanı, yüklü uygulamadan daha yeni bir sürümle oluşturulmuş veya güncellenmiş. Uygulamayı güncelleyin ya da veritabanı dosyasını yedekleyip kenara alın.',
+  'storageOpen.tooNew.title': 'Veritabanı daha yeni bir uygulamadan',
   'nav.home': 'Anasayfa',
   'nav.cockpit': 'Kokpit',
   'nav.search': 'Ara',

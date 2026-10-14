@@ -93,6 +93,7 @@ import {
   quitConfirmAutoAnswer,
 } from './quit-flow';
 import { createQuitPrompt } from './quit-prompt';
+import { logOpenDatabaseFailure, storageOpenBootQuery } from './storage-open';
 import {
   WINDOW_MIN_HEIGHT,
   WINDOW_MIN_WIDTH,
@@ -488,7 +489,11 @@ const registerIpc = (api: Api): void => {
 
 // --- the window -------------------------------------------------------------------------------------
 
-function createWindow(): BrowserWindow {
+/** When set, every window load carries this boot query — storage never opened, so the renderer
+ *  stays on the storage-open screen. */
+let storageOpenBoot: Record<string, string> | undefined;
+
+function createWindow(boot?: Record<string, string>): BrowserWindow {
   // The first window must fit the display it opens on: the default size clamped to the primary
   // display's work area (window-options.ts) — never below the minimums, never spilling off screen.
   const size = clampDefaultWindowSize(screen.getPrimaryDisplay().workArea);
@@ -540,8 +545,16 @@ function createWindow(): BrowserWindow {
   });
   // The dev wiring exports the Vite server URL; the built app serves the renderer from dist/.
   const devUrl = process.env.VITE_DEV_SERVER_URL;
-  if (devUrl !== undefined) void win.loadURL(devUrl);
-  else void win.loadFile(resolve(here, '..', 'dist', 'index.html'));
+  const query = boot ?? storageOpenBoot;
+  if (devUrl !== undefined) {
+    const url = new URL(devUrl);
+    if (query !== undefined) {
+      for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
+    }
+    void win.loadURL(url.toString());
+  } else {
+    void win.loadFile(resolve(here, '..', 'dist', 'index.html'), query === undefined ? undefined : { query });
+  }
   return win;
 }
 
@@ -585,8 +598,9 @@ const startApp = async (): Promise<void> => {
     forgeResolver: createRepoForgeResolver,
   });
   if (!opened.ok) {
-    dialog.showErrorBox('Docket', `Storage could not be opened: ${JSON.stringify(opened.error)}`);
-    app.quit();
+    logOpenDatabaseFailure(opened.error);
+    storageOpenBoot = storageOpenBootQuery(opened.error, dataDir);
+    createWindow(storageOpenBoot);
     return;
   }
   node = opened.value;
@@ -776,7 +790,7 @@ app.on('window-all-closed', () => {
 
 app.on('activate', () => {
   // macOS keeps the app alive after the last window closes; the dock icon reopens it.
-  if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  if (BrowserWindow.getAllWindows().length === 0) createWindow(storageOpenBoot);
 });
 
 const resolveActiveLocale = async (win?: BrowserWindow): Promise<Locale> => {
