@@ -1809,3 +1809,9 @@ Added 2026-10-14, #1104; amends U-288.
 - **U-298** (added 2026-10-14, #1104; amends U-288) A role row whose binding is detached shows "Kütüphaneye bağla" (en: "Re-link to library") in place of "Ayır". It is disabled with the visible reason line "Rol kütüphanede yok" (en: "Role is not in the library") when the library holds no version of that role.
 - **U-299** (added 2026-10-14, #1104) The action opens a modal confirm dialog (`role="dialog"`, `aria-modal="true"`, focus trap, Esc cancels, focus returns to the row). It has a version select (default latest), a choice between "Yerel değişiklikleri tut" (default) and "Kütüphane sürümünü kullan", and the list of fields that become overlay (labels, not keys) when the first choice is selected. Buttons: "Vazgeç" (default, focused) and "Bağla".
 - **U-300** (added 2026-10-14, #1104) After "Bağla" the draft changes and the row shows the version badge and, if newer versions exist, the usual "Yeni sürüm var" row; a polite live region announces "Rol kütüphaneye bağlandı". Nothing is saved before Kaydet. All copy lives in the TR and EN bundles, every sentence at most 8 words (U-178).
+
+## The built-in Docket MCP row (U-305, U-306)
+
+Added 2026-10-14, #1120; implements A-361/A-362 (docs/v2/application.md).
+- **U-305** (added 2026-10-14, #1120) The MCP menu's first row is the built-in Docket entry of decision 1, 2 and 3; it has no remove, archive, rename or edit control; "Geri yükle" shows a busy state and then the inline result; the status is announced politely.
+- **U-306** (added 2026-10-14, #1120) "Docket AI ile kur" is disabled with the sentence of decision 4 while the status is not `running`; the sentence is a button to the built-in row; copy lives in the TR and EN bundles, every sentence at most 8 words (U-178).

@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { AccountRoute, Actor, AgentEvent, CatalogModel, RoleSlug, Slug, Ulid } from '../domain/index';
 import { parseSlug, parseUlid } from '../domain/index';
 
-import type { AgentTransport, AppDeps, McpEndpoint } from '../application';
+import type { AgentTransport, AppDeps, McpEndpoint, McpListenerControl } from '../application';
 import {
   createActionApplier,
   createActionUndoer,
@@ -26,6 +26,7 @@ import {
   createFakeDefinitionStore,
   createFakeDeps,
   createFakeIdGen,
+  createFakeMcpListenerControl,
   createFakeModelCatalog,
   createFakeRunDirs,
   createFakeRunTokens,
@@ -122,6 +123,8 @@ interface SeedOptions {
   readonly endpoint?: McpEndpoint;
   readonly withTurn?: boolean;
   readonly reader?: SetupPathReader;
+  /** The MCP listener's standing the composition reports; default is a running one. */
+  readonly mcpListener?: McpListenerControl;
 }
 
 const seed = async (options: SeedOptions = {}): Promise<Harness> => {
@@ -134,6 +137,7 @@ const seed = async (options: SeedOptions = {}): Promise<Harness> => {
     transports: createFakeTransportResolver(),
     modelCatalog: createFakeModelCatalog({ [ACCOUNT]: [MODEL] }),
     mcpEndpoint: options.endpoint,
+    ...(options.mcpListener === undefined ? {} : { mcpListener: options.mcpListener }),
   });
   await deps.accounts.save({
     id: ACCOUNT,
@@ -230,6 +234,14 @@ describe('the setup conversation boundary', () => {
     expect(await h.api.query({ type: 'setup.read.pending', conversation })).toEqual({ ask: null, secrets: 0 });
 
     expect(await h.api.command(USER, { type: 'setup.ai.start', repoPath: REPO, draft: '01ARZ3NDEKTSV4RRFFQ69G5FA0' })).toMatchObject({ ok: false, code: 'not_found' });
+  });
+
+  it('A-362: a down listener refuses the start with mcp_down instead of a silent empty thread', async () => {
+    const h = await seed({
+      endpoint: ENDPOINT,
+      mcpListener: createFakeMcpListenerControl({ state: 'stopped', reason: 'listener_down' }),
+    });
+    expect(await h.api.command(USER, { type: 'setup.ai.start', repoPath: REPO })).toStrictEqual({ ok: false, code: 'mcp_down' });
   });
 
   it('A-358: an ask through the real tool dispatch pushes one coarse event, the pending query answers it, and the answer clears it', async () => {

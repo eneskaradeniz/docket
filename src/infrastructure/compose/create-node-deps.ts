@@ -13,6 +13,7 @@ import type {
   DocketToolExtras,
   DocketToolSetupExtras,
   McpEndpoint,
+  McpListenerControl,
   Notifier,
   ProviderDiscovery,
   QuotaProbeResolver,
@@ -21,7 +22,7 @@ import type {
   SetupConversations,
   TransportResolver,
 } from '../../application/index';
-import { createActionApplier, createChatRunner, createChatTurnLedger, createSetupContexts } from '../../application/index';
+import { createActionApplier, createChatRunner, createChatTurnLedger, createNoEndpointMcpListenerControl, createSetupContexts } from '../../application/index';
 import type { IssueTrackerResolver } from '../../application/services/tracker-sync-service';
 import { createMemoryAccountTestRepo } from './account-test-repo';
 import { createScratchDirs } from './scratch-dirs';
@@ -86,6 +87,10 @@ export interface NodeDepsConfig {
   /** How the app launches its own MCP child (the shell knows its executable and the built script);
    * absent = no run is given Docket's tools. */
   readonly mcpEndpoint?: McpEndpoint;
+  /** The listener's standing and its one repair (A-361, A-362); the Electron shell passes the
+   * control it builds around the listener it starts. Absent = this composition runs no
+   * listener, and the standing control that says so answers. */
+  readonly mcpListener?: McpListenerControl;
   /** Injected command runner for tests; production uses createCommandRunner from commandEnv. */
   readonly commands?: CommandRunner;
   /** Builds the per-repo tracker resolver; the shell passes createRepoTrackerResolver from forge. */
@@ -193,6 +198,7 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     runDirs: createRunDirs({ dataDir: config.dataDir }),
     bundleStore: createFsBundleStore(join(config.dataDir, 'exports')),
     mcpEndpoint: config.mcpEndpoint,
+    mcpListener: config.mcpListener ?? createNoEndpointMcpListenerControl(),
   };
 
   const accountDiscovery = createNodeAccountScan(

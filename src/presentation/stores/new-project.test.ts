@@ -27,6 +27,7 @@ import {
   failureOf,
   folderName,
   hasDraft,
+  mcpRunningOf,
   permissionAfterDeny,
   readRequestKind,
   resetSessionDisclosure,
@@ -70,6 +71,7 @@ const fakeApi = (tree: unknown = oneRepoTree, accounts: unknown = { accounts: [{
     query: (query) => {
       queries.push(query);
       if (query.type === 'settings.accounts') return Promise.resolve(accounts);
+      if (query.type === 'mcp.status') return Promise.resolve({ state: 'running' });
       return Promise.resolve(tree);
     },
     command: (_actor, command) => {
@@ -253,6 +255,64 @@ describe('project setup entries and proposal diff', () => {
     expect(screenSrc).not.toContain('flow catalog');
     expect(proposal.repo.flow.flowId).toBe('standard');
   });
+
+  it('U-306: a stopped Docket MCP disables the AI entry with the sentence-button; running re-enables it', async () => {
+    expect(mcpRunningOf({ state: 'running', tools: { run: [], chat: [] }, rolesWithout: [] })).toBe(true);
+    expect(mcpRunningOf({ state: 'stopped', reason: 'listener_down', tools: { run: [], chat: [] }, rolesWithout: [] })).toBe(false);
+    expect(mcpRunningOf({ ok: false, code: 'not_found' })).toBeNull();
+
+    const stopped: Fake = {
+      ...fakeApi(),
+      query: (query) => {
+        if (query.type === 'mcp.status') return Promise.resolve({ state: 'stopped', reason: 'listener_down' });
+        return Promise.resolve({ accounts: [{ id: 'a' }], bindings: [] });
+      },
+    };
+    const store = createNewProjectStore({ api: stopped, actor, reloadTree: async () => undefined });
+    await store.refreshProvider();
+    expect(store.state().mcpRunning).toBe(false);
+    store.pickPath('docket_ai');
+    expect(store.state().screen).toBe('choose');
+    const html = renderToStaticMarkup(
+      createElement(NewProjectPanel, {
+        open: true,
+        origin: 'pointer',
+        store,
+        locale: 'tr',
+        onClose: () => undefined,
+        onDone: () => undefined,
+      }),
+    );
+    expect(html).toContain('data-setup-no-mcp=""');
+    expect(html).toContain(TR['setup.ai.mcpDown']);
+    const english = renderToStaticMarkup(
+      createElement(NewProjectPanel, {
+        open: true,
+        origin: 'pointer',
+        store,
+        locale: 'en',
+        onClose: () => undefined,
+        onDone: () => undefined,
+      }),
+    );
+    expect(english).toContain(EN['setup.ai.mcpDown']);
+
+    const running = setup();
+    await running.store.refreshProvider();
+    expect(running.store.state().mcpRunning).toBe(true);
+    running.store.pickPath('docket_ai');
+    expect(running.store.state().screen).toBe('ai');
+  });
+
+  it('U-306: a start refusal because of the listener carries the entry\'s own sentence', async () => {
+    const api = fakeApi();
+    api.reply('setup.ai.start', { ok: false, code: 'mcp_down' });
+    const store = createNewProjectStore({ api, actor, reloadTree: async () => undefined });
+    store.pickPath('docket_ai');
+    store.setRepoPath('/Users/e/atolye');
+    await store.startAi();
+    expect(store.state().ai.failure).toBe('setup.ai.mcpDown');
+  });
 });
 
 describe('setup helpers retained', () => {
@@ -306,6 +366,7 @@ const aiSetup = (options: AiOptions = {}): AiHarness => {
   const live: { pending: unknown } = { pending: options.pending ?? { ask: null, secrets: 0 } };
   const answers: Readonly<Record<string, unknown | (() => unknown)>> = {
     'settings.accounts': options.accounts ?? { accounts: [{ id: 'a' }], bindings: [] },
+    'mcp.status': { state: 'running' },
     'setup.draft': options.draft ?? { draft: null },
     'setup.read.pending': (): unknown => live.pending,
     'chat.conversation': options.conversation ?? {

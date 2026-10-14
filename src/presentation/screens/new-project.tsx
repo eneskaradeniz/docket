@@ -32,6 +32,8 @@ export interface NewProjectPanelProps {
   readonly onClose: () => void;
   readonly onDone: (done: NewProjectDone) => void;
   readonly onOpenAccounts?: () => void;
+  /** The "Docket MCP çalışmıyor" line's target (U-306): the settings panel's MCP section. */
+  readonly onOpenMcp?: () => void;
 }
 
 const LABEL_CLASS = 'text-[0.8125rem] leading-[1.25rem] font-semibold text-ink';
@@ -75,10 +77,10 @@ const CloseIcon = () => (
   </svg>
 );
 
-export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, onOpenAccounts }: NewProjectPanelProps) {
+export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, onOpenAccounts, onOpenMcp }: NewProjectPanelProps) {
   const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   const threadFocusRef = useRef<HTMLDivElement>(null);
-  const { form, failure, done, proposal, permission, screen, connectedProvider, busy, reasonKey, secretNotices, ai } = state;
+  const { form, failure, done, proposal, permission, screen, connectedProvider, mcpRunning, busy, reasonKey, secretNotices, ai } = state;
 
   useEffect(() => {
     if (open) void store.refreshProvider();
@@ -183,7 +185,7 @@ export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, 
         </button>
       ) : null}
       {PATH_CARDS.map((card) => {
-        const aiDisabled = card.path === 'docket_ai' && !connectedProvider;
+        const aiDisabled = card.path === 'docket_ai' && (!connectedProvider || !mcpRunning);
         const selected = form.path === card.path && screen !== 'choose';
         const tone = aiDisabled ? 'border-hairline opacity-60' : selected ? 'border-signal-soft bg-raised' : 'border-hairline hover:border-bord';
         return (
@@ -199,7 +201,7 @@ export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, 
               <b className="text-[0.875rem] font-semibold text-ink">{t(locale, card.title)}</b>
               {card.desc !== null ? <span className={`${NOTE_CLASS} text-inkdim`}>{t(locale, card.desc)}</span> : null}
             </button>
-            {aiDisabled ? (
+            {card.path === 'docket_ai' && !connectedProvider ? (
               <button
                 type="button"
                 onClick={() => onOpenAccounts?.()}
@@ -207,6 +209,16 @@ export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, 
                 data-setup-no-provider=""
               >
                 {t(locale, 'setup.ai.noProvider')}
+              </button>
+            ) : null}
+            {card.path === 'docket_ai' && !mcpRunning ? (
+              <button
+                type="button"
+                onClick={() => onOpenMcp?.()}
+                className={`${NOTE_CLASS} w-fit rounded-control border border-bord px-2 py-0.5 font-semibold text-inkdim hover:bg-raised hover:text-ink`}
+                data-setup-no-mcp=""
+              >
+                {t(locale, 'setup.ai.mcpDown')}
               </button>
             ) : null}
           </div>

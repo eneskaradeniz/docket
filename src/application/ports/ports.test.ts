@@ -35,6 +35,7 @@ import type { DispatchStatusHolder, MachineProbe } from './machine-probe';
 import type { IdGen } from './id-gen';
 import type { InstructionFiles } from './instruction-files';
 import type { MemoryStore } from './memory-store';
+import type { McpListenerControl, McpListenerRestartError, McpListenerState } from './mcp-listener-control';
 import type { ModelCatalog } from './model-catalog';
 import type { Notifier } from './notifier';
 import type { ProjectRepo } from './project-repo';
@@ -104,6 +105,7 @@ describe('AppDeps', () => {
     expectTypeOf<AppDeps['repoFolders']>().toEqualTypeOf<RepoFolders>();
     expectTypeOf<AppDeps['machine']>().toEqualTypeOf<MachineProbe>();
     expectTypeOf<AppDeps['dispatchStatus']>().toEqualTypeOf<DispatchStatusHolder>();
+    expectTypeOf<AppDeps['mcpListener']>().toEqualTypeOf<McpListenerControl>();
   });
 
   it('exposes exactly the contract keys', () => {
@@ -155,6 +157,7 @@ describe('AppDeps', () => {
       | 'runTokens'
       | 'runDirs'
       | 'mcpEndpoint'
+      | 'mcpListener'
     >();
   });
 
@@ -206,6 +209,9 @@ describe('AppDeps', () => {
     expectTypeOf<Application.Notifier>().toEqualTypeOf<Notifier>();
     expectTypeOf<Application.BundleStore>().toEqualTypeOf<BundleStore>();
     expectTypeOf<Application.AppDeps>().toEqualTypeOf<AppDeps>();
+    expectTypeOf<Application.McpListenerControl>().toEqualTypeOf<McpListenerControl>();
+    expectTypeOf<Application.McpListenerState>().toEqualTypeOf<McpListenerState>();
+    expectTypeOf<Application.McpListenerRestartError>().toEqualTypeOf<McpListenerRestartError>();
   });
 });
 

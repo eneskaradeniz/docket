@@ -732,6 +732,7 @@ export function ShellScreen({
         onClose={() => dispatchNewProjectPanel({ type: 'close' })}
         onDone={finishNewProject}
         onOpenAccounts={() => openSettings('accounts')}
+        onOpenMcp={() => openSettings('mcp')}
       />
 
       <ChatDock

@@ -22,7 +22,7 @@ import type {
 } from '../domain/index';
 import { parseSlug, parseUlid, sha256Hex } from '../domain/index';
 
-import type { AgentTransport, AppDeps, ChatRunner, McpEndpoint } from '../application';
+import type { AgentTransport, AppDeps, ChatRunner, McpEndpoint, McpListenerControl } from '../application';
 import {
   createActionApplier,
   createActionUndoer,
@@ -38,6 +38,7 @@ import {
   createFakeDeps,
   createFakeEventLog,
   createFakeIdGen,
+  createFakeMcpListenerControl,
   createFakeModelCatalog,
   createFakeRunDirs,
   createFakeRunTokens,
@@ -150,6 +151,8 @@ const PLANTED_BYTES = 'ATTACHMENT-BYTES-PLANTED-NEVER-IN-VIEWS';
 interface SeedOptions {
   readonly withTurn?: boolean;
   readonly withBinding?: boolean;
+  /** The MCP listener's standing the composition reports; default is a running one. */
+  readonly mcpListener?: McpListenerControl;
 }
 
 const seed = async (options: SeedOptions = {}): Promise<Harness> => {
@@ -165,6 +168,7 @@ const seed = async (options: SeedOptions = {}): Promise<Harness> => {
     modelCatalog: createFakeModelCatalog({ [ACCOUNT]: [MODEL] }),
     mcpEndpoint: ENDPOINT,
     attachmentFiles: createFakeAttachmentFiles(),
+    ...(options.mcpListener === undefined ? {} : { mcpListener: options.mcpListener }),
   });
   await deps.projects.save({ id: ATOLYE, name: 'Atölye', repos: [ACME, WEB] });
   await deps.projects.save({ id: DIGER, name: 'Diğer', repos: [YABANCI] });
@@ -493,6 +497,22 @@ describe('chat queries', () => {
 });
 
 describe('chat commands', () => {
+  it('A-362: a down listener refuses a turn with mcp_down — the composer\'s sentence, never a started turn', async () => {
+    const h = await seed({
+      withTurn: true,
+      mcpListener: createFakeMcpListenerControl({ state: 'stopped', reason: 'listener_down' }),
+    });
+    const started = await h.api.command(USER, { type: 'chat.start', scope: { kind: 'global' }, message: 'Selam' });
+    expect(started).toMatchObject({ ok: false, code: 'mcp_down' });
+    const shell = await h.api.command(USER, { type: 'chat.start', scope: { kind: 'global' } });
+    expect(shell.ok).toBe(true);
+    if (!shell.ok) throw new Error('unreachable');
+    expect(await h.api.command(USER, { type: 'chat.send', conversation: shell.conversation ?? '', text: 'Selam' })).toMatchObject({
+      ok: false,
+      code: 'mcp_down',
+    });
+  });
+
   it('A-256: chat.start validates the scope, creates the shell, and with a message also starts the turn', async () => {
     const h = await seed({ withTurn: true });
     expect(await h.api.command(USER, { type: 'chat.start', scope: { kind: 'nonsense' } as never })).toEqual({ ok: false, code: 'bad_scope' });

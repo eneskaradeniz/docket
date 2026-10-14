@@ -33,6 +33,7 @@ import {
   createFakeCapabilityDiscovery,
   createFakeDefinitionStore,
   createFakeDeps,
+  createFakeMcpListenerControl,
   createFakeModelCatalog,
   createFakeWorktreeFiles,
   FAKE_ROADMAP_TARGET,
@@ -45,6 +46,7 @@ import type {
   AccountModelsView,
   BoardView,
   CockpitView,
+  McpStatusView,
   OpenAskView,
   ProjectTree,
   RoadmapPageView,
@@ -2225,5 +2227,29 @@ describe('tracker.linkStatus', () => {
       ok: false,
       code: 'not_found',
     });
+  });
+});
+
+// --- Docket's own MCP standing (A-361) -----------------------------------------------------------------
+
+describe('mcp.status', () => {
+  it('A-361: answers the control\'s standing with the per-kind tool names and the opted-out roles', async () => {
+    const definitions = createFakeDefinitionStore();
+    definitions.seed('library/roles/quiet/v1.yaml', JSON.stringify({ id: 'quiet', name: 'Quiet', docketTools: false }));
+    const control = createFakeMcpListenerControl({ state: 'stopped', reason: 'listener_down' });
+    const view = (await createApi(createFakeDeps({ definitions, mcpListener: control })).query({ type: 'mcp.status' })) as McpStatusView;
+    expect(view.state).toBe('stopped');
+    expect(view.reason).toBe('listener_down');
+    expect(view.tools.run.length).toBeGreaterThan(0);
+    expect(view.tools.chat).toContain('docket_get');
+    expect(view.rolesWithout).toEqual(['quiet']);
+  });
+
+  it('A-361: the query starts nothing — a running control is read, never restarted', async () => {
+    const control = createFakeMcpListenerControl();
+    const view = (await createApi(createFakeDeps({ mcpListener: control })).query({ type: 'mcp.status' })) as McpStatusView;
+    expect(view.state).toBe('running');
+    expect(view.reason).toBeUndefined();
+    expect(control.restarts()).toBe(0);
   });
 });

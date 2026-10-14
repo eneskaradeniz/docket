@@ -12,6 +12,7 @@ import {
 } from '../stores/agent-capabilities';
 import { failureKey } from '../stores/results';
 import { ActionButton } from './action-button';
+import { BuiltinMcpRow } from './builtin-mcp-row';
 import { ProviderMark } from './provider-mark';
 import type { ProviderMarksStore } from '../stores/provider-marks';
 import { RescanButton } from './rescan-button';
@@ -60,11 +61,13 @@ export interface CapabilitySectionProps {
   readonly store: AgentCapabilitiesStore;
   readonly marks: ProviderMarksStore;
   readonly active: boolean;
+  /** The built-in MCP row's "N rolde kapalı" link (U-305): the settings panel's own section switch. */
+  readonly onOpenRoles?: () => void;
 }
 
-export function CapabilitySection({ locale, section, store, marks, active }: CapabilitySectionProps) {
-  const state = useSyncExternalStore(store.subscribe, store.state);
-  useSyncExternalStore(marks.subscribe, marks.state);
+export function CapabilitySection({ locale, section, store, marks, active, onOpenRoles }: CapabilitySectionProps) {
+  const state = useSyncExternalStore(store.subscribe, store.state, store.state);
+  useSyncExternalStore(marks.subscribe, marks.state, marks.state);
 
   if (!active) return null;
 
@@ -231,7 +234,20 @@ export function CapabilitySection({ locale, section, store, marks, active }: Cap
   }
 
   const items = state.definitions[section];
-  if (items.length === 0) {
+  // The MCP menu's first row is the built-in Docket entry (U-305); with no user entry at all the
+  // menu still shows it, so the empty card is never its face.
+  const builtinRow =
+    section === 'mcp' ? (
+      <BuiltinMcpRow
+        locale={locale}
+        status={state.mcp}
+        busy={state.mcpBusy}
+        result={state.mcpResult}
+        onRestore={() => void store.restoreMcp()}
+        {...(onOpenRoles === undefined ? {} : { onOpenRoles })}
+      />
+    ) : null;
+  if (items.length === 0 && builtinRow === null) {
     return (
       <EmptyCard
         mark={`capabilities-${section}`}
@@ -254,6 +270,7 @@ export function CapabilitySection({ locale, section, store, marks, active }: Cap
 
   return (
     <SettingRows>
+      {builtinRow}
       {items.map((item) => {
         const body = isCapabilityBody(item.body) ? item.body : null;
         const kind = body?.kind ?? definitionKindOf(section);

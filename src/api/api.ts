@@ -127,6 +127,8 @@ import {
   rejectMemoryProposalUseCase,
   saveVersion,
   loadRepoTrackerLink,
+  mcpStatusView,
+  restoreMcpListener,
   syncRepoTracker,
   resolveSyncConflict,
   readTrackerLinkStatus,
@@ -540,6 +542,9 @@ export function createApi(
     input: { readonly text: string; readonly refs: readonly ConversationRef[]; readonly attachments?: readonly string[] },
   ): Promise<CommandResult> => {
     if (chat === undefined) return { ok: false, code: 'not_found' };
+    // Docket's tools ride every chat turn, so a down listener means the turn cannot start: the
+    // refusal is the entry's own sentence, never a silent thread (A-362).
+    if (deps.mcpListener.status().state !== 'running') return { ok: false, code: 'mcp_down' };
     await sweepUploads(deps.clock.now());
     const taken = await takeUploads(input.attachments);
     if (taken === 'not_found') return { ok: false, code: 'not_found' };
@@ -1449,6 +1454,9 @@ const runCommand = async (
       if (repoPath === '' || !repoPath.startsWith('/')) return badInput();
       const allowed = await canStartDocketAiSetup(deps);
       if (!allowed.ok) return { ok: false, code: allowed.error };
+      // The setup conversation runs on Docket's own tools, so a down listener is a start refusal
+      // in its own words — never the silent empty thread a broken start would leave (A-362).
+      if (deps.mcpListener.status().state !== 'running') return { ok: false, code: 'mcp_down' };
       let conversation: ConversationId | undefined;
       let draftId: string | undefined;
       if (command.draft !== undefined) {
@@ -1585,6 +1593,14 @@ const runCommand = async (
       if (removed.ok) return { ok: true };
       if (typeof removed.error === 'string') return { ok: false, code: removed.error };
       return { ok: false, code: removed.error.code, reasons: [...removed.error.reasons] };
+    }
+
+    // The one repair of Docket's own listener (A-362): one restart, the fresh standing on
+    // success, the typed refusal on failure. The union's required `code` carries the same typed
+    // value; the failure side's documented carrier is `error`.
+    case 'mcp.restore': {
+      const restored = await restoreMcpListener(deps);
+      return restored.ok ? { ok: true, status: restored.value } : { ok: false, code: restored.error, error: restored.error };
     }
 
     case 'definitions.save': {
@@ -1913,6 +1929,11 @@ const runQuery = async (
     case 'memory.overview': {
       return (await memoryOverview(deps)) as MemoryOverviewView;
     }
+
+    // The standing of Docket's own listener (A-361): the control's read plus the tool-name
+    // constants and the opted-out roles — the query starts nothing.
+    case 'mcp.status':
+      return mcpStatusView(deps);
 
     case 'definitions.list':
       return (await listLibraryDefinitionsByKind(deps, query.kind)).map(

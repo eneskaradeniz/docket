@@ -2151,6 +2151,16 @@ for (const [sizeName, theme] of combos) {
     ]);
     await shot('eklentiler');
 
+    // MCP: the built-in Docket row is the menu's first row (U-305) — above every user entry, with
+    // the Yerleşik badge, a live standing and no library control of its own.
+    await section('MCP').click({ timeout: WAIT });
+    await panel.locator('[data-setting-row="Docket"]').waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    const firstMcpRow = await panel.locator('[data-setting-row]').first().getAttribute('data-setting-row');
+    assert(firstMcpRow === 'Docket', `the built-in Docket row must be the MCP menu's first row, saw ${firstMcpRow}`);
+    await panel.locator('[data-mcp-status="running"]').waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    assert((await panel.locator('[data-setting-row="Docket"]').locator('button:disabled').count()) === 0, 'the built-in row carries no disabled control');
+    await shot('mcp');
+
     // Every section fills the width: the widest block of the body is at least 90 % of its content box.
     for (const name of SECTIONS) {
       await section(name).click({ timeout: WAIT });

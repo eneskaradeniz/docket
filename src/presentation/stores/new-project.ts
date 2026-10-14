@@ -259,6 +259,13 @@ export const connectedProviderOf = (view: unknown): boolean => {
   return Array.isArray(accounts) && accounts.length > 0;
 };
 
+/** The Docket MCP standing the AI entry rides (U-306): true only on a running view; null on a
+ *  failed read, which keeps whatever the panel held — a broken read never blocks the entry. */
+export const mcpRunningOf = (view: unknown): boolean | null => {
+  if (isQueryFailure(view) || typeof view !== 'object' || view === null) return null;
+  return (view as { readonly state?: unknown }).state === 'running';
+};
+
 export type ReadRequestKind = 'allow' | 'ask' | 'secret';
 
 export const readRequestKind = (path: string): ReadRequestKind => {
@@ -338,6 +345,8 @@ export interface NewProjectState {
   readonly screen: SetupScreen;
   readonly form: NewProjectForm;
   readonly connectedProvider: boolean;
+  /** The built-in Docket MCP standing (U-306); true until the first read says otherwise. */
+  readonly mcpRunning: boolean;
   readonly busy: boolean;
   readonly reasonKey: LabelKey | null;
   readonly failure: NewProjectFailure | null;
@@ -389,6 +398,7 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
   let screen: SetupScreen = 'choose';
   let form: NewProjectForm = START_FORM;
   let connectedProvider = false;
+  let mcpRunning = true;
   let busy = false;
   let failure: NewProjectFailure | null = null;
   let proposal: SetupProposal | null = null;
@@ -413,6 +423,7 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
     screen,
     form,
     connectedProvider,
+    mcpRunning,
     busy,
     reasonKey: reasonOf(form, screen),
     failure,
@@ -487,9 +498,10 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
     publish();
   };
 
-  /** A start refusal in the surface's own words: the entry's own no-provider line, the chat
-   *  vocabulary for the rest. */
-  const aiFailureKey = (code: string): LabelKey => (code === 'no_provider' ? 'setup.ai.noProvider' : chatFailureKey(code));
+  /** A start refusal in the surface's own words: the entry's own no-provider and MCP lines, the
+   *  chat vocabulary for the rest. */
+  const aiFailureKey = (code: string): LabelKey =>
+    code === 'no_provider' ? 'setup.ai.noProvider' : code === 'mcp_down' ? 'setup.ai.mcpDown' : chatFailureKey(code);
 
   const startAi = async (resume?: ResumableDraft): Promise<void> => {
     if (busy) return;
@@ -607,6 +619,10 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
     refreshProvider: async () => {
       const reply: unknown = await api.query({ type: 'settings.accounts', catalog: 'skip' } satisfies Query);
       connectedProvider = connectedProviderOf(reply);
+      // The entry's second standing (U-306): the Docket MCP must be running; a failed read keeps
+      // the last one instead of blocking the entry.
+      const standing = mcpRunningOf(await api.query({ type: 'mcp.status' }));
+      if (standing !== null) mcpRunning = standing;
       // The persisted draft decides the resume card (A-340, A-359); a missing surface answers
       // nothing and the card simply stays away.
       resumable = resumableOf(await api.query({ type: 'setup.draft' }));
@@ -623,7 +639,7 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
       publish();
     },
     pickPath: (path) => {
-      if (path === 'docket_ai' && !connectedProvider) return;
+      if (path === 'docket_ai' && (!connectedProvider || !mcpRunning)) return;
       form = pickPath(form, path);
       failure = null;
       screen = path === 'docket_ai' ? 'ai' : 'form';

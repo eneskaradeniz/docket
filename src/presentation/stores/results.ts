@@ -110,7 +110,9 @@ type SilentCommand =
   | 'tracker.resolveConflict'
   // The setup conversation's own panel words its outcomes; neither command toasts.
   | 'setup.ai.start'
-  | 'setup.read.answer';
+  | 'setup.read.answer'
+  // The built-in MCP row words its own restore result inline (U-305).
+  | 'mcp.restore';
 const isSilent = (command: Command['type']): command is SilentCommand =>
   command === 'quit.ack'
   || command === 'quit.answer'
@@ -128,7 +130,8 @@ const isSilent = (command: Command['type']): command is SilentCommand =>
   || command === 'tracker.sync'
   || command === 'tracker.resolveConflict'
   || command === 'setup.ai.start'
-  || command === 'setup.read.answer';
+  || command === 'setup.read.answer'
+  || command === 'mcp.restore';
 
 const SUCCESS_KEYS: Readonly<Record<Exclude<Command['type'], SilentCommand>, LabelKey>> = {
   'workOrder.open': 'success.workOrder.open',
