@@ -29,6 +29,9 @@ const PROJECT_FILE = 'project.yaml';
 const ROADMAP_FILE = 'roadmap.yaml';
 const REPO_FILE = 'repo.yaml';
 const ARCHIVED_MARKER = 'archived.yaml';
+const REPO_AUX_FILES = ['tracker.yaml', 'tracker-sync.json'] as const;
+const isRepoAuxFile = (fileName: string): boolean =>
+  (REPO_AUX_FILES as readonly string[]).includes(fileName);
 
 type UnknownRecord = Readonly<Record<string, unknown>>;
 
@@ -429,7 +432,13 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
             : `${PROJECTS_ROOT}/${scope.project}/${target}`;
         }
       }
-      if (parseTarget(normalized) === undefined && !['roles.json', 'flows.json', 'caps.json', 'capabilities.json'].includes(target)) return undefined;
+      if (
+        parseTarget(normalized) === undefined
+        && !isRepoAuxFile(target)
+        && !['roles.json', 'flows.json', 'caps.json', 'capabilities.json'].includes(target)
+      ) {
+        return undefined;
+      }
       try {
         const content = await readFile(join(config.globalRoot, normalized), 'utf8');
         return { content, hash: hashContent(content) };
@@ -460,7 +469,11 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
         }
       }
       const parsed = parseTarget(normalized);
-      if (parsed === undefined && !['roles.json', 'flows.json', 'caps.json', 'capabilities.json'].includes(target)) {
+      if (
+        parsed === undefined
+        && !isRepoAuxFile(target)
+        && !['roles.json', 'flows.json', 'caps.json', 'capabilities.json'].includes(target)
+      ) {
         throw new Error(`not a definition file: ${target}`);
       }
       const file = join(config.globalRoot, normalized);
@@ -496,9 +509,14 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
         }
       }
       const parsed = parseTarget(normalized);
-      if (parsed === undefined && !['roles.json', 'flows.json', 'caps.json', 'capabilities.json'].includes(target)) {
+      if (
+        parsed === undefined
+        && !isRepoAuxFile(target)
+        && !['roles.json', 'flows.json', 'caps.json', 'capabilities.json'].includes(target)
+      ) {
         return err([{ path: target, code: 'wrong_type', message: 'not a definition file' }]);
       }
+      if (isRepoAuxFile(target)) return ok(undefined);
       if (parsed !== undefined && parsed.kind === 'roadmap') {
         return validateRoadmapCandidate(content, await projectDefAt(target.split('/')[1] ?? ''));
       }
