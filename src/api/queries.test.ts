@@ -2055,6 +2055,50 @@ describe('roadmap.byProject', () => {
     ]);
     expect(done?.workOrders[0]).toMatchObject({ repo: REPO, id: WO_DONE_FIRST, title: 'Bitti görev' });
   });
+
+  it('roadmap.byProject: a phase carries the references of its items (read-only)', async () => {
+    const h = createHarness();
+    await h.deps.projects.save({ id: ROAD_PROJECT, name: 'Yol', repos: [REPO] });
+    h.definitions.seed(
+      `repos/${REPO}/roadmap.yaml`,
+      JSON.stringify({
+        milestones: [{ id: 'ms-1', title: 'M1', state: 'open', source: { kind: 'local' } }],
+        issues: [{ id: 'iss-1', title: 'I1', state: 'open', labels: [], milestone: 'ms-1', source: { kind: 'local' } }],
+      }),
+    );
+    h.definitions.seed(
+      { kind: 'project', project: ROAD_PROJECT },
+      FAKE_ROADMAP_TARGET,
+      JSON.stringify({
+        phases: [
+          {
+            id: 'faz-1',
+            name: 'Faz 1',
+            blockedBy: [],
+            tasks: [],
+            items: [
+              { kind: 'manual', id: 'man-1', title: 'Manual step', done: false },
+              { kind: 'repo_item', ref: { repo: REPO, kind: 'milestone', id: 'ms-1' } },
+              { kind: 'repo_item', ref: { repo: REPO, kind: 'issue', id: 'iss-1' } },
+            ],
+          },
+        ],
+      }),
+    );
+    const view = (await createApi(h.deps).query({ type: 'roadmap.byProject', project: ROAD_PROJECT })) as RoadmapPageView;
+    const phase = view.phases[0];
+    expect(phase?.items).toEqual([
+      { kind: 'manual', id: 'man-1', title: 'Manual step', done: false },
+      { kind: 'repo_item', ref: { repo: REPO, kind: 'milestone', id: 'ms-1' } },
+      { kind: 'repo_item', ref: { repo: REPO, kind: 'issue', id: 'iss-1' } },
+    ]);
+    expect(Object.keys(phase ?? {}).sort()).toEqual(['blockedBy', 'id', 'items', 'name', 'progress', 'status', 'tasks'].sort());
+    expect(Object.keys(phase?.items?.[0] ?? {}).sort()).toEqual(['done', 'id', 'kind', 'title'].sort());
+    for (const repoItem of phase?.items?.filter((entry) => entry.kind === 'repo_item') ?? []) {
+      expect(Object.keys(repoItem).sort()).toEqual(['kind', 'ref'].sort());
+      expect(Object.keys(repoItem.ref).sort()).toEqual(['id', 'kind', 'repo'].sort());
+    }
+  });
 });
 
 describe('roadmap.byRepo', () => {
