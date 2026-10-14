@@ -26,7 +26,7 @@ import type {
 import { parseSlug, parseUlid } from '../domain/index';
 
 import type { AppDeps, DiscoveredProvider, ModelCatalog, ProviderDiscovery, RunRecord } from '../application';
-import { createPermissionBoard } from '../application';
+import { createPermissionBoard, dispatcherTick } from '../application';
 import type { FakeDefinitionStore } from '../application/ports/fakes';
 import {
   createFakeCapabilityCatalog,
@@ -566,7 +566,7 @@ describe('cockpit', () => {
     expect(narrowed.running.filter((row) => row.queued === true).map((row) => row.workOrderId)).toEqual([WO_AWAIT_LATE, WO_READY]);
   });
 
-  it('A-37: a queued row blocked by quota reads limit with the earliest reset; other waits read queue', async () => {
+  it('A-37: a queued row the dispatcher held reads its stored reason (A-401) — quota with the earliest reset, consent for a route with no account', async () => {
     const h = await seedCockpitScenario(createHarness());
     await h.deps.accounts.save(accountRecord(ACCOUNT, 'Main'));
     await h.deps.accounts.savePools(ACCOUNT, [
@@ -588,12 +588,50 @@ describe('cockpit', () => {
     // one — a route with no account can never pass the start gate.
     await h.deps.queue.put(queueItem(QUEUE_LIMITED, WO_READY, PLAN, 6_000));
     await h.deps.queue.put(queueItem(QUEUE_BARE, WO_AWAIT_EARLY, IMPLEMENT, 6_500, REPO, { accountId: ACCOUNT_BARE }));
+    // One tick decides both; the view reads that decision, it recomputes nothing (A-401).
+    await dispatcherTick(h.deps, { limits: { global: 10, perRepo: 10, perAccount: {} } }, () => {});
+    // An item no tick has considered: no reason at all, never a guessed one.
+    await h.deps.queue.put(queueItem(QUEUE_EARLY, WO_AWAIT_LATE, IMPLEMENT, 7_000));
 
     const view = (await createApi(h.deps).query({ type: 'cockpit' })) as CockpitView;
 
     const byWorkOrder = new Map(view.running.map((row) => [row.workOrderId, row]));
-    expect(byWorkOrder.get(WO_READY)).toMatchObject({ queued: true, queuedReason: 'limit', limitResetsAt: 9_000 });
+    expect(byWorkOrder.get(WO_READY)).toMatchObject({ queued: true, queuedReason: 'quota', limitResetsAt: 9_000 });
     expect(byWorkOrder.get(WO_AWAIT_EARLY)).toMatchObject({ queued: true, queuedReason: 'consent', limitResetsAt: null });
+    expect(byWorkOrder.get(WO_AWAIT_LATE)?.queuedReason).toBeUndefined();
+    expect(byWorkOrder.get(WO_AWAIT_LATE)).toMatchObject({ queued: true, limitResetsAt: null });
+    expect(view.running.filter((row) => row.queued === false).every((row) => row.queuedReason === undefined && row.limitResetsAt === null)).toBe(true);
+  });
+
+  it('A-401: the queue row carries the dispatcher\'s own reason — not_before, work_order_busy and global_limit reach the cockpit', async () => {
+    const h = await seedCockpitScenario(createHarness());
+    await h.deps.accounts.save(accountRecord(ACCOUNT, 'Main'));
+    // Three live runs fill the global limit of 3; the free item then waits global_limit, the
+    // scheduled one not_before, the one on a busy work order work_order_busy.
+    await h.deps.queue.put(queueItem(QUEUE_EARLY, WO_READY, PLAN, 6_000));
+    await h.deps.queue.put({ ...queueItem(QUEUE_LATE, WO_ASK, PLAN, 6_100), notBefore: 50_000 });
+    await h.deps.queue.put(queueItem(QUEUE_OTHER, WO_RUNNING, PLAN, 6_200));
+
+    await dispatcherTick(h.deps, { limits: { global: 3, perRepo: 3, perAccount: {} } }, () => {});
+
+    const view = (await createApi(h.deps).query({ type: 'cockpit' })) as CockpitView;
+
+    const byWorkOrder = new Map(view.running.map((row) => [row.workOrderId, row]));
+    expect(byWorkOrder.get(WO_READY)).toMatchObject({ queued: true, queuedReason: 'global_limit', limitResetsAt: null });
+    expect(byWorkOrder.get(WO_ASK)).toMatchObject({ queued: true, queuedReason: 'not_before', limitResetsAt: null });
+    expect(byWorkOrder.get(WO_RUNNING)).toMatchObject({ queued: true, queuedReason: 'work_order_busy', limitResetsAt: null });
+  });
+
+  it('A-401: an item the dispatcher started leaves the queue — no row carries a reason for what runs', async () => {
+    const h = await seedCockpitScenario(createHarness());
+    await h.deps.accounts.save(accountRecord(ACCOUNT, 'Main'));
+    await h.deps.queue.put(queueItem(QUEUE_EARLY, WO_READY, PLAN, 6_000));
+
+    const tick = await dispatcherTick(h.deps, { limits: { global: 4, perRepo: 4, perAccount: {} } }, () => {});
+    expect(tick.started).toStrictEqual([QUEUE_EARLY]);
+
+    const view = (await createApi(h.deps).query({ type: 'cockpit' })) as CockpitView;
+    expect(view.running.some((row) => row.workOrderId === WO_READY)).toBe(false);
     expect(view.running.filter((row) => row.queued === false).every((row) => row.queuedReason === undefined && row.limitResetsAt === null)).toBe(true);
   });
 
@@ -606,6 +644,7 @@ describe('cockpit', () => {
       ...queueItem(QUEUE_BARE, WO_READY, PLAN, 6_000),
       route: { accountId: ACCOUNT, model: 'model-x' },
     });
+    await dispatcherTick(h.deps, { limits: { global: 10, perRepo: 10, perAccount: {} } }, () => {});
 
     const view = (await createApi(h.deps).query({ type: 'cockpit' })) as CockpitView;
 
