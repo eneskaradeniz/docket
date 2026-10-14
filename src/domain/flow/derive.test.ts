@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 import type { FlowDef, GateDef } from '../definitions';
 import type { GateVerdict } from '../gates';
 import type { Actor, EnvSlug, EpochMs, FlowSlug, GateSlug, RoleSlug, RunId, RunOutcome, StageSlug } from '../shared';
-import { deriveWorkOrderState, type WorkOrderState, type WorkOrderStatus } from './derive';
+import {
+  deriveWorkOrderState,
+  filterSkippableStageIds,
+  type WorkOrderState,
+  type WorkOrderStatus,
+} from './derive';
 import type { WorkOrderEvent } from './events';
 
 const USER: Actor = { kind: 'user', id: 'u-1' };
@@ -173,7 +178,11 @@ const deployAttempted = (result: 'success' | 'failed', at: EpochMs = 45, outputT
   ...(outputTail === undefined ? {} : { outputTail }),
 });
 
-const derive = (flow: FlowDef, events: readonly WorkOrderEvent[]): WorkOrderState => deriveWorkOrderState(flow, events);
+/** Legacy expectations predate R-144's `skippedStages`; strip it for the R-17…R-24 suites. */
+const derive = (flow: FlowDef, events: readonly WorkOrderEvent[]): Omit<WorkOrderState, 'skippedStages'> => {
+  const { skippedStages: _skip, ...state } = deriveWorkOrderState(flow, events);
+  return state;
+};
 
 // The prefix of a healthy walk up to implement's gates, so single-rule tests read as deltas.
 const AT_IMPLEMENT_READY: readonly WorkOrderEvent[] = [
@@ -973,5 +982,54 @@ describe('deriveWorkOrderState — rejected human gates (R-120, R-121, R-122)', 
     for (const tail of orders) {
       expect(derive(HUMAN_RETRY_FLOW, [...twoRejects, ...tail])).toEqual(anchor);
     }
+  });
+});
+
+const SKIP_FLOW: FlowDef = {
+  id: flowOf('skip-fixture'),
+  name: 'Skip fixture',
+  stages: [
+    { id: stageOf('plan'), name: 'Plan', role: roleOf('planner'), exit: [HUMAN_PLAN] },
+    { id: stageOf('review'), name: 'Review', role: roleOf('reviewer'), exit: [COMMAND_TESTS] },
+    { id: stageOf('ship'), name: 'Ship', role: roleOf('developer'), exit: [DEPLOY_STG] },
+  ],
+};
+
+describe('planner stage-skip (R-133, R-144)', () => {
+  it('U-291: deploy and human-gate stages are strictly excluded from skipping', () => {
+    expect(filterSkippableStageIds(SKIP_FLOW, [stageOf('plan'), stageOf('review'), stageOf('ship')])).toEqual([
+      stageOf('review'),
+    ]);
+  });
+
+  it('R-144: approved skip proposal marks stages skipped in deriveWorkOrderState', () => {
+    const events: readonly WorkOrderEvent[] = [
+      created(),
+      { type: 'stage_skip_proposed', at: 11, stages: [stageOf('review')], reason: 'tests cover it' },
+      { type: 'stage_skip_decided', at: 12, approved: true },
+    ];
+    expect(deriveWorkOrderState(SKIP_FLOW, events).skippedStages).toEqual([stageOf('review')]);
+  });
+
+  it('R-144: rejected or pending decisions leave skippedStages empty', () => {
+    const proposed: readonly WorkOrderEvent[] = [
+      created(),
+      { type: 'stage_skip_proposed', at: 11, stages: [stageOf('review')], reason: 'n/a' },
+    ];
+    expect(deriveWorkOrderState(SKIP_FLOW, proposed).skippedStages).toEqual([]);
+    const rejected: readonly WorkOrderEvent[] = [
+      ...proposed,
+      { type: 'stage_skip_decided', at: 12, approved: false },
+    ];
+    expect(deriveWorkOrderState(SKIP_FLOW, rejected).skippedStages).toEqual([]);
+  });
+
+  it('R-144: deploy or human stages in the ledger are silently ignored', () => {
+    const events: readonly WorkOrderEvent[] = [
+      created(),
+      { type: 'stage_skip_proposed', at: 11, stages: [stageOf('plan')], reason: 'cannot' },
+      { type: 'stage_skip_decided', at: 12, approved: true },
+    ];
+    expect(deriveWorkOrderState(SKIP_FLOW, events).skippedStages).toEqual([]);
   });
 });

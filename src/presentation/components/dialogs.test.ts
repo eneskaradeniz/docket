@@ -12,6 +12,7 @@ import {
   defaultFlow,
   focusTarget,
   openedWorkOrderForm,
+  pinnedFlowFromColumns,
   STANDARD_FLOW,
   workOrderDraft,
   workOrderFormReducer,
@@ -47,6 +48,11 @@ const launchStore: LaunchStore = { state: () => ({ draft: '' }), openChat: () =>
 const draw = (element: ReturnType<typeof createElement>): string =>
   renderToStaticMarkup(createElement(ChatLauncherContext.Provider, { value: { store: launchStore, locale: 'tr' } }, element));
 
+const PINNED = pinnedFlowFromColumns('standard', 1, [
+  { stage: 'plan', name: 'Plan' },
+  { stage: 'implement', name: 'Implement' },
+]);
+
 const workOrder = (): string =>
   draw(
     createElement(NewWorkOrderWindow, {
@@ -54,6 +60,8 @@ const workOrder = (): string =>
       locale: 'tr',
       projectName: 'Kadife Odoo',
       flows: boardFlowChoices('standard'),
+      pinnedFlow: PINNED,
+      skipProposal: null,
       launchProject: 'kadife',
       onClose: () => undefined,
       onCreated: () => undefined,
@@ -71,17 +79,16 @@ const phone = (): string =>
   );
 
 describe('new work order window (U-245, U-246, U-247)', () => {
-  it('U-245: "+ Yeni iş emri" opens a dialog with Başlık, an Akış select defaulting to standard, and Aç / Vazgeç / Tarif et; the board has no inline create form', () => {
+  it('U-245: "+ Yeni iş emri" opens a dialog with Başlık, a fixed flow strip (U-290), and Oluştur / Vazgeç / Tarif et; the board has no inline create form', () => {
     const html = workOrder();
     expect(html).toContain('role="dialog"');
     expect(html).toContain(t('tr', 'workOrder.new.title'));
     expect(html).toContain(t('tr', 'workOrder.new.titleLabel'));
     expect(html).toContain('<input');
-    expect(html).toContain(t('tr', 'workOrder.new.flowLabel'));
-    expect(html).toContain('<select');
-    expect(html).toContain(`value="${STANDARD_FLOW}"`);
-    expect(html).toContain(t('tr', 'workOrder.new.open'));
-    expect(html).toContain(t('tr', 'workOrder.new.cancel'));
+    expect(html).not.toContain('<select');
+    expect(html).toContain(t('tr', 'workOrder.flowStrip.label'));
+    expect(html).toContain(t('tr', 'workOrder.create'));
+    expect(html).toContain(t('tr', 'workOrder.cancel'));
     expect(html).toContain(t('tr', 'launch.describe'));
     expect(html).toContain('Kadife Odoo');
     const board = source('board.tsx');
@@ -102,14 +109,12 @@ describe('new work order window (U-245, U-246, U-247)', () => {
     expect(defaultFlow(boardFlowChoices('standart-akis'))).toBe('standart-akis');
     expect(defaultFlow(boardFlowChoices('standard'))).toBe(STANDARD_FLOW);
     expect(defaultFlow([])).toBe('');
-    let state = openedWorkOrderForm('Taslak', withStandard);
+    let state = openedWorkOrderForm({ title: 'Taslak', description: '' }, withStandard);
     expect(state.flow).toBe(STANDARD_FLOW);
-    state = workOrderFormReducer(state, { type: 'flow', value: 'release' });
-    expect(state.flow).toBe('release');
     state = workOrderFormReducer(state, { type: 'created', options: withStandard });
-    state = workOrderFormReducer(state, { type: 'open', draft: state.title, options: withStandard });
+    state = workOrderFormReducer(state, { type: 'open', draft: { title: state.title, description: '' }, options: withStandard });
     expect(state.flow).toBe(STANDARD_FLOW);
-    state = workOrderFormReducer(state, { type: 'open', draft: 'Taslak', options: onlyRelease });
+    state = workOrderFormReducer(state, { type: 'open', draft: { title: 'Taslak', description: '' }, options: onlyRelease });
     expect(state.flow).toBe('release');
     const empty = draw(
       createElement(NewWorkOrderWindow, {
@@ -117,6 +122,8 @@ describe('new work order window (U-245, U-246, U-247)', () => {
         locale: 'tr',
         projectName: 'Kadife Odoo',
         flows: [],
+        pinnedFlow: null,
+        skipProposal: null,
         launchProject: null,
         onClose: () => undefined,
         onCreated: () => undefined,
@@ -131,16 +138,16 @@ describe('new work order window (U-245, U-246, U-247)', () => {
   it('U-247: an empty title is refused with a field message; Enter submits; success closes the dialog and names the card to focus', () => {
     workOrderDraft.clear();
     const listed = [{ id: STANDARD_FLOW, name: STANDARD_FLOW }];
-    const open = openedWorkOrderForm('   ', listed);
+    const open = openedWorkOrderForm({ title: '   ', description: '' }, listed);
     const refused = workOrderFormReducer(open, { type: 'invalid', field: 'title_required' });
     expect(refused.fieldError).toBe('title_required');
     expect(refused.failure).toBeNull();
     expect(source('new-work-order-window.tsx')).toContain('validate.title_required');
     expect(source('new-work-order-window.tsx')).toContain("event.key === 'Enter'");
-    workOrderDraft.remember('   ');
-    expect(workOrderDraft.read()).toBe('');
-    workOrderDraft.remember('Kapı');
-    expect(workOrderDraft.read()).toBe('Kapı');
+    workOrderDraft.remember('   ', '');
+    expect(workOrderDraft.read().title).toBe('');
+    workOrderDraft.remember('Kapı', '');
+    expect(workOrderDraft.read().title).toBe('Kapı');
     const created = workOrderFormReducer(workOrderFormReducer(open, { type: 'title', value: 'Kapı' }), { type: 'created', options: listed });
     expect(created.title).toBe('');
     expect(created.flow).toBe(defaultFlow(listed));

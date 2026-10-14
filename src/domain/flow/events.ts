@@ -17,4 +17,6 @@ export type WorkOrderEvent =
       readonly approvedBy: Actor;
       readonly result: 'success' | 'failed';
       readonly outputTail?: string }
+  | { readonly type: 'stage_skip_proposed'; readonly at: EpochMs; readonly stages: readonly StageSlug[]; readonly reason: string }
+  | { readonly type: 'stage_skip_decided'; readonly at: EpochMs; readonly approved: boolean }
   | { readonly type: 'closed'; readonly at: EpochMs; readonly by: Actor };

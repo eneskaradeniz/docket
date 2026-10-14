@@ -244,7 +244,7 @@ describe('approveAndDeploy', () => {
 
     expect(result).toEqual({
       ok: true,
-      value: { status: 'done', stage: null, attempt: 1, pendingGates: [] },
+      value: { status: 'done', stage: null, attempt: 1, pendingGates: [], skippedStages: [] },
     });
     expect(h.commands.calls()).toEqual([
       {
@@ -455,7 +455,7 @@ describe('approveAndDeploy', () => {
 
     expect(result).toEqual({
       ok: true,
-      value: { status: 'done', stage: null, attempt: 1, pendingGates: [] },
+      value: { status: 'done', stage: null, attempt: 1, pendingGates: [], skippedStages: [] },
     });
     expect(h.commands.calls()).toEqual([
       {
@@ -602,7 +602,7 @@ describe('approveAndDeploy', () => {
 
     expect(result).toEqual({
       ok: true,
-      value: { status: 'done', stage: null, attempt: 1, pendingGates: [] },
+      value: { status: 'done', stage: null, attempt: 1, pendingGates: [], skippedStages: [] },
     });
     expect(h.commands.calls()).toEqual([
       { cwd: WORKTREE_PATH, command: 'dev-step-one', timeoutMs: 600_000, env: { REGION: 'eu-west-1' } },

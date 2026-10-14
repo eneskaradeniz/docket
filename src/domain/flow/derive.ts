@@ -20,10 +20,44 @@ export interface WorkOrderState {
   readonly attempt: number; // 1-based attempt of the current stage
   readonly pendingGates: readonly GateSlug[];
   readonly blockedReason?: string;
+  /** Stages an approved planner skip proposal marks skipped for this work order only (R-144). */
+  readonly skippedStages: readonly StageSlug[];
 }
 
+/** R-133 invariant 1: deploy and human exit gates cannot be proposed for skipping. */
+export const stageExitBlocksSkip = (stage: StageDef): boolean =>
+  stage.exit.some((gate) => gate.kind === 'deploy' || gate.kind === 'human');
+
+/** Keeps only stages the flow defines and whose exit gates allow skipping (R-133). */
+export const filterSkippableStageIds = (
+  flow: FlowDef,
+  stages: readonly StageSlug[],
+): readonly StageSlug[] =>
+  stages.filter((id) => {
+    const stage = flow.stages.find((candidate) => candidate.id === id);
+    return stage !== undefined && !stageExitBlocksSkip(stage);
+  });
+
+/** R-144: walks the ledger's proposal–decision pairs; an approved pair marks stages skipped. */
+export const deriveSkippedStages = (flow: FlowDef, events: readonly WorkOrderEvent[]): readonly StageSlug[] => {
+  let skipped: readonly StageSlug[] = [];
+  let pending: readonly StageSlug[] | null = null;
+  for (const event of events) {
+    if (event.type === 'stage_skip_proposed') {
+      pending = event.stages;
+    } else if (event.type === 'stage_skip_decided') {
+      if (pending !== null) {
+        skipped = event.approved ? filterSkippableStageIds(flow, pending) : skipped;
+        pending = null;
+      }
+    }
+  }
+  return skipped;
+};
+
 export function deriveWorkOrderState(flow: FlowDef, events: readonly WorkOrderEvent[]): WorkOrderState {
-  return toState(flow, events.reduce((acc, event) => step(flow, acc, event), initial(flow)));
+  const folded = toState(flow, events.reduce((acc, event) => step(flow, acc, event), initial(flow)));
+  return { ...folded, skippedStages: deriveSkippedStages(flow, events) };
 }
 
 const RUN_FAILED_REASON = 'run failed';
@@ -193,6 +227,10 @@ const step = (flow: FlowDef, acc: Acc, event: WorkOrderEvent): Acc => {
       // The attempt is an audit fact; the verdict that moves the gate arrives as its own
       // gate_evaluated event, so the record itself must never shift the fold.
       return acc;
+    case 'stage_skip_proposed':
+    case 'stage_skip_decided':
+      // R-144: skip marks live beside the machine state; the fold above stays R-17…R-24.
+      return acc;
     case 'closed':
       return doneAcc(acc.stageIndex, acc.attempt, acc.entries);
   }
@@ -200,6 +238,6 @@ const step = (flow: FlowDef, acc: Acc, event: WorkOrderEvent): Acc => {
 
 const toState = (flow: FlowDef, acc: Acc): WorkOrderState => {
   const stage: StageSlug | null = acc.done ? null : flow.stages[acc.stageIndex].id;
-  const base = { status: acc.status, stage, attempt: acc.attempt, pendingGates: acc.pendingGates };
+  const base = { status: acc.status, stage, attempt: acc.attempt, pendingGates: acc.pendingGates, skippedStages: [] as readonly StageSlug[] };
   return acc.blockedReason === undefined ? base : { ...base, blockedReason: acc.blockedReason };
 };

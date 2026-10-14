@@ -12,7 +12,7 @@ const ENV: EnvSlug = 'stg' as EnvSlug;
 const COMMIT = '1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b';
 
 describe('WorkOrderEvent', () => {
-  it('has exactly the eight event types of the contract', () => {
+  it('has exactly the ten event types of the contract', () => {
     const events: readonly WorkOrderEvent[] = [
       { type: 'created', at: 1, by: USER, flow: FLOW },
       { type: 'run_started', at: 2, runId: RUN, stage: STAGE, attempt: 1 },
@@ -30,7 +30,9 @@ describe('WorkOrderEvent', () => {
         approvedBy: USER,
         result: 'success',
       },
-      { type: 'closed', at: 8, by: USER },
+      { type: 'stage_skip_proposed', at: 8, stages: [STAGE], reason: 'small change' },
+      { type: 'stage_skip_decided', at: 9, approved: true },
+      { type: 'closed', at: 10, by: USER },
     ];
     expect(events.map((event) => event.type)).toEqual([
       'created',
@@ -40,8 +42,22 @@ describe('WorkOrderEvent', () => {
       'blocked',
       'unblocked',
       'deployment_attempted',
+      'stage_skip_proposed',
+      'stage_skip_decided',
       'closed',
     ]);
+  });
+
+  it('R-133: stage-skip proposal and decision recorded as ledger events', () => {
+    const proposed: WorkOrderEvent = {
+      type: 'stage_skip_proposed',
+      at: 1,
+      stages: ['review' as StageSlug],
+      reason: 'tests already cover it',
+    };
+    const decided: WorkOrderEvent = { type: 'stage_skip_decided', at: 2, approved: false };
+    expect(proposed).toMatchObject({ type: 'stage_skip_proposed', stages: ['review'], reason: 'tests already cover it' });
+    expect(decided).toEqual({ type: 'stage_skip_decided', at: 2, approved: false });
   });
 
   it('deployment_attempted carries both results and an optional outputTail', () => {

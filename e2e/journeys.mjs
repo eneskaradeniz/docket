@@ -2194,18 +2194,8 @@ for (const [sizeName, theme] of combos) {
       );
     await expectTitleFocused();
     steps.push('dialog');
-    const flow = dialog.getByRole('combobox', { name: 'Akış' });
-    // The standing choice is `standard` only when that id is one of the options; otherwise it is
-    // the first flow the project lists. The value in the control is the value the command sends.
-    const expectShownFlow = async () => {
-      const values = await flow.locator('option').evaluateAll((nodes) => nodes.map((node) => node.value));
-      const selected = await flow.inputValue();
-      const expected = values.includes('standard') ? 'standard' : values[0];
-      assert.equal(selected, expected, 'Akış opens on standard when listed, otherwise the first flow');
-      assert.equal(await flow.locator('option:checked').getAttribute('value'), selected, 'the shown option is the selected value');
-    };
-    await expectShownFlow();
-    await dialog.getByRole('button', { name: 'Aç', exact: true }).click({ timeout: WAIT });
+    await dialog.getByRole('region', { name: 'Depo akışı' }).waitFor({ state: 'visible', timeout: WAIT });
+    await page.keyboard.press('Enter');
     await dialog.getByText('Bir başlık yazın.').waitFor({ state: 'visible', timeout: WAIT });
     const titleBox = dialog.getByRole('textbox', { name: 'Başlık' });
     await titleBox.fill('Pencere işi');
@@ -2215,7 +2205,7 @@ for (const [sizeName, theme] of combos) {
     await dialog.waitFor({ state: 'visible', timeout: WAIT });
     await expectTitleFocused();
     assert.equal(await dialog.getByRole('textbox', { name: 'Başlık' }).inputValue(), 'Pencere işi', 'Esc keeps the draft');
-    await expectShownFlow();
+    await dialog.getByRole('region', { name: 'Depo akışı' }).waitFor({ state: 'visible', timeout: WAIT });
     await dialog.getByRole('textbox', { name: 'Başlık' }).press('Enter');
     await page.getByText('İş emri açıldı.').first().waitFor({ state: 'visible', timeout: WAIT });
     await dialog.waitFor({ state: 'detached', timeout: WAIT });

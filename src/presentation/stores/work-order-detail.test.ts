@@ -115,16 +115,18 @@ const stateAt = (stage: StageSlug, pending: readonly GateSlug[], status: WorkOrd
   stage,
   attempt: 1,
   pendingGates: pending,
+  skippedStages: [],
 });
 
 const AT_BUILD = stateAt(STAGE_BUILD, [GATE_SECRET_SCAN]);
 const AT_SHIP = stateAt(STAGE_SHIP, [GATE_SHIP_APPROVAL, GATE_DEPLOY_PROD, GATE_DEPLOY_STAGING]);
-const DONE: WorkOrderState = { status: 'done', stage: null, attempt: 1, pendingGates: [] };
+const DONE: WorkOrderState = { status: 'done', stage: null, attempt: 1, pendingGates: [], skippedStages: [] };
 const AWAITING_PLAN: WorkOrderState = {
   status: 'awaiting_human',
   stage: STAGE_PLAN,
   attempt: 1,
   pendingGates: [GATE_PLAN_APPROVAL],
+  skippedStages: [],
 };
 
 const detailReply = (state: WorkOrderState): WorkOrderDetailView => ({
@@ -719,7 +721,7 @@ describe('detail badge (U-223)', () => {
     };
     expect(
       badgeFor(
-        { status: 'awaiting_human', stage: STAGE_SHIP, attempt: 1, pendingGates: [GATE_SHIP_APPROVAL, GATE_SHIP_SECURITY] },
+        { status: 'awaiting_human', stage: STAGE_SHIP, attempt: 1, pendingGates: [GATE_SHIP_APPROVAL, GATE_SHIP_SECURITY], skippedStages: [] },
         0,
         multiFlow,
       ),
@@ -730,14 +732,14 @@ describe('detail badge (U-223)', () => {
 
   it('U-223: failure standings say “Başarısız” with the attempts sub-line — “Engellendi” is never used', () => {
     // The block standing is a failure with no attempts left.
-    expect(badgeFor({ status: 'blocked', stage: STAGE_BUILD, attempt: 3, pendingGates: [], blockedReason: 'run failed' })).toEqual({
+    expect(badgeFor({ status: 'blocked', stage: STAGE_BUILD, attempt: 3, pendingGates: [], skippedStages: [], blockedReason: 'run failed' })).toEqual({
       tone: 'error',
       wordKey: 'run.outcome.failed',
       subKey: 'detail.badge.retryOut',
       pulse: false,
     });
     // A ready stage re-entered after a failed run is a failure with attempts left.
-    const retry: WorkOrderState = { status: 'ready', stage: STAGE_BUILD, attempt: 2, pendingGates: [GATE_SECRET_SCAN] };
+    const retry: WorkOrderState = { status: 'ready', stage: STAGE_BUILD, attempt: 2, pendingGates: [GATE_SECRET_SCAN], skippedStages: [] };
     const failedRun: WorkOrderDetailRun = { id: FAILED_RUN_ID, stage: 'build', attempt: 1, startedAt: 100, endedAt: 200, outcome: 'failed' };
     const view = detailReplyWithRuns(retry, [failedRun]);
     expect(isFailedStanding(view)).toBe(true);
@@ -751,7 +753,7 @@ describe('detail badge (U-223)', () => {
 
   it('U-223: a no-role stage holding machine gates keeps the honest gating word', () => {
     expect(
-      badgeFor({ status: 'awaiting_human', stage: STAGE_SHIP, attempt: 1, pendingGates: [GATE_DEPLOY_STAGING] }),
+      badgeFor({ status: 'awaiting_human', stage: STAGE_SHIP, attempt: 1, pendingGates: [GATE_DEPLOY_STAGING], skippedStages: [] }),
     ).toEqual({ tone: 'signal', wordKey: 'detail.badge.deployWaiting', pulse: false });
   });
 });
@@ -806,7 +808,7 @@ describe('decision zone (U-226)', () => {
     };
     expect(
       zoneFor(
-        { status: 'awaiting_human', stage: STAGE_SHIP, attempt: 1, pendingGates: [GATE_SHIP_APPROVAL, GATE_SHIP_SECURITY] },
+        { status: 'awaiting_human', stage: STAGE_SHIP, attempt: 1, pendingGates: [GATE_SHIP_APPROVAL, GATE_SHIP_SECURITY], skippedStages: [] },
         [],
         0,
         flow,
@@ -856,17 +858,17 @@ describe('decision zone (U-226)', () => {
     const failedRuns: readonly WorkOrderDetailRun[] = [
       { id: FAILED_RUN_ID, stage: 'build', attempt: 1, startedAt: 100, endedAt: 200, outcome: 'failed' },
     ];
-    expect(zoneFor({ status: 'ready', stage: STAGE_BUILD, attempt: 2, pendingGates: [GATE_SECRET_SCAN] }, failedRuns)).toEqual({
+    expect(zoneFor({ status: 'ready', stage: STAGE_BUILD, attempt: 2, pendingGates: [GATE_SECRET_SCAN], skippedStages: [] }, failedRuns)).toEqual({
       kind: 'cards',
       cards: [{ kind: 'failed', retry: true }],
     });
-    expect(zoneFor({ status: 'blocked', stage: STAGE_BUILD, attempt: 3, pendingGates: [], blockedReason: 'run failed' }, failedRuns)).toEqual({
+    expect(zoneFor({ status: 'blocked', stage: STAGE_BUILD, attempt: 3, pendingGates: [], skippedStages: [], blockedReason: 'run failed' }, failedRuns)).toEqual({
       kind: 'cards',
       cards: [{ kind: 'failed', retry: false }],
     });
     // Attempts exhausted through the fold's own budget: onFail.maxAttempts reached.
     expect(
-      zoneFor({ status: 'blocked', stage: STAGE_BUILD, attempt: 4, pendingGates: [], blockedReason: 'run failed' }, failedRuns, 0, {
+      zoneFor({ status: 'blocked', stage: STAGE_BUILD, attempt: 4, pendingGates: [], skippedStages: [], blockedReason: 'run failed' }, failedRuns, 0, {
         ...FLOW,
         stages: [{ id: STAGE_BUILD, name: 'Build', role: null, exit: [], onFail: { goto: STAGE_BUILD, maxAttempts: 3 } }],
       }),
@@ -943,7 +945,7 @@ describe('stage strip (U-224)', () => {
   });
 
   it('U-224: the failed and running markings ride the current segment only', () => {
-    const failed: WorkOrderState = { status: 'ready', stage: STAGE_BUILD, attempt: 2, pendingGates: [GATE_SECRET_SCAN] };
+    const failed: WorkOrderState = { status: 'ready', stage: STAGE_BUILD, attempt: 2, pendingGates: [GATE_SECRET_SCAN], skippedStages: [] };
     const failedView = detailReplyWithRuns(failed, [
       { id: FAILED_RUN_ID, stage: 'build', attempt: 1, startedAt: 100, endedAt: 200, outcome: 'failed' },
     ]);
@@ -1038,7 +1040,7 @@ describe('the failed card\'s error line', () => {
   });
 
   it('the store reads the failed run\'s tail once on a failed standing and quotes its last words', async () => {
-    const failed: WorkOrderState = { status: 'ready', stage: STAGE_BUILD, attempt: 2, pendingGates: [GATE_SECRET_SCAN] };
+    const failed: WorkOrderState = { status: 'ready', stage: STAGE_BUILD, attempt: 2, pendingGates: [GATE_SECRET_SCAN], skippedStages: [] };
     const api = fakeApi(
       detailReplyWithRuns(failed, [
         { id: FAILED_RUN_ID, stage: 'build', attempt: 1, startedAt: 100, endedAt: 200, outcome: 'failed' },
@@ -1056,7 +1058,7 @@ describe('the failed card\'s error line', () => {
   });
 
   it('a failed standing whose run said nothing — or whose tail fails to read — keeps the line null', async () => {
-    const failed: WorkOrderState = { status: 'ready', stage: STAGE_BUILD, attempt: 2, pendingGates: [GATE_SECRET_SCAN] };
+    const failed: WorkOrderState = { status: 'ready', stage: STAGE_BUILD, attempt: 2, pendingGates: [GATE_SECRET_SCAN], skippedStages: [] };
     const runs: readonly WorkOrderDetailRun[] = [
       { id: FAILED_RUN_ID, stage: 'build', attempt: 1, startedAt: 100, endedAt: 200, outcome: 'failed' },
     ];

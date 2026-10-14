@@ -202,7 +202,7 @@ describe('pollRemoteChecks', () => {
 
     expect(result).toEqual({
       ok: true,
-      value: { status: 'done', stage: null, attempt: 1, pendingGates: [] },
+      value: { status: 'done', stage: null, attempt: 1, pendingGates: [], skippedStages: [] },
     });
     expect(asked).toEqual([REPO]);
     expect(seen).toEqual([{ repo: REPO, ref: BRANCH_REF }]);
@@ -259,7 +259,7 @@ describe('pollRemoteChecks', () => {
     const done = makeHarness();
     await createIn(done, 'all-flow');
     const green = resolverFor(trackingForge([check('lint', 'passed')]).forge);
-    expect(await poll(done, green.resolver, 'ci')).toEqual({ ok: true, value: { status: 'done', stage: null, attempt: 1, pendingGates: [] } });
+    expect(await poll(done, green.resolver, 'ci')).toEqual({ ok: true, value: { status: 'done', stage: null, attempt: 1, pendingGates: [], skippedStages: [] } });
     const again = resolverFor(trackingForge([check('lint', 'passed')]).forge);
     expect(await poll(done, again.resolver, 'ci')).toEqual({ ok: false, error: 'not_current_stage' });
   });
@@ -329,7 +329,7 @@ describe('pollRemoteChecks', () => {
 
     expect(result).toEqual({
       ok: true,
-      value: { status: 'done', stage: null, attempt: 1, pendingGates: [] },
+      value: { status: 'done', stage: null, attempt: 1, pendingGates: [], skippedStages: [] },
     });
   });
 
@@ -366,7 +366,7 @@ describe('pollRemoteChecks', () => {
 
       expect(result).toEqual({
         ok: true,
-        value: { status: 'awaiting_human', stage: 'verify', attempt: 1, pendingGates: ['ci'] },
+        value: { status: 'awaiting_human', stage: 'verify', attempt: 1, pendingGates: ['ci'], skippedStages: [] },
       });
       expect(await eventsOf(h)).toHaveLength(1);
     }
@@ -394,7 +394,7 @@ describe('pollRemoteChecks', () => {
 
     expect(result).toEqual({
       ok: true,
-      value: { status: 'done', stage: null, attempt: 1, pendingGates: [] },
+      value: { status: 'done', stage: null, attempt: 1, pendingGates: [], skippedStages: [] },
     });
   });
 
@@ -541,7 +541,7 @@ describe('pollRemoteChecks', () => {
     const second = await poll(h, passed.resolver, 'ci');
     expect(second).toEqual({
       ok: true,
-      value: { status: 'done', stage: null, attempt: 1, pendingGates: [] },
+      value: { status: 'done', stage: null, attempt: 1, pendingGates: [], skippedStages: [] },
     });
     expect(await eventsOf(h)).toHaveLength(2);
   });
