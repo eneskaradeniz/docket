@@ -1,11 +1,11 @@
-// pick-folders.ts — the native folder picker bridge, main-process pure half (A-384). main.ts supplies
+// pick-folders.ts — the native folder picker bridge, main-process pure half (U-326). main.ts supplies
 // dialog.showOpenDialog on the focused window; this module caps paths, shapes the answer and fixes
 // the dialog options. It imports no Electron module.
 import type { Locale } from '../src/presentation/labels/t';
 
 export const PICK_FOLDERS_MAX = 50;
 
-/** Fixed titles from the shell copy; the renderer cannot override them (A-384). */
+/** Fixed titles from the shell copy; the renderer cannot override them (U-326). */
 export const FOLDER_PICKER_TITLES: Readonly<Record<Locale, string>> = {
   tr: 'Klasör seç',
   en: 'Choose a folder',
@@ -21,7 +21,7 @@ export type PickFoldersResult =
 
 export const folderPickerDialogTitle = (locale: Locale): string => FOLDER_PICKER_TITLES[locale];
 
-/** Reads only `multiple`; any title or default path from the renderer is ignored (A-384). */
+/** Reads only `multiple`; any title or default path from the renderer is ignored (U-326). */
 export const parsePickFoldersRequest = (value: unknown): PickFoldersOptions & { readonly multiple: boolean } => {
   if (typeof value !== 'object' || value === null) return { multiple: false };
   const record = value as Record<string, unknown>;
