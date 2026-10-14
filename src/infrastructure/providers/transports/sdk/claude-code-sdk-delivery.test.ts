@@ -82,9 +82,100 @@ describe('claude-code SDK delivery cleanup (#1164)', () => {
     );
     const pluginPath = delivery.plugins[0]?.path;
     if (pluginPath === undefined) throw new Error('expected plugin path');
-    expect(await readFile(join(pluginPath, 'skills', 'file-skill', 'SKILL.md'), 'utf8')).toBe('# lone file\n');
-    expect(await readFile(join(pluginPath, 'skills', 'dir-skill', 'SKILL.md'), 'utf8')).toBe('# bundle root\n');
+    expect(await readFile(join(pluginPath, 'skills', 'file-skill', 'SKILL.md'), 'utf8')).toBe(
+      '---\nname: file-skill\ndescription: file-skill\n---\n# lone file\n',
+    );
+    expect(await readFile(join(pluginPath, 'skills', 'dir-skill', 'SKILL.md'), 'utf8')).toBe(
+      '---\nname: dir-skill\ndescription: dir-skill\n---\n# bundle root\n',
+    );
     expect(await readFile(join(pluginPath, 'skills', 'dir-skill', 'helper.txt'), 'utf8')).toBe('extra\n');
+    await delivery.cleanup();
+  });
+
+  it('writes a named plugin manifest for bundled run skills (#1175)', async () => {
+    const runDir = await mkdtemp(join(tmpdir(), 'docket-cc-manifest-'));
+    const skillPath = join(runDir, 'skill.md');
+    await writeFile(skillPath, '# skill\n', 'utf8');
+    const delivery = await prepareClaudeCodeSdkDelivery(
+      runDir,
+      '',
+      [{ kind: 'skill', id: slugOf<'capability'>('s'), name: 'my-skill', path: skillPath }],
+      false,
+    );
+    const pluginPath = delivery.plugins[0]?.path;
+    if (pluginPath === undefined) throw new Error('expected plugin path');
+    expect(await readFile(join(pluginPath, '.claude-plugin', 'plugin.json'), 'utf8')).toBe('{"name":"docket-run"}\n');
+    await delivery.cleanup();
+  });
+
+  it('adds frontmatter to SKILL.md without an opening block (#1175)', async () => {
+    const runDir = await mkdtemp(join(tmpdir(), 'docket-cc-fm-none-'));
+    const skillPath = join(runDir, 'skill.md');
+    await writeFile(skillPath, '# body only\n', 'utf8');
+    const delivery = await prepareClaudeCodeSdkDelivery(
+      runDir,
+      '',
+      [{ kind: 'skill', id: slugOf<'capability'>('s'), name: 'alpha', path: skillPath }],
+      false,
+    );
+    const pluginPath = delivery.plugins[0]?.path;
+    if (pluginPath === undefined) throw new Error('expected plugin path');
+    expect(await readFile(join(pluginPath, 'skills', 'alpha', 'SKILL.md'), 'utf8')).toBe(
+      '---\nname: alpha\ndescription: alpha\n---\n# body only\n',
+    );
+    await delivery.cleanup();
+  });
+
+  it('adds only missing name when frontmatter already has description (#1175)', async () => {
+    const runDir = await mkdtemp(join(tmpdir(), 'docket-cc-fm-partial-'));
+    const skillPath = join(runDir, 'skill.md');
+    await writeFile(skillPath, '---\ndescription: From source\n---\n# keep\n', 'utf8');
+    const delivery = await prepareClaudeCodeSdkDelivery(
+      runDir,
+      '',
+      [{ kind: 'skill', id: slugOf<'capability'>('s'), name: 'beta', path: skillPath }],
+      false,
+    );
+    const pluginPath = delivery.plugins[0]?.path;
+    if (pluginPath === undefined) throw new Error('expected plugin path');
+    expect(await readFile(join(pluginPath, 'skills', 'beta', 'SKILL.md'), 'utf8')).toBe(
+      '---\ndescription: From source\nname: beta\n---\n# keep\n',
+    );
+    await delivery.cleanup();
+  });
+
+  it('leaves SKILL.md unchanged when frontmatter already has name and description (#1175)', async () => {
+    const runDir = await mkdtemp(join(tmpdir(), 'docket-cc-fm-full-'));
+    const skillPath = join(runDir, 'skill.md');
+    const source = '---\nname: custom\ndescription: Custom desc\n---\n# intact\n';
+    await writeFile(skillPath, source, 'utf8');
+    const delivery = await prepareClaudeCodeSdkDelivery(
+      runDir,
+      '',
+      [{ kind: 'skill', id: slugOf<'capability'>('s'), name: 'ignored-dir', path: skillPath }],
+      false,
+    );
+    const pluginPath = delivery.plugins[0]?.path;
+    if (pluginPath === undefined) throw new Error('expected plugin path');
+    expect(await readFile(join(pluginPath, 'skills', 'ignored-dir', 'SKILL.md'), 'utf8')).toBe(source);
+    await delivery.cleanup();
+  });
+
+  it('ignores a lone leading --- line without a closing block (#1175)', async () => {
+    const runDir = await mkdtemp(join(tmpdir(), 'docket-cc-fm-fake-'));
+    const skillPath = join(runDir, 'skill.md');
+    await writeFile(skillPath, '---\nnot frontmatter\n# real\n', 'utf8');
+    const delivery = await prepareClaudeCodeSdkDelivery(
+      runDir,
+      '',
+      [{ kind: 'skill', id: slugOf<'capability'>('s'), name: 'gamma', path: skillPath }],
+      false,
+    );
+    const pluginPath = delivery.plugins[0]?.path;
+    if (pluginPath === undefined) throw new Error('expected plugin path');
+    expect(await readFile(join(pluginPath, 'skills', 'gamma', 'SKILL.md'), 'utf8')).toBe(
+      '---\nname: gamma\ndescription: gamma\n---\n---\nnot frontmatter\n# real\n',
+    );
     await delivery.cleanup();
   });
 

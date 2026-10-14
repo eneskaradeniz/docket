@@ -14,6 +14,71 @@ const HOOK_EVENT_TO_SDK: Readonly<Record<HookEvent, string>> = {
 /** PostToolUse matcher for file-writing tools (Claude Code hooks reference: tool name regex). */
 const AFTER_WRITE_TOOL_MATCHER = 'Write|Edit|MultiEdit|NotebookEdit';
 
+const RUN_PLUGIN_MANIFEST_NAME = 'docket-run';
+
+const yamlScalar = (value: string): string => {
+  if (/^[\w.-]+$/u.test(value)) return value;
+  return `"${value.replace(/\\/gu, '\\\\').replace(/"/gu, '\\"')}"`;
+};
+
+const yamlHasKey = (yaml: string, key: string): boolean =>
+  new RegExp(`^${key}\\s*:`, 'mu').test(yaml);
+
+const splitSkillFrontmatter = (
+  body: string,
+): { readonly hasBlock: boolean; readonly yaml: string; readonly rest: string } => {
+  const normalized = body.endsWith('\n') ? body : `${body}\n`;
+  const lines = normalized.split(/\r?\n/u);
+  if (lines[0] !== '---') {
+    return { hasBlock: false, yaml: '', rest: normalized };
+  }
+  let closeIndex = -1;
+  for (let index = 1; index < lines.length; index += 1) {
+    if (lines[index] === '---') {
+      closeIndex = index;
+      break;
+    }
+  }
+  if (closeIndex === -1) {
+    return { hasBlock: false, yaml: '', rest: normalized };
+  }
+  const yaml = lines.slice(1, closeIndex).join('\n');
+  const restLines = lines.slice(closeIndex + 1);
+  while (restLines.length > 0 && restLines[restLines.length - 1] === '') {
+    restLines.pop();
+  }
+  const rest = restLines.length > 0 ? `${restLines.join('\n')}\n` : '\n';
+  return { hasBlock: true, yaml, rest };
+};
+
+const ensureSkillMarkdownFrontmatter = (skillName: string, description: string, body: string): string => {
+  const skillDescription = description.length > 0 ? description : skillName;
+  const parsed = splitSkillFrontmatter(body);
+  if (!parsed.hasBlock) {
+    const rest = parsed.rest.endsWith('\n') ? parsed.rest : `${parsed.rest}\n`;
+    return `---\nname: ${yamlScalar(skillName)}\ndescription: ${yamlScalar(skillDescription)}\n---\n${rest}`;
+  }
+  const additions: string[] = [];
+  if (!yamlHasKey(parsed.yaml, 'name')) additions.push(`name: ${yamlScalar(skillName)}`);
+  if (!yamlHasKey(parsed.yaml, 'description')) additions.push(`description: ${yamlScalar(skillDescription)}`);
+  if (additions.length === 0) return body.endsWith('\n') ? body : `${body}\n`;
+  const yaml =
+    parsed.yaml.length > 0 ? `${parsed.yaml}\n${additions.join('\n')}` : additions.join('\n');
+  const rest = parsed.rest.endsWith('\n') ? parsed.rest : `${parsed.rest}\n`;
+  return `---\n${yaml}\n---\n${rest}`;
+};
+
+const materializeSkillMarkdown = async (
+  skill: Extract<CapabilityDef, { kind: 'skill' }>,
+  skillMarkdownPath: string,
+): Promise<void> => {
+  const dirName = skillDirName(skill);
+  const description = skill.name.trim().length > 0 ? skill.name.trim() : dirName;
+  const raw = await readFile(skillMarkdownPath, 'utf8');
+  const withFrontmatter = ensureSkillMarkdownFrontmatter(dirName, description, raw);
+  await writeFile(skillMarkdownPath, withFrontmatter, { encoding: 'utf8', mode: 0o600 });
+};
+
 const skillDirName = (capability: Extract<CapabilityDef, { kind: 'skill' }>): string => {
   const trimmed = capability.name.trim();
   if (trimmed.length > 0) return trimmed.replace(/\s+/gu, '-');
@@ -52,17 +117,27 @@ export async function prepareClaudeCodeSdkDelivery(
     bundledPluginDir = await mkdtemp(join(runDir, 'cc-run-plugin-'));
     removals.push(bundledPluginDir);
     await mkdir(join(bundledPluginDir, '.claude-plugin'), { recursive: true, mode: 0o700 });
-    await writeFile(join(bundledPluginDir, '.claude-plugin', 'plugin.json'), '{}\n', { encoding: 'utf8', mode: 0o600 });
+    await writeFile(
+      join(bundledPluginDir, '.claude-plugin', 'plugin.json'),
+      `{"name":"${RUN_PLUGIN_MANIFEST_NAME}"}\n`,
+      { encoding: 'utf8', mode: 0o600 },
+    );
     for (const skill of skillCaps) {
       const targetDir = join(bundledPluginDir, 'skills', skillDirName(skill));
       const sourceStat = await stat(skill.path);
       if (sourceStat.isDirectory()) {
         await cp(skill.path, targetDir, { recursive: true, force: true });
+        await materializeSkillMarkdown(skill, join(targetDir, 'SKILL.md'));
         continue;
       }
       await mkdir(targetDir, { recursive: true, mode: 0o700 });
       const body = await readFile(skill.path, 'utf8');
-      await writeFile(join(targetDir, 'SKILL.md'), body.endsWith('\n') ? body : `${body}\n`, {
+      const withFrontmatter = ensureSkillMarkdownFrontmatter(
+        skillDirName(skill),
+        skill.name.trim().length > 0 ? skill.name.trim() : skillDirName(skill),
+        body,
+      );
+      await writeFile(join(targetDir, 'SKILL.md'), withFrontmatter, {
         encoding: 'utf8',
         mode: 0o600,
       });
