@@ -217,7 +217,7 @@ const routeCatalog = createFakeCapabilityCatalog([
 ]);
 
 describe('claude-code SDK capability delivery (CC-1 … CC-8)', () => {
-  it('CC-1: run-scoped MCP is inline with strictMcpConfig only when any server is delivered', async () => {
+  it('CC-1: run-scoped MCP is inline with strictMcpConfig on every run', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'docket-cc1-'));
     const base = (capabilities: readonly CapabilityDef[]): RunRequest => ({
       runId: RUN_ID,
@@ -244,7 +244,7 @@ describe('claude-code SDK capability delivery (CC-1 … CC-8)', () => {
 
     await drain(unwrap(await transport.start(base([]))));
     expect(calls[0]?.options.mcpServers).toEqual({});
-    expect(calls[0]?.options.strictMcpConfig).toBeUndefined();
+    expect(calls[0]?.options.strictMcpConfig).toBe(true);
 
     const mcp: CapabilityDef = {
       kind: 'mcp',
@@ -326,9 +326,12 @@ describe('claude-code SDK capability delivery (CC-1 … CC-8)', () => {
     );
 
     expect(call.options.settingSources).toEqual([]);
-    const runScopedSkill = join(cwd, '.claude', 'skills', 'role-skill', 'SKILL.md');
+    const pluginPath = call.options.plugins?.[0]?.path;
+    if (pluginPath === undefined) throw new Error('expected a run-scoped plugin path');
+    const runScopedSkill = join(pluginPath, 'skills', 'role-skill', 'SKILL.md');
     await expect(access(runScopedSkill)).resolves.toBeUndefined();
     expect(await readFile(runScopedSkill, 'utf8')).toBe(skillBody);
+    expect(call.options.skills).toBe('all');
   });
 
   it.todo(
@@ -370,7 +373,7 @@ describe('claude-code SDK capability delivery (CC-1 … CC-8)', () => {
     expect(typeof call.options.settings).toBe('object');
   });
 
-  it('CC-5: role context is delivered exactly once via native CLAUDE.md without duplicating systemPrompt append', async () => {
+  it('CC-5: role context is delivered exactly once via systemPrompt append without writing CLAUDE.md', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'docket-cc5-'));
     const library = await mkdtemp(join(tmpdir(), 'docket-cc5-lib-'));
     const contextMarker = 'CC5_CONTEXT_MARKER_UNIQUE';
@@ -398,20 +401,10 @@ describe('claude-code SDK capability delivery (CC-1 … CC-8)', () => {
     );
 
     const claudePath = join(cwd, 'CLAUDE.md');
-    let claudeText = '';
-    try {
-      claudeText = await readFile(claudePath, 'utf8');
-    } catch {
-      claudeText = '';
-    }
+    await expect(access(claudePath)).rejects.toThrow();
     const append = systemAppend(call.options) ?? '';
-    const occurrences =
-      (claudeText.match(new RegExp(contextMarker, 'g')) ?? []).length +
-      (append.match(new RegExp(contextMarker, 'g')) ?? []).length;
-    expect(occurrences).toBe(1);
-    expect(append).toBe('Follow the work order exactly.');
-    expect(claudeText).toContain(contextMarker);
-    expect(append).not.toContain(contextMarker);
+    expect((append.match(new RegExp(contextMarker, 'g')) ?? []).length).toBe(1);
+    expect(append).toContain('Follow the work order exactly.');
   });
 
   it('CC-6: plugin bundles use plugins[{type:local,path}] and skipMcpDiscovery tracks strict MCP delivery', async () => {
@@ -447,7 +440,7 @@ describe('claude-code SDK capability delivery (CC-1 … CC-8)', () => {
       },
       account('subscription'),
     );
-    expect(pluginOnly.options.strictMcpConfig).toBeUndefined();
+    expect(pluginOnly.options.strictMcpConfig).toBe(true);
     expect(pluginOnly.options.plugins).toEqual([{ type: 'local', path: pluginRoot, skipMcpDiscovery: false }]);
 
     const pluginAndMcp = await runCaptured(
@@ -541,7 +534,7 @@ describe('claude-code SDK capability delivery (CC-1 … CC-8)', () => {
     expect(dumped).not.toContain(ROUTE_TOKEN);
   });
 
-  it('CC-8: strict MCP delivery disables claude.ai connectors in settings; subscription and zai-glm differ without MCP', async () => {
+  it('CC-8: every run disables claude.ai connectors in settings with strictMcpConfig', async () => {
     const mcp: CapabilityDef = {
       kind: 'mcp',
       id: slugOf<'capability'>('iso-mcp'),
@@ -581,8 +574,8 @@ describe('claude-code SDK capability delivery (CC-1 … CC-8)', () => {
       account('subscription'),
       routeCatalog,
     );
-    expect(subscriptionBare.options.strictMcpConfig).toBeUndefined();
-    expect(inlineSettings(subscriptionBare.options)?.disableClaudeAiConnectors).toBe(false);
+    expect(subscriptionBare.options.strictMcpConfig).toBe(true);
+    expect(inlineSettings(subscriptionBare.options)?.disableClaudeAiConnectors).toBe(true);
 
     const secrets = createFakeSecretVault();
     await secrets.put('ref-zai', ROUTE_TOKEN);
@@ -615,7 +608,7 @@ describe('claude-code SDK capability delivery (CC-1 … CC-8)', () => {
         }),
       ),
     );
-    expect(calls[0]?.options.strictMcpConfig).toBeUndefined();
+    expect(calls[0]?.options.strictMcpConfig).toBe(true);
     expect(inlineSettings(calls[0]?.options)?.disableClaudeAiConnectors).toBe(true);
   });
 

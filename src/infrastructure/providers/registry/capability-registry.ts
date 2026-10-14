@@ -382,25 +382,23 @@ export const TRANSLATION_TABLE: readonly TranslationRow[] = [
   ...rowsOf('claude-code', {
     mcp: {
       support: 'native',
-      how: probeHow(
-        'Run-scoped MCP via inline mcpServers with --strict-mcp-config when MCP is delivered (ambient settings off via settingSources: [])',
-      ),
+      how: probeHow('Run-scoped MCP via inline mcpServers with strictMcpConfig on every run (settingSources: [])'),
     },
     skill: {
       support: 'native',
-      how: probeHow('Run-scoped skills under .claude/skills in the project directory'),
+      how: probeHow('Per-run local plugin dir with skills/*/SKILL.md and skills: all'),
     },
     hook: {
       support: 'native',
-      how: probeHow('Run-scoped hooks via an explicit --settings file'),
+      how: probeHow('Inline settings.hooks on the SDK settings option'),
     },
     context: {
       support: 'native',
-      how: probeHow('Native instruction file CLAUDE.md in the run cwd (P-37)'),
+      how: probeHow('systemPrompt.append once for role + context (no CLAUDE.md write)'),
     },
     plugin: {
       support: 'native',
-      how: probeHow('Plugin bundle unpacked into native run-scoped MCP, skills, and hooks'),
+      how: probeHow('plugins[{type:local,path,skipMcpDiscovery}]'),
     },
     command,
   }),

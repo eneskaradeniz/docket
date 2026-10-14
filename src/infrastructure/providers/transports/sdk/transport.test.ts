@@ -650,7 +650,7 @@ describe('createSdkTransport', () => {
       expect(options?.resume).toBeUndefined();
       expect(options?.pathToClaudeCodeExecutable).toBeUndefined();
       expect(options?.mcpServers).toEqual({});
-      expect(options?.strictMcpConfig).toBeUndefined();
+      expect(options?.strictMcpConfig).toBe(true);
     });
 
     it('I-28: mcp capabilities become stdio servers with literal and vault-resolved env values', async () => {
@@ -667,7 +667,6 @@ describe('createSdkTransport', () => {
           args: ['-y', 'fs-search-server'],
           env: { LITERAL_FLAG: { literal: 'on' }, SEARCH_TOKEN: { secretRef: 'ref-mcp' } },
         },
-        { kind: 'context', id: slugOf<'capability'>('docs'), name: 'Docs', path: 'docs' },
       ];
       const { query, calls } = scriptedQuery(async function* () {
         yield successResult(0);

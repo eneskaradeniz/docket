@@ -14,6 +14,7 @@ import type {
 import type { AgentEvent, Result } from '../../../../domain/index';
 import { err, ok } from '../../../../domain/index';
 import { claudeCodeRunIsolationSdkOptions } from '../../launch/index';
+import { prepareClaudeCodeSdkDelivery } from './claude-code-sdk-delivery';
 import { docketOwnReadTool } from './docket-own-tool';
 import { mapSdkMessage, toolTarget } from './map-message';
 import { buildRouteEnvironment } from './route-env';
@@ -131,6 +132,18 @@ export function createSdkTransport(config: SdkTransportConfig): AgentTransport {
       }
       const deliversRunScopedMcp = Object.keys(mcpServers).length > 0;
 
+      let delivery: Awaited<ReturnType<typeof prepareClaudeCodeSdkDelivery>> | undefined;
+      try {
+        delivery = await prepareClaudeCodeSdkDelivery(
+          request.runDir,
+          request.role.instructions,
+          request.capabilities,
+          deliversRunScopedMcp,
+        );
+      } catch {
+        return err({ code: 'unsupported', message: 'claude-code capability delivery failed' });
+      }
+
       const abortController = new AbortController();
       const prompt = createChannel<SDKUserMessage>();
       const events = createChannel<AgentEvent>();
@@ -144,6 +157,7 @@ export function createSdkTransport(config: SdkTransportConfig): AgentTransport {
         // A finish settles every still-open ask so the SDK callback never dangles.
         for (const settle of pendingAsks.values()) settle('deny');
         pendingAsks.clear();
+        void delivery?.cleanup();
       };
 
       const finishRun = (reason: FinishReason): void => {
@@ -189,13 +203,16 @@ export function createSdkTransport(config: SdkTransportConfig): AgentTransport {
         model: request.route.model,
         resume: request.resume?.sessionRef,
         settingSources: [], // the user's own settings files are never read or written
-        systemPrompt: { type: 'preset', preset: 'claude_code', append: request.role.instructions },
+        systemPrompt: { type: 'preset', preset: 'claude_code', append: delivery.systemAppend },
         mcpServers,
         env,
         abortController,
         canUseTool,
         pathToClaudeCodeExecutable: config.executablePath,
-        ...claudeCodeRunIsolationSdkOptions(deliversRunScopedMcp),
+        settings: delivery.settings,
+        ...claudeCodeRunIsolationSdkOptions(),
+        ...(delivery.plugins.length > 0 ? { plugins: [...delivery.plugins] } : {}),
+        ...(delivery.skills === undefined ? {} : { skills: delivery.skills }),
         ...(config.sendsEffort === true && sdkEffort(request.effort) !== undefined ? { effort: sdkEffort(request.effort) } : {}),
       };
 
