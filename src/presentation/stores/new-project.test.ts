@@ -256,7 +256,7 @@ describe('project setup entries and proposal diff', () => {
     expect(proposal.repo.flow.flowId).toBe('standard');
   });
 
-  it('U-306: a stopped Docket MCP disables the AI entry with the sentence-button; running re-enables it', async () => {
+  it('U-315: a stopped Docket MCP disables the AI entry with the sentence-button; running re-enables it', async () => {
     expect(mcpRunningOf({ state: 'running', tools: { run: [], chat: [] }, rolesWithout: [] })).toBe(true);
     expect(mcpRunningOf({ state: 'stopped', reason: 'listener_down', tools: { run: [], chat: [] }, rolesWithout: [] })).toBe(false);
     expect(mcpRunningOf({ ok: false, code: 'not_found' })).toBeNull();
@@ -304,7 +304,7 @@ describe('project setup entries and proposal diff', () => {
     expect(running.store.state().screen).toBe('ai');
   });
 
-  it('U-306: a start refusal because of the listener carries the entry\'s own sentence', async () => {
+  it('U-315: a start refusal because of the listener carries the entry\'s own sentence', async () => {
     const api = fakeApi();
     api.reply('setup.ai.start', { ok: false, code: 'mcp_down' });
     const store = createNewProjectStore({ api, actor, reloadTree: async () => undefined });

@@ -87,7 +87,7 @@ export interface NodeDepsConfig {
   /** How the app launches its own MCP child (the shell knows its executable and the built script);
    * absent = no run is given Docket's tools. */
   readonly mcpEndpoint?: McpEndpoint;
-  /** The listener's standing and its one repair (A-361, A-362); the Electron shell passes the
+  /** The listener's standing and its one repair (A-380, A-381); the Electron shell passes the
    * control it builds around the listener it starts. Absent = this composition runs no
    * listener, and the standing control that says so answers. */
   readonly mcpListener?: McpListenerControl;

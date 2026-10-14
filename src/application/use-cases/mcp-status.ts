@@ -1,4 +1,4 @@
-// use-cases/mcp-status.ts — Docket's own MCP standing for the menu row (A-361, A-362): the
+// use-cases/mcp-status.ts — Docket's own MCP standing for the menu row (A-380, A-381): the
 // control's state plus the server's own tool-list constants (names only, never a running
 // process) and the library roles whose current version opted out of Docket's tools (R-81). The
 // view carries no secret, no token and no environment value — an opt-out stays the operator's

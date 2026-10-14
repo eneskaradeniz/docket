@@ -6,8 +6,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Actor, AgentEvent, RoleDef, RunId, Slug, Ulid } from '../domain/index';
 import { ok, parseSlug, parseUlid } from '../domain/index';
 
-import type { AppDeps, UpdateChecker, UpdateState } from '../application';
-import { createPermissionBoard, executeRun } from '../application';
+import type { AgentTransport, AppDeps, UpdateChecker, UpdateState } from '../application';
+import { createPermissionBoard, createRunControl, executeRun } from '../application';
 import {
   createFakeCapabilityDiscovery,
   createFakeCommandRunner,
@@ -1807,8 +1807,333 @@ describe('createApi', () => {
     });
   });
 
-  describe('app update', () => {
-    // The checker is composed beside deps at the root, so these tests hand it straight to the api
+  describe('run.stop / run.steer (A-361 … A-365)', () => {
+    /** A transport whose stream parks after the session starts and ends only when stop() is
+     *  called — the port's own contract for a stop (I-30): the stream finishes with
+     *  `finished { reason: 'cancelled' }`. `stopHolds` keeps the stream parked across the stop
+     *  (the repeated-command window of A-362). */
+    const createParkedTransport = (options?: { readonly stopHolds?: boolean; readonly log?: FakeEventLog }) => {
+      const steers: string[] = [];
+      let stopCount = 0;
+      const auditsAtStop: readonly number[] = [];
+      const transport: AgentTransport = {
+        start: async () => {
+          let released: (() => void) | undefined;
+          const stopped = new Promise<void>((resolve) => {
+            released = resolve;
+          });
+          const stream = async function* (): AsyncGenerator<AgentEvent, void> {
+            yield { type: 'session_started', at: 1_600, sessionRef: 'sess-parked' };
+            await stopped;
+            yield { type: 'finished', at: 2_000, reason: 'cancelled' };
+          };
+          return {
+            ok: true,
+            value: {
+              events: stream(),
+              answerPermission: () => {},
+              steer: (note: string) => {
+                steers.push(note);
+              },
+              stop: async () => {
+                stopCount += 1;
+                // What the audit trail held when the handle was touched — A-362's "before".
+                if (options?.log !== undefined) {
+                  (auditsAtStop as number[]).push(
+                    options.log.entries().filter((entry) => entry.action === 'run.stopped').length,
+                  );
+                }
+                if (options?.stopHolds !== true) released?.();
+              },
+            },
+          };
+        },
+      };
+      return {
+        transport,
+        steers: (): readonly string[] => [...steers],
+        stopCount: (): number => stopCount,
+        auditsAtStop: (): readonly number[] => [...auditsAtStop],
+      };
+    };
+
+    /** The composition wiring of electron/main.ts, verbatim: the registry beside the board, the
+     *  executor attaching into it, the api reading it. */
+    const runControlApi = (h: Harness, runControl: ReturnType<typeof createRunControl>) =>
+      createApi(
+        h.deps, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        undefined, undefined, undefined, undefined, runControl,
+      );
+
+    /** Drives one parked run to the moment its record is live, and hands its id back. */
+    const startLiveRun = async (
+      h: Harness,
+      transport: AgentTransport,
+      runControl: ReturnType<typeof createRunControl>,
+      workOrderId: Ulid<'work-order'>,
+      queueItemId: Ulid<'queue-item'>,
+    ): Promise<RunId> => {
+      await seedRouting(h);
+      const transports = createFakeTransportResolver();
+      transports.register(ACCOUNT, transport);
+      await h.deps.workOrders.create({
+        id: workOrderId,
+        project: slugOf<'project'>(PROJECT),
+        repo: slugOf<'repo'>(REPO),
+        flow: slugOf<'flow'>('board-flow'),
+        title: 'Run it',
+        createdAt: 1_000,
+        createdBy: ACTOR,
+      });
+      void executeRun(
+        { ...h.deps, transports },
+        { onAsk: async () => 'allow' },
+        {
+          item: {
+            id: queueItemId,
+            workOrderId,
+            repo: slugOf<'repo'>(REPO),
+            stage: slugOf<'stage'>('plan'),
+            route: { accountId: ACCOUNT },
+            priority: 0,
+            enqueuedAt: 1_000,
+          },
+          role: RUN_ROLE,
+          prompt: 'do the work',
+          cwd: '/wt/acme/wo',
+          capabilities: [],
+        },
+        undefined,
+        undefined,
+        undefined,
+        runControl,
+      );
+      for (let at = 0; at < 200; at += 1) {
+        const active = (await h.deps.runs.listForWorkOrder(workOrderId)).filter((run) => run.endedAt === undefined);
+        if (active.length > 0) return active[active.length - 1].id;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      throw new Error('the run never became live');
+    };
+
+    it('A-362: run.stop on a live run — the audit lands before the handle, the end path writes the rest', async () => {
+      const h = await createHarness();
+      const parked = createParkedTransport({ log: h.log });
+      const runControl = createRunControl();
+      const api = runControlApi(h, runControl);
+      const workOrderId = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5F20');
+      const runId = await startLiveRun(h, parked.transport, runControl, workOrderId, ulidOf<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5F21'));
+
+      const stopped = await api.command(ACTOR, { type: 'run.stop', runId });
+
+      expect(stopped).toEqual({ ok: true });
+      expect(parked.stopCount()).toBe(1);
+      // A-362: the one audit entry (the operator's ask) already stood when stop() ran.
+      expect(parked.auditsAtStop()).toEqual([1]);
+      const audits = await h.log.list({ kind: 'run', id: runId }, 20);
+      const stoppedEntry = audits.find((entry) => entry.action === 'run.stopped');
+      expect(stoppedEntry?.actor).toEqual(ACTOR);
+
+      // The executor's own end path closes the record cancelled and appends run_finished.
+      for (let at = 0; at < 200; at += 1) {
+        if ((await h.deps.runs.get(runId))?.endedAt !== undefined) break;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      const record = await h.deps.runs.get(runId);
+      expect(record?.outcome).toBe('cancelled');
+      const events = await h.deps.workOrders.events(workOrderId);
+      expect(
+        events.some((event) => event.type === 'run_finished' && event.runId === runId && event.outcome === 'cancelled'),
+      ).toBe(true);
+
+      // The stop is a resume point, not a loss: the next run of the stage continues the session.
+      const resumeTransport = createFakeTransport([
+        { type: 'session_started', at: 2_100, sessionRef: 'sess-resumed' },
+        { type: 'finished', at: 2_200, reason: 'completed' },
+      ]);
+      const transports = createFakeTransportResolver();
+      transports.register(ACCOUNT, resumeTransport);
+      await executeRun(
+        { ...h.deps, transports },
+        { onAsk: async () => 'allow' },
+        {
+          item: {
+            id: ulidOf<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5F22'),
+            workOrderId,
+            repo: slugOf<'repo'>(REPO),
+            stage: slugOf<'stage'>('plan'),
+            route: { accountId: ACCOUNT },
+            priority: 0,
+            enqueuedAt: 2_000,
+          },
+          role: RUN_ROLE,
+          prompt: 'do the work again',
+          cwd: '/wt/acme/wo',
+          capabilities: [],
+        },
+        undefined,
+        undefined,
+        undefined,
+        runControl,
+      );
+      expect(resumeTransport.requests()[0]?.resume).toEqual({ sessionRef: 'sess-parked' });
+      const runs = await h.deps.runs.listForWorkOrder(workOrderId);
+      expect(runs[runs.length - 1]?.attempt).toBe(record?.attempt);
+    });
+
+    it('A-362: a repeated stop while the run is still live is an ok no-op', async () => {
+      const h = await createHarness();
+      const parked = createParkedTransport({ stopHolds: true });
+      const runControl = createRunControl();
+      const api = runControlApi(h, runControl);
+      const runId = await startLiveRun(h, parked.transport, runControl, ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5F30'), ulidOf<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5F31'));
+
+      expect(await api.command(ACTOR, { type: 'run.stop', runId })).toEqual({ ok: true });
+      expect(await api.command(ACTOR, { type: 'run.stop', runId })).toEqual({ ok: true });
+
+      expect(parked.stopCount()).toBe(1);
+    });
+
+    it('A-363: an unknown id answers not_found and writes nothing — not even an audit entry', async () => {
+      const h = await createHarness();
+      const api = runControlApi(h, createRunControl());
+      const seen: UiEvent[] = [];
+      api.subscribe((event) => seen.push(event));
+      const auditsBefore = h.log.entries().length;
+
+      expect(await api.command(ACTOR, { type: 'run.stop', runId: RUN })).toEqual({ ok: false, code: 'not_found' });
+      expect(await api.command(ACTOR, { type: 'run.steer', runId: RUN, note: 'notu' })).toEqual({ ok: false, code: 'not_found' });
+      expect(await api.command(ACTOR, { type: 'run.stop', runId: 'not-a-ulid' })).toEqual({ ok: false, code: 'invalid_id' });
+
+      expect(h.log.entries().length).toBe(auditsBefore);
+      expect(seen).toEqual([]);
+    });
+
+    it('A-363: an ended run answers not_active and writes nothing', async () => {
+      const h = await createHarness();
+      const runControl = createRunControl();
+      const api = runControlApi(h, runControl);
+      // A finished scripted run: the executor's finally has detached it, the record stands ended.
+      const script: readonly AgentEvent[] = [
+        { type: 'session_started', at: 1_600, sessionRef: 'sess-done' },
+        { type: 'finished', at: 1_700, reason: 'completed' },
+      ];
+      const transports = createFakeTransportResolver();
+      transports.register(ACCOUNT, createFakeTransport([...script]));
+      const workOrderId = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5F40');
+      await seedRouting(h);
+      await h.deps.workOrders.create({
+        id: workOrderId,
+        project: slugOf<'project'>(PROJECT),
+        repo: slugOf<'repo'>(REPO),
+        flow: slugOf<'flow'>('board-flow'),
+        title: 'Run it',
+        createdAt: 1_000,
+        createdBy: ACTOR,
+      });
+      await executeRun(
+        { ...h.deps, transports },
+        { onAsk: async () => 'allow' },
+        {
+          item: {
+            id: ulidOf<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5F41'),
+            workOrderId,
+            repo: slugOf<'repo'>(REPO),
+            stage: slugOf<'stage'>('plan'),
+            route: { accountId: ACCOUNT },
+            priority: 0,
+            enqueuedAt: 1_000,
+          },
+          role: RUN_ROLE,
+          prompt: 'do the work',
+          cwd: '/wt/acme/wo',
+          capabilities: [],
+        },
+        undefined,
+        undefined,
+        undefined,
+        runControl,
+      );
+      const runs = await h.deps.runs.listForWorkOrder(workOrderId);
+      const ended = runs[runs.length - 1];
+      if (ended === undefined) throw new Error('the fixture run must exist');
+      const auditsBefore = h.log.entries().length;
+
+      expect(await api.command(ACTOR, { type: 'run.stop', runId: ended.id })).toEqual({ ok: false, code: 'not_active' });
+      expect(await api.command(ACTOR, { type: 'run.steer', runId: ended.id, note: 'notu' })).toEqual({ ok: false, code: 'not_active' });
+
+      expect(h.log.entries().length).toBe(auditsBefore);
+    });
+
+    it('A-364: run.steer forwards the trimmed note, audits it, and emits exactly one run.updated', async () => {
+      const h = await createHarness();
+      const parked = createParkedTransport();
+      const runControl = createRunControl();
+      const api = runControlApi(h, runControl);
+      const workOrderId = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5F50');
+      const runId = await startLiveRun(h, parked.transport, runControl, workOrderId, ulidOf<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5F51'));
+      const seen: UiEvent[] = [];
+      api.subscribe((event) => seen.push(event));
+      const eventsBefore = (await h.deps.workOrders.events(workOrderId)).length;
+
+      const steered = await api.command(ACTOR, { type: 'run.steer', runId, note: '  dosyalara bak  ' });
+
+      expect(steered).toEqual({ ok: true });
+      expect(parked.steers()).toEqual(['dosyalara bak']);
+      const audits = await h.log.list({ kind: 'run', id: runId }, 20);
+      expect(
+        audits.some((entry) => entry.action === 'run.steered' && entry.detail?.['note'] === 'dosyalara bak' && entry.actor.kind === 'user'),
+      ).toBe(true);
+      // One run.updated, no work-order append, no fold change (R-18 stays the only cancelled rule).
+      expect(seen).toEqual([{ type: 'run.updated', runId }]);
+      expect(await h.deps.workOrders.events(workOrderId)).toHaveLength(eventsBefore);
+    });
+
+    it('A-364: an empty, whitespace-only or oversized note answers bad_input and reaches nothing', async () => {
+      const h = await createHarness();
+      const parked = createParkedTransport();
+      const runControl = createRunControl();
+      const api = runControlApi(h, runControl);
+      const runId = await startLiveRun(h, parked.transport, runControl, ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5F60'), ulidOf<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5F61'));
+      const seen: UiEvent[] = [];
+      api.subscribe((event) => seen.push(event));
+      const auditsBefore = h.log.entries().length;
+
+      expect(await api.command(ACTOR, { type: 'run.steer', runId, note: '' })).toEqual({ ok: false, code: 'bad_input' });
+      expect(await api.command(ACTOR, { type: 'run.steer', runId, note: ' \n\t ' })).toEqual({ ok: false, code: 'bad_input' });
+      expect(await api.command(ACTOR, { type: 'run.steer', runId, note: 'x'.repeat(2001) })).toEqual({ ok: false, code: 'bad_input' });
+
+      expect(parked.steers()).toEqual([]);
+      expect(h.log.entries().length).toBe(auditsBefore);
+      expect(seen).toEqual([]);
+    });
+
+    it('A-361: without a composed registry both commands answer not_found', async () => {
+      const h = await createHarness();
+      const api = createApi(h.deps);
+      expect(await api.command(ACTOR, { type: 'run.stop', runId: RUN })).toEqual({ ok: false, code: 'not_found' });
+      expect(await api.command(ACTOR, { type: 'run.steer', runId: RUN, note: 'notu' })).toEqual({ ok: false, code: 'not_found' });
+    });
+
+    it('A-365: the boundary speaks for the operator it received — a payload actor field is never read', async () => {
+      const h = await createHarness();
+      const parked = createParkedTransport();
+      const runControl = createRunControl();
+      const api = runControlApi(h, runControl);
+      const runId = await startLiveRun(h, parked.transport, runControl, ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5F70'), ulidOf<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5F71'));
+
+      // The wire shape carries no actor field (the closed union is the compile-time half); a
+      // renderer that smuggles one anyway changes nothing — the audit names the api's own actor.
+      const forged = { type: 'run.steer', runId, note: 'notu', actor: { kind: 'agent' } } as unknown as Parameters<typeof api.command>[1];
+      expect(await api.command(ACTOR, forged)).toEqual({ ok: true });
+
+      const audits = await h.log.list({ kind: 'run', id: runId }, 20);
+      expect(audits.some((entry) => entry.action === 'run.steered' && entry.actor === ACTOR)).toBe(true);
+      expect(parked.steers()).toEqual(['notu']);
+    });
+  });
+
+  describe('app update', () => {    // The checker is composed beside deps at the root, so these tests hand it straight to the api
     // the way electron/main.ts does — no harness, no work orders, the port alone.
     const updateApi = (updates?: UpdateChecker) =>
       createApi(createFakeDeps(), undefined, undefined, undefined, updates);
@@ -1944,10 +2269,10 @@ describe('capabilities.import', () => {
   });
 });
 
-// --- Docket's own MCP repair (A-362) -------------------------------------------------------------------
+// --- Docket's own MCP repair (A-381) -------------------------------------------------------------------
 
 describe('mcp.restore', () => {
-  it('A-362: success answers the fresh status, and a second call after success is a no-op that answers ok', async () => {
+  it('A-381: success answers the fresh status, and a second call after success is a no-op that answers ok', async () => {
     const control = createFakeMcpListenerControl({ state: 'stopped', reason: 'listener_down' });
     const api = createApi(createFakeDeps({ mcpListener: control }));
     const first = await api.command(ACTOR, { type: 'mcp.restore' });
@@ -1957,7 +2282,7 @@ describe('mcp.restore', () => {
     expect(control.restarts()).toBe(1);
   });
 
-  it('A-362: each refusal keeps its typed error on the failure side', async () => {
+  it('A-381: each refusal keeps its typed error on the failure side', async () => {
     const control = createFakeMcpListenerControl({ state: 'stopped', reason: 'script_missing' });
     control.failWith('script_missing');
     const result = await createApi(createFakeDeps({ mcpListener: control })).command(ACTOR, { type: 'mcp.restore' });

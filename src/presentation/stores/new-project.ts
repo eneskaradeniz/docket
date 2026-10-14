@@ -259,7 +259,7 @@ export const connectedProviderOf = (view: unknown): boolean => {
   return Array.isArray(accounts) && accounts.length > 0;
 };
 
-/** The Docket MCP standing the AI entry rides (U-306): true only on a running view; null on a
+/** The Docket MCP standing the AI entry rides (U-315): true only on a running view; null on a
  *  failed read, which keeps whatever the panel held — a broken read never blocks the entry. */
 export const mcpRunningOf = (view: unknown): boolean | null => {
   if (isQueryFailure(view) || typeof view !== 'object' || view === null) return null;
@@ -345,7 +345,7 @@ export interface NewProjectState {
   readonly screen: SetupScreen;
   readonly form: NewProjectForm;
   readonly connectedProvider: boolean;
-  /** The built-in Docket MCP standing (U-306); true until the first read says otherwise. */
+  /** The built-in Docket MCP standing (U-315); true until the first read says otherwise. */
   readonly mcpRunning: boolean;
   readonly busy: boolean;
   readonly reasonKey: LabelKey | null;
@@ -619,7 +619,7 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
     refreshProvider: async () => {
       const reply: unknown = await api.query({ type: 'settings.accounts', catalog: 'skip' } satisfies Query);
       connectedProvider = connectedProviderOf(reply);
-      // The entry's second standing (U-306): the Docket MCP must be running; a failed read keeps
+      // The entry's second standing (U-315): the Docket MCP must be running; a failed read keeps
       // the last one instead of blocking the entry.
       const standing = mcpRunningOf(await api.query({ type: 'mcp.status' }));
       if (standing !== null) mcpRunning = standing;

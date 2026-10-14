@@ -1,5 +1,5 @@
 // ports/mcp-listener-control.ts — Docket's own MCP listener as the composition that starts it
-// sees it (A-361, A-362): one pure read of the standing, one repair action. The Electron
+// sees it (A-380, A-381): one pure read of the standing, one repair action. The Electron
 // composition implements this around the listener it already starts; the port itself starts
 // nothing, and neither member ever reads or returns a secret or a token value.
 import { err, type Result } from '../../domain/index';

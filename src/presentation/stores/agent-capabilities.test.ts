@@ -61,7 +61,7 @@ describe('createAgentCapabilitiesStore', () => {
   });
 });
 
-// --- the built-in MCP row (U-305, A-361, A-362) ---------------------------------------------------------
+// --- the built-in MCP row (U-314, A-380, A-381) ---------------------------------------------------------
 
 const stopped: McpStatusView = {
   state: 'stopped',
@@ -127,8 +127,8 @@ const builtinSegment = (html: string): string => {
   return html.slice(start, next === -1 ? undefined : next);
 };
 
-describe('the built-in MCP row (U-305)', () => {
-  it('U-305: the row is first with the badge, the standing and the reason; user entries follow in their own order', async () => {
+describe('the built-in MCP row (U-314)', () => {
+  it('U-314: the row is first with the badge, the standing and the reason; user entries follow in their own order', async () => {
     const { store } = await mcpSection(stopped, [userEntry('wiki'), userEntry('db')]);
     const html = draw(store);
     expect(html.indexOf('data-setting-row="Docket"')).toBeGreaterThanOrEqual(0);
@@ -143,7 +143,7 @@ describe('the built-in MCP row (U-305)', () => {
     expect(row).toContain('aria-live="polite"');
   });
 
-  it('U-305: the row carries no remove, archive, rename or edit control — absent, not disabled', async () => {
+  it('U-314: the row carries no remove, archive, rename or edit control — absent, not disabled', async () => {
     const { store } = await mcpSection(stopped, [userEntry('wiki')]);
     const row = builtinSegment(draw(store));
     // The only controls are the repair button and the roles link; nothing else ever renders.
@@ -152,7 +152,7 @@ describe('the built-in MCP row (U-305)', () => {
     expect(row).not.toContain('disabled=""');
   });
 
-  it('U-305: a running row shows Çalışıyor, announces politely, and carries no repair button', async () => {
+  it('U-314: a running row shows Çalışıyor, announces politely, and carries no repair button', async () => {
     const { store } = await mcpSection(running);
     const row = builtinSegment(draw(store));
     expect(row).toContain(TR['capabilities.mcp.running']);
@@ -161,21 +161,21 @@ describe('the built-in MCP row (U-305)', () => {
     expect(row).not.toContain(TR['capabilities.mcp.rolesWithout']);
   });
 
-  it('U-305: the opted-out count is a link to the roles menu, not plain text', async () => {
+  it('U-314: the opted-out count is a link to the roles menu, not plain text', async () => {
     const { store } = await mcpSection(stopped);
     const row = builtinSegment(draw(store));
     expect(row).toContain('data-mcp-roles-without=""');
     expect(row).toContain(TR['capabilities.mcp.rolesWithout'].replace('{count}', '1'));
   });
 
-  it('U-305: an empty user list still shows the built-in row, never the empty card', async () => {
+  it('U-314: an empty user list still shows the built-in row, never the empty card', async () => {
     const { store } = await mcpSection(running, []);
     const html = draw(store);
     expect(html).toContain('data-setting-row="Docket"');
     expect(html).not.toContain('data-empty-card');
   });
 
-  it('U-305: Geri yükle shows a busy state, then the inline result of the restart', async () => {
+  it('U-314: Geri yükle shows a busy state, then the inline result of the restart', async () => {
     const { store } = await mcpSection(stopped, [], { ok: true, status: running });
     expect(store.state().mcpBusy).toBe(false);
     await store.restoreMcp();
@@ -187,7 +187,7 @@ describe('the built-in MCP row (U-305)', () => {
     expect(row).toContain('data-mcp-restore-result=""');
   });
 
-  it('U-305: a refused restart shows its typed sentence inline, the standing stays stopped', async () => {
+  it('U-314: a refused restart shows its typed sentence inline, the standing stays stopped', async () => {
     const { store, restoreCommands } = await mcpSection(stopped, [], { ok: false, code: 'script_missing', error: 'script_missing' });
     await store.restoreMcp();
     expect(restoreCommands).toContainEqual({ type: 'mcp.restore' });
@@ -197,7 +197,7 @@ describe('the built-in MCP row (U-305)', () => {
     expect(row).toContain(TR['capabilities.mcp.reason.script_missing']);
   });
 
-  it('U-305: the row copy is verbatim in both bundles and every sentence stays at most 8 words (U-178)', () => {
+  it('U-314: the row copy is verbatim in both bundles and every sentence stays at most 8 words (U-178)', () => {
     const keys = [
       'capabilities.mcp.builtin',
       'capabilities.mcp.running',

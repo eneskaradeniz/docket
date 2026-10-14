@@ -25,6 +25,10 @@ export type Command =
   | { readonly type: 'gate.attest'; readonly workOrderId: string; readonly gate: string; readonly noChangeNeeded: boolean } // answers when the changes gate's attestation is recorded
   | { readonly type: 'proposal.decide'; readonly id: string; readonly decision: 'approved' | 'rejected' }
   | { readonly type: 'permission.answer'; readonly runId: string; readonly askId: string; readonly decision: 'allow' | 'deny' }
+  // Stopping and steering the live run of a stage (A-361 … A-365). Both speak for the operator
+  // like every other command — no actor field exists on the wire.
+  | { readonly type: 'run.stop'; readonly runId: string } // errors: not_found (unknown id), not_active (no live run) (A-362, A-363)
+  | { readonly type: 'run.steer'; readonly runId: string; readonly note: string } // errors: bad_input (note), not_found, not_active (A-364)
   | { readonly type: 'deploy.approve'; readonly workOrderId: string; readonly gate: string; readonly commit: string; readonly confirmedEnvironment?: string }
   | { readonly type: 'account.save'; readonly id?: string; readonly provider: string; readonly label: string; readonly authMode: string; readonly plan?: string; readonly reserve?: { readonly short?: number; readonly long?: number }; readonly limitPolicy?: string }
   | { readonly type: 'account.adopt'; readonly sourcePath: string; readonly label: string; readonly importToken?: boolean }
@@ -66,7 +70,7 @@ export type Command =
   | { readonly type: 'app.update.apply' }
   // The Docket AI setup conversation (A-357 … A-359): one command starts it, one answers its read
   // asks; the messages themselves ride `chat.send` unchanged.
-  | { readonly type: 'setup.ai.start'; readonly repoPath: string; readonly draft?: string } // ok → { conversation } (A-357); no_provider (A-340), mcp_down (A-362)
+  | { readonly type: 'setup.ai.start'; readonly repoPath: string; readonly draft?: string } // ok → { conversation } (A-357); no_provider (A-340), mcp_down (A-381)
   | { readonly type: 'setup.read.answer'; readonly conversation: string; readonly path: string; readonly allow: boolean } // ok → { ok: true } (A-358)
   /** The quit modal is on screen (answer to `quit.requested`); without it the shell falls back to the native dialog. */
   | { readonly type: 'quit.ack' }
@@ -93,8 +97,8 @@ export type Command =
       readonly resolution: 'keep_remote' | 'keep_local';
     }
   // Restarts Docket's own MCP listener when it is down and answers the fresh standing; the
-  // failure side carries `error`, not `code` (A-362).
-  | { readonly type: 'mcp.restore' }; // ok → { status: McpStatusView } | { ok: false, error: 'endpoint_unavailable' | 'listener_failed' | 'script_missing' } (A-362)
+  // failure side carries `error`, not `code` (A-381).
+  | { readonly type: 'mcp.restore' }; // ok → { status: McpStatusView } | { ok: false, error: 'endpoint_unavailable' | 'listener_failed' | 'script_missing' } (A-381)
 
 /** A repo flow as the renderer sends it (A-345): the domain's `RepoFlow` with plain string ids
  *  and unparsed stage/binding bodies — api.ts narrows it with the same law the file world
@@ -168,7 +172,7 @@ export type CommandResult =
       readonly warnings?: readonly string[];
       readonly renames?: readonly { readonly id: string; readonly to: string }[];
       readonly version?: number;
-      /** Rides only `mcp.restore` (A-362): the standing the restart ended with. */
+      /** Rides only `mcp.restore` (A-381): the standing the restart ended with. */
       readonly status?: McpStatusView;
     }
   /** `roles` rides only `binding_exists`: the roles whose bindings still reference the account.
@@ -177,7 +181,7 @@ export type CommandResult =
    *  `issues` rides `definitions_invalid` on bundle import (A-342).
    *  `definitionIssues` rides `definitions_invalid` on definitions.save (A-352).
    *  `reasons` rides `blocked` on definitions.archive / definitions.delete (A-355).
-   *  `error` rides only `mcp.restore` (A-362): its typed refusal instead of a `code`. */
+   *  `error` rides only `mcp.restore` (A-381): its typed refusal instead of a `code`. */
   | {
       readonly ok: false;
       readonly code: string;

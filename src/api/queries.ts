@@ -30,6 +30,8 @@ export type { McpStatusView } from '../application';
 export type Query =
   | { readonly type: 'workOrder.detail'; readonly id: string }
   | { readonly type: 'workOrder.changes'; readonly workOrder: string } // → WorkOrderChangesView | not_found | invalid_id
+  | { readonly type: 'workOrders.stageFiles'; readonly id: string }
+  | { readonly type: 'workOrders.readStageFile'; readonly id: string; readonly path: string }
   | { readonly type: 'project.tree' }
   | { readonly type: 'repoStatus' } // → RepoStatusView[] (A-341)
   | { readonly type: 'repo.flow'; readonly repo: string } // → RepoFlowView (A-345)
@@ -51,8 +53,6 @@ export type Query =
   | { readonly type: 'run.events'; readonly runId: string }
   | { readonly type: 'permissions.open' }
   | { readonly type: 'app.update' }
-  | { readonly type: 'workOrders.stageFiles'; readonly id: string }
-  | { readonly type: 'workOrders.readStageFile'; readonly id: string; readonly path: string }
   | { readonly type: 'capabilities.candidates' } // no fresh: no cache (A-94)
   | { readonly type: 'capabilities.machine'; readonly providers: readonly string[] } // P-60: on-demand machine scan
   | { readonly type: 'proposals.list'; readonly status?: ProposalStatus } // → readonly ProposalListItem[] (A-128, A-129)
@@ -74,8 +74,8 @@ export type Query =
   // read ask of a setup conversation.
   | { readonly type: 'setup.draft' } // → { draft: { id, repoPath, mode, updatedAt } | null } (A-359)
   | { readonly type: 'setup.read.pending'; readonly conversation: string } // → { ask: { path, reason } | null, secrets: number } | not_found (A-358)
-  // The standing of Docket's own MCP listener (A-361): names only — no secret, no token.
-  | { readonly type: 'mcp.status' }; // → McpStatusView (A-361)
+  // The standing of Docket's own MCP listener (A-380): names only — no secret, no token.
+  | { readonly type: 'mcp.status' }; // → McpStatusView (A-380)
 
 export interface AttentionItem {
   readonly workOrderId: string;

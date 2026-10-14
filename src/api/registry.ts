@@ -37,6 +37,8 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
   'gate.attest': { input: 'workOrderId: WorkOrderId, gate: GateSlug, noChangeNeeded: boolean' },
   'proposal.decide': { input: 'id: ProposalId, decision: approved|rejected' },
   'permission.answer': { input: 'runId: RunId, askId: string, decision: allow|deny' },
+  'run.stop': { input: 'runId: RunId — errors: not_found, not_active (A-362, A-363)' },
+  'run.steer': { input: 'runId: RunId, note: string (trimmed, 1…2000 chars) — errors: bad_input, not_found, not_active (A-364)' },
   'deploy.approve': { input: 'workOrderId: WorkOrderId, gate: GateSlug, commit: string, confirmedEnvironment?: EnvSlug' },
   'account.save': {
     input:
@@ -86,14 +88,16 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
   'definitions.delete': { input: 'kind: roles, id: string' },
   'tracker.sync': { input: 'repo: RepoSlug' },
   'tracker.resolveConflict': { input: 'repo: RepoSlug, conflict: SyncConflict, resolution: keep_remote | keep_local' },
-  'setup.ai.start': { input: 'repoPath: string, draft?: string — errors: no_provider, bad_input, not_found (A-357), mcp_down (A-362)' },
+  'setup.ai.start': { input: 'repoPath: string, draft?: string — errors: no_provider, bad_input, not_found (A-357), mcp_down (A-381)' },
   'setup.read.answer': { input: 'conversation: ConversationId, path: string, allow: boolean (A-358)' },
-  'mcp.restore': { input: 'no input — ok → { status: McpStatusView }, error: endpoint_unavailable | listener_failed | script_missing (A-362)' },
+  'mcp.restore': { input: 'no input — ok → { status: McpStatusView }, error: endpoint_unavailable | listener_failed | script_missing (A-381)' },
 };
 
 export const QUERY_REGISTRY: Record<Query['type'], RegistryEntry> = {
   'workOrder.detail': { input: 'id: WorkOrderId' },
   'workOrder.changes': { input: 'workOrder: WorkOrderId' },
+  'workOrders.stageFiles': { input: 'id: WorkOrderId' },
+  'workOrders.readStageFile': { input: 'id: WorkOrderId, path: string' },
   'repoStatus': { input: 'no input' },
   'repo.flow': { input: 'repo: RepoSlug' },
   'project.tree': { input: 'no input' },
@@ -115,8 +119,6 @@ export const QUERY_REGISTRY: Record<Query['type'], RegistryEntry> = {
   'run.events': { input: 'runId: RunId' },
   'permissions.open': { input: 'no input' },
   'app.update': { input: 'no input' },
-  'workOrders.stageFiles': { input: 'id: WorkOrderId' },
-  'workOrders.readStageFile': { input: 'id: WorkOrderId, path: string' },
   'capabilities.candidates': { input: 'no input' },
   'capabilities.machine': { input: 'providers: string[]' },
   'proposals.list': { input: "status?: 'pending' | 'approved' | 'rejected' | 'stale'" },
@@ -135,5 +137,5 @@ export const QUERY_REGISTRY: Record<Query['type'], RegistryEntry> = {
   'tracker.linkStatus': { input: 'repo: RepoSlug' },
   'setup.draft': { input: 'no input (A-359)' },
   'setup.read.pending': { input: 'conversation: ConversationId (A-358)' },
-  'mcp.status': { input: 'no input → McpStatusView (A-361)' },
+  'mcp.status': { input: 'no input → McpStatusView (A-380)' },
 };

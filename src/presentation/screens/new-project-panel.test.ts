@@ -118,7 +118,7 @@ describe('the Proje ekle panel', () => {
     expect(screen).not.toMatch(/rounded-(?!control|card|panel|full)/);
   });
 
-  it('U-306: the MCP sentence-button is wired to the settings panel\'s MCP section, the provider line\'s pattern', () => {
+  it('U-315: the MCP sentence-button is wired to the settings panel\'s MCP section, the provider line\'s pattern', () => {
     expect(screen).toContain('data-setup-no-mcp=""');
     expect(screen).toContain('onOpenMcp?.()');
     expect(shell).toContain("onOpenMcp={() => openSettings('mcp')}");

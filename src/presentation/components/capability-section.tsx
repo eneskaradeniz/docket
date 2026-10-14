@@ -61,7 +61,7 @@ export interface CapabilitySectionProps {
   readonly store: AgentCapabilitiesStore;
   readonly marks: ProviderMarksStore;
   readonly active: boolean;
-  /** The built-in MCP row's "N rolde kapalı" link (U-305): the settings panel's own section switch. */
+  /** The built-in MCP row's "N rolde kapalı" link (U-314): the settings panel's own section switch. */
   readonly onOpenRoles?: () => void;
 }
 
@@ -234,7 +234,7 @@ export function CapabilitySection({ locale, section, store, marks, active, onOpe
   }
 
   const items = state.definitions[section];
-  // The MCP menu's first row is the built-in Docket entry (U-305); with no user entry at all the
+  // The MCP menu's first row is the built-in Docket entry (U-314); with no user entry at all the
   // menu still shows it, so the empty card is never its face.
   const builtinRow =
     section === 'mcp' ? (

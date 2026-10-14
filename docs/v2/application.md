@@ -1276,9 +1276,7 @@ export function readStageFile(
   input: { readonly id: WorkOrderId; readonly path: string },
 ): Promise<Result<WorktreeFilePreview, StageFilesError | WorktreeFileError>>;
 
-// queries.ts
-| { readonly type: 'workOrders.stageFiles'; readonly id: string }
-| { readonly type: 'workOrders.readStageFile'; readonly id: string; readonly path: string }
+// queries.ts — workOrders.stageFiles / workOrders.readStageFile removed 2026-10-14, #1108: U-231's changes list replaced the card, and no reader remained.
 ```
 
 Rules:
@@ -2022,7 +2020,37 @@ keyed by conversation id), the commands `setup.ai.start` and `setup.read.answer`
 Addendum 2026-10-14 (#1120): the built-in Docket MCP row — the `McpListenerControl` port (the
 standing of Docket's own MCP listener and its one repair, implemented by the Electron composition
 around the listener it already starts), the query `mcp.status` and the command `mcp.restore`.
-Rules A-361 … A-362; the UI rules are U-305 and U-306 (docs/v2/ui.md).
+Rules A-380 … A-381; the UI rules are U-314 and U-315 (docs/v2/ui.md).
 
-- **A-361** (added 2026-10-14, #1120) `mcp.status` answers from `McpListenerControl.status()` plus the tool-name constants and the roles with `docketTools === false`; it never starts anything and never reads a secret or a token.
-- **A-362** (added 2026-10-14, #1120) `mcp.restore` calls `restart()` once; success answers the new status; each failure maps to its typed error; it changes no role, no library entry and no run, and a second call after success is a no-op that answers `ok`.
+- **A-380** (added 2026-10-14, #1120) `mcp.status` answers from `McpListenerControl.status()` plus the tool-name constants and the roles with `docketTools === false`; it never starts anything and never reads a secret or a token.
+- **A-381** (added 2026-10-14, #1120) `mcp.restore` calls `restart()` once; success answers the new status; each failure maps to its typed error; it changes no role, no library entry and no run, and a second call after success is a no-op that answers `ok`.
+
+Addendum 2026-10-14 (#1110): stop and steer a running stage — the live-handle registry
+(`application/services/run-control.ts`, the permission-board pattern), the commands `run.stop`
+and `run.steer`, and the executor's attach/detach wiring. Rules A-361 … A-365.
+
+```ts
+// services/run-control.ts (A-361)
+export interface RunControlHandle {
+  stop(): Promise<void>;
+  steer(note: string): void;
+}
+export const STEER_NOTE_MAX_CHARS = 2000;
+export interface RunControl {
+  attach(runId: RunId, handle: RunControlHandle): void;   // executor, after the transport start succeeds
+  detach(runId: RunId): void;                              // executor, on every end path (the token finally)
+  active(): readonly RunId[];
+  stop(runId: RunId): Result<RunId, 'not_found' | 'not_active'>;
+  steer(runId: RunId, note: string): Result<RunId, 'not_found' | 'not_active' | 'bad_input'>;
+}
+
+// api/commands.ts (A-362, A-364)
+| { readonly type: 'run.stop'; readonly runId: string }
+| { readonly type: 'run.steer'; readonly runId: string; readonly note: string }
+```
+
+- **A-361** (added 2026-10-14, #1110) `RunControl` lifetime: the run executor attaches the transport's own handle right after the successful start (the same registration the permission board gave the run one step earlier) and detaches it on every end path — the same `finally` that revokes the run token (A-142/A-152's path), plus the loop's own early end (the no-output reminder re-run). A detached run answers `not_active`; an id this process never attached answers `not_found`. The registry is process-local like the board — after a relaunch nothing is stoppable (orphans are the child registry's, I-101).
+- **A-362** (added 2026-10-14, #1110) `run.stop` reaches the handle exactly once: the command's error paths are pure reads first (the record lookup and the live check), then one audit `run.stopped` (actor the command's own actor — the operator; subject the run) lands before the handle's `stop()` is called, and a repeated command while the run is still live is an ok no-op that never calls `stop()` again. The command itself writes nothing else: the transport's `finished { reason: 'cancelled' }` (I-30) flows through the executor's normal end path, so the record's `cancelled` outcome, the `run_finished` event, the board slot and the `workOrders.changed` push all come from `endRun` — the quit sweep (A-347) stays shutdown-only. Stop → resume is a product rule: re-enqueueing a stopped stage continues the stored `sessionRef` (the stage returns to `ready` at the same attempt; R-18 stays the only cancelled-run fold rule, unchanged).
+- **A-363** (added 2026-10-14, #1110) Unknown run id → `not_found`; a run this process attached and has since detached (ended) → `not_active`; a malformed id → `invalid_id` (A-21). All three leave every store unchanged and write no audit entry.
+- **A-364** (added 2026-10-14, #1110) `run.steer`: the note is trimmed, then must be 1…`STEER_NOTE_MAX_CHARS` (2000) characters — else `bad_input` before any lookup. Only a live run is steerable (`not_found`/`not_active` as A-363); success calls `steer(note)` with the trimmed text (a further user message, I-28), writes one audit `run.steered` carrying the note at the same bound (operator text is recordable; never an environment value or secret), and emits exactly one `run.updated { runId }`. The command appends no work-order event and changes no fold.
+- **A-365** (added 2026-10-14, #1110) The api boundary speaks for the operator (single user), like every other command: `run.stop` and `run.steer` carry no actor field, and the audit entries name the actor the api itself received.

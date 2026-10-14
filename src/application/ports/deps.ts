@@ -91,6 +91,6 @@ export interface AppDeps {
   readonly runDirs: RunDirs;
   /** How Docket's own MCP child is launched; undefined when this shell runs none. */
   readonly mcpEndpoint: McpEndpoint | undefined;
-  /** The standing of Docket's own MCP listener and its one repair (A-361, A-362). */
+  /** The standing of Docket's own MCP listener and its one repair (A-380, A-381). */
   readonly mcpListener: McpListenerControl;
 }

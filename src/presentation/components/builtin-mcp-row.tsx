@@ -1,4 +1,4 @@
-// components/builtin-mcp-row.tsx — the first, permanent row of the MCP menu (U-305): Docket's own
+// components/builtin-mcp-row.tsx — the first, permanent row of the MCP menu (U-314): Docket's own
 // server with its live standing and its one repair. The row is not a library entry (A-144), so no
 // remove, archive, rename or edit control ever renders here — absent, not disabled.
 import type { McpStatusView } from '../../api/queries';

@@ -236,7 +236,7 @@ describe('the setup conversation boundary', () => {
     expect(await h.api.command(USER, { type: 'setup.ai.start', repoPath: REPO, draft: '01ARZ3NDEKTSV4RRFFQ69G5FA0' })).toMatchObject({ ok: false, code: 'not_found' });
   });
 
-  it('A-362: a down listener refuses the start with mcp_down instead of a silent empty thread', async () => {
+  it('A-381: a down listener refuses the start with mcp_down instead of a silent empty thread', async () => {
     const h = await seed({
       endpoint: ENDPOINT,
       mcpListener: createFakeMcpListenerControl({ state: 'stopped', reason: 'listener_down' }),

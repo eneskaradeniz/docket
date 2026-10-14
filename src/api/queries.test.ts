@@ -2230,10 +2230,10 @@ describe('tracker.linkStatus', () => {
   });
 });
 
-// --- Docket's own MCP standing (A-361) -----------------------------------------------------------------
+// --- Docket's own MCP standing (A-380) -----------------------------------------------------------------
 
 describe('mcp.status', () => {
-  it('A-361: answers the control\'s standing with the per-kind tool names and the opted-out roles', async () => {
+  it('A-380: answers the control\'s standing with the per-kind tool names and the opted-out roles', async () => {
     const definitions = createFakeDefinitionStore();
     definitions.seed('library/roles/quiet/v1.yaml', JSON.stringify({ id: 'quiet', name: 'Quiet', docketTools: false }));
     const control = createFakeMcpListenerControl({ state: 'stopped', reason: 'listener_down' });
@@ -2245,7 +2245,7 @@ describe('mcp.status', () => {
     expect(view.rolesWithout).toEqual(['quiet']);
   });
 
-  it('A-361: the query starts nothing — a running control is read, never restarted', async () => {
+  it('A-380: the query starts nothing — a running control is read, never restarted', async () => {
     const control = createFakeMcpListenerControl();
     const view = (await createApi(createFakeDeps({ mcpListener: control })).query({ type: 'mcp.status' })) as McpStatusView;
     expect(view.state).toBe('running');

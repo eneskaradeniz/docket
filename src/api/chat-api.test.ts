@@ -497,7 +497,7 @@ describe('chat queries', () => {
 });
 
 describe('chat commands', () => {
-  it('A-362: a down listener refuses a turn with mcp_down — the composer\'s sentence, never a started turn', async () => {
+  it('A-381: a down listener refuses a turn with mcp_down — the composer\'s sentence, never a started turn', async () => {
     const h = await seed({
       withTurn: true,
       mcpListener: createFakeMcpListenerControl({ state: 'stopped', reason: 'listener_down' }),

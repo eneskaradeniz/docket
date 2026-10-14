@@ -107,7 +107,7 @@ export type CreateDraft =
 
 export type AgentView = 'list' | 'import' | 'create';
 
-/** The restore refusal sentences (U-305): the stopped reasons in restart vocabulary. */
+/** The restore refusal sentences (U-314): the stopped reasons in restart vocabulary. */
 export const MCP_RESTORE_ERROR_KEY: Readonly<Record<'endpoint_unavailable' | 'listener_failed' | 'script_missing', LabelKey>> = {
   endpoint_unavailable: 'capabilities.mcp.reason.no_endpoint',
   listener_failed: 'capabilities.mcp.reason.listener_down',
@@ -136,7 +136,7 @@ export interface AgentCapabilitiesState {
   readonly createDraft: CreateDraft | null;
   readonly confirmDiscard: boolean;
   readonly saving: boolean;
-  /** The built-in Docket row's standing (U-305); null until the MCP section first reads it. */
+  /** The built-in Docket row's standing (U-314); null until the MCP section first reads it. */
   readonly mcp: McpStatusView | null;
   readonly mcpBusy: boolean;
   /** The one inline result line of "Geri yükle": restored, or the typed refusal sentence. */
@@ -521,7 +521,7 @@ export const createAgentCapabilitiesStore = (deps: AgentCapabilitiesDeps): Agent
         });
         return;
       }
-      // The MCP section's first row is the built-in standing (U-305); a failed read keeps the
+      // The MCP section's first row is the built-in standing (U-314); a failed read keeps the
       // last good one instead of blanking the row.
       const mcpReply: unknown = section === 'mcp' ? await deps.api.query({ type: 'mcp.status' } satisfies Query) : null;
       const mcp = section !== 'mcp' ? state.mcp : isQueryFailure(mcpReply) ? state.mcp : (mcpReply as McpStatusView);
@@ -677,7 +677,7 @@ export const createAgentCapabilitiesStore = (deps: AgentCapabilitiesDeps): Agent
     cancelCreate: () => {
       publish({ ...state, createDraft: null, view: 'list' });
     },
-    // The built-in row's one repair (U-305, A-362): one command, then the fresh standing and the
+    // The built-in row's one repair (U-314, A-381): one command, then the fresh standing and the
     // inline result line — "Geri yüklendi" or the typed refusal's own sentence. A success carries
     // its own standing; a refusal re-reads, because a refused restart may still have changed it.
     restoreMcp: async () => {

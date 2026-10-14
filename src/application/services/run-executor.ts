@@ -49,6 +49,7 @@ import { attachDocketCapability } from './mcp-attach';
 import { catalogOrEmpty, matchIdFor } from './match-id';
 import { DEFAULT_MODEL_CONSENT, defaultBillingOf, spendConsentSatisfied } from './spend-consent';
 import type { BoardHooks } from './permission-board';
+import type { RunControl } from './run-control';
 import { buildHandoff, commitCheckpoint, listActiveMemoryNotes, proposeMemory } from '../use-cases/index';
 
 export interface MemoryProposalDraft {
@@ -520,7 +521,9 @@ const withDocketTools = (
   );
 
 /** A-142: the run's token ends with the run on every path — a normal finish, a limit, a failed
- *  start, a dried-up stream and an exception alike — so the revoke lives in one `finally`. */
+ *  start, a dried-up stream and an exception alike — so the revoke lives in one `finally`. The
+ *  live handle rides the same path (A-361): detaching beside the revoke is what makes an ended
+ *  run answer `not_active` on every end path without a second registration site. */
 export async function executeRun(
   deps: ExecuteDeps,
   permissions: PermissionGate,
@@ -528,11 +531,12 @@ export async function executeRun(
   board?: BoardHooks,
   notify?: RunEventNotify,
   workOrdersChanged?: WorkOrdersChangedNotify,
+  runControl?: Pick<RunControl, 'attach' | 'detach'>,
 ): Promise<ExecuteOutcome> {
   let started: RunId | undefined;
   let runDir: RunDir | undefined;
   try {
-    return await driveRun(deps, permissions, input, board, notify, workOrdersChanged, {
+    return await driveRun(deps, permissions, input, board, runControl, notify, workOrdersChanged, {
       runId: (runId) => {
         started = runId;
       },
@@ -541,7 +545,10 @@ export async function executeRun(
       },
     });
   } finally {
-    if (started !== undefined) deps.runTokens.revoke(started);
+    if (started !== undefined) {
+      deps.runTokens.revoke(started);
+      runControl?.detach(started);
+    }
     // A-152: the run-scoped config dies with the run; a failed removal never masks the outcome.
     await runDir?.dispose().catch(() => undefined);
   }
@@ -552,6 +559,7 @@ async function driveRun(
   permissions: PermissionGate,
   input: ExecuteRunInput,
   board: BoardHooks | undefined,
+  runControl: Pick<RunControl, 'attach' | 'detach'> | undefined,
   notify: RunEventNotify | undefined,
   workOrdersChanged: WorkOrdersChangedNotify | undefined,
   hooks: { readonly runId: (runId: RunId) => void; readonly runDir: (dir: RunDir) => void },
@@ -724,6 +732,11 @@ async function driveRun(
     handle = restart.value;
   }
 
+  // A-361: with the handle live the run is stoppable and steerable — the same registration the
+  // board gave it for permissions one transport start earlier. The transport's own handle IS the
+  // control handle; the executor adds nothing between the command path and the agent.
+  runControl?.attach(runId, handle);
+
   // A-60: the rolling note rides the persisted stream — extended and saved with every event batch,
   // so it exists the moment the account blocks.
   let note: RollingNote | undefined;
@@ -874,8 +887,10 @@ async function driveRun(
   }
 
   if (retryRoot !== undefined) {
-    // The first run's token and directory end with it; the reminder run mints its own.
+    // The first run's token and directory end with it; the reminder run mints its own. The live
+    // handle ends with the token (A-361) — the loop's own early end path.
     deps.runTokens.revoke(runId);
+    runControl?.detach(runId);
     await runDir.dispose().catch(() => undefined);
     sessionPrompt = `${sessionPrompt}\n${stageOutputReminder(retryRoot)}`;
     sessionResume = undefined;

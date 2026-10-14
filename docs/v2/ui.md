@@ -750,6 +750,11 @@ container.
   list heading, the truncated-list note, the truncated-preview note — and a failed read shows the
   failure code's label, never the raw code.
 
+Addendum 2026-10-14 (#1108): the paragraph above is superseded whole. The #972 note in the U-223
+section already took the card — U-231's read-only changes list replaced it — and this change removes
+the two queries the text names, `workOrders.stageFiles` and `workOrders.readStageFile`, dead since no
+presentation code called them. The rule text stands as history.
+
 ## Wizard Yetenekler — the capability step (U-58 … U-60)
 
 - **U-58** (setup wizard; amends U-35 through U-35a; added 2026-10-09, #860) Yetenekler reads
@@ -1810,8 +1815,17 @@ Added 2026-10-14, #1104; amends U-288.
 - **U-299** (added 2026-10-14, #1104) The action opens a modal confirm dialog (`role="dialog"`, `aria-modal="true"`, focus trap, Esc cancels, focus returns to the row). It has a version select (default latest), a choice between "Yerel değişiklikleri tut" (default) and "Kütüphane sürümünü kullan", and the list of fields that become overlay (labels, not keys) when the first choice is selected. Buttons: "Vazgeç" (default, focused) and "Bağla".
 - **U-300** (added 2026-10-14, #1104) After "Bağla" the draft changes and the row shows the version badge and, if newer versions exist, the usual "Yeni sürüm var" row; a polite live region announces "Rol kütüphaneye bağlandı". Nothing is saved before Kaydet. All copy lives in the TR and EN bundles, every sentence at most 8 words (U-178).
 
-## The built-in Docket MCP row (U-305, U-306)
+## The built-in Docket MCP row (U-314, U-315)
 
-Added 2026-10-14, #1120; implements A-361/A-362 (docs/v2/application.md).
-- **U-305** (added 2026-10-14, #1120) The MCP menu's first row is the built-in Docket entry of decision 1, 2 and 3; it has no remove, archive, rename or edit control; "Geri yükle" shows a busy state and then the inline result; the status is announced politely.
-- **U-306** (added 2026-10-14, #1120) "Docket AI ile kur" is disabled with the sentence of decision 4 while the status is not `running`; the sentence is a button to the built-in row; copy lives in the TR and EN bundles, every sentence at most 8 words (U-178).
+Added 2026-10-14, #1120; implements A-380/A-381 (docs/v2/application.md).
+- **U-314** (added 2026-10-14, #1120) The MCP menu's first row is the built-in Docket entry of decision 1, 2 and 3; it has no remove, archive, rename or edit control; "Geri yükle" shows a busy state and then the inline result; the status is announced politely.
+- **U-315** (added 2026-10-14, #1120) "Docket AI ile kur" is disabled with the sentence of decision 4 while the status is not `running`; the sentence is a button to the built-in row; copy lives in the TR and EN bundles, every sentence at most 8 words (U-178).
+
+## Running-card stop and steer (U-301 … U-305)
+
+Added 2026-10-14, #1110; extends U-226's decision-zone matrix and implements A-361 … A-365. (Numbered after #1104's U-298 … U-300 landed on main first.)
+- **U-301** While the work order's active run is live (status `running` and the view still holds a run without `endedAt`), the decision zone carries exactly one card: the quiet "Koşu sürüyor" line, the current stage's name, and the existing duration formatting (`detail.meta.duration`) — with the secondary `Durdur…` and `Yönlendir…` doors. No card when no run is live (a stale `running` standing, all runs ended) and none in `limit_waiting` (no live handle; the quiet state is enough).
+- **U-302** `Durdur…` opens the A3 inline confirm dialog (`InlineDialog`: focus trap, Esc, focus return; the trailing "…" because a further step opens). Confirm issues `run.stop`; the card stays until `workOrders.changed` shows the ended run — no optimistic removal. A `not_active` answer renders the calm "Koşu zaten bitti" line in the card (`detail.stop.alreadyEnded`) and refreshes.
+- **U-303** `Yönlendir…` opens a note dialog: multiline textarea, `Gönder` secondary button; Enter sends and Shift+Enter adds a line (the reject-box precedent). An empty or oversized note answers `bad_input`, which renders as the inline field error and the dialog stays open; anything else closes it and leaves the reporting to the toast.
+- **U-304** Both results map through U-8 (`commandResultKey`); no new tokens, no new hues — the two doors are secondary outline buttons, the confirm dialog carries the weight (there is no danger token on the card).
+- **U-305** Copy: every `detail.stop.*` / `detail.steer.*` key exists in tr and en (Durdur / Yönlendir fixed from the prototype's own list); no inline strings in `detail.tsx` or the decision card (scan).

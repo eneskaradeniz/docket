@@ -32,7 +32,7 @@ export interface NewProjectPanelProps {
   readonly onClose: () => void;
   readonly onDone: (done: NewProjectDone) => void;
   readonly onOpenAccounts?: () => void;
-  /** The "Docket MCP çalışmıyor" line's target (U-306): the settings panel's MCP section. */
+  /** The "Docket MCP çalışmıyor" line's target (U-315): the settings panel's MCP section. */
   readonly onOpenMcp?: () => void;
 }
 

@@ -1,4 +1,4 @@
-// use-cases/mcp-status.test.ts — A-361/A-362 on Docket's own MCP standing: the view is the
+// use-cases/mcp-status.test.ts — A-380/A-381 on Docket's own MCP standing: the view is the
 // control's state plus the server's own tool-name constants and the roles that opted out (R-81),
 // names only; restore calls restart() once, answers the new status, keeps each typed error, and a
 // second call after success is a no-op that answers ok.
@@ -13,8 +13,8 @@ const roleBody = (id: string, docketTools?: boolean): string =>
 
 const depsOf = (control: FakeMcpListenerControl, definitions: FakeDefinitionStore) => ({ mcpListener: control, definitions });
 
-describe('A-361: mcp.status', () => {
-  it('A-361: a running listener answers state running with the per-kind tool names and no reason', async () => {
+describe('A-380: mcp.status', () => {
+  it('A-380: a running listener answers state running with the per-kind tool names and no reason', async () => {
     const view = await mcpStatusView(depsOf(createFakeMcpListenerControl(), createFakeDefinitionStore()));
     expect(view.state).toBe('running');
     expect(view.reason).toBeUndefined();
@@ -28,7 +28,7 @@ describe('A-361: mcp.status', () => {
   });
 
   it.each(['no_endpoint', 'listener_down', 'script_missing'] as const)(
-    'A-361: a stopped listener passes its reason through (%s)',
+    'A-380: a stopped listener passes its reason through (%s)',
     async (reason) => {
       const view = await mcpStatusView(depsOf(createFakeMcpListenerControl({ state: 'stopped', reason }), createFakeDefinitionStore()));
       expect(view).toMatchObject({ state: 'stopped', reason });
@@ -36,7 +36,7 @@ describe('A-361: mcp.status', () => {
     },
   );
 
-  it('A-361: the roles whose current library version opted out are listed by id, latest version decides', async () => {
+  it('A-380: the roles whose current library version opted out are listed by id, latest version decides', async () => {
     const definitions = createFakeDefinitionStore();
     definitions.seed('library/roles/kapali/v1.yaml', roleBody('kapali', false));
     definitions.seed('library/roles/kapali/v2.yaml', roleBody('kapali', true));
@@ -48,8 +48,8 @@ describe('A-361: mcp.status', () => {
   });
 });
 
-describe('A-362: mcp.restore', () => {
-  it('A-362: success calls restart once and answers the new status', async () => {
+describe('A-381: mcp.restore', () => {
+  it('A-381: success calls restart once and answers the new status', async () => {
     const control = createFakeMcpListenerControl({ state: 'stopped', reason: 'listener_down' });
     const restored = await restoreMcpListener(depsOf(control, createFakeDefinitionStore()));
     expect(restored.ok).toBe(true);
@@ -58,7 +58,7 @@ describe('A-362: mcp.restore', () => {
   });
 
   it.each(['endpoint_unavailable', 'listener_failed', 'script_missing'] as const)(
-    'A-362: a restart refusal keeps its typed error (%s)',
+    'A-381: a restart refusal keeps its typed error (%s)',
     async (error) => {
       const control = createFakeMcpListenerControl({ state: 'stopped', reason: 'listener_down' });
       control.failWith(error);
@@ -67,7 +67,7 @@ describe('A-362: mcp.restore', () => {
     },
   );
 
-  it('A-362: a second restore after success is a no-op that answers ok', async () => {
+  it('A-381: a second restore after success is a no-op that answers ok', async () => {
     const control = createFakeMcpListenerControl({ state: 'stopped', reason: 'listener_down' });
     const first = await restoreMcpListener(depsOf(control, createFakeDefinitionStore()));
     const second = await restoreMcpListener(depsOf(control, createFakeDefinitionStore()));
@@ -77,7 +77,7 @@ describe('A-362: mcp.restore', () => {
     expect(control.restarts()).toBe(1);
   });
 
-  it('A-362: the answered status re-reads the roles too, not only the listener', async () => {
+  it('A-381: the answered status re-reads the roles too, not only the listener', async () => {
     const definitions = createFakeDefinitionStore();
     definitions.seed('library/roles/sessiz/v1.yaml', roleBody('sessiz', false));
     const control = createFakeMcpListenerControl({ state: 'stopped', reason: 'listener_down' });
