@@ -123,8 +123,7 @@ export interface RoleUpdateProposal {
 /** R-131: one proposal per non-detached binding below the library's latest version of its role,
  *  naming the overlay fields whose upstream value differs between the two versions. Applies
  *  nothing, never lists a detached stage, and is empty when everything is current. */
-export function roleUpdateProposals(
-  flow: RepoFlow,
+export function roleUpdateProposals(  flow: RepoFlow,
   library: readonly VersionRecord<RoleDef>[],
 ): readonly RoleUpdateProposal[] {
   const proposals: RoleUpdateProposal[] = [];
@@ -146,6 +145,42 @@ export function roleUpdateProposals(
     });
   }
   return proposals;
+}
+
+/** What a work order records at creation: the flow and every stage's effective role, accounts
+ *  and limit policy, copied so later library or repo edits never reach it. */
+export type RelinkError = 'not_detached' | 'unknown_role_version';
+
+export type RelinkKeep = 'overlay' | 'library';
+
+/** R-146: re-links a detached ref to a library version. The overlay choice is lossless — the
+ *  overlay holds exactly the fields where the detached body differs from the library body at
+ *  `version`, so the effective role is the detached body in every field but `id` and `active`.
+ *  The library choice keeps no overlay: the library body wins. */
+export function relinkRole(
+  ref: RoleRef,
+  library: readonly VersionRecord<RoleDef>[],
+  version: number,
+  keep: RelinkKeep,
+): Result<RoleRef, RelinkError> {
+  if (ref.detached === undefined) return { ok: false, error: 'not_detached' };
+  const body = library.find(
+    (candidate) => candidate.definitionId === ref.roleId && candidate.version === version,
+  )?.body;
+  if (body === undefined) return { ok: false, error: 'unknown_role_version' };
+  if (keep === 'library') return { ok: true, value: { roleId: ref.roleId, version } };
+  const overlay: Partial<Record<(typeof OVERLAY_FIELDS)[number], unknown>> = {};
+  for (const field of OVERLAY_FIELDS) {
+    if (!sameValue(ref.detached[field], body[field])) overlay[field] = ref.detached[field];
+  }
+  return {
+    ok: true,
+    value: {
+      roleId: ref.roleId,
+      version,
+      ...(Object.keys(overlay).length === 0 ? {} : { overlay: overlay as RoleOverlay }),
+    },
+  };
 }
 
 /** What a work order records at creation: the flow and every stage's effective role, accounts
