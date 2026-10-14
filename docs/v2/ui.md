@@ -1815,6 +1815,13 @@ Added 2026-10-14, #1104; amends U-288.
 - **U-299** (added 2026-10-14, #1104) The action opens a modal confirm dialog (`role="dialog"`, `aria-modal="true"`, focus trap, Esc cancels, focus returns to the row). It has a version select (default latest), a choice between "Yerel değişiklikleri tut" (default) and "Kütüphane sürümünü kullan", and the list of fields that become overlay (labels, not keys) when the first choice is selected. Buttons: "Vazgeç" (default, focused) and "Bağla".
 - **U-300** (added 2026-10-14, #1104) After "Bağla" the draft changes and the row shows the version badge and, if newer versions exist, the usual "Yeni sürüm var" row; a polite live region announces "Rol kütüphaneye bağlandı". Nothing is saved before Kaydet. All copy lives in the TR and EN bundles, every sentence at most 8 words (U-178).
 
+## Settings repository section (U-310 … U-311)
+
+Added 2026-10-14, #1106; amends U-288.
+- U-288 amendment (2026-10-14, #1106): the #1024 screen contract is reached from Settings — the section `repo` ("Depo ayarları", en: "Repository settings") in the `work` group after `providers`; the `roles` section stays the library roles menu (U-284).
+- **U-310** (added 2026-10-14, #1106; amends U-288) Settings has the section `repo` ("Depo ayarları") in the work group; opening it shows the #1024 screen contract: Akış, Roller, Limit politikası, save bar, discard confirm. It is reachable from the Settings menu and by keyboard like every other section.
+- **U-311** (added 2026-10-14, #1106) With no repository the section shows the empty state with guidance and a link to project setup; while loading it shows skeleton tiles; a failed `repo.flow` shows the error card with a retry button. All copy lives in the TR and EN bundles, every sentence at most 8 words (U-178).
+
 ## The built-in Docket MCP row (U-314, U-315)
 
 Added 2026-10-14, #1120; implements A-380/A-381 (docs/v2/application.md).

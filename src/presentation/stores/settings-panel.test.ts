@@ -71,7 +71,7 @@ describe('reclaimsPanelFocus', () => {
 describe('settings sections (U-28)', () => {
   it('U-28: the menu has three groups in order — Çalışma, Ajan yetenekleri, Uygulama — each with its sections in order', () => {
     expect(SETTINGS_MENU).toStrictEqual([
-      { id: 'work', sections: ['accounts', 'concurrency', 'providers'] },
+      { id: 'work', sections: ['accounts', 'concurrency', 'providers', 'repo'] },
       {
         id: 'agentCapabilities',
         sections: ['memory', 'roles', 'plugins', 'mcp', 'skills', 'commands', 'hooks'],
@@ -82,6 +82,7 @@ describe('settings sections (U-28)', () => {
       'accounts',
       'concurrency',
       'providers',
+      'repo',
       'memory',
       'roles',
       'plugins',
@@ -94,6 +95,14 @@ describe('settings sections (U-28)', () => {
     ]);
     expect(SETTINGS_SECTIONS).not.toContain('language');
     expect(SETTINGS_MENU.find((group) => group.id === 'work')?.sections).not.toContain('roles');
+  });
+
+  it("U-310: Depo ayarları sits in the Çalışma group right after Sağlayıcılar and opens by name like every other section", () => {
+    const work = SETTINGS_MENU.find((group) => group.id === 'work')?.sections ?? [];
+    expect(work.indexOf('repo')).toBe(work.indexOf('providers') + 1);
+    const opened = settingsPanelReducer(CLOSED_SETTINGS_PANEL, { type: 'open', origin: 'pointer', section: 'repo' });
+    expect(opened.section).toBe('repo');
+    expect(settingsPanelReducer(opened, { type: 'select', section: 'repo' }).subPage).toBeNull();
   });
 
   it('U-69: Eşzamanlılık is a section of the Çalışma group, after Hesaplar, and can be opened by name', () => {

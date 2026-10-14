@@ -12,12 +12,14 @@ import type { PaletteOrigin } from './search-palette';
  *  (key activation of the same). It decides where focus lands when the panel closes. */
 export type SettingsPanelOrigin = PaletteOrigin;
 
-/** The panel's sections: Çalışma — accounts, concurrency, providers; Ajan yetenekleri — the seven
- *  capability kinds; Uygulama — appearance (Dil and Tema) and update. Telefon is its own window. */
+/** The panel's sections: Çalışma — accounts, concurrency, providers, repo; Ajan yetenekleri — the
+ *  seven capability kinds; Uygulama — appearance (Dil and Tema) and update. Telefon is its own
+ *  window. `repo` is the per-repo flow/roles/limit screen (U-310); `roles` stays the library's. */
 export type SettingsSection =
   | 'accounts'
   | 'concurrency'
   | 'providers'
+  | 'repo'
   | 'memory'
   | 'roles'
   | 'plugins'
@@ -34,7 +36,7 @@ export interface SettingsMenuGroup {
 }
 
 export const SETTINGS_MENU: readonly SettingsMenuGroup[] = [
-  { id: 'work', sections: ['accounts', 'concurrency', 'providers'] },
+  { id: 'work', sections: ['accounts', 'concurrency', 'providers', 'repo'] },
   {
     id: 'agentCapabilities',
     sections: ['memory', 'roles', 'plugins', 'mcp', 'skills', 'commands', 'hooks'],

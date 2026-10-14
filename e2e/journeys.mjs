@@ -2067,6 +2067,7 @@ for (const [sizeName, theme] of combos) {
     'Hesaplar',
     'Eşzamanlılık',
     'Sağlayıcılar',
+    'Depo ayarları',
     'Hafıza',
     'Roller',
     'Eklentiler',
@@ -2150,6 +2151,37 @@ for (const [sizeName, theme] of combos) {
       panel.locator('[data-setting-row]').first().waitFor({ state: 'visible', timeout: SCAN_WAIT }),
     ]);
     await shot('eklentiler');
+
+    // Depo ayarları (U-310): the region and its three groups render on the real shell — the
+    // roadmap world holds one project with two repos, so the top tab bar shows too — and the
+    // walk from the click to the groups must stay free of console and page errors.
+    {
+      const repoErrors = [];
+      const onConsole = (msg) => {
+        if (msg.type() === 'error') repoErrors.push(msg.text());
+      };
+      const onPageError = (error) => repoErrors.push(String(error));
+      page.on('console', onConsole);
+      page.on('pageerror', onPageError);
+      try {
+        await section('Depo ayarları').click({ timeout: WAIT });
+        const repoRegion = panel.getByRole('region', { name: 'Depo ayarları' });
+        await repoRegion.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+        await Promise.race([
+          Promise.all(
+            ['Akış', 'Roller', 'Limit politikası'].map((group) =>
+              repoRegion.getByRole('group', { name: group }).waitFor({ state: 'visible', timeout: SCAN_WAIT }),
+            ),
+          ),
+          repoRegion.locator('[data-repo-empty]').waitFor({ state: 'visible', timeout: SCAN_WAIT }),
+        ]);
+      } finally {
+        page.off('console', onConsole);
+        page.off('pageerror', onPageError);
+      }
+      assert(repoErrors.length === 0, `Depo ayarları drew with console errors: ${repoErrors.join(' | ')}`);
+      await shot('depo-ayarlari');
+    }
 
     // MCP: the built-in Docket row is the menu's first row (U-314) — above every user entry, with
     // the Yerleşik badge, a live standing and no library control of its own.
