@@ -11,7 +11,9 @@ import type {
   Query,
   RoleListItem,
 } from '../../api/queries';
-import type { Actor, CapabilityKind, RoleDef, TranslationRow, VersionRecord, WriteScope } from '../../domain/index';
+import type { Actor, CapabilityKind, RemovalVerdict, RoleDef, TranslationRow, VersionRecord, WriteScope } from '../../domain/index';
+import { commandResultKey } from './results';
+import { removalActionOf } from './roles';
 import { machineCandidateImportable, supportFor } from '../../domain/index';
 import type { LabelKey } from '../labels/keys';
 import type { ProviderFact } from './candidates';
@@ -76,6 +78,8 @@ export interface RoleLibraryRow {
   readonly warningKey: LabelKey | null;
   readonly warningProviders: string;
   readonly pastVersions: RoleListItem['pastVersions'];
+  readonly removal: RemovalVerdict;
+  readonly stages: RoleListItem['stages'];
 }
 
 export interface MachineImportRow {
@@ -141,6 +145,8 @@ export interface AgentCapabilitiesState {
   readonly mcpBusy: boolean;
   /** The one inline result line of "Geri yükle": restored, or the typed refusal sentence. */
   readonly mcpResult: LabelKey | null;
+  readonly pastVersionsRole: string | null;
+  readonly removalFailure: { readonly id: string; readonly labelKey: LabelKey } | null;
 }
 
 export interface AgentCapabilitiesStore {
@@ -168,6 +174,9 @@ export interface AgentCapabilitiesStore {
   rowWarning(kind: CapabilityKind): LabelKey | null;
   rowWarningProviders(kind: CapabilityKind): string;
   roleWarning(role: RoleLibraryRow): LabelKey | null;
+  openPastVersions(roleId: string): void;
+  closePastVersions(): void;
+  removeLibraryItem(section: DefinitionSection | 'roles', id: string): Promise<void>;
 }
 
 export interface AgentCapabilitiesDeps {
@@ -211,6 +220,8 @@ const initialState = (): AgentCapabilitiesState => ({
   mcp: null,
   mcpBusy: false,
   mcpResult: null,
+  pastVersionsRole: null,
+  removalFailure: null,
 });
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -325,8 +336,24 @@ const mergeRoleRows = (
       warningKey: warning?.key ?? null,
       warningProviders: warning?.providers ?? '',
       pastVersions: item.pastVersions,
+      removal: item.removal,
+      stages: item.stages,
     };
   });
+};
+
+const reloadRoles = async (
+  deps: AgentCapabilitiesDeps,
+  kinds: Readonly<Record<string, CapabilityKind>>,
+  installed: readonly string[],
+  names: Readonly<Record<string, string>>,
+): Promise<readonly RoleLibraryRow[]> => {
+  const [listReply, library] = await Promise.all([
+    deps.api.query({ type: 'roles.list' } satisfies Query),
+    deps.roleLibrary(),
+  ]);
+  if (!Array.isArray(listReply)) return [];
+  return mergeRoleRows(listReply as RoleListItem[], library, kinds, installed, names);
 };
 
 export const createAgentCapabilitiesStore = (deps: AgentCapabilitiesDeps): AgentCapabilitiesStore => {
@@ -701,5 +728,34 @@ export const createAgentCapabilitiesStore = (deps: AgentCapabilitiesDeps): Agent
     rowWarning: (kind) => warningForKind(kind, state.installedProviders, state.providerNames)?.key ?? null,
     rowWarningProviders: (kind) => warningForKind(kind, state.installedProviders, state.providerNames)?.providers ?? '',
     roleWarning: (role) => role.warningKey,
+    openPastVersions: (roleId) => {
+      publish({ ...state, pastVersionsRole: roleId });
+    },
+    closePastVersions: () => {
+      publish({ ...state, pastVersionsRole: null });
+    },
+    removeLibraryItem: async (section, id) => {
+      if (section !== 'roles') return;
+      const row = state.roles.find((entry) => entry.id === id);
+      if (row === undefined) return;
+      const action = removalActionOf(row.removal);
+      if (action === 'blocked') return;
+      const command: Command =
+        action === 'archive'
+          ? { type: 'definitions.archive', kind: 'roles', id }
+          : { type: 'definitions.delete', kind: 'roles', id };
+      const result = await deps.api.command(deps.actor, command);
+      if (!result.ok) {
+        if (result.code === 'blocked') {
+          const roles = await reloadRoles(deps, state.capabilityKinds, state.installedProviders, state.providerNames);
+          publish({ ...state, roles, removalFailure: null });
+          return;
+        }
+        publish({ ...state, removalFailure: { id, labelKey: commandResultKey(command.type, result) } });
+        return;
+      }
+      const roles = await reloadRoles(deps, state.capabilityKinds, state.installedProviders, state.providerNames);
+      publish({ ...state, roles, removalFailure: null, pastVersionsRole: state.pastVersionsRole === id ? null : state.pastVersionsRole });
+    },
   };
 };
