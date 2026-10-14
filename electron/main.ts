@@ -41,6 +41,7 @@ import {
   createActionUndoer,
   executeRun,
   resolveDispatchLimits,
+  roleForStageRun,
 } from '../src/application/index';
 import type { CipherFns, NodeDeps } from '../src/infrastructure/index';
 import {
@@ -236,13 +237,7 @@ const runStartedItem = async (api: Api & RunEventFeed, board: PermissionBoard, i
       console.error(`cannot run queue item ${item.id}: definitions did not load`);
       return;
     }
-    const flow = loaded.value.flows.find((candidate) => candidate.id === record.flow);
-    const stage = flow?.stages.find((candidate) => candidate.id === item.stage);
-    const roleSlug = stage?.role ?? null;
-    const role =
-      roleSlug === null
-        ? undefined
-        : loaded.value.roles.find((candidate) => candidate.id === roleSlug);
+    const role = roleForStageRun(record, loaded.value, item.stage);
     if (role === undefined) {
       console.error(`cannot run queue item ${item.id}: its stage has no runnable role`);
       return;
