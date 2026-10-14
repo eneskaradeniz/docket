@@ -19,6 +19,8 @@ import type { CipherFns } from '../storage/keychain/index';
 import { MIGRATIONS } from '../storage/sqlite/index';
 import type { RandomBytes } from '../system/index';
 import { runGit } from '../vcs/index';
+import { createApi } from '../../api/index';
+import { TRACKER_LINK_TARGET } from '../../application/use-cases/tracker-sync';
 import { createNodeDeps, type NodeDeps, type NodeDepsConfig } from './create-node-deps';
 
 // --- fixtures ---------------------------------------------------------------------------------------
@@ -187,6 +189,7 @@ describe('createNodeDeps', () => {
     const main = await readFile(join(process.cwd(), 'electron', 'main.ts'), 'utf8');
     const call = /createApi\(([^;]*)\);/.exec(main)?.[1] ?? '';
     expect(call).toContain('node.adoption');
+    expect(call).toContain('node.trackers');
   });
 
   it('I-35: wires the account-test adapters — a redacting in-memory repo and real scratch directories', async () => {
@@ -524,6 +527,37 @@ describe('createNodeDeps', () => {
       hasOauthLogin: true,
     });
     expect(JSON.stringify(candidates)).not.toContain(sentinel);
+    node.close();
+  });
+
+  it('compose: tracker.sync is wired when the composition supplies a tracker resolver', async () => {
+    const node = makeNode({
+      trackerResolver: () => ({
+        forRepo: async () => ({
+          kind: 'fake',
+          search: async () => ({ ok: true, value: [] }),
+          get: async () => ({ ok: true, value: undefined }),
+          comment: async () => ({ ok: true, value: undefined }),
+          transition: async () => ({ ok: true, value: undefined }),
+          probePermissions: async () => ({
+            ok: true,
+            value: { read: true, comment: false, transition: false, edit: false },
+          }),
+          listMilestones: async () => ({ ok: true, value: { items: [] } }),
+          listIssues: async () => ({ ok: true, value: { items: [] } }),
+        }),
+      }),
+    });
+    await mkdir(join(dataDir, 'repos', REPO), { recursive: true });
+    await writeFile(
+      join(dataDir, 'repos', REPO, TRACKER_LINK_TARGET),
+      JSON.stringify({ tracker: 'github', connection: 'conn', scope: 'octo/demo', mode: 'read_only_mirror' }),
+      'utf8',
+    );
+
+    const api = createApi(node.deps, undefined, undefined, node.repos, undefined, undefined, undefined, undefined, undefined, undefined, node.trackers);
+    const synced = await api.command(USER, { type: 'tracker.sync', repo: REPO });
+    expect(synced).toEqual({ ok: true, syncedIssues: 0, syncedMilestones: 0, conflicts: [] });
     node.close();
   });
 

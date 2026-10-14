@@ -3,10 +3,17 @@
 // (RunTokens), and a tool name belongs to an allow-set of kinds — the page tools are shared, their
 // semantics decided by the token — while everything else a request carries is never executed.
 // Every failure answers a stable code and nothing more — no message, no stack, no echo of the input.
-import type { Actor, ConversationId, Page, PageId, PageKind } from '../../domain/index';
+import type { Actor, ConversationId, MemoryScope, Page, PageId, PageKind } from '../../domain/index';
 
 import type { AppDeps, RunTokenBinding, RunTokenKind } from '../ports';
-import { ackComments, pageDetail, publishPageUseCase, publishVersion, undeliveredComments } from '../use-cases/index';
+import {
+  ackComments,
+  pageDetail,
+  proposeMemory,
+  publishPageUseCase,
+  publishVersion,
+  undeliveredComments,
+} from '../use-cases/index';
 
 import { CHAT_TOOL_DEFINITIONS, createChatTools } from './chat-tools';
 import { CHAT_WRITE_TOOL_DEFINITIONS, CHAT_WRITE_TOOL_NAMES, createChatWriteTools, type DocketToolExtras } from './chat-write-tools';
@@ -31,6 +38,13 @@ export type { DocketToolCode, DocketToolDefinition, DocketToolRequest, DocketToo
 export type { DocketToolExtras };
 
 export const DOCKET_TOOL_LIMITS = { pagesPerRun: 20, callsPerMinute: 40, windowMs: 60_000 } as const;
+
+export const MEMORY_PROPOSAL_TEXT_MAX_CHARS = 500;
+
+/** Inline memory text is scanned through `SecretScanner` with this prefix plus the raw text. */
+export const MEMORY_PROPOSAL_SCAN_PREFIX = '\0docket:memory-proposal-scan\0';
+
+const MEMORY_SCOPES: ReadonlySet<string> = new Set(['global', 'project', 'repo']);
 
 export interface DocketTools {
   call(request: DocketToolRequest): Promise<DocketToolResponse>;
@@ -117,6 +131,21 @@ export const DOCKET_TOOL_DEFINITIONS: readonly DocketToolDefinition[] = [
       required: ['pageId'],
     },
   },
+  {
+    name: 'propose_memory',
+    description:
+      'Propose a memory note for the operator to approve (or auto-accept when enabled for that scope). ' +
+      '`text` is non-empty and at most 500 characters; `scope` is `global`, `project` or `repo` (project and repo ids come from this run). ' +
+      'Secret-shaped text is rejected.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: 'The note text (non-empty, at most 500 characters).' },
+        scope: { type: 'string', enum: ['global', 'project', 'repo'] },
+      },
+      required: ['text', 'scope'],
+    },
+  },
 ];
 
 /** The page tools both kinds serve identically on the wire. */
@@ -162,6 +191,10 @@ type DocketToolDeps = Pick<
   | 'actions'
   | 'grants'
   | 'proposals'
+  | 'memory'
+  | 'settings'
+  | 'workOrders'
+  | 'secretScanner'
 >;
 
 type Args = ToolArgs;
@@ -252,6 +285,41 @@ export function createDocketTools(deps: DocketToolDeps, extras: DocketToolExtras
       : fail(versioned.error.code);
   };
 
+  const memoryTextHasSecret = async (text: string): Promise<boolean> => {
+    const { findings } = await deps.secretScanner.scan(`${MEMORY_PROPOSAL_SCAN_PREFIX}${text}`);
+    return findings > 0;
+  };
+
+  const proposeMemoryTool = async (binding: RunBinding, args: Args): Promise<DocketToolResponse> => {
+    const { text, scope } = args;
+    if (typeof text !== 'string' || typeof scope !== 'string' || !MEMORY_SCOPES.has(scope)) return fail('bad_input');
+    const trimmed = text.trim();
+    if (trimmed === '' || trimmed.length > MEMORY_PROPOSAL_TEXT_MAX_CHARS) return fail('bad_input');
+    if (await memoryTextHasSecret(trimmed)) return fail('forbidden');
+
+    const workOrder = await deps.workOrders.get(binding.workOrderId);
+    let scopeId: string | undefined;
+    if (scope === 'project') {
+      scopeId = binding.project ?? workOrder?.project;
+      if (scopeId === undefined) return fail('bad_input');
+    } else if (scope === 'repo') {
+      scopeId = workOrder?.repo;
+      if (scopeId === undefined) return fail('bad_input');
+    }
+
+    const result = await proposeMemory(deps, {
+      scope: scope as MemoryScope,
+      ...(scopeId === undefined ? {} : { scopeId }),
+      text: trimmed,
+      sourceRun: binding.runId,
+    });
+
+    if (result.note !== undefined) {
+      return succeed({ outcome: 'accepted', proposalId: result.proposal.id, noteId: result.note.id });
+    }
+    return succeed({ outcome: 'pending', proposalId: result.proposal.id });
+  };
+
   const comments = async (binding: RunBinding, args: Args): Promise<DocketToolResponse> => {
     const pageId = parsePageId(args['pageId']);
     const { includeRead } = args;
@@ -313,6 +381,8 @@ export function createDocketTools(deps: DocketToolDeps, extras: DocketToolExtras
             return args === undefined ? fail('bad_input') : await publish(binding, by, args);
           case 'page_update':
             return args === undefined ? fail('bad_input') : await update(binding, by, args);
+          case 'propose_memory':
+            return args === undefined ? fail('bad_input') : await proposeMemoryTool(binding, args);
           default:
             return args === undefined ? fail('bad_input') : await comments(binding, args);
         }

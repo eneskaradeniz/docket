@@ -1,4 +1,4 @@
-// setup-contexts.test.ts — the setup registry (A-356 … A-358): the context a registration builds,
+// setup-contexts.test.ts — the setup registry (A-357 … A-359): the context a registration builds,
 // the ask bookkeeping the operator surface reads, the answers' grant and denial records, and the
 // draft an operator message persists.
 import { describe, expect, it } from 'vitest';
@@ -54,7 +54,7 @@ const registryOf = (drafts: SetupDraftStore): SetupConversations =>
   createSetupContexts({ clock: createFakeClock(1_000), ids: createFakeIdGen() }, { dataDir: DATA, drafts, reader: memoryReader() });
 
 describe('the setup context registry', () => {
-  it('A-356: register builds the read scope [repoPath, dataDir], fresh grants and a draft id, keyed by conversation', () => {
+  it('A-357: register builds the read scope [repoPath, dataDir], fresh grants and a draft id, keyed by conversation', () => {
     const registry = registryOf(recordingDrafts());
     const conversation = conversationOf(1);
     const context = registry.register({ conversation, repoPath: REPO });
@@ -66,7 +66,7 @@ describe('the setup context registry', () => {
     expect(registry.contextOf(conversationOf(2))).toBeUndefined();
   });
 
-  it('A-357: an ask records once with the reason line, pushes one event, and allow clears it into a session grant', async () => {
+  it('A-358: an ask records once with the reason line, pushes one event, and allow clears it into a session grant', async () => {
     const drafts = recordingDrafts();
     const registry = createSetupContexts(
       { clock: createFakeClock(1_000), ids: createFakeIdGen() },
@@ -95,7 +95,7 @@ describe('the setup context registry', () => {
     expect(retry.ok).toBe(true);
   });
 
-  it('A-357: a denied path is remembered for the conversation and a retry is a typed refusal, never a second ask', async () => {
+  it('A-358: a denied path is remembered for the conversation and a retry is a typed refusal, never a second ask', async () => {
     const registry = registryOf(recordingDrafts());
     const conversation = conversationOf(1);
     const context = registry.register({ conversation, repoPath: REPO });
@@ -115,7 +115,7 @@ describe('the setup context registry', () => {
     expect(registry.answer(conversationOf(9), OUTSIDE, true)).toBe(false);
   });
 
-  it('A-357: a secret-shaped read records no ask and counts the thread notice instead (U-277, A-336)', async () => {
+  it('A-358: a secret-shaped read records no ask and counts the thread notice instead (U-277, A-336)', async () => {
     const registry = registryOf(recordingDrafts());
     const conversation = conversationOf(1);
     const context = registry.register({ conversation, repoPath: REPO });
@@ -130,7 +130,7 @@ describe('the setup context registry', () => {
     expect(context.secrets).toBe(1);
   });
 
-  it('A-358: an operator message persists the draft — the conversation id and repo path only, never content', async () => {
+  it('A-359: an operator message persists the draft — the conversation id and repo path only, never content', async () => {
     const drafts = recordingDrafts();
     const registry = registryOf(drafts);
     const conversation = conversationOf(1);

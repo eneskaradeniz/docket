@@ -268,7 +268,12 @@ const PROJECT_ALPHA: ConversationScope = { kind: 'project', project: ALPHA };
 
 describe('A-204: tools by token kind', () => {
   it('A-204: run tokens list exactly the three page tools; a chat token\'s read tools open the list the write tools complete', () => {
-    expect(DOCKET_TOOL_DEFINITIONS_BY_KIND.run.map((tool) => tool.name)).toEqual(['page_publish', 'page_update', 'page_comments']);
+    expect(DOCKET_TOOL_DEFINITIONS_BY_KIND.run.map((tool) => tool.name)).toEqual([
+      'page_publish',
+      'page_update',
+      'page_comments',
+      'propose_memory',
+    ]);
     // A-204's own list was the three read tools; the shared page tools and the chat write tools
     // follow them (A-213), so the chat list begins with exactly these three, in order.
     expect(DOCKET_TOOL_DEFINITIONS_BY_KIND.chat.slice(0, 3).map((tool) => tool.name)).toEqual(['docket_get', 'docket_search', 'docket_read_file']);

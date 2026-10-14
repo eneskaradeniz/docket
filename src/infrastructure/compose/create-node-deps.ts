@@ -8,6 +8,7 @@ import type {
   AppDeps,
   ChatRunner,
   Clock,
+  CommandRunner,
   CredentialImporter,
   DocketToolExtras,
   DocketToolSetupExtras,
@@ -21,6 +22,7 @@ import type {
   TransportResolver,
 } from '../../application/index';
 import { createActionApplier, createChatRunner, createChatTurnLedger, createSetupContexts } from '../../application/index';
+import type { IssueTrackerResolver } from '../../application/services/tracker-sync-service';
 import { createMemoryAccountTestRepo } from './account-test-repo';
 import { createScratchDirs } from './scratch-dirs';
 import { createSetupDraftFiles, createSetupPathReader } from './setup-files';
@@ -84,6 +86,10 @@ export interface NodeDepsConfig {
   /** How the app launches its own MCP child (the shell knows its executable and the built script);
    * absent = no run is given Docket's tools. */
   readonly mcpEndpoint?: McpEndpoint;
+  /** Injected command runner for tests; production uses createCommandRunner from commandEnv. */
+  readonly commands?: CommandRunner;
+  /** Builds the per-repo tracker resolver; the shell passes createRepoTrackerResolver from forge. */
+  readonly trackerResolver?: (deps: AppDeps) => IssueTrackerResolver;
 }
 
 export interface NodeDeps {
@@ -105,10 +111,12 @@ export interface NodeDeps {
   /** The chat turn runner, built on the same ledger the write tools fill; the api slice (6e-5)
    *  exposes it, nothing here starts a turn on its own. */
   readonly chatRunner: ChatRunner;
-  /** The Docket AI setup registry (A-356 … A-358): the api's setup surface reads it, the tool
+  /** The Docket AI setup registry (A-357 … A-359): the api's setup surface reads it, the tool
    *  dispatch reads it through `docketToolExtras.setupContextOf`, the runner mints the setup token
    *  kind from it. Session state beside the ports, like the runner itself. */
   readonly setupContexts: SetupConversations;
+  /** Resolves the IssueTracker for a registered repo from tracker.yaml (github + gh auth only). */
+  readonly trackers: IssueTrackerResolver;
   close(): void;
 }
 
@@ -163,7 +171,7 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     memory: createSqliteMemoryStore(db),
     secrets,
     transports: config.transports,
-    commands: createCommandRunner({ env: config.commandEnv }),
+    commands: config.commands ?? createCommandRunner({ env: config.commandEnv }),
     secretScanner: createSecretScanner(),
     worktrees: createWorktrees({ root: join(config.dataDir, 'worktrees'), repos: repoPaths }),
     worktreeFiles: createWorktreeFiles(),
@@ -219,6 +227,7 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     setupContextOf: setupContexts.contextOf,
   };
   const chatRunner = createChatRunner(deps, { turnLedger: docketToolExtras.turnLedger, setupContexts });
+  const trackers = config.trackerResolver?.(deps) ?? { forRepo: async () => undefined };
   return ok({
     deps,
     quota,
@@ -229,6 +238,7 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     docketToolExtras,
     chatRunner,
     setupContexts,
+    trackers,
     adoption: { discovery: accountDiscovery, importer: credentialImporter },
     close: (): void => db.close(),
   });

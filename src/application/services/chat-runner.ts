@@ -57,7 +57,7 @@ export type ChatTurnError = ConversationError | { readonly code: 'busy' } | { re
 export interface ChatRunnerExtras {
   /** The ledger the chat write tools fill — the same instance, so the runner drains what the turn did. */
   readonly turnLedger: ChatTurnLedger;
-  /** The setup registry (A-356 … A-358): a conversation it holds gets its token minted with
+  /** The setup registry (A-357 … A-359): a conversation it holds gets its token minted with
    *  `conversationKind: 'setup'` and its draft persisted after each operator message. */
   readonly setupContexts?: Pick<SetupConversations, 'contextOf' | 'noteOperatorMessage'>;
 }
@@ -397,7 +397,7 @@ export function createChatRunner(deps: ChatRunnerDeps, extras: ChatRunnerExtras)
     if (before === undefined) return err({ code: 'not_found' });
     const appended = await appendUserMessage(deps, { conversation: input.conversation, message: input.message });
     if (!appended.ok) return err(appended.error);
-    // A setup conversation's draft persists after every operator message (A-358) — also when the
+    // A setup conversation's draft persists after every operator message (A-359) — also when the
     // turn itself cannot start below, because the message is stored either way (A-232).
     extras.setupContexts?.noteOperatorMessage(input.conversation);
     // A turn that cannot start still leaves the message stored; nothing runs (A-232). The check and
@@ -492,7 +492,7 @@ export function createChatRunner(deps: ChatRunnerDeps, extras: ChatRunnerExtras)
 
       const role = assistantRole(scope);
       const capabilities = await attachDocketCapability(deps, {
-        // A conversation the setup registry holds gets the setup token kind (A-358): the port's
+        // A conversation the setup registry holds gets the setup token kind (A-359): the port's
         // own optional field on the mint shape, never a second token.
         binding: {
           kind: 'chat',

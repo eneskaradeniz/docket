@@ -548,8 +548,11 @@ async function dialogWindowsCheck(target) {
   const workActions = work === null ? [] : work.actions.map((action) => action.name);
   const workVisible =
     work !== null &&
-    ['Oluştur', 'Vazgeç'].every((name) => work.actions.some((action) => action.name.includes(name) && action.inView)) &&
+    ['Aç', 'Vazgeç', 'Aç ve başlat'].every((name) => work.actions.some((action) => action.name.includes(name) && action.inView)) &&
     work.actions.some((action) => action.name.includes('Tarif et') && action.inView);
+  const viewportHeight = await page.evaluate(() => innerHeight);
+  const heightCeiling = Math.max(Math.round(viewportHeight * 0.6), 520);
+  const compactOk = work !== null && work.w <= 642 && work.h <= heightCeiling;
   await page.keyboard.press('Escape');
   await page.locator(selectors.newWorkOrder).waitFor({ state: 'detached', timeout: 4000 });
 
@@ -565,10 +568,17 @@ async function dialogWindowsCheck(target) {
   await page.locator(selectors.phoneWindow).waitFor({ state: 'detached', timeout: 4000 });
 
   if (work === null || phone === null) return { ok: false, detail: 'a dialog was not on screen' };
-  const ok = work.inside && work.outside.length === 0 && workVisible && phone.inside && phone.outside.length === 0 && pairDisabled;
+  const ok =
+    work.inside &&
+    work.outside.length === 0 &&
+    workVisible &&
+    compactOk &&
+    phone.inside &&
+    phone.outside.length === 0 &&
+    pairDisabled;
   return {
     ok,
-    detail: `1024×640 and 1152×720 (this pass ${work.w}x${work.h} / ${phone.w}x${phone.h}) work ${
+    detail: `U-251 compact ${compactOk ? 'ok' : `want w≤640 h<60vh got ${work.w}x${work.h}`}; 1024×640 and 1152×720 (this pass ${work.w}x${work.h} / ${phone.w}x${phone.h}) work ${
       work.inside && work.outside.length === 0 ? 'contained' : `overflow ${work.outside.slice(0, 3).join('; ')}`
     } actions ${workVisible ? workActions.slice(0, 4).join(', ') : 'missing'} phone ${
       phone.inside && phone.outside.length === 0 ? 'contained' : `overflow ${phone.outside.slice(0, 3).join('; ')}`

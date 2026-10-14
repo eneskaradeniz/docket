@@ -209,8 +209,13 @@ const setup = async (): Promise<Harness> => {
 // --- A-213: tool ownership by kind -------------------------------------------------------------------
 
 describe('A-213: tool ownership by kind', () => {
-  it('A-213: run lists its three page tools; chat lists the nine tools in order plus the setup tools', () => {
-    expect(DOCKET_TOOL_DEFINITIONS_BY_KIND.run.map((tool) => tool.name)).toEqual(['page_publish', 'page_update', 'page_comments']);
+  it('A-213: run lists its page tools plus propose_memory; chat lists the nine tools in order plus the setup tools', () => {
+    expect(DOCKET_TOOL_DEFINITIONS_BY_KIND.run.map((tool) => tool.name)).toEqual([
+      'page_publish',
+      'page_update',
+      'page_comments',
+      'propose_memory',
+    ]);
     // The setup tools (A-213's 2026-10-14 addendum) trail the nine: a setup token is a chat token
     // narrowed by conversationKind, so the listing shows them for the setup agent to call.
     expect(DOCKET_TOOL_DEFINITIONS_BY_KIND.chat.map((tool) => tool.name)).toEqual([

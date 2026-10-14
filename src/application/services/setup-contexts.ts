@@ -1,4 +1,4 @@
-// setup-contexts.ts — the registry of live Docket AI setup conversations (A-356 … A-358): one
+// setup-contexts.ts — the registry of live Docket AI setup conversations (A-357 … A-359): one
 // context per conversation id — the read scope, the session grants, the pending ask, the denied
 // paths, the secret count and the draft id — built by the composition root and read by the tool
 // dispatch (setupContextOf), the chat runner (the setup token kind, the draft after each operator
@@ -42,9 +42,9 @@ export interface SetupConversations {
   /** The operator's answer: allow records the session grant (A-335), deny the denied path
    *  (U-276); the matching pending ask clears. False = no such conversation. */
   answer(conversation: ConversationId, path: string, allow: boolean): boolean;
-  /** The runner's hook after an operator message appended: persists the draft (A-340, A-358). */
+  /** The runner's hook after an operator message appended: persists the draft (A-340, A-359). */
   noteOperatorMessage(conversation: ConversationId): void;
-  /** One coarse push per recorded ask (A-357): the api's channel carries the conversation id only. */
+  /** One coarse push per recorded ask (A-358): the api's channel carries the conversation id only. */
   subscribeAsk(listener: (conversation: ConversationId) => void): () => void;
   /** The newest stored draft, for the resume card (A-340). */
   newestDraft(): Promise<SetupDraft | undefined>;

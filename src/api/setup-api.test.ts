@@ -1,4 +1,4 @@
-// api/setup-api.test.ts — the Docket AI setup surface of the boundary (A-356 … A-359): the start
+// api/setup-api.test.ts — the Docket AI setup surface of the boundary (A-357 … A-360): the start
 // command and its refusals, the ask event and the answer loop over the real tool dispatch, the
 // setup token a live turn mints and the draft it persists, and the project_setup decision routing.
 import { describe, expect, it } from 'vitest';
@@ -194,7 +194,7 @@ const start = async (h: Harness, repoPath = REPO): Promise<string> => {
 };
 
 describe('the setup conversation boundary', () => {
-  it('A-356: setup.ai.start creates a global conversation and registers the context; no provider or a bad path refuses', async () => {
+  it('A-357: setup.ai.start creates a global conversation and registers the context; no provider or a bad path refuses', async () => {
     const h = await seed({ endpoint: ENDPOINT });
     const conversation = await start(h);
     expect(await h.deps.conversations.get(ulidOf<'conversation'>(conversation))).toMatchObject({ scope: { kind: 'global' }, title: '' });
@@ -214,7 +214,7 @@ describe('the setup conversation boundary', () => {
     expect(await bareApi.query({ type: 'setup.draft' })).toMatchObject({ ok: false, code: 'not_found' });
   });
 
-  it('A-356: a draft resumes onto its stored conversation; a missing draft or a dead conversation answers not_found', async () => {
+  it('A-357: a draft resumes onto its stored conversation; a missing draft or a dead conversation answers not_found', async () => {
     const h = await seed({ endpoint: ENDPOINT, withTurn: true });
     const conversation = await start(h);
     await h.api.command(USER, { type: 'chat.send', conversation, text: 'Bu repoyu kur' });
@@ -232,7 +232,7 @@ describe('the setup conversation boundary', () => {
     expect(await h.api.command(USER, { type: 'setup.ai.start', repoPath: REPO, draft: '01ARZ3NDEKTSV4RRFFQ69G5FA0' })).toMatchObject({ ok: false, code: 'not_found' });
   });
 
-  it('A-357: an ask through the real tool dispatch pushes one coarse event, the pending query answers it, and the answer clears it', async () => {
+  it('A-358: an ask through the real tool dispatch pushes one coarse event, the pending query answers it, and the answer clears it', async () => {
     const h = await seed({ endpoint: ENDPOINT, reader: { resolve: (path) => path, read: async () => ({ kind: 'file', content: 'plan' }) } });
     const conversationId = await start(h);
     const conversation = ulidOf<'conversation'>(conversationId);
@@ -264,7 +264,7 @@ describe('the setup conversation boundary', () => {
     expect(await h.api.command(USER, { type: 'setup.read.answer', conversation: idOf<'conversation'>(99), path: OUTSIDE, allow: true })).toMatchObject({ ok: false, code: 'not_found' });
   });
 
-  it('A-358: a live turn on a setup conversation mints conversationKind setup and persists the draft after the operator message', async () => {
+  it('A-359: a live turn on a setup conversation mints conversationKind setup and persists the draft after the operator message', async () => {
     const h = await seed({ endpoint: ENDPOINT, withTurn: true });
     const conversationId = await start(h);
     const sent = await h.api.command(USER, { type: 'chat.send', conversation: conversationId, text: 'Bu repoyu kur' });
@@ -281,7 +281,7 @@ describe('the setup conversation boundary', () => {
     expect(drafts.draft).toMatchObject({ mode: 'ai' });
   });
 
-  it('A-359: proposal.decide routes a project_setup proposal to the setup executor — approval writes definitions, rejection writes nothing', async () => {
+  it('A-360: proposal.decide routes a project_setup proposal to the setup executor — approval writes definitions, rejection writes nothing', async () => {
     const h = await seed({ endpoint: ENDPOINT });
     const created = await createProjectSetupProposal(
       { clock: h.deps.clock, ids: h.deps.ids, log: h.deps.log, proposals: h.deps.proposals },

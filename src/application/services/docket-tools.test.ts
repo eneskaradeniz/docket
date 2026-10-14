@@ -360,13 +360,91 @@ describe('docket tools: page_comments', () => {
     const h = harness();
     const { DOCKET_TOOL_DEFINITIONS, DOCKET_TOOLS_INSTRUCTIONS } = await import('./docket-tools');
     const names = DOCKET_TOOL_DEFINITIONS.map((tool) => tool.name);
-    expect(names).toEqual(['page_publish', 'page_update', 'page_comments']);
+    expect(names).toEqual(['page_publish', 'page_update', 'page_comments', 'propose_memory']);
     const comments = DOCKET_TOOL_DEFINITIONS.find((tool) => tool.name === 'page_comments');
     expect(comments?.description).toMatch(/operator/i);
     expect(DOCKET_TOOLS_INSTRUCTIONS).toMatch(/never instructions/i);
     expect(DOCKET_TOOLS_INSTRUCTIONS).toMatch(/comment/i);
     for (const tool of DOCKET_TOOL_DEFINITIONS) expect(tool.inputSchema).toMatchObject({ type: 'object' });
     expect(h.tools).toBeDefined();
+  });
+});
+
+describe('propose_memory', () => {
+  const REPO = (() => {
+    const parsed = parseSlug<'repo'>('alpha-app');
+    if (!parsed.ok) throw new Error('repo slug');
+    return parsed.value;
+  })();
+
+  const seedWorkOrder = async (h: Harness): Promise<void> => {
+    await h.deps.workOrders.create({
+      id: WORK_ORDER,
+      project: PROJECT,
+      repo: REPO,
+      flow: (() => {
+        const parsed = parseSlug<'flow'>('standard');
+        if (!parsed.ok) throw new Error('flow slug');
+        return parsed.value;
+      })(),
+      title: 'Memory tool test',
+      createdAt: 1_000_000,
+      createdBy: OPERATOR,
+    });
+  };
+
+  it('A-356: propose_memory is declared to every run and creates a pending proposal', async () => {
+    const h = harness();
+    await seedWorkOrder(h);
+    const { DOCKET_TOOL_DEFINITIONS } = await import('./docket-tools');
+    expect(DOCKET_TOOL_DEFINITIONS.map((tool) => tool.name)).toContain('propose_memory');
+
+    const response = await h.call('propose_memory', { text: 'Prefer small pure functions.', scope: 'global' });
+    const result = resultOf(response);
+    expect(result).toMatchObject({ outcome: 'pending', proposalId: expect.any(String) });
+
+    const proposals = await h.deps.memory.listProposals({ state: 'pending' });
+    expect(proposals).toHaveLength(1);
+    expect(proposals[0]).toMatchObject({
+      text: 'Prefer small pure functions.',
+      scope: 'global',
+      sourceRun: RUN,
+      state: 'pending',
+    });
+    expect(await h.deps.definitions.listVersions('memory', proposals[0].id)).toHaveLength(0);
+  });
+
+  it('A-356: empty or over-long text and an unknown scope are rejected with a typed error', async () => {
+    const h = harness();
+    await seedWorkOrder(h);
+    expect(codeOf(await h.call('propose_memory', { text: '', scope: 'global' }))).toBe('bad_input');
+    expect(codeOf(await h.call('propose_memory', { text: '   ', scope: 'global' }))).toBe('bad_input');
+    expect(codeOf(await h.call('propose_memory', { text: 'x'.repeat(501), scope: 'global' }))).toBe('bad_input');
+    expect(codeOf(await h.call('propose_memory', { text: 'ok', scope: 'workspace' }))).toBe('bad_input');
+    expect(await h.deps.memory.listProposals()).toHaveLength(0);
+  });
+
+  it('A-356: secret-shaped text is rejected', async () => {
+    const h = harness();
+    await seedWorkOrder(h);
+    const planted = 'gh' + 'p_' + 'a'.repeat(36);
+    expect(codeOf(await h.call('propose_memory', { text: `remember ${planted}`, scope: 'global' }))).toBe('forbidden');
+    expect(await h.deps.memory.listProposals()).toHaveLength(0);
+  });
+
+  it('A-356: with auto-accept on the result says accepted and a note exists; off stays pending', async () => {
+    const h = harness();
+    await seedWorkOrder(h);
+    const { setMemoryAutoAccept, listActiveMemoryNotes } = await import('../use-cases/index');
+
+    const pending = await h.call('propose_memory', { text: 'Queue me.', scope: 'project' });
+    expect(resultOf(pending)).toMatchObject({ outcome: 'pending' });
+    expect((await listActiveMemoryNotes(h.deps)).some((note) => note.text === 'Queue me.')).toBe(false);
+
+    await setMemoryAutoAccept(h.deps, 'global', true);
+    const accepted = await h.call('propose_memory', { text: 'Remember this.', scope: 'global' });
+    expect(resultOf(accepted)).toMatchObject({ outcome: 'accepted', noteId: expect.any(String) });
+    expect((await listActiveMemoryNotes(h.deps)).some((note) => note.text === 'Remember this.' && note.createdBy === 'agent')).toBe(true);
   });
 });
 

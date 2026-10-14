@@ -56,7 +56,7 @@ export function WindowFrame({ label, brand, rail, railNote, head, children, foot
       {...(labelledBy === undefined ? { 'aria-label': label } : { 'aria-labelledby': labelledBy })}
       data-window=""
       {...(dataMark === undefined ? {} : { [dataMark]: '' })}
-      className={`relative grid ${compact ? 'h-auto max-h-[calc(100vh-96px)] w-[30rem] max-w-[calc(100vw-48px)] grid-cols-[minmax(0,1fr)]' : 'h-[680px] max-h-[calc(100vh-96px)] w-[1040px] max-w-[calc(100vw-48px)] grid-cols-[200px_minmax(0,1fr)]'} overflow-hidden rounded-panel border border-bord bg-surface shadow-2xl outline-none ${className}`}
+      className={`relative grid ${compact ? 'box-border h-auto max-h-[min(calc(100vh-96px),max(32.5rem,60vh))] min-w-0 w-[min(640px,calc(100vw-32px))] grid-cols-[minmax(0,1fr)]' : 'h-[680px] max-h-[calc(100vh-96px)] w-[1040px] max-w-[calc(100vw-48px)] grid-cols-[200px_minmax(0,1fr)]'} overflow-hidden rounded-panel border border-bord bg-surface shadow-2xl outline-none ${className}`}
     >
       {compact ? null : <nav aria-label={label} className="flex flex-col gap-[18px] overflow-y-auto border-r border-hairline bg-band px-3.5 pb-4 pt-[22px]">
         <BrandMark name={brand} />
@@ -64,12 +64,12 @@ export function WindowFrame({ label, brand, rail, railNote, head, children, foot
         {railNote !== undefined ? <p className="mt-auto px-1.5 text-[12px] leading-[1.45] text-inkdim">{railNote}</p> : null}
       </nav>}
       <div className={`grid min-h-0 min-w-0 overflow-hidden ${footer === undefined ? 'grid-rows-[auto_minmax(0,1fr)]' : 'grid-rows-[auto_minmax(0,1fr)_auto]'}`}>
-        <header className="px-8 pb-3.5 pt-[26px]">{head}</header>
-        <div data-window-body="" className="min-h-0 overflow-y-auto px-8 pb-5 pt-1.5">
+        <header className={`${compact ? 'px-6 pb-3 pt-5' : 'px-8 pb-3.5 pt-[26px]'}`}>{head}</header>
+        <div data-window-body="" className={`min-h-0 overflow-y-auto ${compact ? 'px-6 pb-4 pt-0' : 'px-8 pb-5 pt-1.5'}`}>
           {children}
         </div>
         {footer !== undefined ? (
-          <footer data-window-footer="" className="flex items-center gap-2 border-t border-hairline bg-surface px-8 py-3">
+          <footer data-window-footer="" className={`flex items-center gap-2 border-t border-hairline bg-surface py-3 ${compact ? 'px-6' : 'px-8'}`}>
             {footer}
           </footer>
         ) : null}
