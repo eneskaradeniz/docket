@@ -17,7 +17,7 @@ import type {
   WorkOrderId,
   WorkOrderState,
 } from '../../domain/index';
-import { MINUTE, deriveWorkOrderState, err, evaluateGate, ok } from '../../domain/index';
+import { MINUTE, deriveWorkOrderState, err, evaluateGate, ok, remoteChecksEvidence } from '../../domain/index';
 
 import type { AppDeps, CheckRun, ForgeResolver } from '../ports';
 
@@ -154,6 +154,8 @@ export async function pollRemoteChecks(
     stage: current.stage,
     gate: input.gate,
     verdict: evaluateGate(remoteGate, evidence, gateContext(definitions)),
+    // R-166: the matched checks the verdict was reduced from — the detail's check rows read them.
+    remoteChecks: remoteChecksEvidence(matched.map((check) => ({ name: check.name, status: check.status }))),
   };
   await deps.workOrders.appendEvent(input.id, event);
   return ok(deriveWorkOrderState(flow, [...events, event]));

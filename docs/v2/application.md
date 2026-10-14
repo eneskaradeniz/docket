@@ -2172,3 +2172,8 @@ release(repo: RepoSlug, workOrderId: WorkOrderId): Promise<Result<'released' | '
   the same way. The prefill is the remote's default branch read from the forge host itself
   (`gh repo view --json defaultBranchRef`, the #1145 decision) — the UI (GI-4) prefills and the
   operator edits; no local default-branch guess rides a RepoRef, and I-20 is not extended.
+
+Addendum 2026-10-14 (#1146): the CI check rows on the work-order detail. Rules A-378, A-379; the domain rule is R-166 (docs/v2/domain.md); the UI rules are U-341 … U-343 (docs/v2/ui.md).
+
+- **A-378** (added 2026-10-14, #1146) `workOrder.detail` gains `gates`: one row per `gate_evaluated` event of the flow's `remote_checks` gates, in event order (newest last), capped at the newest `REMOTE_CHECKS_EVENT_MAX` rows per gate — a pure read of what the dispatcher already recorded. Each row carries `gate`, `stage`, `verdict`, `at` and `checks` from the event's recorded evidence (R-166), so an evaluation older than the field shows `checks: []`; `url` rides the row's contract but is never written (the series decision). `not_found`/`invalid_id` behave as A-21; the read writes no audit entry.
+- **A-379** (added 2026-10-14, #1146) Nothing in the detail starts a poll: the rows are a read of the events the dispatcher's own poll already appended (A-369, A-370). The screen renders them without any query beyond `workOrder.detail` itself.

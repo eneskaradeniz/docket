@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { GateVerdict } from '../gates';
-import type { Actor, EnvSlug, FlowSlug, GateSlug, RunId, RunOutcome, StageSlug } from '../shared';
-import type { WorkOrderEvent } from './events';
+import type { Actor, EnvSlug, FlowSlug, GateSlug, RunId, RunOutcome, Slug, StageSlug } from '../shared';
+import type { FlowDef } from '../definitions';
+import { deriveWorkOrderState } from './derive';
+import { REMOTE_CHECKS_EVENT_MAX, remoteChecksEvidence, type WorkOrderEvent } from './events';
 
 const USER: Actor = { kind: 'user', id: 'u-1' };
 const RUN: RunId = '01ARZ3NDEKTSV4RRFFQ69G5FAV' as RunId;
@@ -104,5 +106,51 @@ describe('WorkOrderEvent', () => {
       (verdict): WorkOrderEvent => ({ type: 'gate_evaluated', at: 2, stage: STAGE, gate: GATE, verdict }),
     );
     expect(evaluated).toHaveLength(4);
+  });
+});
+
+describe('remoteChecks evidence (R-166)', () => {
+  it('R-166: the evidence keeps the first 30 checks in forge order, name and status only', () => {
+    const checks = Array.from({ length: REMOTE_CHECKS_EVENT_MAX + 2 }, (_, index) => ({
+      name: `check-${index}`,
+      status: 'passed' as const,
+    }));
+    const evidence = remoteChecksEvidence(checks);
+    expect(evidence.checks).toHaveLength(REMOTE_CHECKS_EVENT_MAX);
+    expect(evidence.checks[0]).toEqual({ name: 'check-0', status: 'passed' });
+    expect(evidence.checks[REMOTE_CHECKS_EVENT_MAX - 1]).toEqual({
+      name: `check-${REMOTE_CHECKS_EVENT_MAX - 1}`,
+      status: 'passed',
+    });
+    // Name and status only: a url or an environment value never rides the event.
+    expect(Object.keys(evidence.checks[0]).sort()).toEqual(['name', 'status']);
+  });
+
+  it('R-166: an event without remoteChecks folds exactly as one with it', () => {
+    const flow: FlowDef = {
+      id: FLOW,
+      name: 'Standard',
+      stages: [
+        {
+          id: STAGE,
+          name: 'Implement',
+          role: 'worker' as Slug<'role'>,
+          exit: [{ kind: 'remote_checks', id: GATE, required: 'all', timeoutMinutes: 10 }],
+        },
+      ],
+    };
+    const opening: readonly WorkOrderEvent[] = [
+      { type: 'created', at: 1, by: USER, flow: FLOW },
+      { type: 'run_started', at: 2, runId: RUN, stage: STAGE, attempt: 1 },
+      { type: 'run_finished', at: 3, runId: RUN, outcome: 'succeeded' },
+    ];
+    const bare: WorkOrderEvent = { type: 'gate_evaluated', at: 4, stage: STAGE, gate: GATE, verdict: { status: 'passed' } };
+    const withEvidence: WorkOrderEvent = {
+      ...bare,
+      remoteChecks: remoteChecksEvidence([{ name: 'lint', status: 'passed' }]),
+    };
+    expect(deriveWorkOrderState(flow, [...opening, withEvidence])).toEqual(
+      deriveWorkOrderState(flow, [...opening, bare]),
+    );
   });
 });

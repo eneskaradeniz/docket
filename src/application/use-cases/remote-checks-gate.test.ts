@@ -214,6 +214,7 @@ describe('pollRemoteChecks', () => {
       stage: 'verify',
       gate: 'ci',
       verdict: { status: 'passed' },
+      remoteChecks: { checks: [{ name: 'lint', status: 'passed' }, { name: 'test', status: 'passed' }] },
     });
   });
 
@@ -521,7 +522,25 @@ describe('pollRemoteChecks', () => {
       stage: 'verify',
       gate: 'ci',
       verdict: { status: 'failed', reason: 'remote check failed: lint' },
+      remoteChecks: { checks: [{ name: 'lint', status: 'failed' }] },
     });
+  });
+
+  it('R-166: the recorded evidence carries the matched checks, capped at the first 30 in forge order', async () => {
+    const h = makeHarness();
+    await createIn(h, 'all-flow');
+    const many = Array.from({ length: 32 }, (_, index) => check(`check-${index}`, 'passed'));
+    const { resolver } = resolverFor(trackingForge(many).forge);
+    h.clock.advance(25);
+
+    const result = await poll(h, resolver, 'ci');
+
+    expect(result.ok).toBe(true);
+    const events = await eventsOf(h);
+    const evidence = (events[1] as { readonly remoteChecks?: { readonly checks: readonly unknown[] } }).remoteChecks;
+    expect(evidence?.checks).toHaveLength(30);
+    expect(evidence?.checks[0]).toEqual({ name: 'check-0', status: 'passed' });
+    expect(evidence?.checks[29]).toEqual({ name: 'check-29', status: 'passed' });
   });
 
   it('E-17: a pending outcome appends nothing — the gate stays pending for the dispatcher to re-poll', async () => {

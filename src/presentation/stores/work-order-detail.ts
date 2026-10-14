@@ -101,6 +101,17 @@ export interface WorkOrderRunSummary {
   readonly canSteer?: boolean | 'unknown';
 }
 
+/** One remote-checks evaluation row of the detail reply (#1146): the verdict the dispatcher
+ *  recorded and the checks it was reduced from. The verdict status travels as the reply's own
+ *  word; `url` never arrives — the evidence records none. */
+export interface WorkOrderGateRow {
+  readonly gate: string;
+  readonly stage: string;
+  readonly verdict?: { readonly status: string; readonly reason?: string };
+  readonly at: number;
+  readonly checks: readonly { readonly name: string; readonly status: string; readonly url?: string }[];
+}
+
 export interface WorkOrderDetailView {
   readonly record: WorkOrderDetailRecord;
   readonly state: WorkOrderState;
@@ -114,6 +125,8 @@ export interface WorkOrderDetailView {
   readonly environments: readonly EnvironmentDef[];
   /** One summary per run (#969); absent only on a reply older than the field. */
   readonly runSummaries?: readonly WorkOrderRunSummary[];
+  /** The remote_checks gates' evaluation rows (#1146, A-378); absent on an older reply. */
+  readonly gates?: readonly WorkOrderGateRow[];
 }
 
 /** A permission ask shown in the decision zone, fed from `permissions.open` and scoped to the
@@ -594,6 +607,63 @@ export const runRows = (view: WorkOrderDetailView): readonly WorkOrderRunRow[] =
       roleVersion: run.roleVersion ?? null,
     };
   });
+};
+
+// --- U-341…U-343: the CI check fold ------------------------------------------------------------------
+
+/** One matched check of a gate's newest recorded evidence — the forge's name and status word. */
+export interface GateCheckRow {
+  readonly name: string;
+  readonly status: string;
+}
+
+/** One evaluation of the gate's verdict history, in record order (newest last). */
+export interface GateVerdictRow {
+  readonly at: number;
+  readonly status: string;
+}
+
+/** One remote_checks gate's fold model: its standing in this work order, the matched checks of
+ *  the newest evaluation that recorded them, and the verdict history behind it. */
+export interface GateChecksGroup {
+  readonly gate: string;
+  readonly standing: GateStatus;
+  readonly checks: readonly GateCheckRow[];
+  readonly history: readonly GateVerdictRow[];
+}
+
+/** The fold's groups (U-341): every remote_checks gate that is pending or holds evaluations,
+ *  in flow order — an upcoming gate nobody evaluated yet stays out. A gate's checks come from
+ *  the newest evaluation that recorded evidence, so evaluations older than the evidence field
+ *  show history only. A reply without `gates` (older than the field) still folds its pending
+ *  gates: the standing is the stage list's own fact, not the rows'. */
+export const gateCheckGroups = (
+  stages: readonly StageGates[],
+  gates: readonly WorkOrderGateRow[] | undefined,
+): readonly GateChecksGroup[] => {
+  const rows = gates ?? [];
+  const groups: GateChecksGroup[] = [];
+  for (const stage of stages) {
+    for (const gate of stage.gates) {
+      if (gate.kind !== 'remote_checks') continue;
+      const own = rows.filter((row) => row.gate === gate.id);
+      if (own.length === 0 && gate.status !== 'pending') continue;
+      let withChecks: WorkOrderGateRow | undefined;
+      for (let index = own.length - 1; index >= 0; index -= 1) {
+        if ((own[index].checks ?? []).length > 0) {
+          withChecks = own[index];
+          break;
+        }
+      }
+      groups.push({
+        gate: gate.id,
+        standing: gate.status,
+        checks: withChecks === undefined ? [] : withChecks.checks.map((check) => ({ name: check.name, status: check.status })),
+        history: own.map((row) => ({ at: row.at, status: row.verdict?.status ?? 'unknown' })),
+      });
+    }
+  }
+  return groups;
 };
 
 /** The failed card's one mono line: the failed run's last spoken answer — the trailing run of

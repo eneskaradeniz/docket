@@ -26,7 +26,7 @@ export type { AccountTestView, RepoStatusView, ProposalDetailView, ProposalListI
 export type { McpStatusView } from '../application';
 
 export type Query =
-  | { readonly type: 'workOrder.detail'; readonly id: string }
+  | { readonly type: 'workOrder.detail'; readonly id: string } // → detail view incl. gates rows (A-378, A-379) | not_found | invalid_id
   | { readonly type: 'workOrder.changes'; readonly workOrder: string } // → WorkOrderChangesView | not_found | invalid_id
   | { readonly type: 'project.tree' }
   | { readonly type: 'repoStatus' } // → RepoStatusView[] (A-341)

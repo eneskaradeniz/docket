@@ -1884,3 +1884,10 @@ Added 2026-10-14, #1112.
 Added 2026-10-14, #1116; uses `chat.attachment` (A-254) and `chat.attach` (A-259).
 - **U-331** (added 2026-10-14, #1116) png, jpg/jpeg and webp attachments render a small `data:` preview loaded lazily (viewport only, at most 4 at a time, at most 20 cached); all other types stay chips; nothing is rendered as HTML; the tray previews only after validation; the four states of decision 4 render as described.
 - **U-332** (added 2026-10-14, #1116) The enlarge dialog follows decision 5 (modal semantics, focus to Kapat, ←/→ between images, Esc closes only the dialog and restores focus); copy at most 8 words per sentence, TR and EN bundles only.
+
+## Work-order CI check rows (U-341 … U-343)
+
+Added 2026-10-14, #1146; reads `workOrder.detail`'s `gates` rows (A-378).
+- **U-341** (added 2026-10-14, #1146) The check rows sit under the stage strip in one collapsed fold (like U-327's usage line, `aria-expanded`), shown only when a `remote_checks` gate is pending or holds evaluations; expanded it lists per gate the standing word, the matched checks (name + one status word of the six) and the verdict history with its times, newest last.
+- **U-342** (added 2026-10-14, #1146) A pending gate shows the quiet “bekliyor” line beside the last recorded checks and their count line (“{p}/{n} geçti”) — never a spinner and never a promise that a poll is running; copy at most 8 words per sentence, TR and EN bundles only.
+- **U-343** (added 2026-10-14, #1146) No url seam exists yet (the evidence records none), so check names render as plain text — never an inert-looking button or link; a later url field changes this rule, not the renderer's discipline.

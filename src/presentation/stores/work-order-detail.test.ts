@@ -33,6 +33,7 @@ import {
   decisionZone,
   detailBadge,
   formatRunCode,
+  gateCheckGroups,
   gateWaitingCount,
   isFailedStanding,
   lastMessageOf,
@@ -42,7 +43,10 @@ import {
   workOrderUsageMoney,
   type DetailChange,
   type DetailChangeSignal,
+  type GateChecksGroup,
+  type StageGates,
   type WorkOrderDetailRun,
+  type WorkOrderGateRow,
   type WorkOrderDetailView,
   type WorkOrderRunSummary,
 } from './work-order-detail';
@@ -1328,5 +1332,79 @@ describe('changed files (U-231)', () => {
       expect(store.state().changes).toBeNull();
       expect(store.state().view?.state.status).toBe('gating');
     }
+  });
+});
+
+describe('gateCheckGroups — the CI check fold (U-341 … U-343)', () => {
+  /** Two stages: build with a secret-scan gate, verify with a remote_checks gate plus a signoff —
+   *  the shape the fold filters: remote gates only, pending or evaluated. */
+  const stages: readonly StageGates[] = [
+    {
+      stage: slugOf<'stage'>('build'),
+      name: 'Build',
+      role: null,
+      current: false,
+      gates: [{ id: slugOf<'gate'>('scan'), kind: 'secret_scan', status: 'passed' }],
+    },
+    {
+      stage: slugOf<'stage'>('verify'),
+      name: 'Verify',
+      role: null,
+      current: true,
+      gates: [
+        { id: slugOf<'gate'>('ci'), kind: 'remote_checks', status: 'pending' },
+        { id: slugOf<'gate'>('signoff'), kind: 'human', status: 'pending', label: 'Signoff' },
+      ],
+    },
+  ];
+
+  it('U-341: groups hold the newest recorded checks per gate and the history newest last; only remote gates fold', () => {
+    const rows: readonly WorkOrderGateRow[] = [
+      { gate: 'ci', stage: 'verify', verdict: { status: 'failed', reason: 'remote check failed: lint' }, at: 1_000, checks: [] },
+      {
+        gate: 'ci',
+        stage: 'verify',
+        verdict: { status: 'passed' },
+        at: 2_000,
+        checks: [
+          { name: 'build-linux', status: 'passed' },
+          { name: 'lint', status: 'failed' },
+        ],
+      },
+    ];
+
+    const groups = gateCheckGroups(stages, rows);
+
+    expect(groups).toHaveLength(1);
+    const group: GateChecksGroup = groups[0];
+    expect(group.gate).toBe('ci');
+    expect(group.standing).toBe('pending');
+    expect(group.checks).toEqual([
+      { name: 'build-linux', status: 'passed' },
+      { name: 'lint', status: 'failed' },
+    ]);
+    expect(group.history).toEqual([
+      { at: 1_000, status: 'failed' },
+      { at: 2_000, status: 'passed' },
+    ]);
+  });
+
+  it('U-342: a pending gate without evaluations keeps its quiet group; an evaluated gate no longer pending stays', () => {
+    const pendingOnly = gateCheckGroups(stages, []);
+    expect(pendingOnly).toHaveLength(1);
+    expect(pendingOnly[0]).toEqual({ gate: 'ci', standing: 'pending', checks: [], history: [] });
+
+    // A reply older than the field (no gates at all) still folds the pending gate.
+    expect(gateCheckGroups(stages, undefined)).toEqual(pendingOnly);
+
+    // A passed remote gate with history folds too; an upcoming one with nothing stays out.
+    const passedStages: readonly StageGates[] = stages.map((stage) => ({
+      ...stage,
+      current: false,
+      gates: stage.gates.map((gate) => (gate.kind === 'remote_checks' ? { ...gate, status: 'passed' } : gate)),
+    }));
+    const passed = gateCheckGroups(passedStages, [{ gate: 'ci', stage: 'verify', verdict: { status: 'passed' }, at: 3_000, checks: [] }]);
+    expect(passed).toHaveLength(1);
+    expect(gateCheckGroups(passedStages, [])).toEqual([]);
   });
 });

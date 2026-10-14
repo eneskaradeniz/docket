@@ -800,6 +800,7 @@ describe('evaluateMachineGates', () => {
       stage: slugOf('verify'),
       gate: slugOf('ci'),
       verdict: { status: 'passed' },
+      remoteChecks: { checks: [{ name: 'lint', status: 'passed' }, { name: 'test', status: 'passed' }] },
     });
   });
 
