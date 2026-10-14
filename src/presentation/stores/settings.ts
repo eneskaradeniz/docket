@@ -21,6 +21,7 @@ import { commandResultKey, isQueryFailure } from './results';
 import { testRefusal, type TestRefusal } from './account-test';
 import type { DispatchWrite } from './dispatch-settings';
 import type { MeterFailure } from './meter-list';
+import { builtinRoleLibrary, createRepoSettingsStore, type RepoSettingsStore } from './repo-settings';
 
 /** The coarse change events the api emits (docs/v2/ui.md, U-12). Notifications carry no
  *  payloads — the store re-queries. Tests inject a fake; the api's `subscribe` satisfies the
@@ -135,6 +136,8 @@ export interface BindingSaveInput {
 }
 
 export interface SettingsStore {
+  /** Repository flow, overlays and per-stage limit policy (U-288, U-289). */
+  readonly repoSettings: RepoSettingsStore;
   load(): Promise<void>;
   state(): SettingsState;
   /** The reset time of a meter in the active locale, or null when the meter has none.
@@ -221,6 +224,12 @@ const refreshFailure = (code: string): MeterFailure => {
 export const createSettingsStore = (deps: SettingsStoreDeps): SettingsStore => {
   const { api, changes, actor, locale, timeZone } = deps;
   const zone = timeZone ?? 'UTC';
+  const repoSettings = createRepoSettingsStore({
+    api,
+    actor,
+    now: () => Date.now(),
+    roleLibrary: async () => builtinRoleLibrary(),
+  });
 
   let state: SettingsState = {
     loading: false,
@@ -296,6 +305,7 @@ export const createSettingsStore = (deps: SettingsStoreDeps): SettingsStore => {
   const formatters = new Map<string, Intl.DateTimeFormat>();
 
   return {
+    repoSettings,
     load,
     state: () => state,
     resetLine: (resetsAt) => (resetsAt === null ? null : resetLine(locale(), zone, resetsAt, Date.now())),
