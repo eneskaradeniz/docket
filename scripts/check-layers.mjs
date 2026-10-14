@@ -151,6 +151,15 @@ for (const layer of V2_LAYERS) {
         report(file, ln, 'C3 purity', 'time/randomness/crypto come through the Clock / IdGen ports');
       }
       if (!test && VENDOR_RE.test(t)) {
+        // IssueTracker pagination tokens are named `cursor` in the port contract (A-333), not the IDE vendor.
+        if (
+          /\bcursor\b/i.test(t)
+          && (/\blist(?:Milestones|Issues)\b/.test(t)
+            || /\b(?:issue|milestone)Cursor\b/.test(t)
+            || /issue-tracker\.ts$/.test(file))
+        ) {
+          return;
+        }
         // Inside src/infrastructure/ the vendor-name ban holds everywhere but providers/ (N2);
         // outside infrastructure it is C4 for every layer.
         if (layer !== 'infrastructure' || relative(INFRA, file).split(sep)[0] !== 'providers') {

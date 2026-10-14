@@ -103,7 +103,9 @@ type SilentCommand =
   | 'memory.rejectProposal'
   | 'memory.setAutoAccept'
   | 'memory.addNote'
-  | 'definitions.save';
+  | 'definitions.save'
+  | 'tracker.sync'
+  | 'tracker.resolveConflict';
 const isSilent = (command: Command['type']): command is SilentCommand =>
   command === 'quit.ack'
   || command === 'quit.answer'
@@ -115,7 +117,9 @@ const isSilent = (command: Command['type']): command is SilentCommand =>
   || command === 'memory.rejectProposal'
   || command === 'memory.setAutoAccept'
   || command === 'memory.addNote'
-  || command === 'definitions.save';
+  || command === 'definitions.save'
+  || command === 'tracker.sync'
+  || command === 'tracker.resolveConflict';
 
 const SUCCESS_KEYS: Readonly<Record<Exclude<Command['type'], SilentCommand>, LabelKey>> = {
   'workOrder.open': 'success.workOrder.open',

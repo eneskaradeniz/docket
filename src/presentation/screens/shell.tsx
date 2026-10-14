@@ -731,6 +731,7 @@ export function ShellScreen({
         locale={locale}
         onClose={() => dispatchNewProjectPanel({ type: 'close' })}
         onDone={finishNewProject}
+        onOpenAccounts={() => openSettings('accounts')}
       />
 
       <ChatDock
