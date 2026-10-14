@@ -20,6 +20,7 @@ import {
   decisionZone,
   detailBadge,
   gateCheckGroups,
+  gitCard,
   newestFailedRunOf,
   runRows,
   stripSegments,
@@ -36,7 +37,7 @@ import { ActionButton } from '../components/action-button';
 import { WorkOrderLaunchers } from '../components/launcher-rows';
 import { StateBadge, type BadgeTone } from '../components/state-badge';
 import { DetailStrip } from '../components/detail-strip';
-import { DecisionZoneCards } from '../components/detail-decision-card';
+import { DecisionZoneCards, GitDoorsCard } from '../components/detail-decision-card';
 import { DetailFiles } from '../components/detail-files';
 import { DetailRunCard } from '../components/detail-run-card';
 import { DetailRowMenu } from '../components/detail-row-menu';
@@ -251,6 +252,18 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
   // The CI check fold (U-341): remote_checks gates only, from the stages the store already
   // derived and the rows the reply carried.
   const checkGroups = view === null ? [] : gateCheckGroups(state.stages, view.gates);
+  // The git doors (U-344): the lifecycle state arrives on the view (A-390) — never re-derived
+  // here; the worktree fact is the changes read's own state; the forge read words the push
+  // reason and the base prefill. The failed check names feed the merge confirm's quiet warning.
+  const git = view === null
+    ? null
+    : gitCard(view, state.gitBase, state.changes !== null && state.changes.state !== 'no_worktree');
+  const failedChecks: string[] = [];
+  for (const group of checkGroups) {
+    for (const check of group.checks) {
+      if (check.status === 'failed' && !failedChecks.includes(check.name)) failedChecks.push(check.name);
+    }
+  }
   const livePaneVisible = view !== null && view.runs.some((run) => run.endedAt === undefined);
   const running = view !== null && (view.state.status === 'running' || view.state.status === 'limit_waiting');
   // The environments the flow's deploy gates actually target, in flow order, deduplicated —
@@ -464,6 +477,18 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
                 }}
                 onOpenPage={onOpenPage}
               />
+              {git !== null ? (
+                <GitDoorsCard
+                  model={git}
+                  locale={locale}
+                  gitBase={state.gitBase}
+                  failedChecks={failedChecks}
+                  onPush={() => store.push()}
+                  onOpenPr={(input) => store.openPr(input)}
+                  onMerge={(number) => store.mergePr(number)}
+                  onRelease={() => store.releaseBranch()}
+                />
+              ) : null}
             </div>
 
             {livePaneVisible ? (
