@@ -1276,9 +1276,7 @@ export function readStageFile(
   input: { readonly id: WorkOrderId; readonly path: string },
 ): Promise<Result<WorktreeFilePreview, StageFilesError | WorktreeFileError>>;
 
-// queries.ts
-| { readonly type: 'workOrders.stageFiles'; readonly id: string }
-| { readonly type: 'workOrders.readStageFile'; readonly id: string; readonly path: string }
+// queries.ts — workOrders.stageFiles / workOrders.readStageFile removed 2026-10-14, #1108: U-231's changes list replaced the card, and no reader remained.
 ```
 
 Rules:
