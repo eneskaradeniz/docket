@@ -306,11 +306,11 @@ The initial table recorded as data in the capability registry (`registry/capabil
 
 | Provider | Kind | Support | How / Mechanism | Degrades To |
 | --- | --- | --- | --- | --- |
-| `claude-code` | `mcp` | `native` | Run-scoped MCP via inline mcpServers with --strict-mcp-config when MCP is delivered (ambient settings off via settingSources: []) probe #1015, 2026-10-14 | |
-| `claude-code` | `skill` | `native` | Run-scoped skills under .claude/skills in the project directory probe #1015, 2026-10-14 | |
-| `claude-code` | `hook` | `native` | Run-scoped hooks via an explicit --settings file probe #1015, 2026-10-14 | |
-| `claude-code` | `context` | `native` | Native instruction file CLAUDE.md in the run cwd (P-37) probe #1015, 2026-10-14 | |
-| `claude-code` | `plugin` | `native` | Plugin bundle unpacked into native run-scoped MCP, skills, and hooks probe #1015, 2026-10-14 | |
+| `claude-code` | `mcp` | `native` | Run-scoped MCP via inline mcpServers with strictMcpConfig on every run (settingSources: []) probe #1015, 2026-10-14 | |
+| `claude-code` | `skill` | `native` | Per-run local plugin dir with skills/*/SKILL.md and skills: all probe #1015, 2026-10-14 | |
+| `claude-code` | `hook` | `native` | Inline settings.hooks on the SDK settings option probe #1015, 2026-10-14 | |
+| `claude-code` | `context` | `native` | systemPrompt.append once for role + context (no CLAUDE.md write) probe #1015, 2026-10-14 | |
+| `claude-code` | `plugin` | `native` | plugins[{type:local,path,skipMcpDiscovery}] probe #1015, 2026-10-14 | |
 | `claude-code` | `command` | `degraded` | Docket renders template placeholders | `prompt_text` |
 | `codex` | `mcp` | `native` | App-server --ignore-user-config on every run, then -c mcp_servers.* overrides when MCP is delivered | |
 | `codex` | `skill` | `native` | Run-scoped skills under .agents/skills in the run directory probe #1015, 2026-10-14 | |
@@ -350,6 +350,7 @@ The initial table recorded as data in the capability registry (`registry/capabil
 - **P-58 amendment (2026-10-14, probe #1015, #1141)** Real-run probe #1015 updates the solid rows: `claude-code` mcp/skill/hook/context/plugin `how` lines name the evidenced mechanism; `codex` skill and plugin become `native` (run-dir `.agents/skills` and `.codex/plugins`); `codex` hook stays `unsupported` with `how` citing the failed hook attempts.
 - **P-58 amendment (2026-10-14, probe #1015, #1149)** Real-run probe #1015 updates `cursor` (mcp native with nondeterministic listing, skill degraded→context via project rule, hook and plugin unsupported), `opencode` (mcp and plugin unsupported, skill native under the config dir, hook unverified), and `agy` (mcp and skill unsupported, hook and plugin unverified); `copilot` stays unverified until the probe reruns.
 - **P-58 amendment (2026-10-14, probe #1015, #1154)** Ambient MCP isolation: `claude-code` adds `--strict-mcp-config` when run-scoped MCP is delivered; `codex` adds `--ignore-user-config` on the app-server argv when run-scoped MCP is delivered (`codex_apps` remains as a built-in name, not an ambient leak). `cursor`, `opencode`, and `agy` unchanged — no isolation flag; leak names stay in registry data only.
+- **P-58 amendment (2026-10-14, probe #1015, #1164)** Claude-code SDK delivery: `strictMcpConfig` and inline `disableClaudeAiConnectors: true` on every run; skills via a per-run local plugin directory with `skills: 'all'`; hooks via inline `settings.hooks`; context and role instructions via `systemPrompt.append` only (no `CLAUDE.md` write); plugin bundles via `plugins[{type:local,path,skipMcpDiscovery}]`.
 - **P-58 amendment (2026-10-14, probe #1015, #1156)** `codex` passes `--ignore-user-config` on every app-server run (not only when run-scoped MCP is delivered); run MCP still travels as `-c mcp_servers.*` overrides when delivered (`codex_apps` unchanged).
 - **P-59** (added 2026-10-12, #1006) Translation is per provider and per run: a stage's role capabilities are translated into the run-scoped files/flags the provider's launch rules already use (P-7 addendum for run-scoped files, the MCP child launch rules); a capability whose support is `unsupported` is omitted from the run and recorded in the run record as `omitted_capability`; `degraded` capabilities are inlined as instruction text; no translation ever writes into the repository (D-5) or the user's own provider config.
 - **P-60** (added 2026-10-12, #1006) Machine import is read-only: a scan lists `MachineCandidate`s per provider from that provider's own user-level config locations; it never writes there, never copies a secret value (only `secretNames`; at import the user is asked to store the value in the keychain, the definition then holds `{secretRef}`); it supersedes nothing in R-62…R-67 — the existing `CapabilityCandidate` for mcp/skill/context stays and this adds plugin and hook candidates: hook candidates are listed but still not importable (R-66's note, 2026-10-11, stands).
