@@ -636,6 +636,7 @@ export function ShellScreen({
               onOpenRepo={(repo) => navigate({ name: 'board', repo })}
               onOpenWorkOrder={openWorkOrder}
               projectBundle={projectBundle}
+              onOpenBudget={() => openSettings('accounts')}
             />
           ) : null}
           {route.name === 'account' ? (

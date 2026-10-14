@@ -7,14 +7,35 @@ import type { Api } from '../../api/api';
 import type { Command, CommandResult } from '../../api/commands';
 import type { ProjectTreeItem, Query, SettingsAccountsView } from '../../api/queries';
 import type { Actor, FlowDef, LimitPolicy, RepoFlow, SetupWarning } from '../../domain/index';
-import { BUILTIN_FLOWS } from '../../domain/index';
+import { BUILTIN_FLOWS, planImport, type SkipReason } from '../../domain/index';
+
+type PickFoldersResult =
+  | { readonly canceled: true }
+  | { readonly canceled: false; readonly paths: readonly string[]; readonly truncated?: true };
 import type { LabelKey } from '../labels/keys';
 import { chatFailureKey } from './chat-model';
 import { commandResultKey, isQueryFailure } from './results';
 
 export type SetupPathMode = 'docket_ai' | 'quick' | 'detailed';
 
-export type SetupEntryPath = SetupPathMode | 'import';
+export type SetupEntryPath = SetupPathMode | 'import' | 'copy_from' | 'import_multi';
+
+export const IMPORT_QUEUE_MAX = 8;
+
+export interface AddedRepoRecord {
+  readonly id: string;
+  readonly path: string;
+}
+
+export type ImportRowStatus = 'ready' | 'review' | 'skipped' | 'added';
+
+export interface ImportQueueRow {
+  readonly name: string;
+  readonly path: string;
+  readonly status: ImportRowStatus;
+  readonly reasonKey?: LabelKey;
+  readonly proposal?: SetupProposal;
+}
 
 /** The api's push events the setup thread reads; the other members ride the same channel and are
  *  ignored (U-12 — the union mirrors the channel so `subscribe` satisfies the signal as-is). */
@@ -52,7 +73,16 @@ export interface SetupProposal {
   readonly differsFromRecommended: readonly string[];
 }
 
-export type SetupScreen = 'choose' | 'form' | 'proposal' | 'ai';
+export type SetupScreen =
+  | 'choose'
+  | 'form'
+  | 'proposal'
+  | 'ai'
+  | 'summary'
+  | 'repo_list'
+  | 'add_chooser'
+  | 'copy_from'
+  | 'import_batch';
 
 export type NewProjectField = 'path' | 'name' | 'parent';
 
@@ -134,6 +164,32 @@ export const buildSetupProposal = (name: string, repoPath: string): SetupProposa
     },
     warnings: [],
     differsFromRecommended: [],
+  };
+};
+
+export const skipReasonKey = (reason: SkipReason): LabelKey => {
+  switch (reason) {
+    case 'not_a_git_repo':
+      return 'setup.multi.reason.notGit';
+    case 'already_in_project':
+      return 'setup.multi.reason.duplicate';
+    case 'duplicate_path':
+      return 'setup.multi.reason.duplicate';
+  }
+};
+
+export const importStatusOf = (proposal: SetupProposal): ImportRowStatus =>
+  proposal.warnings.length > 0 ? 'review' : 'ready';
+
+export const buildAddedRepoProposal = (
+  projectName: string,
+  existingRepoIds: readonly string[],
+  repoPath: string,
+): SetupProposal => {
+  const draft = buildSetupProposal('', repoPath);
+  return {
+    ...draft,
+    project: { name: projectName, repos: [...existingRepoIds, draft.repo.id] },
   };
 };
 
@@ -356,9 +412,24 @@ export interface NewProjectState {
   readonly resumable: ResumableDraft | null;
   readonly ai: SetupAiState;
   readonly permission: SetupPermissionPrompt | null;
+  /** Depo badge on the permission dialog (U-316). */
+  readonly permissionRepoLabel: string | null;
   readonly deniedPaths: readonly string[];
   readonly secretNotices: number;
   readonly done: NewProjectDone | null;
+  readonly projectId: string | null;
+  readonly projectName: string;
+  readonly addedRepos: readonly AddedRepoRecord[];
+  readonly importQueue: readonly ImportQueueRow[];
+  readonly importMode: 'multi' | 'parent';
+  readonly importLoading: boolean;
+  readonly importOverflow: number;
+  readonly importParent: string;
+  readonly copySourceId: string;
+  readonly copyTargetPath: string;
+  readonly copyErrorKey: LabelKey | null;
+  readonly importSkippedTotal: number;
+  readonly activeRepoPath: string;
 }
 
 export interface NewProjectStoreDeps {
@@ -366,6 +437,7 @@ export interface NewProjectStoreDeps {
   readonly actor: Actor;
   readonly changes?: SetupChangeSignal;
   readonly reloadTree?: () => Promise<void>;
+  readonly pickFolders?: (options?: { readonly multiple?: boolean }) => Promise<PickFoldersResult>;
 }
 
 export interface NewProjectStore {
@@ -390,6 +462,21 @@ export interface NewProjectStore {
   toggleSection(section: SetupDetailSection): void;
   attachExisting(): Promise<void>;
   submit(): Promise<void>;
+  openProjectFromSummary(): Promise<void>;
+  showAddChooser(): void;
+  showRepoList(): void;
+  backFromMulti(): void;
+  setCopySource(id: string): void;
+  setCopyTarget(path: string): void;
+  loadCopyProposal(): Promise<void>;
+  setImportMode(mode: 'multi' | 'parent'): void;
+  setImportParent(path: string): void;
+  pickImportFolders(): Promise<void>;
+  scanImportParent(): Promise<void>;
+  reviewImportRow(path: string): void;
+  approveImportRow(path: string): Promise<void>;
+  approveAllImport(): Promise<void>;
+  continueImportToSummary(): void;
   subscribe(listener: () => void): () => void;
 }
 
@@ -410,6 +497,20 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
   let secretNotices = 0;
   let secretsSeen = 0;
   let done: NewProjectDone | null = null;
+  let projectId: string | null = null;
+  let projectName = '';
+  let addedRepos: AddedRepoRecord[] = [];
+  let importQueue: ImportQueueRow[] = [];
+  let importMode: 'multi' | 'parent' = 'multi';
+  let importLoading = false;
+  let importOverflow = 0;
+  let importParent = '';
+  let importSkippedTotal = 0;
+  let copySourceId = '';
+  let copyTargetPath = '';
+  let copyErrorKey: LabelKey | null = null;
+  let permissionRepoLabel: string | null = null;
+  let activeRepoPath = '';
   let snapshot: NewProjectState | null = null;
   const listeners = new Set<() => void>();
   const sessionGrants = new Set<string>();
@@ -435,6 +536,20 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
     deniedPaths: [...deniedPaths],
     secretNotices,
     done,
+    projectId,
+    projectName,
+    addedRepos,
+    importQueue,
+    importMode,
+    importLoading,
+    importOverflow,
+    importParent,
+    copySourceId,
+    copyTargetPath,
+    copyErrorKey,
+    importSkippedTotal,
+    activeRepoPath,
+    permissionRepoLabel,
   });
 
   const edit = (next: NewProjectForm): void => {
@@ -464,6 +579,7 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
     }
     if (pending.ask !== null && canShowPermission(permission, deniedPaths, pending.ask.path)) {
       permission = { path: pending.ask.path, reason: pending.ask.reason };
+      permissionRepoLabel = folderName(activeRepoPath) || folderName(form.repoPath) || null;
     }
     publish();
   };
@@ -482,19 +598,33 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
     publish();
   };
 
-  /** A finished setup writes the definitions; the panel lands on the new project like every path. */
-  const finishAi = async (): Promise<void> => {
-    const slug = proposal === null ? '' : slugOf(proposal.repo.id);
-    await deps.reloadTree?.();
-    const tree: unknown = await api.query({ type: 'project.tree' });
-    done = { target: targetOf(tree, slug), toastKey: 'newProject.created' };
+  const enterSummary = (name: string, id: string, repo: AddedRepoRecord): void => {
+    projectId = id;
+    projectName = name;
+    addedRepos = [...addedRepos, repo];
     resetSessionDisclosure();
-    form = START_FORM;
-    screen = 'choose';
     proposal = null;
     proposalId = null;
+    form = START_FORM;
     ai = START_AI;
     permission = null;
+    permissionRepoLabel = null;
+    screen = 'summary';
+  };
+
+  /** A finished setup writes the definitions; multi-repo stays on the summary screen. */
+  const finishAi = async (): Promise<void> => {
+    if (proposal === null) return;
+    const repoPath = form.repoPath.trim();
+    const repo: AddedRepoRecord = { id: proposal.repo.id, path: repoPath };
+    if (projectId === null) {
+      await deps.reloadTree?.();
+      enterSummary(proposal.project.name, slugOf(proposal.project.name), repo);
+      publish();
+      return;
+    }
+    await deps.reloadTree?.();
+    enterSummary(projectName, projectId, repo);
     publish();
   };
 
@@ -575,6 +705,43 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
     done = { target: targetOf(tree, result.id), toastKey };
   };
 
+  const applyConfirmedRepo = async (path: string, body: SetupProposal): Promise<boolean> => {
+    if (projectId === null) return false;
+    const result = await api.command(actor, { type: 'setup.apply', project: projectId, path, proposal: body });
+    if (!result.ok) {
+      failure = failureOf(result.code, false, 'setup.apply');
+      return false;
+    }
+    addedRepos = [...addedRepos, { id: body.repo.id, path }];
+    await deps.reloadTree?.();
+    return true;
+  };
+
+  const queueFromFound = (found: readonly { readonly name: string; readonly path: string; readonly isGit: boolean }[]): void => {
+    const inProject = addedRepos.map((repo) => repo.path);
+    const plan = planImport(found, inProject, IMPORT_QUEUE_MAX);
+    importOverflow = plan.overflow;
+    importSkippedTotal += plan.rows.filter((row) => row.state === 'skipped').length;
+    const ids = addedRepos.map((repo) => repo.id);
+    importQueue = plan.rows.map((row): ImportQueueRow => {
+      if (row.state === 'skipped') {
+        return {
+          name: row.name,
+          path: row.path,
+          status: 'skipped',
+          reasonKey: row.reason === undefined ? undefined : skipReasonKey(row.reason),
+        };
+      }
+      const proposalBody = buildAddedRepoProposal(projectName, ids, row.path);
+      return {
+        name: row.name,
+        path: row.path,
+        status: importStatusOf(proposalBody),
+        proposal: proposalBody,
+      };
+    });
+  };
+
   const run = async (command: Command, importMode: boolean): Promise<void> => {
     if (busy) return;
     busy = true;
@@ -582,11 +749,19 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
     publish();
     const result = await api.command(actor, command);
     if (result.ok) {
-      await finish(result, command.type === 'project.create' ? 'newProject.created' : 'success.project.attach');
-      resetSessionDisclosure();
-      form = START_FORM;
-      screen = 'choose';
-      proposal = null;
+      if (command.type === 'project.attach') {
+        await finish(result, 'success.project.attach');
+        resetSessionDisclosure();
+        form = START_FORM;
+        screen = 'choose';
+        proposal = null;
+      } else {
+        await finish(result, 'newProject.created');
+        resetSessionDisclosure();
+        form = START_FORM;
+        screen = 'choose';
+        proposal = null;
+      }
     } else {
       failure = failureOf(result.code, importMode, command.type);
     }
@@ -614,6 +789,20 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
       secretsSeen = 0;
       sessionGrants.clear();
       done = null;
+      projectId = null;
+      projectName = '';
+      addedRepos = [];
+      importQueue = [];
+      importMode = 'multi';
+      importLoading = false;
+      importOverflow = 0;
+      importParent = '';
+      importSkippedTotal = 0;
+      copySourceId = '';
+      copyTargetPath = '';
+      copyErrorKey = null;
+      permissionRepoLabel = null;
+      activeRepoPath = '';
       publish();
     },
     refreshProvider: async () => {
@@ -642,7 +831,19 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
       if (path === 'docket_ai' && (!connectedProvider || !mcpRunning)) return;
       form = pickPath(form, path);
       failure = null;
-      screen = path === 'docket_ai' ? 'ai' : 'form';
+      copyErrorKey = null;
+      if (path === 'copy_from') {
+        copySourceId = addedRepos[0]?.id ?? '';
+        screen = 'copy_from';
+      } else if (path === 'import_multi') {
+        importQueue = [];
+        importOverflow = 0;
+        screen = 'import_batch';
+      } else if (path === 'docket_ai') {
+        screen = 'ai';
+      } else {
+        screen = 'form';
+      }
       publish();
     },
     setRepoPath: (path) => edit(typeRepoPath(form, path)),
@@ -654,7 +855,11 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
       busy = true;
       failure = null;
       publish();
-      proposal = buildSetupProposal(form.name, form.repoPath.trim());
+      activeRepoPath = form.repoPath.trim();
+      proposal =
+        projectId === null
+          ? buildSetupProposal(form.name, activeRepoPath)
+          : buildAddedRepoProposal(projectName, addedRepos.map((repo) => repo.id), activeRepoPath);
       screen = 'proposal';
       busy = false;
       publish();
@@ -691,16 +896,58 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
         return;
       }
       const name = proposal.project.name;
-      const path = form.repoPath.trim();
-      if (form.path === 'import') {
-        await run({ type: 'project.attach', path }, true);
+      const path = activeRepoPath !== '' ? activeRepoPath : form.repoPath.trim();
+      busy = true;
+      failure = null;
+      publish();
+      if (projectId === null) {
+        if (form.path === 'import') {
+          busy = false;
+          await run({ type: 'project.attach', path }, true);
+          return;
+        }
+        const createCommand: Command =
+          form.path === 'detailed' && form.parent.trim() !== ''
+            ? { type: 'project.create', mode: 'blank', parent: form.parent.trim(), name }
+            : { type: 'project.create', mode: 'existing', path, name };
+        const created = await api.command(actor, createCommand);
+        if (!created.ok) {
+          failure = failureOf(created.code, false, createCommand.type);
+          busy = false;
+          publish();
+          return;
+        }
+        const createdId = created.id;
+        if (createdId === undefined) {
+          failure = failureOf('invalid_id', false, createCommand.type);
+          busy = false;
+          publish();
+          return;
+        }
+        projectId = createdId;
+        projectName = name;
+        const applied = await api.command(actor, { type: 'setup.apply', project: createdId, path, proposal });
+        if (!applied.ok) {
+          failure = failureOf(applied.code, false, 'setup.apply');
+          busy = false;
+          publish();
+          return;
+        }
+        await deps.reloadTree?.();
+        enterSummary(name, projectId, { id: proposal.repo.id, path });
+        busy = false;
+        publish();
         return;
       }
-      if (form.path === 'detailed' && form.parent.trim() !== '') {
-        await run({ type: 'project.create', mode: 'blank', parent: form.parent.trim(), name }, false);
-        return;
+      const applied = await applyConfirmedRepo(path, proposal);
+      busy = false;
+      if (applied) {
+        screen = 'summary';
+        proposal = null;
+        activeRepoPath = '';
+        form = START_FORM;
       }
-      await run({ type: 'project.create', mode: 'existing', path, name }, false);
+      publish();
     },
     requestAiRead: (path, reason) => {
       const kind = readRequestKind(path);
@@ -711,6 +958,7 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
       }
       if (!canShowPermission(permission, deniedPaths, path)) return;
       permission = { path, reason };
+      permissionRepoLabel = folderName(activeRepoPath) || folderName(form.repoPath) || null;
       publish();
     },
     denyPermission: () => {
@@ -754,9 +1002,155 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
       busy = true;
       failure = null;
       publish();
-      proposal = buildSetupProposal(form.name, form.repoPath.trim());
+      activeRepoPath = form.repoPath.trim();
+      if (projectId === null) {
+        proposal = buildSetupProposal(form.name, activeRepoPath);
+      } else {
+        proposal = buildAddedRepoProposal(projectName, addedRepos.map((repo) => repo.id), activeRepoPath);
+      }
       screen = 'proposal';
       busy = false;
+      publish();
+    },
+    openProjectFromSummary: async () => {
+      if (projectId === null || busy) return;
+      busy = true;
+      publish();
+      await deps.reloadTree?.();
+      const tree: unknown = await api.query({ type: 'project.tree' });
+      done = { target: targetOf(tree, projectId), toastKey: 'newProject.created' };
+      busy = false;
+      publish();
+    },
+    showAddChooser: () => {
+      screen = 'add_chooser';
+      publish();
+    },
+    showRepoList: () => {
+      screen = 'repo_list';
+      publish();
+    },
+    backFromMulti: () => {
+      screen = projectId === null ? 'choose' : 'summary';
+      publish();
+    },
+    setCopySource: (id) => {
+      copySourceId = id;
+      copyErrorKey = null;
+      publish();
+    },
+    setCopyTarget: (path) => {
+      copyTargetPath = path;
+      copyErrorKey = null;
+      publish();
+    },
+    loadCopyProposal: async () => {
+      if (projectId === null || copySourceId === '' || copyTargetPath.trim() === '' || busy) return;
+      busy = true;
+      copyErrorKey = null;
+      publish();
+      const reply: unknown = await api.query({
+        type: 'setup.copyProposal',
+        project: projectId,
+        source: copySourceId,
+        path: copyTargetPath.trim(),
+      });
+      busy = false;
+      if (isQueryFailure(reply)) {
+        copyErrorKey = `error.${reply.code}` as LabelKey;
+        publish();
+        return;
+      }
+      proposal = reply as SetupProposal;
+      activeRepoPath = copyTargetPath.trim();
+      screen = 'proposal';
+      publish();
+    },
+    setImportMode: (mode) => {
+      importMode = mode;
+      publish();
+    },
+    setImportParent: (path) => {
+      importParent = path;
+      publish();
+    },
+    pickImportFolders: async () => {
+      if (deps.pickFolders === undefined || busy) return;
+      importLoading = true;
+      publish();
+      const picked = await deps.pickFolders({ multiple: true });
+      importLoading = false;
+      if (picked.canceled) {
+        publish();
+        return;
+      }
+      queueFromFound(
+        picked.paths.map((path) => ({
+          name: folderName(path),
+          path,
+          isGit: true,
+        })),
+      );
+      publish();
+    },
+    scanImportParent: async () => {
+      if (importParent.trim() === '' || busy) return;
+      importLoading = true;
+      publish();
+      const reply: unknown = await api.query({ type: 'repos.discover', parent: importParent.trim() });
+      importLoading = false;
+      if (isQueryFailure(reply)) {
+        importSkippedTotal += 1;
+        publish();
+        return;
+      }
+      const body = reply as { readonly found: readonly { readonly name: string; readonly path: string; readonly isGit: boolean }[] };
+      queueFromFound(body.found);
+      publish();
+    },
+    reviewImportRow: (path) => {
+      const row = importQueue.find((entry) => entry.path === path);
+      if (row?.proposal === undefined) return;
+      proposal = row.proposal;
+      activeRepoPath = path;
+      screen = 'proposal';
+      publish();
+    },
+    approveImportRow: async (path) => {
+      const row = importQueue.find((entry) => entry.path === path);
+      if (row?.proposal === undefined || row.status !== 'ready' || busy) return;
+      busy = true;
+      publish();
+      const okApply = await applyConfirmedRepo(path, row.proposal);
+      busy = false;
+      if (okApply) {
+        importQueue = importQueue.map((entry) =>
+          entry.path === path ? { ...entry, status: 'added' as const, proposal: undefined } : entry,
+        );
+      }
+      publish();
+    },
+    approveAllImport: async () => {
+      if (busy || importQueue.some((row) => row.status === 'review')) return;
+      const ready = importQueue.filter((row) => row.status === 'ready' && row.proposal !== undefined);
+      for (const row of ready) {
+        if (row.proposal === undefined) continue;
+        busy = true;
+        publish();
+        const okApply = await applyConfirmedRepo(row.path, row.proposal);
+        busy = false;
+        if (okApply) {
+          importQueue = importQueue.map((entry) =>
+            entry.path === row.path ? { ...entry, status: 'added' as const, proposal: undefined } : entry,
+          );
+        }
+        publish();
+      }
+    },
+    continueImportToSummary: () => {
+      screen = 'summary';
+      importQueue = [];
+      importOverflow = 0;
       publish();
     },
     subscribe: (listener) => {

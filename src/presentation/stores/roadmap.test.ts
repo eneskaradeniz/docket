@@ -121,7 +121,9 @@ describe('roadmap store (U-17)', () => {
     const store = createRoadmapStore({ api, changes: fakeChanges().signal });
     await store.load('antero');
 
-    expect(api.queries).toEqual([{ type: 'project.tree' }, { type: 'roadmap.byProject', project: 'antero' }]);
+    expect(api.queries[0]).toEqual({ type: 'project.tree' });
+    expect(api.queries).toContainEqual({ type: 'roadmap.byProject', project: 'antero' });
+    expect(api.queries).toContainEqual({ type: 'project.spend', project: 'antero' });
     const state = store.state();
     expect(state.problem).toBeNull();
     expect(state.view?.phases).toHaveLength(2);

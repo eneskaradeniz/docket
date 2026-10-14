@@ -48,6 +48,7 @@ const PORT_KEYS: readonly (keyof AppDeps)[] = [
   'phaseAutoRuns',
   'scratch',
   'repoFolders',
+  'repoScanner',
   'repoFiles',
   'worktreeFiles',
   'machine',

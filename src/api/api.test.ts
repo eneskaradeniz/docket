@@ -2221,6 +2221,45 @@ describe('capabilities.import', () => {
   });
 });
 
+// --- Multi-repo setup apply (A-387) --------------------------------------------------------------------
+
+describe('setup.apply', () => {
+  it('A-387: invalid_id when the project slug does not parse', async () => {
+    const api = createApi(createFakeDeps());
+    const result = await api.command(ACTOR, {
+      type: 'setup.apply',
+      project: 'NOT VALID',
+      path: '/x',
+      proposal: {},
+    });
+    expect(result).toEqual({ ok: false, code: 'invalid_id' });
+  });
+
+  it('A-387: not_found when the project slug parses but no project exists', async () => {
+    const api = createApi(createFakeDeps());
+    const result = await api.command(ACTOR, {
+      type: 'setup.apply',
+      project: PROJECT,
+      path: '/x',
+      proposal: {},
+    });
+    expect(result).toEqual({ ok: false, code: 'not_found' });
+  });
+
+  it('A-387: bad_input when the proposal is not buildSetupProposal-shaped', async () => {
+    const deps = createFakeDeps();
+    await deps.projects.save({ id: slugOf<'project'>(PROJECT), name: 'Atölye', repos: [] });
+    const api = createApi(deps);
+    const result = await api.command(ACTOR, {
+      type: 'setup.apply',
+      project: PROJECT,
+      path: '/x',
+      proposal: { only: 'crafted' },
+    });
+    expect(result).toEqual({ ok: false, code: 'bad_input' });
+  });
+});
+
 // --- Docket's own MCP repair (A-381) -------------------------------------------------------------------
 
 describe('mcp.restore', () => {

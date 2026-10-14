@@ -46,6 +46,17 @@ describe('roadmap run controls — state mapping (U-63)', () => {
     expect(chipsAndButton(phase('a', 'A', { status: 'waiting', blockedBy: ['x'] }))).toEqual([null, 'run-disabled', 'blocked']);
   });
 
+  it('U-330: project cap hard_stop disables run with the cap hint', () => {
+    const own = phase('a', 'A', {}, [task('t1', ['r'])]);
+    expect(phaseControl(viewOf([own], ['t1']), own, { projectCapHardStop: true })).toEqual({
+      chip: null,
+      button: 'run-disabled',
+      hint: 'cap',
+      blockedBy: [],
+      attention: 0,
+    });
+  });
+
   it('U-63: planned with a runnable task of the phase shows the enabled run button; with none, no button', () => {
     const own = phase('a', 'A', {}, [task('t1', ['r'])]);
     expect(chipsAndButton(own, ['t1'])).toEqual([null, 'run', null]);
@@ -99,6 +110,7 @@ const harness = (view: RoadmapPageView): Harness => {
       queries.push(query);
       if (query.type === 'project.tree') return Promise.resolve([]);
       if (query.type === 'roadmap.byProject') return Promise.resolve(view);
+      if (query.type === 'project.spend') return Promise.resolve({ totalUsd: 0, perRepo: [], billing: 'none' });
       return Promise.resolve({ ok: false, code: 'not_found' });
     },
     command: (_actor, command) => {

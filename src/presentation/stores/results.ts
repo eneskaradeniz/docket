@@ -65,6 +65,9 @@ export const KNOWN_FAILURE_CODES: readonly string[] = [
   'bad_checksum',
   'wrong_format',
   'project_exists',
+  'source_not_in_project',
+  'folder_not_found',
+  'not_a_git_repo',
   // The phase commands' refusals (A-97, A-110).
   'unknown_project',
   'no_roadmap',
@@ -113,6 +116,7 @@ type SilentCommand =
   // The setup conversation's own panel words its outcomes; neither command toasts.
   | 'setup.ai.start'
   | 'setup.read.answer'
+  | 'setup.apply'
   // The built-in MCP row words its own restore result inline (U-314).
   | 'mcp.restore';
 const isSilent = (command: Command['type']): command is SilentCommand =>
@@ -135,6 +139,7 @@ const isSilent = (command: Command['type']): command is SilentCommand =>
   || command === 'tracker.resolveConflict'
   || command === 'setup.ai.start'
   || command === 'setup.read.answer'
+  || command === 'setup.apply'
   || command === 'mcp.restore';
 
 const SUCCESS_KEYS: Readonly<Record<Exclude<Command['type'], SilentCommand>, LabelKey>> = {

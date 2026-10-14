@@ -151,6 +151,7 @@ describe('AppDeps', () => {
       | 'phaseAutoRuns'
       | 'scratch'
       | 'repoFolders'
+      | 'repoScanner'
       | 'repoFiles'
       | 'machine'
       | 'dispatchStatus'

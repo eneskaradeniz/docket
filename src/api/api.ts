@@ -155,7 +155,11 @@ import {
   pausePhase,
   resumePhase,
   openWorkOrder,
+  buildSetupProposal,
+  setupApply,
   registerRepo,
+  reposDiscover,
+  setupCopyProposal,
   removeAccount,
   removeAccountCap,
   routeChanged,
@@ -851,6 +855,25 @@ const runCommand = async (
           { project, repo, path: command.path, actor },
         ),
       );
+    }
+
+    case 'setup.apply': {
+      const project = slugValue<'project'>(command.project);
+      if (project === undefined) return invalidId();
+      if (typeof command.path !== 'string' || command.path.trim() === '') return badInput();
+      if ((await deps.projects.get(project)) === undefined) return { ok: false, code: 'not_found' };
+      try {
+        buildSetupProposal(command.proposal);
+      } catch {
+        return badInput();
+      }
+      const applied = await setupApply(deps, {
+        project,
+        path: command.path.trim(),
+        answers: command.proposal,
+        actor,
+      });
+      return applied.ok ? { ok: true } : { ok: false, code: applied.error };
     }
 
     case 'repo.unregister': {
@@ -2042,6 +2065,22 @@ const runQuery = async (
       return { ask: context.ask === null ? null : { path: context.ask.path, reason: context.ask.reason }, secrets: context.secrets };
     }
 
+    case 'repos.discover': {
+      if (typeof query.parent !== 'string' || query.parent.trim() === '') return badInput();
+      const discovered = await reposDiscover(deps, query.parent.trim());
+      return discovered.ok ? discovered.value : { ok: false, code: discovered.error };
+    }
+
+    case 'setup.copyProposal': {
+      const project = slugValue<'project'>(query.project);
+      if (project === undefined) return invalidId();
+      const source = slugValue<'repo'>(query.source);
+      if (source === undefined) return invalidId();
+      if (typeof query.path !== 'string' || query.path.trim() === '') return badInput();
+      const copied = await setupCopyProposal(deps, { project, source, path: query.path.trim() });
+      return copied.ok ? copied.value : { ok: false, code: copied.error };
+    }
+
     case 'app.update': {
       // The state is already the view: plain JSON, no derivation, nothing stored.
       if (updates === undefined) return { ok: false, code: 'not_found' };
@@ -2808,6 +2847,58 @@ const accountModelsView = async (
   };
 };
 
+type ProjectSpendRouteBilling = 'pay_per_use' | 'included' | 'unknown';
+
+const routeBillingForProjectSpend = (billing: Billing): ProjectSpendRouteBilling =>
+  billing === 'metered' ? 'pay_per_use' : billing;
+
+const accountBillingForProjectSpend = async (
+  deps: AppDeps,
+  record: AccountRecord,
+): Promise<ProjectSpendRouteBilling> => {
+  const [pools, models] = await Promise.all([
+    deps.accounts.pools(record.id),
+    catalogOrEmpty(() => deps.modelCatalog.list(record.id)),
+  ]);
+  const defaultModel = models.find((model) => model.isDefault === true);
+  const billing =
+    defaultModel === undefined
+      ? defaultBillingOf(deps.capabilities, record)
+      : billingFromPools(defaultModel.billing, defaultModel.resolvedId ?? defaultModel.id, pools);
+  return routeBillingForProjectSpend(billing);
+};
+
+const projectSpendBillingOf = (billings: readonly ProjectSpendRouteBilling[]): ProjectSpendView['billing'] => {
+  if (billings.length === 0) return 'none';
+  if (billings.every((entry) => entry === 'included')) return 'included';
+  if (billings.every((entry) => entry !== 'included')) return 'pay_per_use';
+  return 'mixed';
+};
+
+const projectActiveAccountIds = async (
+  deps: AppDeps,
+  project: ProjectSlug,
+  repos: readonly RepoSlug[],
+): Promise<readonly AccountId[]> => {
+  const repoSet = new Set(repos);
+  const ids: AccountId[] = [];
+  const seen = new Set<string>();
+  for (const { scope, binding } of await deps.bindings.listAll()) {
+    const applies =
+      scope.level === 'global' ||
+      (scope.level === 'project' && scope.project === project) ||
+      (scope.level === 'repo' && repoSet.has(scope.repo));
+    if (!applies) continue;
+    for (const route of binding.accounts) {
+      if (seen.has(route.accountId)) continue;
+      if ((await deps.accounts.get(route.accountId)) === undefined) continue;
+      seen.add(route.accountId);
+      ids.push(route.accountId);
+    }
+  }
+  return ids;
+};
+
 const projectSpendView = async (
   deps: AppDeps,
   project: ProjectSlug,
@@ -2827,9 +2918,17 @@ const projectSpendView = async (
   }
   const totalUsd = perRepo.reduce((sum, entry) => sum + entry.usd, 0);
 
+  const accountIds = await projectActiveAccountIds(deps, project, def.repos);
+  const billings: ProjectSpendRouteBilling[] = [];
+  for (const id of accountIds) {
+    const record = await deps.accounts.get(id);
+    if (record !== undefined) billings.push(await accountBillingForProjectSpend(deps, record));
+  }
+
   return {
     totalUsd,
     perRepo,
+    billing: projectSpendBillingOf(billings),
     ...(def.budget !== undefined ? { cap: { amountUsd: def.budget.amountUsd, warnPercent: def.budget.warnPercent } } : {}),
   };
 };

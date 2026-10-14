@@ -10,13 +10,14 @@ export interface PermissionPromptProps {
   readonly open: boolean;
   readonly prompt: SetupPermissionPrompt | null;
   readonly locale: Locale;
+  readonly repoLabel?: string | null;
   readonly onDeny: () => void;
   readonly onAllow: () => void;
   /** Focus returns here when the dialog closes (U-278). */
   readonly returnFocusRef: { readonly current: HTMLElement | null };
 }
 
-export function PermissionPrompt({ open, prompt, locale, onDeny, onAllow, returnFocusRef }: PermissionPromptProps) {
+export function PermissionPrompt({ open, prompt, locale, repoLabel, onDeny, onAllow, returnFocusRef }: PermissionPromptProps) {
   const denyRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const restoreRef = useRef<HTMLElement | null>(null);
@@ -64,6 +65,14 @@ export function PermissionPrompt({ open, prompt, locale, onDeny, onAllow, return
         className="grid w-full max-w-lg gap-4 rounded-panel border border-bord bg-surface p-5 shadow-2xl"
         data-setup-permission=""
       >
+        <div className="flex flex-wrap items-center gap-2">
+          {repoLabel !== undefined && repoLabel !== null && repoLabel !== '' ? (
+            <span className="rounded-control border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[0.75rem] font-semibold text-ink" data-setup-permission-repo="">
+              {t(locale, 'setup.permission.repoPrefix')} {repoLabel}
+            </span>
+          ) : null}
+          <span className="text-[0.8125rem] text-inkdim">{t(locale, 'setup.permission.scopeNote')}</span>
+        </div>
         <h2 className="m-0 text-[1rem] font-semibold text-ink">{t(locale, titleKey)}</h2>
         <p className="m-0 font-mono text-[0.8125rem] leading-[1.25rem] text-ink" data-setup-permission-path="">
           {prompt.path}
