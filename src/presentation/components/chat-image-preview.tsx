@@ -11,6 +11,9 @@ const TRAY_BOX = `relative grid h-9 w-12 flex-none overflow-hidden rounded-card 
 const SKELETON = 'absolute inset-0 bg-raised motion-safe:animate-pulse motion-reduce:animate-none';
 const REMOVE = `border-0 bg-transparent pl-1 font-mono text-[0.75rem] leading-none text-inkdim hover:text-ink ${FOCUS}`;
 
+/** IntersectionObserver rootMargin must use px or % units only (≈3rem prefetch). */
+export const CHAT_IMAGE_PREVIEW_LAZY_ROOT_MARGIN = `${48}px`;
+
 export interface ChatImagePreviewProps {
   readonly id: string;
   readonly name: string;
@@ -39,7 +42,7 @@ export function ChatImagePreview({ id, name, kind, bytes, state, store, locale, 
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) store.watchAttachmentPreview(id);
       },
-      { rootMargin: '3rem' },
+      { rootMargin: CHAT_IMAGE_PREVIEW_LAZY_ROOT_MARGIN },
     );
     observer.observe(node);
     return () => observer.disconnect();
