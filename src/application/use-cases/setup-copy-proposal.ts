@@ -12,7 +12,7 @@ import {
 
 import type { AppDeps } from '../ports/deps';
 import { registerRepo } from './projects';
-import type { SetupProposal } from './setup';
+import { buildSetupProposal, type SetupProposal } from './setup';
 
 export type SetupCopyProposalError =
   | 'source_not_in_project'
@@ -94,11 +94,17 @@ export async function setupCopyProposal(
   return ok(proposal);
 }
 
-export type ApplySetupRepoError =
-  | 'unknown_project'
-  | 'repo_not_in_project'
+export type SetupApplyError =
+  | 'not_found'
+  | 'folder_not_found'
+  | 'not_a_git_repo'
   | 'definitions_invalid'
   | 'stale';
+
+const folderNameOf = (path: string): string => {
+  const segments = path.split(/[/\\]/).filter((segment) => segment !== '');
+  return segments[segments.length - 1] ?? '';
+};
 
 const projectYamlOf = (proposal: SetupProposal, projectId: ProjectSlug): string =>
   `${JSON.stringify({ id: projectId, name: proposal.project.name, repos: proposal.project.repos }, null, 2)}\n`;
@@ -118,24 +124,66 @@ const repoYamlOf = (proposal: SetupProposal): string =>
     2,
   )}\n`;
 
-export async function applyConfirmedSetupRepo(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'projects' | 'repos' | 'definitions' | 'workOrders'>,
+const rebuildApplyProposal = (
+  project: { readonly id: ProjectSlug; readonly name: string; readonly repos: readonly RepoSlug[] },
+  path: string,
+  answers: unknown,
+  detected: { readonly docsRoot: string; readonly testGlobs: readonly string[] },
+): SetupProposal => {
+  const parsed = buildSetupProposal(answers);
+  const folderName = folderNameOf(path);
+  const repoId = slugFromName<'repo'>(folderName, new Set(project.repos));
+  const repos = project.repos.includes(repoId) ? [...project.repos] : [...project.repos, repoId];
+  return buildSetupProposal({
+    project: { name: project.name, repos },
+    repo: {
+      ...parsed.repo,
+      id: repoId,
+      docsRoot: detected.docsRoot,
+      testGlobs: detected.testGlobs,
+    },
+    warnings: parsed.warnings,
+    differsFromRecommended: parsed.differsFromRecommended,
+  });
+};
+
+export async function setupApply(
+  deps: Pick<
+    AppDeps,
+    'clock' | 'ids' | 'log' | 'projects' | 'repos' | 'definitions' | 'workOrders' | 'git' | 'readFingerprint' | 'repoScanner'
+  >,
   input: {
     readonly project: ProjectSlug;
     readonly path: string;
-    readonly proposal: SetupProposal;
+    readonly answers: unknown;
     readonly actor: Actor;
   },
-): Promise<Result<void, ApplySetupRepoError>> {
+): Promise<Result<void, SetupApplyError>> {
   const project = await deps.projects.get(input.project);
-  if (project === undefined) return err('unknown_project');
-  const repo = input.proposal.repo.id as RepoSlug;
-  const repos = project.repos.includes(repo) ? project.repos : [...project.repos, repo];
-  const updated = { ...project, repos };
+  if (project === undefined) return err('not_found');
+
+  const already = (await deps.repos.list()).find((entry) => entry.path === input.path);
+  if (already !== undefined && project.repos.includes(already.slug)) return ok(undefined);
+
+  const folderName = folderNameOf(input.path);
+  if (folderName === '' || (await deps.readFingerprint(input.path)) === undefined) return err('folder_not_found');
+  if (!(await deps.git.isWorkTree(input.path))) return err('not_a_git_repo');
+
+  const detected = await deps.repoScanner.detect(input.path);
+  let proposal: SetupProposal;
+  try {
+    proposal = rebuildApplyProposal(project, input.path, input.answers, detected);
+  } catch {
+    return err('definitions_invalid');
+  }
+
+  const repo = proposal.repo.id as RepoSlug;
+  const repos = proposal.project.repos as readonly RepoSlug[];
+  const updated = { ...project, repos: [...repos] };
   const projectPath = `projects/${input.project}/project.yaml`;
   const repoPath = `repos/${repo}/repo.yaml`;
-  const projectBody = projectYamlOf({ ...input.proposal, project: { ...input.proposal.project, repos } }, input.project);
-  const repoBody = repoYamlOf(input.proposal);
+  const projectBody = projectYamlOf(proposal, input.project);
+  const repoBody = repoYamlOf(proposal);
   const projectValid = validateDefinitions({
     roles: BUILTIN_ROLES,
     flows: BUILTIN_FLOWS,
@@ -144,14 +192,15 @@ export async function applyConfirmedSetupRepo(
     repo: {
       id: repo,
       name: repo,
-      flow: input.proposal.repo.flow,
-      defaultLimitPolicy: input.proposal.repo.defaultLimitPolicy,
-      commandSets: input.proposal.repo.commandSets,
-      docsRoot: input.proposal.repo.docsRoot,
-      testGlobs: input.proposal.repo.testGlobs,
+      flow: proposal.repo.flow,
+      defaultLimitPolicy: proposal.repo.defaultLimitPolicy,
+      commandSets: proposal.repo.commandSets,
+      docsRoot: proposal.repo.docsRoot,
+      testGlobs: proposal.repo.testGlobs,
     },
   });
   if (!projectValid.ok) return err('definitions_invalid');
+
   await deps.projects.save(updated);
   const wroteProject = await deps.definitions.writeFile(projectPath, projectBody, '');
   const wroteRepo = await deps.definitions.writeFile(repoPath, repoBody, '');
@@ -160,6 +209,6 @@ export async function applyConfirmedSetupRepo(
     { clock: deps.clock, ids: deps.ids, log: deps.log, projects: deps.projects, repos: deps.repos, workOrders: deps.workOrders },
     { project: input.project, repo, path: input.path, actor: input.actor },
   );
-  if (!registered.ok) return err('repo_not_in_project');
+  if (!registered.ok) return err('definitions_invalid');
   return ok(undefined);
 }

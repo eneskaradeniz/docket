@@ -90,7 +90,7 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
   'tracker.resolveConflict': { input: 'repo: RepoSlug, conflict: SyncConflict, resolution: keep_remote | keep_local' },
   'setup.ai.start': { input: 'repoPath: string, draft?: string — errors: no_provider, bad_input, not_found (A-357), mcp_down (A-381)' },
   'setup.read.answer': { input: 'conversation: ConversationId, path: string, allow: boolean (A-358)' },
-  'setup.apply': { input: 'project: ProjectSlug, path: string, proposal: SetupProposal — errors: unknown_project, repo_not_in_project, definitions_invalid, stale (A-383)' },
+  'setup.apply': { input: 'project: ProjectSlug, path: string, proposal: SetupProposal — errors: invalid_id, not_found, bad_input, folder_not_found, not_a_git_repo, definitions_invalid, stale (A-387)' },
   'mcp.restore': { input: 'no input — ok → { status: McpStatusView }, error: endpoint_unavailable | listener_failed | script_missing (A-381)' },
 };
 

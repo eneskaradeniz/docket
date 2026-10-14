@@ -153,8 +153,8 @@ import {
   pausePhase,
   resumePhase,
   openWorkOrder,
-  applyConfirmedSetupRepo,
   buildSetupProposal,
+  setupApply,
   registerRepo,
   reposDiscover,
   setupCopyProposal,
@@ -859,16 +859,18 @@ const runCommand = async (
       const project = slugValue<'project'>(command.project);
       if (project === undefined) return invalidId();
       if (typeof command.path !== 'string' || command.path.trim() === '') return badInput();
-      let proposal;
+      if ((await deps.projects.get(project)) === undefined) return { ok: false, code: 'not_found' };
       try {
-        proposal = buildSetupProposal(command.proposal);
+        buildSetupProposal(command.proposal);
       } catch {
         return badInput();
       }
-      const applied = await applyConfirmedSetupRepo(
-        { clock: deps.clock, ids: deps.ids, log: deps.log, projects: deps.projects, repos: deps.repos, definitions: deps.definitions, workOrders: deps.workOrders },
-        { project, path: command.path.trim(), proposal, actor },
-      );
+      const applied = await setupApply(deps, {
+        project,
+        path: command.path.trim(),
+        answers: command.proposal,
+        actor,
+      });
       return applied.ok ? { ok: true } : { ok: false, code: applied.error };
     }
 
