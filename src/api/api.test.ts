@@ -14,6 +14,7 @@ import {
   createFakeCommandRunner,
   createFakeDefinitionStore,
   createFakeDeps,
+  createFakeModelCatalog,
   createFakeEventLog,
   createFakeForge,
   createFakeGitProbe,
@@ -1166,6 +1167,103 @@ describe('createApi', () => {
 
       expect(result).toEqual({ ok: false, code: 'binding_exists', roles: ['worker', 'reviewer'] });
       expect(await h.deps.accounts.get(ACCOUNT)).toBeDefined();
+    });
+
+    const seedCatalogAccount = async (h: Harness): Promise<Harness> => {
+      const catalog = createFakeModelCatalog({
+        [ACCOUNT]: [
+          {
+            id: 'haiku',
+            source: 'live',
+            thinking: { kind: 'none' },
+            billing: 'included',
+            resolvedId: 'claude-haiku-4-5',
+            contextWindow: null,
+          },
+        ],
+      });
+      const deps: AppDeps = { ...h.deps, modelCatalog: catalog };
+      await deps.accounts.save({
+        id: ACCOUNT,
+        provider: 'acme-prov',
+        label: 'Main',
+        authMode: 'subscription',
+        limitPolicy: 'wait_resume',
+        caps: [{ scope: 'account_month', cap: { amountUsd: 10, warnPercent: 80 } }],
+        consentedModels: ['haiku'],
+      });
+      return { ...h, deps };
+    };
+
+    it('A-389: binding.save keeps a catalog id, rewrites a resolvedId to the alias, and rejects an unknown model before save', async () => {
+      const h = await seedCatalogAccount(await createHarness());
+      const api = createApi(h.deps);
+      const role = slugOf<'role'>('worker');
+
+      expect(
+        await api.command(ACTOR, {
+          type: 'binding.save',
+          role: 'worker',
+          accounts: [{ accountId: ACCOUNT, model: 'haiku' }],
+        }),
+      ).toEqual({ ok: true });
+      expect(await h.deps.bindings.get({ level: 'global' }, role)).toEqual({
+        role,
+        accounts: [{ accountId: ACCOUNT, model: 'haiku' }],
+      });
+
+      expect(
+        await api.command(ACTOR, {
+          type: 'binding.save',
+          role: 'worker',
+          accounts: [{ accountId: ACCOUNT, model: 'claude-haiku-4-5' }],
+        }),
+      ).toEqual({ ok: true });
+      expect(await h.deps.bindings.get({ level: 'global' }, role)).toEqual({
+        role,
+        accounts: [{ accountId: ACCOUNT, model: 'haiku' }],
+      });
+
+      const saveSpy = vi.spyOn(h.deps.bindings, 'save');
+      expect(
+        await api.command(ACTOR, {
+          type: 'binding.save',
+          role: 'worker',
+          accounts: [{ accountId: ACCOUNT, model: 'not-a-model' }],
+        }),
+      ).toEqual({ ok: false, code: 'unknown_model', validModelIds: ['haiku'] });
+      expect(saveSpy).not.toHaveBeenCalled();
+      expect(await h.deps.bindings.get({ level: 'global' }, role)).toEqual({
+        role,
+        accounts: [{ accountId: ACCOUNT, model: 'haiku' }],
+      });
+    });
+
+    it('A-389: consent recorded under the alias matches a binding saved with the resolved id', async () => {
+      const h = await seedCatalogAccount(await createHarness());
+      const api = createApi(h.deps);
+
+      expect(
+        await api.command(ACTOR, {
+          type: 'account.consent.grant',
+          id: ACCOUNT,
+          model: 'haiku',
+          cap: { scope: 'account_month', amountUsd: 10, warnPercent: 80 },
+        }),
+      ).toEqual({ ok: true });
+      expect(
+        await api.command(ACTOR, {
+          type: 'binding.save',
+          role: 'worker',
+          accounts: [{ accountId: ACCOUNT, model: 'claude-haiku-4-5' }],
+        }),
+      ).toEqual({ ok: true });
+      const role = slugOf<'role'>('worker');
+      expect(await h.deps.bindings.get({ level: 'global' }, role)).toEqual({
+        role,
+        accounts: [{ accountId: ACCOUNT, model: 'haiku' }],
+      });
+      expect((await h.deps.accounts.get(ACCOUNT))?.consentedModels).toContain('haiku');
     });
 
     it('U-13: binding.save maps onto saveBinding at the global scope; an empty chain reports empty_chain', async () => {

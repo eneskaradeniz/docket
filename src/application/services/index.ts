@@ -4,6 +4,7 @@ export * from './run-control';
 export * from './dispatcher';
 export * from './permission-board';
 export * from './match-id';
+export * from './normalize-route-model';
 export * from './spend-consent';
 export * from './quota-service';
 export * from './tracker-sync-service';

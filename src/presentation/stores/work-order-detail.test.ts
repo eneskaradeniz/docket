@@ -1598,3 +1598,52 @@ describe('git doors (U-344 … U-349)', () => {
     }
   });
 });
+
+// --- U-350 … U-353: the repo context ------------------------------------------------------------------
+
+describe('repo context (U-350 … U-353)', () => {
+  const CONTEXT = {
+    path: '/clones/atolye',
+    status: 'ok',
+    project: { slug: 'atolye-proj', name: 'Atölye' },
+    siblingCount: 2,
+  } as const;
+
+  it('U-351: a not-ok repo stands the card with every door closed and the one cause line — even with no worktree', () => {
+    const view: WorkOrderDetailView = { ...detailReply(AT_BUILD), repoContext: { ...CONTEXT, status: 'relink_offered' } };
+    // No working copy either: the not-ok repo is itself the standing the card exists to say.
+    const model = gitCard(view, null, false);
+    expect(model).not.toBeNull();
+    expect(model?.repoReasonKey).toBe('detail.git.repo.relinkOffered');
+    expect(model?.doors.every((door) => !door.available)).toBe(true);
+    // The doors' own lifecycle reasons would name the wrong cause; the card carries one line.
+    expect(model?.doors.every((door) => door.reasonKey === undefined)).toBe(true);
+  });
+
+  it('U-351: each not-ok standing words its own cause; an ok or absent context keeps the old matrix', () => {
+    const standings = [
+      ['folder_not_found', 'detail.git.repo.folderNotFound'],
+      ['unregistered', 'detail.git.repo.unregistered'],
+    ] as const;
+    for (const [status, key] of standings) {
+      const view: WorkOrderDetailView = { ...detailReply(AT_BUILD), repoContext: { ...CONTEXT, status } };
+      expect(gitCard(view, null, true)?.repoReasonKey).toBe(key);
+    }
+    // Ok: the worktree decides the card, exactly as before the field existed.
+    expect(gitCard({ ...detailReply(AT_BUILD), repoContext: { ...CONTEXT } }, null, false)).toBeNull();
+    expect(gitCard({ ...detailReply(AT_BUILD), repoContext: { ...CONTEXT } }, null, true)?.repoReasonKey).toBeUndefined();
+    // An older reply without repoContext reads as ok — never a crash, never a wrong cause.
+    expect(gitCard(detailReply(AT_BUILD), null, true)?.repoReasonKey).toBeUndefined();
+    expect(gitCard(detailReply(AT_BUILD), null, false)).toBeNull();
+  });
+
+  it('U-352: the repo cause copy lives in both bundles, one quiet line within eight words', () => {
+    for (const key of ['detail.git.repo.folderNotFound', 'detail.git.repo.relinkOffered', 'detail.git.repo.unregistered']) {
+      for (const bundle of [TR, EN]) {
+        expect(bundle[key as keyof typeof bundle], `${key} in the bundle`).toBeDefined();
+        const words = bundle[key as keyof typeof bundle].split(/\s+/).filter((word) => word.length > 0).length;
+        expect(words, `${key} stays within eight words`).toBeLessThanOrEqual(8);
+      }
+    }
+  });
+});

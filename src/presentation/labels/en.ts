@@ -26,6 +26,7 @@ export const EN: LabelBundle = {
   'error.invalid_after': 'The proposal’s valid-after time is invalid.',
   'error.binding_exists': 'The account is still referenced by a role binding; update the binding first.',
   'error.invalid_model': 'Invalid model.',
+  'error.unknown_model': "That model is not on this account's route.",
   'error.invalid_cap': 'The spend cap is invalid.',
   'error.cap_required': 'The last spend cap cannot be removed while a model is consented; withdraw the consent first.',
   'error.not_a_deploy_gate': 'This gate is not a deploy gate.',
@@ -217,6 +218,13 @@ export const EN: LabelBundle = {
   'detail.git.release.body': 'The local branch and worktree are deleted.',
   'detail.git.release.success': 'The branch is deleted.',
   'detail.git.notMerged': 'The pull request is not merged.',
+  // The repo context (U-350 … U-353): the header's quiet line and the git card's one cause
+  // sentence share this copy — one set words both places.
+  'detail.git.repo.folderNotFound': 'The repo folder was not found.',
+  'detail.git.repo.relinkOffered': 'This folder is not the repo; re-link it.',
+  'detail.git.repo.unregistered': 'This repo is not registered on this machine.',
+  'detail.repo.project': 'Project: {name}',
+  'detail.repo.siblings': '{n} more repos',
   'check.status.queued': 'queued',
   'check.status.running': 'running',
   'check.status.passed': 'passed',

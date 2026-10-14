@@ -186,6 +186,7 @@ type DocketToolDeps = Pick<
   | 'runs'
   | 'projects'
   | 'repos'
+  | 'readFingerprint'
   | 'definitions'
   | 'repoFiles'
   | 'actions'

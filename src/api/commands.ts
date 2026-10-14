@@ -189,7 +189,8 @@ export type CommandResult =
        *  `pr_exists` — the stored one the refusal answers with. */
       readonly pr?: { readonly number: number; readonly url: string };
     }
-  /** `roles` rides only `binding_exists`: the roles whose bindings still reference the account.
+  /** `validModelIds` rides only `unknown_model` (A-389): the catalog ids valid for that account's route.
+   *  `roles` rides only `binding_exists`: the roles whose bindings still reference the account.
    *  `accounts` rides only `account_not_connected` on repo.saveFlow (A-354): every disconnected
    *  stage chain entry as `{ stage, accountId }`.
    *  `issues` rides `definitions_invalid` on bundle import (A-342).
@@ -201,6 +202,7 @@ export type CommandResult =
   | {
       readonly ok: false;
       readonly code: string;
+      readonly validModelIds?: readonly string[];
       readonly roles?: readonly string[];
       readonly accounts?: readonly { readonly stage: string; readonly accountId: string }[];
       readonly issues?: readonly string[];

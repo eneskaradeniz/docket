@@ -48,6 +48,7 @@ import {
   isProjectSetupTarget,
   orderForReview,
   parseRepoFlowValue,
+  type RepoFlow,
   parseSlug,
   parseUlid,
   reserveClassOf,
@@ -184,6 +185,7 @@ import {
   workOrderCodeOf,
   catalogOrEmpty,
   matchIdFor,
+  normalizeRouteModel,
   mergeWorkOrderPr,
   openWorkOrderPr,
   PR_TEXT_MAX_CHARS,
@@ -312,6 +314,60 @@ const tierValue = (input: string | undefined): Tier | undefined | null => {
 };
 
 const invalidId = (): CommandResult => ({ ok: false, code: 'invalid_id' });
+
+const unknownModelOf = (validModelIds: readonly string[]): CommandResult => ({
+  ok: false,
+  code: 'unknown_model',
+  validModelIds,
+});
+
+const normalizeModelForAccount = async (
+  deps: Pick<AppDeps, 'modelCatalog'>,
+  accountId: AccountId,
+  model: string,
+): Promise<Result<string, CommandResult>> => {
+  const catalog = await catalogOrEmpty(() => deps.modelCatalog.list(accountId));
+  const normalized = normalizeRouteModel(catalog, model);
+  return normalized.ok ? { ok: true, value: normalized.value } : { ok: false, error: unknownModelOf(normalized.error.models) };
+};
+
+const normalizeAccountRoutes = async (
+  deps: Pick<AppDeps, 'modelCatalog'>,
+  routes: readonly { readonly accountId: AccountId; readonly model?: string }[],
+): Promise<Result<AccountRoute[], CommandResult>> => {
+  const accounts: AccountRoute[] = [];
+  for (const entry of routes) {
+    if (entry.model === undefined) {
+      accounts.push({ accountId: entry.accountId });
+      continue;
+    }
+    const normalized = await normalizeModelForAccount(deps, entry.accountId, entry.model);
+    if (!normalized.ok) return normalized;
+    accounts.push({ accountId: entry.accountId, model: normalized.value });
+  }
+  return { ok: true, value: accounts };
+};
+
+const normalizeRepoFlowModels = async (
+  deps: Pick<AppDeps, 'modelCatalog'>,
+  flow: RepoFlow,
+): Promise<Result<RepoFlow, CommandResult>> => {
+  const bindings = [];
+  for (const binding of flow.bindings) {
+    const routes: AccountRoute[] = [];
+    for (const route of binding.accounts) {
+      if (route.model === undefined) {
+        routes.push({ accountId: route.accountId });
+        continue;
+      }
+      const normalized = await normalizeModelForAccount(deps, route.accountId, route.model);
+      if (!normalized.ok) return normalized;
+      routes.push({ accountId: route.accountId, model: normalized.value });
+    }
+    bindings.push({ ...binding, accounts: routes });
+  }
+  return { ok: true, value: { ...flow, bindings } };
+};
 
 /** The chat surface's own malformed-answer (A-265): the same edge discipline as invalid_id, in the
  *  vocabulary this slice was fixed with. */
@@ -931,9 +987,11 @@ const runCommand = async (
       // (R-127/R-128 against the merged definitions) are the use case's to refuse.
       const flow = parseRepoFlowValue(command.flow);
       if (!flow.ok) return { ok: false, code: 'bad_input' };
+      const flowModels = await normalizeRepoFlowModels(deps, flow.value);
+      if (!flowModels.ok) return flowModels.error;
       const saved = await saveRepoFlow(
         { clock: deps.clock, ids: deps.ids, log: deps.log, repos: deps.repos, definitions: deps.definitions, accounts: deps.accounts },
-        { repo, flow: flow.value, actor },
+        { repo, flow: flowModels.value, actor },
       );
       if (saved.ok) return { ok: true };
       if (typeof saved.error === 'string') return { ok: false, code: saved.error };
@@ -1384,7 +1442,12 @@ const runCommand = async (
       const id = ulidValue<'account'>(command.id);
       if (id === undefined) return invalidId();
       // An absent or empty model means the route's default model (A-74).
-      const model = command.model === undefined || command.model === '' ? undefined : command.model;
+      let model = command.model === undefined || command.model === '' ? undefined : command.model;
+      if (model !== undefined) {
+        const normalized = await normalizeModelForAccount(deps, id, model);
+        if (!normalized.ok) return normalized.error;
+        model = normalized.value;
+      }
       const tested = await testAccount(deps, model === undefined ? { id, actor } : { id, model, actor });
       // A finished test answers ok whatever its outcome; the outcome rides settings.accounts.
       return tested.ok ? { ok: true } : { ok: false, code: tested.error };
@@ -1427,9 +1490,11 @@ const runCommand = async (
         cap = { scope, cap: { amountUsd: capRaw.amountUsd, warnPercent: capRaw.warnPercent } };
       }
 
+      const consentModel = await normalizeModelForAccount(deps, id, command.model);
+      if (!consentModel.ok) return consentModel.error;
       const granted = await grantSpendConsent(
         { clock: deps.clock, ids: deps.ids, log: deps.log, accounts: deps.accounts },
-        { accountId: id, model: command.model, ...(cap !== undefined ? { cap } : {}), actor },
+        { accountId: id, model: consentModel.value, ...(cap !== undefined ? { cap } : {}), actor },
       );
       return granted.ok ? { ok: true } : { ok: false, code: granted.error };
     }
@@ -1438,9 +1503,11 @@ const runCommand = async (
       const id = ulidValue<'account'>(command.id);
       if (id === undefined) return invalidId();
 
+      const revokeModel = await normalizeModelForAccount(deps, id, command.model);
+      if (!revokeModel.ok) return revokeModel.error;
       const revoked = await revokeSpendConsent(
         { clock: deps.clock, ids: deps.ids, log: deps.log, accounts: deps.accounts },
-        { accountId: id, model: command.model, actor },
+        { accountId: id, model: revokeModel.value, actor },
       );
       return revoked.ok ? { ok: true } : { ok: false, code: revoked.error };
     }
@@ -1448,12 +1515,15 @@ const runCommand = async (
     case 'binding.save': {
       const role = slugValue<'role'>(command.role);
       if (role === undefined) return invalidId();
-      const accounts: AccountRoute[] = [];
+      const parsedAccounts: { readonly accountId: AccountId; readonly model?: string }[] = [];
       for (const entry of command.accounts) {
         const accountId = ulidValue<'account'>(entry.accountId);
         if (accountId === undefined) return invalidId();
-        accounts.push(entry.model === undefined ? { accountId } : { accountId, model: entry.model });
+        parsedAccounts.push(entry.model === undefined ? { accountId } : { accountId, model: entry.model });
       }
+      const routed = await normalizeAccountRoutes(deps, parsedAccounts);
+      if (!routed.ok) return routed.error;
+      const accounts = routed.value;
       const thinking = thinkingValue(command.thinking);
       if (thinking === null) return invalidId();
       const tier = tierValue(command.tier);
@@ -1872,7 +1942,14 @@ const runQuery = async (
       const id = ulidValue<'work-order'>(query.id);
       if (id === undefined) return invalidId();
       const view = await getWorkOrder(
-        { workOrders: deps.workOrders, runs: deps.runs, definitions: deps.definitions },
+        {
+          workOrders: deps.workOrders,
+          runs: deps.runs,
+          definitions: deps.definitions,
+          repos: deps.repos,
+          readFingerprint: deps.readFingerprint,
+          projects: deps.projects,
+        },
         id,
       );
       if (!view.ok) return { ok: false, code: view.error };

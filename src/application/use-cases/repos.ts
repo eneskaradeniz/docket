@@ -4,7 +4,7 @@
 import type { AccountId, Actor, RepoFlow, RepoSlug, Result, StageSlug } from '../../domain/index';
 import { err, ok } from '../../domain/index';
 
-import type { AppDeps } from '../ports/index';
+import type { AppDeps, RepoFingerprint, RepoRegistryEntry } from '../ports/index';
 
 export interface RepoStatusView {
   readonly repoId: string;
@@ -12,6 +12,20 @@ export interface RepoStatusView {
   readonly path: string;
   readonly status: 'ok' | 'folder_not_found' | 'relink_offered';
 }
+
+/** The standing of one registry row against its folder's current fingerprint — the single rule
+ *  `repoStatuses` (A-341) and the work-order detail's repo context (A-392) both read: a folder
+ *  that reads no fingerprint is not there, one whose root commit differs from a stored, non-empty
+ *  one is offered for relink. */
+export const repoEntryStatus = (
+  entry: RepoRegistryEntry,
+  read: RepoFingerprint | undefined,
+): RepoStatusView['status'] =>
+  read === undefined
+    ? 'folder_not_found'
+    : entry.fingerprint.rootCommit !== '' && entry.fingerprint.rootCommit !== read.rootCommit
+      ? 'relink_offered'
+      : 'ok';
 
 export type RepoFlowView =
   | { readonly ok: true; readonly flow: RepoFlow }
@@ -35,13 +49,7 @@ export async function repoStatuses(
   const views: RepoStatusView[] = [];
   for (const entry of await deps.repos.list()) {
     const read = await deps.readFingerprint(entry.path);
-    const status =
-      read === undefined
-        ? 'folder_not_found'
-        : entry.fingerprint.rootCommit !== '' && entry.fingerprint.rootCommit !== read.rootCommit
-          ? 'relink_offered'
-          : 'ok';
-    views.push({ repoId: entry.repoId, slug: entry.slug, path: entry.path, status });
+    views.push({ repoId: entry.repoId, slug: entry.slug, path: entry.path, status: repoEntryStatus(entry, read) });
   }
   return views;
 }

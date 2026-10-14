@@ -27,7 +27,8 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
   'repo.unregister': { input: 'project: ProjectSlug, repo: RepoSlug' },
   'repo.relink': { input: 'repoId: string, path: string' },
   'repo.saveFlow': {
-    input: 'repo: RepoSlug, flow: RepoFlow — errors: not_found, definitions_invalid, stale, account_not_connected (A-354)',
+    input:
+      'repo: RepoSlug, flow: RepoFlow — errors: not_found, definitions_invalid, stale, account_not_connected (A-354), unknown_model (A-389)',
   },
   'workOrder.block': { input: 'id: WorkOrderId, reason: string' },
   'workOrder.unblock': { input: 'id: WorkOrderId' },
@@ -53,14 +54,16 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
   },
   'account.adopt': { input: 'sourcePath: string, label: string, importToken?: boolean' },
   'account.remove': { input: 'id: AccountId' },
-  'account.test': { input: 'id: AccountId, model?: string' },
+  'account.test': { input: 'id: AccountId, model?: string — errors: unknown_model (A-389)' },
   'account.cap.save': { input: 'id: AccountId, scope: account_day|account_week|account_month, amountUsd: number, warnPercent: number' },
   'account.cap.remove': { input: 'id: AccountId, scope: account_day|account_week|account_month' },
-  'account.consent.grant': { input: 'id: AccountId, model: string, cap?: { scope, amountUsd, warnPercent }' },
-  'account.consent.revoke': { input: 'id: AccountId, model: string' },
+  'account.consent.grant': {
+    input: 'id: AccountId, model: string, cap?: { scope, amountUsd, warnPercent } — errors: unknown_model (A-389)',
+  },
+  'account.consent.revoke': { input: 'id: AccountId, model: string — errors: unknown_model (A-389)' },
   'binding.save': {
     input:
-      'role: RoleSlug, accounts: { accountId: AccountId, model?: string }[], thinking?: { level? | effort? }, tier?: Tier',
+      'role: RoleSlug, accounts: { accountId: AccountId, model?: string }[], thinking?: { level? | effort? }, tier?: Tier — errors: unknown_model (A-389)',
   },
   'settings.setDispatch': { input: 'global: 1-16, perRepo: 1-global, perAccount: Record<AccountId, 1-global>, mode?: fixed | auto' },
   'quota.refresh': { input: 'id?: AccountId' },

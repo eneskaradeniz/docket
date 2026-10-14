@@ -221,6 +221,7 @@ const draw = async (
   runEvents: unknown = null,
   usage: unknown = BASE_USAGE,
   gitBase: unknown = null,
+  locale: 'tr' | 'en' = 'tr',
 ): Promise<string> => {
   const api = fakeApi(view, asks, changes, pages, runEvents, usage, gitBase);
   const store = createWorkOrderDetailStore({
@@ -238,7 +239,7 @@ const draw = async (
       pages: pageList,
       onOpenPage: () => {},
       workOrderId: WO_ID,
-      locale: 'tr',
+      locale,
       backKey: null,
       onBack: () => {},
     }),
@@ -1081,6 +1082,102 @@ describe('work-order detail screen — the git doors (U-344 … U-349)', () => {
     // The card and the screen carry none of it inline.
     const card = source('detail-decision-card.tsx');
     for (const word of ['Gönder', 'PR aç', 'Birleştir', 'Dalı sil', 'Vazgeç']) {
+      expect(card, `the word ${word} must live in a label bundle`).not.toContain(`>${word}`);
+      expect(card).not.toContain(`'${word}`);
+    }
+  });
+});
+
+describe('work-order detail screen — the repo context line (U-350 … U-353)', () => {
+  const CONTEXT = {
+    path: '/clones/atolye',
+    status: 'ok',
+    project: { slug: 'atolye-proj', name: 'Atölye' },
+    siblingCount: 2,
+  } as const;
+
+  it('U-350: the context line sits under the meta line — project, path and the sibling count', async () => {
+    const html = await draw({ ...READY, repoContext: { ...CONTEXT } }, [], CHANGES_READY);
+    const lineAt = html.indexOf('data-detail-repo-context');
+    expect(lineAt).toBeGreaterThan(-1);
+    // In the header: after the title's meta line, before the stage strip.
+    expect(lineAt).toBeGreaterThan(html.indexOf('<h1'));
+    expect(lineAt).toBeLessThan(html.indexOf('data-detail-strip'));
+    const line = html.slice(lineAt, lineAt + 700);
+    expect(line).toContain('Proje: Atölye');
+    expect(line).toContain('/clones/atolye');
+    expect(line).toContain('2 depo daha');
+  });
+
+  it('U-350: a single-repo project shows no sibling count; an older reply shows no line at all', async () => {
+    const single = await draw({ ...READY, repoContext: { ...CONTEXT, siblingCount: 0 } }, [], CHANGES_READY);
+    expect(single).toContain('data-detail-repo-context');
+    expect(single).not.toContain('depo daha');
+    const older = await draw(READY, [], CHANGES_READY);
+    expect(older).not.toContain('data-detail-repo-context');
+  });
+
+  it('U-350/U-352: the EN bundle words the same line — parity, never inline copy', async () => {
+    const html = await draw({ ...READY, repoContext: { ...CONTEXT } }, [], CHANGES_READY, [], null, BASE_USAGE, null, 'en');
+    const lineAt = html.indexOf('data-detail-repo-context');
+    const line = html.slice(lineAt, lineAt + 700);
+    expect(line).toContain('Project: Atölye');
+    expect(line).toContain('2 more repos');
+  });
+
+  it('U-351: a not-ok repo words its cause on the context line and on the git card — the card stands with every door closed', async () => {
+    const html = await draw(
+      { ...READY, repoContext: { ...CONTEXT, status: 'relink_offered' } },
+      [],
+      // No working copy either: the not-ok standing is itself why the card exists.
+      { state: 'no_worktree', files: [], truncated: false },
+    );
+    const contextAt = html.indexOf('data-detail-repo-context');
+    expect(html.slice(contextAt, contextAt + 700)).toContain('Bu klasör aynı depo değil; yeniden bağlayın.');
+    const cardAt = html.indexOf('data-decision-card="git"');
+    expect(cardAt).toBeGreaterThan(-1);
+    const card = html.slice(cardAt, html.indexOf('</section>', cardAt));
+    expect(card).toContain('data-git-repo-reason');
+    expect(card).toContain('Bu klasör aynı depo değil; yeniden bağlayın.');
+    expect(card.match(/disabled=""/g)).toHaveLength(4);
+    // The doors' own lifecycle reasons would name the wrong cause; none of them renders.
+    expect(card).not.toContain('Önce dalı gönderin.');
+    expect(card).not.toContain('Açık PR yok.');
+  });
+
+  it('U-353: the not-ok standing is said in words — the cause line carries no status colour', async () => {
+    const html = await draw(
+      { ...READY, repoContext: { ...CONTEXT, status: 'folder_not_found' } },
+      [],
+      { state: 'no_worktree', files: [], truncated: false },
+    );
+    const reasonAt = html.indexOf('data-git-repo-reason');
+    expect(reasonAt).toBeGreaterThan(-1);
+    const reason = html.slice(reasonAt, reasonAt + 400);
+    expect(reason).toContain('Depo klasörü bulunamadı.');
+    for (const tone of ['text-signal', 'text-error', 'text-proceed']) {
+      expect(reason, `the cause line never signals by ${tone} alone`).not.toContain(tone);
+    }
+    // The context line repeats the same sentence — one copy set serves both places.
+    const contextAt = html.indexOf('data-detail-repo-context');
+    expect(html.slice(contextAt, contextAt + 700)).toContain('Depo klasörü bulunamadı.');
+  });
+
+  it('U-352: the repo context copy lives in both bundles — never inline in the screen or the card', () => {
+    const tr = source('tr.ts');
+    const en = source('en.ts');
+    for (const key of [
+      'detail.repo.project', 'detail.repo.siblings', 'detail.git.repo.folderNotFound',
+      'detail.git.repo.relinkOffered', 'detail.git.repo.unregistered',
+    ]) {
+      expect(tr, `tr:${key}`).toContain(`'${key}'`);
+      expect(en, `en:${key}`).toContain(`'${key}'`);
+    }
+    const screen = source('detail.tsx');
+    const card = source('detail-decision-card.tsx');
+    for (const word of ['Proje:', 'depo daha', 'klasör aynı depo', 'bulunamadı', 'kayıtlı değil']) {
+      expect(screen, `the word ${word} must live in a label bundle`).not.toContain(`>${word}`);
+      expect(screen).not.toContain(`'${word}`);
       expect(card, `the word ${word} must live in a label bundle`).not.toContain(`>${word}`);
       expect(card).not.toContain(`'${word}`);
     }

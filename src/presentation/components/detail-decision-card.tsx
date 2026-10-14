@@ -585,6 +585,14 @@ export function GitDoorsCard(props: GitDoorsCardProps) {
         <span className="font-semibold text-ink">{t(locale, 'detail.git.branchLabel')}</span>
         <code className="min-w-0 font-mono text-[0.75rem] text-ink [overflow-wrap:anywhere]">{model.branch}</code>
       </p>
+      {/* U-351: while the repo is not ok this one line is the visible cause every closed door
+          shares — said in the normal ink, words alone (U-353), never the doors' own lifecycle
+          reasons, which would name the wrong cause. */}
+      {model.repoReasonKey !== undefined ? (
+        <p data-git-repo-reason className="m-0 text-[0.78125rem] text-inkdim">
+          {t(locale, model.repoReasonKey)}
+        </p>
+      ) : null}
       {model.pr !== null ? (
         <p className="m-0 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 text-[0.8125rem] text-inkdim">
           <span className="font-semibold text-ink">{t(locale, 'detail.git.prLabel')}</span>

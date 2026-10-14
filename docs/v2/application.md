@@ -2202,3 +2202,22 @@ silently. The application rule is A-384; the domain rule it leans on is R-150
 parking (option A) and any new waiting state (option C).
 
 - **A-384** (added 2026-10-14, #1187) Every non-started outcome of a run start leaves a durable, visible trace, and the queue item is never lost. The dispatcher reads each item's spend consent through the executor's own predicate (`spendConsentSatisfied` over the tier-resolved route — one shared function, never a duplicate) and an unconsented item WAITS in the queue with reason `consent` (R-150) instead of starting; granting consent in Ayarlar › Hesaplar makes the next tick start it, with no unblock command. The cockpit's dashed queued row carries the wait reason `consent` with the sentence "Harcama onayı bekliyor — Ayarlar › Hesaplar" (tr) / "Waiting for spend consent — Settings › Accounts" (en). If the executor still answers `refused` (a race), `applyRefusedStart` re-queues the item verbatim for `needs_spend_consent` — so the next tick holds it with reason `consent` — while `handoff_failed` appends the event and parks (queue empty, exactly the limit `ask` precedent; the work order keeps its prior state, no new state is invented). Both append a typed `start_refused` work-order event carrying the code; the fold treats it as an audit fact that moves nothing. The start wiring's pre-check failures (definitions, role, worktree, prompt composition) append the same typed event with their own code (`definitions_failed`, `role_missing`, `worktree_failed`, `prompt_failed`) in addition to the console line; a work order that no longer exists has nowhere to append, so its trace stays the console line. Rendering the `start_refused` events on a screen is a later issue.
+
+Addendum 2026-10-14 (#1188): route model ids normalized at the api edge before enqueue or save. Rule A-389.
+
+- **A-389** (added 2026-10-14, #1188) Where a command accepts a model id for an account route — `binding.save` (every role, including assistant), `account.consent.grant`, `account.consent.revoke`, `account.test` (when a model is given), and `repo.saveFlow` (each pinned model in a stage chain) — the id is normalized through that account's merged catalog before any write: a catalog row id is kept; an id equal to a row's `resolvedId` is rewritten to that row's id (the alias); anything else answers `unknown_model` with the route's valid catalog ids in `validModelIds` and nothing is saved. When the catalog list is empty the id is accepted unchanged (the list is not authoritative yet). `invalid_model` on consent remains for an empty string only.
+
+Addendum 2026-10-14 (#1178): the repo context on the work-order detail (#1001's multi-repo
+awareness item). Rules A-392, A-393; the UI rules are U-350 … U-353 (docs/v2/ui.md).
+
+- **A-392** (added 2026-10-14, #1178) `workOrder.detail` gains `repoContext`: the work order's
+  registered folder (`path`), its standing against the folder's current fingerprint (`status`:
+  `ok`, `folder_not_found`, `relink_offered` — the `repoStatuses` rule read for this one repo —
+  or `unregistered` when the registry holds no row for the slug, the relink-standing equivalent
+  that keeps the read total), the owning project's `{ slug, name }` (the stored name; a project
+  that no longer loads names itself by its slug) and `siblingCount`, the project's repos other
+  than the work order's own. An unregistered repo carries `path: ''`; nothing here re-points a
+  registry row or invents a path.
+- **A-393** (added 2026-10-14, #1178) The repo context is a pure read exactly like A-379's
+  rows: no audit entry, no ledger event, no `workOrders.changed` announcement, and no write of
+  any kind reaches the registry, the project store or the definitions.
