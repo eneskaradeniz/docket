@@ -13,6 +13,7 @@ import type {
 } from '../../../../application/index';
 import type { AgentEvent, Result } from '../../../../domain/index';
 import { err, ok } from '../../../../domain/index';
+import { claudeCodeRunIsolationSdkOptions } from '../../launch/index';
 import { docketOwnReadTool } from './docket-own-tool';
 import { mapSdkMessage, toolTarget } from './map-message';
 import { buildRouteEnvironment } from './route-env';
@@ -128,6 +129,7 @@ export function createSdkTransport(config: SdkTransportConfig): AgentTransport {
         }
         mcpServers[capability.id] = { command: capability.command, args: [...capability.args], env: serverEnv };
       }
+      const deliversRunScopedMcp = Object.keys(mcpServers).length > 0;
 
       const abortController = new AbortController();
       const prompt = createChannel<SDKUserMessage>();
@@ -193,6 +195,7 @@ export function createSdkTransport(config: SdkTransportConfig): AgentTransport {
         abortController,
         canUseTool,
         pathToClaudeCodeExecutable: config.executablePath,
+        ...claudeCodeRunIsolationSdkOptions(deliversRunScopedMcp),
         ...(config.sendsEffort === true && sdkEffort(request.effort) !== undefined ? { effort: sdkEffort(request.effort) } : {}),
       };
 

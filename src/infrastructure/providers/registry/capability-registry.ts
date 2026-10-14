@@ -15,6 +15,11 @@ export const FAMILY_PATTERNS: readonly FamilyPattern[] = [
   { contains: 'haiku', tier: 'fast' },
 ];
 
+/** MCP server names still visible outside run-scoped delivery after isolation (probe #1015 C6); names only, never values. Built-ins are listed, not treated as ambient leaks. */
+export const AMBIENT_MCP_REMAINING_NAMES: Readonly<Partial<Record<string, readonly string[]>>> = {
+  codex: ['codex_apps'],
+};
+
 export const CAPABILITY_REGISTRY = {
   providers: [
     {
@@ -36,11 +41,13 @@ export const CAPABILITY_REGISTRY = {
     },
     {
       // No G4: the app-server transport maps no usage event, so cost visibility is unproven.
-      // No isolation evidence on purpose (P-44): the CLI keeps its login under its own home, so
-      // the home is left alone and the CLI reads its own configuration; the cap holds.
       providerId: 'codex',
       // The app-server transport delivers a mid-run steering note (P-61).
       steering: 'steerable',
+      isolation: {
+        kind: 'test',
+        name: '#1154: codex run argv carries --ignore-user-config exactly once when run-scoped MCP is delivered',
+      },
       gates: {
         G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
         G2: { kind: 'test', name: 'P-12: the run opens with initialize → thread/start → turn/start and maps the turn stream to AgentEvents' },
@@ -374,7 +381,9 @@ export const TRANSLATION_TABLE: readonly TranslationRow[] = [
   ...rowsOf('claude-code', {
     mcp: {
       support: 'native',
-      how: probeHow('Run-scoped MCP config via --mcp-config with ambient settings off via --setting-sources ""'),
+      how: probeHow(
+        'Run-scoped MCP via inline mcpServers with --strict-mcp-config when MCP is delivered (ambient settings off via settingSources: [])',
+      ),
     },
     skill: {
       support: 'native',
@@ -395,7 +404,10 @@ export const TRANSLATION_TABLE: readonly TranslationRow[] = [
     command,
   }),
   ...rowsOf('codex', {
-    mcp: { support: 'native', how: 'App-server -c mcp_servers.*' },
+    mcp: {
+      support: 'native',
+      how: 'App-server --ignore-user-config when MCP is delivered, then -c mcp_servers.* overrides',
+    },
     skill: {
       support: 'native',
       how: probeHow('Run-scoped skills under .agents/skills in the run directory'),

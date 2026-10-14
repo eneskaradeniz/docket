@@ -385,12 +385,12 @@ describe('bundled model records (P-29, P-40)', () => {
 
 describe('isolation evidence (P-44)', () => {
   it('P-44: every built-in record but agy, copilot, cursor and codex carries isolation evidence, and the rest stay capped at experimental', () => {
-    // codex keeps its login in its own home, which is left alone, and agy, copilot and cursor
-    // document no home their login does not live in (copilot's COPILOT_HOME holds it); none can
-    // evidence isolation, so their records carry none and the cap applies.
+    // agy, copilot and cursor document no home their login does not live in (copilot's
+    // COPILOT_HOME holds it); none can evidence isolation, so their records carry none and the cap
+    // applies.
     const records: readonly ProviderRecord[] = CAPABILITY_REGISTRY.providers;
     for (const provider of records) {
-      if (['agy', 'copilot', 'cursor', 'codex'].includes(provider.providerId)) {
+      if (['agy', 'copilot', 'cursor'].includes(provider.providerId)) {
         expect(provider.isolation, provider.providerId).toBeUndefined();
       } else {
         expect(provider.isolation, provider.providerId).toBeDefined();
