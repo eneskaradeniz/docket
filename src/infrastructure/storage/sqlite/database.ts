@@ -12,9 +12,19 @@ export interface DocketDb {
   close(): void;
 }
 
-export type OpenDbError = { readonly code: 'too_new'; readonly found: number; readonly supported: number };
+export type OpenDbError =
+  | { readonly code: 'old_schema'; readonly found: number; readonly supported: number }
+  | { readonly code: 'too_new'; readonly found: number; readonly supported: number };
+
+/** Highest `user_version` the pre-squash migration chain ever wrote (#1058). */
+export const LEGACY_USER_VERSION_MAX = 11;
 
 const SUPPORTED_VERSION = MIGRATIONS.reduce((max, migration) => Math.max(max, migration.version), 0);
+
+const versionMismatchError = (found: number, supported: number): OpenDbError =>
+  found <= LEGACY_USER_VERSION_MAX
+    ? { code: 'old_schema', found, supported }
+    : { code: 'too_new', found, supported };
 
 function readUserVersion(raw: DatabaseSync): number {
   const row = raw.prepare('PRAGMA user_version').get();
@@ -52,7 +62,7 @@ export function openDatabase(path: string): Result<DocketDb, OpenDbError> {
     const found = readUserVersion(raw);
     if (found > SUPPORTED_VERSION) {
       raw.close();
-      return err({ code: 'too_new', found, supported: SUPPORTED_VERSION });
+      return err(versionMismatchError(found, SUPPORTED_VERSION));
     }
     for (const migration of MIGRATIONS) {
       if (migration.version > found) applyMigration(raw, migration);

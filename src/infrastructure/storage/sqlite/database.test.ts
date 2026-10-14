@@ -152,6 +152,17 @@ describe('openDatabase', () => {
     expect(workOrderCount(second)).toBe(1);
   });
 
+  it('I-3: a pre-squash user_version (10) returns err old_schema with found and supported (#1168)', () => {
+    const path = join(tmp, 'legacy.db');
+    const setup = new DatabaseSync(path);
+    setup.exec('PRAGMA user_version = 10');
+    setup.close();
+    expect(openDatabase(path)).toStrictEqual({
+      ok: false,
+      error: { code: 'old_schema', found: 10, supported: SUPPORTED_VERSION },
+    });
+  });
+
   it('I-3: a file whose user_version is greater than the last migration returns err too_new with found and supported', () => {
     const path = join(tmp, 'docket.db');
     const setup = new DatabaseSync(path);
