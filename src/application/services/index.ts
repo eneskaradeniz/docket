@@ -18,5 +18,8 @@ export * from './mcp-attach';
 export * from './assistant-brief';
 export * from './assistant-role';
 export * from './chat-runner';
+export * from './setup-contexts';
+export * from './setup-permissions';
+export * from './setup-tools';
 export * from './operator-feedback';
 export * from './quit-flow';

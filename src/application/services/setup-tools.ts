@@ -74,6 +74,14 @@ export interface SetupToolsContext {
   readonly grants: SetupReadGrants;
   readonly reader: SetupPathReader;
   readonly draftId?: string;
+  /** Records the pending operator ask (U-272, U-275): the resolved path and the call's reason
+   *  line. Absent when no registry listens — the tests that drive asks by hand. */
+  readonly noteAsk?: (path: string, reason: string) => void;
+  /** A path the operator already denied this conversation (U-276): a retry is a typed refusal,
+   *  never a second ask. */
+  readonly isDenied?: (path: string) => boolean;
+  /** Counts a secret-shaped refusal for the thread's one-line notice (U-277, A-336). */
+  readonly noteSecret?: () => void;
 }
 
 type SetupToolDeps = Pick<AppDeps, 'clock' | 'ids' | 'log' | 'proposals'>;
@@ -159,7 +167,10 @@ export function createSetupTools(deps: SetupToolDeps, ctx: SetupToolsContext): S
           if (typeof path !== 'string' || path.trim() === '') return fail('bad_input');
           const resolved = ctx.reader.resolve(path);
           const decision = decideRead(ctx.scope, path, ctx.readCtx, ctx.grants, resolved);
-          if (decision.kind === 'deny') return fail('forbidden');
+          if (decision.kind === 'deny') {
+            if (decision.reason === 'secret_shaped') ctx.noteSecret?.();
+            return fail('forbidden');
+          }
           if (decision.kind === 'ask') {
             return succeed({ kind: 'ask', path: decision.path });
           }
@@ -172,9 +183,14 @@ export function createSetupTools(deps: SetupToolDeps, ctx: SetupToolsContext): S
             return fail('bad_input');
           }
           const resolved = ctx.reader.resolve(path);
+          if (ctx.isDenied?.(resolved) === true) return fail('forbidden');
           const decision = decideRead(ctx.scope, path, ctx.readCtx, ctx.grants, resolved);
-          if (decision.kind === 'deny') return fail('forbidden');
+          if (decision.kind === 'deny') {
+            if (decision.reason === 'secret_shaped') ctx.noteSecret?.();
+            return fail('forbidden');
+          }
           if (decision.kind === 'ask') {
+            ctx.noteAsk?.(decision.path, reason);
             return succeed({ kind: 'ask', path: decision.path });
           }
           const entry = await ctx.reader.read(resolved);

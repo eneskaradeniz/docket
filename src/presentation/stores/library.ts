@@ -21,6 +21,7 @@ export type LibraryChange =
   | { readonly type: 'chat.turn'; readonly conversation: string; readonly turn: string; readonly phase: 'started' | 'finished'; readonly outcome?: string }
   | { readonly type: 'chat.delta'; readonly conversation: string; readonly turn: string; readonly text: string }
   | { readonly type: 'chat.notice'; readonly conversation: string; readonly turn: string; readonly code: string }
+  | { readonly type: 'setup.read.ask'; readonly conversation: string }
   | { readonly type: 'quit.requested'; readonly runs: readonly string[]; readonly chats: readonly string[] };
 
 export type LibraryChangeSignal = (listener: (change: LibraryChange) => void) => () => void;

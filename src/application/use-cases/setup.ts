@@ -46,6 +46,9 @@ export interface SetupDraft {
 export interface SetupDraftStore {
   save(draft: SetupDraft): Promise<void>;
   load(id: string): Promise<SetupDraft | undefined>;
+  /** The newest stored draft — the resume read (A-340, A-358). Optional so the in-memory fakes
+   *  of the pre-wiring tests keep satisfying the port. */
+  newest?(): Promise<SetupDraft | undefined>;
 }
 
 export type DocketAiStartError = 'no_provider';

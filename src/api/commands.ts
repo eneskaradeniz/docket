@@ -62,6 +62,10 @@ export type Command =
   | { readonly type: 'chat.revoke'; readonly grant: string }
   | { readonly type: 'app.update.check' }
   | { readonly type: 'app.update.apply' }
+  // The Docket AI setup conversation (A-356 … A-358): one command starts it, one answers its read
+  // asks; the messages themselves ride `chat.send` unchanged.
+  | { readonly type: 'setup.ai.start'; readonly repoPath: string; readonly draft?: string } // ok → { conversation } (A-356); no_provider (A-340)
+  | { readonly type: 'setup.read.answer'; readonly conversation: string; readonly path: string; readonly allow: boolean } // ok → { ok: true } (A-357)
   /** The quit modal is on screen (answer to `quit.requested`); without it the shell falls back to the native dialog. */
   | { readonly type: 'quit.ack' }
   /** The operator's answer to the in-app quit confirmation: true = Kapat ve durdur, false = Vazgeç. */

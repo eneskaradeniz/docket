@@ -497,7 +497,7 @@ const startApp = async (): Promise<void> => {
     runner: node.chatRunner,
     apply: node.docketToolExtras.applyAction,
     undo: createActionUndoer(nodeDeps),
-  }, { ack: () => quitPrompt.ack(), answer: (accept) => quitPrompt.answer(accept) });
+  }, { ack: () => quitPrompt.ack(), answer: (accept) => quitPrompt.answer(accept) }, undefined, node.setupContexts);
   currentApi = api;
   const quotaProbes = node.quota.probes; // read here: `node` is not narrowed inside the tick closure
 

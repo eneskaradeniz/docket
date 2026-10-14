@@ -101,6 +101,8 @@ maybe('the token kind over the real socket', () => {
     const { chatToken, socketPath } = await setup();
     const server = createMcpServer({ kind: 'chat', call: createSocketCaller({ socketPath, token: chatToken }) });
     const [listed] = await server.handle(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }));
+    // The three setup tools trail the nine (A-213's 2026-10-14 addendum): a setup token is a chat
+    // token narrowed by conversationKind, so the chat kind's listing carries them.
     expect((JSON.parse(listed ?? '{}') as { result: { tools: { name: string }[] } }).result.tools.map((tool) => tool.name)).toEqual([
       'docket_get',
       'docket_search',
@@ -111,6 +113,9 @@ maybe('the token kind over the real socket', () => {
       'draft_work_order',
       'propose_change',
       'propose_setting',
+      'docket_repo_analyze',
+      'docket_read_path',
+      'docket_setup_propose',
     ]);
     const [called] = await server.handle(
       JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'docket_get', arguments: { kind: 'project', id: PROJECT } } }),

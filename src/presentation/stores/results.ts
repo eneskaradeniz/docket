@@ -107,7 +107,10 @@ type SilentCommand =
   | 'definitions.archive'
   | 'definitions.delete'
   | 'tracker.sync'
-  | 'tracker.resolveConflict';
+  | 'tracker.resolveConflict'
+  // The setup conversation's own panel words its outcomes; neither command toasts.
+  | 'setup.ai.start'
+  | 'setup.read.answer';
 const isSilent = (command: Command['type']): command is SilentCommand =>
   command === 'quit.ack'
   || command === 'quit.answer'
@@ -123,7 +126,9 @@ const isSilent = (command: Command['type']): command is SilentCommand =>
   || command === 'definitions.archive'
   || command === 'definitions.delete'
   || command === 'tracker.sync'
-  || command === 'tracker.resolveConflict';
+  || command === 'tracker.resolveConflict'
+  || command === 'setup.ai.start'
+  || command === 'setup.read.answer';
 
 const SUCCESS_KEYS: Readonly<Record<Exclude<Command['type'], SilentCommand>, LabelKey>> = {
   'workOrder.open': 'success.workOrder.open',

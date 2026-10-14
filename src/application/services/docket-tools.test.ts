@@ -390,6 +390,11 @@ describe('setup conversation tools', () => {
     const token = h.mint({ kind: 'chat', turn: TURN, conversation: CONVERSATION, role: ROLE, conversationKind: 'setup' });
     expect(codeOf(await setupTools.call({ token, tool: 'docket_read_file', args: { repo: 'x', path: 'a' } }))).toBe('forbidden');
     expect(codeOf(await setupTools.call({ token, tool: 'draft_work_order', args: { project: PROJECT, repo: 'alpha-app', title: 'T' } }))).toBe('forbidden');
-    expect(codeOf(await setupTools.call({ token, tool: 'docket_repo_analyze', args: { path: '/repo' } }))).not.toBe('forbidden');
+    // A tool of the set answers for real now — the wiring admits it, not merely fails to refuse it.
+    const analyzed = await setupTools.call({ token, tool: 'docket_repo_analyze', args: { path: '/repo' } });
+    expect(analyzed.ok).toBe(true);
+    // A plain chat token never reaches the setup tools (the set's denial in the other direction).
+    const chatToken = h.mint({ kind: 'chat', turn: TURN, conversation: CONVERSATION, role: ROLE });
+    expect(codeOf(await setupTools.call({ token: chatToken, tool: 'docket_repo_analyze', args: { path: '/repo' } }))).toBe('forbidden');
   });
 });

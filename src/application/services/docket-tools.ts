@@ -10,7 +10,7 @@ import { ackComments, pageDetail, publishPageUseCase, publishVersion, undelivere
 
 import { CHAT_TOOL_DEFINITIONS, createChatTools } from './chat-tools';
 import { CHAT_WRITE_TOOL_DEFINITIONS, CHAT_WRITE_TOOL_NAMES, createChatWriteTools, type DocketToolExtras } from './chat-write-tools';
-import { createSetupTools, SETUP_TOOL_NAMES, type SetupToolsContext } from './setup-tools';
+import { createSetupTools, SETUP_TOOL_DEFINITIONS, SETUP_TOOL_NAMES, type SetupToolsContext } from './setup-tools';
 import {
   asArgs,
   entryOf,
@@ -122,10 +122,12 @@ export const DOCKET_TOOL_DEFINITIONS: readonly DocketToolDefinition[] = [
 /** The page tools both kinds serve identically on the wire. */
 const SHARED_PAGE_TOOLS: readonly DocketToolDefinition[] = DOCKET_TOOL_DEFINITIONS.filter((tool) => tool.name === 'page_publish' || tool.name === 'page_update');
 
-/** What `tools/list` shows per token kind; the app enforces the token's kind on every call. */
+/** What `tools/list` shows per token kind; the app enforces the token's kind on every call. The
+ *  setup tools ride the chat kind's list because a setup token IS a chat token narrowed by
+ *  `conversationKind` — the dispatch admits them only for a setup conversation (A-337). */
 export const DOCKET_TOOL_DEFINITIONS_BY_KIND: Readonly<Record<RunTokenKind, readonly DocketToolDefinition[]>> = {
   run: DOCKET_TOOL_DEFINITIONS,
-  chat: [...CHAT_TOOL_DEFINITIONS, ...SHARED_PAGE_TOOLS, ...CHAT_WRITE_TOOL_DEFINITIONS],
+  chat: [...CHAT_TOOL_DEFINITIONS, ...SHARED_PAGE_TOOLS, ...CHAT_WRITE_TOOL_DEFINITIONS, ...SETUP_TOOL_DEFINITIONS],
 };
 
 /** A tool name may belong to more than one kind: the shared page tools. Everything else is exactly
@@ -295,6 +297,9 @@ export function createDocketTools(deps: DocketToolDeps, extras: DocketToolExtras
             if (SETUP_TOOL_NAMES.has(request.tool)) return await setup.call(request.tool, request.args, actor);
             return await chat.call(binding, request.tool, request.args);
           }
+          // The setup tools sit on the chat kind's list only so a setup token can see them; a
+          // plain chat token never calls them (A-337's denial in the other direction).
+          if (SETUP_TOOL_NAMES.has(request.tool)) return fail('forbidden');
           // The write tools and the shared page tools carry the chat semantics; the rest are the
           // read-only tools of A-204 … A-212.
           if (CHAT_WRITE_TOOL_NAMES.has(request.tool) || request.tool === 'page_publish' || request.tool === 'page_update') {

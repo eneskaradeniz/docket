@@ -10,17 +10,20 @@ import type {
   Clock,
   CredentialImporter,
   DocketToolExtras,
+  DocketToolSetupExtras,
   McpEndpoint,
   Notifier,
   ProviderDiscovery,
   QuotaProbeResolver,
   QuotaTimers,
   RepoRegistry,
+  SetupConversations,
   TransportResolver,
 } from '../../application/index';
-import { createActionApplier, createChatRunner, createChatTurnLedger } from '../../application/index';
+import { createActionApplier, createChatRunner, createChatTurnLedger, createSetupContexts } from '../../application/index';
 import { createMemoryAccountTestRepo } from './account-test-repo';
 import { createScratchDirs } from './scratch-dirs';
+import { createSetupDraftFiles, createSetupPathReader } from './setup-files';
 import { createCommandRunner, createSecretScanner, redactSecrets } from '../gates/index';
 import { createKeychainVault, type CipherFns } from '../storage/keychain/index';
 import { createYamlDefinitionStore } from '../storage/definitions-yaml/index';
@@ -96,11 +99,16 @@ export interface NodeDeps {
   readonly quota: { readonly probes: QuotaProbeResolver; readonly timers: QuotaTimers };
   readonly credentialImporter: CredentialImporter; // reads a token only when an adoption asks for the import
   /** What Docket's own tool dispatch needs: the ONE action applier of this composition and the
-   *  chat turn ledger it fills. A second applier must not exist anywhere. */
-  readonly docketToolExtras: DocketToolExtras;
+   *  chat turn ledger it fills, plus the setup contexts the setup token's tools read. A second
+   *  applier must not exist anywhere. */
+  readonly docketToolExtras: DocketToolExtras & DocketToolSetupExtras;
   /** The chat turn runner, built on the same ledger the write tools fill; the api slice (6e-5)
    *  exposes it, nothing here starts a turn on its own. */
   readonly chatRunner: ChatRunner;
+  /** The Docket AI setup registry (A-356 … A-358): the api's setup surface reads it, the tool
+   *  dispatch reads it through `docketToolExtras.setupContextOf`, the runner mints the setup token
+   *  kind from it. Session state beside the ports, like the runner itself. */
+  readonly setupContexts: SetupConversations;
   close(): void;
 }
 
@@ -198,9 +206,19 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
   };
   // The one applier of the composition (A-214): the tool dispatch, and later the action surfaces,
   // all apply through this instance, never through one of their own. The chat runner drains the
-  // same ledger instance the write tools fill, so one turn's effects meet one message.
-  const docketToolExtras: DocketToolExtras = { applyAction: createActionApplier(deps), turnLedger: createChatTurnLedger() };
-  const chatRunner = createChatRunner(deps, { turnLedger: docketToolExtras.turnLedger });
+  // same ledger instance the write tools fill, so one turn's effects meet one message. The setup
+  // registry sits beside them: the tool dispatch reads its contexts, the runner mints the setup
+  // token kind and persists the draft from it, and the api's setup surface owns the commands.
+  const setupContexts = createSetupContexts(
+    { clock, ids: deps.ids },
+    { dataDir: config.dataDir, drafts: createSetupDraftFiles(config.dataDir), reader: createSetupPathReader() },
+  );
+  const docketToolExtras: DocketToolExtras & DocketToolSetupExtras = {
+    applyAction: createActionApplier(deps),
+    turnLedger: createChatTurnLedger(),
+    setupContextOf: setupContexts.contextOf,
+  };
+  const chatRunner = createChatRunner(deps, { turnLedger: docketToolExtras.turnLedger, setupContexts });
   return ok({
     deps,
     quota,
@@ -210,6 +228,7 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     credentialImporter,
     docketToolExtras,
     chatRunner,
+    setupContexts,
     adoption: { discovery: accountDiscovery, importer: credentialImporter },
     close: (): void => db.close(),
   });
