@@ -305,33 +305,46 @@ describe('claude-code SDK capability delivery (CC-1 … CC-8)', () => {
     const skillBody = '# Role skill CC-3 marker\n';
     await writeFile(skillSource, skillBody, 'utf8');
 
-    const call = await runCaptured(
-      {
-        runId: RUN_ID,
-        cwd,
-        runDir: cwd,
-        role: ROLE_DEF,
-        route: { accountId: ACCOUNT },
-        prompt: 'work',
-        capabilities: [
-          {
-            kind: 'skill',
-            id: slugOf<'capability'>('role-skill'),
-            name: 'role-skill',
-            path: skillSource,
-          },
-        ],
-      },
-      account('subscription'),
+    const accounts = createFakeAccountRepo();
+    await accounts.save(account('subscription'));
+    const { query, calls } = scriptedQuery(async function* (call) {
+      expect(call.options.settingSources).toEqual([]);
+      const pluginPath = call.options.plugins?.[0]?.path;
+      if (pluginPath === undefined) throw new Error('expected a run-scoped plugin path');
+      const runScopedSkill = join(pluginPath, 'skills', 'role-skill', 'SKILL.md');
+      await expect(access(runScopedSkill)).resolves.toBeUndefined();
+      expect(await readFile(runScopedSkill, 'utf8')).toBe(skillBody);
+      expect(call.options.skills).toBe('all');
+      yield successResult();
+    });
+    const transport = createSdkTransport({
+      clock: createFakeClock(START_AT),
+      accounts,
+      secrets: createFakeSecretVault(),
+      baseEnv: {},
+      query,
+    });
+    await drain(
+      unwrap(
+        await transport.start({
+          runId: RUN_ID,
+          cwd,
+          runDir: cwd,
+          role: ROLE_DEF,
+          route: { accountId: ACCOUNT },
+          prompt: 'work',
+          capabilities: [
+            {
+              kind: 'skill',
+              id: slugOf<'capability'>('role-skill'),
+              name: 'role-skill',
+              path: skillSource,
+            },
+          ],
+        }),
+      ),
     );
-
-    expect(call.options.settingSources).toEqual([]);
-    const pluginPath = call.options.plugins?.[0]?.path;
-    if (pluginPath === undefined) throw new Error('expected a run-scoped plugin path');
-    const runScopedSkill = join(pluginPath, 'skills', 'role-skill', 'SKILL.md');
-    await expect(access(runScopedSkill)).resolves.toBeUndefined();
-    expect(await readFile(runScopedSkill, 'utf8')).toBe(skillBody);
-    expect(call.options.skills).toBe('all');
+    expect(calls.length).toBe(1);
   });
 
   it.todo(
@@ -407,7 +420,7 @@ describe('claude-code SDK capability delivery (CC-1 … CC-8)', () => {
     expect(append).toContain('Follow the work order exactly.');
   });
 
-  it('CC-6: plugin bundles use plugins[{type:local,path}] and skipMcpDiscovery tracks strict MCP delivery', async () => {
+  it('CC-6: plugin bundles use plugins[{type:local,path,skipMcpDiscovery:true}] on every run', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'docket-cc6-'));
     const pluginRoot = await mkdtemp(join(tmpdir(), 'docket-cc6-plugin-'));
     await writeFile(join(pluginRoot, 'plugin.json'), '{}\n', 'utf8');
@@ -441,7 +454,7 @@ describe('claude-code SDK capability delivery (CC-1 … CC-8)', () => {
       account('subscription'),
     );
     expect(pluginOnly.options.strictMcpConfig).toBe(true);
-    expect(pluginOnly.options.plugins).toEqual([{ type: 'local', path: pluginRoot, skipMcpDiscovery: false }]);
+    expect(pluginOnly.options.plugins).toEqual([{ type: 'local', path: pluginRoot, skipMcpDiscovery: true }]);
 
     const pluginAndMcp = await runCaptured(
       {
@@ -615,4 +628,70 @@ describe('claude-code SDK capability delivery (CC-1 … CC-8)', () => {
   it.todo(
     'CC-8 LIVE: on subscription without strict MCP, observe whether claude.ai cloud MCP connectors auto-attach in system init mcp_servers',
   );
+
+  it('#1164: removes run-scoped plugin dir when query throws synchronously', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'docket-cc-clean-sync-'));
+    const skillSource = join(cwd, 'skill.md');
+    await writeFile(skillSource, '# skill\n', 'utf8');
+    const accounts = createFakeAccountRepo();
+    await accounts.save(account('subscription'));
+    const throwingQuery: QueryFn = () => {
+      throw new Error('query failed synchronously');
+    };
+    const transport = createSdkTransport({
+      clock: createFakeClock(START_AT),
+      accounts,
+      secrets: createFakeSecretVault(),
+      baseEnv: {},
+      query: throwingQuery,
+    });
+    const started = await transport.start({
+      runId: RUN_ID,
+      cwd,
+      runDir: cwd,
+      role: ROLE_DEF,
+      route: { accountId: ACCOUNT },
+      prompt: 'work',
+      capabilities: [{ kind: 'skill', id: slugOf<'capability'>('s'), name: 's', path: skillSource }],
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    await drain(started.value);
+    const entries = await import('node:fs/promises').then((fs) => fs.readdir(cwd));
+    expect(entries.some((name) => name.startsWith('cc-run-plugin-'))).toBe(false);
+  });
+
+  it('#1164: removes run-scoped plugin dir after a normal finish', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'docket-cc-clean-finish-'));
+    const skillSource = join(cwd, 'skill.md');
+    await writeFile(skillSource, '# skill\n', 'utf8');
+    const accounts = createFakeAccountRepo();
+    await accounts.save(account('subscription'));
+    const { query, calls } = scriptedQuery(async function* () {
+      yield successResult();
+    });
+    const transport = createSdkTransport({
+      clock: createFakeClock(START_AT),
+      accounts,
+      secrets: createFakeSecretVault(),
+      baseEnv: {},
+      query,
+    });
+    await drain(
+      unwrap(
+        await transport.start({
+          runId: RUN_ID,
+          cwd,
+          runDir: cwd,
+          role: ROLE_DEF,
+          route: { accountId: ACCOUNT },
+          prompt: 'work',
+          capabilities: [{ kind: 'skill', id: slugOf<'capability'>('s'), name: 's', path: skillSource }],
+        }),
+      ),
+    );
+    const pluginPath = calls[0]?.options.plugins?.[0]?.path;
+    if (pluginPath === undefined) throw new Error('expected plugin path');
+    await expect(access(pluginPath)).rejects.toThrow();
+  });
 });

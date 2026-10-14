@@ -1,5 +1,5 @@
 // Claude-code SDK capability delivery (probe #1015, SDK1–SDK4): run-scoped plugin dir, inline settings, append-only context.
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { SdkPluginConfig } from '@anthropic-ai/claude-agent-sdk';
 import type { CapabilityDef, HookEvent } from '../../../../domain/index';
@@ -10,6 +10,9 @@ const HOOK_EVENT_TO_SDK: Readonly<Record<HookEvent, string>> = {
   after_write: 'PostToolUse',
   run_end: 'Stop',
 };
+
+/** PostToolUse matcher for file-writing tools (Claude Code hooks reference: tool name regex). */
+const AFTER_WRITE_TOOL_MATCHER = 'Write|Edit|MultiEdit|NotebookEdit';
 
 const skillDirName = (capability: Extract<CapabilityDef, { kind: 'skill' }>): string => {
   const trimmed = capability.name.trim();
@@ -32,9 +35,9 @@ export async function prepareClaudeCodeSdkDelivery(
   runDir: string,
   roleInstructions: string,
   capabilities: readonly CapabilityDef[],
-  deliversRunScopedMcp: boolean,
+  _deliversRunScopedMcp: boolean,
 ): Promise<ClaudeCodeSdkDelivery> {
-  const skipMcpDiscovery = deliversRunScopedMcp;
+  const skipMcpDiscovery = true;
   const sorted = [...capabilities].sort(byId);
   const skillCaps = sorted.filter((capability): capability is Extract<CapabilityDef, { kind: 'skill' }> => capability.kind === 'skill');
   const hookCaps = sorted.filter((capability): capability is Extract<CapabilityDef, { kind: 'hook' }> => capability.kind === 'hook');
@@ -52,6 +55,11 @@ export async function prepareClaudeCodeSdkDelivery(
     await writeFile(join(bundledPluginDir, '.claude-plugin', 'plugin.json'), '{}\n', { encoding: 'utf8', mode: 0o600 });
     for (const skill of skillCaps) {
       const targetDir = join(bundledPluginDir, 'skills', skillDirName(skill));
+      const sourceStat = await stat(skill.path);
+      if (sourceStat.isDirectory()) {
+        await cp(skill.path, targetDir, { recursive: true, force: true });
+        continue;
+      }
       await mkdir(targetDir, { recursive: true, mode: 0o700 });
       const body = await readFile(skill.path, 'utf8');
       await writeFile(join(targetDir, 'SKILL.md'), body.endsWith('\n') ? body : `${body}\n`, {
@@ -71,7 +79,11 @@ export async function prepareClaudeCodeSdkDelivery(
   for (const hook of hookCaps) {
     const sdkEvent = HOOK_EVENT_TO_SDK[hook.event];
     const bucket = hooks[sdkEvent] ?? [];
-    bucket.push({ hooks: [{ type: 'command', command: hook.command }] });
+    const entry =
+      hook.event === 'after_write'
+        ? { matcher: AFTER_WRITE_TOOL_MATCHER, hooks: [{ type: 'command', command: hook.command }] }
+        : { hooks: [{ type: 'command', command: hook.command }] };
+    bucket.push(entry);
     hooks[sdkEvent] = bucket;
   }
 

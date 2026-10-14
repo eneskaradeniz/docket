@@ -144,6 +144,13 @@ export function createSdkTransport(config: SdkTransportConfig): AgentTransport {
         return err({ code: 'unsupported', message: 'claude-code capability delivery failed' });
       }
 
+      let deliveryCleaned = false;
+      const cleanupDelivery = async (): Promise<void> => {
+        if (deliveryCleaned || delivery === undefined) return;
+        deliveryCleaned = true;
+        await delivery.cleanup();
+      };
+
       const abortController = new AbortController();
       const prompt = createChannel<SDKUserMessage>();
       const events = createChannel<AgentEvent>();
@@ -151,20 +158,20 @@ export function createSdkTransport(config: SdkTransportConfig): AgentTransport {
       let finished = false;
       let askCount = 0;
 
-      const closeRun = (): void => {
-        events.close();
-        prompt.close();
+      const closeRun = async (): Promise<void> => {
         // A finish settles every still-open ask so the SDK callback never dangles.
         for (const settle of pendingAsks.values()) settle('deny');
         pendingAsks.clear();
-        void delivery?.cleanup();
+        await cleanupDelivery();
+        events.close();
+        prompt.close();
       };
 
-      const finishRun = (reason: FinishReason): void => {
+      const finishRun = async (reason: FinishReason): Promise<void> => {
         if (finished) return;
         finished = true;
         events.push({ type: 'finished', at: config.clock.now(), reason });
-        closeRun();
+        await closeRun();
       };
 
       const canUseTool: CanUseTool = async (toolName, input, { signal }) => {
@@ -231,7 +238,7 @@ export function createSdkTransport(config: SdkTransportConfig): AgentTransport {
               if (event.type === 'finished') {
                 finished = true;
                 events.push(event.reason === 'completed' && spoiled ? { ...event, reason: 'failed' } : event);
-                closeRun();
+                await closeRun();
                 continue;
               }
               if (event.type === 'text' || event.type === 'thinking' || event.type === 'tool_call') {
@@ -243,44 +250,49 @@ export function createSdkTransport(config: SdkTransportConfig): AgentTransport {
             }
           }
           // A stream that ends without a result message still has to end with exactly one finished.
-          finishRun('failed');
+          await finishRun('failed');
         } catch {
           // An abort from stop() already emitted its own finished; anything else is a crash.
           if (!finished) {
             events.push({ type: 'error', at: config.clock.now(), class: 'crash', message: CRASH_MESSAGE });
-            finishRun('failed');
+            await finishRun('failed');
           }
         }
       };
 
-      prompt.push({
-        type: 'user',
-        message: { role: 'user', content: request.prompt },
-        parent_tool_use_id: null,
-      });
-      void pump();
+      try {
+        prompt.push({
+          type: 'user',
+          message: { role: 'user', content: request.prompt },
+          parent_tool_use_id: null,
+        });
+        void pump();
 
-      const handle: RunHandle = {
-        events: events.stream,
-        answerPermission: (askId: string, decision: 'allow' | 'deny'): void => {
-          const settle = pendingAsks.get(askId);
-          if (settle === undefined) return; // unknown or already answered: ignored
-          pendingAsks.delete(askId);
-          settle(decision);
-        },
-        steer: (note: string): void => {
-          prompt.push({
-            type: 'user',
-            message: { role: 'user', content: note },
-            parent_tool_use_id: null,
-          });
-        },
-        stop: async (): Promise<void> => {
-          abortController.abort();
-          finishRun('cancelled');
-        },
-      };
-      return ok(handle);
+        const handle: RunHandle = {
+          events: events.stream,
+          answerPermission: (askId: string, decision: 'allow' | 'deny'): void => {
+            const settle = pendingAsks.get(askId);
+            if (settle === undefined) return; // unknown or already answered: ignored
+            pendingAsks.delete(askId);
+            settle(decision);
+          },
+          steer: (note: string): void => {
+            prompt.push({
+              type: 'user',
+              message: { role: 'user', content: note },
+              parent_tool_use_id: null,
+            });
+          },
+          stop: async (): Promise<void> => {
+            abortController.abort();
+            await finishRun('cancelled');
+          },
+        };
+        return ok(handle);
+      } catch {
+        await cleanupDelivery();
+        return err({ code: 'unsupported', message: 'claude-code capability delivery failed' });
+      }
     },
   };
 }
