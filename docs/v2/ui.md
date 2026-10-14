@@ -1853,3 +1853,9 @@ Added 2026-10-14, #1110; extends U-226's decision-zone matrix and implements A-3
 Added 2026-10-14, #1115.
 - **U-324** (added 2026-10-14, #1115) The roadmap page has the tabs "Proje katmanı" and "Depo katmanı"; the repo tab bar appears only with several repos and the first repo is selected by default; selecting a tab never reloads the other layer.
 - **U-325** (added 2026-10-14, #1115) The repo layer lists milestones, issues, local subtasks (one level) and "Faz: …" badges that jump to the project layer; it is read-only; the six states of decision 6 render as described; copy lives in the TR and EN bundles, at most 8 words per sentence.
+
+## Work-order usage summary (U-327 … U-328)
+
+Added 2026-10-14, #1112.
+- **U-327** (added 2026-10-14, #1112) The detail shows the collapsed usage line of decision 2 under the stage strip; it expands (`aria-expanded`) to waste findings, the missing-usage line and the stage breakdown; the decision card is never pushed out of view by it in the compact window.
+- **U-328** (added 2026-10-14, #1112) Money follows decision 4 (pay-per-use only, subscription never, ⓘ note for the equivalent, no combined total); a failed load shows the retry line; copy at most 8 words per sentence, TR and EN bundles only.

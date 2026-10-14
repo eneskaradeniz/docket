@@ -10,7 +10,7 @@
 // the pure derivations at the bottom of this file; the screen renders them and forwards clicks.
 import type { Api } from '../../api/api';
 import type { Command, CommandResult } from '../../api/commands';
-import type { OpenAskView, Query } from '../../api/queries';
+import type { OpenAskView, Query, UsageSummaryView } from '../../api/queries';
 import type {
   Actor,
   AgentEvent,
@@ -203,6 +203,10 @@ export interface WorkOrderDetailState {
   /** The asking run's already-allowed asks — the permission card's collapsed “{n} otomatik izin
    *  verildi” line (U-226); 0 renders no line. */
   readonly autoAllowed: number;
+  /** The folded usage read (#1112); null before the first reply or while the first read runs. */
+  readonly usageSummary: UsageSummaryView | null;
+  /** True when the latest `usage.summary` read failed; the detail view stays on screen. */
+  readonly usageSummaryFailed: boolean;
 }
 
 export interface GateDecideInput {
@@ -248,8 +252,43 @@ export interface WorkOrderDetailStore {
   steerRun(runId: string, note: string): Promise<IntentOutcome>;
   /** Closes the work order (`workOrder.close`) — the ⋯ menu's one item (U-226). */
   closeWorkOrder(): Promise<IntentOutcome>;
+  /** Re-reads `usage.summary` for the loaded work order (the usage line's retry). */
+  reloadUsageSummary(): Promise<void>;
   subscribe(listener: () => void): () => void;
 }
+
+/** Pay-per-use money and subscription equivalent totals split per run (#1112, decision 4). */
+export interface WorkOrderUsageMoney {
+  readonly payPerUseUsd: number | null;
+  readonly payPerUseEstimate: boolean;
+  readonly includedEquivalentUsd: number | null;
+}
+
+export const workOrderUsageMoney = (view: WorkOrderDetailView): WorkOrderUsageMoney => {
+  let payUsd = 0;
+  let payEstimate = false;
+  let hasPay = false;
+  let equivUsd = 0;
+  let hasEquiv = false;
+  for (const row of view.runSummaries ?? []) {
+    if (row.usage === undefined) continue;
+    const display = costDisplay(row.usage.costByKind, row.billing);
+    if (display.kind === 'money') {
+      hasPay = true;
+      payUsd += display.usd;
+      if (display.estimate) payEstimate = true;
+    }
+    if (display.kind === 'tokens' && display.equivalentUsd !== undefined) {
+      hasEquiv = true;
+      equivUsd += display.equivalentUsd;
+    }
+  }
+  return {
+    payPerUseUsd: hasPay ? payUsd : null,
+    payPerUseEstimate: payEstimate,
+    includedEquivalentUsd: hasEquiv ? equivUsd : null,
+  };
+};
 
 /** The promoteFrom chain of an environment, immediate prerequisite first. Validation (E-5)
  *  guarantees the chain is acyclic; the visited guard only keeps a degenerate definition from
@@ -639,6 +678,8 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     changes: null,
     lastErrorLine: null,
     autoAllowed: 0,
+    usageSummary: null,
+    usageSummaryFailed: false,
   };
   // The work order the store is bound to: change events re-query it, intents act on it.
   let workOrderId: string | null = null;
@@ -687,6 +728,16 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
 
   /** The permission card's collapsed count: the asking run's already-allowed asks, read from
    *  its own event tail once per load. */
+  const loadUsageSummary = async (id: string, attempt: number): Promise<void> => {
+    const reply: unknown = await api.query({ type: 'usage.summary', workOrder: id } satisfies Query);
+    if (attempt !== attempts) return;
+    if (isQueryFailure(reply)) {
+      set({ ...state, usageSummaryFailed: true });
+      return;
+    }
+    set({ ...state, usageSummary: reply as UsageSummaryView, usageSummaryFailed: false });
+  };
+
   const loadAutoAllowed = async (asks: readonly WorkOrderAskView[]): Promise<void> => {
     const ask = asks[0];
     if (ask === undefined) return;
@@ -702,10 +753,19 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     const attempt = attempts + 1;
     attempts = attempt;
     workOrderId = id;
-    set({ ...state, loading: true, problem: null, lastErrorLine: null, autoAllowed: 0 });
+    set({
+      ...state,
+      loading: true,
+      problem: null,
+      lastErrorLine: null,
+      autoAllowed: 0,
+      usageSummary: null,
+      usageSummaryFailed: false,
+    });
     const detailRead = api.query({ type: 'workOrder.detail', id } satisfies Query);
     void loadAsks();
     void loadChanges(id);
+    void loadUsageSummary(id, attempt);
     const reply: unknown = await detailRead;
     if (attempt !== attempts) return;
     if (isQueryFailure(reply)) {
@@ -878,6 +938,12 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     closeWorkOrder: () => {
       if (workOrderId === null) return Promise.resolve(notLoadedOutcome('workOrder.close'));
       return runIntent({ type: 'workOrder.close', id: workOrderId }, 'success.workOrder.close');
+    },
+    reloadUsageSummary: async () => {
+      if (workOrderId === null) return;
+      const attempt = attempts;
+      set({ ...state, usageSummary: null, usageSummaryFailed: false });
+      await loadUsageSummary(workOrderId, attempt);
     },
   };
 };
