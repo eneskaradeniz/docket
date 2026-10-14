@@ -106,6 +106,7 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
 export const QUERY_REGISTRY: Record<Query['type'], RegistryEntry> = {
   'workOrder.detail': { input: 'id: WorkOrderId' },
   'workOrder.changes': { input: 'workOrder: WorkOrderId' },
+  'workOrder.gitBase': { input: 'id: WorkOrderId — errors: not_found, forge_unavailable, forge_error (A-391)' },
   'repoStatus': { input: 'no input' },
   'repo.flow': { input: 'repo: RepoSlug' },
   'project.tree': { input: 'no input' },

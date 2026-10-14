@@ -2464,6 +2464,89 @@ describe('createApi', () => {
       ]);
     });
   });
+
+  // --- the git base read (GI-4a, A-390, A-391) --------------------------------------------------------
+
+  describe('workOrder.gitBase', () => {
+    const WORK_ORDER_ID = '01ARZ3NDEKTSV4RRFFQ69G5FAV';
+
+    const gitHarness = async (): Promise<Harness> => {
+      const h = await createHarness();
+      const repos = createFakeRepoRegistry();
+      void repos.register({
+        repoId: '1',
+        slug: slugOf<'repo'>(REPO),
+        path: '/repo/acme',
+        fingerprint: { rootCommit: 'root', remote: 'https://github.com/octo/acme.git' },
+      });
+      const deps = { ...h.deps, repos };
+      return { ...h, deps };
+    };
+
+    const gitApi = (h: Harness, forge: Forge | undefined) => {
+      const resolver: ForgeResolver = { forRepo: async () => forge };
+      return createApi(
+        h.deps, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        undefined, undefined, undefined, undefined, undefined, resolver,
+      );
+    };
+
+    const seedWorkOrder = async (h: Harness): Promise<void> => {
+      const id = ulidOf<'work-order'>(WORK_ORDER_ID);
+      await h.deps.workOrders.create({
+        id,
+        project: slugOf<'project'>(PROJECT),
+        repo: slugOf<'repo'>(REPO),
+        flow: slugOf<'flow'>('board-flow'),
+        title: 'Ship it',
+        createdAt: 1_000,
+        createdBy: ACTOR,
+      });
+      await h.deps.workOrders.appendEvent(id, { type: 'created', at: 1_000, by: ACTOR, flow: slugOf<'flow'>('board-flow') });
+    };
+
+    it('A-391: answers the forge default branch for the work order’s repo, writing and announcing nothing', async () => {
+      const h = await gitHarness();
+      await seedWorkOrder(h);
+      const api = gitApi(h, createFakeForge({ defaultBranch: 'trunk' }));
+      const seen: UiEvent[] = [];
+      api.subscribe((event) => seen.push(event));
+
+      expect(await api.query({ type: 'workOrder.gitBase', id: WORK_ORDER_ID })).toEqual({ ok: true, base: 'trunk' });
+      expect(h.log.entries()).toEqual([]);
+      expect(seen).toEqual([]);
+    });
+
+    it('A-391: a malformed id answers invalid_id and an unknown one not_found', async () => {
+      const h = await gitHarness();
+      await seedWorkOrder(h);
+      const api = gitApi(h, createFakeForge());
+
+      expect(await api.query({ type: 'workOrder.gitBase', id: 'not-a-ulid' })).toEqual({ ok: false, code: 'invalid_id' });
+      expect(await api.query({ type: 'workOrder.gitBase', id: UNKNOWN_WORK_ORDER })).toEqual({ ok: false, code: 'not_found' });
+    });
+
+    it('A-391: no forge — an unwired resolver — answers forge_unavailable', async () => {
+      const h = await gitHarness();
+      await seedWorkOrder(h);
+      const api = gitApi(h, undefined);
+
+      expect(await api.query({ type: 'workOrder.gitBase', id: WORK_ORDER_ID })).toEqual({
+        ok: false,
+        code: 'forge_unavailable',
+      });
+      expect(h.log.entries()).toEqual([]);
+    });
+
+    it('A-391: a forge failure maps to forge_error', async () => {
+      const h = await gitHarness();
+      await seedWorkOrder(h);
+      const api = gitApi(h, createFakeForge({ defaultBranchError: 'network' }));
+
+      expect(await api.query({ type: 'workOrder.gitBase', id: WORK_ORDER_ID })).toEqual({ ok: false, code: 'forge_error' });
+      expect(h.log.entries()).toEqual([]);
+    });
+  });
 });
 
 // --- capabilities.import (A-93, A-94) -------------------------------------------------------------

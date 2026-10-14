@@ -712,3 +712,13 @@ Addendum 2026-10-14 (#1097): the setup conversation's adapters and its listing.
 
 - **I-80** addendum (added 2026-10-14, #1097) The chat kind's `tools/list` now carries the three setup tools after the nine (A-213's same-day addendum) — a setup token is a chat token narrowed by `conversationKind`, so the listing is the only way the setup agent sees its own tools. The run kind's list, the instructions and "the listing is only a listing" all stand; the dispatch refuses the three for a plain chat token.
 - **I-83** addendum (added 2026-10-14, #1097) `createNodeDeps` also builds the setup registry (`createSetupContexts` over the fs draft store `createSetupDraftFiles` at `<dataDir>/setup/` and the `createSetupPathReader` reader), hands it to `docketToolExtras.setupContextOf` and to the chat runner's extras, and exposes it as `NodeDeps.setupContexts` for the api's setup surface; `electron/main.ts` passes it to `createApi` beside the chat wiring. The draft store's `newest()` scans the folder, skipping a corrupt or foreign file.
+
+Addendum 2026-10-14 (#1167): the forge's default-branch read (GI-4a of the #1001 series).
+
+- **I-106** (added 2026-10-14, #1167) `createGhForge(...)` grows `defaultBranch(repo)` — the
+  Forge port's read member for the pull-request base prefill (A-391): `gh repo view --repo
+  OWNER/REPO --json defaultBranchRef` through the injected runner (the 60 s gh bound), the
+  shared error classification on failure, and the branch name from `defaultBranchRef.name`. An
+  empty or malformed answer — a missing, null or non-record ref, an empty name, unparseable
+  JSON — is a `ForgeError` (`unknown`), never an empty string. The in-memory fake answers
+  `main` unless a test names another branch or asks for the error path.

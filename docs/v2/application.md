@@ -2177,3 +2177,21 @@ Addendum 2026-10-14 (#1146): the CI check rows on the work-order detail. Rules A
 
 - **A-378** (added 2026-10-14, #1146) `workOrder.detail` gains `gates`: one row per `gate_evaluated` event of the flow's `remote_checks` gates, in event order (newest last), capped at the newest `REMOTE_CHECKS_EVENT_MAX` rows per gate — a pure read of what the dispatcher already recorded. Each row carries `gate`, `stage`, `verdict`, `at` and `checks` from the event's recorded evidence (R-166), so an evaluation older than the field shows `checks: []`; `url` rides the row's contract but is never written (the series decision). `not_found`/`invalid_id` behave as A-21; the read writes no audit entry.
 - **A-379** (added 2026-10-14, #1146) Nothing in the detail starts a poll: the rows are a read of the events the dispatcher's own poll already appended (A-369, A-370). The screen renders them without any query beyond `workOrder.detail` itself.
+
+Addendum 2026-10-14 (#1167): the git lifecycle read on the detail and the forge's default branch
+(GI-4a of the #1001 series). Rules A-390, A-391; the infrastructure rule is I-106
+(docs/v2/infrastructure.md); the domain fold itself stays R-160 … R-164.
+
+- **A-390** (added 2026-10-14, #1167) `workOrder.detail` gains `git`: the git lifecycle fold
+  (R-160 … R-164) over the work order's own events — `branch`, `pr` and `released` exactly as
+  `deriveGitLifecycle` answers them, so an absent branch or pull request reads as undefined and
+  is never invented, and a work order without git events carries the empty fold. The machine
+  state keeps spreading the same fields (they were already there); `git` pins them as the
+  detail's own contract. `not_found`/`invalid_id` behave as A-21; the read writes no audit entry.
+- **A-391** (added 2026-10-14, #1167) New query `workOrder.gitBase { id }` answers the forge's
+  default branch for the work order's repo through the resolver — `{ ok: true, base }` on
+  success; `not_found` for an unknown work order, `forge_unavailable` when no forge resolves
+  (including a repo row without a remote), `forge_error` when the forge call fails, `invalid_id`
+  at the edge. A pure read: no audit entry, no ledger event, and no `run.updated` or
+  `workOrders.changed` is emitted. `RepoRef.defaultBranch` stays whatever GI-2 left it; the
+  branch comes from the forge host itself (I-106), never a local guess.

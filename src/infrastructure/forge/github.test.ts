@@ -332,4 +332,48 @@ describe('gh CLI Forge adapter (P-23)', () => {
     expect(outcome).toEqual({ ok: false, error: 'unknown' });
     expect(runner.calls().filter((call) => call.command.startsWith('gh api'))).toEqual([]);
   });
+
+  it('I-106: defaultBranch reads the repository default branch through gh repo view --json defaultBranchRef', async () => {
+    const runner = createFakeCommandRunner();
+    scriptGhPresent(runner);
+    runner.script(`gh repo view --repo 'octo/hello' --json defaultBranchRef`, result(0, '{"defaultBranchRef":{"name":"trunk"}}'));
+    const forge = await createGhForge(REPO_PATH, runner);
+
+    const outcome = await forge.defaultBranch(REPO);
+
+    expect(outcome).toEqual({ ok: true, value: 'trunk' });
+    const read = runner.calls().find((call) => call.command.startsWith('gh repo view'));
+    expect(read?.command).toBe(`gh repo view --repo 'octo/hello' --json defaultBranchRef`);
+    expect(read?.cwd).toBe(REPO_PATH);
+  });
+
+  it('I-106: an empty or malformed defaultBranchRef answer is a ForgeError, never an empty string', async () => {
+    const answers = [
+      '{"defaultBranchRef":{"name":""}}', // an empty name must not pass as a branch
+      '{"defaultBranchRef":null}', // gh answers null for a repository with no branch yet
+      '{"defaultBranchRef":42}', // the ref is not the object the grammar promises
+      'not json at all',
+    ];
+    for (const output of answers) {
+      const runner = createFakeCommandRunner();
+      scriptGhPresent(runner);
+      runner.script(`gh repo view --repo 'octo/hello' --json defaultBranchRef`, result(0, output));
+      const forge = await createGhForge(REPO_PATH, runner);
+
+      const outcome = await forge.defaultBranch(REPO);
+
+      expect(outcome).toEqual({ ok: false, error: 'unknown' });
+    }
+  });
+
+  it('I-106: a failed gh repo view maps through the shared classification', async () => {
+    const runner = createFakeCommandRunner();
+    scriptGhPresent(runner);
+    runner.script(`gh repo view --repo 'octo/hello' --json defaultBranchRef`, result(1, 'gh: Not Found (HTTP 404)'));
+    const forge = await createGhForge(REPO_PATH, runner);
+
+    const outcome = await forge.defaultBranch(REPO);
+
+    expect(outcome).toEqual({ ok: false, error: 'not_found' });
+  });
 });

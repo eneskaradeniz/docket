@@ -140,6 +140,7 @@ import {
   getUpdateState,
   getWorkOrder,
   workOrderChanges,
+  workOrderGitBase,
   workOrderRunSummaries,
   grantPermission,
   grantSpendConsent,
@@ -409,8 +410,8 @@ const pageCommandOf = (outcome: Result<unknown, { readonly code: string }>): Com
 const commandOf = <E extends string>(outcome: Result<unknown, E>): CommandResult =>
   outcome.ok ? { ok: true } : { ok: false, code: outcome.error };
 
-/** A resolver that stays silent: without forge wiring every git action answers
- *  `forge_unavailable` once its own validations pass — never a silent success. */
+/** A resolver that stays silent: without forge wiring every git action and the gitBase read
+ *  answer `forge_unavailable` once their own validations pass — never a silent success. */
 const SILENT_FORGES: ForgeResolver = { forRepo: async () => undefined };
 
 /** The ports the git lifecycle actions read, picked once so all four handlers share one seam. */
@@ -722,7 +723,7 @@ export function createApi(
       return result;
     },
     query: (query) =>
-      runQuery(deps, query, discovery, registry, board, updates, trackerForRepo, marks, adopting, candidateQuota, chat === undefined ? undefined : chat.runner, setup),
+      runQuery(deps, query, discovery, registry, board, updates, trackerForRepo, marks, adopting, candidateQuota, chat === undefined ? undefined : chat.runner, setup, forges ?? SILENT_FORGES),
     subscribe: (listener) => {
       listeners.add(listener);
       return () => {
@@ -1825,6 +1826,7 @@ const runQuery = async (
   candidateQuota: CandidateQuotaPreview | undefined,
   chatRunner: Pick<ChatRunner, 'active'> | undefined,
   setup: SetupConversations | undefined,
+  forges: ForgeResolver,
 ): Promise<unknown> => {
   switch (query.type) {
     case 'proposals.list':
@@ -1886,6 +1888,15 @@ const runQuery = async (
       if (id === undefined) return invalidId();
       const view = await workOrderChanges(deps, id);
       return view.ok ? view.value : { ok: false, code: view.error };
+    }
+
+    // A pure read through the forge resolver (A-391): the query writes nothing and no handler
+    // here announces it — the prefill reads, the operator edits, the command speaks.
+    case 'workOrder.gitBase': {
+      const id = ulidValue<'work-order'>(query.id);
+      if (id === undefined) return invalidId();
+      const base = await workOrderGitBase({ workOrders: deps.workOrders, repos: deps.repos }, forges, id);
+      return base.ok ? { ok: true, base: base.value } : { ok: false, code: base.error };
     }
 
     case 'cockpit': {
