@@ -44,10 +44,7 @@ const isSourceFile = (name) => /\.(ts|tsx)$/.test(name);
 // Components built ahead of their wiring, held by name so the guard stays honest while they wait.
 // The list must be empty when the phase closes; #1123 wires these two and empties it — an entry
 // whose file gains a non-test importer or stops existing fails the check so it cannot go stale.
-const ORPHAN_ALLOWLIST = new Map([
-  ['src/presentation/components/past-versions-modal.tsx', '#1123'],
-  ['src/presentation/components/removal-action-button.tsx', '#1123'],
-]);
+export const ORPHAN_ALLOWLIST = new Map([]);
 
 /** The relative module specifiers one source file imports (`./x`, `../y`); package imports and
  *  type-only syntax carry no path to resolve. */

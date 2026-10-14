@@ -19,7 +19,7 @@ import { RescanButton } from './rescan-button';
 import { SettingRow, SettingRows } from './setting-row';
 import { EmptyCard, InfoBanner } from './settings-cards';
 import { Skeleton, SkeletonStyle } from './skeleton';
-import { VersionBadge } from './version-badge';
+import { DefinitionLibraryRowControls } from './definition-library-row-controls';
 
 const EMPTY_TITLE: Readonly<Record<DefinitionSection | 'roles', LabelKey>> = {
   roles: 'capabilities.empty.roles.title',
@@ -226,7 +226,20 @@ export function CapabilitySection({ locale, section, store, marks, active, onOpe
             title={row.name}
             purpose={`${t(locale, WRITE_SCOPE_KEY[row.writeScope.kind])} · ${row.linkedCount}`}
             note={row.warningKey === null ? undefined : warningText(locale, row.warningKey, row.warningProviders)}
-            control={<VersionBadge locale={locale} version={row.version} />}
+            control={
+              <DefinitionLibraryRowControls
+                locale={locale}
+                name={row.name}
+                version={row.version}
+                pastVersions={row.pastVersions}
+                pastVersionsOpen={state.pastVersionsRole === row.id}
+                removal={row.removal}
+                stages={row.stages}
+                onOpenPastVersions={() => store.openPastVersions(row.id)}
+                onClosePastVersions={() => store.closePastVersions()}
+                onRemove={() => void store.removeLibraryItem('roles', row.id)}
+              />
+            }
           />
         ))}
       </SettingRows>
@@ -326,7 +339,20 @@ export function CapabilitySection({ locale, section, store, marks, active, onOpe
             title={body?.name ?? item.definitionId}
             below={below}
             note={warningKey === null ? undefined : warningText(locale, warningKey, warningProviders)}
-            control={null}
+            control={
+              <DefinitionLibraryRowControls
+                locale={locale}
+                name={body?.name ?? item.definitionId}
+                version={item.version}
+                pastVersions={null}
+                pastVersionsOpen={false}
+                removal={item.removal}
+                stages={[]}
+                onOpenPastVersions={() => undefined}
+                onClosePastVersions={() => undefined}
+                onRemove={() => void store.removeLibraryItem(section, item.definitionId)}
+              />
+            }
           />
         );
       })}

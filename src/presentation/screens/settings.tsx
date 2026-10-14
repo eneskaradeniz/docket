@@ -33,6 +33,7 @@ import { LimitPolicySection } from '../components/limit-policy-section';
 import { MOTION, motionVars } from '../components/motion';
 import { ModalWindow } from '../components/new-work-order-window';
 import { OverlayEditor } from '../components/overlay-editor';
+import { RepoRelinkBanner } from '../components/repo-relink-banner';
 import { ProviderList } from '../components/provider-list';
 import { ProviderMark } from '../components/provider-mark';
 import { SettingRow, SettingRows } from '../components/setting-row';
@@ -76,6 +77,7 @@ import {
   type AgentCapabilitiesStore,
 } from '../stores/agent-capabilities';
 import { builtinRoleLibrary, flowDraftState } from '../stores/repo-settings';
+import { createRepoRelinkStatusStore, type RepoRelinkStatusStore } from '../stores/repo-relink-status';
 import type { SettingsStore } from '../stores/settings';
 import { failureKey } from '../stores/results';
 import type { ProviderMarksStore } from '../stores/provider-marks';
@@ -128,6 +130,8 @@ export interface SettingsPanelProps {
   readonly localeStore: LocaleStore;
   /** Closes the panel and opens the account's own view ("Hesap görünümünü aç", U-30). */
   readonly onOpenAccount?: (accountId: string) => void;
+  /** Injected in tests so relink outcomes can be driven without the preload bridge. */
+  readonly repoRelink?: RepoRelinkStatusStore;
 }
 
 // The sections and their menu groups are the store's (U-28); the type stays importable from here.
@@ -177,6 +181,18 @@ const docketBridge = (): Pick<Api, 'query' | 'command'> => {
     };
   }
   return bridge;
+};
+
+type PickFoldersResult =
+  | { readonly canceled: true }
+  | { readonly canceled: false; readonly paths: readonly string[] };
+
+const docketPickFolders = (): ((options?: { readonly multiple?: boolean }) => Promise<PickFoldersResult>) => {
+  const bridge = (window as unknown as { docket?: { pickFolders?: (options?: { readonly multiple?: boolean }) => Promise<PickFoldersResult> } }).docket;
+  if (bridge?.pickFolders === undefined) {
+    return async () => ({ canceled: true });
+  }
+  return bridge.pickFolders;
 };
 
 /** One status line per UpdateStatus (U-24) — the Güncelleme section's quiet reading of where the
@@ -234,7 +250,7 @@ function usePaintedFlip(active: boolean): boolean {
 // same classes the search palette animates with, so the two overlays speak one motion language.
 const MOTION_STYLE = motionVars();
 
-export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _fineTune, onOpenTarget, onSection, onBack, onEscape, onClose, candidateDot: candidateDotMirror, candidates, providers, models, themeStore, store, marks, roles, update, locale, localeStore, onEnterSubPage, onOpenAccount }: SettingsPanelProps) {
+export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _fineTune, onOpenTarget, onSection, onBack, onEscape, onClose, candidateDot: candidateDotMirror, candidates, providers, models, themeStore, store, marks, roles, update, locale, localeStore, onEnterSubPage, onOpenAccount, repoRelink: repoRelinkInjected }: SettingsPanelProps) {
   const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   const candidateState = useSyncExternalStore(candidates.subscribe, candidates.state, candidates.state);
   // The marks land once, after the first paint; the subscription turns them into a re-render.
@@ -299,9 +315,26 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
   // tree and the flow, like the agent sections re-read their own view.
   const repo = store.repoSettings;
   const repoState = useSyncExternalStore(repo.subscribe, repo.state, repo.state);
+  const repoRelinkOwned = useMemo(
+    () =>
+      createRepoRelinkStatusStore({
+        api: docketBridge(),
+        actor: SETTINGS_ACTOR,
+        pickFolders: docketPickFolders(),
+      }),
+    [],
+  );
+  const repoRelink = repoRelinkInjected ?? repoRelinkOwned;
+  const repoRelinkState = useSyncExternalStore(repoRelink.subscribe, repoRelink.state, repoRelink.state);
   useEffect(() => {
     if (open && section === 'repo') void repo.load();
   }, [open, section, repo]);
+  useEffect(() => {
+    if (open && section === 'repo') {
+      const slugs = repoState.repos.map((tab) => tab.repo);
+      void repoRelink.load(slugs);
+    }
+  }, [open, section, repoRelink, repoState.repos]);
   // A leave a dirty draft stopped: the discard dialog holds the go that fires on confirmation.
   const [pendingLeave, setPendingLeave] = useState<{ readonly go: () => void } | null>(null);
   /** One leave path for every section: a clean draft goes, a dirty one stops at the discard
@@ -682,6 +715,21 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
             >
               {tab.name}
             </button>
+          ))}
+        </div>
+      ) : null}
+      {repoRelinkState.rows.length > 0 ? (
+        <div className="grid gap-2">
+          {repoRelinkState.rows.map((row) => (
+            <RepoRelinkBanner
+              key={row.repoId}
+              locale={locale}
+              row={row}
+              busy={repoRelinkState.busyRepoId === row.repoId}
+              onLinkOffered={() => void repoRelink.relinkAtPath(row.repoId, row.path)}
+              onPickFolder={() => void repoRelink.pickAndRelink(row.repoId)}
+              onPickOther={() => void repoRelink.pickAndRelink(row.repoId)}
+            />
           ))}
         </div>
       ) : null}

@@ -43,6 +43,48 @@ describe('machine import copy (U-285)', () => {
   });
 });
 
+describe('definition removal (U-293)', () => {
+  it('U-293: a blocked command re-reads roles.list so the row shows updated blockers', async () => {
+    let listPass = 0;
+    const store = createAgentCapabilitiesStore({
+      api: {
+        query: async (query: Query) => {
+          if (query.type === 'roles.list') {
+            listPass += 1;
+            if (listPass === 1) {
+              return [{ id: 'worker', name: 'Uygulayıcı', version: 1, removal: { kind: 'delete' }, pastVersions: [], stages: [] }];
+            }
+            return [
+              {
+                id: 'worker',
+                name: 'Uygulayıcı',
+                version: 1,
+                removal: { kind: 'blocked', reasons: [{ kind: 'dependant', of: 'stage', repo: 'api', stage: 'app' }] },
+                pastVersions: [],
+                stages: [{ flow: 'api', flowName: 'api', stage: 'app', stageName: 'Uygulama', tier: null, thinking: null, reviewOf: null, sameProviderReview: false }],
+              },
+            ];
+          }
+          if (query.type === 'providers.discovered') return [];
+          if (query.type === 'project.tree') return [];
+          if (query.type === 'definitions.list') return [];
+          return [];
+        },
+        command: async () => ({ ok: false, code: 'blocked', reasons: [{ kind: 'dependant', of: 'stage', repo: 'api', stage: 'app' }] }),
+      },
+      actor: { kind: 'user', id: 'u', label: 'U' },
+      runCommand: async () => ({ ok: true }),
+      roleLibrary: async () => [],
+      now: () => 0,
+    });
+    store.setSection('roles');
+    await store.load();
+    await store.removeLibraryItem('roles', 'worker');
+    expect(store.state().roles[0]?.removal.kind).toBe('blocked');
+    expect(listPass).toBeGreaterThanOrEqual(2);
+  });
+});
+
 describe('createAgentCapabilitiesStore', () => {
   it('refuses leave while a create draft is dirty until discard', () => {
     const store = createAgentCapabilitiesStore({

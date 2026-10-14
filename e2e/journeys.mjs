@@ -2144,6 +2144,15 @@ for (const [sizeName, theme] of combos) {
       rolesEmpty.waitFor({ state: 'visible', timeout: SCAN_WAIT }),
       rolesRows.first().waitFor({ state: 'visible', timeout: SCAN_WAIT }),
     ]);
+    if (await rolesRows.count()) {
+      const firstRole = rolesRows.first();
+      await firstRole.getByRole('button', { name: 'Eski sürümler' }).waitFor({ state: 'visible', timeout: WAIT }).catch(() => undefined);
+      await Promise.race([
+        firstRole.getByRole('button', { name: 'Sil' }).waitFor({ state: 'visible', timeout: WAIT }),
+        firstRole.getByRole('button', { name: 'Arşivle' }).waitFor({ state: 'visible', timeout: WAIT }),
+        firstRole.locator('button[disabled]').filter({ hasText: /Sil|Arşivle/ }).waitFor({ state: 'visible', timeout: WAIT }),
+      ]);
+    }
     await shot('roller');
 
     // Eklentiler: empty card or import action.
@@ -2177,6 +2186,7 @@ for (const [sizeName, theme] of combos) {
           ),
           repoRegion.locator('[data-repo-empty]').waitFor({ state: 'visible', timeout: SCAN_WAIT }),
         ]);
+        assert((await repoRegion.locator('[data-repo-relink-banner]').count()) === 0, 'relink banner must stay hidden while every repo is ok (U-312)');
       } finally {
         page.off('console', onConsole);
         page.off('pageerror', onPageError);
