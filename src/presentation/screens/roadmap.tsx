@@ -26,7 +26,9 @@ import { failureKey } from '../stores/results';
 import { toast } from '../stores/toasts';
 import { formatWorkOrderCode } from '../stores/work-order-code';
 import { ProjectMenu } from '../components/project-menu';
+import { ProjectSpendHeader } from '../components/project-spend-header';
 import type { ProjectBundleStore } from '../stores/project-bundle';
+import { projectCapHardStop } from '../stores/project-spend';
 
 export interface RoadmapScreenProps {
   readonly store: RoadmapStore;
@@ -39,6 +41,7 @@ export interface RoadmapScreenProps {
   readonly onOpenRepo: (repo: string) => void;
   readonly onOpenWorkOrder: (workOrderId: string) => void;
   readonly projectBundle?: ProjectBundleStore;
+  readonly onOpenBudget: () => void;
 }
 
 interface TaskView {
@@ -161,6 +164,8 @@ const PhaseCard = ({
   onOpenRepo,
   onOpenWorkOrder,
   highlightPhase,
+  capHardStop,
+  onOpenBudget,
 }: {
   readonly view: RoadmapPageView;
   readonly phase: RoadmapPhase;
@@ -173,9 +178,11 @@ const PhaseCard = ({
   readonly onOpenRepo: (repo: string) => void;
   readonly onOpenWorkOrder: (workOrderId: string) => void;
   readonly highlightPhase: string | null;
+  readonly capHardStop: boolean;
+  readonly onOpenBudget: () => void;
 }) => {
   const done = phase.tasks.filter((task) => task.status === 'done').length;
-  const control = phaseControl(view, phase);
+  const control = phaseControl(view, phase, { projectCapHardStop: capHardStop });
   const confirming = panel?.kind === 'confirm' && panel.phase === phase.id;
   const attending = panel?.kind === 'attention' && panel.phase === phase.id;
   const counts = phaseRunCounts(view, phase);
@@ -253,6 +260,11 @@ const PhaseCard = ({
             </span>
           ) : null}
           {control.hint === 'paused' ? <span className="text-[0.75rem] leading-4 text-inkdim">{t(locale, 'roadmap.hint.paused')}</span> : null}
+          {control.hint === 'cap' ? (
+            <button type="button" onClick={onOpenBudget} className={`${BUTTON_SECONDARY} h-auto min-h-7 border-error/50 text-[0.75rem] text-error`}>
+              {t(locale, 'project.spend.stopChip')}
+            </button>
+          ) : null}
         </div>
       </div>
       {confirming ? (
@@ -407,7 +419,16 @@ const TaskRow = ({
   );
 };
 
-export function RoadmapScreen({ store, project, name, locale, onOpenRepo, onOpenWorkOrder, projectBundle }: RoadmapScreenProps) {
+export function RoadmapScreen({
+  store,
+  project,
+  name,
+  locale,
+  onOpenRepo,
+  onOpenWorkOrder,
+  projectBundle,
+  onOpenBudget,
+}: RoadmapScreenProps) {
   const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   useEffect(() => {
     void store.load(project);
@@ -416,6 +437,7 @@ export function RoadmapScreen({ store, project, name, locale, onOpenRepo, onOpen
   const view = state.view;
   const selectedRepo = state.selectedRepo;
   const repoSlice = selectedRepo === null ? undefined : state.repoSlices[selectedRepo];
+  const capHardStop = projectCapHardStop(state.spend);
 
   return (
     <div className="grid gap-4">
@@ -432,6 +454,16 @@ export function RoadmapScreen({ store, project, name, locale, onOpenRepo, onOpen
           ) : null}
         </div>
         <p className="text-xs text-inkdim">{t(locale, 'roadmap.caption')}</p>
+        <ProjectSpendHeader
+          locale={locale}
+          spend={state.spend}
+          loading={state.spendLoading}
+          problem={state.spendProblem}
+          repoOpen={state.spendRepoOpen}
+          onToggleRepo={() => store.toggleSpendRepo()}
+          onRetry={() => void store.reloadSpend()}
+          onEditCap={onOpenBudget}
+        />
         <RoadmapLaunchers project={project} />
       </header>
 
@@ -495,6 +527,8 @@ export function RoadmapScreen({ store, project, name, locale, onOpenRepo, onOpen
               onOpenRepo={onOpenRepo}
               onOpenWorkOrder={onOpenWorkOrder}
               highlightPhase={state.highlightPhase}
+              capHardStop={capHardStop}
+              onOpenBudget={onOpenBudget}
             />
           ))}
         </div>

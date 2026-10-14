@@ -1838,6 +1838,12 @@ Added 2026-10-14, #1120; implements A-380/A-381 (docs/v2/application.md).
 - **U-318** (added 2026-10-14, #1103) Copy-from: a source select of Eklendi repos only, the new folder (picker or typed), a region summarising what is and is not copied, then the ordinary proposal diff with the "kopyalandı" badge on copied groups; errors map to one-line sentences.
 - **U-319** (added 2026-10-14, #1103) Import: modes "Çoklu klasör seç" and "Üst klasörden bul"; the queue shows the four states with per-row "İncele"/"Onayla"; "Hepsini onayla" only when no row is Gözden geçir; the overflow alert uses `role="alert"`; a failing row never blocks the others; loading uses `aria-busy`.
 
+## Project spend in the roadmap header (U-329, U-330)
+
+Added 2026-10-14, #1113; uses `project.spend` (A-388).
+- **U-329** (added 2026-10-14, #1113) The project header shows the meter, the counter or nothing by decision 1, with loading, error, no ceiling, below the ceiling, above `warnPercent` and over the ceiling; "Depo kırılımı" opens the per-repo list when something is drawn; money appears only for pay-per-use accounts.
+- **U-330** (added 2026-10-14, #1113) At `hard_stop` "Fazı çalıştır" is disabled with "Proje tavanı aşıldı" (en: "Project cap reached") as a button to the budget setting; copy at most 8 words per sentence, TR and EN bundles only.
+
 ## Native folder picker (U-326)
 
 Added 2026-10-14, #1129; `docket.pickFolders` on `window.docket`, `ipcMain.handle('docket:pick-folders', …)` and `electron/pick-folders.ts`.

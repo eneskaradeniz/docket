@@ -802,7 +802,7 @@ export interface AccountDetailView {
   readonly windows: readonly { readonly label?: string; readonly unit: string; readonly used?: number; readonly limit?: number; readonly remaining?: number; readonly resetsAt?: number; readonly resetPrecision: string; readonly source: string }[];
   readonly activeWork: readonly { readonly workOrderId: string; readonly title: string; readonly stage: string | null; readonly status: string }[];   // non-done work orders with a run on this account, oldest active first
 }
-export interface ProjectSpendView { readonly totalUsd: number; readonly perRepo: readonly { readonly repo: string; readonly usd: number }[]; readonly cap?: { readonly amountUsd: number; readonly warnPercent: number } }
+export interface ProjectSpendView { readonly totalUsd: number; readonly perRepo: readonly { readonly repo: string; readonly usd: number }[]; readonly cap?: { readonly amountUsd: number; readonly warnPercent: number }; readonly billing: 'pay_per_use' | 'included' | 'mixed' | 'none' }
 export interface BoardColumn {
   readonly stage: string;
   readonly name: string;
@@ -2029,6 +2029,10 @@ Rules A-380 … A-381; the UI rules are U-314 and U-315 (docs/v2/ui.md).
 
 - **A-380** (added 2026-10-14, #1120) `mcp.status` answers from `McpListenerControl.status()` plus the tool-name constants and the roles with `docketTools === false`; it never starts anything and never reads a secret or a token.
 - **A-381** (added 2026-10-14, #1120) `mcp.restore` calls `restart()` once; success answers the new status; each failure maps to its typed error; it changes no role, no library entry and no run, and a second call after success is a no-op that answers `ok`.
+
+Addendum 2026-10-14 (#1113): `project.spend` billing for the roadmap header. Rules A-388; the UI rules are U-329 and U-330 (docs/v2/ui.md).
+
+- **A-388** (added 2026-10-14, #1113) `project.spend` also answers `billing` as the project's active accounts' billing kinds aggregated: `pay_per_use` when every active account bills per use, `included` when none does, `mixed` otherwise, `none` when the project has no active account; `totalUsd`, `perRepo` and `cap` are unchanged; active accounts are the distinct account ids from bindings at global, project and repo scopes that apply to the project and still exist, billing each account the way `settings.accounts` does.
 
 Addendum 2026-10-14 (#1110): stop and steer a running stage — the live-handle registry
 (`application/services/run-control.ts`, the permission-board pattern), the commands `run.stop`

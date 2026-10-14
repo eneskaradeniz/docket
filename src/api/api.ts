@@ -2815,6 +2815,58 @@ const accountModelsView = async (
   };
 };
 
+type ProjectSpendRouteBilling = 'pay_per_use' | 'included' | 'unknown';
+
+const routeBillingForProjectSpend = (billing: Billing): ProjectSpendRouteBilling =>
+  billing === 'metered' ? 'pay_per_use' : billing;
+
+const accountBillingForProjectSpend = async (
+  deps: AppDeps,
+  record: AccountRecord,
+): Promise<ProjectSpendRouteBilling> => {
+  const [pools, models] = await Promise.all([
+    deps.accounts.pools(record.id),
+    catalogOrEmpty(() => deps.modelCatalog.list(record.id)),
+  ]);
+  const defaultModel = models.find((model) => model.isDefault === true);
+  const billing =
+    defaultModel === undefined
+      ? defaultBillingOf(deps.capabilities, record)
+      : billingFromPools(defaultModel.billing, defaultModel.resolvedId ?? defaultModel.id, pools);
+  return routeBillingForProjectSpend(billing);
+};
+
+const projectSpendBillingOf = (billings: readonly ProjectSpendRouteBilling[]): ProjectSpendView['billing'] => {
+  if (billings.length === 0) return 'none';
+  if (billings.every((entry) => entry === 'included')) return 'included';
+  if (billings.every((entry) => entry !== 'included')) return 'pay_per_use';
+  return 'mixed';
+};
+
+const projectActiveAccountIds = async (
+  deps: AppDeps,
+  project: ProjectSlug,
+  repos: readonly RepoSlug[],
+): Promise<readonly AccountId[]> => {
+  const repoSet = new Set(repos);
+  const ids: AccountId[] = [];
+  const seen = new Set<string>();
+  for (const { scope, binding } of await deps.bindings.listAll()) {
+    const applies =
+      scope.level === 'global' ||
+      (scope.level === 'project' && scope.project === project) ||
+      (scope.level === 'repo' && repoSet.has(scope.repo));
+    if (!applies) continue;
+    for (const route of binding.accounts) {
+      if (seen.has(route.accountId)) continue;
+      if ((await deps.accounts.get(route.accountId)) === undefined) continue;
+      seen.add(route.accountId);
+      ids.push(route.accountId);
+    }
+  }
+  return ids;
+};
+
 const projectSpendView = async (
   deps: AppDeps,
   project: ProjectSlug,
@@ -2834,9 +2886,17 @@ const projectSpendView = async (
   }
   const totalUsd = perRepo.reduce((sum, entry) => sum + entry.usd, 0);
 
+  const accountIds = await projectActiveAccountIds(deps, project, def.repos);
+  const billings: ProjectSpendRouteBilling[] = [];
+  for (const id of accountIds) {
+    const record = await deps.accounts.get(id);
+    if (record !== undefined) billings.push(await accountBillingForProjectSpend(deps, record));
+  }
+
   return {
     totalUsd,
     perRepo,
+    billing: projectSpendBillingOf(billings),
     ...(def.budget !== undefined ? { cap: { amountUsd: def.budget.amountUsd, warnPercent: def.budget.warnPercent } } : {}),
   };
 };

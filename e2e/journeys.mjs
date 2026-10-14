@@ -205,6 +205,9 @@ for (const [sizeName, theme] of combos) {
     await see('Proje katmanı');
     await see('Depo katmanı');
     await shot('roadmap');
+    await page.locator('[data-project-spend]').waitFor({ state: 'visible', timeout: WAIT });
+    await page.locator('[data-project-spend] [role="meter"]').waitFor({ state: 'visible', timeout: WAIT });
+    await see('Depo kırılımı');
     await click('Mobil login');
     await see('İE-0026');
     await see('İE-0027');
