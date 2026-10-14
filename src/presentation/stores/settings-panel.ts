@@ -12,28 +12,41 @@ import type { PaletteOrigin } from './search-palette';
  *  (key activation of the same). It decides where focus lands when the panel closes. */
 export type SettingsPanelOrigin = PaletteOrigin;
 
-/** The panel's sections: Çalışma — accounts, roles, capabilities, concurrency, providers; Uygulama —
- *  appearance (Dil and Tema) and update. Telefon is its own window, not a section. */
+/** The panel's sections: Çalışma — accounts, concurrency, providers; Ajan yetenekleri — the seven
+ *  capability kinds; Uygulama — appearance (Dil and Tema) and update. Telefon is its own window. */
 export type SettingsSection =
   | 'accounts'
-  | 'roles'
-  | 'capabilities'
   | 'concurrency'
   | 'providers'
+  | 'memory'
+  | 'roles'
+  | 'plugins'
+  | 'mcp'
+  | 'skills'
+  | 'commands'
+  | 'hooks'
   | 'appearance'
   | 'update';
 
 export interface SettingsMenuGroup {
-  readonly id: 'work' | 'app';
+  readonly id: 'work' | 'agentCapabilities' | 'app';
   readonly sections: readonly SettingsSection[];
 }
 
 export const SETTINGS_MENU: readonly SettingsMenuGroup[] = [
-  { id: 'work', sections: ['accounts', 'roles', 'capabilities', 'concurrency', 'providers'] },
+  { id: 'work', sections: ['accounts', 'concurrency', 'providers'] },
+  {
+    id: 'agentCapabilities',
+    sections: ['memory', 'roles', 'plugins', 'mcp', 'skills', 'commands', 'hooks'],
+  },
   { id: 'app', sections: ['appearance', 'update'] },
 ];
 
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = SETTINGS_MENU.flatMap((group) => group.sections);
+
+/** The seven menus of the Ajan yetenekleri group, in display order (U-284). */
+export const AGENT_CAPABILITY_SECTIONS: readonly SettingsSection[] =
+  SETTINGS_MENU.find((group) => group.id === 'agentCapabilities')?.sections ?? [];
 
 /** The section the nav's Ayarlar row opens. */
 export const DEFAULT_SETTINGS_SECTION: SettingsSection = 'accounts';

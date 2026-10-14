@@ -69,26 +69,36 @@ describe('reclaimsPanelFocus', () => {
 });
 
 describe('settings sections (U-28)', () => {
-  it('U-28: the menu has two groups in order — Çalışma then Uygulama — each with its sections in order', () => {
+  it('U-28: the menu has three groups in order — Çalışma, Ajan yetenekleri, Uygulama — each with its sections in order', () => {
     expect(SETTINGS_MENU).toStrictEqual([
-      { id: 'work', sections: ['accounts', 'roles', 'capabilities', 'concurrency', 'providers'] },
+      { id: 'work', sections: ['accounts', 'concurrency', 'providers'] },
+      {
+        id: 'agentCapabilities',
+        sections: ['memory', 'roles', 'plugins', 'mcp', 'skills', 'commands', 'hooks'],
+      },
       { id: 'app', sections: ['appearance', 'update'] },
     ]);
     expect(SETTINGS_SECTIONS).toStrictEqual([
       'accounts',
-      'roles',
-      'capabilities',
       'concurrency',
       'providers',
+      'memory',
+      'roles',
+      'plugins',
+      'mcp',
+      'skills',
+      'commands',
+      'hooks',
       'appearance',
       'update',
     ]);
     expect(SETTINGS_SECTIONS).not.toContain('language');
+    expect(SETTINGS_MENU.find((group) => group.id === 'work')?.sections).not.toContain('roles');
   });
 
-  it('U-69: Eşzamanlılık is a section of the Çalışma group, after Yetenekler, and can be opened by name', () => {
+  it('U-69: Eşzamanlılık is a section of the Çalışma group, after Hesaplar, and can be opened by name', () => {
     const work = SETTINGS_MENU.find((group) => group.id === 'work');
-    expect(work?.sections.slice(2, 4)).toStrictEqual(['capabilities', 'concurrency']);
+    expect(work?.sections.slice(0, 2)).toStrictEqual(['accounts', 'concurrency']);
     expect(SETTINGS_SECTIONS.filter((section) => section === 'concurrency')).toHaveLength(1);
     const opened = settingsPanelReducer(CLOSED_SETTINGS_PANEL, { type: 'open', origin: 'pointer', section: 'concurrency' });
     expect(opened.section).toBe('concurrency');

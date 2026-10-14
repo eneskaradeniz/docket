@@ -7,10 +7,15 @@ import { SETTINGS_MENU, type SettingsSection } from '../stores/settings-panel';
 
 const SECTION_KEY: Readonly<Record<SettingsSection, LabelKey>> = {
   accounts: 'settings.section.accounts',
-  roles: 'settings.section.roles',
-  capabilities: 'settings.section.capabilities',
   concurrency: 'settings.section.concurrency',
   providers: 'settings.section.providers',
+  memory: 'settings.section.memory',
+  roles: 'settings.section.roles',
+  plugins: 'settings.section.plugins',
+  mcp: 'settings.section.mcp',
+  skills: 'settings.section.skills',
+  commands: 'settings.section.commands',
+  hooks: 'settings.section.hooks',
   appearance: 'settings.section.appearance',
   update: 'settings.section.update',
 };
@@ -27,7 +32,12 @@ export function SettingsMenu({ locale, section, onSection, dot }: SettingsMenuPr
   return (
     <div className="grid gap-0.5">
       {SETTINGS_MENU.map((group, index) => (
-        <div key={group.id} className={index === 0 ? 'grid gap-0.5' : 'mt-2 grid gap-0.5 border-t border-hairline pt-2'}>
+        <div
+          key={group.id}
+          role={group.id === 'agentCapabilities' ? 'group' : undefined}
+          aria-label={group.id === 'agentCapabilities' ? t(locale, 'settings.group.agentCapabilities') : undefined}
+          className={index === 0 ? 'grid gap-0.5' : 'mt-2 grid gap-0.5 border-t border-hairline pt-2'}
+        >
           {group.sections.map((entry) => {
             const current = entry === section;
             return (
