@@ -2115,16 +2115,24 @@ for (const [sizeName, theme] of combos) {
     await panel.locator('#accounts-unadded-body').waitFor({ state: 'visible', timeout: WAIT });
     await shot('hesaplar');
 
-    // Roller: no account, so the order is an empty card whose button opens Hesaplar.
+    // Roller: repository settings (Akış, overlay, limit policy) replace the global chain editor.
     await section('Roller').click({ timeout: WAIT });
-    const chainCard = panel.locator('[data-empty-card="roles-chain"]');
-    await chainCard.waitFor({ state: 'visible', timeout: SCAN_WAIT });
-    assert((await chainCard.textContent())?.includes('Henüz hesap yok'), 'the order card names itself');
-    assert((await panel.textContent())?.includes('Hesaplar bu sırayla denenir.'), 'the order carries its one short line');
+    const repoSettings = panel.locator('[data-repo-settings]');
+    await repoSettings.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    assert.equal(await repoSettings.getAttribute('role'), 'region', 'repo settings is a named region');
+    assert((await repoSettings.getAttribute('aria-label'))?.includes('Depo ayarları'), 'repo settings region label');
+    await page.waitForFunction(
+      () => {
+        const root = document.querySelector('[data-repo-settings]');
+        if (root === null) return false;
+        if (root.querySelector('[role="alert"]') !== null) return false;
+        return root.querySelector('[role="group"]') !== null;
+      },
+      undefined,
+      { timeout: SCAN_WAIT },
+    );
+    await repoSettings.getByRole('group', { name: 'Akış' }).waitFor({ state: 'visible', timeout: WAIT });
     await shot('roller');
-    await chainCard.getByRole('button', { name: "Hesaplar'a git", exact: true }).click({ timeout: WAIT });
-    await sections.waitFor({ state: 'visible', timeout: SCAN_WAIT });
-    assert.equal(await section('Hesaplar').getAttribute('aria-current'), 'page', "Hesaplar'a git opens Hesaplar");
 
     // Yetenekler: the discovery card.
     await section('Yetenekler').click({ timeout: WAIT });

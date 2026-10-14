@@ -29,9 +29,11 @@ import { KeyMoveCard } from '../components/key-move-card';
 import { MOTION, motionVars } from '../components/motion';
 import { ProviderList } from '../components/provider-list';
 import { ProviderMark } from '../components/provider-mark';
-import { ChainSection, RoleRowView } from '../components/role-row';
+import { FlowStageStrip } from '../components/flow-stage-strip';
+import { LimitPolicySection } from '../components/limit-policy-section';
+import { OverlayEditor } from '../components/overlay-editor';
 import { SettingRow, SettingRows } from '../components/setting-row';
-import { CapabilitiesCard, EmptyCard, RolesUnsetBanner } from '../components/settings-cards';
+import { CapabilitiesCard } from '../components/settings-cards';
 import { SettingsMenu } from '../components/settings-menu';
 import { StatusLamp } from '../components/status-lamp';
 import { WindowFrame, WindowTitle } from '../components/window-frame';
@@ -62,6 +64,7 @@ import {
 import { settingsAccountRows, settingsStanding, type SettingsAccountRow } from '../stores/settings-accounts';
 import type { ThemeStore } from '../stores/theme';
 import { toastOutcome } from '../stores/toasts';
+import { flowDraftState } from '../stores/repo-settings';
 import type { SettingsStore } from '../stores/settings';
 import { failureKey } from '../stores/results';
 import type { ProviderMarksStore } from '../stores/provider-marks';
@@ -163,16 +166,6 @@ const STATUS_KEY: Readonly<Record<AccountStatus, LabelKey>> = {
   modelError: 'editor.status.modelError',
 };
 
-/** A sub-heading inside a section ("Eklenmemiş · 2 hesap"). */
-function SubHeading({ title, note }: { readonly title: string; readonly note?: string }) {
-  return (
-    <h2 className="mb-2 mt-[22px] flex items-baseline gap-2 text-[13px] font-bold text-ink first:mt-0">
-      {title}
-      {note !== undefined ? <span className="font-medium text-inkdim">{note}</span> : null}
-    </h2>
-  );
-}
-
 const CloseIcon = () => (
   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true" className="block h-[15px] w-[15px]">
     <path d="m4 4 8 8M12 4 4 12" />
@@ -205,7 +198,7 @@ function usePaintedFlip(active: boolean): boolean {
 // same classes the search palette animates with, so the two overlays speak one motion language.
 const MOTION_STYLE = motionVars();
 
-export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, onOpenTarget, onSection, onBack, onEscape, onClose, candidateDot: candidateDotMirror, candidates, providers, models, themeStore, store, marks, roles, update, locale, localeStore, onEnterSubPage, onOpenAccount }: SettingsPanelProps) {
+export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _fineTune, onOpenTarget, onSection, onBack, onEscape, onClose, candidateDot: candidateDotMirror, candidates, providers, models, themeStore, store, marks, roles, update, locale, localeStore, onEnterSubPage, onOpenAccount }: SettingsPanelProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
   const candidateState = useSyncExternalStore(candidates.subscribe, candidates.state);
   // The marks land once, after the first paint; the subscription turns them into a re-render.
@@ -246,8 +239,28 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
   // The Roller rows load whenever the section is on screen, and for the role chips on an
   // account's Genel tab.
   useEffect(() => {
-    if (open && (section === 'roles' || (section === 'accounts' && subPage !== null))) void roles.load();
+    if (open && section === 'accounts' && subPage !== null) void roles.load();
   }, [open, section, subPage, roles]);
+  const repoSettings = store.repoSettings;
+  const repoState = useSyncExternalStore(repoSettings.subscribe, repoSettings.state);
+  useEffect(() => {
+    if (open && section === 'roles') void repoSettings.load();
+  }, [open, section, repoSettings]);
+  const [pendingSection, setPendingSection] = useState<SettingsSection | 'close' | null>(null);
+  const tryLeaveRepo = (next: SettingsSection | 'close'): boolean => {
+    if (section !== 'roles' || !flowDraftState(repoState.stored, repoState.draft).isDirty) {
+      if (next === 'close') onClose();
+      else onSection(next);
+      return true;
+    }
+    if (!repoSettings.requestLeave()) {
+      setPendingSection(next);
+      return false;
+    }
+    if (next === 'close') onClose();
+    else onSection(next);
+    return true;
+  };
   // The dismissal of a remove warning is panel-transient (the store exposes no dismiss intent):
   // keyed by the account it was about, so a fresh warning for the same account re-shows the card.
   const [warningDismissedFor, setWarningDismissedFor] = useState<string | null>(null);
@@ -384,6 +397,13 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
   const onKeyDown = (event: React.KeyboardEvent<HTMLElement>): void => {
     if (event.key === 'Escape') {
       event.preventDefault();
+      if (section === 'roles' && flowDraftState(repoState.stored, repoState.draft).isDirty) {
+        if (!repoSettings.requestLeave()) {
+          setPendingSection('close');
+          return;
+        }
+        repoSettings.confirmDiscardLeave();
+      }
       onEscape();
     } else if (event.key === 'Tab') {
       trapTab(event);
@@ -415,7 +435,14 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
   });
   const unaddedGroups = groupAccountRows(unaddedViews, groupProviders);
 
-  const rail = <SettingsMenu locale={locale} section={section} onSection={onSection} dot={candidateDot(candidateState, candidateDotMirror)} />;
+  const rail = (
+    <SettingsMenu
+      locale={locale}
+      section={section}
+      onSection={(next) => (section === 'roles' ? tryLeaveRepo(next) : onSection(next))}
+      dot={candidateDot(candidateState, candidateDotMirror)}
+    />
+  );
 
   const head = (
     <div className="flex items-start gap-3">
@@ -427,7 +454,7 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
       ) : null}
       <button
         type="button"
-        onClick={onClose}
+        onClick={() => tryLeaveRepo('close')}
         aria-label={t(locale, 'settings.close')}
         title={t(locale, 'settings.close')}
         className={`${section === 'concurrency' && dispatchState.justSaved ? '' : 'ml-auto '}grid h-[30px] w-[30px] flex-none place-items-center rounded-control text-inkdim hover:bg-raised hover:text-ink`}
@@ -511,25 +538,144 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
     </AccountsScanning>
   );
 
+  const repoDirty = flowDraftState(repoState.stored, repoState.draft).isDirty;
   const rolesSection = (
-    <div>
-      {rolesState.unsetCount > 0 ? (
-        <div className="mb-3">
-          <RolesUnsetBanner locale={locale} count={rolesState.unsetCount} onApply={() => void roles.applyRecommended()} />
+    <div
+      role="region"
+      aria-label={t(locale, 'repoSettings.title')}
+      className="rounded-panel border border-hairline bg-surface px-3 py-3"
+      data-repo-settings=""
+    >
+      {!repoState.singleRepo && repoState.repos.length > 1 ? (
+        <div role="tablist" aria-label={t(locale, 'repoSettings.title')} className="mb-3 flex flex-wrap gap-1">
+          {repoState.repos.map((tab) => (
+            <button
+              key={tab.repo}
+              type="button"
+              role="tab"
+              aria-selected={repoState.repo === tab.repo}
+              onClick={() => void repoSettings.selectRepo(tab.repo)}
+              className={[
+                'rounded-control px-3 py-1.5 text-[13px]',
+                repoState.repo === tab.repo ? 'bg-raised font-semibold text-ink' : 'text-inkdim hover:bg-raised',
+              ].join(' ')}
+            >
+              {tab.name}
+            </button>
+          ))}
         </div>
       ) : null}
-      <SubHeading title={t(locale, 'roles.chain.title')} note={t(locale, 'roles.chain.purpose')} />
-      <ChainSection store={roles} locale={locale} markFor={marks.markFor} onOpenAccounts={() => onSection('accounts')} />
-      <SubHeading title={t(locale, 'roles.style.title')} />
-      {rolesState.rows === null || rolesState.rows.length === 0 ? (
-        <EmptyCard mark="roles-list" title={t(locale, 'roles.empty')} />
+      {repoState.loading ? (
+        <div role="status" className="animate-pulse rounded-card bg-sunk px-3 py-8 text-[13px] text-inkdim">
+          …
+        </div>
+      ) : repoState.problem !== null ? (
+        <div role="alert" className="rounded-card border border-error/40 px-3 py-3 text-[13px] text-error">
+          {t(locale, failureKey(repoState.problem))}
+          <ActionButton variant="neutral" size="sm" onClick={() => void repoSettings.load()}>
+            {t(locale, 'action.retry')}
+          </ActionButton>
+        </div>
       ) : (
-        <SettingRows>
-          {rolesState.rows.map((row) => (
-            <RoleRowView key={row.id} row={row} store={roles} locale={locale} markFor={marks.markFor} fineTuneOpen={fineTune === row.id} />
-          ))}
-        </SettingRows>
+        <>
+          <FlowStageStrip
+            locale={locale}
+            flow={repoState.draft}
+            activeStage={repoState.activeStage}
+            accountLabels={repoState.accountLabels}
+            library={repoState.library}
+            onSelect={(stage) => repoSettings.selectStage(stage)}
+          />
+          <OverlayEditor
+            locale={locale}
+            flow={repoState.draft}
+            stage={repoState.activeStage}
+            library={repoState.library}
+            proposals={repoSettings.proposals()}
+            proposalBlocked={repoState.activeStage === null ? [] : repoSettings.proposalBlocked(repoState.activeStage)}
+            onInstructions={(stage, text) => repoSettings.setOverlayInstructions(stage, text)}
+            onDetach={(stage) => repoSettings.requestDetach(stage)}
+            onApplyProposal={(stage) => repoSettings.applyProposal(stage)}
+            onClearOverlayField={(stage, field) => repoSettings.clearOverlayField(stage, field)}
+          />
+          <LimitPolicySection
+            locale={locale}
+            flow={repoState.draft}
+            stage={repoState.activeStage}
+            defaultPolicy={repoState.defaultLimitPolicy}
+            onSelect={(stage, policy) => repoSettings.setStageLimitPolicy(stage, policy)}
+            onReset={(stage) => repoSettings.resetStageLimitPolicy(stage)}
+          />
+        </>
       )}
+      {repoDirty || repoState.justSaved ? (
+        <div
+          role="toolbar"
+          aria-label={t(locale, 'repoSettings.saveBar.label')}
+          className="fixed inset-x-0 bottom-0 z-50 border-t border-hairline bg-panel px-4 py-2.5"
+        >
+          <div className="mx-auto flex w-full items-center gap-2 px-4">
+            <span role="status" className="text-[13px] text-ink">
+              {repoState.justSaved ? t(locale, 'repoSettings.saveBar.saved') : t(locale, 'repoSettings.saveBar.unsaved')}
+            </span>
+            {repoDirty ? (
+              <>
+                <ActionButton variant="neutral" size="sm" onClick={() => repoSettings.cancelDraft()}>
+                  {t(locale, 'repoSettings.saveBar.cancel')}
+                </ActionButton>
+                <ActionButton variant="primary" size="sm" disabled={!repoDirty || repoState.saving} onClick={() => void repoSettings.save()}>
+                  {t(locale, 'repoSettings.saveBar.save')}
+                </ActionButton>
+              </>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+      {repoState.detachStage !== null ? (
+        <div role="dialog" aria-modal="true" aria-labelledby="repo-detach-title" className="fixed inset-0 z-[60] grid place-items-center bg-bg/60 p-6">
+          <div className="w-[min(100%,28rem)] rounded-panel border border-hairline bg-panel p-4">
+            <h3 id="repo-detach-title" className="m-0 text-[15px] font-bold text-ink">
+              {t(locale, 'repoSettings.detach.confirm.title')}
+            </h3>
+            <p className="mt-2 text-[13px] text-inkdim">{t(locale, 'repoSettings.detach.confirm.body')}</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <ActionButton variant="neutral" size="sm" onClick={() => repoSettings.cancelDetach()}>
+                {t(locale, 'repoSettings.saveBar.cancel')}
+              </ActionButton>
+              <ActionButton variant="primary" size="sm" onClick={() => repoSettings.confirmDetach()}>
+                {t(locale, 'repoSettings.detach')}
+              </ActionButton>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {repoState.confirmDiscard || pendingSection !== null ? (
+        <div role="dialog" aria-modal="true" aria-labelledby="repo-discard-title" className="fixed inset-0 z-[60] grid place-items-center bg-bg/60 p-6">
+          <div className="w-[min(100%,28rem)] rounded-panel border border-hairline bg-panel p-4">
+            <h3 id="repo-discard-title" className="m-0 text-[15px] font-bold text-ink">
+              {t(locale, 'repoSettings.discard.title')}
+            </h3>
+            <div className="mt-4 flex justify-end gap-2">
+              <ActionButton variant="neutral" size="sm" onClick={() => { repoSettings.cancelDiscardLeave(); setPendingSection(null); }}>
+                {t(locale, 'repoSettings.discard.stay')}
+              </ActionButton>
+              <ActionButton
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  repoSettings.confirmDiscardLeave();
+                  const next = pendingSection;
+                  setPendingSection(null);
+                  if (next === 'close') onClose();
+                  else if (next !== null) onSection(next);
+                }}
+              >
+                {t(locale, 'repoSettings.discard.exit')}
+              </ActionButton>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 
@@ -584,7 +730,7 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, o
         style={MOTION_STYLE}
         // A press that begins on the scrim itself (never on the panel it wraps) closes.
         onMouseDown={(event) => {
-          if (event.target === event.currentTarget) onClose();
+          if (event.target === event.currentTarget) tryLeaveRepo('close');
         }}
         onTransitionEnd={(event) => {
           // The scrim's own fade ends last on close (the panel leaves first) — that is the
