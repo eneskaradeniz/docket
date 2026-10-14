@@ -258,6 +258,70 @@ export interface TrayItem {
   readonly kind: TrayKind;
 }
 
+// --- image previews (U-331, U-332) ---------------------------------------------------------------------
+
+export const IMAGE_PREVIEW_CACHE_MAX = 20;
+export const IMAGE_PREVIEW_MAX_IN_FLIGHT = 4;
+
+/** Only these extensions become a data-URL preview; every other attachment stays a chip. */
+export const isPreviewImageFile = (name: string, kind: TrayKind): boolean => kind === 'image' && IMAGE.has(extOf(name));
+
+export const imageMimeType = (name: string): 'image/png' | 'image/jpeg' | 'image/webp' | null => {
+  const ext = extOf(name);
+  if (ext === 'png') return 'image/png';
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+  if (ext === 'webp') return 'image/webp';
+  return null;
+};
+
+export const imageDataUrlOf = (name: string, base64: string): string | null => {
+  const mime = imageMimeType(name);
+  return mime === null ? null : `data:${mime};base64,${base64}`;
+};
+
+export type ImagePreviewStatus = 'loading' | 'ready' | 'failed';
+
+export interface ImagePreviewSlot {
+  readonly status: ImagePreviewStatus;
+  readonly dataUrl?: string;
+}
+
+/** LRU order for decoded previews; drops the oldest ids when over the cap. */
+export const touchPreviewCache = (order: readonly string[], id: string, max: number): readonly string[] => {
+  const without = order.filter((entry) => entry !== id);
+  const next = [...without, id];
+  return next.length > max ? next.slice(next.length - max) : next;
+};
+
+export interface ImageEnlargeItem {
+  readonly id: string;
+  readonly name: string;
+  readonly dataUrl: string;
+}
+
+export interface ImageEnlargeState {
+  readonly items: readonly ImageEnlargeItem[];
+  readonly index: number;
+}
+
+export const formatPreviewBytes = (bytes: number): string => {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1_024 * 1_024) return `${Math.round(bytes / 102.4) / 10} KB`;
+  return `${Math.round((bytes / (1_024 * 1_024)) * 10) / 10} MB`;
+};
+
+export const imageAttachmentsInConversation = (
+  messages: readonly { readonly attachments: readonly { readonly id: string; readonly name: string; readonly type: TrayKind }[] }[],
+): readonly { readonly id: string; readonly name: string; readonly type: TrayKind }[] => {
+  const out: { readonly id: string; readonly name: string; readonly type: TrayKind }[] = [];
+  for (const message of messages) {
+    for (const attachment of message.attachments) {
+      if (isPreviewImageFile(attachment.name, attachment.type)) out.push(attachment);
+    }
+  }
+  return out;
+};
+
 // --- notices and failure sentences --------------------------------------------------------------------
 
 export type NoticeKind = 'quota' | 'spend' | 'consent' | 'auth' | 'no_binding' | 'limit' | 'network' | 'crash' | 'tools_unavailable';
@@ -464,6 +528,12 @@ export interface ChatState {
   readonly now: number;
   /** Bumped whenever the composer should take focus (opening, a prefill, a committed chip). */
   readonly focusTick: number;
+  readonly previews: Readonly<Record<string, ImagePreviewSlot>>;
+  readonly previewOrder: readonly string[];
+  readonly trayPreviews: Readonly<Record<string, string>>;
+  readonly imageEnlarge: ImageEnlargeState | null;
+  /** The thumbnail that opened the enlarge dialog — focus returns here on close. */
+  readonly imageEnlargeReturn: string | null;
 }
 
 export const chatBusy = (state: ChatState): boolean => state.turn !== null || state.sending;

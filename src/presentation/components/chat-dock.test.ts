@@ -696,3 +696,64 @@ describe('notice copy and the no_binding banner (U-241, U-242)', () => {
     expect(noticeOf('no_binding').action).toBe('roles');
   });
 });
+
+describe('image previews (U-331, U-332)', () => {
+  it('U-331: a png message attachment renders a preview button; a markdown file stays a chip', async () => {
+    const html = await draw(
+      withConversation(
+        conversation('C1', {
+          messages: [
+            message('M1', {
+              role: 'user',
+              text: 'bak',
+              attachments: [
+                { id: 'A1', name: 'ekran.png', type: 'image', bytes: 1200 },
+                { id: 'A2', name: 'notlar.md', type: 'text', bytes: 40 },
+              ],
+            }),
+          ],
+        }),
+      ),
+    );
+    expect(html).toContain('data-chat-image-preview="A1"');
+    expect(html).not.toContain('data-chat-image-preview="A2"');
+    expect(html).toContain('notlar.md');
+  });
+
+  it('U-332: the enlarge dialog is modal with Kapat (Esc) and arrow controls', async () => {
+    const { store, b } = (() => {
+      const br = bridge();
+      const st = createChatStore({ api: br.api, changes: br.changes, actor: ACTOR, now: () => NOW, notify: br.notify });
+      return { store: st, b: br };
+    })();
+    const view = conversation('C1', {
+      messages: [message('M1', { role: 'user', attachments: [{ id: 'A1', name: 'ekran.png', type: 'image', bytes: 10 }] })],
+    });
+    b.onQuery('chat.conversation', () => view);
+    b.onQuery('chat.attachment', () => ({ name: 'ekran.png', type: 'image', base64: 'aGk=' }));
+    store.setPlace(PLACE);
+    store.open();
+    await store.openConversation('C1');
+    store.watchAttachmentPreview('A1');
+    await flush();
+    await flush();
+    store.openImageEnlarge('A1');
+    const html = renderToStaticMarkup(
+      createElement(ChatDock, {
+        store,
+        locale: 'tr',
+        hidden: false,
+        onOpenPage: () => undefined,
+        onOpenAccounts: () => undefined,
+        onOpenConsent: () => undefined,
+        onOpenRoles: () => undefined,
+      }),
+    );
+    expect(html).toContain('data-chat-image-enlarge=""');
+    expect(html).toContain('role="dialog"');
+    expect(html).toContain('aria-modal="true"');
+    expect(html).toContain('Kapat (Esc)');
+    expect(html).toContain('‹ Önceki');
+    expect(html).toContain('Sonraki ›');
+  });
+});

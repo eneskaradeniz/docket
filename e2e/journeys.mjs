@@ -2293,6 +2293,69 @@ for (const [sizeName, theme] of combos) {
   await handle.app.close();
 }
 
+// J-22 walks chat image preview (#1116, U-331 … U-332) on the chat world: a png thumbnail after send,
+// the enlarge dialog, a markdown chip, and the 5 MB refusal line. Hermetic: no model run.
+{
+  const handle = await launchChatApp();
+  const { page, errors } = handle;
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+  const fab = page.locator('[data-chat-fab]');
+  const feed = page.locator('[data-chat-feed]');
+  const text = page.locator('[data-chat-text]');
+  const panelIs = (open) =>
+    page.waitForFunction(
+      (want) => {
+        const panel = document.querySelector('[data-chat-panel]');
+        return panel !== null && panel.hasAttribute('inert') === !want;
+      },
+      open,
+      { timeout: WAIT },
+    );
+  let stepNo = 0;
+  const steps = [];
+  const shot = async (label) => {
+    stepNo += 1;
+    steps.push(label);
+    const slug = label.toLowerCase().replace(/[^a-z0-9ğüşıöç]+/g, '-').replace(/^-|-$/g, '');
+    await page.screenshot({ path: join(OUT, `J-22-${stepNo}-${slug}.png`) });
+  };
+  const title = 'J-22: Sohbet resim önizleme: png küçük resim, büyütme, md çipi, 5 MB reddi';
+  total += 1;
+  try {
+    await fab.click({ timeout: WAIT });
+    await panelIs(true);
+    await page.locator('[data-chat-new]').click({ timeout: WAIT });
+    await page.locator('[data-chat-panel] input[type="file"]').setInputFiles({ name: 'buyuk.png', mimeType: 'image/png', buffer: Buffer.alloc(6_000_000) });
+    await page.locator('[data-chat-note="note"]').getByText('Dosya çok büyük; en fazla 5 MB.').waitFor({ state: 'visible', timeout: WAIT });
+    await shot('cok-buyuk');
+    await page.locator('[data-chat-panel] input[type="file"]').setInputFiles({ name: 'kare.png', mimeType: 'image/png', buffer: PNG });
+    await page.locator('[data-chat-tray] [data-chat-image-preview]').waitFor({ state: 'visible', timeout: WAIT });
+    await text.fill('Resimli mesaj', { timeout: WAIT });
+    await text.press('Enter');
+    await feed.getByText('Resimli mesaj', { exact: true }).waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    const thumb = feed.locator('[data-chat-image-preview]').first();
+    await thumb.waitFor({ state: 'visible', timeout: SCAN_WAIT });
+    await thumb.click({ timeout: WAIT });
+    const dialog = page.locator('[data-chat-image-enlarge]');
+    await dialog.waitFor({ state: 'visible', timeout: WAIT });
+    await page.waitForFunction(() => document.activeElement?.textContent?.includes('Kapat (Esc)') === true, undefined, { timeout: WAIT });
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'detached', timeout: WAIT });
+    await page.locator('[data-chat-panel] input[type="file"]').setInputFiles({ name: 'notlar.md', mimeType: 'text/markdown', buffer: Buffer.from('# x\n') });
+    await page.locator('[data-chat-tray]').getByText('notlar.md').waitFor({ state: 'visible', timeout: WAIT });
+    await shot('md-cipi');
+    assert.deepEqual(errors, [], `the page reported errors: ${errors.join(' | ').slice(0, 600)}`);
+    console.log(`  ok   ${title}`);
+    appendJourney({ id: title, status: 'ok', steps });
+  } catch (error) {
+    failures.push(title);
+    console.log(`  FAIL ${title}\n       ${String(error).slice(0, 600)}`);
+    appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).slice(0, 600) });
+    await page.screenshot({ path: join(OUT, 'J-22-FAIL.png') }).catch(() => undefined);
+  }
+  await handle.app.close();
+}
+
 console.log(`${total - failures.length}/${total} journeys ok; screenshots in ${OUT}`);
 console.log(`report: ${REPORT_PATH}`);
 process.exit(failures.length === 0 ? 0 : 1);

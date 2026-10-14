@@ -9,10 +9,12 @@ import { useEffect, type ReactNode } from 'react';
 import type { ChatActionView, ChatArtifactView, ChatConversationView, ChatMessageView } from '../../api/chat-views';
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
-import { chatShowsDots, chipOfSentRef, noticeTextKey, suggestionKeysOf, undoOpen, type ChatState, type TrayItem } from '../stores/chat-model';
+import { chatShowsDots, chipOfSentRef, isPreviewImageFile, noticeTextKey, suggestionKeysOf, undoOpen, type ChatState, type TrayItem } from '../stores/chat-model';
 import type { ChatStore } from '../stores/chat-store';
+import { ChatImageEnlargeDialog } from './chat-image-enlarge-dialog';
+import { ChatImagePreview } from './chat-image-preview';
 import { ChatIcon, refIcon } from './chat-icons';
-import { BUTTON, BUTTON_PRIMARY, FOCUS, REF_CHIP, SOURCE_CHIP, THUMB, fill } from './chat-style';
+import { BUTTON, BUTTON_PRIMARY, FOCUS, REF_CHIP, SOURCE_CHIP, fill } from './chat-style';
 
 const WRAP = 'whitespace-pre-wrap [overflow-wrap:anywhere]';
 
@@ -55,18 +57,43 @@ function SentRef({ entry }: { readonly entry: Sent }) {
   );
 }
 
-/** A file of a sent message: an image as its gradient thumbnail, anything else as a pill. */
-function SentFile({ name, kind }: { readonly name: string; readonly kind: TrayItem['kind'] }) {
-  if (kind === 'image') return <span className={`${THUMB} h-[3.375rem] w-[4.5rem]`}>{name}</span>;
+function SentFile({
+  file,
+  state,
+  store,
+  locale,
+}: {
+  readonly file: { readonly id: string; readonly name: string; readonly kind: TrayItem['kind']; readonly bytes?: number };
+  readonly state: ChatState;
+  readonly store: ChatStore;
+  readonly locale: Locale;
+}) {
+  if (isPreviewImageFile(file.name, file.kind)) {
+    return <ChatImagePreview id={file.id} name={file.name} kind={file.kind} bytes={file.bytes} state={state} store={store} locale={locale} variant="message" />;
+  }
   return (
     <span className={REF_CHIP}>
       <ChatIcon name="file" className="h-3.5 w-3.5 flex-none text-inkdim" />
-      <span className="truncate">{name}</span>
+      <span className="truncate">{file.name}</span>
     </span>
   );
 }
 
-function UserRow({ text, refs, files }: { readonly text: string; readonly refs: readonly Sent[]; readonly files: readonly { readonly name: string; readonly kind: TrayItem['kind'] }[] }) {
+function UserRow({
+  text,
+  refs,
+  files,
+  state,
+  store,
+  locale,
+}: {
+  readonly text: string;
+  readonly refs: readonly Sent[];
+  readonly files: readonly { readonly id: string; readonly name: string; readonly kind: TrayItem['kind']; readonly bytes?: number }[];
+  readonly state: ChatState;
+  readonly store: ChatStore;
+  readonly locale: Locale;
+}) {
   return (
     <div data-chat-row="user" className="grid justify-items-end gap-1">
       {refs.length > 0 || files.length > 0 ? (
@@ -75,7 +102,7 @@ function UserRow({ text, refs, files }: { readonly text: string; readonly refs: 
             <SentRef key={`${entry.kind}:${entry.id}`} entry={entry} />
           ))}
           {files.map((file) => (
-            <SentFile key={file.name} name={file.name} kind={file.kind} />
+            <SentFile key={file.id} file={file} state={state} store={store} locale={locale} />
           ))}
         </div>
       ) : null}
@@ -351,7 +378,10 @@ export function ChatFeed({ state, store, locale, onOpenPage }: ChatFeedProps) {
             key={message.id}
             text={message.text}
             refs={message.refs}
-            files={message.attachments.map((attachment) => ({ name: attachment.name, kind: attachment.type }))}
+            files={message.attachments.map((attachment) => ({ id: attachment.id, name: attachment.name, kind: attachment.type, bytes: attachment.bytes }))}
+            state={state}
+            store={store}
+            locale={locale}
           />
         ) : (
           <AssistantRow key={message.id} message={message} state={state} store={store} locale={locale} onOpenPage={onOpenPage} />
@@ -361,9 +391,13 @@ export function ChatFeed({ state, store, locale, onOpenPage }: ChatFeedProps) {
         <UserRow
           text={state.pending.text}
           refs={state.pending.refs.map((chip) => ({ kind: chip.kind, id: chip.key, label: chip.label, ...(chip.prefix === undefined ? {} : { project: chip.prefix }) }))}
-          files={state.pending.files.map((file) => ({ name: file.name, kind: file.kind }))}
+          files={state.pending.files.map((file) => ({ id: file.id, name: file.name, kind: file.kind }))}
+          state={state}
+          store={store}
+          locale={locale}
         />
       )}
+      {state.imageEnlarge === null ? null : <ChatImageEnlargeDialog enlarge={state.imageEnlarge} store={store} locale={locale} />}
       {rows.map((action) => (
         <ActionRow key={action.id} action={action} backed={backed.has(action.id)} store={store} locale={locale} now={state.now} />
       ))}
