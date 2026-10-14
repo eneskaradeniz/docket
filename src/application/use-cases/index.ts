@@ -32,6 +32,7 @@ export * from './settings';
 export * from './library';
 export * from './memory';
 export * from './definitions-list';
+export * from './definition-removal';
 export * from './roadmap';
 export * from './setup';
 export * from './tracker-sync';

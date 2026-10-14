@@ -40,10 +40,16 @@ const binding = (role: string, ids: readonly string[]): SettingsBindingView => (
   accounts: ids.map((accountId) => ({ accountId, model: null })),
 });
 
-const ROLES: readonly RoleListItem[] = [
-  { id: 'developer', name: 'Geliştirici', stages: [] },
-  { id: 'planner', name: 'Planlayıcı', stages: [] },
-];
+const listRole = (id: string, name: string): RoleListItem => ({
+  id,
+  name,
+  version: 1,
+  removal: { kind: 'delete' },
+  pastVersions: [],
+  stages: [],
+});
+
+const ROLES: readonly RoleListItem[] = [listRole('developer', 'Geliştirici'), listRole('planner', 'Planlayıcı')];
 
 const rolesApi = (view: SettingsAccountsView): Pick<Api, 'query' | 'command'> => ({
   query: (query: Query) => {

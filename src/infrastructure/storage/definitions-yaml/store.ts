@@ -28,6 +28,7 @@ const VERSION_FILE = /^v([1-9][0-9]*)\.yaml$/;
 const PROJECT_FILE = 'project.yaml';
 const ROADMAP_FILE = 'roadmap.yaml';
 const REPO_FILE = 'repo.yaml';
+const ARCHIVED_MARKER = 'archived.yaml';
 
 type UnknownRecord = Readonly<Record<string, unknown>>;
 
@@ -211,12 +212,29 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
     return validated.ok ? validated.value : undefined;
   };
 
+  const archivedMarker = (kind: DefinitionKind, id: string): string =>
+    join(config.globalRoot, LIBRARY_ROOT, kind, id, ARCHIVED_MARKER);
+
+  const isLibraryArchived = async (kind: DefinitionKind, id: string): Promise<boolean> => {
+    try {
+      await stat(archivedMarker(kind, id));
+      return true;
+    } catch (error) {
+      if (isMissing(error)) return false;
+      throw error;
+    }
+  };
+
   const listLibraryIds = async (kind: DefinitionKind): Promise<readonly string[]> => {
     try {
-      return (await readdir(join(config.globalRoot, LIBRARY_ROOT, kind), { withFileTypes: true }))
+      const ids = (await readdir(join(config.globalRoot, LIBRARY_ROOT, kind), { withFileTypes: true }))
         .filter((entry) => entry.isDirectory())
-        .map((entry) => entry.name)
-        .sort();
+        .map((entry) => entry.name);
+      const active: string[] = [];
+      for (const id of ids) {
+        if (!(await isLibraryArchived(kind, id))) active.push(id);
+      }
+      return active.sort();
     } catch (error) {
       if (isMissing(error)) return [];
       throw error;
@@ -262,6 +280,7 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
   // mtime (a version file is never rewritten, so it stays the write time), and nothing in the
   // layout marks a version archived yet.
   const versionsOf = async (kind: DefinitionKind, id: string): Promise<readonly VersionRecord<unknown>[]> => {
+    const archived = await isLibraryArchived(kind, id);
     const records: VersionRecord<unknown>[] = [];
     for (const versionFile of await listVersionFiles(join(config.globalRoot, LIBRARY_ROOT, kind, id))) {
       const target = `${LIBRARY_ROOT}/${kind}/${id}/${versionFile.name}`;
@@ -277,7 +296,7 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
         version: versionFile.version,
         body,
         recordedAt: mtimeMs,
-        archived: false,
+        archived,
       });
     }
     return records;
@@ -595,6 +614,40 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
         const created = await createExclusive(file, stringifyYaml(body));
         if (!created) return err('stale');
         return ok({ definitionId: id, version: next, body, recordedAt: at, archived: false });
+      });
+    },
+
+    archiveLibrary: async (kind, id) => {
+      const versions = await listVersionFiles(join(config.globalRoot, LIBRARY_ROOT, kind, id));
+      if (versions.length === 0) return err('not_found');
+      const marker = archivedMarker(kind, id);
+      return enqueue(marker, async () => {
+        await mkdir(dirname(marker), { recursive: true });
+        const created = await createExclusive(marker, stringifyYaml({ archived: true }));
+        if (!created) return ok(undefined);
+        return ok(undefined);
+      });
+    },
+
+    removeLibrary: async (kind, id) => {
+      const dir = join(config.globalRoot, LIBRARY_ROOT, kind, id);
+      try {
+        const entries = await readdir(dir);
+        if (entries.length === 0) return err('not_found');
+      } catch (error) {
+        if (isMissing(error)) return err('not_found');
+        throw error;
+      }
+      return enqueue(dir, async () => {
+        for (const versionFile of await listVersionFiles(dir)) {
+          await unlink(join(dir, versionFile.name));
+        }
+        try {
+          await unlink(archivedMarker(kind, id));
+        } catch (error) {
+          if (!isMissing(error)) throw error;
+        }
+        return ok(undefined);
       });
     },
   };

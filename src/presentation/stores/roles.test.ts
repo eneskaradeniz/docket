@@ -55,7 +55,15 @@ const binding = (role: string, ids: readonly string[], extra: Partial<SettingsBi
   ...extra,
 });
 
-const role = (id: string, name: string, stages: RoleListItem['stages'] = []): RoleListItem => ({ id, name, stages });
+const role = (id: string, name: string, stages: RoleListItem['stages'] = [], extra: Partial<RoleListItem> = {}): RoleListItem => ({
+  id,
+  name,
+  version: 1,
+  removal: { kind: 'delete' },
+  pastVersions: [],
+  stages,
+  ...extra,
+});
 
 const ROLES: readonly RoleListItem[] = [
   role('developer', 'Geliştirici'),

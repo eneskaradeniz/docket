@@ -35,9 +35,9 @@ const endpoint = candidate('.claude-zai', {
 const unreadable = candidate('.claude-bad', { warnings: ['unreadable'] });
 
 const roles = [
-  { id: 'analyst', name: 'Analist', stages: [] },
-  { id: 'developer', name: 'Geliştirici', stages: [] },
-  { id: 'planner', name: 'Planlayıcı', stages: [] },
+  { id: 'analyst', name: 'Analist', version: 1, removal: { kind: 'delete' }, pastVersions: [], stages: [] },
+  { id: 'developer', name: 'Geliştirici', version: 1, removal: { kind: 'delete' }, pastVersions: [], stages: [] },
+  { id: 'planner', name: 'Planlayıcı', version: 1, removal: { kind: 'delete' }, pastVersions: [], stages: [] },
 ];
 
 const accountView = (id: string, label: string, authMode: string): SettingsAccountView => ({

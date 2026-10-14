@@ -1976,3 +1976,31 @@ export type SaveFlowError = 'not_found' | 'definitions_invalid' | 'stale' | Save
 ```
 
 - **A-354** (added 2026-10-14, #1078) `saveRepoFlow` refuses a flow whose stage binding names an account that is not connected: `account_not_connected` carries every offending `{ stage, accountId }` and nothing is written (connectedness is application-time only — architect decision 1 of #1013). An empty account chain and a chain whose accounts are all connected save under A-345 unchanged. The `repo.saveFlow` command maps the failure to `{ ok: false, code: 'account_not_connected', accounts }`; pins of existing work orders are never rewritten (A-325); dispatch still skips disconnected pin entries (A-325).
+
+### Addendum 2026-10-14 (#1088): definition removal on list payloads and archive command
+
+```ts
+// api/queries.ts (A-355)
+export interface RoleListItem {
+  readonly version: number;
+  readonly removal: RemovalVerdict;
+  readonly pastVersions: readonly { readonly version: number; readonly recordedAt: number; readonly archived: boolean }[];
+}
+export interface DefinitionListItem {
+  readonly removal: RemovalVerdict;
+}
+
+// api/commands.ts (A-355)
+| { readonly type: 'definitions.archive'; readonly kind: 'roles'; readonly id: string }
+| { readonly type: 'definitions.delete'; readonly kind: 'roles'; readonly id: string }
+
+// ports/definition-store.ts (A-355)
+archiveLibrary(kind: DefinitionKind, id: string): Promise<Result<void, 'not_found'>>;
+removeLibrary(kind: DefinitionKind, id: string): Promise<Result<void, 'not_found'>>;
+
+// use-cases/definition-removal.ts (A-355)
+export function archiveDefinition(...): Promise<Result<void, DefinitionLifecycleError>>;
+export function deleteDefinition(...): Promise<Result<void, DefinitionLifecycleError>>;
+```
+
+- **A-355** (added 2026-10-14, #1088) `roles.list` and `definitions.list` carry a server-evaluated `removal: RemovalVerdict` on every item (`roleRemoval` for roles; capabilities answer `delete` until a capability-specific verdict lands). `roles.list` also carries `version` and `pastVersions` from `listVersions`. Commands `definitions.archive` and `definitions.delete` accept `{ kind: 'roles', id }` only: each runs `roleRemoval` first — `blocked` answers `{ ok: false, code: 'blocked', reasons }` with the domain blocks unchanged; `archive`/`delete` call `archiveLibrary` or `removeLibrary` on the port and audit `library.definition_archived` / `library.definition_deleted`. Archived definitions drop from `listIds` but `listVersions` stays readable (R-134).

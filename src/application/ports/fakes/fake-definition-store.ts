@@ -183,10 +183,16 @@ export const createFakeDefinitionStore = (): FakeDefinitionStore => {
     return ok(parsed.value);
   };
 
-  /** One library kind's current bodies — the newest version of every definition. */
+  const isArchived = (history: readonly VersionRecord<unknown>[]): boolean => {
+    const latest = history[history.length - 1];
+    return latest?.archived === true;
+  };
+
+  /** One library kind's current bodies — the newest version of every non-archived definition. */
   const currentsOf = (kind: DefinitionKind): readonly unknown[] =>
     [...histories.entries()]
       .filter(([key]) => key.startsWith(`${kind}/`))
+      .filter(([, history]) => !isArchived(history))
       .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
       .map(([, history]) => history[history.length - 1]?.body)
       .filter((body): body is unknown => body !== undefined);
@@ -411,9 +417,10 @@ export const createFakeDefinitionStore = (): FakeDefinitionStore => {
     },
 
     listIds: async (kind: DefinitionKind): Promise<readonly string[]> =>
-      [...histories.keys()]
-        .filter((key) => key.startsWith(`${kind}/`))
-        .map((key) => key.slice(kind.length + 1))
+      [...histories.entries()]
+        .filter(([key]) => key.startsWith(`${kind}/`))
+        .filter(([, history]) => !isArchived(history))
+        .map(([key]) => key.slice(kind.length + 1))
         .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
 
     // The version histories live in memory keyed by kind and id. Records are replaced, never
@@ -442,6 +449,23 @@ export const createFakeDefinitionStore = (): FakeDefinitionStore => {
       };
       histories.set(key, [...history, record]);
       return ok(record);
+    },
+
+    archiveLibrary: async (kind: DefinitionKind, id: string): Promise<Result<void, 'not_found'>> => {
+      const key = `${kind}/${id}`;
+      const history = histories.get(key);
+      if (history === undefined || history.length === 0) return err('not_found');
+      const latest = history[history.length - 1];
+      if (latest === undefined) return err('not_found');
+      histories.set(key, [...history.slice(0, -1), { ...latest, archived: true }]);
+      return ok(undefined);
+    },
+
+    removeLibrary: async (kind: DefinitionKind, id: string): Promise<Result<void, 'not_found'>> => {
+      const key = `${kind}/${id}`;
+      if (!histories.has(key)) return err('not_found');
+      histories.delete(key);
+      return ok(undefined);
     },
 
     load: async (repo: RepoSlug): Promise<Result<Definitions, readonly DefinitionIssue[]>> => {
