@@ -193,3 +193,27 @@ describe('claude-code SDK delivery cleanup (#1164)', () => {
     expect(entries.some((name) => name.startsWith('cc-run-plugin-'))).toBe(false);
   });
 });
+
+describe('claude-code SDK delivery automatic memory (A-402)', () => {
+  it('A-402: the inline settings carry autoMemoryEnabled false beside disableClaudeAiConnectors true on every run', async () => {
+    const runDir = await mkdtemp(join(tmpdir(), 'docket-cc-automem-'));
+    const delivery = await prepareClaudeCodeSdkDelivery(
+      runDir,
+      'role text',
+      [
+        {
+          kind: 'hook',
+          id: slugOf<'capability'>('after-write'),
+          name: 'After write',
+          event: 'after_write',
+          command: 'echo wrote',
+        },
+      ],
+      false,
+    );
+    // A capability-laden run keeps both run-level switches: the hook only adds settings.hooks.
+    expect(delivery.settings.disableClaudeAiConnectors).toBe(true);
+    expect(delivery.settings.autoMemoryEnabled).toBe(false);
+    await delivery.cleanup();
+  });
+});

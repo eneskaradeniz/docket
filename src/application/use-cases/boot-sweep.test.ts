@@ -112,7 +112,7 @@ describe('sweepOrphanedRuns', () => {
     const closed = await sweepOrphanedRuns(
       h.deps,
       { active: () => [] },
-      { register: () => {}, unregister: (swept) => unregistered.push(swept) },
+      { register: () => {}, recordAutoDecision: () => {}, unregister: (swept) => unregistered.push(swept) },
       () => {
         changed += 1;
       },
@@ -152,7 +152,7 @@ describe('sweepOrphanedRuns', () => {
     const closed = await sweepOrphanedRuns(
       h.deps,
       { active: () => [liveRunId] },
-      { register: () => {}, unregister: (swept) => unregistered.push(swept) },
+      { register: () => {}, recordAutoDecision: () => {}, unregister: (swept) => unregistered.push(swept) },
     );
 
     expect(closed).toStrictEqual([orphanedRun]);

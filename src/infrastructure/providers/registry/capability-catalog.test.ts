@@ -179,15 +179,25 @@ describe('createCapabilityCatalog', () => {
     const catalog = createCapabilityCatalog();
 
     // The documented sets, each cited to the CLI's own documentation in the data rows. claude-code
-    // names its automatic project memory per P-37 — it lives outside the repo, so it never matches
-    // a repo file and is never an inline candidate.
-    expect(catalog.nativeInstructionFiles('claude-code')).toEqual(['~/.claude/projects/<project>/memory/']);
+    // lists none: its automatic project memory is disabled on every run (A-402), so no repo file
+    // and no memory directory is natively read at all.
+    expect(catalog.nativeInstructionFiles('claude-code')).toEqual([]);
     expect(catalog.nativeInstructionFiles('claude-code')).not.toContain('CLAUDE.md');
     // opencode reads AGENTS.md natively and does not read a repo CLAUDE.md — the handoff
     // scenario's Y leg; cursor reads both root files natively.
     expect(catalog.nativeInstructionFiles('opencode')).toEqual(['AGENTS.md']);
     expect(catalog.nativeInstructionFiles('cursor')).toEqual(['AGENTS.md', 'CLAUDE.md']);
     expect(catalog.nativeInstructionFiles('never-heard-of')).toEqual([]);
+  });
+
+  it('A-402: the claude-code row lists no native instruction set — every run disables the CLI automatic memory', () => {
+    const catalog = createCapabilityCatalog();
+
+    // The automatic project memory once rode this row; with it off on every SDK run (inline
+    // autoMemoryEnabled false plus CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 in the route environment)
+    // nothing native loads it, so the row is empty and the memory path never reaches the union.
+    expect(catalog.nativeInstructionFiles('claude-code')).toEqual([]);
+    expect(catalog.instructionFileNames()).not.toContain('~/.claude/projects/<project>/memory/');
   });
 
   it('P-61: steeringSupport follows the registry per provider; an unknown provider reads unknown', () => {
@@ -205,7 +215,9 @@ describe('createCapabilityCatalog', () => {
   it('P-37: instructionFileNames is the deduplicated union of the rows in registry order', () => {
     const names = createCapabilityCatalog().instructionFileNames();
 
-    expect(names[0]).toBe('~/.claude/projects/<project>/memory/');
+    // claude-code's row is empty (A-402), so the union opens with codex's AGENTS.md.
+    expect(names).not.toContain('~/.claude/projects/<project>/memory/');
+    expect(names[0]).toBe('AGENTS.md');
     expect(names).toContain('CLAUDE.md');
     expect(names).toContain('AGENTS.md');
     expect(new Set(names).size).toBe(names.length);
@@ -226,7 +238,8 @@ describe('createCapabilityCatalog', () => {
       route: ROUTE(accountId),
     });
     if (!composed.ok) throw new Error(composed.error);
-    expect(composed.value.plan.native).toEqual(['~/.claude/projects/<project>/memory/']);
+    // A-402 emptied the row: no native set at all, the repo file is the plan's only inline.
+    expect(composed.value.plan.native).toEqual([]);
     expect(composed.value.plan.inlined.map((file) => file.name)).toEqual(['CLAUDE.md']);
     expect(countOccurrences(composed.value.prompt, CLAUDE_MARKER)).toBe(1);
   });

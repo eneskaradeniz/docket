@@ -203,10 +203,13 @@ The record is the provider's **best-known set**, not a fixed law of the CLI: Cod
 list configurable (`project_doc_fallback_filenames` can add `CLAUDE.md`) and Qoder's `context.fileName`
 can rename `AGENTS.md`, so the set is data that may later grow route- or account-level fields where a
 CLI makes it configurable. A file the CLI reads natively but the row misses is inlined all the same —
-rules delivered twice beat rules lost. Claude Code loads its automatic project memory
-(`~/.claude/projects/<repo>/memory/`) even with `settingSources: []`; its row names that memory in the
-native set. The memory lives outside the repo, so it is never an inline candidate and never travels in
-a pack.
+rules delivered twice beat rules lost. Claude Code loaded its automatic project memory
+(`~/.claude/projects/<repo>/memory/`) even with `settingSources: []`, so its row once named that memory
+in the native set — until A-402 ([application.md](application.md), 2026-10-15, #1207): every
+claude-code run now disables the automatic memory (inline `autoMemoryEnabled: false` plus the route
+environment's `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`), nothing native loads it any more, and the row
+lists no native instruction set. The memory lives outside the repo, so it was never an inline
+candidate and never traveled in a pack.
 - Docket computes the **effective instructions** of a run: the instruction files the chosen provider reads
   natively, plus the Docket layers (flow, stage, role), which are always delivered in the prompt. The same
   Docket layers go to every provider, so behaviour does not depend on the provider.
