@@ -29,6 +29,7 @@ This keeps Phase 1 issues independent and conflict-free.
 | `pages` | `shared` |
 | `conversations` | `shared`, `pages` |
 | `actions` | `shared`, `conversations` |
+| `autonomy` | `shared`, `actions` |
 | `resolver` | `shared`, `definitions`, `quota` |
 | `gates` | `shared`, `definitions` |
 | `providers` | `shared`, `quota`, `definitions` |
@@ -1550,3 +1551,41 @@ existing doc locations that enumerate actors:
 The application-side contracts of the same decision are A-394 … A-396
 ([application.md](application.md) → autonomy addendum); the storage homes and the serialization law
 are the autonomy addendum of [infrastructure.md](infrastructure.md) (I-107).
+
+### Addendum: the risk-rule table (added 2026-10-15, #1200, D-10 split 4/5)
+
+D-10's balanced/auto tool-ask arm is licensed by exactly one deterministic table: `autonomy/risk.ts`
+(new module; imports `shared` and `actions` — `actions` for `ACTION_CLASSES`, the single named list).
+The executor wiring that consults it lands with D-10 2/5; until then the table is contract and
+tests, consulted by no one, and every level behaves as `manual` (R-172).
+
+```ts
+// autonomy/risk.ts (added 2026-10-15, #1200, D-10 split 4/5)
+export type RiskAsk =
+  | { readonly kind: 'tool'; readonly tool: string; readonly arguments?: Readonly<Record<string, unknown>> }
+  | { readonly kind: 'assistant_action'; readonly actionClass: ActionClass };
+export interface RiskContext {
+  readonly worktreeRoot?: string;
+  readonly cwd?: string;
+  readonly verificationCommands: readonly string[];
+}
+export type RiskVerdict =
+  | { readonly verdict: 'low'; readonly rule: RiskRuleId }
+  | { readonly verdict: 'needs_human' };
+export interface RiskRule {
+  readonly id: RiskRuleId;
+  readonly verdict: 'low' | 'needs_human';
+  readonly applies: (ask: RiskAsk, context: RiskContext) => boolean;
+}
+export const RISK_RULES: readonly RiskRule[];   // ordered: the deny floor first, allow rows after
+export function classifyRisk(ask: RiskAsk, context: RiskContext): RiskVerdict;
+```
+
+- **R-173** (added 2026-10-15, #1200) `classifyRisk(ask, context)` walks `RISK_RULES` in order and answers the first match; **no match → `needs_human`** — default-deny is structural, not a branch. Unknown tool name, unknown action class, missing or malformed arguments, and absent `worktreeRoot`/`cwd`/`verificationCommands` where a row needs them reach no allow row. Pure: same inputs → same verdict, inputs never mutated, no `Date`, no randomness, no Node builtins; the function has no failure mode, so there is no `Result`. Path containment is lexical: `~` is never expanded, a relative path resolves against `cwd` only when `cwd` is absolute, `.`/`..` resolve lexically, and no symlink knowledge is claimed — the executor's sandbox owns the filesystem truth. A `'low'` carries the deciding row id (the evidence a policy actor records); `'needs_human'` carries nothing — the ask itself is the reason the user sees.
+- **R-174** (added 2026-10-15, #1200) The read rows. `allow-own-read`: tool `docket_get` / `docket_search` — the bare names the SDK transport distills, Docket's own read-only MCP surface — is low unconditionally. `allow-read-search`: `Read` (`file_path`) and `Grep`/`Glob` (`path` optional, `pattern`/`glob`) are low exactly when every named path resolves lexically inside `worktreeRoot`; a search without `path` is low only when `cwd` is itself inside; a `pattern`/`glob` containing a `..` segment never matches.
+- **R-175** (added 2026-10-15, #1200) `allow-git-read`: a `Bash` ask whose `command` is a plain single command — any of `` ; & | < > ( ) $ " ' ` `` or a line break disqualifies, because quoting and substitution are not parsed — is low for `git status`, `git log`, `git diff`, `git show`, `git blame`, `git rev-parse`, `git ls-files` with any arguments except one starting `--output` (diff and show can write their patch out) or
+`--no-index` (a filesystem diff reads outside the worktree entirely); `git branch` only with flags from {`-v`, `-vv`, `-a`, `-r`, `-l`, `--list`, `--all`, `--no-color`} and no positional operand (`git branch <name>` creates, `-d` deletes); `git remote` bare or with `-v`/`--verbose` only (`git remote <verb>` writes config). Anything richer asks.
+- **R-176** (added 2026-10-15, #1200) `allow-verify`: a `Bash` command equal to one entry of `context.verificationCommands` — after trim, nothing more; a mid-command whitespace difference is a different command — is low. Those are the strings Docket itself runs as the stage's command gates; the executor resolves them (stage command gates → repo commandSets) when it builds the context. The floor still wins: a declared command that is an install, a push or worse asks anyway.
+- **R-177** (added 2026-10-15, #1200) The deny floor — absolute, evaluated first, no exceptions and no verify exemption. Never low: push and merge in every form (`git push` including force variants, `git merge`, `gh … merge`, hidden behind `&&` and `sudo` alike); destructive shell (`rm`, `rmdir` — `git rm` included — `git reset --hard`, `git clean`); network egress (the tools `WebFetch`/`WebSearch`; commands `curl`, `wget`, `nc`, `ncat`, `ssh`, `scp`, `sftp`, `rsync`, `ping`, `telnet` as the first token); secret and environment reads (a path named `.env`, `.env.*`, `*.pem`, `*.key`, `id_rsa*`, `credentials.json`, `.npmrc`, `.netrc` — read, written, or selected by a search pattern; the commands `env`, `printenv`, `history`); package installs (`npm`, `pnpm`, `yarn`, `bun`, `pip`, `pip3`, `uv`, `cargo`, `gem`, `composer`, `brew` followed by `install`, `i`, `add`, `ci`, `update`, `upgrade`; `npx` unconditionally — a fetch-and-run wrapper is an install by another name); writes outside the worktree, `~`-relative or unresolvable; and writes into git internals — a write whose resolved path has a `.git` segment, or whose basename is `.gitmodules`/`.gitattributes`, asks even inside the worktree, because it re-aims the repository rather than the change under review. This floor is the tool-level image of `USER_ONLY_GATES` (R-168): merge, deploy, delete and push stay human at every level. The floor scans whole token lists, so over-matching only ever costs the user one answer.
+- **R-178** (added 2026-10-15, #1200) The assistant arm: `Record<ActionClass, RiskVerdict>` is exhaustive over `ACTION_CLASSES` at compile time — a new class without a row fails the build — and every class is `needs_human`: each has its own human-reviewed pipeline (§9 proposals, R-98 grants) and `open_work_order` commits real runs and spend. Widening is a deliberate docs change, never a drift; a runtime class outside the closed union has no row and asks.
+- **R-179** (added 2026-10-15, #1200) `allow-write-inside` (the architect-approved addition to the issue's candidate list): `Edit`, `Write`, `NotebookEdit` with target lexically inside `worktreeRoot` is low — the worktree is the run's sandbox, checkpoint commits make the change reversible (A-57 … A-59), and the stage-output scope verdict reviews the diff. Outside, `~`-relative and unresolvable targets stay with the floor (R-177); secret-shaped basenames never match this row (R-177's secret clause covers writes too).

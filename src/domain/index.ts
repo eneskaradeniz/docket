@@ -6,6 +6,7 @@ export * from './budget/index';
 export * from './proposal/index';
 export * from './pages/index';
 export * from './actions/index';
+export * from './autonomy/index';
 export * from './conversations/index';
 export * from './resolver/index';
 export * from './gates/index';

@@ -42,6 +42,7 @@ const DOMAIN_MODULES = {
   pages: ['shared'],
   conversations: ['shared', 'pages'],
   actions: ['shared', 'conversations'],
+  autonomy: ['shared', 'actions'],
   resolver: ['shared', 'definitions', 'quota'],
   gates: ['shared', 'definitions'],
   providers: ['shared', 'quota', 'definitions'],
