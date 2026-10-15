@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  PERMISSION_RULES_POLICY,
   parseSlug,
   parseUlid,
   type AccountId,
@@ -31,7 +32,7 @@ import {
   type FakeTransport,
 } from '../ports/fakes';
 
-import { createPermissionBoard, type BoardHooks } from './permission-board';
+import { createPermissionBoard, type AutoDecision, type BoardHooks } from './permission-board';
 import { executeRun } from './run-executor';
 
 // --- fixtures ---------------------------------------------------------------------------------------
@@ -146,6 +147,10 @@ const recordingHooks = (board: BoardHooks): { readonly hooks: BoardHooks; readon
         lifecycle.push(`unregister ${runId}`);
         board.unregister(runId);
       },
+      recordAutoDecision: (entry) => {
+        lifecycle.push(`auto ${entry.askId}`);
+        board.recordAutoDecision(entry);
+      },
     },
   };
 };
@@ -212,6 +217,64 @@ describe('createPermissionBoard', () => {
     expect(await board.onAsk(RUN_A, askOf('ask-1', T0))).toBe('deny');
     expect(board.openAsks()).toEqual([]);
     expect(board.answer('ask-1', 'allow')).toEqual({ ok: false, error: 'not_found' });
+  });
+
+  it('lists recorded auto decisions in insertion order and drops them with their run', () => {
+    const board = createPermissionBoard();
+    board.register(RUN_A);
+    board.register(RUN_B);
+    const first: AutoDecision = {
+      runId: RUN_A,
+      askId: 'ask-1',
+      tool: 'docket_get',
+      at: T0,
+      policy: PERMISSION_RULES_POLICY,
+      level: 'auto',
+    };
+    const second: AutoDecision = {
+      runId: RUN_B,
+      askId: 'ask-2',
+      tool: 'Bash',
+      at: T0 + 5,
+      policy: PERMISSION_RULES_POLICY,
+      level: 'auto',
+    };
+
+    board.recordAutoDecision(first);
+    board.recordAutoDecision(second);
+
+    expect(board.autoDecided()).toEqual([first, second]);
+    board.unregister(RUN_A);
+    expect(board.autoDecided()).toEqual([second]);
+    board.unregister(RUN_B);
+    expect(board.autoDecided()).toEqual([]);
+  });
+
+  it('an autoDecided listing is a snapshot — later records never rewrite an earlier one', () => {
+    const board = createPermissionBoard();
+    board.register(RUN_A);
+    const first: AutoDecision = {
+      runId: RUN_A,
+      askId: 'ask-1',
+      tool: 'docket_get',
+      at: T0,
+      policy: PERMISSION_RULES_POLICY,
+      level: 'auto',
+    };
+    board.recordAutoDecision(first);
+    const listed = board.autoDecided();
+
+    board.recordAutoDecision({
+      runId: RUN_A,
+      askId: 'ask-2',
+      tool: 'Read',
+      at: T0 + 5,
+      policy: PERMISSION_RULES_POLICY,
+      level: 'auto',
+    });
+
+    expect(listed).toEqual([first]);
+    expect(board.autoDecided().length).toBe(2);
   });
 });
 

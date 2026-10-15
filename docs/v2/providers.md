@@ -195,7 +195,9 @@ no Codex install is needed.
   client does not know are ignored (logged), never fatal; the client answers only requests the
   protocol requires it to answer.
 - **P-13** An approval request becomes a `permission_ask`; the user's answer is delivered as the
-  JSON-RPC response. Nothing is ever auto-approved; `stop()` answers `deny`.
+  JSON-RPC response. Nothing is auto-approved except by the permission policy path —
+  `decidePermission` allowing a low-risk ask under a resolved `auto` level, never a
+  `USER_ONLY_GATES` decision; `stop()` still answers `deny`.
 - **P-14** Rate-limit reads and updates map to `quota_signal` meter readings per the Codex row of
   [quota.md](quota.md) (primary ≈5h / secondary ≈weekly, windows from `windowDurationMins`, exact
   resets).

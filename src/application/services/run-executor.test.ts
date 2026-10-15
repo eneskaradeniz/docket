@@ -10,6 +10,7 @@ import {
   nextAction,
   parseSlug,
   parseUlid,
+  PERMISSION_RULES_POLICY,
   RESUME_JITTER_MS,
   ROLLING_NOTE_MAX_CHARS,
   stageBrief,
@@ -72,6 +73,7 @@ import {
 } from '../ports/fakes';
 
 import {
+  AUTONOMY_KEY,
   createMemoryNoteUseCase,
   grantSpendConsent,
   listActiveMemoryNotes,
@@ -80,6 +82,7 @@ import {
   setMemoryAutoAccept,
 } from '../use-cases';
 import { dispatcherTick } from './dispatcher';
+import { createPermissionBoard, type AutoDecision } from './permission-board';
 import { executeRun, type PermissionGate } from './run-executor';
 
 // --- fixtures ---------------------------------------------------------------------------------------
@@ -2463,5 +2466,280 @@ describe('executeRun memory injection and proposal collection (R-142, R-143)', (
 
     const proposals = await listMemoryProposals(h.deps);
     expect(proposals.some((p) => p.text === 'Document public APIs.')).toBe(true);
+  });
+});
+
+// --- the autonomy permission policy (D-10 2b: decidePermission, R-168/R-170 wiring) -------------------
+
+const ownReadAsk = (id: string): AgentEvent => ({
+  type: 'permission_ask',
+  at: at(3),
+  id,
+  tool: 'docket_get',
+  options: ['allow', 'deny'],
+});
+
+const bashAsk = (id: string, command: string): AgentEvent => ({
+  type: 'permission_ask',
+  at: at(3),
+  id,
+  tool: 'Bash',
+  target: command,
+  options: ['allow', 'deny'],
+});
+
+/** The one tool whose ask performs a carve-out decision. */
+const pagePublishAsk = (id: string): AgentEvent => ({
+  type: 'permission_ask',
+  at: at(3),
+  id,
+  tool: 'page_publish',
+  options: ['allow', 'deny'],
+});
+
+/** A search ask: its single target string may be the root or the pattern, so it cannot be mapped. */
+const searchAsk = (id: string): AgentEvent => ({
+  type: 'permission_ask',
+  at: at(3),
+  id,
+  tool: 'Grep',
+  target: '../outside',
+  options: ['allow', 'deny'],
+});
+
+const permissionAnswered = (id: string, decision: 'allow' | 'deny'): AgentEvent => ({
+  type: 'permission_answered',
+  at: T0,
+  id,
+  decision,
+});
+
+const permissionAudits = (log: FakeEventLog): readonly AuditEntry[] =>
+  log.entries().filter((entry) => entry.action === 'permission.answered');
+
+const RUN_EXECUTOR_SYSTEM_ACTOR = { kind: 'system', component: 'run-executor' } as const;
+
+/** Definitions whose stage carries one command gate over `commandSets.verify` — the strings the
+ *  allow-verify row treats as Docket's own. */
+const VERIFY_FLOW = {
+  id: 'standard',
+  name: 'Standard',
+  stages: [
+    {
+      id: STAGE,
+      name: 'Implement',
+      role: ROLE.id,
+      exit: [{ kind: 'command', id: 'verify', commandSet: 'verify' }],
+    },
+  ],
+};
+
+const VERIFY_DEFS_JSON = JSON.stringify({
+  roles: [
+    {
+      id: ROLE.id,
+      name: ROLE.name,
+      instructions: ROLE.instructions,
+      writeScope: ROLE.writeScope,
+      capabilities: [],
+      active: true,
+    },
+  ],
+  flows: [VERIFY_FLOW],
+  capabilities: [],
+  repo: {
+    id: REPO,
+    name: 'WS',
+    flow: repoFlowOf(VERIFY_FLOW),
+    defaultLimitPolicy: 'wait_resume',
+    commandSets: { verify: ['npm test'] },
+    docsRoot: 'docs',
+    testGlobs: [],
+  },
+});
+
+describe('executeRun — the autonomy permission policy', () => {
+  it('auto allows a low ask by the policy: the human gate is never asked, the allow is written and audited by the policy actor', async () => {
+    const h = await harness({ script: [sessionStarted('sess-1'), ownReadAsk('ask-1'), finished('completed')] });
+    await h.deps.settings.set(AUTONOMY_KEY, 'auto');
+    // A deny gate doubles as the leak detector: any ask that slipped through to it would flip the answer.
+    const gate = permissionGate('deny');
+    const board = createPermissionBoard();
+
+    const outcome = await executeRun(h.deps, gate.permissions, INPUT, board);
+
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect(gate.asked).toEqual([]);
+    const record = await theRun(h.runs);
+    expect(await h.runs.events(record.id)).toEqual([
+      sessionStarted('sess-1'),
+      ownReadAsk('ask-1'),
+      permissionAnswered('ask-1', 'allow'),
+      finished('completed'),
+    ]);
+    expect(h.transport.answers()).toEqual([{ askId: 'ask-1', decision: 'allow' }]);
+    expect(permissionAudits(h.log).map((entry) => entry.actor)).toEqual([
+      { kind: 'policy', policy: PERMISSION_RULES_POLICY, level: 'auto' },
+    ]);
+    expect(permissionAudits(h.log)[0]?.detail).toEqual({ tool: 'docket_get', decision: 'allow' });
+    // The run ended: nothing of it stays listed on the board.
+    expect(board.autoDecided()).toEqual([]);
+  });
+
+  it('a manual run asks the human even for an ask the table rates low, with today’s exact events and actor', async () => {
+    const h = await harness({ script: [ownReadAsk('ask-1'), finished('completed')] });
+    const gate = permissionGate('deny');
+
+    await executeRun(h.deps, gate.permissions, INPUT);
+
+    expect(gate.asked.length).toBe(1);
+    const record = await theRun(h.runs);
+    expect(await h.runs.events(record.id)).toEqual([
+      ownReadAsk('ask-1'),
+      permissionAnswered('ask-1', 'deny'),
+      finished('completed'),
+    ]);
+    expect(permissionAudits(h.log).map((entry) => entry.actor)).toEqual([RUN_EXECUTOR_SYSTEM_ACTOR]);
+  });
+
+  it('an invalid stored level fails closed: the human gate answers and no policy actor is written', async () => {
+    const h = await harness({ script: [ownReadAsk('ask-1'), finished('completed')] });
+    await h.deps.settings.set(AUTONOMY_KEY, 'banana');
+    const gate = permissionGate('deny');
+    const board = createPermissionBoard();
+
+    await executeRun(h.deps, gate.permissions, INPUT, board);
+
+    expect(gate.asked.length).toBe(1);
+    const record = await theRun(h.runs);
+    expect(await h.runs.events(record.id)).toEqual([
+      ownReadAsk('ask-1'),
+      permissionAnswered('ask-1', 'deny'),
+      finished('completed'),
+    ]);
+    expect(permissionAudits(h.log).map((entry) => entry.actor)).toEqual([RUN_EXECUTOR_SYSTEM_ACTOR]);
+    expect(board.autoDecided()).toEqual([]);
+  });
+
+  it('a page_publish ask performs a carve-out decision and stays with the human under auto', async () => {
+    const h = await harness({ script: [pagePublishAsk('ask-1'), finished('completed')] });
+    await h.deps.settings.set(AUTONOMY_KEY, 'auto');
+    const gate = permissionGate('deny');
+
+    await executeRun(h.deps, gate.permissions, INPUT);
+
+    expect(gate.asked.length).toBe(1);
+    const record = await theRun(h.runs);
+    expect(await h.runs.events(record.id)).toEqual([
+      pagePublishAsk('ask-1'),
+      permissionAnswered('ask-1', 'deny'),
+      finished('completed'),
+    ]);
+    expect(permissionAudits(h.log).map((entry) => entry.actor)).toEqual([RUN_EXECUTOR_SYSTEM_ACTOR]);
+  });
+
+  it('an unmappable ask — a search whose one string may be root or pattern — stays with the human under auto', async () => {
+    const h = await harness({ script: [searchAsk('ask-1'), finished('completed')] });
+    await h.deps.settings.set(AUTONOMY_KEY, 'auto');
+    const gate = permissionGate('deny');
+
+    await executeRun(h.deps, gate.permissions, INPUT);
+
+    expect(gate.asked.length).toBe(1);
+    const record = await theRun(h.runs);
+    expect(await h.runs.events(record.id)).toEqual([
+      searchAsk('ask-1'),
+      permissionAnswered('ask-1', 'deny'),
+      finished('completed'),
+    ]);
+    expect(permissionAudits(h.log).map((entry) => entry.actor)).toEqual([RUN_EXECUTOR_SYSTEM_ACTOR]);
+  });
+
+  it('a Bash ask whose command is exactly a stage command-gate string is allowed under auto', async () => {
+    const h = await harness({
+      script: [bashAsk('ask-1', 'npm test'), finished('completed')],
+      defsJson: VERIFY_DEFS_JSON,
+    });
+    await h.deps.settings.set(AUTONOMY_KEY, 'auto');
+    const gate = permissionGate('deny');
+
+    await executeRun(h.deps, gate.permissions, INPUT);
+
+    expect(gate.asked).toEqual([]);
+    const record = await theRun(h.runs);
+    expect(await h.runs.events(record.id)).toEqual([
+      bashAsk('ask-1', 'npm test'),
+      permissionAnswered('ask-1', 'allow'),
+      finished('completed'),
+    ]);
+    expect(permissionAudits(h.log).map((entry) => entry.actor)).toEqual([
+      { kind: 'policy', policy: PERMISSION_RULES_POLICY, level: 'auto' },
+    ]);
+  });
+
+  it('R-170: a level change between two asks governs the second only; the first answer keeps its effect', async () => {
+    const h = await harness({
+      script: [ownReadAsk('ask-1'), ownReadAsk('ask-2'), finished('completed')],
+    });
+    // The run starts at the builtin manual; the human's answer to the first ask flips the level.
+    let autonomyReads = 0;
+    const settings = {
+      get: async (key: string) => {
+        if (key === AUTONOMY_KEY) autonomyReads += 1;
+        return h.deps.settings.get(key);
+      },
+      set: h.deps.settings.set.bind(h.deps.settings),
+    };
+    const askedIds: string[] = [];
+    const permissions: PermissionGate = {
+      onAsk: async (_runId, ask) => {
+        askedIds.push(ask.id);
+        await h.deps.settings.set(AUTONOMY_KEY, 'auto');
+        return 'deny';
+      },
+    };
+
+    await executeRun({ ...h.deps, settings }, permissions, INPUT);
+
+    expect(askedIds).toEqual(['ask-1']);
+    const record = await theRun(h.runs);
+    expect(await h.runs.events(record.id)).toEqual([
+      ownReadAsk('ask-1'),
+      permissionAnswered('ask-1', 'deny'),
+      ownReadAsk('ask-2'),
+      permissionAnswered('ask-2', 'allow'),
+      finished('completed'),
+    ]);
+    expect(permissionAudits(h.log).map((entry) => entry.actor)).toEqual([
+      RUN_EXECUTOR_SYSTEM_ACTOR,
+      { kind: 'policy', policy: PERMISSION_RULES_POLICY, level: 'auto' },
+    ]);
+    // The chain was read once per ask: two asks, two reads.
+    expect(autonomyReads).toBe(2);
+  });
+
+  it('policy decisions are listed on the board while the run lives and dropped at its end', async () => {
+    const h = await harness({
+      script: [ownReadAsk('ask-1'), bashAsk('ask-2', 'rm -rf build'), finished('completed')],
+    });
+    await h.deps.settings.set(AUTONOMY_KEY, 'auto');
+    const board = createPermissionBoard();
+    // The second ask rides the deny floor, so the human gate is the observation point: while it
+    // waits, the first ask's policy decision must already be listed.
+    let listedMidRun: readonly AutoDecision[] = [];
+    const permissions: PermissionGate = {
+      onAsk: async (_runId, ask) => {
+        if (ask.id === 'ask-2') listedMidRun = [...board.autoDecided()];
+        return 'deny';
+      },
+    };
+
+    await executeRun(h.deps, permissions, INPUT, board);
+
+    const record = await theRun(h.runs);
+    expect(listedMidRun).toEqual([
+      { runId: record.id, askId: 'ask-1', tool: 'docket_get', at: T0, policy: PERMISSION_RULES_POLICY, level: 'auto' },
+    ]);
+    expect(board.autoDecided()).toEqual([]);
   });
 });

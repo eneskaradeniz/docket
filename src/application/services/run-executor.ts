@@ -17,20 +17,25 @@ import type {
   LimitPolicy,
   Meter,
   MemoryScope,
+  PermissionDecision,
   QueueItem,
   Result,
+  RiskAsk,
+  RiskContext,
   RoleDef,
   RollingNote,
   RunId,
   RunOutcome,
   StageSlug,
   Tier,
+  UserOnlyGate,
   WorkOrderId,
 } from '../../domain/index';
 import {
   CHECKPOINT_MIN_INTERVAL_MS,
   billingFromPools,
   decideOnLimit,
+  decidePermission,
   definitionsDigest,
   effortForChoice,
   extendRollingNote,
@@ -51,7 +56,7 @@ import { catalogOrEmpty, matchIdFor } from './match-id';
 import { DEFAULT_MODEL_CONSENT, defaultBillingOf, spendConsentSatisfied } from './spend-consent';
 import type { BoardHooks } from './permission-board';
 import type { RunControl } from './run-control';
-import { buildHandoff, commitCheckpoint, listActiveMemoryNotes, proposeMemory } from '../use-cases/index';
+import { buildHandoff, commitCheckpoint, effectiveAutonomy, listActiveMemoryNotes, proposeMemory } from '../use-cases/index';
 
 export interface MemoryProposalDraft {
   readonly scope: MemoryScope;
@@ -77,6 +82,81 @@ export type ExecuteOutcome =
 export interface PermissionGate {
   onAsk(runId: RunId, ask: Extract<AgentEvent, { readonly type: 'permission_ask' }>): Promise<'allow' | 'deny'>;
 }
+
+type PermissionAskEvent = Extract<AgentEvent, { readonly type: 'permission_ask' }>;
+
+/** The tools whose ask performs a carve-out decision: tool names are Docket-tool language, so the
+ *  mapping is caller-side — decidePermission reads `USER_ONLY_GATES` itself and refuses the lot. */
+const TOOL_GATE_ACTIONS: Readonly<Record<string, UserOnlyGate>> = { page_publish: 'page_approval' };
+
+/** The tools whose single identifying string the permission_ask event carries unambiguously, with
+ *  the argument key the risk rows read for that tool. A search tool (Grep, Glob) is deliberately
+ *  absent: its one string may be either the search root or the pattern, and mapping it to either
+ *  could allow an ask the table would deny, so it stays with the human. */
+const RISK_ARGUMENT_KEYS: Readonly<Record<string, string>> = {
+  Bash: 'command',
+  Read: 'file_path',
+  Edit: 'file_path',
+  Write: 'file_path',
+};
+
+/** Docket's own read tools: the risk table rates the bare name low without arguments. */
+const RISK_NAME_ONLY_TOOLS: readonly string[] = ['docket_get', 'docket_search'];
+
+/** The ask as the risk table sees it, or undefined when the event's one target string cannot be
+ *  mapped — unmappable asks stay with the human. */
+const riskAskOf = (event: PermissionAskEvent): RiskAsk | undefined => {
+  if (RISK_NAME_ONLY_TOOLS.includes(event.tool)) return { kind: 'tool', tool: event.tool };
+  const argumentKey = RISK_ARGUMENT_KEYS[event.tool];
+  return argumentKey !== undefined && event.target !== undefined
+    ? { kind: 'tool', tool: event.tool, arguments: { [argumentKey]: event.target } }
+    : undefined;
+};
+
+/** The run facts the risk rows read: the work order's own worktree (read, never created), the
+ *  run's working directory, and the exact command strings the stage's command gates run — the
+ *  same definitions load the gate runner reads, because the string Docket itself runs is the
+ *  licence. A fact that cannot be read stays absent, which the rows answer on the human side. */
+const riskContextOf = async (deps: ExecuteDeps, input: ExecuteRunInput): Promise<RiskContext> => {
+  const worktree = await deps.worktrees.existing(input.item.repo, input.item.workOrderId);
+  const record = await deps.workOrders.get(input.item.workOrderId);
+  const loaded = record === undefined ? undefined : await deps.definitions.load(input.item.repo);
+  const flow =
+    record !== undefined && loaded !== undefined && loaded.ok
+      ? loaded.value.flows.find((candidate) => candidate.id === record.flow)
+      : undefined;
+  const stage = flow?.stages.find((candidate) => candidate.id === input.item.stage);
+  const commandSets = loaded !== undefined && loaded.ok ? (loaded.value.repo?.commandSets ?? {}) : {};
+  const verificationCommands = (stage?.exit ?? []).flatMap((gate) =>
+    gate.kind === 'command' ? (commandSets[gate.commandSet] ?? []) : [],
+  );
+  return {
+    ...(worktree !== undefined ? { worktreeRoot: worktree.path } : {}),
+    cwd: input.cwd,
+    verificationCommands,
+  };
+};
+
+/** The axis-1 decision for one ask: the level is re-resolved per ask (R-170 — a level change
+ *  governs asks made after it only), and anything unreadable or unmappable fails closed to the
+ *  human. An invalid stored level surfaces through its own typed reads, never as an audit entry. */
+const decideAsk = async (
+  deps: ExecuteDeps,
+  input: ExecuteRunInput,
+  event: PermissionAskEvent,
+): Promise<PermissionDecision> => {
+  const autonomy = await effectiveAutonomy(deps, { workOrderId: input.item.workOrderId, repo: input.item.repo });
+  if (!autonomy.ok) return { kind: 'ask-human' };
+  const ask = riskAskOf(event);
+  if (ask === undefined) return { kind: 'ask-human' };
+  const action = TOOL_GATE_ACTIONS[event.tool];
+  return decidePermission({
+    level: autonomy.value.level,
+    ask,
+    context: await riskContextOf(deps, input),
+    ...(action !== undefined ? { action } : {}),
+  });
+};
 
 /** The push channel's feed (U-12 of docs/v2/ui.md): one call per event appended to the run's log.
  *  The executor cannot know the api, so composition injects the adapter that turns each call into
@@ -244,12 +324,14 @@ const audit = async (
     readonly action: AuditAction;
     readonly runId: RunId;
     readonly detail?: Readonly<Record<string, string | number | boolean>>;
+    /** Who decided; absent names the executor itself, a policy allow names the policy actor. */
+    readonly actor?: Actor;
   },
 ): Promise<void> => {
   await deps.log.append({
     id: deps.ids.next<'audit'>(),
     at: input.at,
-    actor: RUN_EXECUTOR_ACTOR,
+    actor: input.actor ?? RUN_EXECUTOR_ACTOR,
     action: input.action,
     subject: { kind: 'run', id: input.runId },
     ...(input.detail !== undefined ? { detail: input.detail } : {}),
@@ -503,6 +585,7 @@ type ExecuteDeps = Pick<
   | 'mcpEndpoint'
   | 'memory'
   | 'settings'
+  | 'worktrees'
 >;
 
 /** A-144: Docket's own MCP child, appended LAST so nothing a stored definition says can reorder
@@ -768,7 +851,12 @@ async function driveRun(
         await deps.runs.update(runId, { sessionRef: event.sessionRef });
         break;
       case 'permission_ask': {
-        const answer = await permissions.onAsk(runId, event);
+        // The permission policy reads the chain per ask: only a low ask under a resolved auto
+        // level is answered here, everything else parks on the human gate exactly as before. The
+        // policy allow answers the transport's one-time option only (P-16) — never a standing one.
+        const decision = await decideAsk(deps, input, event);
+        const answer: 'allow' | 'deny' =
+          decision.kind === 'allow-by-policy' ? 'allow' : await permissions.onAsk(runId, event);
         // The decision is persisted as an event the moment it is known: the folds close the ask
         // by it, so the pane can move on to the next ask while the agent still works on this
         // answer. The transport never streams this event — only the executor can write it.
@@ -782,7 +870,20 @@ async function driveRun(
           action: 'permission.answered',
           runId,
           detail: { tool: event.tool, decision: answer },
+          ...(decision.kind === 'allow-by-policy'
+            ? { actor: { kind: 'policy' as const, policy: decision.policy, level: decision.level } }
+            : {}),
         });
+        if (decision.kind === 'allow-by-policy') {
+          board?.recordAutoDecision({
+            runId,
+            askId: event.id,
+            tool: event.tool,
+            at: deps.clock.now(),
+            policy: decision.policy,
+            level: decision.level,
+          });
+        }
         break;
       }
       case 'quota_signal':
