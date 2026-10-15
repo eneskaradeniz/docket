@@ -32,6 +32,8 @@ Decided with the operator on 2026-10-12; architect-owned; supersedes by referenc
    4. Risk-rule table — what "low-risk" means; gates Balanced's ship.
    5. Stage-skip policy arm — last, after the `R-144` derive (PR #1049).
 
+   Landed in: split 1/5 → #1191 — the contracts (policy `Actor` variant, `AutonomyLevel` + chain resolution, level semantics, A-8/E-7 wording, storage under `~/.docket`). No decision above changed; issues 2/5…5/5 follow.
+
 ## Supersessions
 
 | Decision | What it supersedes | Where the contract change lands |
