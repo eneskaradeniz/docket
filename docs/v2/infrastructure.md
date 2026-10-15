@@ -722,3 +722,19 @@ Addendum 2026-10-14 (#1167): the forge's default-branch read (GI-4a of the #1001
   empty or malformed answer — a missing, null or non-record ref, an empty name, unparseable
   JSON — is a `ForgeError` (`unknown`), never an empty string. The in-memory fake answers
   `main` unless a test names another branch or asks for the error path.
+
+Addendum 2026-10-15 (#1191): where the autonomy levels live (D-10 answer 2, resolved under D-5).
+
+Every chain level of the domain's autonomy addendum (`resolveAutonomy`, R-167) lives under
+`~/.docket/`, in the homes the layout above already defines; Docket writes nothing into any
+repository (I-87) — no autonomy value ever reaches a repo checkout.
+
+| Chain level | Home |
+| --- | --- |
+| global | the settings key `autonomy` in `<dataDir>/docket.db` (`app_settings`, the `dispatch.mode` precedent of I-46/I-47 — no new file, no new migration) |
+| project | `~/.docket/projects/<slug>/project.yaml` — `ProjectDef.autonomy` (R-171) |
+| repo | `~/.docket/repos/<slug>/repo.yaml` — `RepoDef.autonomy` (R-171) |
+| work order | the work-order record's JSON in `docket.db` (`work_orders.data`) — `WorkOrderRecord.autonomy` (A-394); no new column (the #982 description precedent) |
+| builtin | nowhere — `manual` is R-167's own fallback when nothing is set |
+
+- **I-107** (added 2026-10-15, #1191) The one (de)serialization law for `autonomy`: every adapter parses a stored level against `AUTONOMY_LEVELS` through one shared parse. A YAML definition's unknown level string is R-171's `wrong_type` validation issue — never silently dropped, never defaulted; the settings key's read and the work-order record's read of a non-member value surface the typed `invalid_autonomy_level` error (A-396), never a silent `manual`. An absent value stays absent — the builtin fallback belongs to R-167's chain, not to the parse. A written level round-trips byte-equal (I-6's law). Implementing issue: D-10 2/5.

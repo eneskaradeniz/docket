@@ -1,6 +1,6 @@
 // api/queries.ts — the read side of the boundary. Exact contract: docs/v2/application.md § 4.
 // Plain JSON-serialisable shapes only; ids travel as strings and are parsed in api.ts.
-import type { ModelMatcher, PageKind, ProposalStatus, RemovalVerdict, UsageSummary, WasteFinding } from '../domain/index';
+import type { ModelMatcher, PageKind, ProposalStatus, RemovalVerdict, UsageSummary, WasteFinding, WaitReason } from '../domain/index';
 import type {
   AccountTestView,
   ProposalDetailView,
@@ -102,7 +102,9 @@ export interface CockpitView {
     readonly stageIndex?: number;
     readonly stageCount?: number;
     readonly queued?: boolean;
-    readonly queuedReason?: 'limit' | 'queue' | 'consent';
+    /** A-401 — the dispatcher's own last wait decision for the item (all 8 reasons of the domain's
+     *  `WaitReason`); absent for a running row and for a queued item no tick has considered yet. */
+    readonly queuedReason?: WaitReason;
     readonly limitResetsAt?: number | null;
   }[];
   /** K-4:B — cockpit cards; one per attached project, always the full list (A-28). */

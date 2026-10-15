@@ -1,7 +1,7 @@
 // definitions/types.ts — exact contract from docs/v2/domain.md section 2.
 import type { SpendCap } from '../budget';
 import type { LimitPolicy } from '../quota';
-import type { CapabilitySlug, EnvSlug, FlowSlug, GateSlug, ProjectSlug, RepoSlug, RoleSlug, StageSlug, ThinkingChoice, Tier } from '../shared';
+import type { AutonomyLevel, CapabilitySlug, EnvSlug, FlowSlug, GateSlug, ProjectSlug, RepoSlug, RoleSlug, StageSlug, ThinkingChoice, Tier } from '../shared';
 import type { RepoFlow } from './repo-flow';
 
 export type WriteScope =
@@ -103,6 +103,8 @@ export interface ProjectDef {
   readonly name: string;
   readonly repos: readonly RepoSlug[]; // unique, non-empty
   readonly budget?: SpendCap; // project spend ceiling (S5): the sum over all repos
+  /** The project layer of the autonomy chain (D-10); absent inherits down the chain (R-167). */
+  readonly autonomy?: AutonomyLevel;
 }
 
 export interface EnvironmentDef {
@@ -130,6 +132,8 @@ export interface RepoDef {
   readonly testGlobs: readonly string[]; // used by WriteScope 'tests'
   readonly environments?: readonly EnvironmentDef[]; // default []
   readonly budget?: SpendCap; // repo spend limit (S5)
+  /** The repo layer of the autonomy chain (D-10); absent inherits down the chain (R-167). */
+  readonly autonomy?: AutonomyLevel;
 }
 
 /** One finding of the definitions validators. `path` is JSON-pointer-like; the UI maps `code`

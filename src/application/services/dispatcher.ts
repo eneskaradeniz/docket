@@ -24,6 +24,7 @@ import type {
   SpendStatus,
   StageSlug,
   StartRefusalCode,
+  WaitReason,
   WorkOrderId,
 } from '../../domain/index';
 import { combinedSpendStatus, decideDispatch, deriveWorkOrderState, err, headroom, nextAction, ok, orderForReview, stageRouting } from '../../domain/index';
@@ -49,6 +50,19 @@ const REQUERY_FAILURES_MAX = 3;
 // than on the item: the item's shape is fixed by the domain, and a restart losing the count only
 // grants the item a few more polls before the release.
 const requeryFailures = new WeakMap<object, Map<QueueItemId, number>>();
+
+/** A-401: the last wait decision per queue item, in dispatcher memory only — never persisted, lost
+ *  with the process, and refilled by the next tick. Keyed by the queue port for the same reason as
+ *  `requeryFailures`: every app instance (and every test harness) keeps its own. */
+const waitMemory = new WeakMap<object, Map<QueueItemId, { readonly reason: WaitReason; readonly until?: EpochMs }>>();
+
+/** A-401: the stored wait of a queued item — the dispatcher's own last decision, the single source
+ *  the queue view reads instead of recomputing headroom and consent at query time. Undefined until
+ *  a tick has considered the item, and cleared the moment one starts it. */
+export const lastQueuedWait = (
+  queue: object,
+  item: QueueItemId,
+): { readonly reason: WaitReason; readonly until?: EpochMs } | undefined => waitMemory.get(queue)?.get(item);
 
 /**
  * A-102/A-104: one poll per account for the due `requeryFirst` items. Returns the ids held back
@@ -190,6 +204,23 @@ export async function dispatcherTick(
     consent: consentByItem,
   };
   const decisions = decideDispatch(queue, snapshot);
+
+  // A-401: every decision lands in memory beside the queue it describes — waits overwrite the
+  // item's previous reason, a start clears it — so the queue view can name the dispatcher's own
+  // reason rather than a query-time recomputation that can disagree with it.
+  const waits = waitMemory.get(deps.queue) ?? new Map<QueueItemId, { readonly reason: WaitReason; readonly until?: EpochMs }>();
+  waitMemory.set(deps.queue, waits);
+  for (const decision of decisions) {
+    if (decision.kind === 'wait') {
+      // Only the reason and the relief instant travel; the view never sees the decision's shape.
+      waits.set(decision.item, {
+        reason: decision.reason,
+        ...(decision.until !== undefined ? { until: decision.until } : {}),
+      });
+    } else {
+      waits.delete(decision.item);
+    }
+  }
 
   // Started items leave the queue before anything runs, so a crash between the two cannot
   // double-start them on the next tick.

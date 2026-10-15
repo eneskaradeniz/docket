@@ -39,7 +39,7 @@ import {
 import { repoFlowOf } from '../ports/fakes';
 
 import { createFakeModelCatalog } from '../ports/fakes/fake-model-catalog';
-import { appendStartRefused, applyLimitDecision, applyRefusedStart, dispatcherTick, enqueueStage } from './dispatcher';
+import { appendStartRefused, applyLimitDecision, applyRefusedStart, dispatcherTick, enqueueStage, lastQueuedWait } from './dispatcher';
 
 // --- fixtures ---------------------------------------------------------------------------------------
 
@@ -1289,6 +1289,43 @@ describe('dispatcherTick', () => {
 
     expect(result).toStrictEqual({ decisions: [], started: [] });
     expect(recorder.items).toStrictEqual([]);
+  });
+
+  it('A-401: the tick stores its own wait decision per item in memory — relief instant included — and a start clears the entry', async () => {
+    const h = makeHarness();
+    await createWorkOrder(h, WO1);
+    await createWorkOrder(h, WO2);
+    await createWorkOrder(h, WO3);
+    await h.deps.accounts.save(account(A1));
+    await h.deps.accounts.savePools(A1, [pool(POOL1, A1)]);
+    await h.deps.accounts.saveMeter(meter(METER1, POOL1, h.clock.now()));
+    // Q1 waits for its scheduled start, Q2 behind WO2's live run, Q3 on the account's exhausted quota.
+    await createRun(h, RUN1, WO2, route(A1));
+    await h.deps.queue.put(queueItem(Q1, WO1, route(A1), { notBefore: 9_000 }));
+    await h.deps.queue.put(queueItem(Q2, WO2, route(A1)));
+    await h.deps.queue.put(queueItem(Q3, WO3, route(A1)));
+
+    await dispatcherTick(h.deps, { limits: LIMITS() }, startRecorder().callback);
+
+    expect(lastQueuedWait(h.deps.queue, Q1)).toStrictEqual({ reason: 'not_before', until: 9_000 });
+    expect(lastQueuedWait(h.deps.queue, Q2)).toStrictEqual({ reason: 'work_order_busy' });
+    expect(lastQueuedWait(h.deps.queue, Q3)).toStrictEqual({ reason: 'quota', until: 9_000 });
+    // The memory rides the queue port it describes: an item no tick considered has no entry.
+    expect(lastQueuedWait(h.deps.queue, Q2)).not.toBeUndefined();
+    const otherQueue = makeHarness();
+    await createWorkOrder(otherQueue, WO1);
+    expect(lastQueuedWait(otherQueue.deps.queue, Q1)).toBeUndefined();
+
+    // A started item leaves no reason behind: what runs shows no wait.
+    const started = makeHarness();
+    await createWorkOrder(started, WO1);
+    await started.deps.accounts.save(account(A1));
+    await started.deps.queue.put(queueItem(Q1, WO1, route(A1)));
+
+    const result = await dispatcherTick(started.deps, { limits: LIMITS() }, startRecorder().callback);
+
+    expect(result.started).toStrictEqual([Q1]);
+    expect(lastQueuedWait(started.deps.queue, Q1)).toBeUndefined();
   });
 });
 

@@ -44,7 +44,6 @@ import {
   deriveRoadmap,
   deriveWorkOrderState,
   foldRun,
-  headroom,
   isProjectSetupTarget,
   orderForReview,
   parseRepoFlowValue,
@@ -117,7 +116,7 @@ import {
   enqueueStage,
   exportProject,
   importBundle,
-  itemConsent,
+  lastQueuedWait,
   acceptMemoryProposalUseCase,
   createMemoryNoteUseCase,
   archiveDefinition,
@@ -184,7 +183,6 @@ import {
   undoAction,
   workOrderCodeOf,
   catalogOrEmpty,
-  matchIdFor,
   normalizeRouteModel,
   mergeWorkOrderPr,
   openWorkOrderPr,
@@ -2655,46 +2653,35 @@ const cockpitView = async (deps: AppDeps, projectFilter?: ProjectSlug): Promise<
   }
 
   // The queue rides the same list after the running rows (A-36); its wait is explained by the
-  // same headroom call the dispatcher's tick makes, read at query time (A-37).
+  // dispatcher's own last decision for the item (A-401) — read from the dispatcher's memory, never
+  // recomputed here, so the row can never disagree with what actually held the item.
   const queuedItems = (await deps.queue.list())
     .filter((item) => projectFilter === undefined || scopedIds.has(item.workOrderId))
     .sort((a, b) => a.enqueuedAt - b.enqueuedAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  if (queuedItems.length > 0) {
-    const pools = await deps.accounts.pools();
-    const meters = await deps.accounts.meters();
-    const now = deps.clock.now();
-    for (const item of queuedItems) {
-      const record = await deps.workOrders.get(item.workOrderId);
-      const number = await deps.workOrders.number(item.workOrderId);
-      if (record === undefined || number === undefined) continue;
-      const { stageIndex, stageCount } = await stagePosition(record, item.stage);
-      const room = headroom(
-        pools,
-        meters,
-        item.route.accountId,
-        matchIdFor(await catalogOrEmpty(() => deps.modelCatalog.list(item.route.accountId)), item.route.model),
-        now,
-        (await deps.accounts.get(item.route.accountId))?.reserve,
-      );
-      const limit = room.ok === false;
-      // A-384: the consent read explains the wait before any quota reading, mirroring the check
-      // order the dispatcher's own rule applies.
-      const consent = await itemConsent(deps, item);
-      running.push({
-        workOrderId: item.workOrderId,
-        number,
-        stage: item.stage,
-        accountId: item.route.accountId,
-        provider: await providerOf(item.route.accountId),
-        startedAt: item.enqueuedAt,
-        title: record.title,
-        stageIndex,
-        stageCount,
-        queued: true,
-        queuedReason: consent === 'needed' ? 'consent' : limit ? 'limit' : 'queue',
-        limitResetsAt: limit ? room.earliestRelief ?? null : null,
-      });
-    }
+  for (const item of queuedItems) {
+    const record = await deps.workOrders.get(item.workOrderId);
+    const number = await deps.workOrders.number(item.workOrderId);
+    if (record === undefined || number === undefined) continue;
+    const { stageIndex, stageCount } = await stagePosition(record, item.stage);
+    const wait = lastQueuedWait(deps.queue, item.id);
+    running.push({
+      workOrderId: item.workOrderId,
+      number,
+      stage: item.stage,
+      accountId: item.route.accountId,
+      provider: await providerOf(item.route.accountId),
+      startedAt: item.enqueuedAt,
+      title: record.title,
+      stageIndex,
+      stageCount,
+      queued: true,
+      // No decision yet (the first tick has not run) carries no reason at all — the cockpit's
+      // generic queue copy covers it rather than a guess.
+      ...(wait === undefined ? {} : { queuedReason: wait.reason }),
+      // Only the quota wait names a relief instant (A-37's limit copy stays); the decision's
+      // `until` is the relief the dispatcher itself read.
+      limitResetsAt: wait?.reason === 'quota' && wait.until !== undefined ? wait.until : null,
+    });
   }
 
   const projects: CockpitView['projects'][number][] = [];

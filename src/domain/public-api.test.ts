@@ -12,6 +12,12 @@ const CONTRACT_FUNCTIONS = [
   'parseUlid',
   'isSlug',
   'isUlid',
+  // shared (section 1, autonomy addendum — D-10)
+  'parseAutonomyLevel',
+  // definitions (section 2, autonomy addendum — D-10)
+  'checkAutoLevel',
+  // resolver (section 3, autonomy addendum — D-10)
+  'resolveAutonomy',
   // definitions (section 2)
   'validateDefinitions',
   // definitions (section 2, Phase 7 addendum — repo flows, pins, removals)
@@ -58,6 +64,9 @@ const CONTRACT_CONSTANTS = [
   // shared (section 1)
   'MINUTE',
   'HOUR',
+  // shared (section 1, autonomy addendum — D-10)
+  'AUTONOMY_LEVELS',
+  'USER_ONLY_GATES',
   // resolver (section 3)
   'LEVEL_ORDER',
   // gates (section 4)

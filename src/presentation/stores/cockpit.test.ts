@@ -19,6 +19,7 @@ import {
   earliestOpenAsk,
   limitRows,
   projectCardTarget,
+  queuedNote,
   recentClosed,
   showsLastActivity,
   stageStrip,
@@ -26,6 +27,9 @@ import {
   type CockpitChange,
   type CockpitChangeSignal,
 } from './cockpit';
+import { formatInstant } from '../components/cockpit-format';
+import { TR } from '../labels/tr';
+import { EN } from '../labels/en';
 
 const userActor: Actor = { kind: 'user', id: 'user-1' };
 
@@ -458,7 +462,7 @@ describe('cockpit — queue, stage strip and project activity (A-35 … A-38)', 
   it('A-36: queued rows are counted apart — the head\'s "running" counts only rows actually running', () => {
     const view: CockpitView = {
       ...cockpitView([]),
-      running: [runRow('a', { queued: false }), runRow('b'), runRow('c', { queued: true, queuedReason: 'queue' }), runRow('d', { queued: true, queuedReason: 'limit' })],
+      running: [runRow('a', { queued: false }), runRow('b'), runRow('c', { queued: true, queuedReason: 'consent' }), runRow('d', { queued: true, queuedReason: 'quota' })],
     };
     expect(cockpitSummary(view)).toMatchObject({ running: 2, queued: 2 });
   });
@@ -520,5 +524,94 @@ describe('cockpit — folded sections persist (U-21 redesign)', () => {
     const store = make();
     store.toggleSection('projects');
     expect(store.state().collapsed).toEqual(['projects']);
+  });
+});
+
+// --- the queued row's wait sentence (A-401) --------------------------------------------------------
+
+/** A queued running row with only the fields the note reads, overridable per case. */
+const queuedRow = (over: Partial<CockpitView['running'][number]> = {}): CockpitView['running'][number] => ({
+  workOrderId: 'wo-1',
+  number: 1,
+  stage: 'plan',
+  accountId: 'acc-1',
+  startedAt: 1_000,
+  queued: true,
+  limitResetsAt: null,
+  ...over,
+});
+
+const WAIT_REASONS = [
+  'not_before',
+  'work_order_busy',
+  'global_limit',
+  'repo_limit',
+  'account_limit',
+  'consent',
+  'quota',
+  'budget',
+] as const satisfies readonly NonNullable<CockpitView['running'][number]['queuedReason']>[];
+
+describe('queuedNote (A-401)', () => {
+  it('A-401: each of the dispatcher\'s eight wait reasons reaches the cockpit row text as its own tr sentence', () => {
+    const sentences: Readonly<Record<(typeof WAIT_REASONS)[number], string>> = {
+      not_before: 'Başlama zamanı bekleniyor',
+      work_order_busy: 'Bu iş emrinin başka koşusu sürüyor',
+      global_limit: 'Eşzamanlı koşu sınırı dolu',
+      repo_limit: 'Depo eşzamanlı koşu sınırı dolu',
+      account_limit: 'Hesap eşzamanlı koşu sınırı dolu',
+      consent: 'Harcama onayı bekliyor — Ayarlar › Hesaplar',
+      quota: 'limit dolu',
+      budget: 'Bütçe sınırı',
+    };
+    for (const reason of WAIT_REASONS) {
+      expect(queuedNote(queuedRow({ queuedReason: reason }), 'tr')).toBe(sentences[reason]);
+    }
+  });
+
+  it('A-401: the consent and limit copy is unchanged — quota keeps the existing limit sentence, reset instant included', () => {
+    const resetAt = 1_790_435_045_678; // 2026-09-26T15:04:05.678Z — pinned so the formatted instant is stable
+    expect(queuedNote(queuedRow({ queuedReason: 'consent' }), 'tr')).toBe('Harcama onayı bekliyor — Ayarlar › Hesaplar');
+    expect(queuedNote(queuedRow({ queuedReason: 'quota' }), 'tr')).toBe('limit dolu');
+    expect(queuedNote(queuedRow({ queuedReason: 'quota', limitResetsAt: resetAt }), 'tr')).toBe(
+      `limit dolu, açılış ${formatInstant('tr', resetAt)}`,
+    );
+    expect(queuedNote(queuedRow({ queuedReason: 'quota', limitResetsAt: resetAt }), 'en')).toBe(
+      `limit full, reopens ${formatInstant('en', resetAt)}`,
+    );
+  });
+
+  it('A-401: a row with no stored reason — an item the dispatcher started, or one no tick has considered — reads the generic queue copy', () => {
+    expect(queuedNote(queuedRow(), 'tr')).toBe('sırada');
+    expect(queuedNote(queuedRow(), 'en')).toBe('queued');
+    expect(queuedNote(queuedRow({ queued: false }), 'tr')).toBe('sırada');
+  });
+
+  it('A-401: no raw wait-reason key reaches the row text in either locale', () => {
+    for (const reason of WAIT_REASONS) {
+      for (const locale of ['tr', 'en'] as const) {
+        const note = queuedNote(queuedRow({ queuedReason: reason }), locale);
+        expect(note.length).toBeGreaterThan(0);
+        expect(note).not.toBe(reason);
+        // The raw keys are snake_case tokens; a sentence never carries one.
+        expect(note.includes('_')).toBe(false);
+      }
+    }
+  });
+
+  it('U-354: the wait sentences live in the TR and EN bundles as their own keys, never inline', () => {
+    const keys = [
+      'cockpit.queued.notBefore',
+      'cockpit.queued.workOrderBusy',
+      'cockpit.queued.globalLimit',
+      'cockpit.queued.repoLimit',
+      'cockpit.queued.accountLimit',
+      'cockpit.queued.budget',
+    ] as const;
+    for (const key of keys) {
+      expect(TR[key].length).toBeGreaterThan(0);
+      expect(EN[key].length).toBeGreaterThan(0);
+      expect(TR[key]).not.toBe(EN[key]);
+    }
   });
 });

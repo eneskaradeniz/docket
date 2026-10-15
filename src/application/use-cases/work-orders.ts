@@ -3,6 +3,7 @@
 import type {
   AccountId,
   Actor,
+  AutonomyLevel,
   Billing,
   CheckRunStatus,
   CostByKind,
@@ -15,8 +16,10 @@ import type {
   GateSlug,
   GateVerdict,
   GitLifecycleState,
+  Layer,
   ProjectSlug,
   RepoRef,
+  ResolvedAutonomy,
   Result,
   RoleDef,
   RoleSlug,
@@ -31,6 +34,7 @@ import type {
 } from '../../domain/index';
 import {
   billingFromPools,
+  checkAutoLevel,
   deriveGitLifecycle,
   deriveWorkOrderState,
   err,
@@ -38,14 +42,17 @@ import {
   nextAction,
   normalizeWorkOrderDescription,
   ok,
+  parseAutonomyLevel,
   pinFlow,
   REMOTE_CHECKS_EVENT_MAX,
+  resolveAutonomy,
 } from '../../domain/index';
 
 import type { AccountRecord, AppDeps, ForgeResolver, RunRecord, WorkOrderRecord } from '../ports';
 import { catalogOrEmpty } from '../services/match-id';
 import { defaultBillingOf } from '../services/spend-consent';
 import { repoEntryStatus } from './repos';
+import { getAutonomyLevel } from './settings';
 
 export type OpenError =
   | 'definitions_invalid'
@@ -55,7 +62,10 @@ export type OpenError =
   | 'flow_not_enabled'
   | 'unknown_task'
   | 'empty_title'
-  | 'description_too_long';
+  | 'description_too_long'
+  | 'invalid_autonomy_level'
+  | 'auto_requires_spend_cap'
+  | 'auto_requires_max_attempts';
 
 export async function openWorkOrder(
   deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'definitions' | 'projects'>,
@@ -66,6 +76,7 @@ export async function openWorkOrder(
     readonly description?: string;
     readonly flow?: FlowSlug;
     readonly task?: TaskSlug;
+    readonly autonomy?: AutonomyLevel;
     readonly actor: Actor;
   },
 ): Promise<Result<WorkOrderId, OpenError>> {
@@ -121,6 +132,26 @@ export async function openWorkOrder(
   if (!pinned.ok) return err('definitions_invalid');
   const pin: FlowPin = pinned.value;
 
+  // A-394/A-395: the level is stored verbatim once it parses; starting at `auto` additionally
+  // demands the R-169 preconditions. Every refusal answers before the first write.
+  let autonomy: AutonomyLevel | undefined;
+  if (input.autonomy !== undefined) {
+    const parsed = parseAutonomyLevel(input.autonomy);
+    if (!parsed.ok) return err('invalid_autonomy_level');
+    autonomy = parsed.value;
+    if (autonomy === 'auto') {
+      // The nearest cap governing the order is the repo definition's budget, else the project's.
+      const cap = repo.budget ?? loaded.value.project?.budget;
+      const flowDef = loaded.value.flows.find((candidate) => candidate.id === flow);
+      // The flow being pinned: the definitions' own FlowDef, or the pin's stages when the library
+      // no longer carries it — pinFlow copies them, so both read the same stages.
+      const pinnedFlow: FlowDef =
+        flowDef ?? { id: pin.flowId, name: pin.flowId, stages: pin.stages.map((entry) => entry.stage) };
+      const checked = checkAutoLevel({ cap, flow: pinnedFlow });
+      if (!checked.ok) return err(checked.error);
+    }
+  }
+
   const id = deps.ids.next<'work-order'>();
   const at = deps.clock.now();
   await deps.workOrders.create({
@@ -131,6 +162,7 @@ export async function openWorkOrder(
     title,
     ...(description.value !== undefined ? { description: description.value } : {}),
     ...(input.task !== undefined ? { task: input.task } : {}),
+    ...(autonomy !== undefined ? { autonomy } : {}),
     pin,
     createdAt: at,
     createdBy: input.actor,
@@ -144,6 +176,35 @@ export async function openWorkOrder(
     subject: { kind: 'work_order', id },
   });
   return ok(id);
+}
+
+/** The effective autonomy of a work order (A-394): `resolveAutonomy` over work order (the record)
+ *  > repo (`RepoDef.autonomy`) > project (`ProjectDef.autonomy`) > global (the `autonomy` settings
+ *  key). The record's own value is re-parsed, never trusted from the JSON blob's cast, and a
+ *  damaged stored level anywhere in the chain is the typed error — never a silent `manual`.
+ *  A definitions load that fails leaves its layers absent: its validation issues are that error's
+ *  own surface, and the chain falls on. */
+export async function effectiveAutonomy(
+  deps: Pick<AppDeps, 'workOrders' | 'definitions' | 'settings'>,
+  input: { readonly workOrderId: WorkOrderId; readonly repo: RepoSlug },
+): Promise<Result<ResolvedAutonomy, 'invalid_autonomy_level'>> {
+  const record = await deps.workOrders.get(input.workOrderId);
+  let own: AutonomyLevel | undefined;
+  if (record?.autonomy !== undefined) {
+    const parsed = parseAutonomyLevel(record.autonomy);
+    if (!parsed.ok) return err(parsed.error);
+    own = parsed.value;
+  }
+  const global = await getAutonomyLevel(deps);
+  if (!global.ok) return err(global.error);
+  const loaded = await deps.definitions.load(input.repo);
+  const layers: readonly Layer<AutonomyLevel>[] = [
+    { level: 'workOrder', value: own },
+    { level: 'repo', value: loaded.ok ? loaded.value.repo?.autonomy : undefined },
+    { level: 'project', value: loaded.ok ? loaded.value.project?.autonomy : undefined },
+    { level: 'global', value: global.value },
+  ];
+  return ok(resolveAutonomy(layers));
 }
 
 /** The billing a run summary shows. `metered` is the route's verified per-use charge, named here

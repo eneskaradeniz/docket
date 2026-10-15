@@ -1,12 +1,12 @@
 // components/cockpit-running.tsx — Koşanlar (U-21): one calm line per run — the account's
 // provider mark, the work-order code, the title (A-35) over the stage and its progress strip, the
 // account name and the live duration. A queued row (A-36) is dashed and dimmed, says why it waits
-// (A-37) and shows how long instead of a running spinner.
+// (A-37, the dispatcher's own reason per A-401) and shows how long instead of a running spinner.
 import type { CockpitView } from '../../api/queries';
-import { t, type Locale } from '../labels/t';
-import { isQueued, stageStrip } from '../stores/cockpit';
+import { type Locale } from '../labels/t';
+import { isQueued, queuedNote, stageStrip } from '../stores/cockpit';
 import { formatWorkOrderCode } from '../stores/work-order-code';
-import { formatAge, formatInstant } from './cockpit-format';
+import { formatAge } from './cockpit-format';
 import { ProviderMark, type ProviderMarkProps } from './provider-mark';
 
 export interface CockpitRunningRowProps {
@@ -34,16 +34,6 @@ function StageStrip({ index, count }: { readonly index: number; readonly count: 
     </span>
   );
 }
-
-const queuedNote = (run: CockpitView['running'][number], locale: Locale): string => {
-  // A-384: the consent wait names the door the operator already knows — Ayarlar › Hesaplar.
-  if (run.queuedReason === 'consent') return t(locale, 'cockpit.queued.consent');
-  if (run.queuedReason !== 'limit') return t(locale, 'cockpit.queued.queue');
-  const at = run.limitResetsAt;
-  return at === null || at === undefined
-    ? t(locale, 'cockpit.queued.limit')
-    : `${t(locale, 'cockpit.queued.limitAt')} ${formatInstant(locale, at)}`;
-};
 
 export function CockpitRunningRow({ run, locale, accountLabel, accountProvider, mark, sinceMs, onOpen }: CockpitRunningRowProps) {
   const queued = isQueued(run);
