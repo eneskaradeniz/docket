@@ -39,6 +39,18 @@ export default defineConfig({
             },
           },
         },
+        {
+          // The permission-ask child an agy run's PreToolUse launcher execs (I-108): the same
+          // plain-Node child shape as docket-mcp, so it is a third entry of that kind and its
+          // changes equally never reload the renderer.
+          input: 'electron/docket-agy-ask.ts',
+          onstart: () => undefined,
+          vite: {
+            build: {
+              rolldownOptions: { output: { format: 'cjs', entryFileNames: 'docket-agy-ask.cjs' } },
+            },
+          },
+        },
       ],
     }),
   ],
