@@ -10,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { RunHandle, RunRequest, TransportError } from '../../../../application/index';
 import type { EffortLevel, Result, RoleDef, RunId } from '../../../../domain/index';
 import { parseSlug, parseUlid, type AccountId, type AgentEvent } from '../../../../domain/index';
-import { effortFlagArgs, type EffortArg, type ProviderDef } from '../../defs/index';
+import { BUILTIN_PROVIDER_DEFS, effortFlagArgs, type EffortArg, type ProviderDef } from '../../defs/index';
 import { createStreamJsonTransport, type StreamDialect } from './stream-json';
 
 let root: string;
@@ -429,6 +429,74 @@ describe('createStreamJsonTransport', () => {
       expect(events.find((event) => event.type === 'text')).toMatchObject({ delta: join(separate, 'config') });
       expect(existsSync(join(separate, 'config', 'mcp.json'))).toBe(true);
       expect(existsSync(join(cwd, 'config'))).toBe(false);
+    });
+  });
+
+  describe('agy delivery (P-62)', () => {
+    // The real built-in agy definition with the binary swapped for a scripted fake, so the def's
+    // own buildLaunch and the transport's agy branch are both the production ones.
+    const agyDefOf = (binPath: string): ProviderDef => {
+      const def = BUILTIN_PROVIDER_DEFS.find((candidate) => candidate.id === 'agy');
+      if (def === undefined) throw new Error('agy built-in def missing');
+      return { ...def, bins: [binPath] };
+    };
+
+    it('P-62: fake agy cli receives --add-dir in argv', async () => {
+      const bin = writeBin(
+        'agy-add-dir-argv',
+        'process.stdout.write(JSON.stringify({ say: process.argv.slice(2).join(" ") }) + \'\\n{"end":"completed"}\\n\');',
+      );
+      const cwd = runDir();
+      writeFileSync(join(cwd, 'ctx.md'), 'argv context body\n');
+      const context = {
+        kind: 'context' as const,
+        id: slugOf<'capability'>('ctx-argv'),
+        name: 'Argv context',
+        path: join(cwd, 'ctx.md'),
+      };
+
+      const handle = unwrap(
+        await createStreamJsonTransport(agyDefOf(bin), fakeDialect).start({
+          ...request(cwd),
+          capabilities: [context],
+          resume: { sessionRef: 'conv-argv-1' },
+        }),
+      );
+      const events = await collect(handle.events);
+
+      const text = events.find((event) => event.type === 'text');
+      const argv = text?.type === 'text' ? text.delta.split(' ') : [];
+      const at = argv.indexOf('--add-dir');
+      expect(at).toBeGreaterThan(-1);
+      // A relative path does not load hooks, so the flag must carry the absolute config dir.
+      expect(argv[at + 1]).toBe(join(cwd, 'config'));
+      // The flag is added before the resume flag handling (P-62 acceptance).
+      expect(at).toBeLessThan(argv.indexOf('--conversation'));
+      // The tree the flag points at carries the run's delivery: context is no longer dropped,
+      // it lands as an always_on rule file.
+      expect(existsSync(join(cwd, 'config', '.agents', 'rules', 'ctx-argv.md'))).toBe(true);
+    });
+
+    it('P-62: secretRef MCP server refuses the run', async () => {
+      const bin = writeBin('agy-secret-ref', ['process.exit(0);'].join('\n'));
+      const cwd = runDir();
+
+      const started = await createStreamJsonTransport(agyDefOf(bin), fakeDialect).start({
+        ...request(cwd),
+        capabilities: [
+          {
+            kind: 'mcp',
+            id: slugOf<'capability'>('mcp-secret'),
+            name: 'Secret MCP',
+            command: 'node',
+            args: [],
+            env: { TOKEN: { secretRef: 'probe/token' } },
+          },
+        ],
+      });
+
+      expect(started.ok).toBe(false);
+      if (!started.ok) expect(started.error.code).toBe('not_logged_in');
     });
   });
 

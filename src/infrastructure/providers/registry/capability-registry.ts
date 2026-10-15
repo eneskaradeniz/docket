@@ -435,25 +435,26 @@ export const TRANSLATION_TABLE: readonly TranslationRow[] = [
   }),
   ...rowsOf('agy', {
     mcp: {
-      support: 'unsupported',
-      how: probeHow('Run-scoped MCP via --mcp-config was not evidenced because agy --help does not list --mcp-config'),
+      support: 'native',
+      how: '.agents/mcp_config.json (stdio command/args/env) via --add-dir on the run config dir; URL (SSE) servers are not delivered (serverUrl key, a wrong key fails silently) probe #1015 agy spike, 2026-10-16',
     },
     skill: {
-      support: 'unsupported',
-      how: probeHow('Workspace skills under .gemini/skills or .agy/skills in the run directory were not evidenced'),
+      support: 'native',
+      how: '.agents/skills/<name>/SKILL.md via --add-dir (directory skill copied, single-file skill written as SKILL.md) probe #1015 agy spike, 2026-10-16',
     },
     hook: {
-      support: 'unverified',
-      how: probeHow(
-        'No hook mechanism named by agy --help or the repo docs (P-58/P-60); nothing to attempt without inventing a format',
-      ),
+      support: 'native',
+      how: '.agents/hooks.json via --add-dir; after_tool maps to PostToolUse, after_write to PostToolUse with a write-tool matcher, run_end to Stop as a direct list; one invalid entry silently disables the whole file; before_tool is not delivered until the permission bridge probe #1015 agy spike, 2026-10-16',
     },
-    context: { support: 'native', how: NATIVE_INSTRUCTIONS_HOW },
+    context: {
+      support: 'native',
+      how: '.agents/rules/<id>.md with trigger always_on frontmatter via --add-dir; repo instruction files stay native (P-37) probe #1015 agy spike, 2026-10-16',
+    },
     plugin: {
-      support: 'unverified',
-      how: probeHow(
-        'Plugin management is CLI-owned ambient state (agy plugin); no run-scoped plugin delivery found in agy --help or the repo docs',
-      ),
+      support: 'native',
+      how: ".agents/plugins/<name>/ with plugin.json via --add-dir (loads hooks and MCP; a plugin's own skill was not evidenced) probe #1015 agy spike, 2026-10-16",
+      // R-149: same rule as claude-code and codex — only a local path bundle is deliverable (P-44).
+      sourceKinds: ['path'],
     },
     command,
   }),
