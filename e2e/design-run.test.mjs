@@ -45,6 +45,7 @@ test('each phase has a progress line printed before the phase starts', () => {
     designPhaseLine('launch'),
     '[design] launching the app — close the window to end this command',
   );
+  assert.equal(designPhaseLine('live'), '[design] seeding the live runs after boot…');
 });
 
 test('a failed phase prints `[design] <phase> failed: <message>`', () => {
