@@ -72,6 +72,11 @@ export const CAPABILITY_REGISTRY = {
         G4: { kind: 'test', name: 'P-11: an ERROR result ends usage + finished failed, so malformed-input runs still fold into one finished' },
         G5: { kind: 'test', name: 'P-19: runs `agy -p /usage --output-format json` and parses the payload from stderr' },
       },
+      // The live agy walk (2026-10-16, agy 1.3.6, run 01M50YHMVARZ1G2FGHNPMG6WD2) is recorded here
+      // per P-28 — an operator run only. It cannot move the level: G6 still has no scripted
+      // stream-json scenario, and the P-44 cap above (no isolation evidence) keeps agy
+      // experimental regardless of operatorRuns.
+      operatorRuns: ['01M50YHMVARZ1G2FGHNPMG6WD2'],
     },
     {
       // No isolation evidence on purpose (P-44): the CLI's documented home override
@@ -437,19 +442,19 @@ export const TRANSLATION_TABLE: readonly TranslationRow[] = [
   ...rowsOf('agy', {
     mcp: {
       support: 'native',
-      how: '.agents/mcp_config.json (stdio command/args/env) via --add-dir on the run config dir; URL (SSE) servers are not delivered (serverUrl key, a wrong key fails silently) probe #1015 agy spike, 2026-10-16',
+      how: '.agents/mcp_config.json (stdio command/args/env) via --add-dir on the run config dir; URL (SSE) servers are not delivered (serverUrl key, a wrong key fails silently); call_mcp_tool asks over the permission bridge as mcp__<Server>__<Tool>, answered allow through the permission board (P-63) probe #1015 agy spike + live run, 2026-10-16',
     },
     skill: {
       support: 'native',
-      how: '.agents/skills/<name>/SKILL.md via --add-dir (directory skill copied, single-file skill written as SKILL.md) probe #1015 agy spike, 2026-10-16',
+      how: '.agents/skills/<name>/SKILL.md via --add-dir (directory skill copied, single-file skill written as SKILL.md); the agent read the delivered SKILL.md probe #1015 agy spike + live run, 2026-10-16',
     },
     hook: {
       support: 'native',
-      how: '.agents/hooks.json via --add-dir; after_tool maps to PostToolUse, after_write to PostToolUse with a write-tool matcher, run_end to Stop as a direct list; one invalid entry silently disables the whole file; before_tool is not delivered until the permission bridge probe #1015 agy spike, 2026-10-16',
+      how: '.agents/hooks.json via --add-dir inside the single docket hook group (event names at the top level are silently ignored); after_tool maps to PostToolUse, after_write to PostToolUse with a write-tool matcher, run_end to Stop as a direct list (run_end not yet observed live); one invalid entry silently disables the whole file; before_tool rides the single PreToolUse wrapper entry whose exit 2 denies before any ask (P-64) probe #1015 agy spike + live run, 2026-10-16',
     },
     context: {
       support: 'native',
-      how: '.agents/rules/<id>.md with trigger always_on frontmatter via --add-dir; repo instruction files stay native (P-37) probe #1015 agy spike, 2026-10-16',
+      how: '.agents/rules/<id>.md with trigger always_on frontmatter via --add-dir; repo instruction files stay native (P-37) and their text reached the agent with no read call probe #1015 agy spike + live run, 2026-10-16',
     },
     plugin: {
       support: 'native',

@@ -147,6 +147,20 @@ describe('capability registry validity (P-28)', () => {
     expect(findRouteKind('anthropic-subscription')?.providerId).toBe('claude-code');
     expect(findRouteKind('no-such-route-kind')).toBeUndefined();
   });
+
+  it('P-28: agy records its live operator run yet stays experimental — no G6 scenario, no isolation evidence', () => {
+    // The live agy walk of 2026-10-16 (agy 1.3.6; the run id lives in the record and the docs
+    // evidence line) is an operator run only: P-28's `full` needs the G6 scripted scenario as
+    // test evidence as well, and P-44 caps a record without isolation evidence at experimental —
+    // so recording the run must not move the level.
+    const agy = findProvider('agy');
+    expect(agy).toBeDefined();
+    expect(agy?.gates.G6).toBeUndefined();
+    expect(agy?.isolation).toBeUndefined();
+    expect(agy?.operatorRuns).toHaveLength(1);
+    expect(agy?.operatorRuns?.[0]).toMatch(/^01[0-9A-Z]{24}$/);
+    if (agy !== undefined) expect(supportLevel(agy)).toBe('experimental');
+  });
 });
 
 describe('model catalog data (P-29)', () => {
@@ -543,9 +557,10 @@ describe('translation support table (P-58)', () => {
   });
 
   it('P-58: agy lists mcp, skill, hook, context and plugin native (plugin path-only), command degraded', () => {
-    // P-58 amendment (2026-10-16, probe #1015 agy spike, #1210): run-scoped delivery via --add-dir
-    // turned the former unsupported/unverified rows native; before_tool hooks stay undelivered
-    // until the permission bridge, which the hook row's how reports.
+    // P-58 amendment #2 (2026-10-16, live agy run, #1221): the delivery series is live-evidenced
+    // (run 01M50YHMVARZ1G2FGHNPMG6WD2), so the mcp/skill/hook/context rows cite the live run —
+    // before_tool now rides the P-64 wrapper (exit 2 denies before any ask) and call_mcp_tool
+    // asks over the P-63 bridge. The plugin row stays probe-evidenced: no plugin rode the run.
     expect(KINDS.map((kind) => rowOf('agy', kind).support)).toEqual([
       'native',
       'native',
@@ -556,8 +571,10 @@ describe('translation support table (P-58)', () => {
     ]);
     expect(rowOf('agy', 'plugin').sourceKinds).toEqual(['path']);
     expect(rowOf('agy', 'command').degradesTo).toBe('prompt_text');
-    expect(rowOf('agy', 'mcp').how).toContain('probe #1015 agy spike, 2026-10-16');
-    expect(rowOf('agy', 'hook').how).toContain('before_tool is not delivered');
+    expect(rowOf('agy', 'mcp').how).toContain('live run, 2026-10-16');
+    expect(rowOf('agy', 'hook').how).toContain('docket hook group');
+    expect(rowOf('agy', 'hook').how).toContain('exit 2 denies before any ask');
+    expect(rowOf('agy', 'plugin').how).toContain('probe #1015 agy spike, 2026-10-16');
   });
 
   it('P-58: cursor lists mcp native, skill degraded to context, hook and plugin unsupported, context native, command degraded', () => {
