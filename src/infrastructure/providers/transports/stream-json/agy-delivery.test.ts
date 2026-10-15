@@ -1,7 +1,9 @@
 // Pure-writer tests for the agy .agents delivery (docs/v2/providers.md → "agy run-scoped delivery
 // (P-62)" and "agy before_tool wrapper (P-64)"). Every assertion pins the measured surface from
 // probe #1015 (spike-agy5/6): the hooks.json schema (one invalid entry silently disables the
-// whole file, so the writer must emit exactly the proven shapes), the always_on rules frontmatter,
+// whole file, so the writer must emit exactly the proven shapes; the P-62 correction wraps every
+// event in the one `docket` hook group — event names at the top level never load), the always_on
+// rules frontmatter,
 // stdio-only MCP and the path-plugin bundle — plus the P-64/I-108 machinery: the per-run hook
 // launcher files, the single PreToolUse entry and the ask configuration file. No real agy CLI is
 // involved; the transport-level legs live in stream-json.test.ts.
@@ -140,6 +142,11 @@ const modeOf = async (path: string): Promise<number> => (await stat(path)).mode 
 const readJson = async (path: string): Promise<Record<string, unknown>> =>
   JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>;
 
+/** hooks.json is `{ "docket": { <Event>: … } }` (P-62 correction, #1219): agy's top level maps
+ * hook-group names to event objects, so every event assertion reads it through the one group. */
+const readHookGroup = async (agentsDir: string): Promise<Record<string, unknown>> =>
+  (await readJson(join(agentsDir, 'hooks.json')))['docket'] as Record<string, unknown>;
+
 describe('prepareAgyDelivery', () => {
   it('P-62: agy delivery writes the .agents tree', async () => {
     const dir = nextDir();
@@ -163,8 +170,9 @@ describe('prepareAgyDelivery', () => {
     expect(await readJson(join(agentsDir, 'plugins', 'probe-plugin', 'plugin.json'))).toEqual({
       name: 'probe-plugin',
     });
-    // The wrapper entry exists from this issue on, so hooks.json is always part of the tree.
-    expect(await readJson(join(agentsDir, 'hooks.json'))).toHaveProperty('PreToolUse');
+    // The wrapper entry exists from this issue on, so hooks.json is always part of the tree —
+    // inside the docket group (P-62 correction).
+    expect(await readJson(join(agentsDir, 'hooks.json'))).toHaveProperty('docket');
   });
 
   it('P-62: Stop entry is a direct list without matcher', async () => {
@@ -172,11 +180,11 @@ describe('prepareAgyDelivery', () => {
 
     const agentsDir = await prepareAgyDelivery(join(dir, 'config'), fullCapabilities(dir));
 
-    const hooks = await readJson(join(agentsDir, 'hooks.json'));
+    const group = await readHookGroup(agentsDir);
     // Stop is a direct command list — no matcher, no hooks wrapper (the wrapper disables the
     // whole file silently; probe #1015 root cause). Every command is the quoted absolute path of
     // a per-run launcher file, never the user's command line itself.
-    const stop = hooks['Stop'] as { type: string; command: string }[];
+    const stop = group['Stop'] as { type: string; command: string }[];
     expect(stop).toEqual([{ type: 'command', command: JSON.stringify(join(agentsDir, 'hooks', 'c-run-end.sh')) }]);
     expect(stop[0]).not.toHaveProperty('matcher');
     expect(stop[0]).not.toHaveProperty('hooks');
@@ -185,7 +193,7 @@ describe('prepareAgyDelivery', () => {
     );
     // PreToolUse/PostToolUse take { matcher?, hooks: [...] }; after_tool has no matcher,
     // after_write carries the write-tool matcher, and before_tool is no entry of its own.
-    expect(hooks['PostToolUse']).toEqual([
+    expect(group['PostToolUse']).toEqual([
       { hooks: [{ type: 'command', command: JSON.stringify(join(agentsDir, 'hooks', 'a-after-tool.sh')) }] },
       {
         matcher: 'write_to_file|replace_file_content|multi_replace_file_content|sed_file|notebook_edit',
@@ -195,6 +203,7 @@ describe('prepareAgyDelivery', () => {
     expect(await readFile(join(agentsDir, 'hooks', 'b-after-write.sh'), 'utf8')).toBe(
       `#!/bin/sh\n${AFTER_WRITE_COMMAND}\n`,
     );
+    const hooks = await readJson(join(agentsDir, 'hooks.json'));
     expect(JSON.stringify(hooks)).not.toContain(BEFORE_TOOL_COMMAND);
   });
 
@@ -228,14 +237,14 @@ describe('prepareAgyDelivery', () => {
 
     // The refusal P-62 used to raise is gone: the command line runs inside the launcher's shell,
     // so pipes, redirection and && reach agy as one executable file.
-    const hooks = await readJson(join(agentsDir, 'hooks.json'));
-    expect(hooks['Stop']).toEqual([
+    const group = await readHookGroup(agentsDir);
+    expect(group['Stop']).toEqual([
       { type: 'command', command: JSON.stringify(join(agentsDir, 'hooks', 'hook-pipe.sh')) },
     ]);
     expect(await readFile(join(agentsDir, 'hooks', 'hook-pipe.sh'), 'utf8')).toBe(`#!/bin/sh\n${command}\n`);
     expect(await modeOf(join(agentsDir, 'hooks', 'hook-pipe.sh'))).toBe(0o755);
     // hooks.json itself still carries no shell syntax — only quoted launcher paths.
-    expect(JSON.stringify(hooks['Stop'])).not.toMatch(/>>|\|\||&&/u);
+    expect(JSON.stringify(group['Stop'])).not.toMatch(/>>|\|\||&&/u);
   });
 
   it('P-64: hooks.json carries exactly one PreToolUse entry', async () => {
@@ -263,8 +272,8 @@ describe('prepareAgyDelivery', () => {
 
     // One entry, matcher .*, one command whose only argument is the ask launcher — the wrapper
     // decides, so no second PreToolUse can let an auto_approve outvote a deny.
-    const hooks = await readJson(join(agentsDir, 'hooks.json'));
-    expect(hooks['PreToolUse']).toEqual([
+    const group = await readHookGroup(agentsDir);
+    expect(group['PreToolUse']).toEqual([
       {
         matcher: '.*',
         hooks: [{ type: 'command', command: JSON.stringify(join(agentsDir, 'hooks', 'docket-ask.sh')), timeout: 3600 }],
@@ -300,10 +309,35 @@ describe('prepareAgyDelivery', () => {
     // neutral allow, and the entry count a run started with is the entry count it keeps.
     const bare = nextDir();
     const bareAgents = await prepareAgyDelivery(join(bare, 'config'), []);
-    const bareHooks = await readJson(join(bareAgents, 'hooks.json'));
-    expect(bareHooks['PreToolUse']).toHaveLength(1);
+    expect((await readHookGroup(bareAgents))['PreToolUse']).toHaveLength(1);
     const bareAsk = await readJson(join(bareAgents, '.docket-ask.json'));
     expect(bareAsk).toMatchObject({ beforeTool: [], bridge: false, timeoutSeconds: 3600 });
+  });
+
+  it('P-62 correction: hooks.json carries one hook group named docket', async () => {
+    const dir = nextDir();
+
+    const agentsDir = await prepareAgyDelivery(join(dir, 'config'), fullCapabilities(dir));
+
+    // agy's schema maps hook-group names to event objects; the top level is the group name alone —
+    // exactly one, so no second hook source can out-vote the single PreToolUse entry (P-64).
+    const hooks = await readJson(join(agentsDir, 'hooks.json'));
+    expect(Object.keys(hooks)).toEqual(['docket']);
+    expect(hooks['docket']).toMatchObject({ PreToolUse: expect.any(Array) });
+  });
+
+  it('P-62 correction: no event name sits at the top level', async () => {
+    const dir = nextDir();
+
+    const agentsDir = await prepareAgyDelivery(join(dir, 'config'), fullCapabilities(dir));
+
+    // Event names at the top level are agy's silent-failure shape (the live-walk root cause):
+    // the whole file is ignored, so not one event key may appear outside the docket group.
+    const hooks = await readJson(join(agentsDir, 'hooks.json'));
+    const eventNames = ['PreToolUse', 'PostToolUse', 'Stop', 'PreToolUseEnd', 'SessionStart', 'Notification'];
+    for (const event of eventNames) expect(hooks).not.toHaveProperty(event);
+    const group = hooks['docket'] as Record<string, unknown>;
+    for (const event of ['PreToolUse', 'PostToolUse', 'Stop']) expect(group).toHaveProperty(event);
   });
 });
 

@@ -7,6 +7,10 @@
 // P-64: the permission surface is ONE PreToolUse entry whose command is the per-run ask launcher;
 // the user's before_tool commands ride `.docket-ask.json`, never hooks.json (two PreToolUse
 // entries would let an auto_approve win over a deny — probe #1015, spike-agy2/3).
+// P-62 correction (#1219): agy's hooks.json top level maps hook-GROUP names to event objects —
+// event names at the top level are silently ignored (the whole file never loads) — so every event
+// rides inside exactly ONE group named `docket`; a second group would be another hook source that
+// could out-vote the single PreToolUse entry.
 // Contract: docs/v2/providers.md → "agy run-scoped delivery (P-62)" and
 // "agy before_tool wrapper (P-64)".
 import { cp, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
@@ -60,11 +64,19 @@ const ASK_TIMEOUT_SECONDS = 3600;
 const DOCKET_PAGES_ID = 'docket-pages';
 
 /** Stop (and the other matcher-less events) take a direct command list — NO matcher, NO hooks
- * wrapper; PreToolUse/PostToolUse take { matcher?, hooks: [...] }. */
-interface AgyHooksFile {
+ * wrapper; PreToolUse/PostToolUse take { matcher?, hooks: [...] }. All of it sits inside the one
+ * hook group `docket` (P-62 correction, #1219) — the group key, not the events, is the file's top
+ * level. */
+interface AgyHookGroup {
   readonly PreToolUse: readonly { readonly matcher?: string; readonly hooks: readonly unknown[] }[];
   readonly PostToolUse?: readonly { readonly matcher?: string; readonly hooks: readonly unknown[] }[];
   readonly Stop?: readonly { readonly type: 'command'; readonly command: string }[];
+}
+
+/** The whole hooks.json: exactly one top-level key, the group name (a second group would be
+ * another hook source and could out-vote the single PreToolUse entry — P-64 inside P-62). */
+interface AgyHooksFile {
+  readonly docket: AgyHookGroup;
 }
 
 const byId = (a: { id: string }, b: { id: string }): number => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
@@ -169,9 +181,11 @@ export async function prepareAgyDelivery(
   }
 
   const hooksFile: AgyHooksFile = {
-    PreToolUse: preToolUse,
-    ...(postToolUse.length > 0 ? { PostToolUse: postToolUse } : {}),
-    ...(stop.length > 0 ? { Stop: stop } : {}),
+    docket: {
+      PreToolUse: preToolUse,
+      ...(postToolUse.length > 0 ? { PostToolUse: postToolUse } : {}),
+      ...(stop.length > 0 ? { Stop: stop } : {}),
+    },
   };
   // Always written now: the PreToolUse wrapper entry exists even with no user hooks and no
   // channel (neutral `allow`), so a later capability cannot change the entry count mid-flight.
