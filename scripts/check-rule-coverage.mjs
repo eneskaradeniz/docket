@@ -90,7 +90,6 @@ const PENDING = new Map([
   ['domain:R-169', '#1191 (D-10 issue 2/5 implements)'],
   ['domain:R-170', '#1191 (D-10 issue 2/5 implements)'],
   ['domain:R-171', '#1191 (D-10 issue 2/5 implements)'],
-  ['domain:R-172', '#1191 (D-10 issue 4/5 implements)'],
   ['application:A-394', '#1191 (D-10 issue 2/5 implements)'],
   ['application:A-395', '#1191 (D-10 issue 2/5 implements)'],
   ['application:A-396', '#1191 (D-10 issue 2/5 implements)'],
