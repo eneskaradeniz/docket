@@ -1,8 +1,10 @@
-// mcp/endpoint.test.ts — rule I-60: where the built MCP script is and how the app launches it.
+// mcp/endpoint.test.ts — rule I-60: where the built MCP script is and how the app launches it;
+// rule I-108: the same questions for the agy permission-ask child.
 import { readFileSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { ASK_SCRIPT_NAME, askScriptPath } from './ask-script-path';
 import { createMcpEndpoint, MCP_SCRIPT_NAME, mcpScriptPath } from './endpoint';
 
 describe('mcpScriptPath', () => {
@@ -26,6 +28,22 @@ describe('the child launcher', () => {
     const source = readFileSync(resolve(__dirname, '../../../electron/docket-mcp.ts'), 'utf8');
     expect(source).toContain("process.env.DOCKET_MCP_KIND === 'chat' ? 'chat' : 'run'");
     expect(source).toMatch(/runStdioServer\(\{[^}]*\bkind\b[^}]*\}\)/);
+  });
+});
+
+describe('askScriptPath', () => {
+  it('I-108: the ask child sits beside the main bundle as docket-agy-ask.cjs, as an absolute path', () => {
+    expect(ASK_SCRIPT_NAME).toBe('docket-agy-ask.cjs');
+    expect(askScriptPath('/app/dist-electron')).toBe(join('/app/dist-electron', 'docket-agy-ask.cjs'));
+    expect(isAbsolute(askScriptPath('relative/dist-electron'))).toBe(true);
+    expect(askScriptPath('relative/dist-electron')).toBe(resolve('relative/dist-electron', 'docket-agy-ask.cjs'));
+  });
+
+  it('I-108: the vite build emits that file name from electron/docket-agy-ask.ts as CommonJS', () => {
+    const config = readFileSync(resolve(__dirname, '../../../vite.config.ts'), 'utf8');
+    expect(config).toContain("input: 'electron/docket-agy-ask.ts'");
+    expect(config).toMatch(/format:\s*'cjs',\s*entryFileNames:\s*'docket-agy-ask\.cjs'/);
+    expect(readFileSync(resolve(__dirname, '../../../electron/docket-agy-ask.ts'), 'utf8')).toContain('runAgyAsk');
   });
 });
 
