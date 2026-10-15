@@ -82,19 +82,14 @@ const PENDING = new Map([
   // #1008: Phase 7 surfaces — settings, setup, repo, work orders, versions, quit
   // #1047 — planner stage-skip derive rule, supplements R-133 (#1025 implements)
 
-  // #1191 — D-10 autonomy contracts, docs-first. Each id names the D-10 split issue (2/5…5/5)
-  // that implements it; that issue removes the id from this list in the same commit as its test.
-  // If the architect's split moves a rule between issues, the PR landing the test moves the removal.
-  ['domain:R-167', '#1191 (D-10 issue 2/5 implements)'],
-  ['domain:R-168', '#1191 (D-10 issue 2/5 implements)'],
-  ['domain:R-169', '#1191 (D-10 issue 2/5 implements)'],
-  ['domain:R-170', '#1191 (D-10 issue 2/5 implements)'],
-  ['domain:R-171', '#1191 (D-10 issue 2/5 implements)'],
+  // #1191 — D-10 autonomy contracts, docs-first. Each id names the D-10 split issue that
+  // implements it; that issue removes the id from this list in the same commit as its test.
+  // The 2a slice (#1201) landed R-167/R-169/R-171 and A-394…A-396; the architect's split moved
+  // the permission-decision arm to 2b (after #1200's risk table).
+  ['domain:R-168', '#1191 (D-10 issue 2b implements, after #1200)'],
+  ['domain:R-170', '#1191 (D-10 issue 2b implements, after #1200)'],
   ['domain:R-172', '#1191 (D-10 issue 4/5 implements)'],
-  ['application:A-394', '#1191 (D-10 issue 2/5 implements)'],
-  ['application:A-395', '#1191 (D-10 issue 2/5 implements)'],
-  ['application:A-396', '#1191 (D-10 issue 2/5 implements)'],
-  ['infrastructure:I-107', '#1191 (D-10 issue 2/5 implements)'],
+  ['infrastructure:I-107', '#1191 (D-10 issue 2b implements, with the executor wiring)'],
 
 ]);
 
