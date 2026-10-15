@@ -2,7 +2,7 @@
 // (P-9, P-10)"). Every binary is a real executable node script in a throwaway tree emitting
 // fixture lines on stdout; no real agent CLI is ever spawned. The inherited port rules
 // (answerPermission, steer) are re-verified here for this transport kind.
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -11,7 +11,7 @@ import type { RunHandle, RunRequest, TransportError } from '../../../../applicat
 import type { EffortLevel, Result, RoleDef, RunId } from '../../../../domain/index';
 import { parseSlug, parseUlid, type AccountId, type AgentEvent } from '../../../../domain/index';
 import { BUILTIN_PROVIDER_DEFS, effortFlagArgs, type EffortArg, type ProviderDef } from '../../defs/index';
-import { createStreamJsonTransport, type StreamDialect } from './stream-json';
+import { createStreamJsonTransport, type AgyAskBridge, type AgyAskRequest, type StreamDialect } from './stream-json';
 
 let root: string;
 let runCount = 0;
@@ -153,6 +153,17 @@ const waitFor = async (probe: () => boolean, timeoutMs = 4000): Promise<void> =>
     if (Date.now() > deadline) throw new Error('condition not reached before the timeout');
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
+};
+
+/** True when the promise is still pending `ms` later — the probe an unanswered ask must pass. */
+const pendingAfter = async (promise: Promise<unknown>, ms: number): Promise<boolean> => {
+  const settled = await Promise.race([
+    promise.then(() => false),
+    new Promise<boolean>((resolve) => {
+      setTimeout(() => resolve(true), ms);
+    }),
+  ]);
+  return settled;
 };
 
 const finishedOf = (events: readonly AgentEvent[]) => events.filter((event) => event.type === 'finished');
@@ -497,6 +508,180 @@ describe('createStreamJsonTransport', () => {
 
       expect(started.ok).toBe(false);
       if (!started.ok) expect(started.error.code).toBe('not_logged_in');
+    });
+  });
+
+  describe('agy permission bridge (P-63)', () => {
+    // The real built-in agy definition with the binary swapped for a scripted fake, so the def's
+    // own buildLaunch and the transport's agy branch are both the production ones.
+    const agyDefOf = (binPath: string): ProviderDef => {
+      const def = BUILTIN_PROVIDER_DEFS.find((candidate) => candidate.id === 'agy');
+      if (def === undefined) throw new Error('agy built-in def missing');
+      return { ...def, bins: [binPath] };
+    };
+
+    /** The bridge as the transport sees it: the registered waiters, invoked the way the listener
+     * invokes them. The mcp module owns the real one (the module map allows this test no import of
+     * it); its listener-side suite carries the other half of the channel. */
+    interface StubBridge extends AgyAskBridge {
+      readonly registered: readonly RunId[];
+      readonly unregistered: readonly RunId[];
+      waiterOf(runId: RunId): ((ask: AgyAskRequest) => Promise<'allow' | 'deny'>) | undefined;
+    }
+    const stubBridge = (): StubBridge => {
+      const waiters = new Map<RunId, (ask: AgyAskRequest) => Promise<'allow' | 'deny'>>();
+      const registered: RunId[] = [];
+      const unregistered: RunId[] = [];
+      return {
+        registered,
+        unregistered,
+        waiterOf: (runId) => waiters.get(runId),
+        register: (runId, waiter) => {
+          registered.push(runId);
+          waiters.set(runId, waiter);
+        },
+        unregister: (runId) => {
+          unregistered.push(runId);
+          waiters.delete(runId);
+        },
+      };
+    };
+
+    /** The docket-pages capability as mcp-attach appends it to a run: the env literals are the
+     * run's only in-band token; the values are opaque here — the listener resolves the token. */
+    const docketPages = (kind: string) => ({
+      kind: 'mcp' as const,
+      id: slugOf<'capability'>('docket-pages'),
+      name: 'Docket pages',
+      command: process.execPath,
+      args: [],
+      env: {
+        DOCKET_MCP_SOCKET: { literal: join(root, 'unused.sock') },
+        DOCKET_MCP_TOKEN: { literal: 'test-run-token' },
+        DOCKET_MCP_KIND: { literal: kind },
+      },
+    });
+
+    /** A fake CLI that stays alive — an open ask must not end the run on its own. */
+    const idleBin = (name: string): string =>
+      writeBin(name, [
+        "process.stdout.write('{\"say\":\"started\"}\\n');",
+        'setInterval(() => {}, 1000);',
+      ].join('\n'));
+
+    const startAgy = async (
+      bin: string,
+      bridge: AgyAskBridge,
+      capabilities: readonly RunRequest['capabilities'][number][],
+    ) => {
+      const cwd = runDir();
+      const handle = unwrap(
+        await createStreamJsonTransport(agyDefOf(bin), fakeDialect, bridge).start({
+          ...request(cwd),
+          ...(capabilities.length === 0 ? {} : { capabilities }),
+        }),
+      );
+      return { cwd, handle };
+    };
+
+    const collectInto = async (events: AsyncIterable<AgentEvent>, into: AgentEvent[]): Promise<void> => {
+      for await (const event of events) into.push(event);
+    };
+
+    const askEvents = (
+      collected: readonly AgentEvent[],
+    ): readonly Extract<AgentEvent, { readonly type: 'permission_ask' }>[] =>
+      collected.filter((event): event is Extract<AgentEvent, { readonly type: 'permission_ask' }> => event.type === 'permission_ask');
+
+    /** The registered waiter of this run, once the channel exists. */
+    const waitForWaiter = async (
+      bridge: StubBridge,
+    ): Promise<(ask: AgyAskRequest) => Promise<'allow' | 'deny'>> => {
+      await waitFor(() => bridge.waiterOf(RUN_ID) !== undefined);
+      const waiter = bridge.waiterOf(RUN_ID);
+      if (waiter === undefined) throw new Error('waiter vanished');
+      return waiter;
+    };
+
+    it('P-63: a PreToolUse ask becomes a permission_ask and waits for the answer', async () => {
+      const bridge = stubBridge();
+      const { handle } = await startAgy(idleBin('agy-ask-waits'), bridge, [docketPages('run')]);
+      const collected: AgentEvent[] = [];
+      void collectInto(handle.events, collected);
+      await waitFor(() => bridge.waiterOf(RUN_ID) !== undefined);
+      expect(bridge.registered).toEqual([RUN_ID]);
+
+      const answer = bridge.waiterOf(RUN_ID)?.({ tool: 'Bash', target: 'npm test', conversationId: 'conv-1' });
+      await waitFor(() => askEvents(collected).length === 1);
+      const ask = askEvents(collected)[0];
+      expect(ask).toMatchObject({ id: 'ask-1', tool: 'Bash', target: 'npm test', options: ['allow', 'deny'] });
+
+      // The ask stays open until the handle is answered — the executor's decision path, not the
+      // transport, produces the settle.
+      handle.answerPermission('ask-1', 'allow');
+      expect(await answer).toBe('allow');
+      await handle.stop();
+      await waitFor(() => bridge.unregistered.includes(RUN_ID));
+      expect(collected[collected.length - 1]).toMatchObject({ type: 'finished', reason: 'cancelled' });
+    });
+
+    it('P-63: stop() answers every open ask deny', async () => {
+      const bridge = stubBridge();
+      const { handle } = await startAgy(idleBin('agy-ask-stop'), bridge, [docketPages('run')]);
+      const collected: AgentEvent[] = [];
+      void collectInto(handle.events, collected);
+      const waiter = await waitForWaiter(bridge);
+
+      const first = waiter({ tool: 'Bash', target: 'rm -rf build' });
+      const second = waiter({ tool: 'Write', target: '/w/new.txt' });
+      await waitFor(() => askEvents(collected).length === 2);
+
+      await handle.stop();
+      expect(await first).toBe('deny');
+      expect(await second).toBe('deny');
+      expect(bridge.unregistered).toContain(RUN_ID);
+      expect(collected[collected.length - 1]).toMatchObject({ type: 'finished', reason: 'cancelled' });
+    });
+
+    it('P-63: nothing is auto-approved without the executor path', async () => {
+      const bridge = stubBridge();
+      const { handle } = await startAgy(idleBin('agy-ask-pending'), bridge, [docketPages('run')]);
+      const collected: AgentEvent[] = [];
+      void collectInto(handle.events, collected);
+      const waiter = await waitForWaiter(bridge);
+
+      const answer = waiter({ tool: 'Write', target: '/w/proof.txt' });
+      await waitFor(() => askEvents(collected).length === 1);
+      // With no answer given, the ask stays open: the channel itself invents no decision.
+      expect(await pendingAfter(answer, 200)).toBe(true);
+      handle.answerPermission(askEvents(collected)[0]?.id ?? '', 'deny');
+      expect(await answer).toBe('deny');
+      await handle.stop();
+    });
+
+    it('a run without a Docket run token registers no channel and the ask file stays bridge false', async () => {
+      const bridge = stubBridge();
+      // A completed run: no channel means no listener to wait for either.
+      const bin = writeBin(
+        'agy-no-channel',
+        "process.stdout.write('{\"say\":\"done\"}\\n{\"end\":\"completed\"}\\n');",
+      );
+      const { cwd, handle } = await startAgy(bin, bridge, []);
+      const events = await collect(handle.events);
+      expect(events[events.length - 1]).toMatchObject({ type: 'finished', reason: 'completed' });
+
+      // A chat-kind token is not a run token: it registers nothing either.
+      const chat = await startAgy(idleBin('agy-chat-token'), bridge, [docketPages('chat')]);
+      const chatEvents: AgentEvent[] = [];
+      void collectInto(chat.handle.events, chatEvents);
+      await waitFor(() => chatEvents.some((event) => event.type === 'text'));
+      await chat.handle.stop();
+
+      expect(bridge.registered).toEqual([]);
+      // The delivery agrees from the child's side: without a channel the ask file says bridge
+      // false, so the ask child never writes the socket (the neutral allow, headless auto-deny).
+      const askFile = JSON.parse(readFileSync(join(cwd, 'config', '.agents', '.docket-ask.json'), 'utf8')) as Record<string, unknown>;
+      expect(askFile['bridge']).toBe(false);
     });
   });
 

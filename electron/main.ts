@@ -56,6 +56,7 @@ import {
   builtinProviderMarks,
   branchHead,
   configureProcessMirrorDir,
+  createAgyAskBridge,
   createDesignUpdateChecker,
   createMcpEndpoint,
   createNodeDeps,
@@ -71,6 +72,7 @@ import {
   reapOrphanedChildren,
   registeredSpawn,
   startMcpListener,
+  wrapAgyAskBridge,
   worktreeBranch,
 } from '../src/infrastructure/index';
 import type { McpListener } from '../src/infrastructure/index';
@@ -199,6 +201,12 @@ const createListenerControl = (
  *  run loop) runs strictly after that point. */
 let deps: AppDeps | undefined;
 
+/** The agy permission bridge — the app side of the ask child's channel: the listener's handler
+ *  wrap routes the ask pseudo-tool here after its run token resolves, and the stream-json transport
+ *  of each bridged run registers its waiter through the transport factory config. It owns no
+ *  decision; the executor's existing permission path settles every ask. */
+const agyAskBridge = createAgyAskBridge();
+
 /** Every discovery pass records here; the model catalog reads it to know whether a listing that
  *  needs a login may run. */
 const loginStates = createLoginStates();
@@ -241,6 +249,7 @@ const buildTransportFactory = (
         clock: depsForFactory.clock,
         baseEnv,
         binPaths,
+        agyAskBridge,
       }),
     );
 };
@@ -631,7 +640,9 @@ const startApp = async (): Promise<void> => {
   // with the listener deliberately down, so the row's stopped face and its repair can be walked.
   mcpTools = (() => {
     const tools = createDocketTools(nodeDeps, node.docketToolExtras);
-    return (request: DocketToolRequest) => tools.call(request);
+    // The agy ask pseudo-tool is the one name that never reaches the tool dispatch: a resolved
+    // run token takes it to the permission bridge, every other name is dispatched unchanged.
+    return wrapAgyAskBridge((request: DocketToolRequest) => tools.call(request), agyAskBridge, nodeDeps.runTokens);
   })();
   const bootDown = !app.isPackaged && process.env.DOCKET_MCP_DOWN === '1';
   if (!bootDown) {

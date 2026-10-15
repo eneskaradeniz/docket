@@ -30,7 +30,14 @@ const SCENARIOS: Readonly<Record<ScenarioId, string>> = {
 };
 
 /** Per-definition exemptions. A reason is mandatory; "bug: …" marks a defect the scenario reproduces. */
-const NOT_APPLICABLE: Readonly<Record<string, Partial<Record<ScenarioId, string>>>> = {};
+const NOT_APPLICABLE: Readonly<Record<string, Partial<Record<ScenarioId, string>>>> = {
+  agy: {
+    // The ask rides the PreToolUse wrapper's channel over mcp.sock (P-63), never the stdout
+    // stream this leg scripts — the bridge suites cover it end to end (stream-json.test.ts,
+    // mcp/agy-ask-bridge.test.ts, mcp/agy-ask.test.ts).
+    permission: 'the ask channel is the hook child over the Docket socket, not a stream event',
+  },
+};
 
 /** Exemptions the definition's own data implies. */
 const derivedReason = (def: ProviderDef, scenario: ScenarioId): string | undefined => {

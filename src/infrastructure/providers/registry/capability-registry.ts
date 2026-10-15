@@ -58,16 +58,17 @@ export const CAPABILITY_REGISTRY = {
       },
     },
     {
-      // No G3 — the dialect surfaces no permission asks — and no G6, the end-to-end scenario has
-      // no stream-json leg. No isolation evidence on purpose (P-44): the CLI documents no
-      // config-dir override and no login location, so HOME is left alone (a run-scoped home could
-      // cut the CLI off from its login) and the CLI reads its own configuration; the cap holds.
+      // No G6 — the end-to-end scenario has no stream-json leg. No isolation evidence on purpose
+      // (P-44): the CLI documents no config-dir override and no login location, so HOME is left
+      // alone (a run-scoped home could cut the CLI off from its login) and the CLI reads its own
+      // configuration; the cap holds.
       providerId: 'agy',
       // The stream-json transport does not carry a steering note (P-61).
       steering: 'not_steerable',
       gates: {
         G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
         G2: { kind: 'test', name: 'P-11: the text turn fixture maps to session_started, one text, usage and a completed finished' },
+        G3: { kind: 'test', name: 'P-63: a PreToolUse ask becomes a permission_ask, waits for the answer, nothing is auto-approved' },
         G4: { kind: 'test', name: 'P-11: an ERROR result ends usage + finished failed, so malformed-input runs still fold into one finished' },
         G5: { kind: 'test', name: 'P-19: runs `agy -p /usage --output-format json` and parses the payload from stderr' },
       },

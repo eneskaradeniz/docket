@@ -83,6 +83,11 @@ export function mapAgyToolCall(name: unknown, args: unknown): { readonly toolNam
   if (name === 'view_file' && typeof raw['AbsolutePath'] === 'string') {
     return { toolName: 'Read', toolInput: { file_path: raw['AbsolutePath'] }, target: raw['AbsolutePath'] };
   }
+  // An MCP call keeps the spelled-out server and tool in the name Docket's risk table reads, with
+  // NO target: the table has no argument key for it, so the ask stays with the human.
+  if (name === 'call_mcp_tool' && typeof raw['ServerName'] === 'string' && typeof raw['ToolName'] === 'string') {
+    return { toolName: `mcp__${raw['ServerName']}__${raw['ToolName']}`, toolInput: raw };
+  }
   return { toolName: name, toolInput: raw };
 }
 
