@@ -144,7 +144,11 @@ describe('cancelActiveRuns', () => {
 
     const cancelled = await cancelActiveRuns(
       deps,
-      { register: () => {}, unregister: (runId) => unregistered.push(runId) },
+      {
+        register: () => {},
+        unregister: (runId) => unregistered.push(runId),
+        recordAutoDecision: () => {},
+      },
       () => {
         changed += 1;
       },
