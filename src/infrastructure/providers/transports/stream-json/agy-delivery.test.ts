@@ -62,7 +62,7 @@ const BEFORE_TOOL_COMMAND = 'node "/tmp/probe/before-tool.mjs"';
 const BEFORE_TOOL_DENY_COMMAND = 'node "/tmp/probe/guard.mjs" --deny >> "/tmp/probe/guard.log"';
 
 const SOCKET_PATH = '/home/u/.docket/run/mcp.sock';
-const RUN_TOKEN = '01ARZ3NDEKTSV4RRFFQ69G5FBV-run';
+const RUN_TOKEN = 'test-run-token';
 const EXEC_PATH = '/opt/Docket/docket';
 const MCP_SCRIPT = '/opt/Docket/resources/app/dist-electron/docket-mcp.cjs';
 
