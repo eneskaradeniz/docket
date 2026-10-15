@@ -84,11 +84,10 @@ const PENDING = new Map([
 
   // #1191 — D-10 autonomy contracts, docs-first. Each id names the D-10 split issue that
   // implements it; that issue removes the id from this list in the same commit as its test.
-  // The 2a slice (#1201) landed R-167/R-169/R-171 and A-394…A-396; the architect's split moved
-  // the permission-decision arm to 2b (after #1200's risk table).
+  // The 4/5 risk table (#1200/#1202) landed R-172; the 2a slice (#1201) landed R-167/R-169/R-171
+  // and A-394…A-396; the architect's split moved the permission-decision arm to 2b.
   ['domain:R-168', '#1191 (D-10 issue 2b implements, after #1200)'],
   ['domain:R-170', '#1191 (D-10 issue 2b implements, after #1200)'],
-  ['domain:R-172', '#1191 (D-10 issue 4/5 implements)'],
   ['infrastructure:I-107', '#1191 (D-10 issue 2b implements, with the executor wiring)'],
 
 ]);
