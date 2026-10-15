@@ -21,6 +21,7 @@ scripts/ops/verify-pr.sh <pr> --allow-busy
 ```
 
 Results and logs are stored under `~/.claude-hybrid/state/verify/<pr>-<sha7>/`.
+Any early failure prints an `Aborting: …` line and exits non-zero — a run with no output was never started.
 
 ## merge-pr.sh
 
