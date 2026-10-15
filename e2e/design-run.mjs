@@ -21,6 +21,7 @@ const PHASE_LINES = {
   'skip-build': '[design] skipping build',
   seed: '[design] seeding…',
   launch: '[design] launching the app — close the window to end this command',
+  live: '[design] seeding the live runs after boot…',
   slow: `[design] slow mode — every API reply waits ${SLOW_API_DELAY_MS} ms`,
 };
 
@@ -109,6 +110,31 @@ function main() {
   child.on('error', (error) => {
     failPhase('launch', error);
   });
+  // The operator reviews the same world the audits measure, so the running orders' live runs
+  // must be in it. The app's boot sweep (A-400) cancels every open run a fresh instance cannot
+  // own, so they are written after boot: the app's MCP socket appears before the sweep runs and
+  // the grace covers it — the writer itself throws if an order already stands open, so a raced
+  // double write can never pass silently. There is no Playwright here to reload the window; if
+  // the cockpit was drawn before the write landed, the operator's usual reload shows it.
+  console.log(designPhaseLine('live'));
+  void (async () => {
+    try {
+      const socket = join(seed.dataDir, 'run', 'mcp.sock');
+      const deadline = Date.now() + 30_000;
+      while (!existsSync(socket) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 250));
+      if (!existsSync(socket)) throw new Error('the app did not create its MCP socket in 30 s');
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      const live = execFileSync('npx', ['tsx', 'e2e/seed-design-live.ts', seed.dataDir], {
+        cwd: ROOT,
+        input: JSON.stringify(seed.liveRuns),
+        encoding: 'utf8',
+      });
+      if (!live.includes('LIVE=ok')) throw new Error('the live-run seed printed no LIVE=ok line');
+      console.log('[design] live runs seeded — reload the window if it was drawn without them');
+    } catch (error) {
+      failPhase('live', error);
+    }
+  })();
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) main();

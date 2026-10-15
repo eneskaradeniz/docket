@@ -61,6 +61,7 @@ test('two runs produce the same world', () => {
   assert.deepEqual(first.dump, second.dump);
   assert.deepEqual(first.manifest.codes, second.manifest.codes);
   assert.deepEqual(first.manifest.accounts, second.manifest.accounts);
+  assert.deepEqual(first.manifest.liveRuns, second.manifest.liveRuns);
   assert.equal(first.manifest.fixedNow, second.manifest.fixedNow);
 });
 
@@ -182,17 +183,69 @@ test('the permission ask is rigged for the executor: queued, consented, no dead 
   assert.equal(binding.role, 'gelistirici');
   assert.deepEqual(binding.accounts.map((entry) => entry.accountId), [manifest.accounts['OpenCode API']]);
 
-  // Dispatch room: still-active seeded runs count against the dispatcher's limits (global 4,
-  // per-repo 3), so the world must leave the queued item a slot on both counts.
-  const repoOf = new Map(Object.values(manifest.codes).map((entry) => [entry.id, entry.repo]));
+  // Dispatch room: still-active runs count against the dispatcher's limits (global 4, per-repo
+  // 3), so the world must leave the queued item a slot on both counts. None stands open at seed
+  // time (the boot sweep would cancel it); the live runs the post-boot seeder writes are two,
+  // leaving the global and the per-repo counts exactly the room the queued item needs.
   const active = dump.runs.map((row) => JSON.parse(row)).filter((row) => row.ended_at === null);
-  assert.ok(active.length <= 3, `${active.length} active runs leave no global slot for the queued stage`);
-  const onAskingRepo = active.filter((row) => repoOf.get(row.work_order_id) === asking.repo);
-  assert.ok(onAskingRepo.length <= 2, `${onAskingRepo.length} active runs on ${asking.repo} leave no repo slot`);
+  assert.equal(active.length, 0, 'the boot sweep (A-400) would cancel any run seeded open');
 
   // The scripted agent asks the prototype's command with answerable options — the text J-1 reads
   // in the cockpit's code band and the allow/deny pair its buttons answer.
   const agent = readFileSync(manifest.agentBin, 'utf8');
   assert.ok(agent.includes('dotnet ef database update'), 'the design agent asks İE-0029 command');
   assert.ok(agent.includes('allow_once') && agent.includes('reject_once'), 'the ask offers allow and reject');
+});
+
+// The running orders cannot carry their live runs at seed time: the boot sweep (A-400) closes
+// every open run record a fresh instance cannot own, so the seed leaves the world sweep-clean
+// and the manifest carries the writes. This test pins both halves of that split — and that the
+// post-boot seeder (seed-design-live.ts) turns the one into the other.
+test('no open run at seed time; the manifest carries the live writes the seeder applies', () => {
+  const [{ manifest, dump }] = seedTwice();
+  const active = dump.runs.map((row) => JSON.parse(row)).filter((row) => row.ended_at === null);
+  assert.equal(active.length, 0, 'the boot sweep (A-400) would cancel any run seeded open');
+
+  const running = Object.entries(manifest.codes).filter(([, entry]) => entry.state === 'running');
+  assert.deepEqual(
+    running.map(([code]) => code).sort(),
+    ['İE-0014', 'İE-0038'],
+    'the two orders the prototype shows running',
+  );
+  assert.equal(manifest.liveRuns.length, running.length, 'one live write per running order');
+  for (const write of manifest.liveRuns) {
+    const order = running.find(([, entry]) => entry.id === write.run.workOrderId);
+    assert.ok(order !== undefined, 'each live write addresses a running order');
+    assert.equal(write.run.workOrderId, write.workOrderId);
+    assert.ok(write.events.length > 0, 'the live write carries its stream');
+    assert.equal(write.startEvent.type, 'run_started');
+    assert.ok(write.events.every((event) => event.type !== 'permission_ask'), 'a seeded live run must not carry an ask');
+  }
+
+  // The seeder, applied to the seeded world (the app's sweep has nothing to close on it —
+  // the sweep's own use-case is what a boot runs, and it finds no open run): the two orders
+  // stand running again, on exactly one open run each.
+  const applied = execFileSync('npx', ['tsx', 'e2e/seed-design-live.ts', manifest.dataDir], {
+    cwd: ROOT,
+    input: JSON.stringify(manifest.liveRuns),
+    encoding: 'utf8',
+  });
+  assert.match(applied, /LIVE=ok/);
+  const db = new DatabaseSync(join(manifest.dataDir, 'docket.db'), { readOnly: true });
+  try {
+    const open = db.prepare('SELECT work_order_id FROM runs WHERE ended_at IS NULL').all().map((row) => row.work_order_id).sort();
+    assert.deepEqual(open, [manifest.codes['İE-0014'].id, manifest.codes['İE-0038'].id].sort());
+    for (const write of manifest.liveRuns) {
+      // Earlier stages' finished runs carry their own run_started events; this one counts only
+      // the live run's — exactly one, on the order the write addresses.
+      const started = db
+        .prepare(
+          "SELECT COUNT(*) AS n FROM work_order_events WHERE work_order_id = ? AND data LIKE '%run_started%' AND data LIKE ?",
+        )
+        .get(write.workOrderId, `%"runId":"${write.run.id}"%`);
+      assert.equal(started.n, 1, 'exactly one run_started event for the live run');
+    }
+  } finally {
+    db.close();
+  }
 });

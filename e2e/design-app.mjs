@@ -35,6 +35,19 @@ export async function launchDesignApp() {
   await assertProfileIsolated(app, profile.dir);
   const page = await app.firstWindow();
   await page.waitForSelector('nav', { timeout: 30_000 });
+  // The seed's running orders cannot carry their live runs at boot: the boot sweep (A-400)
+  // cancels every open run a fresh instance cannot own, so the seed leaves those runs out and
+  // the manifest carries the writes. The nav being up means main.ts already awaited the sweep,
+  // so the writes land after it — and the reload re-reads the world with the running standings
+  // the walks measure (seed-design-live.ts asserts them before returning).
+  const live = execFileSync('npx', ['tsx', 'e2e/seed-design-live.ts', seed.dataDir], {
+    cwd: ROOT,
+    input: JSON.stringify(seed.liveRuns),
+    encoding: 'utf8',
+  });
+  if (!live.includes('LIVE=ok')) throw new Error('the live-run seed printed no LIVE=ok line');
+  await page.reload();
+  await page.waitForSelector('nav', { timeout: 30_000 });
   return { app, page, seed };
 }
 

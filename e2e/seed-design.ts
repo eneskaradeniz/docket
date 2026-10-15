@@ -14,6 +14,12 @@
 // decideHumanGate. The only direct port writes are the facts no use-case produces at seed time:
 // finished agent runs, quota windows and recorded spend.
 //
+// The RUNNING orders' live runs are seeded in a second step, after the launched app has booted
+// (e2e/seed-design-live.ts): the boot sweep (A-400) closes every open run record a fresh instance
+// cannot own, so a run row written here would be cancelled before the first screen renders. The
+// seed carries the writes in the manifest's `liveRuns`; the harness applies them once the sweep
+// has passed, restoring the running standings the audits walk.
+//
 // The one LIVE piece is İE-0029's permission ask. A seeded ask — an event written straight to
 // the store — can never be answered: only the run executor parks an ask on the in-process
 // permission board, so `permission.answer` would answer not_found and the cockpit row would
@@ -608,6 +614,17 @@ const liveEvents = (plan: OrderPlan, startedAt: EpochMs): readonly AgentEvent[] 
 
 const codes: Record<string, { id: WorkOrderId; number: number; project: string; repo: string; title: string; stage: string; state: PlanState }> = {};
 const spendLedger = new Map<AccountKey, number>();
+// The live-run writes the manifest hands the post-boot seeder (seed-design-live.ts): one entry
+// per `running` order — the run row, its live stream and the run_started event, all at the
+// plan's fixed times so the two-phase world is the one the single-pass world was.
+const liveRuns: {
+  readonly workOrderId: WorkOrderId;
+  readonly repo: string;
+  readonly flowId: string;
+  readonly run: Parameters<typeof deps.runs.create>[0];
+  readonly events: readonly AgentEvent[];
+  readonly startEvent: { readonly type: 'run_started'; readonly at: EpochMs; readonly runId: RunId; readonly stage: StageSlug; readonly attempt: number };
+}[] = [];
 
 // Phase 1 — every order opens in prototype code order, one minute apart: the A-29 numbers then
 // follow the code order (the ids ascend with the clock, so createdAt alone fixes the rank). The
@@ -648,19 +665,26 @@ for (const plan of ORDERS_BY_CODE) {
   }
 
   if (plan.state === 'running') {
+    // Not written here: the boot sweep (A-400) would cancel an open run row before the first
+    // screen renders. The write rides the manifest (liveRuns) and lands after the app booted.
     const runId: RunId = deps.ids.next<'run'>();
-    await deps.runs.create({
-      id: runId,
+    liveRuns.push({
       workOrderId: id,
-      stage: stageSlug(plan.stage),
-      attempt: 1,
-      role: ROLE_OF(plan.stage),
-      route: { accountId: accountOf(plan.account) },
-      startedAt: entry,
-      autoResumesUsed: 0,
+      repo: plan.repo,
+      flowId: FLOW_ID,
+      run: {
+        id: runId,
+        workOrderId: id,
+        stage: stageSlug(plan.stage),
+        attempt: 1,
+        role: ROLE_OF(plan.stage),
+        route: { accountId: accountOf(plan.account) },
+        startedAt: entry,
+        autoResumesUsed: 0,
+      },
+      events: liveEvents(plan, entry),
+      startEvent: { type: 'run_started', at: entry, runId, stage: stageSlug(plan.stage), attempt: 1 },
     });
-    await deps.runs.appendEvents(runId, liveEvents(plan, entry));
-    await deps.workOrders.appendEvent(id, { type: 'run_started', at: entry, runId, stage: stageSlug(plan.stage), attempt: 1 });
   } else if (plan.state === 'awaiting' || plan.state === 'done') {
     await finishedRun(id, plan, plan.stage, entry, entry + 10 * MINUTE);
     if (plan.state === 'done') await approve(id, plan.stage, ago(plan.minutes));
@@ -809,8 +833,11 @@ assert.equal(pageCommentRows.length, 2, 'the page must carry both comments on th
 assert.equal(pageCommentRows.filter((comment) => comment.deliveredAt !== undefined).length, 1, 'exactly one comment delivered');
 
 // --- self-checks: the seed refuses to hand out a world that differs from the plan -----------------------
+// A `running` order stands `ready` at seed time — its live run is written after the app boots
+// (the boot sweep, A-400, would cancel it here); the post-boot seeder asserts the running
+// standing it restores, so the plan and the two-phase world stay tied together.
 const EXPECTED_STATUS: Readonly<Record<PlanState, string>> = {
-  running: 'running',
+  running: 'ready',
   awaiting: 'awaiting_human',
   ready: 'ready',
   done: 'done',
@@ -867,14 +894,10 @@ const askingStageRuns = (await deps.runs.listForWorkOrder(askingOrder.id)).filte
   (run) => run.stage === stageSlug(askingPlan.stage),
 );
 assert.equal(askingStageRuns.length, 0, 'the asking stage carries no seeded run');
-const activeRuns = await deps.runs.listActive();
-assert.ok(activeRuns.length <= 3, `${activeRuns.length} active runs leave the dispatcher no global slot for the queued stage`);
-const repoOfOrder = new Map(Object.values(codes).map((entry) => [entry.id as string, entry.repo] as const));
-let activeOnAskingRepo = 0;
-for (const run of activeRuns) {
-  if (repoOfOrder.get(run.workOrderId) === askingPlan.repo) activeOnAskingRepo += 1;
-}
-assert.ok(activeOnAskingRepo <= 2, `${activeOnAskingRepo} active runs on ${askingPlan.repo} leave the dispatcher no repo slot`);
+// Nothing stands open at seed time: the boot sweep (A-400) cancels every open run a fresh
+// instance cannot own, so an open row here would reach the screens as a cancelled run. The
+// running standings ride the manifest and land after the sweep has passed.
+assert.equal((await deps.runs.listActive()).length, 0, 'no run may stand open before the app boots; the boot sweep (A-400) would cancel it');
 assert.deepEqual(
   cockpit.recentlyClosed.map((item) => item.workOrderId),
   ['İE-0009', 'İE-0036', 'İE-0007', 'İE-0003', 'İE-0002'].map((code) => codes[code]?.id),
@@ -977,6 +1000,7 @@ const manifest = {
   dataDir,
   agentBin,
   fixedNow: NOW,
+  liveRuns,
   repos: Object.fromEntries(PROJECTS.flatMap((project) => project.repos.map((slug) => [slug, repoPath(slug)] as const))),
   projects: Object.fromEntries(PROJECTS.map((project) => [project.id, { name: project.name, main: project.main, repos: project.repos }])),
   accounts: Object.fromEntries(ACCOUNTS.map((plan) => [plan.label, accountIds.get(plan.key)])),
