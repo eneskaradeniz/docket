@@ -10,6 +10,8 @@ import type { CommandResult } from '../../api/commands';
 import type { AgentEvent } from '../../domain/index';
 import type { Actor } from '../../domain/index';
 import type { AttentionItem, CockpitView, Query } from '../../api/queries';
+import { t, type Locale } from '../labels/t';
+import { formatInstant } from '../components/cockpit-format';
 import { isQueryFailure } from './results';
 
 /** The coarse change events the api emits after any work-order or run change (docs/v2/ui.md,
@@ -144,6 +146,39 @@ type RunRow = CockpitView['running'][number];
 
 /** A queued row waits for a slot or a limit; every other row is an actually running stage (A-36). */
 export const isQueued = (run: RunRow): boolean => run.queued === true;
+
+/** A-401: the sentence a queued row's wait reads as — the dispatcher's own reason, one sentence per
+ *  reason, each naming what the operator can do or wait for. A row with no stored reason (the first
+ *  tick has not run, or the item just started) falls back to the generic queue copy, never a raw
+ *  key. Numbers would appear only if a decision carried counts; none does today. Pure. */
+export const queuedNote = (run: RunRow, locale: Locale): string => {
+  switch (run.queuedReason) {
+    case 'consent':
+      // The consent wait names the door the operator already knows — Ayarlar › Hesaplar (A-384).
+      return t(locale, 'cockpit.queued.consent');
+    case 'quota': {
+      // The quota wait keeps the limit sentence, with the relief instant when one is known (A-37).
+      const at = run.limitResetsAt;
+      return at === null || at === undefined
+        ? t(locale, 'cockpit.queued.limit')
+        : `${t(locale, 'cockpit.queued.limitAt')} ${formatInstant(locale, at)}`;
+    }
+    case 'not_before':
+      return t(locale, 'cockpit.queued.notBefore');
+    case 'work_order_busy':
+      return t(locale, 'cockpit.queued.workOrderBusy');
+    case 'global_limit':
+      return t(locale, 'cockpit.queued.globalLimit');
+    case 'repo_limit':
+      return t(locale, 'cockpit.queued.repoLimit');
+    case 'account_limit':
+      return t(locale, 'cockpit.queued.accountLimit');
+    case 'budget':
+      return t(locale, 'cockpit.queued.budget');
+    default:
+      return t(locale, 'cockpit.queued.queue');
+  }
+};
 
 /** The head's counts. `attention` is every attention item — the number the title bar's badge
  *  shows (U-10); `waiting` are those the operator or a clock holds, `blocked` the stopped ones.
