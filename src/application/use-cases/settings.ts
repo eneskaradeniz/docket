@@ -1,7 +1,7 @@
 // Operator settings use cases. Today: the dispatcher's concurrency limits (A-105 … A-107); the
 // dispatcher reads them again on every tick (A-108), so a save applies without a restart.
-import type { AccountId, Actor, DispatchLimits, Result } from '../../domain/index';
-import { err, ok, suggestDispatchCap } from '../../domain/index';
+import type { AccountId, Actor, AutonomyLevel, DispatchLimits, Result } from '../../domain/index';
+import { err, ok, parseAutonomyLevel, suggestDispatchCap } from '../../domain/index';
 
 import type { AppDeps, DispatchStatus } from '../ports/index';
 
@@ -12,6 +12,10 @@ export const DISPATCH_LIMITS_KEY = 'dispatch.limits';
 
 /** The settings-store key the dispatch mode lives under. */
 export const DISPATCH_MODE_KEY = 'dispatch.mode';
+
+/** The settings-store key the global autonomy level lives under (A-396; the `dispatch.mode`
+ *  precedent — one value, no new file). */
+export const AUTONOMY_KEY = 'autonomy';
 
 export type DispatchMode = 'fixed' | 'auto';
 
@@ -52,6 +56,17 @@ export async function getDispatchLimits(deps: Pick<AppDeps, 'settings'>): Promis
 export async function getDispatchMode(deps: Pick<AppDeps, 'settings'>): Promise<DispatchMode> {
   const stored = await deps.settings.get(DISPATCH_MODE_KEY);
   return isMode(stored) ? stored : DEFAULT_DISPATCH_MODE;
+}
+
+/** The stored global autonomy level. Unlike the dispatcher's reads, a damaged value is never
+ *  defaulted: absent stays absent (the chain falls on), a present non-member is the typed error —
+ *  never a silent `manual` (A-396, the shared parse of the domain's I-107 law). */
+export async function getAutonomyLevel(
+  deps: Pick<AppDeps, 'settings'>,
+): Promise<Result<AutonomyLevel | undefined, 'invalid_autonomy_level'>> {
+  const stored: unknown = await deps.settings.get(AUTONOMY_KEY);
+  if (stored === undefined) return ok(undefined);
+  return parseAutonomyLevel(stored);
 }
 
 /** What the settings.dispatch query answers (A-126). */

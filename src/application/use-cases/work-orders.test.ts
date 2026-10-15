@@ -3,8 +3,12 @@ import { describe, expect, it } from 'vitest';
 
 import type {
   Actor,
+  AutonomyLevel,
+  DefinitionIssue,
+  Definitions,
   FlowSlug,
   RepoDef,
+  Result,
   RoleDef,
   RunId,
   Slug,
@@ -18,8 +22,8 @@ import type {
 import { deriveWorkOrderState, err, nextAction, parseSlug, parseUlid, workOrderBranch } from '../../domain/index';
 
 import type { ProjectDef, ProjectSlug } from '../../domain/index';
-import type { ReadRepoFingerprint, RepoFingerprint, RepoRegistryEntry, RunRecord } from '../ports';
-import type { FakeProjectRepo, FakeRepoRegistry } from '../ports/fakes';
+import type { AppDeps, ReadRepoFingerprint, RepoFingerprint, RepoRegistryEntry, RunRecord, WorkOrderRecord } from '../ports';
+import type { FakeAppSettingsRepo, FakeProjectRepo, FakeRepoRegistry } from '../ports/fakes';
 import type {
   FakeClock,
   FakeDefinitionStore,
@@ -29,6 +33,7 @@ import type {
 } from '../ports/fakes';
 import {
   createFakeAccountRepo,
+  createFakeAppSettingsRepo,
   createFakeCapabilityCatalog,
   createFakeClock,
   createFakeDefinitionStore,
@@ -42,7 +47,17 @@ import {
   repoFlowOf,
 } from '../ports/fakes';
 
-import { blockWorkOrder, closeWorkOrder, getWorkOrder, openWorkOrder, unblockWorkOrder, workOrderRunSummaries } from './work-orders';
+import { AUTONOMY_KEY } from './settings';
+import {
+  blockWorkOrder,
+  closeWorkOrder,
+  effectiveAutonomy,
+  getWorkOrder,
+  openWorkOrder,
+  unblockWorkOrder,
+  workOrderRunSummaries,
+  type OpenError,
+} from './work-orders';
 
 const ACTOR: Actor = { kind: 'user', id: 'u-1' };
 
@@ -187,6 +202,8 @@ interface Harness {
   readonly definitions: FakeDefinitionStore;
   readonly projects: FakeProjectRepo;
   readonly repos: FakeRepoRegistry;
+  /** The settings store the global autonomy layer reads (A-396). */
+  readonly settings: FakeAppSettingsRepo;
   /** The folder fingerprints the harness's reader answers; a path absent from the map reads
    *  undefined — the folder_not_found standing. */
   readonly fingerprints: Map<string, RepoFingerprint>;
@@ -194,6 +211,7 @@ interface Harness {
   readonly viewDeps: Parameters<typeof getWorkOrder>[0];
   readonly blockDeps: Parameters<typeof blockWorkOrder>[0];
   readonly unblockDeps: Parameters<typeof unblockWorkOrder>[0];
+  readonly autonomyDeps: Parameters<typeof effectiveAutonomy>[0];
 }
 
 const createHarness = (configure?: (definitions: FakeDefinitionStore) => void, withRoadmap = true): Harness => {
@@ -204,6 +222,7 @@ const createHarness = (configure?: (definitions: FakeDefinitionStore) => void, w
   const runs = createFakeRunRepo();
   const definitions = createFakeDefinitionStore();
   const projects = createFakeProjectRepo();
+  const settings = createFakeAppSettingsRepo();
   const fingerprints = new Map<string, RepoFingerprint>();
   const readFingerprint: ReadRepoFingerprint = async (path) => fingerprints.get(path);
   const repos = createFakeRepoRegistry(readFingerprint);
@@ -221,11 +240,13 @@ const createHarness = (configure?: (definitions: FakeDefinitionStore) => void, w
     definitions,
     projects,
     repos,
+    settings,
     fingerprints,
     openDeps: { clock, ids, log, workOrders, definitions, projects },
     viewDeps: { workOrders, runs, definitions, projects, repos, readFingerprint },
     blockDeps: { clock, ids, log, workOrders },
     unblockDeps: { clock, ids, log, workOrders, definitions },
+    autonomyDeps: { workOrders, definitions, settings },
   };
 };
 
@@ -1275,5 +1296,301 @@ describe('workOrderRunSummaries canSteer (A-367)', () => {
 
     expect(rows.find((row) => row.runId === RUN_1)?.canSteer).toBe(false);
     expect(rows.find((row) => row.runId === RUN_2)?.canSteer).toBe('unknown');
+  });
+});
+
+// --- autonomy: the work-order layer of the chain (A-394/A-395, D-10) -----------------------------------
+
+/** Re-seeds the repo section with an autonomy level and an optional budget. */
+const seedRepoAutonomy = (
+  h: Harness,
+  autonomy: string,
+  budget?: { readonly amountUsd: number; readonly warnPercent: number },
+): void => {
+  const base = JSON.parse(definitionsJson()) as { readonly repo: Record<string, unknown> };
+  h.definitions.seed(
+    { kind: 'repo', repo: REPO },
+    'defs.json',
+    JSON.stringify({
+      ...base,
+      repo: { ...base.repo, autonomy, ...(budget !== undefined ? { budget } : {}) },
+    }),
+  );
+};
+
+/** Wraps the harness's definition store so `load` also answers a project section — the fake's own
+ *  load never builds one, and the project layers (budget, autonomy) must flow through the real
+ *  code path. */
+const withProjectSection = (h: Harness, project: ProjectDef): Pick<AppDeps, 'definitions'> => {
+  const load = h.definitions.load.bind(h.definitions);
+  return {
+    definitions: {
+      ...h.definitions,
+      load: async (repo: RepoSlug): Promise<Result<Definitions, readonly DefinitionIssue[]>> => {
+        const loaded = await load(repo);
+        return loaded.ok ? { ok: true, value: { ...loaded.value, project } } : loaded;
+      },
+    },
+  };
+};
+
+const BUDGET = { amountUsd: 25, warnPercent: 80 };
+
+/** The record a successful open wrote, or a throw that fails the fixture. */
+const recordOf = async (h: Harness, result: Result<WorkOrderId, OpenError>): Promise<WorkOrderRecord> => {
+  if (!result.ok) throw new Error(`fixture open must succeed, got ${result.error}`);
+  const record = await h.workOrders.get(result.value);
+  if (record === undefined) throw new Error('fixture record must exist');
+  return record;
+};
+
+describe('openWorkOrder (autonomy)', () => {
+  it('A-394: a given level is stored verbatim on the record; an absent one stays absent', async () => {
+    const h = createHarness();
+
+    const manual = await openWorkOrder(h.openDeps, {
+      project: PROJECT,
+      repo: REPO,
+      title: 'Verbatim manual',
+      autonomy: 'manual',
+      actor: ACTOR,
+    });
+    expect((await recordOf(h, manual)).autonomy).toBe('manual');
+
+    const none = await openWorkOrder(h.openDeps, { project: PROJECT, repo: REPO, title: 'No level', actor: ACTOR });
+    expect('autonomy' in (await recordOf(h, none))).toBe(false);
+  });
+
+  it('A-394: a value outside AUTONOMY_LEVELS answers invalid_autonomy_level and writes nothing', async () => {
+    const h = createHarness();
+
+    const result = await openWorkOrder(h.openDeps, {
+      project: PROJECT,
+      repo: REPO,
+      title: 'Broken level',
+      autonomy: 'turbo' as AutonomyLevel,
+      actor: ACTOR,
+    });
+
+    expect(result).toEqual(err('invalid_autonomy_level'));
+    expect(await h.workOrders.list({})).toEqual([]);
+    expect(h.log.entries()).toEqual([]);
+  });
+
+  it('A-395: auto without any governing cap answers auto_requires_spend_cap and writes nothing', async () => {
+    const h = createHarness();
+
+    const result = await openWorkOrder(h.openDeps, {
+      project: PROJECT,
+      repo: REPO,
+      title: 'Capless auto',
+      autonomy: 'auto',
+      actor: ACTOR,
+    });
+
+    expect(result).toEqual(err('auto_requires_spend_cap'));
+    expect(await h.workOrders.list({})).toEqual([]);
+    expect(h.log.entries()).toEqual([]);
+  });
+
+  it('A-395: the cap refusal wins over a missing onFail — the fixed R-169 order', async () => {
+    const h = createHarness();
+
+    // No cap anywhere and the default flow-a has stages without onFail: the cap answers first.
+    const result = await openWorkOrder(h.openDeps, {
+      project: PROJECT,
+      repo: REPO,
+      title: 'Both missing',
+      autonomy: 'auto',
+      actor: ACTOR,
+    });
+
+    expect(result).toEqual(err('auto_requires_spend_cap'));
+  });
+
+  it('A-395: a cap over a flow with a stage missing onFail answers auto_requires_max_attempts', async () => {
+    const h = createHarness();
+    seedRepoAutonomy(h, 'manual', BUDGET);
+
+    // The repo owns flow-a (stages without onFail) and carries a budget: the bound is the refusal.
+    const result = await openWorkOrder(h.openDeps, {
+      project: PROJECT,
+      repo: REPO,
+      title: 'Unbounded auto',
+      autonomy: 'auto',
+      actor: ACTOR,
+    });
+
+    expect(result).toEqual(err('auto_requires_max_attempts'));
+    expect(await h.workOrders.list({})).toEqual([]);
+  });
+
+  it('A-395: the repo budget is the nearest cap — a bounded flow opens at auto', async () => {
+    const h = createHarness();
+    // The repo owns flow-fail, whose single stage declares its onFail: the bound is written.
+    const base = JSON.parse(definitionsJson({ ownFlow: 2 })) as { readonly repo: Record<string, unknown> };
+    h.definitions.seed(
+      { kind: 'repo', repo: REPO },
+      'defs.json',
+      JSON.stringify({ ...base, repo: { ...base.repo, budget: BUDGET } }),
+    );
+
+    const result = await openWorkOrder(h.openDeps, {
+      project: PROJECT,
+      repo: REPO,
+      title: 'Bounded auto',
+      autonomy: 'auto',
+      actor: ACTOR,
+    });
+
+    expect((await recordOf(h, result)).autonomy).toBe('auto');
+  });
+
+  it('A-395: without a repo budget the project definition’s budget governs the order', async () => {
+    const h = createHarness();
+    h.definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', definitionsJson({ ownFlow: 2 }));
+    const openDeps = { ...h.openDeps, ...withProjectSection(h, { ...PROJECT_DEF, budget: BUDGET }) };
+
+    const viaProjectBudget = await openWorkOrder(openDeps, {
+      project: PROJECT,
+      repo: REPO,
+      title: 'Project-capped auto',
+      autonomy: 'auto',
+      actor: ACTOR,
+    });
+
+    expect((await recordOf(h, viaProjectBudget)).autonomy).toBe('auto');
+  });
+
+  it('A-395: manual and balanced never run the auto check', async () => {
+    const h = createHarness();
+
+    for (const level of ['manual', 'balanced'] as const) {
+      const result = await openWorkOrder(h.openDeps, {
+        project: PROJECT,
+        repo: REPO,
+        title: `Unchecked ${level}`,
+        autonomy: level,
+        actor: ACTOR,
+      });
+      expect((await recordOf(h, result)).autonomy).toBe(level);
+    }
+  });
+});
+
+describe('effectiveAutonomy', () => {
+  it('A-394: the work-order record outranks repo, project and global', async () => {
+    const h = createHarness();
+    seedRepoAutonomy(h, 'manual');
+    await h.settings.set(AUTONOMY_KEY, 'manual');
+    const result = await openWorkOrder(h.openDeps, {
+      project: PROJECT,
+      repo: REPO,
+      title: 'Own level',
+      autonomy: 'manual',
+      actor: ACTOR,
+    });
+    const id = (await recordOf(h, result)).id;
+
+    expect(await effectiveAutonomy(h.autonomyDeps, { workOrderId: id, repo: REPO })).toEqual({
+      ok: true,
+      value: { level: 'manual', source: 'workOrder' },
+    });
+  });
+
+  it('A-394: an absent record level inherits down the chain to the repo layer', async () => {
+    const h = createHarness();
+    seedRepoAutonomy(h, 'auto', BUDGET);
+    const id = await openedWorkOrder(h);
+
+    expect(await effectiveAutonomy(h.autonomyDeps, { workOrderId: id, repo: REPO })).toEqual({
+      ok: true,
+      value: { level: 'auto', source: 'repo' },
+    });
+  });
+
+  it('A-394: a repo-level balanced resolves as manual with the repo layer as its source (R-167)', async () => {
+    const h = createHarness();
+    seedRepoAutonomy(h, 'balanced');
+    const id = await openedWorkOrder(h);
+
+    expect(await effectiveAutonomy(h.autonomyDeps, { workOrderId: id, repo: REPO })).toEqual({
+      ok: true,
+      value: { level: 'manual', source: 'repo' },
+    });
+  });
+
+  it('A-394: the project layer answers when the repo carries no level', async () => {
+    const h = createHarness();
+    const id = await openedWorkOrder(h);
+    const autonomyDeps = {
+      ...h.autonomyDeps,
+      ...withProjectSection(h, { ...PROJECT_DEF, autonomy: 'auto' as AutonomyLevel }),
+    };
+
+    expect(await effectiveAutonomy(autonomyDeps, { workOrderId: id, repo: REPO })).toEqual({
+      ok: true,
+      value: { level: 'auto', source: 'project' },
+    });
+  });
+
+  it('A-394: the global settings key is the last defined layer; nothing anywhere is the builtin manual', async () => {
+    const h = createHarness();
+    const id = await openedWorkOrder(h);
+
+    await h.settings.set(AUTONOMY_KEY, 'auto');
+    expect(await effectiveAutonomy(h.autonomyDeps, { workOrderId: id, repo: REPO })).toEqual({
+      ok: true,
+      value: { level: 'auto', source: 'global' },
+    });
+
+    const fresh = createHarness();
+    const other = await openedWorkOrder(fresh);
+    expect(await effectiveAutonomy(fresh.autonomyDeps, { workOrderId: other, repo: REPO })).toEqual({
+      ok: true,
+      value: { level: 'manual', source: 'builtin' },
+    });
+  });
+
+  it('A-394: a damaged stored global level answers the typed error, never a silent manual', async () => {
+    const h = createHarness();
+    const id = await openedWorkOrder(h);
+    await h.settings.set(AUTONOMY_KEY, 'turbo');
+
+    expect(await effectiveAutonomy(h.autonomyDeps, { workOrderId: id, repo: REPO })).toEqual({
+      ok: false,
+      error: 'invalid_autonomy_level',
+    });
+  });
+
+  it('A-394: a damaged value on the stored record answers the typed error — the blob’s cast is never trusted', async () => {
+    const h = createHarness();
+    const id = await openedWorkOrder(h);
+    const record = await h.workOrders.get(id);
+    if (record === undefined) throw new Error('fixture record must exist');
+    await h.workOrders.create({
+      ...record,
+      id: ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FB2'),
+      autonomy: 'turbo' as AutonomyLevel,
+    });
+
+    expect(
+      await effectiveAutonomy(h.autonomyDeps, {
+        workOrderId: ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FB2'),
+        repo: REPO,
+      }),
+    ).toEqual({ ok: false, error: 'invalid_autonomy_level' });
+  });
+
+  it('A-394: a definitions load that fails leaves its layers absent — the chain falls on', async () => {
+    const h = createHarness();
+    const id = await openedWorkOrder(h);
+    seedRepoAutonomy(h, 'balanced');
+    h.definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', '{not json');
+
+    expect(await effectiveAutonomy(h.autonomyDeps, { workOrderId: id, repo: REPO })).toEqual({
+      ok: true,
+      value: { level: 'manual', source: 'builtin' },
+    });
   });
 });

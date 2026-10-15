@@ -991,3 +991,31 @@ describe('validateDefinitions — plugin and command capabilities', () => {
     expect(codesOf(issues)).toEqual(expect.arrayContaining(['wrong_type', 'missing_field']));
   });
 });
+
+describe('autonomy level on project and repo (R-171)', () => {
+  it('R-171: an autonomy member on the project is accepted verbatim; an absent one stays absent', () => {
+    const withLevel = expectOk(validateDefinitions(doc({ project: project({ autonomy: 'auto' }) })));
+    expect(withLevel.project?.autonomy).toBe('auto');
+
+    const bare = expectOk(validateDefinitions(doc({ project: project() })));
+    expect(bare.project?.autonomy).toBeUndefined();
+  });
+
+  it('R-171: an autonomy member on the repo is accepted verbatim; an absent one stays absent', () => {
+    const withLevel = expectOk(validateDefinitions(doc({ repo: repo({ autonomy: 'balanced' }) })));
+    expect(withLevel.repo?.autonomy).toBe('balanced');
+
+    const bare = expectOk(validateDefinitions(doc({ repo: repo() })));
+    expect(bare.repo?.autonomy).toBeUndefined();
+  });
+
+  it('R-171: a project value outside AUTONOMY_LEVELS is wrong_type at the project section', () => {
+    const issues = expectErr(validateDefinitions(doc({ project: project({ autonomy: 'turbo' }) })));
+    expect(issues).toEqual([issue('project.autonomy', 'wrong_type')]);
+  });
+
+  it('R-171: a repo value outside AUTONOMY_LEVELS is wrong_type at the repo section', () => {
+    const issues = expectErr(validateDefinitions(doc({ repo: repo({ autonomy: 7 }) })));
+    expect(issues).toEqual([issue('repo.autonomy', 'wrong_type')]);
+  });
+});

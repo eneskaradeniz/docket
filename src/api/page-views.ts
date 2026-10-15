@@ -58,6 +58,9 @@ const labelOf = (actor: Actor): string => {
       return actor.role;
     case 'system':
       return actor.component;
+    // No page carries a policy actor yet; the label names the deciding rule set all the same.
+    case 'policy':
+      return actor.policy;
   }
 };
 

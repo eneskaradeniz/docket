@@ -1,6 +1,7 @@
 // Persistence port for work orders and their event lists.
 import type {
   Actor,
+  AutonomyLevel,
   EpochMs,
   FlowSlug,
   FlowPin,
@@ -23,6 +24,9 @@ export interface WorkOrderRecord {
   /** A-324/A-344: the pinned flow and role definitions, stored at creation. Absent on rows
    *  stored before Phase 7 and on work orders opened against a repo without a Phase 7 flow. */
   readonly pin?: FlowPin;
+  /** The work-order layer of the autonomy chain (D-10, A-394): stored verbatim, absent on every
+   *  row stored before the field existed — absence inherits down the chain. */
+  readonly autonomy?: AutonomyLevel;
   readonly createdAt: EpochMs;
   readonly createdBy: Actor;
 }

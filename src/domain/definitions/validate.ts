@@ -3,7 +3,7 @@
 import type { SpendCap } from '../budget';
 import { commandPlaceholders } from './command-template';
 import type { AccountRoute, LimitPolicy } from '../quota';
-import { err, ok, parseSlug, parseUlid, type Result, type Slug, type CapabilitySlug, type EnvSlug, type FlowSlug, type ProjectSlug, type RepoSlug, type RoleSlug, type StageSlug, type EffortLevel, type ThinkingChoice, type Tier } from '../shared';
+import { err, ok, parseAutonomyLevel, parseSlug, parseUlid, type Result, type Slug, type AutonomyLevel, type CapabilitySlug, type EnvSlug, type FlowSlug, type ProjectSlug, type RepoSlug, type RoleSlug, type StageSlug, type EffortLevel, type ThinkingChoice, type Tier } from '../shared';
 import type {
   CapabilityDef,
   CapabilityKind,
@@ -112,6 +112,7 @@ interface RepoDraft {
   readonly id: RepoSlug | undefined;
   readonly name: string | undefined;
   readonly budget: SpendCap | undefined;
+  readonly autonomy: AutonomyLevel | undefined;
   readonly flow: RepoFlowDraft | undefined;
   readonly defaultLimitPolicy: LimitPolicy | undefined;
   readonly commandSets: Readonly<Record<string, readonly string[]>> | undefined;
@@ -125,6 +126,7 @@ interface ProjectDraft {
   readonly name: string | undefined;
   readonly repoSlots: readonly (RepoSlug | undefined)[] | undefined;
   readonly budget: SpendCap | undefined;
+  readonly autonomy: AutonomyLevel | undefined;
 }
 
 const isRecord = (value: unknown): value is UnknownRecord =>
@@ -148,8 +150,8 @@ const addIssue = (issues: DefinitionIssue[], path: string, code: DefinitionIssue
 
 // The fixed shapes (repo, project, flow, binding, role ref, overlay) reject keys they do not
 // carry — a legacy field is refused the same way as any stray key, never silently ignored.
-const REPO_KEYS: readonly string[] = ['id', 'name', 'flow', 'defaultLimitPolicy', 'commandSets', 'docsRoot', 'testGlobs', 'environments', 'budget'];
-const PROJECT_KEYS: readonly string[] = ['id', 'name', 'repos', 'budget'];
+const REPO_KEYS: readonly string[] = ['id', 'name', 'flow', 'defaultLimitPolicy', 'commandSets', 'docsRoot', 'testGlobs', 'environments', 'budget', 'autonomy'];
+const PROJECT_KEYS: readonly string[] = ['id', 'name', 'repos', 'budget', 'autonomy'];
 const REPO_FLOW_KEYS: readonly string[] = ['flowId', 'version', 'stages', 'bindings'];
 const BINDING_KEYS: readonly string[] = ['stage', 'role', 'accounts', 'limitPolicy'];
 const ROLE_REF_KEYS: readonly string[] = ['roleId', 'version', 'overlay', 'detached'];
@@ -940,6 +942,7 @@ const parseRepo = (issues: DefinitionIssue[], container: UnknownRecord): RepoDra
 
   const budgetRaw: unknown = container['budget'];
   const budget = budgetRaw === undefined ? undefined : parseSpendCap(issues, budgetRaw, 'repo.budget');
+  const autonomy = parseAutonomyField(issues, container['autonomy'], 'repo.autonomy');
 
   const commandSetsRaw: unknown = container['commandSets'];
   let commandSets: Readonly<Record<string, readonly string[]>> | undefined;
@@ -973,7 +976,7 @@ const parseRepo = (issues: DefinitionIssue[], container: UnknownRecord): RepoDra
     if (valid) commandSets = out;
   }
 
-  return { id, name, budget, flow, defaultLimitPolicy, commandSets, docsRoot, testGlobs, environments: parseEnvironments(issues, container) };
+  return { id, name, budget, autonomy, flow, defaultLimitPolicy, commandSets, docsRoot, testGlobs, environments: parseEnvironments(issues, container) };
 };
 
 /** A budget, in the project or the repo section, must be a valid SpendCap; anything else is wrong_type. */
@@ -1006,7 +1009,25 @@ const parseProject = (issues: DefinitionIssue[], container: UnknownRecord): Proj
   const repoSlots = readSlugSlots<'repo'>(issues, container['repos'], 'project.repos');
   const budgetRaw: unknown = container['budget'];
   const budget = budgetRaw === undefined ? undefined : parseSpendCap(issues, budgetRaw, 'project.budget');
-  return { id, name, repoSlots, budget };
+  const autonomy = parseAutonomyField(issues, container['autonomy'], 'project.autonomy');
+  return { id, name, repoSlots, budget, autonomy };
+};
+
+/** The autonomy level of a definition: absent inherits down the chain, a present value outside
+ *  AUTONOMY_LEVELS is wrong_type — never silently dropped, never read as `manual` (R-171). The
+ *  membership read rides the one shared parse so the adapters and the validator never disagree. */
+const parseAutonomyField = (
+  issues: DefinitionIssue[],
+  value: unknown,
+  path: string,
+): AutonomyLevel | undefined => {
+  if (value === undefined) return undefined;
+  const parsed = parseAutonomyLevel(value);
+  if (!parsed.ok) {
+    addIssue(issues, path, 'wrong_type', `${path} must be one of manual, balanced, auto`);
+    return undefined;
+  }
+  return parsed.value;
 };
 
 const parseRoles = (issues: DefinitionIssue[], input: UnknownRecord): readonly (RoleDraft | undefined)[] => {
@@ -1557,6 +1578,7 @@ const buildRepoDef = (repo: RepoDraft): RepoDef | undefined => {
     testGlobs: repo.testGlobs,
     ...(environments !== undefined ? { environments } : {}),
     ...(repo.budget !== undefined ? { budget: repo.budget } : {}),
+    ...(repo.autonomy !== undefined ? { autonomy: repo.autonomy } : {}),
   };
 };
 
@@ -1565,9 +1587,13 @@ const buildProjectDef = (project: ProjectDraft): ProjectDef | undefined => {
     return undefined;
   }
   const repos = project.repoSlots.filter((slot): slot is RepoSlug => slot !== undefined);
-  return project.budget === undefined
-    ? { id: project.id, name: project.name, repos }
-    : { id: project.id, name: project.name, repos, budget: project.budget };
+  return {
+    id: project.id,
+    name: project.name,
+    repos,
+    ...(project.budget !== undefined ? { budget: project.budget } : {}),
+    ...(project.autonomy !== undefined ? { autonomy: project.autonomy } : {}),
+  };
 };
 
 /** Narrows a library history body into a RoleDef; a body that fails is simply not resolvable, so
