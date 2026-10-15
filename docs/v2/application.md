@@ -588,6 +588,7 @@ Rules:
 - **A-6** `getWorkOrder` derives `state` with `deriveWorkOrderState` and `next` with `nextAction` from the **current** definitions; nothing derived is stored.
 - **A-7** `blockWorkOrder`/`unblockWorkOrder`/`closeWorkOrder` append the matching event only when it changes something: closing a `done` work order → `already_done`; unblocking one that is not `blocked` → `not_blocked`. Each success appends one audit entry.
 - **A-8** `decideHumanGate`: the gate must belong to the **current** stage and be in `pendingGates`; it must be `human` or `page_approval`; an `agent` actor → `agent_cannot_decide`. The verdict comes from the domain's `evaluateGate` with `approval`/`pageApproval` evidence, appended as one `gate_evaluated` event; audit `gate.decided` with `detail: { gate, decision }`.
+- **A-8** (amended 2026-10-15, #1191, D-10) `agent` → `agent_cannot_decide` stands. A `policy` actor (domain §1) is accepted only for a `human` gate of the current stage not in `USER_ONLY_GATES`, and only when the work order's resolved autonomy (`resolveAutonomy`, domain autonomy addendum) is `auto`; a `page_approval` gate, any other `USER_ONLY_GATES` decision, or a resolved level below `auto` answers the new typed error `policy_cannot_decide` (a `DecideGateError` member this amendment names; the code lands with D-10 issue 3/5). The decision's evidence records the deciding actor (`approval.by`), user or policy alike, so the `gate_evaluated` event and the audit trail name who decided. No code implements this sentence yet — it is the contract the implementing issue codes.
 - **A-9** `evaluateMachineGates`: only when status is `gating`. For each pending `command` and `secret_scan` gate of the current stage, in stage order: `command` → run every command of the set in order in the work order's worktree (timeout 10 min each) and pass all results as evidence; `secret_scan` → `SecretScanner.scan`. Append one `gate_evaluated` per evaluated gate, then return the re-derived state. `agent_verdict` gates are not touched here (see A-9a).
 - **A-9a** `submitAgentVerdict`: the gate must be a pending `agent_verdict` gate of the current stage; the actor must be `kind: 'agent'` with `role` equal to the gate's `role` (`wrong_role` otherwise). `pointersResolved = pointers.length > 0 && EvidenceChecker.resolvePointers(worktree, pointers)`. The verdict comes from the domain `evaluateGate`; append one `gate_evaluated`; audit `gate.decided` with `detail: { gate, decision: approve ? 'approved' : 'rejected' }`.
 - **A-10** `resolveRoute`: role = the definition with repo overrides applied (`applyRoleOverrides`); must exist and be active. Binding layers are read for `workOrder`, `repo`, `project` (via `projectOfRepo`) and `global`, and resolved with `resolveBinding`; the chain keeps only accounts that exist in `AccountRepo`, in order. Empty after filtering → `no_account`; no binding at any level → `no_binding`.
@@ -2221,3 +2222,23 @@ awareness item). Rules A-392, A-393; the UI rules are U-350 … U-353 (docs/v2/u
 - **A-393** (added 2026-10-14, #1178) The repo context is a pure read exactly like A-379's
   rows: no audit entry, no ledger event, no `workOrders.changed` announcement, and no write of
   any kind reaches the registry, the project store or the definitions.
+
+### Addendum 2026-10-15 (#1191): autonomy — the work-order field, the auto refusal, the global setting (D-10)
+
+The domain contracts are the autonomy addendum of [domain.md](domain.md) (the `policy` actor,
+`AutonomyLevel`, `USER_ONLY_GATES`, R-167 … R-172, the level-semantics table); the storage homes and
+the serialization law are I-107 ([infrastructure.md](infrastructure.md) → autonomy addendum). Nothing
+here is implemented yet — each rule names the D-10 split issue that codes it.
+
+```ts
+// work-order-repo.ts — WorkOrderRecord gains (added 2026-10-15, #1191, D-10; absent on rows stored
+// before the field existed; the JSON blob in work_orders.data, no new column — I-107):
+//   readonly autonomy?: AutonomyLevel;
+
+// work-orders.ts — openWorkOrder's input gains autonomy?: AutonomyLevel, and OpenError gains
+//   'invalid_autonomy_level' | 'auto_requires_spend_cap' | 'auto_requires_max_attempts';
+```
+
+- **A-394** (added 2026-10-15, #1191, D-10) `WorkOrderRecord.autonomy?: AutonomyLevel` is the work-order layer of the chain: `openWorkOrder` stores it verbatim when given — a value outside `AUTONOMY_LEVELS` answers `invalid_autonomy_level` and writes nothing; rows stored before the field existed read as absent and inherit down the chain. The **effective autonomy** of a work order is `resolveAutonomy` (R-167) over work order (the record) > repo (`RepoDef.autonomy`, R-171) > project (`ProjectDef.autonomy`, R-171) > global (the `autonomy` settings key, A-396). No consumer resolves it yet — the first is the permission gate of D-10 issue 2/5. Implementing issue: D-10 2/5.
+- **A-395** (added 2026-10-15, #1191, D-10) The auto refusal: `openWorkOrder` with `autonomy: 'auto'` runs `checkAutoLevel` (R-169) first — `cap` is the nearest `SpendCap` governing the order (the repo definition's `budget`, else the project's), `flow` is the pinned flow (A-324) — and answers the typed error (`auto_requires_spend_cap` / `auto_requires_max_attempts`) with nothing written. Escalating an existing work order's level to `auto` passes the same check; the surface that changes a level lands with its own D-10 issue. Implementing issue: D-10 2/5.
+- **A-396** (added 2026-10-15, #1191, D-10) The global level lives as the settings key `autonomy` — one value in the settings store, the `dispatch.mode` precedent, no new file (I-107's table). A write goes only through a surface that validates against `AUTONOMY_LEVELS` first; the read parses through the one shared level parse, and a stored value that is not a member is the typed `invalid_autonomy_level` error (I-107), never a silent `manual` — an absent key is simply absent and the chain falls to the builtin `manual` (R-167). Implementing issue: D-10 2/5.
