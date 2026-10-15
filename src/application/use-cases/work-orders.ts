@@ -17,6 +17,7 @@ import type {
   GateVerdict,
   GitLifecycleState,
   Layer,
+  PolicyGateApproval,
   ProjectSlug,
   RepoRef,
   ResolvedAutonomy,
@@ -247,6 +248,9 @@ export interface WorkOrderView {
   /** The remote_checks gates' evaluation rows (A-378): a pure read of what the dispatcher
    *  already recorded — nothing here starts a poll. */
   readonly gates: readonly WorkOrderGateRow[];
+  /** The human gates' decision rows (A-411), in event order: who decided what the audit already
+   *  names — a policy approval carries its R-180 evidence, a human decision carries none. */
+  readonly decisions: readonly GateDecisionRow[];
   /** The git lifecycle fold (A-390): branch, pull request and release marks derived purely from
    *  the work order's events; a work order without git events carries the empty fold. */
   readonly git: GitLifecycleState;
@@ -267,6 +271,16 @@ export interface WorkOrderGateRow {
   readonly verdict?: GateVerdict;
   readonly at: EpochMs;
   readonly checks: readonly WorkOrderGateCheck[];
+}
+
+/** One decided human gate of the flow (A-411): the event's own words plus, when the policy
+ *  decided it, the R-180 evidence it relied on — absent on every human decision. */
+export interface GateDecisionRow {
+  readonly gate: GateSlug;
+  readonly stage: StageSlug;
+  readonly decision: 'approved' | 'rejected';
+  readonly at: EpochMs;
+  readonly approvedByPolicy?: PolicyGateApproval;
 }
 
 export type ViewError = 'not_found' | 'definitions_invalid' | 'unknown_flow';
@@ -389,6 +403,38 @@ const remoteChecksGates = (flow: FlowDef): ReadonlySet<GateSlug> => {
   return gates;
 };
 
+/** The human gates of the flow by slug — the only decisions the decision rows show. */
+const humanDecisionGates = (flow: FlowDef): ReadonlySet<GateSlug> => {
+  const gates = new Set<GateSlug>();
+  for (const stage of flow.stages) {
+    for (const gate of stage.exit) {
+      if (gate.kind === 'human' || gate.kind === 'page_approval') gates.add(gate.id);
+    }
+  }
+  return gates;
+};
+
+/** A-411: the decision rows of the flow's human gates, in event order (newest last) — the
+ *  reply's own words for who decided what, with the policy evidence riding verbatim. */
+export const workOrderDecisionRows = (
+  flow: FlowDef,
+  events: readonly WorkOrderEvent[],
+): readonly GateDecisionRow[] => {
+  const human = humanDecisionGates(flow);
+  const rows: GateDecisionRow[] = [];
+  for (const event of events) {
+    if (event.type !== 'gate_evaluated' || !human.has(event.gate)) continue;
+    rows.push({
+      gate: event.gate,
+      stage: event.stage,
+      decision: event.verdict.status === 'passed' ? 'approved' : 'rejected',
+      at: event.at,
+      ...(event.approvedByPolicy === undefined ? {} : { approvedByPolicy: event.approvedByPolicy }),
+    });
+  }
+  return rows;
+};
+
 /** A-378: the evaluation rows of the flow's `remote_checks` gates, in event order (newest last),
  *  keeping the newest `REMOTE_CHECKS_EVENT_MAX` rows per gate; each row's checks are its event's
  *  recorded evidence, so an evaluation from before the field existed shows no checks. */
@@ -443,6 +489,7 @@ export async function getWorkOrder(
     environments: loaded.value.repo?.environments ?? [],
     repoContext: await repoContextOf(deps, record),
     gates: workOrderGateRows(flow, events),
+    decisions: workOrderDecisionRows(flow, events),
     git: deriveGitLifecycle(events),
   });
 }

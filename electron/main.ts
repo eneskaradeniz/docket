@@ -34,6 +34,7 @@ import {
   activeWork,
   advancePhases,
   appendStartRefused,
+  applyGateAutoPolicy,
   applyLimitDecision,
   applyRefusedStart,
   cancelActiveRuns,
@@ -373,6 +374,10 @@ const runStartedItem = async (api: Api & RunEventFeed, board: PermissionBoard, r
     } else {
       await evaluateWithRemote(deps, remote, item.workOrderId);
     }
+    // The machine pass just concluded: under a resolved `auto` level the gate-auto policy may
+    // now approve the human gates the pass left pending (A-410). Its own errors are answers
+    // (the gate simply stays pending), so only a crash is loud — same reading as above.
+    await applyGateAutoPolicy(deps, { id: item.workOrderId });
   } catch (error) {
     console.error(`queue item ${item.id} crashed its run loop`, error);
   }
@@ -446,6 +451,21 @@ const sweepRemoteChecks = async (deps: AppDeps, forges: ForgeResolver): Promise<
     const remote = await remoteInputOf(deps, forges, record);
     if (remote === undefined) continue;
     await evaluateWithRemote(deps, remote, record.id);
+  }
+};
+
+/** The gate-auto sweep (A-410): the same cadence the remote sweep runs on, catching the stages
+ *  whose machine set concluded without a machine pass of their own — an agent verdict that
+ *  arrived through the api. The pass itself writes only under a resolved `auto` level and only
+ *  what R-181 licenses; every other work order is a cheap no-op read. One broken work order
+ *  never stops the rest of the sweep. */
+const sweepGateAuto = async (deps: AppDeps): Promise<void> => {
+  for (const record of await deps.workOrders.list({})) {
+    try {
+      await applyGateAutoPolicy(deps, { id: record.id });
+    } catch (error) {
+      console.error(`gate-auto pass for ${record.id} crashed`, error);
+    }
   }
 };
 
@@ -777,14 +797,17 @@ const startApp = async (): Promise<void> => {
 
   // The remote-checks sweep (A-370): its own timer, started through the same injected timers the
   // quota schedule uses, and non-reentrant like the dispatcher's tick — an overlapping pass would
-  // re-derive the same work orders the first is still walking. The forge resolver is read here:
-  // `node` is not narrowed inside the timer closure (the quotaProbes line above, same reason).
+  // re-derive the same work orders the first is still walking. The gate-auto pass rides the same
+  // cadence right after it (A-410), so its `auto`-level approvals need no timer of their own.
+  // The forge resolver is read here: `node` is not narrowed inside the timer closure (the
+  // quotaProbes line above, same reason).
   const nodeForges = node.forges;
   let sweepingRemoteChecks = false;
   remoteChecksTimer = node.quota.timers.setInterval(() => {
     if (sweepingRemoteChecks) return;
     sweepingRemoteChecks = true;
     void sweepRemoteChecks(nodeDeps, nodeForges)
+      .then(() => sweepGateAuto(nodeDeps))
       .catch((error) => console.error('remote-checks sweep failed', error))
       .finally(() => {
         sweepingRemoteChecks = false;

@@ -404,6 +404,54 @@ describe('work-order detail store', () => {
     ]);
   });
 
+  it('U-355: a passed gate the policy decided carries its approval evidence; a human re-decision clears it', async () => {
+    const decided = detailReply(DONE);
+    const api = fakeApi({
+      ...decided,
+      decisions: [
+        {
+          gate: 'plan-approval',
+          stage: 'plan',
+          decision: 'approved',
+          at: 1_500,
+          approvedByPolicy: { policy: 'gate-auto', level: 'auto', passedMachineGates: ['secret-scan'] },
+        },
+        { gate: 'ship-approval', stage: 'ship', decision: 'approved', at: 1_600 },
+      ],
+    });
+    const store = createStore(api);
+    await store.load(WO_ID);
+
+    const stages = store.state().stages;
+    expect(stages[0]?.gates[0]).toEqual({
+      id: 'plan-approval',
+      kind: 'human',
+      label: 'Plan approval',
+      status: 'passed',
+      policyApproval: { policy: 'gate-auto', level: 'auto', passedMachineGates: ['secret-scan'] },
+    });
+    expect(stages[2]?.gates[0]).toMatchObject({ id: 'ship-approval', status: 'passed' });
+    expect(stages[2]?.gates[0]?.policyApproval).toBeUndefined();
+
+    // The latest decision governs: after a stage re-entry the human decides again, and the old
+    // policy evidence must not survive onto the row.
+    api.setReply({
+      ...decided,
+      decisions: [
+        {
+          gate: 'plan-approval',
+          stage: 'plan',
+          decision: 'approved',
+          at: 1_500,
+          approvedByPolicy: { policy: 'gate-auto', level: 'auto', passedMachineGates: ['secret-scan'] },
+        },
+        { gate: 'plan-approval', stage: 'plan', decision: 'approved', at: 2_500 },
+      ],
+    });
+    await store.load(WO_ID);
+    expect(store.state().stages[0]?.gates[0]?.policyApproval).toBeUndefined();
+  });
+
   it('U-4: a deploy gate exposes its environment, protection and the read-only promoteFrom chain', async () => {
     const store = createStore(fakeApi(detailReply(AT_SHIP)));
     await store.load(WO_ID);

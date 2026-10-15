@@ -126,6 +126,20 @@ function GateRow({ gate, locale }: { readonly gate: GateView; readonly locale: L
       <span className={`text-[0.78125rem] ${gate.status === 'pending' ? 'font-semibold text-signal-soft' : gate.status === 'passed' ? 'text-proceed' : 'text-inkdim'}`}>
         {t(locale, GATE_STATUS_KEY[gate.status])}
       </span>
+      {/* A passed gate the policy decided carries its own line (U-355): who decided, at which
+          level, and the machine gates the approval relied on — a human approval shows none. */}
+      {gate.status === 'passed' && gate.policyApproval !== undefined ? (
+        <div className="flex w-full min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+          <span className="text-[0.75rem] font-semibold text-proceed">
+            {t(locale, 'gate.decision.byPolicy')
+              .replace('{policy}', gate.policyApproval.policy)
+              .replace('{level}', gate.policyApproval.level)}
+          </span>
+          <span className="min-w-0 truncate font-mono text-[0.6875rem] text-inkdim" title={gate.policyApproval.passedMachineGates.join(', ')}>
+            {t(locale, 'gate.decision.evidence').replace('{gates}', gate.policyApproval.passedMachineGates.join(', '))}
+          </span>
+        </div>
+      ) : null}
     </li>
   );
 }

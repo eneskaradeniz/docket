@@ -203,7 +203,7 @@ export async function requestPageApproval(
 }
 
 export async function decidePageApproval(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'pages' | 'workOrders' | 'definitions'>,
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'pages' | 'workOrders' | 'definitions' | 'settings'>,
   input: {
     readonly page: PageId;
     readonly decision: 'approved' | 'rejected';

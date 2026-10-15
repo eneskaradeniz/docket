@@ -66,6 +66,8 @@ export const EN: LabelBundle = {
   'gate.state.pending': 'Pending',
   'gate.state.passed': 'Passed',
   'gate.state.upcoming': 'Upcoming',
+  'gate.decision.byPolicy': 'Auto-approved: {policy} · level {level}',
+  'gate.decision.evidence': 'Evidence: {gates}',
   'gate.deploy.protected': 'Protected environment',
   'gate.deploy.prerequisite': 'Promotion chain',
   'wo.status.ready': 'Ready',

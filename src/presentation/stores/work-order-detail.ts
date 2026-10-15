@@ -115,6 +115,17 @@ export interface WorkOrderGateRow {
   readonly checks: readonly { readonly name: string; readonly status: string; readonly url?: string }[];
 }
 
+/** One decided human gate of the detail reply (A-411): the decision's own words, and — when the
+ *  gate-auto policy decided it — the evidence the approval relied on; a human decision carries
+ *  none. Rows arrive in event order, so the last row of a gate is its latest decision. */
+export interface WorkOrderGateDecisionRow {
+  readonly gate: string;
+  readonly stage: string;
+  readonly decision: 'approved' | 'rejected';
+  readonly at: number;
+  readonly approvedByPolicy?: { readonly policy: string; readonly level: string; readonly passedMachineGates: readonly string[] };
+}
+
 export interface WorkOrderDetailView {
   readonly record: WorkOrderDetailRecord;
   readonly state: WorkOrderState;
@@ -130,6 +141,8 @@ export interface WorkOrderDetailView {
   readonly runSummaries?: readonly WorkOrderRunSummary[];
   /** The remote_checks gates' evaluation rows (#1146, A-378); absent on an older reply. */
   readonly gates?: readonly WorkOrderGateRow[];
+  /** The human gates' decision rows (A-411); absent on an older reply reads as no decision shown. */
+  readonly decisions?: readonly WorkOrderGateDecisionRow[];
   /** The git lifecycle fold (#1167, A-390): branch, pull request and release marks as the
    *  reply's own derived state — never re-derived here from events; absent on an older reply. */
   readonly git?: GitLifecycleState;
@@ -179,6 +192,9 @@ export interface GateView {
   readonly label?: string;
   /** Present only for `deploy` gates. */
   readonly deploy?: DeployGateView;
+  /** The latest decision's policy evidence (A-411, U-355), present only when the gate-auto
+   *  policy decided it — a human decision carries none, so the row stays as it always was. */
+  readonly policyApproval?: NonNullable<WorkOrderGateDecisionRow['approvedByPolicy']>;
 }
 
 /** One stage's gates, in flow order; `current` marks the work order's stage. The role decides the
@@ -397,9 +413,17 @@ const stageGates = (
   flow: FlowDef,
   environments: readonly EnvironmentDef[],
   state: WorkOrderState,
+  decisions: readonly WorkOrderGateDecisionRow[] = [],
 ): readonly StageGates[] => {
   const currentIndex =
     state.stage === null ? flow.stages.length : flow.stages.findIndex((stage) => stage.id === state.stage);
+  // Rows arrive in event order, so the last row of a gate is its latest decision — a later human
+  // re-decision after a stage re-entry replaces an older policy approval, exactly as it should.
+  const policyApprovalByGate = new Map<string, NonNullable<WorkOrderGateDecisionRow['approvedByPolicy']>>();
+  for (const row of decisions) {
+    if (row.approvedByPolicy !== undefined) policyApprovalByGate.set(row.gate, row.approvedByPolicy);
+    else policyApprovalByGate.delete(row.gate);
+  }
   return flow.stages.map((stage, index) => ({
     stage: stage.id,
     name: stage.name,
@@ -411,6 +435,7 @@ const stageGates = (
       status: gateStatus(state, index, currentIndex, gate.id),
       ...(gate.kind === 'human' || gate.kind === 'page_approval' ? { label: gate.label } : {}),
       ...(gate.kind === 'deploy' ? { deploy: deployGateView(environments, gate.environment) } : {}),
+      ...(policyApprovalByGate.has(gate.id) ? { policyApproval: policyApprovalByGate.get(gate.id) } : {}),
     })),
   }));
 };
@@ -1024,7 +1049,7 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     // the query has already resolved the definitions server-side — the flow and the environments
     // ride the reply, so the stage list derives without a second read.
     const view = reply as WorkOrderDetailView;
-    const stages = stageGates(view.flow, view.environments, view.state);
+    const stages = stageGates(view.flow, view.environments, view.state, view.decisions);
     set({
       ...state,
       loading: false,
