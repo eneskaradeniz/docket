@@ -4,9 +4,13 @@
 // repository worktree or `~/.gemini`; the tree dies with the run directory. Every shape here is
 // the measured one — one invalid hooks.json entry silently disables the whole file, so the writer
 // emits only the proven minimal schema and the tests pin it.
-// Contract: docs/v2/providers.md → "agy run-scoped delivery (P-62)".
+// P-64: the permission surface is ONE PreToolUse entry whose command is the per-run ask launcher;
+// the user's before_tool commands ride `.docket-ask.json`, never hooks.json (two PreToolUse
+// entries would let an auto_approve win over a deny — probe #1015, spike-agy2/3).
+// Contract: docs/v2/providers.md → "agy run-scoped delivery (P-62)" and
+// "agy before_tool wrapper (P-64)".
 import { cp, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { CapabilityDef, CapabilitySlug, HookEvent } from '../../../../domain/index';
 import type { RunHook, RunMcpServer, RunSkill } from '../../launch/index';
 
@@ -25,23 +29,40 @@ export type AgyDeliveryCapability =
 const AFTER_WRITE_TOOL_MATCHER =
   'write_to_file|replace_file_content|multi_replace_file_content|sed_file|notebook_edit';
 
-/** The events this delivery writes. `before_tool` (PreToolUse) is deliberately absent: the
- * permission bridge owns that entry, so a user before_tool hook is not delivered by this issue
- * and the registry's hook row reports the omission. */
+/** The events this delivery writes as hooks.json entries of their own. `before_tool` (PreToolUse)
+ * is deliberately absent: the ONE PreToolUse entry is the ask wrapper (P-64), and a user
+ * before_tool command is never an entry of its own — an auto_approve that wins over the wrapper's
+ * deny is exactly what the single entry exists to prevent. */
 const HOOK_EVENT_TO_AGY: Readonly<Partial<Record<HookEvent, 'PostToolUse' | 'Stop'>>> = {
   after_tool: 'PostToolUse',
   after_write: 'PostToolUse',
   run_end: 'Stop',
 };
 
-/** agy executes a hook command without a shell (probe #1015: a `2>>` redirection broke every
- * hook call), so the proven form is one command with quoted arguments. A command carrying shell
- * syntax is refused here — writing it would break silently at run time. */
-const SHELL_SYNTAX_RE = /&&|\|\||[|<>;`]|\$\(|\r|\n/u;
+/** The built ask child (I-108), the same spelling mcp/ask-script-path.ts owns; the providers
+ * module cannot import that one (the infrastructure module map allows system only), so the tests
+ * pin the two spellings against each other. */
+const ASK_SCRIPT_FILE = 'docket-agy-ask.cjs';
+
+/** The ask launcher's file name under `.agents/hooks/`; the id is fixed, not a capability id. */
+const ASK_LAUNCHER_ID = 'docket-ask';
+
+/** The ask configuration file the launcher's script reads (I-108). */
+const DOCKET_ASK_FILE = '.docket-ask.json';
+
+/** The one wait budget: the PreToolUse entry's `timeout` and the ask file's `timeoutSeconds`
+ * are this same constant, so the CLI never kills the hook before the script gives up (I-108). */
+const ASK_TIMEOUT_SECONDS = 3600;
+
+/** The built-in MCP capability whose env carries the run's socket path and token, whose command
+ * is the app's own executable and whose script argument names the directory the ask child lives
+ * in (the mcp-attach spelling). */
+const DOCKET_PAGES_ID = 'docket-pages';
 
 /** Stop (and the other matcher-less events) take a direct command list — NO matcher, NO hooks
  * wrapper; PreToolUse/PostToolUse take { matcher?, hooks: [...] }. */
 interface AgyHooksFile {
+  readonly PreToolUse: readonly { readonly matcher?: string; readonly hooks: readonly unknown[] }[];
   readonly PostToolUse?: readonly { readonly matcher?: string; readonly hooks: readonly unknown[] }[];
   readonly Stop?: readonly { readonly type: 'command'; readonly command: string }[];
 }
@@ -49,6 +70,11 @@ interface AgyHooksFile {
 const byId = (a: { id: string }, b: { id: string }): number => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
 const jsonFile = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
+
+/** hooks.json carries only the quoted absolute path of a launcher file: agy parses double-quoted
+ * arguments of its shell-less command exec (probe #1015, spike-agy5 U3), so the quotes are the
+ * proven form for paths with spaces. */
+const quoted = (path: string): string => JSON.stringify(path);
 
 /** Directory name of a named component: the trimmed name with runs of whitespace as dashes, or
  * the id when the name is empty (same rule as the SDK delivery's skill dirs). */
@@ -58,19 +84,79 @@ const dirNameOf = (capability: { readonly id: string; readonly name: string }): 
   return capability.id;
 };
 
-const buildHooksFile = (hooks: readonly RunHook[]): AgyHooksFile => {
+/** One per-run executable launcher: `#!/bin/sh` plus the body verbatim, mode 0755. The user's
+ * command line keeps its shell syntax (P-62's refusal is lifted — the command runs inside the
+ * shell the launcher provides); the ask launcher execs the plain-Node child (I-108). */
+const writeLauncher = async (hooksDir: string, id: string, body: string): Promise<string> => {
+  const path = join(hooksDir, `${id}.sh`);
+  await writeFile(path, `#!/bin/sh\n${body}\n`, { encoding: 'utf8', mode: 0o755 });
+  return path;
+};
+
+/** What the ask side of this run needs: the plain-Node executable, the built ask child, and the
+ * permission channel when the run has one. Everything comes from the delivered `docket-pages`
+ * capability; without it there is no channel (bridge false) and the app's own entry bundle
+ * directory is the best in-band spelling of the built child's home. */
+const askDeliveryOf = (capabilities: readonly AgyDeliveryCapability[]): {
+  readonly execPath: string;
+  readonly scriptPath: string;
+  readonly socketPath: string;
+  readonly token: string;
+} => {
+  const docketPages = capabilities.find(
+    (capability): capability is RunMcpServer =>
+      capability.kind === 'mcp' && capability.id === DOCKET_PAGES_ID && capability.args.length > 0,
+  );
+  if (docketPages !== undefined) {
+    return {
+      execPath: docketPages.command,
+      scriptPath: join(dirname(docketPages.args[0]), ASK_SCRIPT_FILE),
+      socketPath: docketPages.env['DOCKET_MCP_SOCKET'] ?? '',
+      token: docketPages.env['DOCKET_MCP_TOKEN'] ?? '',
+    };
+  }
+  const entry = process.argv[1] ?? process.execPath;
+  return { execPath: process.execPath, scriptPath: join(dirname(entry), ASK_SCRIPT_FILE), socketPath: '', token: '' };
+};
+
+/** Writes the run's `.agents/` tree under `configDir` and returns its path. Throws on a
+ * capability the measured surface cannot carry (unreadable source); the transport turns that
+ * into a typed start error, never a crash. */
+export async function prepareAgyDelivery(
+  configDir: string,
+  capabilities: readonly AgyDeliveryCapability[],
+): Promise<string> {
+  const agentsDir = join(configDir, '.agents');
+  await mkdir(agentsDir, { recursive: true, mode: 0o700 });
+  const sorted = [...capabilities].sort(byId);
+
+  const hooksDir = join(agentsDir, 'hooks');
+  await mkdir(hooksDir, { recursive: true, mode: 0o700 });
+  const ask = askDeliveryOf(sorted);
+  // The ONE PreToolUse entry (P-64): its command is the ask launcher — the user's before_tool
+  // commands are never entries of their own, so nothing can out-vote this wrapper.
+  const askLauncher = await writeLauncher(
+    hooksDir,
+    ASK_LAUNCHER_ID,
+    `exec env ELECTRON_RUN_AS_NODE=1 ${quoted(ask.execPath)} ${quoted(ask.scriptPath)} ${quoted(configDir)}`,
+  );
+  const preToolUse = [
+    { matcher: '.*', hooks: [{ type: 'command' as const, command: quoted(askLauncher), timeout: ASK_TIMEOUT_SECONDS }] },
+  ];
+
+  const beforeTool: string[] = [];
   const postToolUse: { matcher?: string; hooks: unknown[] }[] = [];
   const stop: { type: 'command'; command: string }[] = [];
-  for (const hook of hooks) {
-    const command = hook.command;
-    if (SHELL_SYNTAX_RE.test(command)) {
-      throw new Error(
-        `agy hook ${hook.id} command carries shell syntax agy cannot execute (no shell: ${command})`,
-      );
+  for (const hook of sorted.filter((capability): capability is RunHook => capability.kind === 'hook')) {
+    if (hook.event === 'before_tool') {
+      // Delivered through the wrapper's file, not hooks.json (P-64).
+      beforeTool.push(hook.command);
+      continue;
     }
     const agyEvent = HOOK_EVENT_TO_AGY[hook.event];
-    if (agyEvent === undefined) continue; // before_tool: not delivered by this issue (see above)
-    const entry = { type: 'command' as const, command };
+    if (agyEvent === undefined) continue;
+    const launcher = await writeLauncher(hooksDir, hook.id, hook.command);
+    const entry = { type: 'command' as const, command: quoted(launcher) };
     if (agyEvent === 'Stop') {
       stop.push(entry);
       continue;
@@ -81,31 +167,29 @@ const buildHooksFile = (hooks: readonly RunHook[]): AgyHooksFile => {
         : { hooks: [entry] },
     );
   }
-  const file: AgyHooksFile = {
+
+  const hooksFile: AgyHooksFile = {
+    PreToolUse: preToolUse,
     ...(postToolUse.length > 0 ? { PostToolUse: postToolUse } : {}),
     ...(stop.length > 0 ? { Stop: stop } : {}),
   };
-  return file;
-};
+  // Always written now: the PreToolUse wrapper entry exists even with no user hooks and no
+  // channel (neutral `allow`), so a later capability cannot change the entry count mid-flight.
+  await writeFile(join(agentsDir, 'hooks.json'), jsonFile(hooksFile), { encoding: 'utf8', mode: 0o600 });
 
-/** Writes the run's `.agents/` tree under `configDir` and returns its path. Throws on a
- * capability the measured surface cannot carry (shell-syntax hook command, unreadable source);
- * the transport turns that into a typed start error, never a crash. */
-export async function prepareAgyDelivery(
-  configDir: string,
-  capabilities: readonly AgyDeliveryCapability[],
-): Promise<string> {
-  const agentsDir = join(configDir, '.agents');
-  await mkdir(agentsDir, { recursive: true, mode: 0o700 });
-  const sorted = [...capabilities].sort(byId);
-
-  const hooks = sorted.filter((capability): capability is RunHook => capability.kind === 'hook');
-  const hooksFile = buildHooksFile(hooks);
-  // Only files with content are written: an empty hooks.json or mcp_config.json is not part of the
-  // measured surface, so the writer never bets a run on an unmeasured shape.
-  if (hooksFile.PostToolUse !== undefined || hooksFile.Stop !== undefined) {
-    await writeFile(join(agentsDir, 'hooks.json'), jsonFile(hooksFile), { encoding: 'utf8', mode: 0o600 });
-  }
+  // The ask configuration (I-108): the only place the run token and socket path live outside the
+  // docket-pages server env — 0600, inside the run's own tree, gone with the run directory.
+  await writeFile(
+    join(agentsDir, DOCKET_ASK_FILE),
+    jsonFile({
+      socketPath: ask.socketPath,
+      token: ask.token,
+      timeoutSeconds: ASK_TIMEOUT_SECONDS,
+      beforeTool,
+      bridge: ask.socketPath !== '' && ask.token !== '',
+    }),
+    { encoding: 'utf8', mode: 0o600 },
+  );
 
   const mcpServers: Record<string, Pick<RunMcpServer, 'command' | 'args' | 'env'>> = {};
   for (const server of sorted.filter((capability): capability is RunMcpServer => capability.kind === 'mcp')) {
