@@ -6,7 +6,7 @@
 import { accessSync } from 'node:fs';
 import { StringDecoder } from 'node:string_decoder';
 import type { AgentTransport, RunHandle, RunRequest, TransportError } from '../../../../application/index';
-import type { AgentEvent, Result } from '../../../../domain/index';
+import type { AgentEvent, Result, RunId } from '../../../../domain/index';
 import { err, ok } from '../../../../domain/index';
 import { createSystemClock, registeredSpawn } from '../../../system/index';
 import type { ProviderDef } from '../../defs/index';
@@ -22,6 +22,39 @@ export interface StreamDialect {
    * this the prompt is written as one bare text line (print-mode semantics). */
   readonly wrapInput?: (prompt: string) => string;
 }
+
+/** One permission ask as the bridge delivers it (P-63): the Docket tool name the ask child already
+ *  mapped — no second mapping happens here — its one identifying string when the mapping has one,
+ *  and the CLI's conversation id. */
+export interface AgyAskRequest {
+  readonly tool: string;
+  readonly target?: string;
+  readonly conversationId?: string;
+}
+
+/** The app-side permission channel of one agy run (P-63). The mcp module owns the implementation;
+ *  the providers module spells the shape itself because the infrastructure module map allows it no
+ *  mcp import, and the composition root passes the real bridge through the factory config — the
+ *  type check at that call site is what pins the two spellings together. */
+export interface AgyAskBridge {
+  register(runId: RunId, waiter: (ask: AgyAskRequest) => Promise<'allow' | 'deny'>): void;
+  unregister(runId: RunId): void;
+}
+
+/** The built-in capability that carries a run's Docket token in its env (the mcp-attach spelling). */
+const DOCKET_PAGES_ID = 'docket-pages';
+
+/** Whether the run holds a Docket RUN token: the docket-pages capability with a non-empty token of
+ *  the run kind (P-63). The listener stays the authority — it resolves the token itself — this
+ *  check only decides whether the transport offers a waiter at all; a chat turn registers nothing. */
+const holdsDocketRunToken = (capabilities: readonly RunCapability[]): boolean =>
+  capabilities.some(
+    (capability) =>
+      capability.kind === 'mcp' &&
+      capability.id === DOCKET_PAGES_ID &&
+      capability.env['DOCKET_MCP_TOKEN'] !== '' &&
+      capability.env['DOCKET_MCP_KIND'] === 'run',
+  );
 
 /** Single-consumer push channel: buffers events between await points, ends after a finish. */
 interface Channel<T> {
@@ -72,7 +105,11 @@ function createChannel<T>(): Channel<T> {
   };
 }
 
-export function createStreamJsonTransport(def: ProviderDef, dialect: StreamDialect): AgentTransport {
+export function createStreamJsonTransport(
+  def: ProviderDef,
+  dialect: StreamDialect,
+  agyAskBridge?: AgyAskBridge,
+): AgentTransport {
   const clock = createSystemClock();
 
   return {
@@ -211,9 +248,52 @@ export function createStreamJsonTransport(def: ProviderDef, dialect: StreamDiale
         }
       };
 
+      // P-63: the run's permission channel. Only agy carries one, and only while the run holds a
+      // Docket run token: the bridge then keeps this run's waiter, an agy_permission_ask over
+      // mcp.sock becomes a permission_ask on this stream, and nothing but handle.answerPermission —
+      // the executor's existing decision path — settles it. Registration happens after the only
+      // start failure that follows it, so a dead start leaves no waiter behind.
+      let settleAsk: ((askId: string, decision: 'allow' | 'deny') => void) | undefined;
+      let closeAskChannel: (() => void) | undefined;
+      if (agyAskBridge !== undefined && def.id === 'agy' && holdsDocketRunToken(runCapabilities)) {
+        const asks = new Map<string, (decision: 'allow' | 'deny') => void>();
+        let askCount = 0;
+        settleAsk = (askId, decision) => {
+          const settle = asks.get(askId);
+          if (settle === undefined) return; // unknown or already answered: ignored
+          asks.delete(askId);
+          settle(decision);
+        };
+        agyAskBridge.register(request.runId, async (ask) => {
+          askCount += 1;
+          const askId = `ask-${askCount}`;
+          events.push({
+            type: 'permission_ask',
+            at: clock.now(),
+            id: askId,
+            tool: ask.tool,
+            ...(ask.target === undefined ? {} : { target: ask.target }),
+            options: ['allow', 'deny'],
+          });
+          const decision = await new Promise<'allow' | 'deny'>((resolve) => asks.set(askId, resolve));
+          asks.delete(askId);
+          return decision;
+        });
+        closeAskChannel = () => {
+          // Every end path answers the still-open asks deny — a dying run never leaves a hook child
+          // waiting on a decision nothing will make — and the bridge forgets the run, so a late ask
+          // meets the fail-closed no-channel answer.
+          for (const settle of asks.values()) settle('deny');
+          asks.clear();
+          agyAskBridge.unregister(request.runId);
+        };
+      }
+
       const finishWith = (event: AgentEvent): void => {
         if (finished) return;
         finished = true;
+        closeAskChannel?.();
+        closeAskChannel = undefined;
         events.push(event);
         events.close();
         // The run is over for the consumer; no process of the group may outlive it.
@@ -314,9 +394,10 @@ export function createStreamJsonTransport(def: ProviderDef, dialect: StreamDiale
 
       const handle: RunHandle = {
         events: events.stream,
-        answerPermission: (): void => {
-          // No line protocol carries answers back to the CLI; asks a dialect emits are
-          // informational. A dialect that needs answering brings its own channel.
+        answerPermission: (askId: string, decision: 'allow' | 'deny'): void => {
+          // The agy bridge is the one ask channel this transport kind answers (P-63); without it
+          // asks a dialect emits stay informational, exactly as before.
+          settleAsk?.(askId, decision);
         },
         steer: (note: string): void => {
           if (stdin.writableEnded) return; // the one-shot prompt closed stdin; the note is dropped

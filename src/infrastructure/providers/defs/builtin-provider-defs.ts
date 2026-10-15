@@ -110,9 +110,10 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     resume: 'specify',
     capabilities: {
       structuredStream: true,
-      // No ask channel exists yet: the hook-based permission bridge is a separate issue, so the
-      // def does not claim asking (headless agy auto-denies instead).
-      permissionAsk: false,
+      // The ask channel is the PreToolUse wrapper's bridge over mcp.sock (P-63): the CLI itself
+      // never pauses on stdout, but a hook ask reaches the executor's decision path, so the def
+      // claims asking.
+      permissionAsk: true,
       resume: true,
       // Run-scoped mcp/hooks/skills through the .agents tree via --add-dir (P-62, probe #1015
       // agy spike, 2026-10-16).

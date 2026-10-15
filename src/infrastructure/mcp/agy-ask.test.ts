@@ -11,7 +11,13 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { DocketToolRequest, DocketToolResponse } from '../../application/index';
-import { AGY_ASK_FILE, AGY_PERMISSION_ASK_TOOL, runAgyAsk, type AgyAskFile } from './agy-ask';
+import {
+  AGY_ASK_FILE,
+  AGY_PERMISSION_ASK_TOOL,
+  mapAgyToolCall,
+  runAgyAsk,
+  type AgyAskFile,
+} from './agy-ask';
 import { startMcpListener, type McpListener } from './ipc';
 
 let root: string;
@@ -113,6 +119,55 @@ describe('runAgyAsk', () => {
         reason: 'not on the allowlist',
       });
       expect(requests[1]).toMatchObject({ args: { tool: 'Read', target: '/a/b.txt' } });
+    } finally {
+      await listener.close();
+    }
+  });
+
+  it('P-63: agy tool names map to Docket tool names', async () => {
+    // The child owns the one mapping (the app-side bridge receives the mapped name and never maps
+    // again): each CLI tool becomes the Docket tool the risk table reads, with its one
+    // identifying string as the target when the mapping has one.
+    expect(mapAgyToolCall('run_command', { CommandLine: 'npm test', Cwd: '/tmp' })).toEqual({
+      toolName: 'Bash',
+      toolInput: { command: 'npm test' },
+      target: 'npm test',
+    });
+    expect(mapAgyToolCall('write_to_file', { TargetFile: '/w/new.txt' })).toEqual({
+      toolName: 'Write',
+      toolInput: { file_path: '/w/new.txt' },
+      target: '/w/new.txt',
+    });
+    expect(mapAgyToolCall('view_file', { AbsolutePath: '/a/b.txt' })).toEqual({
+      toolName: 'Read',
+      toolInput: { file_path: '/a/b.txt' },
+      target: '/a/b.txt',
+    });
+    // An MCP call spells the server and tool out in the name and carries NO target — without one
+    // the risk table cannot rate it, so the ask stays with the human.
+    expect(mapAgyToolCall('call_mcp_tool', { ServerName: 'probe', ToolName: 'fetch' })).toEqual({
+      toolName: 'mcp__probe__fetch',
+      toolInput: { ServerName: 'probe', ToolName: 'fetch' },
+    });
+    // A call the mapping cannot read keeps the CLI's own name, still unmapped for risk.
+    expect(mapAgyToolCall('call_mcp_tool', {})).toEqual({ toolName: 'call_mcp_tool', toolInput: {} });
+
+    // The mapped name is what the channel carries: the line the app receives names the MCP tool
+    // with no target key at all.
+    const dir = nextDir();
+    const socketPath = join(dir, 'mcp.sock');
+    const requests: DocketToolRequest[] = [];
+    const listener = await fakeApp(socketPath, [{ ok: true, result: { decision: 'deny', reason: 'ask the human' } }], requests);
+    const configDir = writeAskTree(dir, { socketPath, token: 'tok-1', bridge: true });
+    try {
+      expect(
+        await runScript(configDir, stdinOf('call_mcp_tool', { ServerName: 'probe', ToolName: 'fetch' })),
+      ).toEqual({ decision: 'deny', reason: 'ask the human' });
+      expect(requests[0]).toMatchObject({
+        tool: AGY_PERMISSION_ASK_TOOL,
+        args: { tool: 'mcp__probe__fetch', conversationId: 'conv-7' },
+      });
+      expect(requests[0]?.args).not.toHaveProperty('target');
     } finally {
       await listener.close();
     }
