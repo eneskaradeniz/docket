@@ -307,8 +307,9 @@ const isGitReadCommand = (command: string): boolean => {
   if (tokens[0] !== 'git' || subcommand === undefined) return false;
   const rest = tokens.slice(2);
   if (GIT_READ_SUBCOMMANDS.includes(subcommand)) {
-    // diff and show can write their patch out with --output, in every spelling.
-    return rest.every((token) => !token.startsWith('--output'));
+    // diff and show can write their patch out with --output, and --no-index diffs two filesystem
+    // paths — reading outside the worktree entirely. Both are banned in every spelling.
+    return rest.every((token) => !token.startsWith('--output') && !token.startsWith('--no-index'));
   }
   if (subcommand === 'branch') return rest.every((token) => GIT_BRANCH_FLAGS.includes(token));
   if (subcommand === 'remote') return rest.every((token) => GIT_REMOTE_FLAGS.includes(token));

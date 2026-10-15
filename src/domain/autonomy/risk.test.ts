@@ -132,6 +132,9 @@ describe('autonomy/risk', () => {
     // diff/show can write a patch with --output: banned in every spelling.
     expect(asks(toolAsk('Bash', { command: 'git diff --output=/tmp/patch' }))).toBe(true);
     expect(asks(toolAsk('Bash', { command: 'git show --output /tmp/patch HEAD' }))).toBe(true);
+    // --no-index diffs two filesystem paths, so it reads outside any worktree: banned too.
+    expect(asks(toolAsk('Bash', { command: 'git diff --no-index /etc/hosts /dev/null' }))).toBe(true);
+    expect(asks(toolAsk('Bash', { command: 'git diff --no-index=/etc/hosts /dev/null' }))).toBe(true);
     // Anything with shell metacharacters asks — quoting and substitution are not parsed.
     expect(asks(toolAsk('Bash', { command: 'git status > out.txt' }))).toBe(true);
     expect(asks(toolAsk('Bash', { command: 'git log --oneline | head -5' }))).toBe(true);
