@@ -109,7 +109,7 @@ const makeHarness = (): Harness => {
   return { deps, clock, definitions, log };
 };
 
-const createIn = async (h: Harness): Promise<void> => {
+const createIn = async (h: Harness, autonomy?: 'auto'): Promise<void> => {
   const flowId = slugOf<'flow'>('auto-flow');
   await h.deps.workOrders.create({
     id: WORK_ORDER,
@@ -119,6 +119,7 @@ const createIn = async (h: Harness): Promise<void> => {
     title: 'Fixture',
     createdAt: h.clock.now(),
     createdBy: USER,
+    ...(autonomy !== undefined ? { autonomy } : {}),
   });
   await h.deps.workOrders.appendEvent(WORK_ORDER, { type: 'created', at: h.clock.now(), by: USER, flow: flowId });
 };
@@ -248,5 +249,24 @@ describe('applyGateAutoPolicy', () => {
     const result = await applyGateAutoPolicy(h.deps, { id: WORK_ORDER });
 
     expect(result).toEqual({ ok: false, error: 'not_found' });
+  });
+
+  it('A-410: the work order record itself carrying auto is enough — no settings key anywhere (the walk seed’s shape)', async () => {
+    const h = makeHarness();
+    await createIn(h, 'auto');
+    await machineConcludedIn(h);
+    h.clock.advance(50);
+
+    const result = await applyGateAutoPolicy(h.deps, { id: WORK_ORDER });
+
+    expect(result).toEqual({
+      ok: true,
+      value: { status: 'done', stage: null, attempt: 1, pendingGates: [], skippedStages: [] },
+    });
+    const events = await eventsOf(h);
+    expect(events[4]).toMatchObject({
+      gate: 'final-approval',
+      approvedByPolicy: { policy: 'gate-auto', level: 'auto', passedMachineGates: ['run-checks'] },
+    });
   });
 });

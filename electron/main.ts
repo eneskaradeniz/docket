@@ -797,21 +797,31 @@ const startApp = async (): Promise<void> => {
 
   // The remote-checks sweep (A-370): its own timer, started through the same injected timers the
   // quota schedule uses, and non-reentrant like the dispatcher's tick — an overlapping pass would
-  // re-derive the same work orders the first is still walking. The gate-auto pass rides the same
-  // cadence right after it (A-410), so its `auto`-level approvals need no timer of their own.
+  // re-derive the same work orders the first is still walking. The gate-auto pass (A-410) rides
+  // the same cadence but as its own pass: a remote sweep that rejects must never keep the policy
+  // from running, so each keeps its own guard and its own catch, chained to nothing.
   // The forge resolver is read here: `node` is not narrowed inside the timer closure (the
   // quotaProbes line above, same reason).
   const nodeForges = node.forges;
   let sweepingRemoteChecks = false;
+  let sweepingGateAuto = false;
   remoteChecksTimer = node.quota.timers.setInterval(() => {
-    if (sweepingRemoteChecks) return;
-    sweepingRemoteChecks = true;
-    void sweepRemoteChecks(nodeDeps, nodeForges)
-      .then(() => sweepGateAuto(nodeDeps))
-      .catch((error) => console.error('remote-checks sweep failed', error))
-      .finally(() => {
-        sweepingRemoteChecks = false;
-      });
+    if (!sweepingRemoteChecks) {
+      sweepingRemoteChecks = true;
+      void sweepRemoteChecks(nodeDeps, nodeForges)
+        .catch((error) => console.error('remote-checks sweep failed', error))
+        .finally(() => {
+          sweepingRemoteChecks = false;
+        });
+    }
+    if (!sweepingGateAuto) {
+      sweepingGateAuto = true;
+      void sweepGateAuto(nodeDeps)
+        .catch((error) => console.error('gate-auto sweep failed', error))
+        .finally(() => {
+          sweepingGateAuto = false;
+        });
+    }
   }, REMOTE_CHECKS_POLL_MS);
 
   createWindow();
