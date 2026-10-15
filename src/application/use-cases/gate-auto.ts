@@ -4,7 +4,7 @@
 // gates the policy may approve (R-181), and appends each approval through decideHumanGate — the
 // same path and the same gate_evaluated event as a user decision. The policy only approves; any
 // doubt leaves the gate pending for the human, and the next pass simply tries again.
-import type { Actor, WorkOrderId, WorkOrderState } from '../../domain/index';
+import type { Actor, GateSlug, WorkOrderId, WorkOrderState } from '../../domain/index';
 import { decideGateAuto, deriveWorkOrderState, err, ok, type Result } from '../../domain/index';
 
 import type { AppDeps } from '../ports';
@@ -12,10 +12,18 @@ import type { AppDeps } from '../ports';
 import { decideHumanGate, loadWorkOrder } from './gates';
 import { effectiveAutonomy } from './work-orders';
 
+/** The gate-auto pass's answer: the state its decisions derive, and the gates it approved — the
+ *  composition root emits the work-orders-changed notification (U-12) for exactly that list, so
+ *  an open detail re-queries on a policy approval and a quiet pass stays quiet on the wire. */
+export interface GateAutoPass {
+  readonly state: WorkOrderState;
+  readonly approved: readonly GateSlug[];
+}
+
 export async function applyGateAutoPolicy(
   deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'definitions' | 'settings'>,
   input: { readonly id: WorkOrderId },
-): Promise<Result<WorkOrderState, 'not_found'>> {
+): Promise<Result<GateAutoPass, 'not_found'>> {
   const loaded = await loadWorkOrder(deps, input.id);
   // Same reading as decideHumanGate: without loadable definitions there is no gate to find, and
   // this pass's error vocabulary has no code for broken definitions.
@@ -26,9 +34,12 @@ export async function applyGateAutoPolicy(
   // decisions made after it (R-170). An unreadable level is the typed read's own surface — the
   // pass writes nothing and stays quiet, exactly like the executor's permission ask.
   const autonomy = await effectiveAutonomy(deps, { workOrderId: input.id, repo: record.repo });
-  if (!autonomy.ok) return ok(deriveWorkOrderState(flow, events));
+  if (!autonomy.ok) {
+    return ok({ state: deriveWorkOrderState(flow, events), approved: [] });
+  }
 
   const approvals = decideGateAuto(flow, deriveWorkOrderState(flow, events), events, autonomy.value.level);
+  const approved: GateSlug[] = [];
   for (const approval of approvals) {
     const actor: Actor = { kind: 'policy', policy: approval.policy, level: approval.level };
     const decided = await decideHumanGate(deps, {
@@ -40,6 +51,7 @@ export async function applyGateAutoPolicy(
     // A refusal or a state that moved under the pass stops it: the rest stays pending for the
     // human, and the next pass re-reads the world as it then is.
     if (!decided.ok) break;
+    approved.push(approval.gate);
   }
-  return ok(deriveWorkOrderState(flow, await deps.workOrders.events(input.id)));
+  return ok({ state: deriveWorkOrderState(flow, await deps.workOrders.events(input.id)), approved });
 }

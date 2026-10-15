@@ -376,8 +376,11 @@ const runStartedItem = async (api: Api & RunEventFeed, board: PermissionBoard, r
     }
     // The machine pass just concluded: under a resolved `auto` level the gate-auto policy may
     // now approve the human gates the pass left pending (A-410). Its own errors are answers
-    // (the gate simply stays pending), so only a crash is loud — same reading as above.
-    await applyGateAutoPolicy(deps, { id: item.workOrderId });
+    // (the gate simply stays pending), so only a crash is loud — same reading as above. An
+    // approval that landed here moves the work order the operator may be looking at: the push
+    // notification (U-12) is what makes an open detail re-query, exactly like a finished run.
+    const gated = await applyGateAutoPolicy(deps, { id: item.workOrderId });
+    if (gated.ok && gated.value.approved.length > 0) api.workOrdersChanged();
   } catch (error) {
     console.error(`queue item ${item.id} crashed its run loop`, error);
   }
@@ -458,11 +461,13 @@ const sweepRemoteChecks = async (deps: AppDeps, forges: ForgeResolver): Promise<
  *  whose machine set concluded without a machine pass of their own — an agent verdict that
  *  arrived through the api. The pass itself writes only under a resolved `auto` level and only
  *  what R-181 licenses; every other work order is a cheap no-op read. One broken work order
- *  never stops the rest of the sweep. */
-const sweepGateAuto = async (deps: AppDeps): Promise<void> => {
+ *  never stops the rest of the sweep. `notify` is the push channel (U-12): fired once per work
+ *  order whose gates the pass approved, so an open detail re-queries — never for a quiet pass. */
+const sweepGateAuto = async (deps: AppDeps, notify: () => void): Promise<void> => {
   for (const record of await deps.workOrders.list({})) {
     try {
-      await applyGateAutoPolicy(deps, { id: record.id });
+      const pass = await applyGateAutoPolicy(deps, { id: record.id });
+      if (pass.ok && pass.value.approved.length > 0) notify();
     } catch (error) {
       console.error(`gate-auto pass for ${record.id} crashed`, error);
     }
@@ -816,7 +821,7 @@ const startApp = async (): Promise<void> => {
     }
     if (!sweepingGateAuto) {
       sweepingGateAuto = true;
-      void sweepGateAuto(nodeDeps)
+      void sweepGateAuto(nodeDeps, () => currentApi?.workOrdersChanged())
         .catch((error) => console.error('gate-auto sweep failed', error))
         .finally(() => {
           sweepingGateAuto = false;

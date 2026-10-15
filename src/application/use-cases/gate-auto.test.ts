@@ -153,7 +153,10 @@ describe('applyGateAutoPolicy', () => {
 
     expect(result).toEqual({
       ok: true,
-      value: { status: 'done', stage: null, attempt: 1, pendingGates: [], skippedStages: [] },
+      value: {
+        state: { status: 'done', stage: null, attempt: 1, pendingGates: [], skippedStages: [] },
+        approved: ['final-approval'],
+      },
     });
     const events = await eventsOf(h);
     expect(events[4]).toEqual({
@@ -177,7 +180,12 @@ describe('applyGateAutoPolicy', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value).toMatchObject({ status: 'awaiting_human', pendingGates: ['final-approval'] });
+    // A pass that wrote nothing names no gate: the composition root emits the work-orders-changed
+    // notification for exactly the approved list, so quiet passes stay quiet on the wire too.
+    expect(result.value).toMatchObject({
+      state: { status: 'awaiting_human', pendingGates: ['final-approval'] },
+      approved: [],
+    });
     expect(await eventsOf(h)).toHaveLength(4);
     expect(h.log.entries()).toHaveLength(0);
   });
@@ -225,7 +233,10 @@ describe('applyGateAutoPolicy', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value).toMatchObject({ status: 'awaiting_human', pendingGates: ['final-approval'] });
+    expect(result.value).toMatchObject({
+      state: { status: 'awaiting_human', pendingGates: ['final-approval'] },
+      approved: [],
+    });
     expect(await eventsOf(h)).toHaveLength(rejected.length + 4);
     expect(h.log.entries()).toHaveLength(0);
   });
@@ -261,7 +272,10 @@ describe('applyGateAutoPolicy', () => {
 
     expect(result).toEqual({
       ok: true,
-      value: { status: 'done', stage: null, attempt: 1, pendingGates: [], skippedStages: [] },
+      value: {
+        state: { status: 'done', stage: null, attempt: 1, pendingGates: [], skippedStages: [] },
+        approved: ['final-approval'],
+      },
     });
     const events = await eventsOf(h);
     expect(events[4]).toMatchObject({
