@@ -14,3 +14,6 @@ shows in full is verbatim. Nothing here is sensitive — the identifiers are ran
   `agent_response` carries no `text_delta`).
 - `error-result.jsonl` — the robustness shape the operator produced with malformed input
   envelopes: the stream stays valid NDJSON and ends in `result` `status:"ERROR"`.
+- `denied-result.jsonl` — NOT a capture: derived 2026-10-16 (#1211) from the `tool-turn.jsonl`
+  shape to exercise a multi-entry `denied_actions` (one entry per denied tool, the count the probe
+  measured) — two auto-denied `write_to_file` calls, entry objects verbatim from the capture.

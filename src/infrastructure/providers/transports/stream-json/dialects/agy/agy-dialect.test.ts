@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { AgentEvent, EpochMs } from '../../../../../../domain/index';
+import { foldRun } from '../../../../../../domain/index';
 import { BUILTIN_STREAM_DIALECTS } from '../../index';
 import { createAgyDialect } from './agy-dialect';
 
@@ -41,7 +42,7 @@ describe('agy stream dialect', () => {
 
   it('P-11: the tool turn fixture pairs tool_call and failed tool_result on one id and still finishes completed', () => {
     const events = eventsOf('tool-turn.jsonl');
-    expect(kindsOf(events)).toEqual(['session_started', 'tool_call', 'tool_result', 'usage', 'finished']);
+    expect(kindsOf(events)).toEqual(['session_started', 'tool_call', 'tool_result', 'usage', 'error', 'finished']);
     const call = events[1];
     expect(call).toEqual({
       type: 'tool_call',
@@ -52,7 +53,7 @@ describe('agy stream dialect', () => {
     });
     expect(events[2]).toEqual({ type: 'tool_result', at: AT, id: '2', ok: false });
     // A headless auto-denial is not a permission ask (the CLI cannot ask; the def says
-    // permissionAsk: false) — the ERROR tool step already carries the denial.
+    // permissionAsk: false) — the addendum's error event carries the denial verdict.
     expect(events.some((event) => event.type === 'permission_ask')).toBe(false);
     expect(events.at(-1)).toEqual({ type: 'finished', at: AT, reason: 'completed' });
   });
@@ -89,6 +90,44 @@ describe('agy stream dialect', () => {
     const wrapped = wrapInput('line one\nline two');
     expect(wrapped.split('\n')).toHaveLength(1);
     expect(JSON.parse(wrapped)).toEqual({ event: 'user', message: { role: 'user', content: 'line one\nline two' } });
+  });
+
+  it('P-11 addendum: denied_actions becomes one error event before finished and does not change the fold', () => {
+    const events = eventsOf('denied-result.jsonl');
+    // Two denied tools, two paired tool steps, then exactly ONE error event immediately before
+    // finished — a run that silently skipped its work must not read as a clean success.
+    expect(kindsOf(events)).toEqual([
+      'session_started',
+      'tool_call',
+      'tool_result',
+      'tool_call',
+      'tool_result',
+      'usage',
+      'error',
+      'finished',
+    ]);
+    expect(events.at(-2)).toEqual({
+      type: 'error',
+      at: AT,
+      class: 'unknown',
+      message: 'agy denied 2 action(s): write_file, write_file',
+    });
+    expect(events.at(-1)).toEqual({ type: 'finished', at: AT, reason: 'completed' });
+    // foldRun ignores error events: with and without the event the summary — outcome included —
+    // is identical, so surfacing the denial never reclassifies the run. This fixture folds
+    // 'failed' by the fold's own rule (every tool call failed, no spoken text); a run that
+    // answers in text folds 'succeeded' and stays identical the same way.
+    const withoutError = events.filter((event) => event.type !== 'error');
+    expect(foldRun(events)).toEqual(foldRun(withoutError));
+    expect(foldRun(events).outcome).toBe('failed');
+    // The name list is capped: a long denied_actions keeps the count but lists only the first
+    // few names, ≤200 characters of them.
+    const many = Array.from({ length: 30 }, () => ({ action: 'write_file', display_name: 'WriteToFile' }));
+    const [denial] = (dialect.parse({ event: 'result', result: { status: 'SUCCESS', denied_actions: many } }) ?? []).filter(
+      (event): event is Extract<AgentEvent, { type: 'error' }> => event.type === 'error',
+    );
+    expect(denial?.message.startsWith('agy denied 30 action(s): ')).toBe(true);
+    expect(denial?.message.slice('agy denied 30 action(s): '.length).length).toBeLessThanOrEqual(200);
   });
 
   it('P-11: the dialect is registered in the framework lookup under agy', () => {
