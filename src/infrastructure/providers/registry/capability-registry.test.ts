@@ -542,17 +542,22 @@ describe('translation support table (P-58)', () => {
     ]);
   });
 
-  it('P-58: agy lists mcp and skill unsupported, hook and plugin unverified, context native, command degraded', () => {
+  it('P-58: agy lists mcp, skill, hook, context and plugin native (plugin path-only), command degraded', () => {
+    // P-58 amendment (2026-10-16, probe #1015 agy spike, #1210): run-scoped delivery via --add-dir
+    // turned the former unsupported/unverified rows native; before_tool hooks stay undelivered
+    // until the permission bridge, which the hook row's how reports.
     expect(KINDS.map((kind) => rowOf('agy', kind).support)).toEqual([
-      'unsupported',
-      'unsupported',
-      'unverified',
       'native',
-      'unverified',
+      'native',
+      'native',
+      'native',
+      'native',
       'degraded',
     ]);
+    expect(rowOf('agy', 'plugin').sourceKinds).toEqual(['path']);
     expect(rowOf('agy', 'command').degradesTo).toBe('prompt_text');
-    expect(rowOf('agy', 'mcp').how).toContain('probe #1015, 2026-10-14');
+    expect(rowOf('agy', 'mcp').how).toContain('probe #1015 agy spike, 2026-10-16');
+    expect(rowOf('agy', 'hook').how).toContain('before_tool is not delivered');
   });
 
   it('P-58: cursor lists mcp native, skill degraded to context, hook and plugin unsupported, context native, command degraded', () => {
@@ -656,9 +661,11 @@ describe('plugin source kinds (R-149)', () => {
     expect(translation.omitted).toEqual([{ capability: 'acme-tool', provider: 'claude-code', reason: 'unsupported' }]);
   });
 
-  it('R-149: the two plugin rows are the table’s only sourceKinds declarations, and both list exactly path', () => {
+  it('R-149: the three plugin rows are the table’s only sourceKinds declarations, and each lists exactly path', () => {
+    // agy's plugin row joined with P-62 (2026-10-16, #1210): a path bundle is deliverable through
+    // the .agents tree, a marketplace one never is (R-149 stands for every provider).
     const declared = TRANSLATION_TABLE.filter((row) => row.sourceKinds !== undefined);
-    expect(declared.map((row) => `${row.provider}/${row.kind}`)).toEqual(['claude-code/plugin', 'codex/plugin']);
+    expect(declared.map((row) => `${row.provider}/${row.kind}`)).toEqual(['claude-code/plugin', 'codex/plugin', 'agy/plugin']);
     expect(declared.every((row) => row.sourceKinds?.length === 1 && row.sourceKinds[0] === 'path')).toBe(true);
   });
 });

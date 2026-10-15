@@ -10,7 +10,8 @@ import type { AgentEvent, Result } from '../../../../domain/index';
 import { err, ok } from '../../../../domain/index';
 import { createSystemClock, registeredSpawn } from '../../../system/index';
 import type { ProviderDef } from '../../defs/index';
-import { buildChildEnv, writeRunConfig, type RunCapability } from '../../launch/index';
+import { buildChildEnv, writeRunConfig, type RunCapability, type RunMcpServer } from '../../launch/index';
+import { prepareAgyDelivery, type AgyDeliveryCapability } from './agy-delivery';
 
 export interface StreamDialect {
   readonly id: string;
@@ -88,11 +89,31 @@ export function createStreamJsonTransport(def: ProviderDef, dialect: StreamDiale
         return err({ code: 'not_installed', message: `provider ${def.id} binary is not present` });
       }
 
+      // agy is the one stream-json CLI with a run-scoped delivery surface (P-62): its capabilities
+      // ride a .agents tree under the run's config directory, not only the generic config files.
+      const agyTree: AgyDeliveryCapability[] = [];
       const runCapabilities: RunCapability[] = [];
       for (const capability of request.capabilities) {
-        if (capability.kind === 'context') continue; // context reaches the CLI through the prompt, not launch files
-        // plugin bundles are unpacked and commands rendered upstream (R-140, R-141); neither is a run file
-        if (capability.kind === 'plugin' || capability.kind === 'command') continue;
+        if (capability.kind === 'command') continue; // rendered as instruction text upstream (R-141)
+        if (capability.kind === 'context') {
+          // agy reads run-scoped rule files (P-62); for every other stream-json CLI context
+          // reaches the agent through the prompt, not launch files.
+          if (def.id === 'agy') agyTree.push(capability);
+          continue;
+        }
+        if (capability.kind === 'plugin') {
+          // Bundles are unpacked upstream (R-140); agy loads a path bundle from its .agents tree
+          // (P-62) — a marketplace source is already omitted in translation (R-149).
+          if (def.id === 'agy' && capability.source.kind === 'path') {
+            agyTree.push({
+              kind: 'plugin',
+              id: capability.id,
+              name: capability.name,
+              path: capability.source.path,
+            });
+          }
+          continue;
+        }
         if (capability.kind === 'mcp') {
           const env: Record<string, string> = {};
           for (const [name, value] of Object.entries(capability.env)) {
@@ -107,20 +128,32 @@ export function createStreamJsonTransport(def: ProviderDef, dialect: StreamDiale
               message: `capability ${capability.id} has an unresolvable secret reference`,
             });
           }
-          runCapabilities.push({
+          const resolved: RunMcpServer = {
             kind: 'mcp',
             id: capability.id,
             name: capability.name,
             command: capability.command,
             args: [...capability.args],
             env,
-          });
+          };
+          runCapabilities.push(resolved);
+          if (def.id === 'agy') agyTree.push(resolved);
           continue;
         }
         runCapabilities.push({ ...capability });
+        if (def.id === 'agy') agyTree.push({ ...capability });
       }
 
       const runConfig = await writeRunConfig(request.runDir, def, runCapabilities);
+      if (def.id === 'agy') {
+        // Same guard as the SDK delivery: a capability the measured surface cannot carry is a
+        // typed start error, never a crash mid-launch.
+        try {
+          await prepareAgyDelivery(runConfig.configDir, agyTree);
+        } catch {
+          return err({ code: 'unsupported', message: 'agy capability delivery failed' });
+        }
+      }
       const launch = def.buildLaunch({
         prompt: request.prompt,
         configDir: runConfig.configDir,

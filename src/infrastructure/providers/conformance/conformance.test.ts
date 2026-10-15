@@ -117,7 +117,12 @@ const SCENARIO_RUNS: Readonly<Record<ScenarioId, (leg: Leg) => Promise<void>>> =
     if (argv !== undefined) {
       // The definition's own argument builder produced the launch, not a test stand-in.
       const expected = leg.def.buildLaunch({ prompt: PROMPT_SENTINEL, configDir: '/unused' }).args;
-      for (const arg of expected) expect(argv).toContain(arg);
+      for (const arg of expected) {
+        // P-62 (2026-10-16, #1210): a def may forward the run config dir in its argv (--add-dir);
+        // the real run directory replaces the '/unused' stand-in, so the stand-in is not comparable.
+        if (arg === '/unused') continue;
+        expect(argv).toContain(arg);
+      }
     }
   },
 
