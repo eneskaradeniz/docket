@@ -315,10 +315,13 @@ export const PROVIDER_INSTRUCTION_FILES: readonly {
   {
     // Docket runs with settingSources []: repo CLAUDE.md and CLAUDE.local.md are not loaded by the
     // CLI — P-37 inlines them (systemPrompt.append on the context row). The automatic project
-    // memory loads even with every setting source off, so the row names it per P-37 — it lives
-    // outside the repo and never matches a repo file, hence never an inline candidate.
+    // memory (~/.claude/projects/<project>/memory/) once rode this row because it loaded even
+    // with every setting source off; A-402 turns it off on every SDK run (autoMemoryEnabled
+    // false inline plus CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 in the route environment), so nothing
+    // native loads it any more — Docket's own memory is the only memory a run sees, and the row
+    // lists no native instruction set.
     providerId: 'claude-code',
-    instructionFiles: ['~/.claude/projects/<project>/memory/'],
+    instructionFiles: [],
   },
   {
     // Its own docs: AGENTS.md plus the override companion, walked root→cwd; a global ~/.codex/

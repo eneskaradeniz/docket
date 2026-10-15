@@ -549,6 +549,47 @@ describe('createSdkTransport', () => {
       });
     });
 
+    it('A-402: first and resumed runs both disable the automatic memory inline and in the environment', async () => {
+      const accounts = createFakeAccountRepo();
+      await accounts.save(account('api_key', 'ref-key'));
+      const secrets = createFakeSecretVault();
+      await secrets.put('ref-key', API_KEY);
+      const { query, calls } = scriptedQuery(async function* () {
+        yield successResult(0.01);
+      });
+      const transport = createSdkTransport({
+        clock: createFakeClock(START_AT),
+        accounts,
+        secrets,
+        baseEnv: {
+          DOCKET_HOME: '/tmp/docket-home',
+          SHELL: '/bin/zsh',
+        },
+        query,
+      });
+
+      // The same options shape is built per start, so the disable reaches a resumed run too.
+      await collect(unwrap(await transport.start(request())).events);
+      await collect(unwrap(await transport.start(request({ resume: { sessionRef: 'sess-42' } }))).events);
+
+      expect(calls.length).toBe(2);
+      expect(calls[1]?.options.resume).toBe('sess-42');
+      for (const call of calls) {
+        expect(call.options.settings).toMatchObject({
+          autoMemoryEnabled: false,
+          disableClaudeAiConnectors: true,
+        });
+        // The disable variable rides I-34's spread of the allowlisted environment — the
+        // pre-existing variables and the vault key survive beside it, nothing is replaced.
+        expect(call.options.env).toEqual({
+          DOCKET_HOME: '/tmp/docket-home',
+          SHELL: '/bin/zsh',
+          CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
+          ANTHROPIC_API_KEY: API_KEY,
+        });
+      }
+    });
+
     it('I-28: an api_key run reports usage with costKind reported', async () => {
       const accounts = createFakeAccountRepo();
       await accounts.save(account('api_key', 'ref-key'));

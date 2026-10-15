@@ -45,6 +45,7 @@ const MISSING_WORK_ORDER: WorkOrderId = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFF
 const ACCOUNT_X: AccountId = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FA2');
 const ACCOUNT_Y: AccountId = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FA3');
 const ACCOUNT_UNKNOWN: AccountId = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FA4');
+const ACCOUNT_CC: AccountId = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FA5');
 const USER: Actor = { kind: 'user', id: 'user-1', label: 'Operator' };
 
 const CWD = '/wt/acme';
@@ -302,6 +303,25 @@ describe('composeRunPrompt', () => {
 
     if (!composed.ok) throw new Error(`composition must succeed: ${composed.error}`);
     // Inlining all beats a smaller prompt: the registry has never heard of this provider.
+    expect(composed.value.plan.native).toEqual([]);
+    expect(composed.value.plan.inlined.map((file) => file.name)).toEqual(['CLAUDE.md']);
+    expect(composed.value.prompt).toContain(CLAUDE_MD);
+  });
+
+  it('A-402: a claude-code run has no native instruction set — the CLI automatic memory is not part of the run', async () => {
+    // The fixture kind mirrors the registry's claude-code row after A-402: no native instruction
+    // files, because every SDK run disables the CLI's automatic project memory (inline
+    // autoMemoryEnabled false plus CLAUDE_CODE_DISABLE_AUTO_MEMORY=1) — nothing native loads it,
+    // so Docket's layers plus the inlined repo files are the run's whole instructions.
+    const h = buildHarness(
+      [{ name: 'CLAUDE.md', content: CLAUDE_MD }],
+      [...ROUTE_KINDS, { id: 'rk-cc', authMode: 'subscription', provider: 'claude-code', instructionFiles: [] }],
+    );
+    await h.deps.accounts.save(accountRecord(ACCOUNT_CC, 'claude-code'));
+
+    const composed = await composeRunPrompt(h.deps, INPUT({ accountId: ACCOUNT_CC }));
+
+    if (!composed.ok) throw new Error(`composition must succeed: ${composed.error}`);
     expect(composed.value.plan.native).toEqual([]);
     expect(composed.value.plan.inlined.map((file) => file.name)).toEqual(['CLAUDE.md']);
     expect(composed.value.prompt).toContain(CLAUDE_MD);

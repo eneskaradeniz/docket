@@ -173,7 +173,10 @@ export async function prepareClaudeCodeSdkDelivery(
   const appendParts = [roleInstructions, ...contextParts].filter((part) => part.length > 0);
   const systemAppend = appendParts.join('\n\n');
 
-  const settings: Record<string, unknown> = { disableClaudeAiConnectors: true };
+  // A-402: the CLI's automatic project memory is off on every run — this inline setting plus the
+  // route environment's CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 remove memory_paths from the SDK init
+  // entirely, so Docket's own memory is the only memory a run sees.
+  const settings: Record<string, unknown> = { disableClaudeAiConnectors: true, autoMemoryEnabled: false };
   if (Object.keys(hooks).length > 0) settings.hooks = hooks;
 
   const cleanup = async (): Promise<void> => {
