@@ -15,7 +15,7 @@ import {
 } from '../../../application/ports/fakes';
 import { BUILTIN_PROVIDER_DEFS } from '../defs/index';
 import { CAPABILITY_REGISTRY } from './capability-registry';
-import { createCapabilityCatalog } from './capability-catalog';
+import { createCapabilityCatalog, routeCostKindOf } from './capability-catalog';
 import { findRouteKind } from './capability-registry';
 
 const slugOf = <B extends string>(input: string) => {
@@ -173,6 +173,18 @@ describe('createCapabilityCatalog', () => {
     expect(catalog.routeKind('anthropic-subscription')?.endpointHost).toBeUndefined();
     expect(catalog.routeKind('anthropic-api')).toMatchObject({ id: 'anthropic-api', authMode: 'api_key' });
     expect(catalog.routeKind('no-such-route-kind')).toBeUndefined();
+  });
+
+  it('routeCostKindOf stamps the registry row kind, and an account no route kind covers reads its auth-mode branch default', () => {
+    // The stream-json dialect context resolves through this (G4): the registry row's kind wins,
+    // and the fallbacks match the SDK route environment's branches — reported on an api key,
+    // equivalent on a subscription or a compatible endpoint.
+    expect(routeCostKindOf({ provider: 'agy', authMode: 'subscription' })).toBe('equivalent');
+    expect(routeCostKindOf({ provider: 'claude-code', authMode: 'api_key' })).toBe('reported');
+    expect(routeCostKindOf({ provider: 'claude-code', authMode: 'api_key', routeKind: 'zai-glm' })).toBe('equivalent');
+    expect(routeCostKindOf({ provider: 'copilot', authMode: 'subscription' })).toBe('credits');
+    expect(routeCostKindOf({ provider: 'no-such-provider', authMode: 'subscription' })).toBe('equivalent');
+    expect(routeCostKindOf({ provider: 'no-such-provider', authMode: 'api_key' })).toBe('reported');
   });
 
   it('P-37: native instruction sets come from the registry rows; an unknown provider has none', () => {

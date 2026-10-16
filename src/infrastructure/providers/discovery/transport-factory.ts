@@ -9,11 +9,13 @@ import type {
   TransportResolver,
 } from '../../../application/index';
 import { err, ok } from '../../../domain/index';
+import type { AccountId, CostKind } from '../../../domain/index';
 import {
   DEFAULT_FIRST_OUTPUT_TIMEOUT_MS,
   DEFAULT_INACTIVITY_TIMEOUT_MS,
   type ProviderDef,
 } from '../defs/index';
+import { routeCostKindOf } from '../registry/index';
 import { realWatchdogTimers, wrapWithWatchdog, type WatchdogTimers } from '../launch/watchdog';
 import { createAppServerTransport } from '../transports/app-server/index';
 import {
@@ -55,6 +57,18 @@ const unsupportedTransport = (def: ProviderDef, detail?: string): AgentTransport
     }),
 });
 
+/** The stream-json dialect context's cost kind source (G4): resolved from the same registry data
+ *  the SDK route environment reads, per run, from the account the run routes through. */
+const costKindOf = (
+  accounts: Pick<AccountRepo, 'get'>,
+): ((accountId: AccountId) => Promise<CostKind>) =>
+  async (accountId) => {
+    const account = await accounts.get(accountId);
+    // forAccount already refuses an unknown account, so this is the unreachable guard; the
+    // branch default keeps the resolver total.
+    return account === undefined ? 'equivalent' : routeCostKindOf(account);
+  };
+
 export function createProviderTransportFactory(config: ProviderTransportFactoryConfig): TransportResolver {
   const defById = new Map(config.defs.map((def) => [def.id, def]));
 
@@ -92,6 +106,7 @@ export function createProviderTransportFactory(config: ProviderTransportFactoryC
         { ...def, bins: binPath === null ? [] : [binPath] },
         dialect,
         config.agyAskBridge,
+        costKindOf(config.accounts),
       );
     }
     if (def.transport === 'acp') {

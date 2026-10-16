@@ -6,12 +6,14 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { AgentEvent, EpochMs } from '../../../../../../domain/index';
 import { foldRun } from '../../../../../../domain/index';
-import { BUILTIN_STREAM_DIALECTS } from '../../index';
+import { BUILTIN_STREAM_DIALECTS, type DialectContext } from '../../index';
 import { createAgyDialect } from './agy-dialect';
 
 const AT: EpochMs = 1_758_900_000_000;
 const clock = { now: (): EpochMs => AT };
 const dialect = createAgyDialect(clock);
+// The subscription route's kind — the fixture runs read the route the live CLI rides.
+const CONTEXT: DialectContext = { costKind: 'equivalent' };
 
 // Runs one fixture transcript through the dialect the way the transport does: parse each
 // NDJSON line, keep the mapped events, skip nothing silently.
@@ -20,7 +22,7 @@ const eventsOf = (fixture: string): readonly AgentEvent[] => {
   const events: AgentEvent[] = [];
   for (const line of text.split('\n')) {
     if (line === '') continue;
-    const mapped = dialect.parse(JSON.parse(line));
+    const mapped = dialect.parse(JSON.parse(line), CONTEXT);
     if (mapped === null) throw new Error(`fixture line not recognised: ${line}`);
     events.push(...mapped);
   }
@@ -35,7 +37,7 @@ describe('agy stream dialect', () => {
     expect(eventsOf('text-turn.jsonl')).toEqual([
       { type: 'session_started', at: AT, sessionRef: '4e62b6ca-5db0-4ac6-ab17-1af3f9d9a89e' },
       { type: 'text', at: AT, delta: 'hello\n' },
-      { type: 'usage', at: AT, inputTokens: 13389, outputTokens: 136, cachedInputTokens: 0 },
+      { type: 'usage', at: AT, inputTokens: 13389, outputTokens: 136, cachedInputTokens: 0, costKind: 'equivalent' },
       { type: 'finished', at: AT, reason: 'completed' },
     ]);
   });
@@ -58,6 +60,16 @@ describe('agy stream dialect', () => {
     expect(events.at(-1)).toEqual({ type: 'finished', at: AT, reason: 'completed' });
   });
 
+  it('P-11: the usage event carries the route\'s cost kind', () => {
+    // The CLI reports tokens, never money; the kind comes from the dialect context — the
+    // route's registry row — so two routes stamp two kinds on the same statistics object.
+    const line = { event: 'result', result: { status: 'SUCCESS', usage: { input_tokens: 10, output_tokens: 2 } } };
+    const equivalent = dialect.parse(line, { costKind: 'equivalent' }) ?? [];
+    const credits = dialect.parse(line, { costKind: 'credits' }) ?? [];
+    expect(equivalent.find((event) => event.type === 'usage')).toMatchObject({ costKind: 'equivalent' });
+    expect(credits.find((event) => event.type === 'usage')).toMatchObject({ costKind: 'credits' });
+  });
+
   it('P-11: an ERROR result ends usage + finished failed, so malformed-input runs still fold into one finished', () => {
     const events = eventsOf('error-result.jsonl');
     expect(kindsOf(events)).toEqual(['session_started', 'text', 'usage', 'finished']);
@@ -67,16 +79,16 @@ describe('agy stream dialect', () => {
   it('P-11: recognised-but-silent shapes return an empty list and unknown shapes are not recognised', () => {
     // user_input steps are framing, a textless agent_response is a tool turn's non-answer,
     // a tool step in a non-terminal state has nothing to report yet.
-    expect(dialect.parse({ event: 'step_update', step_update: { step_index: 0, state: 'DONE', step_type: 'user_input' } })).toEqual([]);
-    expect(dialect.parse({ event: 'step_update', step_update: { step_index: 1, state: 'DONE', step_type: 'agent_response' } })).toEqual([]);
-    expect(dialect.parse({ event: 'step_update', step_update: { step_index: 2, state: 'PENDING', step_type: 'tool', tool_name: 'read_file' } })).toEqual([]);
+    expect(dialect.parse({ event: 'step_update', step_update: { step_index: 0, state: 'DONE', step_type: 'user_input' } }, CONTEXT)).toEqual([]);
+    expect(dialect.parse({ event: 'step_update', step_update: { step_index: 1, state: 'DONE', step_type: 'agent_response' } }, CONTEXT)).toEqual([]);
+    expect(dialect.parse({ event: 'step_update', step_update: { step_index: 2, state: 'PENDING', step_type: 'tool', tool_name: 'read_file' } }, CONTEXT)).toEqual([]);
     // Anything else — unknown event kinds, unknown step types, non-objects — is left to the
     // transport's raw fallback, never guessed at.
-    expect(dialect.parse({ event: 'notification' })).toBeNull();
-    expect(dialect.parse({ event: 'step_update', step_update: { step_index: 9, state: 'DONE', step_type: 'checkpoint' } })).toBeNull();
-    expect(dialect.parse('jetski: no output produced — a tool required the write_file permission')).toBeNull();
-    expect(dialect.parse(42)).toBeNull();
-    expect(dialect.parse(null)).toBeNull();
+    expect(dialect.parse({ event: 'notification' }, CONTEXT)).toBeNull();
+    expect(dialect.parse({ event: 'step_update', step_update: { step_index: 9, state: 'DONE', step_type: 'checkpoint' } }, CONTEXT)).toBeNull();
+    expect(dialect.parse('jetski: no output produced — a tool required the write_file permission', CONTEXT)).toBeNull();
+    expect(dialect.parse(42, CONTEXT)).toBeNull();
+    expect(dialect.parse(null, CONTEXT)).toBeNull();
   });
 
   it('P-11: the input envelope wraps any prompt as exactly one NDJSON user line', () => {
@@ -123,7 +135,7 @@ describe('agy stream dialect', () => {
     // The name list is capped: a long denied_actions keeps the count but lists only the first
     // few names, ≤200 characters of them.
     const many = Array.from({ length: 30 }, () => ({ action: 'write_file', display_name: 'WriteToFile' }));
-    const [denial] = (dialect.parse({ event: 'result', result: { status: 'SUCCESS', denied_actions: many } }) ?? []).filter(
+    const [denial] = (dialect.parse({ event: 'result', result: { status: 'SUCCESS', denied_actions: many } }, CONTEXT) ?? []).filter(
       (event): event is Extract<AgentEvent, { type: 'error' }> => event.type === 'error',
     );
     expect(denial?.message.startsWith('agy denied 30 action(s): ')).toBe(true);
