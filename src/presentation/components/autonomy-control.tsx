@@ -21,8 +21,10 @@ export interface AutonomyControlView {
 export const autonomySourceKey = (source: string): LabelKey =>
   `autonomy.source.${source}` as LabelKey;
 
-/** The typed reason's own copy: the refusal codes share the error lines of their commands. */
-export const autonomyRefusalKey = (code: string): LabelKey => `error.${code}` as LabelKey;
+/** The disabled-reason line's own copy (outside `error.*` so L-13's problem-text walk does not
+ *  read the explanation of why `auto` is disabled as a problem text). */
+export const autonomyRefusalKey = (code: string): LabelKey =>
+  `autonomy.autoDisabledReason.${code}` as LabelKey;
 
 export interface AutonomyControlProps {
   readonly locale: Locale;

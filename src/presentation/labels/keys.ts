@@ -1731,8 +1731,9 @@ export const LABEL_KEYS = [
   'detail.run.roleVersion',
   'common.close',
   // The autonomy control of the widened chain (U-334, D-10 chain a): the two offered levels, the
-  // source line of the effective level (A-407) and the clear-layer affordance. The refusal texts
-  // are the typed error codes' own copy (error.auto_requires_* / error.above_ceiling).
+  // source line of the effective level (A-407), the disabled-reason lines (outside error.* so
+  // L-13 does not count the explanation of a disabled radio as problem text) and the clear-layer
+  // affordance.
   'autonomy.title',
   'autonomy.level.manual',
   'autonomy.level.auto',
@@ -1745,7 +1746,10 @@ export const LABEL_KEYS = [
   'autonomy.source.global',
   'autonomy.source.builtin',
   'autonomy.source.ceiling',
-  // The autonomy set commands' typed refusals (A-403).
+  'autonomy.autoDisabledReason.auto_requires_spend_cap',
+  'autonomy.autoDisabledReason.auto_requires_max_attempts',
+  'autonomy.autoDisabledReason.above_ceiling',
+  // The autonomy set commands' typed refusals (A-403) and workOrder.open's auto preconditions (A-395).
   'error.user_only',
   'error.invalid_autonomy_level',
   'error.above_ceiling',
