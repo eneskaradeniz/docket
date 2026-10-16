@@ -104,6 +104,19 @@ const PENDING = new Map([
   // amendments to the #1225 contracts; the four new ids name the chain step that implements
   // each, and the implementing issue removes the id with its test, as above.
 
+  // #1247 — connector contract (Phase 9 step 0), docs-first. Each id names the follow-up number
+  // in the issue's list that implements it; that issue removes the id from this list in the same
+  // commit as its test.
+  ['domain:R-182', '#1247 follow-up 1 (domain/connector + validation)'],
+  ['domain:R-183', '#1247 follow-up 1 (domain/connector + validation)'],
+  ['application:A-415', '#1247 follow-up 2 (ConnectorRegistry + settings key + resolver rewrite)'],
+  ['application:A-416', '#1247 follow-up 2 (ConnectorRegistry + settings key + resolver rewrite)'],
+  ['application:A-417', '#1247 follow-up 2 (ConnectorRegistry + settings key + resolver rewrite)'],
+  ['infrastructure:I-113', '#1247 follow-up 3 (pure move into connectors/github/ + conformance wiring)'],
+  ['infrastructure:I-114', '#1247 follow-up 3 (pure move into connectors/github/ + conformance wiring)'],
+  ['ui:U-356', '#1247 follow-up 4 (Settings screen)'],
+  ['ui:U-357', '#1247 follow-up 4 (Settings screen)'],
+
 ]);
 
 // Rules whose implementing code and tests were removed while the definition and dated addenda stay

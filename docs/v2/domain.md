@@ -41,7 +41,12 @@ This keeps Phase 1 issues independent and conflict-free.
 | `stage-output` | `definitions`, `pages` |
 | `changes` | — |
 | `redaction` | — |
+| `connector` | `shared` |
 | `scenarios` | every module above — **test files only**, no production code, no `index.ts` |
+
+Row amendment (added 2026-10-16, #1247): `connector` — the connector manifest and its validation
+(the #1247 addendum below) — imports `shared` only; the `scripts/check-layers.mjs` entry lands
+with its implementing issue (follow-up 1 of #1247's list).
 
 Row amendment (added 2026-10-13, #1046): `definitions` may import from `shared`, `budget`, **and `quota`** — `RepoFlow`'s `StageBinding` (§2 addendum) references `AccountRoute` and `LimitPolicy`, and `quota → definitions` would be the cycle those types close. `LimitPolicy` and `AccountRoute` stay in `quota/`; the `scripts/check-layers.mjs` entry lands with #1011.
 
@@ -1717,3 +1722,38 @@ export const WRITE_SCOPE_POLICY: PolicyId; // 'write-scope'
 ```
 
 - **R-159** (added 2026-10-16, #1235) `writeScopeVerdict({ scope, tool, target, context })` is pure and two-valued: `deny` with a reason, or `unchecked` — it never allows, and an `unchecked` or in-scope write keeps going down the normal ask/risk path exactly as before. The write tools are `Write`, `Edit`, `MultiEdit`, `NotebookEdit`, in Docket-tool language (a provider's own spellings arrive already translated). `deny` is answered only when the target is **certainly outside** the scope: scope `none` denies every write target — no context fact needed, the target's location is beside the point; `docs` denies a target outside the repo docs root, located inside the worktree (both facts must be present; a missing docs root is never defaulted to a guess); `repo` denies a target outside the work order's worktree; `tests` denies a target outside the repo's listed test folders **when the repo lists them** — an absent or empty list is `unchecked`. Every other case is `unchecked`, never `deny`: a non-write tool (Bash and everything else that writes indirectly), a missing or empty target string, a `~`-relative target (never expanded — where a shell would take it is a fact the string does not carry), a `paths` scope (the four simple kinds are this guard's contract), a relative target with no `cwd`, or a missing context fact. Paths compare after lexical normalisation (`.` and `..` fold, duplicate separators collapse, `..` at the root stays at the root) — a symlink-free string compare in the same frame `risk.ts` gives its classifier, with no filesystem read. The executor-side wiring is A-409 ([application.md](application.md) → the same-titled addendum).
+
+### Addendum 2026-10-16 (#1247): the connector module (Phase 9, step 0)
+
+The connector contract ([integrations.md](integrations.md) → "Adding a connector"): every
+integration is a self-contained **connector module** — a manifest, one registration path, its own
+folder and a conformance suite — shipped inside the app and switched on/off in Settings; loading
+connectors at run time is explicitly deferred (the Deferred note there). This addendum fixes the
+pure domain half: the manifest type and its two laws. Nothing exists in code yet; every rule names
+the follow-up of #1247's list that implements it. The application halves are A-415 … A-417
+([application.md](application.md) → the same-titled addendum), the layout and conformance halves
+I-113/I-114 ([infrastructure.md](infrastructure.md) → the same-titled addendum), the screens
+U-356/U-357 ([ui.md](ui.md)).
+
+```ts
+// connector/index.ts (added 2026-10-16, #1247)
+export type ConnectorId = Brand<string, 'ConnectorId'>;               // slug, ids.ts
+export type PortFamily = 'forge' | 'tracker' | 'ci' | 'deploy';
+export interface ConnectorSettingField { readonly key: string; readonly label: string; readonly kind: 'text' | 'url' | 'secret'; readonly required: boolean }
+export interface ConnectorManifest {
+  readonly id: ConnectorId; readonly name: string; readonly version: string;       // semver of the connector
+  readonly apiVersion: number;                                                      // the connector API the module was written against
+  readonly provides: readonly PortFamily[];                                         // non-empty, unique
+  readonly hostMatch: readonly string[];                                            // remote-URL host patterns for 'forge' (data, e.g. 'github.com'); empty otherwise
+  readonly network: readonly string[];                                              // the hosts the connector may reach (egress allowlist); '*' is invalid
+  readonly settings: readonly ConnectorSettingField[];                              // account fields; 'secret' fields are keychain refs, never values
+  readonly requiresCli?: string;                                                    // an external CLI the connector shells out to (e.g. the GitHub CLI), probed not assumed
+}
+export const CONNECTOR_API_VERSION: number;                                         // the version the core speaks
+export type ConnectorManifestError = 'invalid_id' | 'empty_provides' | 'duplicate_family' | 'unknown_family' | 'bad_host_match' | 'wildcard_network' | 'duplicate_setting' | 'unsupported_api' | 'bad_version';
+export function validateConnectorManifest(m: ConnectorManifest): Result<ConnectorManifest, ConnectorManifestError>;
+export function matchConnectorHost(manifest: ConnectorManifest, remoteUrl: string): boolean;
+```
+
+- **R-182** (added 2026-10-16, #1247) `validateConnectorManifest` is pure and checks, in this order: id is a slug → `invalid_id`; `provides` non-empty → `empty_provides`; entries known and unique → `unknown_family` / `duplicate_family`; every `hostMatch` entry is a bare host or `*.host` (no scheme, path, port or `*` alone) → `bad_host_match`; `network` has no `*` and no entry with scheme/path → `wildcard_network`; setting keys unique → `duplicate_setting`; `apiVersion === CONNECTOR_API_VERSION` → `unsupported_api` (a newer or older module is refused, never loaded in a degraded mode); `version` is semver → `bad_version`. A `forge` module with an empty `hostMatch` is valid (it is selected only by an explicit per-repo `forge.kind`, integrations.md). No input is mutated. Implementing issue: #1247 follow-up 1.
+- **R-183** (added 2026-10-16, #1247) `matchConnectorHost` extracts the host of a git remote (`https://`, `ssh://`, scp-like `git@host:path`), lower-cases it, and answers true iff it equals a `hostMatch` entry or matches a `*.host` suffix entry exactly on a label boundary (`evil-github.com` never matches `github.com`; `github.com.evil.io` never matches). Pure; an unparsable remote answers false. Implementing issue: #1247 follow-up 1.

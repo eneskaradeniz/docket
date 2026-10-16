@@ -43,7 +43,10 @@ interface ForgeResolver { forRepo(repo: RepoRef): Promise<Forge | undefined> }
 ```
 
 - `RepoRef` gains an optional `forge?: { kind; account }`; without it the kind is inferred from the
-  remote URL host, and the integration account is chosen by host.
+  remote URL host, and the integration account is chosen by host. Extended by the connector
+  registry (A-415, [application.md](application.md) → "the connector registry" addendum, added
+  2026-10-16, #1247): the host test and readiness probe become `matchConnectorHost` plus the
+  connector's own probe over the enabled connectors.
 - Adapters: GitHub first (Phase 3). Bitbucket (Cloud and Data Center), Azure Repos, GitLab later —
   each is one adapter plus its tests against recorded API responses, no core change.
 - A platform without checks or pull requests reports it in `capabilities`; gates that need it fail
@@ -176,3 +179,51 @@ A second new gate kind waits for the platform's checks:
 | **4 — UI & parity** | Environments in workspace settings and the wizard; deploy approval and deployment history in the work-order view; CI status on cards. |
 | **5 — Roadmap & dispatcher** | Remote-check polling by the dispatcher; tracker import as proposal; opt-in write-back. |
 | **9 — Integrations** | Adapters: Bitbucket (repos, pipelines), Azure DevOps (Repos, Pipelines, Boards), GitLab, Jira, Odoo Project, GitHub Issues. Each is an adapter set on the ports above. |
+
+## Phase 9 addendum: the connector model (added 2026-10-16, #1247)
+
+Operator decision 2026-10-16, step 0 of Phase 9: *modules in the Odoo sense, but built-in*. Each
+integration is a self-contained **connector module** with a manifest, one registration path, its own
+folder and a conformance suite, shipped inside the app and switched on/off in Settings.
+Clean-architecture layering applies throughout. The contracts: the manifest and its validation are
+R-182/R-183 ([domain.md](domain.md) → the same-titled addendum), the registry, the connector
+context and the write/error laws A-415 … A-417 ([application.md](application.md) → the same-titled
+addendum), the layout and the conformance suite I-113/I-114 ([infrastructure.md](infrastructure.md)
+→ the same-titled addendum), the Settings screen U-356/U-357 ([ui.md](ui.md)). Third-party loading
+at run time is explicitly **not** part of this decision — see Deferred below.
+
+### Adding a connector
+
+The contributor path, mirroring §9 of [provider-capabilities.md](provider-capabilities.md) ("Adding
+a provider"):
+
+1. **Evidence first.** Read the platform's own API documentation; write the adapter independently
+   from that documentation (CLAUDE.md rule 7: no copying, no naming other projects in code).
+2. **Manifest** — `manifest.ts` in the connector folder, valid under R-182.
+3. **Adapter on the ports** — the provided families' methods over the `ConnectorContext` (A-416),
+   nothing else.
+4. **Recorded fixtures** from a throw-away account, with all identifiers replaced — no real data, no
+   tokens, no personal names (I-113).
+5. **Conformance suite green** — `connectorConformance` (I-114) passes for the connector.
+6. **README connector matrix row** — the new connector appears in the matrix.
+7. **One PR per connector.**
+8. **Operator run** — the maintainer's run on a throw-away account is recorded before the connector
+   ships enabled by default.
+
+Strangers need no live account to contribute: fixtures + suite are the review evidence.
+
+### Open decisions
+
+- O-11 Whether Docket ships an auto-updater: the app has none in the code today
+  (`electron-updater`/`autoUpdater` appear nowhere under `electron/` or in `package.json`), so
+  connectors ship with app releases — a connector update is an app update. Whether to add an
+  auto-updater (and with it out-of-band connector updates) is not decided here; revisit when a
+  connector needs to move faster than the app's release rhythm.
+
+### Deferred (not decided)
+
+Loading connectors from a user directory at run time. The boundary above (manifest +
+`ConnectorContext`, no ambient imports) is chosen so a connector could later run out-of-process
+(stdio protocol, permissions from the manifest) without rewriting the built-ins. Revisit when
+several real third-party connector requests exist or maintainer review becomes the bottleneck.
+**Naming:** "connector", never "plugin" — `plugin` is already an agent capability kind (D-4).

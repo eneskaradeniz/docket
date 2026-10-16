@@ -1947,3 +1947,14 @@ U-335/U-336; the contracts are R-157/R-158, A-408, I-111 and the amended A-403/A
 
 - **U-335** (amended 2026-10-16, #1232) The confirm text lists the stages that carry a restriction — every stage of the pinned flow whose definition-level `autonomy` is `manual` or `balanced` — so the user sees what the confirm overrides: a user-confirmed work-order `auto` governs every stage, a restrictive one included (A-405 amended). The banner and the library row's "önerir: auto" tag speak of the **library flow version** (`FlowDef`) — the tag reads the pinned version's definition, and a repo-side `RepoFlow` edit is never their subject (I-111). Operator scenario: 5. Kısıt taşıyan safheler onay metninde listelenir; kullanıcı listeyi görmeden onay vermez.
 - **U-336** (amended 2026-10-16, #1232) The warning's `{n}` counts the non-`done` work orders whose pre-clamp level exceeds the new ceiling — never every open order, never the clamped result (A-406's "N orders currently above" is this count). The stage tag and the editor's versioned change speak of the **library flow version** (`FlowDef`, D-6); a repo-side `RepoFlow` edit is a different change on its own surface, never this tag's wording. Operator scenario: 4. Uyarı sayısı, üst sınırın üzerinde kalan tamamlanmamış iş emirlerini verir.
+
+## Settings → Entegrasyonlar — the connector rows and accounts (U-356 … U-357)
+
+Added 2026-10-16, #1247 (Phase 9, step 0); the contracts are R-182/R-183, A-415 … A-417 and
+I-113/I-114. Two screens in the [template](screen-contract-template.md)'s discipline: states and
+structure a11y-verifiable, copy from the TR and EN bundles only, radius from the three tokens plus
+`rounded-full` (U-23). Nothing is implemented yet; the implementing issue (#1247 follow-up 4) ends
+with the numbered operator scenario the operator gate requires.
+
+- **U-356** (added 2026-10-16, #1247) Settings → "Entegrasyonlar": one row per built-in connector (name, version, what it provides, enabled switch, readiness: ready / needs account / needs CLI / invalid), the `network` list shown as "Bu bağlayıcı şu adreslere bağlanır: …" so the user sees what it can reach. Disabled/invalid rows are inert. TR + EN copy in the label bundle, outside `error.*` and not error-styled (layout test L-13).
+- **U-357** (added 2026-10-16, #1247) "Hesap ekle" for a connector: fields come from `settings` (text/url inputs; `secret` fields use the existing secret-entry component, value goes straight to the keychain — never shown again); a connection test button runs the connector's `probe`; failure copy names the typed reason only.
