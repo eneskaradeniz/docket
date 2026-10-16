@@ -1,4 +1,4 @@
-import type { Actor, CapabilityDef, ProjectSlug, RepoSlug, Result } from '../../domain/index';
+import type { Actor, CapabilityDef, ProjectSlug, RepoSlug, Result, RoleRef } from '../../domain/index';
 import {
   BUILTIN_FLOWS,
   BUILTIN_ROLES,
@@ -58,16 +58,34 @@ export async function setupCopyProposal(
   };
   const accounts = await deps.accounts.list();
   const provider = accounts[0]?.provider;
-  const stages = repo.flow.bindings.map((binding) => {
-    const roleRef = binding.role;
-    const fromOverlay = roleRef?.detached?.capabilities ?? roleRef?.overlay?.capabilities;
-    const capabilities: readonly CapabilityDef[] = Array.isArray(fromOverlay)
-      ? fromOverlay.filter((entry): entry is CapabilityDef => typeof entry === 'object' && entry !== null && 'kind' in entry)
-      : [];
-    return { stage: binding.stage, provider: provider ?? '', capabilities };
-  });
+  // The stage's Docket-tools standing, resolved the way a run resolves the role — a detached
+  // body wins, then the overlay field, then the library body at the binding's pinned version. An
+  // unreadable role answers undefined, which never warns.
+  const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
+    typeof value === 'object' && value !== null && !Array.isArray(value);
+  const docketToolsOf = async (ref: RoleRef | undefined): Promise<boolean | undefined> => {
+    if (ref === undefined) return undefined;
+    if (ref.detached !== undefined) return ref.detached.docketTools !== false;
+    const overlayTools = ref.overlay?.docketTools;
+    if (overlayTools !== undefined) return overlayTools;
+    const history = await deps.definitions.listVersions('roles', ref.roleId);
+    const body = history.find((record) => record.version === ref.version)?.body;
+    return isRecord(body) ? body['docketTools'] !== false : undefined;
+  };
+  const stages = await Promise.all(
+    repo.flow.bindings.map(async (binding) => {
+      const roleRef = binding.role;
+      const fromOverlay = roleRef?.detached?.capabilities ?? roleRef?.overlay?.capabilities;
+      const capabilities: readonly CapabilityDef[] = Array.isArray(fromOverlay)
+        ? fromOverlay.filter((entry): entry is CapabilityDef => typeof entry === 'object' && entry !== null && 'kind' in entry)
+        : [];
+      return { stage: binding.stage, provider: provider ?? '', capabilities, docketTools: await docketToolsOf(roleRef) };
+    }),
+  );
   const warnings =
-    provider === undefined ? [] : setupWarnings(stages, deps.capabilities.translationTable());
+    provider === undefined
+      ? []
+      : setupWarnings(stages, deps.capabilities.translationTable(), deps.capabilities.permissionChannels());
   const differsFromRecommended = [...copied.copiedPaths];
   const proposal: SetupProposal = {
     project: { name: project.name, repos: [...project.repos, repoId] },

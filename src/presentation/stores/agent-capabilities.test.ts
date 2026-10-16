@@ -1,4 +1,4 @@
-// stores/agent-capabilities.test.ts — U-284, U-285, U-333 and the agent-capabilities store rules.
+// stores/agent-capabilities.test.ts — U-284, U-285, U-333, U-337 and the agent-capabilities store rules.
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
@@ -12,6 +12,7 @@ import { TR } from '../labels/tr';
 import type { ProviderMarksStore } from './provider-marks';
 import { AGENT_CAPABILITY_SECTIONS } from './settings-panel';
 import {
+  CAPABILITY_PERMISSION_CHANNELS,
   CAPABILITY_TRANSLATION_TABLE,
   createAgentCapabilitiesStore,
   warningForKind,
@@ -332,3 +333,115 @@ describe('the built-in MCP row (U-314)', () => {
     }
   });
 });
+
+describe('channel-less role setup warning (U-337)', () => {
+  const slug = <T extends string>(id: string) => {
+    const parsed = parseSlug<T>(id);
+    if (!parsed.ok) throw new Error(id);
+    return parsed.value;
+  };
+
+  it('U-337: a role with docketTools: false when agy is installed shows the Turkish warning row in CapabilitySection', async () => {
+    expect(CAPABILITY_PERMISSION_CHANNELS.find((row) => row.provider === 'agy')?.channel).toBe('bridge');
+    const store = createAgentCapabilitiesStore({
+      api: {
+        query: async (query: Query) => {
+          if (query.type === 'providers.discovered') {
+            return [
+              { defId: 'agy', name: 'agy', installUrl: null, binPath: '/usr/local/bin/agy', version: '1.3.6', loggedIn: true, optionalFlags: [] },
+            ];
+          }
+          if (query.type === 'roles.list') {
+            return [{ id: 'sessiz', name: 'Sessiz', version: 1, removal: { kind: 'delete' }, pastVersions: [], stages: [] }];
+          }
+          return [];
+        },
+        command: async () => ({ ok: true }),
+      },
+      actor: { kind: 'user', id: 'u', label: 'U' },
+      runCommand: async () => ({ ok: true }),
+      roleLibrary: async () => [
+        {
+          definitionId: 'sessiz',
+          version: 1,
+          recordedAt: 0,
+          archived: false,
+          body: {
+            id: slug<'role'>('sessiz'),
+            name: 'Sessiz',
+            instructions: '',
+            writeScope: { kind: 'none' },
+            capabilities: [],
+            docketTools: false,
+            active: true,
+          },
+        },
+      ],
+      now: () => 0,
+    });
+    store.setSection('roles');
+    await store.load();
+    const [row] = store.state().roles;
+    if (row === undefined) throw new Error('roles row missing');
+    expect(row.warningKey).toBe('capabilities.warning.noChannel');
+    expect(row.warningProviders).toBe('agy');
+    expect(store.roleWarning(row)).toBe('capabilities.warning.noChannel');
+
+    const htmlTr = renderToStaticMarkup(
+      createElement(CapabilitySection, { locale: 'tr', section: 'roles', store, marks, active: true, onOpenRoles: () => undefined }),
+    );
+    expect(htmlTr).toContain(
+      'Bu rolde Docket araçları kapalı; agy bu aşamada izin soramaz, yazma/komut/MCP çağrıları sessizce reddedilir.',
+    );
+
+    const htmlEn = renderToStaticMarkup(
+      createElement(CapabilitySection, { locale: 'en', section: 'roles', store, marks, active: true, onOpenRoles: () => undefined }),
+    );
+    expect(htmlEn).toContain(
+      'Docket tools are off in this role; agy cannot ask for permission in this stage, and write/command/MCP calls are silently denied.',
+    );
+  });
+
+  it('U-337: a role with docketTools: true or undefined, or when only native-channel providers are installed, raises no noChannel warning', async () => {
+    const store = createAgentCapabilitiesStore({
+      api: {
+        query: async (query: Query) => {
+          if (query.type === 'providers.discovered') {
+            return [
+              { defId: 'claude-code', name: 'Claude Code', installUrl: null, binPath: '/usr/local/bin/claude', version: '1.0.0', loggedIn: true, optionalFlags: [] },
+            ];
+          }
+          if (query.type === 'roles.list') {
+            return [{ id: 'sessiz', name: 'Sessiz', version: 1, removal: { kind: 'delete' }, pastVersions: [], stages: [] }];
+          }
+          return [];
+        },
+        command: async () => ({ ok: true }),
+      },
+      actor: { kind: 'user', id: 'u', label: 'U' },
+      runCommand: async () => ({ ok: true }),
+      roleLibrary: async () => [
+        {
+          definitionId: 'sessiz',
+          version: 1,
+          recordedAt: 0,
+          archived: false,
+          body: {
+            id: slug<'role'>('sessiz'),
+            name: 'Sessiz',
+            instructions: '',
+            writeScope: { kind: 'none' },
+            capabilities: [],
+            docketTools: false,
+            active: true,
+          },
+        },
+      ],
+      now: () => 0,
+    });
+    store.setSection('roles');
+    await store.load();
+    expect(store.state().roles[0]?.warningKey).toBeNull();
+  });
+});
+

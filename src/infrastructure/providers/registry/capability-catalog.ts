@@ -6,7 +6,7 @@ import type { AuthMode, CostKind, RouteKindRecord } from '../../../domain/index'
 
 import { BUILTIN_PROVIDER_DEFS } from '../defs/index';
 
-import { CAPABILITY_REGISTRY, findRouteKind, PROVIDER_INSTRUCTION_FILES, TRANSLATION_TABLE } from './capability-registry';
+import { CAPABILITY_REGISTRY, findRouteKind, PERMISSION_CHANNELS, PROVIDER_INSTRUCTION_FILES, TRANSLATION_TABLE } from './capability-registry';
 
 const steeringSupportOf = (providerId: string): boolean | 'unknown' => {
   const record = CAPABILITY_REGISTRY.providers.find((entry) => entry.providerId === providerId);
@@ -29,6 +29,7 @@ export const createCapabilityCatalog = (): CapabilityCatalog => ({
   routeKindOf: (account) => account.routeKind ?? DEFAULT_ROUTE_KINDS[account.provider]?.[account.authMode],
   routeKind: (id) => findRouteKind(id),
   translationTable: () => TRANSLATION_TABLE,
+  permissionChannels: () => PERMISSION_CHANNELS,
   mcpSupport: (providerId) => BUILTIN_PROVIDER_DEFS.find((def) => def.id === providerId)?.capabilities.mcp ?? 'unknown',
   steeringSupport: steeringSupportOf,
   // Registry order: the row's own order for a provider, first appearance for the union. A provider

@@ -4,7 +4,7 @@
 // no provider can read as `full`; without usage visibility (G4) none can read as `isolated`, so
 // today only the sdk provider tops out at `isolated` and the rest stay `experimental`. Model data
 // (models, effort levels, prices) lands with the model-catalog issues; the route kinds start empty.
-import type { CapabilityKind, CapabilityRegistry, FamilyPattern, ProviderRecord, RouteKindRecord, TranslationRow } from '../../../domain/index';
+import type { CapabilityKind, CapabilityRegistry, ChannelRow, FamilyPattern, ProviderRecord, RouteKindRecord, TranslationRow } from '../../../domain/index';
 
 /** Family recognition as data (P-29 section 4): an unknown live id containing `contains` gets that
  * tier automatically. The Fable family has no entry on purpose — it stays unclassified (selectable,
@@ -27,6 +27,8 @@ export const CAPABILITY_REGISTRY = {
       // The CLI keeps its machine login in its own config directory, so the isolation proof is the
       // launch that never points the config directory at the run directory.
       providerId: 'claude-code',
+      // The SDK permission callback asks on every run (P-66).
+      permissionChannel: 'native',
       // The sdk transport delivers a mid-run steering note (P-61).
       steering: 'steerable',
       isolation: { kind: 'test', name: 'P-44: a subscription launch never points the config directory at the run directory, whatever the ambient environment carries' },
@@ -43,6 +45,8 @@ export const CAPABILITY_REGISTRY = {
       // No G4: the app-server transport maps no usage event, so cost visibility is unproven.
       // Login stays under CODEX_HOME (config.mechanism 'none'); ambient config is dropped via argv.
       providerId: 'codex',
+      // The app-server approval request becomes a permission_ask that waits (P-13, P-66).
+      permissionChannel: 'native',
       // The app-server transport delivers a mid-run steering note (P-61).
       steering: 'steerable',
       isolation: {
@@ -63,6 +67,10 @@ export const CAPABILITY_REGISTRY = {
       // login) and the CLI reads its own configuration; the cap holds — with every gate now
       // carrying test evidence, isolation is the one thing still between agy and `full`.
       providerId: 'agy',
+      // The stream-json transport has no ask callback; a run asks only through the Docket bridge
+      // (P-63), so a role without the Docket tools leaves the run channel-less (P-66).
+      permissionChannel: 'bridge',
+      bridgeHow: 'headless agy cannot ask: command, MCP and write calls are denied without a prompt',
       // The stream-json transport does not carry a steering note (P-61).
       steering: 'not_steerable',
       gates: {
@@ -84,6 +92,8 @@ export const CAPABILITY_REGISTRY = {
       // (COPILOT_HOME) is also where its stored login lives, so neither HOME nor that variable is
       // ever redirected or named and the CLI reads its own configuration; the cap holds.
       providerId: 'copilot',
+      // session/request_permission becomes a permission_ask that waits (P-16, P-66).
+      permissionChannel: 'native',
       // The acp transport does not carry a steering note (P-61).
       steering: 'not_steerable',
       gates: {
@@ -99,6 +109,8 @@ export const CAPABILITY_REGISTRY = {
       // run-scoped home could cut the CLI off from its login) and the CLI reads its own
       // configuration; the cap holds.
       providerId: 'cursor',
+      // session/request_permission becomes a permission_ask that waits (P-16, P-66).
+      permissionChannel: 'native',
       // The acp transport does not carry a steering note (P-61).
       steering: 'not_steerable',
       gates: {
@@ -110,6 +122,8 @@ export const CAPABILITY_REGISTRY = {
     },
     {
       providerId: 'opencode',
+      // session/request_permission becomes a permission_ask that waits (P-16, P-66).
+      permissionChannel: 'native',
       // The acp transport does not carry a steering note (P-61).
       steering: 'not_steerable',
       isolation: { kind: 'test', name: 'P-8: the opencode launch environment is exactly the config dir plus the documented Claude-compatibility switch' },
@@ -331,6 +345,16 @@ export const CAPABILITY_REGISTRY = {
     },
   ],
 } as const satisfies CapabilityRegistry;
+
+/** P-66: the permission-channel table `setupWarnings`' second source reads — one row per provider
+ *  record, the bridge rows carrying their warning sentence. */
+export const PERMISSION_CHANNELS: readonly ChannelRow[] = CAPABILITY_REGISTRY.providers.map(
+  (provider: ProviderRecord) => ({
+    provider: provider.providerId,
+    channel: provider.permissionChannel,
+    ...(provider.bridgeHow === undefined ? {} : { how: provider.bridgeHow }),
+  }),
+);
 
 /** The instruction files each provider reads natively (P-37) — the provider's best-known set, not a
  *  fixed law of the CLI. Entries name repo-level files and paths the CLI reads on its own; where a

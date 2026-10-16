@@ -11,7 +11,7 @@ import type {
   Query,
   RoleListItem,
 } from '../../api/queries';
-import type { Actor, CapabilityKind, RemovalVerdict, RoleDef, TranslationRow, VersionRecord, WriteScope } from '../../domain/index';
+import type { Actor, CapabilityKind, ChannelRow, RemovalVerdict, RoleDef, TranslationRow, VersionRecord, WriteScope } from '../../domain/index';
 import { commandResultKey } from './results';
 import { removalActionOf } from './roles';
 import { machineCandidateImportable, supportFor } from '../../domain/index';
@@ -32,6 +32,15 @@ const parseTranslationTable = (): readonly TranslationRow[] =>
   JSON.parse(atob(CAPABILITY_TRANSLATION_TABLE_B64)) as readonly TranslationRow[];
 
 export const CAPABILITY_TRANSLATION_TABLE: readonly TranslationRow[] = parseTranslationTable();
+
+/** Layer-safe copy of infrastructure/registry/capability-registry.ts PERMISSION_CHANNELS (P-66), base64
+ *  for the same reason as the translation table above and regenerated together with it (U-337). */
+const CAPABILITY_PERMISSION_CHANNELS_B64 = 'W3sicHJvdmlkZXIiOiJjbGF1ZGUtY29kZSIsImNoYW5uZWwiOiJuYXRpdmUifSx7InByb3ZpZGVyIjoiY29kZXgiLCJjaGFubmVsIjoibmF0aXZlIn0seyJwcm92aWRlciI6ImFneSIsImNoYW5uZWwiOiJicmlkZ2UiLCJob3ciOiJoZWFkbGVzcyBhZ3kgY2Fubm90IGFzazogY29tbWFuZCwgTUNQIGFuZCB3cml0ZSBjYWxscyBhcmUgZGVuaWVkIHdpdGhvdXQgYSBwcm9tcHQifSx7InByb3ZpZGVyIjoiY29waWxvdCIsImNoYW5uZWwiOiJuYXRpdmUifSx7InByb3ZpZGVyIjoiY3Vyc29yIiwiY2hhbm5lbCI6Im5hdGl2ZSJ9LHsicHJvdmlkZXIiOiJvcGVuY29kZSIsImNoYW5uZWwiOiJuYXRpdmUifV0=';
+
+const parsePermissionChannels = (): readonly ChannelRow[] =>
+  JSON.parse(atob(CAPABILITY_PERMISSION_CHANNELS_B64)) as readonly ChannelRow[];
+
+export const CAPABILITY_PERMISSION_CHANNELS: readonly ChannelRow[] = parsePermissionChannels();
 
 export type DefinitionSection = 'plugins' | 'mcp' | 'skills' | 'commands' | 'hooks';
 
@@ -287,11 +296,20 @@ export const warningForKind = (
 };
 
 const roleRowWarning = (
+  docketTools: boolean | undefined,
   capabilities: readonly string[],
   kinds: Readonly<Record<string, CapabilityKind>>,
   installed: readonly string[],
   names: Readonly<Record<string, string>>,
 ): { readonly key: LabelKey; readonly providers: string } | null => {
+  if (docketTools === false) {
+    const bridgeProviders = installed.filter(
+      (provider) => CAPABILITY_PERMISSION_CHANNELS.find((row) => row.provider === provider)?.channel === 'bridge',
+    );
+    if (bridgeProviders.length > 0) {
+      return { key: 'capabilities.warning.noChannel', providers: formatProviders(bridgeProviders, names) };
+    }
+  }
   const seen = new Set<CapabilityKind>();
   for (const id of capabilities) {
     const kind = kinds[id];
@@ -328,7 +346,7 @@ const mergeRoleRows = (
     const body = bodies.get(item.id);
     const writeScope = body?.writeScope ?? { kind: 'none' as const };
     const caps = body?.capabilities ?? [];
-    const warning = roleRowWarning(caps, kinds, installed, names);
+    const warning = roleRowWarning(body?.docketTools, caps, kinds, installed, names);
     return {
       id: item.id,
       name: item.name,

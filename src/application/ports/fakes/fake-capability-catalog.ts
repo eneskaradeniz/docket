@@ -1,7 +1,7 @@
 // In-memory CapabilityCatalog — the route kinds a test scripts. `provider` drives the default
 // resolution (`routeKindOf` with no explicit kind), `endpointHost` the A-43 host check,
 // `defaultBilling` the route's unpinned-run billing, `instructionFiles` the native set (P-37).
-import type { AuthMode, Billing, Tier, TranslationRow } from '../../../domain/index';
+import type { AuthMode, Billing, ChannelRow, Tier, TranslationRow } from '../../../domain/index';
 
 import type { CapabilityCatalog } from '../capability-catalog';
 
@@ -25,8 +25,10 @@ export interface FakeRouteKind {
 export const createFakeCapabilityCatalog = (
   routeKinds: readonly FakeRouteKind[] = [],
   translations: readonly TranslationRow[] = [],
+  channels: readonly ChannelRow[] = [],
 ): CapabilityCatalog => ({
   translationTable: () => translations,
+  permissionChannels: () => channels,
   routeKindOf: (account) =>
     account.routeKind ??
     routeKinds.find((kind) => kind.provider === account.provider && kind.authMode === account.authMode)?.id,

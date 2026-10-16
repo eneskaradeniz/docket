@@ -224,6 +224,19 @@ describe('createCapabilityCatalog', () => {
     expect(catalog.steeringSupport('never-heard-of')).toBe('unknown');
   });
 
+  it('P-66: permissionChannels follows the registry per provider — one row each, the sentence only on the bridge row', () => {
+    const channels = createCapabilityCatalog().permissionChannels();
+    expect(channels.map((row) => `${row.provider}/${row.channel}`)).toEqual([
+      'claude-code/native',
+      'codex/native',
+      'agy/bridge',
+      'copilot/native',
+      'cursor/native',
+      'opencode/native',
+    ]);
+    expect(channels.filter((row) => row.how !== undefined).map((row) => row.provider)).toEqual(['agy']);
+  });
+
   it('P-37: instructionFileNames is the deduplicated union of the rows in registry order', () => {
     const names = createCapabilityCatalog().instructionFileNames();
 

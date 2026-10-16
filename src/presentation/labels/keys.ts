@@ -1306,6 +1306,7 @@ export const LABEL_KEYS = [
   'capabilities.warning.degraded',
   'capabilities.warning.unsupported',
   'capabilities.warning.unverified',
+  'capabilities.warning.noChannel',
   'capabilities.roles.writeScope.none',
   'capabilities.roles.writeScope.docs',
   'capabilities.roles.writeScope.tests',

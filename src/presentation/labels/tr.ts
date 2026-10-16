@@ -1235,6 +1235,8 @@ export const TR: LabelBundle = {
   'capabilities.warning.degraded': '{providers} üzerinde yönerge metni olarak çalışır.',
   'capabilities.warning.unsupported': '{providers} üzerinde desteklenmez. Koşudan çıkarılır.',
   'capabilities.warning.unverified': '{providers} üzerinde desteği henüz doğrulanmadı.',
+  'capabilities.warning.noChannel':
+    'Bu rolde Docket araçları kapalı; {providers} bu aşamada izin soramaz, yazma/komut/MCP çağrıları sessizce reddedilir.',
   'capabilities.roles.writeScope.none': 'Salt okunur',
   'capabilities.roles.writeScope.docs': 'Belgeler',
   'capabilities.roles.writeScope.tests': 'Testler',

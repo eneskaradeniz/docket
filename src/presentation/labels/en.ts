@@ -1237,6 +1237,8 @@ export const EN: LabelBundle = {
   'capabilities.warning.degraded': 'Runs as instruction text on {providers}.',
   'capabilities.warning.unsupported': 'Unsupported on {providers}. Omitted from runs.',
   'capabilities.warning.unverified': 'Support on {providers} is not verified yet.',
+  'capabilities.warning.noChannel':
+    'Docket tools are off in this role; {providers} cannot ask for permission in this stage, and write/command/MCP calls are silently denied.',
   'capabilities.roles.writeScope.none': 'Read only',
   'capabilities.roles.writeScope.docs': 'Docs',
   'capabilities.roles.writeScope.tests': 'Tests',

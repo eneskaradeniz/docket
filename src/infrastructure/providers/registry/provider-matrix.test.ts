@@ -37,7 +37,11 @@ describe('README provider matrix (P-36)', () => {
   });
 
   it('P-36: a provider without route kinds still gets a row — placeholders in every route column', () => {
-    const provider: ProviderRecord = { providerId: 'fixture', gates: { G1: { kind: 'test', name: 'fixture' } } };
+    const provider: ProviderRecord = {
+      providerId: 'fixture',
+      permissionChannel: 'native',
+      gates: { G1: { kind: 'test', name: 'fixture' } },
+    };
     const registry: CapabilityRegistry = { providers: [provider], routeKinds: [] };
     expect(buildProviderMatrixRows(registry)).toEqual([
       {

@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { setupWarnings, supportFor, supportLevel, thinkingOptions, translateCapabilities } from './capability';
-import type { Evidence, GateId, ModelRecord, ProviderRecord, TranslationRow } from './capability';
+import type { ChannelRow, Evidence, GateId, ModelRecord, ProviderRecord, TranslationRow } from './capability';
 import type { CapabilityDef } from '../definitions/index';
 import type { CapabilitySlug } from '../shared/index';
 
@@ -24,6 +24,7 @@ const recordOf = (
   extra?: Partial<ProviderRecord>,
 ): ProviderRecord => ({
   providerId: 'fixture-cli',
+  permissionChannel: 'native',
   gates,
   isolation: scenarioEvidence('fixture isolation'),
   ...extra,
@@ -157,11 +158,60 @@ describe('translation support table', () => {
         { stage: 'review', provider: 'beta', capabilities: [mcpCap('m1')] },
       ],
       TABLE,
+      [],
     );
     expect(warnings).toEqual([
       { stage: 'plan', capability: 'h1', provider: 'alpha', support: 'unsupported', how: 'no hook protocol' },
       { stage: 'work', capability: 's1', provider: 'alpha', support: 'degraded', how: 'inlined' },
       { stage: 'review', capability: 'm1', provider: 'beta', support: 'unverified', how: expect.any(String) },
+    ]);
+  });
+});
+
+describe('permission channel warnings (P-66)', () => {
+  const BRIDGE_HOW = 'headless beta cannot ask: command, MCP and write calls are denied without a prompt';
+  const CHANNELS: readonly ChannelRow[] = [
+    { provider: 'alpha', channel: 'native' },
+    { provider: 'beta', channel: 'bridge', how: BRIDGE_HOW },
+    { provider: 'gamma', channel: 'none' },
+  ];
+
+  it('P-66: a bridge channel whose stage role lacks the Docket tools warns with the row’s sentence', () => {
+    const warnings = setupWarnings([{ stage: 'work', provider: 'beta', capabilities: [], docketTools: false }], TABLE, CHANNELS);
+    expect(warnings).toEqual([{ stage: 'work', provider: 'beta', kind: 'no_permission_channel', how: BRIDGE_HOW }]);
+  });
+
+  it('P-66: a bridge channel whose stage role carries the Docket tools stays silent', () => {
+    expect(setupWarnings([{ stage: 'work', provider: 'beta', capabilities: [], docketTools: true }], TABLE, CHANNELS)).toEqual([]);
+  });
+
+  it('P-66: native and none channels stay silent even without the Docket tools', () => {
+    expect(setupWarnings([{ stage: 'work', provider: 'alpha', capabilities: [], docketTools: false }], TABLE, CHANNELS)).toEqual([]);
+    expect(setupWarnings([{ stage: 'work', provider: 'gamma', capabilities: [], docketTools: false }], TABLE, CHANNELS)).toEqual([]);
+  });
+
+  it('P-66: absent inputs never warn and the capability-translation warnings are unchanged', () => {
+    // An unknown docketTools (no role, or the library body unavailable), a provider missing from
+    // the channel table, and a bridge row without its sentence are all absent inputs.
+    expect(setupWarnings([{ stage: 'work', provider: 'beta', capabilities: [] }], TABLE, CHANNELS)).toEqual([]);
+    expect(
+      setupWarnings([{ stage: 'work', provider: 'beta', capabilities: [], docketTools: false }], TABLE, [
+        ...CHANNELS.filter((row) => row.provider !== 'beta'),
+      ]),
+    ).toEqual([]);
+    expect(setupWarnings([{ stage: 'work', provider: 'beta', capabilities: [], docketTools: false }], TABLE, [
+      { provider: 'beta', channel: 'bridge' },
+    ])).toEqual([]);
+    // The channel warning rides ahead of the stage's capability rows; those rows are exactly the
+    // P-57 shape.
+    const both = setupWarnings(
+      [{ stage: 'work', provider: 'beta', capabilities: [hookCap('h1')], docketTools: false }],
+      TABLE,
+      CHANNELS,
+    );
+    expect(both).toEqual([
+      { stage: 'work', provider: 'beta', kind: 'no_permission_channel', how: BRIDGE_HOW },
+      { stage: 'work', capability: 'h1', provider: 'beta', support: 'unverified', how: expect.any(String) },
     ]);
   });
 });
@@ -225,6 +275,7 @@ describe('source-kind keyed support (R-149)', () => {
     const warnings = setupWarnings(
       [{ stage: 'work', provider: 'gamma', capabilities: [pathPlugin, marketPlugin] }],
       PLUGIN_TABLE,
+      [],
     );
     expect(warnings).toEqual([
       {
