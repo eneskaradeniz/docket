@@ -321,6 +321,11 @@ const tierValue = (input: string | undefined): Tier | undefined | null => {
 
 const invalidId = (): CommandResult => ({ ok: false, code: 'invalid_id' });
 
+/** P-67: empty scan-and-import ports for the chosen-identity-directory adoption, the one form
+ *  that consults neither. */
+const EMPTY_CANDIDATE_LIST: AccountCandidateList = { get: async () => [] };
+const EMPTY_CREDENTIAL_IMPORTER: CredentialImporter = { readEndpointToken: async () => undefined };
+
 const unknownModelOf = (validModelIds: readonly string[]): CommandResult => ({
   ok: false,
   code: 'unknown_model',
@@ -1487,6 +1492,27 @@ const runCommand = async (
     }
 
     case 'account.adopt': {
+      // P-67: the chosen-identity-directory form needs no scan — no candidate exists for a
+      // directory the operator picked — so it runs with empty scan-and-import ports and works
+      // exactly where the source-path form below answers not_found.
+      if ('identityDir' in command) {
+        const adopted = await adoptAccountCandidate(
+          {
+            clock: deps.clock,
+            ids: deps.ids,
+            log: deps.log,
+            accounts: deps.accounts,
+            secrets: deps.secrets,
+            capabilities: deps.capabilities,
+            accountTests: deps.accountTests,
+            candidates: EMPTY_CANDIDATE_LIST,
+            importer: EMPTY_CREDENTIAL_IMPORTER,
+          },
+          { provider: command.provider, identityDir: command.identityDir, label: command.label, actor },
+        );
+        if (adopted.ok) void quotaService?.refresh(adopted.value);
+        return adopted.ok ? { ok: true, id: adopted.value } : { ok: false, code: adopted.error };
+      }
       // Without the discovery and importer ports no candidate can be found, so the command
       // answers not_found instead of inventing an account. The command carries no kind: the
       // adoption reads the remembered scan (A-85) and classifies by source path alone.

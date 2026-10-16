@@ -69,6 +69,9 @@ export const CAPABILITY_REGISTRY = {
       // login location, so HOME is left alone (a run-scoped home could cut the CLI off from its
       // login) and the CLI reads its own configuration; the cap holds — with every gate now
       // carrying test evidence, isolation is the one thing still between agy and `full`.
+      // P-67 supersedes that note (measured: the CLI honours $HOME, so an account's home is its
+      // identity directory and a run of that account reads and writes no other): the isolation
+      // evidence below is the sentinel-tree launch test, and the cap lifts.
       providerId: 'agy',
       // The stream-json transport has no ask callback; a run asks only through the Docket bridge
       // (P-63), so a role without the Docket tools leaves the run channel-less (P-66).
@@ -76,6 +79,7 @@ export const CAPABILITY_REGISTRY = {
       bridgeHow: 'headless agy cannot ask: command, MCP and write calls are denied without a prompt',
       // The stream-json transport does not carry a steering note (P-61).
       steering: 'not_steerable',
+      isolation: { kind: 'test', name: 'P-67: an agy run of an account with an identity directory points HOME there and passes only the machine gitconfig across' },
       // P-68: every agy fact in this registry was measured on 1.3.6 — the live run
       // 01M50YHMVARZ1G2FGHNPMG6WD2 and the probe/spike rows below. The CLI may self-update, so the
       // installed version is compared against this field (versionDrift).
@@ -88,11 +92,11 @@ export const CAPABILITY_REGISTRY = {
         G5: { kind: 'test', name: 'P-19: runs `agy -p /usage --output-format json` and parses the payload from stderr' },
         G6: { kind: 'test', name: 'P-24: sdk, app-server, stream-json and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
       },
-      // The live agy walk (2026-10-16, agy 1.3.6, run 01M50YHMVARZ1G2FGHNPMG6WD2) is recorded here
-      // per P-28 — an operator run only. With G6 now carrying the scripted stream-json leg, the
-      // P-44 cap above (no isolation evidence) is the one thing that still keeps agy
-      // experimental regardless of operatorRuns.
-      operatorRuns: ['01M50YHMVARZ1G2FGHNPMG6WD2'],
+      // The live agy walk (2026-10-16, agy 1.3.6, run 01M50YHMVARZ1G2FGHNPMG6WD2) stays cited
+      // here and in the docs' delivery rows, but it predates identity directories: it ran against
+      // the real home, so it cannot back the isolated posture's `full`. operatorRuns starts empty
+      // until the live verification records runs under account homes; until then the level
+      // derives isolated.
     },
     {
       // No isolation evidence on purpose (P-44): the CLI's documented home override

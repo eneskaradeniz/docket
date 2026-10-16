@@ -6,6 +6,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { HookEvent } from '../../../domain/index';
 import type { ProviderDef } from '../defs';
+import { homeRootEnvOf } from '../defs';
 
 /** Capabilities of one run with every secret already resolved: the vault answers before this
  * writer runs, so a secret reference never reaches the filesystem layer. */
@@ -62,8 +63,9 @@ export interface RunConfig {
   /** mechanism 'flag': the flag and the config dir the CLI is invoked with, then the definition's
    * isolation flags and telemetry-off flags. */
   readonly args: readonly string[];
-  /** The config-dir variable of this CLI (mechanism 'env-var') and the definition's isolation
-   * variables, all pointing inside the run or at fixed switches. */
+  /** The config-dir variable of this CLI (mechanism 'env-var'), the definition's isolation
+   * variables, and — for a home-rooted CLI of an account with an identity directory (P-67) —
+   * HOME at that directory plus GIT_CONFIG_GLOBAL at the machine gitconfig. */
   readonly env: Readonly<Record<string, string>>;
   /** The parsed config, so transports that carry config inline (e.g. a session-create field)
    * pass exactly what the files hold. */
@@ -81,10 +83,24 @@ const byId = (a: { id: string }, b: { id: string }): number => a.id.localeCompar
 
 const jsonFile = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
 
+/** P-67: the home of the account a run belongs to. `identityDir` points a home-rooted CLI's HOME
+ * at the account's identity directory (the operator signs in there with the vendor's own tool;
+ * Docket never creates the login and never reads, prints, logs or writes a credential).
+ * `machineGitconfig` is the machine's ~/.gitconfig path: a redirected HOME hides it from every
+ * command the agent runs, so it crosses as GIT_CONFIG_GLOBAL — the one non-secret ambient file.
+ * Nothing else is passed or symlinked, never .ssh, the gh config, .npmrc, keychains or tokens:
+ * the agent holds no push credentials, and Docket's own forge/git actions run host-side in the
+ * worktree. */
+export interface RunAccountHome {
+  readonly identityDir?: string;
+  readonly machineGitconfig?: string;
+}
+
 export async function writeRunConfig(
   runDir: string,
   def: ProviderDef,
   capabilities: readonly RunCapability[],
+  account?: RunAccountHome,
 ): Promise<RunConfig> {
   const configDir = resolve(runDir, CONFIG_DIR_NAME);
   // The run's own directory is the only writable surface; recursive keeps a re-used run dir working.
@@ -114,6 +130,13 @@ export async function writeRunConfig(
   await writeFile(join(configDir, SKILLS_FILE), jsonFile({ skills }), { encoding: 'utf8', mode: 0o600 });
   await writeFile(join(configDir, HOOKS_FILE), jsonFile({ hooks }), { encoding: 'utf8', mode: 0o600 });
 
+  // A HOME-named config root is the CLI's login home (P-67): the run directory must never take
+  // it — the login would be lost (P-44) — so its value comes from the account's identity
+  // directory, and an account without one leaves the machine home to the launch allowlist.
+  const homeRoot = homeRootEnvOf(def);
+  const identityDir = homeRoot !== undefined ? account?.identityDir : undefined;
+  const machineGitconfig = identityDir !== undefined ? account?.machineGitconfig : undefined;
+
   return {
     configDir,
     args: [
@@ -126,7 +149,11 @@ export async function writeRunConfig(
       // The run's own directory is the only value a home variable can take: the user's real home
       // would let the CLI read every other tool's configuration.
       ...(def.isolation?.runScopedHome === undefined ? {} : { [def.isolation.runScopedHome]: configDir }),
-      ...(def.config.mechanism === 'env-var' ? { [def.config.name]: configDir } : {}),
+      ...(def.config.mechanism === 'env-var' && homeRoot === undefined ? { [def.config.name]: configDir } : {}),
+      ...(homeRoot !== undefined && identityDir !== undefined ? { [homeRoot]: identityDir } : {}),
+      // The git identity crosses only together with a redirected home: without one the machine
+      // home already carries it, and an unset machineGitconfig (no ~/.gitconfig) sets nothing.
+      ...(machineGitconfig === undefined ? {} : { GIT_CONFIG_GLOBAL: machineGitconfig }),
     },
     mcpServers,
     skills,

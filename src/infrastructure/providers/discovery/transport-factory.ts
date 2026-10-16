@@ -69,6 +69,14 @@ const costKindOf = (
     return account === undefined ? 'equivalent' : routeCostKindOf(account);
   };
 
+/** P-67: the account's identity directory — the HOME a home-rooted CLI runs with — resolved per
+ *  run from the account the run routes through; a machine login (no identityDir) and an unknown
+ *  account both answer undefined, which keeps the machine home. */
+const identityDirOf = (
+  accounts: Pick<AccountRepo, 'get'>,
+): ((accountId: AccountId) => Promise<string | undefined>) =>
+  async (accountId) => (await accounts.get(accountId))?.identityDir;
+
 export function createProviderTransportFactory(config: ProviderTransportFactoryConfig): TransportResolver {
   const defById = new Map(config.defs.map((def) => [def.id, def]));
 
@@ -107,6 +115,7 @@ export function createProviderTransportFactory(config: ProviderTransportFactoryC
         dialect,
         config.agyAskBridge,
         costKindOf(config.accounts),
+        identityDirOf(config.accounts),
       );
     }
     if (def.transport === 'acp') {

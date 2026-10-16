@@ -7,6 +7,7 @@ import {
   effortFlagArgs,
   effortModelId,
   effortOfProviderLevel,
+  homeRootEnvOf,
   providerLevelOf,
   type LaunchInput,
   type ProviderDef,
@@ -124,7 +125,8 @@ describe('provider definitions (P-1)', () => {
     const DOCUMENTED_CONFIG_NAME_BY_ID: Readonly<Record<string, string>> = {
       'claude-code': '',
       codex: '',
-      agy: '',
+      // Measured, not documented: the CLI honours $HOME for its whole tree (P-67).
+      agy: 'HOME',
       copilot: '',
       cursor: '',
       opencode: 'OPENCODE_CONFIG_DIR',
@@ -148,17 +150,24 @@ describe('provider definitions (P-1)', () => {
     expect(JSON.stringify(launch)).not.toContain(LAUNCH_INPUT.configDir);
   });
 
-  it('P-44: agy sets no config-dir variable — a run-scoped HOME could cut the CLI off from its login home', () => {
-    // The CLI documents no config-dir override and no login location, so HOME is never redirected:
-    // the machine's home reaches the child unchanged. P-62 (2026-10-16, #1210) adds --add-dir
-    // pointing at the run config dir — a delivery flag, not a home redirection — so the config
-    // dir now appears in argv while the environment still names no home.
+  it('P-67: agy declares HOME as its config root — the account identity directory, never a run directory', () => {
+    // Measured with a throw-away HOME: the CLI created its whole .gemini tree there and did not
+    // see the real login, so the config root is the HOME variable and an account's home is its
+    // identity directory. The def's own launch still names no home: the value comes from the
+    // account through the run config writer, and --add-dir (P-62) carries the run's delivery —
+    // a delivery flag, not a home redirection.
     const def = defById('agy');
-    expect(def.config).toEqual({ mechanism: 'none' });
+    expect(def.config).toEqual({ mechanism: 'env-var', name: 'HOME' });
+    expect(homeRootEnvOf(def)).toBe('HOME');
     const launch = def.buildLaunch(LAUNCH_INPUT);
     expect(launch.env).toEqual({});
-    expect(Object.keys(launch.env)).not.toContain('HOME');
     expect(JSON.stringify(launch.env)).not.toContain(LAUNCH_INPUT.configDir);
+  });
+
+  it('P-67: a config root that is not HOME stays run-scoped — only a HOME-named root belongs to the account', () => {
+    expect(homeRootEnvOf(defById('opencode'))).toBeUndefined();
+    expect(homeRootEnvOf(defById('claude-code'))).toBeUndefined();
+    expect(homeRootEnvOf({ ...defById('opencode'), config: { mechanism: 'flag', name: '--mcp-config' } })).toBeUndefined();
   });
 
   it('P-44: copilot sets no config-dir variable and never names COPILOT_HOME — the login stays where the CLI keeps it', () => {

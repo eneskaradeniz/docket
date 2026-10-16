@@ -96,6 +96,7 @@ const makeHarness = (
       { id: 'sub-route', provider: 'prov-a', authMode: 'subscription' },
       { id: 'endpoint-route', provider: 'prov-a', authMode: 'api_key', endpointHost: 'api.example.test' },
       { id: 'machine-route', provider: 'prov-b', authMode: 'subscription' },
+      { id: 'home-route', provider: 'prov-c', authMode: 'subscription' },
     ]),
   });
   // One remembered scan per harness, as the api owns one per instance: every adoption reads it.
@@ -104,6 +105,59 @@ const makeHarness = (
 };
 
 describe('adoptAccountCandidate', () => {
+  it('P-67: adopts a chosen identity directory: the subscription record points at it, no scan runs and nothing is read', async () => {
+    const h = makeHarness([]);
+    const result = await adoptAccountCandidate(h.deps, {
+      provider: 'prov-c',
+      identityDir: '/home/u/.home-max',
+      label: 'Max',
+      actor: USER,
+    });
+    if (!result.ok) throw new Error('adoption must succeed');
+    const record = await h.deps.accounts.get(result.value);
+    expect(record).toMatchObject({
+      provider: 'prov-c',
+      label: 'Max',
+      authMode: 'subscription',
+      routeKind: 'home-route',
+      identityDir: '/home/u/.home-max',
+      limitPolicy: 'wait_resume',
+      caps: [],
+    });
+    expect(record?.secretRef).toBeUndefined();
+    expect(record?.endpoint).toBeUndefined();
+    // The directory is chosen, not scanned: no discovery pass and no importer read ever happens.
+    expect(h.scans.count).toBe(0);
+    expect(h.reads).toEqual([]);
+    expect(h.log.entries().map((entry) => entry.action)).toContain('account.adopted');
+  });
+
+  it('P-67: the same identity directory is refused as already added; another directory of the same provider is not', async () => {
+    const h = makeHarness([]);
+    const first = await adoptAccountCandidate(h.deps, { provider: 'prov-c', identityDir: '/home/u/.home-max', label: 'Max', actor: USER });
+    expect(first.ok).toBe(true);
+    expect(await adoptAccountCandidate(h.deps, { provider: 'prov-c', identityDir: '/home/u/.home-max', label: 'Again', actor: USER })).toEqual({
+      ok: false,
+      error: 'already_added',
+    });
+    // Several accounts of one home-rooted provider are the point: only the occupied directory
+    // refuses — the provider's own machine-login account never blocks another home.
+    const second = await adoptAccountCandidate(h.deps, { provider: 'prov-c', identityDir: '/home/u/.home-other', label: 'Other', actor: USER });
+    expect(second.ok).toBe(true);
+  });
+
+  it('P-67: a relative identity directory is refused as identity_dir_not_allowed; a provider without a subscription route kind is not found', async () => {
+    const h = makeHarness([]);
+    expect(await adoptAccountCandidate(h.deps, { provider: 'prov-c', identityDir: 'relative/.home', label: 'X', actor: USER })).toEqual({
+      ok: false,
+      error: 'identity_dir_not_allowed',
+    });
+    expect(await adoptAccountCandidate(h.deps, { provider: 'prov-x', identityDir: '/home/u/.x', label: 'X', actor: USER })).toEqual({
+      ok: false,
+      error: 'not_found',
+    });
+  });
+
   it('adopts a subscription candidate: identityDir is the source path, no secret, nothing imported', async () => {
     const h = makeHarness();
     const result = await adoptAccountCandidate(h.deps, { sourcePath: SUBSCRIPTION.sourcePath, label: 'Work', actor: USER });

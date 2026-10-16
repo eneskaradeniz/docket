@@ -157,9 +157,42 @@ function Accounts({ state, store, locale, marks }: { readonly state: WizardState
               row.source.keyMoveCard ? <KeyMoveCard locale={locale} on={row.source.importToken} onChange={(on) => store.setImportToken(row.id, on)} /> : null
             }
           />
+          {state.agyAdd === null ? null : <AgyAddCard agyAdd={state.agyAdd} store={store} locale={locale} />}
         </>
       )}
     </AccountsScanning>
+  );
+}
+
+/** The add-another-account card of the home-rooted CLI (P-67): the directory input, the
+ *  one-line sign-in instruction, and the note that never reads as an error — a wrong path is a
+ *  hint, not a failure the screen owes red for. */
+function AgyAddCard({ agyAdd, store, locale }: { readonly agyAdd: NonNullable<WizardState['agyAdd']>; readonly store: WizardStore; readonly locale: Locale }) {
+  return (
+    <section data-agy-add="" className="mt-2.5 rounded-card border border-hairline bg-surface p-3.5">
+      <h3 className="text-[13px] font-bold text-ink">{t(locale, 'wizard.accounts.agyAdd.title').replace('{name}', agyAdd.providerName)}</h3>
+      <p className="mt-1 text-[12.5px] leading-5 text-inkdim">{t(locale, 'wizard.accounts.agyAdd.signIn')}</p>
+      <div className="mt-2.5 flex items-center gap-2">
+        <input
+          value={agyAdd.path}
+          onChange={(event) => store.setAgyAddPath(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') store.addAgyAccount();
+          }}
+          aria-label={t(locale, 'wizard.accounts.agyAdd.pathLabel')}
+          placeholder="/Users/…/.agy-max"
+          className="min-w-0 flex-1 rounded-control border border-bord bg-transparent px-2.5 py-1 font-mono text-[13px] text-ink focus:border-signal focus:outline-none"
+        />
+        <ActionButton variant="neutral" size="sm" onClick={() => store.addAgyAccount()}>
+          {t(locale, 'wizard.accounts.agyAdd.add')}
+        </ActionButton>
+      </div>
+      {agyAdd.noteKey !== null ? (
+        <p data-agy-add-note="" className="mt-2 text-[12.5px] text-inkdim">
+          {t(locale, agyAdd.noteKey)}
+        </p>
+      ) : null}
+    </section>
   );
 }
 

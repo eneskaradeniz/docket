@@ -18,7 +18,12 @@ import type { CatalogError } from './model-catalog';
 // The production default registers the listing child; the injected spawns of tests stay
 // unregistered and hermetic.
 const realSpawn: CliModelSpawn = (command, args, options) =>
-  registeredSpawn(command, args, { timeout: options.timeout }, { kind: 'probe', label: `models ${command}` });
+  registeredSpawn(
+    command,
+    args,
+    { timeout: options.timeout, ...(options.env === undefined ? {} : { env: options.env }) },
+    { kind: 'probe', label: `models ${command}` },
+  );
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
@@ -45,7 +50,7 @@ export const CLI_MODEL_COMMANDS: Readonly<Record<string, CliModelCommand>> = {
 export type CliModelSpawn = (
   command: string,
   args: readonly string[],
-  options: { readonly timeout: number },
+  options: { readonly timeout: number; readonly env?: Readonly<Record<string, string>> },
 ) => ChildProcess;
 
 export interface CliCommandCatalogConfig {
@@ -121,11 +126,12 @@ const runModelsCommand = (
   command: string,
   args: readonly string[],
   timeoutMs: number,
+  env: Readonly<Record<string, string>> | undefined,
 ): Promise<CommandOutcome> =>
   new Promise((resolve) => {
     let child: ChildProcess;
     try {
-      child = spawn(command, [...args], { timeout: timeoutMs });
+      child = spawn(command, [...args], { timeout: timeoutMs, ...(env === undefined ? {} : { env }) });
     } catch {
       resolve({ exitCode: null, timedOut: false, spawnFailed: true, stdout: '' });
       return;
@@ -169,11 +175,20 @@ export async function listCliCommandRouteModels(
   if ((launch.needsLogin === true || config.needsLogin === true) && config.loggedIn !== true) {
     return err({ code: 'unsupported', message: 'the models command needs a login and none is confirmed' });
   }
+  // P-67: the listing of one account runs with that account's identity directory as HOME — the
+  // models a login sees are that login's. The parent environment is inherited and HOME alone is
+  // redirected; a machine login inherits it untouched.
+  const parentEnv: Record<string, string> = {};
+  for (const [name, value] of Object.entries(process.env)) {
+    if (value !== undefined) parentEnv[name] = value;
+  }
+  const env = account.identityDir === undefined ? undefined : { ...parentEnv, HOME: account.identityDir };
   const outcome = await runModelsCommand(
     config.spawn ?? realSpawn,
     config.command ?? launch.command,
     launch.args,
     config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    env,
   );
   if (outcome.spawnFailed) return err({ code: 'not_installed', message: 'the models command could not be started' });
   // A null exit means the child was killed before finishing — only the timeouts here kill it.

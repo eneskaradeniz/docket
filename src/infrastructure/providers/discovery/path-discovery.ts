@@ -7,7 +7,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import type { DiscoveredProvider, ProviderDiscovery } from '../../../application/index';
 import type { LoginStates } from './login-states';
-import type { ProviderDef } from '../defs/index';
+import { homeRootEnvOf, type ProviderDef } from '../defs/index';
 import { buildChildEnv } from '../launch/index';
 import { probeAcpLogin } from '../transports/acp/index';
 
@@ -405,9 +405,15 @@ const probeAuth = async (
   homedir: string,
 ): Promise<boolean | null> => {
   if (def.authProbe === undefined) return null;
-  if (def.authProbe.jsonKey !== undefined) return loggedInFromJsonKeyFile(def.authProbe.jsonKey, env, homedir);
-  if (def.authProbe.presenceFile !== undefined) return loggedInFromPresenceFile(def.authProbe.presenceFile, env, homedir);
-  if (def.authProbe.presenceDir !== undefined) return loggedInFromPresenceDir(def.authProbe.presenceDir, env, homedir);
+  // P-67: a home-rooted CLI resolves its whole tree — login included — under the HOME the
+  // environment names, so a probe of one account reads that account's identity directory; every
+  // other CLI keeps the user home the caller passed.
+  const homeRoot = homeRootEnvOf(def);
+  const homeRootValue = homeRoot === undefined ? undefined : env[homeRoot];
+  const probeHome = homeRootValue !== undefined && homeRootValue !== '' ? homeRootValue : homedir;
+  if (def.authProbe.jsonKey !== undefined) return loggedInFromJsonKeyFile(def.authProbe.jsonKey, env, probeHome);
+  if (def.authProbe.presenceFile !== undefined) return loggedInFromPresenceFile(def.authProbe.presenceFile, env, probeHome);
+  if (def.authProbe.presenceDir !== undefined) return loggedInFromPresenceDir(def.authProbe.presenceDir, env, probeHome);
   if (def.authProbe.acpSession !== undefined) {
     // The ACP session is the login signal: the child gets the same allowlisted environment a run
     // builds, so an ambient credential of another account never counts as this machine's login.

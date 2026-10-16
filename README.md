@@ -41,7 +41,7 @@ from the capability registry; regenerate with `npm run gen:provider-matrix`.
 | Claude Code (`claude-code`) | `anthropic-api` | — | — | — | reported | isolated |
 | Claude Code (`claude-code`) | `zai-glm` | — | — | — | equivalent | isolated |
 | Codex (`codex`) | `codex-subscription` | — | — | — | equivalent | experimental |
-| Antigravity (`agy`) | `agy-subscription` | `gemini-4-argon-low` (strong), `gemini-4-argon-medium` (strong), `gemini-4-argon-high` (strong), `gemini-3.8-flash-low` (fast), `gemini-3.8-flash-medium` (fast), `gemini-3.8-flash-high` (fast), `claude-opus-5-5-low` (strong), `claude-opus-5-5-medium` (strong), `claude-opus-5-5-high` (strong), `claude-sonnet-5-5-low` (balanced), `claude-sonnet-5-5-medium` (balanced), `claude-sonnet-5-5-high` (balanced), `gpt-oss-120b-medium` (balanced) | `low`, `medium`, `high` | — | equivalent | experimental |
+| Antigravity (`agy`) | `agy-subscription` | `gemini-4-argon-low` (strong), `gemini-4-argon-medium` (strong), `gemini-4-argon-high` (strong), `gemini-3.8-flash-low` (fast), `gemini-3.8-flash-medium` (fast), `gemini-3.8-flash-high` (fast), `claude-opus-5-5-low` (strong), `claude-opus-5-5-medium` (strong), `claude-opus-5-5-high` (strong), `claude-sonnet-5-5-low` (balanced), `claude-sonnet-5-5-medium` (balanced), `claude-sonnet-5-5-high` (balanced), `gpt-oss-120b-medium` (balanced) | `low`, `medium`, `high` | — | equivalent | isolated |
 | Copilot CLI (`copilot`) | `copilot-subscription` | — | — | — | credits | experimental |
 | Cursor Agent (`cursor`) | `cursor-subscription` | — | — | — | equivalent | experimental |
 | opencode (`opencode`) | `opencode-subscription` | — | — | — | equivalent | experimental |

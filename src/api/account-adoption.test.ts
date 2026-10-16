@@ -210,4 +210,36 @@ describe('account.adopt', () => {
       code: 'not_found',
     });
   });
+
+  it('P-67: a chosen identity directory adopts without a discovery — the account points at it and nothing is scanned or read', async () => {
+    // No discovery is composed at all: the chosen-directory form needs no candidate, so the
+    // command works exactly where the scan-based form answers not_found.
+    const deps = createFakeDeps({
+      clock: createFakeClock(1_000),
+      capabilities: createFakeCapabilityCatalog([{ id: 'home-route', provider: 'prov-c', authMode: 'subscription' }]),
+    });
+    const api = createApi(deps);
+    const result = await api.command(ACTOR, {
+      type: 'account.adopt',
+      provider: 'prov-c',
+      identityDir: '/home/u/.home-max',
+      label: 'Max',
+    });
+    if (!result.ok || result.id === undefined) throw new Error('adopt must answer an id');
+    const record = (await deps.accounts.list())[0];
+    expect(record).toMatchObject({
+      provider: 'prov-c',
+      authMode: 'subscription',
+      routeKind: 'home-route',
+      identityDir: '/home/u/.home-max',
+    });
+    expect(await api.command(ACTOR, { type: 'account.adopt', provider: 'prov-c', identityDir: '/home/u/.home-max', label: 'Again' })).toEqual({
+      ok: false,
+      code: 'already_added',
+    });
+    expect(await api.command(ACTOR, { type: 'account.adopt', provider: 'prov-c', identityDir: 'relative', label: 'X' })).toEqual({
+      ok: false,
+      code: 'identity_dir_not_allowed',
+    });
+  });
 });

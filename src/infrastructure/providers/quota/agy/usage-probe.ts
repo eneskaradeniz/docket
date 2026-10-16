@@ -18,7 +18,7 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 export type UsageSpawn = (
   command: string,
   args: readonly string[],
-  options: { readonly timeout: number },
+  options: { readonly timeout: number; readonly env?: Readonly<Record<string, string>> },
 ) => ChildProcess;
 
 export interface AgyUsageProbeDeps {
@@ -40,11 +40,12 @@ const runUsage = (
   spawn: UsageSpawn,
   command: string,
   timeoutMs: number,
+  env: Readonly<Record<string, string>> | undefined,
 ): Promise<UsageOutcome> =>
   new Promise((resolve) => {
     let child: ChildProcess;
     try {
-      child = spawn(command, [...USAGE_ARGS], { timeout: timeoutMs });
+      child = spawn(command, [...USAGE_ARGS], { timeout: timeoutMs, ...(env === undefined ? {} : { env }) });
     } catch {
       resolve({ exitCode: null, timedOut: false, spawnFailed: true, stdout: '', stderr: '' });
       return;
@@ -85,10 +86,18 @@ export function createAgyUsageProbe(deps: AgyUsageProbeDeps): QuotaProbe {
   const timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   return {
-    poll: async (defId, binPath) => {
+    poll: async (defId, binPath, context) => {
       if (defId !== AGY_DEF_ID) return err('unknown_provider');
+      // P-67: the probe of one account runs with that account's identity directory as HOME —
+      // the usage answer describes the login that lives there. The parent environment is
+      // inherited and HOME alone is redirected; a machine login inherits it untouched.
+      const parentEnv: Record<string, string> = {};
+      for (const [name, value] of Object.entries(process.env)) {
+        if (value !== undefined) parentEnv[name] = value;
+      }
+      const env = context.identityDir === null ? undefined : { ...parentEnv, HOME: context.identityDir };
       // Without a path hint the bare binary name is left to the platform resolver.
-      const outcome = await runUsage(deps.spawn, binPath ?? AGY_DEF_ID, timeoutMs);
+      const outcome = await runUsage(deps.spawn, binPath ?? AGY_DEF_ID, timeoutMs, env);
       if (outcome.spawnFailed) return err('not_installed');
       if (outcome.timedOut || outcome.exitCode === null || outcome.exitCode !== 0) return err('probe_failed');
       // The observed run printed the payload on stderr; the parser reads whichever stream has it.

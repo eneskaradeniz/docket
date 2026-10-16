@@ -89,6 +89,7 @@ interface SpawnCall {
   readonly command: string;
   readonly args: readonly string[];
   readonly timeout: number;
+  readonly env: Readonly<Record<string, string>> | undefined;
 }
 
 interface BinScript {
@@ -132,8 +133,8 @@ const makeLister = (
   }
   const calls: SpawnCall[] = [];
   const spawn: CliModelSpawn = (command, args, spawnOptions) => {
-    calls.push({ command, args: [...args], timeout: spawnOptions.timeout });
-    return nodeSpawn(command, [...args], { timeout: spawnOptions.timeout });
+    calls.push({ command, args: [...args], timeout: spawnOptions.timeout, env: spawnOptions.env });
+    return nodeSpawn(command, [...args], { timeout: spawnOptions.timeout, ...(spawnOptions.env === undefined ? {} : { env: spawnOptions.env }) });
   };
   return {
     calls,
@@ -219,6 +220,18 @@ describe('listCliCommandRouteModels', () => {
 
     expect(result).toEqual({ ok: true, value: EXPECTED_ROWS });
     expect(calls).toEqual([{ command: binPath, args: ['models'], timeout: 15_000 }]);
+  });
+
+  it('P-67: the listing of an account with an identity directory runs with HOME at it; a machine login inherits the environment untouched', async () => {
+    const { calls, list } = makeLister({});
+
+    const account = await list(agyAccount({ identityDir: '/users/fixture/.agy-max' }));
+    expect(account.ok).toBe(true);
+    expect(calls[0]?.env?.HOME).toBe('/users/fixture/.agy-max');
+
+    const machine = await list();
+    expect(machine.ok).toBe(true);
+    expect(calls[1]?.env).toBeUndefined();
   });
 
   it('P-29: progress noise on stderr is ignored — the table is read from stdout', async () => {

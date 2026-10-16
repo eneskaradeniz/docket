@@ -237,18 +237,21 @@ describe('capability registry validity (P-28)', () => {
     expect(findRouteKind('no-such-route-kind')).toBeUndefined();
   });
 
-  it('P-28: agy carries every gate as test evidence and its live operator run yet stays experimental — the isolation cap holds', () => {
-    // The live agy walk of 2026-10-16 (agy 1.3.6; the run id lives in the record and the docs
-    // evidence line) is an operator run only, and G6 now cites the scripted stream-json leg of
-    // the P-24 scenario — but P-44 caps a record without isolation evidence at experimental, so
-    // neither the gates nor the run may move the level.
+  it('P-28: agy carries every gate and isolation evidence, no operator run stands under the isolated posture, and the level derives isolated', () => {
+    // P-67 adds the isolation evidence (the sentinel-tree launch test), so the P-44 cap lifts —
+    // but the recorded live run predates identity directories: it ran against the real home, so
+    // it cannot back the isolated posture's `full`. Its id stays cited in the record's comment
+    // and the docs' delivery rows; operatorRuns stays empty until the live verification records
+    // runs under account homes, and until then the derived level is isolated, never hand-written.
     const agy = findProvider('agy');
     expect(agy).toBeDefined();
     expect(agy?.gates.G6?.kind).toBe('test');
-    expect(agy?.isolation).toBeUndefined();
-    expect(agy?.operatorRuns).toHaveLength(1);
-    expect(agy?.operatorRuns?.[0]).toMatch(/^01[0-9A-Z]{24}$/);
-    if (agy !== undefined) expect(supportLevel(agy)).toBe('experimental');
+    expect(agy?.isolation).toEqual({
+      kind: 'test',
+      name: 'P-67: an agy run of an account with an identity directory points HOME there and passes only the machine gitconfig across',
+    });
+    expect(agy?.operatorRuns).toBeUndefined();
+    if (agy !== undefined) expect(supportLevel(agy)).toBe('isolated');
   });
 });
 
@@ -555,13 +558,13 @@ describe('bundled model records (P-29, P-40)', () => {
 });
 
 describe('isolation evidence (P-44)', () => {
-  it('P-44: every built-in record but agy, copilot and cursor carries isolation evidence, and the rest stay capped at experimental', () => {
-    // agy, copilot and cursor document no home their login does not live in (copilot's
-    // COPILOT_HOME holds it); none can evidence isolation, so their records carry none and the cap
-    // applies.
+  it('P-44: every built-in record but copilot and cursor carries isolation evidence, and the rest stay capped at experimental', () => {
+    // agy joined the isolated set through P-67's account homes; copilot and cursor document no
+    // home their login does not live in (copilot's COPILOT_HOME holds it), so neither can
+    // evidence isolation, their records carry none and the cap applies.
     const records: readonly ProviderRecord[] = CAPABILITY_REGISTRY.providers;
     for (const provider of records) {
-      if (['agy', 'copilot', 'cursor'].includes(provider.providerId)) {
+      if (['copilot', 'cursor'].includes(provider.providerId)) {
         expect(provider.isolation, provider.providerId).toBeUndefined();
       } else {
         expect(provider.isolation, provider.providerId).toBeDefined();
@@ -571,7 +574,7 @@ describe('isolation evidence (P-44)', () => {
     expect(levels).toEqual({
       'claude-code': 'isolated',
       codex: 'experimental',
-      agy: 'experimental',
+      agy: 'isolated',
       copilot: 'experimental',
       cursor: 'experimental',
       opencode: 'experimental',

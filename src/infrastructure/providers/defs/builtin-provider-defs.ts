@@ -86,10 +86,13 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     transport: 'stream-json',
     streamDialect: 'agy',
     effortArg: AGY_EFFORT,
-    // The CLI documents no config-dir override and no login location, so HOME is never
-    // redirected: a run-scoped home could cut the CLI off from wherever it keeps its login, and
-    // the machine's home reaches the child as the CLI itself resolves it. No isolation is claimed.
-    config: { mechanism: 'none' },
+    // Measured with a throw-away HOME (agy 1.4.0): the CLI created its whole .gemini tree there
+    // and did not see the real login, so the config root is the HOME variable and an account's
+    // home is its identity directory (P-67). The earlier stance — no override documented, so
+    // HOME was never redirected — was an assumption that the measurement supersedes; a
+    // run-scoped home is still never used, because the login lives in the home: the launch
+    // points HOME at the account's identity directory or leaves the machine's alone.
+    config: { mechanism: 'env-var', name: 'HOME' },
     // The run's capabilities ride a per-run .agents tree the transport writes under the run's
     // config directory (P-62, probe #1015 agy spike): --add-dir must point at an absolute path
     // (a relative one loads no hooks) and precedes the resume flag.
