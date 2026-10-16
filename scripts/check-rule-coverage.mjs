@@ -92,8 +92,6 @@ const PENDING = new Map([
   // #1225 — D-10 chain widening contracts, docs-first. Each id names the chain step that
   // implements it — (a) set-level commands and UI, (b) the flow layer, (c) the stage layer and
   // the ceiling; that issue removes the id from this list in the same commit as its test.
-  ['domain:R-152', '#1225 (chain b FlowDef field, c StageDef field)'],
-  ['domain:R-153', '#1225 (chain b — definitionAutonomyLayers; c feeds the stage arm)'],
   ['domain:R-154', '#1225 (chain c — clampAutonomy and the ceilings)'],
   ['application:A-405', '#1225 (chain b — the suggestion flow)'],
   ['application:A-406', '#1225 (chain c — the ceiling homes)'],
