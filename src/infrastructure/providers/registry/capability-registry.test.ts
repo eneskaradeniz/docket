@@ -190,6 +190,19 @@ describe('capability registry as data (P-27)', () => {
       expect(pinned, `the measured sdk ${sdk} is pinned exactly in package.json`).toBeDefined();
     }
   });
+
+  it('P-69: the claude-code measuredWith.sdk is exactly the pinned agent SDK version — a bump that forgets the registry fails here', async () => {
+    // The registry's sdk side tracks the exact package pin: a bump moves both in the same commit,
+    // so the equality below is the tripwire — a pin that moved past the registry, or a registry
+    // naming a version nothing pins, turns this red before the suite can pass.
+    const manifest = JSON.parse(await readFile(new URL('../../../../package.json', import.meta.url), 'utf8')) as {
+      readonly dependencies?: Readonly<Record<string, string>>;
+    };
+    const pin = manifest.dependencies?.['@anthropic-ai/claude-agent-sdk'];
+    expect(pin, 'the agent SDK dependency is pinned in dependencies').toBeDefined();
+    expect(pin, 'the agent SDK pin is exact, never a range').toMatch(/^\d/);
+    expect(findProvider('claude-code')?.measuredWith?.sdk).toBe(pin);
+  });
 });
 
 describe('capability registry validity (P-28)', () => {
