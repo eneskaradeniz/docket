@@ -108,6 +108,10 @@ const PENDING = new Map([
   ['ui:U-335', '#1225 (chain b — the suggestion banner and library tag)'],
   ['ui:U-336', '#1225 (chain c — the stage tag and the ceiling controls)'],
 
+  // #1226 — provider conformance checklist (P-65): the audit landed docs-only; the rule gains its
+  // enforcement test when step 2 of the series closes the checklist gaps.
+  ['providers:P-65', '#1226 (docs-only audit; step 2 lands the test)'],
+
   // #1232 — D-10 chain-widening contract fixes from the review of #1228, docs-first. Additive
   // amendments to the #1225 contracts; the four new ids name the chain step that implements
   // each, and the implementing issue removes the id with its test, as above.
