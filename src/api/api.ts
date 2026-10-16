@@ -773,6 +773,17 @@ export function createApi(
       };
       const result = await runCommand(tracked, actor, command, board, runControl, updates, trackerForRepo, adopting, quotaService, chatOps, setup, forges ?? SILENT_FORGES);
       if (appended) emit({ type: 'workOrders.changed' });
+      // When an autonomy layer or ceiling changes, emit workOrders.changed so open work order details
+      // reactively re-evaluate effective autonomy and reflect the new level immediately (U-336 scenario 3).
+      if (
+        result.ok &&
+        (command.type === 'workOrder.setAutonomy' ||
+          command.type === 'repo.setAutonomy' ||
+          command.type === 'project.setAutonomy' ||
+          command.type === 'settings.setAutonomy')
+      ) {
+        emit({ type: 'workOrders.changed' });
+      }
       // A-364: a steered run says so on the run's own channel — the live pane and the running
       // card re-query on it; the work order's fold is untouched, so workOrders.changed stays
       // silent here. A stop announces nothing (A-362): the executor's end path speaks.

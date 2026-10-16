@@ -116,10 +116,24 @@ const fakeApi = (flow: RepoFlow, tree: ProjectTree): FakeApi => {
       }
       if (command.type === 'repo.setAutonomy') {
         if (autonomyResult.ok) {
-          autonomyRead =
-            command.level === null
+          const read: Record<string, unknown> =
+            command.level === null || command.level === undefined
               ? { level: 'manual', source: 'builtin', layerSet: false }
               : { level: command.level, source: 'repo', layerSet: true };
+          if (command.maxLevel !== undefined && command.maxLevel !== null) read.maxLevel = command.maxLevel;
+          autonomyRead = read;
+        }
+        return autonomyResult;
+      }
+      if (command.type === 'settings.setAutonomy') {
+        if (autonomyResult.ok && command.maxLevel !== undefined) {
+          const base: Record<string, unknown> =
+            typeof autonomyRead === 'object' && autonomyRead !== null
+              ? { ...(autonomyRead as Record<string, unknown>) }
+              : { level: 'manual', source: 'builtin', layerSet: false };
+          if (command.maxLevel === null) delete base.globalCeiling;
+          else base.globalCeiling = command.maxLevel;
+          autonomyRead = base;
         }
         return autonomyResult;
       }
@@ -413,5 +427,79 @@ describe('U-334: the repo layer of the autonomy chain', () => {
     await store.load('web');
     expect(store.state().autonomy).toBeNull();
     expect(store.state().problem).toBeNull();
+  });
+});
+
+describe('U-336: the repo and global ceilings', () => {
+  it('U-336: setMaxLevel speaks repo.setAutonomy with maxLevel, publishes the orders-above warning and refreshes the standing', async () => {
+    const { store, api } = storeWith(sampleFlow(), singleRepoTree);
+    api.setAutonomyRead({ level: 'manual', source: 'builtin', layerSet: false });
+    await store.load('web');
+
+    api.setAutonomyResult({ ok: true, ordersAbove: 2 });
+    await store.setMaxLevel('manual');
+
+    expect(api.commands[api.commands.length - 1]?.command).toEqual({ type: 'repo.setAutonomy', repo: 'web', maxLevel: 'manual' });
+    // The warning line's count is the command's own answer, kept until the next load.
+    expect(store.state().ceilingWarningCount).toBe(2);
+    // The refreshed read is the answer: the repo ceiling now stands set.
+    expect(store.state().autonomy).toEqual({ level: 'manual', source: 'builtin', layerSet: false, maxLevel: 'manual' });
+  });
+
+  it('U-336: a ceiling write without orders above stays quiet — no warning count, no problem line', async () => {
+    const { store, api } = storeWith(sampleFlow(), singleRepoTree);
+    api.setAutonomyRead({ level: 'manual', source: 'builtin', layerSet: false });
+    await store.load('web');
+
+    api.setAutonomyResult({ ok: true });
+    await store.setMaxLevel('auto');
+
+    expect(store.state().ceilingWarningCount).toBeNull();
+    expect(store.state().problem).toBeNull();
+    expect(store.state().autonomy).toEqual({ level: 'manual', source: 'builtin', layerSet: false, maxLevel: 'auto' });
+  });
+
+  it('U-336: setGlobalMaxLevel speaks settings.setAutonomy, publishes its own warning and refreshes through the repo read', async () => {
+    const { store, api } = storeWith(sampleFlow(), singleRepoTree);
+    api.setAutonomyRead({ level: 'manual', source: 'builtin', layerSet: false });
+    await store.load('web');
+
+    api.setAutonomyResult({ ok: true, ordersAbove: 5 });
+    await store.setGlobalMaxLevel('manual');
+
+    expect(api.commands[api.commands.length - 1]?.command).toEqual({ type: 'settings.setAutonomy', maxLevel: 'manual' });
+    expect(store.state().globalCeilingWarningCount).toBe(5);
+    expect(store.state().ceilingWarningCount).toBeNull();
+    expect(store.state().autonomy).toEqual({ level: 'manual', source: 'builtin', layerSet: false, globalCeiling: 'manual' });
+  });
+
+  it('U-336: a refused ceiling write changes nothing — the standing stays as it read and no warning appears', async () => {
+    const { store, api } = storeWith(sampleFlow(), singleRepoTree);
+    const standing = { level: 'manual', source: 'builtin', layerSet: false };
+    api.setAutonomyRead(standing);
+    await store.load('web');
+
+    api.setAutonomyResult({ ok: false, code: 'invalid_autonomy_level' });
+    await store.setMaxLevel('auto');
+
+    expect(store.state().autonomy).toEqual(standing);
+    expect(store.state().ceilingWarningCount).toBeNull();
+    expect(store.state().problem).toBeNull();
+  });
+
+  it('U-336: switching repos clears both warning counts — a stale count never crosses a tab', async () => {
+    const { store, api } = storeWith(sampleFlow(), multiRepoTree);
+    api.setAutonomyRead({ level: 'manual', source: 'builtin', layerSet: false });
+    await store.load('api');
+
+    api.setAutonomyResult({ ok: true, ordersAbove: 1 });
+    await store.setMaxLevel('manual');
+    await store.setGlobalMaxLevel('manual');
+    expect(store.state().ceilingWarningCount).toBe(1);
+    expect(store.state().globalCeilingWarningCount).toBe(1);
+
+    await store.selectRepo('web');
+    expect(store.state().ceilingWarningCount).toBeNull();
+    expect(store.state().globalCeilingWarningCount).toBeNull();
   });
 });

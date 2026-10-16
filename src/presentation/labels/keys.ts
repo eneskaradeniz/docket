@@ -1760,6 +1760,12 @@ export const LABEL_KEYS = [
   'autonomy.suggestion.restrictiveNotice',
   'autonomy.suggestion.restrictiveConfirmNote',
   'autonomy.tag.suggestsAuto',
+  // The ceiling controls and stage tag (U-336, D-10 chain c).
+  'autonomy.level.balanced',
+  'autonomy.ceiling',
+  'autonomy.ceiling.global',
+  'autonomy.ceiling.none',
+  'autonomy.ceilingWarning',
   // The autonomy set commands' typed refusals (A-403) and workOrder.open's auto preconditions (A-395).
   'error.user_only',
   'error.invalid_autonomy_level',
