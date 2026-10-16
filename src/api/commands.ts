@@ -19,6 +19,15 @@ export type Command =
   | { readonly type: 'repo.unregister'; readonly project: string; readonly repo: string }
   | { readonly type: 'repo.relink'; readonly repoId: string; readonly path: string } // errors: not_found, folder_not_found, fingerprint_mismatch (A-341)
   | { readonly type: 'repo.saveFlow'; readonly repo: string; readonly flow: RepoFlowInput } // ok → { ok: true }; errors: not_found, definitions_invalid, stale, account_not_connected (A-345, A-354)
+  // The widened autonomy chain's set-level commands (A-403, D-10 chain a): user actor only — the
+  // api names the operator, so a non-user actor never rides this wire. `null` clears the layer;
+  // errors: user_only, invalid_autonomy_level, above_ceiling, auto_requires_spend_cap,
+  // auto_requires_max_attempts (+ not_found/definitions_invalid/stale where a load or a file
+  // write sits behind them); repo.setAutonomy's maxLevel is ceiling_not_available until chain (c).
+  | { readonly type: 'workOrder.setAutonomy'; readonly id: string; readonly level: AutonomyLevelInput }
+  | { readonly type: 'repo.setAutonomy'; readonly repo: string; readonly level: AutonomyLevelInput; readonly maxLevel?: AutonomyLevelInput }
+  | { readonly type: 'project.setAutonomy'; readonly project: string; readonly level: AutonomyLevelInput }
+  | { readonly type: 'settings.setAutonomy'; readonly level: AutonomyLevelInput }
   | { readonly type: 'workOrder.block'; readonly id: string; readonly reason: string }
   | { readonly type: 'workOrder.unblock'; readonly id: string }
   | { readonly type: 'workOrder.close'; readonly id: string }
@@ -120,6 +129,10 @@ export interface RepoFlowInput {
   readonly stages: readonly object[];
   readonly bindings: readonly object[];
 }
+
+/** An autonomy level on the wire (A-403): one of the domain's three, or `null` to clear the
+ *  layer — api.ts parses the value with the domain's own member law before anything moves. */
+export type AutonomyLevelInput = 'manual' | 'balanced' | 'auto' | null;
 
 /** A conversation scope on the wire: the domain's own three shapes with plain string ids. */
 export type ChatScopeInput =

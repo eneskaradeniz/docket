@@ -70,6 +70,7 @@ const DEFINITIONS_BODY = {
             { kind: 'command', id: 'run-checks', commandSet: 'checks' },
             { kind: 'human', id: 'final-approval', label: 'Final approval' },
           ],
+          onFail: { goto: 'build', maxAttempts: 2 },
         },
       ],
     },
@@ -86,6 +87,7 @@ const REPO_BODY = {
   docsRoot: 'docs',
   testGlobs: [],
   environments: [],
+  budget: { amountUsd: 10, warnPercent: 80 },
 };
 
 interface Harness {

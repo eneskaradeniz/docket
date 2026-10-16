@@ -150,6 +150,19 @@ export interface WorkOrderDetailView {
    *  own name and its other-repo count; absent on an older reply reads as ok — the context
    *  line and the git card's cause line simply stay quiet. */
   readonly repoContext?: WorkOrderDetailRepoContext;
+  /** The effective autonomy block (A-404/A-407, U-334): the level in force with its source, the
+   *  work-order layer's own standing, and the typed refusal that disables an `auto` pick.
+   *  Absent on an older reply or an unreadable chain — the control simply stays quiet. */
+  readonly autonomy?: WorkOrderDetailAutonomy;
+}
+
+/** The autonomy read the control renders (A-407): the projection of the application's
+ *  WorkOrderAutonomyView, plain strings on the wire. */
+export interface WorkOrderDetailAutonomy {
+  readonly level: 'manual' | 'balanced' | 'auto';
+  readonly source: string;
+  readonly layerSet: boolean;
+  readonly autoUnavailable?: string;
 }
 
 /** The repo context the detail reply carries, narrowed to what the presentation reads (A-392). */
@@ -317,6 +330,9 @@ export interface WorkOrderDetailStore {
   steerRun(runId: string, note: string): Promise<IntentOutcome>;
   /** Closes the work order (`workOrder.close`) — the ⋯ menu's one item (U-226). */
   closeWorkOrder(): Promise<IntentOutcome>;
+  /** Sets (or clears, with `null`) the work-order layer of the autonomy chain (U-334, A-403).
+   *  The command never toasts: the refreshed detail read is the answer the control shows. */
+  setAutonomy(level: 'manual' | 'auto' | null): Promise<IntentOutcome>;
   /** Pushes the work order's branch (`workOrder.push`, U-345); the door itself words the
    *  missing-forge reason, so the command's own refusal only answers the late cases. */
   push(): Promise<IntentOutcome>;
@@ -1216,6 +1232,14 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     closeWorkOrder: () => {
       if (workOrderId === null) return Promise.resolve(notLoadedOutcome('workOrder.close'));
       return runIntent({ type: 'workOrder.close', id: workOrderId }, 'success.workOrder.close');
+    },
+    setAutonomy: async (level) => {
+      if (workOrderId === null) return notLoadedOutcome('workOrder.setAutonomy');
+      const result = await api.command(actor, { type: 'workOrder.setAutonomy', id: workOrderId, level });
+      // Never a toast either way (U-334): a success is the refreshed detail's own chain read; a
+      // refusal changed nothing, and the control's reason line already words the standing.
+      if (result.ok) await load(workOrderId);
+      return { command: 'workOrder.setAutonomy', result, labelKey: commandResultKey('workOrder.setAutonomy', result) };
     },
     push: () => {
       if (workOrderId === null) return Promise.resolve(notLoadedOutcome('workOrder.push'));

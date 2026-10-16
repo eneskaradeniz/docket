@@ -6,4 +6,7 @@ export interface AppSettingsRepo {
   /** Upserts the key. The value must be JSON-serialisable (`undefined` is not); a violation
    *  rejects and leaves the stored value untouched. */
   set(key: string, value: unknown): Promise<void>;
+  /** Removes the key; a key never set is already gone — absence is the chain's own fallback,
+   *  never a stored value standing for it. */
+  delete(key: string): Promise<void>;
 }

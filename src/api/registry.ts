@@ -30,6 +30,22 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
     input:
       'repo: RepoSlug, flow: RepoFlow — errors: not_found, definitions_invalid, stale, account_not_connected (A-354), unknown_model (A-389)',
   },
+  'workOrder.setAutonomy': {
+    input:
+      'id: WorkOrderId, level: manual | balanced | auto | null — errors: user_only, invalid_autonomy_level, above_ceiling, auto_requires_spend_cap, auto_requires_max_attempts, not_found, definitions_invalid (A-403)',
+  },
+  'repo.setAutonomy': {
+    input:
+      'repo: RepoSlug, level: manual | balanced | auto | null, maxLevel?: same (refused ceiling_not_available until chain c) — errors: the A-403 set plus stale (A-403)',
+  },
+  'project.setAutonomy': {
+    input:
+      'project: ProjectSlug, level: manual | balanced | auto | null — errors: user_only, invalid_autonomy_level, above_ceiling, not_found, definitions_invalid, stale (A-403 amendment 1)',
+  },
+  'settings.setAutonomy': {
+    input:
+      'level: manual | balanced | auto | null — errors: user_only, invalid_autonomy_level, above_ceiling (A-403, A-396)',
+  },
   'workOrder.block': { input: 'id: WorkOrderId, reason: string' },
   'workOrder.unblock': { input: 'id: WorkOrderId' },
   'workOrder.close': { input: 'id: WorkOrderId' },
@@ -112,6 +128,7 @@ export const QUERY_REGISTRY: Record<Query['type'], RegistryEntry> = {
   'workOrder.gitBase': { input: 'id: WorkOrderId — errors: not_found, forge_unavailable, forge_error (A-391)' },
   'repoStatus': { input: 'no input' },
   'repo.flow': { input: 'repo: RepoSlug' },
+  'repo.autonomy': { input: 'repo: RepoSlug — errors: not_found, definitions_invalid, invalid_autonomy_level (A-407)' },
   'project.tree': { input: 'no input' },
   'roadmap.byProject': { input: 'project: ProjectSlug' },
   'roadmap.byRepo': { input: 'repo: RepoSlug' },

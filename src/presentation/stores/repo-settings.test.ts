@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import type { Api } from '../../api/api';
-import type { Command } from '../../api/commands';
+import type { Command, CommandResult } from '../../api/commands';
 import type { ProjectTree, Query } from '../../api/queries';
 import type { Actor, RepoFlow, RoleDef, StageSlug, VersionRecord } from '../../domain/index';
 import { parseSlug } from '../../domain/index';
@@ -74,6 +74,8 @@ interface FakeApi extends Pick<Api, 'query' | 'command'> {
   readonly commands: { readonly actor: Actor; readonly command: Command }[];
   setFlow(flow: RepoFlow): void;
   setTree(tree: ProjectTree): void;
+  setAutonomyRead(read: unknown): void;
+  setAutonomyResult(result: CommandResult): void;
 }
 
 const fakeApi = (flow: RepoFlow, tree: ProjectTree): FakeApi => {
@@ -81,6 +83,8 @@ const fakeApi = (flow: RepoFlow, tree: ProjectTree): FakeApi => {
   const commands: { actor: Actor; command: Command }[] = [];
   let currentFlow = flow;
   let currentTree = tree;
+  let autonomyRead: unknown = null;
+  let autonomyResult: CommandResult = { ok: true };
   return {
     queries,
     commands,
@@ -90,11 +94,18 @@ const fakeApi = (flow: RepoFlow, tree: ProjectTree): FakeApi => {
     setTree: (next) => {
       currentTree = next;
     },
+    setAutonomyRead: (next) => {
+      autonomyRead = next;
+    },
+    setAutonomyResult: (next) => {
+      autonomyResult = next;
+    },
     query: async (query) => {
       queries.push(query);
       if (query.type === 'project.tree') return currentTree;
       if (query.type === 'repo.flow') return { ok: true, flow: currentFlow };
       if (query.type === 'settings.accounts') return { accounts: [], bindings: [] };
+      if (query.type === 'repo.autonomy') return autonomyRead;
       return { ok: false, code: 'not_found' };
     },
     command: async (actor, command) => {
@@ -102,6 +113,15 @@ const fakeApi = (flow: RepoFlow, tree: ProjectTree): FakeApi => {
       if (command.type === 'repo.saveFlow') {
         currentFlow = command.flow as RepoFlow;
         return { ok: true };
+      }
+      if (command.type === 'repo.setAutonomy') {
+        if (autonomyResult.ok) {
+          autonomyRead =
+            command.level === null
+              ? { level: 'manual', source: 'builtin', layerSet: false }
+              : { level: command.level, source: 'repo', layerSet: true };
+        }
+        return autonomyResult;
       }
       return { ok: false, code: 'not_found' };
     },
@@ -339,5 +359,59 @@ describe('re-link a detached role to the library (U-298 … U-300)', () => {
     expect(ref?.version).toBe(2);
     expect(ref?.overlay).toBeUndefined();
     expect(store.state().relinkNotice).toBe(stage('implement'));
+  });
+});
+
+describe('U-334: the repo layer of the autonomy chain', () => {
+  it('U-334: load reads repo.autonomy beside the flow, and setAutonomy speaks repo.setAutonomy and refreshes the standing', async () => {
+    const { store, api } = storeWith(sampleFlow(), singleRepoTree);
+    api.setAutonomyRead({ level: 'manual', source: 'builtin', layerSet: false, autoUnavailable: 'auto_requires_spend_cap' });
+    await store.load('web');
+    expect(api.queries.some((query) => query.type === 'repo.autonomy' && query.repo === 'web')).toBe(true);
+    expect(store.state().autonomy).toEqual({
+      level: 'manual',
+      source: 'builtin',
+      layerSet: false,
+      autoUnavailable: 'auto_requires_spend_cap',
+    });
+
+    await store.setAutonomy('manual');
+
+    const issued = api.commands[api.commands.length - 1];
+    expect(issued.command).toEqual({ type: 'repo.setAutonomy', repo: 'web', level: 'manual' });
+    // The refreshed read is the answer: the layer now stands set at the repo.
+    expect(store.state().autonomy).toEqual({ level: 'manual', source: 'repo', layerSet: true });
+  });
+
+  it('U-334: clearing speaks the null level and the chain falls on to the builtin', async () => {
+    const { store, api } = storeWith(sampleFlow(), singleRepoTree);
+    api.setAutonomyRead({ level: 'manual', source: 'repo', layerSet: true });
+    await store.load('web');
+    await store.setAutonomy(null);
+    expect(api.commands[api.commands.length - 1]?.command).toEqual({ type: 'repo.setAutonomy', repo: 'web', level: null });
+    expect(store.state().autonomy).toEqual({ level: 'manual', source: 'builtin', layerSet: false });
+  });
+
+  it('U-334: a refused write keeps the standing exactly as it read — no refresh, no problem line', async () => {
+    const { store, api } = storeWith(sampleFlow(), singleRepoTree);
+    const standing = { level: 'manual', source: 'builtin', layerSet: false, autoUnavailable: 'auto_requires_spend_cap' };
+    api.setAutonomyRead(standing);
+    api.setAutonomyResult({ ok: false, code: 'auto_requires_spend_cap' });
+    await store.load('web');
+
+    await store.setAutonomy('auto');
+
+    expect(api.commands[api.commands.length - 1]?.command).toEqual({ type: 'repo.setAutonomy', repo: 'web', level: 'auto' });
+    expect(store.state().autonomy).toEqual(standing);
+    expect(store.state().problem).toBeNull();
+    expect(store.state().lastLabelKey).toBeNull();
+  });
+
+  it('U-334: an unreadable chain keeps the control quiet — the read failure is not a section problem', async () => {
+    const { store, api } = storeWith(sampleFlow(), singleRepoTree);
+    api.setAutonomyRead({ ok: false, code: 'definitions_invalid' });
+    await store.load('web');
+    expect(store.state().autonomy).toBeNull();
+    expect(store.state().problem).toBeNull();
   });
 });

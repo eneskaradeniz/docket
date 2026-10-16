@@ -18,5 +18,9 @@ export const createFakeAppSettingsRepo = (): FakeAppSettingsRepo => {
       if (json === undefined) throw new Error('app setting value is not JSON-serialisable');
       byKey.set(key, json);
     },
+
+    delete: async (key: string): Promise<void> => {
+      byKey.delete(key);
+    },
   };
 };

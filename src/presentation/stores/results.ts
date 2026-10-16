@@ -78,6 +78,14 @@ export const KNOWN_FAILURE_CODES: readonly string[] = [
   'not_paused',
   // saveBinding: a role's account chain cannot be empty (A-14).
   'empty_chain',
+  // The autonomy chain's set-level commands (A-403, D-10 chain a) and the auto-level
+  // preconditions they share with workOrder.open (A-395).
+  'user_only',
+  'invalid_autonomy_level',
+  'above_ceiling',
+  'ceiling_not_available',
+  'auto_requires_spend_cap',
+  'auto_requires_max_attempts',
   // settings.setDispatch refusals (A-105 … A-107).
   'invalid_limits',
   'unknown_account',
@@ -111,6 +119,11 @@ type SilentCommand =
   | 'quit.answer'
   | 'repo.relink'
   | 'repo.saveFlow'
+  // The autonomy control refreshes with the chain's own read, so its commands never toast.
+  | 'workOrder.setAutonomy'
+  | 'repo.setAutonomy'
+  | 'project.setAutonomy'
+  | 'settings.setAutonomy'
   | 'project.export'
   | 'project.importBundle'
   | 'memory.acceptProposal'
@@ -135,6 +148,10 @@ const isSilent = (command: Command['type']): command is SilentCommand =>
   || command === 'quit.answer'
   || command === 'repo.relink'
   || command === 'repo.saveFlow'
+  || command === 'workOrder.setAutonomy'
+  || command === 'repo.setAutonomy'
+  || command === 'project.setAutonomy'
+  || command === 'settings.setAutonomy'
   || command === 'project.export'
   || command === 'project.importBundle'
   || command === 'memory.acceptProposal'

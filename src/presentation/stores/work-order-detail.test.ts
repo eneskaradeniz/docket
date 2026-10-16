@@ -8,7 +8,11 @@
 // adds the view-model rules: U-223 (one badge word per state), U-224 (the stage strip's counter),
 // U-226 (the decision-zone matrix), U-229 (cost by billing), U-230 (provenance) and U-231 (the
 // read-only changes list). Api, change signal and pane are injected fakes.
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+
+import { AutonomyControl } from '../components/autonomy-control';
 
 import type { Api } from '../../api/api';
 import type { Command, CommandResult } from '../../api/commands';
@@ -1693,5 +1697,79 @@ describe('repo context (U-350 … U-353)', () => {
         expect(words, `${key} stays within eight words`).toBeLessThanOrEqual(8);
       }
     }
+  });
+});
+
+describe('the autonomy control wiring (U-334)', () => {
+  it('U-334: the view carries the chain read and the screen control renders it — level, source, disabled auto', async () => {
+    const api = fakeApi({
+      ...detailReply(AT_BUILD),
+      autonomy: { level: 'manual', source: 'builtin', layerSet: false, autoUnavailable: 'auto_requires_spend_cap' },
+    });
+    const store = createStore(api);
+    await store.load(WO_ID);
+    expect(store.state().view?.autonomy).toEqual({
+      level: 'manual',
+      source: 'builtin',
+      layerSet: false,
+      autoUnavailable: 'auto_requires_spend_cap',
+    });
+    const html = renderToStaticMarkup(
+      createElement(AutonomyControl, {
+        locale: 'tr',
+        mark: 'workOrder',
+        view: store.state().view?.autonomy ?? null,
+        onPick: () => {},
+        onClear: () => {},
+      }),
+    );
+    expect(html).toContain('Kaynak: yerleşik');
+    expect(html).toContain('disabled');
+  });
+
+  it('U-334: setAutonomy speaks workOrder.setAutonomy and the refreshed read is the answer — never a toast outcome', async () => {
+    const api = fakeApi({
+      ...detailReply(AT_BUILD),
+      autonomy: { level: 'manual', source: 'workOrder', layerSet: true },
+    });
+    const store = createStore(api);
+    await store.load(WO_ID);
+    const before = store.state().lastOutcome;
+
+    const outcome = await store.setAutonomy('auto');
+
+    expect(api.commands[api.commands.length - 1]).toEqual({ type: 'workOrder.setAutonomy', id: WO_ID, level: 'auto' });
+    expect(outcome.result.ok).toBe(true);
+    // The intent never publishes an outcome (the control's own refresh is the answer) and the
+    // detail is re-queried so the control reads the new chain.
+    expect(store.state().lastOutcome).toBe(before);
+    expect(api.queries.filter((query) => query.type === 'workOrder.detail').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('U-334: a refused pick changes nothing on the screen — the reason line is the standing', async () => {
+    const api = fakeApi({
+      ...detailReply(AT_BUILD),
+      autonomy: { level: 'manual', source: 'builtin', layerSet: false, autoUnavailable: 'auto_requires_spend_cap' },
+    });
+    api.setCommandResult({ ok: false, code: 'auto_requires_spend_cap' });
+    const store = createStore(api);
+    await store.load(WO_ID);
+
+    const outcome = await store.setAutonomy('auto');
+
+    expect(outcome.result).toEqual({ ok: false, code: 'auto_requires_spend_cap' });
+    expect(store.state().view?.autonomy?.level).toBe('manual');
+    expect(store.state().lastOutcome).toBeNull();
+  });
+
+  it('U-334: clearing the layer speaks the null level', async () => {
+    const api = fakeApi({
+      ...detailReply(AT_BUILD),
+      autonomy: { level: 'manual', source: 'workOrder', layerSet: true },
+    });
+    const store = createStore(api);
+    await store.load(WO_ID);
+    await store.setAutonomy(null);
+    expect(api.commands[api.commands.length - 1]).toEqual({ type: 'workOrder.setAutonomy', id: WO_ID, level: null });
   });
 });

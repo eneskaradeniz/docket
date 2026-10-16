@@ -28,7 +28,8 @@ export type AuditAction =
   | 'action.proposed' | 'action.applied' | 'action.rejected' | 'action.failed' | 'action.undone' | 'grant.created' | 'grant.revoked'
   | 'library.version_created' | 'library.definition_archived' | 'library.definition_deleted'
   | 'repo.relinked' | 'repo.flow_saved' | 'project.exported' | 'project.imported'
-  | 'git.pushed' | 'pr.opened' | 'pr.merged' | 'branch.deleted';
+  | 'git.pushed' | 'pr.opened' | 'pr.merged' | 'branch.deleted'
+  | 'work_order.autonomy_changed' | 'repo.autonomy_changed' | 'project.autonomy_changed' | 'settings.autonomy_changed';
 
 export type AuditSubject =
   | { readonly kind: 'work_order'; readonly id: WorkOrderId }
@@ -41,7 +42,7 @@ export type AuditSubject =
   | { readonly kind: 'project'; readonly id: ProjectSlug }
   | { readonly kind: 'repo'; readonly id: RepoSlug }
   | { readonly kind: 'capability'; readonly id: CapabilitySlug }
-  | { readonly kind: 'settings'; readonly id: 'dispatch' }
+  | { readonly kind: 'settings'; readonly id: 'dispatch' | 'autonomy' }
   | { readonly kind: 'definition'; readonly id: string }; // a library definition (A-343); detail carries its kind
 
 export interface AuditEntry {

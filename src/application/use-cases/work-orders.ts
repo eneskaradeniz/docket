@@ -16,11 +16,10 @@ import type {
   GateSlug,
   GateVerdict,
   GitLifecycleState,
-  Layer,
   PolicyGateApproval,
+  Definitions,
   ProjectSlug,
   RepoRef,
-  ResolvedAutonomy,
   Result,
   RoleDef,
   RoleSlug,
@@ -33,9 +32,11 @@ import type {
   WorkOrderState,
   RepoSlug,
 } from '../../domain/index';
+import type { AutoLevelError } from '../../domain/index';
 import {
   billingFromPools,
   checkAutoLevel,
+  clampAutonomy,
   deriveGitLifecycle,
   deriveWorkOrderState,
   err,
@@ -48,6 +49,7 @@ import {
   REMOTE_CHECKS_EVENT_MAX,
   resolveAutonomy,
 } from '../../domain/index';
+import type { AutonomyLayer, AutonomySource } from '../../domain/index';
 
 import type { AccountRecord, AppDeps, ForgeResolver, RunRecord, WorkOrderRecord } from '../ports';
 import { catalogOrEmpty } from '../services/match-id';
@@ -143,12 +145,7 @@ export async function openWorkOrder(
     if (autonomy === 'auto') {
       // The nearest cap governing the order is the repo definition's budget, else the project's.
       const cap = repo.budget ?? loaded.value.project?.budget;
-      const flowDef = loaded.value.flows.find((candidate) => candidate.id === flow);
-      // The flow being pinned: the definitions' own FlowDef, or the pin's stages when the library
-      // no longer carries it — pinFlow copies them, so both read the same stages.
-      const pinnedFlow: FlowDef =
-        flowDef ?? { id: pin.flowId, name: pin.flowId, stages: pin.stages.map((entry) => entry.stage) };
-      const checked = checkAutoLevel({ cap, flow: pinnedFlow });
+      const checked = checkAutoLevel({ cap, flow: pinnedFlowOf({ flow, pin }, loaded.value.flows) });
       if (!checked.ok) return err(checked.error);
     }
   }
@@ -179,17 +176,37 @@ export async function openWorkOrder(
   return ok(id);
 }
 
-/** The effective autonomy of a work order (A-394): `resolveAutonomy` over work order (the record)
- *  > repo (`RepoDef.autonomy`) > project (`ProjectDef.autonomy`) > global (the `autonomy` settings
- *  key). The record's own value is re-parsed, never trusted from the JSON blob's cast, and a
- *  damaged stored level anywhere in the chain is the typed error — never a silent `manual`.
- *  A definitions load that fails leaves its layers absent: its validation issues are that error's
- *  own surface, and the chain falls on. */
+/** The effective autonomy of a work order (A-404): `clampAutonomy(resolveAutonomy([work order
+ *  record, stage, flow, repo, project, global]), ceilings)`. The record's own value is re-parsed,
+ *  never trusted from the JSON blob's cast, and a damaged stored level anywhere in the chain is
+ *  the typed error — never a silent `manual`. A definitions load that fails leaves its layers
+ *  absent: its validation issues are that error's own surface, and the chain falls on. The
+ *  `flow`/`stage` layers are read from the work order's pin, never the live definition — they
+ *  arrive with chain (b)/(c); `stage` names the stage of the decision, absent for a stage-less
+ *  read. */
+export interface EffectiveAutonomy {
+  readonly level: AutonomyLevel;
+  readonly source: AutonomySource | 'ceiling';
+  /** Present iff the ceiling clamped the level down (R-154). */
+  readonly ceiling?: AutonomyLevel;
+  /** Present iff a pinned definition suggests `auto` and the level is not already it (R-153). */
+  readonly suggestion?: 'auto';
+  /** R-158's fail-closed reason: the level resolved to `auto` but R-169's check refused over the
+   *  nearest cap and the pinned flow, so the level in force is `manual` — never a silent `auto`. */
+  readonly autoUnavailable?: AutoLevelError;
+}
+
+/** The ceiling homes of A-406 — `RepoDef.maxLevel` and the `autonomy.max` settings key — land
+ *  with chain (c). Until then no ceiling exists: the list is empty, the clamp is the identity
+ *  and `above_ceiling` never fires. The commands still run the step, in A-403's order, so (c)
+ *  fills this one read and nothing else moves. */
+export const ceilingsInForce = (): readonly (AutonomyLevel | undefined)[] => [];
+
 export async function effectiveAutonomy(
   deps: Pick<AppDeps, 'workOrders' | 'definitions' | 'settings'>,
-  input: { readonly workOrderId: WorkOrderId; readonly repo: RepoSlug },
-): Promise<Result<ResolvedAutonomy, 'invalid_autonomy_level'>> {
-  const record = await deps.workOrders.get(input.workOrderId);
+  input: { readonly workOrder: WorkOrderId; readonly stage?: StageSlug },
+): Promise<Result<EffectiveAutonomy, 'invalid_autonomy_level'>> {
+  const record = await deps.workOrders.get(input.workOrder);
   let own: AutonomyLevel | undefined;
   if (record?.autonomy !== undefined) {
     const parsed = parseAutonomyLevel(record.autonomy);
@@ -198,14 +215,49 @@ export async function effectiveAutonomy(
   }
   const global = await getAutonomyLevel(deps);
   if (!global.ok) return err(global.error);
-  const loaded = await deps.definitions.load(input.repo);
-  const layers: readonly Layer<AutonomyLevel>[] = [
-    { level: 'workOrder', value: own },
-    { level: 'repo', value: loaded.ok ? loaded.value.repo?.autonomy : undefined },
-    { level: 'project', value: loaded.ok ? loaded.value.project?.autonomy : undefined },
-    { level: 'global', value: global.value },
+  const loaded = record === undefined ? undefined : await deps.definitions.load(record.repo);
+  const layers: readonly AutonomyLayer[] = [
+    { source: 'workOrder', value: own },
+    // (b) feeds the flow layer, (c) the stage layer of `input.stage` — both from the pin.
+    { source: 'repo', value: loaded !== undefined && loaded.ok ? loaded.value.repo?.autonomy : undefined },
+    { source: 'project', value: loaded !== undefined && loaded.ok ? loaded.value.project?.autonomy : undefined },
+    { source: 'global', value: global.value },
   ];
-  return ok(resolveAutonomy(layers));
+  const resolved = clampAutonomy(resolveAutonomy(layers), ceilingsInForce());
+  if (resolved.level !== 'auto' || record === undefined) {
+    return ok({
+      level: resolved.level,
+      source: resolved.source,
+      ...(resolved.source === 'ceiling' ? { ceiling: resolved.level } : {}),
+    });
+  }
+  // R-158: an `auto` the preconditions cannot carry answers `manual` on the read, with the typed
+  // reason carried alongside — the cap is the repo definition's budget, else the project's, and
+  // the flow is the pin's own copy (R-156).
+  const definitions = loaded !== undefined && loaded.ok ? loaded.value : undefined;
+  const checked = checkAutoLevel({
+    cap: definitions?.repo?.budget ?? definitions?.project?.budget,
+    flow: pinnedFlowOf(record, definitions?.flows ?? []),
+  });
+  return ok({
+    level: checked.ok ? 'auto' : 'manual',
+    source: resolved.source,
+    ...(resolved.source === 'ceiling' ? { ceiling: resolved.level } : {}),
+    ...(checked.ok ? {} : { autoUnavailable: checked.error }),
+  });
+}
+
+/** The flow an auto-level check judges (R-156): the pin's copied stages — the version the order
+ *  runs, never a later library edit — falling back to the live definitions' FlowDef only for a
+ *  row stored before pins existed (A-324). */
+export function pinnedFlowOf(
+  pick: { readonly flow: FlowSlug; readonly pin?: FlowPin },
+  flows: readonly FlowDef[],
+): FlowDef {
+  if (pick.pin !== undefined) {
+    return { id: pick.flow, name: pick.flow, stages: pick.pin.stages.map((entry) => entry.stage) };
+  }
+  return flows.find((candidate) => candidate.id === pick.flow) ?? { id: pick.flow, name: pick.flow, stages: [] };
 }
 
 /** The billing a run summary shows. `metered` is the route's verified per-use charge, named here
@@ -254,6 +306,23 @@ export interface WorkOrderView {
   /** The git lifecycle fold (A-390): branch, pull request and release marks derived purely from
    *  the work order's events; a work order without git events carries the empty fold. */
   readonly git: GitLifecycleState;
+  /** The effective autonomy block (A-404/A-407, U-334): the level in force, the layer it came
+   *  from, whether the work-order layer itself is set, and — when picking `auto` would be
+   *  refused — the typed reason the control disables the option with. Absent when a stored
+   *  level anywhere in the chain does not parse: that error is its own typed read's surface
+   *  (A-410's reading), never a wrong level on the detail. */
+  readonly autonomy?: WorkOrderAutonomyView;
+}
+
+/** The detail's autonomy read (A-407): the effective level with its source for display, plus the
+ *  control's own facts — the work-order layer's standing and the typed refusal that would answer
+ *  an `auto` pick. */
+export interface WorkOrderAutonomyView {
+  readonly level: AutonomyLevel;
+  readonly source: AutonomySource | 'ceiling';
+  /** True iff the record itself carries a level; false means the level is inherited. */
+  readonly layerSet: boolean;
+  readonly autoUnavailable?: AutoLevelError | 'above_ceiling';
 }
 
 /** One check of a gate's recorded evidence. `url` rides the contract but is never written —
@@ -465,7 +534,7 @@ export const workOrderGateRows = (
 };
 
 export async function getWorkOrder(
-  deps: Pick<AppDeps, 'workOrders' | 'runs' | 'definitions' | 'repos' | 'readFingerprint' | 'projects'>,
+  deps: Pick<AppDeps, 'workOrders' | 'runs' | 'definitions' | 'repos' | 'readFingerprint' | 'projects' | 'settings'>,
   id: WorkOrderId,
 ): Promise<Result<WorkOrderView, ViewError>> {
   const record = await deps.workOrders.get(id);
@@ -491,8 +560,52 @@ export async function getWorkOrder(
     gates: workOrderGateRows(flow, events),
     decisions: workOrderDecisionRows(flow, events),
     git: deriveGitLifecycle(events),
+    ...(await workOrderAutonomyOf(deps, record, loaded.value)),
   });
 }
+
+/** The autonomy block of the detail read: the same chain `effectiveAutonomy` walks (A-404),
+ *  computed over the pieces the view already loaded, plus the control's own facts (U-334) — the
+ *  work-order layer's standing and the refusal an `auto` pick would answer with, judged by the
+ *  same R-169/R-156 check the confirm runs. An unreadable level keeps the block absent rather
+ *  than showing a level the chain never resolved. */
+const workOrderAutonomyOf = async (
+  deps: Pick<AppDeps, 'settings'>,
+  record: WorkOrderRecord,
+  definitions: Definitions,
+): Promise<{ readonly autonomy?: WorkOrderAutonomyView }> => {
+  const global = await getAutonomyLevel(deps);
+  if (!global.ok) return {};
+  let own: AutonomyLevel | undefined;
+  if (record.autonomy !== undefined) {
+    const parsed = parseAutonomyLevel(record.autonomy);
+    if (!parsed.ok) return {};
+    own = parsed.value;
+  }
+  const layers: readonly AutonomyLayer[] = [
+    { source: 'workOrder', value: own },
+    // The flow/stage layers of the pin arrive with chain (b)/(c).
+    { source: 'repo', value: definitions.repo?.autonomy },
+    { source: 'project', value: definitions.project?.autonomy },
+    { source: 'global', value: global.value },
+  ];
+  const resolved = clampAutonomy(resolveAutonomy(layers), ceilingsInForce());
+  const cap = definitions.repo?.budget ?? definitions.project?.budget;
+  const checked = checkAutoLevel({ cap, flow: pinnedFlowOf(record, definitions.flows) });
+  // R-158: an `auto` the preconditions cannot carry answers `manual` on the read with the typed
+  // reason carried alongside (U-334's disabled option words the same code). A clamped level can
+  // never be `auto` — the ceiling ranks below it — so its reason is `above_ceiling` instead.
+  const unavailable: WorkOrderAutonomyView['autoUnavailable'] =
+    resolved.source === 'ceiling' ? 'above_ceiling' : checked.ok ? undefined : checked.error;
+  return {
+    autonomy: {
+      level: resolved.level === 'auto' && !checked.ok ? 'manual' : resolved.level,
+      source: resolved.source,
+      layerSet: own !== undefined,
+      ...(unavailable === undefined ? {} : { autoUnavailable: unavailable }),
+    },
+  };
+};
 
 export type GitBaseError = 'not_found' | 'forge_unavailable' | 'forge_error';
 

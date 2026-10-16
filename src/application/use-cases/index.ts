@@ -1,6 +1,7 @@
 // Use-case barrel. Each file is owned by one Phase 2a issue.
 export * from './work-orders';
 export * from './work-order-changes';
+export * from './autonomy';
 export * from './gates';
 export * from './gate-auto';
 export * from './routing';

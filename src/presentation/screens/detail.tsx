@@ -35,6 +35,7 @@ import { toastOutcome } from '../stores/toasts';
 import { t, type Locale } from '../labels/t';
 import type { LabelKey } from '../labels/keys';
 import { ActionButton } from '../components/action-button';
+import { AutonomyControl } from '../components/autonomy-control';
 import { WorkOrderLaunchers } from '../components/launcher-rows';
 import { StateBadge, type BadgeTone } from '../components/state-badge';
 import { DetailStrip } from '../components/detail-strip';
@@ -447,6 +448,17 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
           </header>
 
           <DetailStrip segments={segments} locale={locale} />
+
+          {/* The autonomy control (U-334): the effective level with its source line, `auto`
+              disabled with the typed reason, and the work-order layer's own clear. Quiet when
+              the chain read does not answer — never a wrong level. */}
+          <AutonomyControl
+            locale={locale}
+            mark="workOrder"
+            view={view.autonomy ?? null}
+            onPick={(level) => void store.setAutonomy(level)}
+            onClear={() => void store.setAutonomy(null)}
+          />
 
           <DetailWorkOrderUsage
             locale={locale}

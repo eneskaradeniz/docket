@@ -144,6 +144,7 @@ const DEFINITIONS_BODY = {
           { kind: 'command', id: 'run-checks', commandSet: 'checks' },
           { kind: 'human', id: 'final-approval', label: 'Final approval' },
         ],
+        onFail: { goto: 'build', maxAttempts: 2 },
       }],
     },
     {
@@ -266,6 +267,7 @@ const repoBodyOf = (flowId: string): Record<string, unknown> => {
     environments: [
       { id: 'stg', name: 'Staging', order: 1, deploy: 'deploy-stg', env: {}, protected: false },
     ],
+    budget: { amountUsd: 10, warnPercent: 80 },
   };
 };
 

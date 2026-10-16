@@ -45,7 +45,7 @@ export interface ChatTools {
 
 type ChatToolDeps = Pick<
   AppDeps,
-  'clock' | 'conversations' | 'workOrders' | 'runs' | 'projects' | 'repos' | 'readFingerprint' | 'definitions' | 'pages' | 'repoFiles'
+  'clock' | 'conversations' | 'workOrders' | 'runs' | 'projects' | 'repos' | 'readFingerprint' | 'definitions' | 'pages' | 'repoFiles' | 'settings'
 >;
 
 export const CHAT_TOOL_DEFINITIONS: readonly DocketToolDefinition[] = [

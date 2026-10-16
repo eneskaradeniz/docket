@@ -452,6 +452,41 @@ describe('createApi', () => {
       expect(result).toEqual({ ok: false, code: 'not_found' });
     });
 
+    it('A-403: the autonomy commands parse the level at the edge and map onto the set use cases', async () => {
+      const h = await createHarness();
+      const api = createApi(h.deps);
+      const opened = await api.command(ACTOR, { type: 'workOrder.open', project: PROJECT, repo: REPO, title: 'Chain a' });
+      if (!opened.ok || opened.id === undefined) throw new Error('open must return an id');
+
+      // A malformed level answers the typed refusal at the edge, before any port call.
+      const bad = await api.command(ACTOR, { type: 'workOrder.setAutonomy', id: opened.id, level: 'turbo' as never });
+      expect(bad).toEqual({ ok: false, code: 'invalid_autonomy_level' });
+      const before = await h.deps.workOrders.get(opened.id as never);
+      expect(before?.autonomy).toBeUndefined();
+
+      const set = await api.command(ACTOR, { type: 'workOrder.setAutonomy', id: opened.id, level: 'manual' });
+      expect(set).toEqual({ ok: true });
+
+      const cleared = await api.command(ACTOR, { type: 'workOrder.setAutonomy', id: opened.id, level: null });
+      expect(cleared).toEqual({ ok: true });
+      const after = await h.deps.workOrders.get(opened.id as never);
+      expect(after?.autonomy).toBeUndefined();
+
+      // The repo read answers the chain standing for the control (A-407).
+      const view = await api.query({ type: 'repo.autonomy', repo: REPO });
+      expect(view).toMatchObject({ level: 'manual', source: 'builtin', layerSet: false });
+
+      // The global write stores the one key; null deletes it.
+      expect(await api.command(ACTOR, { type: 'settings.setAutonomy', level: 'manual' })).toEqual({ ok: true });
+      expect(await h.deps.settings.get('autonomy')).toBe('manual');
+      expect(await api.command(ACTOR, { type: 'settings.setAutonomy', level: null })).toEqual({ ok: true });
+      expect(await h.deps.settings.get('autonomy')).toBeUndefined();
+
+      // A malformed project slug answers at the edge like every other id.
+      const badProject = await api.command(ACTOR, { type: 'project.setAutonomy', project: 'not a slug', level: 'manual' });
+      expect(badProject).toEqual({ ok: false, code: 'invalid_id' });
+    });
+
     it('maps workOrder.block / unblock / close onto the control use cases', async () => {
       const h = await createHarness();
       const api = createApi(h.deps);

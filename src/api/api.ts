@@ -10,6 +10,7 @@ import type {
   AttachmentId,
   AttachmentKind,
   AuthMode,
+  AutonomyLevel,
   Billing,
   CatalogModel,
   ConversationId,
@@ -43,6 +44,8 @@ import {
   deriveProgress,
   deriveRoadmap,
   deriveWorkOrderState,
+  ok,
+  parseAutonomyLevel,
   foldRun,
   isProjectSetupTarget,
   orderForReview,
@@ -178,8 +181,13 @@ import {
   unregisterRepo,
   relinkRepo,
   repoStatuses,
+  repoAutonomyView,
   repoFlowView,
   saveRepoFlow,
+  setGlobalAutonomy,
+  setProjectAutonomy,
+  setRepoAutonomy,
+  setWorkOrderAutonomy,
   undoAction,
   workOrderCodeOf,
   catalogOrEmpty,
@@ -793,6 +801,12 @@ export function createApi(
   };
 }
 
+/** The wire level of an autonomy command (A-403): `null` is the clear, not a value to parse;
+ *  anything else must be a member of the domain's levels or the typed refusal answers at the
+ *  edge, before any port call. */
+const autonomyLevelOf = (level: AutonomyLevel | null): Result<AutonomyLevel | null, 'invalid_autonomy_level'> =>
+  level === null ? ok(null) : parseAutonomyLevel(level);
+
 const runCommand = async (
   deps: AppDeps,
   actor: Actor,
@@ -998,6 +1012,65 @@ const runCommand = async (
         code: saved.error.code,
         accounts: saved.error.accounts.map((row) => ({ stage: row.stage, accountId: row.accountId })),
       };
+    }
+
+    // The autonomy chain's set-level commands (A-403): the level parses with the domain's own
+    // member law at the edge (below, `autonomyLevelOf`), so a malformed value answers the typed
+    // refusal before any read.
+    case 'workOrder.setAutonomy': {
+      const id = ulidValue<'work-order'>(command.id);
+      if (id === undefined) return invalidId();
+      const level = autonomyLevelOf(command.level);
+      if (!level.ok) return { ok: false, code: level.error };
+      return commandOf(
+        await setWorkOrderAutonomy(
+          { clock: deps.clock, ids: deps.ids, log: deps.log, workOrders: deps.workOrders, definitions: deps.definitions },
+          { workOrder: id, level: level.value, actor },
+        ),
+      );
+    }
+
+    case 'repo.setAutonomy': {
+      const repo = slugValue<'repo'>(command.repo);
+      if (repo === undefined) return invalidId();
+      const level = autonomyLevelOf(command.level);
+      if (!level.ok) return { ok: false, code: level.error };
+      let maxLevel: AutonomyLevel | null = null;
+      if (command.maxLevel !== undefined) {
+        const parsedCeiling = parseAutonomyLevel(command.maxLevel);
+        if (!parsedCeiling.ok) return { ok: false, code: parsedCeiling.error };
+        maxLevel = parsedCeiling.value;
+      }
+      return commandOf(
+        await setRepoAutonomy(
+          { clock: deps.clock, ids: deps.ids, log: deps.log, repos: deps.repos, definitions: deps.definitions },
+          { repo, level: level.value, maxLevel, actor },
+        ),
+      );
+    }
+
+    case 'project.setAutonomy': {
+      const project = slugValue<'project'>(command.project);
+      if (project === undefined) return invalidId();
+      const level = autonomyLevelOf(command.level);
+      if (!level.ok) return { ok: false, code: level.error };
+      return commandOf(
+        await setProjectAutonomy(
+          { clock: deps.clock, ids: deps.ids, log: deps.log, definitions: deps.definitions },
+          { project, level: level.value, actor },
+        ),
+      );
+    }
+
+    case 'settings.setAutonomy': {
+      const level = autonomyLevelOf(command.level);
+      if (!level.ok) return { ok: false, code: level.error };
+      return commandOf(
+        await setGlobalAutonomy(
+          { clock: deps.clock, ids: deps.ids, log: deps.log, settings: deps.settings },
+          { level: level.value, actor },
+        ),
+      );
     }
 
     case 'workOrder.block': {
@@ -1947,6 +2020,7 @@ const runQuery = async (
           repos: deps.repos,
           readFingerprint: deps.readFingerprint,
           projects: deps.projects,
+          settings: deps.settings,
         },
         id,
       );
@@ -1988,6 +2062,15 @@ const runQuery = async (
       const repo = slugValue<'repo'>(query.repo);
       if (repo === undefined) return invalidId();
       return repoFlowView(deps, repo);
+    }
+
+    // The repo layer's chain standing (A-407/U-334): the effective level with its source, the
+    // layer's own set-ness and the refusal an `auto` pick would answer with.
+    case 'repo.autonomy': {
+      const repo = slugValue<'repo'>(query.repo);
+      if (repo === undefined) return invalidId();
+      const view = await repoAutonomyView({ definitions: deps.definitions, settings: deps.settings }, repo);
+      return view.ok ? { ...view.value, ok: true } : { ok: false, code: view.error };
     }
 
     case 'project.tree':

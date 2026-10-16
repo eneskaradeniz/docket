@@ -92,19 +92,12 @@ const PENDING = new Map([
   // #1225 — D-10 chain widening contracts, docs-first. Each id names the chain step that
   // implements it — (a) set-level commands and UI, (b) the flow layer, (c) the stage layer and
   // the ceiling; that issue removes the id from this list in the same commit as its test.
-  ['domain:R-151', '#1225 (chain a — the resolver signature and walk; b/c feed it layers)'],
   ['domain:R-152', '#1225 (chain b FlowDef field, c StageDef field)'],
   ['domain:R-153', '#1225 (chain b — definitionAutonomyLayers; c feeds the stage arm)'],
   ['domain:R-154', '#1225 (chain c — clampAutonomy and the ceilings)'],
-  ['domain:R-155', '#1225 (binds a/b/c — nothing widens R-172/R-168; guard test lands with a)'],
-  ['domain:R-156', '#1225 (chain a — the one confirm runs the check; the surface is b)'],
-  ['application:A-403', '#1225 (chain a — the set-level commands)'],
-  ['application:A-404', '#1225 (chain a ships the full signature; b flow, c stage and ceiling)'],
   ['application:A-405', '#1225 (chain b — the suggestion flow)'],
   ['application:A-406', '#1225 (chain c — the ceiling homes)'],
-  ['application:A-407', '#1225 (chain a — the source in read models)'],
   ['infrastructure:I-110', '#1225 (chain b/c — the new fields\' homes and one-parse law)'],
-  ['ui:U-334', '#1225 (chain a — the autonomy control)'],
   ['ui:U-335', '#1225 (chain b — the suggestion banner and library tag)'],
   ['ui:U-336', '#1225 (chain c — the stage tag and the ceiling controls)'],
 
@@ -115,8 +108,6 @@ const PENDING = new Map([
   // #1232 — D-10 chain-widening contract fixes from the review of #1228, docs-first. Additive
   // amendments to the #1225 contracts; the four new ids name the chain step that implements
   // each, and the implementing issue removes the id with its test, as above.
-  ['domain:R-157', '#1232 (chain a — resolveAutonomy defence in depth)'],
-  ['domain:R-158', '#1232 (chain a/(b) — the fail-closed effective read)'],
   ['application:A-408', '#1232 (chain b — the import drops auto)'],
   ['infrastructure:I-111', '#1232 (chain b — the flow-level autonomy home)'],
 
