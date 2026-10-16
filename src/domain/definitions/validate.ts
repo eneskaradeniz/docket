@@ -60,6 +60,7 @@ interface StageDraft {
   readonly tier: Tier | undefined;
   readonly thinking: ThinkingChoice | undefined;
   readonly reviewOf: StageSlug | undefined;
+  readonly autonomy: AutonomyLevel | undefined;
 }
 
 interface FlowDraft {
@@ -115,6 +116,7 @@ interface RepoDraft {
   readonly name: string | undefined;
   readonly budget: SpendCap | undefined;
   readonly autonomy: AutonomyLevel | undefined;
+  readonly maxLevel: AutonomyLevel | undefined;
   readonly flow: RepoFlowDraft | undefined;
   readonly defaultLimitPolicy: LimitPolicy | undefined;
   readonly commandSets: Readonly<Record<string, readonly string[]>> | undefined;
@@ -152,7 +154,7 @@ const addIssue = (issues: DefinitionIssue[], path: string, code: DefinitionIssue
 
 // The fixed shapes (repo, project, flow, binding, role ref, overlay) reject keys they do not
 // carry — a legacy field is refused the same way as any stray key, never silently ignored.
-const REPO_KEYS: readonly string[] = ['id', 'name', 'flow', 'defaultLimitPolicy', 'commandSets', 'docsRoot', 'testGlobs', 'environments', 'budget', 'autonomy'];
+const REPO_KEYS: readonly string[] = ['id', 'name', 'flow', 'defaultLimitPolicy', 'commandSets', 'docsRoot', 'testGlobs', 'environments', 'budget', 'autonomy', 'maxLevel'];
 const PROJECT_KEYS: readonly string[] = ['id', 'name', 'repos', 'budget', 'autonomy'];
 const REPO_FLOW_KEYS: readonly string[] = ['flowId', 'version', 'autonomy', 'stages', 'bindings'];
 const BINDING_KEYS: readonly string[] = ['stage', 'role', 'accounts', 'limitPolicy'];
@@ -647,9 +649,10 @@ const parseStage = (issues: DefinitionIssue[], container: UnknownRecord, path: s
   const tier = readOptionalTier(issues, container, `${path}.tier`);
   const thinking = readOptionalThinking(issues, container, `${path}.thinking`);
   const reviewOf = readOptionalSlugField<'stage'>(issues, container, 'reviewOf', `${path}.reviewOf`);
+  const autonomy = parseAutonomyField(issues, container['autonomy'], `${path}.autonomy`);
 
   if (id === undefined || name === undefined || role === undefined || exit === undefined) return undefined;
-  return { id, name, role, exit, onFail, tier, thinking, reviewOf };
+  return { id, name, role, exit, onFail, tier, thinking, reviewOf, autonomy };
 };
 
 const parseRole = (issues: DefinitionIssue[], container: UnknownRecord, path: string): RoleDraft | undefined => {
@@ -946,6 +949,7 @@ const parseRepo = (issues: DefinitionIssue[], container: UnknownRecord): RepoDra
   const budgetRaw: unknown = container['budget'];
   const budget = budgetRaw === undefined ? undefined : parseSpendCap(issues, budgetRaw, 'repo.budget');
   const autonomy = parseAutonomyField(issues, container['autonomy'], 'repo.autonomy');
+  const maxLevel = parseAutonomyField(issues, container['maxLevel'], 'repo.maxLevel');
 
   const commandSetsRaw: unknown = container['commandSets'];
   let commandSets: Readonly<Record<string, readonly string[]>> | undefined;
@@ -979,7 +983,7 @@ const parseRepo = (issues: DefinitionIssue[], container: UnknownRecord): RepoDra
     if (valid) commandSets = out;
   }
 
-  return { id, name, budget, autonomy, flow, defaultLimitPolicy, commandSets, docsRoot, testGlobs, environments: parseEnvironments(issues, container) };
+  return { id, name, budget, autonomy, maxLevel, flow, defaultLimitPolicy, commandSets, docsRoot, testGlobs, environments: parseEnvironments(issues, container) };
 };
 
 /** A budget, in the project or the repo section, must be a valid SpendCap; anything else is wrong_type. */
@@ -1462,6 +1466,7 @@ const buildStageDef = (stage: StageDraft): StageDef | undefined => {
     ...(stage.tier !== undefined ? { tier: stage.tier } : {}),
     ...(stage.thinking !== undefined ? { thinking: stage.thinking } : {}),
     ...(stage.reviewOf !== undefined ? { reviewOf: stage.reviewOf } : {}),
+    ...(stage.autonomy !== undefined ? { autonomy: stage.autonomy } : {}),
   };
   if (stage.onFail === undefined) {
     return { id: stage.id, name: stage.name, role: stage.role, exit, ...extras };
@@ -1594,6 +1599,7 @@ const buildRepoDef = (repo: RepoDraft): RepoDef | undefined => {
     ...(environments !== undefined ? { environments } : {}),
     ...(repo.budget !== undefined ? { budget: repo.budget } : {}),
     ...(repo.autonomy !== undefined ? { autonomy: repo.autonomy } : {}),
+    ...(repo.maxLevel !== undefined ? { maxLevel: repo.maxLevel } : {}),
   };
 };
 

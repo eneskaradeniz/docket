@@ -30,6 +30,7 @@ import { ConcurrencySection } from '../components/concurrency-section';
 import { FlowStageStrip } from '../components/flow-stage-strip';
 import { KeyMoveCard } from '../components/key-move-card';
 import { LimitPolicySection } from '../components/limit-policy-section';
+import { AutonomyCeilingControl } from '../components/autonomy-ceiling-control';
 import { AutonomyControl } from '../components/autonomy-control';
 import { TrackerLinkSection } from '../components/tracker-link-section';
 import { MOTION, motionVars } from '../components/motion';
@@ -816,6 +817,24 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
             view={repoState.autonomy}
             onPick={(level) => void repo.setAutonomy(level)}
             onClear={() => void repo.setAutonomy(null)}
+          />
+          {/* The ceiling homes (U-336, A-406): the repo's own maxLevel and the global ceiling,
+              each carrying the "{n} iş emri sınırın üzerinde" warning when it lands below
+              existing layers — a standing the read confirms, never a problem line. */}
+          <AutonomyCeilingControl
+            locale={locale}
+            mark="repo"
+            ceiling={repoState.autonomy?.maxLevel ?? null}
+            warningCount={repoState.ceilingWarningCount}
+            onSelect={(maxLevel) => void repo.setMaxLevel(maxLevel)}
+          />
+          <AutonomyCeilingControl
+            locale={locale}
+            mark="global"
+            title={t(locale, 'autonomy.ceiling.global')}
+            ceiling={repoState.autonomy?.globalCeiling ?? null}
+            warningCount={repoState.globalCeilingWarningCount}
+            onSelect={(maxLevel) => void repo.setGlobalMaxLevel(maxLevel)}
           />
           <TrackerLinkSection locale={locale} store={trackerLink} state={trackerLinkState} />
         </>

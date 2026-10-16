@@ -1029,5 +1029,28 @@ describe('autonomy level on project and repo (R-171)', () => {
     const issues = expectErr(validateDefinitions(doc({ flows: [flow({ autonomy: 'turbo' })] })));
     expect(issues).toEqual([issue('flows[0].autonomy', 'wrong_type')]);
   });
+
+  it('R-152: StageDef carries autonomy?: AutonomyLevel; wrong_type on unknown value', () => {
+    const withLevel = expectOk(validateDefinitions(doc({ flows: [flow({ stages: [stage({ autonomy: 'auto' })] })] })));
+    expect(withLevel.flows[0]?.stages[0]?.autonomy).toBe('auto');
+
+    const bare = expectOk(validateDefinitions(doc({ flows: [flow({ stages: [stage()] })] })));
+    expect(bare.flows[0]?.stages[0]?.autonomy).toBeUndefined();
+
+    const issues = expectErr(validateDefinitions(doc({ flows: [flow({ stages: [stage({ autonomy: 'turbo' })] })] })));
+    expect(issues).toEqual([issue('flows[0].stages[0].autonomy', 'wrong_type')]);
+  });
+
+  it('R-154: RepoDef carries maxLevel?: AutonomyLevel; wrong_type on unknown value; absent stays absent', () => {
+    const withLevel = expectOk(validateDefinitions(doc({ repo: repo({ maxLevel: 'manual' }) })));
+    expect(withLevel.repo?.maxLevel).toBe('manual');
+
+    const bare = expectOk(validateDefinitions(doc({ repo: repo() })));
+    expect(bare.repo?.maxLevel).toBeUndefined();
+
+    const issues = expectErr(validateDefinitions(doc({ repo: repo({ maxLevel: 'turbo' }) })));
+    expect(issues).toEqual([issue('repo.maxLevel', 'wrong_type')]);
+  });
 });
+
 

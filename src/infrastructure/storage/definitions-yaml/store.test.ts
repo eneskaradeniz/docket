@@ -712,5 +712,63 @@ describe('autonomy homes (I-110, I-111)', () => {
       expect.objectContaining({ path: 'repo.flow.autonomy', code: 'wrong_type' }),
     ]);
   });
+
+  it('I-110: parses stage autonomy from library/flows/<id>/v1.yaml; unknown string is R-152 wrong_type; byte-equal round trip', async () => {
+    const store = makeStore();
+    const flowYaml = `${stringify(flowDef('custom', { stages: [{ id: 'plan', name: 'Plan', role: null, exit: [], autonomy: 'auto' }] }))}\n`;
+    await store.writeFile('library/flows/custom/v1.yaml', flowYaml, '');
+    await writeYaml(globalRoot, 'library/flows/std/v1.yaml', flowDef('std', { stages: [{ id: 'plan', name: 'Plan', role: 'planner', exit: [] }] }));
+    await writeYaml(globalRoot, 'library/roles/planner/v1.yaml', roleDef('planner'));
+    await writeYaml(globalRoot, `repos/${REPO}/repo.yaml`, repoDef(REPO));
+
+    const loaded = await store.load(REPO);
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) return;
+    const customFlow = loaded.value.flows.find((f) => f.id === 'custom');
+    expect(customFlow?.stages[0]?.autonomy).toBe('auto');
+
+    // Byte-equal round trip (I-6 / I-110)
+    const readBack = await store.readFile('library/flows/custom/v1.yaml');
+    expect(readBack?.content).toBe(flowYaml);
+
+    // Unknown autonomy level string surfaces R-152's wrong_type
+    const invalidYaml = `${stringify(flowDef('custom', { stages: [{ id: 'plan', name: 'Plan', role: null, exit: [], autonomy: 'turbo' }] }))}\n`;
+    const invalidCandidate = await store.validateCandidate('library/flows/custom/v2.yaml', invalidYaml);
+    expect(invalidCandidate.ok).toBe(false);
+    if (invalidCandidate.ok) return;
+    expect(invalidCandidate.error.some((e) => e.code === 'wrong_type' && e.path.includes('stages[0].autonomy'))).toBe(true);
+  });
+
+  it('I-110: parses repo maxLevel from repos/<slug>/repo.yaml; unknown string is R-154 wrong_type; round-trips byte-equal', async () => {
+    const store = makeStore();
+    await writeYaml(globalRoot, 'library/flows/std/v1.yaml', flowDef('std', { stages: [{ id: 'plan', name: 'Plan', role: 'planner', exit: [] }] }));
+    await writeYaml(globalRoot, 'library/roles/planner/v1.yaml', roleDef('planner'));
+
+    const repoWithMaxLevel = repoDef(REPO, {
+      maxLevel: 'manual',
+    });
+    const repoYaml = `${stringify(repoWithMaxLevel)}\n`;
+    await store.writeFile(`repos/${REPO}/repo.yaml`, repoYaml, '');
+
+    const loaded = await store.load(REPO);
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) return;
+    expect(loaded.value.repo?.maxLevel).toBe('manual');
+
+    // Round trips byte-equal
+    const readBack = await store.readFile(`repos/${REPO}/repo.yaml`);
+    expect(readBack?.content).toBe(repoYaml);
+
+    // Stored non-member value is wrong_type at repo.maxLevel
+    const invalidRepo = repoDef(REPO, {
+      maxLevel: 'super_turbo',
+    });
+    const candidate = await store.validateCandidate(`repos/${REPO}/repo.yaml`, `${stringify(invalidRepo)}\n`);
+    expect(candidate.ok).toBe(false);
+    if (candidate.ok) return;
+    expect(candidate.error).toEqual([
+      expect.objectContaining({ path: 'repo.maxLevel', code: 'wrong_type' }),
+    ]);
+  });
 });
 

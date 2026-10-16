@@ -249,13 +249,13 @@ describe('R-158 — the read fails closed when auto\'s preconditions are gone', 
 });
 
 describe('clampAutonomy', () => {
-  it('answers the resolved value unchanged when no ceiling is defined', () => {
+  it('R-154: answers the resolved value unchanged when no ceiling is defined', () => {
     const resolved = { level: 'auto' as const, source: 'workOrder' as const };
     expect(clampAutonomy(resolved, [undefined, undefined])).toEqual(resolved);
     expect(clampAutonomy(resolved, [])).toEqual(resolved);
   });
 
-  it('clamps to the tightest defined ceiling and names the ceiling as the source', () => {
+  it('R-154: clamps to the tightest defined ceiling and names the ceiling as the source', () => {
     expect(clampAutonomy({ level: 'auto', source: 'workOrder' }, ['manual', 'balanced'])).toEqual({
       level: 'manual',
       source: 'ceiling',
@@ -264,9 +264,13 @@ describe('clampAutonomy', () => {
       level: 'manual', // a balanced ceiling is still not offered; R-167's clause applies after the clamp
       source: 'ceiling',
     });
+    expect(clampAutonomy({ level: 'auto', source: 'repo' }, ['auto', 'manual'])).toEqual({
+      level: 'manual',
+      source: 'ceiling',
+    });
   });
 
-  it('leaves a level at or below the ceiling alone', () => {
+  it('R-154: leaves a level at or below the ceiling alone', () => {
     expect(clampAutonomy({ level: 'manual', source: 'repo' }, ['auto'])).toEqual({
       level: 'manual',
       source: 'repo',
@@ -277,10 +281,21 @@ describe('clampAutonomy', () => {
     });
   });
 
-  it('ranks manual < balanced < auto', () => {
+  it('R-154: ranks manual < balanced < auto', () => {
     expect(AUTONOMY_RANK.manual).toBeLessThan(AUTONOMY_RANK.balanced);
     expect(AUTONOMY_RANK.balanced).toBeLessThan(AUTONOMY_RANK.auto);
     expect(Object.keys(AUTONOMY_RANK).sort()).toEqual([...AUTONOMY_LEVELS].sort());
+  });
+
+  it('R-154: demotes balanced to manual preserving source after clamp', () => {
+    expect(clampAutonomy({ level: 'balanced', source: 'repo' }, ['auto'])).toEqual({
+      level: 'manual',
+      source: 'repo',
+    });
+    expect(clampAutonomy({ level: 'balanced', source: 'repo' }, ['manual'])).toEqual({
+      level: 'manual',
+      source: 'ceiling',
+    });
   });
 });
 
@@ -336,5 +351,85 @@ describe('definitionAutonomyLayers (R-153)', () => {
       suggestsAuto: false,
     });
   });
+
+  it('R-153: suggestsAuto is true iff the flow or ANY stage of the pin has autonomy auto', () => {
+    const stageA = {
+      stage: { id: 'plan' as StageSlug, name: 'Plan', role: null, exit: [], autonomy: 'manual' as AutonomyLevel },
+      role: null,
+      roleVersion: null,
+      accounts: [],
+      limitPolicy: 'wait_resume' as const,
+    };
+    const stageB = {
+      stage: { id: 'impl' as StageSlug, name: 'Impl', role: null, exit: [], autonomy: 'auto' as AutonomyLevel },
+      role: null,
+      roleVersion: null,
+      accounts: [],
+      limitPolicy: 'wait_resume' as const,
+    };
+    const pin: FlowPin = {
+      flowId: 'standard' as FlowSlug,
+      flowVersion: 1,
+      stages: [stageA, stageB],
+    };
+
+    // When reading stageA (which is manual), suggestsAuto is STILL true because stageB has auto!
+    const forStageA = definitionAutonomyLayers({ flow: pin, stage: 'plan' as StageSlug });
+    expect(forStageA).toEqual({
+      flow: undefined,
+      stage: 'manual',
+      suggestsAuto: true,
+    });
+
+    // When reading with no stage, suggestsAuto is STILL true because stageB has auto!
+    const noStage = definitionAutonomyLayers({ flow: pin });
+    expect(noStage).toEqual({
+      flow: undefined,
+      stage: undefined,
+      suggestsAuto: true,
+    });
+
+    // When reading stageB (which has auto), suggestsAuto is true, stage level is undefined (never resolves auto)
+    const forStageB = definitionAutonomyLayers({ flow: pin, stage: 'impl' as StageSlug });
+    expect(forStageB).toEqual({
+      flow: undefined,
+      stage: undefined,
+      suggestsAuto: true,
+    });
+
+    // All manual stages and no flow auto -> suggestsAuto is false
+    const allManualPin: FlowPin = {
+      flowId: 'standard' as FlowSlug,
+      flowVersion: 1,
+      stages: [
+        stageA,
+        { ...stageB, stage: { ...stageB.stage, autonomy: 'balanced' as AutonomyLevel } },
+      ],
+    };
+    expect(definitionAutonomyLayers({ flow: allManualPin, stage: 'plan' as StageSlug }).suggestsAuto).toBe(false);
+    expect(definitionAutonomyLayers({ flow: allManualPin }).suggestsAuto).toBe(false);
+  });
+
+  it('R-153: the stage layer passes manual and balanced through and never resolves auto', () => {
+    const pin: FlowPin = {
+      flowId: 'standard' as FlowSlug,
+      flowVersion: 1,
+      stages: [
+        {
+          stage: { id: 'plan' as StageSlug, name: 'Plan', role: null, exit: [], autonomy: 'balanced' as AutonomyLevel },
+          role: null,
+          roleVersion: null,
+          accounts: [],
+          limitPolicy: 'wait_resume' as const,
+        },
+      ],
+    };
+    expect(definitionAutonomyLayers({ flow: pin, stage: 'plan' as StageSlug })).toEqual({
+      flow: undefined,
+      stage: 'balanced',
+      suggestsAuto: false,
+    });
+  });
 });
+
 

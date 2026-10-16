@@ -128,6 +128,10 @@ export interface RepoSettingsState {
   /** The repo layer's chain standing (U-334/A-407): null until the read answers — the control
    *  stays quiet rather than guessing a level. */
   readonly autonomy: RepoAutonomyRead | null;
+  /** Warning count of orders currently above repo ceiling (U-336, A-406); null when no warning. */
+  readonly ceilingWarningCount: number | null;
+  /** Warning count of orders currently above global ceiling (U-336, A-406); null when no warning. */
+  readonly globalCeilingWarningCount: number | null;
 }
 
 /** The `repo.autonomy` reply narrowed to what the control renders (plain strings on the wire). */
@@ -135,6 +139,9 @@ export interface RepoAutonomyRead {
   readonly level: 'manual' | 'balanced' | 'auto';
   readonly source: string;
   readonly layerSet: boolean;
+  readonly maxLevel?: 'manual' | 'balanced' | 'auto';
+  readonly globalCeiling?: 'manual' | 'balanced' | 'auto';
+  readonly ceiling?: 'manual' | 'balanced' | 'auto';
   readonly autoUnavailable?: string;
 }
 
@@ -155,6 +162,10 @@ export interface RepoSettingsStore {
   /** Sets (or clears, with `null`) the repo layer of the autonomy chain (U-334, A-403) and
    *  re-reads the standing; the refreshed control is the answer, never a toast. */
   setAutonomy(level: 'manual' | 'auto' | null): Promise<void>;
+  /** Sets (or clears, with `null`) the repo ceiling (U-336, A-406) and refreshes standing. */
+  setMaxLevel(maxLevel: 'manual' | 'balanced' | 'auto' | null): Promise<void>;
+  /** Sets (or clears, with `null`) the global ceiling (U-336, A-406) and refreshes standing. */
+  setGlobalMaxLevel(maxLevel: 'manual' | 'balanced' | 'auto' | null): Promise<void>;
   setOverlayInstructions(stage: StageSlug, instructions: string): void;
   setStageLimitPolicy(stage: StageSlug, policy: LimitPolicy): void;
   resetStageLimitPolicy(stage: StageSlug): void;
@@ -240,6 +251,8 @@ export const createRepoSettingsStore = (deps: RepoSettingsStoreDeps): RepoSettin
     accountLabels: {},
     lastLabelKey: null,
     autonomy: null,
+    ceilingWarningCount: null,
+    globalCeilingWarningCount: null,
   };
 
   const publish = (next: RepoSettingsState): void => {
@@ -259,7 +272,14 @@ export const createRepoSettingsStore = (deps: RepoSettingsStoreDeps): RepoSettin
   };
 
   const loadFlow = async (repo: string): Promise<void> => {
-    publish({ ...state, loading: true, problem: null, justSaved: false });
+    publish({
+      ...state,
+      loading: true,
+      problem: null,
+      justSaved: false,
+      ceilingWarningCount: null,
+      globalCeilingWarningCount: null,
+    });
     const [flowReply, accountsReply, library] = await Promise.all([
       deps.api.query({ type: 'repo.flow', repo } satisfies Query),
       deps.api.query({ type: 'settings.accounts', catalog: 'skip' } satisfies Query),
@@ -455,6 +475,27 @@ export const createRepoSettingsStore = (deps: RepoSettingsStoreDeps): RepoSettin
       const result = await deps.api.command(deps.actor, { type: 'repo.setAutonomy', repo: state.repo, level });
       if (!result.ok) return;
       await loadAutonomy(state.repo);
+    },
+    setMaxLevel: async (maxLevel) => {
+      if (state.repo === null) return;
+      const result = await deps.api.command(deps.actor, { type: 'repo.setAutonomy', repo: state.repo, maxLevel });
+      if (!result.ok) return;
+      const warningCount =
+        'ordersAbove' in result && typeof result.ordersAbove === 'number' && result.ordersAbove > 0
+          ? result.ordersAbove
+          : null;
+      publish({ ...state, ceilingWarningCount: warningCount });
+      await loadAutonomy(state.repo);
+    },
+    setGlobalMaxLevel: async (maxLevel) => {
+      const result = await deps.api.command(deps.actor, { type: 'settings.setAutonomy', maxLevel });
+      if (!result.ok) return;
+      const warningCount =
+        'ordersAbove' in result && typeof result.ordersAbove === 'number' && result.ordersAbove > 0
+          ? result.ordersAbove
+          : null;
+      publish({ ...state, globalCeilingWarningCount: warningCount });
+      if (state.repo !== null) await loadAutonomy(state.repo);
     },
     requestLeave: () => {
       const dirty = flowDraftState(state.stored, state.draft).isDirty;

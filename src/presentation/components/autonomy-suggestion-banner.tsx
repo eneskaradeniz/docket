@@ -1,7 +1,7 @@
 // components/autonomy-suggestion-banner.tsx — flow suggestion banner on work order detail (U-335).
 import { useState } from 'react';
 import type { IntentOutcome, WorkOrderDetailAutonomy } from '../stores/work-order-detail';
-import type { FlowDef } from '../../domain/index';
+import type { FlowDef, StageDef } from '../../domain/index';
 import { autonomyRefusalKey } from './autonomy-control';
 import { VersionBadge } from './version-badge';
 import { t, type Locale } from '../labels/t';
@@ -127,3 +127,36 @@ export function FlowLibraryRow({ locale, flow, version }: FlowLibraryRowProps) {
   );
 }
 
+export interface FlowEditorStageRowProps {
+  readonly locale: Locale;
+  readonly stage: StageDef;
+}
+
+/** U-336: Stage row in the flow editor — a stage whose `autonomy` is set shows its level as a small
+ *  tag ("önerir: auto" for `auto`, or the level name for manual/balanced); the tag is read-only. */
+export function FlowEditorStageRow({ locale, stage }: FlowEditorStageRowProps) {
+  const autonomy = stage.autonomy;
+  const tagText =
+    autonomy === 'auto'
+      ? t(locale, 'autonomy.tag.suggestsAuto')
+      : autonomy !== undefined
+        ? t(locale, `autonomy.level.${autonomy}`)
+        : undefined;
+
+  return (
+    <div
+      data-flow-editor-stage-row={stage.id}
+      className="flex items-center justify-between rounded-card border border-hairline bg-surface px-3 py-2"
+    >
+      <span className="text-[13px] font-semibold text-ink">{stage.name}</span>
+      {tagText !== undefined ? (
+        <span
+          data-stage-autonomy-tag=""
+          className="rounded-full border border-bord bg-raised px-2 py-0.5 font-mono text-[10px] text-inkdim"
+        >
+          {tagText}
+        </span>
+      ) : null}
+    </div>
+  );
+}

@@ -90,16 +90,16 @@ export function definitionAutonomyLayers(input: {
 } {
   const flowAutonomy = input.flow.autonomy;
   const flowSuggests = flowAutonomy === 'auto';
+  const anyStageSuggests = input.flow.stages.some((entry) => entry.stage.autonomy === 'auto');
 
   const stageDef = input.stage !== undefined
     ? input.flow.stages.find((entry) => entry.stage.id === input.stage)?.stage
     : undefined;
-  const stageAutonomy = (stageDef as { readonly autonomy?: AutonomyLevel } | undefined)?.autonomy;
-  const stageSuggests = stageAutonomy === 'auto';
+  const stageAutonomy = stageDef?.autonomy;
 
   return {
     flow: flowAutonomy === 'auto' ? undefined : flowAutonomy,
     stage: stageAutonomy === 'auto' ? undefined : stageAutonomy,
-    suggestsAuto: flowSuggests || stageSuggests,
+    suggestsAuto: flowSuggests || anyStageSuggests,
   };
 }
