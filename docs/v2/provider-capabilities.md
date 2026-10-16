@@ -396,6 +396,9 @@ later providers are measured by the same list before any promotion (§9). Each p
 records the version its checklist was measured on (P-68: the registry's `measuredWith` — CLI 2.1.302
 with SDK 0.3.221 for Claude Code, CLI 1.3.6 for agy, both 2026-10-16); `scripts/ops/check-provider-versions.sh`
 is the weekly sweep that tells the architect when an installed CLI has drifted past it (P-69).
+Refreshed 2026-10-17 after the step-2 PRs (#1239, #1240, #1242, #1243, #1251) — of the 68 rows:
+**59 `pass`** · **5 `partial`** (agy B3, B4, D1, D2, D6) · **2 `unverified`** (F1, both providers) ·
+**2 `n/a`** (claude-code C4, agy D7).
 
 **P-65** (added 2026-10-16, #1226) Every provider is measured by the checklist below, one status per row:
 `pass` (evidence cited: a file and line, a test that exists under that name, a merged PR/issue, or a
@@ -440,7 +443,7 @@ Paths below are relative to `src/` unless they start with `electron/` or name th
 Measured on CLI 2.1.302 driven by SDK 0.3.221 (registry `measuredWith`, 2026-10-16).
 Registry row registry:29-41; derived level `isolated` — G1–G6 all pass with test evidence, no operator
 run recorded (P-28: `full` additionally needs `operatorRuns`; domain/providers/capability.ts:92-112,
-pinned capability-registry.test.ts:425-433 — see gap 10).
+pinned capability-registry.test.ts:425-433 — remaining gap 2).
 
 | Row | Status | Evidence |
 | --- | --- | --- |
@@ -458,13 +461,13 @@ pinned capability-registry.test.ts:425-433 — see gap 10).
 | B6 | pass | isolation evidence registry:32 = transport.test.ts:976 ('P-44: a subscription launch never points the config directory at the run directory…'); sentinel trees providers/launch/isolated-config.test.ts:122 (every def); env allowlist providers/launch/launch-env.test.ts:26 (P-8) |
 | B7 | pass | context via `systemPrompt.append` once claude-code-sdk-delivery.ts:168-174 (CC-5 claude-code-delivery.test.ts:392); auto-memory off A-402 (#1208): settings :176-179 + route env claude-code route-env.ts:36-37/:72, tests transport.test.ts:552-591, claude-code-sdk-delivery.test.ts:197-218 |
 | C1 | pass | `canUseTool` transport.ts:177-206; the executor decision path run-executor.ts:853-887; board application/services/permission-board.ts:84-101 (U-11 permission-board.test.ts:167+); conformance permission leg providers/conformance/conformance.test.ts:156-167 |
-| C2 | partial | see notes |
+| C2 | pass | the Docket-side write-scope guard judges before any ask: `writeScopeVerdict` (R-159, domain/stage-output/write-scope.ts) is called in the one `permission_ask` path run-executor.ts:879 (A-409) — a write certainly outside the role's write scope is denied, answered, delivered and audited before the board or the risk table sees it, and the run continues; tests domain/stage-output/write-scope.test.ts:25 ('R-159: scope none denies every write tool target — no context fact is needed', the R-159 suite beside it) and run-executor.test.ts:2814 ('A-409: a write certainly outside the role scope is denied before the ask — the gate never sees it, the denial is written, delivered and audited, and the run continues'); PR #1242 |
 | C3 | pass | a deny surfaces as the executor-written `permission_answered` event + audit (run-executor.ts:860-876; A-16 run-executor.test.ts:695) and as the failed `tool_result` (map-message.ts:42-52; I-27 test :237); every permission decision routes through the Docket callback (transport.ts:177), so no silent run-level verdict path exists |
-| C4 | n/a | the SDK permission callback exists on every run — the row's condition (provider without a permission channel) cannot occur; the general absence of a channel-keyed warning is recorded under agy's C4 |
+| C4 | n/a | the SDK permission callback exists on every run — the row's condition (provider without a permission channel) cannot occur; the general absence of a channel-keyed warning is what agy's C4 (P-66, PR #1243) has since closed |
 | C5 | pass | preflight run-executor.ts:663-666 runs before the transport is resolved (provider-blind); predicate application/services/spend-consent.ts:34-52; tests run-executor.test.ts:1528-1675 (P-40), :1856/:1882 (P-46), spend-consent.test.ts:33-72 (P-51) |
 | C6 | pass | prompt never in argv (providers/defs/defs.test.ts:259 P-1; conformance launch leg conformance.test.ts:117-134); env allowlist providers/launch/launch-env.ts:72-88 (P-8 tests :26/:44/:69); the run token appears nowhere a run leaves behind (run-executor.test.ts:2146, A-143). Designed channel only: the docket-pages child env (mcp-attach.ts:33-38) |
 | D1 | pass | resume `specify`: SDK option transport.ts:211; sessionRef captured map-message.ts:19 and persisted run-executor.ts:850-852; attempt plan :262-290; the delivery is rebuilt identically on resume (the A-402 test asserts equal settings and env on the resumed start, transport.test.ts:552-591); I-28 :637-670; stop→resume api/api.test.ts:2007-2070 (A-362); P-22 fallback run-executor.ts:810-828 (tests :1284-1439) |
-| D2 | pass | run.stop is the SDK abort with exactly one `finished cancelled` (I-30 transport.test.ts:1424-1452; A-362 api.test.ts:2007-2083) and `run_end` maps to a Stop hook entry in the inline `settings.hooks` (claude-code-sdk-delivery.ts:7-12, direct list, no matcher; test claude-code-sdk-delivery.test.ts:65 'a run_end hook maps to a Stop entry in the inline settings hooks', #1237) |
+| D2 | pass | run.stop is the SDK abort with exactly one `finished cancelled` (I-30 transport.test.ts:1424-1452; A-362 api.test.ts:2007-2083) and `run_end` maps to a Stop hook entry in the inline `settings.hooks` (claude-code-sdk-delivery.ts:7-12, direct list, no matcher; test claude-code-sdk-delivery.test.ts:65 'a run_end hook maps to a Stop entry in the inline settings hooks', #1237, PR #1240) — the delivery leg; no live observation records a Stop hook firing yet (remaining list) |
 | D3 | pass | after_write matcher `Write/Edit/MultiEdit/NotebookEdit` claude-code-sdk-delivery.ts:14-15/:160-163; test claude-code-sdk-delivery.test.ts:32-63; before_tool CC-4 :357; the hook mechanism is live-evidenced by probe #1015, 2026-10-14 (registry:403) |
 | D4 | pass | `sweepOrphanedRuns` application/use-cases/boot-sweep.ts:22-57 — provider-blind (the file reads no provider field); wired electron/main.ts:788-794 ahead of the first dispatch tick (guard electron/boot-sweep.test.ts:16-28); tests boot-sweep.test.ts:102-245 (A-400, #1196) |
 | D5 | pass | dispatcher wait memory application/services/dispatcher.ts:54-65/:208-223; `queuedReason` api/api.ts:2655-2684; cockpit `queuedNote` U-354 presentation/stores/cockpit.ts:150-181; tests dispatcher.test.ts:1294, queries.test.ts:592-653, cockpit.test.ts:555-596 — all provider-generic (#1195) |
@@ -482,19 +485,26 @@ pinned capability-registry.test.ts:425-433 — see gap 10).
 Non-pass rows — Claude Code:
 
 - **C2 · partial** — Works: user `before_tool` hooks ride inline PreToolUse (CC-4, claude-code-delivery.test.ts:357) and under `auto` the D-10 deny floor keeps forbidden writes, git internals and secrets human-decided (risk.ts:337-350; run-executor.test.ts:2562-2721). Does not: Docket itself blocks no forbidden path before the ask — roles carry write-scope data (domain/library/roles.ts:19-92) that nothing enforces pre-ask, and whether the vendor runs PreToolUse before the permission callback is untested here. Workaround: every ask reaches the board (manual/balanced) or the risk floor (`auto`). Why not done: not built — no guard concept exists in the permission path (measured: no guard/forbidden/allowedPaths match in src/application and src/domain). Proposal: a pre-ask write-scope check in `decideAsk`, keyed on the role's write scope.
+- **C2 · superseded (R-159/A-409, PR #1242)** — the pre-ask guard the note asked for is built, provider-blind (one `permission_ask` path, before `decideAsk`), and the row above passes on the `R-159:`/`A-409:` tests.
 - **C4 · n/a** — reason in the table.
+- **D2 · partial** — Works: run.stop is the SDK abort with exactly one `finished cancelled` (I-30 transport.test.ts:1424-1452; A-362 api.test.ts:2007-2083) and the run_end → Stop leg of the hook map has no test (no match in the sdk test suites) and no live observation records it. Workaround: the mapping ships; CC-4 covers the same settings path. Why not done: test gap only. Proposal: one delivery test pinning `settings.hooks.Stop` for a `run_end` hook.
+- **D2 · superseded (PR #1240)** — the delivery test the note above asked for exists (claude-code-sdk-delivery.test.ts:65) and the row passes on it; the note's other half — no live observation of a Stop hook firing — stays open in the remaining list.
 - **F1 · unverified** — Both arms are provider-independent and test-covered: the permission arm domain/autonomy/decide.ts:23-41 plus run-executor.test.ts:2562-2721 (#1205), the gate arm domain/flow/gate-auto.ts:43-68 plus application/use-cases/gate-auto.test.ts:145-265 (#1209). But no operator run has exercised `auto` live — the registry records no claude-code `operatorRuns` at all (registry:29-41). Workaround: none needed mechanically; the level re-resolves per ask (R-170). Why not done: no live auto run recorded. Proposal: one live auto run (the permission arm on claude-code; the gate arm is provider-blind), recorded per P-28.
 
 ### agy (Antigravity, stream-json transport)
 
-Measured on CLI 1.3.6 (registry `measuredWith`, 2026-10-16; the CLI self-updates, so the drift
-warning and the weekly sweep say when the installed one is newer).
+Measured on CLI 1.3.6 (registry `measuredWith`, 2026-10-16) — that is the version the evidence below
+was measured with, the recorded live run and the `agy models` answer included. **agy 1.4.0 is
+installed** — the P-67 isolation measurement below ran on it. The drift warning grades the gap
+`newer_minor` (P-68) and the weekly sweep `scripts/ops/check-provider-versions.sh` reports it; the
+rows measured with 1.3.6 are re-measured at the next audit, not silently carried.
 Registry row registry:72-95; derived level `isolated` — every gate carries test evidence (G6
 cites the stream-json leg of the P-24 scenario, #1237) and P-67 adds the isolation evidence (the
 sentinel-tree launch test of an account's identity directory), so the cap lifts and the level derives
 `isolated` (capability.ts, pinned capability-registry.test.ts). The recorded live run predates identity
 directories — it ran against the real home — so it cannot back the isolated posture's `full`: its id
-stays cited in the record's comment and the delivery rows below, `operatorRuns` starts empty, and
+stays cited in the record's comment and the delivery rows below, `operatorRuns` is deliberately
+empty until a live run on an account home is recorded (P-67), and
 `full` waits for the live verification to record runs under account homes.
 
 | Row | Status | Evidence |
@@ -502,20 +512,20 @@ stays cited in the record's comment and the delivery rows below, `operatorRuns` 
 | A/G1 | pass | discovery.test.ts:236 (P-4, shared); registry:69 |
 | A/G2 | pass | providers/transports/stream-json/dialects/agy/agy-dialect.test.ts:34 ('P-11: the text turn fixture maps…'); registry:70 |
 | A/G3 | pass | bridge suites stream-json.test.ts:606/:646 (P-63), infrastructure/mcp/agy-ask.test.ts:95/:176 (I-108), agy-ask-bridge.test.ts:57 (I-109); the conformance exemption is documented and tested (conformance.test.ts:33-40/:236); registry:71; the live run answered five asks through the board (#1221) |
-| A/G4 | pass | the usage event carries the route's cost kind from the dialect context — the same `context.costKind` stamp the SDK mapper applies (agy-dialect.ts:80/:96, after map-message.ts:53-67); route kind `equivalent` registry:269; test agy-dialect.test.ts:63 ('P-11: the usage event carries the route's cost kind', #1237); registry:72 |
+| A/G4 | pass | the usage event carries the route's cost kind from the dialect context — the same `context.costKind` stamp the SDK mapper applies (agy-dialect.ts:80/:96, after map-message.ts:53-67); route kind `equivalent` registry:269; test agy-dialect.test.ts:63 ('P-11: the usage event carries the route's cost kind', #1237, PR #1240); registry:72 |
 | A/G5 | pass | providers/quota/agy/usage-probe.test.ts:79 ('P-19: runs `agy -p /usage --output-format json` and parses the payload from stderr'); registry:73 |
-| A/G6 | pass | the P-24 identical-work-order scenario's stream-json leg runs the real built-in agy dialect over the checked-in fake CLI with the same common event kinds and one finished per run (infrastructure/scenarios/providers.test.ts:637, #1237); registry:74 |
+| A/G6 | pass | the P-24 identical-work-order scenario's stream-json leg runs the real built-in agy dialect over the checked-in fake CLI with the same common event kinds and one finished per run (infrastructure/scenarios/providers.test.ts:637, #1237, PR #1240); registry:74 |
 | B1 | pass | native set registry:342-344 (AGENTS.md, GEMINI.md, the `.agents/` variants); live: the repo instruction text reached the agent with no read call (registry:457, #1221); non-native files are inlined by the shared P-37 core (instructions.test.ts:275); production wiring electron/main.ts:327-344 |
 | B2 | pass | `.agents/skills/<name>/SKILL.md` via `--add-dir` providers/transports/stream-json/agy-delivery.ts:221-235; tests agy-delivery.test.ts:151-165, stream-json.test.ts:455-489; live: the agent read the delivered SKILL.md (registry:449) |
 | B3 | partial | see notes |
 | B4 | partial | see notes |
 | B5 | pass | hooks.json inside the single `docket` hook group: the map agy-delivery.ts:36-44, assembly :148-189 (launcher files :102-106; exactly one PreToolUse wrapper :155-157); tests agy-delivery.test.ts:178-341 (P-62, P-64 and both corrections, #1210/#1212/#1219); live: the after_write marker fired once, a before_tool exit 2 denied before any ask (registry:451-454, #1221) |
-| B6 | pass | P-67 (#1245): the account-home launch — HOME points at the account's identity directory, never at a run directory (writer isolated-config.ts; sentinel tests isolated-config.test.ts 'P-67: an agy run of an account with an identity directory points HOME there and passes only the machine gitconfig across' and the no-identity-directory pass-through beside it); the transport resolves the routed account's directory (stream-json.test.ts 'P-67: a home-rooted run…', transport-factory wiring); the allowlist admits GIT_CONFIG_GLOBAL alone beyond the base set (launch-env.test.ts I-112) |
+| B6 | pass | P-67 (#1245, PR #1251): the account-home launch — HOME points at the account's identity directory, never at a run directory (writer isolated-config.ts; sentinel tests isolated-config.test.ts 'P-67: an agy run of an account with an identity directory points HOME there and passes only the machine gitconfig across' and the no-identity-directory pass-through beside it); the transport resolves the routed account's directory (stream-json.test.ts 'P-67: a home-rooted run…', transport-factory wiring); the allowlist admits GIT_CONFIG_GLOBAL alone beyond the base set (launch-env.test.ts I-112) |
 | B7 | pass | `.agents/rules/<id>.md` with `trigger: always_on` frontmatter agy-delivery.ts:240-248 (test agy-delivery.test.ts:210-219); the context row is live-evidenced (registry:457); no agy memory mechanism exists to disable (D7 n/a) |
 | C1 | pass | the bridge: waiter registration and deny on every end path stream-json.ts:50-57/:256-290; the ask child mcp/agy-ask.ts:185-229 (fail-closed); the listener agy-ask-bridge.ts:36-83 (token check, `NO_CHANNEL` deny); wiring electron/main.ts:666-671; tests stream-json.test.ts:606/:628/:646/:662; registry:71; the live run (#1221) |
-| C2 | partial | see notes |
+| C2 | pass | the same provider-blind guard: the agy write family arrives at the one `permission_ask` path already translated (A-409), so `writeScopeVerdict` (R-159) denies a certainly-out-of-scope write at run-executor.ts:879 before the bridge can ask; test run-executor.test.ts:2861 ('A-409: the translated write name — the agy bridge arrival — rides the same guard, and a read-only role needs no context at all') with the R-159 suite domain/stage-output/write-scope.test.ts:25; PR #1242 |
 | C3 | pass | `denied_actions` becomes exactly one error event before finished: agy-dialect.ts:59-75/:96-97, fixture denied-result.jsonl, test agy-dialect.test.ts:95 (P-11 addendum, #1214); never a text event, the fold is unchanged |
-| C4 | pass | P-66 & U-337 (#1234): registry `permissionChannel: 'bridge'` + `bridgeHow`; `setupWarnings` emits `no_permission_channel` when `docketTools === false` on a bridge-channel provider (`capability.test.ts`, `setup-copy-proposal.test.ts`); `CapabilitySection` renders `capabilities.warning.noChannel` on the role row (`agent-capabilities.test.ts`) |
+| C4 | pass | P-66 & U-337 (#1234, PR #1243): registry `permissionChannel: 'bridge'` + `bridgeHow`; `setupWarnings` emits `no_permission_channel` when `docketTools === false` on a bridge-channel provider (`capability.test.ts`, `setup-copy-proposal.test.ts`); `CapabilitySection` renders `capabilities.warning.noChannel` on the role row (`agent-capabilities.test.ts`) |
 | C5 | pass | the same provider-blind preflight run-executor.ts:663-666; agy live rows are billing-`unknown` by design (registry:253-272), so a hand-picked model always needs consent + a cap |
 | C6 | pass | the prompt rides the one-line NDJSON stdin envelope, never argv (defs.test.ts:259 P-1; agy-dialect.test.ts:82); env allowlist extras empty (launch-env.ts:50); a secretRef MCP server refuses the run `not_logged_in` (stream-json.test.ts:491); token, socket path and hook commands appear in neither hooks.json nor the launcher (agy-delivery.test.ts:282-306). Designed channel only: the 0600 run-scoped `.docket-ask.json` and `mcp_config.json`, and the docket-pages child env |
 | D1 | partial | see notes |
@@ -524,10 +534,10 @@ stays cited in the record's comment and the delivery rows below, `operatorRuns` 
 | D4 | pass | the same provider-blind sweep boot-sweep.ts:22-57 (no provider field is read anywhere in the file); tests boot-sweep.test.ts:102-245 (A-400) |
 | D5 | pass | the same generic wait reason (evidence as for claude-code); an open agy ask surfaces as an attention row api.ts:2563-2578 while the watchdog timers pause (watchdog.ts:65) |
 | D6 | partial | see notes |
-| D7 | n/a | no agy auto-memory mechanism is known to the def, the registry or the transport (verified: no memory surface anywhere; `~/.gemini` rule files are native instructions, not memory). If the CLI grows one, nothing today would catch it — tracked under the B6 gap |
-| E1 | pass | the usage event reaches the record with tokens plus the route's cost kind (A/G4 evidence; registry:269 `equivalent`), #1237 |
+| D7 | n/a | no agy auto-memory mechanism is known to the def, the registry or the transport (verified: no memory surface anywhere; `~/.gemini` rule files are native instructions, not memory). If the CLI grows one, nothing today would catch it — the next audit's re-measure is the watch (the closed B6 work, P-67, surfaced none) |
+| E1 | pass | the usage event reaches the record with tokens plus the route's cost kind (A/G4 evidence; registry:269 `equivalent`), #1237, PR #1240 |
 | E2 | pass | the usage probe providers/quota/agy/usage-probe.ts:14/:68-95 (print mode, both streams read) and parser usage-parser.ts:116-134 (stdout or stderr); tests usage-probe.test.ts:79-153, usage-parser.test.ts:107-153, usage-groups.test.ts (P-39); registry:269 `provider_query` |
-| E3 | pass | live list providers/catalog/cli-command-catalog.ts:40-42 (parser + fourteen-model fixture tests cli-command-catalog.test.ts:154-308; login-free per P-45); bundled models + thinking registry:272-295 — the measured `agy models` answer (agy 1.3.6): the id suffix carries the effort, one level per record, tier map argon-high/flash-high/flash-low (tests capability-registry.test.ts:206/:250); a live row meets its bundled record in the merge (model-catalog.test.ts:541); effort `flag` providers/defs/builtin-provider-defs.ts:11 → argv :96-106 (P-41 tests defs.test.ts:331/:345); P-30 mapping domain/providers/catalog.test.ts:356+ |
+| E3 | pass | live list providers/catalog/cli-command-catalog.ts:40-42 (parser + fourteen-model fixture tests cli-command-catalog.test.ts:154-308; login-free per P-45); bundled models + thinking as registry data, PR #1239 — registry:272-295, the measured `agy models` answer (agy 1.3.6): the id suffix carries the effort, one level per record, tier map argon-high/flash-high/flash-low (tests capability-registry.test.ts:206/:250); a live row meets its bundled record in the merge (model-catalog.test.ts:541); effort `flag` providers/defs/builtin-provider-defs.ts:11 → argv :96-106 (P-41 tests defs.test.ts:331/:345); P-30 mapping domain/providers/catalog.test.ts:356+ |
 | E4 | pass | the P-56 presence probe providers/defs/builtin-provider-defs.ts:82-85 (presence only, `absent: 'unknown'`; tests defs.test.ts:217-224, discovery.test.ts:981-1007); no directory scanner → exactly one machine-login candidate and nothing read from disk for it (account-scan.ts:192-227; tests account-scan.test.ts:350/:406) |
 | F1 | unverified | see notes |
 | F2 | pass | agy names are translated once, in the ask child: mcp/agy-ask.ts:74-92 (run_command→Bash, the write family→Write, view_file→Read, call_mcp_tool→mcp__Server__Tool with no target); tests agy-ask.test.ts:127-170; an unmapped ask stays with the human even under `auto` (run-executor.ts:96-114), including the prefixed `mcp__docket-pages__page_publish` itself (run-executor.test.ts:2669 A-412, #1237); the live run's asks arrived as Write, Read and mcp__… (#1221) |
@@ -536,6 +546,10 @@ stays cited in the record's comment and the delivery rows below, `operatorRuns` 
 
 Non-pass rows — agy:
 
+- **A/G4 · partial** — Works: final statistics map to a usage event with token counts (agy-dialect.ts:78-100; tests agy-dialect.test.ts:34-41/:61-65) and the route declares `costKind: 'equivalent'` (registry:268). Does not: the dialect stamps no cost kind on the event — tokens only (agy-dialect.ts:88-94) — and the registry's G4 evidence cites only the error-fold test (registry:72). Workaround: consumers read the cost kind from the route's registry data. Why not done: not built — the dialect predates per-route cost kinds on stream-json. Proposal: stamp the cost kind in `resultEvents` as the SDK leg does (map-message.ts:64), then re-cite G4.
+- **A/G4 · superseded (PR #1240)** — the proposal above is built: the dialect stamps the route's cost kind from the dialect context, and the row passes on agy-dialect.test.ts:63.
+- **A/G6 · partial** — Works: the P-35 conformance legs script agy end to end for launch, mapping, resume, stop and watchdog (conformance.test.ts:247-259; the fake dialect at conformance/legs.ts:39-41). Does not: G6's evidence contract is the P-24 identical-work-order scenario, whose legs are exactly sdk, app-server and acp (src/infrastructure/scenarios/providers.test.ts:594-600) — no stream-json leg exists, so the registry cannot cite G6 (registry:61; capability-registry.test.ts:151-163). Workaround: the P-35 per-def scenarios plus the bridge suites. Why not done: not built. Proposal: add a stream-json leg to P-24 riding the existing fake dialect; small effort, and it is the promotion blocker after isolation.
+- **A/G6 · superseded (PR #1240)** — the stream-json leg above exists and the row passes on providers.test.ts:637.
 - **B3 · partial** — Works: stdio servers are delivered through `.agents/mcp_config.json` `{command, args, env}` (agy-delivery.ts:208-219; tests agy-delivery.test.ts:151-161); the Docket tools ride it and `call_mcp_tool` asks flow through the bridge (live: the page published, #1221). Does not: URL/SSE servers are not delivered at all — the CLI wants the `serverUrl` key and nothing URL-shaped is ever written (agy-delivery.ts:210-212; registry:445); no omission record fires and no negative test pins it. Workaround: the registry row's `how` documents the limit. Why not done: CLI limit — only the stdio shape was evidenced (probe #1015). Proposal: record an `omitted_capability` (P-59) for URL-shaped servers, or deliver `serverUrl` once evidenced.
 - **B4 · partial** — Works: path plugin bundles are copied with a root `plugin.json` and load hooks + MCP (agy-delivery.ts:251-266; tests agy-delivery.test.ts:151-172; probe #1015 spike — registry:459-464, path-only per R-149). Does not: a plugin's own skill was never evidenced and no plugin rode the live run. Workaround: skills travel as first-class capabilities (B2). Why not done: not observed — probe scope. Proposal: one live run with a plugin that carries a skill.
 - **B6 · fail** — The CLI documents no config-dir override and its login lives under `~/.gemini/antigravity-cli` (P-56), so HOME is never redirected and the CLI may read the user's ambient configuration: isolation is deliberately not claimed (registry:61-64), the tests pin the pass-through posture (isolated-config.test.ts:251-267) and the level is capped `experimental` (capability.ts:94). Workaround: the experimental level says so in the UI; everything Docket writes stays inside the run dir (P-7 tests, isolated-config.test.ts:98). Why not done: CLI limit — no config-dir flag exists and redirecting HOME could cut the CLI off from its login (measured; the P-44 rule). Proposal: probe whether a run-scoped home with an adopted login survives, or adopt a CLI config-dir flag when one appears; until then the cap stands.
@@ -547,39 +561,36 @@ Non-pass rows — agy:
   points HOME there (never at a run directory, P-44's rule holds), reads and writes no other home, and
   the row above now passes on the sentinel-tree evidence.
 - **C2 · partial** — Works: the P-64 wrapper runs the user's `before_tool` hooks before any ask and an exit 2 denies first (mcp/agy-ask.ts:210-214; test agy-ask.test.ts:200; live: `forbidden.txt` denied before any ask, #1221). Does not: the guard rules are user hooks — Docket enforces no forbidden-path set of its own before the ask (the same measured absence as claude-code). Workaround: the risk floor under `auto`; the human board otherwise. Why not done: not built. Proposal: the same pre-ask write-scope check as claude-code — it would be provider-blind.
+- **C2 · superseded (R-159/A-409, PR #1242)** — exactly the proposal above happened: the provider-blind write-scope guard sits in the shared `permission_ask` path, and the row above passes on the bridge-arrival `A-409:` test.
 - **D1 · partial** — Works: `--conversation` resume is built and fake-CLI tested, and a resumed run rebuilds the same delivery — `--add-dir` re-passed, the `.agents` tree rewritten, the rules file present (stream-json.ts:184-200; stream-json.test.ts:455-489; defs.test.ts:378-388); the P-22 restart fallback is provider-blind (run-executor.ts:810-828). Does not: no live agy resume exists — explicitly listed as not observed (§15 P-58 amendment #2; the P-63 cross-reference in providers.md). Workaround: scripted evidence plus P-22. Why not done: no live run yet. Proposal: a live resume leg in the next operator run.
 - **D2 · partial** — Works: run.stop kills the whole process group (P-10 test stream-json.test.ts:318-351) and the run_end→Stop entry is writer-tested as the direct list inside the `docket` group (agy-delivery.test.ts:178-208, :222-248). Does not: a Stop hook firing was never observed live (registry:453, 'run_end not yet observed live'). Workaround: the writer tests pin the shape. Why not done: the live run's Stop path produced no observable marker. Proposal: a `run_end` marker hook in the next live run.
-- **D6 · partial** — Works: run.stop (above) plus honest refusal — the registry pins `not_steerable` (registry:67; capability-catalog.test.ts:203-213), `run.steer` answers `unsupported` before any audit (api.ts:1235-1238; api.test.ts:2156-2179) and the UI offers steering only when the transport can (#1148). Does not: mid-run steering is impossible — the stream-json prompt is one-shot on stdin and a later note is dropped (stream-json.ts:386-393/:402-405). Workaround: stop + resume, or a fresh run with the note in the prompt. Why not done: CLI/transport limit — no steering channel (P-61 records it as data). Proposal: none until the CLI grows an input channel; revisit together with the B6 probe.
+- **D6 · partial** — Works: run.stop (above) plus honest refusal — the registry pins `not_steerable` (registry:67; capability-catalog.test.ts:203-213), `run.steer` answers `unsupported` before any audit (api.ts:1235-1238; api.test.ts:2156-2179) and the UI offers steering only when the transport can (#1148). Does not: mid-run steering is impossible — the stream-json prompt is one-shot on stdin and a later note is dropped (stream-json.ts:386-393/:402-405). Workaround: stop + resume, or a fresh run with the note in the prompt. Why not done: CLI/transport limit — no steering channel (P-61 records it as data). Proposal: none until the CLI grows an input channel; revisit at the next re-measure (the B6 probe is closed — P-67 measured the account home, not a steering channel).
+- **E1 · partial** — the same facts as A/G4: the usage event carries tokens, no cost kind is stamped, the route declares `equivalent`.
+- **E1 · superseded (PR #1240)** — the cost kind is stamped (A/G4); the row passes on the same evidence.
+- **E3 · partial** — Works: the catalog is the live `agy models` TSV (providers/catalog/cli-command-catalog.ts:40-42; parser and fourteen-model fixture tests cli-command-catalog.test.ts:154-308; login-free per P-45) and the effort rides the `--effort` flag (builtin-provider-defs.ts:11/:88/:96-106, tested). Does not: the registry bundles no agy models and no thinking levels (registry:272, `models: []`) — a failed or empty listing leaves an empty catalog with no thinking control, and every live row reads billing-`unknown` by design (registry:253-263). Workaround: live-only authoritative list; unknown billing always asks consent (C5). Why not done: not built — registry data awaits a model-catalog pass. Proposal: bundle the gemini families with thinking levels from the recorded TSV.
+- **E3 · superseded (PR #1239)** — the bundling above is built: models and thinking levels are registry data (registry:272-295) and the row passes on the registry tests.
 - **F1 · unverified** — the same state as claude-code: both arms are provider-independent and test-covered, but no live `auto` run exists; the live agy run answered all five asks through the human board and D-10 `auto` on agy asks is explicitly not yet observed (§15 P-58 amendment #2). Workaround: none mechanically. Why not done: no live run under auto. Proposal: one live auto run; on agy it would also prove the bridge path under policy.
 
-### Gaps, in the order we propose to close them
+### Remaining gaps
 
-Ordered by risk first, then effort; step 2 of the series works this list and nothing was fixed in #1226:
+Ordered by risk first, then effort. The audit's step-2 PRs closed B6 (#1245, PR #1251), C4 (#1234,
+PR #1243), C2 (#1235, PR #1242), the agy G4/E1/G6/F2 evidence and the claude-code Stop delivery test
+(#1237, PR #1240) and E3 (#1236, PR #1239); the rows above carry each closure under a superseded note.
+What remains:
 
-1. **B6 · agy** — closed in #1245: P-67's account homes (per-account HOME directories with the
-   operator's own login) give the run its isolation; the derived level is `isolated`, and `full` waits
-   for a recorded operator run under account homes.
-2. **C4 · agy** — closed in #1234: P-66 and U-337 warn at setup when a role with `docketTools: false` runs
-   on a bridge-channel provider (`setupWarnings` emits `no_permission_channel` and the role row renders
-   `capabilities.warning.noChannel`).
-3. **C2 · both** — a Docket-side forbidden-path/write-scope guard before the ask; roles already carry
-   write-scope data, nothing enforces it pre-ask.
-4. **A/G6 · agy** — closed in #1237: the P-24 scenario runs a fourth, stream-json leg over the real
-   agy dialect and the fake CLI, and the registry cites it as G6.
-5. **F1 · both** — one live `auto` run (permission arm and gate arm) recorded in `operatorRuns`; on agy it
-   also exercises the bridge under policy.
-6. **E1 + A/G4 · agy** — closed in #1237: the dialect stamps the route's cost kind (dialect context,
-   as the SDK mapper does) and G4 cites the cost-carrying test.
-7. **D2 · both** — half closed in #1237: the claude-code delivery test pins `settings.hooks.Stop`
-   (D2 now pass there); the live agy Stop marker remains open.
-8. **D1 · agy** — a live resume leg (`--conversation` with `--add-dir`) in the next operator run.
-9. **B3 · agy** — record the URL/SSE MCP omission (or deliver `serverUrl` when evidenced).
-10. **operatorRuns · claude-code** — record the claude-code verification runs per P-28, so six passing
-    gates can translate into `full`.
-11. **B4 · agy** — one live run with a plugin (own-skill evidence).
-12. **E3 · agy** — bundle gemini models and thinking levels as registry data.
-13. **F2 · both** — closed in #1237: A-412 (run-executor.test.ts) pins the prefixed
-    `mcp__docket-pages__page_publish` as human-decided under `auto` via the mappability miss.
+1. **F1 · both** — one live `auto` run (permission arm and gate arm) recorded in `operatorRuns`; on agy
+   it also exercises the bridge under policy.
+2. **operatorRuns** — claude-code: record the verification runs per P-28, so the six passing gates can
+   translate into `full`; agy: a live run on an account home (P-67), so `isolated` can promote to `full`.
+3. **B3 · agy** — URL/SSE MCP: record the omission (P-59) or deliver `serverUrl` once evidenced.
+4. **B4 · agy** — one live run with a plugin (own-skill evidence).
+5. **D1 · agy** — a live resume leg (`--conversation` with `--add-dir`) in the next operator run.
+6. **D2 · Stop live** — a Stop hook firing observed live on either provider; the claude-code delivery
+   leg is already test-pinned.
+7. **D6 · agy** — steer is impossible, a CLI limit: the stream-json prompt is one-shot on stdin (P-61
+   records it as data); nothing to build until the CLI grows an input channel.
+8. **SDK bump** — the pinned claude-agent-sdk 0.3.221 is behind npm's 0.3.302; a bump PR per P-69(3)
+   (changelog review, full suites, the canary) and a `measuredWith` refresh.
 
 ## Open decisions
 - O-1 Where endpoint and model mapping live: account fields (proposed) or a separate preset record.
