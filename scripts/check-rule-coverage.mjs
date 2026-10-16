@@ -103,8 +103,6 @@ const PENDING = new Map([
   ['application:A-415', '#1247 follow-up 2 (ConnectorRegistry + settings key + resolver rewrite)'],
   ['application:A-416', '#1247 follow-up 2 (ConnectorRegistry + settings key + resolver rewrite)'],
   ['application:A-417', '#1247 follow-up 2 (ConnectorRegistry + settings key + resolver rewrite)'],
-  ['infrastructure:I-113', '#1247 follow-up 3 (pure move into connectors/github/ + conformance wiring)'],
-  ['infrastructure:I-114', '#1247 follow-up 3 (pure move into connectors/github/ + conformance wiring)'],
   ['ui:U-356', '#1247 follow-up 4 (Settings screen)'],
   ['ui:U-357', '#1247 follow-up 4 (Settings screen)'],
 

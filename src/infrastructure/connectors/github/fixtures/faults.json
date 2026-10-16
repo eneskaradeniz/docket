@@ -1,0 +1,8 @@
+[
+  { "kind": "unauthorized", "expected": "auth", "exitCode": 1, "output": "gh: HTTP 401: Bad credentials" },
+  { "kind": "forbidden", "expected": "unknown", "exitCode": 1, "output": "gh: HttpError: HTTP 403: Resource not accessible by integration" },
+  { "kind": "missing", "expected": "not_found", "exitCode": 1, "output": "gh: HttpError: HTTP 404: Not Found" },
+  { "kind": "rate_limited", "expected": "rate_limited", "exitCode": 1, "output": "gh: HttpError: HTTP 429: API rate limit exceeded (retry after 60s)" },
+  { "kind": "server", "expected": "unknown", "exitCode": 1, "output": "gh: HttpError: HTTP 500: Internal Server Error" },
+  { "kind": "timeout", "expected": "network", "exitCode": 1, "output": "gh: dial tcp: i/o timeout" }
+]
