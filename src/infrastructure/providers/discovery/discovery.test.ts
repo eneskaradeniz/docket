@@ -1004,6 +1004,20 @@ describe('weak presence login probe (P-56)', () => {
     rmSync(elsewhere, { recursive: true, force: true });
   });
 
+  it('P-67: the presence probe of the home-rooted CLI reads the home the environment names — an account identity directory, not the machine home', async () => {
+    // The def's config root is HOME (P-67), so a probe of one account points HOME at that
+    // account's identity directory: the token under it is the login the probe answers from,
+    // while the machine home stays the home whenever the environment names no other.
+    clearToken();
+    const identityDir = join(root, 'agy-max');
+    mkdirSync(join(identityDir, '.gemini', 'antigravity-cli'), { recursive: true });
+    writeFileSync(join(identityDir, '.gemini', 'antigravity-cli', 'antigravity-oauth-token'), 'opaque fixture bytes');
+    expect((await discoverAgy({ HOME: identityDir })).result?.loggedIn).toBe(true);
+    clearToken();
+    expect((await discoverAgy()).result?.loggedIn).toBeNull();
+    rmSync(identityDir, { recursive: true, force: true });
+  });
+
   it('P-56: a presence rule without absent keeps the old answer — a missing file stays not-logged-in', async () => {
     const def = defOf({
       id: 'p-x',

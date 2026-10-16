@@ -29,6 +29,7 @@ const PAYLOAD = `{"status": "SUCCESS", "num_turns": 0, "command": { "name": "usa
 interface SpawnCall {
   readonly command: string;
   readonly args: readonly string[];
+  readonly env: Readonly<Record<string, string>> | undefined;
 }
 
 interface BinScript {
@@ -64,9 +65,9 @@ const makeProbe = (
     chmodSync(binPath, 0o755);
   }
   const calls: SpawnCall[] = [];
-  const spawn: UsageSpawn = (command, args) => {
-    calls.push({ command, args: [...args] });
-    return nodeSpawn(command, [...args], { timeout: 5_000 });
+  const spawn: UsageSpawn = (command, args, options) => {
+    calls.push({ command, args: [...args], env: options.env });
+    return nodeSpawn(command, [...args], { timeout: 5_000, ...(options.env === undefined ? {} : { env: options.env }) });
   };
   return {
     calls,
@@ -76,6 +77,19 @@ const makeProbe = (
 };
 
 describe('createAgyUsageProbe', () => {
+  it('P-67: the usage probe of an account with an identity directory runs with HOME at it; a machine login inherits the environment untouched', async () => {
+    const { calls, binPath, probe } = makeProbe({ payloadStream: 'stdout' });
+    if (binPath === null) throw new Error('fixture binary missing');
+
+    const account = await probe.poll('agy', binPath, { accountId: null, identityDir: '/users/fixture/.agy-max' });
+    expect(account.ok).toBe(true);
+    expect(calls[0]?.env?.HOME).toBe('/users/fixture/.agy-max');
+
+    const machine = await probe.poll('agy', binPath, { accountId: null, identityDir: null });
+    expect(machine.ok).toBe(true);
+    expect(calls[1]?.env).toBeUndefined();
+  });
+
   it('P-19: runs `agy -p /usage --output-format json` and parses the payload from stderr', async () => {
     const { calls, binPath, probe } = makeProbe({ payloadStream: 'stderr' });
     if (binPath === null) throw new Error('fixture binary missing');
