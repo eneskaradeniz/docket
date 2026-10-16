@@ -33,12 +33,16 @@ export async function applyGateAutoPolicy(
   // The level is re-resolved per pass, never cached across them: a level change governs only the
   // decisions made after it (R-170). An unreadable level is the typed read's own surface — the
   // pass writes nothing and stays quiet, exactly like the executor's permission ask.
-  const autonomy = await effectiveAutonomy(deps, { workOrder: input.id });
+  const state = deriveWorkOrderState(flow, events);
+  const autonomy = await effectiveAutonomy(deps, {
+    workOrder: input.id,
+    ...(state.stage !== null ? { stage: state.stage } : {}),
+  });
   if (!autonomy.ok) {
-    return ok({ state: deriveWorkOrderState(flow, events), approved: [] });
+    return ok({ state, approved: [] });
   }
 
-  const approvals = decideGateAuto(flow, deriveWorkOrderState(flow, events), events, autonomy.value.level);
+  const approvals = decideGateAuto(flow, state, events, autonomy.value.level);
   const approved: GateSlug[] = [];
   for (const approval of approvals) {
     const actor: Actor = { kind: 'policy', policy: approval.policy, level: approval.level };

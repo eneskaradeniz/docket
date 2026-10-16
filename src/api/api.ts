@@ -185,6 +185,7 @@ import {
   repoFlowView,
   saveRepoFlow,
   setGlobalAutonomy,
+  setProjectAutonomy,
   setRepoAutonomy,
   setWorkOrderAutonomy,
   undoAction,
@@ -1044,6 +1045,19 @@ const runCommand = async (
         await setRepoAutonomy(
           { clock: deps.clock, ids: deps.ids, log: deps.log, repos: deps.repos, definitions: deps.definitions },
           { repo, level: level.value, maxLevel, actor },
+        ),
+      );
+    }
+
+    case 'project.setAutonomy': {
+      const project = slugValue<'project'>(command.project);
+      if (project === undefined) return invalidId();
+      const level = autonomyLevelOf(command.level);
+      if (!level.ok) return { ok: false, code: level.error };
+      return commandOf(
+        await setProjectAutonomy(
+          { clock: deps.clock, ids: deps.ids, log: deps.log, definitions: deps.definitions },
+          { project, level: level.value, actor },
         ),
       );
     }

@@ -616,16 +616,16 @@ describe('getWorkOrder', () => {
       level: 'manual',
       source: 'builtin',
       layerSet: false,
-      autoRefusal: 'auto_requires_spend_cap',
+      autoUnavailable: 'auto_requires_spend_cap',
     });
 
     seedRepoAutonomy(h, 'auto', BUDGET);
     view = await getWorkOrder(h.viewDeps, id);
     expect(view.ok && view.value.autonomy).toEqual({
-      level: 'auto',
+      level: 'manual',
       source: 'repo',
       layerSet: false,
-      autoRefusal: 'auto_requires_max_attempts',
+      autoUnavailable: 'auto_requires_max_attempts',
     });
 
     // The record's own layer outranks the repo's and flips the standing.
@@ -637,7 +637,7 @@ describe('getWorkOrder', () => {
       level: 'manual',
       source: 'workOrder',
       layerSet: true,
-      autoRefusal: 'auto_requires_max_attempts',
+      autoUnavailable: 'auto_requires_max_attempts',
     });
     await h.workOrders.setAutonomy(id, undefined);
   });
@@ -1544,14 +1544,16 @@ describe('effectiveAutonomy', () => {
     });
   });
 
-  it('A-394: an absent record level inherits down the chain to the repo layer', async () => {
+  it('R-158/A-394: a repo auto the preconditions cannot carry answers manual with the typed reason — never a silent auto', async () => {
     const h = createHarness();
+    // The repo layer says auto and carries the cap, but the pinned flow's stages carry no onFail:
+    // the read fails closed (R-158) with the max-attempts reason.
     seedRepoAutonomy(h, 'auto', BUDGET);
     const id = await openedWorkOrder(h);
 
     expect(await effectiveAutonomy(h.autonomyDeps, { workOrder: id })).toEqual({
       ok: true,
-      value: { level: 'auto', source: 'repo' },
+      value: { level: 'manual', source: 'repo', autoUnavailable: 'auto_requires_max_attempts' },
     });
   });
 
@@ -1566,17 +1568,17 @@ describe('effectiveAutonomy', () => {
     });
   });
 
-  it('A-394: the project layer answers when the repo carries no level', async () => {
+  it('A-394: the project layer answers when the repo carries no level — an auto without a cap fails closed (R-158)', async () => {
     const h = createHarness();
     const id = await openedWorkOrder(h);
     const autonomyDeps = {
       ...h.autonomyDeps,
-      ...withProjectSection(h, { ...PROJECT_DEF, autonomy: 'auto' as AutonomyLevel }),
+      ...withProjectSection(h, { ...PROJECT_DEF, autonomy: 'auto' as AutonomyLevel, budget: BUDGET }),
     };
 
     expect(await effectiveAutonomy(autonomyDeps, { workOrder: id })).toEqual({
       ok: true,
-      value: { level: 'auto', source: 'project' },
+      value: { level: 'manual', source: 'project', autoUnavailable: 'auto_requires_max_attempts' },
     });
   });
 
@@ -1587,7 +1589,7 @@ describe('effectiveAutonomy', () => {
     await h.settings.set(AUTONOMY_KEY, 'auto');
     expect(await effectiveAutonomy(h.autonomyDeps, { workOrder: id })).toEqual({
       ok: true,
-      value: { level: 'auto', source: 'global' },
+      value: { level: 'manual', source: 'global', autoUnavailable: 'auto_requires_spend_cap' },
     });
 
     const fresh = createHarness();
@@ -1639,20 +1641,39 @@ describe('effectiveAutonomy', () => {
     });
   });
 
+  it('R-158: an auto whose preconditions hold stands — the read carries no reason', async () => {
+    // flow-fail's single stage carries an onFail and the repo carries the cap: the repo layer's
+    // auto survives the fail-closed read exactly as it resolved.
+    const base = JSON.parse(definitionsJson({ ownFlow: 2 })) as { readonly repo: Record<string, unknown> };
+    const h = createHarness();
+    h.definitions.seed(
+      { kind: 'repo', repo: REPO },
+      'defs.json',
+      JSON.stringify({ ...base, repo: { ...base.repo, autonomy: 'auto', budget: BUDGET } }),
+    );
+    const id = await openedWorkOrder(h);
+
+    expect(await effectiveAutonomy(h.autonomyDeps, { workOrder: id })).toEqual({
+      ok: true,
+      value: { level: 'auto', source: 'repo' },
+    });
+  });
+
   it('A-404: the contract’s full signature ships — a stage names the decision, and the answer carries no ceiling or suggestion until (b)/(c) feed them', async () => {
     const h = createHarness();
     const id = await openedWorkOrder(h);
     seedRepoAutonomy(h, 'auto', BUDGET);
 
     // A stage-less read and a per-stage read answer the same chain today: the stage and flow
-    // layers land with (b)/(c), read from the pin, never the live definition.
+    // layers land with (b)/(c), read from the pin, never the live definition. The unbounded pin
+    // fails the auto read closed (R-158), so both answers carry the typed reason.
     expect(await effectiveAutonomy(h.autonomyDeps, { workOrder: id })).toEqual({
       ok: true,
-      value: { level: 'auto', source: 'repo' },
+      value: { level: 'manual', source: 'repo', autoUnavailable: 'auto_requires_max_attempts' },
     });
     expect(await effectiveAutonomy(h.autonomyDeps, { workOrder: id, stage: slugOf<'stage'>('plan') })).toEqual({
       ok: true,
-      value: { level: 'auto', source: 'repo' },
+      value: { level: 'manual', source: 'repo', autoUnavailable: 'auto_requires_max_attempts' },
     });
   });
 });

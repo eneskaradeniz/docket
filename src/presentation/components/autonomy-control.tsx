@@ -14,7 +14,7 @@ export interface AutonomyControlView {
   readonly level: 'manual' | 'balanced' | 'auto';
   readonly source: string;
   readonly layerSet: boolean;
-  readonly autoRefusal?: string;
+  readonly autoUnavailable?: string;
 }
 
 /** The source word of the chain (A-407): one label key per `AutonomySource | 'ceiling'`. */
@@ -40,7 +40,7 @@ export function AutonomyControl({ locale, view, mark, onPick, onClear }: Autonom
   const label = t(locale, 'autonomy.title');
   // `auto` is disabled exactly where picking it would answer the typed refusal (U-334); a level
   // that already is `auto` stays selected whatever a later cap removal would say.
-  const autoBlocked = view.level !== 'auto' && view.autoRefusal !== undefined;
+  const autoBlocked = view.level !== 'auto' && view.autoUnavailable !== undefined;
   return (
     <section
       role="group"
@@ -66,9 +66,9 @@ export function AutonomyControl({ locale, view, mark, onPick, onClear }: Autonom
           <span className={`text-[13px] ${autoBlocked ? 'text-inkdim' : 'text-ink'}`}>{t(locale, 'autonomy.level.auto')}</span>
         </label>
       </div>
-      {autoBlocked && view.autoRefusal !== undefined ? (
+      {autoBlocked && view.autoUnavailable !== undefined ? (
         <p id={`autonomy-${mark}-refusal`} data-autonomy-refusal className="m-0 mt-2 text-[12px] text-inkdim">
-          {t(locale, autonomyRefusalKey(view.autoRefusal))}
+          {t(locale, autonomyRefusalKey(view.autoUnavailable))}
         </p>
       ) : null}
       <p data-autonomy-source className="m-0 mt-2 text-[12px] text-inkdim">

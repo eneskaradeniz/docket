@@ -1,4 +1,4 @@
-// resolver/autonomy.ts — the widened autonomy chain read (R-151, D-10 chain widening #1225;
+// resolver/autonomy.ts — the widened autonomy chain read (R-151, D-10 chain widening;
 // the domain addendum of docs/v2/domain.md): work order > stage > flow > repo > project >
 // global, walked by AUTONOMY_CHAIN_ORDER — never by array position. Pure: the same layers
 // always answer the same value. `Level`/`LEVEL_ORDER` of the setting chain are NOT changed
@@ -40,9 +40,11 @@ export function resolveAutonomy(layers: readonly AutonomyLayer[]): ResolvedAuton
   for (const source of AUTONOMY_CHAIN_ORDER) {
     for (const layer of layers) {
       if (layer.source !== source || layer.value === undefined) continue;
-      // `balanced` is not offered until the risk-rule table lands (D-10 4/5): the layer that set
-      // it stays the source for display, the level in force is `manual`.
-      if (layer.value === 'balanced') return { level: 'manual', source };
+      // R-157, clause 1 — defence in depth: a definition-origin layer can never resolve `auto`,
+      // whatever path fed the walk; the layer reads as absent and the walk goes on. A user-set
+      // source's `auto` passes through (R-151's narrowed clause); `manual`/`balanced` from a
+      // definition pass through too — a definition may restrict, never loosen.
+      if (layer.value === 'auto' && (source === 'flow' || source === 'stage')) continue;
       return { level: layer.value, source };
     }
   }
@@ -51,15 +53,23 @@ export function resolveAutonomy(layers: readonly AutonomyLayer[]): ResolvedAuton
 
 /** The ceiling read (R-154): the effective ceiling is the minimum by AUTONOMY_RANK of the
  *  defined ones — a repo ceiling can tighten the global one, never loosen it. A level ranking
- *  above it answers the ceiling with `ceiling` as its source; R-167's balanced clause applies
- *  after the clamp exactly as before. */
+ *  above it answers the ceiling with `ceiling` as its source. R-157, clause 2: the balanced
+ *  demotion is applied here — once, after the clamp, the source preserved (including
+ *  `'ceiling'`) — so no composition ever leaves a balanced level in force. */
 export function clampAutonomy(
   resolved: ResolvedAutonomy,
   ceilings: readonly (AutonomyLevel | undefined)[],
 ): ResolvedAutonomy {
+  let level = resolved.level;
+  let source: ResolvedAutonomy['source'] = resolved.source;
   const defined = ceilings.filter((ceiling): ceiling is AutonomyLevel => ceiling !== undefined);
-  if (defined.length === 0) return resolved;
-  const ceiling = defined.reduce((low, one) => (AUTONOMY_RANK[one] < AUTONOMY_RANK[low] ? one : low));
-  if (AUTONOMY_RANK[resolved.level] <= AUTONOMY_RANK[ceiling]) return resolved;
-  return { level: ceiling === 'balanced' ? 'manual' : ceiling, source: 'ceiling' };
+  if (defined.length > 0) {
+    const ceiling = defined.reduce((low, one) => (AUTONOMY_RANK[one] < AUTONOMY_RANK[low] ? one : low));
+    if (AUTONOMY_RANK[level] > AUTONOMY_RANK[ceiling]) {
+      level = ceiling;
+      source = 'ceiling';
+    }
+  }
+  if (level === 'balanced') return { level: 'manual', source };
+  return { level, source };
 }

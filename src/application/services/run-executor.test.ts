@@ -2543,6 +2543,7 @@ const VERIFY_FLOW = {
       name: 'Implement',
       role: ROLE.id,
       exit: [{ kind: 'command', id: 'verify', commandSet: 'verify' }],
+      onFail: { goto: STAGE, maxAttempts: 2 },
     },
   ],
 };
@@ -2568,12 +2569,16 @@ const VERIFY_DEFS_JSON = JSON.stringify({
     commandSets: { verify: ['npm test'] },
     docsRoot: 'docs',
     testGlobs: [],
+    budget: { amountUsd: 10, warnPercent: 80 },
   },
 });
 
 describe('executeRun — the autonomy permission policy', () => {
   it('auto allows a low ask by the policy: the human gate is never asked, the allow is written and audited by the policy actor', async () => {
-    const h = await harness({ script: [sessionStarted('sess-1'), ownReadAsk('ask-1'), finished('completed')] });
+    const h = await harness({
+      script: [sessionStarted('sess-1'), ownReadAsk('ask-1'), finished('completed')],
+      defsJson: VERIFY_DEFS_JSON,
+    });
     await h.deps.settings.set(AUTONOMY_KEY, 'auto');
     // A deny gate doubles as the leak detector: any ask that slipped through to it would flip the answer.
     const gate = permissionGate('deny');
@@ -2675,6 +2680,7 @@ describe('executeRun — the autonomy permission policy', () => {
     // the tables the prefix cannot silently license the prefixed tool.
     const h = await harness({
       script: [prefixedPublishAsk('ask-1'), ownReadAsk('ask-2'), finished('completed')],
+      defsJson: VERIFY_DEFS_JSON,
     });
     await h.deps.settings.set(AUTONOMY_KEY, 'auto');
     const gate = permissionGate('deny');
@@ -2721,6 +2727,7 @@ describe('executeRun — the autonomy permission policy', () => {
   it('R-170: a level change between two asks governs the second only; the first answer keeps its effect', async () => {
     const h = await harness({
       script: [ownReadAsk('ask-1'), ownReadAsk('ask-2'), finished('completed')],
+      defsJson: VERIFY_DEFS_JSON,
     });
     // The run starts at the builtin manual; the human's answer to the first ask flips the level.
     let autonomyReads = 0;
@@ -2763,6 +2770,7 @@ describe('executeRun — the autonomy permission policy', () => {
   it('policy decisions are listed on the board while the run lives and dropped at its end', async () => {
     const h = await harness({
       script: [ownReadAsk('ask-1'), bashAsk('ask-2', 'rm -rf build'), finished('completed')],
+      defsJson: VERIFY_DEFS_JSON,
     });
     await h.deps.settings.set(AUTONOMY_KEY, 'auto');
     const board = createPermissionBoard();
@@ -2786,7 +2794,7 @@ describe('executeRun — the autonomy permission policy', () => {
   });
 });
 
-// --- the write-scope guard (A-409 of docs/v2/application.md, #1235 addendum) --------------------------
+// --- the write-scope guard (A-409 of docs/v2/application.md) ------------------------------------------
 
 /** A write-tool ask. `Edit` is a claude-code native name; `Write` is the name the agy bridge
  *  translates its write family to, so the pair covers both providers' arrivals. */
@@ -2908,6 +2916,7 @@ describe('executeRun — the write-scope guard', () => {
   it('A-409: under auto an in-worktree write is still the risk table allow — the guard neither widens nor narrows the table', async () => {
     const h = await harness({
       script: [writeAsk('ask-1', `${FAKE_WORKTREE}/src/a.ts`, 'Write'), finished('completed')],
+      defsJson: VERIFY_DEFS_JSON,
     });
     (h.deps.worktrees as FakeWorktrees).markExisting(REPO, WORK_ORDER);
     await h.deps.settings.set(AUTONOMY_KEY, 'auto');

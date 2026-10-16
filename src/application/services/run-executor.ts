@@ -148,7 +148,10 @@ const decideAsk = async (
   input: ExecuteRunInput,
   event: PermissionAskEvent,
 ): Promise<PermissionDecision> => {
-  const autonomy = await effectiveAutonomy(deps, { workOrder: input.item.workOrderId });
+  const autonomy = await effectiveAutonomy(deps, {
+    workOrder: input.item.workOrderId,
+    stage: input.item.stage,
+  });
   if (!autonomy.ok) return { kind: 'ask-human' };
   const ask = riskAskOf(event);
   if (ask === undefined) return { kind: 'ask-human' };
@@ -889,8 +892,8 @@ async function driveRun(
           // an unreadable chain denies all the same but surfaces as no policy actor — an invalid
           // level never becomes one.
           const autonomy = await effectiveAutonomy(deps, {
-            workOrderId: input.item.workOrderId,
-            repo: input.item.repo,
+            workOrder: input.item.workOrderId,
+            stage: input.item.stage,
           });
           await audit(deps, {
             at: deps.clock.now(),

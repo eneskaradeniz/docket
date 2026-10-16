@@ -365,14 +365,14 @@ describe('re-link a detached role to the library (U-298 … U-300)', () => {
 describe('U-334: the repo layer of the autonomy chain', () => {
   it('U-334: load reads repo.autonomy beside the flow, and setAutonomy speaks repo.setAutonomy and refreshes the standing', async () => {
     const { store, api } = storeWith(sampleFlow(), singleRepoTree);
-    api.setAutonomyRead({ level: 'manual', source: 'builtin', layerSet: false, autoRefusal: 'auto_requires_spend_cap' });
+    api.setAutonomyRead({ level: 'manual', source: 'builtin', layerSet: false, autoUnavailable: 'auto_requires_spend_cap' });
     await store.load('web');
     expect(api.queries.some((query) => query.type === 'repo.autonomy' && query.repo === 'web')).toBe(true);
     expect(store.state().autonomy).toEqual({
       level: 'manual',
       source: 'builtin',
       layerSet: false,
-      autoRefusal: 'auto_requires_spend_cap',
+      autoUnavailable: 'auto_requires_spend_cap',
     });
 
     await store.setAutonomy('manual');
@@ -394,7 +394,7 @@ describe('U-334: the repo layer of the autonomy chain', () => {
 
   it('U-334: a refused write keeps the standing exactly as it read — no refresh, no problem line', async () => {
     const { store, api } = storeWith(sampleFlow(), singleRepoTree);
-    const standing = { level: 'manual', source: 'builtin', layerSet: false, autoRefusal: 'auto_requires_spend_cap' };
+    const standing = { level: 'manual', source: 'builtin', layerSet: false, autoUnavailable: 'auto_requires_spend_cap' };
     api.setAutonomyRead(standing);
     api.setAutonomyResult({ ok: false, code: 'auto_requires_spend_cap' });
     await store.load('web');

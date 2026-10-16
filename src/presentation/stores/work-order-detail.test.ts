@@ -1704,7 +1704,7 @@ describe('the autonomy control wiring (U-334)', () => {
   it('U-334: the view carries the chain read and the screen control renders it — level, source, disabled auto', async () => {
     const api = fakeApi({
       ...detailReply(AT_BUILD),
-      autonomy: { level: 'manual', source: 'builtin', layerSet: false, autoRefusal: 'auto_requires_spend_cap' },
+      autonomy: { level: 'manual', source: 'builtin', layerSet: false, autoUnavailable: 'auto_requires_spend_cap' },
     });
     const store = createStore(api);
     await store.load(WO_ID);
@@ -1712,7 +1712,7 @@ describe('the autonomy control wiring (U-334)', () => {
       level: 'manual',
       source: 'builtin',
       layerSet: false,
-      autoRefusal: 'auto_requires_spend_cap',
+      autoUnavailable: 'auto_requires_spend_cap',
     });
     const html = renderToStaticMarkup(
       createElement(AutonomyControl, {
@@ -1749,7 +1749,7 @@ describe('the autonomy control wiring (U-334)', () => {
   it('U-334: a refused pick changes nothing on the screen — the reason line is the standing', async () => {
     const api = fakeApi({
       ...detailReply(AT_BUILD),
-      autonomy: { level: 'manual', source: 'builtin', layerSet: false, autoRefusal: 'auto_requires_spend_cap' },
+      autonomy: { level: 'manual', source: 'builtin', layerSet: false, autoUnavailable: 'auto_requires_spend_cap' },
     });
     api.setCommandResult({ ok: false, code: 'auto_requires_spend_cap' });
     const store = createStore(api);

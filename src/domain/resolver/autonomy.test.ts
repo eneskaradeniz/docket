@@ -1,9 +1,10 @@
-// resolver/autonomy — R-151/R-155/R-156 of docs/v2/domain.md (chain-widening addendum #1225,
-// D-10): the widened chain walk over AUTONOMY_CHAIN_ORDER, the guard that nothing widens the
-// user-only carve-out, and the confirm's auto-level check over the pinned flow.
+// resolver/autonomy — R-167 and R-151/R-155/R-156/R-157/R-158 of docs/v2/domain.md (D-10
+// chain-widening addendum): the widened chain walk over AUTONOMY_CHAIN_ORDER, the guard that
+// nothing widens the user-only carve-out, and the confirm's auto-level check over the pinned flow.
 import { describe, expect, it } from 'vitest';
 
 import { checkAutoLevel } from '../definitions/index';
+import type { FlowDef } from '../definitions/index';
 import type { AutonomyLevel, FlowSlug, StageSlug } from '../shared';
 import { AUTONOMY_LEVELS, USER_ONLY_GATES } from '../shared';
 import {
@@ -20,6 +21,20 @@ const layer = (source: AutonomySource, value: AutonomyLevel | undefined): Autono
 });
 
 describe('resolveAutonomy', () => {
+  it('R-167: the work-order layer outranks repo, project and global, and nothing defined answers the builtin manual', () => {
+    expect(
+      resolveAutonomy([
+        layer('repo', 'auto'),
+        layer('project', 'auto'),
+        layer('global', 'auto'),
+        layer('workOrder', 'manual'),
+      ]),
+    ).toEqual({ level: 'manual', source: 'workOrder' });
+    expect(
+      resolveAutonomy([layer('workOrder', undefined), layer('repo', undefined), layer('global', undefined)]),
+    ).toEqual({ level: 'manual', source: 'builtin' });
+  });
+
   it('R-151: answers the first defined level by AUTONOMY_CHAIN_ORDER, not array position', () => {
     expect(
       resolveAutonomy([
@@ -48,7 +63,7 @@ describe('resolveAutonomy', () => {
         layer('stage', 'balanced'),
         layer('workOrder', undefined),
       ]),
-    ).toEqual({ level: 'manual', source: 'stage' });
+    ).toEqual({ level: 'balanced', source: 'stage' });
     expect(
       resolveAutonomy([layer('repo', 'auto'), layer('flow', 'manual'), layer('stage', undefined)]),
     ).toEqual({ level: 'manual', source: 'flow' });
@@ -85,15 +100,10 @@ describe('resolveAutonomy', () => {
     expect(resolveAutonomy([])).toEqual({ level: 'manual', source: 'builtin' });
   });
 
-  it('R-151: a defined balanced demotes to manual until the risk-rule table lands, keeping its layer as the source', () => {
+  it('R-151: a defined balanced passes through as balanced — the demotion is the clamp\'s, not the walk\'s (R-157)', () => {
     expect(resolveAutonomy([layer('repo', 'balanced'), layer('global', 'manual')])).toEqual({
-      level: 'manual',
+      level: 'balanced',
       source: 'repo',
-    });
-    // The demotion holds at the definition-origin layers too: they may restrict, never loosen.
-    expect(resolveAutonomy([layer('stage', 'balanced'), layer('repo', 'auto')])).toEqual({
-      level: 'manual',
-      source: 'stage',
     });
   });
 
@@ -145,6 +155,94 @@ describe('checkAutoLevel over the pinned flow', () => {
     });
     const bounded = { id: flowOf('ship'), name: 'ship', stages: [stage('build', true), stage('review', true)] };
     expect(checkAutoLevel({ cap, flow: bounded })).toEqual({ ok: true, value: undefined });
+  });
+});
+
+describe('R-157 — definition-origin autos ignored; the balanced demotion once, after the clamp', () => {
+  it('R-157: an auto arriving from flow or stage reads as absent — the walk goes on', () => {
+    // Defence in depth: even a caller that bypasses definitionAutonomyLayers (R-153) cannot
+    // resolve auto from a definition — the layer is skipped, not demoted.
+    expect(resolveAutonomy([layer('flow', 'auto'), layer('repo', 'manual')])).toEqual({
+      level: 'manual',
+      source: 'repo',
+    });
+    expect(resolveAutonomy([layer('stage', 'auto'), layer('flow', 'manual')])).toEqual({
+      level: 'manual',
+      source: 'flow',
+    });
+    expect(resolveAutonomy([layer('workOrder', undefined), layer('stage', 'auto'), layer('flow', 'auto')])).toEqual({
+      level: 'manual',
+      source: 'builtin',
+    });
+    // The user-set sources keep their auto pass-through (R-151's narrowed clause).
+    expect(resolveAutonomy([layer('stage', 'auto'), layer('repo', 'auto')])).toEqual({
+      level: 'auto',
+      source: 'repo',
+    });
+    // A definition-origin manual or balanced still passes through — a definition may restrict.
+    expect(resolveAutonomy([layer('flow', 'balanced'), layer('repo', 'auto')])).toEqual({
+      level: 'balanced',
+      source: 'flow',
+    });
+  });
+
+  it('R-157: the balanced demotion is applied once, after the clamp, with the source preserved', () => {
+    // No ceiling: the demotion happens in the clamp, naming the layer that set balanced.
+    expect(clampAutonomy(resolveAutonomy([layer('repo', 'balanced')]), [])).toEqual({
+      level: 'manual',
+      source: 'repo',
+    });
+    // A balanced clamped by a manual ceiling reads the ceiling as its source.
+    expect(clampAutonomy(resolveAutonomy([layer('workOrder', 'balanced')]), ['manual'])).toEqual({
+      level: 'manual',
+      source: 'ceiling',
+    });
+    // A balanced level at a balanced ceiling: the clamp leaves it, the demotion still applies —
+    // the layer that set balanced keeps the source, never a balanced level in force.
+    expect(clampAutonomy(resolveAutonomy([layer('workOrder', 'balanced')]), ['balanced'])).toEqual({
+      level: 'manual',
+      source: 'workOrder',
+    });
+    // An auto clamped by a balanced ceiling: clamp to balanced, demote once, ceiling as source.
+    expect(clampAutonomy(resolveAutonomy([layer('global', 'auto')]), ['balanced'])).toEqual({
+      level: 'manual',
+      source: 'ceiling',
+    });
+    // An untouched manual stays manual with its own source — demotion never invents one.
+    expect(clampAutonomy(resolveAutonomy([layer('repo', 'manual')]), ['auto'])).toEqual({
+      level: 'manual',
+      source: 'repo',
+    });
+  });
+});
+
+describe('R-158 — the read fails closed when auto\'s preconditions are gone', () => {
+  const stageOf = (id: string): StageSlug => id as StageSlug;
+  const flowSlugOf = (id: string): FlowSlug => id as FlowSlug;
+  const boundedFlow: FlowDef = {
+    id: flowSlugOf('ship'),
+    name: 'ship',
+    stages: [
+      { id: stageOf('build'), name: 'Build', role: null, exit: [], onFail: { goto: stageOf('build'), maxAttempts: 2 } },
+    ],
+  };
+  const unboundedFlow: FlowDef = { id: flowSlugOf('ship'), name: 'ship', stages: [{ id: stageOf('build'), name: 'Build', role: null, exit: [] }] };
+  const cap = { amountUsd: 5, warnPercent: 80 };
+
+  it('R-158: an auto the check refuses answers manual on the read — never a silent auto', () => {
+    // The composition the effectiveAutonomy read applies (A-404): resolve, clamp, then, when the
+    // level still says auto, R-169's check against the nearest cap and the pinned flow.
+    const effective = (layers: readonly AutonomyLayer[], capPresent: boolean, flow: typeof boundedFlow) => {
+      const resolved = clampAutonomy(resolveAutonomy(layers), []);
+      if (resolved.level !== 'auto') return resolved;
+      const checked = checkAutoLevel({ cap: capPresent ? cap : undefined, flow });
+      return checked.ok ? resolved : { level: 'manual' as const, source: resolved.source };
+    };
+    expect(effective([layer('repo', 'auto')], false, boundedFlow)).toEqual({ level: 'manual', source: 'repo' });
+    expect(effective([layer('repo', 'auto')], true, unboundedFlow)).toEqual({ level: 'manual', source: 'repo' });
+    expect(effective([layer('repo', 'auto')], true, boundedFlow)).toEqual({ level: 'auto', source: 'repo' });
+    // A manual level never runs the check at all.
+    expect(effective([layer('repo', 'manual')], false, unboundedFlow)).toEqual({ level: 'manual', source: 'repo' });
   });
 });
 

@@ -1,5 +1,5 @@
 // use-cases/autonomy.test.ts — A-403 (the set-level commands) and A-407's repo read of the
-// chain-widening addendum (#1225, D-10 chain a): user actor only, the typed validation order,
+// chain-widening addendum (D-10 chain a): user actor only, the typed validation order,
 // `null` clearing a layer, the repo.yaml round trip, and R-170's no-event law on a level change.
 import { describe, expect, it } from 'vitest';
 
@@ -19,7 +19,13 @@ import {
 } from '../ports/fakes';
 
 import { AUTONOMY_KEY } from './settings';
-import { setGlobalAutonomy, setRepoAutonomy, setWorkOrderAutonomy, repoAutonomyView } from './autonomy';
+import {
+  repoAutonomyView,
+  setGlobalAutonomy,
+  setProjectAutonomy,
+  setRepoAutonomy,
+  setWorkOrderAutonomy,
+} from './autonomy';
 import { effectiveAutonomy, openWorkOrder } from './work-orders';
 
 const ACTOR: Actor = { kind: 'user', id: 'u-1', label: 'Operator' };
@@ -106,6 +112,9 @@ const harness = (defs: string) => {
   const projects = createFakeProjectRepo();
   const settings = createFakeAppSettingsRepo();
   definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', defs);
+  // project.yaml seeded as the file itself, so the write path (readFile → writeFile) and the
+  // load's project arm read the same body and a written level shows on the next load.
+  definitions.seed(`projects/${PROJECT}/project.yaml`, JSON.stringify({ id: PROJECT, name: 'Atölye', repos: [REPO] }));
   void projects.save({ id: PROJECT, name: 'Atölye', repos: [REPO] });
   const repos = createFakeRepoRegistry();
   void repos.register({ repoId: '01HZX0000000000000000000A1', slug: REPO, path: '/c/web', fingerprint: { rootCommit: 'aaa' } });
@@ -121,6 +130,7 @@ const harness = (defs: string) => {
     openDeps: { clock, ids, log, workOrders, definitions, projects },
     woDeps: { clock, ids, log, workOrders, definitions },
     repoDeps: { clock, ids, log, repos, definitions },
+    projectDeps: { clock, ids, log, definitions },
     globalDeps: { clock, ids, log, settings },
     readDeps: { definitions, settings },
     chainDeps: { workOrders, definitions, settings },
@@ -278,14 +288,14 @@ describe('setRepoAutonomy', () => {
     let view = await repoAutonomyView(h.readDeps, REPO);
     expect(view).toEqual({
       ok: true,
-      value: { level: 'manual', source: 'repo', layerSet: true, autoRefusal: 'auto_requires_spend_cap' },
+      value: { level: 'manual', source: 'repo', layerSet: true, autoUnavailable: 'auto_requires_spend_cap' },
     });
 
     expect(await setRepoAutonomy(h.repoDeps, { repo: REPO, level: null, actor: ACTOR })).toEqual({ ok: true, value: undefined });
     view = await repoAutonomyView(h.readDeps, REPO);
     expect(view).toEqual({
       ok: true,
-      value: { level: 'manual', source: 'builtin', layerSet: false, autoRefusal: 'auto_requires_spend_cap' },
+      value: { level: 'manual', source: 'builtin', layerSet: false, autoUnavailable: 'auto_requires_spend_cap' },
     });
 
     expect(
@@ -303,22 +313,35 @@ describe('setRepoAutonomy', () => {
     expect(afterPolicy.ok && afterPolicy.value.layerSet).toBe(false);
   });
 
-  it('A-403: auto answers the typed R-169 refusals over the repo’s own flow; bounds and a cap pass', async () => {
+  it('A-403 amendment 3: a repo auto write is not refused at write time — no single order to check; the read carries the typed reason instead', async () => {
+    // Whatever the repo's own flow and cap say, the layer write goes through; each order's read
+    // fails closed on its own preconditions (R-158).
     const noCap = harness(defsJson({ bounded: true }));
-    expect(await setRepoAutonomy(noCap.repoDeps, { repo: REPO, level: 'auto', actor: ACTOR })).toEqual({
-      ok: false,
-      error: 'auto_requires_spend_cap',
+    expect(await setRepoAutonomy(noCap.repoDeps, { repo: REPO, level: 'auto', actor: ACTOR })).toEqual({ ok: true, value: undefined });
+    let view = await repoAutonomyView(noCap.readDeps, REPO);
+    expect(view.ok && view.value).toEqual({
+      level: 'auto',
+      source: 'repo',
+      layerSet: true,
+      autoUnavailable: 'auto_requires_spend_cap',
     });
 
     const unbounded = harness(defsJson({ bounded: false, budget: { amountUsd: 10, warnPercent: 80 } }));
-    expect(await setRepoAutonomy(unbounded.repoDeps, { repo: REPO, level: 'auto', actor: ACTOR })).toEqual({
-      ok: false,
-      error: 'auto_requires_max_attempts',
+    expect(
+      await setRepoAutonomy(unbounded.repoDeps, { repo: REPO, level: 'auto', actor: ACTOR }),
+    ).toEqual({ ok: true, value: undefined });
+    view = await repoAutonomyView(unbounded.readDeps, REPO);
+    expect(view.ok && view.value).toEqual({
+      level: 'auto',
+      source: 'repo',
+      layerSet: true,
+      autoUnavailable: 'auto_requires_max_attempts',
     });
 
+    // Bounds and a cap present: the repo read names no reason — the level simply stands.
     const bounded = harness(defsJson({ bounded: true, budget: { amountUsd: 10, warnPercent: 80 } }));
     expect(await setRepoAutonomy(bounded.repoDeps, { repo: REPO, level: 'auto', actor: ACTOR })).toEqual({ ok: true, value: undefined });
-    const view = await repoAutonomyView(bounded.readDeps, REPO);
+    view = await repoAutonomyView(bounded.readDeps, REPO);
     expect(view.ok && view.value).toEqual({ level: 'auto', source: 'repo', layerSet: true });
   });
 
@@ -377,13 +400,61 @@ describe('setGlobalAutonomy', () => {
     expect(await h.settings.get(AUTONOMY_KEY)).toBeUndefined();
   });
 
-  it('A-403: auto at the global layer answers auto_requires_spend_cap — no cap governs the global layer', async () => {
+  it('A-403 amendment 3: a global auto write is not refused at write time — the settings key stores it; orders fail closed per read (R-158)', async () => {
     const h = harness(defsJson({ bounded: false }));
-    expect(await setGlobalAutonomy(h.globalDeps, { level: 'auto', actor: ACTOR })).toEqual({
-      ok: false,
-      error: 'auto_requires_spend_cap',
+    expect(await setGlobalAutonomy(h.globalDeps, { level: 'auto', actor: ACTOR })).toEqual({ ok: true, value: undefined });
+    expect(await h.settings.get(AUTONOMY_KEY)).toBe('auto');
+  });
+});
+
+describe('setProjectAutonomy', () => {
+  it('A-403 amendment 1: the project write sets and clears the project layer through the definitions store', async () => {
+    const h = harness(defsJson({ bounded: false }));
+
+    expect(await setProjectAutonomy(h.projectDeps, { project: PROJECT, level: 'auto', actor: ACTOR })).toEqual({
+      ok: true,
+      value: undefined,
     });
-    expect(await h.settings.get(AUTONOMY_KEY)).toBeUndefined();
+    const written = await h.definitions.readFile({ kind: 'project', project: PROJECT }, 'project.yaml');
+    expect(written !== undefined && JSON.parse(written.content)).toMatchObject({ id: PROJECT, autonomy: 'auto' });
+
+    expect(await setProjectAutonomy(h.projectDeps, { project: PROJECT, level: null, actor: ACTOR })).toEqual({
+      ok: true,
+      value: undefined,
+    });
+    const cleared = await h.definitions.readFile({ kind: 'project', project: PROJECT }, 'project.yaml');
+    expect(cleared !== undefined && JSON.parse(cleared.content)).not.toHaveProperty('autonomy');
+
+    expect(
+      h.log
+        .entries()
+        .filter((entry) => entry.action === 'project.autonomy_changed')
+        .map((entry) => [entry.action, entry.detail]),
+    ).toEqual([
+      ['project.autonomy_changed', { level: 'auto' }],
+      ['project.autonomy_changed', { cleared: true }],
+    ]);
+  });
+
+  it('A-403 amendment 1: a non-user actor answers user_only and project.yaml is untouched', async () => {
+    const h = harness(defsJson({ bounded: false }));
+    const before = await h.definitions.readFile({ kind: 'project', project: PROJECT }, 'project.yaml');
+    expect(await setProjectAutonomy(h.projectDeps, { project: PROJECT, level: 'auto', actor: SYSTEM })).toEqual({
+      ok: false,
+      error: 'user_only',
+    });
+    const after = await h.definitions.readFile({ kind: 'project', project: PROJECT }, 'project.yaml');
+    expect(after?.content).toBe(before?.content);
+  });
+
+  it('A-403 amendment 1: a project without project.yaml answers not_found; a non-member level answers invalid_autonomy_level', async () => {
+    const h = harness(defsJson({ bounded: false }));
+    expect(
+      await setProjectAutonomy(h.projectDeps, { project: slugOf<'project'>('ghost'), level: 'manual', actor: ACTOR }),
+    ).toEqual({ ok: false, error: 'not_found' });
+    expect(
+      await setProjectAutonomy(h.projectDeps, { project: PROJECT, level: 'turbo' as AutonomyLevel, actor: ACTOR }),
+    ).toEqual({ ok: false, error: 'invalid_autonomy_level' });
   });
 });
 
@@ -393,14 +464,14 @@ describe('repoAutonomyView', () => {
     const view = await repoAutonomyView(h.readDeps, REPO);
     expect(view).toEqual({
       ok: true,
-      value: { level: 'manual', source: 'builtin', layerSet: false, autoRefusal: 'auto_requires_max_attempts' },
+      value: { level: 'manual', source: 'builtin', layerSet: false, autoUnavailable: 'auto_requires_max_attempts' },
     });
 
     await h.settings.set(AUTONOMY_KEY, 'auto');
     const inherited = await repoAutonomyView(h.readDeps, REPO);
     expect(inherited).toEqual({
       ok: true,
-      value: { level: 'auto', source: 'global', layerSet: false, autoRefusal: 'auto_requires_max_attempts' },
+      value: { level: 'auto', source: 'global', layerSet: false, autoUnavailable: 'auto_requires_max_attempts' },
     });
   });
 

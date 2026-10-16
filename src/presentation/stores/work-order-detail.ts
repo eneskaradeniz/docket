@@ -162,7 +162,7 @@ export interface WorkOrderDetailAutonomy {
   readonly level: 'manual' | 'balanced' | 'auto';
   readonly source: string;
   readonly layerSet: boolean;
-  readonly autoRefusal?: string;
+  readonly autoUnavailable?: string;
 }
 
 /** The repo context the detail reply carries, narrowed to what the presentation reads (A-392). */

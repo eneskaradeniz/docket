@@ -26,6 +26,7 @@ export type Command =
   // write sits behind them); repo.setAutonomy's maxLevel is ceiling_not_available until chain (c).
   | { readonly type: 'workOrder.setAutonomy'; readonly id: string; readonly level: AutonomyLevelInput }
   | { readonly type: 'repo.setAutonomy'; readonly repo: string; readonly level: AutonomyLevelInput; readonly maxLevel?: AutonomyLevelInput }
+  | { readonly type: 'project.setAutonomy'; readonly project: string; readonly level: AutonomyLevelInput }
   | { readonly type: 'settings.setAutonomy'; readonly level: AutonomyLevelInput }
   | { readonly type: 'workOrder.block'; readonly id: string; readonly reason: string }
   | { readonly type: 'workOrder.unblock'; readonly id: string }

@@ -46,20 +46,20 @@ describe('AutonomyControl', () => {
   });
 
   it('U-334: disables auto with the typed reason text when R-169/R-156 or the ceiling would refuse', () => {
-    const blocked = render({ level: 'manual', source: 'builtin', autoRefusal: 'auto_requires_spend_cap' });
+    const blocked = render({ level: 'manual', source: 'builtin', autoUnavailable: 'auto_requires_spend_cap' });
     expect(blocked).toContain('disabled');
     expect(blocked).toContain(TR['error.auto_requires_spend_cap']);
 
-    const attempts = render({ level: 'manual', source: 'workOrder', layerSet: true, autoRefusal: 'auto_requires_max_attempts' });
+    const attempts = render({ level: 'manual', source: 'workOrder', layerSet: true, autoUnavailable: 'auto_requires_max_attempts' });
     expect(attempts).toContain(TR['error.auto_requires_max_attempts']);
     expect(attempts).toContain('disabled');
 
-    const ceiling = render({ level: 'manual', source: 'ceiling', autoRefusal: 'above_ceiling' });
+    const ceiling = render({ level: 'manual', source: 'ceiling', autoUnavailable: 'above_ceiling' });
     expect(ceiling).toContain(TR['error.above_ceiling']);
   });
 
   it('U-334: an already-automatic level keeps auto selected — a later missing cap does not unpick it', () => {
-    const markup = render({ level: 'auto', source: 'workOrder', layerSet: true, autoRefusal: 'auto_requires_spend_cap' });
+    const markup = render({ level: 'auto', source: 'workOrder', layerSet: true, autoUnavailable: 'auto_requires_spend_cap' });
     expect(markup).not.toContain('disabled');
     expect(markup).not.toContain(`>${TR['error.auto_requires_spend_cap']}<`);
   });
@@ -77,8 +77,8 @@ describe('AutonomyControl', () => {
   });
 
   it('U-334: Turkish and English carry the same keys — the source and refusal lines localize', () => {
-    const tr = render({ level: 'manual', source: 'repo', autoRefusal: 'above_ceiling' }, 'tr');
-    const en = render({ level: 'manual', source: 'repo', autoRefusal: 'above_ceiling' }, 'en');
+    const tr = render({ level: 'manual', source: 'repo', autoUnavailable: 'above_ceiling' }, 'tr');
+    const en = render({ level: 'manual', source: 'repo', autoUnavailable: 'above_ceiling' }, 'en');
     expect(tr).toContain(TR['autonomy.source.repo']);
     expect(tr).toContain(TR['error.above_ceiling']);
     expect(en).toContain(EN['autonomy.source.repo']);

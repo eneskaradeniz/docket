@@ -191,6 +191,9 @@ export interface EffectiveAutonomy {
   readonly ceiling?: AutonomyLevel;
   /** Present iff a pinned definition suggests `auto` and the level is not already it (R-153). */
   readonly suggestion?: 'auto';
+  /** R-158's fail-closed reason: the level resolved to `auto` but R-169's check refused over the
+   *  nearest cap and the pinned flow, so the level in force is `manual` — never a silent `auto`. */
+  readonly autoUnavailable?: AutoLevelError;
 }
 
 /** The ceiling homes of A-406 — `RepoDef.maxLevel` and the `autonomy.max` settings key — land
@@ -221,10 +224,26 @@ export async function effectiveAutonomy(
     { source: 'global', value: global.value },
   ];
   const resolved = clampAutonomy(resolveAutonomy(layers), ceilingsInForce());
+  if (resolved.level !== 'auto' || record === undefined) {
+    return ok({
+      level: resolved.level,
+      source: resolved.source,
+      ...(resolved.source === 'ceiling' ? { ceiling: resolved.level } : {}),
+    });
+  }
+  // R-158: an `auto` the preconditions cannot carry answers `manual` on the read, with the typed
+  // reason carried alongside — the cap is the repo definition's budget, else the project's, and
+  // the flow is the pin's own copy (R-156).
+  const definitions = loaded !== undefined && loaded.ok ? loaded.value : undefined;
+  const checked = checkAutoLevel({
+    cap: definitions?.repo?.budget ?? definitions?.project?.budget,
+    flow: pinnedFlowOf(record, definitions?.flows ?? []),
+  });
   return ok({
-    level: resolved.level,
+    level: checked.ok ? 'auto' : 'manual',
     source: resolved.source,
     ...(resolved.source === 'ceiling' ? { ceiling: resolved.level } : {}),
+    ...(checked.ok ? {} : { autoUnavailable: checked.error }),
   });
 }
 
@@ -303,7 +322,7 @@ export interface WorkOrderAutonomyView {
   readonly source: AutonomySource | 'ceiling';
   /** True iff the record itself carries a level; false means the level is inherited. */
   readonly layerSet: boolean;
-  readonly autoRefusal?: AutoLevelError | 'above_ceiling';
+  readonly autoUnavailable?: AutoLevelError | 'above_ceiling';
 }
 
 /** One check of a gate's recorded evidence. `url` rides the contract but is never written —
@@ -573,14 +592,17 @@ const workOrderAutonomyOf = async (
   const resolved = clampAutonomy(resolveAutonomy(layers), ceilingsInForce());
   const cap = definitions.repo?.budget ?? definitions.project?.budget;
   const checked = checkAutoLevel({ cap, flow: pinnedFlowOf(record, definitions.flows) });
-  const refusal: WorkOrderAutonomyView['autoRefusal'] =
+  // R-158: an `auto` the preconditions cannot carry answers `manual` on the read with the typed
+  // reason carried alongside (U-334's disabled option words the same code). A clamped level can
+  // never be `auto` — the ceiling ranks below it — so its reason is `above_ceiling` instead.
+  const unavailable: WorkOrderAutonomyView['autoUnavailable'] =
     resolved.source === 'ceiling' ? 'above_ceiling' : checked.ok ? undefined : checked.error;
   return {
     autonomy: {
-      level: resolved.level,
+      level: resolved.level === 'auto' && !checked.ok ? 'manual' : resolved.level,
       source: resolved.source,
       layerSet: own !== undefined,
-      ...(refusal === undefined ? {} : { autoRefusal: refusal }),
+      ...(unavailable === undefined ? {} : { autoUnavailable: unavailable }),
     },
   };
 };

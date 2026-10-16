@@ -168,7 +168,7 @@ export async function decideHumanGate(
   if (input.actor.kind === 'policy') {
     if (input.decision !== 'approved') return err('policy_cannot_decide');
     if ((USER_ONLY_GATES as readonly string[]).includes(current.gate.kind)) return err('policy_cannot_decide');
-    const autonomy = await effectiveAutonomy(deps, { workOrder: input.id });
+    const autonomy = await effectiveAutonomy(deps, { workOrder: input.id, stage: current.stage });
     if (!autonomy.ok || autonomy.value.level !== 'auto') return err('policy_cannot_decide');
     const stage = flow.stages.find((candidate) => candidate.id === current.stage);
     if (stage === undefined) return err('policy_cannot_decide');

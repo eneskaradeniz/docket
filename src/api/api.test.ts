@@ -481,6 +481,10 @@ describe('createApi', () => {
       expect(await h.deps.settings.get('autonomy')).toBe('manual');
       expect(await api.command(ACTOR, { type: 'settings.setAutonomy', level: null })).toEqual({ ok: true });
       expect(await h.deps.settings.get('autonomy')).toBeUndefined();
+
+      // A malformed project slug answers at the edge like every other id.
+      const badProject = await api.command(ACTOR, { type: 'project.setAutonomy', project: 'not a slug', level: 'manual' });
+      expect(badProject).toEqual({ ok: false, code: 'invalid_id' });
     });
 
     it('maps workOrder.block / unblock / close onto the control use cases', async () => {

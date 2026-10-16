@@ -122,6 +122,7 @@ type SilentCommand =
   // The autonomy control refreshes with the chain's own read, so its commands never toast.
   | 'workOrder.setAutonomy'
   | 'repo.setAutonomy'
+  | 'project.setAutonomy'
   | 'settings.setAutonomy'
   | 'project.export'
   | 'project.importBundle'
@@ -149,6 +150,7 @@ const isSilent = (command: Command['type']): command is SilentCommand =>
   || command === 'repo.saveFlow'
   || command === 'workOrder.setAutonomy'
   || command === 'repo.setAutonomy'
+  || command === 'project.setAutonomy'
   || command === 'settings.setAutonomy'
   || command === 'project.export'
   || command === 'project.importBundle'

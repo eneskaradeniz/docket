@@ -135,7 +135,7 @@ export interface RepoAutonomyRead {
   readonly level: 'manual' | 'balanced' | 'auto';
   readonly source: string;
   readonly layerSet: boolean;
-  readonly autoRefusal?: string;
+  readonly autoUnavailable?: string;
 }
 
 const isRepoAutonomyRead = (value: unknown): value is RepoAutonomyRead => {

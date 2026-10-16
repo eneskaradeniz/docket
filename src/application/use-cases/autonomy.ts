@@ -1,21 +1,31 @@
 // use-cases/autonomy.ts — the set-level commands of the widened chain (A-403, D-10 chain
-// widening #1225): setWorkOrderAutonomy, setRepoAutonomy and the global write, plus the repo
-// autonomy read the repo settings control shows (A-407). User actor only — any other actor
-// kind, including `policy`, answers the typed `user_only` error and nothing is written. Each
-// refusal writes nothing; a level change appends no work-order event and changes no past
-// decision (R-170) — the audit log alone records that a hand moved a layer.
+// widening): setWorkOrderAutonomy, setRepoAutonomy, setProjectAutonomy
+// and the global write, plus the repo autonomy read the repo settings control shows (A-407).
+// User actor only — any other actor kind, including `policy`, answers the typed `user_only`
+// error and nothing is written. Each refusal writes nothing; a level change appends no
+// work-order event and changes no past decision (R-170) — the audit log alone records that a
+// hand moved a layer.
 import type {
   Actor,
   AutoLevelError,
   AutonomyLevel,
   AutonomySource,
   FlowDef,
+  ProjectSlug,
   RepoSlug,
   Result,
   SpendCap,
   WorkOrderId,
 } from '../../domain/index';
-import { AUTONOMY_RANK, checkAutoLevel, err, ok, parseAutonomyLevel, resolveAutonomy } from '../../domain/index';
+import {
+  AUTONOMY_RANK,
+  checkAutoLevel,
+  clampAutonomy,
+  err,
+  ok,
+  parseAutonomyLevel,
+  resolveAutonomy,
+} from '../../domain/index';
 
 import type { AppDeps } from '../ports';
 import { getAutonomyLevel, AUTONOMY_KEY } from './settings';
@@ -53,7 +63,7 @@ const parseLevel = (level: AutonomyLevel | null): Result<AutonomyLevel | null, '
 
 /** The auto arm (R-169/R-156): judged over the flow the layer governs — a work order's pinned
  *  flow, a repo's own flow — with the nearest cap that governs it. */
-const autoRefusalOf = (cap: SpendCap | undefined, flow: FlowDef): AutoLevelError | undefined => {
+const autoUnavailableOf = (cap: SpendCap | undefined, flow: FlowDef): AutoLevelError | undefined => {
   const checked = checkAutoLevel({ cap, flow });
   return checked.ok ? undefined : checked.error;
 };
@@ -76,7 +86,7 @@ export async function setWorkOrderAutonomy(
     const loaded = await deps.definitions.load(record.repo);
     if (!loaded.ok) return err('definitions_invalid');
     // The nearest cap governing the order is the repo definition's budget, else the project's.
-    const refusal = autoRefusalOf(
+    const refusal = autoUnavailableOf(
       loaded.value.repo?.budget ?? loaded.value.project?.budget,
       pinnedFlowOf(record, loaded.value.flows),
     );
@@ -121,18 +131,11 @@ export async function setRepoAutonomy(
   const loaded = await deps.definitions.load(input.repo);
   const def = loaded.ok ? loaded.value.repo : undefined;
   if (def === undefined) return err('definitions_invalid');
-  const flows = loaded.ok ? loaded.value.flows : [];
 
   if (level !== null && aboveCeiling(level)) return err('above_ceiling');
-  if (level === 'auto') {
-    // The repo owns exactly one flow; the cap nearest this layer is its own budget, else the
-    // project's.
-    const refusal = autoRefusalOf(
-      def.budget ?? (loaded.ok ? loaded.value.project?.budget : undefined),
-      pinnedFlowOf({ flow: def.flow.flowId }, flows),
-    );
-    if (refusal !== undefined) return err(refusal);
-  }
+  // A-403's amendment (3): an `auto` written here has no single order to check, so the write is
+  // not refused — the read fails closed per order instead (R-158). The work-order command, with
+  // its concrete order and pinned flow, is the one that still refuses early.
 
   // The stored definition with only the autonomy layer replaced (or removed) — the file's whole
   // new body, validated as it would load before anything is written.
@@ -156,10 +159,9 @@ export async function setRepoAutonomy(
 }
 
 /** A-403 (with A-396): the global write — one settings key, parsed through the shared level
- *  parse on the way in; `null` deletes the key, so absence stays absence. The `auto` arm runs
- *  the validation order's check with the cap that governs this layer: none does — no single
- *  flow or SpendCap sits at the global level — so `auto` answers `auto_requires_spend_cap`
- *  until a later chain step names the global arm's own inputs. */
+ *  parse on the way in; `null` deletes the key, so absence stays absence. An `auto` written
+ *  here has no single order to check (A-403's amendment 3), so the write is not refused — each
+ *  order's read fails closed on its own preconditions (R-158). */
 export async function setGlobalAutonomy(
   deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'settings'>,
   input: { readonly level: AutonomyLevel | null; readonly actor: Actor },
@@ -169,7 +171,6 @@ export async function setGlobalAutonomy(
   if (!parsed.ok) return err(parsed.error);
   const level = parsed.value;
   if (level !== null && aboveCeiling(level)) return err('above_ceiling');
-  if (level === 'auto') return err('auto_requires_spend_cap');
 
   if (level === null) await deps.settings.delete(AUTONOMY_KEY);
   else await deps.settings.set(AUTONOMY_KEY, level);
@@ -184,6 +185,49 @@ export async function setGlobalAutonomy(
   return ok(undefined);
 }
 
+/** A-403's amendment (1): the project write — the same user-only law and the same validation
+ *  order as the others, a definitions-store write of project.yaml under the YAML round-trip law
+ *  (I-6/I-107), hash-guarded. An `auto` written here has no single order to check; the read
+ *  fails closed per order (R-158). */
+export async function setProjectAutonomy(
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'definitions'>,
+  input: { readonly project: ProjectSlug; readonly level: AutonomyLevel | null; readonly actor: Actor },
+): Promise<Result<void, SetAutonomyError>> {
+  if (!isUser(input.actor)) return err('user_only');
+  const parsed = parseLevel(input.level);
+  if (!parsed.ok) return err(parsed.error);
+  const level = parsed.value;
+  if (level !== null && aboveCeiling(level)) return err('above_ceiling');
+
+  const file = await deps.definitions.readFile({ kind: 'project', project: input.project }, 'project.yaml');
+  if (file === undefined) return err('not_found');
+  let body: Record<string, unknown>;
+  try {
+    body = JSON.parse(file.content) as Record<string, unknown>;
+  } catch {
+    return err('definitions_invalid');
+  }
+  // The stored definition with only the autonomy layer replaced (or removed) — the file's whole
+  // new body, validated as it would load before anything is written.
+  const { autonomy: _absent, ...rest } = body;
+  const next = level === null ? rest : { ...rest, autonomy: level };
+  const content = JSON.stringify(next);
+  const candidate = await deps.definitions.validateCandidate({ kind: 'project', project: input.project }, 'project.yaml', content);
+  if (!candidate.ok) return err('definitions_invalid');
+  const written = await deps.definitions.writeFile({ kind: 'project', project: input.project }, 'project.yaml', content, file.hash);
+  if (!written.ok) return err('stale');
+
+  await deps.log.append({
+    id: deps.ids.next<'audit'>(),
+    at: deps.clock.now(),
+    actor: input.actor,
+    action: 'project.autonomy_changed',
+    subject: { kind: 'project', id: input.project },
+    detail: level === null ? { cleared: true } : { level },
+  });
+  return ok(undefined);
+}
+
 /** The repo settings control's read (A-407/U-334): the repo layer's own standing and the
  *  effective level it resolves to with its source, plus the refusal an `auto` pick would
  *  answer with. */
@@ -192,7 +236,7 @@ export interface RepoAutonomyView {
   readonly source: AutonomySource | 'ceiling';
   /** True iff repo.yaml itself carries a level; false means the level is inherited. */
   readonly layerSet: boolean;
-  readonly autoRefusal?: AutoLevelError | 'above_ceiling';
+  readonly autoUnavailable?: AutoLevelError | 'above_ceiling';
 }
 
 export async function repoAutonomyView(
@@ -211,11 +255,12 @@ export async function repoAutonomyView(
     { source: 'project' as const, value: loaded.ok ? loaded.value.project?.autonomy : undefined },
     { source: 'global' as const, value: global.value },
   ];
-  const resolved = resolveAutonomy(layers);
+  // The clamp closes the composition (R-157, clause 2): a balanced layer never reads in force.
+  const resolved = clampAutonomy(resolveAutonomy(layers), ceilingsInForce());
   const refusal =
     resolved.source === 'ceiling'
       ? ('above_ceiling' as const)
-      : autoRefusalOf(
+      : autoUnavailableOf(
           def.budget ?? (loaded.ok ? loaded.value.project?.budget : undefined),
           pinnedFlowOf({ flow: def.flow.flowId }, loaded.ok ? loaded.value.flows : []),
         );
@@ -223,6 +268,6 @@ export async function repoAutonomyView(
     level: resolved.level,
     source: resolved.source,
     layerSet: def.autonomy !== undefined,
-    ...(refusal === undefined ? {} : { autoRefusal: refusal }),
+    ...(refusal === undefined ? {} : { autoUnavailable: refusal }),
   });
 }

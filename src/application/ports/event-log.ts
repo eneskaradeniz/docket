@@ -29,7 +29,7 @@ export type AuditAction =
   | 'library.version_created' | 'library.definition_archived' | 'library.definition_deleted'
   | 'repo.relinked' | 'repo.flow_saved' | 'project.exported' | 'project.imported'
   | 'git.pushed' | 'pr.opened' | 'pr.merged' | 'branch.deleted'
-  | 'work_order.autonomy_changed' | 'repo.autonomy_changed' | 'settings.autonomy_changed';
+  | 'work_order.autonomy_changed' | 'repo.autonomy_changed' | 'project.autonomy_changed' | 'settings.autonomy_changed';
 
 export type AuditSubject =
   | { readonly kind: 'work_order'; readonly id: WorkOrderId }
