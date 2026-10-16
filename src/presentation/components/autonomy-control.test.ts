@@ -35,8 +35,10 @@ describe('AutonomyControl', () => {
     expect(markup).toContain(TR['autonomy.level.auto']);
     expect(markup).not.toContain('Dengeli');
     expect(markup).not.toContain('balanced');
-    // No balanced key exists in the bundle at all yet — the control cannot name what is not offered.
-    expect(LABEL_KEYS).not.toContain('autonomy.level.balanced');
+    // The balanced key exists for the surfaces that only reflect a stored value (the ceiling's
+    // and the stage tag's wording, U-336) — this control still never renders it, offered or not.
+    expect(LABEL_KEYS).toContain('autonomy.level.balanced');
+    expect(markup).not.toContain(TR['autonomy.level.balanced']);
   });
 
   it('U-334: shows the effective level with its source line — Kaynak: …', () => {

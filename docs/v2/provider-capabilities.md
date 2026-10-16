@@ -17,7 +17,9 @@ same transport).
 - It holds, per provider: `planned` (manual flag), the six promotion gates (section 2) each with
   evidence, optional `steering` (`steerable` | `not_steerable`; absent reads `unknown` through
   `CapabilityCatalog.steeringSupport`), `permissionChannel` (`native` | `bridge` | `none`, plus `bridgeHow?`
-  on `bridge` rows; P-66), and its route kinds. Per route kind: auth mode, endpoint host (preset only), identity
+  on `bridge` rows; P-66), optional `measuredWith` (`{ cli?, sdk?, at }`; P-68 — the versions the
+  record's evidence was measured on, `at` a date written by the issue that measures), and its route kinds. Per
+  route kind: auth mode, endpoint host (preset only), identity
   source, `tierModels`, cost kind, quota probe kind, model source, `liveIsAuthoritative` (a plan-scoped
   live list hides the registry models it does not contain). Per model: `id`, `family`, `tier`,
   `thinking`, `contextWindow?`, `retired?`, `billing?` (`included`, `metered` or `unknown`; see P-40).
@@ -357,7 +359,7 @@ The initial table recorded as data in the capability registry (`registry/capabil
 | `opencode` | `plugin` | `unsupported` | JS plugin in the config tree plugin directory whose module load appends the marker line was not evidenced probe #1015, 2026-10-14 | | |
 | `opencode` | `command` | `degraded` | Template delivered as instruction text; the agent fills the placeholders | `prompt_text` | |
 
-### Rules (P-57 … P-60, P-66)
+### Rules (P-57 … P-60, P-66, P-68, P-69)
 
 - **P-57** (added 2026-10-12, #1006) `supportFor` answers from the table; a missing row is `unverified`; `setupWarnings` returns one warning per (stage, capability) whose support is not `native`, in stage order; the UI shows them at setup time and before a run starts; `unverified` is shown as such, never as `native`.
 - **P-58** (added 2026-10-12, #1006) The table's initial content (data in the registry; honest, no claim without evidence — the real-run probe #1015 later turns `unverified` into the observed value): for provider `claude-code` (stream-json/SDK): mcp native, skill native, hook native, context native, plugin native, command degraded→prompt_text; for `codex`: mcp native, context native, skill degraded→context, hook unsupported, plugin unverified, command degraded→prompt_text; for `agy`, `copilot`, `cursor`, `opencode`: every kind `unverified` except context (native: instruction files, P-37) and command (degraded→prompt_text).
@@ -379,6 +381,8 @@ The initial table recorded as data in the capability registry (`registry/capabil
   - `opencode`: `~/.config/opencode/` (or `$OPENCODE_CONFIG_DIR`, `$OPENCODE_CONFIG`: `opencode.json` `mcp` / `plugins`, `AGENTS.md`, `skills/`, `plugins/`).
   - Other providers without evidenced documentation (`gemini-cli`) stay unconfigured and return an empty candidate list.
 - **P-66** (added 2026-10-16, #1234) Each provider record in the capability registry declares `permissionChannel: 'native' | 'bridge' | 'none'` (plus `bridgeHow?: string` on `bridge` rows): `claude-code`, `codex`, `copilot`, `cursor`, and `opencode` carry `'native'`; `agy` carries `'bridge'` with `bridgeHow: 'headless agy cannot ask: command, MCP and write calls are denied without a prompt'`. `setupWarnings` takes per-stage `docketTools?: boolean` and `channels?: readonly ChannelRow[]`: when a stage's provider has `channel === 'bridge'` and `docketTools === false` (`true` or `undefined` means Docket tools are on), it emits `{ stage, provider, kind: 'no_permission_channel', how }` ahead of capability-kind warnings for that stage; `'native'`, `'none'`, and absent channel rows emit no channel warning.
+- **P-68** (added 2026-10-16, #1246) Each provider record may carry `measuredWith: { cli?: string; sdk?: string; at: string }` — the versions its evidence was measured on, filled only where a measurement exists (`claude-code` `{ cli: '2.1.302', sdk: '0.3.221' }`, `agy` `{ cli: '1.3.6' }`, both `at: '2026-10-16'`; the rest absent = unknown, never an invented version). The pure `versionDrift(installed, measured)` answers `none | newer_minor | newer_major | older | unknown` (semver compare of the leading `major.minor.patch`; absent or unparseable either side → `unknown`; a forward patch-only difference reads `none` because the finest forward grade is `newer_minor` and the warning threshold starts there; every backward difference is one grade, `older`). `setupWarnings` takes a fourth table `versions: readonly VersionRow[]` (`{ provider, installed?, measured? }`, default absent): a provider whose drift is `newer_minor` or `newer_major` yields `{ stage, provider, kind: 'version_drift', installed, measured }` once per stage — after the channel warning, ahead of the capability rows — informational and never blocking a run. `older` and `unknown` never warn. Evidence rows in the registry keep naming the version they were measured on, and the §16 checklist header records the version per provider. The registry serves its measured side as `MEASURED_VERSIONS` through `CapabilityCatalog.providerVersions()`; the installed side joins where discovery answers are known (the providers screen renders the drift from its own discovery facts, U-338).
+- **P-69** (added 2026-10-16, #1246; normative docs rule — keeping the provider stack current). (1) Provider-stack dependencies stay pinned to an exact version: no range, no automatic PRs, no bot. (2) `scripts/ops/check-provider-versions.sh` is the weekly read-only sweep: it probes each measured CLI's `--version` (the defs' own version args) and each exactly-pinned package against `npm view`, compares both with the registry's `measuredWith`, and prints a table — the architect runs it weekly and files one issue per provider that drifted. (3) A bump PR changes only `package.json`, the lock file and the affected `measuredWith`, names the changelog range reviewed in the PR body, and must pass the full suite plus the conformance suite. (4) Before merge the architect runs the canary — `npm run operator-run -- <id>` with a cheap model on `~/.docket-test` — and records the result in `operatorRuns` (the evidence rule of P-28). A failing canary reverts the bump; it is never merged "to look later".
 
 Conflicts and supersessions (added 2026-10-12, #1006, D-7): Glossary "Capability — MCP, skill, hook, context" grows by plugin and command; "capabilities attached to roles" now also arrive through plugins; Phase 3.5 account-scoped capability candidates (R-62…R-67, #850–#866) stay as the import mechanism.
 
@@ -388,7 +392,10 @@ Added 2026-10-16, #1226 — step 1 of the provider conformance series: an audit 
 that issue (step 2 closes the gaps, step 3 reports). One checklist measures every provider by the same
 rows. It is filled in below for **Claude Code** (`claude-code`, sdk transport) and **agy** (Antigravity,
 stream-json transport) from the code, the tests and the recorded evidence at main `e970310` (2026-10-16);
-later providers are measured by the same list before any promotion (§9).
+later providers are measured by the same list before any promotion (§9). Each provider section below
+records the version its checklist was measured on (P-68: the registry's `measuredWith` — CLI 2.1.302
+with SDK 0.3.221 for Claude Code, CLI 1.3.6 for agy, both 2026-10-16); `scripts/ops/check-provider-versions.sh`
+is the weekly sweep that tells the architect when an installed CLI has drifted past it (P-69).
 
 **P-65** (added 2026-10-16, #1226) Every provider is measured by the checklist below, one status per row:
 `pass` (evidence cited: a file and line, a test that exists under that name, a merged PR/issue, or a
@@ -430,6 +437,7 @@ Paths below are relative to `src/` unless they start with `electron/` or name th
 
 ### Claude Code (claude-code, sdk transport)
 
+Measured on CLI 2.1.302 driven by SDK 0.3.221 (registry `measuredWith`, 2026-10-16).
 Registry row registry:29-41; derived level `isolated` — G1–G6 all pass with test evidence, no operator
 run recorded (P-28: `full` additionally needs `operatorRuns`; domain/providers/capability.ts:92-112,
 pinned capability-registry.test.ts:425-433 — see gap 10).
@@ -479,6 +487,8 @@ Non-pass rows — Claude Code:
 
 ### agy (Antigravity, stream-json transport)
 
+Measured on CLI 1.3.6 (registry `measuredWith`, 2026-10-16; the CLI self-updates, so the drift
+warning and the weekly sweep say when the installed one is newer).
 Registry row registry:72-95; derived level `isolated` — every gate carries test evidence (G6
 cites the stream-json leg of the P-24 scenario, #1237) and P-67 adds the isolation evidence (the
 sentinel-tree launch test of an account's identity directory), so the cap lifts and the level derives
@@ -576,7 +586,8 @@ Ordered by risk first, then effort; step 2 of the series works this list and not
 - O-2 Resolved: sessions stay under the user's config directory; a per-run copy cannot keep the macOS login.
 - O-3 Resolved (2026-10-03, P-47): no pilot in the launch set; the add-a-provider path is the §9 checklist, exercised by the next contributed provider.
 - O-4 Whether Docket may fetch an updated model registry from the internet.
-- O-5 Minimum supported CLI versions, as data, for the capability scan.
+- O-5 Minimum supported CLI versions, as data, for the capability scan. (P-68, 2026-10-16, answers the
+  drift half — measured-on versions plus the `versionDrift` warning; the minimum-floor half stays open.)
 - O-6 Which instruction file is canonical when a repo serves several providers (proposed: keep each file
   as the repo has it, inline the missing one; offer a canonical-file diff only on request).
 - O-7 Resolved: `CostKind` gains `credits`; the internal representation is the provider's smallest unit.

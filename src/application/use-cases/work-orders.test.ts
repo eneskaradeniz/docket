@@ -48,7 +48,7 @@ import {
   repoFlowOf,
 } from '../ports/fakes';
 
-import { AUTONOMY_KEY } from './settings';
+import { AUTONOMY_KEY, AUTONOMY_MAX_KEY } from './settings';
 import {
   blockWorkOrder,
   closeWorkOrder,
@@ -243,7 +243,7 @@ const createHarness = (configure?: (definitions: FakeDefinitionStore) => void, w
     repos,
     settings,
     fingerprints,
-    openDeps: { clock, ids, log, workOrders, definitions, projects },
+    openDeps: { clock, ids, log, workOrders, definitions, projects, settings },
     viewDeps: { workOrders, runs, definitions, projects, repos, readFingerprint, settings },
     blockDeps: { clock, ids, log, workOrders },
     unblockDeps: { clock, ids, log, workOrders, definitions },
@@ -1756,5 +1756,133 @@ describe('effectiveAutonomy', () => {
     expect(detail.value.autonomy?.level).toBe('manual');
     expect(detail.value.autonomy?.suggestion).toBe('auto');
     expect(detail.value.autonomy?.layerSet).toBe(false);
+  });
+
+  it('A-404: stage arm resolves per stage at decision time; manual and balanced pass through; auto suggests auto; ceiling clamps and populates ceiling', async () => {
+    const h = createHarness();
+    const id = await openedWorkOrder(h);
+    const baseRecord = await h.workOrders.get(id);
+    if (!baseRecord || !baseRecord.pin) throw new Error('record must have pin');
+
+    // Create a pin where stage 'plan' has autonomy: 'manual', and stage 'implement' has autonomy: 'auto'
+    const stageId = h.openDeps.ids.next<'work-order'>();
+    const stagePin: FlowPin = {
+      ...baseRecord.pin,
+      stages: [
+        {
+          ...baseRecord.pin.stages[0],
+          stage: {
+            ...baseRecord.pin.stages[0].stage,
+            autonomy: 'manual',
+          },
+        },
+        {
+          ...baseRecord.pin.stages[1],
+          stage: {
+            ...baseRecord.pin.stages[1].stage,
+            autonomy: 'auto',
+          },
+        },
+      ],
+    };
+    await h.workOrders.create({ ...baseRecord, id: stageId, pin: stagePin });
+
+    // Resolving for stage 'plan': stage level 'manual' passes through as source 'stage',
+    // and suggestion 'auto' is present because stage 'implement' has autonomy 'auto'
+    const planEffective = await effectiveAutonomy(h.autonomyDeps, {
+      workOrder: stageId,
+      stage: slugOf<'stage'>('plan'),
+    });
+    expect(planEffective).toEqual({
+      ok: true,
+      value: {
+        level: 'manual',
+        source: 'stage',
+        suggestion: 'auto',
+      },
+    });
+
+    // Resolving for stage 'implement': auto from stage does not resolve (R-153), falls to builtin 'manual' with suggestion: 'auto'
+    const implementEffective = await effectiveAutonomy(h.autonomyDeps, {
+      workOrder: stageId,
+      stage: slugOf<'stage'>('implement'),
+    });
+    expect(implementEffective).toEqual({
+      ok: true,
+      value: {
+        level: 'manual',
+        source: 'builtin',
+        suggestion: 'auto',
+      },
+    });
+
+    // With a repo ceiling in force: ceiling is always populated
+    h.definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', JSON.stringify({
+      roles: [ROLE_JSON],
+      flows: FLOWS_JSON,
+      capabilities: [],
+      repo: {
+        ...REPO_JSON,
+        maxLevel: 'balanced',
+      },
+    }));
+    const withCeiling = await effectiveAutonomy(h.autonomyDeps, {
+      workOrder: stageId,
+      stage: slugOf<'stage'>('plan'),
+    });
+    expect(withCeiling).toEqual({
+      ok: true,
+      value: {
+        level: 'manual',
+        source: 'stage',
+        ceiling: 'balanced',
+        suggestion: 'auto',
+      },
+    });
+  });
+
+  it('A-406: openWorkOrder refuses level above effective ceiling with above_ceiling before anything is written', async () => {
+    const h = createHarness();
+    // Repo ceiling set to 'balanced'
+    h.definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', JSON.stringify({
+      roles: [ROLE_JSON],
+      flows: FLOWS_JSON,
+      capabilities: [],
+      repo: {
+        ...REPO_JSON,
+        maxLevel: 'balanced',
+      },
+    }));
+
+    // Opening with autonomy 'auto' is refused with above_ceiling
+    const result = await openWorkOrder(h.openDeps, {
+      project: PROJECT,
+      repo: REPO,
+      title: 'Above ceiling order',
+      autonomy: 'auto',
+      actor: ACTOR,
+    });
+    expect(result).toEqual({ ok: false, error: 'above_ceiling' });
+
+    // Global ceiling: setting autonomy.max to 'manual'
+    await h.settings.set(AUTONOMY_MAX_KEY, 'manual');
+    const globalCeilingResult = await openWorkOrder(h.openDeps, {
+      project: PROJECT,
+      repo: REPO,
+      title: 'Above global ceiling',
+      autonomy: 'balanced',
+      actor: ACTOR,
+    });
+    expect(globalCeilingResult).toEqual({ ok: false, error: 'above_ceiling' });
+
+    // Opening with level within ceiling succeeds
+    const okResult = await openWorkOrder(h.openDeps, {
+      project: PROJECT,
+      repo: REPO,
+      title: 'Within ceiling',
+      autonomy: 'manual',
+      actor: ACTOR,
+    });
+    expect(okResult.ok).toBe(true);
   });
 });

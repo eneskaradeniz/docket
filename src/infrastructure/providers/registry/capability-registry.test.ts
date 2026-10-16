@@ -22,7 +22,7 @@ import type {
 import { mergeCatalog, resolveTier, setupWarnings, supportFor, supportLevel, translateCapabilities } from '../../../domain/index';
 
 const slugOf = <B extends string>(input: string): Slug<B> => input as Slug<B>;
-import { CAPABILITY_REGISTRY, FAMILY_PATTERNS, findProvider, findRouteKind, PERMISSION_CHANNELS, TRANSLATION_TABLE } from './capability-registry';
+import { CAPABILITY_REGISTRY, FAMILY_PATTERNS, findProvider, findRouteKind, MEASURED_VERSIONS, PERMISSION_CHANNELS, TRANSLATION_TABLE } from './capability-registry';
 
 const DOC_TABLE_PATH = join(fileURLToPath(new URL('../../../../docs/v2/provider-capabilities.md', import.meta.url)));
 
@@ -148,6 +148,47 @@ describe('capability registry as data (P-27)', () => {
         how: 'headless agy cannot ask: command, MCP and write calls are denied without a prompt',
       },
     ]);
+  });
+
+  it('P-68: measuredWith records the versions the evidence was measured on — only where a measurement exists', () => {
+    // The live matrices ran on the claude-code CLI/SDK pair below; every agy fact in the registry
+    // was measured on 1.3.6 (the live run 01M50YHMVARZ1G2FGHNPMG6WD2). The providers without a
+    // recorded measurement carry no field at all — unknown, never an invented version.
+    expect(findProvider('claude-code')?.measuredWith).toEqual({ cli: '2.1.302', sdk: '0.3.221', at: '2026-10-16' });
+    expect(findProvider('agy')?.measuredWith).toEqual({ cli: '1.3.6', at: '2026-10-16' });
+    for (const providerId of ['codex', 'copilot', 'cursor', 'opencode']) {
+      expect(findProvider(providerId)?.measuredWith, providerId).toBeUndefined();
+    }
+  });
+
+  it('P-68: MEASURED_VERSIONS carries the measured CLI side per provider, installed left to the caller', () => {
+    // The installed side joins where discovery answers are known; the registry knows only what its
+    // evidence was measured on, so the rows carry `measured` alone (absent installed reads unknown
+    // and never warns).
+    expect(MEASURED_VERSIONS).toEqual([
+      { provider: 'claude-code', measured: '2.1.302' },
+      { provider: 'agy', measured: '1.3.6' },
+    ]);
+  });
+
+  it('P-69: every measured SDK version is pinned exactly in package.json — the pin and the registry move together', async () => {
+    // A bump PR changes the pin and measuredWith in the same commit, so a measured SDK version must
+    // always be findable as an exact (range-free) dependency; a caret or tilde here is the drift
+    // this test exists to catch.
+    const manifest = JSON.parse(await readFile(new URL('../../../../package.json', import.meta.url), 'utf8')) as {
+      readonly dependencies?: Readonly<Record<string, string>>;
+      readonly devDependencies?: Readonly<Record<string, string>>;
+    };
+    const specs = { ...(manifest.dependencies ?? {}), ...(manifest.devDependencies ?? {}) };
+    const providers: readonly ProviderRecord[] = CAPABILITY_REGISTRY.providers;
+    const measuredSdks = providers
+      .map((provider) => provider.measuredWith?.sdk)
+      .filter((sdk): sdk is string => sdk !== undefined);
+    expect(measuredSdks.length).toBeGreaterThan(0);
+    for (const sdk of measuredSdks) {
+      const pinned = Object.entries(specs).find(([, spec]) => spec === sdk);
+      expect(pinned, `the measured sdk ${sdk} is pinned exactly in package.json`).toBeDefined();
+    }
   });
 });
 

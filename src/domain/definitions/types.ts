@@ -43,6 +43,8 @@ export interface StageDef {
   /** The earlier stage of the same flow whose output this stage reviews; its runs prefer another
    *  provider than the one that wrote it. */
   readonly reviewOf?: StageSlug;
+  /** The stage layer of the autonomy chain (D-10); suggests auto but never resolves it (R-153). */
+  readonly autonomy?: AutonomyLevel;
 }
 
 export interface FlowDef {
@@ -137,6 +139,8 @@ export interface RepoDef {
   readonly budget?: SpendCap; // repo spend limit (S5)
   /** The repo layer of the autonomy chain (D-10); absent inherits down the chain (R-167). */
   readonly autonomy?: AutonomyLevel;
+  /** The repo ceiling of the autonomy chain (R-154, A-406); absent means no repo ceiling. */
+  readonly maxLevel?: AutonomyLevel;
 }
 
 /** One finding of the definitions validators. `path` is JSON-pointer-like; the UI maps `code`

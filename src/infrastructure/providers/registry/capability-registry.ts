@@ -4,7 +4,7 @@
 // no provider can read as `full`; without usage visibility (G4) none can read as `isolated`, so
 // today only the sdk provider tops out at `isolated` and the rest stay `experimental`. Model data
 // (models, effort levels, prices) lands with the model-catalog issues; the route kinds start empty.
-import type { CapabilityKind, CapabilityRegistry, ChannelRow, FamilyPattern, ProviderRecord, RouteKindRecord, TranslationRow } from '../../../domain/index';
+import type { CapabilityKind, CapabilityRegistry, ChannelRow, FamilyPattern, ProviderRecord, RouteKindRecord, TranslationRow, VersionRow } from '../../../domain/index';
 
 /** Family recognition as data (P-29 section 4): an unknown live id containing `contains` gets that
  * tier automatically. The Fable family has no entry on purpose — it stays unclassified (selectable,
@@ -31,6 +31,9 @@ export const CAPABILITY_REGISTRY = {
       permissionChannel: 'native',
       // The sdk transport delivers a mid-run steering note (P-61).
       steering: 'steerable',
+      // P-68: the live matrices ran on this installed pair — the user's own CLI binary driven by
+      // the pinned SDK. The two sides drift independently, so both are named.
+      measuredWith: { cli: '2.1.302', sdk: '0.3.221', at: '2026-10-16' },
       isolation: { kind: 'test', name: 'P-44: a subscription launch never points the config directory at the run directory, whatever the ambient environment carries' },
       gates: {
         G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
@@ -77,6 +80,10 @@ export const CAPABILITY_REGISTRY = {
       // The stream-json transport does not carry a steering note (P-61).
       steering: 'not_steerable',
       isolation: { kind: 'test', name: 'P-67: an agy run of an account with an identity directory points HOME there and passes only the machine gitconfig across' },
+      // P-68: every agy fact in this registry was measured on 1.3.6 — the live run
+      // 01M50YHMVARZ1G2FGHNPMG6WD2 and the probe/spike rows below. The CLI may self-update, so the
+      // installed version is compared against this field (versionDrift).
+      measuredWith: { cli: '1.3.6', at: '2026-10-16' },
       gates: {
         G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
         G2: { kind: 'test', name: 'P-11: the text turn fixture maps to session_started, one text, usage and a completed finished' },
@@ -358,6 +365,14 @@ export const PERMISSION_CHANNELS: readonly ChannelRow[] = CAPABILITY_REGISTRY.pr
     channel: provider.permissionChannel,
     ...(provider.bridgeHow === undefined ? {} : { how: provider.bridgeHow }),
   }),
+);
+
+/** P-68: the measured side of the version table `setupWarnings`' third source reads — the CLI
+ *  version each provider record's evidence was measured on, providers without a measurement
+ *  absent. The installed side joins where discovery answers are known; absent reads `unknown`
+ *  and never warns. */
+export const MEASURED_VERSIONS: readonly VersionRow[] = CAPABILITY_REGISTRY.providers.flatMap((provider: ProviderRecord) =>
+  provider.measuredWith?.cli === undefined ? [] : [{ provider: provider.providerId, measured: provider.measuredWith.cli }],
 );
 
 /** The instruction files each provider reads natively (P-37) — the provider's best-known set, not a

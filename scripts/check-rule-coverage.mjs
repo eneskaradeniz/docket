@@ -89,13 +89,6 @@ const PENDING = new Map([
   // is the adapters' own test, not the executor wiring that consumes the typed error.
   ['infrastructure:I-107', '#1191 (the adapters parse stored levels; the typed read landed with 2a)'],
 
-  // #1225 — D-10 chain widening contracts, docs-first. Each id names the chain step that
-  // implements it — (a) set-level commands and UI, (b) the flow layer, (c) the stage layer and
-  // the ceiling; that issue removes the id from this list in the same commit as its test.
-  ['domain:R-154', '#1225 (chain c — clampAutonomy and the ceilings)'],
-  ['application:A-406', '#1225 (chain c — the ceiling homes)'],
-  ['ui:U-336', '#1225 (chain c — the stage tag and the ceiling controls)'],
-
   // #1226 — provider conformance checklist (P-65): the audit landed docs-only; the rule gains its
   // enforcement test when step 2 of the series closes the checklist gaps.
   ['providers:P-65', '#1226 (docs-only audit; step 2 lands the test)'],
@@ -103,6 +96,19 @@ const PENDING = new Map([
   // #1232 — D-10 chain-widening contract fixes from the review of #1228, docs-first. Additive
   // amendments to the #1225 contracts; the four new ids name the chain step that implements
   // each, and the implementing issue removes the id with its test, as above.
+
+  // #1247 — connector contract (Phase 9 step 0), docs-first. Each id names the follow-up number
+  // in the issue's list that implements it; that issue removes the id from this list in the same
+  // commit as its test.
+  ['domain:R-182', '#1247 follow-up 1 (domain/connector + validation)'],
+  ['domain:R-183', '#1247 follow-up 1 (domain/connector + validation)'],
+  ['application:A-415', '#1247 follow-up 2 (ConnectorRegistry + settings key + resolver rewrite)'],
+  ['application:A-416', '#1247 follow-up 2 (ConnectorRegistry + settings key + resolver rewrite)'],
+  ['application:A-417', '#1247 follow-up 2 (ConnectorRegistry + settings key + resolver rewrite)'],
+  ['infrastructure:I-113', '#1247 follow-up 3 (pure move into connectors/github/ + conformance wiring)'],
+  ['infrastructure:I-114', '#1247 follow-up 3 (pure move into connectors/github/ + conformance wiring)'],
+  ['ui:U-356', '#1247 follow-up 4 (Settings screen)'],
+  ['ui:U-357', '#1247 follow-up 4 (Settings screen)'],
 
 ]);
 

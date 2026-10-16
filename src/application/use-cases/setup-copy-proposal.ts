@@ -85,7 +85,7 @@ export async function setupCopyProposal(
   const warnings =
     provider === undefined
       ? []
-      : setupWarnings(stages, deps.capabilities.translationTable(), deps.capabilities.permissionChannels());
+      : setupWarnings(stages, deps.capabilities.translationTable(), deps.capabilities.permissionChannels(), deps.capabilities.providerVersions());
   const differsFromRecommended = [...copied.copiedPaths];
   const proposal: SetupProposal = {
     project: { name: project.name, repos: [...project.repos, repoId] },

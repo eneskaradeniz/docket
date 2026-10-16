@@ -237,6 +237,15 @@ describe('createCapabilityCatalog', () => {
     expect(channels.filter((row) => row.how !== undefined).map((row) => row.provider)).toEqual(['agy']);
   });
 
+  it('P-68: providerVersions serves the registry measured side; the installed side is absent, never invented', () => {
+    const versions = createCapabilityCatalog().providerVersions();
+    expect(versions).toEqual([
+      { provider: 'claude-code', measured: '2.1.302' },
+      { provider: 'agy', measured: '1.3.6' },
+    ]);
+    expect(versions.every((row) => row.installed === undefined)).toBe(true);
+  });
+
   it('P-37: instructionFileNames is the deduplicated union of the rows in registry order', () => {
     const names = createCapabilityCatalog().instructionFileNames();
 

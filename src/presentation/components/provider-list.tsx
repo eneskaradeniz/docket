@@ -1,8 +1,9 @@
 // components/provider-list.tsx — Settings → Sağlayıcılar (U-38): one row per discovered provider
 // (mark, name, version in mono, status word, binary path in mono and dim with the full path in
-// `title`), the shared "Yeniden tara" button in the header row (rows settle as their provider
-// answers; the list never blanks on a rescan, and a skeleton stands only before the first
-// result), and the
+// `title`, and U-338's version-drift note under the row when the installed CLI is newer than the
+// registry's measured-on version), the shared "Yeniden tara" button in the header row (rows settle
+// as their provider answers; the list never blanks on a rescan, and a skeleton stands only before
+// the first result), and the
 // providers not found on the machine folded into one closed group whose rows show the install
 // URL as copyable text. The store decides every state; a null field renders nothing.
 import { useSyncExternalStore } from 'react';
@@ -46,6 +47,13 @@ function Row({ row, marks, locale }: { readonly row: ProviderViewRow; readonly m
         <span title={row.binPath} className="block truncate pl-10 font-mono text-[12px] text-inkdim">
           {row.binPath}
         </span>
+      ) : null}
+      {row.drift !== null ? (
+        <p className="m-0 pl-10 text-[12px] text-signal-soft" data-provider-drift="">
+          {t(locale, 'providers.versionDrift')
+            .replace('{installed}', row.drift.installed)
+            .replace('{measured}', row.drift.measured)}
+        </p>
       ) : null}
       {row.installUrl !== null ? (
         <div className="flex items-center gap-2 rounded-control bg-band px-2 py-1">

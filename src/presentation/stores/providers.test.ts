@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Query } from '../../api/queries';
 import type { ProviderFact } from './candidates';
-import { createProvidersStore, parseVersion, providerDisplayName, providerStatusTone, providerViewRows } from './providers';
+import { createProvidersStore, parseVersion, providerDisplayName, providerDrift, providerStatusTone, providerViewRows } from './providers';
 
 const ready: ProviderFact = { defId: 'p-a', name: 'Alpha', installUrl: 'https://a.test/i', binPath: '/usr/bin/alpha', version: '1.2.3', loggedIn: true, optionalFlags: [] };
 const out: ProviderFact = { ...ready, defId: 'p-b', name: 'Beta', version: null, loggedIn: false };
@@ -108,5 +108,38 @@ describe('Sağlayıcılar presentation (U-38)', () => {
     expect(providerDisplayName(facts, 'p-a')).toBe('Alpha');
     expect(providerDisplayName(facts, 'p-d')).toBe('Delta');
     expect(providerDisplayName(facts, 'nope')).toBeNull();
+  });
+});
+
+describe('U-338 version drift', () => {
+  // The pinned copy the drift reads: the registry's measured-on versions (P-68 data, base64-guarded
+  // by scripts/check-capability-copy.mjs). The ids below are the copy's own rows.
+  it('U-338: an installed CLI a minor or more past the measured version carries the drift pair', () => {
+    expect(providerDrift({ defId: 'agy', version: 'Antigravity 1.4.0 (latest)' })).toEqual({
+      installed: '1.4.0',
+      measured: '1.3.6',
+    });
+    expect(providerDrift({ defId: 'claude-code', version: '3.0.0 (Claude Code)' })).toEqual({
+      installed: '3.0.0',
+      measured: '2.1.302',
+    });
+  });
+
+  it('U-338: the same version, a backward drift, an unknown provider and a missing version never warn', () => {
+    expect(providerDrift({ defId: 'agy', version: '1.3.6' })).toBeNull();
+    expect(providerDrift({ defId: 'agy', version: '1.3.7' })).toBeNull(); // patch-only forward
+    expect(providerDrift({ defId: 'agy', version: '1.2.0' })).toBeNull(); // older
+    expect(providerDrift({ defId: 'p-a', version: '9.9.9' })).toBeNull(); // no measured row
+    expect(providerDrift({ defId: 'agy', version: null })).toBeNull(); // probe failed
+    expect(providerDrift({ defId: 'agy', version: 'nightly' })).toBeNull(); // unparseable
+  });
+
+  it('U-338: the drift rides the installed row only — a not-installed provider has no version to compare', () => {
+    const view = providerViewRows(
+      [{ ...ready, defId: 'agy', version: '1.4.0' }, { ...missing, defId: 'agy' } as ProviderFact],
+      new Set(),
+    );
+    expect(view.installed[0]?.drift).toEqual({ installed: '1.4.0', measured: '1.3.6' });
+    expect(view.notInstalled[0]?.drift).toBeNull();
   });
 });

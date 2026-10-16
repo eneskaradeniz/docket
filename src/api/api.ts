@@ -778,6 +778,17 @@ export function createApi(
       };
       const result = await runCommand(tracked, actor, command, board, runControl, updates, trackerForRepo, adopting, quotaService, chatOps, setup, forges ?? SILENT_FORGES);
       if (appended) emit({ type: 'workOrders.changed' });
+      // When an autonomy layer or ceiling changes, emit workOrders.changed so open work order details
+      // reactively re-evaluate effective autonomy and reflect the new level immediately (U-336 scenario 3).
+      if (
+        result.ok &&
+        (command.type === 'workOrder.setAutonomy' ||
+          command.type === 'repo.setAutonomy' ||
+          command.type === 'project.setAutonomy' ||
+          command.type === 'settings.setAutonomy')
+      ) {
+        emit({ type: 'workOrders.changed' });
+      }
       // A-364: a steered run says so on the run's own channel — the live pane and the running
       // card re-query on it; the work order's fold is untouched, so workOrders.changed stays
       // silent here. A stop announces nothing (A-362): the executor's end path speaks.
@@ -838,7 +849,7 @@ const runCommand = async (
       if (task === undefined && command.task !== undefined) return invalidId();
 
       const opened = await openWorkOrder(
-        { clock: deps.clock, ids: deps.ids, log: deps.log, workOrders: deps.workOrders, definitions: deps.definitions, projects: deps.projects },
+        { clock: deps.clock, ids: deps.ids, log: deps.log, workOrders: deps.workOrders, definitions: deps.definitions, projects: deps.projects, settings: deps.settings },
         {
           project,
           repo,
@@ -1029,7 +1040,7 @@ const runCommand = async (
       if (!level.ok) return { ok: false, code: level.error };
       return commandOf(
         await setWorkOrderAutonomy(
-          { clock: deps.clock, ids: deps.ids, log: deps.log, workOrders: deps.workOrders, definitions: deps.definitions },
+          { clock: deps.clock, ids: deps.ids, log: deps.log, workOrders: deps.workOrders, definitions: deps.definitions, settings: deps.settings },
           { workOrder: id, level: level.value, actor },
         ),
       );
@@ -1038,20 +1049,28 @@ const runCommand = async (
     case 'repo.setAutonomy': {
       const repo = slugValue<'repo'>(command.repo);
       if (repo === undefined) return invalidId();
-      const level = autonomyLevelOf(command.level);
-      if (!level.ok) return { ok: false, code: level.error };
-      let maxLevel: AutonomyLevel | null = null;
-      if (command.maxLevel !== undefined) {
-        const parsedCeiling = parseAutonomyLevel(command.maxLevel);
-        if (!parsedCeiling.ok) return { ok: false, code: parsedCeiling.error };
-        maxLevel = parsedCeiling.value;
+      let level: AutonomyLevel | null | undefined = undefined;
+      if (command.level !== undefined) {
+        const parsed = autonomyLevelOf(command.level);
+        if (!parsed.ok) return { ok: false, code: parsed.error };
+        level = parsed.value;
       }
-      return commandOf(
-        await setRepoAutonomy(
-          { clock: deps.clock, ids: deps.ids, log: deps.log, repos: deps.repos, definitions: deps.definitions },
-          { repo, level: level.value, maxLevel, actor },
-        ),
+      let maxLevel: AutonomyLevel | null | undefined = undefined;
+      if (command.maxLevel !== undefined) {
+        if (command.maxLevel === null) {
+          maxLevel = null;
+        } else {
+          const parsedCeiling = parseAutonomyLevel(command.maxLevel);
+          if (!parsedCeiling.ok) return { ok: false, code: parsedCeiling.error };
+          maxLevel = parsedCeiling.value;
+        }
+      }
+      const set = await setRepoAutonomy(
+        { clock: deps.clock, ids: deps.ids, log: deps.log, repos: deps.repos, definitions: deps.definitions, settings: deps.settings, workOrders: deps.workOrders },
+        { repo, ...(level !== undefined ? { level } : {}), ...(maxLevel !== undefined ? { maxLevel } : {}), actor },
       );
+      if (!set.ok) return { ok: false, code: set.error };
+      return { ok: true, ...(set.value?.ordersAbove !== undefined ? { ordersAbove: set.value.ordersAbove } : {}) };
     }
 
     case 'project.setAutonomy': {
@@ -1061,21 +1080,35 @@ const runCommand = async (
       if (!level.ok) return { ok: false, code: level.error };
       return commandOf(
         await setProjectAutonomy(
-          { clock: deps.clock, ids: deps.ids, log: deps.log, definitions: deps.definitions },
+          { clock: deps.clock, ids: deps.ids, log: deps.log, definitions: deps.definitions, settings: deps.settings },
           { project, level: level.value, actor },
         ),
       );
     }
 
     case 'settings.setAutonomy': {
-      const level = autonomyLevelOf(command.level);
-      if (!level.ok) return { ok: false, code: level.error };
-      return commandOf(
-        await setGlobalAutonomy(
-          { clock: deps.clock, ids: deps.ids, log: deps.log, settings: deps.settings },
-          { level: level.value, actor },
-        ),
+      let level: AutonomyLevel | null | undefined = undefined;
+      if (command.level !== undefined) {
+        const parsed = autonomyLevelOf(command.level);
+        if (!parsed.ok) return { ok: false, code: parsed.error };
+        level = parsed.value;
+      }
+      let maxLevel: AutonomyLevel | null | undefined = undefined;
+      if (command.maxLevel !== undefined) {
+        if (command.maxLevel === null) {
+          maxLevel = null;
+        } else {
+          const parsedCeiling = parseAutonomyLevel(command.maxLevel);
+          if (!parsedCeiling.ok) return { ok: false, code: parsedCeiling.error };
+          maxLevel = parsedCeiling.value;
+        }
+      }
+      const set = await setGlobalAutonomy(
+        { clock: deps.clock, ids: deps.ids, log: deps.log, settings: deps.settings, definitions: deps.definitions, workOrders: deps.workOrders },
+        { ...(level !== undefined ? { level } : {}), ...(maxLevel !== undefined ? { maxLevel } : {}), actor },
       );
+      if (!set.ok) return { ok: false, code: set.error };
+      return { ok: true, ...(set.value?.ordersAbove !== undefined ? { ordersAbove: set.value.ordersAbove } : {}) };
     }
 
     case 'workOrder.block': {

@@ -3,8 +3,8 @@
 // on synthetic records and the real data is validated in its own module.
 import { describe, expect, it } from 'vitest';
 
-import { setupWarnings, supportFor, supportLevel, thinkingOptions, translateCapabilities } from './capability';
-import type { ChannelRow, Evidence, GateId, ModelRecord, ProviderRecord, TranslationRow } from './capability';
+import { setupWarnings, supportFor, supportLevel, thinkingOptions, translateCapabilities, versionDrift } from './capability';
+import type { ChannelRow, Evidence, GateId, ModelRecord, ProviderRecord, TranslationRow, VersionRow } from './capability';
 import type { CapabilityDef } from '../definitions/index';
 import type { CapabilitySlug } from '../shared/index';
 
@@ -211,6 +211,90 @@ describe('permission channel warnings (P-66)', () => {
     );
     expect(both).toEqual([
       { stage: 'work', provider: 'beta', kind: 'no_permission_channel', how: BRIDGE_HOW },
+      { stage: 'work', capability: 'h1', provider: 'beta', support: 'unverified', how: expect.any(String) },
+    ]);
+  });
+});
+
+describe('measured-on versions (P-68)', () => {
+  it('P-68: versionDrift answers the five grades of a semver compare', () => {
+    expect(versionDrift('1.3.6', '1.3.6')).toBe('none');
+    expect(versionDrift('1.4.0', '1.3.6')).toBe('newer_minor');
+    expect(versionDrift('2.1.302', '1.3.6')).toBe('newer_major');
+    expect(versionDrift('2.2.0', '2.1.302')).toBe('newer_minor');
+    // Any backward difference is one grade — the answer set has no older_minor/older_major.
+    expect(versionDrift('1.2.9', '1.3.6')).toBe('older');
+    expect(versionDrift('0.3.221', '0.3.300')).toBe('older');
+  });
+
+  it('P-68: an absent or unparseable side answers unknown, never a warning grade', () => {
+    expect(versionDrift(undefined, '1.3.6')).toBe('unknown');
+    expect(versionDrift('1.4.0', undefined)).toBe('unknown');
+    expect(versionDrift(undefined, undefined)).toBe('unknown');
+    expect(versionDrift('', '1.3.6')).toBe('unknown');
+    expect(versionDrift('not-a-version', '1.3.6')).toBe('unknown');
+    expect(versionDrift('1.4.0', 'not-a-version')).toBe('unknown');
+  });
+
+  it('P-68: a forward patch-only difference reads none — the finest forward grade is newer_minor', () => {
+    // The union has no newer_patch, and the warning threshold starts at a minor: a patch bump is
+    // inside the same measured envelope, so it must not warn.
+    expect(versionDrift('1.3.7', '1.3.6')).toBe('none');
+    expect(versionDrift('2.1.303', '2.1.302')).toBe('none');
+    // A backward patch difference is still a difference: older.
+    expect(versionDrift('1.3.5', '1.3.6')).toBe('older');
+    // A two-segment version compares with an implicit zero patch.
+    expect(versionDrift('1.4', '1.3.6')).toBe('newer_minor');
+    expect(versionDrift('1.3', '1.3.6')).toBe('older');
+  });
+
+  it('P-68: a newer_minor or newer_major installed CLI warns once per stage, naming both versions', () => {
+    const VERSIONS: readonly VersionRow[] = [
+      { provider: 'alpha', installed: '1.4.0', measured: '1.3.6' },
+      { provider: 'beta', installed: '2.0.0', measured: '1.9.4' },
+    ];
+    const warnings = setupWarnings(
+      [
+        { stage: 'plan', provider: 'alpha', capabilities: [] },
+        { stage: 'work', provider: 'alpha', capabilities: [] },
+        { stage: 'review', provider: 'beta', capabilities: [] },
+      ],
+      TABLE,
+      [],
+      VERSIONS,
+    );
+    expect(warnings).toEqual([
+      { stage: 'plan', provider: 'alpha', kind: 'version_drift', installed: '1.4.0', measured: '1.3.6' },
+      { stage: 'work', provider: 'alpha', kind: 'version_drift', installed: '1.4.0', measured: '1.3.6' },
+      { stage: 'review', provider: 'beta', kind: 'version_drift', installed: '2.0.0', measured: '1.9.4' },
+    ]);
+  });
+
+  it('P-68: none, older and unknown never warn; a measured-only row stays silent', () => {
+    const VERSIONS: readonly VersionRow[] = [
+      { provider: 'alpha', installed: '1.3.6', measured: '1.3.6' },
+      { provider: 'beta', installed: '1.2.0', measured: '1.3.6' },
+      { provider: 'gamma', measured: '1.3.6' },
+      { provider: 'delta', installed: '1.4.0' },
+      { provider: 'epsilon' },
+    ];
+    for (const provider of ['alpha', 'beta', 'gamma', 'delta', 'epsilon']) {
+      expect(setupWarnings([{ stage: 'work', provider, capabilities: [] }], TABLE, [], VERSIONS)).toEqual([]);
+    }
+  });
+
+  it('P-68: the drift warning sits after the channel warning and ahead of the capability rows', () => {
+    // Stage-level sentences first — a stage that cannot ask, then a stage on an unverified
+    // version — then the per-capability rows.
+    const warnings = setupWarnings(
+      [{ stage: 'work', provider: 'beta', capabilities: [hookCap('h1')], docketTools: false }],
+      TABLE,
+      [{ provider: 'beta', channel: 'bridge', how: 'headless beta cannot ask' }],
+      [{ provider: 'beta', installed: '1.4.0', measured: '1.3.6' }],
+    );
+    expect(warnings).toEqual([
+      { stage: 'work', provider: 'beta', kind: 'no_permission_channel', how: 'headless beta cannot ask' },
+      { stage: 'work', provider: 'beta', kind: 'version_drift', installed: '1.4.0', measured: '1.3.6' },
       { stage: 'work', capability: 'h1', provider: 'beta', support: 'unverified', how: expect.any(String) },
     ]);
   });

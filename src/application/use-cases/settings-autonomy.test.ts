@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { createFakeDeps } from '../ports/fakes';
 
-import { AUTONOMY_KEY, getAutonomyLevel } from './settings';
+import { AUTONOMY_KEY, AUTONOMY_MAX_KEY, getAutonomyLevel, getAutonomyMaxLevel } from './settings';
 
 const make = () => ({ deps: createFakeDeps() });
 
@@ -33,5 +33,22 @@ describe('global autonomy setting', () => {
     const { deps } = make();
     await deps.settings.set(AUTONOMY_KEY, 7);
     expect(await getAutonomyLevel(deps)).toEqual({ ok: false, error: 'invalid_autonomy_level' });
+  });
+
+  it('I-110: autonomy.max settings key parses against AUTONOMY_LEVELS; absent stays absent, non-member is typed invalid_autonomy_level', async () => {
+    const { deps } = make();
+    expect(await deps.settings.get(AUTONOMY_MAX_KEY)).toBeUndefined();
+    expect(await getAutonomyMaxLevel(deps)).toEqual({ ok: true, value: undefined });
+
+    for (const level of ['manual', 'balanced', 'auto'] as const) {
+      await deps.settings.set(AUTONOMY_MAX_KEY, level);
+      expect(await getAutonomyMaxLevel(deps)).toEqual({ ok: true, value: level });
+    }
+
+    await deps.settings.set(AUTONOMY_MAX_KEY, 'turbo');
+    expect(await getAutonomyMaxLevel(deps)).toEqual({ ok: false, error: 'invalid_autonomy_level' });
+
+    await deps.settings.set(AUTONOMY_MAX_KEY, 7);
+    expect(await getAutonomyMaxLevel(deps)).toEqual({ ok: false, error: 'invalid_autonomy_level' });
   });
 });

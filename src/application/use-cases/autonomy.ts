@@ -21,14 +21,17 @@ import {
   AUTONOMY_RANK,
   checkAutoLevel,
   clampAutonomy,
+  definitionAutonomyLayers,
+  deriveWorkOrderState,
   err,
   ok,
   parseAutonomyLevel,
   resolveAutonomy,
 } from '../../domain/index';
+import type { AutonomyLayer } from '../../domain/index';
 
 import type { AppDeps } from '../ports';
-import { getAutonomyLevel, AUTONOMY_KEY } from './settings';
+import { getAutonomyLevel, getAutonomyMaxLevel, AUTONOMY_KEY, AUTONOMY_MAX_KEY } from './settings';
 import { ceilingsInForce, pinnedFlowOf } from './work-orders';
 
 /** The refusals every set-level command shares (A-403's order, each writing nothing):
@@ -46,11 +49,8 @@ export type SetAutonomyError =
 
 const isUser = (actor: Actor): boolean => actor.kind === 'user';
 
-/** The ceiling arm of A-403's order: the level may not rank above the effective ceiling. The
- *  ceiling homes land with chain (c) (A-406), so the list is empty today and this never fires —
- *  the step runs anyway, in its place in the order. */
-const aboveCeiling = (level: AutonomyLevel): boolean => {
-  const ceilings = ceilingsInForce();
+/** The ceiling arm of A-403's order: the level may not rank above the effective ceiling. */
+export const isAboveCeiling = (level: AutonomyLevel, ceilings: readonly (AutonomyLevel | undefined)[]): boolean => {
   const defined = ceilings.filter((ceiling): ceiling is AutonomyLevel => ceiling !== undefined);
   if (defined.length === 0) return false;
   const lowest = defined.reduce((low, one) => (AUTONOMY_RANK[one] < AUTONOMY_RANK[low] ? one : low));
@@ -71,7 +71,9 @@ const autoUnavailableOf = (cap: SpendCap | undefined, flow: FlowDef): AutoLevelE
 /** A-403: sets (or, with `null`, clears) the work-order layer. The write patches the record's
  *  `autonomy` (A-394) — no event, no past decision changes (R-170). */
 export async function setWorkOrderAutonomy(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'definitions'>,
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'definitions'> & {
+    readonly settings?: AppDeps['settings'];
+  },
   input: { readonly workOrder: WorkOrderId; readonly level: AutonomyLevel | null; readonly actor: Actor },
 ): Promise<Result<void, SetAutonomyError>> {
   if (!isUser(input.actor)) return err('user_only');
@@ -81,10 +83,22 @@ export async function setWorkOrderAutonomy(
 
   const record = await deps.workOrders.get(input.workOrder);
   if (record === undefined) return err('not_found');
-  if (level !== null && aboveCeiling(level)) return err('above_ceiling');
+
+  const loaded = await deps.definitions.load(record.repo);
+  if (!loaded.ok) return err('definitions_invalid');
+
+  if (level !== null) {
+    let globalMax: AutonomyLevel | undefined;
+    if (deps.settings !== undefined) {
+      const maxRes = await getAutonomyMaxLevel({ settings: deps.settings });
+      if (!maxRes.ok) return err(maxRes.error);
+      globalMax = maxRes.value;
+    }
+    const ceilings = ceilingsInForce(loaded.value.repo?.maxLevel, globalMax);
+    if (isAboveCeiling(level, ceilings)) return err('above_ceiling');
+  }
+
   if (level === 'auto') {
-    const loaded = await deps.definitions.load(record.repo);
-    if (!loaded.ok) return err('definitions_invalid');
     // The nearest cap governing the order is the repo definition's budget, else the project's.
     const refusal = autoUnavailableOf(
       loaded.value.repo?.budget ?? loaded.value.project?.budget,
@@ -105,83 +119,273 @@ export async function setWorkOrderAutonomy(
   return ok(undefined);
 }
 
+async function countRepoOrdersAbove(
+  deps: {
+    readonly workOrders: AppDeps['workOrders'];
+    readonly settings?: AppDeps['settings'];
+  },
+  repo: RepoSlug,
+  newRepoCeiling: AutonomyLevel | undefined,
+  globalMax: AutonomyLevel | undefined,
+  repoAutonomy: AutonomyLevel | undefined,
+  projectAutonomy: AutonomyLevel | undefined,
+  flows: readonly FlowDef[],
+): Promise<number> {
+  const defined = [newRepoCeiling, globalMax].filter((c): c is AutonomyLevel => c !== undefined);
+  if (defined.length === 0) return 0;
+  const effectiveCeiling = defined.reduce((low, one) => (AUTONOMY_RANK[one] < AUTONOMY_RANK[low] ? one : low));
+
+  let globalAutonomy: AutonomyLevel | undefined;
+  if (deps.settings !== undefined) {
+    const globalRes = await getAutonomyLevel({ settings: deps.settings });
+    if (globalRes.ok) globalAutonomy = globalRes.value;
+  }
+
+  const orders = await deps.workOrders.list({ repo });
+  let count = 0;
+  for (const order of orders) {
+    const events = await deps.workOrders.events(order.id);
+    const flow = pinnedFlowOf(order, flows);
+    const state = deriveWorkOrderState(flow, events);
+    if (state.status === 'done') continue;
+
+    const defLayers = order.pin !== undefined ? definitionAutonomyLayers({ flow: order.pin }) : undefined;
+    const layers: readonly AutonomyLayer[] = [
+      { source: 'workOrder', value: order.autonomy },
+      { source: 'stage', value: defLayers?.stage },
+      { source: 'flow', value: defLayers?.flow },
+      { source: 'repo', value: repoAutonomy },
+      { source: 'project', value: projectAutonomy },
+      { source: 'global', value: globalAutonomy },
+    ];
+    const preClamp = resolveAutonomy(layers).level;
+    if (AUTONOMY_RANK[preClamp] > AUTONOMY_RANK[effectiveCeiling]) {
+      count++;
+    }
+  }
+  return count;
+}
+
+async function countGlobalOrdersAbove(
+  deps: {
+    readonly workOrders: AppDeps['workOrders'];
+    readonly definitions: AppDeps['definitions'];
+    readonly settings: AppDeps['settings'];
+  },
+  newGlobalMax: AutonomyLevel,
+): Promise<number> {
+  const globalRes = await getAutonomyLevel({ settings: deps.settings });
+  const globalAutonomy = globalRes.ok ? globalRes.value : undefined;
+
+  const orders = await deps.workOrders.list({});
+  let count = 0;
+  for (const order of orders) {
+    const loaded = await deps.definitions.load(order.repo);
+    if (!loaded.ok) continue;
+    const events = await deps.workOrders.events(order.id);
+    const flow = pinnedFlowOf(order, loaded.value.flows);
+    const state = deriveWorkOrderState(flow, events);
+    if (state.status === 'done') continue;
+
+    const defined = [loaded.value.repo?.maxLevel, newGlobalMax].filter((c): c is AutonomyLevel => c !== undefined);
+    const effectiveCeiling = defined.reduce((low, one) => (AUTONOMY_RANK[one] < AUTONOMY_RANK[low] ? one : low));
+
+    const defLayers = order.pin !== undefined ? definitionAutonomyLayers({ flow: order.pin }) : undefined;
+    const layers: readonly AutonomyLayer[] = [
+      { source: 'workOrder', value: order.autonomy },
+      { source: 'stage', value: defLayers?.stage },
+      { source: 'flow', value: defLayers?.flow },
+      { source: 'repo', value: loaded.value.repo?.autonomy },
+      { source: 'project', value: loaded.value.project?.autonomy },
+      { source: 'global', value: globalAutonomy },
+    ];
+    const preClamp = resolveAutonomy(layers).level;
+    if (AUTONOMY_RANK[preClamp] > AUTONOMY_RANK[effectiveCeiling]) {
+      count++;
+    }
+  }
+  return count;
+}
+
 /** A-403: sets (or clears) the repo layer — a definitions-store write of repo.yaml under the
  *  YAML round-trip law (I-6/I-107), hash-guarded like every other direct write. The `maxLevel`
- *  argument is accepted and refused with the typed `ceiling_not_available` until chain (c)
- *  gives ceilings their homes (A-406). */
+ *  argument lands with chain (c) (A-406). Lowering a ceiling below existing layers is allowed
+ *  and returns the warning count of non-done orders currently above the ceiling. */
 export async function setRepoAutonomy(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'repos' | 'definitions'>,
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'repos' | 'definitions'> & {
+    readonly settings?: AppDeps['settings'];
+    readonly workOrders?: AppDeps['workOrders'];
+  },
   input: {
     readonly repo: RepoSlug;
-    readonly level: AutonomyLevel | null;
+    readonly level?: AutonomyLevel | null;
     readonly maxLevel?: AutonomyLevel | null;
     readonly actor: Actor;
   },
-): Promise<Result<void, SetAutonomyError>> {
+): Promise<Result<{ readonly ordersAbove?: number } | void, SetAutonomyError>> {
   if (!isUser(input.actor)) return err('user_only');
-  if (input.maxLevel !== undefined && input.maxLevel !== null) return err('ceiling_not_available');
-  const parsed = parseLevel(input.level);
-  if (!parsed.ok) return err(parsed.error);
-  const level = parsed.value;
+
+  let level: AutonomyLevel | null | undefined = undefined;
+  if (input.level !== undefined) {
+    const parsed = parseLevel(input.level);
+    if (!parsed.ok) return err(parsed.error);
+    level = parsed.value;
+  }
+
+  let maxLevel: AutonomyLevel | null | undefined = undefined;
+  if (input.maxLevel !== undefined) {
+    const parsedMax = parseLevel(input.maxLevel);
+    if (!parsedMax.ok) return err(parsedMax.error);
+    maxLevel = parsedMax.value;
+  }
 
   const entry = (await deps.repos.list()).find((candidate) => candidate.slug === input.repo);
   if (entry === undefined) return err('not_found');
   const file = await deps.definitions.readFile({ kind: 'repo', repo: input.repo }, 'repo.yaml');
   if (file === undefined) return err('not_found');
   const loaded = await deps.definitions.load(input.repo);
-  const def = loaded.ok ? loaded.value.repo : undefined;
-  if (def === undefined) return err('definitions_invalid');
+  if (!loaded.ok || loaded.value.repo === undefined) return err('definitions_invalid');
+  const def = loaded.value.repo;
 
-  if (level !== null && aboveCeiling(level)) return err('above_ceiling');
-  // A-403's amendment (3): an `auto` written here has no single order to check, so the write is
-  // not refused — the read fails closed per order instead (R-158). The work-order command, with
-  // its concrete order and pinned flow, is the one that still refuses early.
+  let globalMax: AutonomyLevel | undefined;
+  if (deps.settings !== undefined) {
+    const maxResult = await getAutonomyMaxLevel({ settings: deps.settings });
+    if (!maxResult.ok) return err(maxResult.error);
+    globalMax = maxResult.value;
+  }
 
-  // The stored definition with only the autonomy layer replaced (or removed) — the file's whole
-  // new body, validated as it would load before anything is written.
-  const { autonomy: _absent, ...rest } = def;
-  const body = level === null ? rest : { ...rest, autonomy: level };
+  const newRepoCeiling = maxLevel !== undefined ? (maxLevel === null ? undefined : maxLevel) : def.maxLevel;
+
+  // above_ceiling is checked ONLY when a level is set or raised (never when a ceiling is lowered).
+  if (level !== undefined && level !== null) {
+    if (isAboveCeiling(level, ceilingsInForce(newRepoCeiling, globalMax))) {
+      return err('above_ceiling');
+    }
+  }
+
+  const { autonomy: _absentAutonomy, maxLevel: _absentMaxLevel, ...rest } = def;
+  const nextAutonomy = level !== undefined ? (level === null ? undefined : level) : def.autonomy;
+  const nextMaxLevel = maxLevel !== undefined ? (maxLevel === null ? undefined : maxLevel) : def.maxLevel;
+  const body = {
+    ...rest,
+    ...(nextAutonomy !== undefined ? { autonomy: nextAutonomy } : {}),
+    ...(nextMaxLevel !== undefined ? { maxLevel: nextMaxLevel } : {}),
+  };
   const content = JSON.stringify(body);
   const candidate = await deps.definitions.validateCandidate({ kind: 'repo', repo: input.repo }, 'repo.yaml', content);
   if (!candidate.ok) return err('definitions_invalid');
   const written = await deps.definitions.writeFile({ kind: 'repo', repo: input.repo }, 'repo.yaml', content, file.hash);
   if (!written.ok) return err('stale');
 
+  const detail: Record<string, string | number | boolean> = {};
+  if (level !== undefined) {
+    if (level === null) detail.cleared = true;
+    else detail.level = level;
+  }
+  if (maxLevel !== undefined) {
+    if (maxLevel === null) detail.maxCleared = true;
+    else detail.maxLevel = maxLevel;
+  }
   await deps.log.append({
     id: deps.ids.next<'audit'>(),
     at: deps.clock.now(),
     actor: input.actor,
     action: 'repo.autonomy_changed',
     subject: { kind: 'repo', id: input.repo },
-    detail: level === null ? { cleared: true } : { level },
+    detail,
   });
+
+  if (maxLevel !== undefined && maxLevel !== null && deps.workOrders !== undefined) {
+    const ordersAbove = await countRepoOrdersAbove(
+      { workOrders: deps.workOrders, settings: deps.settings },
+      input.repo,
+      newRepoCeiling,
+      globalMax,
+      nextAutonomy,
+      loaded.value.project?.autonomy,
+      loaded.value.flows,
+    );
+    return ok({ ordersAbove });
+  }
+
   return ok(undefined);
 }
 
 /** A-403 (with A-396): the global write — one settings key, parsed through the shared level
  *  parse on the way in; `null` deletes the key, so absence stays absence. An `auto` written
  *  here has no single order to check (A-403's amendment 3), so the write is not refused — each
- *  order's read fails closed on its own preconditions (R-158). */
+ *  order's read fails closed on its own preconditions (R-158). Lowering a ceiling returns
+ *  ordersAbove across all repos. */
 export async function setGlobalAutonomy(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'settings'>,
-  input: { readonly level: AutonomyLevel | null; readonly actor: Actor },
-): Promise<Result<void, SetAutonomyError>> {
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'settings'> & {
+    readonly definitions?: AppDeps['definitions'];
+    readonly workOrders?: AppDeps['workOrders'];
+  },
+  input: {
+    readonly level?: AutonomyLevel | null;
+    readonly maxLevel?: AutonomyLevel | null;
+    readonly actor: Actor;
+  },
+): Promise<Result<{ readonly ordersAbove?: number } | void, SetAutonomyError>> {
   if (!isUser(input.actor)) return err('user_only');
-  const parsed = parseLevel(input.level);
-  if (!parsed.ok) return err(parsed.error);
-  const level = parsed.value;
-  if (level !== null && aboveCeiling(level)) return err('above_ceiling');
 
-  if (level === null) await deps.settings.delete(AUTONOMY_KEY);
-  else await deps.settings.set(AUTONOMY_KEY, level);
+  let level: AutonomyLevel | null | undefined = undefined;
+  if (input.level !== undefined) {
+    const parsed = parseLevel(input.level);
+    if (!parsed.ok) return err(parsed.error);
+    level = parsed.value;
+  }
+
+  let maxLevel: AutonomyLevel | null | undefined = undefined;
+  if (input.maxLevel !== undefined) {
+    const parsedMax = parseLevel(input.maxLevel);
+    if (!parsedMax.ok) return err(parsedMax.error);
+    maxLevel = parsedMax.value;
+  }
+
+  const currentMax = await getAutonomyMaxLevel(deps);
+  if (!currentMax.ok) return err(currentMax.error);
+  const effectiveNewMax = maxLevel !== undefined ? (maxLevel === null ? undefined : maxLevel) : currentMax.value;
+
+  if (level !== undefined && level !== null && isAboveCeiling(level, [effectiveNewMax])) {
+    return err('above_ceiling');
+  }
+
+  if (level !== undefined) {
+    if (level === null) await deps.settings.delete(AUTONOMY_KEY);
+    else await deps.settings.set(AUTONOMY_KEY, level);
+  }
+  if (maxLevel !== undefined) {
+    if (maxLevel === null) await deps.settings.delete(AUTONOMY_MAX_KEY);
+    else await deps.settings.set(AUTONOMY_MAX_KEY, maxLevel);
+  }
+
+  const detail: Record<string, string | number | boolean> = {};
+  if (level !== undefined) {
+    if (level === null) detail.cleared = true;
+    else detail.level = level;
+  }
+  if (maxLevel !== undefined) {
+    if (maxLevel === null) detail.maxCleared = true;
+    else detail.maxLevel = maxLevel;
+  }
   await deps.log.append({
     id: deps.ids.next<'audit'>(),
     at: deps.clock.now(),
     actor: input.actor,
     action: 'settings.autonomy_changed',
     subject: { kind: 'settings', id: 'autonomy' },
-    detail: level === null ? { cleared: true } : { level },
+    detail,
   });
+
+  if (maxLevel !== undefined && maxLevel !== null && deps.workOrders !== undefined && deps.definitions !== undefined) {
+    const ordersAbove = await countGlobalOrdersAbove(
+      { workOrders: deps.workOrders, definitions: deps.definitions, settings: deps.settings },
+      maxLevel,
+    );
+    return ok({ ordersAbove });
+  }
+
   return ok(undefined);
 }
 
@@ -190,14 +394,21 @@ export async function setGlobalAutonomy(
  *  (I-6/I-107), hash-guarded. An `auto` written here has no single order to check; the read
  *  fails closed per order (R-158). */
 export async function setProjectAutonomy(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'definitions'>,
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'definitions'> & {
+    readonly settings?: AppDeps['settings'];
+  },
   input: { readonly project: ProjectSlug; readonly level: AutonomyLevel | null; readonly actor: Actor },
 ): Promise<Result<void, SetAutonomyError>> {
   if (!isUser(input.actor)) return err('user_only');
   const parsed = parseLevel(input.level);
   if (!parsed.ok) return err(parsed.error);
   const level = parsed.value;
-  if (level !== null && aboveCeiling(level)) return err('above_ceiling');
+
+  if (level !== null && deps.settings !== undefined) {
+    const maxRes = await getAutonomyMaxLevel({ settings: deps.settings });
+    if (!maxRes.ok) return err(maxRes.error);
+    if (isAboveCeiling(level, [maxRes.value])) return err('above_ceiling');
+  }
 
   const file = await deps.definitions.readFile({ kind: 'project', project: input.project }, 'project.yaml');
   if (file === undefined) return err('not_found');
@@ -237,6 +448,9 @@ export interface RepoAutonomyView {
   /** True iff repo.yaml itself carries a level; false means the level is inherited. */
   readonly layerSet: boolean;
   readonly autoUnavailable?: AutoLevelError | 'above_ceiling';
+  readonly maxLevel?: AutonomyLevel;
+  readonly globalCeiling?: AutonomyLevel;
+  readonly ceiling?: AutonomyLevel;
 }
 
 export async function repoAutonomyView(
@@ -248,6 +462,8 @@ export async function repoAutonomyView(
   if (def === undefined) return err(loaded.ok ? 'not_found' : 'definitions_invalid');
   const global = await getAutonomyLevel(deps);
   if (!global.ok) return err(global.error);
+  const globalMax = await getAutonomyMaxLevel(deps);
+  if (!globalMax.ok) return err(globalMax.error);
 
   const layers = [
     // The flow/stage layers of the pinned definitions arrive with chain (b)/(c).
@@ -256,9 +472,14 @@ export async function repoAutonomyView(
     { source: 'global' as const, value: global.value },
   ];
   // The clamp closes the composition (R-157, clause 2): a balanced layer never reads in force.
-  const resolved = clampAutonomy(resolveAutonomy(layers), ceilingsInForce());
+  const ceilings = ceilingsInForce(def.maxLevel, globalMax.value);
+  const resolved = clampAutonomy(resolveAutonomy(layers), ceilings);
+  const definedCeilings = ceilings.filter((c): c is AutonomyLevel => c !== undefined);
+  const effectiveCeiling = definedCeilings.length > 0
+    ? definedCeilings.reduce((low, one) => (AUTONOMY_RANK[one] < AUTONOMY_RANK[low] ? one : low))
+    : undefined;
   const refusal =
-    resolved.source === 'ceiling'
+    effectiveCeiling !== undefined && AUTONOMY_RANK['auto'] > AUTONOMY_RANK[effectiveCeiling]
       ? ('above_ceiling' as const)
       : autoUnavailableOf(
           def.budget ?? (loaded.ok ? loaded.value.project?.budget : undefined),
@@ -268,6 +489,9 @@ export async function repoAutonomyView(
     level: resolved.level,
     source: resolved.source,
     layerSet: def.autonomy !== undefined,
+    ...(def.maxLevel !== undefined ? { maxLevel: def.maxLevel } : {}),
+    ...(globalMax.value !== undefined ? { globalCeiling: globalMax.value } : {}),
+    ...(effectiveCeiling !== undefined ? { ceiling: effectiveCeiling } : {}),
     ...(refusal === undefined ? {} : { autoUnavailable: refusal }),
   });
 }

@@ -14,7 +14,7 @@
 | **v2 · Phase 6 — Pages & chat** | Docket MCP server, page viewer, page-approval gate, chat at three scopes, proposals | "Add a test role" approved from chat as a diff |
 | **v2 · Phase 7 — Companion & library** | New project from scratch, role/flow library, security gates | From an empty machine to a running project |
 | **v2 · Phase 8 — Mobile** | Free local-network mobile app: attention inbox, approvals, live view | A gate approved from the phone |
-| **v2 · Phase 9 — Integrations** | `Forge` and `IssueTracker` adapters: Bitbucket, Azure DevOps, GitLab, Jira, Odoo Project, GitHub Issues | Each platform passes its adapter tests; one project runs on Bitbucket + Jira |
+| **v2 · Phase 9 — Integrations** | `Forge` and `IssueTracker` adapters: Bitbucket, Azure DevOps, GitLab, Jira, Odoo Project, GitHub Issues. Step 0 (2026-10-16, #1247): the connector contract — every integration lands as a built-in connector module (manifest, registry, conformance suite, contributor guide; docs/v2/integrations.md → "Phase 9 addendum") | Each platform passes its adapter tests; one project runs on Bitbucket + Jira |
 
 Team features and off-LAN remote access are out of scope for now.
 
