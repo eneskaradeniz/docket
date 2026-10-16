@@ -351,6 +351,7 @@ export async function importBundle(
 
   // Renaming and collisions (I-91)
   const renames: { id: string; to: string }[] = [];
+  const warnings: string[] = [];
   const repoSlugMap = new Map<RepoSlug, RepoSlug>();
 
   // 1. Library renames / bumps
@@ -381,7 +382,14 @@ export async function importBundle(
   const preparedRepos: RepoDef[] = [];
   const existingRepoEntries = await deps.repos.list();
 
-  for (const repo of bundleRepos) {
+  for (const rawRepo of bundleRepos) {
+    let repo = rawRepo;
+    // A-408: a bundle import loads repo autonomy: 'auto' as absent with a warning
+    if (repo.autonomy === 'auto') {
+      const { autonomy: _auto, ...rest } = repo;
+      repo = rest as RepoDef;
+      warnings.push(`autonomy_auto_dropped: repos/${rawRepo.id}/repo.yaml`);
+    }
     let targetSlug = repo.id;
     const existingFile = await deps.definitions.readFile(`repos/${targetSlug}/repo.yaml`);
     const isRegistered = existingRepoEntries.some((e) => e.slug === targetSlug);
@@ -406,7 +414,14 @@ export async function importBundle(
   // 3. Project renames
   const preparedProjects: { readonly project: ProjectDef; readonly roadmap?: Roadmap }[] = [];
   for (const projItem of bundleProjects) {
-    let targetSlug = projItem.project.id;
+    let project = projItem.project;
+    // A-408: a bundle import loads project autonomy: 'auto' as absent with a warning
+    if (project.autonomy === 'auto') {
+      const { autonomy: _auto, ...rest } = project;
+      project = rest as ProjectDef;
+      warnings.push(`autonomy_auto_dropped: projects/${projItem.project.id}/project.yaml`);
+    }
+    let targetSlug = project.id;
     const existingProject = await deps.projects.get(targetSlug);
 
     if (existingProject !== undefined) {
@@ -420,10 +435,10 @@ export async function importBundle(
     }
 
     // Remap repo slugs in project and roadmap
-    const remappedRepos = projItem.project.repos.map((r: RepoSlug) => repoSlugMap.get(r) ?? r);
+    const remappedRepos = project.repos.map((r: RepoSlug) => repoSlugMap.get(r) ?? r);
 
     const remappedProject: ProjectDef = {
-      ...projItem.project,
+      ...project,
       id: targetSlug,
       repos: remappedRepos,
     };
@@ -501,7 +516,7 @@ export async function importBundle(
   return {
     ok: true,
     value: {
-      warnings: [],
+      warnings,
       renames,
     },
   };

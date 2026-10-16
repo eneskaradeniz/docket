@@ -37,6 +37,7 @@ import {
   billingFromPools,
   checkAutoLevel,
   clampAutonomy,
+  definitionAutonomyLayers,
   deriveGitLifecycle,
   deriveWorkOrderState,
   err,
@@ -213,22 +214,32 @@ export async function effectiveAutonomy(
     if (!parsed.ok) return err(parsed.error);
     own = parsed.value;
   }
+  if (record?.pin?.autonomy !== undefined) {
+    const parsedPin = parseAutonomyLevel(record.pin.autonomy);
+    if (!parsedPin.ok) return err(parsedPin.error);
+  }
   const global = await getAutonomyLevel(deps);
   if (!global.ok) return err(global.error);
   const loaded = record === undefined ? undefined : await deps.definitions.load(record.repo);
+  const defLayers = record?.pin !== undefined
+    ? definitionAutonomyLayers({ flow: record.pin, stage: input.stage })
+    : undefined;
   const layers: readonly AutonomyLayer[] = [
     { source: 'workOrder', value: own },
-    // (b) feeds the flow layer, (c) the stage layer of `input.stage` — both from the pin.
+    { source: 'stage', value: defLayers?.stage },
+    { source: 'flow', value: defLayers?.flow },
     { source: 'repo', value: loaded !== undefined && loaded.ok ? loaded.value.repo?.autonomy : undefined },
     { source: 'project', value: loaded !== undefined && loaded.ok ? loaded.value.project?.autonomy : undefined },
     { source: 'global', value: global.value },
   ];
   const resolved = clampAutonomy(resolveAutonomy(layers), ceilingsInForce());
   if (resolved.level !== 'auto' || record === undefined) {
+    const suggestion = defLayers?.suggestsAuto && resolved.level !== 'auto' ? ('auto' as const) : undefined;
     return ok({
       level: resolved.level,
       source: resolved.source,
       ...(resolved.source === 'ceiling' ? { ceiling: resolved.level } : {}),
+      ...(suggestion === undefined ? {} : { suggestion }),
     });
   }
   // R-158: an `auto` the preconditions cannot carry answers `manual` on the read, with the typed
@@ -239,11 +250,14 @@ export async function effectiveAutonomy(
     cap: definitions?.repo?.budget ?? definitions?.project?.budget,
     flow: pinnedFlowOf(record, definitions?.flows ?? []),
   });
+  const effectiveLevel = checked.ok ? 'auto' : 'manual';
+  const suggestion = defLayers?.suggestsAuto && effectiveLevel !== 'auto' ? ('auto' as const) : undefined;
   return ok({
-    level: checked.ok ? 'auto' : 'manual',
+    level: effectiveLevel,
     source: resolved.source,
     ...(resolved.source === 'ceiling' ? { ceiling: resolved.level } : {}),
     ...(checked.ok ? {} : { autoUnavailable: checked.error }),
+    ...(suggestion === undefined ? {} : { suggestion }),
   });
 }
 
@@ -323,6 +337,10 @@ export interface WorkOrderAutonomyView {
   /** True iff the record itself carries a level; false means the level is inherited. */
   readonly layerSet: boolean;
   readonly autoUnavailable?: AutoLevelError | 'above_ceiling';
+  /** Present iff a pinned definition suggests `auto` and the level is not already it (R-153, U-335). */
+  readonly suggestion?: 'auto';
+  /** Stage names with a definition-level restriction (manual/balanced) that confirm overrides (U-335). */
+  readonly restrictiveStages?: readonly string[];
 }
 
 /** One check of a gate's recorded evidence. `url` rides the contract but is never written —
@@ -582,9 +600,24 @@ const workOrderAutonomyOf = async (
     if (!parsed.ok) return {};
     own = parsed.value;
   }
+  let defLayers:
+    | {
+        readonly flow: AutonomyLevel | undefined;
+        readonly stage: AutonomyLevel | undefined;
+        readonly suggestsAuto: boolean;
+      }
+    | undefined;
+  if (record.pin !== undefined) {
+    if (record.pin.autonomy !== undefined) {
+      const parsedPin = parseAutonomyLevel(record.pin.autonomy);
+      if (!parsedPin.ok) return {};
+    }
+    defLayers = definitionAutonomyLayers({ flow: record.pin });
+  }
   const layers: readonly AutonomyLayer[] = [
     { source: 'workOrder', value: own },
-    // The flow/stage layers of the pin arrive with chain (b)/(c).
+    { source: 'stage', value: defLayers?.stage },
+    { source: 'flow', value: defLayers?.flow },
     { source: 'repo', value: definitions.repo?.autonomy },
     { source: 'project', value: definitions.project?.autonomy },
     { source: 'global', value: global.value },
@@ -597,12 +630,23 @@ const workOrderAutonomyOf = async (
   // never be `auto` — the ceiling ranks below it — so its reason is `above_ceiling` instead.
   const unavailable: WorkOrderAutonomyView['autoUnavailable'] =
     resolved.source === 'ceiling' ? 'above_ceiling' : checked.ok ? undefined : checked.error;
+  const effectiveLevel = resolved.level === 'auto' && !checked.ok ? 'manual' : resolved.level;
+  const suggestion = defLayers?.suggestsAuto && effectiveLevel !== 'auto' ? ('auto' as const) : undefined;
+  const restrictiveStages: readonly string[] = (record.pin?.stages ?? [])
+    .filter((entry) => {
+      const level = (entry.stage as { readonly autonomy?: AutonomyLevel }).autonomy;
+      return level === 'manual' || level === 'balanced';
+    })
+    .map((entry) => entry.stage.name || entry.stage.id);
+
   return {
     autonomy: {
-      level: resolved.level === 'auto' && !checked.ok ? 'manual' : resolved.level,
+      level: effectiveLevel,
       source: resolved.source,
       layerSet: own !== undefined,
       ...(unavailable === undefined ? {} : { autoUnavailable: unavailable }),
+      ...(suggestion === undefined ? {} : { suggestion }),
+      ...(restrictiveStages.length > 0 ? { restrictiveStages } : {}),
     },
   };
 };
