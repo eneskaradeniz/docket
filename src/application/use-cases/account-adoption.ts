@@ -25,6 +25,13 @@ export type AdoptDeps = Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'se
   readonly importer: CredentialImporter;
 };
 
+/** P-67: the input is either a scanned candidate (named by its source path) or a chosen identity
+ *  directory — the account's HOME for a home-rooted CLI, picked by the operator; no scanner
+ *  proposes it, so the provider and the absolute path travel with the label instead. */
+export type AdoptInput =
+  | { readonly sourcePath: string; readonly label: string; readonly importToken?: boolean; readonly actor: Actor }
+  | { readonly provider: string; readonly identityDir: string; readonly label: string; readonly actor: Actor };
+
 /** Cache over the scan: the candidates list is read often and the scan touches the disk. */
 export interface AccountCandidateList {
   get(options?: { readonly fresh?: boolean }): Promise<readonly AccountCandidate[]>;
@@ -80,8 +87,43 @@ export const isSourceTaken = (candidate: AccountCandidate, accounts: readonly Ac
 
 export async function adoptAccountCandidate(
   deps: AdoptDeps,
-  input: { readonly sourcePath: string; readonly label: string; readonly importToken?: boolean; readonly actor: Actor },
+  input: AdoptInput,
 ): Promise<Result<AccountId, AdoptError>> {
+  // P-67: a chosen identity directory is the one adoption that needs no scan. The operator
+  // creates the login under that home with the vendor's own tool; Docket never creates it and
+  // never reads a credential — the account only points at the directory, exactly like a scanned
+  // subscription candidate's record does.
+  if ('identityDir' in input) {
+    const routeKind = deps.capabilities.routeKindOf({ provider: input.provider, authMode: 'subscription' });
+    if (routeKind === undefined) return err('not_found');
+    if ((await deps.accounts.list()).some((account) => account.identityDir === input.identityDir)) {
+      return err('already_added');
+    }
+    const id = deps.ids.next<'account'>();
+    const record: AccountRecord = {
+      id,
+      provider: input.provider,
+      label: input.label,
+      authMode: 'subscription',
+      limitPolicy: 'wait_resume',
+      caps: [],
+      routeKind,
+      // The login stays in the user's directory; the account only points at it.
+      identityDir: input.identityDir,
+    };
+    const saved = await saveAccount(deps, { record, actor: input.actor });
+    if (!saved.ok) return err(saved.error);
+    await deps.log.append({
+      id: deps.ids.next<'audit'>(),
+      at: deps.clock.now(),
+      actor: input.actor,
+      action: 'account.adopted',
+      subject: { kind: 'account', id },
+      detail: { displayPath: input.identityDir },
+    });
+    return ok(id);
+  }
+
   const candidate = (await deps.candidates.get()).find((entry) => entry.sourcePath === input.sourcePath);
   if (candidate === undefined) return err('not_found');
   if (candidate.alreadyAdded) return err('already_added');

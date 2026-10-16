@@ -124,7 +124,7 @@ const fakeApi = (): Fake => {
   const settle = (command: Command): Promise<CommandResult> => {
     const failure = failures.get(command.type);
     if (failure !== undefined) return Promise.resolve(failure);
-    if (command.type === 'account.adopt') {
+    if (command.type === 'account.adopt' && 'sourcePath' in command) {
       adopted += 1;
       const id = `acc-${adopted}`;
       const isEndpoint = command.sourcePath.includes('zai');
