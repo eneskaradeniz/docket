@@ -6,11 +6,26 @@
 // time. The api answers a whole pass at once, so until the reply lands every listed row stays
 // "scanning" and the reply is received as one batch. A null field is shown as absent — nothing
 // is invented (no version, no status, no command).
+// U-338: an installed row whose CLI drifted past the registry's measured-on version carries the
+// drift pair (installed, measured) for the row's warning line.
 import type { Api } from '../../api/api';
+import type { VersionRow } from '../../domain/index';
+import { versionDrift } from '../../domain/index';
 import type { LabelKey } from '../labels/keys';
 import { isProviderFact, providerStatus, type LampTone, type ProviderFact, type ProviderStatus } from './candidates';
 import { isQueryFailure } from './results';
 import { scanStatusOf, type ScanStatus } from './scan-status';
+
+/** Layer-safe copy of infrastructure/registry/capability-registry.ts MEASURED_VERSIONS (P-68), base64
+ *  so provider ids never appear as literals in presentation source (C4). Generated from the registry,
+ *  never hand-edited: regenerate with `npm run gen:capability-copy`; scripts/check-capability-copy.mjs
+ *  (part of check:boundaries) fails the build when the copy drifts from the registry (U-338). */
+const CAPABILITY_MEASURED_VERSIONS_B64 = 'W3sicHJvdmlkZXIiOiJjbGF1ZGUtY29kZSIsIm1lYXN1cmVkIjoiMi4xLjMwMiJ9LHsicHJvdmlkZXIiOiJhZ3kiLCJtZWFzdXJlZCI6IjEuMy42In1d';
+
+const parseMeasuredVersions = (): readonly VersionRow[] =>
+  JSON.parse(atob(CAPABILITY_MEASURED_VERSIONS_B64)) as readonly VersionRow[];
+
+export const CAPABILITY_MEASURED_VERSIONS: readonly VersionRow[] = parseMeasuredVersions();
 
 export type ProviderStatusKey = Extract<LabelKey, `providers.status.${string}`>;
 
@@ -23,6 +38,9 @@ export interface ProviderViewRow {
   readonly version: string | null;
   /** The CLI's full version line, for the cell's `title`. */
   readonly versionFull: string | null;
+  /** U-338: the drift pair when the installed CLI is newer (minor or more) than the registry's
+   *  measured-on version; null when the versions match, went unknown, or drifted backward. */
+  readonly drift: { readonly installed: string; readonly measured: string } | null;
   readonly statusKey: ProviderStatusKey;
   /** The binary's full path (the row shows it dim, the full text also goes in `title`). */
   readonly binPath: string | null;
@@ -62,6 +80,19 @@ const STATUS_KEY: Readonly<Record<Exclude<ProviderStatus, 'not_installed'>, Prov
   unknown: 'providers.status.unverified',
 };
 
+/** U-338: the drift pair of an installed row — the parsed installed number against the registry's
+ *  measured-on version; null when the drift is none, older or unknown (never a warning). Pure. */
+export const providerDrift = (
+  fact: Pick<ProviderFact, 'defId' | 'version'>,
+): { readonly installed: string; readonly measured: string } | null => {
+  const measured = CAPABILITY_MEASURED_VERSIONS.find((row) => row.provider === fact.defId)?.measured;
+  if (fact.version === null || measured === undefined) return null;
+  const installed = parseVersion(fact.version);
+  if (installed === null) return null;
+  const drift = versionDrift(installed, measured);
+  return drift === 'newer_minor' || drift === 'newer_major' ? { installed, measured } : null;
+};
+
 /** Rows and the not-found fold from the facts; `pending` holds the ids still being scanned. Pure. */
 export const providerViewRows = (facts: readonly ProviderFact[], pending: ReadonlySet<string>): ProvidersViewRows => {
   const installed: ProviderViewRow[] = [];
@@ -74,6 +105,7 @@ export const providerViewRows = (facts: readonly ProviderFact[], pending: Readon
       name: fact.name,
       version: fact.version === null ? null : (parseVersion(fact.version) ?? fact.version),
       versionFull: fact.version,
+      drift: providerDrift(fact),
       binPath: fact.binPath,
       scanning: pending.has(fact.defId),
     };
