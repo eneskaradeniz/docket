@@ -2,7 +2,7 @@
 // (P-9, P-10)"). Every binary is a real executable node script in a throwaway tree emitting
 // fixture lines on stdout; no real agent CLI is ever spawned. The inherited port rules
 // (answerPermission, steer) are re-verified here for this transport kind.
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -423,6 +423,71 @@ describe('createStreamJsonTransport', () => {
       expect(existsSync(join(cwd, 'config', 'mcp.json'))).toBe(true);
       expect(existsSync(join(cwd, 'config', 'skills.json'))).toBe(true);
       expect(existsSync(join(cwd, 'config', 'hooks.json'))).toBe(true);
+    });
+
+    it('P-67: a home-rooted run of an account with an identity directory launches with HOME there and the machine gitconfig across', async () => {
+      const machineHome = join(root, 'machine-home');
+      mkdirSync(machineHome, { recursive: true });
+      writeFileSync(join(machineHome, '.gitconfig'), '[user]\n\tname = Operator\n');
+      const identityDir = join(root, 'agy-identity');
+      mkdirSync(identityDir, { recursive: true });
+      const bin = writeBin('echo-home-env', [
+        'process.stdout.write(JSON.stringify({ say: `HOME=${process.env.HOME ?? \'none\'}` }) + \'\\n\');',
+        'process.stdout.write(JSON.stringify({ say: `GIT=${process.env.GIT_CONFIG_GLOBAL ?? \'none\'}` }) + \'\\n\');',
+        'process.stdout.write(\'{"end":"completed"}\\n\');',
+      ].join('\n'));
+      const homeDef: ProviderDef = {
+        ...defOf(bin),
+        config: { mechanism: 'env-var', name: 'HOME' },
+        buildLaunch: () => ({ args: [], env: {}, stdin: 'prompt' }),
+      };
+      const cwd = runDir();
+      const previousHome = process.env.HOME;
+      process.env.HOME = machineHome;
+      try {
+        const handle = unwrap(
+          await createStreamJsonTransport(homeDef, fakeDialect, undefined, undefined, async () => identityDir).start(request(cwd)),
+        );
+        const events = await collect(handle.events);
+        const says = events.filter((event) => event.type === 'text').map((event) => (event.type === 'text' ? event.delta : ''));
+        expect(says).toContain(`HOME=${identityDir}`);
+        expect(says).toContain(`GIT=${join(machineHome, '.gitconfig')}`);
+      } finally {
+        process.env.HOME = previousHome;
+      }
+      // Nothing is written into the identity directory and nothing else crosses the machine home.
+      expect(readdirSync(identityDir)).toEqual([]);
+      expect(readdirSync(machineHome)).toEqual(['.gitconfig']);
+    });
+
+    it('P-67: a home-rooted run of an account without an identity directory keeps the machine home and sets no git identity', async () => {
+      const machineHome = join(root, 'bare-machine-home');
+      mkdirSync(machineHome, { recursive: true });
+      writeFileSync(join(machineHome, '.gitconfig'), '[user]\n');
+      const bin = writeBin('echo-home-env-plain', [
+        'process.stdout.write(JSON.stringify({ say: `HOME=${process.env.HOME ?? \'none\'}` }) + \'\\n\');',
+        'process.stdout.write(JSON.stringify({ say: `GIT=${process.env.GIT_CONFIG_GLOBAL ?? \'none\'}` }) + \'\\n\');',
+        'process.stdout.write(\'{"end":"completed"}\\n\');',
+      ].join('\n'));
+      const homeDef: ProviderDef = {
+        ...defOf(bin),
+        config: { mechanism: 'env-var', name: 'HOME' },
+        buildLaunch: () => ({ args: [], env: {}, stdin: 'prompt' }),
+      };
+      const cwd = runDir();
+      const previousHome = process.env.HOME;
+      process.env.HOME = machineHome;
+      try {
+        const handle = unwrap(
+          await createStreamJsonTransport(homeDef, fakeDialect, undefined, undefined, async () => undefined).start(request(cwd)),
+        );
+        const events = await collect(handle.events);
+        const says = events.filter((event) => event.type === 'text').map((event) => (event.type === 'text' ? event.delta : ''));
+        expect(says).toContain(`HOME=${machineHome}`);
+        expect(says).toContain('GIT=none');
+      } finally {
+        process.env.HOME = previousHome;
+      }
     });
   });
 

@@ -3,14 +3,15 @@
 // no event, and the exactly-one-finished invariant. Contract: docs/v2/providers.md →
 // "stream-json transport (P-9, P-10)"; the dialect itself (P-11) is a plug-in, not part of
 // this framework.
-import { accessSync } from 'node:fs';
+import { accessSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import type { AgentTransport, RunHandle, RunRequest, TransportError } from '../../../../application/index';
 import type { AccountId, AgentEvent, CostKind, Result, RunId } from '../../../../domain/index';
 import { err, ok } from '../../../../domain/index';
 import { createSystemClock, registeredSpawn } from '../../../system/index';
-import type { ProviderDef } from '../../defs/index';
-import { buildChildEnv, writeRunConfig, type RunCapability, type RunMcpServer } from '../../launch/index';
+import { homeRootEnvOf, type ProviderDef } from '../../defs/index';
+import { buildChildEnv, writeRunConfig, type RunAccountHome, type RunCapability, type RunMcpServer } from '../../launch/index';
 import { prepareAgyDelivery, type AgyDeliveryCapability } from './agy-delivery';
 
 /** Per-run context handed to every parse call (G4): the route's cost kind, resolved once per
@@ -61,6 +62,15 @@ const holdsDocketRunToken = (capabilities: readonly RunCapability[]): boolean =>
       capability.env['DOCKET_MCP_TOKEN'] !== '' &&
       capability.env['DOCKET_MCP_KIND'] === 'run',
   );
+
+/** The machine's ~/.gitconfig when it exists — the one non-secret ambient file a redirected home
+ * passes across (P-67), so the agent's commits keep their identity; undefined when the machine
+ * has none, and nothing is ever symlinked or copied beside it. */
+const gitconfigOf = (machineHome: string | undefined): string | undefined => {
+  if (machineHome === undefined) return undefined;
+  const path = join(machineHome, '.gitconfig');
+  return existsSync(path) ? path : undefined;
+};
 
 /** Single-consumer push channel: buffers events between await points, ends after a finish. */
 interface Channel<T> {
@@ -116,6 +126,7 @@ export function createStreamJsonTransport(
   dialect: StreamDialect,
   agyAskBridge?: AgyAskBridge,
   costKindOf?: (accountId: AccountId) => Promise<CostKind>,
+  identityDirOf?: (accountId: AccountId) => Promise<string | undefined>,
 ): AgentTransport {
   const clock = createSystemClock();
   // A transport built without a resolver is test wiring; the production factory always injects
@@ -196,7 +207,22 @@ export function createStreamJsonTransport(
         if (def.id === 'agy') agyTree.push({ ...capability });
       }
 
-      const runConfig = await writeRunConfig(request.runDir, def, runCapabilities);
+      // P-67: a home-rooted CLI of an account with an identity directory runs with that
+      // directory as its HOME. The machine home is read from the allowlisted environment first —
+      // it names the gitconfig the redirect would hide — and the run config writer then points
+      // HOME at the account's directory, never at a run directory.
+      const parentEnv: Record<string, string> = {};
+      for (const [name, value] of Object.entries(process.env)) {
+        if (value !== undefined) parentEnv[name] = value;
+      }
+      const machineEnv = buildChildEnv(def.id, parentEnv, {});
+      const identityDir = homeRootEnvOf(def) === undefined ? undefined : await identityDirOf?.(request.route.accountId);
+      const machineGitconfig = identityDir === undefined ? undefined : gitconfigOf(machineEnv.HOME);
+      const accountHome: RunAccountHome | undefined =
+        identityDir === undefined
+          ? undefined
+          : { identityDir, ...(machineGitconfig === undefined ? {} : { machineGitconfig }) };
+      const runConfig = await writeRunConfig(request.runDir, def, runCapabilities, accountHome);
       if (def.id === 'agy') {
         // Same guard as the SDK delivery: a capability the measured surface cannot carry is a
         // typed start error, never a crash mid-launch.
@@ -216,11 +242,7 @@ export function createStreamJsonTransport(
 
       // The ambient environment reaches the child only through the launch allowlist; the def's
       // own launch environment (the run-scoped config mechanism) rides on top of it.
-      const parentEnv: Record<string, string> = {};
-      for (const [name, value] of Object.entries(process.env)) {
-        if (value !== undefined) parentEnv[name] = value;
-      }
-      const env = { ...buildChildEnv(def.id, parentEnv, {}), ...runConfig.env, ...launch.env };
+      const env = { ...machineEnv, ...runConfig.env, ...launch.env };
 
       // The registry's graceful stop lands here once the finish path below exists: a managed quit
       // ends this run `cancelled` through the same event the handle's own stop() pushes.
