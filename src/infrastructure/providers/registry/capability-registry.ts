@@ -32,8 +32,10 @@ export const CAPABILITY_REGISTRY = {
       // The sdk transport delivers a mid-run steering note (P-61).
       steering: 'steerable',
       // P-68: the live matrices ran on this installed pair — the user's own CLI binary driven by
-      // the pinned SDK. The two sides drift independently, so both are named.
-      measuredWith: { cli: '2.1.302', sdk: '0.3.221', at: '2026-10-16' },
+      // the pinned SDK. The two sides drift independently, so both are named; the sdk side tracks
+      // the exact package pin (a bump moves it in the same commit, and the canary re-measures
+      // before the bump merges), while the cli side waits for the canary's own update.
+      measuredWith: { cli: '2.1.302', sdk: '0.3.302', at: '2026-10-16' },
       isolation: { kind: 'test', name: 'P-44: a subscription launch never points the config directory at the run directory, whatever the ambient environment carries' },
       gates: {
         G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
