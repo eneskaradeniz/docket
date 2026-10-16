@@ -62,6 +62,29 @@ describe('claude-code SDK delivery cleanup (#1164)', () => {
     await delivery.cleanup();
   });
 
+  it('a run_end hook maps to a Stop entry in the inline settings hooks', async () => {
+    const runDir = await mkdtemp(join(tmpdir(), 'docket-cc-stop-'));
+    const delivery = await prepareClaudeCodeSdkDelivery(
+      runDir,
+      '',
+      [
+        {
+          kind: 'hook',
+          id: slugOf<'capability'>('run-end'),
+          name: 'Run end',
+          event: 'run_end',
+          command: 'echo stopped',
+        },
+      ],
+      false,
+    );
+    // Stop carries no matcher — the run-end hook fires once at the turn's end, tool-blind.
+    expect(delivery.settings.hooks).toEqual({
+      Stop: [{ hooks: [{ type: 'command', command: 'echo stopped' }] }],
+    });
+    await delivery.cleanup();
+  });
+
   it('materializes a skill directory with all files; a single file becomes SKILL.md', async () => {
     const runDir = await mkdtemp(join(tmpdir(), 'docket-cc-skill-'));
     const fileSkill = join(runDir, 'one-file.md');

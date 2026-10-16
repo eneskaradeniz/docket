@@ -6,18 +6,24 @@
 import { accessSync } from 'node:fs';
 import { StringDecoder } from 'node:string_decoder';
 import type { AgentTransport, RunHandle, RunRequest, TransportError } from '../../../../application/index';
-import type { AgentEvent, Result, RunId } from '../../../../domain/index';
+import type { AccountId, AgentEvent, CostKind, Result, RunId } from '../../../../domain/index';
 import { err, ok } from '../../../../domain/index';
 import { createSystemClock, registeredSpawn } from '../../../system/index';
 import type { ProviderDef } from '../../defs/index';
 import { buildChildEnv, writeRunConfig, type RunCapability, type RunMcpServer } from '../../launch/index';
 import { prepareAgyDelivery, type AgyDeliveryCapability } from './agy-delivery';
 
+/** Per-run context handed to every parse call (G4): the route's cost kind, resolved once per
+ *  run the same way the SDK mapper resolves its own context. */
+export interface DialectContext {
+  readonly costKind: CostKind;
+}
+
 export interface StreamDialect {
   readonly id: string;
   /** One parsed stdout object → its events. `null` = the dialect does not recognise the
    * object (the transport degrades the line to a raw event); `[]` = recognised but silent. */
-  parse(line: unknown): readonly AgentEvent[] | null;
+  parse(line: unknown, context: DialectContext): readonly AgentEvent[] | null;
   /** CLIs whose stdin speaks NDJSON need the prompt wrapped in their input envelope; without
    * this the prompt is written as one bare text line (print-mode semantics). */
   readonly wrapInput?: (prompt: string) => string;
@@ -109,8 +115,14 @@ export function createStreamJsonTransport(
   def: ProviderDef,
   dialect: StreamDialect,
   agyAskBridge?: AgyAskBridge,
+  costKindOf?: (accountId: AccountId) => Promise<CostKind>,
 ): AgentTransport {
   const clock = createSystemClock();
+  // A transport built without a resolver is test wiring; the production factory always injects
+  // the registry resolver. The fallback is the subscription branch default — every stream-json
+  // CLI in the launch set rides a subscription login, matching the SDK route environment's
+  // fallback for an account no route kind covers.
+  const resolveCostKind = costKindOf ?? (async () => 'equivalent' as const);
 
   return {
     start: async (request: RunRequest): Promise<Result<RunHandle, TransportError>> => {
@@ -125,6 +137,9 @@ export function createStreamJsonTransport(
       } catch {
         return err({ code: 'not_installed', message: `provider ${def.id} binary is not present` });
       }
+      // The route's cost kind is run-scoped (G4): resolved once here, before the first line can
+      // arrive, and handed to every dialect parse call.
+      const dialectContext: DialectContext = { costKind: await resolveCostKind(request.route.accountId) };
 
       // agy is the one stream-json CLI with a run-scoped delivery surface (P-62): its capabilities
       // ride a .agents tree under the run's config directory, not only the generic config files.
@@ -318,7 +333,7 @@ export function createStreamJsonTransport(
         }
         let mapped: readonly AgentEvent[] | null;
         try {
-          mapped = dialect.parse(parsed);
+          mapped = dialect.parse(parsed, dialectContext);
         } catch {
           // A dialect bug must never throw into the event stream; the line degrades to raw.
           mapped = null;

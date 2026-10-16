@@ -148,14 +148,14 @@ describe('capability registry validity (P-28)', () => {
     expect(findRouteKind('no-such-route-kind')).toBeUndefined();
   });
 
-  it('P-28: agy records its live operator run yet stays experimental — no G6 scenario, no isolation evidence', () => {
+  it('P-28: agy carries every gate as test evidence and its live operator run yet stays experimental — the isolation cap holds', () => {
     // The live agy walk of 2026-10-16 (agy 1.3.6; the run id lives in the record and the docs
-    // evidence line) is an operator run only: P-28's `full` needs the G6 scripted scenario as
-    // test evidence as well, and P-44 caps a record without isolation evidence at experimental —
-    // so recording the run must not move the level.
+    // evidence line) is an operator run only, and G6 now cites the scripted stream-json leg of
+    // the P-24 scenario — but P-44 caps a record without isolation evidence at experimental, so
+    // neither the gates nor the run may move the level.
     const agy = findProvider('agy');
     expect(agy).toBeDefined();
-    expect(agy?.gates.G6).toBeUndefined();
+    expect(agy?.gates.G6?.kind).toBe('test');
     expect(agy?.isolation).toBeUndefined();
     expect(agy?.operatorRuns).toHaveLength(1);
     expect(agy?.operatorRuns?.[0]).toMatch(/^01[0-9A-Z]{24}$/);

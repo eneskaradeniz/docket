@@ -2,7 +2,7 @@
 // route kind (A-44) and the route-kind surface saveAccount validates endpoints against (A-43).
 // Vendor names live here and in the data file — nowhere else.
 import type { CapabilityCatalog } from '../../../application/index';
-import type { AuthMode } from '../../../domain/index';
+import type { AuthMode, CostKind, RouteKindRecord } from '../../../domain/index';
 
 import { BUILTIN_PROVIDER_DEFS } from '../defs/index';
 
@@ -39,3 +39,25 @@ export const createCapabilityCatalog = (): CapabilityCatalog => ({
     ...new Set(PROVIDER_INSTRUCTION_FILES.flatMap((row) => row.instructionFiles)),
   ],
 });
+
+/** The registry route-level cost union admits `none` (no cost visibility); a usage event always
+ *  carries a real kind, so a route kind without cost data falls back to the branch default. */
+const eventCostKind = (kind: RouteKindRecord['costKind'] | undefined, fallback: CostKind): CostKind =>
+  kind === undefined || kind === 'none' ? fallback : kind;
+
+/** The cost kind an account's route stamps on its usage events (G4): the registry row's kind, or
+ *  the auth-mode branch default when no route kind covers the account — the same fallbacks the SDK
+ *  route environment applies, kept beside the default mapping they read. */
+export const routeCostKindOf = (account: {
+  readonly provider: string;
+  readonly authMode: AuthMode;
+  readonly routeKind?: string;
+}): CostKind => {
+  const routeKindId = account.routeKind ?? DEFAULT_ROUTE_KINDS[account.provider]?.[account.authMode];
+  const routeKind = routeKindId === undefined ? undefined : findRouteKind(routeKindId);
+  if (routeKind?.endpointHost !== undefined) return eventCostKind(routeKind.costKind, 'equivalent');
+  if ((routeKind?.authMode ?? account.authMode) === 'api_key') {
+    return eventCostKind(routeKind?.costKind, 'reported');
+  }
+  return eventCostKind(routeKind?.costKind, 'equivalent');
+};
