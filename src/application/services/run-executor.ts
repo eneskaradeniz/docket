@@ -145,7 +145,7 @@ const decideAsk = async (
   input: ExecuteRunInput,
   event: PermissionAskEvent,
 ): Promise<PermissionDecision> => {
-  const autonomy = await effectiveAutonomy(deps, { workOrderId: input.item.workOrderId, repo: input.item.repo });
+  const autonomy = await effectiveAutonomy(deps, { workOrder: input.item.workOrderId });
   if (!autonomy.ok) return { kind: 'ask-human' };
   const ask = riskAskOf(event);
   if (ask === undefined) return { kind: 'ask-human' };

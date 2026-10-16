@@ -125,12 +125,36 @@ export interface RepoSettingsState {
   readonly justSaved: boolean;
   readonly accountLabels: Readonly<Record<string, string>>;
   readonly lastLabelKey: LabelKey | null;
+  /** The repo layer's chain standing (U-334/A-407): null until the read answers — the control
+   *  stays quiet rather than guessing a level. */
+  readonly autonomy: RepoAutonomyRead | null;
 }
+
+/** The `repo.autonomy` reply narrowed to what the control renders (plain strings on the wire). */
+export interface RepoAutonomyRead {
+  readonly level: 'manual' | 'balanced' | 'auto';
+  readonly source: string;
+  readonly layerSet: boolean;
+  readonly autoRefusal?: string;
+}
+
+const isRepoAutonomyRead = (value: unknown): value is RepoAutonomyRead => {
+  if (typeof value !== 'object' || value === null) return false;
+  const read = value as { readonly level?: unknown; readonly source?: unknown; readonly layerSet?: unknown };
+  return (
+    (read.level === 'manual' || read.level === 'balanced' || read.level === 'auto') &&
+    typeof read.source === 'string' &&
+    typeof read.layerSet === 'boolean'
+  );
+};
 
 export interface RepoSettingsStore {
   load(initialRepo?: string): Promise<void>;
   selectRepo(repo: string): Promise<void>;
   selectStage(stage: StageSlug): void;
+  /** Sets (or clears, with `null`) the repo layer of the autonomy chain (U-334, A-403) and
+   *  re-reads the standing; the refreshed control is the answer, never a toast. */
+  setAutonomy(level: 'manual' | 'auto' | null): Promise<void>;
   setOverlayInstructions(stage: StageSlug, instructions: string): void;
   setStageLimitPolicy(stage: StageSlug, policy: LimitPolicy): void;
   resetStageLimitPolicy(stage: StageSlug): void;
@@ -215,11 +239,23 @@ export const createRepoSettingsStore = (deps: RepoSettingsStoreDeps): RepoSettin
     justSaved: false,
     accountLabels: {},
     lastLabelKey: null,
+    autonomy: null,
   };
 
   const publish = (next: RepoSettingsState): void => {
     state = next;
     for (const listener of [...listeners]) listener();
+  };
+
+  /** The repo layer's chain standing (U-334): read beside the flow; a failed read keeps the
+   *  control quiet — an unreadable chain is its own typed read's surface. Only the newest
+   *  requested repo may land its read: a slow answer from a tab just left never speaks. */
+  let autonomyRepo: string | null = null;
+  const loadAutonomy = async (repo: string): Promise<void> => {
+    autonomyRepo = repo;
+    const reply: unknown = await deps.api.query({ type: 'repo.autonomy', repo } satisfies Query);
+    if (autonomyRepo !== repo) return;
+    publish({ ...state, autonomy: isQueryFailure(reply) ? null : isRepoAutonomyRead(reply) ? reply : null });
   };
 
   const loadFlow = async (repo: string): Promise<void> => {
@@ -229,6 +265,7 @@ export const createRepoSettingsStore = (deps: RepoSettingsStoreDeps): RepoSettin
       deps.api.query({ type: 'settings.accounts', catalog: 'skip' } satisfies Query),
       deps.roleLibrary(),
     ]);
+    void loadAutonomy(repo);
     if (isQueryFailure(flowReply)) {
       publish({ ...state, loading: false, problem: flowReply.code, stored: null, draft: null });
       return;
@@ -410,6 +447,14 @@ export const createRepoSettingsStore = (deps: RepoSettingsStoreDeps): RepoSettin
       } else {
         publish({ ...state, saving: false, problem: result.code, lastLabelKey: labelKey });
       }
+    },
+    setAutonomy: async (level) => {
+      if (state.repo === null) return;
+      // Never a toast and never the section's problem line: a refusal changed nothing, and the
+      // re-read's reason line words the standing (U-334).
+      const result = await deps.api.command(deps.actor, { type: 'repo.setAutonomy', repo: state.repo, level });
+      if (!result.ok) return;
+      await loadAutonomy(state.repo);
     },
     requestLeave: () => {
       const dirty = flowDraftState(state.stored, state.draft).isDirty;

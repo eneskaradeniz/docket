@@ -28,12 +28,12 @@ export async function applyGateAutoPolicy(
   // Same reading as decideHumanGate: without loadable definitions there is no gate to find, and
   // this pass's error vocabulary has no code for broken definitions.
   if (!loaded.ok) return err('not_found');
-  const { record, flow, events } = loaded.value;
+  const { flow, events } = loaded.value;
 
   // The level is re-resolved per pass, never cached across them: a level change governs only the
   // decisions made after it (R-170). An unreadable level is the typed read's own surface — the
   // pass writes nothing and stays quiet, exactly like the executor's permission ask.
-  const autonomy = await effectiveAutonomy(deps, { workOrderId: input.id, repo: record.repo });
+  const autonomy = await effectiveAutonomy(deps, { workOrder: input.id });
   if (!autonomy.ok) {
     return ok({ state: deriveWorkOrderState(flow, events), approved: [] });
   }

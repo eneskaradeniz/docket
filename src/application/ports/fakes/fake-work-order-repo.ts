@@ -1,5 +1,5 @@
 // In-memory WorkOrderRepo — work orders keyed by id, events kept per work order.
-import type { ProjectSlug, WorkOrderEvent, WorkOrderId, RepoSlug } from '../../../domain/index';
+import type { AutonomyLevel, ProjectSlug, WorkOrderEvent, WorkOrderId, RepoSlug } from '../../../domain/index';
 
 import type { WorkOrderRecord, WorkOrderRepo } from '../work-order-repo';
 
@@ -47,5 +47,12 @@ export const createFakeWorkOrderRepo = (): FakeWorkOrderRepo => {
     },
 
     events: async (id: WorkOrderId): Promise<readonly WorkOrderEvent[]> => [...(eventsById.get(id) ?? [])],
+
+    setAutonomy: async (id: WorkOrderId, autonomy: AutonomyLevel | undefined): Promise<void> => {
+      const record = byId.get(id);
+      if (record === undefined) throw new Error(`work order ${id} does not exist`);
+      const { autonomy: _absent, ...rest } = record;
+      byId.set(id, autonomy === undefined ? rest : { ...rest, autonomy });
+    },
   };
 };

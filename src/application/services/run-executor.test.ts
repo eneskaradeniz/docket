@@ -2689,6 +2689,7 @@ describe('executeRun — the autonomy permission policy', () => {
         return h.deps.settings.get(key);
       },
       set: h.deps.settings.set.bind(h.deps.settings),
+      delete: h.deps.settings.delete.bind(h.deps.settings),
     };
     const askedIds: string[] = [];
     const permissions: PermissionGate = {

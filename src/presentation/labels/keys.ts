@@ -1730,6 +1730,28 @@ export const LABEL_KEYS = [
   'detail.run.flowVersion',
   'detail.run.roleVersion',
   'common.close',
+  // The autonomy control of the widened chain (U-334, D-10 chain a): the two offered levels, the
+  // source line of the effective level (A-407) and the clear-layer affordance. The refusal texts
+  // are the typed error codes' own copy (error.auto_requires_* / error.above_ceiling).
+  'autonomy.title',
+  'autonomy.level.manual',
+  'autonomy.level.auto',
+  'autonomy.clear',
+  'autonomy.source.workOrder',
+  'autonomy.source.stage',
+  'autonomy.source.flow',
+  'autonomy.source.repo',
+  'autonomy.source.project',
+  'autonomy.source.global',
+  'autonomy.source.builtin',
+  'autonomy.source.ceiling',
+  // The autonomy set commands' typed refusals (A-403).
+  'error.user_only',
+  'error.invalid_autonomy_level',
+  'error.above_ceiling',
+  'error.ceiling_not_available',
+  'error.auto_requires_spend_cap',
+  'error.auto_requires_max_attempts',
 ] as const;
 
 export type LabelKey = (typeof LABEL_KEYS)[number];

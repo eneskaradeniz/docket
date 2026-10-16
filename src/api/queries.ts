@@ -32,6 +32,7 @@ export type Query =
   | { readonly type: 'project.tree' }
   | { readonly type: 'repoStatus' } // → RepoStatusView[] (A-341)
   | { readonly type: 'repo.flow'; readonly repo: string } // → RepoFlowView (A-345)
+  | { readonly type: 'repo.autonomy'; readonly repo: string } // → { level, source, layerSet, autoRefusal? } | not_found | definitions_invalid | invalid_autonomy_level (A-407, U-334)
   | { readonly type: 'roadmap.byProject'; readonly project: string }
   | { readonly type: 'roadmap.byRepo'; readonly repo: string }
   | { readonly type: 'repo.board'; readonly repo: string }

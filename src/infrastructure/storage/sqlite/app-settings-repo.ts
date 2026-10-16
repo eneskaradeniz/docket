@@ -21,5 +21,9 @@ export function createSqliteAppSettingsRepo(db: DocketDb): AppSettingsRepo {
         .prepare('INSERT INTO app_settings (key, value_json) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value_json = excluded.value_json')
         .run(key, json);
     },
+
+    delete: async (key: string): Promise<void> => {
+      db.raw.prepare('DELETE FROM app_settings WHERE key = ?').run(key);
+    },
   };
 }

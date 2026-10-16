@@ -30,6 +30,7 @@ import { ConcurrencySection } from '../components/concurrency-section';
 import { FlowStageStrip } from '../components/flow-stage-strip';
 import { KeyMoveCard } from '../components/key-move-card';
 import { LimitPolicySection } from '../components/limit-policy-section';
+import { AutonomyControl } from '../components/autonomy-control';
 import { TrackerLinkSection } from '../components/tracker-link-section';
 import { MOTION, motionVars } from '../components/motion';
 import { ModalWindow } from '../components/new-work-order-window';
@@ -806,6 +807,15 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
             defaultPolicy={repoState.defaultLimitPolicy}
             onSelect={(stage, policy) => repo.setStageLimitPolicy(stage, policy)}
             onReset={(stage) => repo.resetStageLimitPolicy(stage)}
+          />
+          {/* The repo layer of the autonomy chain (U-334): the effective level with its source
+              line, `auto` disabled with the typed reason, and the repo layer's own clear. */}
+          <AutonomyControl
+            locale={locale}
+            mark="repo"
+            view={repoState.autonomy}
+            onPick={(level) => void repo.setAutonomy(level)}
+            onClear={() => void repo.setAutonomy(null)}
           />
           <TrackerLinkSection locale={locale} store={trackerLink} state={trackerLinkState} />
         </>

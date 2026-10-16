@@ -1,6 +1,6 @@
 // SQLite-backed work order repository; the full record rides in `data`, plus derived index columns.
 import type { WorkOrderRecord, WorkOrderRepo } from '../../../application/index';
-import type { ProjectSlug, WorkOrderEvent, WorkOrderId, RepoSlug } from '../../../domain/index';
+import type { AutonomyLevel, ProjectSlug, WorkOrderEvent, WorkOrderId, RepoSlug } from '../../../domain/index';
 
 import type { DocketDb } from './database';
 
@@ -91,5 +91,18 @@ export function createSqliteWorkOrderRepo(db: DocketDb): WorkOrderRepo {
 
     events: async (id: WorkOrderId): Promise<readonly WorkOrderEvent[]> =>
       eventsFor.all(id).map((row) => decodeEvent(row['data'])),
+
+    setAutonomy: async (id: WorkOrderId, autonomy: AutonomyLevel | undefined): Promise<void> => {
+      // The whole record rides in `data` (A-394: no new column), so the patch is a read-modify-
+      // write of that one row; the callers establish existence first with their own `not_found`.
+      db.transaction(() => {
+        const row = byId.get(id);
+        if (row === undefined) throw new Error(`work order ${id} does not exist`);
+        const record = decodeRecord(row['data']);
+        const { autonomy: _absent, ...rest } = record;
+        const next = autonomy === undefined ? rest : { ...rest, autonomy };
+        db.raw.prepare('UPDATE work_orders SET data = ? WHERE id = ?').run(JSON.stringify(next), id);
+      });
+    },
   };
 }

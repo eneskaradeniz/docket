@@ -583,6 +583,7 @@ describe('previous value before a setting change (A-192)', () => {
         order.push(key);
         return base.set(key, value);
       },
+      delete: base.delete,
     };
     const h = await makeHarness({ settings });
     await h.deps.settings.set('dispatch.limits', { global: 6, perRepo: 2, perAccount: {} });
@@ -610,6 +611,7 @@ describe('previous value before a setting change (A-192)', () => {
         if (key.startsWith('assistant.undo.')) throw new Error('disk full /secret/path');
         return base.set(key, value);
       },
+      delete: base.delete,
     };
     const h = await makeHarness({ settings });
     const before = await world(h);
@@ -825,6 +827,7 @@ describe('codes only (A-196)', () => {
           if (key.startsWith('assistant.undo.') && JSON.stringify(value).includes(SECRET)) throw new Error(`cannot store ${SECRET}`);
           return base.set(key, value);
         },
+        delete: base.delete,
       };
       const h = await makeHarness({ settings });
       const secretTarget = 'roles/secret-target-role.yaml';

@@ -156,7 +156,7 @@ export async function decideHumanGate(
   // use case's error vocabulary has no code for broken definitions: the gate the caller asked
   // for simply cannot be found.
   if (!loaded.ok) return err('not_found');
-  const { record, definitions, flow, events, state } = loaded.value;
+  const { definitions, flow, events, state } = loaded.value;
   const current = findCurrentGate(flow, state, input.gate);
   if (current === undefined) return err('not_current_stage');
   if (current.gate.kind !== 'human' && current.gate.kind !== 'page_approval') return err('not_a_human_gate');
@@ -168,7 +168,7 @@ export async function decideHumanGate(
   if (input.actor.kind === 'policy') {
     if (input.decision !== 'approved') return err('policy_cannot_decide');
     if ((USER_ONLY_GATES as readonly string[]).includes(current.gate.kind)) return err('policy_cannot_decide');
-    const autonomy = await effectiveAutonomy(deps, { workOrderId: input.id, repo: record.repo });
+    const autonomy = await effectiveAutonomy(deps, { workOrder: input.id });
     if (!autonomy.ok || autonomy.value.level !== 'auto') return err('policy_cannot_decide');
     const stage = flow.stages.find((candidate) => candidate.id === current.stage);
     if (stage === undefined) return err('policy_cannot_decide');

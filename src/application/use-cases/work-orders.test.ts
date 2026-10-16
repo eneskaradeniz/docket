@@ -243,7 +243,7 @@ const createHarness = (configure?: (definitions: FakeDefinitionStore) => void, w
     settings,
     fingerprints,
     openDeps: { clock, ids, log, workOrders, definitions, projects },
-    viewDeps: { workOrders, runs, definitions, projects, repos, readFingerprint },
+    viewDeps: { workOrders, runs, definitions, projects, repos, readFingerprint, settings },
     blockDeps: { clock, ids, log, workOrders },
     unblockDeps: { clock, ids, log, workOrders, definitions },
     autonomyDeps: { workOrders, definitions, settings },
@@ -603,6 +603,52 @@ describe('getWorkOrder', () => {
     expect(result.value.flow).toEqual(FLOWS_JSON[0]);
     // The environments keep their protection and promotion chain verbatim (E-5).
     expect(result.value.environments).toEqual(ENVIRONMENTS_JSON);
+  });
+
+  it('A-407: the detail carries the effective level with its source, the layer standing and the auto refusal', async () => {
+    const h = createHarness();
+    const id = await openedWorkOrder(h);
+
+    // Nothing set anywhere: builtin manual, no layer, and `auto` would refuse — flow-a's stages
+    // carry no onFail and no cap governs the order.
+    let view = await getWorkOrder(h.viewDeps, id);
+    expect(view.ok && view.value.autonomy).toEqual({
+      level: 'manual',
+      source: 'builtin',
+      layerSet: false,
+      autoRefusal: 'auto_requires_spend_cap',
+    });
+
+    seedRepoAutonomy(h, 'auto', BUDGET);
+    view = await getWorkOrder(h.viewDeps, id);
+    expect(view.ok && view.value.autonomy).toEqual({
+      level: 'auto',
+      source: 'repo',
+      layerSet: false,
+      autoRefusal: 'auto_requires_max_attempts',
+    });
+
+    // The record's own layer outranks the repo's and flips the standing.
+    const record = await h.workOrders.get(id);
+    if (record === undefined) throw new Error('fixture record must exist');
+    await h.workOrders.setAutonomy(id, 'manual');
+    view = await getWorkOrder(h.viewDeps, id);
+    expect(view.ok && view.value.autonomy).toEqual({
+      level: 'manual',
+      source: 'workOrder',
+      layerSet: true,
+      autoRefusal: 'auto_requires_max_attempts',
+    });
+    await h.workOrders.setAutonomy(id, undefined);
+  });
+
+  it('A-407: a damaged stored level keeps the autonomy block absent — never a wrong level on the detail', async () => {
+    const h = createHarness();
+    const id = await openedWorkOrder(h);
+    await h.settings.set(AUTONOMY_KEY, 'turbo');
+
+    const view = await getWorkOrder(h.viewDeps, id);
+    expect(view.ok && view.value.autonomy).toBeUndefined();
   });
 
   it('A-6: definitions without a repo section yield an empty environment list, flow intact', async () => {
@@ -1492,7 +1538,7 @@ describe('effectiveAutonomy', () => {
     });
     const id = (await recordOf(h, result)).id;
 
-    expect(await effectiveAutonomy(h.autonomyDeps, { workOrderId: id, repo: REPO })).toEqual({
+    expect(await effectiveAutonomy(h.autonomyDeps, { workOrder: id })).toEqual({
       ok: true,
       value: { level: 'manual', source: 'workOrder' },
     });
@@ -1503,7 +1549,7 @@ describe('effectiveAutonomy', () => {
     seedRepoAutonomy(h, 'auto', BUDGET);
     const id = await openedWorkOrder(h);
 
-    expect(await effectiveAutonomy(h.autonomyDeps, { workOrderId: id, repo: REPO })).toEqual({
+    expect(await effectiveAutonomy(h.autonomyDeps, { workOrder: id })).toEqual({
       ok: true,
       value: { level: 'auto', source: 'repo' },
     });
@@ -1514,7 +1560,7 @@ describe('effectiveAutonomy', () => {
     seedRepoAutonomy(h, 'balanced');
     const id = await openedWorkOrder(h);
 
-    expect(await effectiveAutonomy(h.autonomyDeps, { workOrderId: id, repo: REPO })).toEqual({
+    expect(await effectiveAutonomy(h.autonomyDeps, { workOrder: id })).toEqual({
       ok: true,
       value: { level: 'manual', source: 'repo' },
     });
@@ -1528,7 +1574,7 @@ describe('effectiveAutonomy', () => {
       ...withProjectSection(h, { ...PROJECT_DEF, autonomy: 'auto' as AutonomyLevel }),
     };
 
-    expect(await effectiveAutonomy(autonomyDeps, { workOrderId: id, repo: REPO })).toEqual({
+    expect(await effectiveAutonomy(autonomyDeps, { workOrder: id })).toEqual({
       ok: true,
       value: { level: 'auto', source: 'project' },
     });
@@ -1539,14 +1585,14 @@ describe('effectiveAutonomy', () => {
     const id = await openedWorkOrder(h);
 
     await h.settings.set(AUTONOMY_KEY, 'auto');
-    expect(await effectiveAutonomy(h.autonomyDeps, { workOrderId: id, repo: REPO })).toEqual({
+    expect(await effectiveAutonomy(h.autonomyDeps, { workOrder: id })).toEqual({
       ok: true,
       value: { level: 'auto', source: 'global' },
     });
 
     const fresh = createHarness();
     const other = await openedWorkOrder(fresh);
-    expect(await effectiveAutonomy(fresh.autonomyDeps, { workOrderId: other, repo: REPO })).toEqual({
+    expect(await effectiveAutonomy(fresh.autonomyDeps, { workOrder: other })).toEqual({
       ok: true,
       value: { level: 'manual', source: 'builtin' },
     });
@@ -1557,7 +1603,7 @@ describe('effectiveAutonomy', () => {
     const id = await openedWorkOrder(h);
     await h.settings.set(AUTONOMY_KEY, 'turbo');
 
-    expect(await effectiveAutonomy(h.autonomyDeps, { workOrderId: id, repo: REPO })).toEqual({
+    expect(await effectiveAutonomy(h.autonomyDeps, { workOrder: id })).toEqual({
       ok: false,
       error: 'invalid_autonomy_level',
     });
@@ -1576,8 +1622,7 @@ describe('effectiveAutonomy', () => {
 
     expect(
       await effectiveAutonomy(h.autonomyDeps, {
-        workOrderId: ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FB2'),
-        repo: REPO,
+        workOrder: ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FB2'),
       }),
     ).toEqual({ ok: false, error: 'invalid_autonomy_level' });
   });
@@ -1588,9 +1633,26 @@ describe('effectiveAutonomy', () => {
     seedRepoAutonomy(h, 'balanced');
     h.definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', '{not json');
 
-    expect(await effectiveAutonomy(h.autonomyDeps, { workOrderId: id, repo: REPO })).toEqual({
+    expect(await effectiveAutonomy(h.autonomyDeps, { workOrder: id })).toEqual({
       ok: true,
       value: { level: 'manual', source: 'builtin' },
+    });
+  });
+
+  it('A-404: the contract’s full signature ships — a stage names the decision, and the answer carries no ceiling or suggestion until (b)/(c) feed them', async () => {
+    const h = createHarness();
+    const id = await openedWorkOrder(h);
+    seedRepoAutonomy(h, 'auto', BUDGET);
+
+    // A stage-less read and a per-stage read answer the same chain today: the stage and flow
+    // layers land with (b)/(c), read from the pin, never the live definition.
+    expect(await effectiveAutonomy(h.autonomyDeps, { workOrder: id })).toEqual({
+      ok: true,
+      value: { level: 'auto', source: 'repo' },
+    });
+    expect(await effectiveAutonomy(h.autonomyDeps, { workOrder: id, stage: slugOf<'stage'>('plan') })).toEqual({
+      ok: true,
+      value: { level: 'auto', source: 'repo' },
     });
   });
 });

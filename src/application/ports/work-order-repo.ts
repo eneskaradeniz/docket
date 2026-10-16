@@ -39,4 +39,8 @@ export interface WorkOrderRepo {
   list(filter: { readonly project?: ProjectSlug; readonly repo?: RepoSlug }): Promise<readonly WorkOrderRecord[]>; // createdAt asc
   appendEvent(id: WorkOrderId, event: WorkOrderEvent): Promise<void>;
   events(id: WorkOrderId): Promise<readonly WorkOrderEvent[]>; // append order
+  /** Patches the record's autonomy layer (A-394/A-403): `undefined` clears it, so the row
+   *  inherits down the chain again. No event is appended — a level change is not a decision
+   *  (R-170), and past decisions keep their effect. */
+  setAutonomy(id: WorkOrderId, autonomy: AutonomyLevel | undefined): Promise<void>;
 }
