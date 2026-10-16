@@ -3,7 +3,7 @@
 // R-11/R-130 overlay and effective-role arms. R-126..R-128 live in validate.test.ts; R-135 is #1013.
 import { describe, expect, it } from 'vitest';
 
-import type { AccountId, FlowSlug, RepoSlug, RoleSlug, Slug, StageSlug, Ulid } from '../shared';
+import type { AccountId, AutonomyLevel, FlowSlug, RepoSlug, RoleSlug, Slug, StageSlug, Ulid } from '../shared';
 import { parseSlug, parseUlid } from '../shared';
 import type { LimitPolicy } from '../quota';
 import type { RepoDef, RoleDef, StageDef } from './types';
@@ -92,7 +92,14 @@ const repoFlow = (
   bindings: readonly StageBinding[],
   version = 1,
   flowId: FlowSlug = FLOW,
-): RepoFlow => ({ flowId, version, stages, bindings });
+  autonomy?: AutonomyLevel,
+): RepoFlow => ({
+  flowId,
+  version,
+  ...(autonomy !== undefined ? { autonomy } : {}),
+  stages,
+  bindings,
+});
 
 const versionOf = <T>(
   definitionId: string,
@@ -297,6 +304,29 @@ describe('pinFlow', () => {
     // the library's records.
     expect(work.stage).toEqual(stageDef(WORK, ROLE));
     expect(work.role).not.toBe(devLibrary()[1].body);
+  });
+
+  it('I-111: pinFlow copies flow.autonomy into the FlowPin', () => {
+    const flow = repoFlow(
+      [stageDef(WORK, ROLE)],
+      [binding(WORK, roleRef(ROLE, 2))],
+      1,
+      FLOW,
+      'auto',
+    );
+    const pinned = pinFlow(flow, devLibrary(), 'wait_resume');
+    expect(pinned.ok).toBe(true);
+    if (!pinned.ok) return;
+    expect(pinned.value.autonomy).toBe('auto');
+
+    const bareFlow = repoFlow(
+      [stageDef(WORK, ROLE)],
+      [binding(WORK, roleRef(ROLE, 2))],
+    );
+    const barePinned = pinFlow(bareFlow, devLibrary(), 'wait_resume');
+    expect(barePinned.ok).toBe(true);
+    if (!barePinned.ok) return;
+    expect(barePinned.value.autonomy).toBeUndefined();
   });
 
   it('R-132: the pin is self-contained — later library edits, archives or repo changes never change it', () => {

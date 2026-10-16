@@ -13,6 +13,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import { AutonomyControl } from '../components/autonomy-control';
+import { AutonomySuggestionBanner } from '../components/autonomy-suggestion-banner';
 
 import type { Api } from '../../api/api';
 import type { Command, CommandResult } from '../../api/commands';
@@ -1772,4 +1773,36 @@ describe('the autonomy control wiring (U-334)', () => {
     await store.setAutonomy(null);
     expect(api.commands[api.commands.length - 1]).toEqual({ type: 'workOrder.setAutonomy', id: WO_ID, level: null });
   });
+
+  it('U-335: the detail carries suggestion auto and restrictive stages; confirm calls setAutonomy("auto")', async () => {
+    const api = fakeApi({
+      ...detailReply(AT_BUILD),
+      autonomy: {
+        level: 'manual',
+        source: 'builtin',
+        layerSet: false,
+        suggestion: 'auto',
+        restrictiveStages: ['implement'],
+      },
+    });
+    const store = createStore(api);
+    await store.load(WO_ID);
+
+    expect(store.state().view?.autonomy?.suggestion).toBe('auto');
+    expect(store.state().view?.autonomy?.restrictiveStages).toEqual(['implement']);
+
+    const html = renderToStaticMarkup(
+      createElement(AutonomySuggestionBanner, {
+        locale: 'tr',
+        view: store.state().view?.autonomy ?? null,
+        onConfirm: () => store.setAutonomy('auto'),
+      }),
+    );
+    expect(html).toContain('Bu akış otomatik seviyeyi öneriyor');
+    expect(html).toContain('implement');
+
+    await store.setAutonomy('auto');
+    expect(api.commands[api.commands.length - 1]).toEqual({ type: 'workOrder.setAutonomy', id: WO_ID, level: 'auto' });
+  });
 });
+

@@ -1018,4 +1018,16 @@ describe('autonomy level on project and repo (R-171)', () => {
     const issues = expectErr(validateDefinitions(doc({ repo: repo({ autonomy: 7 }) })));
     expect(issues).toEqual([issue('repo.autonomy', 'wrong_type')]);
   });
+
+  it('R-152: FlowDef carries autonomy?: AutonomyLevel; wrong_type on unknown value', () => {
+    const withLevel = expectOk(validateDefinitions(doc({ flows: [flow({ autonomy: 'auto' })] })));
+    expect(withLevel.flows[0]?.autonomy).toBe('auto');
+
+    const bare = expectOk(validateDefinitions(doc({ flows: [flow()] })));
+    expect(bare.flows[0]?.autonomy).toBeUndefined();
+
+    const issues = expectErr(validateDefinitions(doc({ flows: [flow({ autonomy: 'turbo' })] })));
+    expect(issues).toEqual([issue('flows[0].autonomy', 'wrong_type')]);
+  });
 });
+

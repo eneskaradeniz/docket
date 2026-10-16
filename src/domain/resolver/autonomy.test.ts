@@ -4,16 +4,18 @@
 import { describe, expect, it } from 'vitest';
 
 import { checkAutoLevel } from '../definitions/index';
-import type { FlowDef } from '../definitions/index';
+import type { FlowDef, FlowPin } from '../definitions/index';
 import type { AutonomyLevel, FlowSlug, StageSlug } from '../shared';
 import { AUTONOMY_LEVELS, USER_ONLY_GATES } from '../shared';
 import {
   AUTONOMY_CHAIN_ORDER,
   AUTONOMY_RANK,
   clampAutonomy,
+  definitionAutonomyLayers,
   resolveAutonomy,
 } from './autonomy';
 import type { AutonomyLayer, AutonomySource } from './autonomy';
+
 
 const layer = (source: AutonomySource, value: AutonomyLevel | undefined): AutonomyLayer => ({
   source,
@@ -281,3 +283,58 @@ describe('clampAutonomy', () => {
     expect(Object.keys(AUTONOMY_RANK).sort()).toEqual([...AUTONOMY_LEVELS].sort());
   });
 });
+
+describe('definitionAutonomyLayers (R-153)', () => {
+  it('R-153: definition-origin layers suggest auto but never resolve it (flow arm)', () => {
+    const flowPin: FlowPin = {
+      flowId: 'standard' as FlowSlug,
+      flowVersion: 1,
+      autonomy: 'auto',
+      stages: [],
+    };
+    const layers = definitionAutonomyLayers({ flow: flowPin });
+    expect(layers).toEqual({
+      flow: undefined,
+      stage: undefined,
+      suggestsAuto: true,
+    });
+  });
+
+  it('R-153: manual and balanced from a flow definition pass through with suggestsAuto false', () => {
+    const manualPin: FlowPin = {
+      flowId: 'standard' as FlowSlug,
+      flowVersion: 1,
+      autonomy: 'manual',
+      stages: [],
+    };
+    expect(definitionAutonomyLayers({ flow: manualPin })).toEqual({
+      flow: 'manual',
+      stage: undefined,
+      suggestsAuto: false,
+    });
+
+    const balancedPin: FlowPin = {
+      flowId: 'standard' as FlowSlug,
+      flowVersion: 1,
+      autonomy: 'balanced',
+      stages: [],
+    };
+    expect(definitionAutonomyLayers({ flow: balancedPin })).toEqual({
+      flow: 'balanced',
+      stage: undefined,
+      suggestsAuto: false,
+    });
+
+    const absentPin: FlowPin = {
+      flowId: 'standard' as FlowSlug,
+      flowVersion: 1,
+      stages: [],
+    };
+    expect(definitionAutonomyLayers({ flow: absentPin })).toEqual({
+      flow: undefined,
+      stage: undefined,
+      suggestsAuto: false,
+    });
+  });
+});
+

@@ -366,4 +366,25 @@ describe('decideProposalUseCase', () => {
     expect(file?.content).toBe(rolesFile('Changed elsewhere'));
     expect(h.log.entries()).toHaveLength(1);
   });
+
+  it('A-408: decideProposalUseCase refuses any candidate carrying autonomy with invalid_after', async () => {
+    const h = makeHarness();
+    h.definitions.seed(TARGET, rolesFile('Implementer'));
+
+    // Candidate carrying autonomy
+    const candidateWithAutonomy = JSON.stringify({
+      ...JSON.parse(rolesFile('Implementer v2')),
+      autonomy: 'auto',
+    });
+    const id = await idOf(h, candidateWithAutonomy);
+
+    const result = await decideProposalUseCase(h.deps, { id, decision: 'approved', actor: USER });
+    expect(result).toEqual({ ok: false, error: 'invalid_after' });
+
+    // Proposal stays pending and file stays untouched
+    const stored = await h.proposals.get(id);
+    expect(stored?.status).toBe('pending');
+    const file = await h.definitions.readFile(TARGET);
+    expect(file?.content).toBe(rolesFile('Implementer'));
+  });
 });

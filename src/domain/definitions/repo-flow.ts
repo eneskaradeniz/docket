@@ -1,7 +1,7 @@
 // definitions/repo-flow.ts — the Phase 7 addendum of docs/v2/domain.md §2 (D-1, D-4, D-6):
 // repo-owned flows with versioned library roles, the work-order pin, removal verdicts and the
 // per-stage limit policy. Pure and clock-free: `recordedAt`/`at` values are passed in.
-import type { AccountId, EpochMs, FlowSlug, RepoSlug, Result, RoleSlug, StageSlug } from '../shared/index';
+import type { AccountId, AutonomyLevel, EpochMs, FlowSlug, RepoSlug, Result, RoleSlug, StageSlug } from '../shared/index';
 import type { AccountRoute, LimitPolicy } from '../quota/index';
 import type { DefinitionIssue, RepoDef, RoleDef, StageDef } from './types';
 
@@ -26,9 +26,12 @@ export interface StageBinding {
 export interface RepoFlow {
   readonly flowId: FlowSlug;
   readonly version: number; // version of the library flow this was copied from (provenance)
+  /** The flow-level autonomy copied from the library FlowDef (I-111); absent inherits down the chain. */
+  readonly autonomy?: AutonomyLevel;
   readonly stages: readonly StageDef[]; // the repo's own copy: edits here never touch the library
   readonly bindings: readonly StageBinding[]; // exactly one per stage, same order
 }
+
 
 /** One immutable version of a library definition. The body never changes once recorded. */
 export interface VersionRecord<T> {
@@ -186,6 +189,8 @@ export function relinkRole(
 export interface FlowPin {
   readonly flowId: FlowSlug;
   readonly flowVersion: number;
+  /** The flow-level autonomy copied by pinFlow from the repo flow (I-111). */
+  readonly autonomy?: AutonomyLevel;
   readonly stages: readonly {
     readonly stage: StageDef;
     readonly role: RoleDef | null;
@@ -194,6 +199,7 @@ export interface FlowPin {
     readonly limitPolicy: LimitPolicy;
   }[];
 }
+
 
 /** R-135: the stage binding's `limitPolicy`, else the repo's `defaultLimitPolicy`. */
 export function limitPolicyFor(flow: RepoFlow, stage: StageSlug, defaultLimitPolicy: LimitPolicy): LimitPolicy {
@@ -294,8 +300,17 @@ export function pinFlow(
       limitPolicy: limitPolicyFor(flow, stage.id, defaultLimitPolicy),
     });
   }
-  return { ok: true, value: { flowId: flow.flowId, flowVersion: flow.version, stages } };
+  return {
+    ok: true,
+    value: {
+      flowId: flow.flowId,
+      flowVersion: flow.version,
+      ...(flow.autonomy !== undefined ? { autonomy: flow.autonomy } : {}),
+      stages,
+    },
+  };
 }
+
 
 export type RemovalVerdict =
   | { readonly kind: 'delete' }

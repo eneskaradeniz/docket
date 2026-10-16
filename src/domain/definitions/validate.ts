@@ -65,6 +65,7 @@ interface StageDraft {
 interface FlowDraft {
   readonly id: FlowSlug;
   readonly name: string;
+  readonly autonomy: AutonomyLevel | undefined;
   readonly stages: readonly (StageDraft | undefined)[];
 }
 
@@ -104,6 +105,7 @@ interface BindingDraft {
 interface RepoFlowDraft {
   readonly flowId: FlowSlug | undefined;
   readonly version: number | undefined;
+  readonly autonomy: AutonomyLevel | undefined;
   readonly stages: readonly (StageDraft | undefined)[] | undefined;
   readonly bindings: readonly (BindingDraft | undefined)[] | undefined;
 }
@@ -152,7 +154,7 @@ const addIssue = (issues: DefinitionIssue[], path: string, code: DefinitionIssue
 // carry — a legacy field is refused the same way as any stray key, never silently ignored.
 const REPO_KEYS: readonly string[] = ['id', 'name', 'flow', 'defaultLimitPolicy', 'commandSets', 'docsRoot', 'testGlobs', 'environments', 'budget', 'autonomy'];
 const PROJECT_KEYS: readonly string[] = ['id', 'name', 'repos', 'budget', 'autonomy'];
-const REPO_FLOW_KEYS: readonly string[] = ['flowId', 'version', 'stages', 'bindings'];
+const REPO_FLOW_KEYS: readonly string[] = ['flowId', 'version', 'autonomy', 'stages', 'bindings'];
 const BINDING_KEYS: readonly string[] = ['stage', 'role', 'accounts', 'limitPolicy'];
 const ROLE_REF_KEYS: readonly string[] = ['roleId', 'version', 'overlay', 'detached'];
 const OVERLAY_KEYS: readonly string[] = ['name', 'instructions', 'writeScope', 'capabilities', 'docketTools'];
@@ -874,6 +876,7 @@ const parseRepoFlow = (issues: DefinitionIssue[], container: UnknownRecord): Rep
   checkUnknownKeys(issues, container, REPO_FLOW_KEYS, 'repo.flow');
   const flowId = readSlugField<'flow'>(issues, container, 'flowId', 'repo.flow.flowId');
   const version = readVersionField(issues, container, 'repo.flow.version');
+  const autonomy = parseAutonomyField(issues, container['autonomy'], 'repo.flow.autonomy');
 
   const stagesRaw: unknown = container['stages'];
   let stages: readonly (StageDraft | undefined)[] | undefined;
@@ -910,7 +913,7 @@ const parseRepoFlow = (issues: DefinitionIssue[], container: UnknownRecord): Rep
     });
   }
 
-  return { flowId, version, stages, bindings };
+  return { flowId, version, autonomy, stages, bindings };
 };
 
 const parseRepo = (issues: DefinitionIssue[], container: UnknownRecord): RepoDraft | undefined => {
@@ -1068,6 +1071,7 @@ const parseFlows = (issues: DefinitionIssue[], input: UnknownRecord): readonly (
     }
     const id = readSlugField<'flow'>(issues, item, 'id', `${path}.id`);
     const name = readStringField(issues, item, 'name', `${path}.name`);
+    const autonomy = parseAutonomyField(issues, item['autonomy'], `${path}.autonomy`);
     const stagesRaw: unknown = item['stages'];
     let stages: readonly (StageDraft | undefined)[] | undefined;
     if (stagesRaw === undefined) {
@@ -1088,7 +1092,7 @@ const parseFlows = (issues: DefinitionIssue[], input: UnknownRecord): readonly (
       });
     }
     if (id === undefined || name === undefined || stages === undefined) return undefined;
-    return { id, name, stages };
+    return { id, name, autonomy, stages };
   });
 };
 
@@ -1474,7 +1478,12 @@ const buildFlowDef = (flow: FlowDraft): FlowDef | undefined => {
     if (built === undefined) return undefined;
     stages.push(built);
   }
-  return { id: flow.id, name: flow.name, stages };
+  return {
+    id: flow.id,
+    name: flow.name,
+    ...(flow.autonomy !== undefined ? { autonomy: flow.autonomy } : {}),
+    stages,
+  };
 };
 
 const buildEnvironmentDef = (draft: EnvironmentDraft): EnvironmentDef | undefined => {
@@ -1540,7 +1549,13 @@ const buildRepoFlow = (draft: RepoFlowDraft): RepoFlow | undefined => {
     if (built === undefined) return undefined;
     bindings.push(built);
   }
-  return { flowId: draft.flowId, version: draft.version, stages, bindings };
+  return {
+    flowId: draft.flowId,
+    version: draft.version,
+    ...(draft.autonomy !== undefined ? { autonomy: draft.autonomy } : {}),
+    stages,
+    bindings,
+  };
 };
 
 const buildRepoDef = (repo: RepoDraft): RepoDef | undefined => {
@@ -1685,7 +1700,12 @@ export function validateDefinitions(
     const effectiveFlows = [...base.flows];
     const ownIndex = effectiveFlows.findIndex((flow) => flow.id === repoDef.flow.flowId);
     const name = ownIndex === -1 ? repoDef.flow.flowId : effectiveFlows[ownIndex]?.name ?? repoDef.flow.flowId;
-    const own: FlowDef = { id: repoDef.flow.flowId, name, stages: repoDef.flow.stages };
+    const own: FlowDef = {
+      id: repoDef.flow.flowId,
+      name,
+      ...(repoDef.flow.autonomy !== undefined ? { autonomy: repoDef.flow.autonomy } : {}),
+      stages: repoDef.flow.stages,
+    };
     if (ownIndex === -1) effectiveFlows.push(own);
     else effectiveFlows[ownIndex] = own;
     return ok({

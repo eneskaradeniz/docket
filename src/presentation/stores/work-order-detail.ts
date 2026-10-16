@@ -163,6 +163,8 @@ export interface WorkOrderDetailAutonomy {
   readonly source: string;
   readonly layerSet: boolean;
   readonly autoUnavailable?: string;
+  readonly suggestion?: 'auto';
+  readonly restrictiveStages?: readonly string[];
 }
 
 /** The repo context the detail reply carries, narrowed to what the presentation reads (A-392). */

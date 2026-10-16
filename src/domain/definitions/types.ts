@@ -48,8 +48,11 @@ export interface StageDef {
 export interface FlowDef {
   readonly id: FlowSlug;
   readonly name: string;
+  /** The flow layer of the autonomy chain (D-10); suggests auto but never resolves it (R-153). */
+  readonly autonomy?: AutonomyLevel;
   readonly stages: readonly StageDef[]; // linear order; onFail may jump back
 }
+
 
 export type CapabilityDef =
   | {

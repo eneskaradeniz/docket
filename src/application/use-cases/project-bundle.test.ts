@@ -291,4 +291,138 @@ describe('project-bundle use cases (A-342, R-8, I-86, I-91)', () => {
     const imported = await importBundle(deps, { path: exported.value.path, actor: ACTOR });
     expect(imported.ok).toBe(true);
   });
+
+  it('A-405: definition import of a flow with autonomy: auto leaves every layer untouched', async () => {
+    const { deps, bundleStore } = setupHarness();
+
+    const bundle = {
+      format: 'docket-bundle',
+      version: 1,
+      createdAt: 1000,
+      projects: [],
+      repos: [],
+      library: {
+        roles: {},
+        flows: {
+          suggested: [
+            {
+              definitionId: 'suggested',
+              version: 1,
+              recordedAt: 1000,
+              archived: false,
+              body: {
+                id: slugOf('suggested'),
+                name: 'Suggested Flow',
+                autonomy: 'auto',
+                stages: [{ id: slugOf('stage-1'), name: 'S1', role: null, exit: [] }],
+              },
+            },
+          ],
+        },
+        capabilities: {},
+        memory: {},
+      },
+      memory: [],
+    };
+    bundleStore.seed('/fake/flow-bundle.json', bundle as unknown as DocketBundle);
+
+    const imported = await importBundle(deps, { path: '/fake/flow-bundle.json', actor: ACTOR });
+    expect(imported.ok).toBe(true);
+
+    // The flow imported into library with its autonomy field
+    const versions = await deps.definitions.listVersions('flows', 'suggested');
+    expect(versions).toHaveLength(1);
+    expect((versions[0]?.body as unknown as { autonomy?: string })?.autonomy).toBe('auto');
+
+    // But no work-order, repo, project or global layer was written
+    expect(await deps.projects.get(slugOf('suggested'))).toBeUndefined();
+    expect(await deps.definitions.readFile('repos/suggested/repo.yaml')).toBeUndefined();
+    expect(await deps.workOrders.list({})).toEqual([]);
+  });
+
+  it('A-408: bundle import drops project and repo autonomy: auto as absent, and records autonomy_auto_dropped warning', async () => {
+    const { deps, bundleStore } = setupHarness();
+
+    const bundle = {
+      format: 'docket-bundle',
+      version: 1,
+      createdAt: 1000,
+      projects: [
+        {
+          project: {
+            id: slugOf('p-auto'),
+            name: 'Auto Project',
+            repos: [slugOf('r-auto'), slugOf('r-manual')],
+            autonomy: 'auto',
+          },
+        },
+      ],
+      repos: [
+        {
+          id: slugOf('r-auto'),
+          name: 'Auto Repo',
+          autonomy: 'auto',
+          flow: {
+            flowId: slugOf('std'),
+            version: 1,
+            stages: [{ id: slugOf('s1'), name: 'S1', role: null, exit: [] }],
+            bindings: [{ stage: slugOf('s1'), accounts: [] }],
+          },
+          defaultLimitPolicy: 'wait_resume',
+          commandSets: {},
+          docsRoot: 'docs',
+          testGlobs: [],
+        },
+        {
+          id: slugOf('r-manual'),
+          name: 'Manual Repo',
+          autonomy: 'manual',
+          flow: {
+            flowId: slugOf('std'),
+            version: 1,
+            stages: [{ id: slugOf('s1'), name: 'S1', role: null, exit: [] }],
+            bindings: [{ stage: slugOf('s1'), accounts: [] }],
+          },
+          defaultLimitPolicy: 'wait_resume',
+          commandSets: {},
+          docsRoot: 'docs',
+          testGlobs: [],
+        },
+      ],
+      library: {
+        roles: {},
+        flows: {},
+        capabilities: {},
+        memory: {},
+      },
+      memory: [],
+    };
+    bundleStore.seed('/fake/auto-drop-bundle.json', bundle as unknown as DocketBundle);
+
+    const imported = await importBundle(deps, { path: '/fake/auto-drop-bundle.json', actor: ACTOR });
+    expect(imported.ok).toBe(true);
+    if (!imported.ok) return;
+
+    // Warnings contain autonomy_auto_dropped for project and repo
+    expect(imported.value.warnings).toEqual([
+      'autonomy_auto_dropped: repos/r-auto/repo.yaml',
+      'autonomy_auto_dropped: projects/p-auto/project.yaml',
+    ]);
+
+    // Saved project has autonomy dropped as absent
+    const savedProj = await deps.projects.get(slugOf('p-auto'));
+    expect(savedProj?.autonomy).toBeUndefined();
+
+    // Saved repo r-auto has autonomy dropped as absent
+    const savedAutoRepo = await deps.definitions.readFile('repos/r-auto/repo.yaml');
+    expect(savedAutoRepo).toBeDefined();
+    const autoRepoObj = JSON.parse(savedAutoRepo!.content);
+    expect(autoRepoObj.autonomy).toBeUndefined();
+
+    // Saved repo r-manual preserves autonomy: 'manual' (imports normally)
+    const savedManualRepo = await deps.definitions.readFile('repos/r-manual/repo.yaml');
+    expect(savedManualRepo).toBeDefined();
+    const manualRepoObj = JSON.parse(savedManualRepo!.content);
+    expect(manualRepoObj.autonomy).toBe('manual');
+  });
 });

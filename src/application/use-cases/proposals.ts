@@ -53,6 +53,27 @@ export async function createProposal(
 
 export type ApplyError = 'not_found' | 'not_pending' | 'stale' | 'self_approval' | 'invalid_after';
 
+const hasAutonomyProperty = (value: unknown): boolean => {
+  if (typeof value !== 'object' || value === null) return false;
+  if ('autonomy' in value && (value as Record<string, unknown>)['autonomy'] !== undefined) return true;
+  for (const child of Object.values(value)) {
+    if (typeof child === 'object' && child !== null && hasAutonomyProperty(child)) return true;
+  }
+  return false;
+};
+
+const proposalCarriesAutonomy = (content: string): boolean => {
+  try {
+    const parsed = JSON.parse(content);
+    if (hasAutonomyProperty(parsed)) return true;
+  } catch {
+    // not JSON
+  }
+  if (/^\s*autonomy\s*:/m.test(content)) return true;
+  if (/"autonomy"\s*:/.test(content)) return true;
+  return false;
+};
+
 export async function decideProposalUseCase(
   deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'proposals' | 'definitions'>,
   input: {
@@ -71,6 +92,8 @@ export async function decideProposalUseCase(
   const currentHash = file?.hash ?? '';
 
   if (input.decision === 'approved') {
+    // A-408: proposal path can never write an autonomy value — refuses candidate carrying autonomy
+    if (proposalCarriesAutonomy(proposal.after)) return err('invalid_after');
     const candidate = isGrammar
       ? await deps.definitions.validateCandidate(proposal.target, proposal.after)
       : await deps.definitions.validateCandidate(proposal.scope, proposal.target, proposal.after);

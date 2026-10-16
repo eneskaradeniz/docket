@@ -3,7 +3,8 @@
 // global, walked by AUTONOMY_CHAIN_ORDER — never by array position. Pure: the same layers
 // always answer the same value. `Level`/`LEVEL_ORDER` of the setting chain are NOT changed
 // (R-130 stands); the two definition-origin slots join this chain only.
-import type { AutonomyLevel } from '../shared';
+import type { FlowPin } from '../definitions/index';
+import type { AutonomyLevel, StageSlug } from '../shared';
 import type { Level } from './resolve';
 
 export type AutonomySource = Level | 'stage' | 'flow';
@@ -72,4 +73,33 @@ export function clampAutonomy(
   }
   if (level === 'balanced') return { level: 'manual', source };
   return { level, source };
+}
+
+/** R-153: Definition-origin layers (`flow`, `stage`) can suggest `auto` but never resolve it:
+ *  returns the stage's and the flow's values with every `auto` replaced by `undefined`, and
+ *  `suggestsAuto = true` iff the flow's or any stage's `autonomy === 'auto'`. `manual`/`balanced`
+ *  from a definition pass through — a definition may restrict, never loosen. In chain (b) the flow
+ *  arm applies; chain (c) feeds the stage arm. */
+export function definitionAutonomyLayers(input: {
+  readonly flow: FlowPin;
+  readonly stage?: StageSlug;
+}): {
+  readonly flow: AutonomyLevel | undefined;
+  readonly stage: AutonomyLevel | undefined;
+  readonly suggestsAuto: boolean;
+} {
+  const flowAutonomy = input.flow.autonomy;
+  const flowSuggests = flowAutonomy === 'auto';
+
+  const stageDef = input.stage !== undefined
+    ? input.flow.stages.find((entry) => entry.stage.id === input.stage)?.stage
+    : undefined;
+  const stageAutonomy = (stageDef as { readonly autonomy?: AutonomyLevel } | undefined)?.autonomy;
+  const stageSuggests = stageAutonomy === 'auto';
+
+  return {
+    flow: flowAutonomy === 'auto' ? undefined : flowAutonomy,
+    stage: stageAutonomy === 'auto' ? undefined : stageAutonomy,
+    suggestsAuto: flowSuggests || stageSuggests,
+  };
 }

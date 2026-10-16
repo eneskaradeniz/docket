@@ -6,6 +6,7 @@ import type {
   AutonomyLevel,
   DefinitionIssue,
   Definitions,
+  FlowPin,
   FlowSlug,
   RepoDef,
   Result,
@@ -1659,21 +1660,101 @@ describe('effectiveAutonomy', () => {
     });
   });
 
-  it('A-404: the contract’s full signature ships — a stage names the decision, and the answer carries no ceiling or suggestion until (b)/(c) feed them', async () => {
+  it('A-404: reads the flow layer from the work order pin (FlowPin); auto suggests auto without resolving it; manual/balanced pass through', async () => {
     const h = createHarness();
     const id = await openedWorkOrder(h);
-    seedRepoAutonomy(h, 'auto', BUDGET);
+    const baseRecord = await h.workOrders.get(id);
+    if (!baseRecord || !baseRecord.pin) throw new Error('record must have pin');
 
-    // A stage-less read and a per-stage read answer the same chain today: the stage and flow
-    // layers land with (b)/(c), read from the pin, never the live definition. The unbounded pin
-    // fails the auto read closed (R-158), so both answers carry the typed reason.
-    expect(await effectiveAutonomy(h.autonomyDeps, { workOrder: id })).toEqual({
+    // Flow pin with autonomy: 'auto'
+    const autoId = h.openDeps.ids.next<'work-order'>();
+    const autoPin: FlowPin = { ...baseRecord.pin, autonomy: 'auto' };
+    await h.workOrders.create({ ...baseRecord, id: autoId, pin: autoPin });
+
+    const effective = await effectiveAutonomy(h.autonomyDeps, { workOrder: autoId });
+    expect(effective).toEqual({
       ok: true,
-      value: { level: 'manual', source: 'repo', autoUnavailable: 'auto_requires_max_attempts' },
+      value: {
+        level: 'manual',
+        source: 'builtin',
+        suggestion: 'auto',
+      },
     });
-    expect(await effectiveAutonomy(h.autonomyDeps, { workOrder: id, stage: slugOf<'stage'>('plan') })).toEqual({
+
+    // Flow pin with autonomy: 'manual' passes through as source 'flow'
+    const manualId = h.openDeps.ids.next<'work-order'>();
+    const manualPin: FlowPin = { ...baseRecord.pin, autonomy: 'manual' };
+    await h.workOrders.create({ ...baseRecord, id: manualId, pin: manualPin });
+    const manualEffective = await effectiveAutonomy(h.autonomyDeps, { workOrder: manualId });
+    expect(manualEffective).toEqual({
       ok: true,
-      value: { level: 'manual', source: 'repo', autoUnavailable: 'auto_requires_max_attempts' },
+      value: {
+        level: 'manual',
+        source: 'flow',
+      },
     });
+
+    // Pinned version behaviour: editing the live flow after the order pinned it does not change this order's chain
+    h.definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', definitionsJson({ ownFlow: 0 }));
+    const afterLiveEdit = await effectiveAutonomy(h.autonomyDeps, { workOrder: manualId });
+    expect(afterLiveEdit).toEqual({
+      ok: true,
+      value: {
+        level: 'manual',
+        source: 'flow',
+      },
+    });
+  });
+
+  it('A-404: a damaged autonomy level stored in the work-order pin returns invalid_autonomy_level', async () => {
+    const h = createHarness();
+    const id = await openedWorkOrder(h);
+    const baseRecord = await h.workOrders.get(id);
+    if (!baseRecord || !baseRecord.pin) throw new Error('record must have pin');
+
+    const corruptId = h.openDeps.ids.next<'work-order'>();
+    const corruptPin = { ...baseRecord.pin, autonomy: 'turbo' as unknown as AutonomyLevel };
+    await h.workOrders.create({ ...baseRecord, id: corruptId, pin: corruptPin });
+
+    const result = await effectiveAutonomy(h.autonomyDeps, { workOrder: corruptId });
+    expect(result).toEqual({ ok: false, error: 'invalid_autonomy_level' });
+  });
+
+  it('A-405: suggestion flow — opening work order with flow suggesting auto writes no layer; workOrderDetail carries suggestion: auto', async () => {
+    const h = createHarness();
+    // Repo flow with autonomy: 'auto'
+    const repoWithAutoFlow = {
+      ...REPO_JSON,
+      flow: {
+        ...repoFlowOf(FLOWS_JSON[0]),
+        autonomy: 'auto' as const,
+      },
+    };
+    h.definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', JSON.stringify({
+      roles: [ROLE_JSON],
+      flows: FLOWS_JSON,
+      capabilities: [],
+      repo: repoWithAutoFlow,
+    }));
+
+    // Opening work order does not write an autonomy layer
+    const opened = await openWorkOrder(h.openDeps, {
+      project: PROJECT,
+      repo: REPO,
+      title: 'Suggested order',
+      actor: ACTOR,
+    });
+    if (!opened.ok) throw new Error('openWorkOrder must succeed');
+    const rec = await h.workOrders.get(opened.value);
+    expect(rec?.autonomy).toBeUndefined(); // Nothing written at open
+    expect(rec?.pin?.autonomy).toBe('auto');
+
+    // Detail view reads the suggestion
+    const detail = await getWorkOrder(h.viewDeps, opened.value);
+    expect(detail.ok).toBe(true);
+    if (!detail.ok) return;
+    expect(detail.value.autonomy?.level).toBe('manual');
+    expect(detail.value.autonomy?.suggestion).toBe('auto');
+    expect(detail.value.autonomy?.layerSet).toBe(false);
   });
 });
