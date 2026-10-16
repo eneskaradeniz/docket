@@ -479,10 +479,13 @@ Non-pass rows — Claude Code:
 
 ### agy (Antigravity, stream-json transport)
 
-Registry row registry:64-81; derived level `experimental` — every gate now carries test evidence (G6
-cites the stream-json leg of the P-24 scenario, #1237) and one live operator run is recorded (the live run,
-registry:80), but the record still carries no isolation evidence, and that P-44 cap alone (capability.ts:94)
-holds the level (capability-registry.test.ts:151-163).
+Registry row registry:72-95; derived level `isolated` — every gate carries test evidence (G6
+cites the stream-json leg of the P-24 scenario, #1237) and P-67 adds the isolation evidence (the
+sentinel-tree launch test of an account's identity directory), so the cap lifts and the level derives
+`isolated` (capability.ts, pinned capability-registry.test.ts). The recorded live run predates identity
+directories — it ran against the real home — so it cannot back the isolated posture's `full`: its id
+stays cited in the record's comment and the delivery rows below, `operatorRuns` starts empty, and
+`full` waits for the live verification to record runs under account homes.
 
 | Row | Status | Evidence |
 | --- | --- | --- |
@@ -497,7 +500,7 @@ holds the level (capability-registry.test.ts:151-163).
 | B3 | partial | see notes |
 | B4 | partial | see notes |
 | B5 | pass | hooks.json inside the single `docket` hook group: the map agy-delivery.ts:36-44, assembly :148-189 (launcher files :102-106; exactly one PreToolUse wrapper :155-157); tests agy-delivery.test.ts:178-341 (P-62, P-64 and both corrections, #1210/#1212/#1219); live: the after_write marker fired once, a before_tool exit 2 denied before any ask (registry:451-454, #1221) |
-| B6 | fail | see notes |
+| B6 | pass | P-67 (#1245): the account-home launch — HOME points at the account's identity directory, never at a run directory (writer isolated-config.ts; sentinel tests isolated-config.test.ts 'P-67: an agy run of an account with an identity directory points HOME there and passes only the machine gitconfig across' and the no-identity-directory pass-through beside it); the transport resolves the routed account's directory (stream-json.test.ts 'P-67: a home-rooted run…', transport-factory wiring); the allowlist admits GIT_CONFIG_GLOBAL alone beyond the base set (launch-env.test.ts I-112) |
 | B7 | pass | `.agents/rules/<id>.md` with `trigger: always_on` frontmatter agy-delivery.ts:240-248 (test agy-delivery.test.ts:210-219); the context row is live-evidenced (registry:457); no agy memory mechanism exists to disable (D7 n/a) |
 | C1 | pass | the bridge: waiter registration and deny on every end path stream-json.ts:50-57/:256-290; the ask child mcp/agy-ask.ts:185-229 (fail-closed); the listener agy-ask-bridge.ts:36-83 (token check, `NO_CHANNEL` deny); wiring electron/main.ts:666-671; tests stream-json.test.ts:606/:628/:646/:662; registry:71; the live run (#1221) |
 | C2 | partial | see notes |
@@ -526,6 +529,13 @@ Non-pass rows — agy:
 - **B3 · partial** — Works: stdio servers are delivered through `.agents/mcp_config.json` `{command, args, env}` (agy-delivery.ts:208-219; tests agy-delivery.test.ts:151-161); the Docket tools ride it and `call_mcp_tool` asks flow through the bridge (live: the page published, #1221). Does not: URL/SSE servers are not delivered at all — the CLI wants the `serverUrl` key and nothing URL-shaped is ever written (agy-delivery.ts:210-212; registry:445); no omission record fires and no negative test pins it. Workaround: the registry row's `how` documents the limit. Why not done: CLI limit — only the stdio shape was evidenced (probe #1015). Proposal: record an `omitted_capability` (P-59) for URL-shaped servers, or deliver `serverUrl` once evidenced.
 - **B4 · partial** — Works: path plugin bundles are copied with a root `plugin.json` and load hooks + MCP (agy-delivery.ts:251-266; tests agy-delivery.test.ts:151-172; probe #1015 spike — registry:459-464, path-only per R-149). Does not: a plugin's own skill was never evidenced and no plugin rode the live run. Workaround: skills travel as first-class capabilities (B2). Why not done: not observed — probe scope. Proposal: one live run with a plugin that carries a skill.
 - **B6 · fail** — The CLI documents no config-dir override and its login lives under `~/.gemini/antigravity-cli` (P-56), so HOME is never redirected and the CLI may read the user's ambient configuration: isolation is deliberately not claimed (registry:61-64), the tests pin the pass-through posture (isolated-config.test.ts:251-267) and the level is capped `experimental` (capability.ts:94). Workaround: the experimental level says so in the UI; everything Docket writes stays inside the run dir (P-7 tests, isolated-config.test.ts:98). Why not done: CLI limit — no config-dir flag exists and redirecting HOME could cut the CLI off from its login (measured; the P-44 rule). Proposal: probe whether a run-scoped home with an adopted login survives, or adopt a CLI config-dir flag when one appears; until then the cap stands.
+
+- **B6 · superseded (P-67, #1245)** — The note above stays for the record; its "why not done" was an
+  assumption, never a measurement. Measured (agy 1.4.0): the CLI honours `$HOME` — started with a
+  throw-away HOME it created its whole `.gemini/antigravity-cli/` and `.gemini/config/` tree there and
+  did not see the real login — so an account's home is its identity directory: a run of that account
+  points HOME there (never at a run directory, P-44's rule holds), reads and writes no other home, and
+  the row above now passes on the sentinel-tree evidence.
 - **C2 · partial** — Works: the P-64 wrapper runs the user's `before_tool` hooks before any ask and an exit 2 denies first (mcp/agy-ask.ts:210-214; test agy-ask.test.ts:200; live: `forbidden.txt` denied before any ask, #1221). Does not: the guard rules are user hooks — Docket enforces no forbidden-path set of its own before the ask (the same measured absence as claude-code). Workaround: the risk floor under `auto`; the human board otherwise. Why not done: not built. Proposal: the same pre-ask write-scope check as claude-code — it would be provider-blind.
 - **D1 · partial** — Works: `--conversation` resume is built and fake-CLI tested, and a resumed run rebuilds the same delivery — `--add-dir` re-passed, the `.agents` tree rewritten, the rules file present (stream-json.ts:184-200; stream-json.test.ts:455-489; defs.test.ts:378-388); the P-22 restart fallback is provider-blind (run-executor.ts:810-828). Does not: no live agy resume exists — explicitly listed as not observed (§15 P-58 amendment #2; the P-63 cross-reference in providers.md). Workaround: scripted evidence plus P-22. Why not done: no live run yet. Proposal: a live resume leg in the next operator run.
 - **D2 · partial** — Works: run.stop kills the whole process group (P-10 test stream-json.test.ts:318-351) and the run_end→Stop entry is writer-tested as the direct list inside the `docket` group (agy-delivery.test.ts:178-208, :222-248). Does not: a Stop hook firing was never observed live (registry:453, 'run_end not yet observed live'). Workaround: the writer tests pin the shape. Why not done: the live run's Stop path produced no observable marker. Proposal: a `run_end` marker hook in the next live run.
@@ -536,8 +546,9 @@ Non-pass rows — agy:
 
 Ordered by risk first, then effort; step 2 of the series works this list and nothing was fixed in #1226:
 
-1. **B6 · agy** — isolation: probe a run-scoped home (or a config-dir flag) that keeps the login, or the
-   experimental cap stands; it blocks every promotion.
+1. **B6 · agy** — closed in #1245: P-67's account homes (per-account HOME directories with the
+   operator's own login) give the run its isolation; the derived level is `isolated`, and `full` waits
+   for a recorded operator run under account homes.
 2. **C4 · agy** — closed in #1234: P-66 and U-337 warn at setup when a role with `docketTools: false` runs
    on a bridge-channel provider (`setupWarnings` emits `no_permission_channel` and the role row renders
    `capabilities.warning.noChannel`).
