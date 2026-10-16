@@ -121,6 +121,69 @@ describe('setupCopyProposal', () => {
       },
     ]);
   });
+
+  it('P-68: an account provider whose installed CLI drifted past the measured version warns per stage, informationally', async () => {
+    const git = createFakeGitProbe();
+    git.markWorkTree(REPO_PATH);
+    const definitions = createFakeDefinitionStore();
+    await definitions.installBuiltins({ roles: BUILTIN_ROLES, flows: BUILTIN_FLOWS });
+    const standard = BUILTIN_FLOWS[0];
+    if (standard === undefined) throw new Error('builtin flow missing');
+    const sourceRepo: RepoDef = {
+      id: source.value,
+      name: 'Atölye',
+      defaultLimitPolicy: 'wait_resume',
+      commandSets: { tests: ['npm test'] },
+      docsRoot: 'docs',
+      testGlobs: ['**/*.test.ts'] as readonly string[],
+      flow: {
+        flowId: standard.id,
+        version: 1,
+        stages: standard.stages,
+        bindings: standard.stages.map((stage) => ({
+          stage: stage.id,
+          ...(stage.role === null ? {} : { role: { roleId: stage.role, version: 1 } }),
+          accounts: [],
+        })),
+      },
+    };
+    definitions.setRepoDef(source.value, sourceRepo);
+    const deps = createFakeDeps({
+      git,
+      definitions,
+      capabilities: createFakeCapabilityCatalog([], [], [], [
+        // The installed CLI is a minor past the measured version, so every stage of the flow warns;
+        // a provider whose measured side is unknown (installed alone) never does.
+        { provider: 'fixture-drift', installed: '1.4.0', measured: '1.3.6' },
+        { provider: 'fixture-drift-unknown', installed: '9.9.9' },
+      ]),
+      repoScanner: { ...createFakeRepoScanner(), detect: async () => ({ docsRoot: 'docs', testGlobs: ['**/*.test.ts'] }) },
+    });
+    await deps.projects.save({ id: project.value, name: 'Atölye', repos: [source.value] });
+    await deps.repos.register({ repoId: 'r-1', slug: source.value, path: '/work/atolye', fingerprint: { rootCommit: 'abc' } });
+    const accountId = parseSlug<'account'>('a-2');
+    if (!accountId.ok) throw new Error('accountId');
+    await deps.accounts.save({
+      id: accountId.value,
+      provider: 'fixture-drift',
+      label: 'Sürükmeli',
+      authMode: 'subscription',
+      limitPolicy: 'wait_resume',
+      caps: [],
+    });
+    const result = await setupCopyProposal(deps, { project: project.value, source: source.value, path: REPO_PATH });
+    if (!result.ok) throw new Error(`setup failed: ${JSON.stringify(result)}`);
+    // One informational warning per stage — the drift never blocks the proposal.
+    expect(result.value.warnings.every((warning) => 'kind' in warning && warning.kind === 'version_drift')).toBe(true);
+    expect(result.value.warnings).toHaveLength(standard.stages.length);
+    expect(result.value.warnings[0]).toEqual({
+      stage: standard.stages[0]?.id,
+      provider: 'fixture-drift',
+      kind: 'version_drift',
+      installed: '1.4.0',
+      measured: '1.3.6',
+    });
+  });
 });
 
 describe('setupApply', () => {
