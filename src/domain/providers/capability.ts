@@ -34,6 +34,14 @@ export type Evidence =
  *  sandboxed (`none`). */
 export type PermissionChannel = 'native' | 'bridge' | 'none';
 
+/** P-68: the versions a provider record's evidence was measured on. `at` is a date written by the
+ *  issue that measures; an absent `cli`/`sdk` side is unknown, never free. */
+export interface MeasuredWith {
+  readonly cli?: string;
+  readonly sdk?: string;
+  readonly at: string;
+}
+
 export interface ProviderRecord {
   readonly providerId: string;
   /** Manual flag: the definition exists but nothing is verified; it overrides every gate. */
@@ -52,6 +60,9 @@ export interface ProviderRecord {
   readonly operatorRuns?: readonly string[];
   /** Whether the provider's transport takes a steering note mid-run (P-61); absent = unknown. */
   readonly steering?: 'steerable' | 'not_steerable';
+  /** P-68: the versions the record's evidence was measured on; absent = measured on nothing
+   *  recorded, so version drift reads `unknown` and never warns. */
+  readonly measuredWith?: MeasuredWith;
 }
 
 export interface ModelRecord {
@@ -175,6 +186,45 @@ export interface ChannelRow {
   readonly how?: string;
 }
 
+/** P-68: the version table `setupWarnings`' third data source reads — one row per provider, the
+ *  installed CLI version (discovery's probe) beside the version the registry's evidence was
+ *  measured on. Either side absent reads `unknown` and never warns. */
+export interface VersionRow {
+  readonly provider: string;
+  readonly installed?: string;
+  readonly measured?: string;
+}
+
+/** P-68: the drift of an installed CLI version from the version the evidence was measured on. */
+export type VersionDrift = 'none' | 'newer_minor' | 'newer_major' | 'older' | 'unknown';
+
+/** The leading `major.minor.patch` of a version string; a missing patch reads 0; null when no
+ *  two-segment number opens the string. */
+const semverOf = (raw: string): readonly [number, number, number] | undefined => {
+  const match = /^(\d+)\.(\d+)(?:\.(\d+))?/.exec(raw.trim());
+  if (match === null) return undefined;
+  return [Number(match[1]), Number(match[2]), Number(match[3] ?? 0)];
+};
+
+/** P-68: semver compare of the installed CLI against the measured-on version. An absent or
+ *  unparseable side answers `unknown` — never a warning. The answer set has no patch grade: a
+ *  forward patch-only difference reads `none` (the finest forward grade is `newer_minor`, and the
+ *  warning threshold starts there), while every backward difference is one grade, `older`. */
+export function versionDrift(installed: string | undefined, measured: string | undefined): VersionDrift {
+  if (installed === undefined || measured === undefined) return 'unknown';
+  const from = semverOf(installed);
+  const to = semverOf(measured);
+  if (from === undefined || to === undefined) return 'unknown';
+  for (let part = 0; part < 3; part += 1) {
+    const difference = from[part] - to[part];
+    if (difference === 0) continue;
+    if (difference < 0) return 'older';
+    // A first difference at the patch position is a forward patch-only difference: none.
+    return part === 0 ? 'newer_major' : part === 1 ? 'newer_minor' : 'none';
+  }
+  return 'none';
+}
+
 export type SetupWarning =
   | {
       readonly stage: string;
@@ -188,11 +238,19 @@ export type SetupWarning =
       readonly provider: string;
       readonly kind: 'no_permission_channel';
       readonly how: string;
+    }
+  | {
+      readonly stage: string;
+      readonly provider: string;
+      readonly kind: 'version_drift';
+      readonly installed: string;
+      readonly measured: string;
     };
 
-/** P-57/P-66: one warning per (stage, capability) whose support is not `native`, plus the stage's
- *  channel warning, in stage order — the channel warning first, because a stage that cannot ask
- *  at all is the wider problem than any single capability. */
+/** P-57/P-66/P-68: one warning per (stage, capability) whose support is not `native`, plus the
+ *  stage's channel and version-drift warnings, in stage order — the stage-level sentences first
+ *  (a stage that cannot ask at all, then one on an unverified version), because both are the
+ *  wider problem than any single capability. */
 export function setupWarnings(
   stages: readonly {
     readonly stage: string;
@@ -203,6 +261,7 @@ export function setupWarnings(
   }[],
   table: readonly TranslationRow[],
   channels: readonly ChannelRow[],
+  versions: readonly VersionRow[] = [],
 ): readonly SetupWarning[] {
   const warnings: SetupWarning[] = [];
   for (const { stage, provider, capabilities, docketTools } of stages) {
@@ -212,6 +271,13 @@ export function setupWarnings(
     // role whose tools are unknown is an absent input — none of them warns.
     if (channel?.channel === 'bridge' && docketTools === false && channel.how !== undefined) {
       warnings.push({ stage, provider, kind: 'no_permission_channel', how: channel.how });
+    }
+    // P-68: informational only — the drift never blocks the run, it says the installed CLI is
+    // newer than the version the registry's evidence was measured on.
+    const version = versions.find((row) => row.provider === provider);
+    const drift = versionDrift(version?.installed, version?.measured);
+    if ((drift === 'newer_minor' || drift === 'newer_major') && version?.installed !== undefined && version.measured !== undefined) {
+      warnings.push({ stage, provider, kind: 'version_drift', installed: version.installed, measured: version.measured });
     }
     for (const capability of capabilities) {
       const row = supportFor(table, provider, capability.kind, sourceKindOf(capability));
