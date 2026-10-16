@@ -23,6 +23,7 @@ Decided with the operator on 2026-10-12; architect-owned; supersedes by referenc
    4. The stage-skip policy arm lands in the last issue of the split; until it ships, stage skipping stays human-decided at every level.
    5. A level change applies only to future decisions; decisions already made (gate verdicts, skips, answered asks) stay valid.
    6. Balanced does not ship until the risk-rule table exists; it gates both the risk-rule issue below and any UI that offers the level.
+   7. The chain widens (operator, 2026-10-16, docket-7a session — "önerinle ilerle onaylıyorum"): work order > stage > flow > repo > project > global > builtin. Flow and stage are definition-origin layers read from the pinned flow version; their `auto` is only a suggestion, confirmed once by the user, and a definition import can never enable it. An optional `maxLevel` ceiling at repo and global caps the resolved level. `USER_ONLY_GATES` (answer 3) and invariant İ1 are untouched. Contracts: R-151 … R-156, A-403 … A-407, I-110, U-334 … U-336 (#1225); implementation in three steps — (a) set-level commands and UI, (b) the flow layer, (c) the stage layer and the ceiling.
 
    Split into issues, in order, all after GI-1…GI-4 (the merge doors define what "irreversible" concretely means):
 
