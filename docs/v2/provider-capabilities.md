@@ -437,7 +437,7 @@ Paths below are relative to `src/` unless they start with `electron/` or name th
 
 ### Claude Code (claude-code, sdk transport)
 
-Measured on CLI 2.1.302 driven by SDK 0.3.221 (registry `measuredWith`, 2026-10-16).
+Measured on CLI 2.1.302 driven by SDK 0.3.302 (registry `measuredWith`; SDK pin bumped 0.3.221 → 0.3.302 on 2026-10-17).
 Registry row registry:29-41; derived level `isolated` — G1–G6 all pass with test evidence, no operator
 run recorded (P-28: `full` additionally needs `operatorRuns`; domain/providers/capability.ts:92-112,
 pinned capability-registry.test.ts:425-433 — see gap 10).
