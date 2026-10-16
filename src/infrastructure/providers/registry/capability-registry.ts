@@ -36,7 +36,7 @@ export const CAPABILITY_REGISTRY = {
         G3: { kind: 'test', name: 'I-29: a scripted session yields session_started, tool_call, permission_ask, usage and finished in order once answered' },
         G4: { kind: 'test', name: 'I-27: result maps to usage carrying the context costKind, then finished completed' },
         G5: { kind: 'test', name: 'P-21: get_usage utilization is 0–100 and normalises to the same meter scale a pushed rate_limit_event uses' },
-        G6: { kind: 'test', name: 'P-24: sdk, app-server and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
+        G6: { kind: 'test', name: 'P-24: sdk, app-server, stream-json and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
       },
     },
     {
@@ -54,14 +54,14 @@ export const CAPABILITY_REGISTRY = {
         G2: { kind: 'test', name: 'P-12: the run opens with initialize → thread/start → turn/start and maps the turn stream to AgentEvents' },
         G3: { kind: 'test', name: 'P-13: an approval request becomes a permission_ask; the user’s allow is delivered as the JSON-RPC response and nothing is ever auto-approved' },
         G5: { kind: 'test', name: 'P-20: reads rate limits through the app-server connection and maps primary/secondary windows to meters with exact resets, source polled' },
-        G6: { kind: 'test', name: 'P-24: sdk, app-server and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
+        G6: { kind: 'test', name: 'P-24: sdk, app-server, stream-json and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
       },
     },
     {
-      // No G6 — the end-to-end scenario has no stream-json leg. No isolation evidence on purpose
-      // (P-44): the CLI documents no config-dir override and no login location, so HOME is left
-      // alone (a run-scoped home could cut the CLI off from its login) and the CLI reads its own
-      // configuration; the cap holds.
+      // No isolation evidence on purpose (P-44): the CLI documents no config-dir override and no
+      // login location, so HOME is left alone (a run-scoped home could cut the CLI off from its
+      // login) and the CLI reads its own configuration; the cap holds — with every gate now
+      // carrying test evidence, isolation is the one thing still between agy and `full`.
       providerId: 'agy',
       // The stream-json transport does not carry a steering note (P-61).
       steering: 'not_steerable',
@@ -69,12 +69,13 @@ export const CAPABILITY_REGISTRY = {
         G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
         G2: { kind: 'test', name: 'P-11: the text turn fixture maps to session_started, one text, usage and a completed finished' },
         G3: { kind: 'test', name: 'P-63: a PreToolUse ask becomes a permission_ask, waits for the answer, nothing is auto-approved' },
-        G4: { kind: 'test', name: 'P-11: an ERROR result ends usage + finished failed, so malformed-input runs still fold into one finished' },
+        G4: { kind: 'test', name: 'P-11: the usage event carries the route\'s cost kind' },
         G5: { kind: 'test', name: 'P-19: runs `agy -p /usage --output-format json` and parses the payload from stderr' },
+        G6: { kind: 'test', name: 'P-24: sdk, app-server, stream-json and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
       },
       // The live agy walk (2026-10-16, agy 1.3.6, run 01M50YHMVARZ1G2FGHNPMG6WD2) is recorded here
-      // per P-28 — an operator run only. It cannot move the level: G6 still has no scripted
-      // stream-json scenario, and the P-44 cap above (no isolation evidence) keeps agy
+      // per P-28 — an operator run only. With G6 now carrying the scripted stream-json leg, the
+      // P-44 cap above (no isolation evidence) is the one thing that still keeps agy
       // experimental regardless of operatorRuns.
       operatorRuns: ['01M50YHMVARZ1G2FGHNPMG6WD2'],
     },
@@ -89,7 +90,7 @@ export const CAPABILITY_REGISTRY = {
         G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
         G2: { kind: 'test', name: 'P-15: initialize → session/new (carrying the run-scoped config) → session/prompt; session/update maps to AgentEvents and an unknown update kind becomes a raw event, never an error' },
         G3: { kind: 'test', name: 'P-16: session/request_permission becomes a permission_ask that waits for the user; the answer round-trips and nothing is ever auto-approved' },
-        G6: { kind: 'test', name: 'P-24: sdk, app-server and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
+        G6: { kind: 'test', name: 'P-24: sdk, app-server, stream-json and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
       },
     },
     {
@@ -104,7 +105,7 @@ export const CAPABILITY_REGISTRY = {
         G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
         G2: { kind: 'test', name: 'P-15: initialize → session/new (carrying the run-scoped config) → session/prompt; session/update maps to AgentEvents and an unknown update kind becomes a raw event, never an error' },
         G3: { kind: 'test', name: 'P-16: session/request_permission becomes a permission_ask that waits for the user; the answer round-trips and nothing is ever auto-approved' },
-        G6: { kind: 'test', name: 'P-24: sdk, app-server and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
+        G6: { kind: 'test', name: 'P-24: sdk, app-server, stream-json and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
       },
     },
     {
@@ -116,7 +117,7 @@ export const CAPABILITY_REGISTRY = {
         G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
         G2: { kind: 'test', name: 'P-15: initialize → session/new (carrying the run-scoped config) → session/prompt; session/update maps to AgentEvents and an unknown update kind becomes a raw event, never an error' },
         G3: { kind: 'test', name: 'P-16: session/request_permission becomes a permission_ask that waits for the user; the answer round-trips and nothing is ever auto-approved' },
-        G6: { kind: 'test', name: 'P-24: sdk, app-server and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
+        G6: { kind: 'test', name: 'P-24: sdk, app-server, stream-json and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
       },
     },
   ],
@@ -269,7 +270,30 @@ export const CAPABILITY_REGISTRY = {
       quotaProbe: 'provider_query',
       modelSource: 'cli-command',
       liveIsAuthoritative: true,
-      models: [],
+      // The bundled rows are the measured `agy models` answer (agy 1.3.6): every listed id
+      // carries its effort in the suffix — one level per record, never a set — because the
+      // `--effort` flag exists only on suffix-less ids the listing does not offer. Tiers follow
+      // the families (argon the flagship, flash the cheap one, the third-party rows their own
+      // family tiers), and billing stays unset on every row for the plan reason above. The tier
+      // map stays inside the everywhere-covered Gemini families so a tier pick never names a
+      // third-party row a lower plan cannot use; balanced is the flash family's top, the mid
+      // point between flash low and argon high.
+      models: [
+        { id: 'gemini-4-argon-low', family: 'argon', tier: 'strong', thinking: { kind: 'levels', levels: ['low'] } },
+        { id: 'gemini-4-argon-medium', family: 'argon', tier: 'strong', thinking: { kind: 'levels', levels: ['medium'] } },
+        { id: 'gemini-4-argon-high', family: 'argon', tier: 'strong', thinking: { kind: 'levels', levels: ['high'] } },
+        { id: 'gemini-3.8-flash-low', family: 'flash', tier: 'fast', thinking: { kind: 'levels', levels: ['low'] } },
+        { id: 'gemini-3.8-flash-medium', family: 'flash', tier: 'fast', thinking: { kind: 'levels', levels: ['medium'] } },
+        { id: 'gemini-3.8-flash-high', family: 'flash', tier: 'fast', thinking: { kind: 'levels', levels: ['high'] } },
+        { id: 'claude-opus-5-5-low', family: 'opus', tier: 'strong', thinking: { kind: 'levels', levels: ['low'] } },
+        { id: 'claude-opus-5-5-medium', family: 'opus', tier: 'strong', thinking: { kind: 'levels', levels: ['medium'] } },
+        { id: 'claude-opus-5-5-high', family: 'opus', tier: 'strong', thinking: { kind: 'levels', levels: ['high'] } },
+        { id: 'claude-sonnet-5-5-low', family: 'sonnet', tier: 'balanced', thinking: { kind: 'levels', levels: ['low'] } },
+        { id: 'claude-sonnet-5-5-medium', family: 'sonnet', tier: 'balanced', thinking: { kind: 'levels', levels: ['medium'] } },
+        { id: 'claude-sonnet-5-5-high', family: 'sonnet', tier: 'balanced', thinking: { kind: 'levels', levels: ['high'] } },
+        { id: 'gpt-oss-120b-medium', family: 'gpt-oss', tier: 'balanced', thinking: { kind: 'levels', levels: ['medium'] } },
+      ],
+      tierModels: { strong: 'gemini-4-argon-high', balanced: 'gemini-3.8-flash-high', fast: 'gemini-3.8-flash-low' },
     },
     {
       // The machine login's models come from a protocol session the provider opens on demand —

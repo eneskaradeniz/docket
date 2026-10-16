@@ -2497,6 +2497,17 @@ const pagePublishAsk = (id: string): AgentEvent => ({
   options: ['allow', 'deny'],
 });
 
+/** The same tool as the MCP server prefix spells it — the shape transports that keep the prefix
+ *  deliver. The mapping tables know only the bare name, so the ask is unmappable exactly like a
+ *  search ask: it must stay with the human even under `auto`. */
+const prefixedPublishAsk = (id: string): AgentEvent => ({
+  type: 'permission_ask',
+  at: at(3),
+  id,
+  tool: 'mcp__docket-pages__page_publish',
+  options: ['allow', 'deny'],
+});
+
 /** A search ask: its single target string may be the root or the pattern, so it cannot be mapped. */
 const searchAsk = (id: string): AgentEvent => ({
   type: 'permission_ask',
@@ -2653,6 +2664,34 @@ describe('executeRun — the autonomy permission policy', () => {
       finished('completed'),
     ]);
     expect(permissionAudits(h.log).map((entry) => entry.actor)).toEqual([RUN_EXECUTOR_SYSTEM_ACTOR]);
+  });
+
+  it('A-412: the server-prefixed docket tool name mcp__docket-pages__page_publish stays human-decided under auto — by the mappability miss, not the carve-out', async () => {
+    // The carve-out map knows the bare name only, so the prefixed spelling reaches neither the
+    // carve-out nor the risk table's argument map: it fails closed to the human. The second ask
+    // proves `auto` was live and allowing in the same run — a later mapping change that teaches
+    // the tables the prefix cannot silently license the prefixed tool.
+    const h = await harness({
+      script: [prefixedPublishAsk('ask-1'), ownReadAsk('ask-2'), finished('completed')],
+    });
+    await h.deps.settings.set(AUTONOMY_KEY, 'auto');
+    const gate = permissionGate('deny');
+
+    await executeRun(h.deps, gate.permissions, INPUT);
+
+    expect(gate.asked.map((entry) => entry.ask.id)).toEqual(['ask-1']);
+    const record = await theRun(h.runs);
+    expect(await h.runs.events(record.id)).toEqual([
+      prefixedPublishAsk('ask-1'),
+      permissionAnswered('ask-1', 'deny'),
+      ownReadAsk('ask-2'),
+      permissionAnswered('ask-2', 'allow'),
+      finished('completed'),
+    ]);
+    expect(permissionAudits(h.log).map((entry) => entry.actor)).toEqual([
+      RUN_EXECUTOR_SYSTEM_ACTOR,
+      { kind: 'policy', policy: PERMISSION_RULES_POLICY, level: 'auto' },
+    ]);
   });
 
   it('a Bash ask whose command is exactly a stage command-gate string is allowed under auto', async () => {

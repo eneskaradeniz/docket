@@ -3,7 +3,7 @@
 // probe issue) — print-mode objects never appear here, the def launches stream-json mode.
 // Contract: docs/v2/providers.md → P-11 and the mapping table on the probe issue.
 import type { AgentEvent, EpochMs } from '../../../../../../domain/index';
-import type { StreamDialect } from '../../stream-json';
+import type { DialectContext, StreamDialect } from '../../stream-json';
 
 type Clock = { readonly now: () => EpochMs };
 
@@ -74,8 +74,10 @@ const deniedActionEvent = (body: Record<string, unknown>, at: EpochMs): AgentEve
   return { type: 'error', at, class: 'unknown', message: `agy denied ${denied.length} action(s): ${listed}` };
 };
 
-// The final object carries the run's statistics and verdict.
-const resultEvents = (body: unknown, at: EpochMs): readonly AgentEvent[] | null => {
+// The final object carries the run's statistics and verdict. The CLI reports no money figure,
+// so the usage event carries tokens plus the route's cost kind from the dialect context — the
+// consumer reads costs the way the route's registry row defines them.
+const resultEvents = (body: unknown, at: EpochMs, context: DialectContext): readonly AgentEvent[] | null => {
   if (!isRecord(body)) return null;
   const events: AgentEvent[] = [];
   const usage = body.usage;
@@ -91,6 +93,7 @@ const resultEvents = (body: unknown, at: EpochMs): readonly AgentEvent[] | null 
       inputTokens: usage.input_tokens,
       outputTokens: usage.output_tokens,
       ...(typeof cached === 'number' ? { cachedInputTokens: cached } : {}),
+      costKind: context.costKind,
     });
   }
   const denial = deniedActionEvent(body, at);
@@ -103,7 +106,7 @@ export function createAgyDialect(clock: Clock): StreamDialect {
   return {
     id: 'agy',
     wrapInput: wrapUserLine,
-    parse: (line: unknown): readonly AgentEvent[] | null => {
+    parse: (line: unknown, context: DialectContext): readonly AgentEvent[] | null => {
       if (!isRecord(line)) return null;
       const at = clock.now();
       switch (line.event) {
@@ -114,7 +117,7 @@ export function createAgyDialect(clock: Clock): StreamDialect {
         case 'step_update':
           return stepUpdateEvents(line.step_update, at);
         case 'result':
-          return resultEvents(line.result, at);
+          return resultEvents(line.result, at, context);
         default:
           return null;
       }

@@ -30,7 +30,7 @@ const DIALECT_AT = 424242;
 /** Recognises {say} → text, {end} → finished, {quiet} → recognised but silent; null otherwise. */
 const fakeDialect: StreamDialect = {
   id: 'fake',
-  parse: (line) => {
+  parse: (line, _context) => {
     if (typeof line !== 'object' || line === null || Array.isArray(line)) return null;
     const record = line as Record<string, unknown>;
     if (record['quiet'] === true) return [];
@@ -45,11 +45,11 @@ const fakeDialect: StreamDialect = {
 /** A buggy dialect: throws on {boom}; everything else behaves like the fake dialect. */
 const throwingDialect: StreamDialect = {
   id: 'throwing',
-  parse: (line) => {
+  parse: (line, context) => {
     if (typeof line === 'object' && line !== null && (line as Record<string, unknown>)['boom'] === true) {
       throw new Error('dialect bug');
     }
-    return fakeDialect.parse(line);
+    return fakeDialect.parse(line, context);
   },
 };
 

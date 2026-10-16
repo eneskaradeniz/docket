@@ -561,11 +561,14 @@ describe('createModelCatalog (P-29)', () => {
     const listed = await catalog.list(ACCOUNT_A);
 
     expect(listed).toHaveLength(3);
+    // The flash row meets its bundled record, so the registry's tier joins the live row while
+    // the row's own data (display name, the effort variant) stays what the CLI printed.
     expect(listed.find((model) => model.id === 'gemini-3.8-flash-high')).toEqual({
       id: 'gemini-3.8-flash-high',
       displayName: 'Gemini 3.8 Flash (High)',
       source: 'live',
       contextWindow: null,
+      tier: 'fast',
       thinking: { kind: 'levels', levels: ['high'] },
       billing: 'unknown',
     });

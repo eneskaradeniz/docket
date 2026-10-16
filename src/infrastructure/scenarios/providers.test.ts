@@ -1,7 +1,8 @@
 // infrastructure/scenarios/providers.test.ts — the Phase 3 acceptance (docs/v2/providers.md → "Acceptance
-// (P-24)"): the same work order runs to completion three times through the three real
+// (P-24)"): the same work order runs to completion four times through the four real
 // transports — the sdk transport over a scripted SDK session, the app-server transport against
-// its checked-in fake server, and the acp transport against its checked-in fake agent. The
+// its checked-in fake server, the acp transport against its checked-in fake agent, and the
+// stream-json transport over the real agy dialect against its checked-in fake CLI. The
 // engine and use-case path is identical in every leg (open → plan → implement → review → close
 // through the api boundary and the application services); only the transport wiring differs, and
 // every run delivers the same common event kinds with exactly one `finished`.
@@ -65,6 +66,7 @@ import { createRunDirs } from '../compose/index';
 import { createSdkTransport, type QueryFn } from '../providers/index';
 import { createAppServerTransport } from '../providers/transports/app-server/index';
 import { createAcpTransport } from '../providers/transports/acp/index';
+import { BUILTIN_STREAM_DIALECTS, createStreamJsonTransport } from '../providers/transports/stream-json/index';
 import type { ProviderDef } from '../providers/defs/index';
 import type { Query, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 
@@ -75,6 +77,9 @@ const APP_SERVER_FIXTURE = fileURLToPath(
 );
 const ACP_AGENT_BIN = fileURLToPath(
   new URL('../providers/transports/acp/fake-agent.cjs', import.meta.url),
+);
+const AGY_CLI_FIXTURE = fileURLToPath(
+  new URL('../providers/transports/stream-json/fixtures/fake-agy-cli.cjs', import.meta.url),
 );
 
 let root = '';
@@ -383,19 +388,49 @@ const acpDef = (logPath: string): ProviderDef => ({
   mark: null,
 });
 
+const agyStreamJsonDef = (logPath: string): ProviderDef => ({
+  id: 'fake-agy',
+  displayName: 'Fake agy CLI',
+  bins: [process.execPath],
+  versionArgs: ['--version'],
+  transport: 'stream-json',
+  streamDialect: 'agy',
+  config: { mechanism: 'env-var', name: 'FAKE_AGY_HOME' },
+  // The scenario and the log path are how the test scripts its fake CLI; the dialect the
+  // transport parses it through is the real built-in agy one.
+  buildLaunch: () => ({ args: [AGY_CLI_FIXTURE, 'happy', logPath], env: {}, stdin: 'prompt' }),
+  resume: 'specify',
+  capabilities: {
+    structuredStream: true,
+    permissionAsk: false,
+    resume: true,
+    mcp: false,
+    hooks: 'unknown',
+    skills: 'unknown',
+    images: 'unknown',
+    quotaReport: 'none',
+    costReport: 'none',
+  },
+  installHint: { url: 'https://example.invalid/fake-agy' },
+  mark: null,
+});
+
 /** One leg's transport, built exactly as the composition root would wire it for that provider. */
 interface LegWiring {
-  readonly name: 'sdk' | 'app-server' | 'acp';
+  readonly name: 'sdk' | 'app-server' | 'stream-json' | 'acp';
   /** A real directory: the protocol transports spawn their fake against this cwd. */
   readonly runCwd: string;
   readonly transport: (deps: AppDeps) => AgentTransport;
 }
 
 const legWirings = (): readonly LegWiring[] => {
+  const agyDialect = BUILTIN_STREAM_DIALECTS['agy'];
+  if (agyDialect === undefined) throw new Error('the built-in agy stream dialect must exist');
   const sdkCwd = join(root, 'sdk');
   const appServerCwd = join(root, 'app-server');
+  const streamJsonCwd = join(root, 'stream-json');
   const acpCwd = join(root, 'acp');
-  for (const dir of [sdkCwd, appServerCwd, acpCwd]) mkdirSync(dir, { recursive: true });
+  for (const dir of [sdkCwd, appServerCwd, streamJsonCwd, acpCwd]) mkdirSync(dir, { recursive: true });
   return [
     {
       name: 'sdk',
@@ -413,6 +448,14 @@ const legWirings = (): readonly LegWiring[] => {
       name: 'app-server',
       runCwd: appServerCwd,
       transport: () => createAppServerTransport(appServerDef(join(appServerCwd, 'rpc.log'))),
+    },
+    {
+      name: 'stream-json',
+      runCwd: streamJsonCwd,
+      // The fake provider rides no registry route kind, so its cost kind is the subscription
+      // branch default — the same value the factory's registry resolver yields for it.
+      transport: () =>
+        createStreamJsonTransport(agyStreamJsonDef(join(streamJsonCwd, 'fake.log')), agyDialect, undefined, async () => 'equivalent'),
     },
     {
       name: 'acp',
@@ -590,13 +633,13 @@ const runLeg = async (wiring: LegWiring): Promise<LegResult> => {
 
 // --- the Phase 3 acceptance scenario ----------------------------------------------------------------
 
-describe('the same work order through the three transports, headless end to end', () => {
-  it('P-24: sdk, app-server and acp each run the identical work order to done with the same common event kinds and exactly one finished per run', async () => {
+describe('the same work order through the four transports, headless end to end', () => {
+  it('P-24: sdk, app-server, stream-json and acp each run the identical work order to done with the same common event kinds and exactly one finished per run', async () => {
     const legs: LegResult[] = [];
     for (const wiring of legWirings()) legs.push(await runLeg(wiring));
-    const [sdk, appServer, acp] = legs;
-    if (sdk === undefined || appServer === undefined || acp === undefined) {
-      throw new Error('the three transport legs must all run');
+    const [sdk, appServer, streamJson, acp] = legs;
+    if (sdk === undefined || appServer === undefined || streamJson === undefined || acp === undefined) {
+      throw new Error('the four transport legs must all run');
     }
 
     // Every leg drove the work order to the same terminal state with three succeeded stage runs.
@@ -609,10 +652,12 @@ describe('the same work order through the three transports, headless end to end'
 
     // The engine and use-case path is identical: the audit trail tells the same story per leg.
     expect(appServer.auditActions).toEqual(sdk.auditActions);
+    expect(streamJson.auditActions).toEqual(sdk.auditActions);
     expect(acp.auditActions).toEqual(sdk.auditActions);
 
     // Only the transport differs: each leg's three runs delivered the same common event kinds.
     expect(appServer.runKinds).toEqual(sdk.runKinds);
+    expect(streamJson.runKinds).toEqual(sdk.runKinds);
     expect(acp.runKinds).toEqual(sdk.runKinds);
     // And those common kinds are the stream the engine consumes, in the order it consumes them.
     expect(sdk.runKinds).toEqual([
