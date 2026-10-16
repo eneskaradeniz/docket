@@ -12,6 +12,7 @@ import {
   parseUlid,
   PERMISSION_RULES_POLICY,
   RESUME_JITTER_MS,
+  WRITE_SCOPE_POLICY,
   ROLLING_NOTE_MAX_CHARS,
   stageBrief,
   type AccountId,
@@ -69,6 +70,7 @@ import {
   type FakeTransport,
   type FakeTransportResolver,
   type FakeWorkOrderRepo,
+  type FakeWorktrees,
   repoFlowOf,
 } from '../ports/fakes';
 
@@ -2781,5 +2783,147 @@ describe('executeRun — the autonomy permission policy', () => {
       { runId: record.id, askId: 'ask-1', tool: 'docket_get', at: T0, policy: PERMISSION_RULES_POLICY, level: 'auto' },
     ]);
     expect(board.autoDecided()).toEqual([]);
+  });
+});
+
+// --- the write-scope guard (A-409 of docs/v2/application.md, #1235 addendum) --------------------------
+
+/** A write-tool ask. `Edit` is a claude-code native name; `Write` is the name the agy bridge
+ *  translates its write family to, so the pair covers both providers' arrivals. */
+const writeAsk = (id: string, target: string, tool: 'Write' | 'Edit' = 'Edit'): AgentEvent => ({
+  type: 'permission_ask',
+  at: at(3),
+  id,
+  tool,
+  target,
+  options: ['allow', 'deny'],
+});
+
+/** The worktree the fake worktrees port hands the executor once marked existing. */
+const FAKE_WORKTREE = `/fake/worktrees/${REPO}/${WORK_ORDER}`;
+
+describe('executeRun — the write-scope guard', () => {
+  it('A-409: a write certainly outside the role scope is denied before the ask — the gate never sees it, the denial is written, delivered and audited, and the run continues', async () => {
+    const h = await harness({
+      script: [sessionStarted('sess-1'), writeAsk('ask-1', '/etc/passwd'), bashAsk('ask-2', 'npm test'), finished('completed')],
+    });
+    (h.deps.worktrees as FakeWorktrees).markExisting(REPO, WORK_ORDER);
+    // An allow gate doubles as the leak detector: a write ask that slipped through to it would
+    // come back allowed and flip the asserted events.
+    const gate = permissionGate('allow');
+    const board = createPermissionBoard();
+    // The Bash ask is the observation point: while the human gate waits on it, the write denial
+    // must already be listed as a policy decision.
+    let listedMidRun: readonly AutoDecision[] = [];
+    const permissions: PermissionGate = {
+      onAsk: async (runId, ask) => {
+        if (ask.id === 'ask-2') listedMidRun = [...board.autoDecided()];
+        return await gate.permissions.onAsk(runId, ask);
+      },
+    };
+
+    const outcome = await executeRun(h.deps, permissions, INPUT, board);
+
+    // A denied write is a tool answer, not a run failure.
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect(gate.asked.map((entry) => entry.ask.id)).toEqual(['ask-2']);
+    const record = await theRun(h.runs);
+    expect(listedMidRun).toEqual([
+      { runId: record.id, askId: 'ask-1', tool: 'Edit', at: T0, policy: WRITE_SCOPE_POLICY, level: 'manual' },
+    ]);
+    expect(await h.runs.events(record.id)).toEqual([
+      sessionStarted('sess-1'),
+      writeAsk('ask-1', '/etc/passwd'),
+      permissionAnswered('ask-1', 'deny'),
+      bashAsk('ask-2', 'npm test'),
+      permissionAnswered('ask-2', 'allow'),
+      finished('completed'),
+    ]);
+    expect(h.transport.answers()).toEqual([
+      { askId: 'ask-1', decision: 'deny' },
+      { askId: 'ask-2', decision: 'allow' },
+    ]);
+    expect(permissionAudits(h.log).map((entry) => entry.actor)).toEqual([
+      { kind: 'policy', policy: WRITE_SCOPE_POLICY, level: 'manual' },
+      RUN_EXECUTOR_SYSTEM_ACTOR,
+    ]);
+    expect(permissionAudits(h.log)[0]?.detail).toEqual({ tool: 'Edit', decision: 'deny', reason: 'write_scope' });
+  });
+
+  it('A-409: the translated write name — the agy bridge arrival — rides the same guard, and a read-only role needs no context at all', async () => {
+    const h = await harness({
+      script: [writeAsk('ask-1', `${FAKE_WORKTREE}/src/a.ts`, 'Write'), finished('completed')],
+    });
+    // No worktree is marked existing and no definitions load: scope none must still deny.
+    const reviewerInput = { ...INPUT, role: { ...ROLE, writeScope: { kind: 'none' } as const } };
+    const gate = permissionGate('allow');
+
+    const outcome = await executeRun(h.deps, gate.permissions, reviewerInput);
+
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect(gate.asked).toEqual([]);
+    const record = await theRun(h.runs);
+    expect(await h.runs.events(record.id)).toEqual([
+      writeAsk('ask-1', `${FAKE_WORKTREE}/src/a.ts`, 'Write'),
+      permissionAnswered('ask-1', 'deny'),
+      finished('completed'),
+    ]);
+    expect(permissionAudits(h.log).map((entry) => entry.actor)).toEqual([
+      { kind: 'policy', policy: WRITE_SCOPE_POLICY, level: 'manual' },
+    ]);
+  });
+
+  it('A-409: an in-scope write is unchanged — the ask reaches the human gate and the system actor answers', async () => {
+    const h = await harness({
+      script: [writeAsk('ask-1', `${FAKE_WORKTREE}/src/a.ts`), finished('completed')],
+    });
+    (h.deps.worktrees as FakeWorktrees).markExisting(REPO, WORK_ORDER);
+    const gate = permissionGate('deny');
+
+    await executeRun(h.deps, gate.permissions, INPUT);
+
+    expect(gate.asked.length).toBe(1);
+    const record = await theRun(h.runs);
+    expect(await h.runs.events(record.id)).toEqual([
+      writeAsk('ask-1', `${FAKE_WORKTREE}/src/a.ts`),
+      permissionAnswered('ask-1', 'deny'),
+      finished('completed'),
+    ]);
+    expect(permissionAudits(h.log).map((entry) => entry.actor)).toEqual([RUN_EXECUTOR_SYSTEM_ACTOR]);
+    expect(permissionAudits(h.log)[0]?.detail).toEqual({ tool: 'Edit', decision: 'deny' });
+  });
+
+  it('A-409: an unchecked write — no worktree fact to judge with — reaches the human gate unchanged', async () => {
+    const h = await harness({
+      script: [writeAsk('ask-1', '/etc/passwd', 'Write'), finished('completed')],
+    });
+    const gate = permissionGate('deny');
+
+    await executeRun(h.deps, gate.permissions, INPUT);
+
+    expect(gate.asked.length).toBe(1);
+    expect(permissionAudits(h.log).map((entry) => entry.actor)).toEqual([RUN_EXECUTOR_SYSTEM_ACTOR]);
+  });
+
+  it('A-409: under auto an in-worktree write is still the risk table allow — the guard neither widens nor narrows the table', async () => {
+    const h = await harness({
+      script: [writeAsk('ask-1', `${FAKE_WORKTREE}/src/a.ts`, 'Write'), finished('completed')],
+    });
+    (h.deps.worktrees as FakeWorktrees).markExisting(REPO, WORK_ORDER);
+    await h.deps.settings.set(AUTONOMY_KEY, 'auto');
+    const gate = permissionGate('deny');
+
+    await executeRun(h.deps, gate.permissions, INPUT);
+
+    expect(gate.asked).toEqual([]);
+    const record = await theRun(h.runs);
+    expect(await h.runs.events(record.id)).toEqual([
+      writeAsk('ask-1', `${FAKE_WORKTREE}/src/a.ts`, 'Write'),
+      permissionAnswered('ask-1', 'allow'),
+      finished('completed'),
+    ]);
+    expect(permissionAudits(h.log).map((entry) => entry.actor)).toEqual([
+      { kind: 'policy', policy: PERMISSION_RULES_POLICY, level: 'auto' },
+    ]);
   });
 });

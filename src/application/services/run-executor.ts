@@ -29,6 +29,7 @@ import type {
   StageSlug,
   Tier,
   UserOnlyGate,
+  WriteScopeContext,
   WorkOrderId,
 } from '../../domain/index';
 import {
@@ -47,6 +48,8 @@ import {
   stageOutputScopeRoot,
   stageOutputVerdict,
   translateCapabilities,
+  WRITE_SCOPE_POLICY,
+  writeScopeVerdict,
 } from '../../domain/index';
 
 import type { AccountRecord, AppDeps, AuditAction, RunDir, RunHandle, RunRecord, RunRepo, TransportError } from '../ports';
@@ -156,6 +159,21 @@ const decideAsk = async (
     context: await riskContextOf(deps, input),
     ...(action !== undefined ? { action } : {}),
   });
+};
+
+/** The facts the write-scope verdict reads: the run's working directory, the work order's
+ *  worktree, and the repo's docs root and test folders. A fact that cannot be read stays absent,
+ *  and an absent fact is exactly what makes the verdict unchecked (R-159). */
+const writeScopeContextOf = async (deps: ExecuteDeps, input: ExecuteRunInput): Promise<WriteScopeContext> => {
+  const worktree = await deps.worktrees.existing(input.item.repo, input.item.workOrderId);
+  const loaded = await deps.definitions.load(input.item.repo);
+  const repo = loaded.ok ? loaded.value.repo : undefined;
+  return {
+    cwd: input.cwd,
+    ...(worktree !== undefined ? { worktreeRoot: worktree.path } : {}),
+    ...(repo?.docsRoot !== undefined ? { docsRoot: repo.docsRoot } : {}),
+    ...(repo?.testGlobs !== undefined ? { testGlobs: repo.testGlobs } : {}),
+  };
 };
 
 /** The push channel's feed (U-12 of docs/v2/ui.md): one call per event appended to the run's log.
@@ -851,6 +869,50 @@ async function driveRun(
         await deps.runs.update(runId, { sessionRef: event.sessionRef });
         break;
       case 'permission_ask': {
+        // A-409: the write-scope guard judges first, provider-blind — a write target certainly
+        // outside the role's write scope is denied here, before the board can be shown an ask or
+        // the risk table consulted. The denial is a tool answer, not a run failure: the agent is
+        // told and the run goes on.
+        const scopeVerdict = writeScopeVerdict({
+          scope: input.role.writeScope,
+          tool: event.tool,
+          target: event.target,
+          context: await writeScopeContextOf(deps, input),
+        });
+        if (scopeVerdict.verdict === 'deny') {
+          const denied: AgentEvent = { type: 'permission_answered', at: deps.clock.now(), id: event.id, decision: 'deny' };
+          streamed.push(denied);
+          await deps.runs.appendEvents(runId, [denied]);
+          notify?.(runId);
+          handle.answerPermission(event.id, 'deny');
+          // The guard itself is level-independent; the actor still names the level in force, and
+          // an unreadable chain denies all the same but surfaces as no policy actor — an invalid
+          // level never becomes one.
+          const autonomy = await effectiveAutonomy(deps, {
+            workOrderId: input.item.workOrderId,
+            repo: input.item.repo,
+          });
+          await audit(deps, {
+            at: deps.clock.now(),
+            action: 'permission.answered',
+            runId,
+            detail: { tool: event.tool, decision: 'deny', reason: 'write_scope' },
+            ...(autonomy.ok
+              ? { actor: { kind: 'policy' as const, policy: WRITE_SCOPE_POLICY, level: autonomy.value.level } }
+              : {}),
+          });
+          if (autonomy.ok) {
+            board?.recordAutoDecision({
+              runId,
+              askId: event.id,
+              tool: event.tool,
+              at: deps.clock.now(),
+              policy: WRITE_SCOPE_POLICY,
+              level: autonomy.value.level,
+            });
+          }
+          break;
+        }
         // The permission policy reads the chain per ask: only a low ask under a resolved auto
         // level is answered here, everything else parks on the human gate exactly as before. The
         // policy allow answers the transport's one-time option only (P-16) — never a standing one.
