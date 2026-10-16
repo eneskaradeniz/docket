@@ -16,7 +16,8 @@ same transport).
 - One data file is the single source of truth: `src/infrastructure/providers/registry/capability-registry.ts`, plain `as const` data checked with `satisfies` against the domain types. The types and the pure derivations live in `src/domain/providers/capability.ts` (domain rules: no npm packages, no Node builtins, no classes). The data sits in infrastructure because vendor names are banned outside `src/infrastructure/providers/`; an application port `CapabilityCatalog` exposes route kinds to `saveAccount`.
 - It holds, per provider: `planned` (manual flag), the six promotion gates (section 2) each with
   evidence, optional `steering` (`steerable` | `not_steerable`; absent reads `unknown` through
-  `CapabilityCatalog.steeringSupport`), and its route kinds. Per route kind: auth mode, endpoint host (preset only), identity
+  `CapabilityCatalog.steeringSupport`), `permissionChannel` (`native` | `bridge` | `none`, plus `bridgeHow?`
+  on `bridge` rows; P-66), and its route kinds. Per route kind: auth mode, endpoint host (preset only), identity
   source, `tierModels`, cost kind, quota probe kind, model source, `liveIsAuthoritative` (a plan-scoped
   live list hides the registry models it does not contain). Per model: `id`, `family`, `tier`,
   `thinking`, `contextWindow?`, `retired?`, `billing?` (`included`, `metered` or `unknown`; see P-40).
@@ -296,10 +297,18 @@ honest `unverified` status where live evidence is lacking. The real-run probe #1
 // providers — translation and support table (data, in the capability registry)
 export type CapabilityKind = CapabilityDef['kind'];
 export type TranslationSupport = 'native' | 'degraded' | 'unsupported' | 'unverified';
+export type PermissionChannel = 'native' | 'bridge' | 'none';
+export interface ChannelRow { readonly provider: string; readonly channel: PermissionChannel; readonly how?: string }
 export interface TranslationRow { readonly provider: string; readonly kind: CapabilityKind; readonly support: TranslationSupport; readonly how: string; readonly degradesTo?: CapabilityKind | 'prompt_text'; readonly sourceKinds?: readonly string[] }   // sourceKinds (R-149): the source kinds this row delivers; absent = every source kind
 export function supportFor(table: readonly TranslationRow[], provider: string, kind: CapabilityKind, sourceKind?: string): TranslationRow;   // missing row → { support: 'unverified' }; a sourceKind a sourceKinds row does not list → { support: 'unsupported' }, no degradesTo, how naming the source kind
-export interface SetupWarning { readonly stage: string; readonly capability: CapabilitySlug; readonly provider: string; readonly support: 'degraded' | 'unsupported' | 'unverified'; readonly how: string }
-export function setupWarnings(stages: readonly { stage: string; provider: string; capabilities: readonly CapabilityDef[] }[], table: readonly TranslationRow[]): readonly SetupWarning[];
+export type SetupWarning =
+  | { readonly stage: string; readonly capability: CapabilitySlug; readonly provider: string; readonly support: 'degraded' | 'unsupported' | 'unverified'; readonly how: string }
+  | { readonly stage: string; readonly provider: string; readonly kind: 'no_permission_channel'; readonly how: string };
+export function setupWarnings(
+  stages: readonly { stage: string; provider: string; capabilities: readonly CapabilityDef[]; docketTools?: boolean }[],
+  table: readonly TranslationRow[],
+  channels?: readonly ChannelRow[],
+): readonly SetupWarning[];
 
 // machine import (read-only)
 export interface MachineCandidate { readonly provider: string; readonly kind: CapabilityKind; readonly name: string; readonly sourcePath: string; readonly secretNames: readonly string[] }   // names only, never values
@@ -348,7 +357,7 @@ The initial table recorded as data in the capability registry (`registry/capabil
 | `opencode` | `plugin` | `unsupported` | JS plugin in the config tree plugin directory whose module load appends the marker line was not evidenced probe #1015, 2026-10-14 | | |
 | `opencode` | `command` | `degraded` | Template delivered as instruction text; the agent fills the placeholders | `prompt_text` | |
 
-### Rules (P-57 … P-60)
+### Rules (P-57 … P-60, P-66)
 
 - **P-57** (added 2026-10-12, #1006) `supportFor` answers from the table; a missing row is `unverified`; `setupWarnings` returns one warning per (stage, capability) whose support is not `native`, in stage order; the UI shows them at setup time and before a run starts; `unverified` is shown as such, never as `native`.
 - **P-58** (added 2026-10-12, #1006) The table's initial content (data in the registry; honest, no claim without evidence — the real-run probe #1015 later turns `unverified` into the observed value): for provider `claude-code` (stream-json/SDK): mcp native, skill native, hook native, context native, plugin native, command degraded→prompt_text; for `codex`: mcp native, context native, skill degraded→context, hook unsupported, plugin unverified, command degraded→prompt_text; for `agy`, `copilot`, `cursor`, `opencode`: every kind `unverified` except context (native: instruction files, P-37) and command (degraded→prompt_text).
@@ -369,6 +378,7 @@ The initial table recorded as data in the capability registry (`registry/capabil
   - `copilot`: `~/.copilot/` (or `$COPILOT_HOME`: `mcp-config.json` `mcpServers`, `copilot-instructions.md`, `skills/`, `plugins/`).
   - `opencode`: `~/.config/opencode/` (or `$OPENCODE_CONFIG_DIR`, `$OPENCODE_CONFIG`: `opencode.json` `mcp` / `plugins`, `AGENTS.md`, `skills/`, `plugins/`).
   - Other providers without evidenced documentation (`gemini-cli`) stay unconfigured and return an empty candidate list.
+- **P-66** (added 2026-10-16, #1234) Each provider record in the capability registry declares `permissionChannel: 'native' | 'bridge' | 'none'` (plus `bridgeHow?: string` on `bridge` rows): `claude-code`, `codex`, `copilot`, `cursor`, and `opencode` carry `'native'`; `agy` carries `'bridge'` with `bridgeHow: 'headless agy cannot ask: command, MCP and write calls are denied without a prompt'`. `setupWarnings` takes per-stage `docketTools?: boolean` and `channels?: readonly ChannelRow[]`: when a stage's provider has `channel === 'bridge'` and `docketTools === false` (`true` or `undefined` means Docket tools are on), it emits `{ stage, provider, kind: 'no_permission_channel', how }` ahead of capability-kind warnings for that stage; `'native'`, `'none'`, and absent channel rows emit no channel warning.
 
 Conflicts and supersessions (added 2026-10-12, #1006, D-7): Glossary "Capability — MCP, skill, hook, context" grows by plugin and command; "capabilities attached to roles" now also arrive through plugins; Phase 3.5 account-scoped capability candidates (R-62…R-67, #850–#866) stay as the import mechanism.
 
@@ -492,7 +502,7 @@ holds the level (capability-registry.test.ts:151-163).
 | C1 | pass | the bridge: waiter registration and deny on every end path stream-json.ts:50-57/:256-290; the ask child mcp/agy-ask.ts:185-229 (fail-closed); the listener agy-ask-bridge.ts:36-83 (token check, `NO_CHANNEL` deny); wiring electron/main.ts:666-671; tests stream-json.test.ts:606/:628/:646/:662; registry:71; the live run (#1221) |
 | C2 | partial | see notes |
 | C3 | pass | `denied_actions` becomes exactly one error event before finished: agy-dialect.ts:59-75/:96-97, fixture denied-result.jsonl, test agy-dialect.test.ts:95 (P-11 addendum, #1214); never a text event, the fold is unchanged |
-| C4 | fail | see notes |
+| C4 | pass | P-66 & U-337 (#1234): registry `permissionChannel: 'bridge'` + `bridgeHow`; `setupWarnings` emits `no_permission_channel` when `docketTools === false` on a bridge-channel provider (`capability.test.ts`, `setup-copy-proposal.test.ts`); `CapabilitySection` renders `capabilities.warning.noChannel` on the role row (`agent-capabilities.test.ts`) |
 | C5 | pass | the same provider-blind preflight run-executor.ts:663-666; agy live rows are billing-`unknown` by design (registry:253-272), so a hand-picked model always needs consent + a cap |
 | C6 | pass | the prompt rides the one-line NDJSON stdin envelope, never argv (defs.test.ts:259 P-1; agy-dialect.test.ts:82); env allowlist extras empty (launch-env.ts:50); a secretRef MCP server refuses the run `not_logged_in` (stream-json.test.ts:491); token, socket path and hook commands appear in neither hooks.json nor the launcher (agy-delivery.test.ts:282-306). Designed channel only: the 0600 run-scoped `.docket-ask.json` and `mcp_config.json`, and the docket-pages child env |
 | D1 | partial | see notes |
@@ -517,7 +527,6 @@ Non-pass rows — agy:
 - **B4 · partial** — Works: path plugin bundles are copied with a root `plugin.json` and load hooks + MCP (agy-delivery.ts:251-266; tests agy-delivery.test.ts:151-172; probe #1015 spike — registry:459-464, path-only per R-149). Does not: a plugin's own skill was never evidenced and no plugin rode the live run. Workaround: skills travel as first-class capabilities (B2). Why not done: not observed — probe scope. Proposal: one live run with a plugin that carries a skill.
 - **B6 · fail** — The CLI documents no config-dir override and its login lives under `~/.gemini/antigravity-cli` (P-56), so HOME is never redirected and the CLI may read the user's ambient configuration: isolation is deliberately not claimed (registry:61-64), the tests pin the pass-through posture (isolated-config.test.ts:251-267) and the level is capped `experimental` (capability.ts:94). Workaround: the experimental level says so in the UI; everything Docket writes stays inside the run dir (P-7 tests, isolated-config.test.ts:98). Why not done: CLI limit — no config-dir flag exists and redirecting HOME could cut the CLI off from its login (measured; the P-44 rule). Proposal: probe whether a run-scoped home with an adopted login survives, or adopt a CLI config-dir flag when one appears; until then the cap stands.
 - **C2 · partial** — Works: the P-64 wrapper runs the user's `before_tool` hooks before any ask and an exit 2 denies first (mcp/agy-ask.ts:210-214; test agy-ask.test.ts:200; live: `forbidden.txt` denied before any ask, #1221). Does not: the guard rules are user hooks — Docket enforces no forbidden-path set of its own before the ask (the same measured absence as claude-code). Workaround: the risk floor under `auto`; the human board otherwise. Why not done: not built. Proposal: the same pre-ask write-scope check as claude-code — it would be provider-blind.
-- **C4 · fail** — A role without the `docket-pages` capability (or any run without a run token) sets up no permission channel: the ask file stays `bridge: false`, the wrapper answers neutral `allow` and headless agy auto-denies `command`/`mcp`/`write` tools, surfacing only as the run's `denied_actions` error (stream-json.test.ts:662-684; §15 P-58 amendment #2). No setup-time warning exists — `setupWarnings` keys on capability kind only (capability.ts:158-180), and the runtime deny string 'no permission channel for this run' (agy-ask-bridge.ts:38) is an answer, not a warning. Workaround: the C3 error event tells the operator after the run. Why not done: not built (measured: no channel-keyed warning anywhere). Proposal: a provider-level SetupWarning when the def's ask rides a capability and the stage's roles carry no Docket tools.
 - **D1 · partial** — Works: `--conversation` resume is built and fake-CLI tested, and a resumed run rebuilds the same delivery — `--add-dir` re-passed, the `.agents` tree rewritten, the rules file present (stream-json.ts:184-200; stream-json.test.ts:455-489; defs.test.ts:378-388); the P-22 restart fallback is provider-blind (run-executor.ts:810-828). Does not: no live agy resume exists — explicitly listed as not observed (§15 P-58 amendment #2; the P-63 cross-reference in providers.md). Workaround: scripted evidence plus P-22. Why not done: no live run yet. Proposal: a live resume leg in the next operator run.
 - **D2 · partial** — Works: run.stop kills the whole process group (P-10 test stream-json.test.ts:318-351) and the run_end→Stop entry is writer-tested as the direct list inside the `docket` group (agy-delivery.test.ts:178-208, :222-248). Does not: a Stop hook firing was never observed live (registry:453, 'run_end not yet observed live'). Workaround: the writer tests pin the shape. Why not done: the live run's Stop path produced no observable marker. Proposal: a `run_end` marker hook in the next live run.
 - **D6 · partial** — Works: run.stop (above) plus honest refusal — the registry pins `not_steerable` (registry:67; capability-catalog.test.ts:203-213), `run.steer` answers `unsupported` before any audit (api.ts:1235-1238; api.test.ts:2156-2179) and the UI offers steering only when the transport can (#1148). Does not: mid-run steering is impossible — the stream-json prompt is one-shot on stdin and a later note is dropped (stream-json.ts:386-393/:402-405). Workaround: stop + resume, or a fresh run with the note in the prompt. Why not done: CLI/transport limit — no steering channel (P-61 records it as data). Proposal: none until the CLI grows an input channel; revisit together with the B6 probe.
@@ -529,8 +538,9 @@ Ordered by risk first, then effort; step 2 of the series works this list and not
 
 1. **B6 · agy** — isolation: probe a run-scoped home (or a config-dir flag) that keeps the login, or the
    experimental cap stands; it blocks every promotion.
-2. **C4 · agy** — a setup warning for a channel-less role; today the operator learns of the headless
-   auto-deny only after a wasted run.
+2. **C4 · agy** — closed in #1234: P-66 and U-337 warn at setup when a role with `docketTools: false` runs
+   on a bridge-channel provider (`setupWarnings` emits `no_permission_channel` and the role row renders
+   `capabilities.warning.noChannel`).
 3. **C2 · both** — a Docket-side forbidden-path/write-scope guard before the ask; roles already carry
    write-scope data, nothing enforces it pre-ask.
 4. **A/G6 · agy** — closed in #1237: the P-24 scenario runs a fourth, stream-json leg over the real

@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { Actor } from '../../domain/index';
-import { parseSlug } from '../../domain/index';
-import { createFakeDefinitionStore, createFakeDeps, createFakeGitProbe, createFakeRepoScanner } from '../ports/fakes';
+import type { Actor, RepoDef } from '../../domain/index';
+import { BUILTIN_FLOWS, BUILTIN_ROLES, parseSlug } from '../../domain/index';
+import { createFakeCapabilityCatalog, createFakeDefinitionStore, createFakeDeps, createFakeGitProbe, createFakeRepoScanner } from '../ports/fakes';
 import { defaultSetupAnswers } from './setup';
 import { setupApply, setupCopyProposal } from './setup-copy-proposal';
 
@@ -47,6 +47,79 @@ describe('setupCopyProposal', () => {
     await deps.projects.save({ id: project.value, name: 'Atölye', repos: [source.value] });
     const result = await setupCopyProposal(deps, { project: project.value, source: source.value, path: '/tmp/nogit' });
     expect(result).toEqual({ ok: false, error: 'not_a_git_repo' });
+  });
+
+  it('P-66: a bridge-channel account with a binding whose role opts out of the Docket tools warns in the proposal', async () => {
+    const git = createFakeGitProbe();
+    git.markWorkTree(REPO_PATH);
+    const definitions = createFakeDefinitionStore();
+    await definitions.installBuiltins({ roles: BUILTIN_ROLES, flows: BUILTIN_FLOWS });
+    const standard = BUILTIN_FLOWS[0];
+    if (standard === undefined) throw new Error('builtin flow missing');
+    // One stage's role opts out of the Docket tools through an overlay; the rest keep them, so
+    // exactly the bridge-without-tools stage warns.
+    const sourceRepo: RepoDef = {
+      id: source.value,
+      name: 'Atölye',
+      defaultLimitPolicy: 'wait_resume',
+      commandSets: { tests: ['npm test'] },
+      docsRoot: 'docs',
+      testGlobs: ['**/*.test.ts'],
+      flow: {
+        flowId: standard.id,
+        version: 1,
+        stages: standard.stages,
+        bindings: standard.stages.map((stage) => ({
+          stage: stage.id,
+          ...(stage.role === null
+            ? {}
+            : {
+                role: {
+                  roleId: stage.role,
+                  version: 1,
+                  ...(stage.id === 'implement' ? { overlay: { docketTools: false } } : {}),
+                },
+              }),
+          accounts: [],
+        })),
+      },
+    };
+    definitions.setRepoDef(source.value, sourceRepo);
+    const deps = createFakeDeps({
+      git,
+      definitions,
+      capabilities: createFakeCapabilityCatalog([], [], [
+        {
+          provider: 'fixture-bridge',
+          channel: 'bridge',
+          how: 'headless fixture-bridge cannot ask: command, MCP and write calls are denied without a prompt',
+        },
+      ]),
+      repoScanner: { ...createFakeRepoScanner(), detect: async () => ({ docsRoot: 'docs', testGlobs: ['**/*.test.ts'] }) },
+    });
+    await deps.projects.save({ id: project.value, name: 'Atölye', repos: [source.value] });
+    await deps.repos.register({ repoId: 'r-1', slug: source.value, path: '/work/atolye', fingerprint: { rootCommit: 'abc' } });
+    const accountId = parseSlug<'account'>('a-1');
+    if (!accountId.ok) throw new Error('accountId');
+    await deps.accounts.save({
+      id: accountId.value,
+      provider: 'fixture-bridge',
+      label: 'Köprü',
+      authMode: 'subscription',
+      limitPolicy: 'wait_resume',
+      caps: [],
+    });
+    const result = await setupCopyProposal(deps, { project: project.value, source: source.value, path: REPO_PATH });
+    if (!result.ok) throw new Error(`setup failed: ${JSON.stringify(result)}`);
+    expect(result.ok).toBe(true);
+    expect(result.value.warnings).toEqual([
+      {
+        stage: 'implement',
+        provider: 'fixture-bridge',
+        kind: 'no_permission_channel',
+        how: 'headless fixture-bridge cannot ask: command, MCP and write calls are denied without a prompt',
+      },
+    ]);
   });
 });
 

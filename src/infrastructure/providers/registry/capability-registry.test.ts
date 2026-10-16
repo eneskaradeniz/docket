@@ -22,7 +22,7 @@ import type {
 import { mergeCatalog, resolveTier, setupWarnings, supportFor, supportLevel, translateCapabilities } from '../../../domain/index';
 
 const slugOf = <B extends string>(input: string): Slug<B> => input as Slug<B>;
-import { CAPABILITY_REGISTRY, FAMILY_PATTERNS, findProvider, findRouteKind, TRANSLATION_TABLE } from './capability-registry';
+import { CAPABILITY_REGISTRY, FAMILY_PATTERNS, findProvider, findRouteKind, PERMISSION_CHANNELS, TRANSLATION_TABLE } from './capability-registry';
 
 const DOC_TABLE_PATH = join(fileURLToPath(new URL('../../../../docs/v2/provider-capabilities.md', import.meta.url)));
 
@@ -100,6 +100,54 @@ describe('capability registry as data (P-27)', () => {
     expect(steeringOf('copilot')).toBe('not_steerable');
     expect(steeringOf('cursor')).toBe('not_steerable');
     expect(steeringOf('opencode')).toBe('not_steerable');
+  });
+
+  it('P-66: the six launch providers pin their permission channel from their transport, and only the bridge row carries its sentence', () => {
+    const channelOf = (providerId: string): string | undefined =>
+      CAPABILITY_REGISTRY.providers.find((provider) => provider.providerId === providerId)?.permissionChannel;
+    // claude-code asks through the SDK callback, codex through the app-server approval, the three
+    // acp providers through session/request_permission; agy asks only through the Docket bridge.
+    expect(channelOf('claude-code')).toBe('native');
+    expect(channelOf('codex')).toBe('native');
+    expect(channelOf('agy')).toBe('bridge');
+    expect(channelOf('copilot')).toBe('native');
+    expect(channelOf('cursor')).toBe('native');
+    expect(channelOf('opencode')).toBe('native');
+    const providers: readonly ProviderRecord[] = CAPABILITY_REGISTRY.providers;
+    for (const provider of providers) {
+      expect(provider.bridgeHow !== undefined, provider.providerId).toBe(provider.permissionChannel === 'bridge');
+    }
+    expect(findProvider('agy')?.bridgeHow).toBe(
+      'headless agy cannot ask: command, MCP and write calls are denied without a prompt',
+    );
+  });
+
+  it('P-66: the channel table carries one row per provider and setupWarnings warns only for the bridge-without-tools stage', () => {
+    expect(PERMISSION_CHANNELS.map((row) => `${row.provider}/${row.channel}`)).toEqual([
+      'claude-code/native',
+      'codex/native',
+      'agy/bridge',
+      'copilot/native',
+      'cursor/native',
+      'opencode/native',
+    ]);
+    const warnings = setupWarnings(
+      [
+        { stage: 'plan', provider: 'claude-code', capabilities: [], docketTools: false },
+        { stage: 'work', provider: 'agy', capabilities: [], docketTools: false },
+        { stage: 'review', provider: 'agy', capabilities: [], docketTools: true },
+      ],
+      TRANSLATION_TABLE,
+      PERMISSION_CHANNELS,
+    );
+    expect(warnings).toEqual([
+      {
+        stage: 'work',
+        provider: 'agy',
+        kind: 'no_permission_channel',
+        how: 'headless agy cannot ask: command, MCP and write calls are denied without a prompt',
+      },
+    ]);
   });
 });
 
@@ -600,6 +648,7 @@ describe('translation support table (P-58)', () => {
     const warnings = setupWarnings(
       [{ stage: 'work', provider: 'codex', capabilities: [skill, plugin, hook] }],
       TRANSLATION_TABLE,
+      PERMISSION_CHANNELS,
     );
     expect(warnings).toEqual([
       {
@@ -712,6 +761,7 @@ describe('plugin source kinds (R-149)', () => {
         { stage: 'review', provider: 'codex', capabilities: [pathPlugin, marketPlugin] },
       ],
       TRANSLATION_TABLE,
+      PERMISSION_CHANNELS,
     );
     expect(warnings).toEqual([
       {

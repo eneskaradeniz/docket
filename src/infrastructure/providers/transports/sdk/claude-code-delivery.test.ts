@@ -768,6 +768,7 @@ describe('claude-code SDK plugin-kind and command-kind delivery (CC-9 … CC-12)
     const warnings = setupWarnings(
       [{ stage: 'implement', provider: 'claude-code', capabilities: [marketplacePlugin] }],
       TRANSLATION_TABLE,
+      [],
     );
 
     const accounts = createFakeAccountRepo();

@@ -29,10 +29,21 @@ export type Evidence =
   | { readonly kind: 'operator_run'; readonly id: string }
   | { readonly kind: 'waived'; readonly reason: string };
 
+/** P-66: how a provider's headless runs reach the operator for permission — the transport's own
+ *  ask surface (`native`), the Docket tools' bridge (`bridge`), or never because the run is
+ *  sandboxed (`none`). */
+export type PermissionChannel = 'native' | 'bridge' | 'none';
+
 export interface ProviderRecord {
   readonly providerId: string;
   /** Manual flag: the definition exists but nothing is verified; it overrides every gate. */
   readonly planned?: true;
+  /** P-66: the provider's truthful permission channel; a provider that cannot ask and runs
+   *  sandboxed records `none`, never a silent absence. */
+  readonly permissionChannel: PermissionChannel;
+  /** P-66: the sentence the no-permission-channel setup warning carries; present exactly when
+   *  `permissionChannel` is `bridge`, because only a bridge can lose its only ask path. */
+  readonly bridgeHow?: string;
   readonly gates: Readonly<Partial<Record<GateId, Evidence>>>;
   /** Evidence that a run keeps the CLI from reading the user's configuration of other tools; a
    * provider without it is capped at `experimental`. */
@@ -155,21 +166,53 @@ export function supportFor(
   return { ...rest, support: 'unsupported', how: `${row.how} — source kind ${sourceKind} is not delivered` };
 }
 
-export interface SetupWarning {
-  readonly stage: string;
-  readonly capability: CapabilitySlug;
+/** P-66: the channel table's row — data, like the translation table, so the domain knows no
+ *  provider id. */
+export interface ChannelRow {
   readonly provider: string;
-  readonly support: 'degraded' | 'unsupported' | 'unverified';
-  readonly how: string;
+  readonly channel: PermissionChannel;
+  /** The sentence the bridge warning carries; absent on native and none rows. */
+  readonly how?: string;
 }
 
-/** P-57: one warning per (stage, capability) whose support is not `native`, in stage order. */
+export type SetupWarning =
+  | {
+      readonly stage: string;
+      readonly capability: CapabilitySlug;
+      readonly provider: string;
+      readonly support: 'degraded' | 'unsupported' | 'unverified';
+      readonly how: string;
+    }
+  | {
+      readonly stage: string;
+      readonly provider: string;
+      readonly kind: 'no_permission_channel';
+      readonly how: string;
+    };
+
+/** P-57/P-66: one warning per (stage, capability) whose support is not `native`, plus the stage's
+ *  channel warning, in stage order — the channel warning first, because a stage that cannot ask
+ *  at all is the wider problem than any single capability. */
 export function setupWarnings(
-  stages: readonly { readonly stage: string; readonly provider: string; readonly capabilities: readonly CapabilityDef[] }[],
+  stages: readonly {
+    readonly stage: string;
+    readonly provider: string;
+    readonly capabilities: readonly CapabilityDef[];
+    /** P-66: whether the stage's role carries the Docket tools; absent (unknown) never warns. */
+    readonly docketTools?: boolean;
+  }[],
   table: readonly TranslationRow[],
+  channels: readonly ChannelRow[],
 ): readonly SetupWarning[] {
   const warnings: SetupWarning[] = [];
-  for (const { stage, provider, capabilities } of stages) {
+  for (const { stage, provider, capabilities, docketTools } of stages) {
+    const channel = channels.find((row) => row.provider === provider);
+    // Only a bridge can lose its only ask path: the Docket tools carry it. A native ask rides the
+    // transport's own callback, a sandboxed run never asks, and a row without its sentence or a
+    // role whose tools are unknown is an absent input — none of them warns.
+    if (channel?.channel === 'bridge' && docketTools === false && channel.how !== undefined) {
+      warnings.push({ stage, provider, kind: 'no_permission_channel', how: channel.how });
+    }
     for (const capability of capabilities) {
       const row = supportFor(table, provider, capability.kind, sourceKindOf(capability));
       if (row.support === 'native') continue;

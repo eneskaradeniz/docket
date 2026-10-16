@@ -1,7 +1,7 @@
 // Route-kind lookups over the capability registry. The registry data is infrastructure, so the
 // application sees only two questions: which route kind an account rides, and what that route kind
 // fixes. Contract: docs/v2/application.md (A-43, A-44); data: src/infrastructure/providers/registry/.
-import type { AuthMode, Billing, Tier, TranslationRow } from '../../domain/index';
+import type { AuthMode, Billing, ChannelRow, Tier, TranslationRow } from '../../domain/index';
 
 export interface CapabilityCatalog {
   /** The account's route kind: the explicit `routeKind`, else the provider's default for its authMode. */
@@ -28,6 +28,8 @@ export interface CapabilityCatalog {
   steeringSupport(providerId: string): boolean | 'unknown';
   /** The capability translation and support table (P-57, P-58): data the translator reads. */
   translationTable(): readonly TranslationRow[];
+  /** The provider permission-channel table (P-66): data the setup warning's second source reads. */
+  permissionChannels(): readonly ChannelRow[];
   /** The instruction-file names one provider reads natively, registry order (P-37). */
   nativeInstructionFiles(providerId: string): readonly string[];
   /** The union of known instruction-file names across providers — the candidate list to look for. */
