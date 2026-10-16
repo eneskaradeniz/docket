@@ -19,3 +19,4 @@ export * from './usage/index';
 export * from './stage-output/index';
 export * from './changes/index';
 export * from './redaction/index';
+export * from './connector/index';

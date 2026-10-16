@@ -54,8 +54,9 @@ const DOMAIN_MODULES = {
   'stage-output': ['definitions', 'pages'],
   changes: [],
   redaction: [],
+  connector: ['shared'],
   // Cross-module scenario tests only (no production code): may import every module.
-  scenarios: ['shared', 'definitions', 'quota', 'budget', 'proposal', 'conversations', 'actions', 'resolver', 'gates', 'providers', 'library', 'flow', 'dispatch', 'roadmap', 'usage', 'stage-output', 'changes', 'redaction'],
+  scenarios: ['shared', 'definitions', 'quota', 'budget', 'proposal', 'conversations', 'actions', 'resolver', 'gates', 'providers', 'library', 'flow', 'dispatch', 'roadmap', 'usage', 'stage-output', 'changes', 'redaction', 'connector'],
 };
 // Module dependency map inside src/infrastructure (docs/v2/infrastructure.md).
 const INFRA_MODULES = {

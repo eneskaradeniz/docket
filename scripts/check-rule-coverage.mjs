@@ -99,9 +99,7 @@ const PENDING = new Map([
 
   // #1247 — connector contract (Phase 9 step 0), docs-first. Each id names the follow-up number
   // in the issue's list that implements it; that issue removes the id from this list in the same
-  // commit as its test.
-  ['domain:R-182', '#1247 follow-up 1 (domain/connector + validation)'],
-  ['domain:R-183', '#1247 follow-up 1 (domain/connector + validation)'],
+  // commit as its test. Follow-up 1 landed R-182/R-183 with domain/connector.
   ['application:A-415', '#1247 follow-up 2 (ConnectorRegistry + settings key + resolver rewrite)'],
   ['application:A-416', '#1247 follow-up 2 (ConnectorRegistry + settings key + resolver rewrite)'],
   ['application:A-417', '#1247 follow-up 2 (ConnectorRegistry + settings key + resolver rewrite)'],
