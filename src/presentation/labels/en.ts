@@ -839,6 +839,7 @@ export const EN: LabelBundle = {
   'providers.status.not_installed': "Not installed",
   'providers.group': "Not installed",
   'providers.copy': "Copy",
+  'providers.versionDrift': "Installed version {installed}; this integration was verified on version {measured}.",
   'settings.theme.label': 'Theme',
   'settings.theme.system': 'System',
   'settings.theme.dark': 'Dark',

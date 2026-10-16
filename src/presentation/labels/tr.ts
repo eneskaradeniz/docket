@@ -837,6 +837,7 @@ export const TR: LabelBundle = {
   'providers.status.not_installed': "Kurulu değil",
   'providers.group': "Kurulu değil",
   'providers.copy': "Kopyala",
+  'providers.versionDrift': "Kurulu sürüm {installed}; bu entegrasyon {measured} sürümünde doğrulandı.",
   'settings.theme.label': 'Tema',
   'settings.theme.system': 'Sistem',
   'settings.theme.dark': 'Koyu',

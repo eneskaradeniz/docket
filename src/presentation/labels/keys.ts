@@ -888,6 +888,7 @@ export const LABEL_KEYS = [
   'providers.status.not_installed',
   'providers.group',
   'providers.copy',
+  'providers.versionDrift',
   'settings.theme.label',
   'settings.theme.system',
   'settings.theme.dark',

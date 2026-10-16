@@ -1,8 +1,10 @@
 #!/usr/bin/env node
-// U-333 / U-337 drift guard — the presentation layer-safe copies of the translation table and the
-// permission-channel table (the base64 CAPABILITY_TRANSLATION_TABLE_B64 and
+// U-333 / U-337 / U-338 drift guard — the presentation layer-safe copies of the translation table,
+// the permission-channel table (the base64 CAPABILITY_TRANSLATION_TABLE_B64 and
 // CAPABILITY_PERMISSION_CHANNELS_B64 constants in src/presentation/stores/agent-capabilities.ts)
-// must equal the infrastructure registry's TRANSLATION_TABLE and PERMISSION_CHANNELS row for row.
+// and the measured-version table (CAPABILITY_MEASURED_VERSIONS_B64 in
+// src/presentation/stores/providers.ts) must equal the infrastructure registry's TRANSLATION_TABLE,
+// PERMISSION_CHANNELS and MEASURED_VERSIONS row for row.
 // No layer may read both sides (presentation may not import infrastructure, infrastructure may not
 // import presentation), so the guard lives here under scripts/ the way check-rule-coverage.mjs
 // does; TypeScript loads the same way gen-provider-matrix.mjs loads it: a direct .ts import under
@@ -11,10 +13,11 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PERMISSION_CHANNELS, TRANSLATION_TABLE } from '../src/infrastructure/providers/registry/capability-registry.ts';
+import { MEASURED_VERSIONS, PERMISSION_CHANNELS, TRANSLATION_TABLE } from '../src/infrastructure/providers/registry/capability-registry.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const STORE_PATH = join(ROOT, 'src', 'presentation', 'stores', 'agent-capabilities.ts');
+const PROVIDERS_STORE_PATH = join(ROOT, 'src', 'presentation', 'stores', 'providers.ts');
 const WRITE = process.argv.includes('--write');
 const REGEN_HINT = 'regenerate with: npm run gen:capability-copy (tsx scripts/check-capability-copy.mjs --write)';
 
@@ -34,10 +37,20 @@ const copyChannelRow = (row) => {
   return copy;
 };
 
+/** The version copy's row: provider and the measured side — the installed side never travels with
+ *  the copy, it joins at render time from discovery. */
+const copyVersionRow = (row) => {
+  const copy = { provider: row.provider };
+  if (row.measured !== undefined) copy.measured = row.measured;
+  return copy;
+};
+
 const expectedRows = () => TRANSLATION_TABLE.map(copyRow);
 const expectedBase64 = () => Buffer.from(JSON.stringify(expectedRows()), 'utf8').toString('base64');
 const expectedChannelRows = () => PERMISSION_CHANNELS.map(copyChannelRow);
 const expectedChannelBase64 = () => Buffer.from(JSON.stringify(expectedChannelRows()), 'utf8').toString('base64');
+const expectedVersionRows = () => MEASURED_VERSIONS.map(copyVersionRow);
+const expectedVersionBase64 = () => Buffer.from(JSON.stringify(expectedVersionRows()), 'utf8').toString('base64');
 
 /** Structural compare independent of field order: stable JSON with sorted keys. */
 const canonical = (value) =>
@@ -82,19 +95,28 @@ if (channelMatch === null) {
   console.error(`capability copy drift check: CAPABILITY_PERMISSION_CHANNELS_B64 literal not found in ${STORE_PATH}\n${REGEN_HINT}`);
   process.exit(1);
 }
+const providersSource = readFileSync(PROVIDERS_STORE_PATH, 'utf8');
+const versionMatch = /(const CAPABILITY_MEASURED_VERSIONS_B64 =\s*')([A-Za-z0-9+/=]+)(')/.exec(providersSource);
+if (versionMatch === null) {
+  console.error(`capability copy drift check: CAPABILITY_MEASURED_VERSIONS_B64 literal not found in ${PROVIDERS_STORE_PATH}\n${REGEN_HINT}`);
+  process.exit(1);
+}
 
 const fresh = expectedBase64();
 const freshChannels = expectedChannelBase64();
+const freshVersions = expectedVersionBase64();
 if (WRITE) {
   const nextSource = source
     .replace(match[0], `${match[1]}${fresh}${match[3]}`)
     .replace(channelMatch[0], `${channelMatch[1]}${freshChannels}${channelMatch[3]}`);
-  if (nextSource === source) {
+  const nextProvidersSource = providersSource.replace(versionMatch[0], `${versionMatch[1]}${freshVersions}${versionMatch[3]}`);
+  if (nextSource === source && nextProvidersSource === providersSource) {
     console.log('capability copy already current');
   } else {
-    writeFileSync(STORE_PATH, nextSource, 'utf8');
+    if (nextSource !== source) writeFileSync(STORE_PATH, nextSource, 'utf8');
+    if (nextProvidersSource !== providersSource) writeFileSync(PROVIDERS_STORE_PATH, nextProvidersSource, 'utf8');
     console.log(
-      `capability copy regenerated (${expectedRows().length} rows, ${expectedChannelRows().length} channels)`,
+      `capability copy regenerated (${expectedRows().length} rows, ${expectedChannelRows().length} channels, ${expectedVersionRows().length} versions)`,
     );
   }
   process.exit(0);
@@ -102,9 +124,11 @@ if (WRITE) {
 
 let copyRows;
 let copyChannelRows;
+let copyVersionRows;
 try {
   copyRows = JSON.parse(Buffer.from(match[2], 'base64').toString('utf8'));
   copyChannelRows = JSON.parse(Buffer.from(channelMatch[2], 'base64').toString('utf8'));
+  copyVersionRows = JSON.parse(Buffer.from(versionMatch[2], 'base64').toString('utf8'));
 } catch (error) {
   console.error(`capability copy drift check: the constant does not decode (${error.message})\n${REGEN_HINT}`);
   process.exit(1);
@@ -125,4 +149,12 @@ if (canonical(copyChannelRows) !== canonical(expectedChannels)) {
   );
   process.exit(1);
 }
-console.log(`capability copy drift check clean (${expected.length} rows, ${expectedChannels.length} channels)`);
+const expectedVersions = expectedVersionRows();
+if (canonical(copyVersionRows) !== canonical(expectedVersions)) {
+  console.error(
+    `capability copy drift: the presentation version copy does not equal the registry table (copy ${copyVersionRows.length} rows, registry ${expectedVersions.length} rows)\n` +
+      `${rowDiffs(copyVersionRows, expectedVersions, (row) => `${row.provider}`).join('\n')}\n${REGEN_HINT}`,
+  );
+  process.exit(1);
+}
+console.log(`capability copy drift check clean (${expected.length} rows, ${expectedChannels.length} channels, ${expectedVersions.length} versions)`);
