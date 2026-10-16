@@ -132,4 +132,28 @@ describe('child environment allowlist (P-8)', () => {
     expect('CODEX_HOME' in buildChildEnv('copilot', ambient, {})).toBe(false);
     expect('CODEX_HOME' in buildChildEnv('codex', BASE_ENV, {})).toBe(false);
   });
+
+  it('I-112: the agy allowlist carries the machine git identity and nothing else beyond the base set; HOME passes from the base and the account overrides it', () => {
+    // A home-rooted account launch (P-67) points HOME at the account's identity directory, which
+    // hides the machine's ~/.gitconfig from every command the agent runs — so GIT_CONFIG_GLOBAL
+    // is the one non-secret ambient file the agy allowlist admits. Every other home-shaped
+    // ambient path stays out, and no other provider's child sees the git identity at all.
+    const ambient = {
+      ...BASE_ENV,
+      GIT_CONFIG_GLOBAL: '/Users/someone/.gitconfig',
+      SSH_AUTH_SOCK: '/private/tmp/agent.sock',
+      XDG_CONFIG_HOME: '/Users/someone/.config',
+      NPM_CONFIG_USERCONFIG: '/Users/someone/.npmrc',
+    };
+    const redirected = buildChildEnv('agy', ambient, { HOME: '/Users/someone/.agy-max' });
+    expect(redirected.HOME).toBe('/Users/someone/.agy-max');
+    expect(redirected.GIT_CONFIG_GLOBAL).toBe('/Users/someone/.gitconfig');
+    expect('SSH_AUTH_SOCK' in redirected).toBe(false);
+    expect('XDG_CONFIG_HOME' in redirected).toBe(false);
+    expect('NPM_CONFIG_USERCONFIG' in redirected).toBe(false);
+    // Without an identity directory the machine home passes through as before (P-67), and the
+    // git identity stays an agy-only allowance.
+    expect(buildChildEnv('agy', ambient, {}).HOME).toBe(BASE_ENV.HOME);
+    expect('GIT_CONFIG_GLOBAL' in buildChildEnv('claude-code', ambient, {})).toBe(false);
+  });
 });

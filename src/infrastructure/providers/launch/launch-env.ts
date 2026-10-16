@@ -47,7 +47,12 @@ const PROVIDER_ENV_ALLOWLIST: Readonly<Record<string, readonly string[]>> = {
   // The CLI's documented home (its --profile help names $CODEX_HOME), where auth.json lives: the
   // login probe and a run must read the same one.
   codex: ['CODEX_HOME'],
-  agy: [],
+  // The home-rooted CLI (P-67, I-112): HOME itself passes from the base set and the account's
+  // identity directory overrides it from the run config — the designed channel. GIT_CONFIG_GLOBAL
+  // is the one non-secret ambient file admitted beyond the base set: a redirected home hides the
+  // machine's ~/.gitconfig from every command the agent runs, so the commit identity crosses.
+  // Nothing else home-shaped passes — never ssh, gh, npm or keychain material.
+  agy: ['GIT_CONFIG_GLOBAL'],
   // The CLI's documented home override ("override the directory where configuration and state
   // files are stored"), the stored login among them: an ambient value is the machine's own
   // relocation, so the probe and a run read the same one.

@@ -248,7 +248,7 @@ describe('isolation and telemetry (P-44)', () => {
     expect(Object.values(childEnv).some((value) => value.startsWith(realHome))).toBe(false);
   });
 
-  it('P-44: an agy, copilot or cursor run never replaces HOME — the machine home reaches the child, and none is invented when the machine carries no HOME', async () => {
+  it('P-44: an agy, copilot or cursor run without an identity directory never replaces HOME — the machine home reaches the child, and none is invented when the machine carries no HOME', async () => {
     const { root, runDir } = await createRoot();
     const realHome = join(root, 'real-home');
     for (const id of ['agy', 'copilot', 'cursor']) {
@@ -264,6 +264,59 @@ describe('isolation and telemetry (P-44)', () => {
       const withoutHome = { ...buildChildEnv(def.id, { PATH: '/bin' }, {}), ...config.env, ...launch.env };
       expect('HOME' in withoutHome, id).toBe(false);
     }
+  });
+
+  it('P-67: an agy run of an account with an identity directory points HOME there and passes only the machine gitconfig across', async () => {
+    const { root, runDir } = await createRoot();
+    const realHome = await createSentinelHome(root);
+    const identityDir = join(root, 'agy-max');
+    await mkdir(identityDir, { recursive: true });
+    const machineGitconfig = join(realHome, '.gitconfig');
+    const def = defById('agy');
+    const homeBefore = await snapshotTree(realHome);
+    const identityBefore = await snapshotTree(identityDir);
+
+    const config = await writeRunConfig(runDir, def, RUN_CAPABILITIES, { identityDir, machineGitconfig });
+    const launch = def.buildLaunch({ prompt: 'x', configDir: config.configDir });
+    // The transports spread the allowlisted machine env first, the run config on top of it.
+    const childEnv = {
+      ...buildChildEnv(def.id, { HOME: realHome, PATH: '/bin', GIT_CONFIG_GLOBAL: '/ambient/other-gitconfig' }, {}),
+      ...config.env,
+      ...launch.env,
+    };
+
+    // The CLI's whole tree — login included — lands in the identity directory: the run's own
+    // home points there, and the designed git identity wins over any ambient variable.
+    expect(childEnv.HOME).toBe(identityDir);
+    expect(childEnv.GIT_CONFIG_GLOBAL).toBe(machineGitconfig);
+    // Nothing is read from or written to the real home, and nothing is written into or symlinked
+    // from the identity directory: the writer touches only the run dir.
+    expect(await snapshotTree(realHome)).toEqual(homeBefore);
+    expect(await snapshotTree(identityDir)).toEqual(identityBefore);
+    // No other ambient path crosses the redirected home: the git identity is the one exception.
+    for (const [name, value] of Object.entries(childEnv)) {
+      if (name === 'GIT_CONFIG_GLOBAL') continue;
+      expect(value.startsWith(realHome), name).toBe(false);
+    }
+    // The run's own files stay in the run directory and still reach the CLI through --add-dir.
+    expect(config.configDir.startsWith(runDir)).toBe(true);
+    expect(launch.args).toContain(config.configDir);
+  });
+
+  it('P-67: an agy run of an account with an identity directory and no machine gitconfig sets no git identity, and the redirect never names the run directory', async () => {
+    const { root, runDir } = await createRoot();
+    const realHome = join(root, 'real-home');
+    const identityDir = join(root, 'agy-max');
+    const def = defById('agy');
+
+    const config = await writeRunConfig(runDir, def, [], { identityDir });
+    expect(config.env).toEqual({ HOME: identityDir });
+    expect(JSON.stringify(config.env)).not.toContain(runDir);
+
+    // A machine with a gitconfig the redirect cannot see: without the identity directory the
+    // machine home reaches the child and nothing is set — today's behaviour stands.
+    const unredirected = await writeRunConfig(runDir, def, [], { machineGitconfig: join(realHome, '.gitconfig') });
+    expect(unredirected.env).toEqual({});
   });
 
   it('P-44: a definition without isolation or telemetry flags launches exactly as before', async () => {

@@ -171,10 +171,21 @@ export interface ProviderAuthProbe {
 }
 
 /** How the run-scoped config dir is passed to this CLI. `none` is for a CLI whose login lives in
- * its own home: the launch sets no variable and no flag, so the machine's login stays reachable. */
+ * its own home: the launch sets no variable and no flag, so the machine's login stays reachable.
+ * An `env-var` root named HOME is the account-home form (P-67): the CLI's whole tree — login
+ * included — resolves under HOME, so the launch points that variable at the account's identity
+ * directory, never at a run directory. */
 export type ProviderConfig =
   | { readonly mechanism: 'env-var' | 'flag'; readonly name: string }
   | { readonly mechanism: 'none' };
+
+/** P-67: the variable a home-rooted CLI resolves its whole tree — login included — from, set
+ *  exactly when `config` names HOME. A launch points it at the account's identity directory and
+ *  never at a run directory (a run-scoped home would cut the CLI off from its login, P-44); the
+ *  login probe and the model listing of one account point it at the same directory. */
+export function homeRootEnvOf(def: ProviderDef): string | undefined {
+  return def.config.mechanism === 'env-var' && def.config.name === 'HOME' ? def.config.name : undefined;
+}
 
 /**
  * How a CLI is kept from reading the user's configuration of other tools (another agent's
