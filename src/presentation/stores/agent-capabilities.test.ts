@@ -1,10 +1,11 @@
-// stores/agent-capabilities.test.ts — U-284, U-285 and the agent-capabilities store rules.
+// stores/agent-capabilities.test.ts — U-284, U-285, U-333 and the agent-capabilities store rules.
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import type { Command, CommandResult } from '../../api/commands';
 import type { DefinitionListItem, McpStatusView, Query } from '../../api/queries';
+import { parseSlug, supportFor } from '../../domain/index';
 import { CapabilitySection } from '../components/capability-section';
 import { EN } from '../labels/en';
 import { TR } from '../labels/tr';
@@ -40,6 +41,77 @@ describe('machine import copy (U-285)', () => {
   it('U-285: the translation table copy matches the infrastructure registry row count', () => {
     expect(CAPABILITY_TRANSLATION_TABLE.length).toBeGreaterThan(0);
     expect(CAPABILITY_TRANSLATION_TABLE.some((row) => row.provider === 'claude-code' && row.kind === 'mcp')).toBe(true);
+  });
+});
+
+describe('the regenerated capability copy (U-333)', () => {
+  it('U-333: the agy rows read native for mcp, skill, hook and plugin — the delivery series landed in the copy', () => {
+    for (const kind of ['mcp', 'skill', 'hook', 'plugin'] as const) {
+      expect(supportFor(CAPABILITY_TRANSLATION_TABLE, 'agy', kind).support).toBe('native');
+    }
+    expect(warningForKind('mcp', ['agy'], { agy: 'agy' })).toBeNull();
+  });
+
+  it('U-333: a role bound only to agy with an mcp capability raises no capabilities.warning.unsupported', async () => {
+    const slug = <T extends string>(id: string) => {
+      const parsed = parseSlug<T>(id);
+      if (!parsed.ok) throw new Error(id);
+      return parsed.value;
+    };
+    const store = createAgentCapabilitiesStore({
+      api: {
+        query: async (query: Query) => {
+          if (query.type === 'providers.discovered') {
+            return [
+              { defId: 'agy', name: 'agy', installUrl: null, binPath: '/usr/local/bin/agy', version: '1.3.6', loggedIn: true, optionalFlags: [] },
+            ];
+          }
+          if (query.type === 'definitions.list') {
+            return query.kind === 'mcp'
+              ? [{
+                  definitionId: 'lookup',
+                  version: 1,
+                  recordedAt: 0,
+                  archived: false,
+                  body: { kind: 'mcp', id: 'lookup', name: 'Lookup', command: 'npx', args: [], env: {} },
+                  removal: { kind: 'delete' },
+                }]
+              : [];
+          }
+          if (query.type === 'roles.list') {
+            return [{ id: 'runner', name: 'Koşucu', version: 1, removal: { kind: 'delete' }, pastVersions: [], stages: [] }];
+          }
+          return [];
+        },
+        command: async () => ({ ok: true }),
+      },
+      actor: { kind: 'user', id: 'u', label: 'U' },
+      runCommand: async () => ({ ok: true }),
+      roleLibrary: async () => [
+        {
+          definitionId: 'runner',
+          version: 1,
+          recordedAt: 0,
+          archived: false,
+          body: {
+            id: slug<'role'>('runner'),
+            name: 'Koşucu',
+            instructions: '',
+            writeScope: { kind: 'none' },
+            capabilities: [slug<'capability'>('lookup')],
+            active: true,
+          },
+        },
+      ],
+      now: () => 0,
+    });
+    store.setSection('roles');
+    await store.load();
+    const [row] = store.state().roles;
+    if (row === undefined) throw new Error('roles row missing');
+    expect(row.warningKey).toBeNull();
+    expect(store.roleWarning(row)).toBeNull();
+    expect(store.rowWarning('mcp')).toBeNull();
   });
 });
 

@@ -19,6 +19,7 @@ import { createAppServerTransport } from '../transports/app-server/index';
 import {
   BUILTIN_STREAM_DIALECTS,
   createStreamJsonTransport,
+  type AgyAskBridge,
   type StreamDialect,
 } from '../transports/stream-json/index';
 import { createAcpTransport } from '../transports/acp/index';
@@ -38,6 +39,10 @@ export interface ProviderTransportFactoryConfig {
   /** Injectable stream dialects for tests; default: the built-in registry. An id without an
    * entry is reported as unsupported when the transport starts, never a crash. */
   readonly streamDialects?: Readonly<Record<string, StreamDialect>>;
+  /** The agy permission channel (P-63): the composition root passes the app's bridge and the
+   * stream-json transport registers each bridged run's waiter on it. Absent means no channel —
+   * an agy run then keeps the headless auto-deny, exactly as without a Docket run token. */
+  readonly agyAskBridge?: AgyAskBridge;
   /** Injectable watchdog timers for tests; default: real timers. */
   readonly watchdogTimers?: WatchdogTimers;
 }
@@ -86,6 +91,7 @@ export function createProviderTransportFactory(config: ProviderTransportFactoryC
       return createStreamJsonTransport(
         { ...def, bins: binPath === null ? [] : [binPath] },
         dialect,
+        config.agyAskBridge,
       );
     }
     if (def.transport === 'acp') {

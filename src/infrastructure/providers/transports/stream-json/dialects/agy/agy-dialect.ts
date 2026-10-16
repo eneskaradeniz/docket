@@ -56,8 +56,25 @@ const stepUpdateEvents = (body: unknown, at: EpochMs): readonly AgentEvent[] | n
   }
 };
 
-// The final object carries the run's statistics and verdict; `denied_actions` needs no event
-// of its own — the ERROR tool step already reported the denial.
+// Headless mode cannot prompt for permissions, so a tool needing `command`, `mcp` or
+// `write_file` permission is auto-denied while the stream still ends SUCCESS — the ERROR tool
+// step reports the tool's failure, but the run-level verdict lives only in `denied_actions`.
+// Exactly one `error` event (never `text`: that would read as the agent's own words and leak
+// into handoff summaries) surfaces it; `foldRun` ignores error events, so the outcome stands.
+const deniedActionEvent = (body: Record<string, unknown>, at: EpochMs): AgentEvent | null => {
+  const denied = body.denied_actions;
+  if (!Array.isArray(denied) || denied.length === 0) return null;
+  const names: string[] = [];
+  for (const entry of denied) {
+    if (!isRecord(entry)) continue;
+    if (typeof entry.action === 'string' && entry.action !== '') names.push(entry.action);
+    else if (typeof entry.display_name === 'string' && entry.display_name !== '') names.push(entry.display_name);
+  }
+  const listed = names.join(', ').slice(0, 200); // first few names, ≤200 characters
+  return { type: 'error', at, class: 'unknown', message: `agy denied ${denied.length} action(s): ${listed}` };
+};
+
+// The final object carries the run's statistics and verdict.
 const resultEvents = (body: unknown, at: EpochMs): readonly AgentEvent[] | null => {
   if (!isRecord(body)) return null;
   const events: AgentEvent[] = [];
@@ -76,6 +93,8 @@ const resultEvents = (body: unknown, at: EpochMs): readonly AgentEvent[] | null 
       ...(typeof cached === 'number' ? { cachedInputTokens: cached } : {}),
     });
   }
+  const denial = deniedActionEvent(body, at);
+  if (denial !== null) events.push(denial);
   events.push({ type: 'finished', at, reason: body.status === 'SUCCESS' ? 'completed' : 'failed' });
   return events;
 };

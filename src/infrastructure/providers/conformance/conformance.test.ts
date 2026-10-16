@@ -30,7 +30,14 @@ const SCENARIOS: Readonly<Record<ScenarioId, string>> = {
 };
 
 /** Per-definition exemptions. A reason is mandatory; "bug: …" marks a defect the scenario reproduces. */
-const NOT_APPLICABLE: Readonly<Record<string, Partial<Record<ScenarioId, string>>>> = {};
+const NOT_APPLICABLE: Readonly<Record<string, Partial<Record<ScenarioId, string>>>> = {
+  agy: {
+    // The ask rides the PreToolUse wrapper's channel over mcp.sock (P-63), never the stdout
+    // stream this leg scripts — the bridge suites cover it end to end (stream-json.test.ts,
+    // mcp/agy-ask-bridge.test.ts, mcp/agy-ask.test.ts).
+    permission: 'the ask channel is the hook child over the Docket socket, not a stream event',
+  },
+};
 
 /** Exemptions the definition's own data implies. */
 const derivedReason = (def: ProviderDef, scenario: ScenarioId): string | undefined => {
@@ -117,7 +124,12 @@ const SCENARIO_RUNS: Readonly<Record<ScenarioId, (leg: Leg) => Promise<void>>> =
     if (argv !== undefined) {
       // The definition's own argument builder produced the launch, not a test stand-in.
       const expected = leg.def.buildLaunch({ prompt: PROMPT_SENTINEL, configDir: '/unused' }).args;
-      for (const arg of expected) expect(argv).toContain(arg);
+      for (const arg of expected) {
+        // P-62 (2026-10-16, #1210): a def may forward the run config dir in its argv (--add-dir);
+        // the real run directory replaces the '/unused' stand-in, so the stand-in is not comparable.
+        if (arg === '/unused') continue;
+        expect(argv).toContain(arg);
+      }
     }
   },
 

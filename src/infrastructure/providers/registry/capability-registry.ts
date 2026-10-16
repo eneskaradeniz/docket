@@ -58,19 +58,25 @@ export const CAPABILITY_REGISTRY = {
       },
     },
     {
-      // No G3 — the dialect surfaces no permission asks — and no G6, the end-to-end scenario has
-      // no stream-json leg. No isolation evidence on purpose (P-44): the CLI documents no
-      // config-dir override and no login location, so HOME is left alone (a run-scoped home could
-      // cut the CLI off from its login) and the CLI reads its own configuration; the cap holds.
+      // No G6 — the end-to-end scenario has no stream-json leg. No isolation evidence on purpose
+      // (P-44): the CLI documents no config-dir override and no login location, so HOME is left
+      // alone (a run-scoped home could cut the CLI off from its login) and the CLI reads its own
+      // configuration; the cap holds.
       providerId: 'agy',
       // The stream-json transport does not carry a steering note (P-61).
       steering: 'not_steerable',
       gates: {
         G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
         G2: { kind: 'test', name: 'P-11: the text turn fixture maps to session_started, one text, usage and a completed finished' },
+        G3: { kind: 'test', name: 'P-63: a PreToolUse ask becomes a permission_ask, waits for the answer, nothing is auto-approved' },
         G4: { kind: 'test', name: 'P-11: an ERROR result ends usage + finished failed, so malformed-input runs still fold into one finished' },
         G5: { kind: 'test', name: 'P-19: runs `agy -p /usage --output-format json` and parses the payload from stderr' },
       },
+      // The live agy walk (2026-10-16, agy 1.3.6, run 01M50YHMVARZ1G2FGHNPMG6WD2) is recorded here
+      // per P-28 — an operator run only. It cannot move the level: G6 still has no scripted
+      // stream-json scenario, and the P-44 cap above (no isolation evidence) keeps agy
+      // experimental regardless of operatorRuns.
+      operatorRuns: ['01M50YHMVARZ1G2FGHNPMG6WD2'],
     },
     {
       // No isolation evidence on purpose (P-44): the CLI's documented home override
@@ -435,25 +441,26 @@ export const TRANSLATION_TABLE: readonly TranslationRow[] = [
   }),
   ...rowsOf('agy', {
     mcp: {
-      support: 'unsupported',
-      how: probeHow('Run-scoped MCP via --mcp-config was not evidenced because agy --help does not list --mcp-config'),
+      support: 'native',
+      how: '.agents/mcp_config.json (stdio command/args/env) via --add-dir on the run config dir; URL (SSE) servers are not delivered (serverUrl key, a wrong key fails silently); call_mcp_tool asks over the permission bridge as mcp__<Server>__<Tool>, answered allow through the permission board (P-63) probe #1015 agy spike + live run, 2026-10-16',
     },
     skill: {
-      support: 'unsupported',
-      how: probeHow('Workspace skills under .gemini/skills or .agy/skills in the run directory were not evidenced'),
+      support: 'native',
+      how: '.agents/skills/<name>/SKILL.md via --add-dir (directory skill copied, single-file skill written as SKILL.md); the agent read the delivered SKILL.md probe #1015 agy spike + live run, 2026-10-16',
     },
     hook: {
-      support: 'unverified',
-      how: probeHow(
-        'No hook mechanism named by agy --help or the repo docs (P-58/P-60); nothing to attempt without inventing a format',
-      ),
+      support: 'native',
+      how: '.agents/hooks.json via --add-dir inside the single docket hook group (event names at the top level are silently ignored); after_tool maps to PostToolUse, after_write to PostToolUse with a write-tool matcher, run_end to Stop as a direct list (run_end not yet observed live); one invalid entry silently disables the whole file; before_tool rides the single PreToolUse wrapper entry whose exit 2 denies before any ask (P-64) probe #1015 agy spike + live run, 2026-10-16',
     },
-    context: { support: 'native', how: NATIVE_INSTRUCTIONS_HOW },
+    context: {
+      support: 'native',
+      how: '.agents/rules/<id>.md with trigger always_on frontmatter via --add-dir; repo instruction files stay native (P-37) and their text reached the agent with no read call probe #1015 agy spike + live run, 2026-10-16',
+    },
     plugin: {
-      support: 'unverified',
-      how: probeHow(
-        'Plugin management is CLI-owned ambient state (agy plugin); no run-scoped plugin delivery found in agy --help or the repo docs',
-      ),
+      support: 'native',
+      how: ".agents/plugins/<name>/ with plugin.json via --add-dir (loads hooks and MCP; a plugin's own skill was not evidenced) probe #1015 agy spike, 2026-10-16",
+      // R-149: same rule as claude-code and codex — only a local path bundle is deliverable (P-44).
+      sourceKinds: ['path'],
     },
     command,
   }),

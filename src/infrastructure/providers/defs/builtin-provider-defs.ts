@@ -90,12 +90,17 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     // redirected: a run-scoped home could cut the CLI off from wherever it keeps its login, and
     // the machine's home reaches the child as the CLI itself resolves it. No isolation is claimed.
     config: { mechanism: 'none' },
+    // The run's capabilities ride a per-run .agents tree the transport writes under the run's
+    // config directory (P-62, probe #1015 agy spike): --add-dir must point at an absolute path
+    // (a relative one loads no hooks) and precedes the resume flag.
     buildLaunch: (input) => ({
       args: [
         '--input-format',
         'stream-json',
         '--output-format',
         'stream-json',
+        '--add-dir',
+        input.configDir,
         ...(input.resume === undefined ? [] : ['--conversation', input.resume.sessionRef]),
         ...effortFlagArgs(AGY_EFFORT, input.effort),
       ],
@@ -105,11 +110,16 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     resume: 'specify',
     capabilities: {
       structuredStream: true,
-      permissionAsk: false,
+      // The ask channel is the PreToolUse wrapper's bridge over mcp.sock (P-63): the CLI itself
+      // never pauses on stdout, but a hook ask reaches the executor's decision path, so the def
+      // claims asking.
+      permissionAsk: true,
       resume: true,
-      mcp: 'unknown',
-      hooks: 'unknown',
-      skills: 'unknown',
+      // Run-scoped mcp/hooks/skills through the .agents tree via --add-dir (P-62, probe #1015
+      // agy spike, 2026-10-16).
+      mcp: true,
+      hooks: true,
+      skills: true,
       images: 'unknown',
       quotaReport: 'query',
       costReport: 'none',

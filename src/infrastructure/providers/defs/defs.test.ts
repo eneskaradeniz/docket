@@ -150,13 +150,15 @@ describe('provider definitions (P-1)', () => {
 
   it('P-44: agy sets no config-dir variable — a run-scoped HOME could cut the CLI off from its login home', () => {
     // The CLI documents no config-dir override and no login location, so HOME is never redirected:
-    // the machine's home reaches the child unchanged and the run directory never appears.
+    // the machine's home reaches the child unchanged. P-62 (2026-10-16, #1210) adds --add-dir
+    // pointing at the run config dir — a delivery flag, not a home redirection — so the config
+    // dir now appears in argv while the environment still names no home.
     const def = defById('agy');
     expect(def.config).toEqual({ mechanism: 'none' });
     const launch = def.buildLaunch(LAUNCH_INPUT);
     expect(launch.env).toEqual({});
     expect(Object.keys(launch.env)).not.toContain('HOME');
-    expect(JSON.stringify(launch)).not.toContain(LAUNCH_INPUT.configDir);
+    expect(JSON.stringify(launch.env)).not.toContain(LAUNCH_INPUT.configDir);
   });
 
   it('P-44: copilot sets no config-dir variable and never names COPILOT_HOME — the login stays where the CLI keeps it', () => {
