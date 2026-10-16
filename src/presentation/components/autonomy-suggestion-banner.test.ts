@@ -1,11 +1,13 @@
 // components/autonomy-suggestion-banner.test.ts — U-335 of docs/v2/ui.md (D-10 chain b):
 // the suggestion banner on work order detail, confirm and decline affordances, restrictive stage listing,
-// refusal text, and the "önerir: auto" tag on the flow library row.
+// refusal text, and the "önerir: auto" tag on the flow library row. U-336 (chain c) adds the flow
+// editor's read-only stage tag: "önerir: auto" for a suggesting stage, the level name for a
+// restrictive one, nothing when the stage carries no autonomy.
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { AutonomySuggestionBanner, FlowLibraryRow } from './autonomy-suggestion-banner';
+import { AutonomySuggestionBanner, FlowEditorStageRow, FlowLibraryRow } from './autonomy-suggestion-banner';
 import { TR } from '../labels/tr';
 import { EN } from '../labels/en';
 import type { FlowDef, Slug } from '../../domain/index';
@@ -148,5 +150,55 @@ describe('AutonomySuggestionBanner and FlowLibraryRow (U-335)', () => {
       createElement(FlowLibraryRow, { locale: 'tr', flow: plainFlow }),
     );
     expect(plainRow).not.toContain('önerir: auto');
+  });
+});
+
+describe('FlowEditorStageRow (U-336)', () => {
+  it('U-336: a stage whose autonomy is auto shows the read-only "önerir: auto" tag', () => {
+    const htmlTr = renderToStaticMarkup(
+      createElement(FlowEditorStageRow, {
+        locale: 'tr',
+        stage: { ...SAMPLE_FLOW.stages[0], autonomy: 'auto' },
+      }),
+    );
+    expect(htmlTr).toContain('Build');
+    expect(htmlTr).toContain(TR['autonomy.tag.suggestsAuto']);
+    expect(htmlTr).toContain('data-stage-autonomy-tag');
+    // The tag is never a control there: no input, no button rides the row.
+    expect(htmlTr).not.toContain('<button');
+    expect(htmlTr).not.toContain('<select');
+
+    const htmlEn = renderToStaticMarkup(
+      createElement(FlowEditorStageRow, {
+        locale: 'en',
+        stage: { ...SAMPLE_FLOW.stages[0], autonomy: 'auto' },
+      }),
+    );
+    expect(htmlEn).toContain(EN['autonomy.tag.suggestsAuto']);
+  });
+
+  it('U-336: a restrictive stage names its level, an unset stage draws no tag', () => {
+    const manualRow = renderToStaticMarkup(
+      createElement(FlowEditorStageRow, {
+        locale: 'tr',
+        stage: { ...SAMPLE_FLOW.stages[0], autonomy: 'manual' },
+      }),
+    );
+    expect(manualRow).toContain(TR['autonomy.level.manual']);
+    expect(manualRow).not.toContain(TR['autonomy.tag.suggestsAuto']);
+
+    const balancedRow = renderToStaticMarkup(
+      createElement(FlowEditorStageRow, {
+        locale: 'tr',
+        stage: { ...SAMPLE_FLOW.stages[0], autonomy: 'balanced' },
+      }),
+    );
+    expect(balancedRow).toContain(TR['autonomy.level.balanced']);
+
+    const unsetRow = renderToStaticMarkup(
+      createElement(FlowEditorStageRow, { locale: 'tr', stage: SAMPLE_FLOW.stages[0] }),
+    );
+    expect(unsetRow).toContain('Build');
+    expect(unsetRow).not.toContain('data-stage-autonomy-tag');
   });
 });
