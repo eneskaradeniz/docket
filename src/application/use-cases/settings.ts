@@ -69,6 +69,18 @@ export async function getAutonomyLevel(
   return parseAutonomyLevel(stored);
 }
 
+/** The settings-store key the global autonomy ceiling lives under (A-406, I-110). */
+export const AUTONOMY_MAX_KEY = 'autonomy.max';
+
+/** The stored global autonomy ceiling (A-406, I-110): absent stays absent, damaged is typed error. */
+export async function getAutonomyMaxLevel(
+  deps: Pick<AppDeps, 'settings'>,
+): Promise<Result<AutonomyLevel | undefined, 'invalid_autonomy_level'>> {
+  const stored: unknown = await deps.settings.get(AUTONOMY_MAX_KEY);
+  if (stored === undefined) return ok(undefined);
+  return parseAutonomyLevel(stored);
+}
+
 /** What the settings.dispatch query answers (A-126). */
 export interface DispatchSettingsView extends DispatchLimits {
   readonly mode: DispatchMode;
