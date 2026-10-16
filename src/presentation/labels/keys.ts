@@ -1750,6 +1750,16 @@ export const LABEL_KEYS = [
   'autonomy.autoDisabledReason.auto_requires_spend_cap',
   'autonomy.autoDisabledReason.auto_requires_max_attempts',
   'autonomy.autoDisabledReason.above_ceiling',
+  'autonomy.autoDisabledReason.invalid_autonomy_level',
+  'autonomy.autoDisabledReason.user_only',
+  'autonomy.autoDisabledReason.unknown',
+  // The suggestion banner and library tag (U-335, D-10 chain b).
+  'autonomy.suggestion.banner',
+  'autonomy.suggestion.confirm',
+  'autonomy.suggestion.decline',
+  'autonomy.suggestion.restrictiveNotice',
+  'autonomy.suggestion.restrictiveConfirmNote',
+  'autonomy.tag.suggestsAuto',
   // The autonomy set commands' typed refusals (A-403) and workOrder.open's auto preconditions (A-395).
   'error.user_only',
   'error.invalid_autonomy_level',

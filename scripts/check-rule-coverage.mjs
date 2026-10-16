@@ -94,7 +94,6 @@ const PENDING = new Map([
   // the ceiling; that issue removes the id from this list in the same commit as its test.
   ['domain:R-154', '#1225 (chain c — clampAutonomy and the ceilings)'],
   ['application:A-406', '#1225 (chain c — the ceiling homes)'],
-  ['ui:U-335', '#1225 (chain b — the suggestion banner and library tag)'],
   ['ui:U-336', '#1225 (chain c — the stage tag and the ceiling controls)'],
 
   // #1226 — provider conformance checklist (P-65): the audit landed docs-only; the rule gains its

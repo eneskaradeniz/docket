@@ -36,6 +36,7 @@ import { t, type Locale } from '../labels/t';
 import type { LabelKey } from '../labels/keys';
 import { ActionButton } from '../components/action-button';
 import { AutonomyControl } from '../components/autonomy-control';
+import { AutonomySuggestionBanner } from '../components/autonomy-suggestion-banner';
 import { WorkOrderLaunchers } from '../components/launcher-rows';
 import { StateBadge, type BadgeTone } from '../components/state-badge';
 import { DetailStrip } from '../components/detail-strip';
@@ -448,6 +449,15 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
           </header>
 
           <DetailStrip segments={segments} locale={locale} />
+
+          {/* The suggestion banner (U-335, D-10 chain b): offers `auto` when the pinned flow
+              suggests it and the effective level is not already `auto`. The confirm sets the
+              work order level to `auto` while listing definition restrictions it overrides. */}
+          <AutonomySuggestionBanner
+            locale={locale}
+            view={view.autonomy ?? null}
+            onConfirm={() => store.setAutonomy('auto')}
+          />
 
           {/* The autonomy control (U-334): the effective level with its source line, `auto`
               disabled with the typed reason, and the work-order layer's own clear. Quiet when
