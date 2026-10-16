@@ -154,7 +154,7 @@ describe('capability registry as data (P-27)', () => {
     // The live matrices ran on the claude-code CLI/SDK pair below; every agy fact in the registry
     // was measured on 1.3.6 (the live run 01M50YHMVARZ1G2FGHNPMG6WD2). The providers without a
     // recorded measurement carry no field at all — unknown, never an invented version.
-    expect(findProvider('claude-code')?.measuredWith).toEqual({ cli: '2.1.302', sdk: '0.3.221', at: '2026-10-16' });
+    expect(findProvider('claude-code')?.measuredWith).toEqual({ cli: '2.1.302', sdk: '0.3.302', at: '2026-10-16' });
     expect(findProvider('agy')?.measuredWith).toEqual({ cli: '1.3.6', at: '2026-10-16' });
     for (const providerId of ['codex', 'copilot', 'cursor', 'opencode']) {
       expect(findProvider(providerId)?.measuredWith, providerId).toBeUndefined();
