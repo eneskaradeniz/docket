@@ -737,7 +737,19 @@ repository (I-87) — no autonomy value ever reaches a repo checkout.
 | work order | the work-order record's JSON in `docket.db` (`work_orders.data`) — `WorkOrderRecord.autonomy` (A-394); no new column (the #982 description precedent) |
 | builtin | nowhere — `manual` is R-167's own fallback when nothing is set |
 
-- **I-107** (added 2026-10-15, #1191) The one (de)serialization law for `autonomy`: every adapter parses a stored level against `AUTONOMY_LEVELS` through one shared parse. A YAML definition's unknown level string is R-171's `wrong_type` validation issue — never silently dropped, never defaulted; the settings key's read and the work-order record's read of a non-member value surface the typed `invalid_autonomy_level` error (A-396), never a silent `manual`. An absent value stays absent — the builtin fallback belongs to R-167's chain, not to the parse. A written level round-trips byte-equal (I-6's law). Implementing issue: D-10 2/5.
+- **I-107** (added 2026-10-15, #1191) The one (de)serialization law for `autonomy`: every adapter parses a stored level against `AUTONOMY_LEVELS` through one shared parse. A YAML definition's unknown level string is R-171's `wrong_type` validation issue — never silently dropped, never defaulted; the settings key's read and the work-order record's read of a non-member value surface the typed `invalid_autonomy_level` error (A-396), never a silent `manual`. An absent value stays absent — the builtin fallback belongs to R-167's chain, not to the parse. A written level round-trips byte-equal (I-6's law). Implementing issue: D-10 2/5. Extended by I-110 (added 2026-10-16, #1225): the home table above gains the flow, stage and ceiling rows of the chain-widening addendum below, and the one-parse law and byte-equal round trip also cover the new fields.
+
+Addendum 2026-10-16 (#1225): the chain widened — where the new fields live (extends the autonomy
+addendum above; I-107's one-parse law and I-6's byte-equal round trip govern every row).
+
+| New chain member | Home |
+| --- | --- |
+| flow | `autonomy` on `FlowDef` — `~/.docket/library/flows/<id>/v<N>.yaml` (I-96) |
+| stage | `autonomy` on each stage of the same versioned file |
+| repo ceiling | `maxLevel` in `~/.docket/repos/<slug>/repo.yaml` — `RepoDef.maxLevel` (R-154) |
+| global ceiling | the settings key `autonomy.max` in `<dataDir>/docket.db` (`app_settings`, the A-396/A-406 precedent) |
+
+- **I-110** (added 2026-10-16, #1225) The homes above, under I-107's law: every adapter parses a stored level or ceiling against `AUTONOMY_LEVELS` through the one shared parse — a YAML definition's unknown string is R-152's (flow/stage `autonomy`) or R-154's (`maxLevel`) `wrong_type` validation issue at the file it came from, never silently dropped and never read as `manual`; the `autonomy.max` settings key's read of a non-member surfaces the typed `invalid_autonomy_level` error (A-406). An absent value stays absent; a written value round-trips byte-equal (I-6). Docket still writes nothing into a repository (I-87) — a flow's or stage's `autonomy` lives in the library file under `~/.docket/`, never in a repo checkout. Implementing issue: D-10 chain (b)/(c).
 
 Addendum 2026-10-16 (#1212): the agy permission-ask child — the P-64 child side of the provider
 hook wrapper, a sibling of Docket's own MCP child.
