@@ -203,6 +203,62 @@ describe('model catalog data (P-29)', () => {
     expect(findRouteKind('agy-subscription')?.defaultBilling).toBeUndefined();
   });
 
+  it('P-29: the agy route bundles the measured model list — the id suffix is the one effort level, tiers follow the families', () => {
+    // Measured `agy models` (agy 1.3.6): thirteen ids, every one carrying its effort in the
+    // suffix — the `--effort` flag exists only on suffix-less ids the listing does not offer —
+    // so each record states exactly one level. Billing stays unset on every row (the plan reason
+    // above), and the tier map names the ends the measurement pins (argon high the strongest,
+    // flash low the cheapest) with balanced on the flash top, inside the everywhere-covered
+    // Gemini families.
+    const route = findRouteKind('agy-subscription');
+    const models = route?.models ?? [];
+    expect(models.map((model) => model.id)).toEqual([
+      'gemini-4-argon-low',
+      'gemini-4-argon-medium',
+      'gemini-4-argon-high',
+      'gemini-3.8-flash-low',
+      'gemini-3.8-flash-medium',
+      'gemini-3.8-flash-high',
+      'claude-opus-5-5-low',
+      'claude-opus-5-5-medium',
+      'claude-opus-5-5-high',
+      'claude-sonnet-5-5-low',
+      'claude-sonnet-5-5-medium',
+      'claude-sonnet-5-5-high',
+      'gpt-oss-120b-medium',
+    ]);
+    for (const model of models) {
+      expect(model.thinking.kind).toBe('levels');
+      if (model.thinking.kind !== 'levels') throw new Error('unreachable');
+      expect(model.thinking.levels).toHaveLength(1);
+      expect(model.id.endsWith(`-${model.thinking.levels[0]}`)).toBe(true);
+      expect(model.billing).toBeUndefined();
+    }
+    const tierOf = (id: string): Tier | 'missing' => models.find((model) => model.id === id)?.tier ?? 'missing';
+    expect(tierOf('gemini-4-argon-high')).toBe('strong');
+    expect(tierOf('gemini-3.8-flash-low')).toBe('fast');
+    expect(tierOf('claude-opus-5-5-high')).toBe('strong');
+    expect(tierOf('claude-sonnet-5-5-medium')).toBe('balanced');
+    expect(tierOf('gpt-oss-120b-medium')).toBe('balanced');
+    expect(route?.tierModels).toEqual({
+      strong: 'gemini-4-argon-high',
+      balanced: 'gemini-3.8-flash-high',
+      fast: 'gemini-3.8-flash-low',
+    });
+  });
+
+  it('P-29: with no live list yet the bundled agy records still answer every tier', () => {
+    // A failed or empty `agy models` listing no longer leaves the route without models: the
+    // bundled data is the fallback catalog, and the tier map resolves without the CLI.
+    const route = findRouteKind('agy-subscription');
+    const merged = mergeCatalog(undefined, route?.models ?? [], FAMILY_PATTERNS);
+    expect(merged).toHaveLength(13);
+    expect(merged.every((model) => model.billing === 'unknown')).toBe(true);
+    expect(resolveTier('strong', merged, route?.tierModels)).toBe('gemini-4-argon-high');
+    expect(resolveTier('balanced', merged, route?.tierModels)).toBe('gemini-3.8-flash-high');
+    expect(resolveTier('fast', merged, route?.tierModels)).toBe('gemini-3.8-flash-low');
+  });
+
   it('P-29: the Copilot subscription kind lists its models from the session answer and meters its cost in credits', () => {
     // The login's model list is the plan-scoped ACP session answer, so it is authoritative; the
     // tiers name quality settings of the automatic choice, not model ids. The quota channel is

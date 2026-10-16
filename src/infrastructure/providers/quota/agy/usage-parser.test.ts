@@ -140,6 +140,34 @@ describe('parseAgyUsage', () => {
     expect(readings?.[0]?.pool.appliesTo).toEqual([{ prefix: 'gemini-' }]);
   });
 
+  it('P-39: the argon group carries its own weekly meter only, applied to the argon prefix (measured /quota, agy 1.3.6)', () => {
+    // The recorded line — group TAB bucket TAB remaining TAB reset — reads
+    // `Gemini 4 Argon\tGemini 4 Argon Weekly Limit\t82%\t2026-10-23T15:33:59Z`: a third group
+    // with one weekly bucket next to the other two. The payload below carries the measured
+    // values in the /usage shape (82% → 0.82, the reset verbatim; the bucket keeps the name the
+    // CLI printed), so exactly one meter comes back and its pool applies to argon ids alone.
+    const payload = `{"command": { "name": "usage", "data": { "groups": [
+      { "name": "Gemini 4 Argon", "description": "Models within this group: Gemini 4 Argon",
+        "buckets": [ { "id": "argon-weekly", "name": "Gemini 4 Argon Weekly Limit", "window": "weekly",
+          "remaining_fraction": 0.82, "reset_time": "2026-10-23T15:33:59Z" } ] } ] } } }`;
+
+    expect(parseAgyUsage(payload, '', OBSERVED_AT)).toEqual([
+      {
+        pool: { label: 'Gemini 4 Argon', kind: 'allowance', appliesTo: [{ prefix: 'gemini-4-argon' }] },
+        meter: {
+          label: 'Gemini 4 Argon Weekly Limit',
+          cadence: 'rolling_from_first_use',
+          unit: 'fraction',
+          remaining: 0.82,
+          resetsAt: Date.parse('2026-10-23T15:33:59Z'),
+          resetPrecision: 'exact',
+          observedAt: OBSERVED_AT,
+          source: 'polled',
+        },
+      },
+    ]);
+  });
+
   it('P-19: durationMs is never derived from the window name', () => {
     const readings = parseAgyUsage(PAYLOAD, '', OBSERVED_AT) ?? [];
     expect(readings).toHaveLength(4);
