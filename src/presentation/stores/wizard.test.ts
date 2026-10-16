@@ -104,6 +104,8 @@ interface Fake extends Pick<Api, 'query' | 'command'> {
 }
 
 const claudeProvider = { defId: 'claude', name: 'Claude Code', installUrl: null, binPath: '/usr/bin/claude', version: null, loggedIn: true, optionalFlags: [] };
+/** The home-rooted CLI's discovery fact (P-67): its accounts are per-account HOME directories. */
+const agyProvider = { defId: 'agy', name: 'Antigravity', installUrl: null, binPath: '/usr/bin/agy', version: null, loggedIn: true, optionalFlags: [] };
 
 const fakeApi = (): Fake => {
   const commands: Command[] = [];
@@ -129,6 +131,12 @@ const fakeApi = (): Fake => {
       const id = `acc-${adopted}`;
       const isEndpoint = command.sourcePath.includes('zai');
       accounts.push(accountView(id, command.label, isEndpoint ? 'api_key' : 'subscription'));
+      return Promise.resolve({ ok: true, id });
+    }
+    if (command.type === 'account.adopt' && 'identityDir' in command) {
+      adopted += 1;
+      const id = `acc-${adopted}`;
+      accounts.push(accountView(id, command.label, 'subscription'));
       return Promise.resolve({ ok: true, id });
     }
     if (command.type === 'capabilities.import') {
@@ -1013,6 +1021,72 @@ describe('wizard store (U-35, U-42)', () => {
     const saves = bundle.api.commands.filter((command): command is Extract<Command, { readonly type: 'account.save' }> => command.type === 'account.save');
     expect(saves).toHaveLength(1);
     expect(saves[0]?.reserve).toEqual({ short: 0.3, long: 0.3 });
+  });
+
+  it('P-67: an installed home-rooted CLI offers the add-another-account card, and a chosen directory becomes a selected ready row', async () => {
+    const bundle = setup([]);
+    bundle.api.setProviders([agyProvider]);
+    await toAccounts(bundle);
+    expect(bundle.store.state().agyAdd).toMatchObject({ path: '', noteKey: null, providerName: 'Antigravity' });
+
+    bundle.store.setAgyAddPath('/h/.agy-max');
+    bundle.store.addAgyAccount();
+    const state = bundle.store.state();
+    const row = state.rows.find((candidate) => candidate.displayPath === '/h/.agy-max');
+    expect(row).toMatchObject({
+      provider: 'agy',
+      label: 'agy-max',
+      existing: false,
+      selectable: true,
+      selected: true,
+      statusKey: 'candidates.status.ready',
+    });
+    expect(state.agyAdd?.path).toBe('');
+    expect(state.agyAdd?.noteKey).toBeNull();
+    // Nothing is written before the finish (U-49's stance): the row is a draft like every entry.
+    expect(bundle.api.commands).toEqual([]);
+  });
+
+  it('P-67: a relative or already-chosen directory refuses with its own note and adds no row', async () => {
+    const bundle = setup([]);
+    bundle.api.setProviders([agyProvider]);
+    await toAccounts(bundle);
+
+    bundle.store.setAgyAddPath('relative/.agy-max');
+    bundle.store.addAgyAccount();
+    expect(bundle.store.state().agyAdd?.noteKey).toBe('wizard.accounts.agyAdd.note.relative');
+    expect(bundle.store.state().rows.some((row) => row.displayPath === 'relative/.agy-max')).toBe(false);
+
+    bundle.store.setAgyAddPath('/h/.agy-max');
+    bundle.store.addAgyAccount();
+    expect(bundle.store.state().rows.some((row) => row.displayPath === '/h/.agy-max')).toBe(true);
+    bundle.store.setAgyAddPath('/h/.agy-max');
+    bundle.store.addAgyAccount();
+    expect(bundle.store.state().agyAdd?.noteKey).toBe('wizard.accounts.agyAdd.note.taken');
+
+    // An uninstalled CLI offers no card at all.
+    const absent = setup([]);
+    absent.api.setProviders([claudeProvider]);
+    await toAccounts(absent);
+    expect(absent.store.state().agyAdd).toBeNull();
+  });
+
+  it('P-67: the finish adopts a chosen directory through the identity form of account.adopt', async () => {
+    const bundle = setup([]);
+    bundle.api.setProviders([agyProvider]);
+    await toAccounts(bundle);
+    bundle.store.setAgyAddPath('/h/.agy-max');
+    bundle.store.addAgyAccount();
+    // Hesaplar → (Yetenekler and Asistan sırası skip with one selected account) → Bütçe → finish.
+    await bundle.store.next();
+    expect(bundle.store.state().step).toBe('budget');
+    await bundle.store.next();
+    const adopt = bundle.api.commands.find(
+      (command): command is Extract<Command, { readonly type: 'account.adopt'; readonly identityDir: string }> =>
+        command.type === 'account.adopt' && 'identityDir' in command,
+    );
+    expect(adopt).toEqual({ type: 'account.adopt', provider: 'agy', identityDir: '/h/.agy-max', label: 'agy-max' });
+    expect(bundle.store.state().finished?.accounts).toBe(1);
   });
 
   it('U-49: the finish walks its four lines in order — a line takes its check only when its real step completes, never on a fixed delay', async () => {
