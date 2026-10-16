@@ -10,6 +10,7 @@ import type {
   GateEvidence,
   GateSlug,
   GateVerdict,
+  PolicyGateApproval,
   RepoRef,
   Result,
   StageSlug,
@@ -17,19 +18,20 @@ import type {
   WorkOrderId,
   WorkOrderState,
 } from '../../domain/index';
-import { MINUTE, deriveWorkOrderState, err, evaluateGate, ok } from '../../domain/index';
+import { MINUTE, deriveWorkOrderState, err, evaluateGate, machineGateIds, ok, USER_ONLY_GATES } from '../../domain/index';
 
 import type { AppDeps, ForgeResolver, WorkOrderRecord } from '../ports';
 import { boundOperatorNote } from '../services/operator-feedback';
 
 import { pollRemoteChecks } from './remote-checks-gate';
+import { effectiveAutonomy } from './work-orders';
 
 /** A gate's commands run in the work order's worktree, ten minutes each. */
 const COMMAND_TIMEOUT_MS = 10 * MINUTE;
 
 type LoadError = 'not_found' | 'definitions_invalid';
 
-interface LoadedWorkOrder {
+export interface LoadedWorkOrder {
   readonly record: WorkOrderRecord;
   readonly definitions: Definitions;
   readonly flow: FlowDef;
@@ -37,7 +39,9 @@ interface LoadedWorkOrder {
   readonly state: WorkOrderState;
 }
 
-const loadWorkOrder = async (
+/** The shared load of record, definitions, events and the state they derive — every gate use
+ *  case starts here, and so does the gate-auto policy pass of A-410. */
+export const loadWorkOrder = async (
   deps: Pick<AppDeps, 'workOrders' | 'definitions'>,
   id: WorkOrderId,
 ): Promise<Result<LoadedWorkOrder, LoadError>> => {
@@ -77,7 +81,8 @@ const gateContext = (definitions: Definitions): GateContext => ({
 });
 
 /** Records one decided gate — the event on the work order plus its audit entry — and returns the
- *  state that event derives. */
+ *  state that event derives. A policy decision carries its R-180 evidence on the event; a human
+ *  decision carries nothing, exactly as before the field existed. */
 const recordGateDecision = async (
   deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders'>,
   decided: {
@@ -87,6 +92,7 @@ const recordGateDecision = async (
     readonly verdict: GateVerdict;
     readonly decision: 'approved' | 'rejected';
     readonly actor: Actor;
+    readonly approvedByPolicy?: PolicyGateApproval;
   },
   flow: FlowDef,
   events: readonly WorkOrderEvent[],
@@ -98,6 +104,7 @@ const recordGateDecision = async (
     stage: decided.stage,
     gate: decided.gate,
     verdict: decided.verdict,
+    ...(decided.approvedByPolicy === undefined ? {} : { approvedByPolicy: decided.approvedByPolicy }),
   };
   await deps.workOrders.appendEvent(decided.id, event);
   await deps.log.append({
@@ -126,10 +133,16 @@ export async function pendingPageApprovalGate(
   return stage?.exit.find((gate) => gate.kind === 'page_approval' && state.pendingGates.includes(gate.id))?.id;
 }
 
-export type DecideGateError = 'not_found' | 'not_current_stage' | 'not_pending' | 'not_a_human_gate' | 'agent_cannot_decide';
+export type DecideGateError =
+  | 'not_found'
+  | 'not_current_stage'
+  | 'not_pending'
+  | 'not_a_human_gate'
+  | 'agent_cannot_decide'
+  | 'policy_cannot_decide';
 
 export async function decideHumanGate(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'definitions'>,
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'definitions' | 'settings'>,
   input: {
     readonly id: WorkOrderId;
     readonly gate: GateSlug;
@@ -143,11 +156,28 @@ export async function decideHumanGate(
   // use case's error vocabulary has no code for broken definitions: the gate the caller asked
   // for simply cannot be found.
   if (!loaded.ok) return err('not_found');
-  const { definitions, flow, events, state } = loaded.value;
+  const { record, definitions, flow, events, state } = loaded.value;
   const current = findCurrentGate(flow, state, input.gate);
   if (current === undefined) return err('not_current_stage');
   if (current.gate.kind !== 'human' && current.gate.kind !== 'page_approval') return err('not_a_human_gate');
   if (input.actor.kind === 'agent') return err('agent_cannot_decide');
+  // A-8's policy arm (D-10): the policy decides human gates only, outside USER_ONLY_GATES (the
+  // named constant, never a copy), only under the resolved auto level — and it only ever
+  // approves. Anything else is the typed refusal, with nothing written.
+  let approvedByPolicy: PolicyGateApproval | undefined;
+  if (input.actor.kind === 'policy') {
+    if (input.decision !== 'approved') return err('policy_cannot_decide');
+    if ((USER_ONLY_GATES as readonly string[]).includes(current.gate.kind)) return err('policy_cannot_decide');
+    const autonomy = await effectiveAutonomy(deps, { workOrderId: input.id, repo: record.repo });
+    if (!autonomy.ok || autonomy.value.level !== 'auto') return err('policy_cannot_decide');
+    const stage = flow.stages.find((candidate) => candidate.id === current.stage);
+    if (stage === undefined) return err('policy_cannot_decide');
+    approvedByPolicy = {
+      policy: input.actor.policy,
+      level: input.actor.level,
+      passedMachineGates: machineGateIds(stage.exit),
+    };
+  }
   // A human decision lands only while the stage actually waits for one. In every other status
   // the pending list is the fold's pre-fill (or residue) of the stage's gates, and a
   // gate_evaluated event now would be a dead fact the fold ignores.
@@ -168,7 +198,15 @@ export async function decideHumanGate(
   const verdict = evaluateGate(current.gate, evidence, gateContext(definitions));
   const stateAfter = await recordGateDecision(
     deps,
-    { id: input.id, stage: current.stage, gate: input.gate, verdict, decision: input.decision, actor: input.actor },
+    {
+      id: input.id,
+      stage: current.stage,
+      gate: input.gate,
+      verdict,
+      decision: input.decision,
+      actor: input.actor,
+      ...(approvedByPolicy === undefined ? {} : { approvedByPolicy }),
+    },
     flow,
     events,
   );

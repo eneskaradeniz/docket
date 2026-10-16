@@ -65,6 +65,8 @@ export const TR: LabelBundle = {
   'gate.state.pending': 'Bekliyor',
   'gate.state.passed': 'Geçti',
   'gate.state.upcoming': 'Sırada',
+  'gate.decision.byPolicy': 'Otomatik onay: {policy} · {level} düzeyi',
+  'gate.decision.evidence': 'Kanıt: {gates}',
   'gate.deploy.protected': 'Korumalı ortam',
   'gate.deploy.prerequisite': 'Yükseltme zinciri',
   'wo.status.ready': 'Hazır',

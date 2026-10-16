@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FlowDef, GateDef } from '../definitions';
 import type { GateVerdict } from '../gates';
-import type { Actor, EnvSlug, EpochMs, FlowSlug, GateSlug, RoleSlug, RunId, RunOutcome, StageSlug } from '../shared';
+import type { Actor, EnvSlug, EpochMs, FlowSlug, GateSlug, PolicyId, RoleSlug, RunId, RunOutcome, StageSlug } from '../shared';
 import {
   deriveWorkOrderState,
   filterSkippableStageIds,
@@ -361,6 +361,30 @@ describe('deriveWorkOrderState — success and pending gates (R-19)', () => {
         runFinished('succeeded'),
       ]),
     ).toEqual({ status: 'done', stage: null, attempt: 1, pendingGates: [] });
+  });
+
+  it('R-180: approvedByPolicy rides gate_evaluated without moving the fold', () => {
+    const machineConcluded = [
+      created(),
+      runStarted('implement'),
+      runFinished('succeeded'),
+      gatePassed('implement', 'tests'),
+      gatePassed('implement', 'secrets'),
+    ];
+    const humanDecided = gateOn('close', 'closure', { status: 'passed' }, 50);
+    const policyDecided: WorkOrderEvent = {
+      type: 'gate_evaluated',
+      at: 50,
+      stage: stageOf('close'),
+      gate: gateOf('closure'),
+      verdict: { status: 'passed' },
+      approvedByPolicy: { policy: 'gate-auto' as PolicyId, level: 'auto', passedMachineGates: [gateOf('tests'), gateOf('secrets')] },
+    };
+    // The same history with and without the policy evidence field derives the same state: the
+    // fold reads only the verdict, so events recorded before the field existed fold as before.
+    expect(derive(THREE_STAGE, [...machineConcluded, policyDecided])).toEqual(
+      derive(THREE_STAGE, [...machineConcluded, humanDecided]),
+    );
   });
 
   it('R-19: passing the non-human gates of a mixed stage flips it to awaiting_human', () => {

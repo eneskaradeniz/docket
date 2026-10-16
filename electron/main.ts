@@ -34,6 +34,7 @@ import {
   activeWork,
   advancePhases,
   appendStartRefused,
+  applyGateAutoPolicy,
   applyLimitDecision,
   applyRefusedStart,
   cancelActiveRuns,
@@ -382,6 +383,13 @@ const runStartedItem = async (api: Api & RunEventFeed, board: PermissionBoard, r
     } else {
       await evaluateWithRemote(deps, remote, item.workOrderId);
     }
+    // The machine pass just concluded: under a resolved `auto` level the gate-auto policy may
+    // now approve the human gates the pass left pending (A-410). Its own errors are answers
+    // (the gate simply stays pending), so only a crash is loud — same reading as above. An
+    // approval that landed here moves the work order the operator may be looking at: the push
+    // notification (U-12) is what makes an open detail re-query, exactly like a finished run.
+    const gated = await applyGateAutoPolicy(deps, { id: item.workOrderId });
+    if (gated.ok && gated.value.approved.length > 0) api.workOrdersChanged();
   } catch (error) {
     console.error(`queue item ${item.id} crashed its run loop`, error);
   }
@@ -455,6 +463,23 @@ const sweepRemoteChecks = async (deps: AppDeps, forges: ForgeResolver): Promise<
     const remote = await remoteInputOf(deps, forges, record);
     if (remote === undefined) continue;
     await evaluateWithRemote(deps, remote, record.id);
+  }
+};
+
+/** The gate-auto sweep (A-410): the same cadence the remote sweep runs on, catching the stages
+ *  whose machine set concluded without a machine pass of their own — an agent verdict that
+ *  arrived through the api. The pass itself writes only under a resolved `auto` level and only
+ *  what R-181 licenses; every other work order is a cheap no-op read. One broken work order
+ *  never stops the rest of the sweep. `notify` is the push channel (U-12): fired once per work
+ *  order whose gates the pass approved, so an open detail re-queries — never for a quiet pass. */
+const sweepGateAuto = async (deps: AppDeps, notify: () => void): Promise<void> => {
+  for (const record of await deps.workOrders.list({})) {
+    try {
+      const pass = await applyGateAutoPolicy(deps, { id: record.id });
+      if (pass.ok && pass.value.approved.length > 0) notify();
+    } catch (error) {
+      console.error(`gate-auto pass for ${record.id} crashed`, error);
+    }
   }
 };
 
@@ -788,18 +813,31 @@ const startApp = async (): Promise<void> => {
 
   // The remote-checks sweep (A-370): its own timer, started through the same injected timers the
   // quota schedule uses, and non-reentrant like the dispatcher's tick — an overlapping pass would
-  // re-derive the same work orders the first is still walking. The forge resolver is read here:
-  // `node` is not narrowed inside the timer closure (the quotaProbes line above, same reason).
+  // re-derive the same work orders the first is still walking. The gate-auto pass (A-410) rides
+  // the same cadence but as its own pass: a remote sweep that rejects must never keep the policy
+  // from running, so each keeps its own guard and its own catch, chained to nothing.
+  // The forge resolver is read here: `node` is not narrowed inside the timer closure (the
+  // quotaProbes line above, same reason).
   const nodeForges = node.forges;
   let sweepingRemoteChecks = false;
+  let sweepingGateAuto = false;
   remoteChecksTimer = node.quota.timers.setInterval(() => {
-    if (sweepingRemoteChecks) return;
-    sweepingRemoteChecks = true;
-    void sweepRemoteChecks(nodeDeps, nodeForges)
-      .catch((error) => console.error('remote-checks sweep failed', error))
-      .finally(() => {
-        sweepingRemoteChecks = false;
-      });
+    if (!sweepingRemoteChecks) {
+      sweepingRemoteChecks = true;
+      void sweepRemoteChecks(nodeDeps, nodeForges)
+        .catch((error) => console.error('remote-checks sweep failed', error))
+        .finally(() => {
+          sweepingRemoteChecks = false;
+        });
+    }
+    if (!sweepingGateAuto) {
+      sweepingGateAuto = true;
+      void sweepGateAuto(nodeDeps, () => currentApi?.workOrdersChanged())
+        .catch((error) => console.error('gate-auto sweep failed', error))
+        .finally(() => {
+          sweepingGateAuto = false;
+        });
+    }
   }, REMOTE_CHECKS_POLL_MS);
 
   createWindow();

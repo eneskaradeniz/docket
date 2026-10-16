@@ -3,4 +3,5 @@ export * from './events';
 export * from './derive';
 export * from './git-lifecycle';
 export * from './next-action';
+export * from './gate-auto';
 export * from './description';

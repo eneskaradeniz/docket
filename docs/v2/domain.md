@@ -1589,3 +1589,36 @@ export function classifyRisk(ask: RiskAsk, context: RiskContext): RiskVerdict;
 - **R-177** (added 2026-10-15, #1200) The deny floor — absolute, evaluated first, no exceptions and no verify exemption. Never low: push and merge in every form (`git push` including force variants, `git merge`, `gh … merge`, hidden behind `&&` and `sudo` alike); destructive shell (`rm`, `rmdir` — `git rm` included — `git reset --hard`, `git clean`); network egress (the tools `WebFetch`/`WebSearch`; commands `curl`, `wget`, `nc`, `ncat`, `ssh`, `scp`, `sftp`, `rsync`, `ping`, `telnet` as the first token); secret and environment reads (a path named `.env`, `.env.*`, `*.pem`, `*.key`, `id_rsa*`, `credentials.json`, `.npmrc`, `.netrc` — read, written, or selected by a search pattern; the commands `env`, `printenv`, `history`); package installs (`npm`, `pnpm`, `yarn`, `bun`, `pip`, `pip3`, `uv`, `cargo`, `gem`, `composer`, `brew` followed by `install`, `i`, `add`, `ci`, `update`, `upgrade`; `npx` unconditionally — a fetch-and-run wrapper is an install by another name); writes outside the worktree, `~`-relative or unresolvable; and writes into git internals — a write whose resolved path has a `.git` segment, or whose basename is `.gitmodules`/`.gitattributes`, asks even inside the worktree, because it re-aims the repository rather than the change under review. This floor is the tool-level image of `USER_ONLY_GATES` (R-168): merge, deploy, delete and push stay human at every level. The floor scans whole token lists, so over-matching only ever costs the user one answer.
 - **R-178** (added 2026-10-15, #1200) The assistant arm: `Record<ActionClass, RiskVerdict>` is exhaustive over `ACTION_CLASSES` at compile time — a new class without a row fails the build — and every class is `needs_human`: each has its own human-reviewed pipeline (§9 proposals, R-98 grants) and `open_work_order` commits real runs and spend. Widening is a deliberate docs change, never a drift; a runtime class outside the closed union has no row and asks.
 - **R-179** (added 2026-10-15, #1200) `allow-write-inside` (the architect-approved addition to the issue's candidate list): `Edit`, `Write`, `NotebookEdit` with target lexically inside `worktreeRoot` is low — the worktree is the run's sandbox, checkpoint commits make the change reversible (A-57 … A-59), and the stage-output scope verdict reviews the diff. Outside, `~`-relative and unresolvable targets stay with the floor (R-177); secret-shaped basenames never match this row (R-177's secret clause covers writes too).
+
+### Addendum: the gate-auto policy approval (added 2026-10-15, #1206, D-10 split 3/5)
+
+D-10's `auto` level lets a `policy` actor approve a stage's human gates once its machine evidence
+is concluded. The approval rides the same `gate_evaluated` event a user decision does, with its
+own evidence field; the application contracts are A-8's amendment (the `policy_cannot_decide`
+arm, coded by this split) and A-410/A-411.
+
+```ts
+// flow/events.ts — gate_evaluated gains (added 2026-10-15, #1206, D-10 split 3/5)
+export interface PolicyGateApproval {
+  readonly policy: PolicyId;                        // 'gate-auto' — the deciding rule set
+  readonly level: AutonomyLevel;                    // the level in force at the decision
+  readonly passedMachineGates: readonly GateSlug[]; // the current attempt's non-human exit gates, stage order
+}
+//   readonly approvedByPolicy?: PolicyGateApproval;
+
+// flow/gate-auto.ts (added 2026-10-15, #1206, D-10 split 3/5)
+export const GATE_AUTO_POLICY: PolicyId;
+export interface GateAutoApproval {
+  readonly gate: GateSlug;
+  readonly policy: PolicyId;
+  readonly level: AutonomyLevel;
+  readonly passedMachineGates: readonly GateSlug[];
+}
+export const machineGateIds: (exit: readonly GateDef[]) => readonly GateSlug[];
+export function decideGateAuto(
+  flow: FlowDef, state: WorkOrderState, events: readonly WorkOrderEvent[], level: AutonomyLevel,
+): readonly GateAutoApproval[];
+```
+
+- **R-180** (added 2026-10-15, #1206) A `gate_evaluated` event may carry `approvedByPolicy: { policy, level, passedMachineGates }` — written only by a `policy` actor's approval through `decideHumanGate` (A-8's amendment). `policy` names the deciding rule set (`gate-auto`), `level` the autonomy in force at the decision, `passedMachineGates` the current stage attempt's non-human exit gates in stage order (the machine evidence the approval relied on). Events without the field — every one recorded before it existed, and every human decision after — fold exactly as before: the fold reads only the verdict (R-166's law, verbatim).
+- **R-181** (added 2026-10-15, #1206) `decideGateAuto(flow, state, events, level)` answers the pending `human` gates of the current stage a `gate-auto` policy may approve, in stage order, each as `{ gate, policy, level, passedMachineGates }`: only under status `awaiting_human`, only at level `auto`, only when the stage's exit holds at least one non-human gate and every one of them is out of `pendingGates` (the attempt's machine gates concluded passed — `pendingGates` refills on every stage entry, so absence is the conclusion), and never a gate with an earlier `failed` verdict anywhere in the work order's history (a human reject is standing doubt the policy never overrides). A stage whose human gate has no machine gate in its exit list — nothing passed, nothing to rely on — stays with the human at every level. No gate of a kind in `USER_ONLY_GATES` (R-168's named constant, never a copy) is ever answered: a pending `page_approval` or `deploy` gate keeps its decision with the user. The function is pure — the same inputs always give the same answer, the inputs are never mutated — and every doubt answers the empty list.

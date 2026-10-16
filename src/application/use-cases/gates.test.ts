@@ -44,6 +44,7 @@ import {
 
 import { approveAndDeploy } from './deploy-gate';
 import { attestNoChanges, decideHumanGate, evaluateMachineGates, submitAgentVerdict } from './gates';
+import { AUTONOMY_KEY } from './settings';
 
 // --- fixtures ---------------------------------------------------------------------------------------
 
@@ -67,6 +68,7 @@ const WORKTREE_PATH = `/fake/worktrees/ws/${WORK_ORDER}`;
 const USER: Actor = { kind: 'user', id: 'user-1', label: 'Operator' };
 const REVIEWER_AGENT: Actor = { kind: 'agent', runId: RUN_ID, role: slugOf<'role'>('reviewer') };
 const WORKER_AGENT: Actor = { kind: 'agent', runId: RUN_ID, role: slugOf<'role'>('worker') };
+const POLICY_ACTOR: Actor = { kind: 'policy', policy: slugOf<'policy'>('gate-auto'), level: 'auto' };
 
 const CHECK_COMMANDS = ['npm ci', 'npm test', 'npm run lint'] as const;
 
@@ -128,6 +130,19 @@ const DEFINITIONS_BODY = {
         exit: [
           { kind: 'command', id: 'run-checks', commandSet: 'checks' },
           { kind: 'secret_scan', id: 'secrets' },
+        ],
+      }],
+    },
+    {
+      id: 'auto-policy-flow',
+      name: 'Auto policy',
+      stages: [{
+        id: 'build',
+        name: 'Build',
+        role: 'worker',
+        exit: [
+          { kind: 'command', id: 'run-checks', commandSet: 'checks' },
+          { kind: 'human', id: 'final-approval', label: 'Final approval' },
         ],
       }],
     },
@@ -564,6 +579,94 @@ describe('decideHumanGate', () => {
     });
 
     expect(result).toEqual({ ok: false, error: 'agent_cannot_decide' });
+    expect(await eventsOf(h)).toHaveLength(1);
+    expect(h.log.entries()).toHaveLength(0);
+  });
+
+  it('A-8: a policy actor approves a human gate under the resolved auto level, naming the policy on the event and the audit', async () => {
+    const h = makeHarness();
+    await createIn(h, 'auto-policy-flow');
+    await runSucceededIn(h, slugOf('build'));
+    await h.deps.workOrders.appendEvent(WORK_ORDER, {
+      type: 'gate_evaluated',
+      at: h.clock.now(),
+      stage: slugOf('build'),
+      gate: slugOf('run-checks'),
+      verdict: { status: 'passed' },
+    });
+    await h.deps.settings.set(AUTONOMY_KEY, 'auto');
+    h.clock.advance(50);
+
+    const result = await decideHumanGate(h.deps, {
+      id: WORK_ORDER,
+      gate: slugOf('final-approval'),
+      decision: 'approved',
+      actor: POLICY_ACTOR,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: { status: 'done', stage: null, attempt: 1, pendingGates: [], skippedStages: [] },
+    });
+    const events = await eventsOf(h);
+    expect(events[4]).toEqual({
+      type: 'gate_evaluated',
+      at: 1_050,
+      stage: slugOf('build'),
+      gate: slugOf('final-approval'),
+      verdict: { status: 'passed' },
+      approvedByPolicy: { policy: 'gate-auto', level: 'auto', passedMachineGates: ['run-checks'] },
+    });
+    expect(h.log.entries()).toHaveLength(1);
+    expect(h.log.entries()[0]).toMatchObject({ actor: POLICY_ACTOR, action: 'gate.decided' });
+  });
+
+  it('A-8: a policy actor on a page_approval gate answers policy_cannot_decide and appends nothing', async () => {
+    const h = makeHarness();
+    await createIn(h, 'page-flow');
+    await h.deps.settings.set(AUTONOMY_KEY, 'auto');
+
+    const result = await decideHumanGate(h.deps, {
+      id: WORK_ORDER,
+      gate: slugOf('findings'),
+      decision: 'approved',
+      actor: POLICY_ACTOR,
+    });
+
+    expect(result).toEqual({ ok: false, error: 'policy_cannot_decide' });
+    expect(await eventsOf(h)).toHaveLength(1);
+    expect(h.log.entries()).toHaveLength(0);
+  });
+
+  it('A-8: a policy actor below the auto level answers policy_cannot_decide and appends nothing', async () => {
+    const h = makeHarness();
+    await createIn(h, 'human-flow');
+
+    const result = await decideHumanGate(h.deps, {
+      id: WORK_ORDER,
+      gate: slugOf('approve-me'),
+      decision: 'approved',
+      actor: POLICY_ACTOR,
+    });
+
+    expect(result).toEqual({ ok: false, error: 'policy_cannot_decide' });
+    expect(await eventsOf(h)).toHaveLength(1);
+    expect(h.log.entries()).toHaveLength(0);
+  });
+
+  it('A-8: a policy actor never rejects — a policy rejection answers policy_cannot_decide', async () => {
+    const h = makeHarness();
+    await createIn(h, 'human-flow');
+    await h.deps.settings.set(AUTONOMY_KEY, 'auto');
+
+    const result = await decideHumanGate(h.deps, {
+      id: WORK_ORDER,
+      gate: slugOf('approve-me'),
+      decision: 'rejected',
+      actor: POLICY_ACTOR,
+    });
+
+    expect(result).toEqual({ ok: false, error: 'policy_cannot_decide' });
     expect(await eventsOf(h)).toHaveLength(1);
     expect(h.log.entries()).toHaveLength(0);
   });

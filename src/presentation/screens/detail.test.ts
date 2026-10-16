@@ -253,6 +253,29 @@ const CHANGES_READY = {
 };
 
 describe('work-order detail screen — the decision zone (U-4, U-226)', () => {
+  it('U-355: a policy-decided gate row carries the auto-approval line; a human-decided one does not', async () => {
+    const decided: WorkOrderDetailView = {
+      ...READY,
+      state: { status: 'done', stage: null, attempt: 1, pendingGates: [], skippedStages: [] },
+      decisions: [
+        {
+          gate: 'plan-approval',
+          stage: 'plan',
+          decision: 'approved',
+          at: 1_500,
+          approvedByPolicy: { policy: 'gate-auto', level: 'auto', passedMachineGates: ['secret-scan'] },
+        },
+        { gate: 'sign-off', stage: 'check', decision: 'approved', at: 1_600 },
+      ],
+    };
+    const html = await draw(decided);
+
+    expect(html).toContain('Otomatik onay: gate-auto · auto düzeyi');
+    expect(html).toContain('Kanıt: secret-scan');
+    // Exactly one policy line: the human-decided gate stays at its passed word alone.
+    expect(html.match(/Otomatik onay/g)).toHaveLength(1);
+  });
+
   it('U-4: while the stage waits to start (ready) the start card shows and no decision does', async () => {
     const html = await draw(READY);
 

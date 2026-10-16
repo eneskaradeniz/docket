@@ -77,6 +77,10 @@ export const LABEL_KEYS = [
   'gate.state.pending',
   'gate.state.passed',
   'gate.state.upcoming',
+  // A policy approval's own line on a decided gate row (U-355): the deciding rule set with the
+  // level it decided under, and the machine gates the approval relied on.
+  'gate.decision.byPolicy',
+  'gate.decision.evidence',
   // Deploy-gate copy (U-4): protection marker and the read-only promotion chain (E-5).
   'gate.deploy.protected',
   'gate.deploy.prerequisite',

@@ -1113,7 +1113,7 @@ const runCommand = async (
       if (gate === undefined) return invalidId();
       return commandOf(
         await decideHumanGate(
-          { clock: deps.clock, ids: deps.ids, log: deps.log, workOrders: deps.workOrders, definitions: deps.definitions },
+          { clock: deps.clock, ids: deps.ids, log: deps.log, workOrders: deps.workOrders, definitions: deps.definitions, settings: deps.settings },
           { id, gate, decision: command.decision, note: command.note, actor },
         ),
       );

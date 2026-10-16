@@ -2318,6 +2318,60 @@ describe('createApi', () => {
     });
   });
 
+  describe('workOrder.detail decision rows (A-411)', () => {
+    it('A-411: one row per decided human gate — a policy approval names its evidence, a human approval carries none', async () => {
+      const h = await createHarness();
+      const id = await openViaApi(h, 'Decision rows', 'board-flow');
+      const workOrderId = ulidOf<'work-order'>(id);
+      const runId = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FA7');
+      const plan = slugOf<'stage'>('plan');
+      await h.deps.workOrders.appendEvent(workOrderId, { type: 'run_started', at: 1_000, runId, stage: plan, attempt: 1 });
+      await h.deps.workOrders.appendEvent(workOrderId, { type: 'run_finished', at: 1_100, runId, outcome: 'succeeded' });
+      await h.deps.workOrders.appendEvent(workOrderId, {
+        type: 'gate_evaluated',
+        at: 1_200,
+        stage: plan,
+        gate: slugOf<'gate'>('plan-approval'),
+        verdict: { status: 'passed' },
+        approvedByPolicy: {
+          policy: slugOf<'policy'>('gate-auto'),
+          level: 'auto',
+          passedMachineGates: [slugOf<'gate'>('run-checks')],
+        },
+      });
+      // The implement stage has no gates, so its run advances straight to the close stage's human
+      // gate, which the operator then decides through the real command path.
+      await h.deps.workOrders.appendEvent(workOrderId, {
+        type: 'run_started',
+        at: 1_300,
+        runId,
+        stage: slugOf<'stage'>('implement'),
+        attempt: 1,
+      });
+      await h.deps.workOrders.appendEvent(workOrderId, { type: 'run_finished', at: 1_400, runId, outcome: 'succeeded' });
+      const decided = await createApi(h.deps).command(ACTOR, {
+        type: 'gate.decide',
+        workOrderId: id,
+        gate: 'closure',
+        decision: 'approved',
+      });
+      expect(decided.ok).toBe(true);
+
+      const detail = await createApi(h.deps).query({ type: 'workOrder.detail', id });
+      const decisions = (detail as { readonly decisions: readonly Record<string, unknown>[] }).decisions;
+      expect(decisions).toHaveLength(2);
+      expect(decisions[0]).toEqual({
+        gate: 'plan-approval',
+        stage: 'plan',
+        decision: 'approved',
+        at: 1_200,
+        approvedByPolicy: { policy: 'gate-auto', level: 'auto', passedMachineGates: ['run-checks'] },
+      });
+      expect(decisions[1]).toMatchObject({ gate: 'closure', stage: 'close', decision: 'approved' });
+      expect(decisions[1]['approvedByPolicy']).toBeUndefined();
+    });
+  });
+
   describe('app update', () => {    // The checker is composed beside deps at the root, so these tests hand it straight to the api
     // the way electron/main.ts does — no harness, no work orders, the port alone.
     const updateApi = (updates?: UpdateChecker) =>
