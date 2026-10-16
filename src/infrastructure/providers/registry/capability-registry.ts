@@ -269,7 +269,30 @@ export const CAPABILITY_REGISTRY = {
       quotaProbe: 'provider_query',
       modelSource: 'cli-command',
       liveIsAuthoritative: true,
-      models: [],
+      // The bundled rows are the measured `agy models` answer (agy 1.3.6): every listed id
+      // carries its effort in the suffix — one level per record, never a set — because the
+      // `--effort` flag exists only on suffix-less ids the listing does not offer. Tiers follow
+      // the families (argon the flagship, flash the cheap one, the third-party rows their own
+      // family tiers), and billing stays unset on every row for the plan reason above. The tier
+      // map stays inside the everywhere-covered Gemini families so a tier pick never names a
+      // third-party row a lower plan cannot use; balanced is the flash family's top, the mid
+      // point between flash low and argon high.
+      models: [
+        { id: 'gemini-4-argon-low', family: 'argon', tier: 'strong', thinking: { kind: 'levels', levels: ['low'] } },
+        { id: 'gemini-4-argon-medium', family: 'argon', tier: 'strong', thinking: { kind: 'levels', levels: ['medium'] } },
+        { id: 'gemini-4-argon-high', family: 'argon', tier: 'strong', thinking: { kind: 'levels', levels: ['high'] } },
+        { id: 'gemini-3.8-flash-low', family: 'flash', tier: 'fast', thinking: { kind: 'levels', levels: ['low'] } },
+        { id: 'gemini-3.8-flash-medium', family: 'flash', tier: 'fast', thinking: { kind: 'levels', levels: ['medium'] } },
+        { id: 'gemini-3.8-flash-high', family: 'flash', tier: 'fast', thinking: { kind: 'levels', levels: ['high'] } },
+        { id: 'claude-opus-5-5-low', family: 'opus', tier: 'strong', thinking: { kind: 'levels', levels: ['low'] } },
+        { id: 'claude-opus-5-5-medium', family: 'opus', tier: 'strong', thinking: { kind: 'levels', levels: ['medium'] } },
+        { id: 'claude-opus-5-5-high', family: 'opus', tier: 'strong', thinking: { kind: 'levels', levels: ['high'] } },
+        { id: 'claude-sonnet-5-5-low', family: 'sonnet', tier: 'balanced', thinking: { kind: 'levels', levels: ['low'] } },
+        { id: 'claude-sonnet-5-5-medium', family: 'sonnet', tier: 'balanced', thinking: { kind: 'levels', levels: ['medium'] } },
+        { id: 'claude-sonnet-5-5-high', family: 'sonnet', tier: 'balanced', thinking: { kind: 'levels', levels: ['high'] } },
+        { id: 'gpt-oss-120b-medium', family: 'gpt-oss', tier: 'balanced', thinking: { kind: 'levels', levels: ['medium'] } },
+      ],
+      tierModels: { strong: 'gemini-4-argon-high', balanced: 'gemini-3.8-flash-high', fast: 'gemini-3.8-flash-low' },
     },
     {
       // The machine login's models come from a protocol session the provider opens on demand —
