@@ -108,6 +108,10 @@ const PENDING = new Map([
   ['ui:U-335', '#1225 (chain b — the suggestion banner and library tag)'],
   ['ui:U-336', '#1225 (chain c — the stage tag and the ceiling controls)'],
 
+  // #1226 — provider conformance checklist (P-65): the audit landed docs-only; the rule gains its
+  // enforcement test when step 2 of the series closes the checklist gaps.
+  ['providers:P-65', '#1226 (docs-only audit; step 2 lands the test)'],
+
 ]);
 
 // Rules whose implementing code and tests were removed while the definition and dated addenda stay
