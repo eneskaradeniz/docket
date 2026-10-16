@@ -751,6 +751,12 @@ addendum above; I-107's one-parse law and I-6's byte-equal round trip govern eve
 
 - **I-110** (added 2026-10-16, #1225) The homes above, under I-107's law: every adapter parses a stored level or ceiling against `AUTONOMY_LEVELS` through the one shared parse — a YAML definition's unknown string is R-152's (flow/stage `autonomy`) or R-154's (`maxLevel`) `wrong_type` validation issue at the file it came from, never silently dropped and never read as `manual`; the `autonomy.max` settings key's read of a non-member surfaces the typed `invalid_autonomy_level` error (A-406). An absent value stays absent; a written value round-trips byte-equal (I-6). Docket still writes nothing into a repository (I-87) — a flow's or stage's `autonomy` lives in the library file under `~/.docket/`, never in a repo checkout. Implementing issue: D-10 chain (b)/(c).
 
+Addendum 2026-10-16 (#1232): the flow-level field's pinned home — the review of #1228 found that
+`RepoFlow` and `FlowPin` carried the stage copies (R-152) but no flow-level field, so a library
+flow's `autonomy` had no home once the flow was copied into a repo or pinned.
+
+- **I-111** (added 2026-10-16, #1232) `RepoFlow` and `FlowPin` gain `autonomy?: AutonomyLevel`. The value is copied from the library `FlowDef` when the repo flow is created from the library, and `pinFlow` copies it into the `FlowPin` (R-132's self-containment: later library or repo edits never change a running order's pin). The repo copy is stored in `repo.yaml`'s `flow` block (`~/.docket/repos/<slug>/repo.yaml`); the pin's copy lives in the work-order record's JSON (the A-394 precedent). I-107/I-110's one-parse law covers both fields: a stored non-member value is the typed `wrong_type`/`invalid_autonomy_level` at the file it came from, never dropped, never a silent `manual`; an absent value stays absent; a written value round-trips byte-equal (I-6). Implementing issue: D-10 chain (b).
+
 Addendum 2026-10-16 (#1212): the agy permission-ask child — the P-64 child side of the provider
 hook wrapper, a sibling of Docket's own MCP child.
 
