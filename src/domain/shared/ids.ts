@@ -15,7 +15,7 @@ export type ProjectSlug = Slug<'project'>;
 export type PhaseSlug = Slug<'phase'>;
 export type TaskSlug = Slug<'task'>;
 export type EnvSlug = Slug<'env'>;
-/** Names a deciding rule set (D-10): 'permission-rules', 'gate-auto' — never free-form. */
+/** Names a deciding rule set (D-10): 'permission-rules', 'gate-auto', 'write-scope' — never free-form. */
 export type PolicyId = Slug<'policy'>;
 
 /** Runtime identifiers: ULID, 26 chars Crockford base32 (0-9 A-H J K M N P-T V-Z), uppercase. */

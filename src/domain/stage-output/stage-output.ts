@@ -4,6 +4,8 @@
 import type { WriteScope } from '../definitions/index';
 import { validatePagePath } from '../pages/index';
 
+import { matchesAny, trimSlashes, underRoot } from './scope-match';
+
 export type StageOutputVerdict = 'ok' | 'no_output' | 'not_applicable';
 
 /** The finish reason of the run, not the folded outcome. Only `completed` is judged. */
@@ -20,12 +22,6 @@ export interface StageOutputInput {
 }
 
 const DEFAULT_DOCS_ROOT = 'docs';
-
-const trimSlashes = (root: string): string => {
-  let end = root.length;
-  while (end > 0 && root[end - 1] === '/') end -= 1;
-  return root.slice(0, end);
-};
 
 const docsRootOf = (input: StageOutputInput): string => {
   const given = input.docsRoot;
@@ -50,51 +46,6 @@ export function stageOutputScopeRoot(
       return undefined;
   }
 }
-
-const underRoot = (root: string, path: string): boolean => path === root || path.startsWith(`${root}/`);
-
-/** `*` matches inside one segment; `**` matches across segments, including none. */
-const segmentMatches = (pattern: string, segment: string): boolean => {
-  if (pattern === '*') return true;
-  const parts = pattern.split('*');
-  if (parts.length === 1) return pattern === segment;
-  let from = 0;
-  for (let i = 0; i < parts.length; i += 1) {
-    const part = parts[i] ?? '';
-    if (part.length === 0) continue;
-    const at = segment.indexOf(part, from);
-    if (at < 0) return false;
-    if (i === 0 && !pattern.startsWith('*') && at !== 0) return false;
-    from = at + part.length;
-  }
-  const last = parts[parts.length - 1] ?? '';
-  return pattern.endsWith('*') || segment.endsWith(last);
-};
-
-const globMatches = (glob: string, path: string): boolean => {
-  const g = glob.split('/');
-  const p = path.split('/');
-  const walk = (gi: number, pi: number): boolean => {
-    if (gi === g.length) return pi === p.length;
-    const part = g[gi] ?? '';
-    if (part === '**') {
-      if (walk(gi + 1, pi)) return true;
-      if (pi >= p.length) return false;
-      return walk(gi, pi + 1);
-    }
-    if (pi >= p.length) return false;
-    if (!segmentMatches(part, p[pi] ?? '')) return false;
-    return walk(gi + 1, pi + 1);
-  };
-  return walk(0, 0);
-};
-
-const matchesAny = (globs: readonly string[], path: string): boolean => {
-  for (const glob of globs) {
-    if (globMatches(glob, path)) return true;
-  }
-  return false;
-};
 
 const pathInside = (input: StageOutputInput, path: string): boolean => {
   // The page-path rule refuses traversal before any prefix or glob is considered.

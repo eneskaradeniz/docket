@@ -1681,3 +1681,39 @@ amended ([ui.md](ui.md)).
 - **R-151** (amended 2026-10-16, #1232, D-10) The "a defined `auto` is returned as `auto`" clause holds for the user-set sources only (`workOrder`, `repo`, `project`, `global`); an `auto` arriving from `flow` or `stage` is ignored — R-157, clause 1.
 - **R-153** (amended 2026-10-16, #1232, D-10) The signature is `definitionAutonomyLayers(input: { flow: FlowPin; stage?: StageSlug })` — the flow input is the work order's pin, whose flow-level field I-111 adds, never the live definition. `stage` is optional: a stage-less (work-order-level) read passes no stage and only the flow arm applies — the flow's value and the flow's share of `suggestsAuto`; with a stage, the rule above stands as written. The "a definition may restrict, never loosen" sentence is about the definition layers themselves — it never stops a user-confirmed work-order `auto` from governing a restrictive stage (A-405 amended).
 - **R-154** (amended 2026-10-16, #1232, D-10) The closing sentence — "R-167's clause applies after the clamp as before" — means exactly R-157, clause 2: applied once, after the clamp, the `source` preserved.
+
+### Addendum 2026-10-16 (#1235): the write-scope guard before the ask
+
+A role's `writeScope` stops being instruction text only (checklist gap 3, C2 of the provider
+conformance series): before an ask is presented or the risk table consulted, the executor asks the
+domain whether the write tool's target is *certainly outside* the role's write scope, and denies it
+itself when it is — provider-blind, because the claude-code `canUseTool` callback and the agy
+bridge both deliver `permission_ask` to the executor's one decision path, and the agy write family
+arrives already translated to `Write` (`mapAgyToolCall`). The guard lives in the `stage-output`
+module: its concern is the role's write scope — judged after the run (`stageOutputVerdict`) and now
+before the write. The containment helpers the two halves share (`trimSlashes`, `underRoot`, the
+glob matcher) moved to the module-internal `scope-match.ts`, not re-exported through the index; the
+module's map row (`definitions`, `pages`) is unchanged. The audit actor's policy id is exported
+from `autonomy` — the module that owns ask-deciding policy ids — beside `PERMISSION_RULES_POLICY`.
+
+```ts
+// stage-output/write-scope.ts (added 2026-10-16, #1235)
+export interface WriteScopeContext {
+  readonly cwd?: string;                  // the run's working directory; a relative target resolves against it
+  readonly worktreeRoot?: string;         // the work order's worktree — the repo boundary
+  readonly docsRoot?: string;             // the repo's docs root, repo-relative
+  readonly testGlobs?: readonly string[]; // the repo's listed test folders, repo-relative globs
+}
+export type WriteScopeDenyReason = 'read-only-role' | 'outside-docs-root' | 'outside-worktree' | 'outside-test-folders';
+export type WriteScopeVerdict =
+  | { readonly verdict: 'unchecked' }
+  | { readonly verdict: 'deny'; readonly reason: WriteScopeDenyReason };
+export function writeScopeVerdict(input: {
+  readonly scope: WriteScope; readonly tool: string; readonly target: string | undefined;
+  readonly context: WriteScopeContext;
+}): WriteScopeVerdict;
+// autonomy/decide.ts (added 2026-10-16, #1235)
+export const WRITE_SCOPE_POLICY: PolicyId; // 'write-scope'
+```
+
+- **R-159** (added 2026-10-16, #1235) `writeScopeVerdict({ scope, tool, target, context })` is pure and two-valued: `deny` with a reason, or `unchecked` — it never allows, and an `unchecked` or in-scope write keeps going down the normal ask/risk path exactly as before. The write tools are `Write`, `Edit`, `MultiEdit`, `NotebookEdit`, in Docket-tool language (a provider's own spellings arrive already translated). `deny` is answered only when the target is **certainly outside** the scope: scope `none` denies every write target — no context fact needed, the target's location is beside the point; `docs` denies a target outside the repo docs root, located inside the worktree (both facts must be present; a missing docs root is never defaulted to a guess); `repo` denies a target outside the work order's worktree; `tests` denies a target outside the repo's listed test folders **when the repo lists them** — an absent or empty list is `unchecked`. Every other case is `unchecked`, never `deny`: a non-write tool (Bash and everything else that writes indirectly), a missing or empty target string, a `~`-relative target (never expanded — where a shell would take it is a fact the string does not carry), a `paths` scope (the four simple kinds are this guard's contract), a relative target with no `cwd`, or a missing context fact. Paths compare after lexical normalisation (`.` and `..` fold, duplicate separators collapse, `..` at the root stays at the root) — a symlink-free string compare in the same frame `risk.ts` gives its classifier, with no filesystem read. The executor-side wiring is A-409 ([application.md](application.md) → the same-titled addendum).

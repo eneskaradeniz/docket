@@ -14,6 +14,10 @@ const asPolicyId = (id: string): PolicyId => id as PolicyId;
 /** The named rule set behind every policy allow: the risk-rule table of this module. */
 export const PERMISSION_RULES_POLICY: PolicyId = asPolicyId('permission-rules');
 
+/** The named rule set behind the write-scope guard's denials (R-159): the rule set the audit's
+ *  policy actor names when the executor refuses a write certainly outside the role's scope. */
+export const WRITE_SCOPE_POLICY: PolicyId = asPolicyId('write-scope');
+
 export type PermissionDecision =
   | { readonly kind: 'allow-by-policy'; readonly policy: PolicyId; readonly level: AutonomyLevel }
   | { readonly kind: 'ask-human' };
