@@ -95,7 +95,6 @@ const PENDING = new Map([
   ['domain:R-154', '#1225 (chain c — clampAutonomy and the ceilings)'],
   ['application:A-405', '#1225 (chain b — the suggestion flow)'],
   ['application:A-406', '#1225 (chain c — the ceiling homes)'],
-  ['infrastructure:I-110', '#1225 (chain b/c — the new fields\' homes and one-parse law)'],
   ['ui:U-335', '#1225 (chain b — the suggestion banner and library tag)'],
   ['ui:U-336', '#1225 (chain c — the stage tag and the ceiling controls)'],
 
@@ -107,7 +106,6 @@ const PENDING = new Map([
   // amendments to the #1225 contracts; the four new ids name the chain step that implements
   // each, and the implementing issue removes the id with its test, as above.
   ['application:A-408', '#1232 (chain b — the import drops auto)'],
-  ['infrastructure:I-111', '#1232 (chain b — the flow-level autonomy home)'],
 
 ]);
 

@@ -298,4 +298,24 @@ describe('createSqliteWorkOrderRepo (sqlite rules)', () => {
     expect((await reopened.list({ repo: OTHER })).map((r) => r.id)).toEqual([woId(U2)]);
     expect(await reopened.events(woId(U1))).toStrictEqual([createdEvent(10), blockedEvent(11, 'waiting')]);
   });
+
+  it('I-111: work order record persists FlowPin with autonomy?: AutonomyLevel in JSON data', async () => {
+    const path = join(tmp, 'docket.db');
+    const opened = openDatabase(path);
+    if (!opened.ok) throw new Error('openDatabase must succeed');
+    openDbs.push(opened.value);
+    const repo = createSqliteWorkOrderRepo(opened.value);
+
+    const withAuto = pinnedRecord(U1, 10);
+    const pinWithAuto = { ...PIN, autonomy: 'auto' as const };
+    await repo.create({ ...withAuto, pin: pinWithAuto });
+
+    const fetched = await repo.get(woId(U1));
+    expect(fetched?.pin?.autonomy).toBe('auto');
+
+    // Absent autonomy remains undefined
+    await repo.create(pinnedRecord(U2, 20));
+    const fetched2 = await repo.get(woId(U2));
+    expect(fetched2?.pin?.autonomy).toBeUndefined();
+  });
 });

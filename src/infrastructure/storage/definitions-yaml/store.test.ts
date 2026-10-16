@@ -641,3 +641,76 @@ describe('listVersions and appendVersion', () => {
     }
   });
 });
+
+describe('autonomy homes (I-110, I-111)', () => {
+  it('I-110: parses flow autonomy from library/flows/<id>/v1.yaml; unknown string is R-152 wrong_type; byte-equal round trip', async () => {
+    const store = makeStore();
+    const flowYaml = `${stringify(flowDef('custom', { autonomy: 'auto', stages: [{ id: 'plan', name: 'Plan', role: null, exit: [] }] }))}\n`;
+    await store.writeFile('library/flows/custom/v1.yaml', flowYaml, '');
+    await writeYaml(globalRoot, 'library/flows/std/v1.yaml', flowDef('std', { stages: [{ id: 'plan', name: 'Plan', role: 'planner', exit: [] }] }));
+    await writeYaml(globalRoot, 'library/roles/planner/v1.yaml', roleDef('planner'));
+    await writeYaml(globalRoot, `repos/${REPO}/repo.yaml`, repoDef(REPO));
+
+    const loaded = await store.load(REPO);
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) return;
+    const customFlow = loaded.value.flows.find((f) => f.id === 'custom');
+    expect(customFlow?.autonomy).toBe('auto');
+
+    // Byte-equal round trip (I-6 / I-110)
+    const readBack = await store.readFile('library/flows/custom/v1.yaml');
+    expect(readBack?.content).toBe(flowYaml);
+
+    // Unknown autonomy level string surfaces R-152's wrong_type
+    const invalidYaml = `${stringify(flowDef('custom', { autonomy: 'turbo', stages: [{ id: 'plan', name: 'Plan', role: null, exit: [] }] }))}\n`;
+    const invalidCandidate = await store.validateCandidate('library/flows/custom/v2.yaml', invalidYaml);
+    expect(invalidCandidate.ok).toBe(false);
+    if (invalidCandidate.ok) return;
+    expect(invalidCandidate.error.some((e) => e.code === 'wrong_type' && e.path.includes('autonomy'))).toBe(true);
+  });
+
+  it('I-111: repo.yaml flow block carries autonomy?: AutonomyLevel; wrong_type on unknown value; round-trips byte-equal', async () => {
+    const store = makeStore();
+    await writeYaml(globalRoot, 'library/flows/std/v1.yaml', flowDef('std', { stages: [{ id: 'plan', name: 'Plan', role: 'planner', exit: [] }] }));
+    await writeYaml(globalRoot, 'library/roles/planner/v1.yaml', roleDef('planner'));
+
+    const repoWithFlowAutonomy = repoDef(REPO, {
+      flow: {
+        flowId: 'std',
+        version: 1,
+        autonomy: 'auto',
+        stages: [{ id: 'plan', name: 'Plan', role: 'planner', exit: [] }],
+        bindings: [{ stage: 'plan', role: { roleId: 'planner', version: 1 }, accounts: [] }],
+      },
+    });
+    const repoYaml = `${stringify(repoWithFlowAutonomy)}\n`;
+    await store.writeFile(`repos/${REPO}/repo.yaml`, repoYaml, '');
+
+    const loaded = await store.load(REPO);
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) return;
+    expect(loaded.value.repo?.flow.autonomy).toBe('auto');
+
+    // Round trips byte-equal
+    const readBack = await store.readFile(`repos/${REPO}/repo.yaml`);
+    expect(readBack?.content).toBe(repoYaml);
+
+    // Stored non-member value is wrong_type at repo.flow.autonomy
+    const invalidRepo = repoDef(REPO, {
+      flow: {
+        flowId: 'std',
+        version: 1,
+        autonomy: 'invalid_level',
+        stages: [{ id: 'plan', name: 'Plan', role: 'planner', exit: [] }],
+        bindings: [{ stage: 'plan', role: { roleId: 'planner', version: 1 }, accounts: [] }],
+      },
+    });
+    const candidate = await store.validateCandidate(`repos/${REPO}/repo.yaml`, `${stringify(invalidRepo)}\n`);
+    expect(candidate.ok).toBe(false);
+    if (candidate.ok) return;
+    expect(candidate.error).toEqual([
+      expect.objectContaining({ path: 'repo.flow.autonomy', code: 'wrong_type' }),
+    ]);
+  });
+});
+
