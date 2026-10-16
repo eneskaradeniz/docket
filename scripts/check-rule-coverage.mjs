@@ -92,7 +92,6 @@ const PENDING = new Map([
   // #1225 — D-10 chain widening contracts, docs-first. Each id names the chain step that
   // implements it — (a) set-level commands and UI, (b) the flow layer, (c) the stage layer and
   // the ceiling; that issue removes the id from this list in the same commit as its test.
-  ['application:A-406', '#1225 (chain c — the ceiling homes)'],
   ['ui:U-336', '#1225 (chain c — the stage tag and the ceiling controls)'],
 
   // #1226 — provider conformance checklist (P-65): the audit landed docs-only; the rule gains its

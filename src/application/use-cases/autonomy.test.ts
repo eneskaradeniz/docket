@@ -18,7 +18,7 @@ import {
   repoFlowOf,
 } from '../ports/fakes';
 
-import { AUTONOMY_KEY } from './settings';
+import { AUTONOMY_KEY, AUTONOMY_MAX_KEY } from './settings';
 import {
   repoAutonomyView,
   setGlobalAutonomy,
@@ -127,11 +127,11 @@ const harness = (defs: string) => {
     projects,
     settings,
     repos,
-    openDeps: { clock, ids, log, workOrders, definitions, projects },
-    woDeps: { clock, ids, log, workOrders, definitions },
-    repoDeps: { clock, ids, log, repos, definitions },
-    projectDeps: { clock, ids, log, definitions },
-    globalDeps: { clock, ids, log, settings },
+    openDeps: { clock, ids, log, workOrders, definitions, projects, settings },
+    woDeps: { clock, ids, log, workOrders, definitions, settings },
+    repoDeps: { clock, ids, log, repos, definitions, settings, workOrders },
+    projectDeps: { clock, ids, log, definitions, settings },
+    globalDeps: { clock, ids, log, settings, repos, definitions, workOrders },
     readDeps: { definitions, settings },
     chainDeps: { workOrders, definitions, settings },
   };
@@ -345,18 +345,96 @@ describe('setRepoAutonomy', () => {
     expect(view.ok && view.value).toEqual({ level: 'auto', source: 'repo', layerSet: true });
   });
 
-  it('A-403: a maxLevel argument is accepted and refused with ceiling_not_available until chain (c), nothing written', async () => {
-    const h = harness(defsJson({ bounded: false }));
-    expect(await setRepoAutonomy(h.repoDeps, { repo: REPO, level: 'manual', maxLevel: 'balanced', actor: ACTOR })).toEqual({
-      ok: false,
-      error: 'ceiling_not_available',
+  it('A-406: a maxLevel argument is written to repo.yaml and round trips; setting a level above effective ceiling is refused with above_ceiling', async () => {
+    const h = harness(defsJson({ bounded: true, budget: { amountUsd: 10, warnPercent: 80 } }));
+    // Setting maxLevel to 'balanced' on repo
+    const setResult = await setRepoAutonomy(h.repoDeps, { repo: REPO, maxLevel: 'balanced', actor: ACTOR });
+    expect(setResult).toEqual({ ok: true, value: { ordersAbove: 0 } });
+
+    // The view reflects the ceiling
+    const view = await repoAutonomyView(h.readDeps, REPO);
+    expect(view.ok && view.value).toMatchObject({
+      ceiling: 'balanced',
+      maxLevel: 'balanced',
+      autoUnavailable: 'above_ceiling',
     });
-    const afterPolicy = await repoAutonomyView(h.readDeps, REPO);
-    expect(afterPolicy.ok && afterPolicy.value.layerSet).toBe(false);
-    // A null ceiling (no ceiling wanted) is simply a level-only write.
-    expect(await setRepoAutonomy(h.repoDeps, { repo: REPO, level: null, maxLevel: null, actor: ACTOR })).toEqual({
+
+    // Trying to set level 'auto' on repo is refused with above_ceiling
+    expect(await setRepoAutonomy(h.repoDeps, { repo: REPO, level: 'auto', actor: ACTOR })).toEqual({
+      ok: false,
+      error: 'above_ceiling',
+    });
+
+    // Setting level 'balanced' or 'manual' succeeds
+    expect(await setRepoAutonomy(h.repoDeps, { repo: REPO, level: 'balanced', actor: ACTOR })).toEqual({
       ok: true,
       value: undefined,
+    });
+
+    // Work order level above ceiling is also refused
+    const id = (await opened(h)) as WorkOrderId;
+    expect(await setWorkOrderAutonomy(h.woDeps, { workOrder: id, level: 'auto', actor: ACTOR })).toEqual({
+      ok: false,
+      error: 'above_ceiling',
+    });
+
+    // Global ceiling prevents setting project level above it
+    await h.settings.set(AUTONOMY_MAX_KEY, 'balanced');
+    expect(await setProjectAutonomy(h.projectDeps, { project: PROJECT, level: 'auto', actor: ACTOR })).toEqual({
+      ok: false,
+      error: 'above_ceiling',
+    });
+    await h.settings.delete(AUTONOMY_MAX_KEY);
+
+    // Clearing ceiling with maxLevel: null allows setting auto again
+    expect(await setRepoAutonomy(h.repoDeps, { repo: REPO, maxLevel: null, actor: ACTOR })).toEqual({
+      ok: true,
+      value: undefined,
+    });
+    expect(await setRepoAutonomy(h.repoDeps, { repo: REPO, level: 'auto', actor: ACTOR })).toEqual({
+      ok: true,
+      value: undefined,
+    });
+  });
+
+  it('A-406: above_ceiling is checked only when a level is set or raised, never when a ceiling is lowered; lowering returns count of orders currently above', async () => {
+    const h = harness(defsJson({ bounded: true, budget: { amountUsd: 10, warnPercent: 80 } }));
+    const id = (await opened(h)) as WorkOrderId;
+    // Set work order to auto while no ceiling is present
+    expect(await setWorkOrderAutonomy(h.woDeps, { workOrder: id, level: 'auto', actor: ACTOR })).toEqual({
+      ok: true,
+      value: undefined,
+    });
+
+    // Lowering repo ceiling to balanced is ALLOWED and returns ordersAbove: 1
+    const lowerResult = await setRepoAutonomy(h.repoDeps, { repo: REPO, maxLevel: 'balanced', actor: ACTOR });
+    expect(lowerResult).toEqual({ ok: true, value: { ordersAbove: 1 } });
+
+    // Effective autonomy of the work order is clamped to balanced, which demotes to manual (R-157)
+    const eff = await effectiveAutonomy(h.chainDeps, { workOrder: id });
+    expect(eff.ok && eff.value.level).toBe('manual');
+    expect(eff.ok && eff.value.source).toBe('ceiling');
+    expect(eff.ok && eff.value.ceiling).toBe('balanced');
+
+    // If the work order is done (closed), it is not counted in ordersAbove
+    await h.workOrders.appendEvent(id, { type: 'closed', at: 2000, by: ACTOR });
+    const doneResult = await setRepoAutonomy(h.repoDeps, { repo: REPO, maxLevel: 'manual', actor: ACTOR });
+    expect(doneResult).toEqual({ ok: true, value: { ordersAbove: 0 } });
+  });
+
+  it('A-406: invalid_autonomy_level on non-member maxLevel before anything is written', async () => {
+    const h = harness(defsJson({ bounded: false }));
+    expect(
+      await setRepoAutonomy(h.repoDeps, { repo: REPO, maxLevel: 'turbo' as unknown as AutonomyLevel, actor: ACTOR }),
+    ).toEqual({
+      ok: false,
+      error: 'invalid_autonomy_level',
+    });
+    expect(
+      await setGlobalAutonomy(h.globalDeps, { maxLevel: 'turbo' as unknown as AutonomyLevel, actor: ACTOR }),
+    ).toEqual({
+      ok: false,
+      error: 'invalid_autonomy_level',
     });
   });
 
@@ -404,6 +482,33 @@ describe('setGlobalAutonomy', () => {
     const h = harness(defsJson({ bounded: false }));
     expect(await setGlobalAutonomy(h.globalDeps, { level: 'auto', actor: ACTOR })).toEqual({ ok: true, value: undefined });
     expect(await h.settings.get(AUTONOMY_KEY)).toBe('auto');
+  });
+
+  it('A-406: setGlobalAutonomy sets and clears autonomy.max setting; returns ordersAbove count when ceiling is set or lowered', async () => {
+    const h = harness(defsJson({ bounded: true, budget: { amountUsd: 10, warnPercent: 80 } }));
+    const id = (await opened(h)) as WorkOrderId;
+    expect(await setWorkOrderAutonomy(h.woDeps, { workOrder: id, level: 'auto', actor: ACTOR })).toEqual({
+      ok: true,
+      value: undefined,
+    });
+
+    // Setting global ceiling to balanced returns ordersAbove: 1
+    const res = await setGlobalAutonomy(h.globalDeps, { maxLevel: 'balanced', actor: ACTOR });
+    expect(res).toEqual({ ok: true, value: { ordersAbove: 1 } });
+    expect(await h.settings.get(AUTONOMY_MAX_KEY)).toBe('balanced');
+
+    // Setting level auto anywhere is refused due to global ceiling
+    expect(await setRepoAutonomy(h.repoDeps, { repo: REPO, level: 'auto', actor: ACTOR })).toEqual({
+      ok: false,
+      error: 'above_ceiling',
+    });
+
+    // Clearing global ceiling
+    expect(await setGlobalAutonomy(h.globalDeps, { maxLevel: null, actor: ACTOR })).toEqual({
+      ok: true,
+      value: undefined,
+    });
+    expect(await h.settings.get(AUTONOMY_MAX_KEY)).toBeUndefined();
   });
 });
 

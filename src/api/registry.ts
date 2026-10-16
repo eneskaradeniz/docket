@@ -36,7 +36,7 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
   },
   'repo.setAutonomy': {
     input:
-      'repo: RepoSlug, level: manual | balanced | auto | null, maxLevel?: same (refused ceiling_not_available until chain c) — errors: the A-403 set plus stale (A-403)',
+      'repo: RepoSlug, level?: manual | balanced | auto | null, maxLevel?: same — errors: the A-403 set plus stale (A-403, A-406)',
   },
   'project.setAutonomy': {
     input:
@@ -44,7 +44,7 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
   },
   'settings.setAutonomy': {
     input:
-      'level: manual | balanced | auto | null — errors: user_only, invalid_autonomy_level, above_ceiling (A-403, A-396)',
+      'level?: manual | balanced | auto | null, maxLevel?: same — errors: user_only, invalid_autonomy_level, above_ceiling (A-403, A-406)',
   },
   'workOrder.block': { input: 'id: WorkOrderId, reason: string' },
   'workOrder.unblock': { input: 'id: WorkOrderId' },

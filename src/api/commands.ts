@@ -25,9 +25,9 @@ export type Command =
   // auto_requires_max_attempts (+ not_found/definitions_invalid/stale where a load or a file
   // write sits behind them); repo.setAutonomy's maxLevel is ceiling_not_available until chain (c).
   | { readonly type: 'workOrder.setAutonomy'; readonly id: string; readonly level: AutonomyLevelInput }
-  | { readonly type: 'repo.setAutonomy'; readonly repo: string; readonly level: AutonomyLevelInput; readonly maxLevel?: AutonomyLevelInput }
+  | { readonly type: 'repo.setAutonomy'; readonly repo: string; readonly level?: AutonomyLevelInput; readonly maxLevel?: AutonomyLevelInput }
   | { readonly type: 'project.setAutonomy'; readonly project: string; readonly level: AutonomyLevelInput }
-  | { readonly type: 'settings.setAutonomy'; readonly level: AutonomyLevelInput }
+  | { readonly type: 'settings.setAutonomy'; readonly level?: AutonomyLevelInput; readonly maxLevel?: AutonomyLevelInput }
   | { readonly type: 'workOrder.block'; readonly id: string; readonly reason: string }
   | { readonly type: 'workOrder.unblock'; readonly id: string }
   | { readonly type: 'workOrder.close'; readonly id: string }
@@ -201,6 +201,8 @@ export type CommandResult =
       /** Rides only `workOrder.openPr` (A-372): the pull request that was opened, or — on
        *  `pr_exists` — the stored one the refusal answers with. */
       readonly pr?: { readonly number: number; readonly url: string };
+      /** Warning count of non-done work orders whose pre-clamp level exceeds the ceiling (A-406). */
+      readonly ordersAbove?: number;
     }
   /** `validModelIds` rides only `unknown_model` (A-389): the catalog ids valid for that account's route.
    *  `roles` rides only `binding_exists`: the roles whose bindings still reference the account.

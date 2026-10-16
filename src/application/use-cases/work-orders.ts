@@ -34,6 +34,7 @@ import type {
 } from '../../domain/index';
 import type { AutoLevelError } from '../../domain/index';
 import {
+  AUTONOMY_RANK,
   billingFromPools,
   checkAutoLevel,
   clampAutonomy,
@@ -56,7 +57,7 @@ import type { AccountRecord, AppDeps, ForgeResolver, RunRecord, WorkOrderRecord 
 import { catalogOrEmpty } from '../services/match-id';
 import { defaultBillingOf } from '../services/spend-consent';
 import { repoEntryStatus } from './repos';
-import { getAutonomyLevel } from './settings';
+import { getAutonomyLevel, getAutonomyMaxLevel } from './settings';
 
 export type OpenError =
   | 'definitions_invalid'
@@ -68,11 +69,14 @@ export type OpenError =
   | 'empty_title'
   | 'description_too_long'
   | 'invalid_autonomy_level'
+  | 'above_ceiling'
   | 'auto_requires_spend_cap'
   | 'auto_requires_max_attempts';
 
 export async function openWorkOrder(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'definitions' | 'projects'>,
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'definitions' | 'projects'> & {
+    readonly settings?: Pick<AppDeps, 'settings'>['settings'];
+  },
   input: {
     readonly project: ProjectSlug;
     readonly repo: RepoSlug;
@@ -143,6 +147,20 @@ export async function openWorkOrder(
     const parsed = parseAutonomyLevel(input.autonomy);
     if (!parsed.ok) return err('invalid_autonomy_level');
     autonomy = parsed.value;
+
+    let globalMax: AutonomyLevel | undefined;
+    if (deps.settings !== undefined) {
+      const globalMaxResult = await getAutonomyMaxLevel({ settings: deps.settings });
+      if (!globalMaxResult.ok) return err(globalMaxResult.error);
+      globalMax = globalMaxResult.value;
+    }
+    const ceilings = ceilingsInForce(repo.maxLevel, globalMax);
+    const definedCeilings = ceilings.filter((c): c is AutonomyLevel => c !== undefined);
+    if (definedCeilings.length > 0) {
+      const lowest = definedCeilings.reduce((low, one) => (AUTONOMY_RANK[one] < AUTONOMY_RANK[low] ? one : low));
+      if (AUTONOMY_RANK[autonomy] > AUTONOMY_RANK[lowest]) return err('above_ceiling');
+    }
+
     if (autonomy === 'auto') {
       // The nearest cap governing the order is the repo definition's budget, else the project's.
       const cap = repo.budget ?? loaded.value.project?.budget;
@@ -197,11 +215,12 @@ export interface EffectiveAutonomy {
   readonly autoUnavailable?: AutoLevelError;
 }
 
-/** The ceiling homes of A-406 — `RepoDef.maxLevel` and the `autonomy.max` settings key — land
- *  with chain (c). Until then no ceiling exists: the list is empty, the clamp is the identity
- *  and `above_ceiling` never fires. The commands still run the step, in A-403's order, so (c)
- *  fills this one read and nothing else moves. */
-export const ceilingsInForce = (): readonly (AutonomyLevel | undefined)[] => [];
+/** The ceiling homes of A-406 — `RepoDef.maxLevel` and the `autonomy.max` settings key.
+ *  Returns the defined ceilings in force (repo ceiling, global ceiling). */
+export const ceilingsInForce = (
+  repoMax?: AutonomyLevel,
+  globalMax?: AutonomyLevel,
+): readonly (AutonomyLevel | undefined)[] => [repoMax, globalMax];
 
 export async function effectiveAutonomy(
   deps: Pick<AppDeps, 'workOrders' | 'definitions' | 'settings'>,
@@ -220,6 +239,9 @@ export async function effectiveAutonomy(
   }
   const global = await getAutonomyLevel(deps);
   if (!global.ok) return err(global.error);
+  const globalMax = await getAutonomyMaxLevel(deps);
+  if (!globalMax.ok) return err(globalMax.error);
+
   const loaded = record === undefined ? undefined : await deps.definitions.load(record.repo);
   const defLayers = record?.pin !== undefined
     ? definitionAutonomyLayers({ flow: record.pin, stage: input.stage })
@@ -232,13 +254,20 @@ export async function effectiveAutonomy(
     { source: 'project', value: loaded !== undefined && loaded.ok ? loaded.value.project?.autonomy : undefined },
     { source: 'global', value: global.value },
   ];
-  const resolved = clampAutonomy(resolveAutonomy(layers), ceilingsInForce());
+  const repoMax = loaded !== undefined && loaded.ok ? loaded.value.repo?.maxLevel : undefined;
+  const ceilings = ceilingsInForce(repoMax, globalMax.value);
+  const resolved = clampAutonomy(resolveAutonomy(layers), ceilings);
+  const definedCeilings = ceilings.filter((c): c is AutonomyLevel => c !== undefined);
+  const effectiveCeiling = definedCeilings.length > 0
+    ? definedCeilings.reduce((low, one) => (AUTONOMY_RANK[one] < AUTONOMY_RANK[low] ? one : low))
+    : undefined;
+
   if (resolved.level !== 'auto' || record === undefined) {
     const suggestion = defLayers?.suggestsAuto && resolved.level !== 'auto' ? ('auto' as const) : undefined;
     return ok({
       level: resolved.level,
       source: resolved.source,
-      ...(resolved.source === 'ceiling' ? { ceiling: resolved.level } : {}),
+      ...(effectiveCeiling !== undefined ? { ceiling: effectiveCeiling } : {}),
       ...(suggestion === undefined ? {} : { suggestion }),
     });
   }
@@ -255,7 +284,7 @@ export async function effectiveAutonomy(
   return ok({
     level: effectiveLevel,
     source: resolved.source,
-    ...(resolved.source === 'ceiling' ? { ceiling: resolved.level } : {}),
+    ...(effectiveCeiling !== undefined ? { ceiling: effectiveCeiling } : {}),
     ...(checked.ok ? {} : { autoUnavailable: checked.error }),
     ...(suggestion === undefined ? {} : { suggestion }),
   });
@@ -341,6 +370,7 @@ export interface WorkOrderAutonomyView {
   readonly suggestion?: 'auto';
   /** Stage names with a definition-level restriction (manual/balanced) that confirm overrides (U-335). */
   readonly restrictiveStages?: readonly string[];
+  readonly ceiling?: AutonomyLevel;
 }
 
 /** One check of a gate's recorded evidence. `url` rides the contract but is never written —
@@ -594,6 +624,8 @@ const workOrderAutonomyOf = async (
 ): Promise<{ readonly autonomy?: WorkOrderAutonomyView }> => {
   const global = await getAutonomyLevel(deps);
   if (!global.ok) return {};
+  const globalMax = await getAutonomyMaxLevel(deps);
+  if (!globalMax.ok) return {};
   let own: AutonomyLevel | undefined;
   if (record.autonomy !== undefined) {
     const parsed = parseAutonomyLevel(record.autonomy);
@@ -622,14 +654,23 @@ const workOrderAutonomyOf = async (
     { source: 'project', value: definitions.project?.autonomy },
     { source: 'global', value: global.value },
   ];
-  const resolved = clampAutonomy(resolveAutonomy(layers), ceilingsInForce());
+  const ceilings = ceilingsInForce(definitions.repo?.maxLevel, globalMax.value);
+  const resolved = clampAutonomy(resolveAutonomy(layers), ceilings);
   const cap = definitions.repo?.budget ?? definitions.project?.budget;
   const checked = checkAutoLevel({ cap, flow: pinnedFlowOf(record, definitions.flows) });
+  const definedCeilings = ceilings.filter((c): c is AutonomyLevel => c !== undefined);
+  const effectiveCeiling = definedCeilings.length > 0
+    ? definedCeilings.reduce((low, one) => (AUTONOMY_RANK[one] < AUTONOMY_RANK[low] ? one : low))
+    : undefined;
   // R-158: an `auto` the preconditions cannot carry answers `manual` on the read with the typed
   // reason carried alongside (U-334's disabled option words the same code). A clamped level can
   // never be `auto` — the ceiling ranks below it — so its reason is `above_ceiling` instead.
   const unavailable: WorkOrderAutonomyView['autoUnavailable'] =
-    resolved.source === 'ceiling' ? 'above_ceiling' : checked.ok ? undefined : checked.error;
+    effectiveCeiling !== undefined && AUTONOMY_RANK['auto'] > AUTONOMY_RANK[effectiveCeiling]
+      ? 'above_ceiling'
+      : checked.ok
+        ? undefined
+        : checked.error;
   const effectiveLevel = resolved.level === 'auto' && !checked.ok ? 'manual' : resolved.level;
   const suggestion = defLayers?.suggestsAuto && effectiveLevel !== 'auto' ? ('auto' as const) : undefined;
   const restrictiveStages: readonly string[] = (record.pin?.stages ?? [])
@@ -644,6 +685,7 @@ const workOrderAutonomyOf = async (
       level: effectiveLevel,
       source: resolved.source,
       layerSet: own !== undefined,
+      ...(effectiveCeiling !== undefined ? { ceiling: effectiveCeiling } : {}),
       ...(unavailable === undefined ? {} : { autoUnavailable: unavailable }),
       ...(suggestion === undefined ? {} : { suggestion }),
       ...(restrictiveStages.length > 0 ? { restrictiveStages } : {}),
