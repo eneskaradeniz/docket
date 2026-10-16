@@ -5,14 +5,14 @@
 // are asserted here because only this layer can script those conditions.
 import { describe, expect, it } from 'vitest';
 
-import type { CommandResult, ExternalItem } from '../../application/index';
-import { createFakeCommandRunner, type FakeCommandRunner } from '../../application/ports/fakes/index';
+import type { CommandResult, ExternalItem } from '../../../application/index';
+import { createFakeCommandRunner, type FakeCommandRunner } from '../../../application/ports/fakes/index';
 import {
   TRACKER_CONTRACT_ABSENT_KEY,
   TRACKER_CONTRACT_SCOPE,
   trackerAdapterContract,
-} from '../../application/ports/tracker-adapter-contract.test';
-import type { IssueTracker } from '../../application/index';
+} from '../../../application/ports/tracker-adapter-contract.test';
+import type { IssueTracker } from '../../../application/index';
 import { createGhTracker } from './github-tracker';
 
 const REPO_PATH = '/repo/hello';

@@ -2,8 +2,8 @@
 // scripts its outcomes and asserts the exact commands; nothing touches the network.
 import { describe, expect, it } from 'vitest';
 
-import type { CommandResult } from '../../application/index';
-import { createFakeCommandRunner, type FakeCommandRunner } from '../../application/ports/fakes/index';
+import type { CommandResult } from '../../../application/index';
+import { createFakeCommandRunner, type FakeCommandRunner } from '../../../application/ports/fakes/index';
 import { createGhForge } from './github';
 
 const REPO_PATH = '/repo/hello';

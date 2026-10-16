@@ -4,8 +4,7 @@
 // keeps exactly the gate behaviour it had before any forge existed.
 import type { AppDeps, ForgeResolver } from '../../application/index';
 
-import { GITHUB_REMOTE, createGhForge } from './github';
-import { isGhCliAuthenticated } from './repo-tracker-resolver';
+import { GITHUB_REMOTE, createGhForge, isGhCliAuthenticated } from '../connectors/github';
 
 export function createRepoForgeResolver(deps: Pick<AppDeps, 'repos' | 'commands'>): ForgeResolver {
   let ghReady: boolean | undefined;

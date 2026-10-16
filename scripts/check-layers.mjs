@@ -67,7 +67,9 @@ const INFRA_MODULES = {
   'storage/bundle': [],
   vcs: ['system'],
   gates: ['system', 'vcs'],
-  forge: ['system'],
+  // The resolver wiring still builds the github adapters directly; the registry module replaces it.
+  forge: ['system', 'connectors'],
+  connectors: [],
   providers: ['system'],
   mcp: [],
   'pages-view': [],

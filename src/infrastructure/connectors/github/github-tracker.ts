@@ -4,10 +4,10 @@
 // inside gh. Listing runs through `gh api graphql` so the listIssues/listMilestones page token
 // maps one to one onto the port, and the permission probe reads the permissions object of
 // `gh api repos/{owner}/{repo}` — fine-grained tokens carry no scope headers to parse instead.
-import type { EpochMs, Result } from '../../domain/index';
-import { err, ok } from '../../domain/index';
+import type { EpochMs, Result } from '../../../domain/index';
+import { err, ok } from '../../../domain/index';
 
-import type { CommandRunner, ExternalItem, ExternalMilestone, IssueTracker, TrackerError, TrackerPermissions } from '../../application/index';
+import type { CommandRunner, ExternalItem, ExternalMilestone, IssueTracker, TrackerError, TrackerPermissions } from '../../../application/index';
 
 const KIND = 'github-issues';
 

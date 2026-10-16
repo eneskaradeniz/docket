@@ -2,8 +2,8 @@
 // runner, so tests script it and nothing here spawns processes or touches the network itself.
 // Authentication stays entirely inside gh (its own keyring, or GH_TOKEN in the runner's base
 // environment) — no token ever passes through this file, the commands or their output.
-import type { RepoRef, Result } from '../../domain/index';
-import { err, ok } from '../../domain/index';
+import type { RepoRef, Result } from '../../../domain/index';
+import { err, ok } from '../../../domain/index';
 
 import type {
   CheckRun,
@@ -12,7 +12,7 @@ import type {
   ForgeCapabilities,
   ForgeError,
   PullRequestRef,
-} from '../../application/index';
+} from '../../../application/index';
 
 // A gh call is a single API request; a push may upload a large pack over a slow link.
 const GH_TIMEOUT_MS = 60_000;
