@@ -13,6 +13,7 @@ export * from './capability-discovery';
 export * from './machine-capability-scan';
 export * from './checkpoints';
 export * from './clock';
+export * from './connector-module';
 export * from './conversation-repo';
 export * from './credential-importer';
 export * from './definition-store';
