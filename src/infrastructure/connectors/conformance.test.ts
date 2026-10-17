@@ -27,6 +27,8 @@ import {
 } from '../../application/ports/fakes/index';
 import {
   connectorContextContract,
+  SHELL_CONSTRUCTS,
+  unquotedShellText,
   type ConnectorContextKit,
 } from '../../application/ports/connector-context-contract.test';
 import {
@@ -149,6 +151,7 @@ const kitFor = (manifest: ConnectorManifest): ConnectorContextKit => {
     transportCalls: () => transportCalls,
     logLines: () => [...lines],
     commandRuns: () => runner.calls().length,
+    commandLines: () => runner.calls().map((call) => call.command),
   };
 };
 
@@ -300,9 +303,40 @@ export function connectorConformance(connector: ConnectorModule, fixtures: Confo
       const cli = connector.manifest.requiresCli ?? '';
       for (const call of runner.calls()) {
         expect(
-          call.command.startsWith(`${cli} `) || call.command.startsWith('git push '),
+          call.command.startsWith(`'${cli}' `) || call.command.startsWith(`'git' 'push' `),
           `${id} issued a command outside its declared CLI: ${call.command}`,
         ).toBe(true);
+      }
+    });
+
+    it('I-114: a construct-bearing argument reaches the runner as quoted words only — a foreign binary never reaches it', async () => {
+      const runner = createFakeCommandRunner();
+      const context = contextFor(connector.manifest, runner);
+      const cli = connector.manifest.requiresCli;
+      const licensed = cli === undefined ? 0 : SHELL_CONSTRUCTS.length;
+      if (cli !== undefined) {
+        for (const construct of SHELL_CONSTRUCTS) {
+          const outcome = await context.commands.run(REPO_PATH, { bin: cli, args: ['probe', `x${construct}y`] }, 1000);
+          expect(outcome.exitCode, JSON.stringify(construct)).toBe(0);
+        }
+      }
+      for (const construct of SHELL_CONSTRUCTS) {
+        const refused = await context.commands.run(REPO_PATH, { bin: 'curl', args: [`x${construct}y`] }, 1000);
+        expect(refused.exitCode, JSON.stringify(construct)).not.toBe(0);
+      }
+      expect(runner.calls()).toHaveLength(licensed);
+      for (const call of runner.calls()) {
+        expect(unquotedShellText(call.command).trim(), call.command).toBe('');
+      }
+    });
+
+    it('I-114: an http request to an allowed host never reaches the transport', async () => {
+      const kit = kitFor(connector.manifest);
+      // A wildcard entry is not itself a host, so the cleartext proof uses the first exact one.
+      const host = connector.manifest.network.find((entry) => !entry.includes('*'));
+      if (host !== undefined) {
+        expect(await kit.context.http.request({ url: `http://${host}/x` })).toEqual({ ok: false, error: 'egress_denied' });
+        expect(kit.transportCalls()).toBe(0);
       }
     });
   });

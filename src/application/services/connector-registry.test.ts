@@ -7,7 +7,6 @@ import { describe, expect, it } from 'vitest';
 import type { Actor, RoleSlug, RunId } from '../../domain/index';
 import { CONNECTOR_API_VERSION, err, ok, parseSlug } from '../../domain/index';
 import type {
-  CommandRunner,
   ConnectorContext,
   ConnectorModule,
   ConnectorReadiness,
@@ -15,7 +14,7 @@ import type {
   ForgeCapabilities,
   IssueTracker,
 } from '../index';
-import { createFakeAppSettingsRepo, createFakeCommandRunner, createFakeIdGen, type FakeAppSettingsRepo } from '../ports/fakes/index';
+import { createFakeAppSettingsRepo, createFakeIdGen, type FakeAppSettingsRepo } from '../ports/fakes/index';
 
 import { CONNECTORS_ENABLED_KEY, createConnectorRegistry, type ConnectorRegistry } from './connector-registry';
 
@@ -104,10 +103,12 @@ const moduleOf = (fixture: FixtureModule): ConnectorModule => ({
   },
 });
 
-const stubContext = (runner: CommandRunner): ConnectorContext => ({
+const stubContext = (): ConnectorContext => ({
   http: { request: async () => err('egress_denied') },
   secrets: { resolve: async () => undefined },
-  commands: runner,
+  // The synthetic modules never issue commands; the stub keeps the port's shape without owning
+  // any rendering — quoting belongs to the infrastructure context alone.
+  commands: { run: async () => ({ exitCode: 0, durationMs: 0, outputTail: '' }) },
   clock: { now: () => 0 },
   ids: createFakeIdGen(),
   log: { line: () => undefined },
@@ -119,14 +120,13 @@ const registryOf = (
   settings: FakeAppSettingsRepo = createFakeAppSettingsRepo(),
 ): { readonly registry: ConnectorRegistry; readonly settings: FakeAppSettingsRepo } => {
   probeCalls.length = 0;
-  const runner = createFakeCommandRunner();
   return {
     settings,
     registry: createConnectorRegistry({
       connectors: fixtures.map(moduleOf),
       defaultEnabled: [slug('shipped')],
       settings,
-      createContext: () => stubContext(runner),
+      createContext: () => stubContext(),
     }),
   };
 };

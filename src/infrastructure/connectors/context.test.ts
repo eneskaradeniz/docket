@@ -60,6 +60,7 @@ const kitFor = (manifest: ConnectorManifest): ConnectorContextKit => {
     transportCalls: () => transportCalls,
     logLines: () => [...lines],
     commandRuns: () => runner.calls().length,
+    commandLines: () => runner.calls().map((call) => call.command),
   };
 };
 
@@ -68,10 +69,30 @@ connectorContextContract((manifest) => kitFor(manifest));
 describe('createConnectorContext', () => {
   it('a refused command answers a normal CommandResult — no throw, a tail that names the refusal', async () => {
     const kit = kitFor(manifestOf('impl-cli', 'demo'));
-    const refused = await kit.context.commands.run('/repo', 'curl https://evil.example', 1000);
+    const refused = await kit.context.commands.run('/repo', { bin: 'curl', args: ['https://evil.example'] }, 1000);
     expect(refused.exitCode).not.toBe(0);
     expect(refused.outputTail).toContain('refused');
     expect(kit.commandRuns()).toBe(0);
+  });
+
+  it('A-416: the runner receives single-quoted words only — the binary included, the arguments verbatim', async () => {
+    const kit = kitFor(manifestOf('impl-cli', 'demo'));
+    await kit.context.commands.run('/repo', { bin: 'demo', args: ['pr', 'view', '7'] }, 1000);
+    await kit.context.commands.run('/repo', { bin: 'demo', args: ["it's", 'a b', ''] }, 1000);
+    await kit.context.commands.run('/repo', { bin: 'git', args: ['push', 'https://forge.example/x.git', 'feature-x'] }, 1000);
+    expect(kit.commandLines()).toEqual([
+      `'demo' 'pr' 'view' '7'`,
+      `'demo' 'it'\\''s' 'a b' ''`,
+      `'git' 'push' 'https://forge.example/x.git' 'feature-x'`,
+    ]);
+  });
+
+  it('A-416: an http, ws or file url is refused like a foreign host — only https leaves the machine', async () => {
+    const kit = kitFor(manifestOf('impl-cli', 'demo'));
+    for (const url of ['http://api.forge.example/x', 'ws://api.forge.example/x', 'file://api.forge.example/etc']) {
+      expect(await kit.context.http.request({ url }), url).toEqual({ ok: false, error: 'egress_denied' });
+    }
+    expect(kit.transportCalls()).toBe(0);
   });
 
   it('an unparsable request url is denied like a foreign host — it never reaches the transport', async () => {

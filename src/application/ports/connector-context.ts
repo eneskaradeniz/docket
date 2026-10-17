@@ -7,9 +7,10 @@ import type { Result } from '../../domain/index';
 
 import type { Clock } from './clock';
 import type { IdGen } from './id-gen';
-import type { CommandRunner } from './repo-tools';
+import type { CommandResult } from './repo-tools';
 
-/** One outbound request. The manifest's `network` allowlist is the only gate in front of it. */
+/** One outbound request. The manifest's `network` allowlist and the https-only scheme rule are
+ *  the only gates in front of it. */
 export interface HttpRequest {
   readonly url: string;
   readonly method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
@@ -30,6 +31,21 @@ export interface HttpPort {
   request(req: HttpRequest): Promise<Result<HttpResponse, HttpError>>;
 }
 
+/** One command a connector issues: a binary and its argument vector — never a shell line. The
+ *  context renders the line itself with every word single-quoted, so no connector-supplied word
+ *  can become a shell construct. */
+export interface ConnectorCommand {
+  readonly bin: string;
+  readonly args: readonly string[];
+}
+
+/** The exec port. At run time it refuses every binary but the declared CLI (and the one
+ *  `git push remote branch` member the forge family needs); a manifest without `requiresCli`
+ *  declares no command capability, so every command is refused. */
+export interface ConnectorCommands {
+  run(cwd: string, command: ConnectorCommand, timeoutMs: number, env?: Readonly<Record<string, string>>): Promise<CommandResult>;
+}
+
 /** Resolves a keychain ref held by one of the connector's own accounts. A ref outside them
  *  answers undefined — one connector never reads another's secret. */
 export interface ConnectorSecrets {
@@ -48,10 +64,8 @@ export type ConnectorReadiness = 'ready' | 'needs_cli' | 'needs_account';
 export interface ConnectorContext {
   readonly http: HttpPort;
   readonly secrets: ConnectorSecrets;
-  /** The exec port. At run time it refuses everything but the declared CLI's own commands (and
-   *  `git push`, the one host-side git member the forge family needs); a manifest without
-   *  `requiresCli` declares no command capability, so every command is refused. */
-  readonly commands: CommandRunner;
+  /** The exec port — the argument-vector shape; see `ConnectorCommands` for the fence. */
+  readonly commands: ConnectorCommands;
   readonly clock: Clock;
   readonly ids: IdGen;
   readonly log: ConnectorLog;

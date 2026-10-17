@@ -40,8 +40,8 @@ const reposWithRemote = (remote: string | undefined): RepoRegistry => ({
 });
 
 const scriptGhReady = (runner: ReturnType<typeof createFakeCommandRunner>): void => {
-  runner.script('gh --version', { exitCode: 0, durationMs: 1, outputTail: 'gh version 2' });
-  runner.script('gh auth status', { exitCode: 0, durationMs: 1, outputTail: '' });
+  runner.script("'gh' '--version'", { exitCode: 0, durationMs: 1, outputTail: 'gh version 2' });
+  runner.script("'gh' 'auth' 'status'", { exitCode: 0, durationMs: 1, outputTail: '' });
 };
 
 /** The registry the resolver delegates to, built exactly like the composition root builds it —
@@ -83,7 +83,7 @@ describe('createRepoForgeResolver', () => {
 
   it('A-368: a missing gh CLI resolves undefined', async () => {
     const runner = createFakeCommandRunner();
-    runner.script('gh --version', { exitCode: 127, durationMs: 1, outputTail: 'command not found' });
+    runner.script("'gh' '--version'", { exitCode: 127, durationMs: 1, outputTail: 'command not found' });
     const resolver = createRepoForgeResolver({ repos: reposWithRemote('git@github.com:octo/demo.git'), commands: runner }, registryOver(runner));
 
     const forge = await resolver.forRepo({ id: GH_REPO, remote: 'git@github.com:octo/demo.git', defaultBranch: 'main' });
@@ -100,11 +100,11 @@ describe('createRepoForgeResolver', () => {
 
     await resolver.forRepo(repoRef);
     // One resolver probe + one creation probe so far.
-    expect(runner.calls().filter((call) => call.command === 'gh --version')).toHaveLength(2);
+    expect(runner.calls().filter((call) => call.command === "'gh' '--version'")).toHaveLength(2);
 
     await resolver.forRepo(repoRef);
     // Only the forge's own creation probe ran again; the resolver's probe answer was cached.
-    expect(runner.calls().filter((call) => call.command === 'gh --version')).toHaveLength(3);
+    expect(runner.calls().filter((call) => call.command === "'gh' '--version'")).toHaveLength(3);
   });
 });
 

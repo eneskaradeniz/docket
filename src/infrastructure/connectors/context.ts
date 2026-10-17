@@ -8,6 +8,8 @@ import { err, ok } from '../../domain/index';
 import type {
   Clock,
   CommandRunner,
+  ConnectorCommand,
+  ConnectorCommands,
   ConnectorContext,
   HttpRequest,
   HttpResponse,
@@ -39,6 +41,16 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 // the conformance suite asserts no foreign command ever reaches the runner.
 const REFUSED_TAIL = 'connector command refused: outside the declared CLI';
 
+// The runner executes the line through the shell, so every word is single-quoted — the binary
+// included, because a manifest's declared CLI is not charset-checked anywhere else. The one
+// character that ends a single-quoted shell word is the quote itself.
+const shellQuote = (value: string): string => `'${value.split("'").join(`'\\''`)}'`;
+
+// The one git member a connector may run: exactly `push remote branch` — the forge family's
+// host-side push, and no other shape of git.
+const isPushMember = (command: ConnectorCommand): boolean =>
+  command.bin === 'git' && command.args.length === 3 && command.args[0] === 'push';
+
 // The exact host of a `*.host` entry does not match — the leading dot is the label boundary, so
 // `evil-forge.example` and `forge.example.evil.io` never pass for `forge.example`.
 const hostAllowed = (network: readonly string[], host: string): boolean => {
@@ -52,9 +64,6 @@ const hostAllowed = (network: readonly string[], host: string): boolean => {
   }
   return false;
 };
-
-// The first word of the command line is the binary the manifest must have declared.
-const binaryOf = (command: string): string => command.trim().split(/\s+/)[0] ?? '';
 
 const nodeSend = async (req: HttpRequest): Promise<Result<HttpResponse, 'network' | 'timeout'>> => {
   try {
@@ -82,29 +91,30 @@ export function createConnectorContext(manifest: ConnectorManifest, deps: Connec
   const http: HttpPort = {
     request: async (req) => {
       // An unparsable url has no host to allow, so it is denied like a foreign one — it never
-      // reaches the transport.
-      let host: string | undefined;
+      // reaches the transport. The scheme is part of the same fence: only https leaves the
+      // machine, so a request carrying a token header never crosses a cleartext hop.
+      let parsed: URL | undefined;
       try {
-        host = new URL(req.url).hostname.toLowerCase();
+        parsed = new URL(req.url);
       } catch {
-        host = undefined;
+        parsed = undefined;
       }
+      const host = parsed === undefined || parsed.protocol !== 'https:' ? undefined : parsed.hostname.toLowerCase();
       if (host === undefined || !hostAllowed(manifest.network, host)) return err('egress_denied');
       return send(req);
     },
   };
 
-  const commands: CommandRunner = {
+  const commands: ConnectorCommands = {
     run: (cwd, command, timeoutMs, env) => {
       const cli = manifest.requiresCli;
-      // `git push` is the forge family's one host-side git member; without a declared CLI the
-      // manifest promises no command capability at all.
-      const licensed =
-        cli !== undefined && (binaryOf(command) === cli || command.trim().startsWith('git push '));
+      // `git push remote branch` is the forge family's one host-side git member; without a
+      // declared CLI the manifest promises no command capability at all.
+      const licensed = cli !== undefined && (command.bin === cli || isPushMember(command));
       if (!licensed) {
         return Promise.resolve({ exitCode: 126, durationMs: 0, outputTail: REFUSED_TAIL });
       }
-      return deps.commands.run(cwd, command, timeoutMs, env);
+      return deps.commands.run(cwd, [command.bin, ...command.args].map(shellQuote).join(' '), timeoutMs, env);
     },
   };
 

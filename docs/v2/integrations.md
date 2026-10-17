@@ -226,4 +226,8 @@ Loading connectors from a user directory at run time. The boundary above (manife
 `ConnectorContext`, no ambient imports) is chosen so a connector could later run out-of-process
 (stdio protocol, permissions from the manifest) without rewriting the built-ins. Revisit when
 several real third-party connector requests exist or maintainer review becomes the bottleneck.
-**Naming:** "connector", never "plugin" — `plugin` is already an agent capability kind (D-4).
+The stated **precondition** of any run-time loading is the A-416 fence being real (amended by
+#1265): the command port is argument-vector only — a connector cannot hand over a shell line,
+the context renders the one quoted line itself and refuses every binary but the declared CLI —
+and egress is https-only to the manifest's hosts. **Naming:** "connector", never "plugin" —
+`plugin` is already an agent capability kind (D-4).

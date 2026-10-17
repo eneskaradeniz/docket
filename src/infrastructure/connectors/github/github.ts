@@ -1,5 +1,5 @@
 // Forge adapter through the gh CLI. Every remote operation is one command through the injected
-// runner, so tests script it and nothing here spawns processes or touches the network itself.
+// exec port, so tests script it and nothing here spawns processes or touches the network itself.
 // Authentication stays entirely inside gh (its own keyring, or GH_TOKEN in the runner's base
 // environment) — no token ever passes through this file, the commands or their output.
 import type { RepoRef, Result } from '../../../domain/index';
@@ -7,7 +7,7 @@ import { err, ok } from '../../../domain/index';
 
 import type {
   CheckRun,
-  CommandRunner,
+  ConnectorCommands,
   Forge,
   ForgeCapabilities,
   ForgeError,
@@ -18,10 +18,6 @@ import type {
 const GH_TIMEOUT_MS = 60_000;
 const PUSH_TIMEOUT_MS = 600_000;
 const PROBE_TIMEOUT_MS = 15_000;
-
-// The runner executes commands through the shell, so every interpolated value is single-quoted;
-// the one character that ends a single-quoted shell word is the quote itself.
-const shellQuote = (value: string): string => `'${value.split("'").join(`'\\''`)}'`;
 
 // Reads OWNER/REPO out of a github.com remote URL (https, ssh:// or git@ form) for `--repo`;
 // remotes on other hosts belong to other forges, so they are not mistaken for this one. The
@@ -158,30 +154,30 @@ const parseDefaultBranch = (output: string): Result<string, ForgeError> => {
 // `capabilities` is a synchronous property but the probe runs commands, so it happens once here,
 // at creation: presence is `gh --version` succeeding, authentication `gh auth status` doing so.
 // The port carries no issue-tracker members, so no capability is promised for issues.
-const probeCapabilities = async (repo: string, runner: CommandRunner): Promise<ForgeCapabilities> => {
+const probeCapabilities = async (repo: string, commands: ConnectorCommands): Promise<ForgeCapabilities> => {
   const absent: ForgeCapabilities = { pullRequests: false, checks: false, issues: false };
-  const present = await runner.run(repo, 'gh --version', PROBE_TIMEOUT_MS);
+  const present = await commands.run(repo, { bin: 'gh', args: ['--version'] }, PROBE_TIMEOUT_MS);
   if (present.exitCode !== 0) return absent;
-  const authenticated = await runner.run(repo, 'gh auth status', PROBE_TIMEOUT_MS);
+  const authenticated = await commands.run(repo, { bin: 'gh', args: ['auth', 'status'] }, PROBE_TIMEOUT_MS);
   if (authenticated.exitCode !== 0) return absent;
   return { pullRequests: true, checks: true, issues: false };
 };
 
 /** The Forge for one local checkout. `repo` is the checkout directory every command runs in. */
-export async function createGhForge(repo: string, runner: CommandRunner): Promise<Forge> {
-  const capabilities = await probeCapabilities(repo, runner);
+export async function createGhForge(repo: string, commands: ConnectorCommands): Promise<Forge> {
+  const capabilities = await probeCapabilities(repo, commands);
 
   // A disabled forge still implements the port: every member runs its command and lets the
   // failure classification speak, so callers see the concrete cause instead of a probe guess.
-  const runGh = async (command: string, timeoutMs: number): Promise<Result<void, ForgeError>> => {
-    const outcome = await runner.run(repo, command, timeoutMs);
+  const runGh = async (args: readonly string[], timeoutMs: number): Promise<Result<void, ForgeError>> => {
+    const outcome = await commands.run(repo, { bin: 'gh', args }, timeoutMs);
     if (outcome.exitCode !== 0) return err(classify(outcome.exitCode, outcome.outputTail));
     return ok(undefined);
   };
 
   const withTarget = async (
     repoRef: RepoRef,
-    build: (slug: string) => string,
+    build: (slug: string) => readonly string[],
     timeoutMs: number,
   ): Promise<Result<void, ForgeError>> => {
     const target = ownerRepo(repoRef.remote);
@@ -196,9 +192,12 @@ export async function createGhForge(repo: string, runner: CommandRunner): Promis
     pushBranch: async (repoRef, branch) => {
       // gh has no push; the branch goes to the remote URL itself so no remote name is assumed.
       // A hung credential prompt would eat the whole timeout, so prompts are switched off.
-      const outcome = await runner.run(repo, `git push ${shellQuote(repoRef.remote)} ${shellQuote(branch)}`, PUSH_TIMEOUT_MS, {
-        GIT_TERMINAL_PROMPT: '0',
-      });
+      const outcome = await commands.run(
+        repo,
+        { bin: 'git', args: ['push', repoRef.remote, branch] },
+        PUSH_TIMEOUT_MS,
+        { GIT_TERMINAL_PROMPT: '0' },
+      );
       if (outcome.exitCode !== 0) return err(classify(outcome.exitCode, outcome.outputTail));
       return ok(undefined);
     },
@@ -207,13 +206,14 @@ export async function createGhForge(repo: string, runner: CommandRunner): Promis
       const target = ownerRepo(repoRef.remote);
       if (target === undefined) return err('unknown');
       const slug = `${target.owner}/${target.name}`;
-      const command =
-        `gh pr create --repo ${shellQuote(slug)}` +
-        ` --head ${shellQuote(input.head)}` +
-        ` --base ${shellQuote(input.base)}` +
-        ` --title ${shellQuote(input.title)}` +
-        ` --body ${shellQuote(input.body)}`;
-      const outcome = await runner.run(repo, command, GH_TIMEOUT_MS);
+      const outcome = await commands.run(
+        repo,
+        {
+          bin: 'gh',
+          args: ['pr', 'create', '--repo', slug, '--head', input.head, '--base', input.base, '--title', input.title, '--body', input.body],
+        },
+        GH_TIMEOUT_MS,
+      );
       if (outcome.exitCode !== 0) return err(classify(outcome.exitCode, outcome.outputTail));
       return parseCreatedPullRequest(outcome.outputTail);
     },
@@ -221,8 +221,11 @@ export async function createGhForge(repo: string, runner: CommandRunner): Promis
     pullRequest: async (repoRef, number) => {
       const target = ownerRepo(repoRef.remote);
       if (target === undefined) return err('unknown');
-      const command = `gh pr view ${number} --repo ${shellQuote(`${target.owner}/${target.name}`)} --json state,mergeable`;
-      const outcome = await runner.run(repo, command, GH_TIMEOUT_MS);
+      const outcome = await commands.run(
+        repo,
+        { bin: 'gh', args: ['pr', 'view', String(number), '--repo', `${target.owner}/${target.name}`, '--json', 'state,mergeable'] },
+        GH_TIMEOUT_MS,
+      );
       if (outcome.exitCode !== 0) return err(classify(outcome.exitCode, outcome.outputTail));
       const parsed = parseJson(outcome.outputTail);
       if (parsed === undefined) return err('unknown');
@@ -239,8 +242,11 @@ export async function createGhForge(repo: string, runner: CommandRunner): Promis
       if (target === undefined) return err('unknown');
       // One page of 100 covers the check runs of a single ref; a pagination loop would turn the
       // gate's poll into an unbounded walk.
-      const command = `gh api ${shellQuote(`repos/${target.owner}/${target.name}/commits/${ref}/check-runs?per_page=100`)}`;
-      const outcome = await runner.run(repo, command, GH_TIMEOUT_MS);
+      const outcome = await commands.run(
+        repo,
+        { bin: 'gh', args: ['api', `repos/${target.owner}/${target.name}/commits/${ref}/check-runs?per_page=100`] },
+        GH_TIMEOUT_MS,
+      );
       if (outcome.exitCode !== 0) return err(classify(outcome.exitCode, outcome.outputTail));
       return parseCheckRuns(outcome.outputTail);
     },
@@ -250,8 +256,11 @@ export async function createGhForge(repo: string, runner: CommandRunner): Promis
     defaultBranch: async (repoRef) => {
       const target = ownerRepo(repoRef.remote);
       if (target === undefined) return err('unknown');
-      const command = `gh repo view --repo ${shellQuote(`${target.owner}/${target.name}`)} --json defaultBranchRef`;
-      const outcome = await runner.run(repo, command, GH_TIMEOUT_MS);
+      const outcome = await commands.run(
+        repo,
+        { bin: 'gh', args: ['repo', 'view', '--repo', `${target.owner}/${target.name}`, '--json', 'defaultBranchRef'] },
+        GH_TIMEOUT_MS,
+      );
       if (outcome.exitCode !== 0) return err(classify(outcome.exitCode, outcome.outputTail));
       return parseDefaultBranch(outcome.outputTail);
     },
@@ -259,7 +268,7 @@ export async function createGhForge(repo: string, runner: CommandRunner): Promis
     // The only merge path. Plain --merge, never --auto: an automatic merge is a decision the
     // port has not asked for, and no other member runs a command that could merge.
     mergePullRequest: async (repoRef, number) => {
-      return withTarget(repoRef, (slug) => `gh pr merge ${number} --repo ${shellQuote(slug)} --merge`, GH_TIMEOUT_MS);
+      return withTarget(repoRef, (slug) => ['pr', 'merge', String(number), '--repo', slug, '--merge'], GH_TIMEOUT_MS);
     },
   };
 }
