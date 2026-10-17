@@ -1,4 +1,5 @@
 // Services barrel.
+export * from './connector-registry';
 export * from './run-executor';
 export * from './run-control';
 export * from './dispatcher';

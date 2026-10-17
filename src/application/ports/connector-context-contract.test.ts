@@ -2,11 +2,13 @@
 // implementation wherever it is built — the connector conformance suite invokes this for every
 // built-in connector, so the laws hold per connector, not just on a bench fixture. The fixtures
 // here are synthetic manifests; the caller supplies the context, so the same laws also run over
-// a real connector's own manifest.
+// a real connector's own manifest. The bottom self-run exercises the laws against the layer's
+// fake context, which is their reference implementation.
 import { describe, expect, it } from 'vitest';
 
 import { CONNECTOR_API_VERSION, parseSlug, type ConnectorManifest } from '../../domain/index';
 
+import { createFakeConnectorContext } from './fakes/fake-connector-context';
 import type { ConnectorContext } from './connector-context';
 
 /** Everything the laws need to observe one built context: the two secret refs planted in the
@@ -54,8 +56,13 @@ const NO_CLI_MANIFEST: ConnectorManifest = {
   settings: [],
 };
 
-/** Runs the context laws over `makeKit`, which builds one real context per manifest. */
-export function connectorContextContract(makeKit: (manifest: ConnectorManifest) => ConnectorContextKit): void {
+/** Runs the context laws over `makeKit`, which builds one real context per manifest. When
+ *  `subject` is given (a real connector's manifest), the allowlist law also runs against that
+ *  manifest's own network, so the conformance suite proves the fence per connector. */
+export function connectorContextContract(
+  makeKit: (manifest: ConnectorManifest) => ConnectorContextKit,
+  subject?: ConnectorManifest,
+): void {
   describe('connector context', () => {
     it('A-416: a request to a host outside the manifest network answers the typed egress_denied and never reaches the transport', async () => {
       const kit = makeKit(CLI_MANIFEST);
@@ -124,5 +131,47 @@ export function connectorContextContract(makeKit: (manifest: ConnectorManifest) 
       expect(none.exitCode).not.toBe(0);
       expect(bare.commandRuns()).toBe(0);
     });
+
+    if (subject !== undefined) {
+      it("A-416: no request leaves the connector's own network — a manifest host passes, a foreign host answers egress_denied", async () => {
+        const kit = makeKit(subject);
+        expect(await kit.context.http.request({ url: 'https://outside-every-manifest.example/x' })).toEqual({
+          ok: false,
+          error: 'egress_denied',
+        });
+        expect(kit.transportCalls()).toBe(0);
+        // A wildcard entry is not itself a host, so the pass-through proof uses the first exact one.
+        const host = subject.network.find((entry) => !entry.includes('*'));
+        if (host !== undefined) {
+          expect(await kit.context.http.request({ url: `https://${host}/x` })).toEqual({
+            ok: true,
+            value: { status: 200, body: '' },
+          });
+          expect(kit.transportCalls()).toBe(1);
+        }
+      });
+    }
   });
 }
+
+// A compliant closure over the fake context: the layer's reference implementation of the fences.
+const fakeKitOf = (manifest: ConnectorManifest): ConnectorContextKit => {
+  const ownSecretRef = `connectors/${manifest.id}/token`;
+  const foreignSecretRef = 'connectors/someone-else/token';
+  const secretValue = 'FIXTURE-FAKE-CONTEXT-SECRET';
+  const context = createFakeConnectorContext(manifest, { ownRefs: [ownSecretRef] });
+  context.plantSecret(ownSecretRef, secretValue);
+  context.plantSecret(foreignSecretRef, secretValue);
+  return {
+    context,
+    manifest,
+    ownSecretRef,
+    foreignSecretRef,
+    secretValue,
+    transportCalls: () => context.sentRequests().length,
+    logLines: () => context.logLines(),
+    commandRuns: () => context.commandRuns(),
+  };
+};
+
+connectorContextContract(fakeKitOf);

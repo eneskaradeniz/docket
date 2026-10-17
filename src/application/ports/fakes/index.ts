@@ -12,6 +12,7 @@ export * from './fake-capability-discovery';
 export * from './fake-machine-capability-scan';
 export * from './fake-checkpoints';
 export * from './fake-clock';
+export * from './fake-connector-context';
 export * from './fake-conversation-repo';
 export * from './fake-definition-store';
 export * from './fake-deps';

@@ -101,21 +101,28 @@ const WRITE_MEMBERS = /\.pushBranch\(|\.openPullRequest\(|\.mergePullRequest\(/;
 /** The one production module the git-actions issue (GI-2) licensed to call a forge write member. */
 const GIT_ACTIONS = join(process.cwd(), 'src', 'application', 'use-cases', 'git-actions.ts');
 
+/** The registry's failure boundary delegates every member of the forge it hands out; it is
+ *  pass-through wrapping, not a caller — the decision to write still lives in the git-actions
+ *  use case alone. */
+const REGISTRY_BOUNDARY = join(process.cwd(), 'src', 'application', 'services', 'connector-registry.ts');
+
 describe('forge write members stay uncalled in production', () => {
   it('I-104: no production file under src/ or electron/ but the git-actions use case calls a forge write member', () => {
     const offenders = productionFiles(join(process.cwd(), 'src'))
       .concat(productionFiles(join(process.cwd(), 'electron')))
-      .filter((file) => file !== GIT_ACTIONS)
+      .filter((file) => file !== GIT_ACTIONS && file !== REGISTRY_BOUNDARY)
       .filter((file) => WRITE_MEMBERS.test(readFileSync(file, 'utf8')));
     expect(offenders).toEqual([]);
   });
 
   it('holds the merge invariant (A-373): mergePullRequest is called from exactly one place', () => {
     // Whichever production file dares call forge.mergePullRequest besides the git-actions use
-    // case breaks the explicit-approval pin — nothing else may merge on any path.
+    // case (and the registry's pass-through boundary) breaks the explicit-approval pin — nothing
+    // else may merge on any path.
     const callers = productionFiles(join(process.cwd(), 'src'))
       .concat(productionFiles(join(process.cwd(), 'electron')))
-      .filter((file) => /\.mergePullRequest\(/.test(readFileSync(file, 'utf8')));
-    expect(callers).toEqual([GIT_ACTIONS]);
+      .filter((file) => /\.mergePullRequest\(/.test(readFileSync(file, 'utf8')))
+      .sort();
+    expect(callers).toEqual([REGISTRY_BOUNDARY, GIT_ACTIONS].sort());
   });
 });
