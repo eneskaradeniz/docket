@@ -151,10 +151,11 @@ describe('capability registry as data (P-27)', () => {
   });
 
   it('P-68: measuredWith records the versions the evidence was measured on — only where a measurement exists', () => {
-    // The live matrices ran on the claude-code CLI/SDK pair below; every agy fact in the registry
-    // was measured on 1.3.6 (the live run 01M50YHMVARZ1G2FGHNPMG6WD2). The providers without a
-    // recorded measurement carry no field at all — unknown, never an invented version.
-    expect(findProvider('claude-code')?.measuredWith).toEqual({ cli: '2.1.302', sdk: '0.3.302', at: '2026-10-16' });
+    // The live matrices ran on the claude-code CLI/SDK pair below, and the 2026-10-17 canary
+    // re-measured the pair on main 1ecb80b; every agy fact in the registry was measured on 1.3.6
+    // (the live run 01M50YHMVARZ1G2FGHNPMG6WD2). The providers without a recorded measurement
+    // carry no field at all — unknown, never an invented version.
+    expect(findProvider('claude-code')?.measuredWith).toEqual({ cli: '2.1.302', sdk: '0.3.302', at: '2026-10-17' });
     expect(findProvider('agy')?.measuredWith).toEqual({ cli: '1.3.6', at: '2026-10-16' });
     for (const providerId of ['codex', 'copilot', 'cursor', 'opencode']) {
       expect(findProvider(providerId)?.measuredWith, providerId).toBeUndefined();
@@ -248,6 +249,21 @@ describe('capability registry validity (P-28)', () => {
     expect(findProvider('no-such-provider')).toBeUndefined();
     expect(findRouteKind('anthropic-subscription')?.providerId).toBe('claude-code');
     expect(findRouteKind('no-such-route-kind')).toBeUndefined();
+  });
+
+  it('P-28: claude-code carries every gate as test evidence plus the recorded canary runs, so the level derives full — never hand-written', () => {
+    // The 2026-10-17 canary (build main 1ecb80b, SDK 0.3.302 driving CLI 2.1.302) recorded both
+    // runs below — zai-glm 01M53HX9EZ66MSNT1PTBBJMF6T and anthropic-subscription
+    // 01M53J2TKZ25Y1XM3CPD031264. With G1–G6 as test evidence and the runs recorded, P-28's
+    // `full` derives; the assertion runs supportLevel on the registry record itself, so a level
+    // nobody can derive from the data turns red here.
+    const claudeCode = findProvider('claude-code');
+    expect(claudeCode).toBeDefined();
+    for (const gate of ALL_GATES) {
+      expect(claudeCode?.gates[gate]?.kind, gate).toBe('test');
+    }
+    expect(claudeCode?.operatorRuns).toEqual(['01M53HX9EZ66MSNT1PTBBJMF6T', '01M53J2TKZ25Y1XM3CPD031264']);
+    if (claudeCode !== undefined) expect(supportLevel(claudeCode)).toBe('full');
   });
 
   it('P-28: agy carries every gate and isolation evidence, no operator run stands under the isolated posture, and the level derives isolated', () => {
@@ -585,7 +601,7 @@ describe('isolation evidence (P-44)', () => {
     }
     const levels = Object.fromEntries(CAPABILITY_REGISTRY.providers.map((p) => [p.providerId, supportLevel(p)]));
     expect(levels).toEqual({
-      'claude-code': 'isolated',
+      'claude-code': 'full',
       codex: 'experimental',
       agy: 'isolated',
       copilot: 'experimental',
