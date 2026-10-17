@@ -329,12 +329,12 @@ describe('cockpit store — sections (U-21)', () => {
     expect(api.queries.filter((query) => query.type === 'cockpit').length).toBe(2);
   });
 
-  it('U-21: a multi-repo project card opens the roadmap, a single-repo card the main repo board', () => {
-    expect(projectCardTarget({ project: 'antero', name: 'Antero', mainRepo: 'antreo-api', repoCount: 7, active: 3, waiting: 2 })).toEqual({
+  it('U-21: a multi-repo project card opens the roadmap, a single-repo card the first repo board', () => {
+    expect(projectCardTarget({ project: 'antero', name: 'Antero', firstRepo: 'antreo-api', repoCount: 7, active: 3, waiting: 2 })).toEqual({
       kind: 'roadmap',
       project: 'antero',
     });
-    expect(projectCardTarget({ project: 'kadife', name: 'Kadife Odoo', mainRepo: 'kadife-odoo', repoCount: 1, active: 1, waiting: 0 })).toEqual({
+    expect(projectCardTarget({ project: 'kadife', name: 'Kadife Odoo', firstRepo: 'kadife-odoo', repoCount: 1, active: 1, waiting: 0 })).toEqual({
       kind: 'board',
       repo: 'kadife-odoo',
     });
@@ -430,9 +430,9 @@ describe('cockpit head and lists (U-21 redesign)', () => {
     expect(cockpitPhase({ ...base, loading: true, view: null })).toBe('loading');
     expect(cockpitPhase({ ...base, failed: true, view: null })).toBe('failed-empty');
     expect(cockpitPhase({ ...base, view: cockpitView([]) })).toBe('first-run');
-    expect(cockpitPhase({ ...base, view: { ...cockpitView([]), projects: [{ project: 'p', name: 'P', mainRepo: 'r', repoCount: 1, active: 0, waiting: 0 }] } })).toBe('ready');
+    expect(cockpitPhase({ ...base, view: { ...cockpitView([]), projects: [{ project: 'p', name: 'P', firstRepo: 'r', repoCount: 1, active: 0, waiting: 0 }] } })).toBe('ready');
     // A failed reload never blanks a view the screen already has (U-2).
-    expect(cockpitPhase({ ...base, failed: true, view: { ...cockpitView([]), projects: [{ project: 'p', name: 'P', mainRepo: 'r', repoCount: 1, active: 0, waiting: 0 }] } })).toBe('ready');
+    expect(cockpitPhase({ ...base, failed: true, view: { ...cockpitView([]), projects: [{ project: 'p', name: 'P', firstRepo: 'r', repoCount: 1, active: 0, waiting: 0 }] } })).toBe('ready');
   });
 
   it('U-2: loadedAt stamps the last successful load and survives a failed one', async () => {
@@ -477,7 +477,7 @@ describe('cockpit — queue, stage strip and project activity (A-35 … A-38)', 
 
   it('A-38: a card with no active work shows its last activity; one with active work or no activity does not', () => {
     const card = (active: number, lastActivityAt?: number | null): CockpitView['projects'][number] => ({
-      project: 'p', name: 'P', mainRepo: 'r', repoCount: 1, active, waiting: 0, ...(lastActivityAt === undefined ? {} : { lastActivityAt }),
+      project: 'p', name: 'P', firstRepo: 'r', repoCount: 1, active, waiting: 0, ...(lastActivityAt === undefined ? {} : { lastActivityAt }),
     });
     expect(showsLastActivity(card(0, 5_000))).toBe(true);
     expect(showsLastActivity(card(2, 5_000))).toBe(false);

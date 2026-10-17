@@ -276,7 +276,7 @@ export function CockpitScreen({ store, marks, locale, onOpenWorkOrder, onOpenPro
                     card={card}
                     locale={locale}
                     sinceMs={store.sinceMs}
-                    onOpen={() => (card.repoCount > 1 ? onOpenProject(card.project) : onOpenBoard(card.mainRepo))}
+                    onOpen={() => (card.repoCount > 1 ? onOpenProject(card.project) : onOpenBoard(card.firstRepo))}
                   />
                 ))}
               </div>

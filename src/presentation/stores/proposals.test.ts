@@ -83,7 +83,7 @@ const harness = (items: readonly ProposalListItem[]) => {
           return detailOf(item, { currentlyStale: item.status === 'pending' && script.stale.has(item.id) });
         }
         if (query.type === 'project.tree') {
-          return [{ project: 'antero', name: 'Antero', mainRepo: 'antero-api', repos: [{ repo: 'antero-api', name: 'Antero API', main: true }] }];
+          return [{ project: 'antero', name: 'Antero', firstRepo: 'antero-api', repos: [{ repo: 'antero-api', name: 'Antero API', first: true }] }];
         }
         return null;
       },

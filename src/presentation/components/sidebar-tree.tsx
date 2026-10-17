@@ -149,7 +149,7 @@ const RepoRow = ({
     <span title={node.name} className="min-w-0 flex-1 truncate">
       {node.name}
     </span>
-    {node.main ? (
+    {node.first ? (
       <span title={node.name} aria-label={node.name} className="flex-none text-[10px] text-signal">
         ★
       </span>

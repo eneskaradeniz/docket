@@ -20,7 +20,7 @@ import type { ShellChange, ShellChangeSignal } from './shell';
 const repoNode = (repo: string, overrides: Partial<RepoNode> = {}): RepoNode => ({
   repo,
   name: repo,
-  main: false,
+  first: false,
   active: 0,
   running: 0,
   waiting: 0,
@@ -31,7 +31,7 @@ const repoNode = (repo: string, overrides: Partial<RepoNode> = {}): RepoNode => 
 const projectItem = (project: string, name: string, repos: readonly RepoNode[]): ProjectTreeItem => ({
   project,
   name,
-  mainRepo: repos[0]?.repo ?? '',
+  firstRepo: repos[0]?.repo ?? '',
   repos,
   active: repos.reduce((sum, node) => sum + node.active, 0),
   running: repos.reduce((sum, node) => sum + node.running, 0),
@@ -46,7 +46,7 @@ const projectItem = (project: string, name: string, repos: readonly RepoNode[]):
 /** The prototype's world, trimmed to what the rules read: Antero with six repos, plus flat rows. */
 const world = (): ProjectTree => [
   projectItem('antero', 'Antero', [
-    repoNode('antreo-docs', { main: true }),
+    repoNode('antreo-docs', { first: true }),
     repoNode('antreo-api', { active: 3, running: 1, status: 'running' }),
     repoNode('antreo-mobile', { active: 2, waiting: 1, status: 'waiting' }),
     repoNode('antreo-web'),
@@ -298,7 +298,7 @@ describe('project tree store', () => {
       project: { id: 'antero', state: 'psel' },
       repo: 'antreo-api',
     });
-    // The main-repo row is a repo row like any other: it selects the board the same way.
+    // The first-repo row is a repo row like any other: it selects the board the same way.
     expect(treeSelection(tree, { kind: 'repo', repo: 'antreo-docs' })).toEqual({
       project: { id: 'antero', state: 'psel' },
       repo: 'antreo-docs',

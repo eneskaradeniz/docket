@@ -296,7 +296,7 @@ describe('compact work-order and phone windows (U-251 … U-256)', () => {
     const outcome = await runWorkOrderCreate(
       {
         api: {
-          query: async (query) => (query.type === 'project.tree' ? [{ project: 'kadife', repos: [{ repo: 'kadife-odoo', main: true }] }] : null),
+          query: async (query) => (query.type === 'project.tree' ? [{ project: 'kadife', repos: [{ repo: 'kadife-odoo', first: true }] }] : null),
           command: async (_actor, command) => {
             commands.push(command);
             if (command.type === 'workOrder.open') return { ok: true, id: 'wo-9' };

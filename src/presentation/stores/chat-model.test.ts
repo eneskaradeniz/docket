@@ -24,7 +24,7 @@ const TREE: ProjectTree = [
   {
     project: 'antero',
     name: 'Antero',
-    mainRepo: 'antero-api',
+    firstRepo: 'antero-api',
     repos: [
       { repo: 'antero-api', active: 0, running: 0, waiting: 0 },
       { repo: 'antero-mobile', active: 0, running: 0, waiting: 0 },

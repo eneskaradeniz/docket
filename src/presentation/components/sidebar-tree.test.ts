@@ -40,11 +40,11 @@ const renderTree = async (tree: ProjectTree): Promise<string> => {
 const project = (name: string, repos: number): ProjectTree[number] => ({
   project: name.toLowerCase(),
   name,
-  mainRepo: `${name.toLowerCase()}-ana`,
+  firstRepo: `${name.toLowerCase()}-ana`,
   repos: Array.from({ length: repos }, (_, index) => ({
     repo: `${name.toLowerCase()}-${index}`,
     name: `${name} Depo ${index}`,
-    main: index === 0,
+    first: index === 0,
     active: 0,
     running: 0,
     waiting: 0,

@@ -52,10 +52,10 @@ const TREE = [
   {
     project: 'antero',
     name: 'Antero',
-    mainRepo: 'antreo-api',
+    firstRepo: 'antreo-api',
     repos: [
-      { repo: 'antreo-api', name: 'antreo-api', main: true, active: 0, running: 0, waiting: 0, status: 'idle' as const },
-      { repo: 'antreo-mobile', name: 'antreo-mobile', main: false, active: 0, running: 0, waiting: 0, status: 'idle' as const },
+      { repo: 'antreo-api', name: 'antreo-api', first: true, active: 0, running: 0, waiting: 0, status: 'idle' as const },
+      { repo: 'antreo-mobile', name: 'antreo-mobile', first: false, active: 0, running: 0, waiting: 0, status: 'idle' as const },
     ],
     active: 0,
     running: 0,

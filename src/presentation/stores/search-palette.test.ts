@@ -30,25 +30,25 @@ const TREE: ProjectTree = [
   {
     project: 'antero',
     name: 'Antero',
-    mainRepo: 'antreo-docs',
+    firstRepo: 'antreo-docs',
     active: 3,
     running: 1,
     waiting: 0,
     status: 'running',
     repos: [
-      { repo: 'antreo-docs', name: 'antreo-docs', main: true, active: 1, running: 0, waiting: 0, status: 'idle' },
-      { repo: 'antreo-api', name: 'antreo-api', main: false, active: 2, running: 1, waiting: 0, status: 'running' },
+      { repo: 'antreo-docs', name: 'antreo-docs', first: true, active: 1, running: 0, waiting: 0, status: 'idle' },
+      { repo: 'antreo-api', name: 'antreo-api', first: false, active: 2, running: 1, waiting: 0, status: 'running' },
     ],
   },
   {
     project: 'kadife-odoo',
     name: 'Kadife Odoo',
-    mainRepo: 'kadife-odoo',
+    firstRepo: 'kadife-odoo',
     active: 0,
     running: 0,
     waiting: 0,
     status: 'idle',
-    repos: [{ repo: 'kadife-odoo', name: 'kadife-odoo', main: true, active: 0, running: 0, waiting: 0, status: 'idle' }],
+    repos: [{ repo: 'kadife-odoo', name: 'kadife-odoo', first: true, active: 0, running: 0, waiting: 0, status: 'idle' }],
   },
 ];
 
