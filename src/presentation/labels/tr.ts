@@ -55,6 +55,8 @@ export const TR: LabelBundle = {
   'error.forge_error': 'Forge çağrısı başarısız oldu.',
   'error.branch_not_merged': 'Dal birleştirilmedi; silinemez.',
   'error.git_failed': 'Git komutu başarısız oldu.',
+  'error.invalid': 'Bu bağlayıcının tanımı geçersiz; anahtarı kullanılamaz.',
+  'error.invalid_settings': 'Ayar deposu okunamadı; bağlayıcı ayarları gösterilemiyor.',
   'error.unknown': 'Beklenmeyen bir hata oluştu.',
   'attention.permission_ask': 'İzin bekleniyor',
   'attention.awaiting_human': 'İnsan yanıtı bekleniyor',

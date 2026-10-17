@@ -63,6 +63,10 @@ export const LABEL_KEYS = [
   'error.forge_error',
   'error.branch_not_merged',
   'error.git_failed',
+  // The connector switch's refusals (A-415): a manifest that fails R-182 is never switchable,
+  // and a corrupt settings store fails closed.
+  'error.invalid',
+  'error.invalid_settings',
   // Generic failure for an unknown code (U-8).
   'error.unknown',
   // Attention kinds (api/queries.ts AttentionItem).

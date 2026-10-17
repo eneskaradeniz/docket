@@ -56,6 +56,8 @@ export const EN: LabelBundle = {
   'error.forge_error': 'The forge call failed.',
   'error.branch_not_merged': 'The branch is not merged; it cannot be deleted.',
   'error.git_failed': 'The git command failed.',
+  'error.invalid': 'This connector’s manifest is invalid; its switch cannot be used.',
+  'error.invalid_settings': 'The settings store is unreadable; the connector settings cannot be shown.',
   'error.unknown': 'An unexpected error occurred.',
   'attention.permission_ask': 'Permission ask',
   'attention.awaiting_human': 'Awaiting human',

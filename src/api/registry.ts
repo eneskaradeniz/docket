@@ -120,6 +120,7 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
   'setup.read.answer': { input: 'conversation: ConversationId, path: string, allow: boolean (A-358)' },
   'setup.apply': { input: 'project: ProjectSlug, path: string, proposal: SetupProposal — errors: invalid_id, not_found, bad_input, folder_not_found, not_a_git_repo, definitions_invalid, stale (A-387)' },
   'mcp.restore': { input: 'no input — ok → { status: McpStatusView }, error: endpoint_unavailable | listener_failed | script_missing (A-381)' },
+  'connector.setEnabled': { input: 'id: connector slug, enabled: boolean — errors: user_only, not_found, invalid, invalid_settings (A-415)' },
 };
 
 export const QUERY_REGISTRY: Record<Query['type'], RegistryEntry> = {
@@ -139,6 +140,7 @@ export const QUERY_REGISTRY: Record<Query['type'], RegistryEntry> = {
   'project.spend': { input: 'project: ProjectSlug' },
   'settings.accounts': { input: "catalog?: 'read' | 'skip'" },
   'settings.dispatch': { input: 'no input' },
+  'connector.list': { input: 'no input → ConnectorListView[] (U-356) | not_found | invalid_settings' },
   'roles.list': { input: 'no input' },
   'providers.discovered': { input: 'no input' },
   'accounts.candidates': { input: 'fresh?: boolean' },

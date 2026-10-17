@@ -69,6 +69,7 @@ import type {
   AppDeps,
   CandidateQuotaPreview,
   ChatRunner,
+  ConnectorRegistry,
   CreateProjectSource,
   CredentialImporter,
   BindingScope,
@@ -471,6 +472,12 @@ export interface ChatWiring {
   readonly undo: ActionUndoer;
 }
 
+/** The connector registry's settings-facing slice (U-356), composed beside AppDeps like the
+ *  resolvers — the root injects the one registry instance it already built for them, so the api
+ *  reads the same switch state and readiness the resolvers resolve through. Without it the
+ *  Entegrasyonlar surface answers not_found instead of inventing rows. */
+export type ConnectorWiring = Pick<ConnectorRegistry, 'list' | 'setEnabled'>;
+
 /** Page use cases fail with `{ code }` records; the code goes through unchanged (A-158). */
 const pageCommandOf = (outcome: Result<unknown, { readonly code: string }>): CommandResult =>
   outcome.ok ? { ok: true } : { ok: false, code: outcome.error.code };
@@ -521,6 +528,7 @@ export function createApi(
   setup?: SetupConversations,
   runControl?: Pick<RunControl, 'stop' | 'steer' | 'active'>,
   forges?: ForgeResolver,
+  connectors?: ConnectorWiring,
 ): Api & RunEventFeed & { readonly quota: QuotaLifecycle; readonly quitRequested: (runs: readonly string[], chats: readonly string[]) => void } {
   const trackerForRepo = async (repo: RepoSlug): Promise<IssueTracker | undefined> => {
     if (tracker === undefined) return undefined;
@@ -776,7 +784,7 @@ export function createApi(
           },
         },
       };
-      const result = await runCommand(tracked, actor, command, board, runControl, updates, trackerForRepo, adopting, quotaService, chatOps, setup, forges ?? SILENT_FORGES);
+      const result = await runCommand(tracked, actor, command, board, runControl, updates, trackerForRepo, adopting, quotaService, chatOps, setup, forges ?? SILENT_FORGES, connectors);
       if (appended) emit({ type: 'workOrders.changed' });
       // When an autonomy layer or ceiling changes, emit workOrders.changed so open work order details
       // reactively re-evaluate effective autonomy and reflect the new level immediately (U-336 scenario 3).
@@ -802,7 +810,7 @@ export function createApi(
       return result;
     },
     query: (query) =>
-      runQuery(deps, query, discovery, registry, board, updates, trackerForRepo, marks, adopting, candidateQuota, chat === undefined ? undefined : chat.runner, setup, forges ?? SILENT_FORGES),
+      runQuery(deps, query, discovery, registry, board, updates, trackerForRepo, marks, adopting, candidateQuota, chat === undefined ? undefined : chat.runner, setup, forges ?? SILENT_FORGES, connectors),
     subscribe: (listener) => {
       listeners.add(listener);
       return () => {
@@ -836,6 +844,7 @@ const runCommand = async (
   chatOps: ChatOps,
   setup: SetupConversations | undefined,
   forges: ForgeResolver,
+  connectors: ConnectorWiring | undefined,
 ): Promise<CommandResult> => {
   switch (command.type) {
     case 'workOrder.open': {
@@ -1688,6 +1697,16 @@ const runCommand = async (
       );
     }
 
+    // The Entegrasyonlar switch (U-356): the api names the operator, so a non-user actor is
+    // refused at the edge — the registry's own actor guard is the second door, not the first.
+    case 'connector.setEnabled': {
+      const id = slugValue<'connector'>(command.id);
+      if (id === undefined) return invalidId();
+      if (actor.kind !== 'user') return { ok: false, code: 'user_only' };
+      if (connectors === undefined) return { ok: false, code: 'not_found' };
+      return commandOf(await connectors.setEnabled(id, command.enabled, actor));
+    }
+
     // --- the chat surface (6e-5) -------------------------------------------------------------------
 
     case 'chat.start':
@@ -2028,6 +2047,7 @@ const runQuery = async (
   chatRunner: Pick<ChatRunner, 'active'> | undefined,
   setup: SetupConversations | undefined,
   forges: ForgeResolver,
+  connectors: ConnectorWiring | undefined,
 ): Promise<unknown> => {
   switch (query.type) {
     case 'proposals.list':
@@ -2180,6 +2200,28 @@ const runQuery = async (
     // The stored limits are already the view: plain JSON, defaults when nothing valid is saved.
     case 'settings.dispatch':
       return dispatchSettingsView(deps);
+
+    // The Entegrasyonlar rows (U-356): manifest facts copied verbatim — the platform name is
+    // data from the manifest, nothing here knows or names a platform — beside the registry's
+    // switch state and health. A corrupt store answers its typed code, never a defaulted list.
+    case 'connector.list': {
+      if (connectors === undefined) return { ok: false, code: 'not_found' };
+      const listed = await connectors.list();
+      if (!listed.ok) return { ok: false, code: listed.error };
+      return listed.value.map((row) => ({
+        id: row.manifest.id,
+        name: row.manifest.name,
+        version: row.manifest.version,
+        provides: row.manifest.provides,
+        ...(row.manifest.hostMatch.length > 0 ? { hostMatch: row.manifest.hostMatch } : {}),
+        network: row.manifest.network,
+        ...(row.manifest.requiresCli === undefined ? {} : { requiresCli: row.manifest.requiresCli }),
+        hasSettings: row.manifest.settings.length > 0,
+        enabled: row.enabled,
+        health: row.health,
+        ...(row.error === undefined ? {} : { error: row.error }),
+      }));
+    }
 
     case 'roles.list':
       return rolesListView(deps, registry);
