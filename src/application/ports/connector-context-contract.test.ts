@@ -23,7 +23,38 @@ export interface ConnectorContextKit {
   readonly transportCalls: () => number;
   readonly logLines: () => readonly string[];
   readonly commandRuns: () => number;
+  /** The rendered command lines that reached the runner, in order (refused ones never do). */
+  readonly commandLines: () => readonly string[];
 }
+
+/** The shell constructs a first-word fence could never see: each one, planted inside an
+ *  argument, must arrive at the runner as one quoted literal — never as live syntax. */
+export const SHELL_CONSTRUCTS: readonly string[] = [';', '&&', '||', '|', '`', '$(', '\n', '>', '<', '&'];
+
+/** The characters a shell could read as syntax rather than as a literal word: everything
+ *  outside single-quoted spans. Outside quotes a backslash escapes the next character (the
+ *  quote itself, in the `'\''` idiom), so the pair is skipped as a literal too. */
+export const unquotedShellText = (line: string): string => {
+  let out = '';
+  let inQuote = false;
+  let at = 0;
+  while (at < line.length) {
+    const char = line[at];
+    if (inQuote) {
+      if (char === "'") inQuote = false;
+      at += 1;
+    } else if (char === "'") {
+      inQuote = true;
+      at += 1;
+    } else if (char === '\\') {
+      at += 2;
+    } else {
+      out += char;
+      at += 1;
+    }
+  }
+  return out;
+};
 
 const slug = (input: string) => {
   const parsed = parseSlug<'connector'>(input);
@@ -132,24 +163,58 @@ export function connectorContextContract(
       expect(lines[0]).not.toContain(kit.secretValue);
     });
 
-    it('A-416: commands run only the declared binary — and nothing at all without one', async () => {
+    it('A-416: commands run only the declared binary, and only one shape of git — nothing at all without one', async () => {
       const cli = makeKit(CLI_MANIFEST);
-      const passed = await cli.context.commands.run('/repo', 'demo status', 1000);
+      const passed = await cli.context.commands.run('/repo', { bin: 'demo', args: ['status'] }, 1000);
       expect(passed.exitCode).toBe(0);
       expect(cli.commandRuns()).toBe(1);
       // A foreign binary is refused before the runner, as a failed command — never executed.
-      const refused = await cli.context.commands.run('/repo', 'curl https://evil.example', 1000);
+      const refused = await cli.context.commands.run('/repo', { bin: 'curl', args: ['https://evil.example'] }, 1000);
       expect(refused.exitCode).not.toBe(0);
       expect(cli.commandRuns()).toBe(1);
-      // The push carve-out: the forge family's one host-side git member.
-      const pushed = await cli.context.commands.run('/repo', 'git push origin main', 1000);
+      // The push carve-out is exactly `git push remote branch` — no other shape of git passes.
+      const pushed = await cli.context.commands.run('/repo', { bin: 'git', args: ['push', 'origin', 'main'] }, 1000);
       expect(pushed.exitCode).toBe(0);
+      expect(cli.commandRuns()).toBe(2);
+      for (const command of [
+        { bin: 'git', args: ['clone', 'https://evil.example/x', 'y'] },
+        { bin: 'git', args: ['push'] },
+        { bin: 'git', args: ['push', 'origin'] },
+        { bin: 'git', args: ['push', 'origin', 'main', 'extra'] },
+      ]) {
+        const outcome = await cli.context.commands.run('/repo', command, 1000);
+        expect(outcome.exitCode, JSON.stringify(command)).not.toBe(0);
+      }
       expect(cli.commandRuns()).toBe(2);
 
       const bare = makeKit(NO_CLI_MANIFEST);
-      const none = await bare.context.commands.run('/repo', 'demo status', 1000);
+      const none = await bare.context.commands.run('/repo', { bin: 'demo', args: ['status'] }, 1000);
       expect(none.exitCode).not.toBe(0);
+      const noPush = await bare.context.commands.run('/repo', { bin: 'git', args: ['push', 'origin', 'main'] }, 1000);
+      expect(noPush.exitCode).not.toBe(0);
       expect(bare.commandRuns()).toBe(0);
+    });
+
+    it('A-416: a construct-bearing argument stays one quoted literal — nothing outside single quotes ever reaches the runner', async () => {
+      const kit = makeKit(CLI_MANIFEST);
+      for (const construct of SHELL_CONSTRUCTS) {
+        const outcome = await kit.context.commands.run('/repo', { bin: 'demo', args: ['probe', `x${construct}y`] }, 1000);
+        expect(outcome.exitCode, JSON.stringify(construct)).toBe(0);
+      }
+      // An apostrophe exercises the one character a single-quoted word must escape.
+      const quoted = await kit.context.commands.run('/repo', { bin: 'demo', args: ["it's", 'a b'] }, 1000);
+      expect(quoted.exitCode).toBe(0);
+      expect(kit.commandRuns()).toBe(SHELL_CONSTRUCTS.length + 1);
+      // A foreign binary is refused in every construct form — it never reaches the runner at all.
+      for (const construct of SHELL_CONSTRUCTS) {
+        const refused = await kit.context.commands.run('/repo', { bin: 'curl', args: [`x${construct}y`] }, 1000);
+        expect(refused.exitCode, JSON.stringify(construct)).not.toBe(0);
+      }
+      expect(kit.commandRuns()).toBe(SHELL_CONSTRUCTS.length + 1);
+      // The whole surface the shell ever sees: quoted words joined by spaces, nothing else.
+      for (const line of kit.commandLines()) {
+        expect(unquotedShellText(line).trim(), line).toBe('');
+      }
     });
 
     if (subject !== undefined) {
@@ -191,6 +256,7 @@ const fakeKitOf = (manifest: ConnectorManifest): ConnectorContextKit => {
     transportCalls: () => context.sentRequests().length,
     logLines: () => context.logLines(),
     commandRuns: () => context.commandRuns(),
+    commandLines: () => context.commandLines(),
   };
 };
 

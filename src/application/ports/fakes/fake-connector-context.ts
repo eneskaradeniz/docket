@@ -9,6 +9,8 @@ import type { ConnectorManifest, Result } from '../../../domain/index';
 import type { Clock } from '../clock';
 import type {
   CommandRunner,
+  ConnectorCommand,
+  ConnectorCommands,
   ConnectorContext,
   ConnectorLog,
   ConnectorSecrets,
@@ -27,6 +29,9 @@ export interface FakeConnectorContext extends ConnectorContext {
   logLines(): readonly string[];
   /** How many commands reached the runner (refused ones never do). */
   commandRuns(): number;
+  /** The rendered lines that reached the runner, in order — the same quoting the infrastructure
+   *  context produces, so the shared laws can assert on it. */
+  commandLines(): readonly string[];
   /** Plants a secret under one ref; only refs passed as `ownRefs` resolve through the context. */
   plantSecret(ref: string, value: string): void;
 }
@@ -43,6 +48,15 @@ const hostAllowed = (network: readonly string[], host: string): boolean => {
   }
   return false;
 };
+
+// The same quoting the infrastructure context renders with — the fake mirrors the fence so the
+// shared laws assert the same line shape against both.
+const shellQuote = (value: string): string => `'${value.split("'").join(`'\\''`)}'`;
+
+// The one git member a connector may run, mirroring the infrastructure context: exactly
+// `push remote branch`, no other shape of git.
+const isPushMember = (command: ConnectorCommand): boolean =>
+  command.bin === 'git' && command.args.length === 3 && command.args[0] === 'push';
 
 // A runner that only records: the fake's laws are about the fence, not the command's outcome.
 const recordingRunner = (): CommandRunner & { calls(): readonly { readonly command: string }[] } => {
@@ -112,25 +126,29 @@ export const createFakeConnectorContext = (
     },
   };
 
+  // The same argv fence the infrastructure context enforces: the declared binary only (plus the
+  // one push member), rendered to a line of quoted words here — never by the connector.
+  const fenced: ConnectorCommands = {
+    run: (cwd, command, timeoutMs, env) => {
+      const licensed =
+        manifest.requiresCli !== undefined && (command.bin === manifest.requiresCli || isPushMember(command));
+      return licensed
+        ? commands.run(cwd, [command.bin, ...command.args].map(shellQuote).join(' '), timeoutMs, env)
+        : Promise.resolve({ exitCode: 126, durationMs: 0, outputTail: 'connector command refused: outside the declared CLI' });
+    },
+  };
+
   return {
     http,
     secrets,
-    commands: {
-      run: (cwd, command, timeoutMs, env) => {
-        const licensed =
-          manifest.requiresCli !== undefined &&
-          (command.trim().split(/\s+/)[0] === manifest.requiresCli || command.trim().startsWith('git push '));
-        return licensed
-          ? commands.run(cwd, command, timeoutMs, env)
-          : Promise.resolve({ exitCode: 126, durationMs: 0, outputTail: 'connector command refused: outside the declared CLI' });
-      },
-    },
+    commands: fenced,
     clock,
     ids,
     log,
     sentRequests: () => [...sent],
     logLines: () => [...lines],
     commandRuns: runsOf,
+    commandLines: () => (pieces.commands === undefined ? fallbackRunner.calls().map((call) => call.command) : []),
     plantSecret: (ref, value) => {
       values.set(ref, value);
     },

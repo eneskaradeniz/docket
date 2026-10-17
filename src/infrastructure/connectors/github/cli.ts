@@ -1,13 +1,13 @@
 // The gh CLI readiness probe (the connector's `probe`): which of the two things a CLI connector
 // can be missing it is — the binary, or the login. Probed, never assumed; a missing or
 // unauthenticated CLI answers its state without logging.
-import type { CommandRunner, ConnectorReadiness } from '../../../application/index';
+import type { ConnectorCommands, ConnectorReadiness } from '../../../application/index';
 
 const PROBE_TIMEOUT_MS = 15_000;
 
-export const ghConnectorReadiness = async (runner: CommandRunner, cwd: string): Promise<ConnectorReadiness> => {
-  const present = await runner.run(cwd, 'gh --version', PROBE_TIMEOUT_MS);
+export const ghConnectorReadiness = async (commands: ConnectorCommands, cwd: string): Promise<ConnectorReadiness> => {
+  const present = await commands.run(cwd, { bin: 'gh', args: ['--version'] }, PROBE_TIMEOUT_MS);
   if (present.exitCode !== 0) return 'needs_cli';
-  const authenticated = await runner.run(cwd, 'gh auth status', PROBE_TIMEOUT_MS);
+  const authenticated = await commands.run(cwd, { bin: 'gh', args: ['auth', 'status'] }, PROBE_TIMEOUT_MS);
   return authenticated.exitCode === 0 ? 'ready' : 'needs_account';
 };

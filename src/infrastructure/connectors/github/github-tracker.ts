@@ -7,7 +7,14 @@
 import type { EpochMs, Result } from '../../../domain/index';
 import { err, ok } from '../../../domain/index';
 
-import type { CommandRunner, ExternalItem, ExternalMilestone, IssueTracker, TrackerError, TrackerPermissions } from '../../../application/index';
+import type {
+  ConnectorCommands,
+  ExternalItem,
+  ExternalMilestone,
+  IssueTracker,
+  TrackerError,
+  TrackerPermissions,
+} from '../../../application/index';
 
 const KIND = 'github-issues';
 
@@ -19,10 +26,6 @@ const PROBE_TIMEOUT_MS = 15_000;
 const PAGE_SIZE = 50;
 // gh rejects --limit values above its own ceiling, so a larger ask is clamped, never failed.
 const SEARCH_LIMIT_MAX = 1000;
-
-// The runner executes commands through the shell, so every interpolated value is single-quoted;
-// the one character that ends a single-quoted shell word is the quote itself.
-const shellQuote = (value: string): string => `'${value.split("'").join(`'\\''`)}'`;
 
 // GitHub page tokens are opaque base64url strings. The charset is also a safety fence: a token
 // outside it cannot appear inside the GraphQL document as a literal, so it is refused up front
@@ -199,20 +202,20 @@ const milestonesQuery = (owner: string, name: string, milestoneCursor: string | 
 /** The IssueTracker for one local checkout. `repoPath` is the directory every command runs in;
  *  the scope-less methods (get, search, comment, transition) let gh resolve the repository from
  *  that checkout's own remote, while the scope-carrying ones address OWNER/REPO explicitly. */
-export function createGhTracker(repoPath: string, runner: CommandRunner): IssueTracker {
-  const runGh = async (command: string, timeoutMs: number): Promise<Result<string, TrackerError>> => {
-    const outcome = await runner.run(repoPath, command, timeoutMs);
+export function createGhTracker(repoPath: string, commands: ConnectorCommands): IssueTracker {
+  const runGh = async (args: readonly string[], timeoutMs: number): Promise<Result<string, TrackerError>> => {
+    const outcome = await commands.run(repoPath, { bin: 'gh', args }, timeoutMs);
     if (outcome.exitCode !== 0) return err(classify(outcome.exitCode, outcome.outputTail));
     return ok(outcome.outputTail);
   };
 
-  const runVoid = async (command: string, timeoutMs: number): Promise<Result<void, TrackerError>> => {
-    const outcome = await runGh(command, timeoutMs);
+  const runVoid = async (args: readonly string[], timeoutMs: number): Promise<Result<void, TrackerError>> => {
+    const outcome = await runGh(args, timeoutMs);
     return outcome.ok ? ok(undefined) : outcome;
   };
 
   const graphCall = async (query: string): Promise<Result<string, TrackerError>> =>
-    runGh(`gh api graphql -f query=${shellQuote(query)}`, GH_TIMEOUT_MS);
+    runGh(['api', 'graphql', '-f', `query=${query}`], GH_TIMEOUT_MS);
 
   const pageToken = (token: string | undefined): Result<string | undefined, TrackerError> =>
     token === undefined ? ok(undefined) : PAGE_TOKEN_RE.test(token) ? ok(token) : err('unknown');
@@ -261,7 +264,7 @@ export function createGhTracker(repoPath: string, runner: CommandRunner): IssueT
     probePermissions: async (scope) => {
       const target = ownerRepoOf(scope);
       if (target === undefined) return err('unknown');
-      const output = await runGh(`gh api ${shellQuote(`repos/${target.owner}/${target.name}`)}`, PROBE_TIMEOUT_MS);
+      const output = await runGh(['api', `repos/${target.owner}/${target.name}`], PROBE_TIMEOUT_MS);
       if (!output.ok) return output;
       const parsed = parseJson(output.value);
       const permissions = parsed === undefined ? undefined : parsed['permissions'];
@@ -282,7 +285,7 @@ export function createGhTracker(repoPath: string, runner: CommandRunner): IssueT
 
     get: async (key) => {
       const output = await runGh(
-        `gh issue view ${shellQuote(key)} --json number,title,url,state,updatedAt,body,milestone,labels`,
+        ['issue', 'view', key, '--json', 'number,title,url,state,updatedAt,body,milestone,labels'],
         GH_TIMEOUT_MS,
       );
       if (!output.ok) return output;
@@ -296,8 +299,7 @@ export function createGhTracker(repoPath: string, runner: CommandRunner): IssueT
       if (limit <= 0) return ok([]);
       const capped = Math.min(SEARCH_LIMIT_MAX, Math.floor(limit));
       const output = await runGh(
-        `gh issue list --search ${shellQuote(query)} --limit ${shellQuote(String(capped))}` +
-          ` --json number,title,url,state,updatedAt,body,milestone,labels`,
+        ['issue', 'list', '--search', query, '--limit', String(capped), '--json', 'number,title,url,state,updatedAt,body,milestone,labels'],
         GH_TIMEOUT_MS,
       );
       if (!output.ok) return output;
@@ -319,14 +321,14 @@ export function createGhTracker(repoPath: string, runner: CommandRunner): IssueT
     },
 
     comment: async (key, text) =>
-      runVoid(`gh issue comment ${shellQuote(key)} --body ${shellQuote(text)}`, GH_TIMEOUT_MS),
+      runVoid(['issue', 'comment', key, '--body', text], GH_TIMEOUT_MS),
 
     transition: async (key, status) => {
       // GitHub has no third state to move an issue to, so an unmappable status is refused
       // rather than translated into a command that would mean something else.
       const verb = status === 'open' ? 'reopen' : status === 'closed' ? 'close' : undefined;
       if (verb === undefined) return err('unknown');
-      return runVoid(`gh issue ${verb} ${shellQuote(key)}`, GH_TIMEOUT_MS);
+      return runVoid(['issue', verb, key], GH_TIMEOUT_MS);
     },
 
     createIssue: async (scope, item) => {
@@ -336,11 +338,18 @@ export function createGhTracker(repoPath: string, runner: CommandRunner): IssueT
       const title = readString(item, 'title');
       if (title === undefined || title === '') return err('unknown');
       const body = readString(item, 'body');
-      const command =
-        `gh issue create --repo ${shellQuote(`${target.owner}/${target.name}`)}` +
-        ` --title ${shellQuote(title)}` +
-        `${body === undefined ? '' : ` --body ${shellQuote(body)}`}`;
-      const output = await runGh(command, GH_TIMEOUT_MS);
+      const output = await runGh(
+        [
+          'issue',
+          'create',
+          '--repo',
+          `${target.owner}/${target.name}`,
+          '--title',
+          title,
+          ...(body === undefined ? [] : ['--body', body]),
+        ],
+        GH_TIMEOUT_MS,
+      );
       if (!output.ok) return output;
       const url = output.value.trim();
       const match = /\/issues\/(\d+)/.exec(url);
@@ -364,19 +373,25 @@ export function createGhTracker(repoPath: string, runner: CommandRunner): IssueT
       const state = readString(patch, 'state');
       if (state !== undefined && state !== 'open' && state !== 'closed') return err('unknown');
       if (title === undefined && body === undefined && state === undefined) return ok(undefined);
-      const slug = shellQuote(`${target.owner}/${target.name}`);
+      const slug = `${target.owner}/${target.name}`;
       if (title !== undefined || body !== undefined) {
         const edited = await runGh(
-          `gh issue edit ${shellQuote(key)} --repo ${slug}` +
-            `${title === undefined ? '' : ` --title ${shellQuote(title)}`}` +
-            `${body === undefined ? '' : ` --body ${shellQuote(body)}`}`,
+          [
+            'issue',
+            'edit',
+            key,
+            '--repo',
+            slug,
+            ...(title === undefined ? [] : ['--title', title]),
+            ...(body === undefined ? [] : ['--body', body]),
+          ],
           GH_TIMEOUT_MS,
         );
         if (!edited.ok) return edited;
       }
       if (state !== undefined) {
         const verb = state === 'open' ? 'reopen' : 'close';
-        const moved = await runGh(`gh issue ${verb} ${shellQuote(key)} --repo ${slug}`, GH_TIMEOUT_MS);
+        const moved = await runGh(['issue', verb, key, '--repo', slug], GH_TIMEOUT_MS);
         if (!moved.ok) return moved;
       }
       return ok(undefined);

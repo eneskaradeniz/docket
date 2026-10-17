@@ -32,8 +32,8 @@ describe('createRepoTrackerResolver', () => {
     );
 
     const runner = createFakeCommandRunner();
-    runner.script('gh --version', { exitCode: 0, durationMs: 1, outputTail: 'gh version 2' });
-    runner.script('gh auth status', { exitCode: 0, durationMs: 1, outputTail: '' });
+    runner.script("'gh' '--version'", { exitCode: 0, durationMs: 1, outputTail: 'gh version 2' });
+    runner.script("'gh' 'auth' 'status'", { exitCode: 0, durationMs: 1, outputTail: '' });
 
     // The registry the resolver delegates to, built like the composition root builds it — the
     // built-in list, the shipped default set, no stored settings — over the same runner.
