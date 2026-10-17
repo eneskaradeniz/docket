@@ -100,9 +100,10 @@ const PENDING = new Map([
   // #1247 — connector contract (Phase 9 step 0), docs-first. Each id names the follow-up number
   // in the issue's list that implements it; that issue removes the id from this list in the same
   // commit as its test. Follow-up 1 landed R-182/R-183 with domain/connector; follow-up 2 landed
-  // A-415/A-416/A-417 with the registry, the context and the resolver rewrite.
-  ['ui:U-356', '#1247 follow-up 4 (Settings screen)'],
-  ['ui:U-357', '#1247 follow-up 4 (Settings screen)'],
+  // A-415/A-416/A-417 with the registry, the context and the resolver rewrite; follow-up 4
+  // landed U-356 with the Settings screen. U-357 lands with the first connector that declares
+  // settings — no built-in connector has fields yet, so its form and store wait for a real case.
+  ['ui:U-357', '#1247 follow-up (lands with the first connector with settings)'],
 
 ]);
 

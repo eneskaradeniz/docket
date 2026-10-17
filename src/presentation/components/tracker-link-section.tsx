@@ -21,6 +21,9 @@ export interface TrackerLinkSectionProps {
   readonly locale: Locale;
   readonly store: TrackerLinkStore;
   readonly state: TrackerLinkStoreState;
+  /** The tracker family's display name — manifest data via connector.list, never a platform
+   *  name written here; null while the connector rows have not loaded. */
+  readonly trackerName: string | null;
 }
 
 const statusLabelKey = (ui: TrackerUiState): LabelKey => {
@@ -131,9 +134,14 @@ function ModeCards({
   );
 }
 
-export function TrackerLinkSection({ locale, store, state }: TrackerLinkSectionProps) {
+export function TrackerLinkSection({ locale, store, state, trackerName }: TrackerLinkSectionProps) {
   const heading = t(locale, 'tracker.heading');
   const busy = state.busy || state.ui === 'loading' || state.ui === 'syncing';
+
+  // The one copy that names the tracker: its word is the connector's manifest name, so the
+  // sentence never carries a platform written in code.
+  const inlineText = (key: LabelKey): string =>
+    key === 'tracker.error.connection' && trackerName !== null ? t(locale, key).replace('{name}', trackerName) : t(locale, key);
 
   const unlinkTitle = t(locale, 'tracker.unlink.title');
 
@@ -188,7 +196,7 @@ export function TrackerLinkSection({ locale, store, state }: TrackerLinkSectionP
           <label className="grid gap-1 text-[12px] text-inkdim">
             <span>{t(locale, 'tracker.form.trackerLabel')}</span>
             <select disabled className="rounded-control border border-hairline bg-surface px-2 py-1.5 text-[13px] text-ink">
-              <option>GitHub</option>
+              <option>{trackerName ?? '—'}</option>
             </select>
           </label>
           <label className="grid gap-1 text-[12px] text-inkdim">
@@ -205,7 +213,7 @@ export function TrackerLinkSection({ locale, store, state }: TrackerLinkSectionP
             <ActionButton variant="primary" size="sm" disabled={state.busy} onClick={() => void store.applyLink()}>{t(locale, 'tracker.form.apply')}</ActionButton>
           </div>
         </div>
-        {state.inlineKey !== null ? <p role="status" className="m-0 mt-2 text-[12px] text-error">{t(locale, state.inlineKey)}</p> : null}
+        {state.inlineKey !== null ? <p role="status" className="m-0 mt-2 text-[12px] text-error">{inlineText(state.inlineKey)}</p> : null}
       </section>
     );
   }
@@ -218,7 +226,7 @@ export function TrackerLinkSection({ locale, store, state }: TrackerLinkSectionP
       <label className="grid gap-1 text-[12px] text-inkdim">
         <span>{t(locale, 'tracker.form.trackerLabel')}</span>
         <select disabled className="rounded-control border border-hairline bg-surface px-2 py-1.5 text-[13px] text-ink">
-          <option>GitHub</option>
+          <option>{trackerName ?? '—'}</option>
         </select>
       </label>
       <label className="grid gap-1 text-[12px] text-inkdim">
@@ -375,7 +383,7 @@ export function TrackerLinkSection({ locale, store, state }: TrackerLinkSectionP
       {formBlock}
 
       {state.inlineKey !== null ? (
-        <p role="status" className="m-0 mt-2 text-[12px] text-error">{t(locale, state.inlineKey)}</p>
+        <p role="status" className="m-0 mt-2 text-[12px] text-error">{inlineText(state.inlineKey)}</p>
       ) : null}
 
       <ModalWindow

@@ -104,6 +104,10 @@ export const KNOWN_FAILURE_CODES: readonly string[] = [
   'forge_error',
   'branch_not_merged',
   'git_failed',
+  // The connector switch's refusals (A-415): an invalid manifest is never switchable, and a
+  // corrupt settings store fails closed.
+  'invalid',
+  'invalid_settings',
 ];
 
 const FAILURE_KEYS: Readonly<Record<string, LabelKey>> = Object.fromEntries(
@@ -142,7 +146,9 @@ type SilentCommand =
   | 'setup.read.answer'
   | 'setup.apply'
   // The built-in MCP row words its own restore result inline (U-314).
-  | 'mcp.restore';
+  // The Entegrasyonlar switch reflects its own outcome on the row (U-356), so it never toasts.
+  | 'mcp.restore'
+  | 'connector.setEnabled';
 const isSilent = (command: Command['type']): command is SilentCommand =>
   command === 'quit.ack'
   || command === 'quit.answer'
@@ -168,7 +174,8 @@ const isSilent = (command: Command['type']): command is SilentCommand =>
   || command === 'setup.ai.start'
   || command === 'setup.read.answer'
   || command === 'setup.apply'
-  || command === 'mcp.restore';
+  || command === 'mcp.restore'
+  || command === 'connector.setEnabled';
 
 const SUCCESS_KEYS: Readonly<Record<Exclude<Command['type'], SilentCommand>, LabelKey>> = {
   'workOrder.open': 'success.workOrder.open',

@@ -67,6 +67,7 @@ import {
 } from '../stores/settings-panel';
 import type { CandidatesStore } from '../stores/candidates';
 import type { ProvidersStore } from '../stores/providers';
+import type { ConnectorsStore } from '../stores/connectors';
 import type { ShellStore } from '../stores/shell';
 import { toast, toastStore } from '../stores/toasts';
 import type { ThemeStore } from '../stores/theme';
@@ -133,6 +134,8 @@ export interface ShellScreenProps {
   readonly candidateList: CandidatesStore;
   /** The providers Settings → Sağlayıcılar renders (U-38). */
   readonly providerList: ProvidersStore;
+  /** The connector rows Settings → Entegrasyonlar renders (U-356). */
+  readonly connectorsList: ConnectorsStore;
   readonly locale: Locale;
   /** The machine's zone, for the account view's reset times; tests pass 'UTC'. */
   readonly timeZone: string;
@@ -209,6 +212,7 @@ export function ShellScreen({
   candidates,
   candidateList,
   providerList,
+  connectorsList,
   locale,
   timeZone,
   projectBundle,
@@ -708,6 +712,7 @@ export function ShellScreen({
         candidateDot={candidateDot}
         candidates={candidateList}
         providers={providerList}
+        connectors={connectorsList}
         themeStore={themeStore}
         onClose={() => dispatchSettingsPanel({ type: 'close' })}
         store={settings}

@@ -1,6 +1,6 @@
 // api/queries.ts — the read side of the boundary. Exact contract: docs/v2/application.md § 4.
 // Plain JSON-serialisable shapes only; ids travel as strings and are parsed in api.ts.
-import type { ModelMatcher, PageKind, ProposalStatus, RemovalVerdict, UsageSummary, WasteFinding, WaitReason } from '../domain/index';
+import type { ModelMatcher, PageKind, PortFamily, ProposalStatus, RemovalVerdict, UsageSummary, WasteFinding, WaitReason } from '../domain/index';
 import type {
   AccountTestView,
   ProposalDetailView,
@@ -46,6 +46,9 @@ export type Query =
   | { readonly type: 'accounts.candidates'; readonly fresh?: boolean }
   | { readonly type: 'accounts.candidateQuota'; readonly sourcePath: string }
   | { readonly type: 'settings.dispatch' } // → DispatchSettingsView: { global, perRepo, perAccount, mode, suggested?, machine?, status? }
+  // The Settings → Entegrasyonlar rows (U-356): manifest data plus the registry's switch state
+  // and health — the platform name arrives from the manifest, nothing hard-coded.
+  | { readonly type: 'connector.list' } // → readonly ConnectorListView[] (U-356) | not_found | invalid_settings
   | { readonly type: 'providers.marks' }
   | { readonly type: 'run.events'; readonly runId: string }
   | { readonly type: 'permissions.open' }
@@ -310,6 +313,28 @@ export interface SettingsBindingView {
 export interface SettingsAccountsView {
   readonly accounts: readonly SettingsAccountView[];
   readonly bindings: readonly SettingsBindingView[];
+}
+
+// --- connector.list (U-356) --------------------------------------------------------------------------
+
+/** One built-in connector as the Settings → Entegrasyonlar rows see it (U-356): the manifest's
+ *  own facts (the platform name is manifest data, never hard-coded), the registry's switch state
+ *  and its readiness health. `error` rides only health `invalid` — the manifest law it failed
+ *  (R-182) or a probe that threw. `hasSettings` is the one fact the disabled "Hesap ekle"
+ *  placeholder row reads (U-357 lands with the first connector that declares fields). */
+export interface ConnectorListView {
+  readonly id: string;
+  readonly name: string;
+  readonly version: string;
+  readonly provides: readonly PortFamily[];
+  /** Remote-host patterns; absent when the manifest declares none (an explicit kind selects then). */
+  readonly hostMatch?: readonly string[];
+  readonly network: readonly string[];
+  readonly requiresCli?: string;
+  readonly hasSettings: boolean;
+  readonly enabled: boolean;
+  readonly health: 'ready' | 'needs_account' | 'needs_cli' | 'invalid';
+  readonly error?: string;
 }
 
 // --- memory.overview (A-349) -------------------------------------------------------------------------

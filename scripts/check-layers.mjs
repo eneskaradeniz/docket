@@ -86,9 +86,10 @@ const infraModuleId = (absPath) => {
 const VENDOR_RE = /\b(claude|anthropic|codex|openai|gpt|gemini|antigravity|cursor|copilot)\b/i;
 // Platform names are connector data (the connector model): domain, application, api and
 // presentation never hard-code a platform — ids, copy and options arrive from connector
-// manifests. The Phase 7 tracker-link surface still carries its github kind literal end to end;
-// the registry rewrite (A-415) makes that flow manifest-data-driven and empties the ledger
-// below, whose every entry is a deviation reported with the connector move.
+// manifests. The Settings connector rows (U-356) read their names from connector.list, which
+// emptied the presentation half of this ledger; what stays is the Phase 7 tracker-link command's
+// own kind literal (the use-case, the api validation and the store payload name one kind until
+// the command widens to manifest data) and the CI-config hints.
 const PLATFORM_RE = /\b(github|bitbucket|jira|gitlab|azure|odoo)\b/i;
 const PLATFORM_NAME_PENDING = new Map([
   ['src/application/use-cases/tracker-link.ts', 'Phase 7 tracker-link kind literal; the registry (A-415) makes known trackers manifest data'],
@@ -96,10 +97,7 @@ const PLATFORM_NAME_PENDING = new Map([
   ['src/api/commands.ts', 'the tracker.link command literal mirrors the Phase 7 use-case'],
   ['src/api/registry.ts', 'the tracker.link signature text of the same command'],
   ['src/api/api.ts', 'the tracker.link kind validation of the same command'],
-  ['src/presentation/labels/tr.ts', 'shipped copy naming the tracker; the manifest name replaces it via the registry'],
-  ['src/presentation/labels/en.ts', 'shipped copy naming the tracker; the manifest name replaces it via the registry'],
-  ['src/presentation/stores/tracker-link.ts', 'the tracker.link payload kind literal'],
-  ['src/presentation/components/tracker-link-section.tsx', 'the hard-coded tracker option label; the Settings connector rows (U-356) render manifest data'],
+  ['src/presentation/stores/tracker-link.ts', 'the tracker.link payload kind literal; the command\'s api validation widens it with Phase 7'],
 ]);
 const IMPURE_RE = /\bDate\.now\b|\bnew Date\b|\bMath\.random\b|\bcrypto\b|\bperformance\.now\b/;
 const ANY_RE = /(:\s*any\b|\bas\s+any\b|<any>|\bany\[\])/;

@@ -8,10 +8,11 @@ import { SETTINGS_MENU, type SettingsSection } from '../stores/settings-panel';
 /** The menu's own vertical geometry, in the units the classes name: rem for what rides the root
  *  scale, px for the hairline. The colocated test sums these against the rail the window frame
  *  gives the menu at the smallest supported window, so a new section that stops fitting fails
- *  here instead of in the layout audit. Row padding keeps every row a ≥24px target (U-23). */
+ *  here instead of in the layout audit. Row padding keeps every row a ≥24px target (U-23); the
+ *  fourteenth row (Entegrasyonlar, U-356) bought its place by one rem step of that padding. */
 export const MENU_GEOMETRY = {
-  /** One row's vertical padding, both sides (`py-[0.375rem]`). */
-  rowPaddingYRem: 0.375,
+  /** One row's vertical padding, both sides (`py-[0.3125rem]`). */
+  rowPaddingYRem: 0.3125,
   /** The gap between rows inside one group, and between the group blocks (`gap-0.5`). */
   gapRem: 0.125,
   /** A group boundary's margin above and padding below the hairline (`mt-1`, `pt-1`). */
@@ -24,6 +25,7 @@ const SECTION_KEY: Readonly<Record<SettingsSection, LabelKey>> = {
   accounts: 'settings.section.accounts',
   concurrency: 'settings.section.concurrency',
   providers: 'settings.section.providers',
+  connectors: 'settings.section.connectors',
   repo: 'settings.section.repo',
   memory: 'settings.section.memory',
   roles: 'settings.section.roles',
@@ -62,7 +64,7 @@ export function SettingsMenu({ locale, section, onSection, dot }: SettingsMenuPr
                 type="button"
                 onClick={() => onSection(entry)}
                 aria-current={current ? 'page' : undefined}
-                className={`flex w-full items-center gap-2.5 rounded-control px-2.5 py-[0.375rem] text-left text-[0.8125rem] font-semibold ${
+                className={`flex w-full items-center gap-2.5 rounded-control px-2.5 py-[0.3125rem] text-left text-[0.8125rem] font-semibold ${
                   current ? 'bg-raised text-ink shadow-[inset_0_0_0_1px_var(--signal)]' : 'text-inkdim hover:bg-raised'
                 }`}
               >

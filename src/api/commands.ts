@@ -120,7 +120,11 @@ export type Command =
     }
   // Restarts Docket's own MCP listener when it is down and answers the fresh standing; the
   // failure side carries `error`, not `code` (A-381).
-  | { readonly type: 'mcp.restore' }; // ok → { status: McpStatusView } | { ok: false, error: 'endpoint_unavailable' | 'listener_failed' | 'script_missing' } (A-381)
+  | { readonly type: 'mcp.restore' } // ok → { status: McpStatusView } | { ok: false, error: 'endpoint_unavailable' | 'listener_failed' | 'script_missing' } (A-381)
+  // The Settings → Entegrasyonlar rows' one write (U-356): the switch speaks for the operator
+  // like every other command — no actor field exists on the wire, and the api's own actor gate
+  // answers user_only before the registry is ever called.
+  | { readonly type: 'connector.setEnabled'; readonly id: string; readonly enabled: boolean }; // errors: user_only, not_found, invalid, invalid_settings (A-415)
 
 /** A repo flow as the renderer sends it (A-345): the domain's `RepoFlow` with plain string ids
  *  and unparsed stage/binding bodies — api.ts narrows it with the same law the file world
