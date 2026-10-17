@@ -66,7 +66,7 @@ const fakeBoardApi = (initial: unknown, commandResults: readonly CommandResult[]
   let issued = 0;
   // One project owning every repo the tests open boards for.
   const replyProjectTree = [
-    { project: 'atolye', name: 'Atölye', mainRepo: 'atolye', repos: [{ repo: 'atolye', main: true }], active: 0, running: 0, waiting: 0, status: 'idle' },
+    { project: 'atolye', name: 'Atölye', firstRepo: 'atolye', repos: [{ repo: 'atolye', first: true }], active: 0, running: 0, waiting: 0, status: 'idle' },
   ];
   return {
     queries,

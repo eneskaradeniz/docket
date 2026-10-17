@@ -194,8 +194,8 @@ const treeOf = (repos: readonly string[]): ProjectTree =>
         {
           project: 'p1',
           name: 'Proj',
-          mainRepo: repos[0] ?? '',
-          repos: repos.map((repo, index) => ({ repo, name: repo, main: index === 0, active: 0, running: 0, waiting: 0, status: 'idle' })),
+          firstRepo: repos[0] ?? '',
+          repos: repos.map((repo, index) => ({ repo, name: repo, first: index === 0, active: 0, running: 0, waiting: 0, status: 'idle' })),
           active: 0,
           running: 0,
           waiting: 0,

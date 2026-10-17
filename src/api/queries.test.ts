@@ -1883,9 +1883,9 @@ describe('project.tree', () => {
 
     const alpha = tree[0];
     expect(alpha?.name).toBe('Alpha');
-    expect(alpha?.mainRepo).toBe('acme');
+    expect(alpha?.firstRepo).toBe('acme');
     expect(alpha?.repos.map((node) => node.repo)).toEqual(['acme']);
-    expect(alpha?.repos[0]?.main).toBe(true);
+    expect(alpha?.repos[0]?.first).toBe(true);
     // Non-done work orders count as active: the whole cockpit scenario's acme orders (8) plus
     // this scenario's await (1); the two finished ones do not. Waiting is the attention kinds
     // (ask, two awaiting_human, blocked, this scenario's await) and three runs are live.
@@ -1896,7 +1896,7 @@ describe('project.tree', () => {
 
     const beta = tree[1];
     expect(beta?.repos.map((node) => node.repo)).toEqual(['beta-repo']);
-    expect(beta?.repos[0]?.main).toBe(true);
+    expect(beta?.repos[0]?.first).toBe(true);
     expect(beta?.active).toBe(1);
     expect(beta?.waiting).toBe(1);
     expect(beta?.running).toBe(0);
@@ -1926,6 +1926,24 @@ describe('project.tree', () => {
     expect(tree[0]?.status).toBe('waiting');
     expect(tree[0]?.active).toBe(2);
   });
+
+  it('A-418: the views name the first listed repo — firstRepo on the card and the tree item, first on its row — and the transitional names are gone', async () => {
+    const h = createHarness();
+    await h.deps.projects.save({ id: PROJECT_ALPHA, name: 'Alpha', repos: [REPO, OTHER_REPO] });
+
+    const view = (await createApi(h.deps).query({ type: 'cockpit' })) as CockpitView;
+    const tree = (await createApi(h.deps).query({ type: 'project.tree' })) as ProjectTree;
+
+    // A project has no main repo (D-1): both views carry the first listed one under its own name.
+    expect(view.projects[0]?.firstRepo).toBe(REPO);
+    expect(view.projects[0]?.repoCount).toBe(2);
+    expect(tree[0]?.firstRepo).toBe(REPO);
+    expect(tree[0]?.repos.map((node) => node.first)).toEqual([true, false]);
+    // The transitional mainRepo / main names are gone from the shipped shapes.
+    expect(view.projects[0]).not.toHaveProperty('mainRepo');
+    expect(tree[0]).not.toHaveProperty('mainRepo');
+    for (const node of tree[0]?.repos ?? []) expect(node).not.toHaveProperty('main');
+  });
 });
 
 describe('cockpit (project layer)', () => {
@@ -1943,7 +1961,7 @@ describe('cockpit (project layer)', () => {
     expect(view.projects[0]).toEqual({
       project: 'alpha',
       name: 'Alpha',
-      mainRepo: 'acme',
+      firstRepo: 'acme',
       repoCount: 1,
       active: 9,
       waiting: 5,

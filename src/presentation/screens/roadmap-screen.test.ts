@@ -67,8 +67,8 @@ const SINGLE_TREE = [
   {
     project: 'antero',
     name: 'Antero',
-    mainRepo: 'api',
-    repos: [{ repo: 'api', name: 'api', main: true, active: 0, running: 0, waiting: 0, status: 'idle' as const }],
+    firstRepo: 'api',
+    repos: [{ repo: 'api', name: 'api', first: true, active: 0, running: 0, waiting: 0, status: 'idle' as const }],
     active: 0,
     running: 0,
     waiting: 0,
@@ -284,10 +284,10 @@ describe('roadmap page — layer tabs (U-324)', () => {
       {
         project: 'antero',
         name: 'Antero',
-        mainRepo: 'api',
+        firstRepo: 'api',
         repos: [
-          { repo: 'api', name: 'api', main: true, active: 0, running: 0, waiting: 0, status: 'idle' as const },
-          { repo: 'web', name: 'web', main: false, active: 0, running: 0, waiting: 0, status: 'idle' as const },
+          { repo: 'api', name: 'api', first: true, active: 0, running: 0, waiting: 0, status: 'idle' as const },
+          { repo: 'web', name: 'web', first: false, active: 0, running: 0, waiting: 0, status: 'idle' as const },
         ],
         active: 0,
         running: 0,

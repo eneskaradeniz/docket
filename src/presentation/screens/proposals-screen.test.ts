@@ -65,7 +65,7 @@ const load = async (world: World): Promise<ProposalsStore> => {
           return Promise.resolve(item === undefined ? { ok: false, code: 'not_found' } : detailOf(item, world.details?.[item.id] ?? {}));
         }
         if (query.type === 'project.tree') {
-          return Promise.resolve([{ project: 'antero', name: 'Antero', mainRepo: 'antero-api', repos: [{ repo: 'antero-api', name: 'Antero API', main: true }] }]);
+          return Promise.resolve([{ project: 'antero', name: 'Antero', firstRepo: 'antero-api', repos: [{ repo: 'antero-api', name: 'Antero API', first: true }] }]);
         }
         return Promise.resolve(null);
       },

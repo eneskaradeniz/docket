@@ -2885,9 +2885,9 @@ const cockpitView = async (deps: AppDeps, projectFilter?: ProjectSlug): Promise<
     projects.push({
       project: def.id,
       name: def.name,
-      // A stored project carries no main repo; the view's transitional reading names the first
-      // listed one until the repo surfaces reshape it.
-      mainRepo: def.repos[0],
+      // A stored project carries no main repo (D-1); the card names the first listed one —
+      // the board a single-repo card opens (A-418).
+      firstRepo: def.repos[0],
       repoCount: def.repos.length,
       active: own.filter((entry) => entry.status !== 'done').length,
       waiting: own.filter((entry) => entry.kind === 'permission_ask' || entry.kind === 'awaiting_human' || entry.kind === 'blocked').length,
@@ -2955,8 +2955,8 @@ const projectTree = async (deps: AppDeps): Promise<ProjectTree> => {
       return {
         repo,
         name: repo,
-        // First listed stands in for "main" until the repo surfaces reshape the view.
-        main: index === 0,
+        // The first listed row carries the star; D-1 keeps it a marked row, not a main repo (A-418).
+        first: index === 0,
         active: own.filter((entry) => entry.status !== 'done').length,
         running,
         waiting,
@@ -2969,7 +2969,7 @@ const projectTree = async (deps: AppDeps): Promise<ProjectTree> => {
     items.push({
       project: def.id,
       name: def.name,
-      mainRepo: def.repos[0],
+      firstRepo: def.repos[0],
       repos,
       active: repos.reduce((sum, node) => sum + node.active, 0),
       running,

@@ -376,7 +376,7 @@ export const targetOf = (tree: unknown, id: string | undefined): NewProjectTarge
   const projects = tree as readonly ProjectTreeItem[];
   const project = projects.find((item) => item.project === id);
   if (project === undefined) return null;
-  return project.repos.length > 1 ? { kind: 'roadmap', project: project.project } : { kind: 'board', repo: project.mainRepo };
+  return project.repos.length > 1 ? { kind: 'roadmap', project: project.project } : { kind: 'board', repo: project.firstRepo };
 };
 
 export interface NewProjectDone {

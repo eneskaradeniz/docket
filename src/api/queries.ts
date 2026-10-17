@@ -115,7 +115,9 @@ export interface CockpitView {
   readonly projects: readonly {
     readonly project: string;
     readonly name: string;
-    readonly mainRepo: string;
+    /** A-418 — the first listed repo; the board a single-repo card opens. A project has no
+     *  main repo (D-1), so the card names what it carries. */
+    readonly firstRepo: string;
     readonly repoCount: number;
     readonly active: number;
     readonly waiting: number;
@@ -137,7 +139,8 @@ export interface CockpitView {
 export interface RepoNode {
   readonly repo: string;
   readonly name: string;
-  readonly main: boolean;
+  /** A-418 — the first listed repo of the project; a marked row, not a privileged repo. */
+  readonly first: boolean;
   readonly active: number;
   readonly running: number;
   readonly waiting: number;
@@ -147,7 +150,8 @@ export interface RepoNode {
 export interface ProjectTreeItem {
   readonly project: string;
   readonly name: string;
-  readonly mainRepo: string;
+  /** A-418 — the first listed repo; the row the tree marks with the star. */
+  readonly firstRepo: string;
   readonly repos: readonly RepoNode[];
   readonly active: number;
   readonly running: number;

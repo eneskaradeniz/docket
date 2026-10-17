@@ -76,9 +76,6 @@ const SECTIONS = [
 // and an id still pending after its issue closes is a review blocker. This list must be empty
 // when the phase closes.
 const PENDING = new Map([
-  // #1179: first-repo view fields replace the transitional main repo
-  ['application:A-418', '#1179 (the view rename lands the test)'],
-
   // #1006 — agent capabilities: library, provider translation, memory, machine import
 
   // #1008: Phase 7 surfaces — settings, setup, repo, work orders, versions, quit

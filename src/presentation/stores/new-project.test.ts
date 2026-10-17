@@ -58,8 +58,8 @@ const oneRepoTree = [
   {
     project: 'atolye',
     name: 'Atölye',
-    mainRepo: 'atolye',
-    repos: [{ repo: 'atolye', name: 'atolye', main: true, active: 0, status: 'idle' }],
+    firstRepo: 'atolye',
+    repos: [{ repo: 'atolye', name: 'atolye', first: true, active: 0, status: 'idle' }],
     active: 0,
     running: 0,
     waiting: 0,

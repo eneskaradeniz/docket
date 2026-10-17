@@ -146,8 +146,8 @@ const singleRepoTree: ProjectTree = [
   {
     project: 'p1',
     name: 'Proj',
-    mainRepo: 'web',
-    repos: [{ repo: 'web', name: 'web', main: true, active: 0, running: 0, waiting: 0, status: 'idle' }],
+    firstRepo: 'web',
+    repos: [{ repo: 'web', name: 'web', first: true, active: 0, running: 0, waiting: 0, status: 'idle' }],
     active: 0,
     running: 0,
     waiting: 0,
@@ -159,10 +159,10 @@ const multiRepoTree: ProjectTree = [
   {
     project: 'p1',
     name: 'Proj',
-    mainRepo: 'api',
+    firstRepo: 'api',
     repos: [
-      { repo: 'api', name: 'api', main: true, active: 0, running: 0, waiting: 0, status: 'idle' },
-      { repo: 'mobile', name: 'mobile', main: false, active: 0, running: 0, waiting: 0, status: 'idle' },
+      { repo: 'api', name: 'api', first: true, active: 0, running: 0, waiting: 0, status: 'idle' },
+      { repo: 'mobile', name: 'mobile', first: false, active: 0, running: 0, waiting: 0, status: 'idle' },
     ],
     active: 0,
     running: 0,

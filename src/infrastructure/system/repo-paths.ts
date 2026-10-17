@@ -7,7 +7,6 @@ export interface RepoPaths {
 }
 
 export interface ProjectPaths {
-  mainRepoPath(project: ProjectSlug): Promise<string | undefined>;
   /** The project a repo belongs to; the project arm of a definitions load resolves through it. */
   projectOf(repo: RepoSlug): Promise<ProjectSlug | undefined>;
 }

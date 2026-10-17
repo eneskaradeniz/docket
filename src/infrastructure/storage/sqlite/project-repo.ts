@@ -64,25 +64,12 @@ export function createSqliteProjectRepo(db: DocketDb): ProjectRepo {
   };
 }
 
-/** The path views over the registries: which project owns a repo, and where the project's first
- *  listed repo checks out. A stored project carries no main repo, so the def's own member order
- *  (the membership rows' insert order) is the closest reading of "the project's repo". */
+/** The path view over the registries: which project owns a repo. */
 export function createSqliteProjectPaths(db: DocketDb): ProjectPaths {
   return {
     projectOf: async (repo: RepoSlug): Promise<ProjectSlug | undefined> => {
       const row = db.raw.prepare('SELECT project FROM project_repos WHERE repo = ? ORDER BY project ASC LIMIT 1').get(repo);
       return row === undefined ? undefined : (row.project as ProjectSlug);
-    },
-
-    mainRepoPath: async (project: ProjectSlug): Promise<string | undefined> => {
-      const row = db.raw
-        .prepare(
-          'SELECT r.path AS path FROM project_repos pr JOIN repo_registry r ON r.slug = pr.repo ' +
-            'WHERE pr.project = ? ORDER BY pr.rowid ASC LIMIT 1',
-        )
-        .get(project);
-      if (row === undefined) return undefined;
-      return typeof row.path === 'string' ? row.path : undefined;
     },
   };
 }

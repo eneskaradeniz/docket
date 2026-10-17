@@ -131,12 +131,12 @@ export const earliestOpenAsk = (events: readonly AgentEvent[]): OpenAskFacts | n
   return ask === undefined ? null : { askId: ask.id, tool: ask.tool, target: ask.target ?? null };
 };
 
-/** The card's default view (K-4:B, U-21): multi-repo → roadmap, single-repo → the main repo's
- *  board. Pure. */
+/** The card's default view (K-4:B, U-21): multi-repo → roadmap, single-repo → the first listed
+ *  repo's board. Pure. */
 export const projectCardTarget = (card: Extract<CockpitView['projects'][number], { readonly project: string }>): ProjectCardTarget =>
   card.repoCount > 1
     ? { kind: 'roadmap', project: card.project }
-    : { kind: 'board', repo: card.mainRepo };
+    : { kind: 'board', repo: card.firstRepo };
 
 /** How many rows each list shows before its fold; Son kapananlar is capped by the api too (A-28),
  *  the store re-asserts it so a longer reply never stretches the screen. */

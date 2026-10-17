@@ -1,6 +1,6 @@
 // Project repository over SQLite: the parity suite runs the same behaviour cases against the
-// in-memory fake and the SQLite adapter (I-5); the path views over the registries are tested on
-// the SQLite side, where the membership join lives.
+// in-memory fake and the SQLite adapter (I-5); the project-path view is tested on the SQLite
+// side, where the membership table lives.
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,7 +13,6 @@ import { parseSlug } from '../../../domain/index';
 
 import { openDatabase, type DocketDb } from './database';
 import { createSqliteProjectPaths, createSqliteProjectRepo } from './project-repo';
-import { createSqliteRepoRegistry } from './repo-registry';
 
 const slugOf = <B extends string>(s: string) => {
   const parsed = parseSlug<B>(s);
@@ -121,30 +120,21 @@ describe.each(suites)('project repository (%s)', (_kind, make) => {
 });
 
 describe('createSqliteProjectPaths', () => {
-  it('answers projectOf and mainRepoPath over the membership and registry tables', async () => {
+  it('answers projectOf over the membership table', async () => {
     const db = openMemory();
     const projects = createSqliteProjectRepo(db);
-    const registry = createSqliteRepoRegistry(db, async () => undefined);
     const paths = createSqliteProjectPaths(db);
 
-    await registry.register({ repoId: '01ARZ3NDEKTSV4RRFFQ69G5FP01', slug: MAIN, path: join(tmp, 'main'), fingerprint: { rootCommit: '' } });
-    await registry.register({ repoId: '01ARZ3NDEKTSV4RRFFQ69G5FP02', slug: ACME, path: join(tmp, 'acme'), fingerprint: { rootCommit: '' } });
     await projects.save(def(ATOLYE));
 
     expect(await paths.projectOf(ACME)).toBe(ATOLYE);
     expect(await paths.projectOf(slugOf<'repo'>('ghost'))).toBeUndefined();
-    // A stored project has no main repo; the def's first listed member is the reading.
-    expect(await paths.mainRepoPath(ATOLYE)).toBe(join(tmp, 'main'));
-    // A project whose repos are not registered locally has no main path.
-    expect(await paths.mainRepoPath(slugOf<'project'>('ghost'))).toBeUndefined();
   });
 
-  it('I-8: the path views survive a close and reopen on the same file', async () => {
+  it('I-8: the path view survives a close and reopen on the same file', async () => {
     const file = join(tmp, 'docket.db');
     const first = openDatabase(file);
     if (!first.ok) throw new Error('open must succeed');
-    await createSqliteRepoRegistry(first.value, async () => undefined)
-      .register({ repoId: '01ARZ3NDEKTSV4RRFFQ69G5FP01', slug: MAIN, path: join(tmp, 'main'), fingerprint: { rootCommit: '' } });
     await createSqliteProjectRepo(first.value).save(def(ATOLYE));
     first.value.close();
 
@@ -153,6 +143,5 @@ describe('createSqliteProjectPaths', () => {
     openDbs.push(second.value);
     const paths = createSqliteProjectPaths(second.value);
     expect(await paths.projectOf(ACME)).toBe(ATOLYE);
-    expect(await paths.mainRepoPath(ATOLYE)).toBe(join(tmp, 'main'));
   });
 });
