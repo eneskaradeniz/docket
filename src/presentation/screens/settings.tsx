@@ -27,6 +27,7 @@ import { ActionButton } from '../components/action-button';
 import { SettingsLaunchers } from '../components/launcher-rows';
 import { AppearanceRows } from '../components/appearance-rows';
 import { ConcurrencySection } from '../components/concurrency-section';
+import { ConnectorsSection } from '../components/connectors-section';
 import { FlowStageStrip } from '../components/flow-stage-strip';
 import { KeyMoveCard } from '../components/key-move-card';
 import { LimitPolicySection } from '../components/limit-policy-section';
@@ -56,6 +57,7 @@ import {
 import { groupAccountRows, groupTotals, type AccountGroup } from '../stores/account-groups';
 import { candidateDot, type CandidatesStore } from '../stores/candidates';
 import { createDispatchSettingsStore } from '../stores/dispatch-settings';
+import { trackerConnectorName, type ConnectorsStore } from '../stores/connectors';
 import { addedOpen, unaddedOpen } from '../stores/settings-cards';
 import type { LocaleStore } from '../stores/locale';
 import { providerDisplayName, type ProvidersStore } from '../stores/providers';
@@ -117,6 +119,9 @@ export interface SettingsPanelProps {
   readonly candidates: CandidatesStore;
   /** The Sağlayıcılar section's discovered providers (U-38). */
   readonly providers: ProvidersStore;
+  /** The Entegrasyonlar section's connector rows and switches (U-356); the tracker-link surface
+   *  reads its display name from the same rows. */
+  readonly connectors: ConnectorsStore;
   /** Tema (U-36) binds straight to the theme store. */
   readonly themeStore: ThemeStore;
   readonly store: SettingsStore;
@@ -146,6 +151,7 @@ const SECTION_KEY: Readonly<Record<SettingsSection, LabelKey>> = {
   accounts: 'settings.section.accounts',
   concurrency: 'settings.section.concurrency',
   providers: 'settings.section.providers',
+  connectors: 'settings.section.connectors',
   repo: 'settings.section.repo',
   memory: 'settings.section.memory',
   roles: 'settings.section.roles',
@@ -162,6 +168,7 @@ const SECTION_HINT_KEY: Readonly<Record<SettingsSection, LabelKey>> = {
   accounts: 'settings.hint.accounts',
   concurrency: 'settings.hint.concurrency',
   providers: 'settings.hint.providers',
+  connectors: 'settings.hint.connectors',
   repo: 'settings.hint.repo',
   memory: 'settings.hint.memory',
   roles: 'settings.hint.roles',
@@ -254,7 +261,7 @@ function usePaintedFlip(active: boolean): boolean {
 // same classes the search palette animates with, so the two overlays speak one motion language.
 const MOTION_STYLE = motionVars();
 
-export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _fineTune, onOpenTarget, onSection, onBack, onEscape, onClose, candidateDot: candidateDotMirror, candidates, providers, models, themeStore, store, marks, roles, update, locale, localeStore, onEnterSubPage, onOpenAccount, repoRelink: repoRelinkInjected }: SettingsPanelProps) {
+export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _fineTune, onOpenTarget, onSection, onBack, onEscape, onClose, candidateDot: candidateDotMirror, candidates, providers, connectors, models, themeStore, store, marks, roles, update, locale, localeStore, onEnterSubPage, onOpenAccount, repoRelink: repoRelinkInjected }: SettingsPanelProps) {
   const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   const candidateState = useSyncExternalStore(candidates.subscribe, candidates.state, candidates.state);
   // The marks land once, after the first paint; the subscription turns them into a re-render.
@@ -289,6 +296,12 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
   useEffect(() => {
     if (open && section === 'providers') void providers.ensure();
   }, [open, section, providers]);
+  // The connector rows load once per session (manifests and the cached probes are stable); the
+  // Depo ayarları section's tracker surface reads the same rows for its display name.
+  const connectorsState = useSyncExternalStore(connectors.subscribe, connectors.state, connectors.state);
+  useEffect(() => {
+    if (open && (section === 'connectors' || section === 'repo')) void connectors.ensure();
+  }, [open, section, connectors]);
 
   const view = state.view;
   const rolesState = useSyncExternalStore(roles.subscribe, roles.state, roles.state);
@@ -836,7 +849,7 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
             warningCount={repoState.globalCeilingWarningCount}
             onSelect={(maxLevel) => void repo.setGlobalMaxLevel(maxLevel)}
           />
-          <TrackerLinkSection locale={locale} store={trackerLink} state={trackerLinkState} />
+          <TrackerLinkSection locale={locale} store={trackerLink} state={trackerLinkState} trackerName={trackerConnectorName(connectorsState.rows)} />
         </>
       )}
       {repoLoaded && repoState.problem !== null ? (
@@ -972,6 +985,7 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
             />
           ) : null}
           {section === 'providers' ? <ProviderList store={providers} marks={marks} locale={locale} /> : null}
+          {section === 'connectors' ? <ConnectorsSection store={connectors} locale={locale} /> : null}
           {section === 'repo' ? repoSection : null}
           {section === 'appearance' ? <AppearanceRows locale={locale} localeStore={localeStore} themeStore={themeStore} /> : null}
           {section === 'update' ? updateSection : null}

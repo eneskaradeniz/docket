@@ -26,6 +26,7 @@ import { createProjectTreeStore } from './stores/project-tree';
 import { createRoadmapStore } from './stores/roadmap';
 import { createCandidatesStore } from './stores/candidates';
 import { createProvidersStore } from './stores/providers';
+import { createConnectorsStore } from './stores/connectors';
 import { createSettingsStore } from './stores/settings';
 import { createCandidateDotStore } from './stores/settings-panel';
 import { createShellStore } from './stores/shell';
@@ -130,6 +131,9 @@ if (mount !== null) {
   // shell starts the first one in the background, the accounts scan seeds the providers one with
   // the discovery it already read, and only "Yeniden tara" or an accounts change reads again.
   const providerList = createProvidersStore({ api, now: () => Date.now() });
+  // The Entegrasyonlar rows (U-356): one read per session, manifest data plus the registry's
+  // switch state; the panel's sections and the tracker-link label read the same rows.
+  const connectorsList = createConnectorsStore({ api, actor: USER });
   // The list under Hesaplar → Eklenmemiş; an adoption re-reads the dot.
   const candidateList = createCandidatesStore({
     api,
@@ -226,6 +230,7 @@ if (mount !== null) {
           candidates={candidates}
           candidateList={candidateList}
           providerList={providerList}
+          connectorsList={connectorsList}
           shell={shell}
           tree={tree}
           accounts={accountsFrame}

@@ -11,6 +11,7 @@ import { AccountEditorPanels } from '../components/account-editor';
 import { createAccountEditorStore } from '../stores/account-editor';
 import { createAccountModelsStore } from '../stores/account-models';
 import { createCandidatesStore } from '../stores/candidates';
+import { createConnectorsStore } from '../stores/connectors';
 import { createLocaleStore } from '../stores/locale';
 import { createProviderMarksStore } from '../stores/provider-marks';
 import { createProvidersStore } from '../stores/providers';
@@ -226,6 +227,7 @@ const panelOver = (
   const store = createSettingsStore({ api, changes, actor: ACTOR, locale: () => 'tr' });
   const candidates = createCandidatesStore({ api, actor: ACTOR });
   const providers = createProvidersStore({ api });
+  const connectors = createConnectorsStore({ api, actor: ACTOR });
   const marks = createProviderMarksStore({ api });
   const roles = createRolesStore({ api, changes, actor: ACTOR, now: () => 0 });
   const models = createAccountModelsStore({ api, changes, actor: ACTOR });
@@ -250,6 +252,7 @@ const panelOver = (
         candidateDot: false,
         candidates,
         providers,
+        connectors,
         themeStore,
         store,
         marks,
