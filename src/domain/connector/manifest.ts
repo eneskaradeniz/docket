@@ -23,7 +23,7 @@ export interface ConnectorManifest {
   readonly apiVersion: number;
   /** non-empty, unique */
   readonly provides: readonly PortFamily[];
-  /** remote-URL host patterns for 'forge' (data, e.g. 'github.com'); empty otherwise */
+  /** remote-URL host patterns for 'forge' (data, the forge's own host); empty otherwise */
   readonly hostMatch: readonly string[];
   /** the hosts the connector may reach (egress allowlist); '*' is invalid */
   readonly network: readonly string[];
@@ -51,7 +51,7 @@ export type ConnectorManifestError =
 const PORT_FAMILIES: readonly PortFamily[] = ['forge', 'tracker', 'ci', 'deploy'];
 
 // A bare DNS-style host: dot-separated labels, each starting and ending alphanumeric, so
-// 'github.com', 'localhost' and 'gist.github.com' pass while 'a..b' or '-x.com' fail.
+// 'forge.example', 'localhost' and 'pkg.forge.example' pass while 'a..b' or '-x.com' fail.
 const BARE_HOST = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$/;
 
 // semver.org: MAJOR.MINOR.PATCH with optional pre-release and build metadata.
@@ -99,7 +99,7 @@ export function validateConnectorManifest(m: ConnectorManifest): Result<Connecto
 
 const SCHEME_URL = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//;
 
-// The host half of a URL authority: 'git@github.com:22/owner' → 'github.com'. An empty host,
+// The host half of a URL authority: 'git@forge.example:22/owner' → 'forge.example'. An empty host,
 // a leftover port, or anything that is not a bare host makes the remote unparsable.
 const hostOfAuthority = (authorityAndPath: string): string | undefined => {
   let authority = authorityAndPath;
@@ -141,7 +141,7 @@ const extractRemoteHost = (remoteUrl: string): string | undefined => {
 /** R-183: does this manifest's `hostMatch` cover the host of a git remote? The host is extracted
  *  (https, ssh://, scp-like), lower-cased, and compared to each entry: a bare host matches only
  *  itself, a '*.host' entry matches any subdomain — the leading dot of the suffix is the label
- *  boundary, so 'evil-github.com' and 'github.com.evil.io' never match 'github.com'. Pure; an
+ *  boundary, so 'evil-forge.example' and 'forge.example.evil.io' never match 'forge.example'. Pure; an
  *  unparsable remote answers false. */
 export function matchConnectorHost(manifest: ConnectorManifest, remoteUrl: string): boolean {
   const host = extractRemoteHost(remoteUrl);

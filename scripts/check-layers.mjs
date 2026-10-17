@@ -84,6 +84,23 @@ const infraModuleId = (absPath) => {
   return parts[0] === 'storage' && parts.length > 2 ? `storage/${parts[1]}` : parts[0];
 };
 const VENDOR_RE = /\b(claude|anthropic|codex|openai|gpt|gemini|antigravity|cursor|copilot)\b/i;
+// Platform names are connector data (the connector model): domain, application, api and
+// presentation never hard-code a platform — ids, copy and options arrive from connector
+// manifests. The Phase 7 tracker-link surface still carries its github kind literal end to end;
+// the registry rewrite (A-415) makes that flow manifest-data-driven and empties the ledger
+// below, whose every entry is a deviation reported with the connector move.
+const PLATFORM_RE = /\b(github|bitbucket|jira|gitlab|azure|odoo)\b/i;
+const PLATFORM_NAME_PENDING = new Map([
+  ['src/application/use-cases/tracker-link.ts', 'Phase 7 tracker-link kind literal; the registry (A-415) makes known trackers manifest data'],
+  ['src/application/services/setup-tools.ts', 'CI-config hints; connector capabilities own platform knowledge once the registry lands'],
+  ['src/api/commands.ts', 'the tracker.link command literal mirrors the Phase 7 use-case'],
+  ['src/api/registry.ts', 'the tracker.link signature text of the same command'],
+  ['src/api/api.ts', 'the tracker.link kind validation of the same command'],
+  ['src/presentation/labels/tr.ts', 'shipped copy naming the tracker; the manifest name replaces it via the registry'],
+  ['src/presentation/labels/en.ts', 'shipped copy naming the tracker; the manifest name replaces it via the registry'],
+  ['src/presentation/stores/tracker-link.ts', 'the tracker.link payload kind literal'],
+  ['src/presentation/components/tracker-link-section.tsx', 'the hard-coded tracker option label; the Settings connector rows (U-356) render manifest data'],
+]);
 const IMPURE_RE = /\bDate\.now\b|\bnew Date\b|\bMath\.random\b|\bcrypto\b|\bperformance\.now\b/;
 const ANY_RE = /(:\s*any\b|\bas\s+any\b|<any>|\bany\[\])/;
 const DEFAULT_EXPORT_RE = /\bexport\s+default\b/;
@@ -171,6 +188,9 @@ for (const layer of V2_LAYERS) {
           report(file, ln, rule, `agent-vendor name outside src/infrastructure/providers/: "${t.trim().slice(0, 80)}"`);
         }
       }
+      if (!test && layer !== 'infrastructure' && PLATFORM_RE.test(t) && !PLATFORM_NAME_PENDING.has(relative(ROOT, file))) {
+        report(file, ln, 'L5 platform-name', `platform names are connector data — no hard-coded platform outside src/infrastructure/connectors/: "${t.trim().slice(0, 80)}"`);
+      }
     });
   }
 }
@@ -237,6 +257,29 @@ for (const file of walk(join(SRC, 'domain'))) {
     if (!spec.startsWith('.')) continue;
     const target = resolveRelative(file, spec);
     if (target === join(SRC, 'domain', 'index.ts')) report(file, lineOf(text, m.index), 'D4 barrel', 'modules must not import src/domain/index.ts');
+  }
+}
+
+// Connector folders are self-contained: connectors/<id>/ imports only its own folder — never a
+// sibling connector and never the family root. The family barrel and the shared conformance
+// suite sit at the family root and may reach down; a connector folder never reaches up.
+const CONNECTORS_DIR = join(INFRA, 'connectors');
+for (const file of walk(CONNECTORS_DIR)) {
+  const parts = relative(CONNECTORS_DIR, file).split(sep);
+  if (parts.length === 1) continue; // family-root files: index.ts, the conformance suite
+  const folder = parts[0];
+  const text = readFileSync(file, 'utf8');
+  for (const m of text.matchAll(SPEC_RE)) {
+    const spec = m[1] || m[2] || m[3] || m[4];
+    if (!spec.startsWith('.')) continue;
+    const target = resolveRelative(file, spec);
+    if (!target.startsWith(CONNECTORS_DIR + sep)) continue;
+    const targetRel = relative(CONNECTORS_DIR, target).split(sep);
+    if (targetRel[0] === 'index.ts') {
+      report(file, lineOf(text, m.index), 'N6 connector-isolation', `connector folder may not import the connectors family root: ${spec}`);
+    } else if (targetRel[0] !== folder) {
+      report(file, lineOf(text, m.index), 'N6 connector-isolation', `connector '${folder}' may not import connector '${targetRel[0]}': ${spec}`);
+    }
   }
 }
 

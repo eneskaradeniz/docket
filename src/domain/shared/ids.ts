@@ -17,7 +17,7 @@ export type TaskSlug = Slug<'task'>;
 export type EnvSlug = Slug<'env'>;
 /** Names a deciding rule set (D-10): 'permission-rules', 'gate-auto', 'write-scope' — never free-form. */
 export type PolicyId = Slug<'policy'>;
-/** A connector module (a shipped integration): 'github', 'gitlab', … */
+/** A connector module (a shipped integration), named by its manifest's slug. */
 export type ConnectorId = Slug<'connector'>;
 
 /** Runtime identifiers: ULID, 26 chars Crockford base32 (0-9 A-H J K M N P-T V-Z), uppercase. */
