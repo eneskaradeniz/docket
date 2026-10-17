@@ -21,7 +21,11 @@ export interface CheckRun {
   readonly url?: string;
 }
 
-export type ForgeError = 'auth' | 'not_found' | 'network' | 'rate_limited' | 'unknown';
+// The registry boundary's failure: a connector that threw. The failure names the kind and
+// nothing else — no stack, no message text a secret could hide in; the caller identifies the
+// connector through the port object it holds (the forge's kind) and folds the code like any
+// typed failure, never a crash.
+export type ForgeError = 'auth' | 'not_found' | 'network' | 'rate_limited' | 'unknown' | 'connector_failed';
 
 export interface Forge {
   readonly kind: ForgeKind;

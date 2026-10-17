@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { RepoSlug } from '../../domain/index';
 import { createFakeClock, createFakeDefinitionStore, createFakeDeps, createFakeEventLog } from '../ports/fakes';
+import type { TrackerError } from '../ports/issue-tracker';
 import { TRACKER_LINK_TARGET } from '../use-cases/tracker-sync';
 
 import {
@@ -180,7 +181,7 @@ describe('createTrackerSyncService', () => {
         relink: async () => ({ ok: false, error: 'folder_not_found' as const }),
       },
     });
-    const errors: string[] = [];
+    const errors: TrackerError[] = [];
     const trackers: IssueTrackerResolver = {
       forRepo: async () => ({
         kind: 'fake',
