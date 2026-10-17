@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { openDatabase, type DocketDb } from './database';
+import { APPLICATION_ID, openDatabase, type DocketDb } from './database';
 import { MIGRATIONS } from './schema';
 
 const SUPPORTED_VERSION = MIGRATIONS.reduce((max, migration) => Math.max(max, migration.version), 0);
@@ -163,9 +163,48 @@ describe('openDatabase', () => {
     });
   });
 
+  it('I-3: a pre-squash user_version without the application-id stamp stays old_schema even below the legacy ceiling (#1173)', () => {
+    const path = join(tmp, 'legacy-partial.db');
+    const setup = new DatabaseSync(path);
+    setup.exec('PRAGMA user_version = 2');
+    setup.close();
+    expect(openDatabase(path)).toStrictEqual({
+      ok: false,
+      error: { code: 'old_schema', found: 2, supported: SUPPORTED_VERSION },
+    });
+  });
+
+  it('I-3: an application-id-stamped user_version above supported returns err too_new, not old_schema (#1173)', () => {
+    const path = join(tmp, 'newer.db');
+    const setup = new DatabaseSync(path);
+    setup.exec(`PRAGMA application_id = ${APPLICATION_ID}`);
+    setup.exec('PRAGMA user_version = 5');
+    setup.close();
+    expect(openDatabase(path)).toStrictEqual({
+      ok: false,
+      error: { code: 'too_new', found: 5, supported: SUPPORTED_VERSION },
+    });
+  });
+
+  it('I-3: a fresh database is stamped with the application id (#1173)', () => {
+    const db = openOk(join(tmp, 'docket.db'));
+    expect(pragmaValue(db, 'application_id')).toBe(APPLICATION_ID);
+  });
+
+  it('I-3: an unstamped database at the supported version is adopted and stamped (#1173)', () => {
+    const path = join(tmp, 'docket.db');
+    const setup = new DatabaseSync(path);
+    setup.exec(`PRAGMA user_version = ${SUPPORTED_VERSION}`);
+    setup.close();
+    const db = openOk(path);
+    expect(pragmaValue(db, 'user_version')).toBe(SUPPORTED_VERSION);
+    expect(pragmaValue(db, 'application_id')).toBe(APPLICATION_ID);
+  });
+
   it('I-3: a file whose user_version is greater than the last migration returns err too_new with found and supported', () => {
     const path = join(tmp, 'docket.db');
     const setup = new DatabaseSync(path);
+    setup.exec(`PRAGMA application_id = ${APPLICATION_ID}`);
     setup.exec('PRAGMA user_version = 99');
     setup.close();
     const result = openDatabase(path);
@@ -178,6 +217,7 @@ describe('openDatabase', () => {
   it('I-3: the too-new database file stays usable after the rejected open', () => {
     const path = join(tmp, 'docket.db');
     const setup = new DatabaseSync(path);
+    setup.exec(`PRAGMA application_id = ${APPLICATION_ID}`);
     setup.exec('PRAGMA user_version = 99');
     setup.close();
     expect(openDatabase(path).ok).toBe(false);
