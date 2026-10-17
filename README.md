@@ -37,9 +37,9 @@ from the capability registry; regenerate with `npm run gen:provider-matrix`.
 <!-- provider-matrix:start -->
 | Provider | Route kind | Models | Thinking | Context | Cost | Support level |
 | --- | --- | --- | --- | --- | --- | --- |
-| Claude Code (`claude-code`) | `anthropic-subscription` | `claude-opus-5-5` (strong), `claude-sonnet-5-5` (balanced), `claude-haiku-4-5` (fast) | `low`, `medium`, `high`, `xhigh`, `max` | — | equivalent | isolated |
-| Claude Code (`claude-code`) | `anthropic-api` | — | — | — | reported | isolated |
-| Claude Code (`claude-code`) | `zai-glm` | — | — | — | equivalent | isolated |
+| Claude Code (`claude-code`) | `anthropic-subscription` | `claude-opus-5-5` (strong), `claude-sonnet-5-5` (balanced), `claude-haiku-4-5` (fast) | `low`, `medium`, `high`, `xhigh`, `max` | — | equivalent | full |
+| Claude Code (`claude-code`) | `anthropic-api` | — | — | — | reported | full |
+| Claude Code (`claude-code`) | `zai-glm` | — | — | — | equivalent | full |
 | Codex (`codex`) | `codex-subscription` | — | — | — | equivalent | experimental |
 | Antigravity (`agy`) | `agy-subscription` | `gemini-4-argon-low` (strong), `gemini-4-argon-medium` (strong), `gemini-4-argon-high` (strong), `gemini-3.8-flash-low` (fast), `gemini-3.8-flash-medium` (fast), `gemini-3.8-flash-high` (fast), `claude-opus-5-5-low` (strong), `claude-opus-5-5-medium` (strong), `claude-opus-5-5-high` (strong), `claude-sonnet-5-5-low` (balanced), `claude-sonnet-5-5-medium` (balanced), `claude-sonnet-5-5-high` (balanced), `gpt-oss-120b-medium` (balanced) | `low`, `medium`, `high` | — | equivalent | isolated |
 | Copilot CLI (`copilot`) | `copilot-subscription` | — | — | — | credits | experimental |

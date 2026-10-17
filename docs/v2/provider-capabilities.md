@@ -437,13 +437,20 @@ itself.
 Paths below are relative to `src/` unless they start with `electron/` or name the README; `registry` is
 `src/infrastructure/providers/registry/capability-registry.ts`. The live agy run id
 `01M50YHMVARZ1G2FGHNPMG6WD2` (agy 1.3.6, 2026-10-16, registry:80, #1221) is cited as "the live run".
+The claude-code canary run ids `01M53HX9EZ66MSNT1PTBBJMF6T` (zai-glm, `glm-5.3-flash`, 71 s) and
+`01M53J2TKZ25Y1XM3CPD031264` (anthropic-subscription, `haiku`, 15 s) — both `succeeded`, 2026-10-17,
+build main 1ecb80b with SDK 0.3.302 and CLI 2.1.302, `~/.docket-test`, throw-away repo, cheap models,
+no billing prompt (#1259) — are cited as "the canary runs"; recorded in `operatorRuns` (registry:48-59).
 
 ### Claude Code (claude-code, sdk transport)
 
-Measured on CLI 2.1.302 driven by SDK 0.3.302 (registry `measuredWith`; SDK pin bumped 0.3.221 → 0.3.302 on 2026-10-17).
-Registry row registry:29-41; derived level `isolated` — G1–G6 all pass with test evidence, no operator
-run recorded (P-28: `full` additionally needs `operatorRuns`; domain/providers/capability.ts:92-112,
-pinned capability-registry.test.ts:425-433 — remaining gap 2).
+Measured on CLI 2.1.302 driven by SDK 0.3.302 (registry `measuredWith`, at 2026-10-17; SDK pin bumped
+0.3.221 → 0.3.302 on 2026-10-17, and the canary re-measured the pair that day).
+Registry row registry:29-59; derived level `full` — G1–G6 all pass with test evidence and the two canary
+runs are recorded in `operatorRuns` (P-28: domain/providers/capability.ts:114-134, pinned
+capability-registry.test.ts 'P-28: claude-code carries every gate as test evidence plus the recorded
+canary runs…'). What the canary did not exercise stays open and keeps its not-observed-live notes:
+F1 (`auto` live) and the live Stop hook (D2's delivery leg is test-pinned) — non-pass rows below.
 
 | Row | Status | Evidence |
 | --- | --- | --- |
@@ -489,7 +496,7 @@ Non-pass rows — Claude Code:
 - **C4 · n/a** — reason in the table.
 - **D2 · partial** — Works: run.stop is the SDK abort with exactly one `finished cancelled` (I-30 transport.test.ts:1424-1452; A-362 api.test.ts:2007-2083) and the run_end → Stop leg of the hook map has no test (no match in the sdk test suites) and no live observation records it. Workaround: the mapping ships; CC-4 covers the same settings path. Why not done: test gap only. Proposal: one delivery test pinning `settings.hooks.Stop` for a `run_end` hook.
 - **D2 · superseded (PR #1240)** — the delivery test the note above asked for exists (claude-code-sdk-delivery.test.ts:65) and the row passes on it; the note's other half — no live observation of a Stop hook firing — stays open in the remaining list.
-- **F1 · unverified** — Both arms are provider-independent and test-covered: the permission arm domain/autonomy/decide.ts:23-41 plus run-executor.test.ts:2562-2721 (#1205), the gate arm domain/flow/gate-auto.ts:43-68 plus application/use-cases/gate-auto.test.ts:145-265 (#1209). But no operator run has exercised `auto` live — the registry records no claude-code `operatorRuns` at all (registry:29-41). Workaround: none needed mechanically; the level re-resolves per ask (R-170). Why not done: no live auto run recorded. Proposal: one live auto run (the permission arm on claude-code; the gate arm is provider-blind), recorded per P-28.
+- **F1 · unverified** — Both arms are provider-independent and test-covered: the permission arm domain/autonomy/decide.ts:23-41 plus run-executor.test.ts:2562-2721 (#1205), the gate arm domain/flow/gate-auto.ts:43-68 plus application/use-cases/gate-auto.test.ts:145-265 (#1209). But no operator run has exercised `auto` live — the canary runs recorded in `operatorRuns` (registry:59) both answered their two asks through the human board, none under `auto`. Workaround: none needed mechanically; the level re-resolves per ask (R-170). Why not done: no live auto run recorded. Proposal: one live auto run (the permission arm on claude-code; the gate arm is provider-blind), recorded per P-28.
 
 ### agy (Antigravity, stream-json transport)
 
@@ -580,8 +587,8 @@ What remains:
 
 1. **F1 · both** — one live `auto` run (permission arm and gate arm) recorded in `operatorRuns`; on agy
    it also exercises the bridge under policy.
-2. **operatorRuns** — claude-code: record the verification runs per P-28, so the six passing gates can
-   translate into `full`; agy: a live run on an account home (P-67), so `isolated` can promote to `full`.
+2. **operatorRuns · agy** — claude-code's canary runs are recorded (2026-10-17, #1259) and the level
+   derives `full`; agy still needs a live run on an account home (P-67), so `isolated` can promote to `full`.
 3. **B3 · agy** — URL/SSE MCP: record the omission (P-59) or deliver `serverUrl` once evidenced.
 4. **B4 · agy** — one live run with a plugin (own-skill evidence).
 5. **D1 · agy** — a live resume leg (`--conversation` with `--add-dir`) in the next operator run.

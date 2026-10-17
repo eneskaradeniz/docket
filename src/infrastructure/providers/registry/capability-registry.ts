@@ -34,8 +34,9 @@ export const CAPABILITY_REGISTRY = {
       // P-68: the live matrices ran on this installed pair — the user's own CLI binary driven by
       // the pinned SDK. The two sides drift independently, so both are named; the sdk side tracks
       // the exact package pin (a bump moves it in the same commit, and the canary re-measures
-      // before the bump merges), while the cli side waits for the canary's own update.
-      measuredWith: { cli: '2.1.302', sdk: '0.3.302', at: '2026-10-16' },
+      // before the bump merges), while the cli side waits for the canary's own update. The canary
+      // of 2026-10-17 re-measured the pair on main 1ecb80b, so `at` follows that day.
+      measuredWith: { cli: '2.1.302', sdk: '0.3.302', at: '2026-10-17' },
       isolation: { kind: 'test', name: 'P-44: a subscription launch never points the config directory at the run directory, whatever the ambient environment carries' },
       gates: {
         G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
@@ -45,6 +46,17 @@ export const CAPABILITY_REGISTRY = {
         G5: { kind: 'test', name: 'P-21: get_usage utilization is 0–100 and normalises to the same meter scale a pushed rate_limit_event uses' },
         G6: { kind: 'test', name: 'P-24: sdk, app-server, stream-json and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
       },
+      // The operator-gate canary runs of 2026-10-17 (P-69(4) protocol, P-28 evidence): build main
+      // 1ecb80b — SDK 0.3.302 driving CLI 2.1.302 — against ~/.docket-test, a throw-away repo and
+      // cheap models, no billing prompt. 01M53HX9EZ66MSNT1PTBBJMF6T rode zai-glm (glm-5.3-flash,
+      // 71 s) and 01M53J2TKZ25Y1XM3CPD031264 rode anthropic-subscription (haiku, 15 s); both
+      // succeeded. Observed in both: the repo rule reached the agent (first line of notes.txt),
+      // the user before_tool guard blocked forbidden.txt, the after_write hook marker fired, the
+      // Docket MCP published the page, the skill was called as docket-run:<name> and the answer
+      // ended with its marker, two permission asks (Write, page_publish) answered through the
+      // board, no console or page errors. Not exercised: D-10 auto live (F1), the Stop hook live,
+      // resume.
+      operatorRuns: ['01M53HX9EZ66MSNT1PTBBJMF6T', '01M53J2TKZ25Y1XM3CPD031264'],
     },
     {
       // No G4: the app-server transport maps no usage event, so cost visibility is unproven.
