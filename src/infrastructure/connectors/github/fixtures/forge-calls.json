@@ -1,0 +1,8 @@
+[
+  { "method": "pushBranch", "command": "git push 'https://github.com/octo/contract.git' 'feature-x'", "exitCode": 0, "output": "" },
+  { "method": "openPullRequest", "command": "gh pr create --repo 'octo/contract' --head 'feature-x' --base 'main' --title 'Fixture pull request' --body 'Fixture body'", "exitCode": 0, "output": "https://github.com/octo/contract/pull/41\n" },
+  { "method": "pullRequest", "command": "gh pr view 7 --repo 'octo/contract' --json state,mergeable", "exitCode": 0, "output": "{\"state\":\"OPEN\",\"mergeable\":\"MERGEABLE\"}" },
+  { "method": "checks", "command": "gh api 'repos/octo/contract/commits/feature-x/check-runs?per_page=100'", "exitCode": 0, "output": "{\"total_count\":2,\"check_runs\":[{\"name\":\"fixture-ci\",\"status\":\"completed\",\"conclusion\":\"success\",\"html_url\":\"https://github.com/octo/contract/actions/runs/1\"},{\"name\":\"fixture-lint\",\"status\":\"queued\"}]}" },
+  { "method": "defaultBranch", "command": "gh repo view --repo 'octo/contract' --json defaultBranchRef", "exitCode": 0, "output": "{\"defaultBranchRef\":{\"name\":\"main\"}}" },
+  { "method": "mergePullRequest", "command": "gh pr merge 7 --repo 'octo/contract' --merge", "exitCode": 0, "output": "" }
+]

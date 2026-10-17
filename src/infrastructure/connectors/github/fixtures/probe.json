@@ -1,0 +1,4 @@
+[
+  { "method": "probe", "command": "gh --version", "exitCode": 0, "output": "gh version 2.63.0 (2025-01-01)" },
+  { "method": "probe", "command": "gh auth status", "exitCode": 0, "output": "" }
+]

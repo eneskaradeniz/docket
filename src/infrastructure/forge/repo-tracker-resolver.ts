@@ -1,20 +1,11 @@
 // Per-repo IssueTracker wiring: reads tracker.yaml, accepts github only, and builds the gh
 // adapter when the CLI is present and authenticated. Unknown kinds and missing auth return
 // undefined without logging.
-import type { AppDeps, CommandRunner } from '../../application/index';
+import type { AppDeps } from '../../application/index';
 import type { IssueTrackerResolver } from '../../application/services/tracker-sync-service';
 import { loadRepoTrackerLink } from '../../application/use-cases/tracker-sync';
 
-import { createGhTracker } from './github-tracker';
-
-const PROBE_TIMEOUT_MS = 15_000;
-
-export const isGhCliAuthenticated = async (runner: CommandRunner, cwd: string): Promise<boolean> => {
-  const present = await runner.run(cwd, 'gh --version', PROBE_TIMEOUT_MS);
-  if (present.exitCode !== 0) return false;
-  const authenticated = await runner.run(cwd, 'gh auth status', PROBE_TIMEOUT_MS);
-  return authenticated.exitCode === 0;
-};
+import { createGhTracker, isGhCliAuthenticated } from '../connectors/github';
 
 export function createRepoTrackerResolver(
   deps: Pick<AppDeps, 'repos' | 'commands' | 'definitions'>,

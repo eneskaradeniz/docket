@@ -11,7 +11,7 @@ export interface Proposal {
   readonly id: ProposalId;
   readonly author: Actor;
   readonly createdAt: EpochMs;
-  readonly target: string; // definition file path relative to its root, e.g. "flows/odoo.yaml"
+  readonly target: string; // definition file path relative to its root, e.g. "flows/billing.yaml"
   readonly baseHash: string; // hash of the file when proposed (computed outside the domain)
   readonly before: string;
   readonly after: string;
