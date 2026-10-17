@@ -77,7 +77,7 @@ const SECTIONS = [
 // when the phase closes.
 const PENDING = new Map([
   // #1179: first-repo view fields replace the transitional main repo
-  ['A-418', '#1179'],
+  ['application:A-418', '#1179 (the view rename lands the test)'],
 
   // #1006 — agent capabilities: library, provider translation, memory, machine import
 
