@@ -1,9 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
 import { parseSlug, type RepoSlug } from '../../domain/index';
-import { createFakeCommandRunner, createFakeDefinitionStore } from '../../application/ports/fakes/index';
+import type { ConnectorRegistry } from '../../application/index';
+import { createConnectorRegistry } from '../../application/index';
+import {
+  createFakeAppSettingsRepo,
+  createFakeClock,
+  createFakeCommandRunner,
+  createFakeDefinitionStore,
+  createFakeIdGen,
+  createFakeSecretVault,
+} from '../../application/ports/fakes/index';
 import { TRACKER_LINK_TARGET } from '../../application/use-cases/tracker-sync';
 
+import { BUILTIN_CONNECTORS, DEFAULT_ENABLED_CONNECTORS, createConnectorContext } from '../connectors/index';
 import { createRepoTrackerResolver } from './repo-tracker-resolver';
 
 const slug = (input: string): RepoSlug => {
@@ -25,16 +35,33 @@ describe('createRepoTrackerResolver', () => {
     runner.script('gh --version', { exitCode: 0, durationMs: 1, outputTail: 'gh version 2' });
     runner.script('gh auth status', { exitCode: 0, durationMs: 1, outputTail: '' });
 
-    const resolver = createRepoTrackerResolver({
-      definitions,
-      repos: {
-        list: async () => [{ repoId: '1', slug: repo, path: '/repo/demo', fingerprint: { rootCommit: '' } }],
-        register: async () => undefined,
-        byRepoId: async () => undefined,
-        relink: async () => ({ ok: false, error: 'folder_not_found' as const }),
-      },
-      commands: runner,
+    // The registry the resolver delegates to, built like the composition root builds it — the
+    // built-in list, the shipped default set, no stored settings — over the same runner.
+    const registry: ConnectorRegistry = createConnectorRegistry({
+      connectors: BUILTIN_CONNECTORS,
+      defaultEnabled: DEFAULT_ENABLED_CONNECTORS,
+      settings: createFakeAppSettingsRepo(),
+      createContext: (manifest) =>
+        createConnectorContext(manifest, {
+          secrets: createFakeSecretVault(),
+          commands: runner,
+          clock: createFakeClock(0),
+          ids: createFakeIdGen(),
+        }),
     });
+    const resolver = createRepoTrackerResolver(
+      {
+        definitions,
+        repos: {
+          list: async () => [{ repoId: '1', slug: repo, path: '/repo/demo', fingerprint: { rootCommit: '' } }],
+          register: async () => undefined,
+          byRepoId: async () => undefined,
+          relink: async () => ({ ok: false, error: 'folder_not_found' as const }),
+        },
+        commands: runner,
+      },
+      registry,
+    );
 
     const tracker = await resolver.forRepo(repo);
     expect(tracker?.kind).toBe('github-issues');

@@ -28,7 +28,7 @@ import type { Actor, QueueItem, WorkOrderId } from '../src/domain/index';
 import { deriveWorkOrderState, err, foldRun, ok } from '../src/domain/index';
 import { COMMAND_REGISTRY, QUERY_REGISTRY, createApi } from '../src/api/index';
 import type { Api, RunEventFeed, UiEvent } from '../src/api/index';
-import type { ActiveWork, AppDeps, ForgeResolver, McpEndpoint, McpListenerControl, McpListenerState, Notifier, PermissionBoard, RunControl, TransportResolver, WorkOrderRecord } from '../src/application/index';
+import type { ActiveWork, AppDeps, ConnectorRegistry, ForgeResolver, McpEndpoint, McpListenerControl, McpListenerState, Notifier, PermissionBoard, RunControl, TransportResolver, WorkOrderRecord } from '../src/application/index';
 import type { DocketToolRequest, DocketToolResponse } from '../src/application/index';
 import {
   activeWork,
@@ -39,6 +39,7 @@ import {
   applyRefusedStart,
   cancelActiveRuns,
   composeRunPrompt,
+  createConnectorRegistry,
   createDocketTools,
   createPermissionBoard,
   createRunControl,
@@ -53,11 +54,14 @@ import {
 } from '../src/application/index';
 import type { CipherFns, NodeDeps } from '../src/infrastructure/index';
 import {
+  BUILTIN_CONNECTORS,
   BUILTIN_PROVIDER_DEFS,
+  DEFAULT_ENABLED_CONNECTORS,
   builtinProviderMarks,
   branchHead,
   configureProcessMirrorDir,
   createAgyAskBridge,
+  createConnectorContext,
   createDesignUpdateChecker,
   createMcpEndpoint,
   createNodeDeps,
@@ -633,6 +637,29 @@ const startApp = async (): Promise<void> => {
   const mcpEndpoint = createMcpEndpoint({ dataDir, platform: process.platform, execPath: process.execPath, mainDir: here });
   const mcpControl = createListenerControl(mcpEndpoint, mcpScriptPath(here), () => mcpTools);
 
+  // The connector registry, built once and shared by both per-repo resolvers: one settings
+  // read, one readiness probe cache, one failure boundary for every connector call. Both
+  // factories receive the finished deps, so the registry is composed here and injected — the
+  // application layer never learns which connectors exist.
+  let connectorsBuilt: ConnectorRegistry | undefined;
+  const connectorRegistry = (deps: AppDeps): ConnectorRegistry => {
+    if (connectorsBuilt === undefined) {
+      connectorsBuilt = createConnectorRegistry({
+        connectors: BUILTIN_CONNECTORS,
+        defaultEnabled: DEFAULT_ENABLED_CONNECTORS,
+        settings: deps.settings,
+        createContext: (manifest) =>
+          createConnectorContext(manifest, {
+            secrets: deps.secrets,
+            commands: deps.commands,
+            clock: deps.clock,
+            ids: deps.ids,
+          }),
+      });
+    }
+    return connectorsBuilt;
+  };
+
   const opened = createNodeDeps({
     dataDir,
     mcpEndpoint,
@@ -645,8 +672,8 @@ const startApp = async (): Promise<void> => {
     // The same discovery the settings query runs: an installed provider without a directory
     // scanner must still be listed as a machine-login candidate (P-53).
     providerDiscovery: discovery,
-    trackerResolver: createRepoTrackerResolver,
-    forgeResolver: createRepoForgeResolver,
+    trackerResolver: (deps) => createRepoTrackerResolver(deps, connectorRegistry(deps)),
+    forgeResolver: (deps) => createRepoForgeResolver(deps, connectorRegistry(deps)),
   });
   if (!opened.ok) {
     logOpenDatabaseFailure(opened.error);

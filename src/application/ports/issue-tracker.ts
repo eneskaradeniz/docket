@@ -15,7 +15,10 @@ export interface ExternalItem {
   readonly labels?: readonly string[];
 }
 
-export type TrackerError = 'auth' | 'not_found' | 'network' | 'rate_limited' | 'unknown';
+// The registry boundary's failure (the forge port's twin): a connector that threw. The code
+// names the kind and nothing else — no stack, no message text a secret could hide in; the caller
+// identifies the connector through the port object it holds (the tracker's kind).
+export type TrackerError = 'auth' | 'not_found' | 'network' | 'rate_limited' | 'unknown' | 'connector_failed';
 
 export interface IssueTracker {
   // The kind is data, not a union: new trackers appear without a contract change.

@@ -4,19 +4,38 @@
 // injected command runner, so nothing here spawns a process or touches the network. The tracker
 // leg is the shared trackerAdapterContract (A-333) over the same recordings; the forge leg, the
 // transport-fault mapping, the secret fence and the capability laws are asserted here because
-// only a connector's own fixtures can script those conditions.
+// only a connector's own fixtures can script those conditions. Every adapter is built through a
+// real connector context, so the egress fence and the secret fence are proven per connector, not
+// just on a bench fixture.
 import { describe, expect, it } from 'vitest';
 
-import type { RepoRef } from '../../domain/index';
-import { validateConnectorManifest } from '../../domain/index';
-import type { CommandResult, ConnectorModule, Forge, IssueTracker } from '../../application/index';
-import { createFakeCommandRunner, type FakeCommandRunner } from '../../application/ports/fakes/index';
+import type { ConnectorManifest, RepoRef } from '../../domain/index';
+import { ok, validateConnectorManifest } from '../../domain/index';
+import type {
+  CommandResult,
+  ConnectorContext,
+  ConnectorModule,
+  Forge,
+  IssueTracker,
+} from '../../application/index';
+import {
+  createFakeClock,
+  createFakeCommandRunner,
+  createFakeIdGen,
+  createFakeSecretVault,
+  type FakeCommandRunner,
+} from '../../application/ports/fakes/index';
+import {
+  connectorContextContract,
+  type ConnectorContextKit,
+} from '../../application/ports/connector-context-contract.test';
 import {
   TRACKER_CONTRACT_SCOPE,
   trackerAdapterContract,
 } from '../../application/ports/tracker-adapter-contract.test';
 
 import { BUILTIN_CONNECTORS } from './index';
+import { createConnectorContext } from './context';
 import probeRows from './github/fixtures/probe.json';
 import forgeRows from './github/fixtures/forge-calls.json';
 import trackerRows from './github/fixtures/tracker-calls.json';
@@ -75,14 +94,62 @@ const forgeOf = async (connector: ConnectorModule, script: (runner: FakeCommandR
   if (connector.createForge === undefined) throw new Error('manifest provides forge but createForge is missing');
   const runner = createFakeCommandRunner();
   script(runner);
-  return connector.createForge(REPO_PATH, runner);
+  return connector.createForge(REPO_PATH, contextFor(connector.manifest, runner));
 };
 
 const trackerOf = (connector: ConnectorModule, script: (runner: FakeCommandRunner) => void): IssueTracker => {
   if (connector.createTracker === undefined) throw new Error('manifest provides tracker but createTracker is missing');
   const runner = createFakeCommandRunner();
   script(runner);
-  return connector.createTracker(REPO_PATH, runner);
+  return connector.createTracker(REPO_PATH, contextFor(connector.manifest, runner));
+};
+
+/** One real context over the scripted runner — the only machine surface the suite hands a
+ *  connector, exactly what the registry hands it in production. */
+const contextFor = (manifest: ConnectorManifest, runner: FakeCommandRunner): ConnectorContext =>
+  createConnectorContext(manifest, {
+    secrets: createFakeSecretVault(),
+    commands: runner,
+    clock: createFakeClock(0),
+    ids: createFakeIdGen(),
+  });
+
+/** The context law kit of one manifest: the real context, a planted own-account secret beside a
+ *  foreign one, and the observers the laws count. */
+const kitFor = (manifest: ConnectorManifest): ConnectorContextKit => {
+  const runner = createFakeCommandRunner();
+  const vault = createFakeSecretVault();
+  const lines: string[] = [];
+  let transportCalls = 0;
+  const ownSecretRef = `connectors/${manifest.id}/token`;
+  const foreignSecretRef = 'connectors/someone-else/token';
+  const secretValue = 'FIXTURE-CONFORMANCE-SECRET';
+  void vault.put(ownSecretRef, secretValue);
+  void vault.put(foreignSecretRef, secretValue);
+  const context = createConnectorContext(manifest, {
+    secrets: vault,
+    commands: runner,
+    clock: createFakeClock(0),
+    ids: createFakeIdGen(),
+    secretRefs: [ownSecretRef],
+    send: async () => {
+      transportCalls += 1;
+      return ok({ status: 200, body: '' });
+    },
+    logSink: (message) => {
+      lines.push(message);
+    },
+  });
+  return {
+    context,
+    manifest,
+    ownSecretRef,
+    foreignSecretRef,
+    secretValue,
+    transportCalls: () => transportCalls,
+    logLines: () => [...lines],
+    commandRuns: () => runner.calls().length,
+  };
 };
 
 /** Runs the conformance laws for one connector over its fixtures. */
@@ -114,6 +181,9 @@ export function connectorConformance(connector: ConnectorModule, fixtures: Confo
   };
 
   describe(`connector conformance: ${id}`, () => {
+    // The context laws, through the real context, against this connector's own manifest.
+    connectorContextContract(kitFor, connector.manifest);
+
     it('I-113: the manifest is valid under R-182 and every provided family has its factory', () => {
       expect(validateConnectorManifest(connector.manifest).ok).toBe(true);
       expect(connector.manifest.provides.includes('forge')).toBe(connector.createForge !== undefined);
@@ -218,7 +288,10 @@ export function connectorConformance(connector: ConnectorModule, fixtures: Confo
       const runner = createFakeCommandRunner();
       scriptRows(runner, fixtures.probe, 2);
       scriptRows(runner, fixtures.forge);
-      const forge = connector.createForge === undefined ? undefined : await connector.createForge(REPO_PATH, runner);
+      const forge =
+        connector.createForge === undefined
+          ? undefined
+          : await connector.createForge(REPO_PATH, contextFor(connector.manifest, runner));
       if (forge !== undefined) {
         await forge.pushBranch(REPO, 'feature-x');
         await forge.openPullRequest(REPO, PR_INPUT);
