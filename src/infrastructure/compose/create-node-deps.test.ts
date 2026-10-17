@@ -19,7 +19,7 @@ import {
   type FakeNotifier,
 } from '../../application/ports/fakes/index';
 import type { CipherFns } from '../storage/keychain/index';
-import { MIGRATIONS } from '../storage/sqlite/index';
+import { APPLICATION_ID, MIGRATIONS } from '../storage/sqlite/index';
 import type { RandomBytes } from '../system/index';
 import { branchHead, runGit, worktreeBranch } from '../vcs/index';
 import { createApi } from '../../api/index';
@@ -364,6 +364,7 @@ describe('createNodeDeps', () => {
   it('I-31: a too-new database returns the openDatabase error', async () => {
     await mkdir(dataDir, { recursive: true });
     const setup = new DatabaseSync(join(dataDir, 'docket.db'));
+    setup.exec(`PRAGMA application_id = ${APPLICATION_ID}`);
     setup.exec('PRAGMA user_version = 99');
     setup.close();
 
