@@ -11,8 +11,3 @@ export const ghConnectorReadiness = async (runner: CommandRunner, cwd: string): 
   const authenticated = await runner.run(cwd, 'gh auth status', PROBE_TIMEOUT_MS);
   return authenticated.exitCode === 0 ? 'ready' : 'needs_account';
 };
-
-/** The boolean view of the readiness the pre-registry resolvers still consume; the registry
- *  rewrite replaces them and this alias with it. */
-export const isGhCliAuthenticated = async (runner: CommandRunner, cwd: string): Promise<boolean> =>
-  (await ghConnectorReadiness(runner, cwd)) === 'ready';

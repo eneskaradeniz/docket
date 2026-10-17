@@ -10,9 +10,17 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { parseSlug, type RepoSlug } from '../../domain/index';
-import type { RepoRegistry } from '../../application/index';
-import { createFakeCommandRunner } from '../../application/ports/fakes/index';
+import type { ConnectorRegistry, RepoRegistry } from '../../application/index';
+import { createConnectorRegistry } from '../../application/index';
+import {
+  createFakeAppSettingsRepo,
+  createFakeClock,
+  createFakeCommandRunner,
+  createFakeIdGen,
+  createFakeSecretVault,
+} from '../../application/ports/fakes/index';
 
+import { BUILTIN_CONNECTORS, DEFAULT_ENABLED_CONNECTORS, createConnectorContext } from '../connectors/index';
 import { createRepoForgeResolver } from './repo-forge-resolver';
 
 const slug = (input: string): RepoSlug => {
@@ -36,12 +44,28 @@ const scriptGhReady = (runner: ReturnType<typeof createFakeCommandRunner>): void
   runner.script('gh auth status', { exitCode: 0, durationMs: 1, outputTail: '' });
 };
 
+/** The registry the resolver delegates to, built exactly like the composition root builds it —
+ *  the built-in list, the shipped default set, no stored settings — over the same runner. */
+const registryOver = (runner: ReturnType<typeof createFakeCommandRunner>): ConnectorRegistry =>
+  createConnectorRegistry({
+    connectors: BUILTIN_CONNECTORS,
+    defaultEnabled: DEFAULT_ENABLED_CONNECTORS,
+    settings: createFakeAppSettingsRepo(),
+    createContext: (manifest) =>
+      createConnectorContext(manifest, {
+        secrets: createFakeSecretVault(),
+        commands: runner,
+        clock: createFakeClock(0),
+        ids: createFakeIdGen(),
+      }),
+  });
+
 describe('createRepoForgeResolver', () => {
   it('A-368: returns a github forge for a github.com remote when gh is authenticated', async () => {
     const runner = createFakeCommandRunner();
     scriptGhReady(runner);
     scriptGhReady(runner); // createGhForge probes capabilities at creation, through the same runner
-    const resolver = createRepoForgeResolver({ repos: reposWithRemote('https://github.com/octo/demo.git'), commands: runner });
+    const resolver = createRepoForgeResolver({ repos: reposWithRemote('https://github.com/octo/demo.git'), commands: runner }, registryOver(runner));
 
     const forge = await resolver.forRepo({ id: GH_REPO, remote: 'https://github.com/octo/demo.git', defaultBranch: 'main' });
     expect(forge?.kind).toBe('github');
@@ -50,7 +74,7 @@ describe('createRepoForgeResolver', () => {
 
   it('A-368: a remote on another host resolves undefined and runs no command', async () => {
     const runner = createFakeCommandRunner();
-    const resolver = createRepoForgeResolver({ repos: reposWithRemote('https://gitlab.example/octo/demo'), commands: runner });
+    const resolver = createRepoForgeResolver({ repos: reposWithRemote('https://gitlab.example/octo/demo'), commands: runner }, registryOver(runner));
 
     const forge = await resolver.forRepo({ id: GH_REPO, remote: 'https://gitlab.example/octo/demo', defaultBranch: 'main' });
     expect(forge).toBeUndefined();
@@ -60,7 +84,7 @@ describe('createRepoForgeResolver', () => {
   it('A-368: a missing gh CLI resolves undefined', async () => {
     const runner = createFakeCommandRunner();
     runner.script('gh --version', { exitCode: 127, durationMs: 1, outputTail: 'command not found' });
-    const resolver = createRepoForgeResolver({ repos: reposWithRemote('git@github.com:octo/demo.git'), commands: runner });
+    const resolver = createRepoForgeResolver({ repos: reposWithRemote('git@github.com:octo/demo.git'), commands: runner }, registryOver(runner));
 
     const forge = await resolver.forRepo({ id: GH_REPO, remote: 'git@github.com:octo/demo.git', defaultBranch: 'main' });
     expect(forge).toBeUndefined();
@@ -71,7 +95,7 @@ describe('createRepoForgeResolver', () => {
     scriptGhReady(runner);
     scriptGhReady(runner);
     scriptGhReady(runner); // the forge creation probe of the second resolution
-    const resolver = createRepoForgeResolver({ repos: reposWithRemote('https://github.com/octo/demo'), commands: runner });
+    const resolver = createRepoForgeResolver({ repos: reposWithRemote('https://github.com/octo/demo'), commands: runner }, registryOver(runner));
     const repoRef = { id: GH_REPO, remote: 'https://github.com/octo/demo', defaultBranch: 'main' } as const;
 
     await resolver.forRepo(repoRef);
