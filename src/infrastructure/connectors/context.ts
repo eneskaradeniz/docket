@@ -82,13 +82,15 @@ export function createConnectorContext(manifest: ConnectorManifest, deps: Connec
   const http: HttpPort = {
     request: async (req) => {
       // An unparsable url has no host to allow, so it is denied like a foreign one — it never
-      // reaches the transport.
-      let host: string | undefined;
+      // reaches the transport. The scheme is part of the same fence: only https leaves the
+      // machine, so a request carrying a token header never crosses a cleartext hop.
+      let parsed: URL | undefined;
       try {
-        host = new URL(req.url).hostname.toLowerCase();
+        parsed = new URL(req.url);
       } catch {
-        host = undefined;
+        parsed = undefined;
       }
+      const host = parsed === undefined || parsed.protocol !== 'https:' ? undefined : parsed.hostname.toLowerCase();
       if (host === undefined || !hostAllowed(manifest.network, host)) return err('egress_denied');
       return send(req);
     },

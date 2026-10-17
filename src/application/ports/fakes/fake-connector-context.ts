@@ -80,12 +80,15 @@ export const createFakeConnectorContext = (
 
   const http: HttpPort = {
     request: async (req) => {
-      let host: string | undefined;
+      // The same boundary the infrastructure context enforces: exact hosts and label-bounded
+      // wildcards, and https only — a cleartext or foreign scheme never reaches the transport.
+      let parsed: URL | undefined;
       try {
-        host = new URL(req.url).hostname.toLowerCase();
+        parsed = new URL(req.url);
       } catch {
-        host = undefined;
+        parsed = undefined;
       }
+      const host = parsed === undefined || parsed.protocol !== 'https:' ? undefined : parsed.hostname.toLowerCase();
       if (host === undefined || !hostAllowed(manifest.network, host)) return err('egress_denied');
       sent.push(req);
       return pieces.send !== undefined ? pieces.send(req) : Promise.resolve(ok({ status: 200, body: '' }));

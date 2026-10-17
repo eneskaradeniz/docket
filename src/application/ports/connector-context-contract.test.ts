@@ -96,6 +96,26 @@ export function connectorContextContract(
       expect(kit.transportCalls()).toBe(2);
     });
 
+    it('A-416: egress is https-only — a cleartext or non-web scheme never reaches the transport, an explicit port still matches by host', async () => {
+      const kit = makeKit(CLI_MANIFEST);
+      for (const url of [
+        'http://api.forge.example/x',
+        'ws://api.forge.example/x',
+        'file://api.forge.example/etc',
+        'http://pkg.mirror.example/x',
+      ]) {
+        expect(await kit.context.http.request({ url }), url).toEqual({ ok: false, error: 'egress_denied' });
+      }
+      expect(kit.transportCalls()).toBe(0);
+      // The port is not part of the host match, so an https request on a non-default port passes
+      // exactly like the default one.
+      expect(await kit.context.http.request({ url: 'https://api.forge.example:8443/x' })).toEqual({
+        ok: true,
+        value: { status: 200, body: '' },
+      });
+      expect(kit.transportCalls()).toBe(1);
+    });
+
     it("A-416: secrets resolve only refs of the connector's own accounts — a foreign ref answers undefined", async () => {
       const kit = makeKit(CLI_MANIFEST);
       expect(await kit.context.secrets.resolve(kit.ownSecretRef)).toBe(kit.secretValue);

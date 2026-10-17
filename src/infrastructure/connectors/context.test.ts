@@ -74,6 +74,14 @@ describe('createConnectorContext', () => {
     expect(kit.commandRuns()).toBe(0);
   });
 
+  it('A-416: an http, ws or file url is refused like a foreign host — only https leaves the machine', async () => {
+    const kit = kitFor(manifestOf('impl-cli', 'demo'));
+    for (const url of ['http://api.forge.example/x', 'ws://api.forge.example/x', 'file://api.forge.example/etc']) {
+      expect(await kit.context.http.request({ url }), url).toEqual({ ok: false, error: 'egress_denied' });
+    }
+    expect(kit.transportCalls()).toBe(0);
+  });
+
   it('an unparsable request url is denied like a foreign host — it never reaches the transport', async () => {
     const kit = kitFor(manifestOf('impl-cli', 'demo'));
     const outcome = await kit.context.http.request({ url: 'not-a-url' });
