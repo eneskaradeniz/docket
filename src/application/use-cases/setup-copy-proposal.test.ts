@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { Actor, RepoDef } from '../../domain/index';
-import { BUILTIN_FLOWS, BUILTIN_ROLES, parseSlug } from '../../domain/index';
+import { BUILTIN_FLOWS, BUILTIN_ROLES, parseSlug, validateDefinitions } from '../../domain/index';
 import { createFakeCapabilityCatalog, createFakeDefinitionStore, createFakeDeps, createFakeGitProbe, createFakeRepoScanner } from '../ports/fakes';
 import { defaultSetupAnswers } from './setup';
 import { setupApply, setupCopyProposal } from './setup-copy-proposal';
@@ -259,7 +259,7 @@ describe('setupApply', () => {
       answers: crafted,
       actor: ACTOR,
     });
-    expect(result).toEqual({ ok: true });
+    expect(result.ok).toBe(true);
     expect(detect).toHaveBeenCalledWith(REPO_PATH);
     const repoFile = await definitions.readFile('repos/acme/repo.yaml');
     expect(repoFile?.content).toContain('"docsRoot": "documentation"');
@@ -276,7 +276,7 @@ describe('setupApply', () => {
       answers: validAnswers('acme'),
       actor: ACTOR,
     });
-    expect(first).toEqual({ ok: true });
+    expect(first).toEqual({ ok: true, value: { wroteRepoYaml: true } });
     const writesAfterFirst = writeSpy.mock.calls.length;
     const savesAfterFirst = saveSpy.mock.calls.length;
     const second = await setupApply(deps, {
@@ -285,9 +285,61 @@ describe('setupApply', () => {
       answers: validAnswers('wrong'),
       actor: ACTOR,
     });
-    expect(second).toEqual({ ok: true });
+    expect(second).toEqual({ ok: true, value: { wroteRepoYaml: false } });
     expect(writeSpy.mock.calls.length).toBe(writesAfterFirst);
     expect(saveSpy.mock.calls.length).toBe(savesAfterFirst);
+  });
+
+  const registeredDeps = async (slug: string) => {
+    const ready = readyApplyDeps();
+    const parsed = parseSlug<'repo'>(slug);
+    if (!parsed.ok) throw new Error('slug');
+    await ready.deps.projects.save({ id: project.value, name: 'Atölye', repos: [parsed.value] });
+    await ready.deps.repos.register({ repoId: '01ARZ3NDEKTSV4RRFFQ69G5FB1', slug: parsed.value, path: REPO_PATH, fingerprint: { rootCommit: 'abc' } });
+    return ready;
+  };
+
+  it('A-76: a path that project.create already registered still gets its repo.yaml, under the registered slug', async () => {
+    const { deps, definitions } = await registeredDeps('acme');
+    const result = await setupApply(deps, { project: project.value, path: REPO_PATH, answers: validAnswers('acme'), actor: ACTOR });
+    expect(result).toEqual({ ok: true, value: { wroteRepoYaml: true } });
+    expect(await definitions.readFile('repos/acme-2/repo.yaml')).toBeUndefined();
+    const file = await definitions.readFile('repos/acme/repo.yaml');
+    expect(file).toBeDefined();
+    const body = JSON.parse(file?.content ?? '{}') as RepoDef;
+    expect(body.commandSets).toEqual({ tests: [] });
+    const checked = validateDefinitions({
+      roles: BUILTIN_ROLES,
+      flows: BUILTIN_FLOWS,
+      capabilities: [],
+      project: { id: project.value, name: 'Atölye', repos: [source.value] },
+      repo: body,
+    });
+    expect(checked.ok).toBe(true);
+    expect((await deps.projects.get(project.value))?.repos).toEqual(['acme']);
+  });
+
+  it('A-387: a registered path whose repo.yaml exists is a no-op', async () => {
+    const { deps, definitions } = await registeredDeps('acme');
+    await definitions.writeFile('repos/acme/repo.yaml', '{"id":"acme"}\n', '');
+    const writeSpy = vi.spyOn(definitions, 'writeFile');
+    const result = await setupApply(deps, { project: project.value, path: REPO_PATH, answers: validAnswers('acme'), actor: ACTOR });
+    expect(result).toEqual({ ok: true, value: { wroteRepoYaml: false } });
+    expect(writeSpy).not.toHaveBeenCalled();
+  });
+
+  it('A-76: an AI-shaped proposal with empty commandSets is written with the built-in set empty', async () => {
+    const { deps, definitions } = readyApplyDeps();
+    const base = validAnswers('acme') as { repo: Record<string, unknown> };
+    const result = await setupApply(deps, {
+      project: project.value,
+      path: REPO_PATH,
+      answers: { ...base, repo: { ...base.repo, commandSets: {} } },
+      actor: ACTOR,
+    });
+    expect(result.ok).toBe(true);
+    const body = JSON.parse((await definitions.readFile('repos/acme/repo.yaml'))?.content ?? '{}') as RepoDef;
+    expect(body.commandSets).toEqual({ tests: [] });
   });
 
   it('A-387: writes nothing when a folder check fails', async () => {

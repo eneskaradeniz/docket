@@ -651,6 +651,17 @@ describe('existing-folder import accept', () => {
     expect(store.state().done).toBeNull();
   });
 
+  it('A-387: the summary counts only a repo whose repo.yaml was written', async () => {
+    const { api, store } = setup();
+    store.pickPath('import');
+    store.setRepoPath('/Users/e/atolye');
+    await store.submit();
+    api.reply('project.create', { ok: true, id: 'atolye' });
+    api.reply('setup.apply', { ok: true, wroteRepoYaml: false });
+    await store.acceptProposal();
+    expect(store.state().addedRepos).toEqual([]);
+  });
+
   it('a create refusal shows its labelled failure and no success toast', async () => {
     const { api, store } = setup();
     store.pickPath('import');

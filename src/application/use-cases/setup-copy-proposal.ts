@@ -47,7 +47,8 @@ export async function setupCopyProposal(
     },
     detected,
   );
-  const repoId = slugFromName<'repo'>(folderName, new Set(project.repos));
+  const registered = (await deps.repos.list()).find((entry) => entry.path === input.path && project.repos.includes(entry.slug));
+  const repoId = registered?.slug ?? slugFromName<'repo'>(folderName, new Set(project.repos));
   const repo = {
     id: repoId,
     flow: copied.repo.flow as SetupProposal['repo']['flow'],
@@ -88,7 +89,7 @@ export async function setupCopyProposal(
       : setupWarnings(stages, deps.capabilities.translationTable(), deps.capabilities.permissionChannels(), deps.capabilities.providerVersions());
   const differsFromRecommended = [...copied.copiedPaths];
   const proposal: SetupProposal = {
-    project: { name: project.name, repos: [...project.repos, repoId] },
+    project: { name: project.name, repos: registered === undefined ? [...project.repos, repoId] : [...project.repos] },
     repo,
     warnings,
     differsFromRecommended,
@@ -147,10 +148,11 @@ const rebuildApplyProposal = (
   path: string,
   answers: unknown,
   detected: { readonly docsRoot: string; readonly testGlobs: readonly string[] },
+  registeredSlug: RepoSlug | undefined,
 ): SetupProposal => {
   const parsed = buildSetupProposal(answers);
   const folderName = folderNameOf(path);
-  const repoId = slugFromName<'repo'>(folderName, new Set(project.repos));
+  const repoId = registeredSlug ?? slugFromName<'repo'>(folderName, new Set(project.repos));
   const repos = project.repos.includes(repoId) ? [...project.repos] : [...project.repos, repoId];
   return buildSetupProposal({
     project: { name: project.name, repos },
@@ -176,12 +178,17 @@ export async function setupApply(
     readonly answers: unknown;
     readonly actor: Actor;
   },
-): Promise<Result<void, SetupApplyError>> {
+): Promise<Result<{ readonly wroteRepoYaml: boolean }, SetupApplyError>> {
   const project = await deps.projects.get(input.project);
   if (project === undefined) return err('not_found');
 
   const already = (await deps.repos.list()).find((entry) => entry.path === input.path);
-  if (already !== undefined && project.repos.includes(already.slug)) return ok(undefined);
+  const registeredSlug = already !== undefined && project.repos.includes(already.slug) ? already.slug : undefined;
+  // A-387: the no-op applies only once the repo's definition file exists; project.create registers
+  // the repo first, so a registered path alone does not mean the setup was written.
+  if (registeredSlug !== undefined && (await deps.definitions.readFile(`repos/${registeredSlug}/repo.yaml`)) !== undefined) {
+    return ok({ wroteRepoYaml: false });
+  }
 
   const folderName = folderNameOf(input.path);
   if (folderName === '' || (await deps.readFingerprint(input.path)) === undefined) return err('folder_not_found');
@@ -190,7 +197,7 @@ export async function setupApply(
   const detected = await deps.repoScanner.detect(input.path);
   let proposal: SetupProposal;
   try {
-    proposal = rebuildApplyProposal(project, input.path, input.answers, detected);
+    proposal = rebuildApplyProposal(project, input.path, input.answers, detected, registeredSlug);
   } catch {
     return err('definitions_invalid');
   }
@@ -220,7 +227,11 @@ export async function setupApply(
   if (!projectValid.ok) return err('definitions_invalid');
 
   await deps.projects.save(updated);
-  const wroteProject = await deps.definitions.writeFile(projectPath, projectBody, '');
+  // A registered repo means the project already exists; its project.yaml is left as it is.
+  const wroteProject =
+    registeredSlug !== undefined && (await deps.definitions.readFile(projectPath)) !== undefined
+      ? { ok: true as const, value: { hash: '' } }
+      : await deps.definitions.writeFile(projectPath, projectBody, '');
   const wroteRepo = await deps.definitions.writeFile(repoPath, repoBody, '');
   if (!wroteProject.ok || !wroteRepo.ok) return err('stale');
   const registered = await registerRepo(
@@ -228,5 +239,5 @@ export async function setupApply(
     { project: input.project, repo, path: input.path, actor: input.actor },
   );
   if (!registered.ok) return err('definitions_invalid');
-  return ok(undefined);
+  return ok({ wroteRepoYaml: true });
 }

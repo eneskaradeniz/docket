@@ -1007,7 +1007,7 @@ export const TR: LabelBundle = {
   'newProject.cancel': 'Vazgeç',
   'newProject.close': 'Pencereyi kapat',
   'newProject.attach': 'Bağla',
-  'newProject.created': "Proje oluşturuldu. Test komutlarını ~/.docket/repos/<slug>/repo.yaml'a yaz; yazılana kadar test kapısı bekler.",
+  'newProject.created': 'Proje oluşturuldu. Test komutları henüz tanımlı değil; tanımlanana kadar test kapısı bekler.',
   'setup.title': 'Proje ekle',
   'setup.method.group': 'Kurulum yöntemi',
   'setup.ai.title': 'Docket AI ile kur',

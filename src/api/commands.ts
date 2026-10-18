@@ -209,6 +209,8 @@ export type CommandResult =
       readonly pr?: { readonly number: number; readonly url: string };
       /** Warning count of non-done work orders whose pre-clamp level exceeds the ceiling (A-406). */
       readonly ordersAbove?: number;
+      /** Rides only `setup.apply`: false when repos/<slug>/repo.yaml already existed and nothing was written. */
+      readonly wroteRepoYaml?: boolean;
     }
   /** `validModelIds` rides only `unknown_model` (A-389): the catalog ids valid for that account's route.
    *  `roles` rides only `binding_exists`: the roles whose bindings still reference the account.
