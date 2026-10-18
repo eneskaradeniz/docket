@@ -317,6 +317,13 @@ function DeployCard({
   );
 }
 
+/** The readable heading of a tool Docket itself serves, so the card never shows its raw wire name;
+ *  every other tool keeps the exact name the agent asked with. */
+const permissionToolTitle = (locale: Locale, tool: string): string =>
+  tool === 'submit_verdict' || tool === 'mcp__docket-pages__submit_verdict'
+    ? t(locale, 'detail.zone.tool.submitVerdict')
+    : tool;
+
 /** The permission card: the tool asked for, its exact command or path in the code box, the two answers, and
  *  the asking run's already-allowed asks folded into one line. */
 function PermissionCard({
@@ -335,7 +342,7 @@ function PermissionCard({
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <span className={LABEL_CLASS}>{t(locale, 'detail.zone.permissionChip')}</span>
         <span className="inline-flex min-w-0 items-center rounded-control border border-bord px-2 py-px font-mono text-[0.75rem] font-bold text-ink [overflow-wrap:anywhere]">
-          {ask.tool}
+          {permissionToolTitle(locale, ask.tool)}
         </span>
       </div>
       {ask.target !== null ? (

@@ -133,6 +133,7 @@ export const LABEL_KEYS = [
   'detail.zone.attestBody',
   'detail.zone.permissionChip',
   'detail.zone.permissionBody',
+  'detail.zone.tool.submitVerdict',
   'detail.zone.autoAllowed',
   'detail.zone.rejectOpen',
   'detail.zone.rejectNoteLabel',
@@ -1796,6 +1797,10 @@ export const LABEL_KEYS = [
   'autonomy.autoDisabledReason.invalid_autonomy_level',
   'autonomy.autoDisabledReason.user_only',
   'autonomy.autoDisabledReason.unknown',
+  'autonomy.why.auto_requires_spend_cap',
+  'autonomy.why.auto_requires_max_attempts',
+  'autonomy.why.above_ceiling',
+  'autonomy.why.default',
   // The suggestion banner and library tag (U-335, D-10 chain b).
   'autonomy.suggestion.banner',
   'autonomy.suggestion.confirm',
