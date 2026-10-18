@@ -81,6 +81,20 @@ describe('AutonomyControl', () => {
     }
   });
 
+  it('#1283: a manual level says why — the missing spend cap, the missing attempt bound, the ceiling, or the untouched default', () => {
+    const cap = render({ level: 'manual', source: 'builtin', autoUnavailable: 'auto_requires_spend_cap' });
+    expect(cap).toContain(TR['autonomy.why.auto_requires_spend_cap']);
+    expect(cap).toContain('data-autonomy-why');
+    expect(render({ level: 'manual', source: 'repo', autoUnavailable: 'auto_requires_max_attempts' })).toContain(TR['autonomy.why.auto_requires_max_attempts']);
+    expect(render({ level: 'manual', source: 'ceiling', autoUnavailable: 'above_ceiling' })).toContain(TR['autonomy.why.above_ceiling']);
+    // Nothing set anywhere and nothing refusing: the built-in default is the reason.
+    expect(render({ level: 'manual', source: 'builtin' })).toContain(TR['autonomy.why.default']);
+    expect(render({ level: 'manual', source: 'builtin' }, 'en')).toContain(EN['autonomy.why.default']);
+    // A chosen manual (no refusal, not the built-in) and an automatic level need no explanation.
+    expect(render({ level: 'manual', source: 'workOrder', layerSet: true })).not.toContain('data-autonomy-why');
+    expect(render({ level: 'auto', source: 'workOrder', layerSet: true })).not.toContain('data-autonomy-why');
+  });
+
   it('U-334: the clear-layer affordance appears only when the layer itself is set', () => {
     expect(render({ level: 'manual', source: 'workOrder', layerSet: true })).toContain(TR['autonomy.clear']);
     expect(render({ level: 'manual', source: 'repo', layerSet: false })).not.toContain(TR['autonomy.clear']);

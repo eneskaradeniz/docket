@@ -395,6 +395,21 @@ describe('work-order detail screen — the decision zone (U-4, U-226)', () => {
     expect(html).toContain('1 izin verildi');
   });
 
+  it('#1283: the permission card names the verdict tool in words, never by its raw tool name', async () => {
+    const ask = { ...ASK_ROW };
+    const html = await draw(
+      ASKING,
+      [ask],
+      null,
+      [],
+      [{ type: 'permission_ask', at: 0, id: 'ask-1', tool: 'mcp__docket-pages__submit_verdict', options: ['allow', 'deny'] }],
+    );
+
+    const card = html.slice(html.indexOf('data-decision-card="permission"'), html.indexOf('</li>', html.indexOf('data-decision-card="permission"')));
+    expect(card).toContain('Docket: inceleme kararı');
+    expect(card).not.toContain('submit_verdict');
+  });
+
   it('U-226: the failed standing quotes the run\'s own last words and offers the retry', async () => {
     const failed: WorkOrderDetailView = {
       ...READY,
