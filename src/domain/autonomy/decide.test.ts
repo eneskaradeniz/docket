@@ -76,4 +76,19 @@ describe('decidePermission', () => {
     expect(ask).toEqual({ kind: 'tool', tool: 'Read', arguments: { file_path: '/wt/src/a.ts' } });
     expect(context).toEqual({ worktreeRoot: '/wt', cwd: '/wt', verificationCommands: ['npm test'] });
   });
+
+  it('R-184: a run-config ask is denied by policy at every level, never asked of a human', () => {
+    const ask: RiskAsk = { kind: 'tool', tool: 'Read', arguments: { file_path: '/data/runs/r/config/token' } };
+    const context: RiskContext = { ...CONTEXT, dataDir: '/data' };
+    for (const level of AUTONOMY_LEVELS) {
+      expect(decidePermission({ level, ask, context })).toEqual({
+        kind: 'deny-by-policy',
+        policy: PERMISSION_RULES_POLICY,
+        level,
+        rule: 'deny-run-config',
+      });
+    }
+    // Without the data dir the ask is judged as before.
+    expect(decidePermission({ level: 'auto', ask, context: CONTEXT })).toEqual({ kind: 'ask-human' });
+  });
 });

@@ -2844,7 +2844,50 @@ const writeAsk = (id: string, target: string, tool: 'Write' | 'Edit' = 'Edit'): 
 });
 
 /** The worktree the fake worktrees port hands the executor once marked existing. */
+const readAsk = (id: string, target: string): AgentEvent => ({
+  type: 'permission_ask',
+  at: at(3),
+  id,
+  tool: 'Read',
+  target,
+  options: ['allow', 'deny'],
+});
+
+const globAsk = (id: string, target: string): AgentEvent => ({
+  type: 'permission_ask',
+  at: at(3),
+  id,
+  tool: 'Glob',
+  target,
+  options: ['allow', 'deny'],
+});
+
 const FAKE_WORKTREE = `/fake/worktrees/${REPO}/${WORK_ORDER}`;
+
+describe('executeRun — the run config deny', () => {
+  it('A-424: a read of <data>/runs/<id>/config is denied by policy at every level, never reaches the human gate, and a search tool is covered too', async () => {
+    for (const level of ['manual', 'auto'] as const) {
+      const h = await harness({
+        script: [
+          readAsk('ask-1', '/fake-data/runs/r1/config/.agents/.docket-ask.json'),
+          globAsk('ask-2', '/fake-data/runs/*/config/**'),
+          bashAsk('ask-3', 'rm -rf build'),
+          finished('completed'),
+        ],
+        defsJson: VERIFY_DEFS_JSON,
+      });
+      await h.deps.settings.set(AUTONOMY_KEY, level);
+      const gate = permissionGate('allow');
+
+      await executeRun(h.deps, gate.permissions, INPUT);
+
+      expect(gate.asked.map((entry) => entry.ask.id)).toEqual(['ask-3']);
+      expect(h.transport.answers().map((answer) => answer.decision)).toEqual(['deny', 'deny', 'allow']);
+      expect(permissionAudits(h.log)[0]?.detail).toEqual({ tool: 'Read', decision: 'deny', reason: 'deny-run-config' });
+      expect(permissionAudits(h.log)[0]?.actor).toMatchObject({ kind: 'policy', level });
+    }
+  });
+});
 
 describe('executeRun — the write-scope guard', () => {
   it('A-409: a write certainly outside the role scope is denied before the ask — the gate never sees it, the denial is written, delivered and audited, and the run continues', async () => {

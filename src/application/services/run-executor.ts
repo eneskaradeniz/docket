@@ -123,7 +123,11 @@ const riskAskOf = (event: PermissionAskEvent): RiskAsk | undefined => {
  *  run's working directory, and the exact command strings the stage's command gates run — the
  *  same definitions load the gate runner reads, because the string Docket itself runs is the
  *  licence. A fact that cannot be read stays absent, which the rows answer on the human side. */
-const riskContextOf = async (deps: ExecuteDeps, input: ExecuteRunInput): Promise<RiskContext> => {
+const riskContextOf = async (
+  deps: ExecuteDeps,
+  input: ExecuteRunInput,
+  dataDir: string | undefined,
+): Promise<RiskContext> => {
   const worktree = await deps.worktrees.existing(input.item.repo, input.item.workOrderId);
   const record = await deps.workOrders.get(input.item.workOrderId);
   const loaded = record === undefined ? undefined : await deps.definitions.load(input.item.repo);
@@ -138,9 +142,17 @@ const riskContextOf = async (deps: ExecuteDeps, input: ExecuteRunInput): Promise
   );
   return {
     ...(worktree !== undefined ? { worktreeRoot: worktree.path } : {}),
+    ...(dataDir !== undefined ? { dataDir } : {}),
     cwd: input.cwd,
     verificationCommands,
   };
+};
+
+/** The Docket data directory, read off the run directory the run-dir port made (`<data>/runs/<id>`);
+ *  a path of any other shape leaves it unknown, which skips the run-config deny row. */
+const dataDirOf = (runDirPath: string): string | undefined => {
+  const match = /^(.+)\/runs\/[^/]+\/*$/.exec(runDirPath);
+  return match?.[1];
 };
 
 /** The axis-1 decision for one ask: the level is re-resolved per ask (R-170 — a level change
@@ -150,11 +162,22 @@ const decideAsk = async (
   deps: ExecuteDeps,
   input: ExecuteRunInput,
   event: PermissionAskEvent,
+  dataDir: string | undefined,
 ): Promise<PermissionDecision> => {
   const autonomy = await effectiveAutonomy(deps, {
     workOrder: input.item.workOrderId,
     stage: input.item.stage,
   });
+  // A search tool's one string may be its root or its pattern, so it never maps to an allow; the
+  // run-config deny reads both keys, and only a deny from this probe is honoured.
+  if ((event.tool === 'Grep' || event.tool === 'Glob') && event.target !== undefined) {
+    const probe = decidePermission({
+      level: autonomy.ok ? autonomy.value.level : 'manual',
+      ask: { kind: 'tool', tool: event.tool, arguments: { path: event.target, pattern: event.target } },
+      context: await riskContextOf(deps, input, dataDir),
+    });
+    if (probe.kind === 'deny-by-policy') return probe;
+  }
   if (!autonomy.ok) return { kind: 'ask-human' };
   const ask = riskAskOf(event);
   if (ask === undefined) return { kind: 'ask-human' };
@@ -162,7 +185,7 @@ const decideAsk = async (
   return decidePermission({
     level: autonomy.value.level,
     ask,
-    context: await riskContextOf(deps, input),
+    context: await riskContextOf(deps, input, dataDir),
     ...(action !== undefined ? { action } : {}),
   });
 };
@@ -957,7 +980,33 @@ async function driveRun(
         // The permission policy reads the chain per ask: only a low ask under a resolved auto
         // level is answered here, everything else parks on the human gate exactly as before. The
         // policy allow answers the transport's one-time option only (P-16) — never a standing one.
-        const decision = await decideAsk(deps, input, event);
+        const decision = await decideAsk(deps, input, event, dataDirOf(runDir.path));
+        if (decision.kind === 'deny-by-policy') {
+          // The run-config row: level-independent, never shown to a human, a tool answer rather
+          // than a run failure. The audit names the rule, and says so when the row could not run.
+          notify?.(runId);
+          const denied: AgentEvent = { type: 'permission_answered', at: deps.clock.now(), id: event.id, decision: 'deny' };
+          streamed.push(denied);
+          await deps.runs.appendEvents(runId, [denied]);
+          notify?.(runId);
+          handle.answerPermission(event.id, 'deny');
+          await audit(deps, {
+            at: deps.clock.now(),
+            action: 'permission.answered',
+            runId,
+            detail: { tool: event.tool, decision: 'deny', reason: decision.rule },
+            actor: { kind: 'policy' as const, policy: decision.policy, level: decision.level },
+          });
+          board?.recordAutoDecision({
+            runId,
+            askId: event.id,
+            tool: event.tool,
+            at: deps.clock.now(),
+            policy: decision.policy,
+            level: decision.level,
+          });
+          break;
+        }
         // The gate parks the ask on the board synchronously, so the announcement right after it
         // already finds the ask listed; the policy allow never reaches the board.
         let answer: 'allow' | 'deny' = 'allow';
@@ -980,7 +1029,11 @@ async function driveRun(
           at: deps.clock.now(),
           action: 'permission.answered',
           runId,
-          detail: { tool: event.tool, decision: answer },
+          detail: {
+            tool: event.tool,
+            decision: answer,
+            ...(dataDirOf(runDir.path) === undefined ? { runConfigRule: 'skipped_no_data_dir' } : {}),
+          },
           ...(decision.kind === 'allow-by-policy'
             ? { actor: { kind: 'policy' as const, policy: decision.policy, level: decision.level } }
             : {}),
