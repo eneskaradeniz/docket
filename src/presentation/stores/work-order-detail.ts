@@ -530,6 +530,10 @@ export type DecisionCard =
   | { readonly kind: 'approve'; readonly gate: GateView }
   | { readonly kind: 'attest'; readonly gate: GateView }
   | { readonly kind: 'deploy'; readonly gate: GateView }
+  /** The honest card of a `gating` stage: nothing here is the operator's to answer — the pending
+   *  machine-evaluated gates are listed, and `verdictOrphaned` says no run is live while an
+   *  agent-verdict gate still waits (the reviewer ended without deciding). */
+  | { readonly kind: 'gating'; readonly gates: readonly GateView[]; readonly verdictOrphaned: boolean }
   | { readonly kind: 'permission'; readonly ask: WorkOrderAskView }
   | { readonly kind: 'start'; readonly stageName: string }
   | { readonly kind: 'failed'; readonly retry: boolean }
@@ -590,11 +594,25 @@ export const decisionZone = (
   if (view.state.status === 'gating' || view.state.status === 'awaiting_human') {
     const current = stages.find((stage) => stage.current);
     const cards: DecisionCard[] = [];
+    const settling: GateView[] = [];
+    let humanHeldBack = false;
     for (const gate of current?.gates ?? []) {
       if (gate.status !== 'pending') continue;
-      if (isHumanDecision(gate)) cards.push({ kind: 'approve', gate });
-      else if (gate.kind === 'changes') cards.push({ kind: 'attest', gate });
+      // `decideHumanGate` only answers an `awaiting_human` stage: while machine gates are still
+      // pending (`gating`) a human gate is not yet the operator's to decide.
+      if (isHumanDecision(gate)) {
+        if (view.state.status === 'awaiting_human') cards.push({ kind: 'approve', gate });
+        else humanHeldBack = true;
+      } else if (gate.kind === 'changes') cards.push({ kind: 'attest', gate });
       else if (gate.kind === 'deploy') cards.push({ kind: 'deploy', gate });
+      else settling.push(gate);
+    }
+    // A stage whose machine gates simply run stays quiet; the card speaks when a human gate waits
+    // behind them or the agent verdict has no run left to deliver it.
+    const verdictOrphaned =
+      newestActiveRun(view) === undefined && settling.some((gate) => gate.kind === 'agent_verdict');
+    if (view.state.status === 'gating' && settling.length > 0 && (humanHeldBack || verdictOrphaned)) {
+      cards.unshift({ kind: 'gating', gates: settling, verdictOrphaned });
     }
     return cards.length > 0 ? { kind: 'cards', cards } : { kind: 'quiet', done: false };
   }

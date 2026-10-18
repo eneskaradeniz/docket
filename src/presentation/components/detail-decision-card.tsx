@@ -69,6 +69,49 @@ export interface DecisionZoneProps {
 
 const gateName = (gate: GateView): string => gate.label ?? gate.id;
 
+export const GATE_KIND_KEY: Readonly<Record<GateView['kind'], LabelKey>> = {
+  human: 'gate.kind.human',
+  command: 'gate.kind.command',
+  changes: 'gate.kind.changes',
+  agent_verdict: 'gate.kind.agent_verdict',
+  secret_scan: 'gate.kind.secret_scan',
+  page_approval: 'gate.kind.page_approval',
+  deploy: 'gate.kind.deploy',
+  remote_checks: 'gate.kind.remote_checks',
+};
+
+/** The honest card of a `gating` stage: nothing here awaits the operator, so it carries no
+ *  action — only the pending gates by name and kind, and the stuck-verdict line when no run is
+ *  left to deliver the agent's decision. */
+function GatingCard({
+  gates,
+  verdictOrphaned,
+  locale,
+}: {
+  readonly gates: readonly GateView[];
+  readonly verdictOrphaned: boolean;
+  readonly locale: Locale;
+}) {
+  return (
+    <li data-decision-card="gating" className="grid min-w-0 gap-3 rounded-card border border-hairline bg-surface px-5 py-4">
+      <h3 className="text-[0.875rem] font-semibold text-ink">{t(locale, 'detail.zone.gatingTitle')}</h3>
+      <p className="m-0 text-[0.8125rem] text-inkdim">{t(locale, 'detail.zone.gatingBody')}</p>
+      <ul className="m-0 grid list-none gap-1 p-0 text-[0.8125rem] text-ink">
+        {gates.map((gate) => (
+          <li key={gate.id} data-gating-gate={gate.id}>
+            {gateName(gate)} <span className="text-inkdim">· {t(locale, GATE_KIND_KEY[gate.kind])}</span>
+          </li>
+        ))}
+      </ul>
+      {verdictOrphaned ? (
+        <p data-gating-orphaned className="m-0 text-[0.8125rem] font-semibold text-ink">
+          {t(locale, 'detail.zone.gatingVerdictOrphaned')}
+        </p>
+      ) : null}
+    </li>
+  );
+}
+
 /** The approve card: what is being approved, said out loud, and the two ways to answer. */
 function ApproveCard({
   gate,
@@ -768,6 +811,8 @@ export function DecisionZoneCards(props: DecisionZoneProps) {
                 return <AttestCard key={`attest:${card.gate.id}`} gate={card.gate} locale={locale} onAttest={props.onAttest} />;
               case 'deploy':
                 return <DeployCard key={`deploy:${card.gate.id}`} gate={card.gate} locale={locale} onDeployApprove={props.onDeployApprove} />;
+              case 'gating':
+                return <GatingCard key="gating" gates={card.gates} verdictOrphaned={card.verdictOrphaned} locale={locale} />;
               case 'permission':
                 return (
                   <PermissionCard key={`permission:${card.ask.askId}`} ask={card.ask} locale={locale} autoAllowed={props.autoAllowed} onAnswer={props.onAnswer} />
