@@ -192,6 +192,7 @@ const fakeApi = (
   runEvents: unknown = null,
   usage: unknown = BASE_USAGE,
   gitBase: unknown = null,
+  localBase: unknown = null,
 ): Pick<Api, 'query' | 'command'> => ({
   query: (query: Query) => {
     if (query.type === 'pages.list') return Promise.resolve(pages);
@@ -200,6 +201,7 @@ const fakeApi = (
     if (query.type === 'run.events') return Promise.resolve(runEvents);
     if (query.type === 'usage.summary') return Promise.resolve(usage);
     if (query.type === 'workOrder.gitBase') return Promise.resolve(gitBase);
+    if (query.type === 'workOrder.localBase') return Promise.resolve(localBase);
     return Promise.resolve(reply);
   },
   command: (_actor: Actor, _command: Command): Promise<CommandResult> =>
@@ -225,8 +227,9 @@ const draw = async (
   usage: unknown = BASE_USAGE,
   gitBase: unknown = null,
   locale: 'tr' | 'en' = 'tr',
+  localBase: unknown = null,
 ): Promise<string> => {
-  const api = fakeApi(view, asks, changes, pages, runEvents, usage, gitBase);
+  const api = fakeApi(view, asks, changes, pages, runEvents, usage, gitBase, localBase);
   const store = createWorkOrderDetailStore({
     api,
     changes: () => () => {},
@@ -1150,6 +1153,64 @@ describe('work-order detail screen — the git doors (U-344 … U-349)', () => {
     expect(html).toContain('Önce dalı gönderin.');
     expect(html).toContain('Açık PR yok.');
     expect(html).toContain('PR birleştirilmedi.');
+  });
+
+  it('U-358: a forge-less repo offers Ana dala al… with a base; a forge or an unread base does not open it', async () => {
+    const NO_FORGE = { ok: false, code: 'forge_unavailable' };
+    const open = await draw(READY, [], { ...WORKTREE, files: [{ path: 'src/a.ts', added: 1, removed: 0, binary: false }] }, [], null, BASE_USAGE, NO_FORGE, 'tr', { ok: true, base: 'main' });
+    const rowAt = open.indexOf('data-git-door="mergeLocal"');
+    expect(rowAt).toBeGreaterThan(-1);
+    const row = open.slice(rowAt, open.indexOf('</li>', rowAt));
+    expect(row).toContain('Ana dala al…');
+    expect(row).not.toContain('disabled=""');
+    const forge = await draw(READY, [], { ...WORKTREE, files: [{ path: 'src/a.ts', added: 1, removed: 0, binary: false }] }, [], null, BASE_USAGE, { ok: true, base: 'main' }, 'tr', { ok: true, base: 'main' });
+    expect(forge).not.toContain('data-git-door="mergeLocal"');
+    const en = await draw(READY, [], { ...WORKTREE, files: [{ path: 'src/a.ts', added: 1, removed: 0, binary: false }] }, [], null, BASE_USAGE, NO_FORGE, 'en', { ok: true, base: 'main' });
+    expect(en).toContain('Merge into base…');
+  });
+
+  it('U-358: after the local merge the card says Ana dala alındı with the base and Dalı sil is open', async () => {
+    const merged: WorkOrderDetailView = { ...READY, git: { mergedLocal: { base: 'main', at: 9 } } };
+    const html = await draw(merged, [], WORKTREE, [], null, BASE_USAGE, { ok: false, code: 'forge_unavailable' }, 'tr', { ok: true, base: 'main' });
+    const cardAt = html.indexOf('data-decision-card="git"');
+    expect(cardAt).toBeGreaterThan(-1);
+    const card = html.slice(cardAt, html.indexOf('</section>', cardAt));
+    expect(card).toContain('Ana dala alındı');
+    expect(card).toContain('main');
+    expect(card).not.toContain('data-git-door="mergeLocal"');
+    const releaseAt = card.indexOf('data-git-door="release"');
+    expect(card.slice(releaseAt, card.indexOf('</li>', releaseAt))).not.toContain('disabled=""');
+  });
+
+  it('U-358: the confirm names the branch and the base, Vazgeç is the first stop, the command carries the captured base', async () => {
+    await draw(READY, [], WORKTREE);
+    const card = source('detail-decision-card.tsx');
+    expect(card).toContain('data-detail-git-merge-local');
+    const dialogAt = card.indexOf('data-detail-git-merge-local');
+    const dialog = card.slice(dialogAt, dialogAt + 2400);
+    const cancelAt = dialog.indexOf("t(locale, 'detail.action.cancel')");
+    const confirmAt = dialog.indexOf("t(locale, 'detail.git.mergeLocal.confirm')");
+    expect(cancelAt).toBeGreaterThan(-1);
+    expect(confirmAt).toBeGreaterThan(cancelAt);
+    expect(dialog).not.toContain('autoFocus');
+    expect(dialog).toContain('mergeLocalTarget.branch');
+    expect(dialog).toContain('mergeLocalTarget.base');
+    expect(card).toContain('void props.onMergeLocal(target.base);');
+  });
+
+  it('U-358: the copy lives in both bundles — never inline in the card', () => {
+    const tr = source('tr.ts');
+    const en = source('en.ts');
+    for (const key of [
+      'detail.git.mergeLocal', 'detail.git.mergeLocal.title', 'detail.git.mergeLocal.body',
+      'detail.git.mergeLocal.confirm', 'detail.git.mergeLocal.success', 'detail.git.mergeLocal.noBase',
+      'detail.git.mergedLocal', 'error.dirty_checkout', 'error.base_not_checked_out', 'error.conflict',
+      'error.already_merged', 'error.forge_configured',
+    ]) {
+      expect(tr, `tr:${key}`).toContain(`'${key}'`);
+      expect(en, `en:${key}`).toContain(`'${key}'`);
+    }
+    expect(source('detail-decision-card.tsx')).not.toContain('Ana dala');
   });
 
   it('#1277: no doors while the branch has nothing to ship — an empty worktree shows no git card', async () => {

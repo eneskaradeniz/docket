@@ -246,6 +246,7 @@ const step = (flow: FlowDef, acc: Acc, event: WorkOrderEvent): Acc => {
     case 'pr_opened':
     case 'pr_merged':
     case 'branch_released':
+    case 'branch_merged_local':
       // R-160 … R-164: the git lifecycle lives beside the machine state the same way.
       return acc;
     case 'closed':

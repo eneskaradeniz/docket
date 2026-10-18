@@ -2650,6 +2650,55 @@ describe('createApi', () => {
         ['pr.merged', ACTOR],
       ]);
     });
+
+    it('A-425: mergeLocal through the api merges in the checkout, records the event, announces the change and offers the release', async () => {
+      const h = await gitHarness();
+      await seedWorkOrder(h);
+      const api = gitApi(h, undefined);
+      const seen: UiEvent[] = [];
+      api.subscribe((event) => seen.push(event));
+
+      expect(await api.command(ACTOR, { type: 'workOrder.mergeLocal', id: WORK_ORDER_ID, base: 'main' })).toEqual({ ok: true });
+
+      expect(h.log.entries()).toEqual([
+        expect.objectContaining({
+          action: 'branch.merged_local',
+          actor: ACTOR,
+          detail: { branch: `docket/wo-${WORK_ORDER_ID.toLowerCase()}`, base: 'main' },
+        }),
+      ]);
+      expect(seen).toContainEqual({ type: 'workOrders.changed' });
+      const detail = await api.query({ type: 'workOrder.detail', id: WORK_ORDER_ID });
+      expect(detail).toMatchObject({ git: { mergedLocal: { base: 'main' } } });
+      expect(await api.command(ACTOR, { type: 'workOrder.releaseBranch', id: WORK_ORDER_ID })).toEqual({ ok: true });
+    });
+
+    it('A-425: mergeLocal answers the typed refusals — invalid_id, not_found, forge_configured, conflict — and a refusal before git writes nothing', async () => {
+      const h = await gitHarness();
+      await seedWorkOrder(h);
+      const withForge = gitApi(h, createFakeForge());
+      expect(await withForge.command(ACTOR, { type: 'workOrder.mergeLocal', id: WORK_ORDER_ID, base: 'main' })).toEqual({ ok: false, code: 'forge_configured' });
+      expect(h.log.entries()).toEqual([]);
+
+      const api = gitApi(h, undefined);
+      expect(await api.command(ACTOR, { type: 'workOrder.mergeLocal', id: 'nope', base: 'main' })).toEqual({ ok: false, code: 'invalid_id' });
+      expect(await api.command(ACTOR, { type: 'workOrder.mergeLocal', id: '01ARZ3NDEKTSV4RRFFQ69G5FB9', base: 'main' })).toEqual({ ok: false, code: 'not_found' });
+      expect(await api.command(ACTOR, { type: 'workOrder.mergeLocal', id: WORK_ORDER_ID, base: ' ' })).toEqual({ ok: false, code: 'bad_input' });
+      h.worktrees.scriptMergeLocal(slugOf<'repo'>(REPO), ulidOf<'work-order'>(WORK_ORDER_ID), 'conflict');
+      expect(await api.command(ACTOR, { type: 'workOrder.mergeLocal', id: WORK_ORDER_ID, base: 'main' })).toEqual({ ok: false, code: 'conflict' });
+      expect(h.log.entries()).toHaveLength(1); // only the conflicted attempt's audit
+    });
+
+    it('A-426: workOrder.localBase reads the checked-out branch for a forge-less repo and is a pure read', async () => {
+      const h = await gitHarness();
+      await seedWorkOrder(h);
+      h.worktrees.setCheckedOut(slugOf<'repo'>(REPO), 'trunk');
+
+      expect(await gitApi(h, undefined).query({ type: 'workOrder.localBase', id: WORK_ORDER_ID })).toEqual({ ok: true, base: 'trunk' });
+      expect(await gitApi(h, createFakeForge()).query({ type: 'workOrder.localBase', id: WORK_ORDER_ID })).toEqual({ ok: false, code: 'forge_configured' });
+      expect(await gitApi(h, undefined).query({ type: 'workOrder.localBase', id: 'nope' })).toEqual({ ok: false, code: 'invalid_id' });
+      expect(h.log.entries()).toEqual([]);
+    });
   });
 
   // --- the git base read (GI-4a, A-390, A-391) --------------------------------------------------------

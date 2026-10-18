@@ -1,5 +1,5 @@
-// flow/git-lifecycle.ts — the git lifecycle fold (R-160 … R-164). The work order's branch, pull
-// request and release marks derive from the four git ledger events exactly the way skippedStages
+// flow/git-lifecycle.ts — the git lifecycle fold (R-160 … R-164, R-185). The work order's branch, pull
+// request and release marks derive from the git ledger events exactly the way skippedStages
 // derive from the R-133 pair: an event in an order the rules forbid is silently ignored, never an
 // error and never an invented state — the writer that appended it is where the refusal belonged.
 import type { EpochMs, WorkOrderId } from '../shared';
@@ -19,9 +19,15 @@ export interface GitPrState {
   readonly merged: boolean;
 }
 
+export interface GitLocalMergeState {
+  readonly base: string;
+  readonly at: EpochMs;
+}
+
 export interface GitLifecycleState {
   readonly branch?: GitBranchState;
   readonly pr?: GitPrState;
+  readonly mergedLocal?: GitLocalMergeState;
   readonly released?: true;
 }
 
@@ -32,6 +38,7 @@ export const workOrderBranch = (id: WorkOrderId): string => `docket/wo-${id.toLo
 export function deriveGitLifecycle(events: readonly WorkOrderEvent[]): GitLifecycleState {
   let branch: GitBranchState | undefined;
   let pr: GitPrState | undefined;
+  let mergedLocal: GitLocalMergeState | undefined;
   let released = false;
   for (const event of events) {
     if (released) {
@@ -53,15 +60,20 @@ export function deriveGitLifecycle(events: readonly WorkOrderEvent[]): GitLifecy
         // R-162: only the open PR's own number merges, and only while it is open.
         if (pr !== undefined && !pr.merged && event.number === pr.number) pr = { ...pr, merged: true };
         break;
+      case 'branch_merged_local':
+        // R-185: a forge-less merge — never over a pull request, and the first one stands.
+        if (pr === undefined && mergedLocal === undefined) mergedLocal = { base: event.base, at: event.at };
+        break;
       case 'branch_released':
-        // R-163: the release lands only on a merged PR.
-        if (pr !== undefined && pr.merged) released = true;
+        // R-163: the release lands on a merged PR; R-185: or on a local merge.
+        if ((pr !== undefined && pr.merged) || mergedLocal !== undefined) released = true;
         break;
     }
   }
   return {
     ...(branch === undefined ? {} : { branch }),
     ...(pr === undefined ? {} : { pr }),
+    ...(mergedLocal === undefined ? {} : { mergedLocal }),
     ...(released ? { released: true as const } : {}),
   };
 }

@@ -63,10 +63,12 @@ export type WorkOrderEvent =
   | { readonly type: 'start_refused'; readonly at: EpochMs; readonly stage: StageSlug; readonly reason: StartRefusalCode }
   | { readonly type: 'stage_skip_proposed'; readonly at: EpochMs; readonly stages: readonly StageSlug[]; readonly reason: string }
   | { readonly type: 'stage_skip_decided'; readonly at: EpochMs; readonly approved: boolean }
-  // The git lifecycle pair the operator's actions append (R-160 … R-164). They never move the
+  // The git lifecycle events the operator's actions append (R-160 … R-164). They never move the
   // machine fold; deriveGitLifecycle walks them beside it.
   | { readonly type: 'branch_pushed'; readonly at: EpochMs; readonly branch: string; readonly head: string }
   | { readonly type: 'pr_opened'; readonly at: EpochMs; readonly number: number; readonly url: string; readonly head: string; readonly base: string }
   | { readonly type: 'pr_merged'; readonly at: EpochMs; readonly number: number }
   | { readonly type: 'branch_released'; readonly at: EpochMs }
+  // The forge-less merge (R-185): the work order's branch merged into the repo's checked-out base.
+  | { readonly type: 'branch_merged_local'; readonly at: EpochMs; readonly branch: string; readonly base: string }
   | { readonly type: 'closed'; readonly at: EpochMs; readonly by: Actor };

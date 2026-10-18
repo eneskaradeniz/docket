@@ -28,7 +28,7 @@ export type AuditAction =
   | 'action.proposed' | 'action.applied' | 'action.rejected' | 'action.failed' | 'action.undone' | 'grant.created' | 'grant.revoked'
   | 'library.version_created' | 'library.definition_archived' | 'library.definition_deleted'
   | 'repo.relinked' | 'repo.flow_saved' | 'project.exported' | 'project.imported'
-  | 'git.pushed' | 'pr.opened' | 'pr.merged' | 'branch.deleted'
+  | 'git.pushed' | 'pr.opened' | 'pr.merged' | 'branch.merged_local' | 'branch.deleted'
   | 'work_order.autonomy_changed' | 'repo.autonomy_changed' | 'project.autonomy_changed' | 'settings.autonomy_changed';
 
 export type AuditSubject =

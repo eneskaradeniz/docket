@@ -38,6 +38,7 @@ export type Command =
   | { readonly type: 'workOrder.push'; readonly id: string } // errors: not_found, no_repo, forge_unavailable, forge_error (A-371)
   | { readonly type: 'workOrder.openPr'; readonly id: string; readonly base: string; readonly title?: string } // ok → { pr } (A-372); errors: bad_input, not_pushed, pr_exists (answers the stored ref), forge_error
   | { readonly type: 'workOrder.mergePr'; readonly id: string; readonly number: number } // errors: not_found (also a stale number — the explicit-approval pin), forge_error (A-373)
+  | { readonly type: 'workOrder.mergeLocal'; readonly id: string; readonly base: string } // forge-less repos only; `base` is the branch the operator saw checked out (the approval pin) — errors: bad_input, forge_configured, already_merged, no_repo, no_branch, dirty_checkout, base_not_checked_out, conflict (merge aborted, tree clean), git_failed (A-425)
   | { readonly type: 'workOrder.releaseBranch'; readonly id: string } // errors: branch_not_merged, no_repo, git_failed (A-374)
   | { readonly type: 'gate.decide'; readonly workOrderId: string; readonly gate: string; readonly decision: 'approved' | 'rejected'; readonly note?: string }
   | { readonly type: 'gate.attest'; readonly workOrderId: string; readonly gate: string; readonly noChangeNeeded: boolean } // answers when the changes gate's attestation is recorded

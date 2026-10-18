@@ -56,6 +56,7 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
       'id: WorkOrderId, base: string (trimmed, 1…255 chars), title?: string (trimmed, ≤ 255) — ok → { pr }; errors: bad_input, not_pushed, pr_exists (answers the stored ref), forge_error (A-372, A-377)',
   },
   'workOrder.mergePr': { input: 'id: WorkOrderId, number: number (the PR the operator saw) — errors: not_found (also a stale number), forge_error (A-373)' },
+  'workOrder.mergeLocal': { input: 'id: WorkOrderId, base: string (the checked-out branch the operator saw) — errors: bad_input, forge_configured, already_merged, no_repo, no_branch, dirty_checkout, base_not_checked_out, conflict, git_failed (A-425)' },
   'workOrder.releaseBranch': { input: 'id: WorkOrderId — errors: branch_not_merged, no_repo, git_failed (A-374)' },
   'gate.decide': { input: 'workOrderId: WorkOrderId, gate: GateSlug, decision: approved|rejected, note?: string' },
   'gate.attest': { input: 'workOrderId: WorkOrderId, gate: GateSlug, noChangeNeeded: boolean' },
@@ -126,6 +127,7 @@ export const COMMAND_REGISTRY: Record<Command['type'], RegistryEntry> = {
 export const QUERY_REGISTRY: Record<Query['type'], RegistryEntry> = {
   'workOrder.detail': { input: 'id: WorkOrderId' },
   'workOrder.changes': { input: 'workOrder: WorkOrderId' },
+  'workOrder.localBase': { input: 'id: WorkOrderId — errors: not_found, forge_configured, no_repo, base_not_checked_out (A-426)' },
   'workOrder.gitBase': { input: 'id: WorkOrderId — errors: not_found, forge_unavailable, forge_error (A-391)' },
   'repoStatus': { input: 'no input' },
   'repo.flow': { input: 'repo: RepoSlug' },

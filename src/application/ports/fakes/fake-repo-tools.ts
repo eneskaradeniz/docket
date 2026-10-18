@@ -1,7 +1,7 @@
 // In-memory machine-side ports — scripted commands, scans, evidence and worktrees.
 import { redactSecretShapes, type Result, type RepoSlug, type WorkOrderId } from '../../../domain/index';
 
-import type { CommandResult, CommandRunner, EvidenceChecker, SecretScanner, Worktrees } from '../repo-tools';
+import type { CommandResult, CommandRunner, EvidenceChecker, LocalMergeError, SecretScanner, Worktrees } from '../repo-tools';
 
 export interface FakeCommandRunner extends CommandRunner {
   /** Scripts the result for an exact command string; same-command scripts are consumed in order. */
@@ -41,6 +41,12 @@ export interface FakeWorktrees extends Worktrees {
   setBranchHead(repo: RepoSlug, workOrderId: WorkOrderId, head: string): void;
   /** Scripts release outcomes for that work order, consumed in order. */
   scriptRelease(repo: RepoSlug, workOrderId: WorkOrderId, outcome: 'released' | 'branch_not_merged' | 'no_repo' | 'git_failed'): void;
+  /** Sets the branch `checkedOutBranch` answers for that repo (default `main`); `undefined` = detached. */
+  setCheckedOut(repo: RepoSlug, branch: string | undefined): void;
+  /** Scripts the next `mergeLocal` outcome for that work order; unscripted merges succeed. */
+  scriptMergeLocal(repo: RepoSlug, workOrderId: WorkOrderId, outcome: LocalMergeError): void;
+  /** The `mergeLocal` calls made, in order. */
+  mergeLocalCalls(): readonly { readonly repo: RepoSlug; readonly workOrderId: WorkOrderId; readonly base: string }[];
 }
 
 /** Must match `MEMORY_PROPOSAL_SCAN_PREFIX` in `services/docket-tools.ts` (A-356). */
@@ -128,6 +134,9 @@ export const createFakeWorktrees = (): FakeWorktrees => {
   const withoutRepo = new Set<RepoSlug>();
   const listed = new Set<string>();
   const heads = new Map<string, string>();
+  const checkedOut = new Map<RepoSlug, string | undefined>();
+  const mergeScripts = new Map<string, LocalMergeError[]>();
+  const merges: { repo: RepoSlug; workOrderId: WorkOrderId; base: string }[] = [];
   const releaseScripts = new Map<string, ('released' | 'branch_not_merged' | 'no_repo' | 'git_failed')[]>();
   let ensures = 0;
   const keyOf = (repo: RepoSlug, workOrderId: WorkOrderId): string => `${repo}/${workOrderId}`;
@@ -145,6 +154,24 @@ export const createFakeWorktrees = (): FakeWorktrees => {
     scriptRelease: (repo: RepoSlug, workOrderId: WorkOrderId, outcome: 'released' | 'branch_not_merged' | 'no_repo' | 'git_failed'): void => {
       const key = keyOf(repo, workOrderId);
       releaseScripts.set(key, [...(releaseScripts.get(key) ?? []), outcome]);
+    },
+    setCheckedOut: (repo: RepoSlug, branch: string | undefined): void => {
+      checkedOut.set(repo, branch);
+    },
+    scriptMergeLocal: (repo: RepoSlug, workOrderId: WorkOrderId, outcome: LocalMergeError): void => {
+      const key = keyOf(repo, workOrderId);
+      mergeScripts.set(key, [...(mergeScripts.get(key) ?? []), outcome]);
+    },
+    mergeLocalCalls: () => merges,
+    checkedOutBranch: async (repo: RepoSlug): Promise<Result<string, 'no_repo' | 'base_not_checked_out'>> => {
+      if (withoutRepo.has(repo)) return { ok: false, error: 'no_repo' };
+      const branch = checkedOut.has(repo) ? checkedOut.get(repo) : 'main';
+      return branch === undefined ? { ok: false, error: 'base_not_checked_out' } : { ok: true, value: branch };
+    },
+    mergeLocal: async (repo: RepoSlug, workOrderId: WorkOrderId, base: string): Promise<Result<void, LocalMergeError>> => {
+      merges.push({ repo, workOrderId, base });
+      const scripted = mergeScripts.get(keyOf(repo, workOrderId))?.shift();
+      return scripted === undefined ? { ok: true, value: undefined } : { ok: false, error: scripted };
     },
     ensure: async (repo: RepoSlug, workOrderId: WorkOrderId): Promise<Result<{ readonly path: string }, 'no_repo'>> => {
       ensures += 1;

@@ -2,7 +2,7 @@
 import { mkdir, realpath } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-import type { Worktrees } from '../../application/index';
+import type { LocalMergeError, Worktrees } from '../../application/index';
 import { err, ok, workOrderBranch, type Result, type WorkOrderId } from '../../domain/index';
 import type { RepoPaths } from '../system/index';
 import { branchHead as headOf, runGit } from './git';
@@ -11,6 +11,10 @@ export interface WorktreesConfig {
   readonly root: string; // root = <dataDir>/worktrees
   readonly repos: RepoPaths;
 }
+
+// The merge commit of a local merge carries the same Docket identity the checkpoints do; no
+// user identity or signing setup is ever required of the checkout.
+const MERGE_IDENTITY_ARGS = ['-c', 'user.name=Docket', '-c', 'user.email=checkpoints@docket.local', '-c', 'commit.gpgsign=false'] as const;
 
 // + work-order id -> the commit the worktree started from
 export const BASE_REF_PREFIX = 'refs/docket/bases/';
@@ -138,6 +142,39 @@ export function createWorktrees(config: WorktreesConfig): Worktrees {
       if (deleted.exitCode === 0) return ok('released');
       if (deleted.stderr.includes('not fully merged')) return ok('branch_not_merged');
       return err('git_failed');
+    },
+
+    async checkedOutBranch(repo) {
+      const checkout = await config.repos.path(repo);
+      if (checkout === undefined) return err('no_repo');
+      const current = await runGit(checkout, ['symbolic-ref', '--short', '-q', 'HEAD']);
+      const name = current.stdout.trim();
+      return current.exitCode === 0 && name !== '' ? ok(name) : err('base_not_checked_out');
+    },
+
+    async mergeLocal(repo, id, base): Promise<Result<void, LocalMergeError>> {
+      const checkout = await config.repos.path(repo);
+      if (checkout === undefined) return err('no_repo');
+
+      // Every refusal below happens before git touches the checkout: the base is the branch the
+      // operator saw checked out, the tree has no tracked change a merge could tangle with.
+      const branch = workOrderBranch(id);
+      if ((await headOf(checkout, branch)) === undefined) return err('no_branch');
+      const current = await runGit(checkout, ['symbolic-ref', '--short', '-q', 'HEAD']);
+      if (current.exitCode !== 0 || current.stdout.trim() !== base) return err('base_not_checked_out');
+      // Untracked files are not "dirty" here: a merge only trips over one it would overwrite, and
+      // that case fails below as a plain git_failed with the tree untouched.
+      const status = await runGit(checkout, ['status', '--porcelain', '--untracked-files=no']);
+      if (status.exitCode !== 0) return err('git_failed');
+      if (status.stdout.trim() !== '') return err('dirty_checkout');
+
+      const merged = await runGit(checkout, [...MERGE_IDENTITY_ARGS, 'merge', '--no-edit', branch]);
+      if (merged.exitCode === 0) return ok(undefined);
+      // A merge stopped half way leaves MERGE_HEAD behind; that is the conflict signature.
+      const midMerge = await runGit(checkout, ['rev-parse', '-q', '--verify', 'MERGE_HEAD']);
+      if (midMerge.exitCode !== 0) return err('git_failed');
+      const aborted = await runGit(checkout, ['merge', '--abort']);
+      return aborted.exitCode === 0 ? err('conflict') : err('git_failed');
     },
   };
 }

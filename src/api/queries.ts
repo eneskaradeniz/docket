@@ -29,6 +29,7 @@ export type Query =
   | { readonly type: 'workOrder.detail'; readonly id: string } // → detail view incl. gates rows (A-378, A-379), git (A-390) and repoContext (A-392) | not_found | invalid_id
   | { readonly type: 'workOrder.changes'; readonly workOrder: string } // → WorkOrderChangesView | not_found | invalid_id
   | { readonly type: 'workOrder.gitBase'; readonly id: string } // → { ok: true, base } | not_found | forge_unavailable | forge_error | invalid_id (A-391)
+  | { readonly type: 'workOrder.localBase'; readonly id: string } // → { ok: true, base } | not_found | forge_configured | no_repo | base_not_checked_out | invalid_id (A-426)
   | { readonly type: 'project.tree' }
   | { readonly type: 'repoStatus' } // → RepoStatusView[] (A-341)
   | { readonly type: 'repo.flow'; readonly repo: string } // → RepoFlowView (A-345)

@@ -266,7 +266,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
   // reason and the base prefill. The failed check names feed the merge confirm's quiet warning.
   const git = view === null
     ? null
-    : gitCard(view, state.gitBase, state.changes !== null && state.changes.state !== 'no_worktree');
+    : gitCard(view, state.gitBase, state.changes !== null && state.changes.state !== 'no_worktree', state.localBase);
   const failedChecks: string[] = [];
   for (const group of checkGroups) {
     for (const check of group.checks) {
@@ -532,10 +532,12 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
                   model={git}
                   locale={locale}
                   gitBase={state.gitBase}
+                  localBase={state.localBase}
                   failedChecks={failedChecks}
                   onPush={() => store.push()}
                   onOpenPr={(input) => store.openPr(input)}
                   onMerge={(number) => store.mergePr(number)}
+                  onMergeLocal={(base) => store.mergeLocal(base)}
                   onRelease={() => store.releaseBranch()}
                 />
               ) : null}

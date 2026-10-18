@@ -364,6 +364,91 @@ describe('createWorktrees', () => {
       expect(await worktrees.release(ACME, woId(U1))).toEqual({ ok: false, error: 'no_repo' });
     });
   });
+
+  describe('mergeLocal', () => {
+    const ready = async (): Promise<{ worktrees: ReturnType<typeof createWorktrees>; id: WorkOrderId }> => {
+      await initRepo(repoDir);
+      await commitFile(repoDir, 'a.ts', 'l1\n');
+      const worktrees = createWorktrees({ root: rootDir, repos: pathsOf({ acme: repoDir }) });
+      const id = woId(U1);
+      await worktrees.ensure(ACME, id);
+      return { worktrees, id };
+    };
+
+    it('I-115: checkedOutBranch answers the branch the checkout stands on, and base_not_checked_out when HEAD is detached', async () => {
+      const { worktrees } = await ready();
+      expect(await worktrees.checkedOutBranch(ACME)).toEqual({ ok: true, value: 'main' });
+      await git(repoDir, ['checkout', '--detach']);
+      expect(await worktrees.checkedOutBranch(ACME)).toEqual({ ok: false, error: 'base_not_checked_out' });
+      expect(await createWorktrees({ root: rootDir, repos: pathsOf({}) }).checkedOutBranch(ACME)).toEqual({ ok: false, error: 'no_repo' });
+    });
+
+    it('I-115: a clean merge brings the work into the base, keeps the branch and leaves the tree clean', async () => {
+      const { worktrees, id } = await ready();
+      const head = await commitFile(worktreeOf(U1), 'w.ts', 'work\n');
+
+      const result = await worktrees.mergeLocal(ACME, id, 'main');
+
+      expect(result).toEqual({ ok: true, value: undefined });
+      const contained = await runGit(repoDir, ['merge-base', '--is-ancestor', head, 'main']);
+      expect(contained.exitCode).toBe(0);
+      expect(await git(repoDir, ['show', 'main:w.ts'])).toBe('work\n');
+      expect((await git(repoDir, ['rev-parse', `refs/heads/${worktreeBranch(id)}`])).trim()).toBe(head);
+      expect(await git(repoDir, ['status', '--porcelain'])).toBe('');
+      // The merged branch can now be released with -d.
+      expect(await worktrees.release(ACME, id)).toEqual({ ok: true, value: 'released' });
+    });
+
+    it('I-115: a diverged base merges with a Docket-authored merge commit even without any git identity', async () => {
+      const { worktrees, id } = await ready();
+      await commitFile(worktreeOf(U1), 'w.ts', 'work\n');
+      await commitFile(repoDir, 'b.ts', 'base moved\n');
+
+      expect(await worktrees.mergeLocal(ACME, id, 'main')).toEqual({ ok: true, value: undefined });
+      expect((await git(repoDir, ['log', '-1', '--format=%an'])).trim()).toBe('Docket');
+      expect(await git(repoDir, ['show', 'main:w.ts'])).toBe('work\n');
+      expect(await git(repoDir, ['show', 'main:b.ts'])).toBe('base moved\n');
+      expect(await git(repoDir, ['status', '--porcelain'])).toBe('');
+    });
+
+    it('I-115: a dirty checkout answers dirty_checkout and nothing changes', async () => {
+      const { worktrees, id } = await ready();
+      await commitFile(worktreeOf(U1), 'w.ts', 'work\n');
+      await writeFile(join(repoDir, 'a.ts'), 'edited\n', 'utf8');
+      const before = (await git(repoDir, ['rev-parse', 'main'])).trim();
+
+      expect(await worktrees.mergeLocal(ACME, id, 'main')).toEqual({ ok: false, error: 'dirty_checkout' });
+      expect((await git(repoDir, ['rev-parse', 'main'])).trim()).toBe(before);
+      expect(await git(repoDir, ['status', '--porcelain'])).toBe(' M a.ts\n');
+    });
+
+    it('I-115: a base that is not the checked-out branch answers base_not_checked_out', async () => {
+      const { worktrees, id } = await ready();
+      await commitFile(worktreeOf(U1), 'w.ts', 'work\n');
+      expect(await worktrees.mergeLocal(ACME, id, 'develop')).toEqual({ ok: false, error: 'base_not_checked_out' });
+      await git(repoDir, ['checkout', '--detach']);
+      expect(await worktrees.mergeLocal(ACME, id, 'main')).toEqual({ ok: false, error: 'base_not_checked_out' });
+    });
+
+    it('I-115: a conflicting branch answers conflict, the merge is aborted and the tree is clean', async () => {
+      const { worktrees, id } = await ready();
+      await commitFile(worktreeOf(U1), 'a.ts', 'from the branch\n');
+      const before = await commitFile(repoDir, 'a.ts', 'from the base\n');
+
+      expect(await worktrees.mergeLocal(ACME, id, 'main')).toEqual({ ok: false, error: 'conflict' });
+      expect(await git(repoDir, ['status', '--porcelain'])).toBe('');
+      expect((await git(repoDir, ['rev-parse', 'main'])).trim()).toBe(before);
+      const mergeHead = await runGit(repoDir, ['rev-parse', '-q', '--verify', 'MERGE_HEAD']);
+      expect(mergeHead.exitCode).not.toBe(0);
+    });
+
+    it('I-115: a missing branch answers no_branch and an unknown repo no_repo', async () => {
+      const { worktrees } = await ready();
+      expect(await worktrees.mergeLocal(ACME, woId(U2), 'main')).toEqual({ ok: false, error: 'no_branch' });
+      const bare = createWorktrees({ root: rootDir, repos: pathsOf({}) });
+      expect(await bare.mergeLocal(ACME, woId(U1), 'main')).toEqual({ ok: false, error: 'no_repo' });
+    });
+  });
 });
 
 describe('worktreeBranch', () => {

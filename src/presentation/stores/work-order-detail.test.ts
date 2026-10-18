@@ -230,6 +230,7 @@ interface FakeApi extends Pick<Api, 'query' | 'command'> {
   setRunEventsFor(runId: string, reply: unknown): void;
   setUsageSummary(reply: unknown): void;
   setGitBase(reply: unknown): void;
+  setLocalBase(reply: unknown): void;
   setCommandResult(result: CommandResult): void;
 }
 
@@ -259,6 +260,7 @@ const fakeApi = (initialReply: unknown): FakeApi => {
   const runEventsByRun = new Map<string, unknown>();
   let usageSummaryReply: unknown = EMPTY_USAGE;
   let gitBaseReply: unknown = null;
+  let localBaseReply: unknown = null;
   let commandResult: CommandResult = { ok: true };
   return {
     queries,
@@ -284,6 +286,9 @@ const fakeApi = (initialReply: unknown): FakeApi => {
     setGitBase: (next) => {
       gitBaseReply = next;
     },
+    setLocalBase: (next) => {
+      localBaseReply = next;
+    },
     setCommandResult: (next) => {
       commandResult = next;
     },
@@ -294,6 +299,7 @@ const fakeApi = (initialReply: unknown): FakeApi => {
       if (query.type === 'run.events') return Promise.resolve(runEventsByRun.has(query.runId) ? runEventsByRun.get(query.runId) : runEventsReply);
       if (query.type === 'usage.summary') return Promise.resolve(usageSummaryReply);
       if (query.type === 'workOrder.gitBase') return Promise.resolve(gitBaseReply);
+      if (query.type === 'workOrder.localBase') return Promise.resolve(localBaseReply);
       return Promise.resolve(reply);
     },
     command: (_actor, command) => {
@@ -377,6 +383,7 @@ describe('work-order detail store', () => {
       usageSummary: null,
       usageSummaryFailed: false,
       gitBase: null,
+      localBase: null,
     });
     const loading = store.load(WO_ID);
     expect(store.state().loading).toBe(true);
@@ -1618,9 +1625,9 @@ describe('git doors (U-344 … U-349)', () => {
 
   /** The door of one kind off a view's lifecycle, worktree standing (the changes read's own
    *  fact) and forge read. */
-  const doorOf = (git: GitLifecycleState | undefined, gitBase: GitBaseRead | null, kind: 'push' | 'openPr' | 'merge' | 'release', hasWorktree = true) => {
+  const doorOf = (git: GitLifecycleState | undefined, gitBase: GitBaseRead | null, kind: 'push' | 'openPr' | 'merge' | 'mergeLocal' | 'release', hasWorktree = true, localBase: GitBaseRead | null = null) => {
     const view: WorkOrderDetailView = { ...detailReply(AT_BUILD), ...(git === undefined ? {} : { git }) };
-    return gitCard(view, gitBase, hasWorktree)?.doors.find((door) => door.kind === kind);
+    return gitCard(view, gitBase, hasWorktree, localBase)?.doors.find((door) => door.kind === kind);
   };
 
   it('U-344: released work orders and worktree-less ones carry no card; the branch line is the deterministic name until the ledger names it', () => {
@@ -1769,6 +1776,69 @@ describe('git doors (U-344 … U-349)', () => {
     expect(refused.labelKey).toBe('error.branch_not_merged');
     expect(TR['error.branch_not_merged']).toBe('Dal birleştirilmedi; silinemez.');
     expect(EN['error.branch_not_merged']).not.toBe(TR['error.branch_not_merged']);
+  });
+
+  it('U-358: Ana dala al… stands only in a forge-less repo, only with a read base, and never twice', () => {
+    // A forge (healthy, unread or failing) offers no local merge door at all.
+    expect(doorOf(undefined, null, 'mergeLocal')).toBeUndefined();
+    expect(doorOf(undefined, { ok: true, base: 'main' }, 'mergeLocal')).toBeUndefined();
+    expect(doorOf(undefined, { ok: false, code: 'forge_error' }, 'mergeLocal')).toBeUndefined();
+    // Forge-less: open once the checkout's base is read; closed with one quiet line otherwise.
+    expect(doorOf(undefined, NO_FORGE, 'mergeLocal', true, { ok: true, base: 'main' })?.available).toBe(true);
+    const unread = doorOf(undefined, NO_FORGE, 'mergeLocal');
+    expect(unread?.available).toBe(false);
+    expect(unread?.reasonKey).toBe('detail.git.mergeLocal.noBase');
+    expect(doorOf(undefined, NO_FORGE, 'mergeLocal', true, { ok: false, code: 'base_not_checked_out' })?.available).toBe(false);
+    // The door precedes the release door; once merged it is gone and the card says so.
+    const view = detailReply(AT_BUILD);
+    expect(gitCard(view, NO_FORGE, true, { ok: true, base: 'main' })?.doors.map((door) => door.kind)).toEqual(['push', 'openPr', 'merge', 'mergeLocal', 'release']);
+    const merged = gitCard({ ...view, git: { mergedLocal: { base: 'main', at: 9 } } }, NO_FORGE, true, { ok: true, base: 'main' });
+    expect(merged?.mergedLocal).toEqual({ base: 'main' });
+    expect(merged?.doors.map((door) => door.kind)).toEqual(['push', 'openPr', 'merge', 'release']);
+  });
+
+  it('U-358: Dalı sil opens after a local merge', () => {
+    expect(doorOf({ mergedLocal: { base: 'main', at: 9 } }, NO_FORGE, 'release')?.available).toBe(true);
+    expect(doorOf(undefined, NO_FORGE, 'release')?.available).toBe(false);
+  });
+
+  it('U-358: the localBase read follows a missing forge, carries its code, and the card stays visible after the merge', async () => {
+    const api = fakeApi({ ...detailReply(AT_BUILD) });
+    api.setGitBase({ ok: false, code: 'forge_unavailable' });
+    api.setLocalBase({ ok: true, base: 'trunk' });
+    const store = createStore(api);
+    await store.load(WO_ID);
+    expect(api.queries).toContainEqual({ type: 'workOrder.localBase', id: WO_ID });
+    expect(store.state().localBase).toEqual({ ok: true, base: 'trunk' });
+    // A forge that answers never asks for a local base.
+    const withForge = fakeApi({ ...detailReply(AT_BUILD) });
+    withForge.setGitBase({ ok: true, base: 'main' });
+    await createStore(withForge).load(WO_ID);
+    expect(withForge.queries.some((query) => query.type === 'workOrder.localBase')).toBe(false);
+    // A merged card stays on screen even though no branch was ever pushed.
+    const view: WorkOrderDetailView = { ...detailReply(AT_BUILD), git: { mergedLocal: { base: 'main', at: 9 } } };
+    expect(gitCardVisible(view, gitCard(view, NO_FORGE, true, null), null)).toBe(true);
+  });
+
+  it('U-358: mergeLocal sends the base the dialog named; success reads Ana dala alındı; refusals read calm lines in both bundles', async () => {
+    const api = fakeApi({ ...detailReply(AT_BUILD) });
+    const store = createStore(api);
+    await store.load(WO_ID);
+    const outcome = await store.mergeLocal('trunk');
+    expect(api.commands).toContainEqual({ type: 'workOrder.mergeLocal', id: WO_ID, base: 'trunk' });
+    expect(outcome.labelKey).toBe('detail.git.mergeLocal.success');
+    expect(TR['detail.git.mergeLocal.success']).toBe('Ana dala alındı.');
+    expect(TR['detail.git.mergeLocal']).toBe('Ana dala al…');
+    expect(TR['detail.git.mergedLocal']).toBe('Ana dala alındı');
+    // The intent refreshes the detail query like every other: the card follows the ledger.
+    expect(api.queries.filter((query) => query.type === 'workOrder.detail')).toHaveLength(2);
+    for (const code of ['dirty_checkout', 'base_not_checked_out', 'conflict', 'already_merged', 'forge_configured', 'no_branch'] as const) {
+      api.setCommandResult({ ok: false, code });
+      const refused = await store.mergeLocal('trunk');
+      expect(refused.labelKey).toBe(`error.${code}`);
+      expect(TR[`error.${code}`].length).toBeGreaterThan(0);
+      expect(EN[`error.${code}`]).not.toBe(TR[`error.${code}`]);
+    }
   });
 
   it('U-349: the doors hold their fixed order and every closed door says one quiet line within eight words', () => {

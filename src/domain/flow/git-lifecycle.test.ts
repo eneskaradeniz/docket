@@ -147,6 +147,37 @@ describe('deriveGitLifecycle', () => {
     });
   });
 
+  it('R-185: branch_merged_local folds in once, only without a pull request, and opens the release', () => {
+    const local = (base = 'main', at: EpochMs = 5): WorkOrderEvent => ({
+      type: 'branch_merged_local',
+      at,
+      branch: 'docket/wo-1',
+      base,
+    });
+    // The forge-less lifecycle: no push, no PR — the local merge alone marks the state.
+    expect(deriveGitLifecycle([created(), local()])).toEqual({ mergedLocal: { base: 'main', at: 5 } });
+    // The first merge stands; a second one never replaces it.
+    expect(deriveGitLifecycle([created(), local('main', 5), local('dev', 6)])).toEqual({
+      mergedLocal: { base: 'main', at: 5 },
+    });
+    // A forge-backed lifecycle (a pull request exists) ignores it, merged or not.
+    expect(deriveGitLifecycle([created(), PUSHED, OPENED, local()]).mergedLocal).toBeUndefined();
+    expect(deriveGitLifecycle([created(), PUSHED, OPENED, merged(7), local()]).mergedLocal).toBeUndefined();
+    // branch_released now lands after a local merge, and is ignored before one.
+    expect(deriveGitLifecycle([created(), released()])).toEqual({});
+    expect(deriveGitLifecycle([created(), local(), released()])).toEqual({
+      mergedLocal: { base: 'main', at: 5 },
+      released: true,
+    });
+    // R-164: the release freezes the state, a later local merge changes nothing.
+    expect(deriveGitLifecycle([created(), local('main', 5), released(), local('dev', 9)]).mergedLocal).toEqual({
+      base: 'main',
+      at: 5,
+    });
+    // R-163 for forge pull requests is unchanged: a release over an unmerged PR is still ignored.
+    expect(deriveGitLifecycle([created(), PUSHED, OPENED, released()]).released).toBeUndefined();
+  });
+
   it('R-165: workOrderBranch is the one naming rule, lower-cased after its prefix', () => {
     const id = '01ARZ3NDEKTSV4RRFFQ69G5FAV' as WorkOrderId;
     expect(workOrderBranch(id)).toBe(`docket/wo-${id.toLowerCase()}`);
