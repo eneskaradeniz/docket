@@ -105,6 +105,9 @@ export function AutonomyControl({ locale, view, mark, onPick, onClear }: Autonom
           {t(locale, whyKey)}
         </p>
       ) : null}
+      <p data-autonomy-auto-help className="m-0 mt-2 text-[12px] text-inkdim">
+        {t(locale, 'autonomy.autoHelp')}
+      </p>
       <p data-autonomy-source className="m-0 mt-2 text-[12px] text-inkdim">
         {t(locale, autonomySourceKey(view.source))}
       </p>
