@@ -176,9 +176,9 @@ export interface WorkOrderDetailRepoContext {
 }
 
 /** A permission ask shown in the decision zone, fed from `permissions.open` and scoped to the
- *  loaded work order's runs. The owning work order's title stands in for the tool when the ask
- *  still resolves to one, the ask id when it does not — never an invented tool name; the read
- *  carries no target, so none is claimed. */
+ *  loaded work order's runs. The tool and its target (the command or path) come from the asking
+ *  run's own `permission_ask` event; until that read lands — or when the stream no longer holds
+ *  the ask — the ask id stands in for the tool and no target is claimed, never an invented one. */
 export interface WorkOrderAskView {
   readonly runId: string;
   readonly askId: string;
@@ -602,12 +602,17 @@ export const decisionZone = (
   return { kind: 'quiet', done: false };
 };
 
-/** The cards the strip's counter counts (U-224): every card that waits for the operator's
- *  yes/no — a start or a failure report is not a gate waiting. */
+/** The cards the strip's gate counter counts (U-224): every gate card that waits for the
+ *  operator's yes/no — a start or a failure report is not a gate waiting, and a permission ask
+ *  is a run's question, not a gate (it has its own counter). */
 export const gateWaitingCount = (zone: DecisionZone): number =>
   zone.kind === 'quiet'
     ? 0
-    : zone.cards.filter((card) => card.kind === 'approve' || card.kind === 'attest' || card.kind === 'deploy' || card.kind === 'permission').length;
+    : zone.cards.filter((card) => card.kind === 'approve' || card.kind === 'attest' || card.kind === 'deploy').length;
+
+/** The permission asks the strip's own counter names beside the gate count. */
+export const asksWaitingCount = (zone: DecisionZone): number =>
+  zone.kind === 'quiet' ? 0 : zone.cards.filter((card) => card.kind === 'permission').length;
 
 // --- U-224: the stage strip -------------------------------------------------------------------------
 
@@ -618,6 +623,8 @@ export interface StripSegment {
   readonly running: boolean;
   /** Present on the current stage only; 0 renders nothing. */
   readonly gatesWaiting: number;
+  /** Open permission asks, on the current stage only; 0 renders nothing. */
+  readonly asksWaiting: number;
 }
 
 /** The strip (U-224, the operator's Alternative 1): stages only — never gate segments, never
@@ -630,6 +637,7 @@ export const stripSegments = (
   const failedStanding = view.state.status === 'blocked' || isFailedStanding(view);
   const running = view.state.status === 'running' || view.state.status === 'limit_waiting';
   const waiting = gateWaitingCount(zone);
+  const asking = asksWaitingCount(zone);
   const currentAt = stages.findIndex((stage) => stage.current);
   return stages.map((stage, index) => ({
     name: stage.name,
@@ -637,7 +645,39 @@ export const stripSegments = (
     failed: stage.current && failedStanding,
     running: stage.current && running,
     gatesWaiting: stage.current ? waiting : 0,
+    asksWaiting: stage.current ? asking : 0,
   }));
+};
+
+/** The stage list's standing of one row (not the strip's): behind the current stage is done,
+ *  the current one is now, ahead of it is upcoming; a finished work order has no current stage
+ *  and every stage is done. A flow position nobody holds (a stage id the flow no longer has)
+ *  claims nothing: every row stays upcoming rather than a false “done”. */
+export const stageListStanding = (
+  stages: readonly StageGates[],
+  index: number,
+  finished: boolean,
+): 'done' | 'current' | 'upcoming' => {
+  if (finished) return 'done';
+  const currentAt = stages.findIndex((stage) => stage.current);
+  if (currentAt === -1) return 'upcoming';
+  return index < currentAt ? 'done' : index === currentAt ? 'current' : 'upcoming';
+};
+
+/** The git doors card shows only when there is something to ship or a ledger fact to keep
+ *  showing: the branch has changed files, a branch was pushed, a pull request exists — or the
+ *  repo's own not-ok cause must be said. Before that, four disabled doors with reasons are
+ *  noise. A changes read that has not landed is not an empty tree, but it is also no evidence
+ *  of anything to ship, so the card waits for it. */
+export const gitCardVisible = (
+  view: WorkOrderDetailView,
+  model: GitCardModel | null,
+  changes: WorkOrderChangesView | null,
+): boolean => {
+  if (model === null) return false;
+  if (model.repoReasonKey !== undefined) return true;
+  if (model.pr !== null || view.git?.branch !== undefined) return true;
+  return changes !== null && changes.state === 'ready' && changes.files.length > 0;
 };
 
 // --- U-229/U-230: the run rows ----------------------------------------------------------------------
@@ -876,14 +916,19 @@ export const newestFailedRunOf = (view: WorkOrderDetailView): WorkOrderDetailRun
   return newest;
 };
 
-/** The honest map from a `permissions.open` row to what the decision zone shows: the owning work
- *  order's title when the ask still resolves to one, the ask id when it does not; the read
- *  carries no target, so none is claimed. */
-const toAskView = (row: OpenAskView): WorkOrderAskView => ({
+/** What the asking run's `permission_ask` event says about one ask. */
+interface AskDetail {
+  readonly tool: string;
+  readonly target: string | null;
+}
+
+/** The honest map from a `permissions.open` row to what the decision zone shows: the tool and
+ *  target of the run's own ask event when it was read, the ask id alone when it was not. */
+const toAskView = (row: OpenAskView, detail: AskDetail | undefined): WorkOrderAskView => ({
   runId: row.runId,
   askId: row.askId,
-  tool: row.title ?? row.askId,
-  target: null,
+  tool: detail?.tool ?? row.askId,
+  target: detail?.target ?? null,
 });
 
 /** A reply that is not exactly the changes view — a failure, an envelope, a list that is not a
@@ -920,10 +965,11 @@ const isGitBaseView = (value: unknown): value is { readonly ok: true; readonly b
 const asksFor = (
   rows: readonly OpenAskView[],
   view: WorkOrderDetailView | null,
+  details: ReadonlyMap<string, AskDetail>,
 ): readonly WorkOrderAskView[] => {
   if (view === null) return [];
   const ownRuns = new Set(view.runs.map((run) => run.id));
-  return rows.filter((row) => ownRuns.has(row.runId)).map(toAskView);
+  return rows.filter((row) => ownRuns.has(row.runId)).map((row) => toAskView(row, details.get(row.askId)));
 };
 
 /** The work order's newest still-active run — the one the live pane mounts for and the running
@@ -959,13 +1005,16 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
   // The raw `permissions.open` rows; the state's asks derive from these plus the loaded view on
   // every set, so whichever read lands second still shows a consistent section.
   let askRows: readonly OpenAskView[] = [];
+  // What each open ask's own event said (tool + target), keyed by ask id; filled by the run
+  // event tail reads and folded into the asks on every set.
+  const askDetails = new Map<string, AskDetail>();
   const listeners = new Set<() => void>();
   // Only the newest attempt may apply its reply: a slow earlier query must not overwrite a
   // fresher view when change events stack up.
   let attempts = 0;
 
   const set = (next: WorkOrderDetailState): void => {
-    state = { ...next, asks: asksFor(askRows, next.view) };
+    state = { ...next, asks: asksFor(askRows, next.view, askDetails) };
     for (const listener of [...listeners]) listener();
   };
 
@@ -977,6 +1026,8 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     if (isQueryFailure(reply)) return;
     askRows = reply as readonly OpenAskView[];
     set({ ...state });
+    // An ask that arrives after the detail load must still say what it asks for.
+    if (state.asks.some((ask) => !askDetails.has(ask.askId))) void loadAskDetails(state.asks);
   };
 
   /** The read-only changes list rides every load the same way (U-231): a failure keeps the list
@@ -1024,15 +1075,27 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     set({ ...state, usageSummary: reply as UsageSummaryView, usageSummaryFailed: false });
   };
 
-  const loadAutoAllowed = async (asks: readonly WorkOrderAskView[]): Promise<void> => {
-    const ask = asks[0];
-    if (ask === undefined) return;
-    const reply: unknown = await api.query({ type: 'run.events', runId: ask.runId } satisfies Query);
-    if (isQueryFailure(reply) || !Array.isArray(reply)) return;
-    const count = (reply as readonly AgentEvent[]).filter(
-      (event) => event.type === 'permission_answered' && event.decision === 'allow',
-    ).length;
-    set({ ...state, autoAllowed: count });
+  /** One read per asking run of its event tail feeds two things: each open ask's tool and target
+   *  (the card must show what is being approved — every pending ask, whichever run raised it)
+   *  and the collapsed count of asks those runs already allowed. A run whose read fails leaves
+   *  its asks on the ask-id fallback. */
+  const loadAskDetails = async (asks: readonly WorkOrderAskView[]): Promise<void> => {
+    const runIds = [...new Set(asks.map((ask) => ask.runId))];
+    if (runIds.length === 0) return;
+    const replies = await Promise.all(
+      runIds.map((runId): Promise<unknown> => api.query({ type: 'run.events', runId } satisfies Query)),
+    );
+    let allowed = 0;
+    let read = false;
+    for (const reply of replies) {
+      if (isQueryFailure(reply) || !Array.isArray(reply)) continue;
+      read = true;
+      for (const event of reply as readonly AgentEvent[]) {
+        if (event.type === 'permission_ask') askDetails.set(event.id, { tool: event.tool, target: event.target ?? null });
+        else if (event.type === 'permission_answered' && event.decision === 'allow') allowed += 1;
+      }
+    }
+    if (read) set({ ...state, autoAllowed: allowed });
   };
 
   const load = async (id: string): Promise<void> => {
@@ -1076,8 +1139,8 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
       problem: null,
     });
     if (view.state.status === 'blocked' || isFailedStanding(view)) void loadErrorLine(view);
-    const freshAsks = asksFor(askRows, view);
-    if (freshAsks.length > 0) void loadAutoAllowed(freshAsks);
+    const freshAsks = asksFor(askRows, view, askDetails);
+    if (freshAsks.length > 0) void loadAskDetails(freshAsks);
     // A run still going is mounted into the live pane; the pane itself ignores a repeat attach.
     const active = newestActiveRun(view);
     if (active !== undefined) void pane.attach(active.id);

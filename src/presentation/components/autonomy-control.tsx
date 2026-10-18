@@ -26,6 +26,12 @@ export const autonomySourceKey = (source: string): LabelKey =>
 export const autonomyRefusalKey = (code: string): LabelKey =>
   `autonomy.autoDisabledReason.${code}` as LabelKey;
 
+/** Radios drawn by hand: the platform's disabled radio is a grey disc in the dark theme, which
+ *  reads as selected. Selected = signal ring with a solid dot; disabled = dashed hollow ring,
+ *  never a fill — the two never share a look in either theme. */
+const RADIO_CLASS =
+  "grid h-4 w-4 flex-none appearance-none place-content-center rounded-full border-2 border-bord bg-transparent before:h-2 before:w-2 before:scale-0 before:rounded-full before:bg-signal before:content-[''] checked:border-signal checked:before:scale-100 disabled:border-dashed disabled:border-hairline disabled:opacity-60 disabled:checked:before:scale-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal";
+
 export interface AutonomyControlProps {
   readonly locale: Locale;
   /** Null keeps the whole section quiet: an unreadable chain is its own typed read's surface,
@@ -53,12 +59,13 @@ export function AutonomyControl({ locale, view, mark, onPick, onClear }: Autonom
       <h2 className="mb-2 text-[13px] font-bold text-ink">{label}</h2>
       <div className="flex flex-col gap-1">
         <label className="flex items-center gap-2 rounded-control px-2 py-1.5 hover:bg-raised">
-          <input type="radio" name={`autonomy-${mark}`} checked={view.level === 'manual'} onChange={() => onPick('manual')} />
+          <input type="radio" className={RADIO_CLASS} name={`autonomy-${mark}`} checked={view.level === 'manual'} onChange={() => onPick('manual')} />
           <span className="text-[13px] text-ink">{t(locale, 'autonomy.level.manual')}</span>
         </label>
         <label className={`flex items-center gap-2 rounded-control px-2 py-1.5 ${autoBlocked ? '' : 'hover:bg-raised'}`}>
           <input
             type="radio"
+            className={RADIO_CLASS}
             name={`autonomy-${mark}`}
             checked={view.level === 'auto'}
             disabled={autoBlocked}

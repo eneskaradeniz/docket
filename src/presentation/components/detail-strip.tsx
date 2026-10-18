@@ -72,6 +72,11 @@ export function DetailStrip({ segments, locale }: DetailStripProps) {
                   {t(locale, 'detail.strip.gatesWaiting').replace('{n}', String(segment.gatesWaiting))}
                 </span>
               ) : null}
+              {segment.asksWaiting >= 1 ? (
+                <span className="flex-none whitespace-nowrap text-[0.78125rem] font-normal text-signal-soft">
+                  {t(locale, 'detail.strip.asksWaiting').replace('{n}', String(segment.asksWaiting))}
+                </span>
+              ) : null}
               {/* The state word in a child span: the hidden wrapper carries no direct text, so
                   L-4's truncation scan sees no squeezed element (the span's box overflows the
                   clip at its full width instead). */}

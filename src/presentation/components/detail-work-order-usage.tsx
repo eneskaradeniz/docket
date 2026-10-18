@@ -16,7 +16,13 @@ export interface DetailWorkOrderUsageProps {
   readonly usageFailed: boolean;
   readonly money: WorkOrderUsageMoney;
   readonly onRetry: () => void;
+  /** A run is going: a transport that reports usage only at the end shows 0 until then. */
+  readonly running: boolean;
 }
+
+/** A share as a whole percent, never above 100: a cache share cannot exceed the input it caches
+ *  (a transport that counts cached tokens outside the input would otherwise read “%155”). */
+const percent = (ratio: number): number => Math.min(100, Math.max(0, Math.round(ratio * 100)));
 
 const stageNameOf = (flow: FlowDef, stageId: string): string =>
   flow.stages.find((stage) => stage.id === stageId)?.name ?? stageId;
@@ -37,11 +43,11 @@ export const wasteFindingLine = (locale: Locale, finding: WasteFinding, flow: Fl
   const ratio = finding.values.ratio;
   const inputTokens = finding.values.inputTokens;
   return t(locale, 'detail.usage.waste.cache')
-    .replace('{r}', String(Math.round(ratio * 100)))
+    .replace('{r}', String(percent(ratio)))
     .replace('{in}', formatTokensCompact(locale, inputTokens));
 };
 
-export function DetailWorkOrderUsage({ locale, flow, usage, usageFailed, money, onRetry }: DetailWorkOrderUsageProps) {
+export function DetailWorkOrderUsage({ locale, flow, usage, usageFailed, money, onRetry, running }: DetailWorkOrderUsageProps) {
   const [expanded, setExpanded] = useState(false);
   const [estimateOpen, setEstimateOpen] = useState(false);
 
@@ -68,11 +74,15 @@ export function DetailWorkOrderUsage({ locale, flow, usage, usageFailed, money, 
 
   const { summary, findings, runsWithoutUsage } = usage;
   const outputTokens = summary.tokens - summary.inputTokens;
-  const tokenLine = t(locale, 'detail.usage.tokens')
+  // Nothing counted while a run is going is “not reported yet”, not “zero tokens”.
+  const awaitingRunUsage = running && summary.tokens === 0;
+  const tokenLine = awaitingRunUsage
+    ? t(locale, 'detail.usage.pendingRun')
+    : t(locale, 'detail.usage.tokens')
     .replace('{in}', formatTokensCompact(locale, summary.inputTokens))
     .replace('{out}', formatTokensCompact(locale, outputTokens));
   const runsLine = t(locale, 'detail.usage.runs').replace('{n}', String(summary.runs));
-  const cacheLine = t(locale, 'detail.usage.cache').replace('{p}', String(Math.round(summary.cacheRatio * 100)));
+  const cacheLine = t(locale, 'detail.usage.cache').replace('{p}', String(percent(summary.cacheRatio)));
   const planLine = t(locale, 'detail.usage.planShare').replace('{p}', String(Math.round(summary.planningShare * 100)));
   const hasWaste = findings.length > 0;
 
@@ -96,7 +106,7 @@ export function DetailWorkOrderUsage({ locale, flow, usage, usageFailed, money, 
           <span className="text-[0.78125rem] font-semibold text-ink">{t(locale, 'detail.usage.heading')}</span>
           <span className="font-mono text-[0.6875rem] text-inkdim">{tokenLine}</span>
           <span className="font-mono text-[0.6875rem] text-inkdim">· {runsLine}</span>
-          <span className="font-mono text-[0.6875rem] text-inkdim">· {cacheLine}</span>
+          {awaitingRunUsage ? null : <span className="font-mono text-[0.6875rem] text-inkdim">· {cacheLine}</span>}
           {hasWaste ? (
             <span className="inline-flex items-center gap-1.5 text-[0.78125rem] text-signal-soft">
               <span aria-hidden="true" className="h-1.5 w-1.5 flex-none rounded-full bg-signal" />

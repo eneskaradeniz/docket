@@ -42,7 +42,10 @@ import {
   detailBadge,
   formatRunCode,
   gateCheckGroups,
+  asksWaitingCount,
   gateWaitingCount,
+  gitCardVisible,
+  stageListStanding,
   gitCard,
   isFailedStanding,
   lastMessageOf,
@@ -51,6 +54,7 @@ import {
   stripSegments,
   workOrderUsageMoney,
   type DetailChange,
+  type DecisionZone,
   type DetailChangeSignal,
   type GateChecksGroup,
   type GitBaseRead,
@@ -222,6 +226,8 @@ interface FakeApi extends Pick<Api, 'query' | 'command'> {
   setAsks(reply: unknown): void;
   setChanges(reply: unknown): void;
   setRunEvents(reply: unknown): void;
+  /** The event tail of one run alone; wins over the shared `setRunEvents` reply. */
+  setRunEventsFor(runId: string, reply: unknown): void;
   setUsageSummary(reply: unknown): void;
   setGitBase(reply: unknown): void;
   setCommandResult(result: CommandResult): void;
@@ -250,6 +256,7 @@ const fakeApi = (initialReply: unknown): FakeApi => {
   let asksReply: unknown = [];
   let changesReply: unknown = null;
   let runEventsReply: unknown = null;
+  const runEventsByRun = new Map<string, unknown>();
   let usageSummaryReply: unknown = EMPTY_USAGE;
   let gitBaseReply: unknown = null;
   let commandResult: CommandResult = { ok: true };
@@ -268,6 +275,9 @@ const fakeApi = (initialReply: unknown): FakeApi => {
     setRunEvents: (next) => {
       runEventsReply = next;
     },
+    setRunEventsFor: (runId, next) => {
+      runEventsByRun.set(runId, next);
+    },
     setUsageSummary: (next) => {
       usageSummaryReply = next;
     },
@@ -281,7 +291,7 @@ const fakeApi = (initialReply: unknown): FakeApi => {
       queries.push(query);
       if (query.type === 'permissions.open') return Promise.resolve(asksReply);
       if (query.type === 'workOrder.changes') return Promise.resolve(changesReply);
-      if (query.type === 'run.events') return Promise.resolve(runEventsReply);
+      if (query.type === 'run.events') return Promise.resolve(runEventsByRun.has(query.runId) ? runEventsByRun.get(query.runId) : runEventsReply);
       if (query.type === 'usage.summary') return Promise.resolve(usageSummaryReply);
       if (query.type === 'workOrder.gitBase') return Promise.resolve(gitBaseReply);
       return Promise.resolve(reply);
@@ -707,12 +717,65 @@ describe('work-order detail store', () => {
     const store = createStore(api);
     await store.load(WO_ID);
 
-    // Only this work order's runs are shown. The title stands in for the tool when the ask still
-    // resolves to one, the ask id when it does not; the read carries no target, so none is claimed.
+    // Only this work order's runs are shown. Without the run's ask event the ask id stands in
+    // for the tool and no target is claimed — the work order's title is never the tool (#1277).
     expect(store.state().asks).toEqual([
-      { runId: RUN_ID, askId: 'ask-1', tool: 'Ship the thing', target: null },
+      { runId: RUN_ID, askId: 'ask-1', tool: 'ask-1', target: null },
       { runId: RUN_ID, askId: 'ask-3', tool: 'ask-3', target: null },
     ]);
+  });
+
+  it('#1277: an ask carries the tool and exact target its own run event named', async () => {
+    const api = fakeApi(detailReply(AT_BUILD));
+    api.setAsks([
+      { runId: RUN_ID, askId: 'ask-1', since: 5, title: 'Ship the thing' },
+      { runId: RUN_ID, askId: 'ask-2', since: 6, title: 'Ship the thing' },
+    ]);
+    api.setRunEvents([
+      { type: 'permission_ask', at: 1, id: 'ask-1', tool: 'Read', target: '/repo/docs/plan.md', options: ['allow'] },
+      { type: 'permission_ask', at: 2, id: 'ask-2', tool: 'Bash', target: 'ls -la', options: ['allow'] },
+    ]);
+    const store = createStore(api);
+    await store.load(WO_ID);
+    await flush();
+
+    expect(store.state().asks).toEqual([
+      { runId: RUN_ID, askId: 'ask-1', tool: 'Read', target: '/repo/docs/plan.md' },
+      { runId: RUN_ID, askId: 'ask-2', tool: 'Bash', target: 'ls -la' },
+    ]);
+  });
+
+  it('#1277: asks raised by different runs each read their own run\'s event — not only the first ask\'s run', async () => {
+    const OTHER_RUN = '01ARZ3NDEKTSV4RRFFQ69G5FC3';
+    const api = fakeApi(
+      detailReplyWithRuns(stateAt(STAGE_BUILD, [], 'running'), [
+        { id: RUN_ID, stage: 'build', attempt: 1, startedAt: 1_000 },
+        { id: OTHER_RUN, stage: 'build', attempt: 1, startedAt: 2_000 },
+      ]),
+    );
+    api.setAsks([
+      { runId: RUN_ID, askId: 'ask-1', since: 5, title: null },
+      { runId: OTHER_RUN, askId: 'ask-2', since: 6, title: null },
+      { runId: OTHER_RUN, askId: 'ask-3', since: 7, title: null },
+    ]);
+    api.setRunEventsFor(RUN_ID, [{ type: 'permission_ask', at: 1, id: 'ask-1', tool: 'Read', target: '/repo/a.md', options: ['allow'] }]);
+    api.setRunEventsFor(OTHER_RUN, [
+      { type: 'permission_ask', at: 2, id: 'ask-2', tool: 'Bash', target: 'ls -la', options: ['allow'] },
+      { type: 'permission_ask', at: 3, id: 'ask-3', tool: 'Edit', options: ['allow'] },
+    ]);
+    const store = createStore(api);
+    await store.load(WO_ID);
+    await flush();
+
+    expect(store.state().asks).toEqual([
+      { runId: RUN_ID, askId: 'ask-1', tool: 'Read', target: '/repo/a.md' },
+      { runId: OTHER_RUN, askId: 'ask-2', tool: 'Bash', target: 'ls -la' },
+      // An ask event without a target claims none.
+      { runId: OTHER_RUN, askId: 'ask-3', tool: 'Edit', target: null },
+    ]);
+    // One tail read per asking run, not one per ask.
+    const reads = api.queries.filter((query) => query.type === 'run.events');
+    expect(new Set(reads.map((query) => (query.type === 'run.events' ? query.runId : ''))).size).toBe(2);
   });
 
   it('U-4: a permissions.open failure keeps the asks already shown', async () => {
@@ -1051,7 +1114,20 @@ describe('decision zone (U-226)', () => {
     ).toEqual({ kind: 'cards', cards: [{ kind: 'failed', retry: false }] });
   });
 
-  it('U-224: the gate count a strip counter reads — approve, attest, deploy and permission cards count; start and failure do not', () => {
+  it('#1277: a permission ask is counted as an ask, never as a waiting gate', () => {
+    const ask = { runId: RUN_ID, askId: 'a', tool: 'Bash', target: 'ls' };
+    const zone: DecisionZone = { kind: 'cards', cards: [{ kind: 'permission', ask }] };
+    expect(gateWaitingCount(zone)).toBe(0);
+    expect(asksWaitingCount(zone)).toBe(1);
+    expect(asksWaitingCount({ kind: 'quiet', done: false })).toBe(0);
+    const state = stateAt(STAGE_BUILD, [], 'running');
+    const view = detailReply(state);
+    const segments = stripSegments(stagesFor(FLOW, state), zone, view);
+    expect(segments.every((segment) => segment.gatesWaiting === 0)).toBe(true);
+    expect(segments.map((segment) => segment.asksWaiting)).toEqual(segments.map((segment) => (segment.standing === 'current' ? 1 : 0)));
+  });
+
+  it('U-224: the gate count a strip counter reads — approve, attest and deploy cards count; permission, start and failure do not', () => {
     const state = stateAt(STAGE_SHIP, [GATE_SHIP_APPROVAL, GATE_DEPLOY_PROD, GATE_DEPLOY_STAGING], 'awaiting_human');
     const zone = zoneFor(state);
     expect(gateWaitingCount(zone)).toBe(3);
@@ -1806,3 +1882,42 @@ describe('the autonomy control wiring (U-334)', () => {
   });
 });
 
+
+// --- #1277: the stage list's states and the git card's visibility --------------------------------------
+
+describe('stage list standing (#1277)', () => {
+  it('#1277: stages behind the current one are done, the current one is current, those ahead are upcoming', () => {
+    const state = stateAt(STAGE_BUILD, [GATE_SECRET_SCAN]);
+    const stages = stagesFor(FLOW, state);
+    expect(stages.map((_, index) => stageListStanding(stages, index, false))).toEqual(['done', 'current', 'upcoming']);
+  });
+
+  it('#1277: the first stage current leaves every later stage upcoming — never done', () => {
+    const state = stateAt(STAGE_PLAN, []);
+    const stages = stagesFor(FLOW, state);
+    expect(stages.map((_, index) => stageListStanding(stages, index, false))).toEqual(['current', 'upcoming', 'upcoming']);
+  });
+
+  it('#1277: a finished work order has every stage done', () => {
+    const stages = stagesFor(FLOW, DONE);
+    expect(stages.map((_, index) => stageListStanding(stages, index, true))).toEqual(['done', 'done', 'done']);
+  });
+});
+
+describe('git card visibility (#1277)', () => {
+  const view = detailReply(AT_BUILD);
+  const model = gitCard(view, null, true);
+  const READY_CHANGES = { state: 'ready' as const, files: [{ path: 'a.ts', added: 1, removed: 0, binary: false }], truncated: false };
+
+  it('#1277: no changes, no branch, no pull request — no card', () => {
+    expect(gitCardVisible(view, model, { state: 'ready', files: [], truncated: false })).toBe(false);
+    expect(gitCardVisible(view, model, null)).toBe(false);
+    expect(gitCardVisible(view, null, READY_CHANGES)).toBe(false);
+  });
+
+  it('#1277: changed files, a pushed branch or a pull request each bring the card', () => {
+    expect(gitCardVisible(view, model, READY_CHANGES)).toBe(true);
+    const branch = { name: 'docket/wo-x', head: 'a1b2c3d4', pushedAt: 1 };
+    expect(gitCardVisible({ ...view, git: { branch } }, model, null)).toBe(true);
+  });
+});
