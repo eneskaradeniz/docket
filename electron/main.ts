@@ -350,6 +350,7 @@ const runStartedItem = async (api: Api & RunEventFeed, board: PermissionBoard, r
       api.runUpdated,
       api.workOrdersChanged,
       runControl,
+      node?.docketToolExtras.verdicts,
     );
 
     if (outcome.kind === 'refused') {

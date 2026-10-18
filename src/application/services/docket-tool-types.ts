@@ -17,6 +17,10 @@ export type DocketToolCode =
   | 'internal'
   | 'not_text'
   | 'too_large'
+  | 'no_verdict_gate'
+  | 'wrong_role'
+  | 'already_submitted'
+  | 'pointers_unresolved'
   | PageError['code'];
 
 export type DocketToolResponse =

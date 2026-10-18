@@ -5,7 +5,7 @@ import type { RunTokenKind } from '../ports';
 
 /** Names returned by `tools/list` per token kind; must match `DOCKET_TOOL_DEFINITIONS_BY_KIND`. */
 export const MCP_DOCKET_TOOL_NAMES_BY_KIND: Readonly<Record<RunTokenKind, readonly string[]>> = {
-  run: ['page_publish', 'page_update', 'page_comments', 'propose_memory'],
+  run: ['page_publish', 'page_update', 'page_comments', 'propose_memory', 'submit_verdict'],
   chat: [
     'docket_get',
     'docket_search',

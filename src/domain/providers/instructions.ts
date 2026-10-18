@@ -57,7 +57,7 @@ const criterionFor = (gate: GateDef, repo: RepoDef): string => {
     case 'changes':
       return 'The run changed at least one file, or attests nothing needed changing';
     case 'agent_verdict':
-      return `Agent verdict: role "${gate.role}" approves this stage`;
+      return `Agent verdict: role "${gate.role}" approves this stage — finish by calling submit_verdict with your verdict, a summary and the file:line pointers you checked; a review that ends without it does not pass`;
     case 'human':
       return `Human gate "${gate.label}" is approved`;
     case 'page_approval':

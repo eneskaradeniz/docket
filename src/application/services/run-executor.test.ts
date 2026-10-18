@@ -50,6 +50,7 @@ import {
   createFakeDefinitionStore,
   createFakeDeps,
   createFakeEventLog,
+  createFakeEvidenceChecker,
   createFakeIdGen,
   createFakeInstructionFiles,
   createFakeModelCatalog,
@@ -83,9 +84,13 @@ import {
   revokeSpendConsent,
   setMemoryAutoAccept,
 } from '../use-cases';
+import { createActionApplier } from './action-appliers';
+import { createChatTurnLedger } from './chat-turn-ledger';
 import { dispatcherTick } from './dispatcher';
+import { createDocketTools } from './docket-tools';
 import { createPermissionBoard, type AutoDecision } from './permission-board';
 import { executeRun, type PermissionGate } from './run-executor';
+import { createVerdictHolder } from './verdict-holder';
 
 // --- fixtures ---------------------------------------------------------------------------------------
 
@@ -2934,5 +2939,137 @@ describe('executeRun — the write-scope guard', () => {
     expect(permissionAudits(h.log).map((entry) => entry.actor)).toEqual([
       { kind: 'policy', policy: PERMISSION_RULES_POLICY, level: 'auto' },
     ]);
+  });
+});
+
+// --- the agent verdict reaches the gate through the run (A-421) ------------------------------------------
+
+const REVIEW_FLOW: FlowDef = {
+  id: slugOf<'flow'>('standard'),
+  name: 'Standart',
+  stages: [
+    {
+      id: OTHER_STAGE,
+      name: 'Review',
+      role: slugOf<'role'>('reviewer'),
+      exit: [
+        { kind: 'agent_verdict', id: slugOf<'gate'>('review-verdict'), role: slugOf<'role'>('reviewer') },
+        { kind: 'human', id: slugOf<'gate'>('review-approval'), label: 'Review approval' },
+      ],
+    },
+  ],
+};
+
+const REVIEWER_ROLE: RoleDef = {
+  ...ROLE,
+  id: slugOf<'role'>('reviewer'),
+  name: 'Reviewer',
+  writeScope: { kind: 'none' },
+};
+
+const REVIEW_DEFS_JSON = JSON.stringify({
+  roles: [
+    {
+      id: REVIEWER_ROLE.id,
+      name: REVIEWER_ROLE.name,
+      instructions: REVIEWER_ROLE.instructions,
+      writeScope: REVIEWER_ROLE.writeScope,
+      capabilities: [],
+      active: true,
+    },
+  ],
+  flows: [REVIEW_FLOW],
+  capabilities: [],
+  repo: {
+    id: REPO,
+    name: 'WS',
+    flow: repoFlowOf(REVIEW_FLOW),
+    defaultLimitPolicy: 'wait_resume',
+    commandSets: {},
+    docsRoot: 'docs',
+    testGlobs: [],
+    budget: { amountUsd: 10, warnPercent: 80 },
+  },
+});
+
+describe('executeRun delivers the held agent verdict', () => {
+  const ENDPOINT = {
+    socketPath: '/data/run/mcp.sock',
+    command: '/Applications/Docket.app/Contents/MacOS/Docket',
+    args: ['/Applications/Docket.app/Contents/Resources/app/dist-electron/docket-mcp.cjs'],
+    env: { ELECTRON_RUN_AS_NODE: '1' },
+  } as const;
+  const POINTER = 'src/main.ts:1';
+
+  /** A scripted reviewer run: the transport calls `submit_verdict` through the real tool dispatch
+   *  while the run is live, with the token the executor handed to the child. */
+  const reviewerRun = async (
+    call: Readonly<Record<string, unknown>>,
+    script: readonly AgentEvent[] = [finished('completed')],
+  ) => {
+    const h = await harness({ defsJson: REVIEW_DEFS_JSON, script });
+    const runTokens = createFakeRunTokens();
+    const evidence = createFakeEvidenceChecker();
+    evidence.setResolvable([POINTER]);
+    const deps = { ...h.deps, runTokens, evidence, mcpEndpoint: ENDPOINT };
+    const verdicts = createVerdictHolder();
+    const tools = createDocketTools(deps, { applyAction: createActionApplier(deps), turnLedger: createChatTurnLedger(), verdicts });
+    const answers: unknown[] = [];
+    h.transports.register(ACCOUNT, {
+      start: async (request) => {
+        const capability = request.capabilities.find((candidate) => candidate.id === 'docket-pages');
+        const env = capability !== undefined && capability.kind === 'mcp' ? capability.env : {};
+        const token = env['DOCKET_MCP_TOKEN'];
+        if (token !== undefined && 'literal' in token) {
+          answers.push(await tools.call({ token: token.literal, tool: 'submit_verdict', args: call }));
+        }
+        return h.transport.start(request);
+      },
+    });
+    const outcome = await executeRun(
+      deps,
+      permissionGate().permissions,
+      { ...INPUT, item: { ...ITEM, stage: OTHER_STAGE }, role: REVIEWER_ROLE, capabilities: [] },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      verdicts,
+    );
+    const events = await h.workOrders.events(WORK_ORDER);
+    return { h, outcome, answers, verdicts, events, state: deriveWorkOrderState(REVIEW_FLOW, events) };
+  };
+
+  it('A-421: a reviewer that calls submit_verdict approve mid-run has its gate passed once the run finished succeeded', async () => {
+    const run = await reviewerRun({ verdict: 'approve', summary: 'Matches the stage.', pointers: [POINTER] });
+
+    expect(run.outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect(run.answers).toEqual([expect.objectContaining({ ok: true })]);
+    expect(run.events.map((event) => event.type)).toEqual(['run_started', 'run_finished', 'gate_evaluated']);
+    expect(run.events[2]).toMatchObject({ gate: 'review-verdict', verdict: { status: 'passed' } });
+    expect(run.state.status).toBe('awaiting_human');
+    expect(run.state.pendingGates).toEqual(['review-approval']);
+    expect(run.h.log.entries().map((entry) => entry.action)).toContain('gate.verdict_summary');
+    const runs = await run.h.runs.listForWorkOrder(WORK_ORDER);
+    expect(run.verdicts.has(runs[0]?.id ?? PRIOR_RUN)).toBe(false);
+  });
+
+  it('A-421: a held reject fails the gate once the run finished succeeded', async () => {
+    const run = await reviewerRun({ verdict: 'reject', summary: 'The tests are missing.', pointers: [] });
+
+    expect(run.outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect(run.events[2]).toMatchObject({ gate: 'review-verdict', verdict: { status: 'failed' } });
+    expect(run.state.status).toBe('blocked');
+  });
+
+  it('A-421: a run that ends any other way after calling the tool delivers nothing and drops the held verdict', async () => {
+    const run = await reviewerRun({ verdict: 'approve', summary: 'Matches the stage.', pointers: [POINTER] }, [finished('cancelled')]);
+
+    expect(run.answers).toEqual([expect.objectContaining({ ok: true })]);
+    expect(run.outcome).toEqual({ kind: 'finished', outcome: 'cancelled' });
+    expect(run.events.map((event) => event.type)).toEqual(['run_started', 'run_finished']);
+    expect(run.h.log.entries().map((entry) => entry.action)).not.toContain('gate.verdict_summary');
+    const runs = await run.h.runs.listForWorkOrder(WORK_ORDER);
+    expect(run.verdicts.has(runs[0]?.id ?? PRIOR_RUN)).toBe(false);
   });
 });

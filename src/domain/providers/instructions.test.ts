@@ -104,6 +104,7 @@ describe('acceptanceCriteria', () => {
     expect(criteria[0]).toContain('npm test');
     expect(criteria[1].toLowerCase()).toContain('secret');
     expect(criteria[2]).toContain('reviewer');
+    expect(criteria[2]).toContain('submit_verdict');
     expect(criteria[3]).toContain('Kapanış onayı');
   });
 

@@ -59,6 +59,7 @@ import { catalogOrEmpty, matchIdFor } from './match-id';
 import { DEFAULT_MODEL_CONSENT, defaultBillingOf, spendConsentSatisfied } from './spend-consent';
 import type { BoardHooks } from './permission-board';
 import type { RunControl } from './run-control';
+import { deliverHeldVerdict, type VerdictHolder } from './verdict-holder';
 import { buildHandoff, commitCheckpoint, effectiveAutonomy, listActiveMemoryNotes, proposeMemory } from '../use-cases/index';
 
 export interface MemoryProposalDraft {
@@ -607,6 +608,7 @@ type ExecuteDeps = Pick<
   | 'memory'
   | 'settings'
   | 'worktrees'
+  | 'evidence'
 >;
 
 /** A-144: Docket's own MCP child, appended LAST so nothing a stored definition says can reorder
@@ -648,11 +650,12 @@ export async function executeRun(
   notify?: RunEventNotify,
   workOrdersChanged?: WorkOrdersChangedNotify,
   runControl?: Pick<RunControl, 'attach' | 'detach'>,
+  verdicts?: VerdictHolder,
 ): Promise<ExecuteOutcome> {
   let started: RunId | undefined;
   let runDir: RunDir | undefined;
   try {
-    return await driveRun(deps, permissions, input, board, runControl, notify, workOrdersChanged, {
+    return await driveRun(deps, permissions, input, board, runControl, notify, workOrdersChanged, verdicts, {
       runId: (runId) => {
         started = runId;
       },
@@ -664,6 +667,8 @@ export async function executeRun(
     if (started !== undefined) {
       deps.runTokens.revoke(started);
       runControl?.detach(started);
+      // A-421: whatever the run still holds belongs to a run that did not finish succeeded.
+      verdicts?.drop(started);
     }
     // A-152: the run-scoped config dies with the run; a failed removal never masks the outcome.
     await runDir?.dispose().catch(() => undefined);
@@ -678,6 +683,7 @@ async function driveRun(
   runControl: Pick<RunControl, 'attach' | 'detach'> | undefined,
   notify: RunEventNotify | undefined,
   workOrdersChanged: WorkOrdersChangedNotify | undefined,
+  verdicts: VerdictHolder | undefined,
   hooks: { readonly runId: (runId: RunId) => void; readonly runDir: (dir: RunDir) => void },
 ): Promise<ExecuteOutcome> {
   const { item } = input;
@@ -1032,6 +1038,12 @@ async function driveRun(
             await collectMemoryProposals(deps, input, streamed, runId);
           }
           const endedAt = await endRun(deps, { runId, workOrderId: item.workOrderId, outcome: finalOutcome }, board, workOrdersChanged);
+          // A-421: R-19 re-pends the stage's gates on `run_finished(succeeded)`, so the verdict the
+          // run held is delivered only now, after that event.
+          if (finalOutcome === 'succeeded' && verdicts !== undefined) {
+            await deliverHeldVerdict(deps, verdicts, { runId, workOrderId: item.workOrderId, role: input.role.id });
+            workOrdersChanged?.();
+          }
           // Two fold rules flip a completed finish to failed; the audit names the one that fired.
           // 0/0 tokens with a usage report is the empty run (the more fundamental verdict), an
           // all-failed tool stream that said nothing is the other. A scope with no file is named
@@ -1069,6 +1081,7 @@ async function driveRun(
     // handle ends with the token (A-361) — the loop's own early end path.
     deps.runTokens.revoke(runId);
     runControl?.detach(runId);
+    verdicts?.drop(runId);
     await runDir.dispose().catch(() => undefined);
     sessionPrompt = `${sessionPrompt}\n${stageOutputReminder(retryRoot)}`;
     sessionResume = undefined;

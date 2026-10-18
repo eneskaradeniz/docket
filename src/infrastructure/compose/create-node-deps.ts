@@ -13,6 +13,7 @@ import type {
   DocketToolExtras,
   ForgeResolver,
   DocketToolSetupExtras,
+  DocketToolVerdictExtras,
   McpEndpoint,
   McpListenerControl,
   Notifier,
@@ -23,7 +24,7 @@ import type {
   SetupConversations,
   TransportResolver,
 } from '../../application/index';
-import { createActionApplier, createChatRunner, createChatTurnLedger, createNoEndpointMcpListenerControl, createSetupContexts } from '../../application/index';
+import { createActionApplier, createChatRunner, createChatTurnLedger, createNoEndpointMcpListenerControl, createSetupContexts, createVerdictHolder } from '../../application/index';
 import type { IssueTrackerResolver } from '../../application/services/tracker-sync-service';
 import { createMemoryAccountTestRepo } from './account-test-repo';
 import { createScratchDirs } from './scratch-dirs';
@@ -114,8 +115,9 @@ export interface NodeDeps {
   readonly credentialImporter: CredentialImporter; // reads a token only when an adoption asks for the import
   /** What Docket's own tool dispatch needs: the ONE action applier of this composition and the
    *  chat turn ledger it fills, plus the setup contexts the setup token's tools read. A second
-   *  applier must not exist anywhere. */
-  readonly docketToolExtras: DocketToolExtras & DocketToolSetupExtras;
+   *  applier must not exist anywhere. `verdicts` is the one holder the `submit_verdict` tool fills
+   *  and the run executor drains (A-420, A-421). */
+  readonly docketToolExtras: DocketToolExtras & DocketToolSetupExtras & DocketToolVerdictExtras;
   /** The chat turn runner, built on the same ledger the write tools fill; the api slice (6e-5)
    *  exposes it, nothing here starts a turn on its own. */
   readonly chatRunner: ChatRunner;
@@ -234,10 +236,11 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     { clock, ids: deps.ids },
     { dataDir: config.dataDir, drafts: createSetupDraftFiles(config.dataDir), reader: createSetupPathReader() },
   );
-  const docketToolExtras: DocketToolExtras & DocketToolSetupExtras = {
+  const docketToolExtras: DocketToolExtras & DocketToolSetupExtras & DocketToolVerdictExtras = {
     applyAction: createActionApplier(deps),
     turnLedger: createChatTurnLedger(),
     setupContextOf: setupContexts.contextOf,
+    verdicts: createVerdictHolder(),
   };
   const chatRunner = createChatRunner(deps, { turnLedger: docketToolExtras.turnLedger, setupContexts });
   const trackers = config.trackerResolver?.(deps) ?? { forRepo: async () => undefined };
