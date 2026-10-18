@@ -872,7 +872,9 @@ async function driveRun(
     await deps.runs.appendEvents(runId, [event]);
     note = extendRollingNote(note, [event]);
     await deps.runs.saveHandoffNote(runId, note);
-    notify?.(runId);
+    // An ask is announced by its own case below: the announcement must come after the board holds
+    // the ask, or a subscriber that re-reads the open asks on it finds the board empty.
+    if (event.type !== 'permission_ask') notify?.(runId);
     switch (event.type) {
       case 'session_started':
         await deps.runs.update(runId, { sessionRef: event.sessionRef });
@@ -889,6 +891,7 @@ async function driveRun(
           context: await writeScopeContextOf(deps, input),
         });
         if (scopeVerdict.verdict === 'deny') {
+          notify?.(runId);
           const denied: AgentEvent = { type: 'permission_answered', at: deps.clock.now(), id: event.id, decision: 'deny' };
           streamed.push(denied);
           await deps.runs.appendEvents(runId, [denied]);
@@ -926,8 +929,16 @@ async function driveRun(
         // level is answered here, everything else parks on the human gate exactly as before. The
         // policy allow answers the transport's one-time option only (P-16) — never a standing one.
         const decision = await decideAsk(deps, input, event);
-        const answer: 'allow' | 'deny' =
-          decision.kind === 'allow-by-policy' ? 'allow' : await permissions.onAsk(runId, event);
+        // The gate parks the ask on the board synchronously, so the announcement right after it
+        // already finds the ask listed; the policy allow never reaches the board.
+        let answer: 'allow' | 'deny' = 'allow';
+        if (decision.kind === 'allow-by-policy') {
+          notify?.(runId);
+        } else {
+          const parked = permissions.onAsk(runId, event);
+          notify?.(runId);
+          answer = await parked;
+        }
         // The decision is persisted as an event the moment it is known: the folds close the ask
         // by it, so the pane can move on to the next ask while the agent still works on this
         // answer. The transport never streams this event — only the executor can write it.
