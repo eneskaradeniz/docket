@@ -42,7 +42,7 @@ import { AutonomySuggestionBanner } from '../components/autonomy-suggestion-bann
 import { WorkOrderLaunchers } from '../components/launcher-rows';
 import { StateBadge, type BadgeTone } from '../components/state-badge';
 import { DetailStrip } from '../components/detail-strip';
-import { DecisionZoneCards, GitDoorsCard } from '../components/detail-decision-card';
+import { DecisionZoneCards, GATE_KIND_KEY, GitDoorsCard } from '../components/detail-decision-card';
 import { DetailFiles } from '../components/detail-files';
 import { DetailRunCard } from '../components/detail-run-card';
 import { DECISION_BAR_FRAME_CLASS, DECISION_BAR_Z_CLASS } from '../components/decision-bar-geometry';
@@ -68,17 +68,6 @@ export interface WorkOrderDetailScreenProps {
   readonly pages: PageListStore;
   readonly onOpenPage: (id: string) => void;
 }
-
-const GATE_KIND_KEY: Readonly<Record<GateView['kind'], LabelKey>> = {
-  human: 'gate.kind.human',
-  command: 'gate.kind.command',
-  changes: 'gate.kind.changes',
-  agent_verdict: 'gate.kind.agent_verdict',
-  secret_scan: 'gate.kind.secret_scan',
-  page_approval: 'gate.kind.page_approval',
-  deploy: 'gate.kind.deploy',
-  remote_checks: 'gate.kind.remote_checks',
-};
 
 const GATE_STATUS_KEY: Readonly<Record<GateView['status'], LabelKey>> = {
   pending: 'gate.state.pending',
@@ -334,7 +323,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
   const barRef = useRef<HTMLDivElement | null>(null);
   const [barShown, setBarShown] = useState(false);
   const [barHeight, setBarHeight] = useState(0);
-  const zoneHasCards = zone?.kind === 'cards';
+  const zoneHasCards = zone?.kind === 'cards' && zone.cards.some((card) => card.kind !== 'gating');
   useEffect(() => {
     if (!zoneHasCards || zoneRef.current === null || typeof IntersectionObserver === 'undefined') {
       setBarShown(false);
@@ -358,7 +347,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
   }, [barShown]);
   // The bar's own action mirrors the zone's first decidable card: approve and permission act
   // directly, every other standing offers the jump back to the form.
-  const firstCard = zone?.kind === 'cards' ? zone.cards.find((card) => card.kind !== 'failed' && card.kind !== 'start') ?? null : null;
+  const firstCard = zone?.kind === 'cards' ? zone.cards.find((card) => card.kind !== 'failed' && card.kind !== 'start' && card.kind !== 'gating') ?? null : null;
 
   return (
     <div className="relative grid min-w-0 gap-6" style={barShown ? { paddingBottom: barHeight } : undefined}>

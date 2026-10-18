@@ -149,6 +149,9 @@ export const LABEL_KEYS = [
   'detail.zone.startTitle',
   'detail.zone.startBody',
   'detail.zone.goToDecision',
+  'detail.zone.gatingTitle',
+  'detail.zone.gatingBody',
+  'detail.zone.gatingVerdictOrphaned',
   // The ⋯ menu (A4) and the close confirmation (A3's third dialog).
   'detail.menu.label',
   'detail.close.open',

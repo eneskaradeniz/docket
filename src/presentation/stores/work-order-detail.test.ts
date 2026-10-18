@@ -1061,6 +1061,65 @@ describe('decision zone (U-226)', () => {
     });
   });
 
+  describe('gating card', () => {
+    const GATE_VERDICT = slugOf<'gate'>('review-verdict');
+    const GATE_REVIEW_APPROVAL = slugOf<'gate'>('review-approval');
+    const reviewFlow: FlowDef = {
+      ...FLOW,
+      stages: [
+        {
+          id: STAGE_BUILD,
+          name: 'Build',
+          role: slugOf<'role'>('reviewer'),
+          exit: [
+            { kind: 'agent_verdict', id: GATE_VERDICT, role: slugOf<'role'>('reviewer') },
+            { kind: 'human', id: GATE_REVIEW_APPROVAL, label: 'Review approval' },
+          ],
+        },
+      ],
+    };
+    const pendingBoth = [GATE_VERDICT, GATE_REVIEW_APPROVAL];
+
+    it('R-1287: gating with a pending human gate shows no approve card, only the honest gating card naming the agent gate', () => {
+      const zone = zoneFor(stateAt(STAGE_BUILD, pendingBoth, 'gating'), [], 0, reviewFlow);
+      expect(zone).toEqual({
+        kind: 'cards',
+        cards: [{ kind: 'gating', gates: [expect.objectContaining({ id: 'review-verdict', kind: 'agent_verdict' })], verdictOrphaned: true }],
+      });
+      expect(zone.kind === 'cards' && zone.cards.some((card) => card.kind === 'approve')).toBe(false);
+    });
+
+    it('R-1287: the orphaned-verdict note only holds while no run is live', () => {
+      const live = [{ id: ACTIVE_RUN_ID, stage: 'build', attempt: 1, startedAt: 5_000 }];
+      expect(zoneFor(stateAt(STAGE_BUILD, pendingBoth, 'gating'), live, 0, reviewFlow)).toEqual({
+        kind: 'cards',
+        cards: [{ kind: 'gating', gates: [expect.objectContaining({ id: 'review-verdict' })], verdictOrphaned: false }],
+      });
+    });
+
+    it('R-1287: a gating card never counts as a gate waiting for the operator', () => {
+      const zone = zoneFor(stateAt(STAGE_BUILD, pendingBoth, 'gating'), [], 0, reviewFlow);
+      expect(gateWaitingCount(zone)).toBe(0);
+    });
+
+    it('R-1287: awaiting_human keeps the approve card exactly as before', () => {
+      expect(
+        zoneFor(stateAt(STAGE_BUILD, [GATE_REVIEW_APPROVAL], 'awaiting_human'), [], 0, reviewFlow),
+      ).toEqual({
+        kind: 'cards',
+        cards: [{ kind: 'approve', gate: expect.objectContaining({ id: 'review-approval' }) }],
+      });
+    });
+
+    it('R-1287: the gating copy never claims the machine gates passed', () => {
+      for (const key of ['detail.zone.gatingTitle', 'detail.zone.gatingBody', 'detail.zone.gatingVerdictOrphaned'] as const) {
+        expect(TR[key]).not.toMatch(/makine kapıları geçti/);
+        expect(EN[key]).not.toMatch(/machine gates passed/);
+      }
+      expect(TR['detail.zone.gatingVerdictOrphaned']).toBe('Ajan kararı bekleniyor; inceleyen karar vermeden bitti');
+    });
+  });
+
   it('U-226: a pending changes gate carries the attestation card; a pending deploy gate the deploy card', () => {
     const GATE_CHANGES = slugOf<'gate'>('changes');
     const flow: FlowDef = {
