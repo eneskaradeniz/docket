@@ -13,6 +13,7 @@ import type {
   PolicyGateApproval,
   RepoRef,
   Result,
+  RoleSlug,
   StageSlug,
   WorkOrderEvent,
   WorkOrderId,
@@ -399,6 +400,51 @@ export async function submitAgentVerdict(
     events,
   );
   return ok(stateAfter);
+}
+
+/** Why a verdict gate failed when its reviewer's run ended without delivering a verdict (A-422). */
+export const VERDICT_MISSING_REASON = 'verdict_missing: the reviewer ended without calling submit_verdict';
+
+const RUN_EXECUTOR_ACTOR: Actor = { kind: 'system', component: 'run-executor' };
+
+export type MissingVerdictError = 'not_found' | 'not_current_stage' | 'no_pending_verdict_gate';
+
+/** A-422: fails the pending `agent_verdict` gate of `role` on the work order's current stage, as
+ *  the run executor, because the reviewer's run ended without a verdict. The gate stays pending
+ *  only until this lands; once it has failed (or was decided by a delivered verdict) the stage is
+ *  no longer `gating`, so a second call writes nothing and re-entering the executor never records twice.
+ *  What the failure means — retry or block — is the derive rules' (R-21), not decided here. */
+export async function recordMissingVerdict(
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'definitions'>,
+  input: { readonly id: WorkOrderId; readonly stage: StageSlug; readonly role: RoleSlug },
+): Promise<Result<{ readonly gate: GateSlug; readonly state: WorkOrderState }, MissingVerdictError>> {
+  const loaded = await loadWorkOrder(deps, input.id);
+  if (!loaded.ok) return err('not_found');
+  const { flow, events, state } = loaded.value;
+  if (state.stage !== input.stage) return err('not_current_stage');
+  // Outside `gating` the pending list is the fold's pre-fill or residue (a blocked stage keeps it),
+  // and a gate_evaluated event there would be a dead fact.
+  if (state.status !== 'gating') return err('no_pending_verdict_gate');
+  const stage = flow.stages.find((candidate) => candidate.id === input.stage);
+  const gate = stage?.exit.find(
+    (candidate) =>
+      candidate.kind === 'agent_verdict' && candidate.role === input.role && state.pendingGates.includes(candidate.id),
+  );
+  if (gate === undefined) return err('no_pending_verdict_gate');
+  const stateAfter = await recordGateDecision(
+    deps,
+    {
+      id: input.id,
+      stage: input.stage,
+      gate: gate.id,
+      verdict: { status: 'failed', reason: VERDICT_MISSING_REASON },
+      decision: 'rejected',
+      actor: RUN_EXECUTOR_ACTOR,
+    },
+    flow,
+    events,
+  );
+  return ok({ gate: gate.id, state: stateAfter });
 }
 
 /** The human answer to a changes gate the machine measured at zero (A-96): the operator attests

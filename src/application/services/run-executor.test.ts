@@ -37,6 +37,7 @@ import {
   type StageSlug,
   type TranslationRow,
   type Ulid,
+  type WorkOrderEvent,
   type WorkOrderId,
   type RepoSlug,
 } from '../../domain/index';
@@ -2997,30 +2998,33 @@ const REVIEWER_ROLE: RoleDef = {
   writeScope: { kind: 'none' },
 };
 
-const REVIEW_DEFS_JSON = JSON.stringify({
-  roles: [
-    {
-      id: REVIEWER_ROLE.id,
-      name: REVIEWER_ROLE.name,
-      instructions: REVIEWER_ROLE.instructions,
-      writeScope: REVIEWER_ROLE.writeScope,
-      capabilities: [],
-      active: true,
+const reviewDefsJson = (flow: FlowDef): string =>
+  JSON.stringify({
+    roles: [
+      {
+        id: REVIEWER_ROLE.id,
+        name: REVIEWER_ROLE.name,
+        instructions: REVIEWER_ROLE.instructions,
+        writeScope: REVIEWER_ROLE.writeScope,
+        capabilities: [],
+        active: true,
+      },
+    ],
+    flows: [flow],
+    capabilities: [],
+    repo: {
+      id: REPO,
+      name: 'WS',
+      flow: repoFlowOf(flow),
+      defaultLimitPolicy: 'wait_resume',
+      commandSets: {},
+      docsRoot: 'docs',
+      testGlobs: [],
+      budget: { amountUsd: 10, warnPercent: 80 },
     },
-  ],
-  flows: [REVIEW_FLOW],
-  capabilities: [],
-  repo: {
-    id: REPO,
-    name: 'WS',
-    flow: repoFlowOf(REVIEW_FLOW),
-    defaultLimitPolicy: 'wait_resume',
-    commandSets: {},
-    docsRoot: 'docs',
-    testGlobs: [],
-    budget: { amountUsd: 10, warnPercent: 80 },
-  },
-});
+  });
+
+const REVIEW_DEFS_JSON = reviewDefsJson(REVIEW_FLOW);
 
 describe('executeRun delivers the held agent verdict', () => {
   const ENDPOINT = {
@@ -3032,12 +3036,24 @@ describe('executeRun delivers the held agent verdict', () => {
   const POINTER = 'src/main.ts:1';
 
   /** A scripted reviewer run: the transport calls `submit_verdict` through the real tool dispatch
-   *  while the run is live, with the token the executor handed to the child. */
+   *  while the run is live, with the token the executor handed to the child. No `call` is a
+   *  reviewer that never calls it. */
   const reviewerRun = async (
-    call: Readonly<Record<string, unknown>>,
+    call: Readonly<Record<string, unknown>> | undefined,
     script: readonly AgentEvent[] = [finished('completed')],
+    flow: FlowDef = REVIEW_FLOW,
+    options: { readonly throwOnGateEvent?: boolean } = {},
   ) => {
-    const h = await harness({ defsJson: REVIEW_DEFS_JSON, script });
+    const h = await harness({ defsJson: flow === REVIEW_FLOW ? REVIEW_DEFS_JSON : reviewDefsJson(flow), script });
+    if (options.throwOnGateEvent === true) {
+      const append = h.workOrders.appendEvent.bind(h.workOrders);
+      Object.assign(h.workOrders, {
+        appendEvent: async (id: WorkOrderId, event: WorkOrderEvent): Promise<void> => {
+          if (event.type === 'gate_evaluated') throw new Error('disk full');
+          await append(id, event);
+        },
+      });
+    }
     const runTokens = createFakeRunTokens();
     const evidence = createFakeEvidenceChecker();
     evidence.setResolvable([POINTER]);
@@ -3050,7 +3066,7 @@ describe('executeRun delivers the held agent verdict', () => {
         const capability = request.capabilities.find((candidate) => candidate.id === 'docket-pages');
         const env = capability !== undefined && capability.kind === 'mcp' ? capability.env : {};
         const token = env['DOCKET_MCP_TOKEN'];
-        if (token !== undefined && 'literal' in token) {
+        if (call !== undefined && token !== undefined && 'literal' in token) {
           answers.push(await tools.call({ token: token.literal, tool: 'submit_verdict', args: call }));
         }
         return h.transport.start(request);
@@ -3067,7 +3083,7 @@ describe('executeRun delivers the held agent verdict', () => {
       verdicts,
     );
     const events = await h.workOrders.events(WORK_ORDER);
-    return { h, outcome, answers, verdicts, events, state: deriveWorkOrderState(REVIEW_FLOW, events) };
+    return { h, outcome, answers, verdicts, events, state: deriveWorkOrderState(flow, events) };
   };
 
   it('A-421: a reviewer that calls submit_verdict approve mid-run has its gate passed once the run finished succeeded', async () => {
@@ -3101,5 +3117,105 @@ describe('executeRun delivers the held agent verdict', () => {
     expect(run.h.log.entries().map((entry) => entry.action)).not.toContain('gate.verdict_summary');
     const runs = await run.h.runs.listForWorkOrder(WORK_ORDER);
     expect(run.verdicts.has(runs[0]?.id ?? PRIOR_RUN)).toBe(false);
+  });
+
+  // --- a reviewer run that ends without a verdict fails its gate (A-422) ---
+
+  const VERDICT_MISSING = 'verdict_missing: the reviewer ended without calling submit_verdict';
+  const retryFlow = (maxAttempts: number): FlowDef => ({
+    ...REVIEW_FLOW,
+    stages: REVIEW_FLOW.stages.map((stage) => ({ ...stage, onFail: { goto: OTHER_STAGE, maxAttempts } })),
+  });
+  const auditActions = (run: { readonly h: Harness }) => run.h.log.entries().map((entry) => entry.action);
+
+  it('A-422: a succeeded reviewer run that never called the tool fails the verdict gate with verdict_missing, audited', async () => {
+    const run = await reviewerRun(undefined);
+
+    expect(run.outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect(run.events.map((event) => event.type)).toEqual(['run_started', 'run_finished', 'gate_evaluated']);
+    expect(run.events[2]).toMatchObject({
+      stage: OTHER_STAGE,
+      gate: 'review-verdict',
+      verdict: { status: 'failed', reason: VERDICT_MISSING },
+    });
+    expect(run.state.status).toBe('blocked');
+    expect(run.state.blockedReason).toBe(`gate "review-verdict" failed: ${VERDICT_MISSING}`);
+    const missing = run.h.log.entries().find((entry) => entry.action === 'gate.verdict_missing');
+    expect(missing).toMatchObject({
+      actor: { kind: 'system', component: 'run-executor' },
+      subject: { kind: 'run', id: (await run.h.runs.listForWorkOrder(WORK_ORDER))[0]?.id ?? PRIOR_RUN },
+      detail: { stage: OTHER_STAGE, gate: 'review-verdict' },
+    });
+    expect(auditActions(run)).not.toContain('gate.verdict_summary');
+  });
+
+  it('A-422: the stage onFail then decides — a retry goes back with attempt + 1', async () => {
+    const run = await reviewerRun(undefined, [finished('completed')], retryFlow(3));
+
+    expect(run.events[2]).toMatchObject({ gate: 'review-verdict', verdict: { status: 'failed', reason: VERDICT_MISSING } });
+    expect(run.state).toMatchObject({ status: 'ready', stage: OTHER_STAGE, attempt: 2 });
+  });
+
+  it('A-422: exhausted attempts block with the verdict_missing reason', async () => {
+    const run = await reviewerRun(undefined, [finished('completed')], retryFlow(1));
+
+    expect(run.state.status).toBe('blocked');
+    expect(run.state.blockedReason).toBe(`gate "review-verdict" failed: ${VERDICT_MISSING}`);
+  });
+
+  it('A-422: a reviewer whose every call was refused (pointers_unresolved) has nothing held and fails the same way', async () => {
+    const run = await reviewerRun({ verdict: 'approve', summary: 'Looks fine.', pointers: ['nowhere.ts:9'] });
+
+    expect(run.answers).toEqual([expect.objectContaining({ ok: false })]);
+    expect(run.events[2]).toMatchObject({ gate: 'review-verdict', verdict: { status: 'failed', reason: VERDICT_MISSING } });
+    expect(auditActions(run)).toContain('gate.verdict_missing');
+  });
+
+  it('A-422: a run that delivered its verdict is unaffected — no verdict_missing, one gate event', async () => {
+    const run = await reviewerRun({ verdict: 'approve', summary: 'Matches the stage.', pointers: [POINTER] });
+
+    expect(run.events.filter((event) => event.type === 'gate_evaluated')).toHaveLength(1);
+    expect(run.events[2]).toMatchObject({ verdict: { status: 'passed' } });
+    expect(auditActions(run)).not.toContain('gate.verdict_missing');
+  });
+
+  it('A-422: a held reject is a delivered verdict, so it is not verdict_missing', async () => {
+    const run = await reviewerRun({ verdict: 'reject', summary: 'The tests are missing.', pointers: [] });
+
+    expect(run.events.filter((event) => event.type === 'gate_evaluated')).toHaveLength(1);
+    expect(auditActions(run)).not.toContain('gate.verdict_missing');
+  });
+
+  it('A-422: a cancelled reviewer run is not a missing verdict', async () => {
+    const run = await reviewerRun(undefined, [finished('cancelled')]);
+
+    expect(run.events.map((event) => event.type)).toEqual(['run_started', 'run_finished']);
+    expect(auditActions(run)).not.toContain('gate.verdict_missing');
+  });
+
+  it('A-422: a failed reviewer run is left to R-18/R-21, with no verdict_missing', async () => {
+    const run = await reviewerRun(undefined, [finished('failed')]);
+
+    expect(run.events.map((event) => event.type)).toEqual(['run_started', 'run_finished']);
+    expect(auditActions(run)).not.toContain('gate.verdict_missing');
+  });
+
+  it('A-422: a succeeded run on a stage with no agent_verdict gate is unaffected', async () => {
+    const h = await harness({ script: [finished('completed')] });
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT, undefined, undefined, undefined, undefined, createVerdictHolder());
+
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect((await h.workOrders.events(WORK_ORDER)).map((event) => event.type)).not.toContain('gate_evaluated');
+    expect(h.log.entries().map((entry) => entry.action)).not.toContain('gate.verdict_missing');
+  });
+
+  it('A-422: a recording that throws is audited as not recorded and never reaches the run result', async () => {
+    const run = await reviewerRun(undefined, [finished('completed')], REVIEW_FLOW, { throwOnGateEvent: true });
+
+    expect(run.outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect(run.events.map((event) => event.type)).toEqual(['run_started', 'run_finished']);
+    expect(run.h.log.entries().find((entry) => entry.action === 'gate.verdict_missing')).toMatchObject({
+      detail: { stage: OTHER_STAGE, recorded: false, error: 'record_failed' },
+    });
   });
 });

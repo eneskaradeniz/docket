@@ -1,5 +1,6 @@
 // gates use cases — rules A-8 (decideHumanGate), A-9 (evaluateMachineGates), A-9a
-// (submitAgentVerdict), A-96 (the changes gate's evidence and its human attestation) and E-18
+// (submitAgentVerdict), A-422 (recordMissingVerdict), A-96 (the changes gate's evidence and its human
+// attestation) and E-18
 // (evaluateMachineGates polling remote_checks gates; the GateContext environments invariant) from
 // docs/v2/application.md, driven over the in-memory port fakes.
 import { describe, expect, it } from 'vitest';
@@ -43,7 +44,14 @@ import {
 } from '../ports/fakes';
 
 import { approveAndDeploy } from './deploy-gate';
-import { attestNoChanges, decideHumanGate, evaluateMachineGates, submitAgentVerdict } from './gates';
+import {
+  attestNoChanges,
+  decideHumanGate,
+  evaluateMachineGates,
+  recordMissingVerdict,
+  submitAgentVerdict,
+  VERDICT_MISSING_REASON,
+} from './gates';
 import { AUTONOMY_KEY } from './settings';
 
 // --- fixtures ---------------------------------------------------------------------------------------
@@ -1641,6 +1649,107 @@ describe('submitAgentVerdict', () => {
     expect(result).toEqual({ ok: false, error: 'no_repo' });
     expect(await eventsOf(h)).toHaveLength(3);
     expect(h.log.entries()).toHaveLength(0);
+  });
+});
+
+describe('recordMissingVerdict', () => {
+  const REVIEW = slugOf<'stage'>('review');
+  const REVIEWER = slugOf<'role'>('reviewer');
+  const input = { id: WORK_ORDER, stage: REVIEW, role: REVIEWER };
+
+  it('A-422: a pending agent_verdict gate of the run\'s role fails with verdict_missing, decided by the system actor', async () => {
+    const h = makeHarness();
+    await createIn(h, 'verdict-flow');
+    await runSucceededIn(h, REVIEW);
+    h.clock.advance(30);
+
+    const result = await recordMissingVerdict(h.deps, input);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.gate).toBe('review-verdict');
+    expect(result.value.state.status).toBe('blocked');
+    expect(result.value.state.blockedReason).toBe(`gate "review-verdict" failed: ${VERDICT_MISSING_REASON}`);
+    const events = await eventsOf(h);
+    expect(events[events.length - 1]).toEqual({
+      type: 'gate_evaluated',
+      at: 1_030,
+      stage: REVIEW,
+      gate: slugOf('review-verdict'),
+      verdict: { status: 'failed', reason: VERDICT_MISSING_REASON },
+    });
+    expect(h.log.entries()).toHaveLength(1);
+    expect(h.log.entries()[0]).toMatchObject({
+      actor: { kind: 'system', component: 'run-executor' },
+      action: 'gate.decided',
+      subject: { kind: 'work_order', id: WORK_ORDER },
+      detail: { gate: 'review-verdict', decision: 'rejected' },
+    });
+  });
+
+  it('A-422: the reason names the missing tool call', () => {
+    expect(VERDICT_MISSING_REASON).toBe('verdict_missing: the reviewer ended without calling submit_verdict');
+  });
+
+  it('A-422: a second call finds the gate no longer pending and records nothing (idempotent)', async () => {
+    const h = makeHarness();
+    await createIn(h, 'verdict-flow');
+    await runSucceededIn(h, REVIEW);
+    await recordMissingVerdict(h.deps, input);
+    const before = (await eventsOf(h)).length;
+
+    const again = await recordMissingVerdict(h.deps, input);
+
+    expect(again).toEqual({ ok: false, error: 'no_pending_verdict_gate' });
+    expect(await eventsOf(h)).toHaveLength(before);
+    expect(h.log.entries()).toHaveLength(1);
+  });
+
+  it('A-422: a gate already decided by a delivered verdict is left alone', async () => {
+    const h = makeHarness();
+    h.evidence.setResolvable(['src/a.ts:12']);
+    await createIn(h, 'verdict-flow');
+    await runSucceededIn(h, REVIEW);
+    await submitAgentVerdict(h.deps, {
+      id: WORK_ORDER,
+      gate: slugOf('review-verdict'),
+      approve: true,
+      pointers: ['src/a.ts:12'],
+      actor: REVIEWER_AGENT,
+    });
+    const before = (await eventsOf(h)).length;
+
+    expect(await recordMissingVerdict(h.deps, input)).toEqual({ ok: false, error: 'no_pending_verdict_gate' });
+    expect(await eventsOf(h)).toHaveLength(before);
+  });
+
+  it('A-422: a stage without an agent_verdict gate, another stage, or another role records nothing', async () => {
+    const h = makeHarness();
+    await createIn(h, 'cmd-flow');
+    await runSucceededIn(h, slugOf('build'));
+    expect(await recordMissingVerdict(h.deps, { ...input, stage: slugOf('build') })).toEqual({
+      ok: false,
+      error: 'no_pending_verdict_gate',
+    });
+
+    const other = makeHarness();
+    await createIn(other, 'verdict-flow');
+    await runSucceededIn(other, REVIEW);
+    expect(await recordMissingVerdict(other.deps, { ...input, stage: slugOf('build') })).toEqual({
+      ok: false,
+      error: 'not_current_stage',
+    });
+    expect(await recordMissingVerdict(other.deps, { ...input, role: slugOf('worker') })).toEqual({
+      ok: false,
+      error: 'no_pending_verdict_gate',
+    });
+    expect(await eventsOf(other)).toHaveLength(3);
+    expect(other.log.entries()).toHaveLength(0);
+  });
+
+  it('A-422: an unknown work order is not_found', async () => {
+    const h = makeHarness();
+    expect(await recordMissingVerdict(h.deps, input)).toEqual({ ok: false, error: 'not_found' });
   });
 });
 

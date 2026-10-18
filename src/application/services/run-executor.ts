@@ -23,6 +23,7 @@ import type {
   RiskAsk,
   RiskContext,
   RoleDef,
+  RoleSlug,
   RollingNote,
   RunId,
   RunOutcome,
@@ -61,6 +62,7 @@ import type { BoardHooks } from './permission-board';
 import type { RunControl } from './run-control';
 import { deliverHeldVerdict, type VerdictHolder } from './verdict-holder';
 import { buildHandoff, commitCheckpoint, effectiveAutonomy, listActiveMemoryNotes, proposeMemory } from '../use-cases/index';
+import { recordMissingVerdict } from '../use-cases/gates';
 
 export interface MemoryProposalDraft {
   readonly scope: MemoryScope;
@@ -358,6 +360,31 @@ const audit = async (
     subject: { kind: 'run', id: input.runId },
     ...(input.detail !== undefined ? { detail: input.detail } : {}),
   });
+};
+
+/** A-422: after a succeeded run's verdict delivery step, fails the stage's `agent_verdict` gate of
+ *  the run's role when it is still pending — the reviewer never called `submit_verdict`, or every
+ *  call was refused — so the stage retries or blocks (R-21) instead of waiting in `gating` for ever.
+ *  A stage without such a gate, or one a delivered verdict already decided, records nothing. A
+ *  recording that fails is audited as not recorded and never reaches the run result. */
+const failMissingVerdict = async (
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'definitions'>,
+  input: { readonly runId: RunId; readonly workOrderId: WorkOrderId; readonly stage: StageSlug; readonly role: RoleSlug },
+): Promise<void> => {
+  const auditMissing = async (detail: Readonly<Record<string, string | boolean>>): Promise<void> => {
+    try {
+      await audit(deps, { at: deps.clock.now(), action: 'gate.verdict_missing', runId: input.runId, detail });
+    } catch {
+      // The audit write may be what failed; nothing more can be recorded, and the run is unaffected.
+    }
+  };
+  try {
+    const recorded = await recordMissingVerdict(deps, { id: input.workOrderId, stage: input.stage, role: input.role });
+    if (!recorded.ok) return;
+    await auditMissing({ stage: input.stage, gate: recorded.value.gate });
+  } catch {
+    await auditMissing({ stage: input.stage, recorded: false, error: 'record_failed' });
+  }
 };
 
 /** Closes the run record and appends the matching `run_finished` event to the work order. Every
@@ -1053,6 +1080,9 @@ async function driveRun(
           // run held is delivered only now, after that event.
           if (finalOutcome === 'succeeded' && verdicts !== undefined) {
             await deliverHeldVerdict(deps, verdicts, { runId, workOrderId: item.workOrderId, role: input.role.id });
+            // A-422: a verdict gate still pending after the delivery step got no verdict at all. A
+            // shell without a holder has no tool path for the verdict, so it is not judged here.
+            await failMissingVerdict(deps, { runId, workOrderId: item.workOrderId, stage: item.stage, role: input.role.id });
             workOrdersChanged?.();
           }
           // Two fold rules flip a completed finish to failed; the audit names the one that fired.
