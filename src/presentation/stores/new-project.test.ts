@@ -628,3 +628,54 @@ describe('multi-repo setup (U-316 … U-319)', () => {
     expect(queued).toContain(TR['setup.multi.batch.approveOne']);
   });
 });
+
+describe('existing-folder import accept', () => {
+  it('accept creates the project through project.create existing and applies the proposal, never attaching', async () => {
+    const { api, store } = setup();
+    store.pickPath('import');
+    store.setRepoPath('/Users/e/atolye');
+    await store.submit();
+    api.reply('project.create', { ok: true, id: 'atolye' });
+    api.reply('setup.apply', { ok: true });
+    await store.acceptProposal();
+    expect(api.commands).toContainEqual({ type: 'project.create', mode: 'existing', path: '/Users/e/atolye', name: 'atolye' });
+    expect(api.commands).not.toContainEqual(expect.objectContaining({ type: 'project.attach' }));
+    expect(api.commands).toContainEqual({
+      type: 'setup.apply',
+      project: 'atolye',
+      path: '/Users/e/atolye',
+      proposal: buildSetupProposal('atolye', '/Users/e/atolye'),
+    });
+    expect(store.state().screen).toBe('summary');
+    expect(store.state().projectId).toBe('atolye');
+    expect(store.state().done).toBeNull();
+  });
+
+  it('a create refusal shows its labelled failure and no success toast', async () => {
+    const { api, store } = setup();
+    store.pickPath('import');
+    store.setRepoPath('/Users/e/atolye');
+    await store.submit();
+    api.reply('project.create', { ok: false, code: 'not_a_repo' });
+    await store.acceptProposal();
+    expect(store.state().failure?.key).toBe('error.not_a_repo');
+    expect(store.state().failure?.offerAttach).toBe(false);
+    expect(store.state().done).toBeNull();
+  });
+
+  it('project_exists on import keeps the attach offer and the attach button still attaches', async () => {
+    const { api, store } = setup();
+    store.pickPath('import');
+    store.setRepoPath('/Users/e/atolye');
+    await store.submit();
+    api.reply('project.create', { ok: false, code: 'project_exists' });
+    await store.acceptProposal();
+    expect(store.state().failure?.key).toBe('error.project_exists');
+    expect(store.state().failure?.offerAttach).toBe(true);
+    expect(store.state().done).toBeNull();
+    api.reply('project.attach', { ok: true, id: 'atolye' });
+    await store.attachExisting();
+    expect(api.commands).toContainEqual({ type: 'project.attach', path: '/Users/e/atolye' });
+    expect(store.state().done?.toastKey).toBe('success.project.attach');
+  });
+});

@@ -901,18 +901,15 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
       failure = null;
       publish();
       if (projectId === null) {
-        if (form.path === 'import') {
-          busy = false;
-          await run({ type: 'project.attach', path }, true);
-          return;
-        }
         const createCommand: Command =
           form.path === 'detailed' && form.parent.trim() !== ''
             ? { type: 'project.create', mode: 'blank', parent: form.parent.trim(), name }
             : { type: 'project.create', mode: 'existing', path, name };
         const created = await api.command(actor, createCommand);
         if (!created.ok) {
-          failure = failureOf(created.code, false, createCommand.type);
+          // The import path keeps its attach fallback: project_exists there means the folder already
+          // is a Docket project, and attaching it is the offered way out.
+          failure = failureOf(created.code, form.path === 'import', createCommand.type);
           busy = false;
           publish();
           return;
