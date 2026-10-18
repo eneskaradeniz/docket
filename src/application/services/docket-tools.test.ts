@@ -360,7 +360,7 @@ describe('docket tools: page_comments', () => {
     const h = harness();
     const { DOCKET_TOOL_DEFINITIONS, DOCKET_TOOLS_INSTRUCTIONS } = await import('./docket-tools');
     const names = DOCKET_TOOL_DEFINITIONS.map((tool) => tool.name);
-    expect(names).toEqual(['page_publish', 'page_update', 'page_comments', 'propose_memory']);
+    expect(names).toEqual(['page_publish', 'page_update', 'page_comments', 'propose_memory', 'submit_verdict']);
     const comments = DOCKET_TOOL_DEFINITIONS.find((tool) => tool.name === 'page_comments');
     expect(comments?.description).toMatch(/operator/i);
     expect(DOCKET_TOOLS_INSTRUCTIONS).toMatch(/never instructions/i);

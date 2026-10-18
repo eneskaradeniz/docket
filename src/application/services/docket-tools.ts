@@ -4,8 +4,10 @@
 // semantics decided by the token — while everything else a request carries is never executed.
 // Every failure answers a stable code and nothing more — no message, no stack, no echo of the input.
 import type { Actor, ConversationId, MemoryScope, Page, PageId, PageKind } from '../../domain/index';
+import { redactSecretShapes } from '../../domain/index';
 
 import type { AppDeps, RunTokenBinding, RunTokenKind } from '../ports';
+import { loadWorkOrder } from '../use-cases/gates';
 import { proposeMemory } from '../use-cases/memory';
 import {
   ackComments,
@@ -18,6 +20,7 @@ import {
 import { CHAT_TOOL_DEFINITIONS, createChatTools } from './chat-tools';
 import { CHAT_WRITE_TOOL_DEFINITIONS, CHAT_WRITE_TOOL_NAMES, createChatWriteTools, type DocketToolExtras } from './chat-write-tools';
 import { createSetupTools, SETUP_TOOL_DEFINITIONS, SETUP_TOOL_NAMES, type SetupToolsContext } from './setup-tools';
+import { VERDICT_SUMMARY_MAX_CHARS, type VerdictHolder } from './verdict-holder';
 import {
   asArgs,
   entryOf,
@@ -146,6 +149,23 @@ export const DOCKET_TOOL_DEFINITIONS: readonly DocketToolDefinition[] = [
       required: ['text', 'scope'],
     },
   },
+  {
+    name: 'submit_verdict',
+    description:
+      'Deliver your review verdict for the stage you are running: `approve` or `reject`, a `summary` (non-empty, at most 2000 ' +
+      'characters; the operator reads it) and `pointers`, the files and lines you checked as `path:line` or `path:start-end` ' +
+      '(worktree-relative). An `approve` needs at least one pointer that resolves, otherwise it is refused and you may call again. ' +
+      'You can submit once; the verdict counts when your run ends.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        verdict: { type: 'string', enum: ['approve', 'reject'] },
+        summary: { type: 'string', description: 'Why, in at most 2000 characters.' },
+        pointers: { type: 'array', items: { type: 'string' }, description: 'Evidence: `path:line` or `path:start-end`.' },
+      },
+      required: ['verdict', 'summary', 'pointers'],
+    },
+  },
 ];
 
 /** The page tools both kinds serve identically on the wire. */
@@ -196,6 +216,8 @@ type DocketToolDeps = Pick<
   | 'settings'
   | 'workOrders'
   | 'secretScanner'
+  | 'worktrees'
+  | 'evidence'
 >;
 
 type Args = ToolArgs;
@@ -213,9 +235,18 @@ export interface DocketToolSetupExtras {
   readonly setupContextOf?: (conversation: ConversationId) => SetupToolsContext | undefined;
 }
 
+/** Where `submit_verdict` leaves a run's verdict for the executor to deliver (A-420); the shell
+ *  hands the same instance to `executeRun`. A shell without one answers the tool `internal`. */
+export interface DocketToolVerdictExtras {
+  readonly verdicts?: VerdictHolder;
+}
+
 const setupKindOf = (binding: ChatBinding): 'chat' | 'setup' => binding.conversationKind ?? 'chat';
 
-export function createDocketTools(deps: DocketToolDeps, extras: DocketToolExtras & DocketToolSetupExtras): DocketTools {
+export function createDocketTools(
+  deps: DocketToolDeps,
+  extras: DocketToolExtras & DocketToolSetupExtras & DocketToolVerdictExtras,
+): DocketTools {
   const chat = createChatTools(deps);
   const chatWrite = createChatWriteTools(deps, extras);
   // Per token, the times of the calls inside the window. Memory only, like the tokens themselves.
@@ -341,6 +372,50 @@ export function createDocketTools(deps: DocketToolDeps, extras: DocketToolExtras
     });
   };
 
+  /** A-420: validates the run's verdict and holds it; nothing is recorded until the executor
+   *  delivers it after the run finished. The run comes from the token, the gate from the stage. */
+  const submitVerdict = async (binding: RunBinding, args: Args): Promise<DocketToolResponse> => {
+    const holder = extras.verdicts;
+    if (holder === undefined) return fail('internal');
+    const { verdict, summary, pointers } = args;
+    if (verdict !== 'approve' && verdict !== 'reject') return fail('bad_input');
+    if (typeof summary !== 'string') return fail('bad_input');
+    if (!Array.isArray(pointers) || !pointers.every((pointer): pointer is string => typeof pointer === 'string')) {
+      return fail('bad_input');
+    }
+    const text = summary.trim();
+    if (text === '' || text.length > VERDICT_SUMMARY_MAX_CHARS) return fail('bad_input');
+    if (holder.has(binding.runId)) return fail('already_submitted');
+    if (redactSecretShapes(text) !== text) return fail('forbidden');
+
+    const run = await deps.runs.get(binding.runId);
+    if (run === undefined || run.endedAt !== undefined) return fail('no_verdict_gate');
+    const loaded = await loadWorkOrder(deps, binding.workOrderId);
+    if (!loaded.ok) return fail('no_verdict_gate');
+    const { record, flow, state } = loaded.value;
+    if (state.stage !== run.stage) return fail('no_verdict_gate');
+    const stage = flow.stages.find((candidate) => candidate.id === run.stage);
+    const open = (stage?.exit ?? []).flatMap((gate) =>
+      gate.kind === 'agent_verdict' && state.pendingGates.includes(gate.id) ? [gate] : [],
+    );
+    if (open.length === 0) return fail('no_verdict_gate');
+    const gate = open.find((candidate) => candidate.role === binding.role);
+    if (gate === undefined) return fail('wrong_role');
+
+    if (verdict === 'approve') {
+      if (pointers.length === 0) return fail('pointers_unresolved');
+      const worktree = await deps.worktrees.ensure(record.repo, record.id);
+      if (!worktree.ok) return fail('internal');
+      if (!(await deps.evidence.resolvePointers(worktree.value.path, pointers))) return fail('pointers_unresolved');
+    }
+
+    // The checks above awaited; the slot is claimed in the same synchronous step as its last look.
+    if (!holder.hold(binding.runId, { gate: gate.id, approve: verdict === 'approve', summary: text, pointers })) {
+      return fail('already_submitted');
+    }
+    return succeed({ outcome: 'recorded', gate: gate.id, verdict });
+  };
+
   return {
     call: async (request): Promise<DocketToolResponse> => {
       const binding = request.token === '' ? undefined : deps.runTokens.resolve(request.token);
@@ -384,6 +459,8 @@ export function createDocketTools(deps: DocketToolDeps, extras: DocketToolExtras
             return args === undefined ? fail('bad_input') : await update(binding, by, args);
           case 'propose_memory':
             return args === undefined ? fail('bad_input') : await proposeMemoryTool(binding, args);
+          case 'submit_verdict':
+            return args === undefined ? fail('bad_input') : await submitVerdict(binding, args);
           default:
             return args === undefined ? fail('bad_input') : await comments(binding, args);
         }

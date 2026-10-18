@@ -38,6 +38,8 @@ Decided with the operator on 2026-10-12; architect-owned; supersedes by referenc
 
 11. **D-11**: Empty command set at setup: a repo whose setup ends with no test command gets `tests: []` and its flow copy drops the `command` gates bound to empty sets; a filled Test komutu keeps them. R-13/R-16/R-22 unchanged. (#1278)
 
+12. **D-12**: Agent verdict is delivered by the run-token-bound `submit_verdict` tool; the gate never reads prose. (#1286) The tool takes `{ verdict, summary, pointers }`, checks the run, its role and the evidence pointers, and holds the verdict; the run executor delivers it through `submitAgentVerdict` right after `run_finished(succeeded)` and audits the summary as `gate.verdict_summary`. R-15/R-16/R-19/R-22 and A-9a are unchanged.
+
 ## Supersessions
 
 | Decision | What it supersedes | Where the contract change lands |

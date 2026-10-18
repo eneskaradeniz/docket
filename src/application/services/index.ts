@@ -25,6 +25,7 @@ export * from './chat-runner';
 export * from './setup-contexts';
 export * from './setup-permissions';
 export * from './setup-tools';
+export * from './verdict-holder';
 export * from './operator-feedback';
 export * from './quit-flow';
 export * from './stage-run-role';

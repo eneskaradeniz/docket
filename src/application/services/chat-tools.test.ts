@@ -273,6 +273,7 @@ describe('A-204: tools by token kind', () => {
       'page_update',
       'page_comments',
       'propose_memory',
+      'submit_verdict',
     ]);
     // A-204's own list was the three read tools; the shared page tools and the chat write tools
     // follow them (A-213), so the chat list begins with exactly these three, in order.

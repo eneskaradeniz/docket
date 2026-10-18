@@ -215,6 +215,7 @@ describe('A-213: tool ownership by kind', () => {
       'page_update',
       'page_comments',
       'propose_memory',
+      'submit_verdict',
     ]);
     // The setup tools (A-213's 2026-10-14 addendum) trail the nine: a setup token is a chat token
     // narrowed by conversationKind, so the listing shows them for the setup agent to call.
