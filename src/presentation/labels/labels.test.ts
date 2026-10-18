@@ -79,6 +79,7 @@ describe('labels', () => {
       .map(([key]) => key);
     expect(dotted.sort()).toEqual([
       'detail.close.open',
+      'detail.git.mergeLocal',
       'detail.git.mergeOpen',
       'detail.steer.open',
       'detail.stop.open',

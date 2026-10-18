@@ -104,6 +104,12 @@ export const KNOWN_FAILURE_CODES: readonly string[] = [
   'forge_error',
   'branch_not_merged',
   'git_failed',
+  // The local merge's refusals (A-425).
+  'already_merged',
+  'forge_configured',
+  'dirty_checkout',
+  'base_not_checked_out',
+  'conflict',
   // The connector switch's refusals (A-415): an invalid manifest is never switchable, and a
   // corrupt settings store fails closed.
   'invalid',
@@ -188,6 +194,7 @@ const SUCCESS_KEYS: Readonly<Record<Exclude<Command['type'], SilentCommand>, Lab
   'workOrder.push': 'detail.git.push.success',
   'workOrder.openPr': 'detail.git.openPr.success',
   'workOrder.mergePr': 'detail.git.merge.success',
+  'workOrder.mergeLocal': 'detail.git.mergeLocal.success',
   'workOrder.releaseBranch': 'detail.git.release.success',
   'task.open': 'success.task.open',
   // The roadmap page words its phase toasts itself (stores/roadmap.ts); these are the plain copy.

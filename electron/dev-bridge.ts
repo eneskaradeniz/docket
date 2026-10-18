@@ -205,6 +205,8 @@ export const workOrderEventSummary = (event: WorkOrderEvent): string => {
       return `pr opened #${event.number} ${event.head} → ${event.base}`;
     case 'pr_merged':
       return `pr merged #${event.number}`;
+    case 'branch_merged_local':
+      return `merged ${event.branch} into ${event.base}`;
     case 'branch_released':
       return 'branch released';
     case 'closed':

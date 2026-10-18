@@ -274,6 +274,9 @@ export interface WorkOrderDetailState {
   /** The forge default-branch read (A-391); null before the first reply or on a reply the guard
    *  cannot read — the PR dialog's prefill and the push door's reason both read it. */
   readonly gitBase: GitBaseRead | null;
+  /** The checked-out branch a local merge would land on (A-426); read only while the repo has
+   *  no forge, null before the first reply. */
+  readonly localBase: GitBaseRead | null;
 }
 
 /** The `workOrder.gitBase` reply narrowed (A-391): the default branch on success, the typed code
@@ -344,6 +347,9 @@ export interface WorkOrderDetailStore {
   /** Merges the pull request (`workOrder.mergePr`, U-347) — the number the confirm dialog
    *  restated travels verbatim; a stale number is the typed refusal, never a wrong merge. */
   mergePr(number: number): Promise<IntentOutcome>;
+  /** Merges the work-order branch into the base the confirm named (`workOrder.mergeLocal`,
+   *  U-358) — the base travels as the approval pin. */
+  mergeLocal(base: string): Promise<IntentOutcome>;
   /** Releases the branch and worktree (`workOrder.releaseBranch`, U-348). */
   releaseBranch(): Promise<IntentOutcome>;
   /** Re-reads `usage.summary` for the loaded work order (the usage line's retry). */
@@ -694,7 +700,7 @@ export const gitCardVisible = (
 ): boolean => {
   if (model === null) return false;
   if (model.repoReasonKey !== undefined) return true;
-  if (model.pr !== null || view.git?.branch !== undefined) return true;
+  if (model.pr !== null || view.git?.branch !== undefined || view.git?.mergedLocal !== undefined) return true;
   return changes !== null && changes.state === 'ready' && changes.files.length > 0;
 };
 
@@ -817,7 +823,7 @@ export const gateCheckGroups = (
 /** One door of the git card: its standing and, when it is closed, the one quiet line that says
  *  why (U-345, U-349). */
 export interface GitDoor {
-  readonly kind: 'push' | 'openPr' | 'merge' | 'release';
+  readonly kind: 'push' | 'openPr' | 'merge' | 'mergeLocal' | 'release';
   readonly available: boolean;
   /** Present only on a closed door — the reason line the card renders beside it. */
   readonly reasonKey?: LabelKey;
@@ -828,6 +834,8 @@ export interface GitDoor {
 export interface GitCardModel {
   readonly branch: string;
   readonly pr: GitPrState | null;
+  /** Present once the branch was merged into the base locally (R-185, U-358). */
+  readonly mergedLocal?: { readonly base: string };
   /** Present only while the repo context answers a not-ok standing (U-351): the one visible
    *  cause every closed door shares — the card stands to say it. */
   readonly repoReasonKey?: LabelKey;
@@ -856,6 +864,7 @@ export const gitCard = (
   view: WorkOrderDetailView,
   gitBase: GitBaseRead | null,
   hasWorktree: boolean,
+  localBase: GitBaseRead | null = null,
 ): GitCardModel | null => {
   const git = view.git;
   if (git?.released === true) return null;
@@ -877,9 +886,21 @@ export const gitCard = (
   const pr = git?.pr ?? null;
   const openPr = pr !== null && !pr.merged;
   const pushBlocked = gitBase !== null && !gitBase.ok && gitBase.code === 'forge_unavailable';
+  const mergedLocal = git?.mergedLocal;
+  // U-358: the local merge is the forge-less door — a standing forge never offers it, and a
+  // merged branch has done it. It needs the checkout's base to name in its confirm.
+  const mergeLocalDoor: readonly GitDoor[] =
+    pushBlocked && mergedLocal === undefined
+      ? [
+          localBase !== null && localBase.ok
+            ? { kind: 'mergeLocal', available: true }
+            : { kind: 'mergeLocal', available: false, reasonKey: 'detail.git.mergeLocal.noBase' as LabelKey },
+        ]
+      : [];
   return {
     branch: git?.branch?.name ?? workOrderBranch(view.record.id as WorkOrderId),
     pr,
+    ...(mergedLocal === undefined ? {} : { mergedLocal: { base: mergedLocal.base } }),
     doors: [
       {
         kind: 'push',
@@ -900,10 +921,11 @@ export const gitCard = (
         available: openPr,
         ...(!openPr ? { reasonKey: 'detail.git.noOpenPr' as LabelKey } : {}),
       },
+      ...mergeLocalDoor,
       {
         kind: 'release',
-        available: pr?.merged === true,
-        ...(pr?.merged !== true ? { reasonKey: 'detail.git.notMerged' as LabelKey } : {}),
+        available: pr?.merged === true || mergedLocal !== undefined,
+        ...(pr?.merged !== true && mergedLocal === undefined ? { reasonKey: 'detail.git.notMerged' as LabelKey } : {}),
       },
     ],
   };
@@ -1017,6 +1039,7 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     usageSummary: null,
     usageSummaryFailed: false,
     gitBase: null,
+    localBase: null,
   };
   // The work order the store is bound to: change events re-query it, intents act on it.
   let workOrderId: string | null = null;
@@ -1066,8 +1089,20 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     const reply: unknown = await api.query({ type: 'workOrder.gitBase', id } satisfies Query);
     // A binding that moved on while the read was out leaves its answer for the next one.
     if (workOrderId !== id) return;
-    if (isQueryFailure(reply)) set({ ...state, gitBase: { ok: false, code: reply.code } });
-    else if (isGitBaseView(reply)) set({ ...state, gitBase: { ok: true, base: reply.base } });
+    if (isQueryFailure(reply)) {
+      set({ ...state, gitBase: { ok: false, code: reply.code } });
+      // Only a repo with no forge has a local base to name (U-358).
+      if (reply.code === 'forge_unavailable') void loadLocalBase(id);
+    } else if (isGitBaseView(reply)) set({ ...state, gitBase: { ok: true, base: reply.base } });
+  };
+
+  /** The checkout's branch (A-426), read on every refresh while the forge is missing: it is a
+   *  local git read, and the confirm must name what is checked out now. */
+  const loadLocalBase = async (id: string): Promise<void> => {
+    const reply: unknown = await api.query({ type: 'workOrder.localBase', id } satisfies Query);
+    if (workOrderId !== id) return;
+    if (isQueryFailure(reply)) set({ ...state, localBase: { ok: false, code: reply.code } });
+    else if (isGitBaseView(reply)) set({ ...state, localBase: { ok: true, base: reply.base } });
   };
 
   /** The failed standing's one-line quote: the failed run's own last words, read once per
@@ -1136,6 +1171,8 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     if (gitBaseFor !== id) {
       gitBaseFor = id;
       void loadGitBase(id);
+    } else if (state.gitBase !== null && !state.gitBase.ok && state.gitBase.code === 'forge_unavailable') {
+      void loadLocalBase(id);
     }
     const reply: unknown = await detailRead;
     if (attempt !== attempts) return;
@@ -1348,6 +1385,10 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     mergePr: (number) => {
       if (workOrderId === null) return Promise.resolve(notLoadedOutcome('workOrder.mergePr'));
       return runIntent({ type: 'workOrder.mergePr', id: workOrderId, number }, 'detail.git.merge.success');
+    },
+    mergeLocal: (base) => {
+      if (workOrderId === null) return Promise.resolve(notLoadedOutcome('workOrder.mergeLocal'));
+      return runIntent({ type: 'workOrder.mergeLocal', id: workOrderId, base }, 'detail.git.mergeLocal.success');
     },
     releaseBranch: () => {
       if (workOrderId === null) return Promise.resolve(notLoadedOutcome('workOrder.releaseBranch'));

@@ -46,6 +46,8 @@ Decided with the operator on 2026-10-12; architect-owned; supersedes by referenc
 
 15. **D-15**: Agent may not read or write the run config tree; deny at every level. (#1298, #1282)
 
+16. **D-16**: 'Ana dala al' — a human-confirmed local merge of the work-order branch into the repo's checked-out base branch for repos without a forge; typed refusals `dirty_checkout`, `base_not_checked_out`, `conflict` (aborted, tree clean), `no_branch`; never pushes; after it `Dalı sil` opens. (#1295, #1291)
+
 ## Supersessions
 
 | Decision | What it supersedes | Where the contract change lands |

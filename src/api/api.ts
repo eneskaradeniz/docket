@@ -146,6 +146,7 @@ import {
   getWorkOrder,
   workOrderChanges,
   workOrderGitBase,
+  workOrderLocalBase,
   workOrderRunSummaries,
   grantPermission,
   grantSpendConsent,
@@ -196,6 +197,7 @@ import {
   mergeWorkOrderPr,
   openWorkOrderPr,
   PR_TEXT_MAX_CHARS,
+  mergeWorkOrderLocal,
   pushWorkOrderBranch,
   releaseWorkOrderBranch,
   STEER_NOTE_MAX_CHARS,
@@ -1215,6 +1217,12 @@ const runCommand = async (
       );
     }
 
+    case 'workOrder.mergeLocal': {
+      const id = ulidValue<'work-order'>(command.id);
+      if (id === undefined) return invalidId();
+      return commandOf(await mergeWorkOrderLocal(gitDeps(deps), forges, { id, base: command.base, actor }));
+    }
+
     case 'workOrder.releaseBranch': {
       const id = ulidValue<'work-order'>(command.id);
       if (id === undefined) return invalidId();
@@ -2125,6 +2133,14 @@ const runQuery = async (
       const id = ulidValue<'work-order'>(query.id);
       if (id === undefined) return invalidId();
       const base = await workOrderGitBase({ workOrders: deps.workOrders, repos: deps.repos }, forges, id);
+      return base.ok ? { ok: true, base: base.value } : { ok: false, code: base.error };
+    }
+
+    // The local merge's confirm names its base (A-426): a pure read of the checkout's branch.
+    case 'workOrder.localBase': {
+      const id = ulidValue<'work-order'>(query.id);
+      if (id === undefined) return invalidId();
+      const base = await workOrderLocalBase(gitDeps(deps), forges, id);
       return base.ok ? { ok: true, base: base.value } : { ok: false, code: base.error };
     }
 

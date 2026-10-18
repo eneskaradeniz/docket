@@ -583,6 +583,7 @@ const GIT_DOOR_LABEL: Readonly<Record<GitDoor['kind'], LabelKey>> = {
   push: 'detail.git.push',
   openPr: 'detail.git.openPr',
   merge: 'detail.git.mergeOpen',
+  mergeLocal: 'detail.git.mergeLocal',
   release: 'detail.git.release',
 };
 
@@ -592,12 +593,15 @@ export interface GitDoorsCardProps {
   /** The forge default-branch read (A-391): the PR dialog's prefill on success, its visible
    *  hint on failure — the operator can always type a base. */
   readonly gitBase: GitBaseRead | null;
+  /** The checkout's branch read (A-426): the local merge confirm names it as the base. */
+  readonly localBase: GitBaseRead | null;
   /** The names of the remote checks currently failing (GI-3's rows) — the merge confirm's quiet
    *  warning line; it never blocks the human's decision (decision 5). */
   readonly failedChecks: readonly string[];
   readonly onPush: () => Promise<IntentOutcome>;
   readonly onOpenPr: (input: GitOpenPrInput) => Promise<IntentOutcome>;
   readonly onMerge: (number: number) => Promise<IntentOutcome>;
+  readonly onMergeLocal: (base: string) => Promise<IntentOutcome>;
   readonly onRelease: () => Promise<IntentOutcome>;
 }
 
@@ -615,6 +619,7 @@ export function GitDoorsCard(props: GitDoorsCardProps) {
   const [title, setTitle] = useState('');
   const [prRejected, setPrRejected] = useState(false);
   const [mergeTarget, setMergeTarget] = useState<{ readonly number: number; readonly head: string; readonly base: string } | null>(null);
+  const [mergeLocalTarget, setMergeLocalTarget] = useState<{ readonly branch: string; readonly base: string } | null>(null);
   const [releaseTarget, setReleaseTarget] = useState<string | null>(null);
 
   const openPrForm = (): void => {
@@ -662,6 +667,13 @@ export function GitDoorsCard(props: GitDoorsCardProps) {
           {model.pr.merged ? <span className="text-[0.75rem] text-proceed">{t(locale, 'detail.git.prMerged')}</span> : null}
         </p>
       ) : null}
+      {/* U-358: the lifecycle's own word once the branch landed in the base locally. */}
+      {model.mergedLocal !== undefined ? (
+        <p data-git-merged-local className="m-0 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 text-[0.8125rem] text-inkdim">
+          <span className="text-[0.75rem] text-proceed">{t(locale, 'detail.git.mergedLocal')}</span>
+          <code className="min-w-0 font-mono text-[0.75rem] text-ink [overflow-wrap:anywhere]">{model.mergedLocal.base}</code>
+        </p>
+      ) : null}
       <ul className="m-0 grid list-none gap-2 p-0">
         {model.doors.map((door) => (
           <li key={door.kind} data-git-door={door.kind} className="flex min-w-0 flex-wrap items-center gap-2">
@@ -675,6 +687,11 @@ export function GitDoorsCard(props: GitDoorsCardProps) {
                   const pr = model.pr;
                   // The capture is the restatement: the dialog freezes what it will send.
                   if (pr !== null) setMergeTarget({ number: pr.number, head: pr.head, base: pr.base });
+                } else if (door.kind === 'mergeLocal') {
+                  // The capture is the restatement: the base the dialog names is the base it sends.
+                  if (props.localBase !== null && props.localBase.ok) {
+                    setMergeLocalTarget({ branch: model.branch, base: props.localBase.base });
+                  }
                 } else setReleaseTarget(model.branch);
               }}
             >
@@ -754,6 +771,32 @@ export function GitDoorsCard(props: GitDoorsCardProps) {
                 }}
               >
                 {t(locale, 'detail.git.merge.confirm')}
+              </ActionButton>
+            </div>
+          </div>
+        ) : null}
+      </InlineDialog>
+      <InlineDialog active={mergeLocalTarget !== null} onClose={() => setMergeLocalTarget(null)}>
+        {mergeLocalTarget !== null ? (
+          <div data-detail-git-merge-local className="grid gap-2 border-t border-hairline pt-3">
+            <p className="m-0 text-[0.8125rem] font-semibold text-ink">{t(locale, 'detail.git.mergeLocal.title')}</p>
+            <p className="m-0 font-mono text-[0.75rem] text-inkdim [overflow-wrap:anywhere]">
+              {mergeLocalTarget.branch} → {mergeLocalTarget.base}
+            </p>
+            <p className="m-0 text-[0.8125rem] text-inkdim">{t(locale, 'detail.git.mergeLocal.body')}</p>
+            {/* Vazgeç first, as in the forge merge: the refusal owns the default focus. */}
+            <div className="flex gap-2">
+              <ActionButton onClick={() => setMergeLocalTarget(null)}>{t(locale, 'detail.action.cancel')}</ActionButton>
+              <ActionButton
+                variant="primary"
+                size="md"
+                onClick={() => {
+                  const target = mergeLocalTarget;
+                  setMergeLocalTarget(null);
+                  void props.onMergeLocal(target.base);
+                }}
+              >
+                {t(locale, 'detail.git.mergeLocal.confirm')}
               </ActionButton>
             </div>
           </div>

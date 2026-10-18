@@ -33,10 +33,13 @@ import {
 } from '../ports/fakes';
 
 import {
+  PR_TEXT_MAX_CHARS,
+  mergeWorkOrderLocal,
   mergeWorkOrderPr,
   openWorkOrderPr,
   pushWorkOrderBranch,
   releaseWorkOrderBranch,
+  workOrderLocalBase,
 } from './git-actions';
 
 // --- fixtures ---------------------------------------------------------------------------------------
@@ -68,7 +71,7 @@ interface Harness {
   readonly worktrees: FakeWorktrees;
 }
 
-const makeHarness = (events: readonly ('created' | 'pushed' | 'opened' | 'merged' | 'released')[] = ['created']): Harness => {
+const makeHarness = (events: readonly ('created' | 'pushed' | 'opened' | 'merged' | 'released' | 'mergedLocal')[] = ['created']): Harness => {
   const clock = createFakeClock(1_000);
   const workOrders = createFakeWorkOrderRepo();
   const log = createFakeEventLog();
@@ -99,6 +102,7 @@ const makeHarness = (events: readonly ('created' | 'pushed' | 'opened' | 'merged
     if (kind === 'pushed') workOrders.appendEvent(WORK_ORDER, { type: 'branch_pushed', at: (at += 1) as EpochMs, branch: BRANCH, head: HEAD });
     if (kind === 'opened') workOrders.appendEvent(WORK_ORDER, { type: 'pr_opened', at: (at += 1) as EpochMs, number: 3, url: 'https://forge.fake/ws/pull/3', head: BRANCH, base: 'main' });
     if (kind === 'merged') workOrders.appendEvent(WORK_ORDER, { type: 'pr_merged', at: (at += 1) as EpochMs, number: 3 });
+    if (kind === 'mergedLocal') workOrders.appendEvent(WORK_ORDER, { type: 'branch_merged_local', at: (at += 1) as EpochMs, branch: BRANCH, base: 'main' });
     if (kind === 'released') workOrders.appendEvent(WORK_ORDER, { type: 'branch_released', at: (at += 1) as EpochMs });
   }
 
@@ -435,5 +439,106 @@ describe('releaseWorkOrderBranch', () => {
 
     expect(result).toEqual({ ok: false, error: 'not_found' });
     expect(h.log.entries()).toEqual([]);
+  });
+});
+
+describe('mergeWorkOrderLocal', () => {
+  const NO_FORGE = resolverFor(undefined).resolver;
+  const input = { id: WORK_ORDER, base: 'main', actor: USER } as const;
+
+  it('A-425: merges the branch into the base in the checkout after one branch.merged_local audit, then records branch_merged_local', async () => {
+    const h = makeHarness();
+
+    const result = await mergeWorkOrderLocal(h.deps, NO_FORGE, input);
+
+    expect(result).toEqual({ ok: true, value: undefined });
+    expect(h.worktrees.mergeLocalCalls()).toEqual([{ repo: REPO, workOrderId: WORK_ORDER, base: 'main' }]);
+    expect(h.log.entries()).toEqual([
+      expect.objectContaining({
+        action: 'branch.merged_local',
+        actor: USER,
+        subject: { kind: 'work_order', id: WORK_ORDER },
+        detail: { branch: BRANCH, base: 'main' },
+      }),
+    ]);
+    expect((await h.workOrders.events(WORK_ORDER)).at(-1)).toEqual({ type: 'branch_merged_local', at: 1_000, branch: BRANCH, base: 'main' });
+  });
+
+  it('A-425: validation refusals write nothing and never reach git — unknown id, bad base, released, already merged, a forge that resolves, no worktree, no branch', async () => {
+    const forge = createFakeForge();
+    const cases: readonly { readonly name: string; readonly h: Harness; readonly run: (h: Harness) => ReturnType<typeof mergeWorkOrderLocal>; readonly error: string }[] = [
+      { name: 'unknown', h: makeHarness(), run: (h) => mergeWorkOrderLocal(h.deps, NO_FORGE, { ...input, id: UNKNOWN }), error: 'not_found' },
+      { name: 'empty base', h: makeHarness(), run: (h) => mergeWorkOrderLocal(h.deps, NO_FORGE, { ...input, base: '  ' }), error: 'bad_input' },
+      { name: 'long base', h: makeHarness(), run: (h) => mergeWorkOrderLocal(h.deps, NO_FORGE, { ...input, base: 'b'.repeat(PR_TEXT_MAX_CHARS + 1) }), error: 'bad_input' },
+      { name: 'released', h: makeHarness(['created', 'mergedLocal', 'released']), run: (h) => mergeWorkOrderLocal(h.deps, NO_FORGE, input), error: 'released' },
+      { name: 'already merged', h: makeHarness(['created', 'mergedLocal']), run: (h) => mergeWorkOrderLocal(h.deps, NO_FORGE, input), error: 'already_merged' },
+      { name: 'forge', h: makeHarness(), run: (h) => mergeWorkOrderLocal(h.deps, resolverFor(forge).resolver, input), error: 'forge_configured' },
+      { name: 'no worktree', h: makeHarness(), run: (h) => mergeWorkOrderLocal({ ...h.deps, worktrees: createFakeWorktrees() }, NO_FORGE, input), error: 'no_repo' },
+    ];
+    for (const c of cases) {
+      const before = (await c.h.workOrders.events(WORK_ORDER)).length;
+      expect(await c.run(c.h), c.name).toEqual({ ok: false, error: c.error });
+      expect(c.h.worktrees.mergeLocalCalls(), c.name).toEqual([]);
+      expect(c.h.log.entries(), c.name).toEqual([]);
+      expect((await c.h.workOrders.events(WORK_ORDER)).length, c.name).toBe(before);
+    }
+    // A branch the checkout lost: no_branch, also before any write.
+    const bare = makeHarness();
+    const worktrees = createFakeWorktrees();
+    worktrees.markExisting(REPO, WORK_ORDER);
+    expect(await mergeWorkOrderLocal({ ...bare.deps, worktrees }, NO_FORGE, input)).toEqual({ ok: false, error: 'no_branch' });
+    expect(bare.log.entries()).toEqual([]);
+  });
+
+  it('A-425: a git refusal after the audit (dirty_checkout, base_not_checked_out, conflict, no_branch) keeps the audit and appends no event', async () => {
+    for (const code of ['dirty_checkout', 'base_not_checked_out', 'conflict', 'no_branch'] as const) {
+      const h = makeHarness();
+      h.worktrees.scriptMergeLocal(REPO, WORK_ORDER, code);
+
+      expect(await mergeWorkOrderLocal(h.deps, NO_FORGE, input), code).toEqual({ ok: false, error: code });
+      expect(h.log.entries(), code).toHaveLength(1);
+      expect(await h.workOrders.events(WORK_ORDER), code).toHaveLength(1); // the created event only
+    }
+    const failed = makeHarness();
+    failed.worktrees.scriptMergeLocal(REPO, WORK_ORDER, 'git_failed');
+    expect(await mergeWorkOrderLocal(failed.deps, NO_FORGE, input)).toEqual({ ok: false, error: 'git_failed' });
+  });
+
+  it('A-425: after a local merge the branch can be released, and the merge never pushes or calls a forge', async () => {
+    const h = makeHarness();
+    const forge = createFakeForge();
+    expect(await releaseWorkOrderBranch(h.deps, { id: WORK_ORDER, actor: USER })).toEqual({ ok: false, error: 'branch_not_merged' });
+
+    await mergeWorkOrderLocal(h.deps, NO_FORGE, input);
+
+    expect(forge.pushed).toEqual([]);
+    expect(await releaseWorkOrderBranch(h.deps, { id: WORK_ORDER, actor: USER })).toEqual({ ok: true, value: undefined });
+    expect((await h.workOrders.events(WORK_ORDER)).at(-1)).toEqual({ type: 'branch_released', at: 1_000 });
+  });
+
+  it('A-425: the base text is trimmed before it reaches git', async () => {
+    const h = makeHarness();
+    await mergeWorkOrderLocal(h.deps, NO_FORGE, { ...input, base: '  main  ' });
+    expect(h.worktrees.mergeLocalCalls()[0]?.base).toBe('main');
+  });
+});
+
+describe('workOrderLocalBase', () => {
+  it('A-426: answers the checked-out branch of a forge-less repo and writes nothing', async () => {
+    const h = makeHarness();
+    h.worktrees.setCheckedOut(REPO, 'trunk');
+    expect(await workOrderLocalBase(h.deps, resolverFor(undefined).resolver, WORK_ORDER)).toEqual({ ok: true, value: 'trunk' });
+    expect(h.log.entries()).toEqual([]);
+    expect(await h.workOrders.events(WORK_ORDER)).toHaveLength(1);
+  });
+
+  it('A-426: not_found, forge_configured, base_not_checked_out and no_repo are typed', async () => {
+    const h = makeHarness();
+    expect(await workOrderLocalBase(h.deps, resolverFor(undefined).resolver, UNKNOWN)).toEqual({ ok: false, error: 'not_found' });
+    expect(await workOrderLocalBase(h.deps, resolverFor(createFakeForge()).resolver, WORK_ORDER)).toEqual({ ok: false, error: 'forge_configured' });
+    h.worktrees.setCheckedOut(REPO, undefined);
+    expect(await workOrderLocalBase(h.deps, resolverFor(undefined).resolver, WORK_ORDER)).toEqual({ ok: false, error: 'base_not_checked_out' });
+    h.worktrees.markNoRepo(REPO);
+    expect(await workOrderLocalBase(h.deps, resolverFor(undefined).resolver, WORK_ORDER)).toEqual({ ok: false, error: 'no_repo' });
   });
 });
