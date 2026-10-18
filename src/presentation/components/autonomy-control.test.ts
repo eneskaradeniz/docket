@@ -49,14 +49,14 @@ describe('AutonomyControl', () => {
 
   it('U-334: disables auto with the typed reason text when R-169/R-156 or the ceiling would refuse', () => {
     const blocked = render({ level: 'manual', source: 'builtin', autoUnavailable: 'auto_requires_spend_cap' });
-    expect(blocked).toContain('disabled');
+    expect(blocked).toContain('disabled=""');
     expect(blocked).toContain(TR['autonomy.autoDisabledReason.auto_requires_spend_cap']);
     expect(blocked).not.toContain(TR['error.auto_requires_spend_cap']);
     expect(blocked).not.toContain('role="alert"');
 
     const attempts = render({ level: 'manual', source: 'workOrder', layerSet: true, autoUnavailable: 'auto_requires_max_attempts' });
     expect(attempts).toContain(TR['autonomy.autoDisabledReason.auto_requires_max_attempts']);
-    expect(attempts).toContain('disabled');
+    expect(attempts).toContain('disabled=""');
 
     const ceiling = render({ level: 'manual', source: 'ceiling', autoUnavailable: 'above_ceiling' });
     expect(ceiling).toContain(TR['autonomy.autoDisabledReason.above_ceiling']);
@@ -64,8 +64,21 @@ describe('AutonomyControl', () => {
 
   it('U-334: an already-automatic level keeps auto selected — a later missing cap does not unpick it', () => {
     const markup = render({ level: 'auto', source: 'workOrder', layerSet: true, autoUnavailable: 'auto_requires_spend_cap' });
-    expect(markup).not.toContain('disabled');
+    expect(markup).not.toContain('disabled=""');
     expect(markup).not.toContain(`>${TR['autonomy.autoDisabledReason.auto_requires_spend_cap']}<`);
+  });
+
+  it('#1277: selected and disabled radios never share a look — hand-drawn, disabled is hollow and dashed', () => {
+    const markup = render({ level: 'manual', source: 'builtin', autoUnavailable: 'auto_requires_spend_cap' });
+    const radios = markup.match(/<input[^>]*type="radio"[^>]*>/g) ?? [];
+    expect(radios).toHaveLength(2);
+    for (const radio of radios) {
+      // The platform's own radio (a grey disc when disabled in the dark theme) is switched off.
+      expect(radio).toContain('appearance-none');
+      expect(radio).toContain('checked:before:scale-100');
+      expect(radio).toContain('disabled:border-dashed');
+      expect(radio).toContain('disabled:checked:before:scale-0');
+    }
   });
 
   it('U-334: the clear-layer affordance appears only when the layer itself is set', () => {

@@ -274,7 +274,7 @@ function DeployCard({
   );
 }
 
-/** The permission card: the pending question, the command in its code box, the two answers, and
+/** The permission card: the tool asked for, its exact command or path in the code box, the two answers, and
  *  the asking run's already-allowed asks folded into one line. */
 function PermissionCard({
   ask,
@@ -289,14 +289,20 @@ function PermissionCard({
 }) {
   return (
     <li data-decision-card="permission" className="grid min-w-0 gap-3 rounded-card border border-signal/45 bg-surface px-5 py-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="inline-flex items-center rounded-control border border-bord px-2 py-px font-mono text-[0.75rem] font-bold text-inkdim">
-          {t(locale, 'detail.zone.permissionChip')}
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <span className={LABEL_CLASS}>{t(locale, 'detail.zone.permissionChip')}</span>
+        <span className="inline-flex min-w-0 items-center rounded-control border border-bord px-2 py-px font-mono text-[0.75rem] font-bold text-ink [overflow-wrap:anywhere]">
+          {ask.tool}
         </span>
       </div>
-      <pre className="m-0 min-w-0 overflow-auto whitespace-pre-wrap [overflow-wrap:anywhere] rounded-control border border-hairline bg-band px-3 py-2 font-mono text-[0.6875rem] leading-[1.6] text-ink">
-        {ask.tool}
-      </pre>
+      {ask.target !== null ? (
+        <pre
+          data-permission-target
+          className="m-0 min-w-0 overflow-auto whitespace-pre-wrap [overflow-wrap:anywhere] rounded-control border border-hairline bg-band px-3 py-2 font-mono text-[0.6875rem] leading-[1.6] text-ink"
+        >
+          {ask.target}
+        </pre>
+      ) : null}
       <p className="m-0 text-[0.8125rem] text-inkdim">{t(locale, 'detail.zone.permissionBody')}</p>
       <div className="flex flex-wrap items-center gap-2">
         <ActionButton variant="neutral" onClick={() => onAnswer(ask, 'deny')}>
@@ -415,18 +421,22 @@ function RunningCard({
         <ActionButton variant="neutral" onClick={() => setStopping(true)}>
           {t(locale, 'detail.stop.open')}
         </ActionButton>
-        <ActionButton
-          variant="neutral"
-          disabled={steerDisabled}
-          onClick={() => {
-            setNoteRejected(false);
-            setSteering(true);
-          }}
-        >
-          {t(locale, 'detail.steer.open')}
-        </ActionButton>
+        {/* A transport that cannot take a note offers no door at all (a disabled button with an
+            apology is noise); an unknown capability keeps the door, disabled, until it is known. */}
+        {canSteer === false ? null : (
+          <ActionButton
+            variant="neutral"
+            disabled={steerDisabled}
+            onClick={() => {
+              setNoteRejected(false);
+              setSteering(true);
+            }}
+          >
+            {t(locale, 'detail.steer.open')}
+          </ActionButton>
+        )}
       </div>
-      {steerDisabled ? (
+      {canSteer === 'unknown' ? (
         <p className="m-0 text-[0.78125rem] text-inkdim">{t(locale, 'detail.steer.unsupported')}</p>
       ) : null}
       {alreadyEnded ? (

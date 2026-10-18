@@ -181,6 +181,7 @@ export const LABEL_KEYS = [
   // The stage strip (U-224): stages only, the counter on the current label, sr state words (A6).
   'detail.strip.label',
   'detail.strip.gatesWaiting',
+  'detail.strip.asksWaiting',
   'detail.strip.state.done',
   'detail.strip.state.running',
   'detail.strip.state.failed',
@@ -275,6 +276,7 @@ export const LABEL_KEYS = [
   'detail.usage.waste.cache',
   'detail.usage.noUsageRuns',
   'detail.usage.loading',
+  'detail.usage.pendingRun',
   'detail.usage.loadFailed',
   'detail.usage.retry',
   // The skip link (A1): the detail's first focusable element.

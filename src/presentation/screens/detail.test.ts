@@ -376,11 +376,18 @@ describe('work-order detail screen — the decision zone (U-4, U-226)', () => {
       [ASK_ROW],
       null,
       [],
-      [{ type: 'permission_answered', at: 1, id: 'a', decision: 'allow' }],
+      [
+        { type: 'permission_ask', at: 0, id: 'ask-1', tool: 'Bash', target: 'ls -la /srv/app', options: ['allow', 'deny'] },
+        { type: 'permission_answered', at: 1, id: 'a', decision: 'allow' },
+      ],
     );
 
-    // The tool stands in the code box; the two answers sit beside it.
-    expect(html).toContain(LONG_TITLE.slice(0, 40));
+    // #1277: the card names the tool and the exact command of the pending ask — never the work
+    // order's title; the two answers sit beside it.
+    const card = html.slice(html.indexOf('data-decision-card="permission"'), html.indexOf('</li>', html.indexOf('data-decision-card="permission"')));
+    expect(card).toContain('>Bash<');
+    expect(card).toContain('ls -la /srv/app');
+    expect(card).not.toContain(LONG_TITLE.slice(0, 40));
     expect(html).toContain('>İzin ver<');
     expect(html).toContain('1 otomatik izin verildi');
   });
@@ -405,7 +412,22 @@ describe('work-order detail screen — the decision zone (U-4, U-226)', () => {
     expect(html).not.toContain('01ARZ3NDEKTSV4RRFFQ69G5FE77</code>');
   });
 
-  it('U-340: a non-steerable run keeps Durdur enabled, disables Yönlendir, and shows the reason line', async () => {
+  it('#1277: the pinned decision bar spans the column with the page gutter, clears the chat button and covers the shell padding', () => {
+    const screen = source('detail.tsx');
+    const at = screen.indexOf('data-decision-bar');
+    const bar = screen.slice(at, at + 900);
+    // Full-bleed to both gutter edges with the gutter handed back as padding …
+    expect(bar).toContain('-mx-[1.375rem]');
+    expect(bar).toContain('pl-[1.375rem]');
+    // … a right inset wider than the floating button (bottom-right, 3.5 rem + 1.5 rem offset) …
+    expect(bar).toContain('pr-[5.75rem]');
+    // … and a bottom offset that reaches past the shell's bottom padding.
+    expect(bar).toContain('bottom-[-1.125rem]');
+    expect(bar).toContain('bg-surface');
+    expect(bar).toContain('border-t');
+  });
+
+  it('U-340: a non-steerable run keeps Durdur and hides Yönlendir (#1277)', async () => {
     const base = RUNNING.runSummaries?.[0];
     if (base === undefined) throw new Error('RUNNING fixture must carry a run summary');
     const view: WorkOrderDetailView = {
@@ -416,9 +438,9 @@ describe('work-order detail screen — the decision zone (U-4, U-226)', () => {
     const cardAt = html.indexOf('data-decision-card="running"');
     const card = html.slice(cardAt, html.indexOf('</li>', cardAt));
     expect(card).toContain('Durdur…');
-    expect(card).toContain('Yönlendir…');
-    expect(card).toContain('disabled');
-    expect(card).toContain('Bu koşunun aktarımı yönlendirme notu taşımaz; not gönderilemez.');
+    // #1277: a door the transport cannot take is not offered at all — no disabled button, no apology.
+    expect(card).not.toContain('Yönlendir…');
+    expect(card).not.toContain('not gönderilemez');
   });
 
   it('U-340: an unknown canSteer verdict disables Yönlendir with the same reason line', async () => {
@@ -1071,14 +1093,19 @@ describe('work-order detail screen — the git doors (U-344 … U-349)', () => {
   });
 
   it('U-349: the doors read in their fixed order with one quiet line per closed door', async () => {
-    // Nothing git has happened yet: every door after Gönder is closed with its one quiet line.
-    const html = await draw(READY, [], WORKTREE);
+    // A branch with changes to ship: every door after Gönder is closed with its one quiet line.
+    const html = await draw(READY, [], { ...WORKTREE, files: [{ path: 'src/a.ts', added: 1, removed: 0, binary: false }] });
     const order = ['push', 'openPr', 'merge', 'release'].map((kind) => html.indexOf(`data-git-door="${kind}"`));
     for (const at of order) expect(at).toBeGreaterThan(-1);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(html).toContain('Önce dalı gönderin.');
     expect(html).toContain('Açık PR yok.');
     expect(html).toContain('PR birleştirilmedi.');
+  });
+
+  it('#1277: no doors while the branch has nothing to ship — an empty worktree shows no git card', async () => {
+    const html = await draw(READY, [], WORKTREE);
+    expect(html).not.toContain('data-git-door=');
   });
 
   it('U-349: the doors\' copy lives in both bundles — never inline in the card or the screen', async () => {

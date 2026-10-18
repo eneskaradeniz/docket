@@ -15,15 +15,17 @@
 // the strip says its states in words (A6), and short windows pin the decision bar at the bottom
 // while the content's padding grows by its height (the prototype's IntersectionObserver rule).
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import type { DeployGateView, GateChecksGroup, GateView, StageGates } from '../stores/work-order-detail';
+import type { DeployGateView, GateChecksGroup, GateView } from '../stores/work-order-detail';
 import {
   decisionZone,
   detailBadge,
   gateCheckGroups,
   gitCard,
+  gitCardVisible,
   newestFailedRunOf,
   repoStatusReasonKey,
   runRows,
+  stageListStanding,
   stripSegments,
   workOrderUsageMoney,
   type WorkOrderAskView,
@@ -102,8 +104,8 @@ const VERDICT_KEY: Readonly<Record<string, LabelKey>> = {
 
 /** The stage row's standing word: done behind the work order, the current stage running or
  *  waiting, upcoming ahead of it. */
-const stageStandingKey = (stage: StageGates, done: boolean, running: boolean): LabelKey =>
-  stage.current ? (running ? 'detail.stage.running' : 'detail.stage.now') : done ? 'detail.stage.done' : 'detail.stage.upcoming';
+const stageStandingKey = (standing: 'done' | 'current' | 'upcoming', running: boolean): LabelKey =>
+  standing === 'current' ? (running ? 'detail.stage.running' : 'detail.stage.now') : standing === 'done' ? 'detail.stage.done' : 'detail.stage.upcoming';
 
 /** Scroll with the motion the operator asked for (A9): smooth by default, instant under
  *  prefers-reduced-motion. */
@@ -432,7 +434,11 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
                 colour alone). An older reply without the field renders no line at all. */}
             {view.repoContext !== undefined ? (
               <p data-detail-repo-context className="m-0 flex flex-wrap gap-x-5 gap-y-1 font-mono text-[0.6875rem] text-inkdim">
-                <span>{t(locale, 'detail.repo.project').replace('{name}', view.repoContext.project.name)}</span>
+                {/* The header's first line already names the repo; the project is said only when
+                    it is a different name (a repo inside a larger project). */}
+                {view.repoContext.project.name !== view.record.repo && view.repoContext.project.slug !== view.record.repo ? (
+                  <span>{t(locale, 'detail.repo.project').replace('{name}', view.repoContext.project.name)}</span>
+                ) : null}
                 <code className="min-w-0 truncate" title={view.repoContext.path}>{view.repoContext.path}</code>
                 {view.repoContext.siblingCount > 0 ? (
                   <span>{t(locale, 'detail.repo.siblings').replace('{n}', String(view.repoContext.siblingCount))}</span>
@@ -475,6 +481,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
             flow={view.flow}
             usage={state.usageSummary}
             usageFailed={state.usageSummaryFailed}
+            running={running}
             money={workOrderUsageMoney(view)}
             onRetry={() => void store.reloadUsageSummary()}
           />
@@ -530,7 +537,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
                 }}
                 onOpenPage={onOpenPage}
               />
-              {git !== null ? (
+              {git !== null && gitCardVisible(view, git, state.changes) ? (
                 <GitDoorsCard
                   model={git}
                   locale={locale}
@@ -565,7 +572,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
                   const stageRuns = rows.filter((row) => row.stage === stage.stage);
                   const newest = stageRuns[stageRuns.length - 1] ?? null;
                   const open = stage.current || stageRuns.length > 0;
-                  const doneStage = !stage.current && state.stages.some((other, otherIndex) => other.current && otherIndex < index);
+                  const standing = stageListStanding(state.stages, index, view.state.stage === null);
                   return (
                     <details key={stage.stage} open={open} className="border-b border-hairline">
                       <summary className="flex list-none flex-wrap items-center gap-3 py-3">
@@ -592,7 +599,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
                           </span>
                         ) : null}
                         <span className={`ml-auto text-[0.78125rem] text-inkdim ${stage.current && !running ? 'font-semibold text-signal-soft' : ''}`}>
-                          {t(locale, stageStandingKey(stage, doneStage, running))}
+                          {t(locale, stageStandingKey(standing, running))}
                         </span>
                       </summary>
                       <div className="grid gap-3 pb-4 pl-6">
@@ -652,7 +659,12 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
             <div
               ref={barRef}
               data-decision-bar
-              className="sticky bottom-0 z-30 flex min-w-0 items-center gap-3 border-t border-hairline bg-surface py-2"
+              // Spans the whole main column: the negative margins cancel the shell's gutter and
+              // the padding gives it back, so the bar's solid surface reaches both edges while its
+              // content keeps the page's own inset. The bottom offset and padding cover the
+              // shell's bottom padding, so nothing shows beneath it, and the right inset clears
+              // the floating chat button (fixed at the bottom right, 3.5 rem wide).
+              className="sticky bottom-[-1.125rem] z-30 -mx-[1.375rem] -mb-[1.125rem] flex min-w-0 items-center gap-3 border-t border-hairline bg-surface pb-[1.625rem] pl-[1.375rem] pr-[5.75rem] pt-2"
             >
               <span className="m-0 min-w-0 truncate text-[0.8125rem] font-semibold text-ink">
                 {firstCard?.kind === 'approve'
