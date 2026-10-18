@@ -1056,13 +1056,18 @@ export interface ProviderCapabilities {
 export type CostKind = 'reported' | 'computed' | 'equivalent' | 'credits';
 // credits: the provider meters usage in its own credit unit; the amount is a number of credits
 // in the provider's smallest unit.
+export interface VerdictAskDetail {
+  readonly verdict: 'approve' | 'reject';
+  readonly summary: string;        // plain text, redacted, at most VERDICT_ASK_SUMMARY_MAX_CHARS (280)
+  readonly pointerCount: number;   // how many evidence pointers the call names, never the pointers
+}
 export type AgentEvent =
   | { readonly type: 'session_started'; readonly at: EpochMs; readonly sessionRef: string }
   | { readonly type: 'text'; readonly at: EpochMs; readonly delta: string }
   | { readonly type: 'thinking'; readonly at: EpochMs; readonly delta: string }
   | { readonly type: 'tool_call'; readonly at: EpochMs; readonly id: string; readonly name: string; readonly target?: string }
   | { readonly type: 'tool_result'; readonly at: EpochMs; readonly id: string; readonly ok: boolean }
-  | { readonly type: 'permission_ask'; readonly at: EpochMs; readonly id: string; readonly tool: string; readonly target?: string; readonly options: readonly string[] }
+  | { readonly type: 'permission_ask'; readonly at: EpochMs; readonly id: string; readonly tool: string; readonly target?: string; readonly detail?: VerdictAskDetail; readonly options: readonly string[] }
   | { readonly type: 'usage'; readonly at: EpochMs; readonly inputTokens: number; readonly outputTokens: number; readonly cachedInputTokens?: number; readonly reasoningTokens?: number; readonly costUsd?: number; readonly costKind?: CostKind }
   | { readonly type: 'quota_signal'; readonly at: EpochMs; readonly meter: Omit<Meter, 'id' | 'poolId'> & { readonly poolLabel?: string } }
   | { readonly type: 'limit_hit'; readonly at: EpochMs; readonly hit: Omit<LimitHit, 'accountId' | 'at'> }

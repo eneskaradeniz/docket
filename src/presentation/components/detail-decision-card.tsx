@@ -353,6 +353,17 @@ function PermissionCard({
           {ask.target}
         </pre>
       ) : null}
+      {ask.detail !== undefined ? (
+        <div data-permission-verdict className="grid min-w-0 gap-1">
+          <p className="m-0 text-[0.8125rem] font-semibold text-ink">
+            {t(locale, 'detail.zone.verdict').replace('{verdict}', t(locale, `detail.zone.verdict.${ask.detail.verdict}`))}
+          </p>
+          <p className="m-0 whitespace-pre-wrap text-[0.8125rem] text-ink [overflow-wrap:anywhere]">{ask.detail.summary}</p>
+          <p className="m-0 text-[0.78125rem] text-inkdim">
+            {t(locale, 'detail.zone.verdictPointers').replace('{n}', String(ask.detail.pointerCount))}
+          </p>
+        </div>
+      ) : null}
       <p className="m-0 text-[0.8125rem] text-inkdim">{t(locale, 'detail.zone.permissionBody')}</p>
       <div className="flex flex-wrap items-center gap-2">
         <ActionButton variant="neutral" onClick={() => onAnswer(ask, 'deny')}>

@@ -112,6 +112,12 @@ describe('the agy permission bridge', () => {
       });
       expect(seen).toEqual([{ tool: 'Bash', target: 'echo hi', conversationId: 'conv-9' }]);
 
+      // The verdict tool's arguments ride through to the waiter; a value that is not an object does not.
+      const verdictInput = { verdict: 'approve', summary: 'Checked.', pointers: ['a.ts:1'] };
+      await askRun(AGY_PERMISSION_ASK_TOOL, { tool: 'mcp__docket-pages__submit_verdict', verdictInput });
+      await askRun(AGY_PERMISSION_ASK_TOOL, { tool: 'mcp__docket-pages__submit_verdict', verdictInput: 'approve' });
+      expect(seen.slice(1)).toEqual([{ tool: 'mcp__docket-pages__submit_verdict', verdictInput }, { tool: 'mcp__docket-pages__submit_verdict' }]);
+
       // Any other tool name reaches the wrapped handler unchanged.
       expect(await askRun('docket_get', { q: 'open asks' })).toEqual({ ok: true, result: { pinned: true } });
       expect(through).toHaveLength(1);

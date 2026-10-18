@@ -2889,6 +2889,86 @@ describe('executeRun — the run config deny', () => {
   });
 });
 
+const VERDICT_TOOL = 'mcp__docket-pages__submit_verdict';
+const SECRET = `sk-${'a1'.repeat(20)}`;
+
+const verdictAsk = (id: string, detail: unknown, tool: string = VERDICT_TOOL): AgentEvent => ({
+  type: 'permission_ask',
+  at: at(3),
+  id,
+  tool,
+  // A transport can only be trusted to the contract's shape; the executor checks it again.
+  detail: detail as Extract<AgentEvent, { readonly type: 'permission_ask' }>['detail'],
+  options: ['allow', 'deny'],
+});
+
+const askDetailsOf = (events: readonly AgentEvent[]): readonly unknown[] =>
+  events.flatMap((event) => (event.type === 'permission_ask' ? [event.detail] : []));
+
+describe('executeRun — the verdict tool ask detail', () => {
+  it('A-427: a verdict ask is stored and shown with its detail — the verdict, the redacted summary cut to 280 characters, and the pointer count', async () => {
+    const long = `${'x'.repeat(270)} ${SECRET} and then a long tail of words`;
+    const h = await harness({
+      script: [
+        verdictAsk('ask-1', { verdict: 'approve', summary: `Token ${SECRET} was in the diff.`, pointerCount: 2 }),
+        verdictAsk('ask-2', { verdict: 'reject', summary: long, pointerCount: 0 }, 'submit_verdict'),
+        finished('completed'),
+      ],
+    });
+    const gate = permissionGate('allow');
+
+    await executeRun(h.deps, gate.permissions, INPUT);
+
+    const stored = await h.runs.events((await theRun(h.runs)).id);
+    expect(askDetailsOf(stored)[0]).toEqual({ verdict: 'approve', summary: 'Token [redacted] was in the diff.', pointerCount: 2 });
+    const second = askDetailsOf(stored)[1] as { readonly verdict: string; readonly summary: string; readonly pointerCount: number };
+    expect(second.verdict).toBe('reject');
+    expect([...second.summary].length).toBeLessThanOrEqual(280);
+    expect(second.summary.endsWith('…')).toBe(true);
+    expect(second.pointerCount).toBe(0);
+    // The human gate is shown the very same bounded detail, and no stored byte carries the secret.
+    expect(askDetailsOf(gate.asked.map((entry) => entry.ask))).toEqual(askDetailsOf(stored));
+    expect(JSON.stringify(stored)).not.toContain(SECRET);
+  });
+
+  it('A-427: a detail on any other tool, or one that is malformed, is dropped — the ask itself stays as it was', async () => {
+    const good = { verdict: 'approve', summary: 'Fine.', pointerCount: 1 };
+    const h = await harness({
+      script: [
+        verdictAsk('ask-1', good, 'Bash'),
+        verdictAsk('ask-2', { ...good, verdict: 'maybe' }),
+        verdictAsk('ask-3', { ...good, summary: '   ' }),
+        verdictAsk('ask-4', { ...good, summary: 7 }),
+        verdictAsk('ask-5', { ...good, pointerCount: -1 }),
+        verdictAsk('ask-6', { ...good, pointerCount: 1.5 }),
+        verdictAsk('ask-7', 'approve'),
+        finished('completed'),
+      ],
+    });
+    const gate = permissionGate('allow');
+
+    await executeRun(h.deps, gate.permissions, INPUT);
+
+    const stored = await h.runs.events((await theRun(h.runs)).id);
+    const asks = stored.filter((event) => event.type === 'permission_ask');
+    expect(asks.map((event) => event.type === 'permission_ask' && event.id)).toEqual(['ask-1', 'ask-2', 'ask-3', 'ask-4', 'ask-5', 'ask-6', 'ask-7']);
+    expect(asks.some((event) => event.type === 'permission_ask' && 'detail' in event)).toBe(false);
+    expect(gate.asked).toHaveLength(7);
+    expect(gate.asked.some((entry) => 'detail' in entry.ask)).toBe(false);
+  });
+
+  it('A-427: a verdict ask without a detail is unchanged, and the detail never changes who decides it', async () => {
+    const h = await harness({ script: [verdictAsk('ask-1', undefined), finished('completed')] });
+    await h.deps.settings.set(AUTONOMY_KEY, 'auto');
+    const gate = permissionGate('deny');
+
+    await executeRun(h.deps, gate.permissions, INPUT);
+
+    expect(gate.asked.map((entry) => entry.ask.id)).toEqual(['ask-1']);
+    expect(h.transport.answers()).toEqual([{ askId: 'ask-1', decision: 'deny' }]);
+  });
+});
+
 describe('executeRun — the write-scope guard', () => {
   it('A-409: a write certainly outside the role scope is denied before the ask — the gate never sees it, the denial is written, delivered and audited, and the run continues', async () => {
     const h = await harness({

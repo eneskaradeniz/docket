@@ -14,6 +14,7 @@ import type {
 import type { AgentEvent, Result } from '../../../../domain/index';
 import { err, ok } from '../../../../domain/index';
 import { claudeCodeRunIsolationSdkOptions } from '../../launch/index';
+import { DOCKET_VERDICT_TOOL, verdictAskDetailOf } from '../verdict-ask-detail';
 import { prepareClaudeCodeSdkDelivery } from './claude-code-sdk-delivery';
 import { docketOwnReadTool } from './docket-own-tool';
 import { mapSdkMessage, toolTarget } from './map-message';
@@ -182,12 +183,14 @@ export function createSdkTransport(config: SdkTransportConfig): AgentTransport {
         // server prefix stays in this transport, so a write tool on the same server
         // still arrives under the name the callback was given.
         const ownTool = docketOwnReadTool(toolName);
+        const detail = toolName === DOCKET_VERDICT_TOOL ? verdictAskDetailOf(input) : undefined;
         events.push({
           type: 'permission_ask',
           at: config.clock.now(),
           id: askId,
           tool: ownTool ?? toolName,
           ...(target === undefined ? {} : { target }),
+          ...(detail === undefined ? {} : { detail }),
           options: ['allow', 'deny'],
         });
         const decision = await new Promise<'allow' | 'deny'>((resolve) => {

@@ -30,6 +30,7 @@ import type {
   StageSlug,
   Tier,
   UserOnlyGate,
+  VerdictAskDetail,
   WriteScopeContext,
   WorkOrderId,
 } from '../../domain/index';
@@ -43,11 +44,13 @@ import {
   extendRollingNote,
   foldRun,
   headroom,
+  redactSecretShapes,
   resolveTier,
   selectMemory,
   stageOutputScopeRoot,
   stageOutputVerdict,
   translateCapabilities,
+  VERDICT_ASK_SUMMARY_MAX_CHARS,
   WRITE_SCOPE_POLICY,
   writeScopeVerdict,
 } from '../../domain/index';
@@ -94,6 +97,38 @@ type PermissionAskEvent = Extract<AgentEvent, { readonly type: 'permission_ask' 
 /** The tools whose ask performs a carve-out decision: tool names are Docket-tool language, so the
  *  mapping is caller-side — decidePermission reads `USER_ONLY_GATES` itself and refuses the lot. */
 const TOOL_GATE_ACTIONS: Readonly<Record<string, UserOnlyGate>> = { page_publish: 'page_approval' };
+
+/** Docket's own verdict tool, bare and as the MCP server prefix spells it — the two names an ask
+ *  for it reaches the executor under. Only an ask for this tool may carry a `detail`. */
+const VERDICT_TOOLS: readonly string[] = ['submit_verdict', 'mcp__docket-pages__submit_verdict'];
+
+const cutTo = (text: string, max: number): string => {
+  const points = [...text];
+  return points.length <= max ? text : `${points.slice(0, max - 1).join('')}…`;
+};
+
+/** The detail as the card may show and the log may keep it, or undefined when it is not one: the
+ *  summary is redacted first and cut afterwards, so a secret straddling the cut cannot survive as
+ *  a fragment the redaction no longer recognises. The pointers never get this far — only their
+ *  count — and a count that is not a whole number is no count. */
+const boundedVerdictDetail = (detail: unknown): VerdictAskDetail | undefined => {
+  if (typeof detail !== 'object' || detail === null) return undefined;
+  const { verdict, summary, pointerCount } = detail as Readonly<Record<string, unknown>>;
+  if (verdict !== 'approve' && verdict !== 'reject') return undefined;
+  if (typeof summary !== 'string' || summary.trim() === '') return undefined;
+  if (typeof pointerCount !== 'number' || !Number.isInteger(pointerCount) || pointerCount < 0) return undefined;
+  return { verdict, summary: cutTo(redactSecretShapes(summary.trim()), VERDICT_ASK_SUMMARY_MAX_CHARS), pointerCount };
+};
+
+/** Every streamed event passes here before it is stored, shown or decided: an ask's `detail` is
+ *  kept for the verdict tool alone and only in its bounded form — the transports are not the
+ *  authority on what reaches the log. */
+const withBoundedDetail = (event: AgentEvent): AgentEvent => {
+  if (event.type !== 'permission_ask' || !('detail' in event)) return event;
+  const { detail, ...rest } = event;
+  const bounded = VERDICT_TOOLS.includes(event.tool) ? boundedVerdictDetail(detail) : undefined;
+  return bounded === undefined ? rest : { ...rest, detail: bounded };
+};
 
 /** The tools whose single identifying string the permission_ask event carries unambiguously, with
  *  the argument key the risk rows read for that tool. A search tool (Grep, Glob) is deliberately
@@ -919,7 +954,8 @@ async function driveRun(
   // The finished fold must see the whole streamed prefix — the empty-run rule reads the
   // accumulated usage, so the executor keeps in memory what it already persists.
   const streamed: AgentEvent[] = [];
-  events: for await (const event of handle.events) {
+  events: for await (const received of handle.events) {
+    const event = withBoundedDetail(received);
     streamed.push(event);
     await deps.runs.appendEvents(runId, [event]);
     note = extendRollingNote(note, [event]);
