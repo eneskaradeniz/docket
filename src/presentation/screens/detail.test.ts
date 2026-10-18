@@ -392,7 +392,7 @@ describe('work-order detail screen — the decision zone (U-4, U-226)', () => {
     expect(card).toContain('ls -la /srv/app');
     expect(card).not.toContain(LONG_TITLE.slice(0, 40));
     expect(html).toContain('>İzin ver<');
-    expect(html).toContain('1 otomatik izin verildi');
+    expect(html).toContain('1 izin verildi');
   });
 
   it('U-226: the failed standing quotes the run\'s own last words and offers the retry', async () => {

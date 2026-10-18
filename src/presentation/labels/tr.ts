@@ -110,7 +110,7 @@ export const TR: LabelBundle = {
   'detail.zone.attestBody': 'Makine bu aşamada dosya değişikliği ölçemedi. Değişiklik gerçekten gerekmiyor mu, yoksa bir şey eksik mi?',
   'detail.zone.permissionChip': 'İstenen işlem',
   'detail.zone.permissionBody': 'Ajan bu işlemi ancak sen izin verirsen yapar; karar verene kadar bekler.',
-  'detail.zone.autoAllowed': '{n} otomatik izin verildi',
+  'detail.zone.autoAllowed': '{n} izin verildi',
   'detail.zone.rejectOpen': 'Reddet…',
   'detail.zone.rejectNoteLabel': 'Ajana not',
   'detail.zone.rejectNoteOptional': '(isteğe bağlı)',
