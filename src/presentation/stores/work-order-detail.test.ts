@@ -732,7 +732,7 @@ describe('work-order detail store', () => {
       { runId: RUN_ID, askId: 'ask-2', since: 6, title: 'Ship the thing' },
     ]);
     api.setRunEvents([
-      { type: 'permission_ask', at: 1, id: 'ask-1', tool: 'Read', target: '/repo/docs/plan.md', options: ['allow'] },
+      { type: 'permission_ask', at: 1, id: 'ask-1', tool: 'Read', target: '/repo/docs/plans/ie-0001.md', options: ['allow'] },
       { type: 'permission_ask', at: 2, id: 'ask-2', tool: 'Bash', target: 'ls -la', options: ['allow'] },
     ]);
     const store = createStore(api);
@@ -740,7 +740,7 @@ describe('work-order detail store', () => {
     await flush();
 
     expect(store.state().asks).toEqual([
-      { runId: RUN_ID, askId: 'ask-1', tool: 'Read', target: '/repo/docs/plan.md' },
+      { runId: RUN_ID, askId: 'ask-1', tool: 'Read', target: '/repo/docs/plans/ie-0001.md' },
       { runId: RUN_ID, askId: 'ask-2', tool: 'Bash', target: 'ls -la' },
     ]);
   });

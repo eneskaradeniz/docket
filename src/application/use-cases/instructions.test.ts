@@ -390,6 +390,24 @@ describe('composeRunPrompt', () => {
     expect(prompt.indexOf('Role instructions:')).toBeLessThan(prompt.indexOf(DATA_HEADING));
   });
 
+  it('A-423: a plan run is told its work order\'s own plan file, and any other stage is not', async () => {
+    const h = buildHarness([], ROUTE_KINDS);
+    h.deps.definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', planDefs());
+    const planned = await composeRunPrompt(h.deps, {
+      ...INPUT({ accountId: ACCOUNT_X }),
+      stage: slugOf<'stage'>('plan'),
+      role: slugOf<'role'>('planner'),
+    });
+    if (!planned.ok) throw new Error(`composition must succeed: ${planned.error}`);
+    expect(planned.value.prompt).toContain('Plan file: docs/plans/ie-0001.md');
+    expect(planned.value.prompt).not.toMatch(/docs\/plan\.md/);
+
+    const other = buildHarness([], ROUTE_KINDS);
+    const implemented = await composeRunPrompt(other.deps, INPUT({ accountId: ACCOUNT_X }));
+    if (!implemented.ok) throw new Error(`composition must succeed: ${implemented.error}`);
+    expect(implemented.value.prompt).not.toContain('plans/');
+  });
+
   it('A-303: after a reject the next plan run quotes the note, and a missing note says it was rejected without a reason', async () => {
     const h = buildHarness([], ROUTE_KINDS);
     h.deps.definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', planDefs());

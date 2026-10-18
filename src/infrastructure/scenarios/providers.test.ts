@@ -574,7 +574,7 @@ const runLeg = async (wiring: LegWiring): Promise<LegResult> => {
   // The implement run's edit: one changed file since the worktree base — the changes gate's
   // measured evidence (A-96).
   h.checkpoints.setBase(id, 'wo-base-0001');
-  h.checkpoints.setDiff('wo-base-0001', { files: ['docs/plan.md', 'src/main.ts'], patch: 'diff --git a/src/main.ts' });
+  h.checkpoints.setDiff('wo-base-0001', { files: ['docs/plans/ie-0001.md', 'src/main.ts'], patch: 'diff --git a/src/main.ts' });
   h.clock.advance(1_000);
 
   const planRun = await runCurrentStage(h, id, wiring.runCwd);

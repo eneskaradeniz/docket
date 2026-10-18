@@ -11,8 +11,8 @@ const docs = (over: Partial<StageOutputInput> = {}): StageOutputInput => ({
 
 describe('stageOutputVerdict', () => {
   it('R-123: docs scope with a changed docs/… path is ok', () => {
-    expect(stageOutputVerdict(docs({ changed: ['docs/plan.md'] }))).toBe('ok');
-    expect(stageOutputVerdict(docs({ changed: ['src/a.ts', 'docs/plan.md'] }))).toBe('ok');
+    expect(stageOutputVerdict(docs({ changed: ['docs/plans/ie-0001.md'] }))).toBe('ok');
+    expect(stageOutputVerdict(docs({ changed: ['src/a.ts', 'docs/plans/ie-0001.md'] }))).toBe('ok');
     expect(stageOutputVerdict(docs({ changed: ['docs'] }))).toBe('ok');
   });
 
@@ -27,7 +27,7 @@ describe('stageOutputVerdict', () => {
 
   it('R-123: no write scope is not_applicable', () => {
     expect(stageOutputVerdict(docs({ writeScope: { kind: 'none' }, changed: [] }))).toBe('not_applicable');
-    expect(stageOutputVerdict(docs({ writeScope: { kind: 'none' }, changed: ['docs/plan.md'] }))).toBe('not_applicable');
+    expect(stageOutputVerdict(docs({ writeScope: { kind: 'none' }, changed: ['docs/plans/ie-0001.md'] }))).toBe('not_applicable');
   });
 
   it('R-123: a non-completed outcome is not_applicable', () => {
@@ -48,7 +48,7 @@ describe('stageOutputVerdict', () => {
     expect(
       stageOutputVerdict({
         writeScope: { kind: 'tests' },
-        changed: ['docs/plan.md'],
+        changed: ['docs/plans/ie-0001.md'],
         runOutcome: 'completed',
         testGlobs: ['src/**/*.test.ts'],
       }),
@@ -63,7 +63,7 @@ describe('stageOutputVerdict', () => {
     expect(
       stageOutputVerdict({
         writeScope: { kind: 'paths', globs: ['src/**'] },
-        changed: ['docs/plan.md'],
+        changed: ['docs/plans/ie-0001.md'],
         runOutcome: 'completed',
       }),
     ).toBe('no_output');
@@ -71,14 +71,14 @@ describe('stageOutputVerdict', () => {
   });
 
   it('R-123: the verdict is pure — the changed list is not mutated', () => {
-    const changed = ['src/a.ts', 'docs/plan.md'];
+    const changed = ['src/a.ts', 'docs/plans/ie-0001.md'];
     const snapshot = [...changed];
     expect(stageOutputVerdict(docs({ changed }))).toBe('ok');
     expect(changed).toEqual(snapshot);
   });
 
   it('R-124: the verdict never depends on path order', () => {
-    const paths = ['src/a.ts', 'docs/plan.md', 'README.md'];
+    const paths = ['src/a.ts', 'docs/plans/ie-0001.md', 'README.md'];
     const forward = stageOutputVerdict(docs({ changed: paths }));
     const backward = stageOutputVerdict(docs({ changed: [...paths].reverse() }));
     expect(forward).toBe('ok');
@@ -88,12 +88,12 @@ describe('stageOutputVerdict', () => {
   it('R-124: docs/../src/x is outside the docs scope', () => {
     expect(stageOutputVerdict(docs({ changed: ['docs/../src/x'] }))).toBe('no_output');
     expect(stageOutputVerdict(docs({ changed: ['docs/../src/x', 'README.md'] }))).toBe('no_output');
-    expect(stageOutputVerdict(docs({ changed: ['docs/plan.md', 'docs/../src/x'] }))).toBe('ok');
+    expect(stageOutputVerdict(docs({ changed: ['docs/plans/ie-0001.md', 'docs/../src/x'] }))).toBe('ok');
   });
 
   it('R-124: a custom docs root uses the same containment', () => {
     expect(stageOutputVerdict(docs({ docsRoot: 'documentation', changed: ['documentation/plan.md'] }))).toBe('ok');
-    expect(stageOutputVerdict(docs({ docsRoot: 'documentation', changed: ['docs/plan.md'] }))).toBe('no_output');
+    expect(stageOutputVerdict(docs({ docsRoot: 'documentation', changed: ['docs/plans/ie-0001.md'] }))).toBe('no_output');
     expect(stageOutputScopeRoot({ kind: 'docs' }, 'documentation', undefined)).toBe('documentation');
     expect(stageOutputScopeRoot({ kind: 'docs' }, undefined, undefined)).toBe('docs');
     expect(stageOutputScopeRoot({ kind: 'none' }, 'docs', undefined)).toBeUndefined();

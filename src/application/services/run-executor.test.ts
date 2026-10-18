@@ -2305,8 +2305,8 @@ describe('stage output check', () => {
     expect(flowed.attempt).toBe(2);
   });
 
-  it('A-308: a run that wrote docs/plan.md passes and the human gate turns pending', async () => {
-    const h = await harness({ checkpointDiffs: { '': { files: ['docs/plan.md'], patch: '' } } });
+  it('A-308: a run that wrote docs/plans/ie-0001.md passes and the human gate turns pending', async () => {
+    const h = await harness({ checkpointDiffs: { '': { files: ['docs/plans/ie-0001.md'], patch: '' } } });
     const outcome = await executeRun(h.deps, permissionGate().permissions, planInput({ kind: 'docs' }));
     expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
     expect(h.transport.requests()).toHaveLength(1);
