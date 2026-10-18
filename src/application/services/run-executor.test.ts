@@ -2797,6 +2797,36 @@ describe('executeRun — the autonomy permission policy', () => {
     ]);
     expect(board.autoDecided()).toEqual([]);
   });
+
+  it('a parked ask is already open on the board when its run.updated is notified', async () => {
+    const h = await harness({ script: [bashAsk('ask-1', 'rm -rf build'), finished('completed')] });
+    const board = createPermissionBoard();
+    // The human gate is the real board's, answered on a later tick like an operator would.
+    const permissions: PermissionGate = {
+      onAsk: async (runId, ask) => {
+        const parked = board.onAsk(runId, ask);
+        setTimeout(() => board.answer(ask.id, 'deny'), 0);
+        return await parked;
+      },
+    };
+    // A detail screen re-queries `permissions.open` the moment a notification lands, so what the
+    // board holds at that instant is what the screen can show.
+    const openAtNotify: (readonly string[])[] = [];
+
+    const outcome = await executeRun(h.deps, permissions, INPUT, board, () => {
+      openAtNotify.push(board.openAsks().map((ask) => ask.askId));
+    });
+
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect(openAtNotify.some((open) => open.includes('ask-1'))).toBe(true);
+    const record = await theRun(h.runs);
+    expect(await h.runs.events(record.id)).toEqual([
+      bashAsk('ask-1', 'rm -rf build'),
+      permissionAnswered('ask-1', 'deny'),
+      finished('completed'),
+    ]);
+    expect(board.openAsks()).toEqual([]);
+  });
 });
 
 // --- the write-scope guard (A-409 of docs/v2/application.md) ------------------------------------------
