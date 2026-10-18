@@ -36,6 +36,8 @@ Decided with the operator on 2026-10-12; architect-owned; supersedes by referenc
 
    Landed in: split 1/5 → #1191 — the contracts (policy `Actor` variant, `AutonomyLevel` + chain resolution, level semantics, A-8/E-7 wording, storage under `~/.docket`). No decision above changed; issues 2/5…5/5 follow.
 
+11. **D-11**: Empty command set at setup: a repo whose setup ends with no test command gets `tests: []` and its flow copy drops the `command` gates bound to empty sets; a filled Test komutu keeps them. R-13/R-16/R-22 unchanged. (#1278)
+
 ## Supersessions
 
 | Decision | What it supersedes | Where the contract change lands |

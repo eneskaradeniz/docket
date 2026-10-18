@@ -68,6 +68,20 @@ export const withBuiltinCommandSets = (
   return filled;
 };
 
+/** A-419: an empty command set is missing configuration, not evidence — a `command` gate bound to
+ *  one could only ever read `unknown` (R-13) and would block its stage for good (R-22), so the repo's
+ *  flow copy drops it. Only the stages are rewritten; the library flow stays as it is (D-8). */
+export const withoutEmptyCommandGates = (
+  flow: RepoFlow,
+  commandSets: Readonly<Record<string, readonly string[]>>,
+): RepoFlow => ({
+  ...flow,
+  stages: flow.stages.map((stage) => ({
+    ...stage,
+    exit: stage.exit.filter((gate) => gate.kind !== 'command' || (commandSets[gate.commandSet] ?? []).length > 0),
+  })),
+});
+
 /** A-339: the same answers yield the same proposal regardless of setup path. */
 export function buildSetupProposal(answers: unknown): SetupProposal {
   if (!isRecord(answers)) throw new Error('setup answers must be an object');
@@ -96,13 +110,14 @@ export function buildSetupProposal(answers: unknown): SetupProposal {
   const differs = Array.isArray(answers['differsFromRecommended'])
     ? answers['differsFromRecommended'].filter((entry): entry is string => typeof entry === 'string')
     : [];
+  const filledSets = withBuiltinCommandSets(commandSets as Readonly<Record<string, readonly string[]>>);
   return {
     project: { name, repos: repos.filter((entry): entry is string => typeof entry === 'string') },
     repo: {
       id: repoId,
-      flow: flow as unknown as RepoFlow,
+      flow: withoutEmptyCommandGates(flow as unknown as RepoFlow, filledSets),
       defaultLimitPolicy: defaultLimitPolicy as LimitPolicy,
-      commandSets: withBuiltinCommandSets(commandSets as Readonly<Record<string, readonly string[]>>),
+      commandSets: filledSets,
       docsRoot: typeof docsRoot === 'string' ? docsRoot : 'docs',
       testGlobs: Array.isArray(testGlobs) ? testGlobs.filter((g): g is string => typeof g === 'string') : ['**/*.test.ts'],
     },
@@ -164,9 +179,10 @@ export async function createProjectSetupProposal(
   deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'proposals'>,
   input: { readonly proposal: SetupProposal; readonly author: Actor; readonly draftId?: string },
 ): Promise<Result<ProposalId, 'invalid'>> {
+  const commandSets = withBuiltinCommandSets(input.proposal.repo.commandSets);
   const proposal: SetupProposal = {
     ...input.proposal,
-    repo: { ...input.proposal.repo, commandSets: withBuiltinCommandSets(input.proposal.repo.commandSets) },
+    repo: { ...input.proposal.repo, flow: withoutEmptyCommandGates(input.proposal.repo.flow, commandSets), commandSets },
   };
   const checked = validateDefinitions({
     roles: BUILTIN_ROLES,

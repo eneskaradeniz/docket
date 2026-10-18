@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseUlid, PROJECT_SETUP_PROPOSAL_TARGET, type Actor, type ProposalId } from '../../domain/index';
+import { BUILTIN_FLOWS, parseUlid, PROJECT_SETUP_PROPOSAL_TARGET, type Actor, type GateDef, type ProposalId, type RepoFlow } from '../../domain/index';
 
 import { createFakeClock, createFakeDefinitionStore, createFakeDeps, createFakeProposalRepo } from '../ports/fakes/index';
 
@@ -32,6 +32,16 @@ const memoryDraftStore = (): SetupDraftStore & { all(): readonly SetupDraft[] } 
   };
 };
 
+const commandGatesOf = (flow: RepoFlow): readonly GateDef[] =>
+  flow.stages.flatMap((stage) => stage.exit.filter((gate) => gate.kind === 'command'));
+
+const gateIdsOf = (flow: RepoFlow): readonly string[] => flow.stages.flatMap((stage) => stage.exit.map((gate) => `${stage.id}/${gate.id}`));
+
+const withCommandSets = (commandSets: unknown): unknown => {
+  const answers = defaultSetupAnswers('Acme', 'acme') as { repo: Record<string, unknown> };
+  return { ...answers, repo: { ...answers.repo, commandSets } };
+};
+
 describe('setup use cases', () => {
   it('A-339: buildSetupProposal produces identical proposal shape across Quick, Detailed, and AI paths', () => {
     const answers = defaultSetupAnswers('Acme', 'acme');
@@ -52,6 +62,69 @@ describe('setup use cases', () => {
     expect(ai.repo.commandSets).toEqual({ tests: [] });
     const kept = buildSetupProposal({ ...answers, repo: { ...answers.repo, commandSets: { tests: ['make test'], lint: ['x'] } } });
     expect(kept.repo.commandSets).toEqual({ tests: ['make test'], lint: ['x'] });
+  });
+
+  it('A-419: an empty test command drops every command gate bound to an empty set from the flow copy, and only those', () => {
+    const answers = defaultSetupAnswers('Acme', 'acme') as { repo: { flow: RepoFlow } };
+    const full = gateIdsOf(answers.repo.flow);
+    expect(commandGatesOf(answers.repo.flow).length).toBeGreaterThan(0);
+    const proposal = buildSetupProposal(answers);
+    expect(proposal.repo.commandSets).toEqual({ tests: [] });
+    expect(commandGatesOf(proposal.repo.flow)).toEqual([]);
+    expect(gateIdsOf(proposal.repo.flow)).toEqual(full.filter((id) => !id.endsWith('/tests')));
+    expect(proposal.repo.flow.bindings).toEqual(answers.repo.flow.bindings);
+  });
+
+  it('A-419: a filled test command keeps the flow copy and its command gate', () => {
+    const answers = withCommandSets({ tests: ['npm test'] }) as { repo: { flow: RepoFlow } };
+    const proposal = buildSetupProposal(answers);
+    expect(proposal.repo.commandSets).toEqual({ tests: ['npm test'] });
+    expect(proposal.repo.flow.stages).toEqual(answers.repo.flow.stages);
+    expect(commandGatesOf(proposal.repo.flow)).not.toEqual([]);
+  });
+
+  it('A-419: an AI-path proposal with commandSets {} is pruned like an empty test command', () => {
+    const quick = buildSetupProposal(defaultSetupAnswers('Acme', 'acme'));
+    const ai = buildSetupProposal(withCommandSets({}));
+    expect(ai.repo.commandSets).toEqual({ tests: [] });
+    expect(ai.repo.flow).toEqual(quick.repo.flow);
+  });
+
+  it('A-419: a command gate bound to a still-filled set is kept while the empty-set gate is dropped', () => {
+    const answers = defaultSetupAnswers('Acme', 'acme') as { repo: { flow: RepoFlow } };
+    const gate: GateDef = { kind: 'command', id: 'lint' as never, commandSet: 'lint' };
+    const [first, ...rest] = answers.repo.flow.stages;
+    if (first === undefined) throw new Error('flow stage');
+    const flow: RepoFlow = { ...answers.repo.flow, stages: [{ ...first, exit: [...first.exit, gate] }, ...rest] };
+    const proposal = buildSetupProposal({ repo: { ...answers.repo, flow, commandSets: { tests: [], lint: ['npm run lint'] } }, project: { name: 'Acme', repos: ['acme'] } });
+    expect(commandGatesOf(proposal.repo.flow)).toEqual([gate]);
+  });
+
+  it('A-419: pruning leaves the library flows and the input answers untouched', () => {
+    const before = JSON.stringify(BUILTIN_FLOWS);
+    const answers = defaultSetupAnswers('Acme', 'acme');
+    const answersBefore = JSON.stringify(answers);
+    buildSetupProposal(answers);
+    expect(JSON.stringify(BUILTIN_FLOWS)).toBe(before);
+    expect(JSON.stringify(answers)).toBe(answersBefore);
+    expect(BUILTIN_FLOWS.flatMap((flow) => flow.stages.flatMap((stage) => stage.exit)).some((gate) => gate.kind === 'command')).toBe(true);
+  });
+
+  it('A-419: createProjectSetupProposal stores the pruned flow copy, so approval writes what was reviewed', async () => {
+    const proposals = createFakeProposalRepo();
+    const definitions = createFakeDefinitionStore();
+    const deps = createFakeDeps({ proposals, definitions, clock: createFakeClock(10) });
+    const answers = defaultSetupAnswers('Acme', 'acme') as { repo: Record<string, unknown> };
+    const raw = { ...buildSetupProposal(answers), repo: { ...buildSetupProposal(answers).repo, flow: answers.repo['flow'] as RepoFlow } };
+    const created = await createProjectSetupProposal(deps, { proposal: raw, author: AGENT });
+    if (!created.ok) throw new Error('create');
+    const stored = JSON.parse((await proposals.get(created.value))?.after ?? '{}') as { repo: { flow: RepoFlow } };
+    expect(commandGatesOf(stored.repo.flow)).toEqual([]);
+    const decided = await decideProjectSetupProposal(deps, { id: created.value, decision: 'approved', actor: USER });
+    expect(decided.ok).toBe(true);
+    const written = JSON.parse((await definitions.readFile('repos/acme/repo.yaml'))?.content ?? '{}') as { flow: RepoFlow; commandSets: unknown };
+    expect(commandGatesOf(written.flow)).toEqual([]);
+    expect(written.commandSets).toEqual({ tests: [] });
   });
 
   it('A-76: createProjectSetupProposal stores a proposal whose empty commandSets gained the built-in sets', async () => {

@@ -12,7 +12,7 @@ import {
 
 import type { AppDeps } from '../ports/deps';
 import { registerRepo } from './projects';
-import { buildSetupProposal, type SetupProposal } from './setup';
+import { buildSetupProposal, withoutEmptyCommandGates, type SetupProposal } from './setup';
 
 export type SetupCopyProposalError =
   | 'source_not_in_project'
@@ -51,7 +51,7 @@ export async function setupCopyProposal(
   const repoId = registered?.slug ?? slugFromName<'repo'>(folderName, new Set(project.repos));
   const repo = {
     id: repoId,
-    flow: copied.repo.flow as SetupProposal['repo']['flow'],
+    flow: withoutEmptyCommandGates(copied.repo.flow as SetupProposal['repo']['flow'], copied.repo.commandSets),
     defaultLimitPolicy: copied.repo.defaultLimitPolicy as SetupProposal['repo']['defaultLimitPolicy'],
     commandSets: copied.repo.commandSets,
     docsRoot: copied.repo.docsRoot,

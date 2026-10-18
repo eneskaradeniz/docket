@@ -2,13 +2,15 @@
 // detail sections with session memory; copy-from shows kopyalandı badges and re-detected rows.
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
-import type { SetupDetailSection, SetupProposal } from '../stores/new-project';
+import { testCommandOf, type SetupDetailSection, type SetupProposal } from '../stores/new-project';
 
 export interface SetupProposalDiffProps {
   readonly locale: Locale;
   readonly proposal: SetupProposal;
   readonly expanded: (section: SetupDetailSection) => boolean;
   readonly onToggle: (section: SetupDetailSection) => void;
+  /** Absent when the command is not editable here (a stored AI proposal, a multi-command set): the field then reads only. */
+  readonly onTestCommandChange?: (value: string) => void;
 }
 
 const SECTIONS: readonly { readonly id: SetupDetailSection; readonly key: LabelKey; readonly copiedField: string }[] = [
@@ -33,7 +35,7 @@ const sectionBody = (proposal: SetupProposal, section: SetupDetailSection): stri
 
 const copied = (proposal: SetupProposal, field: string): boolean => proposal.differsFromRecommended.includes(field);
 
-export function SetupProposalDiff({ locale, proposal, expanded, onToggle }: SetupProposalDiffProps) {
+export function SetupProposalDiff({ locale, proposal, expanded, onToggle, onTestCommandChange }: SetupProposalDiffProps) {
   const showRedetected = copied(proposal, 'flow') || copied(proposal, 'commandSets');
   return (
     <section role="region" aria-label={t(locale, 'setup.proposal.title')} className="grid gap-3" data-setup-proposal="">
@@ -84,6 +86,20 @@ export function SetupProposalDiff({ locale, proposal, expanded, onToggle }: Setu
                   </>
                 ) : null}
               </div>
+            ) : null}
+            {section.id === 'commands' ? (
+              <label className="grid gap-1 border-t border-hairline px-3.5 py-3" data-setup-test-command="">
+                <span className="text-[0.8125rem] font-semibold text-ink">{t(locale, 'setup.proposal.testCommand')}</span>
+                <input
+                  type="text"
+                  value={testCommandOf(proposal)}
+                  readOnly={onTestCommandChange === undefined}
+                  onChange={(event) => onTestCommandChange?.(event.target.value)}
+                  placeholder={t(locale, 'setup.proposal.testCommandPlaceholder')}
+                  className="h-9 rounded-control border border-bord bg-raised px-3 font-mono text-[0.8125rem] text-ink outline-none focus:border-signal"
+                />
+                <span className="text-[0.75rem] text-inkdim">{t(locale, 'setup.proposal.testCommandHint')}</span>
+              </label>
             ) : null}
           </div>
         );

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { Actor, RepoDef } from '../../domain/index';
+import type { Actor, RepoDef, RepoFlow } from '../../domain/index';
 import { BUILTIN_FLOWS, BUILTIN_ROLES, parseSlug, validateDefinitions } from '../../domain/index';
 import { createFakeCapabilityCatalog, createFakeDefinitionStore, createFakeDeps, createFakeGitProbe, createFakeRepoScanner } from '../ports/fakes';
 import { defaultSetupAnswers } from './setup';
@@ -340,6 +340,34 @@ describe('setupApply', () => {
     expect(result.ok).toBe(true);
     const body = JSON.parse((await definitions.readFile('repos/acme/repo.yaml'))?.content ?? '{}') as RepoDef;
     expect(body.commandSets).toEqual({ tests: [] });
+  });
+
+  it('A-419: setupApply writes tests: [] and no command gate for an empty test command, and keeps the gate for a filled one', async () => {
+    const commandGates = (body: { readonly flow: RepoFlow }) => body.flow.stages.flatMap((stage) => stage.exit.filter((gate) => gate.kind === 'command'));
+    const base = validAnswers('acme') as { repo: Record<string, unknown> };
+    const run = async (commandSets: unknown) => {
+      const { deps, definitions } = readyApplyDeps();
+      const result = await setupApply(deps, {
+        project: project.value,
+        path: REPO_PATH,
+        answers: { ...base, repo: { ...base.repo, commandSets } },
+        actor: ACTOR,
+      });
+      expect(result.ok).toBe(true);
+      const body = JSON.parse((await definitions.readFile('repos/acme/repo.yaml'))?.content ?? '{}') as RepoDef;
+      const checked = validateDefinitions({ roles: BUILTIN_ROLES, flows: BUILTIN_FLOWS, capabilities: [], repo: body });
+      expect(checked.ok).toBe(true);
+      return body;
+    };
+    const empty = await run({ tests: [] });
+    expect(empty.commandSets).toEqual({ tests: [] });
+    expect(commandGates(empty)).toEqual([]);
+    expect(empty.flow.stages.some((stage) => stage.exit.some((gate) => gate.kind === 'secret_scan'))).toBe(true);
+    const aiShaped = await run({});
+    expect(commandGates(aiShaped)).toEqual([]);
+    const filled = await run({ tests: ['npm test'] });
+    expect(filled.commandSets).toEqual({ tests: ['npm test'] });
+    expect(commandGates(filled)).not.toEqual([]);
   });
 
   it('A-387: writes nothing when a folder check fails', async () => {
