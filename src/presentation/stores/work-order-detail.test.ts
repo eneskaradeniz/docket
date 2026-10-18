@@ -226,6 +226,8 @@ interface FakeApi extends Pick<Api, 'query' | 'command'> {
   setAsks(reply: unknown): void;
   setChanges(reply: unknown): void;
   setRunEvents(reply: unknown): void;
+  /** The event tail of one run alone; wins over the shared `setRunEvents` reply. */
+  setRunEventsFor(runId: string, reply: unknown): void;
   setUsageSummary(reply: unknown): void;
   setGitBase(reply: unknown): void;
   setCommandResult(result: CommandResult): void;
@@ -254,6 +256,7 @@ const fakeApi = (initialReply: unknown): FakeApi => {
   let asksReply: unknown = [];
   let changesReply: unknown = null;
   let runEventsReply: unknown = null;
+  const runEventsByRun = new Map<string, unknown>();
   let usageSummaryReply: unknown = EMPTY_USAGE;
   let gitBaseReply: unknown = null;
   let commandResult: CommandResult = { ok: true };
@@ -272,6 +275,9 @@ const fakeApi = (initialReply: unknown): FakeApi => {
     setRunEvents: (next) => {
       runEventsReply = next;
     },
+    setRunEventsFor: (runId, next) => {
+      runEventsByRun.set(runId, next);
+    },
     setUsageSummary: (next) => {
       usageSummaryReply = next;
     },
@@ -285,7 +291,7 @@ const fakeApi = (initialReply: unknown): FakeApi => {
       queries.push(query);
       if (query.type === 'permissions.open') return Promise.resolve(asksReply);
       if (query.type === 'workOrder.changes') return Promise.resolve(changesReply);
-      if (query.type === 'run.events') return Promise.resolve(runEventsReply);
+      if (query.type === 'run.events') return Promise.resolve(runEventsByRun.has(query.runId) ? runEventsByRun.get(query.runId) : runEventsReply);
       if (query.type === 'usage.summary') return Promise.resolve(usageSummaryReply);
       if (query.type === 'workOrder.gitBase') return Promise.resolve(gitBaseReply);
       return Promise.resolve(reply);
@@ -737,6 +743,39 @@ describe('work-order detail store', () => {
       { runId: RUN_ID, askId: 'ask-1', tool: 'Read', target: '/repo/docs/plan.md' },
       { runId: RUN_ID, askId: 'ask-2', tool: 'Bash', target: 'ls -la' },
     ]);
+  });
+
+  it('#1277: asks raised by different runs each read their own run\'s event — not only the first ask\'s run', async () => {
+    const OTHER_RUN = '01ARZ3NDEKTSV4RRFFQ69G5FC3';
+    const api = fakeApi(
+      detailReplyWithRuns(stateAt(STAGE_BUILD, [], 'running'), [
+        { id: RUN_ID, stage: 'build', attempt: 1, startedAt: 1_000 },
+        { id: OTHER_RUN, stage: 'build', attempt: 1, startedAt: 2_000 },
+      ]),
+    );
+    api.setAsks([
+      { runId: RUN_ID, askId: 'ask-1', since: 5, title: null },
+      { runId: OTHER_RUN, askId: 'ask-2', since: 6, title: null },
+      { runId: OTHER_RUN, askId: 'ask-3', since: 7, title: null },
+    ]);
+    api.setRunEventsFor(RUN_ID, [{ type: 'permission_ask', at: 1, id: 'ask-1', tool: 'Read', target: '/repo/a.md', options: ['allow'] }]);
+    api.setRunEventsFor(OTHER_RUN, [
+      { type: 'permission_ask', at: 2, id: 'ask-2', tool: 'Bash', target: 'ls -la', options: ['allow'] },
+      { type: 'permission_ask', at: 3, id: 'ask-3', tool: 'Edit', options: ['allow'] },
+    ]);
+    const store = createStore(api);
+    await store.load(WO_ID);
+    await flush();
+
+    expect(store.state().asks).toEqual([
+      { runId: RUN_ID, askId: 'ask-1', tool: 'Read', target: '/repo/a.md' },
+      { runId: OTHER_RUN, askId: 'ask-2', tool: 'Bash', target: 'ls -la' },
+      // An ask event without a target claims none.
+      { runId: OTHER_RUN, askId: 'ask-3', tool: 'Edit', target: null },
+    ]);
+    // One tail read per asking run, not one per ask.
+    const reads = api.queries.filter((query) => query.type === 'run.events');
+    expect(new Set(reads.map((query) => (query.type === 'run.events' ? query.runId : ''))).size).toBe(2);
   });
 
   it('U-4: a permissions.open failure keeps the asks already shown', async () => {

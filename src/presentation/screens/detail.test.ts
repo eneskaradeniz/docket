@@ -34,6 +34,9 @@ const RAW = import.meta.glob(
     '../components/detail-strip.tsx',
     '../components/detail-decision-card.tsx',
     '../components/detail-skip-link.tsx',
+    '../components/decision-bar-geometry.ts',
+    '../components/chat-dock.tsx',
+    './shell.tsx',
     '../components/detail-work-order-usage.tsx',
     '../stores/work-order-detail.ts',
     '../labels/tr.ts',
@@ -412,19 +415,50 @@ describe('work-order detail screen — the decision zone (U-4, U-226)', () => {
     expect(html).not.toContain('01ARZ3NDEKTSV4RRFFQ69G5FE77</code>');
   });
 
-  it('#1277: the pinned decision bar spans the column with the page gutter, clears the chat button and covers the shell padding', () => {
+  it('#1277: the pinned decision bar sits under the chat button and clears its footprint — one geometry module, checked against the shell and the dock', () => {
     const screen = source('detail.tsx');
-    const at = screen.indexOf('data-decision-bar');
-    const bar = screen.slice(at, at + 900);
-    // Full-bleed to both gutter edges with the gutter handed back as padding …
-    expect(bar).toContain('-mx-[1.375rem]');
-    expect(bar).toContain('pl-[1.375rem]');
-    // … a right inset wider than the floating button (bottom-right, 3.5 rem + 1.5 rem offset) …
-    expect(bar).toContain('pr-[5.75rem]');
-    // … and a bottom offset that reaches past the shell's bottom padding.
-    expect(bar).toContain('bottom-[-1.125rem]');
+    const barAt = screen.indexOf('data-decision-bar');
+    const bar = screen.slice(barAt, screen.indexOf('\n            >', barAt));
+    expect(bar).toContain('DECISION_BAR_FRAME_CLASS');
+    expect(bar).toContain('DECISION_BAR_Z_CLASS');
     expect(bar).toContain('bg-surface');
     expect(bar).toContain('border-t');
+    // No literal gutter or z numbers are left at the call site.
+    expect(bar).not.toMatch(/\[\d/);
+    expect(bar).not.toMatch(/z-\d/);
+
+    const geometry = source('decision-bar-geometry.ts');
+    const classOf = (name: string): string => new RegExp(`${name}\\s*=\\s*'([^']*)'`).exec(geometry)?.[1] ?? '';
+    const z = (cls: string): number => Number(/z-\[?(\d+)\]?/.exec(cls)?.[1]);
+    // The button's z-order in the geometry is the dock's real one, and the bar is under it.
+    expect(source('chat-dock.tsx')).toContain(`fixed bottom-6 right-6 ${classOf('CHAT_BUTTON_Z_CLASS')} `);
+    expect(z(classOf('DECISION_BAR_Z_CLASS'))).toBeLessThan(z(classOf('CHAT_BUTTON_Z_CLASS')));
+    // The gutter the bar undoes is the shell's real main padding.
+    expect(source('shell.tsx')).toContain(classOf('SHELL_MAIN_PADDING_CLASS'));
+    const frame = classOf('DECISION_BAR_FRAME_CLASS');
+    expect(frame).toContain('-mx-[1.375rem]');
+    expect(frame).toContain('pl-[1.375rem]');
+    expect(frame).toContain('bottom-[-1.125rem]');
+    // The right inset (5.75 rem) exceeds the button's footprint: 1.5 rem offset + 3.5 rem width.
+    expect(frame).toContain('pr-[5.75rem]');
+    expect(5.75).toBeGreaterThan(1.5 + 3.5);
+  });
+
+  it('#1277: the header names the project only when it differs from the repo line above — a name or slug equal to the repo says nothing twice', async () => {
+    const ctx = (name: string, slug: string) => ({
+      path: '/clones/atolye',
+      status: 'ok' as const,
+      project: { slug, name },
+      siblingCount: 0,
+    });
+    const same = await draw({ ...READY, repoContext: ctx('atolye', 'other') }, [], CHANGES_READY);
+    expect(same).toContain('data-detail-repo-context');
+    expect(same).toContain('/clones/atolye');
+    expect(same).not.toContain('Proje:');
+    const sameSlug = await draw({ ...READY, repoContext: ctx('Atölye', 'atolye') }, [], CHANGES_READY);
+    expect(sameSlug).not.toContain('Proje:');
+    const different = await draw({ ...READY, repoContext: ctx('Atölye', 'atolye-proj') }, [], CHANGES_READY);
+    expect(different).toContain('Proje: Atölye');
   });
 
   it('U-340: a non-steerable run keeps Durdur and hides Yönlendir (#1277)', async () => {

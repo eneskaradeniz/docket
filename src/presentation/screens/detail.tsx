@@ -45,6 +45,7 @@ import { DetailStrip } from '../components/detail-strip';
 import { DecisionZoneCards, GitDoorsCard } from '../components/detail-decision-card';
 import { DetailFiles } from '../components/detail-files';
 import { DetailRunCard } from '../components/detail-run-card';
+import { DECISION_BAR_FRAME_CLASS, DECISION_BAR_Z_CLASS } from '../components/decision-bar-geometry';
 import { DetailRowMenu } from '../components/detail-row-menu';
 import { DetailSkipLink } from '../components/detail-skip-link';
 import { DetailWorkOrderUsage } from '../components/detail-work-order-usage';
@@ -659,12 +660,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
             <div
               ref={barRef}
               data-decision-bar
-              // Spans the whole main column: the negative margins cancel the shell's gutter and
-              // the padding gives it back, so the bar's solid surface reaches both edges while its
-              // content keeps the page's own inset. The bottom offset and padding cover the
-              // shell's bottom padding, so nothing shows beneath it, and the right inset clears
-              // the floating chat button (fixed at the bottom right, 3.5 rem wide).
-              className="sticky bottom-[-1.125rem] z-30 -mx-[1.375rem] -mb-[1.125rem] flex min-w-0 items-center gap-3 border-t border-hairline bg-surface pb-[1.625rem] pl-[1.375rem] pr-[5.75rem] pt-2"
+              className={`${DECISION_BAR_FRAME_CLASS} ${DECISION_BAR_Z_CLASS} flex min-w-0 items-center gap-3 border-t border-hairline bg-surface`}
             >
               <span className="m-0 min-w-0 truncate text-[0.8125rem] font-semibold text-ink">
                 {firstCard?.kind === 'approve'

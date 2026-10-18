@@ -1075,22 +1075,27 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     set({ ...state, usageSummary: reply as UsageSummaryView, usageSummaryFailed: false });
   };
 
-  /** One read of the asking run's event tail feeds two things: each open ask's tool and target
-   *  (the card must show what is being approved) and the collapsed count of asks the run already
-   *  allowed. */
+  /** One read per asking run of its event tail feeds two things: each open ask's tool and target
+   *  (the card must show what is being approved — every pending ask, whichever run raised it)
+   *  and the collapsed count of asks those runs already allowed. A run whose read fails leaves
+   *  its asks on the ask-id fallback. */
   const loadAskDetails = async (asks: readonly WorkOrderAskView[]): Promise<void> => {
-    const ask = asks[0];
-    if (ask === undefined) return;
-    const reply: unknown = await api.query({ type: 'run.events', runId: ask.runId } satisfies Query);
-    if (isQueryFailure(reply) || !Array.isArray(reply)) return;
-    const events = reply as readonly AgentEvent[];
-    for (const event of events) {
-      if (event.type === 'permission_ask') {
-        askDetails.set(event.id, { tool: event.tool, target: event.target ?? null });
+    const runIds = [...new Set(asks.map((ask) => ask.runId))];
+    if (runIds.length === 0) return;
+    const replies = await Promise.all(
+      runIds.map((runId): Promise<unknown> => api.query({ type: 'run.events', runId } satisfies Query)),
+    );
+    let allowed = 0;
+    let read = false;
+    for (const reply of replies) {
+      if (isQueryFailure(reply) || !Array.isArray(reply)) continue;
+      read = true;
+      for (const event of reply as readonly AgentEvent[]) {
+        if (event.type === 'permission_ask') askDetails.set(event.id, { tool: event.tool, target: event.target ?? null });
+        else if (event.type === 'permission_answered' && event.decision === 'allow') allowed += 1;
       }
     }
-    const count = events.filter((event) => event.type === 'permission_answered' && event.decision === 'allow').length;
-    set({ ...state, autoAllowed: count });
+    if (read) set({ ...state, autoAllowed: allowed });
   };
 
   const load = async (id: string): Promise<void> => {
