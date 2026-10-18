@@ -433,6 +433,11 @@ export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, 
               proposal={proposal}
               expanded={(section) => disclosureExpanded(section)}
               onToggle={(section) => store.toggleSection(section)}
+              onTestCommandChange={
+                state.proposalId === null && (proposal.repo.commandSets['tests'] ?? []).length <= 1
+                  ? (value) => store.setTestCommand(value)
+                  : undefined
+              }
             />
           ) : null}
           {screen === 'summary' ? (

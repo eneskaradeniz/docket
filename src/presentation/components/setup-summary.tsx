@@ -38,6 +38,11 @@ export function SetupSummary({
         <h2 className="m-0 text-[0.9375rem] font-semibold text-ink">{t(locale, 'setup.multi.summary.title')}</h2>
         <p className="m-0 text-[0.8125rem] text-inkdim">{t(locale, 'setup.multi.summary.lead')}</p>
       </header>
+      {added.some((repo) => repo.noTestGate === true) ? (
+        <p role="status" data-setup-no-test-gate="" className="m-0 text-[0.8125rem] text-inkdim">
+          {t(locale, 'setup.multi.summary.noTestGate')}
+        </p>
+      ) : null}
       <div className="flex flex-wrap gap-4">{counter('setup.multi.summary.addedCount', added.length)}{counter('setup.multi.summary.skippedCount', skipped)}{counter('setup.multi.summary.pendingCount', pending)}</div>
       <div className="flex flex-wrap gap-2">
         <ActionButton variant="primary" size="md" disabled={busy} onClick={onOpenProject}>

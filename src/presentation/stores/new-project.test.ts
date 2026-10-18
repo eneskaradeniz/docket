@@ -40,6 +40,7 @@ import {
   readRequestKind,
   resetSessionDisclosure,
   START_FORM,
+  testCommandOf,
   toggleDisclosure,
   type NewProjectStore,
   type SetupChange,
@@ -688,5 +689,71 @@ describe('existing-folder import accept', () => {
     await store.attachExisting();
     expect(api.commands).toContainEqual({ type: 'project.attach', path: '/Users/e/atolye' });
     expect(store.state().done?.toastKey).toBe('success.project.attach');
+  });
+});
+
+describe('setup proposal test command field', () => {
+  const diffHtml = (proposal = buildSetupProposal('P', '/p'), onTestCommandChange?: (value: string) => void): string =>
+    renderToStaticMarkup(
+      createElement(SetupProposalDiff, {
+        locale: 'tr',
+        proposal,
+        expanded: () => false,
+        onToggle: () => undefined,
+        onTestCommandChange,
+      }),
+    );
+
+  it('the Komutlar section shows an optional single-line Test komutu field even while the section is collapsed', () => {
+    const html = diffHtml(undefined, () => undefined);
+    expect(html).toContain('data-setup-test-command=""');
+    expect(html).toContain(TR['setup.proposal.testCommand']);
+    expect(html).toContain(TR['setup.proposal.testCommandHint']);
+    expect(html).toContain('type="text"');
+    expect(html).not.toContain('required');
+    expect(html).not.toContain('readOnly');
+    expect(diffHtml()).toContain('readOnly=""');
+    expect(raw('setup-proposal-diff.tsx')).toContain("t(locale, 'setup.proposal.testCommand')");
+  });
+
+  it('a typed command becomes the tests set; clearing it empties the set again', async () => {
+    const { api, store } = setup();
+    store.pickPath('quick');
+    store.setRepoPath('/Users/e/atolye');
+    await store.submit();
+    expect(testCommandOf(buildSetupProposal('P', '/p'))).toBe('');
+    store.setTestCommand('  npm test  ');
+    expect(store.state().proposal?.repo.commandSets).toEqual({ tests: ['npm test'] });
+    store.setTestCommand('   ');
+    expect(store.state().proposal?.repo.commandSets).toEqual({ tests: [] });
+    store.setTestCommand('make check');
+    api.reply('project.create', { ok: true, id: 'atolye' });
+    api.reply('setup.apply', { ok: true });
+    await store.acceptProposal();
+    expect(api.commands).toContainEqual(
+      expect.objectContaining({ type: 'setup.apply', proposal: expect.objectContaining({ repo: expect.objectContaining({ commandSets: { tests: ['make check'] } }) }) }),
+    );
+    expect(store.state().addedRepos[0]?.noTestGate).toBeUndefined();
+  });
+
+  it('an accepted setup without a test command marks the repo, and the summary says there is no test gate', async () => {
+    const { api, store } = setup();
+    store.pickPath('quick');
+    store.setRepoPath('/Users/e/atolye');
+    await store.submit();
+    api.reply('project.create', { ok: true, id: 'atolye' });
+    api.reply('setup.apply', { ok: true });
+    await store.acceptProposal();
+    expect(store.state().addedRepos[0]?.noTestGate).toBe(true);
+    const html = drawPanel(store);
+    expect(html).toContain('data-setup-no-test-gate=""');
+    expect(html).toContain(TR['setup.multi.summary.noTestGate']);
+    expect(EN['setup.multi.summary.noTestGate']).toMatch(/no test gate/i);
+  });
+
+  it('typing a test command with no proposal on screen changes nothing', () => {
+    const { store } = setup();
+    store.setTestCommand('npm test');
+    expect(store.state().proposal).toBeNull();
   });
 });

@@ -25,6 +25,8 @@ export const IMPORT_QUEUE_MAX = 8;
 export interface AddedRepoRecord {
   readonly id: string;
   readonly path: string;
+  /** The repo was set up with no test command, so its flow copy carries no test gate (A-419). */
+  readonly noTestGate?: boolean;
 }
 
 export type ImportRowStatus = 'ready' | 'review' | 'skipped' | 'added';
@@ -166,6 +168,17 @@ export const buildSetupProposal = (name: string, repoPath: string): SetupProposa
     differsFromRecommended: [],
   };
 };
+
+/** The Test komutu field's value: the one command of the `tests` set, or '' when the set is empty. */
+export const testCommandOf = (proposal: SetupProposal): string => (proposal.repo.commandSets['tests'] ?? []).join(' && ');
+
+const hasNoTestGate = (proposal: SetupProposal): boolean => (proposal.repo.commandSets['tests'] ?? []).length === 0;
+
+const addedRecordOf = (proposal: SetupProposal, path: string): AddedRepoRecord => ({
+  id: proposal.repo.id,
+  path,
+  ...(hasNoTestGate(proposal) ? { noTestGate: true } : {}),
+});
 
 export const skipReasonKey = (reason: SkipReason): LabelKey => {
   switch (reason) {
@@ -453,6 +466,8 @@ export interface NewProjectStore {
   generateProposal(): Promise<void>;
   discardProposal(): void;
   acceptProposal(): Promise<void>;
+  /** Sets the one test command of a Quick/Detailed proposal; an empty value empties the set (A-419). */
+  setTestCommand(value: string): void;
   requestAiRead(path: string, reason: string): void;
   denyPermission(): void;
   allowPermission(): void;
@@ -616,7 +631,7 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
   const finishAi = async (): Promise<void> => {
     if (proposal === null) return;
     const repoPath = form.repoPath.trim();
-    const repo: AddedRepoRecord = { id: proposal.repo.id, path: repoPath };
+    const repo = addedRecordOf(proposal, repoPath);
     if (projectId === null) {
       await deps.reloadTree?.();
       enterSummary(proposal.project.name, slugOf(proposal.project.name), repo);
@@ -712,7 +727,7 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
       failure = failureOf(result.code, false, 'setup.apply');
       return false;
     }
-    if (result.wroteRepoYaml !== false) addedRepos = [...addedRepos, { id: body.repo.id, path }];
+    if (result.wroteRepoYaml !== false) addedRepos = [...addedRepos, addedRecordOf(body, path)];
     await deps.reloadTree?.();
     return true;
   };
@@ -880,6 +895,15 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
       screen = form.path === null ? 'choose' : 'form';
       publish();
     },
+    setTestCommand: (value) => {
+      if (proposal === null || proposalId !== null) return;
+      const command = value.trim();
+      proposal = {
+        ...proposal,
+        repo: { ...proposal.repo, commandSets: { ...proposal.repo.commandSets, tests: command === '' ? [] : [command] } },
+      };
+      publish();
+    },
     acceptProposal: async () => {
       if (proposal === null || busy) return;
       if (proposalId !== null) {
@@ -931,7 +955,7 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
           return;
         }
         await deps.reloadTree?.();
-        enterSummary(name, projectId, { id: proposal.repo.id, path }, applied.wroteRepoYaml !== false);
+        enterSummary(name, projectId, addedRecordOf(proposal, path), applied.wroteRepoYaml !== false);
         busy = false;
         publish();
         return;
