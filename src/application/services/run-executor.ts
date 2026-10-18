@@ -45,7 +45,6 @@ import {
   headroom,
   resolveTier,
   selectMemory,
-  stageBrief,
   stageOutputScopeRoot,
   stageOutputVerdict,
   translateCapabilities,
@@ -59,6 +58,7 @@ import { attachDocketCapability } from './mcp-attach';
 import { catalogOrEmpty, matchIdFor } from './match-id';
 import { DEFAULT_MODEL_CONSENT, defaultBillingOf, spendConsentSatisfied } from './spend-consent';
 import type { BoardHooks } from './permission-board';
+import { stageBriefOf } from './stage-brief';
 import type { RunControl } from './run-control';
 import { deliverHeldVerdict, type VerdictHolder } from './verdict-holder';
 import { buildHandoff, commitCheckpoint, effectiveAutonomy, listActiveMemoryNotes, proposeMemory } from '../use-cases/index';
@@ -582,7 +582,9 @@ const definitionsRevOf = async (
   // The role a load answers is already the binding's effective role (R-130).
   const effective = loaded.value.roles.find((candidate) => candidate.id === role.id);
   if (flow === undefined || stage === undefined || effective === undefined) return undefined;
-  return definitionsDigest(stageBrief(flow, stage, effective, { id: record.id, title: record.title }));
+  return definitionsDigest(
+    await stageBriefOf(deps, { flow, stage, role: effective, record, docsRoot: loaded.value.repo?.docsRoot }),
+  );
 };
 
 /** An unpinned route with a tier runs the best model of that tier: the account's own tier table,

@@ -16,12 +16,12 @@ import {
   ok,
   planInstructions,
   renderInstructionBlock,
-  stageBrief,
   workOrderRequestSection,
 } from '../../domain/index';
 
 import type { AppDeps } from '../ports/index';
 import { operatorFeedbackSection } from '../services/operator-feedback';
+import { stageBriefOf } from '../services/stage-brief';
 
 export interface RunPrompt {
   readonly prompt: string;
@@ -64,7 +64,7 @@ export async function composeRunPrompt(
 
   // Docket layers first — byte-identical for every provider given the same definitions (A-53); the
   // brief already embeds the role instructions, so they are never appended a second time.
-  const brief = stageBrief(flow, stage, role, { id: record.id, title: record.title });
+  const brief = await stageBriefOf(deps, { flow, stage, role, record, docsRoot: loaded.value.repo?.docsRoot });
   const request = workOrderRequestSection(record.title, record.description);
   const events = await deps.workOrders.events(input.workOrderId);
   const feedback = operatorFeedbackSection(flow, events, input.stage);

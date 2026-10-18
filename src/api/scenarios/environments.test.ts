@@ -350,7 +350,7 @@ describe('standard flow with environments, headless end to end', () => {
     expect(id).toBeDefined();
     if (id === undefined) return;
     h.checkpoints.setBase(id, WORKTREE_BASE);
-    h.checkpoints.setDiff(WORKTREE_BASE, { files: ['docs/plan.md', 'src/main.ts'], patch: 'diff --git a/src/main.ts' });
+    h.checkpoints.setDiff(WORKTREE_BASE, { files: ['docs/plans/ie-0001.md', 'src/main.ts'], patch: 'diff --git a/src/main.ts' });
     h.clock.advance(1_000);
     let view = await viewOf(h.deps, id);
     expectState(view, { status: 'ready', stage: PLAN, pendingGates: [PLAN_APPROVAL] });
@@ -512,7 +512,7 @@ describe('standard flow with environments, headless end to end', () => {
     expect(id).toBeDefined();
     if (id === undefined) return;
     h.checkpoints.setBase(id, WORKTREE_BASE);
-    h.checkpoints.setDiff(WORKTREE_BASE, { files: ['docs/plan.md', 'src/main.ts'], patch: 'diff --git a/src/main.ts' });
+    h.checkpoints.setDiff(WORKTREE_BASE, { files: ['docs/plans/ie-0001.md', 'src/main.ts'], patch: 'diff --git a/src/main.ts' });
     expect((await runCurrentStage(h, id)).kind).toBe('finished');
     expect((await approveViaApi(h.deps, id, PLAN_APPROVAL)).ok).toBe(true);
     expect((await runCurrentStage(h, id)).kind).toBe('finished');

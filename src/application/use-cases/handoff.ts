@@ -23,11 +23,11 @@ import {
   planInstructions,
   renderHandoffPrompt,
   sizeHandoffPack,
-  stageBrief,
   workOrderRequestSection,
 } from '../../domain/index';
 
 import type { AppDeps } from '../ports/index';
+import { stageBriefOf } from '../services/stage-brief';
 
 export interface HandoffPlan {
   readonly pack: HandoffPack;
@@ -130,8 +130,8 @@ const assemblePack = async (
   // Item 1 — recomputed from the current definitions, never stored on the run (A-62); the same
   // digest comparison decides `definitionsChanged`, and a run with no recorded rev — or one whose
   // layers cannot be recomputed — counts as unchanged, never as a false change.
-  const stagePrompt = stageBrief(flow, stage, role, { id: record.id, title: record.title });
   const repoDef = loaded.value.repo;
+  const stagePrompt = await stageBriefOf(deps, { flow, stage, role, record, docsRoot: repoDef?.docsRoot });
   const acceptance = repoDef === undefined ? [] : acceptanceCriteria(stage, repoDef);
 
   // Item 2 — for the TARGET provider: the first candidate is the route the continuation runs on;

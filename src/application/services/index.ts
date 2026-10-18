@@ -29,3 +29,4 @@ export * from './verdict-holder';
 export * from './operator-feedback';
 export * from './quit-flow';
 export * from './stage-run-role';
+export * from './stage-brief';

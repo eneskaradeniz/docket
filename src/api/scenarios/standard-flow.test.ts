@@ -240,9 +240,9 @@ const runCurrentStage = async (h: Harness, id: WorkOrderId): Promise<ExecuteOutc
     const since = base.ok ? base.value : '';
     const diff = await h.deps.checkpoints.diffSince({ cwd, since });
     const files = diff.ok ? diff.value.files : [];
-    if (!files.includes('docs/plan.md')) {
+    if (!files.includes('docs/plans/ie-0001.md')) {
       h.checkpoints.setDiff(since, {
-        files: [...files, 'docs/plan.md'],
+        files: [...files, 'docs/plans/ie-0001.md'],
         patch: diff.ok ? diff.value.patch : '',
       });
     }
@@ -290,7 +290,7 @@ describe('standard flow, headless end to end', () => {
     // The implement run's edit: one changed file since the worktree base — the changes gate's
     // measured evidence (A-96).
     h.checkpoints.setBase(id, WORKTREE_BASE);
-    h.checkpoints.setDiff(WORKTREE_BASE, { files: ['docs/plan.md', 'src/main.ts'], patch: 'diff --git a/src/main.ts' });
+    h.checkpoints.setDiff(WORKTREE_BASE, { files: ['docs/plans/ie-0001.md', 'src/main.ts'], patch: 'diff --git a/src/main.ts' });
     h.clock.advance(1_000);
     let view = await viewOf(h.deps, id);
     expectState(view, { status: 'ready', stage: PLAN, pendingGates: [PLAN_APPROVAL] });
@@ -402,7 +402,7 @@ describe('standard flow, headless end to end', () => {
     if (id === undefined) return;
     h.checkpoints.setBase(id, WORKTREE_BASE);
     // The plan stage writes under docs; the implement run is the one that changes nothing.
-    h.checkpoints.setDiff(WORKTREE_BASE, { files: ['docs/plan.md'], patch: '' });
+    h.checkpoints.setDiff(WORKTREE_BASE, { files: ['docs/plans/ie-0001.md'], patch: '' });
 
     // Walk to implement/gating with a zero-file diff behind the implement run.
     expect((await runCurrentStage(h, id)).kind).toBe('finished');
@@ -463,7 +463,7 @@ describe('standard flow, headless end to end', () => {
     expect(id).toBeDefined();
     if (id === undefined) return;
     h.checkpoints.setBase(id, WORKTREE_BASE);
-    h.checkpoints.setDiff(WORKTREE_BASE, { files: ['docs/plan.md'], patch: '' });
+    h.checkpoints.setDiff(WORKTREE_BASE, { files: ['docs/plans/ie-0001.md'], patch: '' });
     expect((await runCurrentStage(h, id)).kind).toBe('finished');
     expect((await approveViaApi(h.deps, id, PLAN_APPROVAL)).ok).toBe(true);
     let view = await viewOf(h.deps, id);

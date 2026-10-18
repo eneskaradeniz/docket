@@ -41,20 +41,20 @@ describe('writeScopeVerdict', () => {
 
   describe('scope docs', () => {
     it('R-159: a target inside the repo docs root is unchecked — the normal path decides', () => {
-      expect(verdict('docs', 'Write', 'docs/plan.md')).toEqual({ verdict: 'unchecked' });
+      expect(verdict('docs', 'Write', 'docs/plans/ie-0001.md')).toEqual({ verdict: 'unchecked' });
       expect(verdict('docs', 'Edit', '/wt/repo/wo-1/docs/sub/plan.md')).toEqual({ verdict: 'unchecked' });
       expect(verdict('docs', 'Write', 'documentation/plan.md', { ...CONTEXT, docsRoot: 'documentation' })).toEqual({
         verdict: 'unchecked',
       });
       // A trailing separator on either side changes nothing.
-      expect(verdict('docs', 'Write', 'docs/plan.md', { ...CONTEXT, docsRoot: 'docs/' })).toEqual({ verdict: 'unchecked' });
+      expect(verdict('docs', 'Write', 'docs/plans/ie-0001.md', { ...CONTEXT, docsRoot: 'docs/' })).toEqual({ verdict: 'unchecked' });
     });
 
     it('R-159: a target outside the repo docs root is denied', () => {
       expect(verdict('docs', 'Write', 'src/a.ts')).toEqual({ verdict: 'deny', reason: 'outside-docs-root' });
       expect(verdict('docs', 'Edit', '/wt/repo/wo-1/src/a.ts')).toEqual({ verdict: 'deny', reason: 'outside-docs-root' });
       // The default root never substitutes for a configured one.
-      expect(verdict('docs', 'Write', 'docs/plan.md', { ...CONTEXT, docsRoot: 'documentation' })).toEqual({
+      expect(verdict('docs', 'Write', 'docs/plans/ie-0001.md', { ...CONTEXT, docsRoot: 'documentation' })).toEqual({
         verdict: 'deny',
         reason: 'outside-docs-root',
       });
@@ -66,13 +66,13 @@ describe('writeScopeVerdict', () => {
 
     it('R-159: docs is undecidable without the docs root, the worktree, the target or the cwd', () => {
       const { docsRoot: _docsRoot, ...withoutDocsRoot } = CONTEXT;
-      expect(verdict('docs', 'Write', 'docs/plan.md', withoutDocsRoot)).toEqual({ verdict: 'unchecked' });
+      expect(verdict('docs', 'Write', 'docs/plans/ie-0001.md', withoutDocsRoot)).toEqual({ verdict: 'unchecked' });
       const { worktreeRoot: _worktreeRoot, ...withoutWorktree } = CONTEXT;
-      expect(verdict('docs', 'Write', 'docs/plan.md', withoutWorktree)).toEqual({ verdict: 'unchecked' });
+      expect(verdict('docs', 'Write', 'docs/plans/ie-0001.md', withoutWorktree)).toEqual({ verdict: 'unchecked' });
       expect(verdict('docs', 'Write', undefined)).toEqual({ verdict: 'unchecked' });
       // A relative target with no cwd to resolve against cannot be located.
       const { cwd: _cwd, ...withoutCwd } = CONTEXT;
-      expect(verdict('docs', 'Write', 'docs/plan.md', withoutCwd)).toEqual({ verdict: 'unchecked' });
+      expect(verdict('docs', 'Write', 'docs/plans/ie-0001.md', withoutCwd)).toEqual({ verdict: 'unchecked' });
     });
   });
 

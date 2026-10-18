@@ -42,6 +42,8 @@ Decided with the operator on 2026-10-12; architect-owned; supersedes by referenc
 
 13. **D-13**: A reviewer run that ends without a verdict fails its verdict gate with verdict_missing; R-21 decides retry or block. (#1288)
 
+14. **D-14**: Plan file per work order: docs/plans/<id>.md. (#1294)
+
 ## Supersessions
 
 | Decision | What it supersedes | Where the contract change lands |
