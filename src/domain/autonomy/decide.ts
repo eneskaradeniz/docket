@@ -7,7 +7,7 @@
 import type { AutonomyLevel, PolicyId, UserOnlyGate } from '../shared';
 import { USER_ONLY_GATES } from '../shared';
 
-import { classifyRisk, type RiskAsk, type RiskContext } from './risk';
+import { classifyRisk, type RiskAsk, type RiskContext, type RiskRuleId } from './risk';
 
 const asPolicyId = (id: string): PolicyId => id as PolicyId;
 
@@ -20,6 +20,7 @@ export const WRITE_SCOPE_POLICY: PolicyId = asPolicyId('write-scope');
 
 export type PermissionDecision =
   | { readonly kind: 'allow-by-policy'; readonly policy: PolicyId; readonly level: AutonomyLevel }
+  | { readonly kind: 'deny-by-policy'; readonly policy: PolicyId; readonly level: AutonomyLevel; readonly rule: RiskRuleId }
   | { readonly kind: 'ask-human' };
 
 const ASK_HUMAN: PermissionDecision = { kind: 'ask-human' };
@@ -35,10 +36,14 @@ export function decidePermission(input: {
   if (input.action !== undefined && (USER_ONLY_GATES as readonly string[]).includes(input.action)) {
     return ASK_HUMAN;
   }
+  // A deny row is level-independent and never reaches a human: it is consulted before the level.
+  const verdict = classifyRisk(input.ask, input.context);
+  if (verdict.verdict === 'deny') {
+    return { kind: 'deny-by-policy', policy: PERMISSION_RULES_POLICY, level: input.level, rule: verdict.rule };
+  }
   // `balanced` reaches here only as defense in depth — R-167 resolves it to `manual` before it
   // can arrive; no level below auto may auto-allow.
   if (input.level !== 'auto') return ASK_HUMAN;
-  const verdict = classifyRisk(input.ask, input.context);
   return verdict.verdict === 'low'
     ? { kind: 'allow-by-policy', policy: PERMISSION_RULES_POLICY, level: input.level }
     : ASK_HUMAN;

@@ -16,11 +16,14 @@ export type RiskAsk =
  *  directory, and the exact command strings Docket itself runs as the stage's command gates. */
 export interface RiskContext {
   readonly worktreeRoot?: string;
+  /** The Docket data directory; absent skips the run-config row (it cannot be judged), never any other. */
+  readonly dataDir?: string;
   readonly cwd?: string;
   readonly verificationCommands: readonly string[];
 }
 
 export type RiskRuleId =
+  | 'deny-run-config'
   | 'deny-push-merge'
   | 'deny-destructive'
   | 'deny-network'
@@ -36,11 +39,12 @@ export type RiskRuleId =
 
 export type RiskVerdict =
   | { readonly verdict: 'low'; readonly rule: RiskRuleId }
+  | { readonly verdict: 'deny'; readonly rule: RiskRuleId }
   | { readonly verdict: 'needs_human' };
 
 export interface RiskRule {
   readonly id: RiskRuleId;
-  readonly verdict: 'low' | 'needs_human';
+  readonly verdict: 'low' | 'needs_human' | 'deny';
   readonly applies: (ask: RiskAsk, context: RiskContext) => boolean;
 }
 
@@ -333,8 +337,36 @@ const allowVerify = (ask: RiskAsk, context: RiskContext): boolean => {
 const allowWriteInside = (ask: RiskAsk, context: RiskContext): boolean =>
   isTool(ask, WRITE_TOOLS) && insideWorktree(writePath(ask), context);
 
+// --- the run config tree: <dataDir>/runs/<run>/config holds the ask-bridge and MCP tokens, so no
+// tool may read or write it. Lexical like every row here — no symlink knowledge is claimed. ---
+
+const RUN_CONFIG_TOKEN_SPLIT = /[\s;|&<>()"'`$=]+/;
+
+const inRunConfigTree = (target: readonly string[] | undefined, dataDir: readonly string[]): boolean =>
+  target !== undefined &&
+  contains(dataDir, target) &&
+  target[dataDir.length] === 'runs' &&
+  target[dataDir.length + 2] === 'config';
+
+const denyRunConfig = (ask: RiskAsk, context: RiskContext): boolean => {
+  if (ask.kind !== 'tool' || context.dataDir === undefined || !isAbsolute(context.dataDir)) return false;
+  const dataDir = resolveSegments(context.dataDir);
+  const named = (path: string | undefined): boolean => inRunConfigTree(resolvePath(path, context), dataDir);
+  if (isBashAsk(ask)) {
+    // Over-matching is the safe direction: any token that resolves into the tree denies, so a
+    // `cd` into it, a redirect target or a flag value cannot slip through.
+    const command = commandOf(ask);
+    return command !== undefined && command.split(RUN_CONFIG_TOKEN_SPLIT).some(named);
+  }
+  if (isTool(ask, READ_TOOLS)) {
+    return [readPathOf(ask), argString(ask, 'pattern'), argString(ask, 'glob')].some(named);
+  }
+  return isTool(ask, WRITE_TOOLS) && named(writePathOf(ask));
+};
+
 /** Ordered: the deny floor first, allow rows after — first match wins. */
 export const RISK_RULES: readonly RiskRule[] = [
+  { id: 'deny-run-config', verdict: 'deny', applies: denyRunConfig },
   { id: 'deny-push-merge', verdict: 'needs_human', applies: denyPushMerge },
   { id: 'deny-destructive', verdict: 'needs_human', applies: denyDestructive },
   { id: 'deny-network', verdict: 'needs_human', applies: denyNetwork },
@@ -366,7 +398,7 @@ export function classifyRisk(ask: RiskAsk, context: RiskContext): RiskVerdict {
   }
   for (const rule of RISK_RULES) {
     if (rule.applies(ask, context)) {
-      return rule.verdict === 'low' ? { verdict: 'low', rule: rule.id } : NEEDS_HUMAN;
+      return rule.verdict === 'needs_human' ? NEEDS_HUMAN : { verdict: rule.verdict, rule: rule.id };
     }
   }
   return NEEDS_HUMAN;

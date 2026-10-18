@@ -30,6 +30,7 @@ const asks = (ask: RiskAsk, ctx: RiskContext = context()): boolean =>
   classifyRisk(ask, ctx).verdict === 'needs_human';
 
 const ALL_ROW_IDS: readonly string[] = [
+  'deny-run-config',
   'deny-push-merge',
   'deny-destructive',
   'deny-network',
@@ -226,5 +227,45 @@ describe('autonomy/risk', () => {
     // Outside targets were already held by the floor; secret-shaped targets never match here.
     expect(asks(toolAsk('Write', { file_path: `${ROOT}/.env.production` }))).toBe(true);
     expect(asks(toolAsk('Write', { file_path: `${ROOT}/server.key` }))).toBe(true);
+  });
+
+  it('R-184: a read or write of <dataDir>/runs/<run>/config is denied for file tools and Bash, traversal included', () => {
+    const DATA = '/data';
+    const ctx = context({ dataDir: DATA });
+    const cfg = `${DATA}/runs/run-1/config`;
+    const denied = (ask: RiskAsk, c: RiskContext = ctx): boolean =>
+      JSON.stringify(classifyRisk(ask, c)) === JSON.stringify({ verdict: 'deny', rule: 'deny-run-config' });
+    expect(denied(toolAsk('Read', { file_path: `${cfg}/.agents/.docket-ask.json` }))).toBe(true);
+    expect(denied(toolAsk('Edit', { file_path: `${cfg}/.agents/hooks.json` }))).toBe(true);
+    expect(denied(toolAsk('Write', { file_path: `${cfg}/x` }))).toBe(true);
+    expect(denied(toolAsk('NotebookEdit', { notebook_path: `${cfg}/n.ipynb` }))).toBe(true);
+    expect(denied(toolAsk('Grep', { pattern: 'token', path: cfg }))).toBe(true);
+    expect(denied(toolAsk('Glob', { pattern: `${cfg}/**` }))).toBe(true);
+    expect(denied(toolAsk('Glob', { pattern: `${DATA}/runs/*/config/**` }))).toBe(true);
+    expect(denied(toolAsk('Bash', { command: `cat ${cfg}/.agents/mcp_config.json` }))).toBe(true);
+    expect(denied(toolAsk('Bash', { command: `ls ${cfg}/` }))).toBe(true);
+    expect(denied(toolAsk('Bash', { command: `head -c 20 < ${cfg}/token` }))).toBe(true);
+    expect(denied(toolAsk('Bash', { command: `echo x>${cfg}/hooks.json` }))).toBe(true);
+    // Traversal variants resolve into the tree.
+    expect(denied(toolAsk('Read', { file_path: `${DATA}/runs/run-1/x/../config/token` }))).toBe(true);
+    expect(denied(toolAsk('Read', { file_path: `${DATA}//runs//run-1//config//token` }))).toBe(true);
+    expect(denied(toolAsk('Read', { file_path: `${cfg}/` }))).toBe(true);
+    expect(denied(toolAsk('Read', { file_path: '../../data/runs/run-1/config/token' }), context({ dataDir: DATA, cwd: '/wt/sub' }))).toBe(true);
+    expect(denied(toolAsk('Read', { file_path: 'token' }), context({ dataDir: DATA, cwd: cfg }))).toBe(true);
+    // Outside the tree is unaffected: the worktree, the run dir beside it, other data-dir files.
+    expect(lowRule(toolAsk('Read', { file_path: `${ROOT}/docs/a.md` }), ctx)).toBe('allow-read-search');
+    expect(denied(toolAsk('Read', { file_path: `${DATA}/runs/run-1/state.json` }))).toBe(false);
+    expect(denied(toolAsk('Read', { file_path: `${DATA}/runs/run-1/configs/x` }))).toBe(false);
+    expect(denied(toolAsk('Read', { file_path: `${DATA}/config/x` }))).toBe(false);
+    expect(denied(toolAsk('Bash', { command: 'npm test' }))).toBe(false);
+    // The vendor schema dir stays with the human, as before.
+    expect(asks(toolAsk('Read', { file_path: '/home/u/.gemini/antigravity-cli/mcp/docket-pages/instructions.md' }), ctx)).toBe(true);
+  });
+
+  it('R-184: an absent or relative data dir skips the row — nothing else changes', () => {
+    const ask = toolAsk('Read', { file_path: '/data/runs/run-1/config/token' });
+    expect(classifyRisk(ask, context())).toEqual({ verdict: 'needs_human' });
+    expect(classifyRisk(ask, context({ dataDir: 'data' }))).toEqual({ verdict: 'needs_human' });
+    expect(lowRule(toolAsk('Read', { file_path: `${ROOT}/src/a.ts` }), context())).toBe('allow-read-search');
   });
 });

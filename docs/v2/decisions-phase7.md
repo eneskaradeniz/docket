@@ -44,6 +44,8 @@ Decided with the operator on 2026-10-12; architect-owned; supersedes by referenc
 
 14. **D-14**: Plan file per work order: docs/plans/<id>.md. (#1294)
 
+15. **D-15**: Agent may not read or write the run config tree; deny at every level. (#1298, #1282)
+
 ## Supersessions
 
 | Decision | What it supersedes | Where the contract change lands |
