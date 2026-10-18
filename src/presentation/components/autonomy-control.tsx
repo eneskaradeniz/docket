@@ -65,6 +65,10 @@ export function AutonomyControl({ locale, view, mark, onPick, onClear }: Autonom
   // that already is `auto` stays selected whatever a later cap removal would say.
   const whyKey = autonomyWhyKey(view);
   const autoBlocked = view.level !== 'auto' && view.autoUnavailable !== undefined;
+  // One reason line: the why line already names the refusal, so the refusal line shows only
+  // where no why line does, and the radio's description follows whichever one is on screen.
+  const refusalShown = autoBlocked && whyKey === null;
+  const describedBy = whyKey !== null ? `autonomy-${mark}-why` : `autonomy-${mark}-refusal`;
   return (
     <section
       role="group"
@@ -85,19 +89,19 @@ export function AutonomyControl({ locale, view, mark, onPick, onClear }: Autonom
             name={`autonomy-${mark}`}
             checked={view.level === 'auto'}
             disabled={autoBlocked}
-            aria-describedby={autoBlocked ? `autonomy-${mark}-refusal` : undefined}
+            aria-describedby={autoBlocked ? describedBy : undefined}
             onChange={() => onPick('auto')}
           />
           <span className={`text-[13px] ${autoBlocked ? 'text-inkdim' : 'text-ink'}`}>{t(locale, 'autonomy.level.auto')}</span>
         </label>
       </div>
-      {autoBlocked && view.autoUnavailable !== undefined ? (
+      {refusalShown && view.autoUnavailable !== undefined ? (
         <p id={`autonomy-${mark}-refusal`} data-autonomy-refusal className="m-0 mt-2 text-[12px] text-inkdim">
           {t(locale, autonomyRefusalKey(view.autoUnavailable))}
         </p>
       ) : null}
       {whyKey !== null ? (
-        <p data-autonomy-why className="m-0 mt-2 text-[12px] text-inkdim">
+        <p id={`autonomy-${mark}-why`} data-autonomy-why className="m-0 mt-2 text-[12px] text-inkdim">
           {t(locale, whyKey)}
         </p>
       ) : null}
