@@ -752,7 +752,7 @@ describe('work-order detail store', () => {
     ]);
   });
 
-  it('A-427: a verdict ask carries the detail its run event holds; any other ask carries none', async () => {
+  it('A-429: a verdict ask carries the detail its run event holds; any other ask carries none', async () => {
     const api = fakeApi(detailReply(AT_BUILD));
     api.setAsks([
       { runId: RUN_ID, askId: 'ask-1', since: 5, title: null },

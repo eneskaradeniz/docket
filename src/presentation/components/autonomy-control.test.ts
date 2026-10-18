@@ -111,6 +111,25 @@ describe('AutonomyControl', () => {
     expect(render({ level: 'auto', source: 'workOrder', layerSet: true })).not.toContain('data-autonomy-why');
   });
 
+  it('#1302: one helper line says what Otomatik changes — both locales, manual, auto and unavailable, apart from the reason line', () => {
+    for (const locale of ['tr', 'en'] as const) {
+      const dict = locale === 'tr' ? TR : EN;
+      const states = [
+        { level: 'manual' as const, source: 'builtin' },
+        { level: 'auto' as const, source: 'repo', layerSet: true },
+        { level: 'manual' as const, source: 'builtin', autoUnavailable: 'auto_requires_spend_cap' },
+        { level: 'manual' as const, source: 'workOrder', autoUnavailable: 'above_ceiling' },
+      ];
+      for (const state of states) {
+        const markup = render(state, locale);
+        expect(markup).toContain('data-autonomy-auto-help');
+        expect(markup.split(dict['autonomy.autoHelp']).length - 1).toBe(1);
+      }
+    }
+    expect(render({ level: 'manual', source: 'builtin' })).toContain('data-autonomy-why');
+    expect(TR['autonomy.autoHelp']).not.toBe(TR['autonomy.why.default']);
+  });
+
   it('U-334: the clear-layer affordance appears only when the layer itself is set', () => {
     expect(render({ level: 'manual', source: 'workOrder', layerSet: true })).toContain(TR['autonomy.clear']);
     expect(render({ level: 'manual', source: 'repo', layerSet: false })).not.toContain(TR['autonomy.clear']);

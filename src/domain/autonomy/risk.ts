@@ -342,21 +342,24 @@ const allowWriteInside = (ask: RiskAsk, context: RiskContext): boolean =>
 
 const RUN_CONFIG_TOKEN_SPLIT = /[\s;|&<>()"'`$=]+/;
 
+const inRunsTree = (target: readonly string[] | undefined, dataDir: readonly string[]): boolean =>
+  target !== undefined && contains(dataDir, target) && target[dataDir.length] === 'runs';
+
 const inRunConfigTree = (target: readonly string[] | undefined, dataDir: readonly string[]): boolean =>
-  target !== undefined &&
-  contains(dataDir, target) &&
-  target[dataDir.length] === 'runs' &&
-  target[dataDir.length + 2] === 'config';
+  inRunsTree(target, dataDir) && target?.[dataDir.length + 2] === 'config';
 
 const denyRunConfig = (ask: RiskAsk, context: RiskContext): boolean => {
   if (ask.kind !== 'tool' || context.dataDir === undefined || !isAbsolute(context.dataDir)) return false;
   const dataDir = resolveSegments(context.dataDir);
   const named = (path: string | undefined): boolean => inRunConfigTree(resolvePath(path, context), dataDir);
   if (isBashAsk(ask)) {
-    // Over-matching is the safe direction: any token that resolves into the tree denies, so a
-    // `cd` into it, a redirect target or a flag value cannot slip through.
+    // Over-matching is the safe direction: any token that resolves to `runs` or below denies — an
+    // ancestor of the config tree walks into it (`find`, `ls -R`, `tar`) — so a `cd` into it, a
+    // redirect target or a flag value cannot slip through either. The file tools name one path,
+    // so they keep the narrower config match.
     const command = commandOf(ask);
-    return command !== undefined && command.split(RUN_CONFIG_TOKEN_SPLIT).some(named);
+    const inRuns = (path: string | undefined): boolean => inRunsTree(resolvePath(path, context), dataDir);
+    return command !== undefined && command.split(RUN_CONFIG_TOKEN_SPLIT).some(inRuns);
   }
   if (isTool(ask, READ_TOOLS)) {
     return [readPathOf(ask), argString(ask, 'pattern'), argString(ask, 'glob')].some(named);

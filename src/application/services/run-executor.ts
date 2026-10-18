@@ -190,9 +190,29 @@ const dataDirOf = (runDirPath: string): string | undefined => {
   return match?.[1];
 };
 
+/** The app-server route's own tool names, each carrying one string the risk table has no key for:
+ *  `shell` the command, the others a root the grant would cover (a granted root, a patch's working
+ *  directory, a permission request's cwd). */
+const ROUTE_TARGET_TOOLS: readonly string[] = ['shell', 'fileChange', 'applyPatch', 'permissions'];
+
+/** The asks only a deny may come of: the event's one string offered under the shapes the risk rows
+ *  read. A search tool's string may be its root or its pattern, so it is both; a route tool's
+ *  string is read as a Bash token, which is the row that also catches a root above the tree. An
+ *  allow never comes of these — a mapping that is not exact must not license anything. */
+const denyProbesOf = (event: PermissionAskEvent): readonly RiskAsk[] => {
+  if (event.target === undefined) return [];
+  if (event.tool === 'Grep' || event.tool === 'Glob') {
+    return [{ kind: 'tool', tool: event.tool, arguments: { path: event.target, pattern: event.target } }];
+  }
+  return ROUTE_TARGET_TOOLS.includes(event.tool)
+    ? [{ kind: 'tool', tool: 'Bash', arguments: { command: event.target } }]
+    : [];
+};
+
 /** The axis-1 decision for one ask: the level is re-resolved per ask (R-170 — a level change
  *  governs asks made after it only), and anything unreadable or unmappable fails closed to the
- *  human. An invalid stored level surfaces through its own typed reads, never as an audit entry. */
+ *  human. An invalid stored level surfaces through its own typed reads, never as an audit entry.
+ *  The run-config deny is level-independent, so it is judged before the chain's state matters. */
 const decideAsk = async (
   deps: ExecuteDeps,
   input: ExecuteRunInput,
@@ -203,24 +223,23 @@ const decideAsk = async (
     workOrder: input.item.workOrderId,
     stage: input.item.stage,
   });
-  // A search tool's one string may be its root or its pattern, so it never maps to an allow; the
-  // run-config deny reads both keys, and only a deny from this probe is honoured.
-  if ((event.tool === 'Grep' || event.tool === 'Glob') && event.target !== undefined) {
-    const probe = decidePermission({
-      level: autonomy.ok ? autonomy.value.level : 'manual',
-      ask: { kind: 'tool', tool: event.tool, arguments: { path: event.target, pattern: event.target } },
-      context: await riskContextOf(deps, input, dataDir),
-    });
-    if (probe.kind === 'deny-by-policy') return probe;
-  }
-  if (!autonomy.ok) return { kind: 'ask-human' };
   const ask = riskAskOf(event);
-  if (ask === undefined) return { kind: 'ask-human' };
+  const probes = [...denyProbesOf(event), ...(ask !== undefined ? [ask] : [])];
+  if (probes.length === 0) return { kind: 'ask-human' };
+  const context = await riskContextOf(deps, input, dataDir);
+  // An unreadable chain denies like any other: the level only names the actor, and `manual` is
+  // the fail-closed stand-in that can never allow.
+  const level = autonomy.ok ? autonomy.value.level : 'manual';
+  for (const probe of probes) {
+    const verdict = decidePermission({ level, ask: probe, context });
+    if (verdict.kind === 'deny-by-policy') return verdict;
+  }
+  if (!autonomy.ok || ask === undefined) return { kind: 'ask-human' };
   const action = TOOL_GATE_ACTIONS[event.tool];
   return decidePermission({
     level: autonomy.value.level,
     ask,
-    context: await riskContextOf(deps, input, dataDir),
+    context,
     ...(action !== undefined ? { action } : {}),
   });
 };

@@ -413,7 +413,7 @@ describe('work-order detail screen — the decision zone (U-4, U-226)', () => {
     expect(card).not.toContain('submit_verdict');
   });
 
-  it('A-427: the verdict permission card shows the verdict, the summary as plain text and the pointer count', async () => {
+  it('A-429: the verdict permission card shows the verdict, the summary as plain text and the pointer count', async () => {
     const summary = 'Checked <b>the</b> diff & the "tests".';
     const html = await draw(ASKING, [ASK_ROW], null, [], [
       {
@@ -448,7 +448,7 @@ describe('work-order detail screen — the decision zone (U-4, U-226)', () => {
     expect(rejected).toContain('0 kanıt işaretçisi');
   });
 
-  it('A-427: a permission card without a detail is the card as before', async () => {
+  it('A-429: a permission card without a detail is the card as before', async () => {
     const verdictWithout = await draw(ASKING, [ASK_ROW], null, [], [
       { type: 'permission_ask', at: 0, id: 'ask-1', tool: 'mcp__docket-pages__submit_verdict', options: ['allow', 'deny'] },
     ]);

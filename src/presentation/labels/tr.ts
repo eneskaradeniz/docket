@@ -1736,6 +1736,7 @@ export const TR: LabelBundle = {
   'autonomy.why.auto_requires_max_attempts': 'Etkin seviye manuel: her aşama için açık deneme üst sınırı tanımlı değil.',
   'autonomy.why.above_ceiling': 'Etkin seviye manuel: üst sınır Otomatik seviyeye izin vermiyor.',
   'autonomy.why.default': 'Etkin seviye manuel: hiçbir katmanda seviye seçilmedi, yerleşik varsayılan bu.',
+  'autonomy.autoHelp': 'Otomatik: worktree içi araç izinlerini ve geri alınabilir onay kapılarını Docket verir; birleştirme, dağıtım ve silme sana kalır.',
   'autonomy.suggestion.banner': 'Bu akış otomatik seviyeyi öneriyor',
   'autonomy.suggestion.confirm': 'Otomatik yap',
   'autonomy.suggestion.decline': 'Vazgeç',

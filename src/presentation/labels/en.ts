@@ -1738,6 +1738,7 @@ export const EN: LabelBundle = {
   'autonomy.why.auto_requires_max_attempts': 'Effective level is manual: not every stage has an explicit attempt cap.',
   'autonomy.why.above_ceiling': 'Effective level is manual: the ceiling does not allow Automatic.',
   'autonomy.why.default': 'Effective level is manual: no layer chose a level, so the built-in default applies.',
+  'autonomy.autoHelp': 'Auto: Docket grants tool permissions inside the worktree and reversible approval gates; merging, deploying and deleting stay with you.',
   'autonomy.suggestion.banner': 'This flow suggests the auto level',
   'autonomy.suggestion.confirm': 'Set auto',
   'autonomy.suggestion.decline': 'Dismiss',
