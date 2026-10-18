@@ -264,8 +264,8 @@ export interface WorkOrderDetailState {
   /** The newest failed run's last spoken line, quoted by the failed card (U-226); null when the
    *  standing is not a failure or the run said nothing. */
   readonly lastErrorLine: string | null;
-  /** The asking run's already-allowed asks — the permission card's collapsed “{n} otomatik izin
-   *  verildi” line (U-226); 0 renders no line. */
+  /** The asking run's already-allowed asks — the permission card's collapsed “{n} izin verildi” line
+   *  (U-226); counts every allowed ask, human or policy; 0 renders no line. */
   readonly autoAllowed: number;
   /** The folded usage read (#1112); null before the first reply or while the first read runs. */
   readonly usageSummary: UsageSummaryView | null;

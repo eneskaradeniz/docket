@@ -59,6 +59,17 @@ describe('labels', () => {
     }
   });
 
+  it('the detail’s allowed-permissions line is neutral: it counts every allowed ask, human or policy, so it never says “otomatik”/“automatic”', () => {
+    expect(TR['detail.zone.autoAllowed']).toBe('{n} izin verildi');
+    expect(EN['detail.zone.autoAllowed']).toBe('{n} permissions allowed');
+    const detailCopy = [TR, EN].flatMap((bundle) =>
+      Object.entries(bundle)
+        .filter(([key]) => key.startsWith('detail.'))
+        .map(([, value]) => value.toLowerCase()),
+    );
+    expect(detailCopy.filter((value) => value.includes('otomatik') || value.includes('automatic'))).toEqual([]);
+  });
+
   it('U-228: the trailing “…” marks only the controls that open a further step (label-bundle scan)', () => {
     // “Yükleniyor…” is progress punctuation, not a control; every dotted CONTROL opens a further
     // step (the reject box, the close confirmation, the stop confirm, the steer note dialog and

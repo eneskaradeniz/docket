@@ -111,7 +111,7 @@ export const EN: LabelBundle = {
   'detail.zone.attestBody': 'The machine measured no file change in this stage. Did the work truly need none, or is something missing?',
   'detail.zone.permissionChip': 'Requested action',
   'detail.zone.permissionBody': 'The agent does this only with your permission; it waits until you decide.',
-  'detail.zone.autoAllowed': '{n} automatic permissions granted',
+  'detail.zone.autoAllowed': '{n} permissions allowed',
   'detail.zone.rejectOpen': 'Reject…',
   'detail.zone.rejectNoteLabel': 'Note to the agent',
   'detail.zone.rejectNoteOptional': '(optional)',
