@@ -2889,6 +2889,71 @@ describe('executeRun — the run config deny', () => {
   });
 });
 
+/** An ask in the shape the app-server route arrives in: its own tool names, one identifying string. */
+const routeAsk = (id: string, tool: string, target: string): AgentEvent => ({
+  type: 'permission_ask',
+  at: at(3),
+  id,
+  tool,
+  target,
+  options: ['allow', 'deny'],
+});
+
+describe('executeRun — the run config deny on every route', () => {
+  it('A-427: the app-server route’s shell, fileChange, applyPatch and permissions asks are denied by policy when their target is in the config tree, at every level', async () => {
+    for (const level of ['manual', 'auto'] as const) {
+      const h = await harness({
+        script: [
+          routeAsk('ask-1', 'shell', 'cat /fake-data/runs/r1/config/.agents/.docket-ask.json'),
+          routeAsk('ask-2', 'shell', 'find /fake-data/runs -exec cat {} \\;'),
+          routeAsk('ask-3', 'fileChange', '/fake-data/runs/r1/config'),
+          routeAsk('ask-4', 'applyPatch', '/fake-data/runs/r1/config/.agents'),
+          routeAsk('ask-5', 'permissions', '/fake-data/runs'),
+          routeAsk('ask-6', 'shell', 'npm test'),
+          routeAsk('ask-7', 'fileChange', FAKE_WORKTREE),
+          finished('completed'),
+        ],
+        defsJson: VERIFY_DEFS_JSON,
+      });
+      await h.deps.settings.set(AUTONOMY_KEY, level);
+      const gate = permissionGate('allow');
+
+      await executeRun(h.deps, gate.permissions, INPUT);
+
+      // Only the harmless asks reach the human, and even under auto nothing on this route is
+      // auto-allowed: the probe can only deny.
+      expect(gate.asked.map((entry) => entry.ask.id)).toEqual(['ask-6', 'ask-7']);
+      expect(h.transport.answers().map((answer) => answer.decision)).toEqual([
+        'deny', 'deny', 'deny', 'deny', 'deny', 'allow', 'allow',
+      ]);
+      expect(permissionAudits(h.log)[0]?.detail).toEqual({ tool: 'shell', decision: 'deny', reason: 'deny-run-config' });
+      expect(permissionAudits(h.log)[0]?.actor).toMatchObject({ kind: 'policy', level });
+    }
+  });
+
+  it('A-428: the deny comes before the autonomy check — an unreadable chain still denies a config read and asks the human for anything else', async () => {
+    const h = await harness({
+      script: [
+        readAsk('ask-1', '/fake-data/runs/r1/config/token'),
+        bashAsk('ask-2', 'cat /fake-data/runs/r1/config/token'),
+        routeAsk('ask-3', 'shell', 'ls /fake-data/runs'),
+        globAsk('ask-4', '/fake-data/runs/*/config/**'),
+        bashAsk('ask-5', 'npm test'),
+        finished('completed'),
+      ],
+      defsJson: VERIFY_DEFS_JSON,
+    });
+    await h.deps.settings.set(AUTONOMY_KEY, 'banana');
+    const gate = permissionGate('allow');
+
+    await executeRun(h.deps, gate.permissions, INPUT);
+
+    expect(gate.asked.map((entry) => entry.ask.id)).toEqual(['ask-5']);
+    expect(h.transport.answers().map((answer) => answer.decision)).toEqual(['deny', 'deny', 'deny', 'deny', 'allow']);
+    expect(permissionAudits(h.log)[0]?.detail).toEqual({ tool: 'Read', decision: 'deny', reason: 'deny-run-config' });
+  });
+});
+
 describe('executeRun — the write-scope guard', () => {
   it('A-409: a write certainly outside the role scope is denied before the ask — the gate never sees it, the denial is written, delivered and audited, and the run continues', async () => {
     const h = await harness({

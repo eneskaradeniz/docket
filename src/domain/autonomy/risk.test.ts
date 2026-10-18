@@ -262,6 +262,32 @@ describe('autonomy/risk', () => {
     expect(asks(toolAsk('Read', { file_path: '/home/u/.gemini/antigravity-cli/mcp/docket-pages/instructions.md' }), ctx)).toBe(true);
   });
 
+  it('R-186: a Bash token that is <dataDir>/runs or anything below it is denied — the ancestors of the config tree included', () => {
+    const DATA = '/data';
+    const ctx = context({ dataDir: DATA });
+    const denied = (ask: RiskAsk, c: RiskContext = ctx): boolean =>
+      JSON.stringify(classifyRisk(ask, c)) === JSON.stringify({ verdict: 'deny', rule: 'deny-run-config' });
+    const bash = (command: string): RiskAsk => toolAsk('Bash', { command });
+    expect(denied(bash(`find ${DATA}/runs -exec cat {} \\;`))).toBe(true);
+    expect(denied(bash(`ls -R ${DATA}/runs`))).toBe(true);
+    expect(denied(bash(`ls ${DATA}/runs/`))).toBe(true);
+    expect(denied(bash(`tar cf x ${DATA}/runs/run-1`))).toBe(true);
+    expect(denied(bash(`cat ${DATA}/runs/run-1/state.json`))).toBe(true);
+    expect(denied(bash(`cd ${DATA}//runs/run-1/x/.. && ls`))).toBe(true);
+    expect(denied(bash('ls ../../data/runs'), context({ dataDir: DATA, cwd: '/wt/sub' }))).toBe(true);
+    expect(denied(bash('ls runs/run-1'), context({ dataDir: DATA, cwd: DATA }))).toBe(true);
+    // The row stays on the runs subtree: the data dir itself, its siblings and look-alike names are not it.
+    expect(denied(bash(`ls ${DATA}`))).toBe(false);
+    expect(denied(bash(`ls ${DATA}/runs-old/x`))).toBe(false);
+    expect(denied(bash(`ls ${DATA}/runsx`))).toBe(false);
+    expect(denied(bash(`ls ${DATA}/worktrees/runs`))).toBe(false);
+    expect(denied(bash('ls src runs'), context({ dataDir: DATA, cwd: ROOT }))).toBe(false);
+    // The file tools keep the narrower match: a file under runs/<run> but outside config is not the tree.
+    expect(denied(toolAsk('Read', { file_path: `${DATA}/runs/run-1/state.json` }))).toBe(false);
+    expect(denied(toolAsk('Grep', { pattern: 'x', path: `${DATA}/runs` }))).toBe(false);
+    expect(denied(toolAsk('Read', { file_path: `${DATA}/runs/run-1/config/token` }))).toBe(true);
+  });
+
   it('R-184: an absent or relative data dir skips the row — nothing else changes', () => {
     const ask = toolAsk('Read', { file_path: '/data/runs/run-1/config/token' });
     expect(classifyRisk(ask, context())).toEqual({ verdict: 'needs_human' });
