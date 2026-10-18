@@ -25,6 +25,7 @@ import type {
   GitPrState,
   RunOutcome,
   StageSlug,
+  VerdictAskDetail,
   WorkOrderId,
   WorkOrderState,
 } from '../../domain/index';
@@ -184,6 +185,9 @@ export interface WorkOrderAskView {
   readonly askId: string;
   readonly tool: string;
   readonly target: string | null;
+  /** The verdict a reviewer is about to submit, when the ask is for Docket's verdict tool and its
+   *  event carried the bounded detail; absent for every other ask. */
+  readonly detail?: VerdictAskDetail;
 }
 
 /** A gate's human-readable standing in this work order; label keys `gate.state.*` (U-1). */
@@ -960,6 +964,7 @@ export const newestFailedRunOf = (view: WorkOrderDetailView): WorkOrderDetailRun
 interface AskDetail {
   readonly tool: string;
   readonly target: string | null;
+  readonly verdict: VerdictAskDetail | undefined;
 }
 
 /** The honest map from a `permissions.open` row to what the decision zone shows: the tool and
@@ -969,6 +974,7 @@ const toAskView = (row: OpenAskView, detail: AskDetail | undefined): WorkOrderAs
   askId: row.askId,
   tool: detail?.tool ?? row.askId,
   target: detail?.target ?? null,
+  ...(detail?.verdict === undefined ? {} : { detail: detail.verdict }),
 });
 
 /** A reply that is not exactly the changes view — a failure, an envelope, a list that is not a
@@ -1144,7 +1150,7 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
       if (isQueryFailure(reply) || !Array.isArray(reply)) continue;
       read = true;
       for (const event of reply as readonly AgentEvent[]) {
-        if (event.type === 'permission_ask') askDetails.set(event.id, { tool: event.tool, target: event.target ?? null });
+        if (event.type === 'permission_ask') askDetails.set(event.id, { tool: event.tool, target: event.target ?? null, verdict: event.detail });
         else if (event.type === 'permission_answered' && event.decision === 'allow') allowed += 1;
       }
     }

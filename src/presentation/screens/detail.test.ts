@@ -413,6 +413,54 @@ describe('work-order detail screen — the decision zone (U-4, U-226)', () => {
     expect(card).not.toContain('submit_verdict');
   });
 
+  it('A-429: the verdict permission card shows the verdict, the summary as plain text and the pointer count', async () => {
+    const summary = 'Checked <b>the</b> diff & the "tests".';
+    const html = await draw(ASKING, [ASK_ROW], null, [], [
+      {
+        type: 'permission_ask',
+        at: 0,
+        id: 'ask-1',
+        tool: 'mcp__docket-pages__submit_verdict',
+        detail: { verdict: 'approve', summary, pointerCount: 2 },
+        options: ['allow', 'deny'],
+      },
+    ]);
+
+    const card = html.slice(html.indexOf('data-decision-card="permission"'), html.indexOf('</li>', html.indexOf('data-decision-card="permission"')));
+    expect(card).toContain('Docket: inceleme kararı');
+    expect(card).toContain('Karar: Onay');
+    expect(card).toContain('2 kanıt işaretçisi');
+    // Text, never markup: the summary reaches the page escaped.
+    expect(card).toContain('Checked &lt;b&gt;the&lt;/b&gt; diff &amp; the &quot;tests&quot;.');
+    expect(card).not.toContain('<b>');
+
+    const rejected = await draw(ASKING, [ASK_ROW], null, [], [
+      {
+        type: 'permission_ask',
+        at: 0,
+        id: 'ask-1',
+        tool: 'mcp__docket-pages__submit_verdict',
+        detail: { verdict: 'reject', summary: 'No tests.', pointerCount: 0 },
+        options: ['allow', 'deny'],
+      },
+    ]);
+    expect(rejected).toContain('Karar: Ret');
+    expect(rejected).toContain('0 kanıt işaretçisi');
+  });
+
+  it('A-429: a permission card without a detail is the card as before', async () => {
+    const verdictWithout = await draw(ASKING, [ASK_ROW], null, [], [
+      { type: 'permission_ask', at: 0, id: 'ask-1', tool: 'mcp__docket-pages__submit_verdict', options: ['allow', 'deny'] },
+    ]);
+    const bash = await draw(ASKING, [ASK_ROW], null, [], [
+      { type: 'permission_ask', at: 0, id: 'ask-1', tool: 'Bash', target: 'ls', options: ['allow', 'deny'] },
+    ]);
+
+    expect(verdictWithout).not.toContain('Karar:');
+    expect(verdictWithout).not.toContain('kanıt işaretçisi');
+    expect(bash).not.toContain('Karar:');
+  });
+
   it('U-226: the failed standing quotes the run\'s own last words and offers the retry', async () => {
     const failed: WorkOrderDetailView = {
       ...READY,

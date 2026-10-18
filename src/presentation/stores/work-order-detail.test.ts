@@ -752,6 +752,39 @@ describe('work-order detail store', () => {
     ]);
   });
 
+  it('A-429: a verdict ask carries the detail its run event holds; any other ask carries none', async () => {
+    const api = fakeApi(detailReply(AT_BUILD));
+    api.setAsks([
+      { runId: RUN_ID, askId: 'ask-1', since: 5, title: null },
+      { runId: RUN_ID, askId: 'ask-2', since: 6, title: null },
+    ]);
+    api.setRunEvents([
+      {
+        type: 'permission_ask',
+        at: 1,
+        id: 'ask-1',
+        tool: 'mcp__docket-pages__submit_verdict',
+        detail: { verdict: 'approve', summary: 'Checked the diff.', pointerCount: 2 },
+        options: ['allow'],
+      },
+      { type: 'permission_ask', at: 2, id: 'ask-2', tool: 'Bash', target: 'ls -la', options: ['allow'] },
+    ]);
+    const store = createStore(api);
+    await store.load(WO_ID);
+    await flush();
+
+    expect(store.state().asks).toEqual([
+      {
+        runId: RUN_ID,
+        askId: 'ask-1',
+        tool: 'mcp__docket-pages__submit_verdict',
+        target: null,
+        detail: { verdict: 'approve', summary: 'Checked the diff.', pointerCount: 2 },
+      },
+      { runId: RUN_ID, askId: 'ask-2', tool: 'Bash', target: 'ls -la' },
+    ]);
+  });
+
   it('#1277: asks raised by different runs each read their own run\'s event — not only the first ask\'s run', async () => {
     const OTHER_RUN = '01ARZ3NDEKTSV4RRFFQ69G5FC3';
     const api = fakeApi(

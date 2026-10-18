@@ -690,6 +690,35 @@ describe('createStreamJsonTransport', () => {
       expect(collected[collected.length - 1]).toMatchObject({ type: 'finished', reason: 'cancelled' });
     });
 
+    it('P-63: a verdict tool ask carries its detail from the call; any other ask, or a malformed input, carries none', async () => {
+      const bridge = stubBridge();
+      const { handle } = await startAgy(idleBin('agy-ask-verdict'), bridge, [docketPages('run')]);
+      const collected: AgentEvent[] = [];
+      void collectInto(handle.events, collected);
+      const waiter = await waitForWaiter(bridge);
+      const tool = 'mcp__docket-pages__submit_verdict';
+
+      void waiter({ tool, verdictInput: { verdict: 'reject', summary: 'No tests.', pointers: ['a.ts:1', 'b.ts:2'] } });
+      void waiter({ tool, verdictInput: { verdict: 'maybe', summary: 'No tests.', pointers: [] } });
+      void waiter({ tool });
+      void waiter({ tool: 'Bash', target: 'npm test', verdictInput: { verdict: 'approve', summary: 's', pointers: [] } });
+      await waitFor(() => askEvents(collected).length === 4);
+
+      const [first, second, third, fourth] = askEvents(collected);
+      expect(first).toStrictEqual({
+        type: 'permission_ask',
+        at: first?.at,
+        id: 'ask-1',
+        tool,
+        detail: { verdict: 'reject', summary: 'No tests.', pointerCount: 2 },
+        options: ['allow', 'deny'],
+      });
+      expect(second).not.toHaveProperty('detail');
+      expect(third).not.toHaveProperty('detail');
+      expect(fourth).not.toHaveProperty('detail');
+      await handle.stop();
+    });
+
     it('P-63: stop() answers every open ask deny', async () => {
       const bridge = stubBridge();
       const { handle } = await startAgy(idleBin('agy-ask-stop'), bridge, [docketPages('run')]);

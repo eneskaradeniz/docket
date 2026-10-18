@@ -66,6 +66,10 @@ const WRITE_TOOLS: ReadonlySet<string> = new Set([
   'notebook_edit',
 ]);
 
+/** The verdict tool as the MCP server prefix spells it in the name this mapping builds — the same
+ *  name the SDK route's ask carries, so one reading serves both. */
+const DOCKET_VERDICT_TOOL = 'mcp__docket-pages__submit_verdict';
+
 const rawArgsOf = (args: unknown): Readonly<Record<string, unknown>> =>
   typeof args === 'object' && args !== null && !Array.isArray(args) ? (args as Record<string, unknown>) : {};
 
@@ -89,6 +93,31 @@ export function mapAgyToolCall(name: unknown, args: unknown): { readonly toolNam
     return { toolName: `mcp__${raw['ServerName']}__${raw['ToolName']}`, toolInput: raw };
   }
   return { toolName: name, toolInput: raw };
+}
+
+const asRecord = (value: unknown): Readonly<Record<string, unknown>> | undefined => {
+  if (typeof value === 'string') {
+    try {
+      return asRecord(JSON.parse(value));
+    } catch {
+      return undefined;
+    }
+  }
+  return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+};
+
+/** The verdict tool's own arguments inside agy's MCP call: the CLI nests them under a key of the
+ *  call's args (as an object or as JSON text), and the mapping does not hard-code which one — it
+ *  takes the first value, or the args themselves, that carries a `verdict`. Only the three fields
+ *  the card reads travel on; anything else in the call stays here. Nothing found → undefined, and
+ *  the ask is sent without it. */
+export function verdictInputOf(toolInput: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> | undefined {
+  for (const candidate of [toolInput, ...Object.values(toolInput).map(asRecord)]) {
+    if (candidate !== undefined && typeof candidate['verdict'] === 'string') {
+      return { verdict: candidate['verdict'], summary: candidate['summary'], pointers: candidate['pointers'] };
+    }
+  }
+  return undefined;
 }
 
 const readAgyAskFile = async (configDir: string): Promise<AgyAskFile | undefined> => {
@@ -216,9 +245,11 @@ const decide = async (input: AgyAskRunInput): Promise<AgyAskDecision> => {
   if (!file.bridge) return { decision: 'allow' };
 
   const ask = createSocketCaller({ socketPath: file.socketPath, token: file.token, timeoutMs: file.timeoutSeconds * 1000 });
+  const verdictInput = mapped.toolName === DOCKET_VERDICT_TOOL ? verdictInputOf(mapped.toolInput) : undefined;
   const outcome: McpToolOutcome = await ask(AGY_PERMISSION_ASK_TOOL, {
     tool: mapped.toolName,
     ...(mapped.target === undefined ? {} : { target: mapped.target }),
+    ...(verdictInput === undefined ? {} : { verdictInput }),
     ...(conversationId === undefined ? {} : { conversationId }),
   });
   if (!outcome.ok) return UNREACHABLE;

@@ -14,6 +14,9 @@ import { AGY_PERMISSION_ASK_TOOL } from './agy-ask';
 export interface AgyAskBridgeArgs {
   readonly tool: string;
   readonly target?: string;
+  /** The verdict tool's own arguments, found by the ask child; never validated here — the
+   *  transport reads them and the executor bounds what is stored. */
+  readonly verdictInput?: Readonly<Record<string, unknown>>;
   readonly conversationId?: string;
 }
 
@@ -38,6 +41,9 @@ const NO_CHANNEL: DocketToolResponse = {
   result: { decision: 'deny', reason: 'no permission channel for this run' },
 };
 
+const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
 export function createAgyAskBridge(): AgyAskBridge {
   const waiters = new Map<RunId, AgyAskWaiter>();
   return {
@@ -58,6 +64,7 @@ export function createAgyAskBridge(): AgyAskBridge {
       const ask: AgyAskBridgeArgs = {
         tool: record['tool'],
         ...(typeof record['target'] === 'string' ? { target: record['target'] } : {}),
+        ...(isRecord(record['verdictInput']) ? { verdictInput: record['verdictInput'] } : {}),
         ...(typeof record['conversationId'] === 'string' ? { conversationId: record['conversationId'] } : {}),
       };
       // Only the waiter decides, and a waiter that crashes answers deny — never a silent hang.

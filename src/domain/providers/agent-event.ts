@@ -8,13 +8,25 @@ import type { EpochMs } from '../shared/index';
  */
 export type CostKind = 'reported' | 'computed' | 'equivalent' | 'credits';
 
+/** What a reviewer is about to submit through Docket's verdict tool, as a permission card shows it:
+ *  the call's verdict, its summary as plain text (redacted and cut to
+ *  {@link VERDICT_ASK_SUMMARY_MAX_CHARS} characters before the event is stored) and how many
+ *  evidence pointers it names — never the pointers themselves. */
+export interface VerdictAskDetail {
+  readonly verdict: 'approve' | 'reject';
+  readonly summary: string;
+  readonly pointerCount: number;
+}
+
+export const VERDICT_ASK_SUMMARY_MAX_CHARS = 280;
+
 export type AgentEvent =
   | { readonly type: 'session_started'; readonly at: EpochMs; readonly sessionRef: string }
   | { readonly type: 'text'; readonly at: EpochMs; readonly delta: string }
   | { readonly type: 'thinking'; readonly at: EpochMs; readonly delta: string }
   | { readonly type: 'tool_call'; readonly at: EpochMs; readonly id: string; readonly name: string; readonly target?: string }
   | { readonly type: 'tool_result'; readonly at: EpochMs; readonly id: string; readonly ok: boolean }
-  | { readonly type: 'permission_ask'; readonly at: EpochMs; readonly id: string; readonly tool: string; readonly target?: string; readonly options: readonly string[] }
+  | { readonly type: 'permission_ask'; readonly at: EpochMs; readonly id: string; readonly tool: string; readonly target?: string; readonly detail?: VerdictAskDetail; readonly options: readonly string[] }
   | { readonly type: 'permission_answered'; readonly at: EpochMs; readonly id: string; readonly decision: 'allow' | 'deny' }
   | { readonly type: 'usage'; readonly at: EpochMs; readonly inputTokens: number; readonly outputTokens: number; readonly cachedInputTokens?: number; readonly reasoningTokens?: number; readonly costUsd?: number; readonly costKind?: CostKind }
   | { readonly type: 'quota_signal'; readonly at: EpochMs; readonly meter: Omit<Meter, 'id' | 'poolId'> & { readonly poolLabel?: string } }

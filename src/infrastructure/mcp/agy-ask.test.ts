@@ -16,6 +16,7 @@ import {
   AGY_PERMISSION_ASK_TOOL,
   mapAgyToolCall,
   runAgyAsk,
+  verdictInputOf,
   type AgyAskFile,
 } from './agy-ask';
 import { startMcpListener, type McpListener } from './ipc';
@@ -171,6 +172,44 @@ describe('runAgyAsk', () => {
     } finally {
       await listener.close();
     }
+  });
+
+  it('the verdict tool call carries its verdict, summary and pointers to the app; no other call does', async () => {
+    const dir = nextDir();
+    const socketPath = join(dir, 'mcp.sock');
+    const requests: DocketToolRequest[] = [];
+    const reply: DocketToolResponse = { ok: true, result: { decision: 'deny', reason: 'ask the human' } };
+    const listener = await fakeApp(socketPath, [reply, reply, reply, reply], requests);
+    const configDir = writeAskTree(dir, { socketPath, token: 'tok-1', bridge: true });
+    const verdict = { verdict: 'approve', summary: 'Checked the diff.', pointers: ['src/a.ts:1', 'src/b.ts:2-4'] };
+    try {
+      // The arguments nested as an object under whichever key the CLI uses, then as JSON text.
+      await runScript(
+        configDir,
+        stdinOf('call_mcp_tool', { ServerName: 'docket-pages', ToolName: 'submit_verdict', Arguments: { ...verdict, extra: 'dropped' } }),
+      );
+      await runScript(
+        configDir,
+        stdinOf('call_mcp_tool', { ServerName: 'docket-pages', ToolName: 'submit_verdict', ToolArguments: JSON.stringify(verdict) }),
+      );
+      // Another server's tool of the same name, and another tool of Docket's server.
+      await runScript(configDir, stdinOf('call_mcp_tool', { ServerName: 'other', ToolName: 'submit_verdict', Arguments: verdict }));
+      await runScript(configDir, stdinOf('call_mcp_tool', { ServerName: 'docket-pages', ToolName: 'docket_get', Arguments: verdict }));
+
+      expect(requests[0]?.args).toMatchObject({ tool: 'mcp__docket-pages__submit_verdict', verdictInput: verdict });
+      expect(requests[0]?.args).not.toHaveProperty('verdictInput.extra');
+      expect(requests[1]?.args).toMatchObject({ tool: 'mcp__docket-pages__submit_verdict', verdictInput: verdict });
+      expect(requests[2]?.args).not.toHaveProperty('verdictInput');
+      expect(requests[3]?.args).not.toHaveProperty('verdictInput');
+    } finally {
+      await listener.close();
+    }
+  });
+
+  it('a verdict tool call whose arguments cannot be found is asked without them', () => {
+    expect(verdictInputOf({ ServerName: 'docket-pages', ToolName: 'submit_verdict' })).toBeUndefined();
+    expect(verdictInputOf({ Arguments: 'not json', Other: [1] })).toBeUndefined();
+    expect(verdictInputOf({ Arguments: { summary: 'no verdict' } })).toBeUndefined();
   });
 
   it('I-108: a missing socket denies (fail closed)', async () => {

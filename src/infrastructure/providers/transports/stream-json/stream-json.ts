@@ -12,6 +12,7 @@ import { err, ok } from '../../../../domain/index';
 import { createSystemClock, registeredSpawn } from '../../../system/index';
 import { homeRootEnvOf, type ProviderDef } from '../../defs/index';
 import { buildChildEnv, writeRunConfig, type RunAccountHome, type RunCapability, type RunMcpServer } from '../../launch/index';
+import { DOCKET_VERDICT_TOOL, verdictAskDetailOf } from '../verdict-ask-detail';
 import { prepareAgyDelivery, type AgyDeliveryCapability } from './agy-delivery';
 
 /** Per-run context handed to every parse call (G4): the route's cost kind, resolved once per
@@ -36,6 +37,8 @@ export interface StreamDialect {
 export interface AgyAskRequest {
   readonly tool: string;
   readonly target?: string;
+  /** The verdict tool's own arguments, when the ask child found them in the call. */
+  readonly verdictInput?: Readonly<Record<string, unknown>>;
   readonly conversationId?: string;
 }
 
@@ -304,12 +307,14 @@ export function createStreamJsonTransport(
         agyAskBridge.register(request.runId, async (ask) => {
           askCount += 1;
           const askId = `ask-${askCount}`;
+          const detail = ask.tool === DOCKET_VERDICT_TOOL ? verdictAskDetailOf(ask.verdictInput) : undefined;
           events.push({
             type: 'permission_ask',
             at: clock.now(),
             id: askId,
             tool: ask.tool,
             ...(ask.target === undefined ? {} : { target: ask.target }),
+            ...(detail === undefined ? {} : { detail }),
             options: ['allow', 'deny'],
           });
           const decision = await new Promise<'allow' | 'deny'>((resolve) => asks.set(askId, resolve));

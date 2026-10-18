@@ -1296,6 +1296,40 @@ describe('createSdkTransport', () => {
       expect(second.map((event) => event.id)).toEqual(['ask-1', 'ask-2']);
     });
 
+    it('a verdict tool ask carries the verdict, the summary and the pointer count of its input; no other tool gets a detail', async () => {
+      const accounts = createFakeAccountRepo();
+      await accounts.save(account('subscription'));
+      const verdictInput = { verdict: 'approve', summary: 'Checked the diff.', pointers: ['src/a.ts:1', 'src/b.ts:2-4'] };
+      const { query } = scriptedQuery(async function* (call) {
+        await askTool(call, 'mcp__docket-pages__submit_verdict', verdictInput, 't1', 'r1');
+        await askTool(call, 'mcp__docket-pages__submit_verdict', { verdict: 'approve' }, 't2', 'r2');
+        await askTool(call, 'mcp__other__submit_verdict', verdictInput, 't3', 'r3');
+        await askTool(call, 'Bash', { ...verdictInput, command: 'npm test' }, 't4', 'r4');
+        yield successResult(0);
+      });
+      const transport = createSdkTransport({
+        clock: createFakeClock(START_AT),
+        accounts,
+        secrets: createFakeSecretVault(),
+        baseEnv: {},
+        query,
+      });
+
+      const asks = await collectAsks(transport, request());
+
+      expect(asks[0]).toStrictEqual({
+        type: 'permission_ask',
+        at: START_AT,
+        id: 'ask-1',
+        tool: 'mcp__docket-pages__submit_verdict',
+        detail: { verdict: 'approve', summary: 'Checked the diff.', pointerCount: 2 },
+        options: ['allow', 'deny'],
+      });
+      expect(asks[1]).not.toHaveProperty('detail');
+      expect(asks[2]).not.toHaveProperty('detail');
+      expect(asks[3]).not.toHaveProperty('detail');
+    });
+
     it('I-29: allow passes the input through untouched, deny answers with the operator denial message', async () => {
       const accounts = createFakeAccountRepo();
       await accounts.save(account('subscription'));
