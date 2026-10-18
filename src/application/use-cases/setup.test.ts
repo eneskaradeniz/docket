@@ -44,6 +44,29 @@ describe('setup use cases', () => {
     expect(quick.repo.id).toBe('acme');
   });
 
+  it('A-76: default answers never guess a test command; an empty commandSets gains the built-in sets', () => {
+    const quick = buildSetupProposal(defaultSetupAnswers('Acme', 'acme'));
+    expect(quick.repo.commandSets).toEqual({ tests: [] });
+    const answers = defaultSetupAnswers('Acme', 'acme') as { repo: Record<string, unknown> };
+    const ai = buildSetupProposal({ ...answers, repo: { ...answers.repo, commandSets: {} } });
+    expect(ai.repo.commandSets).toEqual({ tests: [] });
+    const kept = buildSetupProposal({ ...answers, repo: { ...answers.repo, commandSets: { tests: ['make test'], lint: ['x'] } } });
+    expect(kept.repo.commandSets).toEqual({ tests: ['make test'], lint: ['x'] });
+  });
+
+  it('A-76: createProjectSetupProposal stores a proposal whose empty commandSets gained the built-in sets', async () => {
+    const proposals = createFakeProposalRepo();
+    const deps = createFakeDeps({ proposals, clock: createFakeClock(10) });
+    const base = buildSetupProposal(defaultSetupAnswers('Acme', 'acme'));
+    const created = await createProjectSetupProposal(deps, {
+      proposal: { ...base, repo: { ...base.repo, commandSets: {} } },
+      author: AGENT,
+    });
+    if (!created.ok) throw new Error('create');
+    const stored = await proposals.get(created.value);
+    expect(JSON.parse(stored?.after ?? '{}').repo.commandSets).toEqual({ tests: [] });
+  });
+
   it('A-338: approving project_setup writes definitions; rejecting keeps the setup draft', async () => {
     const definitions = createFakeDefinitionStore();
     const proposals = createFakeProposalRepo();

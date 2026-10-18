@@ -992,7 +992,7 @@ const runCommand = async (
         answers: command.proposal,
         actor,
       });
-      return applied.ok ? { ok: true } : { ok: false, code: applied.error };
+      return applied.ok ? { ok: true, wroteRepoYaml: applied.value.wroteRepoYaml } : { ok: false, code: applied.error };
     }
 
     case 'repo.unregister': {

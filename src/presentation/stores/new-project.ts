@@ -158,7 +158,7 @@ export const buildSetupProposal = (name: string, repoPath: string): SetupProposa
       id: repoSlug,
       flow: repoFlowOf(standard),
       defaultLimitPolicy: 'wait_resume',
-      commandSets: { tests: ['npm test'] },
+      commandSets: { tests: [] },
       docsRoot: 'docs',
       testGlobs: ['**/*.test.ts'],
     },
@@ -598,10 +598,10 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
     publish();
   };
 
-  const enterSummary = (name: string, id: string, repo: AddedRepoRecord): void => {
+  const enterSummary = (name: string, id: string, repo: AddedRepoRecord, written = true): void => {
     projectId = id;
     projectName = name;
-    addedRepos = [...addedRepos, repo];
+    if (written) addedRepos = [...addedRepos, repo];
     resetSessionDisclosure();
     proposal = null;
     proposalId = null;
@@ -712,7 +712,7 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
       failure = failureOf(result.code, false, 'setup.apply');
       return false;
     }
-    addedRepos = [...addedRepos, { id: body.repo.id, path }];
+    if (result.wroteRepoYaml !== false) addedRepos = [...addedRepos, { id: body.repo.id, path }];
     await deps.reloadTree?.();
     return true;
   };
@@ -931,7 +931,7 @@ export const createNewProjectStore = (deps: NewProjectStoreDeps): NewProjectStor
           return;
         }
         await deps.reloadTree?.();
-        enterSummary(name, projectId, { id: proposal.repo.id, path });
+        enterSummary(name, projectId, { id: proposal.repo.id, path }, applied.wroteRepoYaml !== false);
         busy = false;
         publish();
         return;

@@ -9,6 +9,7 @@ import type {
   Result,
 } from '../../domain/index';
 import {
+  BUILTIN_COMMAND_SET_NAMES,
   BUILTIN_FLOWS,
   BUILTIN_ROLES,
   decideProposal,
@@ -58,6 +59,15 @@ const GLOBAL_SCOPE: DefinitionScope = { kind: 'global' };
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+/** A-76: a built-in command set the proposal does not name is filled with [] — Docket never guesses a command. */
+export const withBuiltinCommandSets = (
+  commandSets: Readonly<Record<string, readonly string[]>>,
+): Readonly<Record<string, readonly string[]>> => {
+  const filled: Record<string, readonly string[]> = { ...commandSets };
+  for (const name of BUILTIN_COMMAND_SET_NAMES) filled[name] = filled[name] ?? [];
+  return filled;
+};
+
 /** A-339: the same answers yield the same proposal regardless of setup path. */
 export function buildSetupProposal(answers: unknown): SetupProposal {
   if (!isRecord(answers)) throw new Error('setup answers must be an object');
@@ -92,7 +102,7 @@ export function buildSetupProposal(answers: unknown): SetupProposal {
       id: repoId,
       flow: flow as unknown as RepoFlow,
       defaultLimitPolicy: defaultLimitPolicy as LimitPolicy,
-      commandSets: commandSets as Readonly<Record<string, readonly string[]>>,
+      commandSets: withBuiltinCommandSets(commandSets as Readonly<Record<string, readonly string[]>>),
       docsRoot: typeof docsRoot === 'string' ? docsRoot : 'docs',
       testGlobs: Array.isArray(testGlobs) ? testGlobs.filter((g): g is string => typeof g === 'string') : ['**/*.test.ts'],
     },
@@ -154,19 +164,23 @@ export async function createProjectSetupProposal(
   deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'proposals'>,
   input: { readonly proposal: SetupProposal; readonly author: Actor; readonly draftId?: string },
 ): Promise<Result<ProposalId, 'invalid'>> {
+  const proposal: SetupProposal = {
+    ...input.proposal,
+    repo: { ...input.proposal.repo, commandSets: withBuiltinCommandSets(input.proposal.repo.commandSets) },
+  };
   const checked = validateDefinitions({
     roles: BUILTIN_ROLES,
     flows: BUILTIN_FLOWS,
     capabilities: [],
-    project: { id: input.proposal.repo.id as RepoSlug, name: input.proposal.project.name, repos: input.proposal.project.repos as readonly RepoSlug[] },
+    project: { id: proposal.repo.id as RepoSlug, name: proposal.project.name, repos: proposal.project.repos as readonly RepoSlug[] },
     repo: {
-      id: input.proposal.repo.id as RepoSlug,
-      name: input.proposal.repo.id,
-      flow: input.proposal.repo.flow,
-      defaultLimitPolicy: input.proposal.repo.defaultLimitPolicy,
-      commandSets: input.proposal.repo.commandSets,
-      docsRoot: input.proposal.repo.docsRoot,
-      testGlobs: input.proposal.repo.testGlobs,
+      id: proposal.repo.id as RepoSlug,
+      name: proposal.repo.id,
+      flow: proposal.repo.flow,
+      defaultLimitPolicy: proposal.repo.defaultLimitPolicy,
+      commandSets: proposal.repo.commandSets,
+      docsRoot: proposal.repo.docsRoot,
+      testGlobs: proposal.repo.testGlobs,
     },
   });
   if (!checked.ok) return err('invalid');
@@ -180,8 +194,8 @@ export async function createProjectSetupProposal(
     target: PROJECT_SETUP_PROPOSAL_TARGET,
     baseHash: '',
     before: '',
-    after: JSON.stringify(input.proposal),
-    summary: `Set up project ${input.proposal.project.name}`,
+    after: JSON.stringify(proposal),
+    summary: `Set up project ${proposal.project.name}`,
     status: 'pending',
     scope: GLOBAL_SCOPE,
   });
@@ -288,7 +302,7 @@ export const defaultSetupAnswers = (name: string, repoSlug: string): unknown => 
       id: repoSlug,
       flow: repoFlowOf(standard),
       defaultLimitPolicy: 'wait_resume',
-      commandSets: { tests: ['npm test'] },
+      commandSets: { tests: [] },
       docsRoot: 'docs',
       testGlobs: ['**/*.test.ts'],
     },
