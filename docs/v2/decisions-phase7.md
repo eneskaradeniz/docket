@@ -40,6 +40,8 @@ Decided with the operator on 2026-10-12; architect-owned; supersedes by referenc
 
 12. **D-12**: Agent verdict is delivered by the run-token-bound `submit_verdict` tool; the gate never reads prose. (#1286) The tool takes `{ verdict, summary, pointers }`, checks the run, its role and the evidence pointers, and holds the verdict; the run executor delivers it through `submitAgentVerdict` right after `run_finished(succeeded)` and audits the summary as `gate.verdict_summary`. R-15/R-16/R-19/R-22 and A-9a are unchanged.
 
+13. **D-13**: A reviewer run that ends without a verdict fails its verdict gate with verdict_missing; R-21 decides retry or block. (#1288)
+
 ## Supersessions
 
 | Decision | What it supersedes | Where the contract change lands |
