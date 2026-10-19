@@ -29,6 +29,7 @@ export interface AccountLimit {
   /** "used / limit" for a counted unit; null for shares and money. */
   readonly fraction: string | null;
   readonly resetsAt: number | null;
+  readonly poolLabel?: string | null;
 }
 
 /** One card as the section renders it (U-51): one fixed height whatever its number of limits. */
@@ -94,6 +95,7 @@ export const accountCards = (view: SettingsAccountsView): readonly AccountCard[]
       remaining: row.remaining,
       fraction: row.fraction,
       resetsAt: row.resetsAt,
+      poolLabel: row.scope?.kind === 'model' ? row.scope.model : null,
     }));
     return {
       id: account.id,

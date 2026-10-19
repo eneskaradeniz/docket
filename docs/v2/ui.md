@@ -1969,3 +1969,12 @@ with the numbered operator scenario the operator gate requires.
 
 Added 2026-10-19, #1295 (D-16); reads `workOrder.gitBase`'s `forge_unavailable`, `workOrder.localBase` (A-426) and the lifecycle's `mergedLocal` (R-185).
 - **U-358** (added 2026-10-19, #1295, D-16) While the gitBase read answers `forge_unavailable` and no local merge folded in, the git card shows the door `Ana dala al…` (EN `Merge into base…`) between `Birleştir…` and `Dalı sil`: open once the localBase read names a base, otherwise closed beside the one quiet line `detail.git.mergeLocal.noBase`; a forge that answers (or an unread forge read) never offers it. Its confirm restates `<branch> → <base>` as captured when it opened, `Vazgeç` is the first stop (the refusal owns the default focus), and the command carries that captured base. Success announces `Ana dala alındı.`; the card then shows the line `Ana dala alındı` with the base, hides the door and opens `Dalı sil`. Refusals read calm lines (`error.dirty_checkout`, `error.base_not_checked_out`, `error.conflict`, `error.already_merged`, `error.forge_configured`, `error.no_branch`), TR and EN, never inline in the card.
+
+## Wizard and accounts polish (U-361)
+
+Added 2026-10-19, #1309 (#1275-1).
+- **U-361** (added 2026-10-19, #1309) Wizard and accounts polish:
+  1. Rail skip tooltip: When a rail step button has standing `'skipped'`, its `title` tooltip is set to `'wizard.rail.skippedCapabilities'` (`step === 'capabilities'`) or `'wizard.rail.skippedOrder'` (`step === 'order'`).
+  2. Selection helper bar: In `WizardStore`, `clearSelection()` empties selection and `selectAllReady()` selects all selectable rows. In the wizard Accounts step, when selectable rows exceed 1, a selection bar (`data-wizard-selection-bar=""`) renders above `AccountGroups` displaying `'wizard.accounts.selectionHint'` and an `ActionButton` calling `clearSelection()` when any row is selected (`'wizard.accounts.clearSelection'`) or `selectAllReady()` when none is selected (`'wizard.accounts.selectAll'`). Initial default selection (U-42) remains unchanged.
+  3. Model-scoped pool label on sidebar `AccountCard`: `AccountLimit` includes optional `poolLabel?: string | null`, populated in `accountCards` as `row.scope?.kind === 'model' ? row.scope.model : null`. On `SidebarAccounts`, when `tightest.poolLabel !== null && tightest.poolLabel !== undefined`, `<span data-account-pool={tightest.poolLabel}>` renders right before the percentage `<span>`.
+

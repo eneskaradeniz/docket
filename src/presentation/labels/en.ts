@@ -887,6 +887,8 @@ export const EN: LabelBundle = {
   'wizard.step.order': 'Assistant order',
   'wizard.step.budget': 'Budget',
   'wizard.rail.skipped': '–',
+  'wizard.rail.skippedCapabilities': 'Skipped because no capabilities were found to import',
+  'wizard.rail.skippedOrder': 'Skipped because only one account is selected',
   'wizard.back': 'Back',
   'wizard.skip': 'Skip this step',
   'wizard.next': 'Continue',
@@ -897,6 +899,9 @@ export const EN: LabelBundle = {
   'wizard.reason.budget': 'Pay-per-use accounts need a spend consent with a cap.',
   'wizard.welcome.lead': 'Docket runs the AI assistants on your computer through the steps you define. The important decisions always come from you.',
   'wizard.accounts.lead': "I found your assistants and each one's accounts. Choose the ones Docket may use.",
+  'wizard.accounts.selectionHint': 'Keep only the accounts you want to use on this device selected',
+  'wizard.accounts.clearSelection': 'Clear selection',
+  'wizard.accounts.selectAll': 'Select all',
   // The add-another-account card (P-67): the provider's name fills {name}.
   'wizard.accounts.agyAdd.title': 'Add another {name} account',
   'wizard.accounts.agyAdd.signIn': 'Choose or create the directory, then sign in once with `HOME=<dir> agy` in a terminal — Docket never creates the login and never reads or writes a credential.',

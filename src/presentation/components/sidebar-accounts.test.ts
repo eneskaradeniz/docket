@@ -333,6 +333,21 @@ describe('SidebarAccounts (U-51)', () => {
     // Refresh button uses SIDEBAR_HEADER_BUTTON which is h-6 w-6
     expect(html).toContain('h-6 w-6');
   });
+
+  it('U-361: renders data-account-pool with tightest.poolLabel right before percentage when tightest has a poolLabel', async () => {
+    const acc = {
+      ...account('acc-scoped', 'Scoped Account', [
+        meter('m-model', 'pool-model', { label: 'Model Window', used: 20, limit: 100, remaining: 80 }),
+      ]),
+      pools: [
+        { id: 'pool-model', label: 'claude-3-7-sonnet', kind: 'allowance', appliesTo: [{ exact: 'claude-3-7-sonnet' }] },
+      ],
+    };
+    const html = await renderFrame(view([acc]), true);
+    expect(html).toContain('data-account-pool="claude-3-7-sonnet"');
+    expect(html).toContain('claude-3-7-sonnet');
+    expect(html.indexOf('data-account-pool="claude-3-7-sonnet"')).toBeLessThan(html.indexOf('%80'));
+  });
 });
 
 describe('SidebarAccounts skeleton (U-26)', () => {

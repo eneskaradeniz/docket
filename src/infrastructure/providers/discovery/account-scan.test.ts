@@ -416,4 +416,41 @@ describe('machine-login candidates', () => {
       ['copilot', { path: '~/.copilot', env: 'COPILOT_HOME' }],
     ]);
   });
+
+  it('I-116: expired/downgraded free-tier OAuth accounts are not proposed as subscription candidates', async () => {
+    const expiredIdentity = JSON.stringify({
+      oauthAccount: {
+        emailAddress: SENTINEL,
+        accountUuid: SENTINEL,
+        organizationRateLimitTier: 'default_claude_ai',
+        seatTier: null,
+        userRateLimitTier: null,
+      },
+    });
+    const foundExpired = await scan({
+      dirs: ['.claude-expired'],
+      contents: {
+        [`${HOME}/.claude-expired/.claude.json`]: expiredIdentity,
+      },
+    });
+    expect(foundExpired).toEqual([]);
+
+    const validProIdentity = JSON.stringify({
+      oauthAccount: {
+        emailAddress: SENTINEL,
+        accountUuid: SENTINEL,
+        organizationRateLimitTier: 'default_claude_ai',
+        seatTier: 'pro',
+      },
+    });
+    const foundPro = await scan({
+      dirs: ['.claude-pro'],
+      contents: {
+        [`${HOME}/.claude-pro/.claude.json`]: validProIdentity,
+      },
+    });
+    expect(foundPro).toHaveLength(1);
+    expect(foundPro[0]?.hasOauthLogin).toBe(true);
+    expect(foundPro[0]?.kind).toBe('subscription');
+  });
 });
