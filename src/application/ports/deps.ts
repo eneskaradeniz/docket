@@ -95,4 +95,7 @@ export interface AppDeps {
   readonly mcpEndpoint: McpEndpoint | undefined;
   /** The standing of Docket's own MCP listener and its one repair (A-380, A-381). */
   readonly mcpListener: McpListenerControl;
+  /** The user's home directory for path expansion in deny probes (A-430). */
+  readonly homeDir?: string;
 }
+

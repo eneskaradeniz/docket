@@ -14,6 +14,7 @@ import type { EffortLevel, Result, RoleDef, RunId } from '../../../../domain/ind
 import { parseSlug, parseUlid, type AccountId, type AgentEvent } from '../../../../domain/index';
 import type { ProviderDef } from '../../defs/index';
 import { createAppServerTransport } from './app-server';
+import { describeApprovalRequest } from './approvals';
 
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'fake-app-server.cjs');
 
@@ -327,6 +328,30 @@ describe('createAppServerTransport', () => {
       const answer = readLog(logPath).find((entry) => entry.dir === 'in' && entry.msg['id'] === 41)?.msg;
       expect(answer).toMatchObject({ result: { decision: 'decline' } });
       expect(clientRequests(logPath).some((msg) => msg['method'] === 'turn/interrupt')).toBe(true);
+    });
+
+    it('P-13: item/permissions/requestApproval includes nested permission patterns in permission_ask.target', () => {
+      const ask = describeApprovalRequest('item/permissions/requestApproval', {
+        cwd: '/work/project',
+        permissions: {
+          file: {
+            read: ['/data/*', '/data/runs/**'],
+            write: ['/tmp/scratch'],
+          },
+          network: ['example.com'],
+          empty: '',
+        },
+      });
+
+      expect(ask).toBeDefined();
+      expect(ask?.tool).toBe('permissions');
+      expect(ask?.target).toBe('/work/project /data/* /data/runs/** /tmp/scratch example.com');
+
+      const emptyAsk = describeApprovalRequest('item/permissions/requestApproval', {
+        cwd: '',
+        permissions: {},
+      });
+      expect(emptyAsk?.target).toBeUndefined();
     });
   });
 

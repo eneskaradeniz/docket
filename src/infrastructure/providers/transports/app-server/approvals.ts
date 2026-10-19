@@ -39,6 +39,20 @@ const permissionGrant =
     scope: 'turn',
   });
 
+const collectStringLeaves = (value: unknown, out: string[]): void => {
+  if (typeof value === 'string') {
+    if (value.length > 0) out.push(value);
+  } else if (Array.isArray(value)) {
+    for (const item of value) {
+      collectStringLeaves(item, out);
+    }
+  } else if (isRecord(value)) {
+    for (const key of Object.keys(value)) {
+      collectStringLeaves(value[key], out);
+    }
+  }
+};
+
 /** The server requests this client must answer so the run can proceed. Everything else — other
  * server requests, unknown methods — is the caller's to ignore. */
 export function describeApprovalRequest(method: string, params: unknown): ApprovalAsk | undefined {
@@ -47,8 +61,16 @@ export function describeApprovalRequest(method: string, params: unknown): Approv
       return withTarget('shell', stringField(params, 'command'), v2Decision);
     case 'item/fileChange/requestApproval':
       return withTarget('fileChange', stringField(params, 'grantRoot'), v2Decision);
-    case 'item/permissions/requestApproval':
-      return withTarget('permissions', stringField(params, 'cwd'), permissionGrant(params));
+    case 'item/permissions/requestApproval': {
+      const parts: string[] = [];
+      const cwd = stringField(params, 'cwd');
+      if (cwd !== undefined && cwd.length > 0) parts.push(cwd);
+      if (isRecord(params)) {
+        collectStringLeaves(params['permissions'], parts);
+      }
+      const target = parts.length > 0 ? parts.join(' ') : undefined;
+      return withTarget('permissions', target, permissionGrant(params));
+    }
     case 'execCommandApproval': {
       // The legacy variant carries the command as an argv array.
       const command = isRecord(params) && Array.isArray(params['command'])

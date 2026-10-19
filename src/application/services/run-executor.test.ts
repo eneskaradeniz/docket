@@ -42,7 +42,7 @@ import {
   type RepoSlug,
 } from '../../domain/index';
 
-import type { AccountRecord, AgentTransport, AuditEntry, CheckpointDiff, RunRecord, RunRequest, TransportError } from '../ports';
+import type { AccountRecord, AgentTransport, AuditEntry, CheckpointDiff, RunDirs, RunRecord, RunRequest, TransportError } from '../ports';
 import {
   createFakeAccountRepo,
   createFakeCapabilityCatalog,
@@ -278,6 +278,8 @@ const harness = async (options: {
   readonly files?: readonly { readonly name: string; readonly content: string }[];
   readonly checkpointDiffs?: Readonly<Record<string, CheckpointDiff>>;
   readonly checkpointBases?: Readonly<Record<string, string>>;
+  readonly homeDir?: string;
+  readonly runDirs?: RunDirs;
 } = {}): Promise<Harness> => {
   const clock = createFakeClock(T0);
   const ids = createFakeIdGen();
@@ -306,6 +308,8 @@ const harness = async (options: {
     checkpoints,
     transports,
     definitions,
+    ...(options.runDirs !== undefined ? { runDirs: options.runDirs } : {}),
+    ...(options.homeDir !== undefined ? { homeDir: options.homeDir } : {}),
     ...(options.files !== undefined ? { instructionFiles: createFakeInstructionFiles({ [INPUT.cwd]: options.files }) } : {}),
     ...(options.models !== undefined ? { modelCatalog: createFakeModelCatalog({ [ACCOUNT]: options.models }) } : {}),
     ...(options.routeKinds !== undefined || options.translations !== undefined
@@ -2952,7 +2956,71 @@ describe('executeRun — the run config deny on every route', () => {
     expect(h.transport.answers().map((answer) => answer.decision)).toEqual(['deny', 'deny', 'deny', 'deny', 'allow']);
     expect(permissionAudits(h.log)[0]?.detail).toEqual({ tool: 'Read', decision: 'deny', reason: 'deny-run-config' });
   });
+
+  it('A-430: expands ~ and $HOME on deny probes for Bash, Read, fileChange and permissions, and never auto-allows ~/worktree/...', async () => {
+    const h = await harness({
+      homeDir: '/fake-home',
+      runDirs: {
+        create: async (id: RunId) => ({
+          path: `/fake-home/.docket/runs/${id}`,
+          dispose: async () => {},
+        }),
+      },
+      script: [
+        // Bash deny probes with ~ and $HOME / ${HOME}
+        bashAsk('ask-b1', 'cat ~/.docket/runs/r1/config/token'),
+        bashAsk('ask-b2', 'cat $HOME/.docket/runs/r1/config/token'),
+        bashAsk('ask-b3', 'cat ${HOME}/.docket/runs/r1/config/token'),
+        // Read deny probes with ~ and $HOME
+        readAsk('ask-r1', '~/.docket/runs/r1/config/token'),
+        readAsk('ask-r2', '$HOME/.docket/runs/r1/config/token'),
+        // fileChange deny probes with ~ and $HOME
+        routeAsk('ask-fc1', 'fileChange', '~/.docket/runs'),
+        routeAsk('ask-fc2', 'fileChange', '$HOME/.docket/runs'),
+        // permissions deny probes with ~ and $HOME
+        routeAsk('ask-p1', 'permissions', '~/.docket/runs/*'),
+        routeAsk('ask-p2', 'permissions', '$HOME/.docket/runs/**'),
+        // Harmless asks targeting ~/worktree/... under auto level — must go to human, never auto-allowed
+        readAsk('ask-r-wt', '~/worktree/src/index.ts'),
+        bashAsk('ask-b-wt', 'cat ~/worktree/package.json'),
+        routeAsk('ask-fc-wt', 'fileChange', '~/worktree'),
+        finished('completed'),
+      ],
+      defsJson: VERIFY_DEFS_JSON,
+    });
+    await h.deps.settings.set(AUTONOMY_KEY, 'auto');
+    const gate = permissionGate('allow');
+
+    await executeRun(h.deps, gate.permissions, INPUT);
+
+    // All deny probes denied by policy and never reached the gate;
+    // only the ~/worktree asks reached the human gate.
+    expect(gate.asked.map((entry) => entry.ask.id)).toEqual(['ask-r-wt', 'ask-b-wt', 'ask-fc-wt']);
+    expect(h.transport.answers().map((answer) => answer.decision)).toEqual([
+      'deny', 'deny', 'deny', 'deny', 'deny', 'deny', 'deny', 'deny', 'deny',
+      'allow', 'allow', 'allow',
+    ]);
+  });
+
+  it('A-430: when homeDir is absent or relative, ~ and $HOME are not expanded', async () => {
+    const h = await harness({
+      // homeDir omitted
+      script: [
+        bashAsk('ask-1', 'cat ~/.docket/runs/r1/config/token'),
+        finished('completed'),
+      ],
+      defsJson: VERIFY_DEFS_JSON,
+    });
+    await h.deps.settings.set(AUTONOMY_KEY, 'auto');
+    const gate = permissionGate('allow');
+
+    await executeRun(h.deps, gate.permissions, INPUT);
+
+    // Without homeDir expansion, the ask goes to the human rather than being denied by policy
+    expect(gate.asked.map((entry) => entry.ask.id)).toEqual(['ask-1']);
+  });
 });
+
 
 const VERDICT_TOOL = 'mcp__docket-pages__submit_verdict';
 const SECRET = `sk-${'a1'.repeat(20)}`;
