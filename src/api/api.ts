@@ -869,9 +869,14 @@ const runCommand = async (
           flow,
           task,
           actor,
+          ...(command.stageSkip !== undefined ? { stageSkip: command.stageSkip } : {}),
         },
       );
-      return opened.ok ? { ok: true, id: opened.value } : { ok: false, code: opened.error };
+      if (!opened.ok) {
+        const code = typeof opened.error === 'string' ? opened.error : opened.error.code;
+        return { ok: false, code };
+      }
+      return { ok: true, id: opened.value };
     }
 
     case 'task.open': {

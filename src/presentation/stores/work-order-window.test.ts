@@ -10,6 +10,7 @@ import {
   boardFlowChoices,
   openedWorkOrderForm,
   pinnedFlowFromColumns,
+  runWorkOrderCreate,
   stageSkipLedgerEvents,
   workOrderFormReducer,
   type PinnedFlowView,
@@ -112,4 +113,105 @@ describe('new work order window (U-290, U-291)', () => {
       { type: 'stage_skip_decided', at: 100, approved: true },
     ]);
   });
+
+  it('U-359: runWorkOrderCreate includes stageSkip when skipProposal is present and valid', async () => {
+    let sentCommand: unknown = null;
+    const fakeDeps = {
+      api: {
+        query: async () => [{ project: 'kadife', repos: [{ repo: 'acme' }] }],
+        command: async (_actor: unknown, command: unknown) => {
+          sentCommand = command;
+          return { ok: true as const, id: '01ARZ3NDEKTSV4RRFFQ69G5FAV' };
+        },
+      },
+      actor: { kind: 'user' as const, id: 'user-1', label: 'Operator' },
+      onOpened: () => undefined,
+    };
+
+    // 1. With skipDecision: 'approved'
+    await runWorkOrderCreate(fakeDeps, 'acme', {
+      title: 'Order A',
+      description: '',
+      flow: 'standard',
+      mode: 'open',
+      skipProposal: { stages: ['review'], reason: '  tests green  ' },
+      skipDecision: 'approved',
+    });
+    expect(sentCommand).toMatchObject({
+      type: 'workOrder.open',
+      project: 'kadife',
+      repo: 'acme',
+      title: 'Order A',
+      stageSkip: {
+        stages: ['review'],
+        reason: 'tests green',
+        approved: true,
+      },
+    });
+
+    // 2. With skipDecision: 'rejected'
+    await runWorkOrderCreate(fakeDeps, 'acme', {
+      title: 'Order B',
+      description: '',
+      flow: 'standard',
+      mode: 'open',
+      skipProposal: { stages: ['review'], reason: 'tests green' },
+      skipDecision: 'rejected',
+    });
+    expect(sentCommand).toMatchObject({
+      type: 'workOrder.open',
+      stageSkip: {
+        stages: ['review'],
+        reason: 'tests green',
+        approved: false,
+      },
+    });
+
+    // 3. With skipDecision: null / undecided
+    await runWorkOrderCreate(fakeDeps, 'acme', {
+      title: 'Order C',
+      description: '',
+      flow: 'standard',
+      mode: 'open',
+      skipProposal: { stages: ['review'], reason: 'tests green' },
+      skipDecision: null,
+    });
+    expect(sentCommand).toMatchObject({
+      type: 'workOrder.open',
+      stageSkip: {
+        stages: ['review'],
+        reason: 'tests green',
+      },
+    });
+    expect(sentCommand).not.toHaveProperty('stageSkip.approved');
+
+    // 4. Without proposal or with empty stages/reason
+    await runWorkOrderCreate(fakeDeps, 'acme', {
+      title: 'Order D',
+      description: '',
+      flow: 'standard',
+      mode: 'open',
+      skipProposal: null,
+    });
+    expect(sentCommand).not.toHaveProperty('stageSkip');
+
+    await runWorkOrderCreate(fakeDeps, 'acme', {
+      title: 'Order E',
+      description: '',
+      flow: 'standard',
+      mode: 'open',
+      skipProposal: { stages: [], reason: 'reason' },
+    });
+    expect(sentCommand).not.toHaveProperty('stageSkip');
+
+    await runWorkOrderCreate(fakeDeps, 'acme', {
+      title: 'Order F',
+      description: '',
+      flow: 'standard',
+      mode: 'open',
+      skipProposal: { stages: ['review'], reason: '   ' },
+    });
+    expect(sentCommand).not.toHaveProperty('stageSkip');
+  });
 });
+

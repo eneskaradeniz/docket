@@ -443,6 +443,42 @@ describe('createApi', () => {
       expect(result).toEqual({ ok: false, code: 'empty_title' });
     });
 
+    it('A-431: workOrder.open accepts stageSkip and records skip events', async () => {
+      const h = await createHarness();
+      const api = createApi(h.deps);
+
+      const opened = await api.command(ACTOR, {
+        type: 'workOrder.open',
+        project: PROJECT,
+        repo: REPO,
+        title: 'With stage skip',
+        stageSkip: { stages: ['implement'], reason: 'already done', approved: true },
+      });
+      expect(opened.ok).toBe(true);
+      if (!opened.ok || opened.id === undefined) throw new Error('open must return an id');
+
+      const events = await h.deps.workOrders.events(ulidOf<'work-order'>(opened.id));
+      expect(events).toEqual([
+        { type: 'created', at: expect.any(Number), by: ACTOR, flow: 'board-flow' },
+        { type: 'stage_skip_proposed', at: expect.any(Number), stages: ['implement'], reason: 'already done' },
+        { type: 'stage_skip_decided', at: expect.any(Number), approved: true },
+      ]);
+    });
+
+    it('A-431: workOrder.open returns bad_input when stageSkip validation fails', async () => {
+      const h = await createHarness();
+      const api = createApi(h.deps);
+
+      const bad = await api.command(ACTOR, {
+        type: 'workOrder.open',
+        project: PROJECT,
+        repo: REPO,
+        title: 'With bad skip',
+        stageSkip: { stages: ['plan'], reason: 'cannot skip plan', approved: true },
+      });
+      expect(bad).toEqual({ ok: false, code: 'bad_input' });
+    });
+
     it('maps an unknown work order onto not_found', async () => {
       const h = await createHarness();
       const api = createApi(h.deps);

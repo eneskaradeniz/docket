@@ -1056,4 +1056,63 @@ describe('planner stage-skip (R-133, R-144)', () => {
     ];
     expect(deriveWorkOrderState(SKIP_FLOW, events).skippedStages).toEqual([]);
   });
+
+  it('R-188: approved skip proposal advances immediately past current stage when ready', () => {
+    const flow: FlowDef = {
+      id: flowOf('skippable-fixture'),
+      name: 'Skippable fixture',
+      stages: [
+        { id: stageOf('build'), name: 'Build', role: roleOf('developer'), exit: [COMMAND_TESTS] },
+        { id: stageOf('review'), name: 'Review', role: roleOf('reviewer'), exit: [COMMAND_TESTS] },
+        { id: stageOf('ship'), name: 'Ship', role: roleOf('developer'), exit: [DEPLOY_STG] },
+      ],
+    };
+    const events: readonly WorkOrderEvent[] = [
+      created(),
+      { type: 'stage_skip_proposed', at: 11, stages: [stageOf('build')], reason: 'already built' },
+      { type: 'stage_skip_decided', at: 12, approved: true },
+    ];
+    const state = deriveWorkOrderState(flow, events);
+    expect(state.stage).toBe('review');
+    expect(state.status).toBe('ready');
+    expect(state.attempt).toBe(1);
+    expect(state.skippedStages).toEqual([stageOf('build')]);
+  });
+
+  it('R-188: rejected skip proposal keeps the current stage in place', () => {
+    const flow: FlowDef = {
+      id: flowOf('skippable-fixture'),
+      name: 'Skippable fixture',
+      stages: [
+        { id: stageOf('build'), name: 'Build', role: roleOf('developer'), exit: [COMMAND_TESTS] },
+        { id: stageOf('review'), name: 'Review', role: roleOf('reviewer'), exit: [COMMAND_TESTS] },
+      ],
+    };
+    const events: readonly WorkOrderEvent[] = [
+      created(),
+      { type: 'stage_skip_proposed', at: 11, stages: [stageOf('build')], reason: 'already built' },
+      { type: 'stage_skip_decided', at: 12, approved: false },
+    ];
+    const state = deriveWorkOrderState(flow, events);
+    expect(state.stage).toBe('build');
+    expect(state.status).toBe('ready');
+    expect(state.skippedStages).toEqual([]);
+  });
+
+  it('R-188: advance steps over approved skipped intermediate stages without incrementing attempts', () => {
+    const events: readonly WorkOrderEvent[] = [
+      created(),
+      { type: 'stage_skip_proposed', at: 11, stages: [stageOf('review')], reason: 'tests cover it' },
+      { type: 'stage_skip_decided', at: 12, approved: true },
+      runStarted('plan'),
+      runFinished('succeeded'),
+      { type: 'gate_evaluated', at: 22, stage: stageOf('plan'), gate: HUMAN_PLAN.id, verdict: { status: 'passed' } },
+    ];
+    const state = deriveWorkOrderState(SKIP_FLOW, events);
+    expect(state.stage).toBe('ship');
+    expect(state.status).toBe('ready');
+    expect(state.attempt).toBe(1);
+    expect(state.skippedStages).toEqual([stageOf('review')]);
+  });
 });
+

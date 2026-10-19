@@ -47,9 +47,11 @@ import {
   normalizeWorkOrderDescription,
   ok,
   parseAutonomyLevel,
+  parseSlug,
   pinFlow,
   REMOTE_CHECKS_EVENT_MAX,
   resolveAutonomy,
+  stageExitBlocksSkip,
 } from '../../domain/index';
 import type { AutonomyLayer, AutonomySource } from '../../domain/index';
 
@@ -71,23 +73,43 @@ export type OpenError =
   | 'invalid_autonomy_level'
   | 'above_ceiling'
   | 'auto_requires_spend_cap'
-  | 'auto_requires_max_attempts';
+  | 'auto_requires_max_attempts'
+  | 'bad_input';
+
+export type StageSkipValidationError = { readonly code: 'bad_input'; readonly message: string };
+
+export interface OpenWorkOrderInput {
+  readonly project: ProjectSlug;
+  readonly repo: RepoSlug;
+  readonly title: string;
+  readonly description?: string;
+  readonly flow?: FlowSlug;
+  readonly task?: TaskSlug;
+  readonly autonomy?: AutonomyLevel;
+  readonly actor: Actor;
+  readonly stageSkip?: { readonly stages: readonly string[]; readonly reason: string; readonly approved?: boolean };
+}
+
+export type OpenWorkOrderDeps = Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'definitions' | 'projects'> & {
+  readonly settings?: Pick<AppDeps, 'settings'>['settings'];
+};
 
 export async function openWorkOrder(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'definitions' | 'projects'> & {
-    readonly settings?: Pick<AppDeps, 'settings'>['settings'];
-  },
-  input: {
-    readonly project: ProjectSlug;
-    readonly repo: RepoSlug;
-    readonly title: string;
-    readonly description?: string;
-    readonly flow?: FlowSlug;
-    readonly task?: TaskSlug;
-    readonly autonomy?: AutonomyLevel;
-    readonly actor: Actor;
-  },
-): Promise<Result<WorkOrderId, OpenError>> {
+  deps: OpenWorkOrderDeps,
+  input: OpenWorkOrderInput & { readonly stageSkip: NonNullable<OpenWorkOrderInput['stageSkip']> },
+): Promise<Result<WorkOrderId, OpenError | StageSkipValidationError>>;
+export async function openWorkOrder(
+  deps: OpenWorkOrderDeps,
+  input: OpenWorkOrderInput & { readonly stageSkip?: undefined },
+): Promise<Result<WorkOrderId, OpenError>>;
+export async function openWorkOrder(
+  deps: OpenWorkOrderDeps,
+  input: OpenWorkOrderInput,
+): Promise<Result<WorkOrderId, OpenError | StageSkipValidationError>>;
+export async function openWorkOrder(
+  deps: OpenWorkOrderDeps,
+  input: OpenWorkOrderInput,
+): Promise<Result<WorkOrderId, OpenError | StageSkipValidationError>> {
   const title = input.title.trim();
   if (title === '') return err('empty_title');
   const description = normalizeWorkOrderDescription(input.description);
@@ -169,6 +191,36 @@ export async function openWorkOrder(
     }
   }
 
+  let parsedSkipStages: readonly StageSlug[] | undefined;
+  if (input.stageSkip !== undefined) {
+    const reason = input.stageSkip.reason.trim();
+    if (reason === '') {
+      return err({ code: 'bad_input', message: 'stageSkip reason must not be empty' });
+    }
+    if (!Array.isArray(input.stageSkip.stages) || input.stageSkip.stages.length === 0) {
+      return err({ code: 'bad_input', message: 'stageSkip stages must be a non-empty array' });
+    }
+    const parsed: StageSlug[] = [];
+    for (const raw of input.stageSkip.stages) {
+      const stageSlug = parseSlug<'stage'>(raw);
+      if (!stageSlug.ok) {
+        return err({ code: 'bad_input', message: `invalid stage slug: ${raw}` });
+      }
+      parsed.push(stageSlug.value);
+    }
+    const resolvedFlow = pinnedFlowOf({ flow, pin }, loaded.value.flows);
+    for (const stageId of parsed) {
+      const stage = resolvedFlow.stages.find((candidate) => candidate.id === stageId);
+      if (stage === undefined) {
+        return err({ code: 'bad_input', message: `stage "${stageId}" does not exist in flow "${flow}"` });
+      }
+      if (stageExitBlocksSkip(stage)) {
+        return err({ code: 'bad_input', message: `stage "${stageId}" exit gates block skipping` });
+      }
+    }
+    parsedSkipStages = parsed;
+  }
+
   const id = deps.ids.next<'work-order'>();
   const at = deps.clock.now();
   await deps.workOrders.create({
@@ -185,6 +237,21 @@ export async function openWorkOrder(
     createdBy: input.actor,
   });
   await deps.workOrders.appendEvent(id, { type: 'created', at, by: input.actor, flow });
+  if (input.stageSkip !== undefined && parsedSkipStages !== undefined) {
+    await deps.workOrders.appendEvent(id, {
+      type: 'stage_skip_proposed',
+      at,
+      stages: parsedSkipStages,
+      reason: input.stageSkip.reason.trim(),
+    });
+    if (typeof input.stageSkip.approved === 'boolean') {
+      await deps.workOrders.appendEvent(id, {
+        type: 'stage_skip_decided',
+        at,
+        approved: input.stageSkip.approved,
+      });
+    }
+  }
   await deps.log.append({
     id: deps.ids.next<'audit'>(),
     at,
