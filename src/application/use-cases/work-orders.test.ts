@@ -2019,22 +2019,32 @@ describe('stage-skip decision rows (A-433)', () => {
         stages: ['implement'],
         decision: 'rejected',
         at: 20,
+        reason: 'human skip attempt',
       },
       {
         stages: ['review'],
         decision: 'approved',
         at: 40,
+        reason: 'auto skip attempt',
         decidedByPolicy: { policy: 'stage-skip-auto', level: 'auto' },
       },
     ]);
   });
 
-  it('A-433: workOrderStageSkipDecisionRows ignores proposals with no decisions and decisions without proposals', () => {
+  it('A-433: workOrderStageSkipDecisionRows ignores proposals with no decisions, decisions without proposals, and omits blank reasons', () => {
     const events: readonly WorkOrderEvent[] = [
       { type: 'stage_skip_decided', at: 5, approved: true },
       { type: 'stage_skip_proposed', at: 10, stages: [slugOf<'stage'>('implement')], reason: 'undecided' },
+      { type: 'stage_skip_proposed', at: 15, stages: [slugOf<'stage'>('build')], reason: '   ' },
+      { type: 'stage_skip_decided', at: 20, approved: true },
     ];
-    expect(workOrderStageSkipDecisionRows(events)).toEqual([]);
+    expect(workOrderStageSkipDecisionRows(events)).toEqual([
+      {
+        stages: ['build'],
+        decision: 'approved',
+        at: 20,
+      },
+    ]);
   });
 });
 

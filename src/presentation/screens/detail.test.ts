@@ -282,7 +282,7 @@ describe('work-order detail screen — the decision zone (U-4, U-226)', () => {
     expect(html.match(/Otomatik onay/g)).toHaveLength(1);
   });
 
-  it('U-360: renders stage-skip decisions with stage names, approved/rejected standing, and policy badge', async () => {
+  it('U-360: renders stage-skip decisions with stage names, approved/rejected standing, policy badge, and reason', async () => {
     const viewWithSkips: WorkOrderDetailView = {
       ...READY,
       skipDecisions: [
@@ -290,11 +290,13 @@ describe('work-order detail screen — the decision zone (U-4, U-226)', () => {
           stages: ['plan'],
           decision: 'rejected',
           at: 1_100,
+          reason: 'Manual reject rationale',
         },
         {
           stages: ['check'],
           decision: 'approved',
           at: 1_200,
+          reason: 'Auto skip rationale',
           decidedByPolicy: { policy: 'stage-skip-auto', level: 'auto' },
         },
       ],
@@ -308,6 +310,9 @@ describe('work-order detail screen — the decision zone (U-4, U-226)', () => {
     expect(htmlTr).toContain('Atlanmadı');
     expect(htmlTr).toContain('Check');
     expect(htmlTr).toContain('Atlandı');
+    expect(htmlTr).toContain('data-detail-skip-decision-reason');
+    expect(htmlTr).toContain('Manual reject rationale');
+    expect(htmlTr).toContain('Auto skip rationale');
     expect(htmlTr).toContain('data-detail-skip-decision-policy');
     expect(htmlTr).toContain('Otomatik onay: stage-skip-auto · auto düzeyi');
 
@@ -315,6 +320,9 @@ describe('work-order detail screen — the decision zone (U-4, U-226)', () => {
     expect(htmlEn).toContain('Stage skip decisions');
     expect(htmlEn).toContain('Not skipped');
     expect(htmlEn).toContain('Skipped');
+    expect(htmlEn).toContain('data-detail-skip-decision-reason');
+    expect(htmlEn).toContain('Manual reject rationale');
+    expect(htmlEn).toContain('Auto skip rationale');
     expect(htmlEn).toContain('Auto-approved: stage-skip-auto · level auto');
   });
 

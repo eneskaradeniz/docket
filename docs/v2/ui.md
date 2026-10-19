@@ -1973,7 +1973,7 @@ Added 2026-10-19, #1295 (D-16); reads `workOrder.gitBase`'s `forge_unavailable`,
 
 ## Stage-skip decisions on the work-order detail (U-360)
 
-- **U-360** (added 2026-10-19, #1227, D-10 5/5) Work-order detail renders stage-skip decisions (`skipDecisions`, A-433) in their own section (`data-detail-skip-decisions`) when one or more decisions have folded in. Each row (`data-detail-skip-decision-row`) renders the target stage slugs, the outcome badge (`stageSkip.decision.approved` / `stageSkip.decision.rejected`), an optional policy badge (`data-detail-skip-decision-policy`, `stageSkip.decision.byPolicy` showing policy name and autonomy level) when `decidedByPolicy` is present, and the reason text when non-empty. Human decisions omit the policy badge. Copy lives strictly in TR and EN bundles (`stageSkip.section`, `stageSkip.decision.*`), never inline.
+- **U-360** (added 2026-10-19, #1227, D-10 5/5) Work-order detail renders stage-skip decisions (`skipDecisions`, A-433) in their own section (`data-detail-skip-decisions`) when one or more decisions have folded in. Each row (`data-detail-skip-decision-row`) renders the target stage slugs, the outcome badge (`stageSkip.decision.approved` / `stageSkip.decision.rejected`), an optional policy badge (`data-detail-skip-decision-policy`, `stageSkip.decision.byPolicy` showing policy name and autonomy level) when `decidedByPolicy` is present, and the reason text (`data-detail-skip-decision-reason`) when non-empty. Human decisions omit the policy badge. Copy lives strictly in TR and EN bundles (`stageSkip.section`, `stageSkip.decision.*`), never inline.
 
 ## Wizard and accounts polish (U-361)
 

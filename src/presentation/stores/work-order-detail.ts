@@ -134,6 +134,7 @@ export interface WorkOrderStageSkipDecisionRow {
   readonly stages: readonly string[];
   readonly decision: 'approved' | 'rejected';
   readonly at: number;
+  readonly reason?: string;
   readonly decidedByPolicy?: { readonly policy: string; readonly level: string };
 }
 

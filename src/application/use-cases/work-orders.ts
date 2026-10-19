@@ -477,6 +477,7 @@ export interface StageSkipDecisionRow {
   readonly stages: readonly StageSlug[];
   readonly decision: 'approved' | 'rejected';
   readonly at: EpochMs;
+  readonly reason?: string;
   readonly decidedByPolicy?: { readonly policy: PolicyId; readonly level: AutonomyLevel };
 }
 
@@ -638,16 +639,17 @@ export const workOrderStageSkipDecisionRows = (
   events: readonly WorkOrderEvent[],
 ): readonly StageSkipDecisionRow[] => {
   const rows: StageSkipDecisionRow[] = [];
-  let pending: readonly StageSlug[] | null = null;
+  let pending: { readonly stages: readonly StageSlug[]; readonly reason: string } | null = null;
   for (const event of events) {
     if (event.type === 'stage_skip_proposed') {
-      pending = event.stages;
+      pending = { stages: event.stages, reason: event.reason };
     } else if (event.type === 'stage_skip_decided') {
       if (pending !== null) {
         rows.push({
-          stages: pending,
+          stages: pending.stages,
           decision: event.approved ? 'approved' : 'rejected',
           at: event.at,
+          ...(pending.reason.trim() !== '' ? { reason: pending.reason } : {}),
           ...(event.decidedByPolicy === undefined ? {} : { decidedByPolicy: event.decidedByPolicy }),
         });
         pending = null;

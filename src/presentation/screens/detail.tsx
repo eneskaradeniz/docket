@@ -575,6 +575,11 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
                           {t(locale, skip.decision === 'approved' ? 'stageSkip.decision.approved' : 'stageSkip.decision.rejected')}
                         </span>
                       </div>
+                      {skip.reason !== undefined && skip.reason.trim() !== '' ? (
+                        <span data-detail-skip-decision-reason className="text-[0.75rem] text-inkdim">
+                          {skip.reason}
+                        </span>
+                      ) : null}
                       {skip.decidedByPolicy !== undefined ? (
                         <div data-detail-skip-decision-policy className="flex w-full min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
                           <span className="text-[0.75rem] font-semibold text-proceed">
