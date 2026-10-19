@@ -275,6 +275,8 @@ export interface WorkOrderWindowCreateRequest {
   readonly description: string;
   readonly flow: string;
   readonly mode: WorkOrderCreateMode;
+  readonly skipProposal?: StageSkipProposalCard | null;
+  readonly skipDecision?: StageSkipDraftDecision;
 }
 
 /** Open outcome; `startFailed` is set when the order opened but the first enqueue did not (U-254). */
@@ -305,6 +307,22 @@ export const runWorkOrderCreate = async (
   );
   if (owner === undefined) return { ok: false, code: 'unknown_project' };
 
+  const stageSkip =
+    request.skipProposal !== undefined &&
+    request.skipProposal !== null &&
+    request.skipProposal.stages.length > 0 &&
+    request.skipProposal.reason.trim() !== ''
+      ? {
+          stages: request.skipProposal.stages,
+          reason: request.skipProposal.reason.trim(),
+          ...(request.skipDecision === 'approved'
+            ? { approved: true }
+            : request.skipDecision === 'rejected'
+              ? { approved: false }
+              : {}),
+        }
+      : undefined;
+
   const openCommand: Command = {
     type: 'workOrder.open',
     project: owner.project,
@@ -312,6 +330,7 @@ export const runWorkOrderCreate = async (
     title: fields.title,
     flow: fields.flow,
     ...(fields.description === undefined ? {} : { description: fields.description }),
+    ...(stageSkip !== undefined ? { stageSkip } : {}),
   };
   const result = await deps.api.command(deps.actor, openCommand);
   if (!result.ok) return { ok: false, code: result.code };
