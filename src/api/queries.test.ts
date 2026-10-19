@@ -33,14 +33,17 @@ import {
   createFakeCapabilityDiscovery,
   createFakeDefinitionStore,
   createFakeDeps,
+  createFakeGitProbe,
+  createFakeRepoFolders,
   createFakeRepoScanner,
   createFakeMcpListenerControl,
   createFakeModelCatalog,
   FAKE_ROADMAP_TARGET,
   repoFlowOf,
 } from '../application/ports/fakes';
+import { buildSetupProposal } from '../application/use-cases/setup';
 
-import { createApi } from './api';
+import { createApi, type UiEvent } from './api';
 import type { RepoRegistryPort } from './api';
 import type {
   AccountModelsView,
@@ -1913,11 +1916,11 @@ describe('project.tree', () => {
     });
 
     // One repo runs, the other only waits: the project aggregates both and reports waiting.
-    await seedWorkOrder(h, WO_RUNNING, BOARD_FLOW, 'Busy running', 100);
+    await seedWorkOrder(h, WO_RUNNING, BOARD_FLOW, 'Busy running', 100, REPO, PROJECT_ALPHA);
     await seedEvents(h, WO_RUNNING, [runStarted(150, RUN_RUNNING, PLAN)]);
     await seedRun(h, activeRun(RUN_RUNNING, WO_RUNNING, PLAN, 200));
 
-    await seedWorkOrder(h, WO_AWAIT_EARLY, BOARD_FLOW, 'Waiting', 300, OTHER_REPO);
+    await seedWorkOrder(h, WO_AWAIT_EARLY, BOARD_FLOW, 'Waiting', 300, OTHER_REPO, PROJECT_ALPHA);
     await seedEvents(h, WO_AWAIT_EARLY, [runStarted(350, RUN_EARLY, PLAN), runFinished(400, RUN_EARLY, 'succeeded')]);
 
     const tree = (await createApi(h.deps).query({ type: 'project.tree' })) as ProjectTree;
@@ -1943,6 +1946,102 @@ describe('project.tree', () => {
     expect(view.projects[0]).not.toHaveProperty('mainRepo');
     expect(tree[0]).not.toHaveProperty('mainRepo');
     for (const node of tree[0]?.repos ?? []) expect(node).not.toHaveProperty('main');
+  });
+
+  it('A-434: projectTree scopes derived work orders and running counts strictly by project and repo', async () => {
+    const h = createHarness();
+    h.definitions.seed({ kind: 'repo', repo: OTHER_REPO }, 'defs.json', DEFINITIONS_JSON);
+    await h.deps.projects.save({ id: PROJECT_ALPHA, name: 'Alpha', repos: [REPO] });
+    await h.deps.projects.save({ id: PROJECT_BETA, name: 'Beta', repos: [REPO] });
+
+    await seedWorkOrder(h, WO_RUNNING, BOARD_FLOW, 'Alpha busy', 100, REPO, PROJECT_ALPHA);
+    await seedEvents(h, WO_RUNNING, [runStarted(150, RUN_RUNNING, PLAN)]);
+    await seedRun(h, activeRun(RUN_RUNNING, WO_RUNNING, PLAN, 200));
+
+    const tree = (await createApi(h.deps).query({ type: 'project.tree' })) as ProjectTree;
+    const alpha = tree.find((item) => item.project === 'alpha');
+    const beta = tree.find((item) => item.project === 'beta');
+
+    expect(alpha?.repos[0]?.active).toBe(1);
+    expect(alpha?.repos[0]?.running).toBe(1);
+    expect(alpha?.repos[0]?.status).toBe('running');
+    expect(alpha?.active).toBe(1);
+    expect(alpha?.running).toBe(1);
+
+    expect(beta?.repos[0]?.active).toBe(0);
+    expect(beta?.repos[0]?.running).toBe(0);
+    expect(beta?.repos[0]?.status).toBe('idle');
+    expect(beta?.active).toBe(0);
+    expect(beta?.running).toBe(0);
+  });
+
+  it('A-434: deriveOrders treats closed work orders as done when flow is missing so active counts do not inflate', async () => {
+    const h = createHarness();
+    await h.deps.projects.save({ id: PROJECT_ALPHA, name: 'Alpha', repos: [BROKEN_REPO] });
+
+    const woOpen = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FC1');
+    await seedWorkOrder(h, woOpen, BOARD_FLOW, 'Broken open', 100, BROKEN_REPO, PROJECT_ALPHA);
+
+    const woClosed = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FC2');
+    await seedWorkOrder(h, woClosed, BOARD_FLOW, 'Broken closed', 200, BROKEN_REPO, PROJECT_ALPHA);
+    await seedEvents(h, woClosed, [{ type: 'closed', at: 250, by: ACTOR }]);
+
+    const tree = (await createApi(h.deps).query({ type: 'project.tree' })) as ProjectTree;
+    const alpha = tree.find((item) => item.project === 'alpha');
+
+    expect(alpha?.repos[0]?.active).toBe(1);
+    expect(alpha?.active).toBe(1);
+  });
+
+  it('A-434: project lifecycle and setup mutations emit workOrders.changed on success', async () => {
+    const git = createFakeGitProbe();
+    const folders = createFakeRepoFolders();
+    const definitions = createFakeDefinitionStore();
+    const deps = createFakeDeps({
+      git,
+      repoFolders: folders,
+      definitions,
+      readFingerprint: async () => ({ rootCommit: 'abc' }),
+    });
+    folders.markFolder('/work');
+    git.markWorkTree('/work/atolye');
+
+    const api = createApi(deps);
+    const seen: UiEvent[] = [];
+    api.subscribe((event) => seen.push(event));
+
+    const createRes = await api.command(ACTOR, { type: 'project.create', mode: 'existing', path: '/work/atolye', name: 'Atölye' });
+    expect(createRes.ok).toBe(true);
+    expect(seen).toContainEqual({ type: 'workOrders.changed' });
+
+    seen.length = 0;
+    const attachRes = await api.command(ACTOR, { type: 'project.attach', path: '/work/atolye' });
+    expect(attachRes.ok).toBe(true);
+    expect(seen).toContainEqual({ type: 'workOrders.changed' });
+
+    seen.length = 0;
+    await definitions.writeFile('repos/atolye/repo.yaml', '{"id":"atolye"}\n', '');
+    const proposal = buildSetupProposal({
+      project: { name: 'Atölye', repos: ['atolye'] },
+      repo: {
+        id: 'atolye',
+        flow: repoFlowOf(FLOWS_JSON[0]),
+        defaultLimitPolicy: 'wait_resume',
+        commandSets: {},
+        docsRoot: 'docs',
+        testGlobs: [],
+      },
+      warnings: [],
+      differsFromRecommended: [],
+    });
+    const setupRes = await api.command(ACTOR, {
+      type: 'setup.apply',
+      project: 'atolye',
+      path: '/work/atolye',
+      proposal,
+    });
+    expect(setupRes.ok).toBe(true);
+    expect(seen).toContainEqual({ type: 'workOrders.changed' });
   });
 });
 

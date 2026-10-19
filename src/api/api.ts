@@ -790,12 +790,16 @@ export function createApi(
       if (appended) emit({ type: 'workOrders.changed' });
       // When an autonomy layer or ceiling changes, emit workOrders.changed so open work order details
       // reactively re-evaluate effective autonomy and reflect the new level immediately (U-336 scenario 3).
+      // Also emit on project mutations and setup.apply (A-434).
       if (
         result.ok &&
         (command.type === 'workOrder.setAutonomy' ||
           command.type === 'repo.setAutonomy' ||
           command.type === 'project.setAutonomy' ||
-          command.type === 'settings.setAutonomy')
+          command.type === 'settings.setAutonomy' ||
+          command.type === 'project.create' ||
+          command.type === 'project.attach' ||
+          command.type === 'setup.apply')
       ) {
         emit({ type: 'workOrders.changed' });
       }
@@ -2733,7 +2737,15 @@ const deriveOrders = async (
   for (const record of records) {
     const flow = (await flowsOf(record.repo)).find((candidate) => candidate.id === record.flow);
     if (flow === undefined) {
-      derived.push({ record, status: undefined, stage: null, kind: undefined, since: record.createdAt });
+      const events = await deps.workOrders.events(record.id);
+      const last = events[events.length - 1];
+      derived.push({
+        record,
+        status: last?.type === 'closed' ? 'done' : undefined,
+        stage: null,
+        kind: undefined,
+        since: record.createdAt,
+      });
       continue;
     }
     const events = await deps.workOrders.events(record.id);
@@ -2947,18 +2959,20 @@ const projectTree = async (deps: AppDeps): Promise<ProjectTree> => {
   const askSinceByWorkOrder = await openAskSince(deps);
   const records = await deps.workOrders.list({});
   const derived = await deriveOrders(deps, records, askSinceByWorkOrder);
-  const derivedByRepo = new Map<RepoSlug, readonly DerivedOrder[]>();
+  const derivedByRepo = new Map<string, readonly DerivedOrder[]>();
   for (const entry of derived) {
-    const own = derivedByRepo.get(entry.record.repo);
-    if (own === undefined) derivedByRepo.set(entry.record.repo, [entry]);
-    else derivedByRepo.set(entry.record.repo, [...own, entry]);
+    const key = `${entry.record.project}\0${entry.record.repo}`;
+    const own = derivedByRepo.get(key);
+    if (own === undefined) derivedByRepo.set(key, [entry]);
+    else derivedByRepo.set(key, [...own, entry]);
   }
 
-  const runningByRepo = new Map<RepoSlug, number>();
+  const runningByRepo = new Map<string, number>();
   for (const run of await deps.runs.listActive()) {
     const workOrder = await deps.workOrders.get(run.workOrderId);
     if (workOrder === undefined) continue;
-    runningByRepo.set(workOrder.repo, (runningByRepo.get(workOrder.repo) ?? 0) + 1);
+    const key = `${workOrder.project}\0${workOrder.repo}`;
+    runningByRepo.set(key, (runningByRepo.get(key) ?? 0) + 1);
   }
 
   // Status precedence (A-27): waiting > running > idle.
@@ -2968,11 +2982,12 @@ const projectTree = async (deps: AppDeps): Promise<ProjectTree> => {
   const items: ProjectTreeItem[] = [];
   for (const def of await deps.projects.list()) {
     const repos: RepoNode[] = def.repos.map((repo, index) => {
-      const own = derivedByRepo.get(repo) ?? [];
+      const key = `${def.id}\0${repo}`;
+      const own = derivedByRepo.get(key) ?? [];
       const waiting = own.filter(
         (entry) => entry.kind === 'permission_ask' || entry.kind === 'awaiting_human' || entry.kind === 'blocked',
       ).length;
-      const running = runningByRepo.get(repo) ?? 0;
+      const running = runningByRepo.get(key) ?? 0;
       return {
         repo,
         name: repo,

@@ -422,7 +422,7 @@ export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, 
         scrimMark="data-new-project-scrim"
         onClose={onClose}
       >
-        <div data-new-project="" className="w-full">
+        <div data-new-project="" className="grid w-full gap-4">
           <HomeLaunchers onLaunch={onClose} />
           {screen === 'choose' ? methodChooser : null}
           {screen === 'form' ? pathForm : null}
