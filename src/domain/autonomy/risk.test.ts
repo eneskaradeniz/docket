@@ -177,6 +177,56 @@ describe('autonomy/risk', () => {
     expect(asks(toolAsk('Bash', { command: 'git config user.email' }))).toBe(true);
   });
 
+  it('R-193: shell expansion and outside-path operands never ride the readonly rows; revision ranges and relative paths stay low', () => {
+    const bash = (command: string): RiskAsk => toolAsk('Bash', { command });
+    // Expansion characters rewrite the command into paths the lexical checks never see.
+    for (const command of [
+      'ls .\\./x',
+      'ls .?/x',
+      'ls .[.]/x',
+      'ls .*',
+      'ls {..,}',
+      'ls ..\\',
+      'ls {/etc,}',
+      'ls src/*',
+      'ls !x',
+      'git -C {..,.} log',
+      'git log {--output=/tmp/x,}',
+      'git log --o\\utput=/tmp/x',
+      'ls && ls .*',
+    ]) {
+      expect(asks(bash(command)), command).toBe(true);
+    }
+    // git: outside operands, implicit --no-index, --contents and abbreviated long options.
+    for (const command of [
+      'git diff /etc/hosts /etc/passwd',
+      'git blame --contents /etc/hosts',
+      'git blame --contents=/etc/hosts file',
+      'git diff ../a ../b',
+      'git diff ~/a ~/b',
+      'git log -- /etc/hosts',
+      'git log --outp=/tmp/x',
+      'git diff --no-ind /etc/hosts /dev/null',
+      'git diff ..',
+    ]) {
+      expect(asks(bash(command)), command).toBe(true);
+    }
+    for (const command of ['ls src']) {
+      expect(lowRule(bash(command)), command).toBe('allow-readonly-shell');
+    }
+    for (const command of [
+      'git log main..feature',
+      'git log a...b',
+      'git diff HEAD~1',
+      'git show HEAD^',
+      'git diff HEAD~3 -- src',
+      'git log --oneline -n 5 -- src docs',
+      'git -C . status',
+    ]) {
+      expect(lowRule(bash(command)), command).toBe('allow-git-read');
+    }
+  });
+
   it('R-176: verify row — exact equality after trim only; the floor still wins', () => {
     const ctx = context({ verificationCommands: ['npm run typecheck && npm test', 'npm test'] });
     expect(lowRule(toolAsk('Bash', { command: 'npm run typecheck && npm test' }), ctx)).toBe('allow-verify');

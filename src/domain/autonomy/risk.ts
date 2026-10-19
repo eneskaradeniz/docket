@@ -148,7 +148,11 @@ const touchesGitInternals = (target: readonly string[] | undefined): boolean => 
 // --- command work: quoting and substitution are never parsed, so only the plainest form can match
 // an allow row; anything unreadable asks ---
 
-const COMMAND_METACHARS: readonly string[] = [';', '|', '&', '<', '>', '(', ')', '$', '"', "'", '`', '\n', '\r'];
+// Expansion characters count too: the shell rewrites `.\./x`, `.?/x`, `.[.]/x`, `.*` and `{..,}` into
+// paths the lexical operand checks never see, so a command carrying one cannot be judged by its text.
+const COMMAND_METACHARS: readonly string[] = [
+  ';', '|', '&', '<', '>', '(', ')', '$', '"', "'", '`', '\n', '\r', '\\', '*', '?', '[', ']', '{', '}', '!',
+];
 
 const plainCommand = (command: string): boolean =>
   COMMAND_METACHARS.every((metachar) => !command.includes(metachar));
@@ -330,6 +334,23 @@ const GIT_READ_SUBCOMMANDS: readonly string[] = [
 const GIT_BRANCH_FLAGS: readonly string[] = ['-v', '-vv', '-a', '-r', '-l', '--list', '--all', '--no-color'];
 const GIT_REMOTE_FLAGS: readonly string[] = ['-v', '--verbose'];
 
+// Options that write a file (--output), read outside the tree (--no-index, --contents). git accepts
+// any unambiguous abbreviation of a long option, so a name that is a prefix of one of these is held
+// back as well; an ambiguous prefix is a git error, which costs nothing.
+const GIT_BANNED_OPTIONS: readonly string[] = ['--output', '--no-index', '--contents'];
+
+const isBannedGitOption = (token: string): boolean => {
+  if (GIT_BANNED_OPTIONS.some((banned) => token.startsWith(banned))) return true;
+  const name = token.split('=')[0];
+  return name.length >= 3 && GIT_BANNED_OPTIONS.some((banned) => banned.startsWith(name));
+};
+
+/** A non-option token that points outside the tree: an absolute or tilde path, or one with a `..`
+ *  segment. A revision range (`main..feature`, `a...b`, `HEAD~3`, `HEAD^`) has no such segment.
+ *  With two such operands git diff turns itself into --no-index without being asked. */
+const isOutsideGitOperand = (token: string): boolean =>
+  !token.startsWith('-') && (token.startsWith('/') || token.startsWith('~') || token.split('/').includes('..'));
+
 const isGitReadCommand = (command: string, context: RiskContext): boolean => {
   if (!plainCommand(command)) return false;
   const tokens = tokensOf(command);
@@ -346,9 +367,10 @@ const isGitReadCommand = (command: string, context: RiskContext): boolean => {
   if (subcommand === undefined) return false;
   const rest = tail.slice(1);
   if (GIT_READ_SUBCOMMANDS.includes(subcommand)) {
-    // diff and show can write their patch out with --output, and --no-index diffs two filesystem
-    // paths — reading outside the worktree entirely. Both are banned in every spelling.
-    return rest.every((token) => !token.startsWith('--output') && !token.startsWith('--no-index'));
+    // diff and show can write their patch out with --output, --no-index diffs two filesystem paths
+    // and blame --contents reads one — all banned in every spelling, and so is any positional
+    // operand that names a path outside the worktree.
+    return rest.every((token) => !isBannedGitOption(token) && !isOutsideGitOperand(token));
   }
   if (subcommand === 'branch') return rest.every((token) => GIT_BRANCH_FLAGS.includes(token));
   if (subcommand === 'remote') return rest.every((token) => GIT_REMOTE_FLAGS.includes(token));
