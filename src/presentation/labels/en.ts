@@ -532,6 +532,7 @@ export const EN: LabelBundle = {
   'workOrder.new.close': 'Close',
   'workOrder.new.descriptionLabel': 'Description / goal',
   'workOrder.new.descriptionHint': 'Goes to the first stage as its input.',
+  'workOrder.new.openBranchesHint': 'A new work order branches from the base branch and does not include changes from unmerged work orders.',
   'workOrder.flowStrip.label': 'Repository flow',
   'workOrder.flowStrip.version': 'Version {version}',
   'workOrder.flowStrip.gateCount': '{count} approval gates',

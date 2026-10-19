@@ -67,6 +67,10 @@ export function BoardScreen({ store, repo, locale, onOpenWorkOrder, roadmapProje
   const columns = view === null ? [] : kanbanColumns(view, state.columnOverrides);
   const groups = view === null ? [] : listGroups(view, state.groupOverrides);
 
+  const activeWorkOrderCount = (view?.columns ?? [])
+    .filter((c) => c.stage !== 'done')
+    .reduce((sum, c) => sum + ((c as unknown as { cards?: readonly unknown[] }).cards ?? c.workOrders).length, 0);
+
   return (
     <>
     <div
@@ -154,6 +158,7 @@ export function BoardScreen({ store, repo, locale, onOpenWorkOrder, roadmapProje
       }
       skipProposal={null}
       launchProject={launchProject}
+      activeWorkOrderCount={activeWorkOrderCount}
       onClose={() => setCreateOpen(false)}
       onCreated={setFocusTitle}
       onCreate={(intent) =>
