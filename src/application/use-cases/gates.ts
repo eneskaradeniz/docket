@@ -242,6 +242,10 @@ const countChangedFiles = async (
   return ok(diff.value.files.length);
 };
 
+export interface EvaluateMachineGatesResult extends WorkOrderState {
+  readonly evaluated: readonly GateSlug[];
+}
+
 /** Evaluates every pending machine gate of the current stage that a machine can conclude:
  *  changes, command and secret_scan gates, then remote_checks gates when the caller brought a
  *  forge. agent_verdict gates wait for their reviewer (submitAgentVerdict); deploy gates wait for
@@ -257,7 +261,7 @@ export async function evaluateMachineGates(
       readonly branchRef: string;
     };
   },
-): Promise<Result<WorkOrderState, 'not_found' | 'not_gating' | 'definitions_invalid' | 'no_repo' | 'git_failed'>> {
+): Promise<Result<EvaluateMachineGatesResult, 'not_found' | 'not_gating' | 'definitions_invalid' | 'no_repo' | 'git_failed'>> {
   const loaded = await loadWorkOrder(deps, input.id);
   if (!loaded.ok) return err(loaded.error);
   const { record, definitions, flow, events, state } = loaded.value;
@@ -265,6 +269,7 @@ export async function evaluateMachineGates(
   const worktree = await deps.worktrees.ensure(record.repo, record.id);
   if (!worktree.ok) return err('no_repo');
   const ctx = gateContext(definitions);
+  const initialEventsCount = events.length;
 
   let history = events;
   // Whether a zero-measured changes gate halted the pass: the gates behind it — and the remote
@@ -350,7 +355,12 @@ export async function evaluateMachineGates(
       });
     }
   }
-  return ok(deriveWorkOrderState(flow, await deps.workOrders.events(input.id)));
+  const finalEvents = await deps.workOrders.events(input.id);
+  const newlyAppended = finalEvents.slice(initialEventsCount);
+  const evaluated: GateSlug[] = newlyAppended.flatMap((e) => (e.type === 'gate_evaluated' ? [e.gate] : []));
+  const finalState = deriveWorkOrderState(flow, finalEvents);
+  Object.defineProperty(finalState, 'evaluated', { value: evaluated, enumerable: false, writable: true, configurable: true });
+  return ok(finalState as EvaluateMachineGatesResult);
 }
 
 /** An agent_verdict gate's evidence: the reviewer role reports approve/reject with evidence pointers. */

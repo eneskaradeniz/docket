@@ -1955,9 +1955,10 @@ describe('createApi', () => {
         { workOrder: ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FE7'), queueItem: ulidOf<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5FE9') },
       );
 
-      // One run.updated per appended event, then the work-order change of the run-finished append:
-      // the re-query it triggers is what clears a badge that the preceding run.updated left stale.
+      // workOrders.changed on run_started (A-435), then one run.updated per appended event,
+      // then the work-order change of the run-finished append:
       expect(seen).toEqual([
+        { type: 'workOrders.changed' },
         { type: 'run.updated', runId },
         { type: 'run.updated', runId },
         { type: 'run.updated', runId },

@@ -1485,12 +1485,12 @@ describe('executeRun', () => {
 
     expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
     const record = await theRun(h.runs);
-    // The per-event notifications keep their order and the work-order change lands exactly once,
-    // after the last of them; the run_started append stays silent on this channel.
-    expect(calls).toEqual([`run ${record.id}`, `run ${record.id}`, 'workOrders']);
-    const first = logAtChange[0];
-    if (first === undefined) throw new Error('workOrders.changed must have been delivered');
-    expect(await first).toEqual(['run_started', 'run_finished']);
+    // A-435: workOrders.changed is called on run_started as well as run_finished.
+    expect(calls).toEqual(['workOrders', `run ${record.id}`, `run ${record.id}`, 'workOrders']);
+    expect(await Promise.all(logAtChange)).toEqual([
+      ['run_started'],
+      ['run_started', 'run_finished'],
+    ]);
   });
 
   it('a run that fails before any transport still notifies workOrders.changed — every run_finished append does', async () => {
@@ -1502,7 +1502,7 @@ describe('executeRun', () => {
     });
 
     expect(outcome.kind).toBe('transport_error');
-    expect(changed).toBe(1);
+    expect(changed).toBe(2);
     expect((await h.workOrders.events(WORK_ORDER)).map((event) => event.type)).toEqual(['run_started', 'run_finished']);
   });
 });
@@ -3473,5 +3473,94 @@ describe('executeRun delivers the held agent verdict', () => {
     expect(run.h.log.entries().find((entry) => entry.action === 'gate.verdict_missing')).toMatchObject({
       detail: { stage: OTHER_STAGE, recorded: false, error: 'record_failed' },
     });
+  });
+});
+
+describe('executeRun — lifecycle notify and macOS symlink alignment (A-435)', () => {
+  it('A-435: workOrdersChanged is called when run_started is appended as well as when run_finished is appended', async () => {
+    const h = await harness({ script: [finished('completed')] });
+    const eventSnapshots: string[][] = [];
+    const onWorkOrdersChanged = () => {
+      void h.workOrders.events(WORK_ORDER).then((events) => {
+        eventSnapshots.push(events.map((e) => e.type));
+      });
+    };
+
+    await executeRun(
+      h.deps,
+      permissionGate().permissions,
+      INPUT,
+      undefined,
+      undefined,
+      onWorkOrdersChanged,
+    );
+
+    expect(eventSnapshots).toEqual([
+      ['run_started'],
+      ['run_started', 'run_finished'],
+    ]);
+  });
+
+  it('A-435: aligns macOS symlink prefixes on decideAsk and writeScopeVerdict to auto-allow in-worktree targets', async () => {
+    const root = '/var/folders/xx/worktrees/wo-1';
+    const privateRoot = '/private/var/folders/xx/worktrees/wo-1';
+    const h = await harness({
+      script: [
+        readAsk('ask-read', `${privateRoot}/README.md`),
+        writeAsk('ask-write', `${privateRoot}/docs/plan.md`, 'Write'),
+        finished('completed'),
+      ],
+      defsJson: VERIFY_DEFS_JSON,
+    });
+    (h.deps.worktrees as FakeWorktrees).markExisting(REPO, WORK_ORDER);
+    h.deps.worktrees.existing = async () => ({ path: root });
+    await h.deps.settings.set(AUTONOMY_KEY, 'auto');
+    const gate = permissionGate('deny');
+    const input = { ...INPUT, cwd: root };
+
+    await executeRun(h.deps, gate.permissions, input);
+
+    // Both asks auto-allowed by policy without hitting the human gate
+    expect(gate.asked).toEqual([]);
+    expect(h.transport.answers().map((a) => a.decision)).toEqual(['allow', 'allow']);
+    const record = await theRun(h.runs);
+    expect(await h.runs.events(record.id)).toEqual([
+      readAsk('ask-read', `${privateRoot}/README.md`),
+      permissionAnswered('ask-read', 'allow'),
+      writeAsk('ask-write', `${privateRoot}/docs/plan.md`, 'Write'),
+      permissionAnswered('ask-write', 'allow'),
+      finished('completed'),
+    ]);
+    expect(permissionAudits(h.log).map((entry) => entry.actor)).toEqual([
+      { kind: 'policy', policy: PERMISSION_RULES_POLICY, level: 'auto' },
+      { kind: 'policy', policy: PERMISSION_RULES_POLICY, level: 'auto' },
+    ]);
+  });
+
+  it('A-435: aligns macOS symlink prefix on decideAsk to deny-by-policy run config reads', async () => {
+    const runPath = '/var/folders/xx/docket/runs/run-1';
+    const privateAskTarget = '/private/var/folders/xx/docket/runs/run-1/config/mcp.json';
+    const h = await harness({
+      runDirs: {
+        create: async () => ({
+          path: runPath,
+          dispose: async () => {},
+        }),
+      },
+      script: [
+        readAsk('ask-deny', privateAskTarget),
+        finished('completed'),
+      ],
+      defsJson: VERIFY_DEFS_JSON,
+    });
+    await h.deps.settings.set(AUTONOMY_KEY, 'auto');
+    const gate = permissionGate('allow');
+
+    await executeRun(h.deps, gate.permissions, INPUT);
+
+    expect(gate.asked).toEqual([]);
+    expect(h.transport.answers().map((a) => a.decision)).toEqual(['deny']);
+    expect(permissionAudits(h.log)[0]?.detail).toEqual({ tool: 'Read', decision: 'deny', reason: 'deny-run-config' });
+    expect(permissionAudits(h.log)[0]?.actor).toMatchObject({ kind: 'policy', level: 'auto' });
   });
 });
