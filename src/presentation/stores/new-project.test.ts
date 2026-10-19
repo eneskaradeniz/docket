@@ -831,3 +831,28 @@ describe('U-362: direct attach and setup proposal polish', () => {
     expect(html).toContain('<div data-new-project="" class="grid w-full gap-4">');
   });
 });
+
+describe('U-364: setup UI fixes and proposal details', () => {
+  it('U-364: newProject.created toast label states no test gate was added when test command was not set', () => {
+    expect(TR['newProject.created']).toBe(
+      'Proje oluşturuldu. Test komutu girilmediği için test kapısı eklenmedi; dilediğiniz zaman depo ayarlarından ekleyebilirsiniz.',
+    );
+    expect(EN['newProject.created']).toBe(
+      'Project created. No test gate was added because no test command was set; you can add one anytime in repo settings.',
+    );
+  });
+
+  it('U-364: hasDraft returns false on screen === summary so completed summary can be dismissed without draft warning', () => {
+    const proposal = buildSetupProposal('Acme', '/Users/e/acme');
+    expect(hasDraft(START_FORM, 'summary', null)).toBe(false);
+    expect(hasDraft(START_FORM, 'summary', proposal)).toBe(false);
+    expect(hasDraft({ ...START_FORM, repoPath: '/Users/e/acme', path: 'quick' }, 'summary', proposal, { id: 'draft-1', repoPath: '/Users/e/acme' })).toBe(false);
+
+    // Other screens retain draft detection
+    expect(hasDraft(START_FORM, 'choose', null)).toBe(false);
+    expect(hasDraft(START_FORM, 'choose', proposal)).toBe(true);
+    expect(hasDraft(START_FORM, 'form', null)).toBe(true);
+    expect(hasDraft(START_FORM, 'proposal', null)).toBe(true);
+  });
+});
+

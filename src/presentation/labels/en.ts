@@ -1041,7 +1041,7 @@ export const EN: LabelBundle = {
   'newProject.cancel': 'Cancel',
   'newProject.close': 'Close window',
   'newProject.attach': 'Attach',
-  'newProject.created': 'Project created. No test commands are defined yet; until they are, the test gate waits.',
+  'newProject.created': 'Project created. No test gate was added because no test command was set; you can add one anytime in repo settings.',
   'setup.title': 'Add project',
   'setup.method.group': 'Setup method',
   'setup.ai.title': 'Set up with Docket AI',

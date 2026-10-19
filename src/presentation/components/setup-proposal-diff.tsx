@@ -25,7 +25,7 @@ const SECTIONS: readonly {
   { id: 'commands', key: 'setup.section.commands', descKey: 'setup.sectionDesc.commands', copiedField: 'commandSets' },
 ];
 
-const sectionBody = (proposal: SetupProposal, section: SetupDetailSection): string => {
+export const sectionBody = (proposal: SetupProposal, section: SetupDetailSection): string => {
   switch (section) {
     case 'flow':
       return proposal.repo.flow.flowId;
@@ -35,6 +35,30 @@ const sectionBody = (proposal: SetupProposal, section: SetupDetailSection): stri
       return proposal.repo.defaultLimitPolicy;
     case 'commands':
       return Object.keys(proposal.repo.commandSets).join(', ');
+  }
+};
+
+export const sectionDetail = (proposal: SetupProposal, section: SetupDetailSection): string => {
+  switch (section) {
+    case 'flow':
+      return proposal.repo.flow.stages.length > 0
+        ? proposal.repo.flow.stages.map((s) => s.name || s.id).join(' → ')
+        : proposal.repo.flow.flowId;
+    case 'roles':
+      return proposal.repo.flow.bindings.length > 0
+        ? proposal.repo.flow.bindings
+            .map((b) => (b.role !== undefined ? `${b.stage}: ${b.role.roleId}` : b.stage))
+            .join(' · ')
+        : '0';
+    case 'limits':
+      return proposal.repo.defaultLimitPolicy;
+    case 'commands': {
+      const entries = Object.entries(proposal.repo.commandSets);
+      if (entries.length === 0) return Object.keys(proposal.repo.commandSets).join(', ');
+      return entries
+        .map(([key, cmds]) => `${key}: ${cmds.length > 0 ? cmds.join(' && ') : '—'}`)
+        .join(' · ');
+    }
   }
 };
 
@@ -77,7 +101,7 @@ export function SetupProposalDiff({ locale, proposal, expanded, onToggle, onTest
             {open ? (
               <div className="grid gap-1 border-t border-hairline px-3.5 py-2 font-mono text-[0.75rem] leading-[1.125rem] text-inkdim">
                 <p className="m-0 font-sans text-[0.75rem] text-inkdim">{t(locale, section.descKey)}</p>
-                <div>{sectionBody(proposal, section.id)}</div>
+                <p data-proposal-section-detail={section.id} className="mt-1 font-mono text-[12px] text-inkdim">{sectionDetail(proposal, section.id)}</p>
                 {section.id === 'commands' && showRedetected ? (
                   <>
                     <div className="flex flex-wrap items-center gap-2 pt-1 text-ink" data-setup-redetected="">
