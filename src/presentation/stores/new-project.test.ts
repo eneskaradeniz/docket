@@ -757,3 +757,77 @@ describe('setup proposal test command field', () => {
     expect(store.state().proposal).toBeNull();
   });
 });
+
+describe('U-362: direct attach and setup proposal polish', () => {
+  it('U-362: each section button shows a compact summary before the chevron even while collapsed', () => {
+    const proposal = buildSetupProposal('Atolye', '/Users/e/atolye');
+    const html = renderToStaticMarkup(
+      createElement(SetupProposalDiff, {
+        locale: 'tr',
+        proposal,
+        expanded: () => false,
+        onToggle: () => undefined,
+      }),
+    );
+
+    expect(html).toContain(proposal.repo.flow.flowId);
+    expect(html).toContain(String(proposal.repo.flow.bindings.length));
+    expect(html).toContain(proposal.repo.defaultLimitPolicy);
+    expect(html).toMatch(/<span class="font-mono text-\[0\.75rem\] font-normal text-inkdim">[^<]+<\/span><span aria-hidden="true" class="text-inkdim">▸<\/span>/);
+  });
+
+  it('U-362: open sections render human-readable description above the value in both TR and EN', () => {
+    const proposal = buildSetupProposal('Atolye', '/Users/e/atolye');
+    const htmlTr = renderToStaticMarkup(
+      createElement(SetupProposalDiff, {
+        locale: 'tr',
+        proposal,
+        expanded: () => true,
+        onToggle: () => undefined,
+      }),
+    );
+    expect(htmlTr).toContain(TR['setup.sectionDesc.flow']);
+    expect(htmlTr).toContain(TR['setup.sectionDesc.roles']);
+    expect(htmlTr).toContain(TR['setup.sectionDesc.limits']);
+    expect(htmlTr).toContain(TR['setup.sectionDesc.commands']);
+    expect(htmlTr).toContain('İş emirlerinin geçeceği aşama ve onay kapısı dizisi.');
+
+    const htmlEn = renderToStaticMarkup(
+      createElement(SetupProposalDiff, {
+        locale: 'en',
+        proposal,
+        expanded: () => true,
+        onToggle: () => undefined,
+      }),
+    );
+    expect(htmlEn).toContain(EN['setup.sectionDesc.flow']);
+    expect(htmlEn).toContain(EN['setup.sectionDesc.roles']);
+    expect(htmlEn).toContain(EN['setup.sectionDesc.limits']);
+    expect(htmlEn).toContain(EN['setup.sectionDesc.commands']);
+    expect(htmlEn).toContain('The sequence of stages and approval gates work orders walk through.');
+  });
+
+  it('U-362: test command field renders as a standalone card outside the collapsible section groups', () => {
+    const proposal = buildSetupProposal('Atolye', '/Users/e/atolye');
+    const html = renderToStaticMarkup(
+      createElement(SetupProposalDiff, {
+        locale: 'tr',
+        proposal,
+        expanded: () => false,
+        onToggle: () => undefined,
+      }),
+    );
+    expect(html).toContain('class="grid gap-1 rounded-card border border-hairline bg-surface px-3.5 py-3" data-setup-test-command=""');
+    const groupMatches = [...html.matchAll(/<div role="group"[\s\S]*?<\/div>/g)];
+    expect(groupMatches.length).toBe(4);
+    for (const match of groupMatches) {
+      expect(match[0]).not.toContain('data-setup-test-command');
+    }
+  });
+
+  it('U-362: NewProjectPanel renders its container with grid w-full gap-4', () => {
+    const { store } = setup();
+    const html = drawPanel(store);
+    expect(html).toContain('<div data-new-project="" class="grid w-full gap-4">');
+  });
+});

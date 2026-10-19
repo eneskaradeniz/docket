@@ -13,11 +13,16 @@ export interface SetupProposalDiffProps {
   readonly onTestCommandChange?: (value: string) => void;
 }
 
-const SECTIONS: readonly { readonly id: SetupDetailSection; readonly key: LabelKey; readonly copiedField: string }[] = [
-  { id: 'flow', key: 'setup.section.flow', copiedField: 'flow' },
-  { id: 'roles', key: 'setup.section.roles', copiedField: 'flow' },
-  { id: 'limits', key: 'setup.section.limits', copiedField: 'defaultLimitPolicy' },
-  { id: 'commands', key: 'setup.section.commands', copiedField: 'commandSets' },
+const SECTIONS: readonly {
+  readonly id: SetupDetailSection;
+  readonly key: LabelKey;
+  readonly descKey: LabelKey;
+  readonly copiedField: string;
+}[] = [
+  { id: 'flow', key: 'setup.section.flow', descKey: 'setup.sectionDesc.flow', copiedField: 'flow' },
+  { id: 'roles', key: 'setup.section.roles', descKey: 'setup.sectionDesc.roles', copiedField: 'flow' },
+  { id: 'limits', key: 'setup.section.limits', descKey: 'setup.sectionDesc.limits', copiedField: 'defaultLimitPolicy' },
+  { id: 'commands', key: 'setup.section.commands', descKey: 'setup.sectionDesc.commands', copiedField: 'commandSets' },
 ];
 
 const sectionBody = (proposal: SetupProposal, section: SetupDetailSection): string => {
@@ -64,10 +69,14 @@ export function SetupProposalDiff({ locale, proposal, expanded, onToggle, onTest
                 <span>{t(locale, section.key)}</span>
                 {badge}
               </span>
-              <span aria-hidden="true" className="text-inkdim">{open ? '▾' : '▸'}</span>
+              <span className="inline-flex items-center gap-2">
+                <span className="font-mono text-[0.75rem] font-normal text-inkdim">{sectionBody(proposal, section.id)}</span>
+                <span aria-hidden="true" className="text-inkdim">{open ? '▾' : '▸'}</span>
+              </span>
             </button>
             {open ? (
               <div className="grid gap-1 border-t border-hairline px-3.5 py-2 font-mono text-[0.75rem] leading-[1.125rem] text-inkdim">
+                <p className="m-0 font-sans text-[0.75rem] text-inkdim">{t(locale, section.descKey)}</p>
                 <div>{sectionBody(proposal, section.id)}</div>
                 {section.id === 'commands' && showRedetected ? (
                   <>
@@ -87,23 +96,21 @@ export function SetupProposalDiff({ locale, proposal, expanded, onToggle, onTest
                 ) : null}
               </div>
             ) : null}
-            {section.id === 'commands' ? (
-              <label className="grid gap-1 border-t border-hairline px-3.5 py-3" data-setup-test-command="">
-                <span className="text-[0.8125rem] font-semibold text-ink">{t(locale, 'setup.proposal.testCommand')}</span>
-                <input
-                  type="text"
-                  value={testCommandOf(proposal)}
-                  readOnly={onTestCommandChange === undefined}
-                  onChange={(event) => onTestCommandChange?.(event.target.value)}
-                  placeholder={t(locale, 'setup.proposal.testCommandPlaceholder')}
-                  className="h-9 rounded-control border border-bord bg-raised px-3 font-mono text-[0.8125rem] text-ink outline-none focus:border-signal"
-                />
-                <span className="text-[0.75rem] text-inkdim">{t(locale, 'setup.proposal.testCommandHint')}</span>
-              </label>
-            ) : null}
           </div>
         );
       })}
+      <label className="grid gap-1 rounded-card border border-hairline bg-surface px-3.5 py-3" data-setup-test-command="">
+        <span className="text-[0.8125rem] font-semibold text-ink">{t(locale, 'setup.proposal.testCommand')}</span>
+        <input
+          type="text"
+          value={testCommandOf(proposal)}
+          readOnly={onTestCommandChange === undefined}
+          onChange={(event) => onTestCommandChange?.(event.target.value)}
+          placeholder={t(locale, 'setup.proposal.testCommandPlaceholder')}
+          className="h-9 rounded-control border border-bord bg-raised px-3 font-mono text-[0.8125rem] text-ink outline-none focus:border-signal"
+        />
+        <span className="text-[0.75rem] text-inkdim">{t(locale, 'setup.proposal.testCommandHint')}</span>
+      </label>
     </section>
   );
 }
