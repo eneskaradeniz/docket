@@ -4,7 +4,7 @@
 import type { CapabilityCatalog } from '../../../application/index';
 import type { AuthMode, CostKind, RouteKindRecord } from '../../../domain/index';
 
-import { BUILTIN_PROVIDER_DEFS } from '../defs/index';
+import { BUILTIN_PROVIDER_DEFS, homeRootEnvOf } from '../defs/index';
 
 import { CAPABILITY_REGISTRY, findRouteKind, MEASURED_VERSIONS, PERMISSION_CHANNELS, PROVIDER_INSTRUCTION_FILES, TRANSLATION_TABLE } from './capability-registry';
 
@@ -40,6 +40,16 @@ export const createCapabilityCatalog = (): CapabilityCatalog => ({
   instructionFileNames: () => [
     ...new Set(PROVIDER_INSTRUCTION_FILES.flatMap((row) => row.instructionFiles)),
   ],
+  // The home the launch would resolve for this account (P-67): a home-rooted CLI's whole tree —
+  // descriptor cache included — sits under the identity directory; every other CLI under the
+  // machine home. A non-absolute home resolves nothing, so the row never fires on it.
+  mcpDefsDirOf: (account, machineHome) => {
+    const def = BUILTIN_PROVIDER_DEFS.find((entry) => entry.id === account.provider);
+    if (def === undefined || def.mcpDefsPath === undefined) return undefined;
+    const home =
+      homeRootEnvOf(def) !== undefined && account.identityDir !== undefined ? account.identityDir : machineHome;
+    return home !== undefined && home.startsWith('/') ? `${home}/${def.mcpDefsPath}` : undefined;
+  },
 });
 
 /** The registry route-level cost union admits `none` (no cost visibility); a usage event always

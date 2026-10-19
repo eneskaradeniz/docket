@@ -280,6 +280,8 @@ const harness = async (options: {
   readonly checkpointBases?: Readonly<Record<string, string>>;
   readonly homeDir?: string;
   readonly runDirs?: RunDirs;
+  readonly mcpDefsDirs?: Readonly<Record<string, string>>;
+  readonly identityDir?: string;
 } = {}): Promise<Harness> => {
   const clock = createFakeClock(T0);
   const ids = createFakeIdGen();
@@ -312,13 +314,18 @@ const harness = async (options: {
     ...(options.homeDir !== undefined ? { homeDir: options.homeDir } : {}),
     ...(options.files !== undefined ? { instructionFiles: createFakeInstructionFiles({ [INPUT.cwd]: options.files }) } : {}),
     ...(options.models !== undefined ? { modelCatalog: createFakeModelCatalog({ [ACCOUNT]: options.models }) } : {}),
-    ...(options.routeKinds !== undefined || options.translations !== undefined
-      ? { capabilities: createFakeCapabilityCatalog(options.routeKinds ?? [], options.translations ?? []) }
+    ...(options.routeKinds !== undefined || options.translations !== undefined || options.mcpDefsDirs !== undefined
+      ? { capabilities: createFakeCapabilityCatalog(options.routeKinds ?? [], options.translations ?? [], [], [], options.mcpDefsDirs ?? {}) }
       : {}),
   });
 
   await workOrders.create({ ...WORK_ORDER_RECORD, ...(options.pin !== undefined ? { pin: options.pin } : {}) });
-  if (options.withAccount !== false) await accounts.save(accountRecord(options.limitPolicy ?? 'wait_resume'));
+  if (options.withAccount !== false) {
+    await accounts.save({
+      ...accountRecord(options.limitPolicy ?? 'wait_resume'),
+      ...(options.identityDir !== undefined ? { identityDir: options.identityDir } : {}),
+    });
+  }
   if (options.pools !== undefined) await accounts.savePools(ACCOUNT, options.pools);
   for (const meter of options.meters ?? []) await accounts.saveMeter(meter);
   for (const run of options.priorRuns ?? []) await runs.create(run);
@@ -2692,6 +2699,96 @@ describe('executeRun — the autonomy permission policy', () => {
     ]);
     expect(permissionAudits(h.log)[0]?.detail).toEqual({ tool: 'page_publish', decision: 'allow' });
     expect(board.autoDecided()).toEqual([]);
+  });
+
+  it('R-194: the risk context carries the run account\'s MCP descriptor dir, so an own-defs Read is policy-allowed under auto — and asks without it', async () => {
+    const DIR = '/fake-home/.gemini/antigravity-cli/mcp/docket-pages';
+    const fed = await harness({
+      homeDir: '/fake-home',
+      mcpDefsDirs: { 'provider-x': '.gemini/antigravity-cli/mcp/docket-pages' },
+      script: [readAsk('ask-1', `${DIR}/page_publish.json`), readAsk('ask-2', `${DIR}/instructions.md`), finished('completed')],
+      defsJson: VERIFY_DEFS_JSON,
+    });
+    await fed.deps.settings.set(AUTONOMY_KEY, 'auto');
+    // A deny gate doubles as the leak detector: any ask that slipped through to it would flip the answer.
+    const gate = permissionGate('deny');
+
+    await executeRun(fed.deps, gate.permissions, INPUT);
+
+    expect(gate.asked).toEqual([]);
+    expect(fed.transport.answers()).toEqual([
+      { askId: 'ask-1', decision: 'allow' },
+      { askId: 'ask-2', decision: 'allow' },
+    ]);
+    expect(permissionAudits(fed.log).map((entry) => entry.actor)).toEqual([
+      { kind: 'policy', policy: PERMISSION_RULES_POLICY, level: 'auto' },
+      { kind: 'policy', policy: PERMISSION_RULES_POLICY, level: 'auto' },
+    ]);
+    expect(permissionAudits(fed.log)[0]?.detail).toEqual({ tool: 'Read', decision: 'allow' });
+
+    // Without the def data for the provider, the exact same ask stays with the human: the row is
+    // licensed by the context, never by the path alone.
+    const unfed = await harness({
+      script: [readAsk('ask-1', `${DIR}/page_publish.json`), finished('completed')],
+      defsJson: VERIFY_DEFS_JSON,
+    });
+    await unfed.deps.settings.set(AUTONOMY_KEY, 'auto');
+    const unfedGate = permissionGate('deny');
+
+    await executeRun(unfed.deps, unfedGate.permissions, INPUT);
+
+    expect(unfedGate.asked.map((entry) => entry.ask.id)).toEqual(['ask-1']);
+  });
+
+  it('R-194: an account with an identity directory resolves the descriptor dir under it — the machine-home spelling asks', async () => {
+    const IDENTITY_DIR = '/idents/acct-9';
+    const h = await harness({
+      homeDir: '/fake-home',
+      identityDir: IDENTITY_DIR,
+      mcpDefsDirs: { 'provider-x': '.gemini/antigravity-cli/mcp/docket-pages' },
+      script: [
+        readAsk('ask-1', `${IDENTITY_DIR}/.gemini/antigravity-cli/mcp/docket-pages/page_publish.json`),
+        readAsk('ask-2', '/fake-home/.gemini/antigravity-cli/mcp/docket-pages/page_publish.json'),
+        finished('completed'),
+      ],
+      defsJson: VERIFY_DEFS_JSON,
+    });
+    await h.deps.settings.set(AUTONOMY_KEY, 'auto');
+    const gate = permissionGate('deny');
+
+    await executeRun(h.deps, gate.permissions, INPUT);
+
+    // The identity home is the one the launch points the CLI at, so its spelling is the licensed
+    // one; the machine-home spelling of the same tree is not what the run reads and asks.
+    expect(h.transport.answers()).toEqual([
+      { askId: 'ask-1', decision: 'allow' },
+      { askId: 'ask-2', decision: 'deny' },
+    ]);
+    expect(gate.asked.map((entry) => entry.ask.id)).toEqual(['ask-2']);
+  });
+
+  it('R-194: an unreadable run account leaves the descriptor dir absent — the ask stays with the human', async () => {
+    const DIR = '/fake-home/.gemini/antigravity-cli/mcp/docket-pages';
+    const h = await harness({
+      withAccount: false,
+      homeDir: '/fake-home',
+      mcpDefsDirs: { 'provider-x': '.gemini/antigravity-cli/mcp/docket-pages' },
+      models: [{ id: 'model-free', source: 'live', thinking: 'unknown', billing: 'included', contextWindow: null }],
+      script: [readAsk('ask-1', `${DIR}/page_publish.json`), finished('completed')],
+      defsJson: VERIFY_DEFS_JSON,
+    });
+    await h.deps.settings.set(AUTONOMY_KEY, 'auto');
+    const gate = permissionGate('deny');
+    // The account stays absent so the context's account read really misses; the route pins an
+    // included model so the spend-consent preflight does not refuse the run beforehand (A-17's
+    // shape).
+    const input = { ...INPUT, item: { ...ITEM, route: { accountId: ACCOUNT, model: 'model-free' } } };
+
+    await executeRun(h.deps, gate.permissions, input);
+
+    expect(gate.asked.map((entry) => entry.ask.id)).toEqual(['ask-1']);
+    expect(h.transport.answers()).toEqual([{ askId: 'ask-1', decision: 'deny' }]);
+    expect(permissionAudits(h.log).filter((entry) => entry.detail?.decision === 'allow')).toEqual([]);
   });
 
   it('R-191: a manual run asks the human for a page_publish ask the policy would allow', async () => {

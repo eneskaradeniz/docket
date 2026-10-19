@@ -18,6 +18,10 @@ export interface RiskContext {
   readonly worktreeRoot?: string;
   /** The Docket data directory; absent skips the run-config row (it cannot be judged), never any other. */
   readonly dataDir?: string;
+  /** The provider CLI's MCP descriptor directory for this run, resolved absolute by the executor
+   *  from provider-def data — the vendor path is provider data and lives outside the domain.
+   *  Absent or relative skips the own-defs row, so the ask stays with the human. */
+  readonly mcpDefsDir?: string;
   readonly cwd?: string;
   readonly verificationCommands: readonly string[];
 }
@@ -33,6 +37,7 @@ export type RiskRuleId =
   | 'deny-write-outside'
   | 'allow-own-read'
   | 'allow-own-pages'
+  | 'allow-own-mcp-defs'
   | 'allow-read-search'
   | 'allow-git-read'
   | 'allow-verify'
@@ -304,6 +309,46 @@ const OWN_PAGE_TOOLS: readonly string[] = [
 
 const allowOwnPages = (ask: RiskAsk): boolean => isTool(ask, OWN_PAGE_TOOLS);
 
+// --- the provider's MCP descriptor directory (R-194): a CLI caches the descriptors of the MCP
+// servers a run may call — Docket's own pages server among them — in one directory under the home
+// the launch resolves, and the agent reads them to call the tools. The vendor path is provider
+// data: the executor resolves it from the def and hands it in absolute, so this row anchors on the
+// context's dir and holds no path of its own. ---
+
+/** `instructions.md` or `<slug>.json` — alnum first, then name characters only: no glob spelling,
+ *  no path separator and no bare `.json` (empty stem) can match. */
+const MCP_DEFS_JSON_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*\.json$/;
+
+const isMcpDefsName = (name: string): boolean =>
+  name === 'instructions.md' || MCP_DEFS_JSON_NAME.test(name);
+
+/** `allow-own-mcp-defs` (R-194): a Read of exactly one descriptor file directly under the
+ *  context's dir — absolute and canonical in its spelling (no empty segment, so no trailing
+ *  slash and no `//`; no `.` and no `..` segment — every non-canonical spelling asks even when
+ *  it resolves to the same file, the stance R-192 holds contained operands to), the dir as the
+ *  file's immediate parent by equality of the resolved segments. The dir is executor data
+ *  resolved lexically — a trailing slash on it is the same dir, and a value that resolves to
+ *  nothing licenses nothing. Everything else, including every other directory, asks. */
+const allowOwnMcpDefs = (ask: RiskAsk, context: RiskContext): boolean => {
+  if (!isTool(ask, ['Read'])) return false;
+  const dir = context.mcpDefsDir;
+  if (dir === undefined || !isAbsolute(dir)) return false;
+  const dirSegments = resolveSegments(dir);
+  if (dirSegments.length === 0) return false;
+  const path = argString(ask, 'file_path');
+  if (path === undefined || !isAbsolute(path)) return false;
+  const segments = path.slice(1).split('/');
+  if (segments.some((segment) => segment.length === 0 || segment === '.' || segment === '..')) return false;
+  const parent = segments.slice(0, -1);
+  const name = segments[segments.length - 1];
+  return (
+    name !== undefined &&
+    isMcpDefsName(name) &&
+    parent.length === dirSegments.length &&
+    dirSegments.every((segment, index) => parent[index] === segment)
+  );
+};
+
 // A pattern or glob walking out of the tree (`../**`) must not ride a contained base path.
 const escapesPattern = (ask: ToolAsk): boolean =>
   ['pattern', 'glob'].some((key) => {
@@ -530,6 +575,7 @@ export const RISK_RULES: readonly RiskRule[] = [
   { id: 'deny-write-outside', verdict: 'needs_human', applies: denyWriteOutside },
   { id: 'allow-own-read', verdict: 'low', applies: allowOwnRead },
   { id: 'allow-own-pages', verdict: 'low', applies: allowOwnPages },
+  { id: 'allow-own-mcp-defs', verdict: 'low', applies: allowOwnMcpDefs },
   { id: 'allow-read-search', verdict: 'low', applies: allowReadSearch },
   { id: 'allow-git-read', verdict: 'low', applies: allowGitRead },
   { id: 'allow-verify', verdict: 'low', applies: allowVerify },

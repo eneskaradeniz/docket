@@ -131,6 +131,25 @@ describe('createCapabilityCatalog', () => {
     expect(catalog.routeKindOf({ provider: 'codex', authMode: 'api_key' })).toBeUndefined();
   });
 
+  it('R-194: mcpDefsDirOf resolves the def\'s descriptor path under the home the launch resolves — the identity dir for a home-rooted CLI, else the machine home', () => {
+    const catalog = createCapabilityCatalog();
+
+    // The home-rooted CLI: the account's identity directory is the home the launch points at, so
+    // the descriptor cache resolves there; without one, the machine home is what the CLI sees.
+    expect(catalog.mcpDefsDirOf({ provider: 'agy', identityDir: '/idents/acct-1' }, '/Users/u')).toBe(
+      '/idents/acct-1/.gemini/antigravity-cli/mcp/docket-pages',
+    );
+    expect(catalog.mcpDefsDirOf({ provider: 'agy' }, '/Users/u')).toBe(
+      '/Users/u/.gemini/antigravity-cli/mcp/docket-pages',
+    );
+    // No home resolves nothing — the risk row stays absent and the ask goes to the human.
+    expect(catalog.mcpDefsDirOf({ provider: 'agy' }, undefined)).toBeUndefined();
+    expect(catalog.mcpDefsDirOf({ provider: 'agy' }, 'home')).toBeUndefined();
+    // A provider whose def names no such cache, and an unknown provider, resolve nothing.
+    expect(catalog.mcpDefsDirOf({ provider: 'claude-code' }, '/Users/u')).toBeUndefined();
+    expect(catalog.mcpDefsDirOf({ provider: 'nope' }, '/Users/u')).toBeUndefined();
+  });
+
   it('A-44: every default names a route kind the registry knows', () => {
     const catalog = createCapabilityCatalog();
 

@@ -83,6 +83,10 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     // OS keyring, so a missing file answers unknown, never logged out. Only presence is read,
     // and the CLI documents no home override, so none is declared.
     authProbe: { args: [], presenceFile: { homeDir: '.gemini/antigravity-cli', file: 'antigravity-oauth-token', absent: 'unknown' } },
+    // The CLI caches each registered MCP server's descriptors (one <slug>.json per tool plus an
+    // instructions.md) in this dir under the home the launch resolves — the same .gemini tree the
+    // login file lives in. The risk context anchors its own-defs read row here (R-194).
+    mcpDefsPath: '.gemini/antigravity-cli/mcp/docket-pages',
     transport: 'stream-json',
     streamDialect: 'agy',
     effortArg: AGY_EFFORT,

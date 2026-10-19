@@ -253,6 +253,14 @@ describe('provider definitions (P-1)', () => {
     rejectsWith({ ...createValidDef(), authProbe: { args: ['status'], parse: 'authenticated-text' } }, 'unknown parse kind');
   });
 
+  it('R-194: isProviderDef accepts a home-relative mcpDefsPath and rejects absolute, tilde, parent-walking and blank spellings', () => {
+    expect(isProviderDef({ ...createValidDef(), mcpDefsPath: 'vendor/mcp/descriptors' })).toBe(true);
+    rejectsWith({ ...createValidDef(), mcpDefsPath: '/vendor/mcp' }, 'absolute path escapes the launch-resolved home join');
+    rejectsWith({ ...createValidDef(), mcpDefsPath: '~/vendor/mcp' }, 'tilde path is never expanded here');
+    rejectsWith({ ...createValidDef(), mcpDefsPath: '../vendor/mcp' }, 'parent segment could walk the risk anchor');
+    rejectsWith({ ...createValidDef(), mcpDefsPath: '' }, 'blank path');
+  });
+
   it('P-56: isProviderDef accepts a presenceFile without homeEnv and with absent unknown, and rejects a bad absent value', () => {
     expect(isProviderDef({ ...createValidDef(), authProbe: { args: [], presenceFile: { homeDir: '.p-x', file: 'token', absent: 'unknown' } } })).toBe(true);
     rejectsWith(

@@ -243,6 +243,12 @@ export interface ProviderDef {
   readonly helpNeedsLogin?: true;
   /** Flag → capability name; enabled only if the help output lists the flag. */
   readonly optionalFlags?: Readonly<Record<string, string>>;
+  /** The CLI's MCP server descriptor cache, as a path under the home the launch resolves (the
+   *  account's identity home for a home-rooted CLI, else the machine home): a run reads the
+   *  descriptors of the servers it may call there, so the auto arm's own-defs risk row (R-194)
+   *  anchors on the resolved directory. Docket never opens the path — it only names it for the
+   *  risk context. Absent for a CLI that keeps no such cache. */
+  readonly mcpDefsPath?: string;
   readonly transport: ProviderTransport;
   /** stream-json only: which line parser decodes this CLI's output. */
   readonly streamDialect?: string;

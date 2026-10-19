@@ -27,6 +27,7 @@ export const createFakeCapabilityCatalog = (
   translations: readonly TranslationRow[] = [],
   channels: readonly ChannelRow[] = [],
   versions: readonly VersionRow[] = [],
+  mcpDefsDirs: Readonly<Record<string, string>> = {},
 ): CapabilityCatalog => ({
   translationTable: () => translations,
   permissionChannels: () => channels,
@@ -55,4 +56,12 @@ export const createFakeCapabilityCatalog = (
   nativeInstructionFiles: (providerId) =>
     routeKinds.filter((kind) => kind.provider === providerId).flatMap((kind) => kind.instructionFiles ?? []),
   instructionFileNames: () => [...new Set(routeKinds.flatMap((kind) => kind.instructionFiles ?? []))],
+  // Scripted per provider as a home-relative path, resolved under the account's identity home
+  // when it has one, else the machine home — the passthrough the executor test observes. The
+  // home-rooted nuance is the real catalog's own rule, tested there.
+  mcpDefsDirOf: (account, machineHome) => {
+    const path = mcpDefsDirs[account.provider];
+    if (path === undefined || machineHome === undefined) return undefined;
+    return `${account.identityDir ?? machineHome}/${path}`;
+  },
 });
