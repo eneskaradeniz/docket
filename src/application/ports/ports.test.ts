@@ -161,7 +161,6 @@ describe('AppDeps', () => {
       | 'mcpListener'
       | 'homeDir'
     >();
-
   });
 
   it('re-exports every section-1 type from the application barrel', () => {

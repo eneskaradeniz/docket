@@ -104,7 +104,6 @@ export interface NodeDepsConfig {
   readonly homeDir?: string;
 }
 
-
 export interface NodeDeps {
   readonly deps: AppDeps;
   readonly repos: RepoRegistry;
@@ -214,7 +213,6 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     mcpListener: config.mcpListener ?? createNoEndpointMcpListenerControl(),
     homeDir: config.homeDir ?? homedir(),
   };
-
 
   const accountDiscovery = createNodeAccountScan(
     accounts,

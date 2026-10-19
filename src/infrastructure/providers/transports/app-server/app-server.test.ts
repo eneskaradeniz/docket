@@ -355,7 +355,6 @@ describe('createAppServerTransport', () => {
     });
   });
 
-
   describe('rate limits (P-14)', () => {
     it('P-14: account/rateLimits/read maps the primary and secondary windows to quota_signal meters with exact resets', async () => {
       const { events } = await runScenario('rate-limits');

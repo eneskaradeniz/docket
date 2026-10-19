@@ -331,4 +331,3 @@ describe('autonomy/risk', () => {
     expect(denied(toolAsk('permissions', { command: `/other/* /workspace/*` }))).toBe(false);
   });
 });
-

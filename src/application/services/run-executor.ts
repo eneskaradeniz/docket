@@ -263,9 +263,10 @@ const decideAsk = async (
     ...(ask !== undefined ? [ask] : []),
   ];
   if (rawProbes.length === 0) return { kind: 'ask-human' };
-  const shouldExpand = typeof deps.homeDir === 'string' && deps.homeDir.startsWith('/');
+  const homeDir = deps.homeDir;
+  const shouldExpand = typeof homeDir === 'string' && homeDir.startsWith('/');
   const probes = shouldExpand
-    ? rawProbes.map((probe) => expandAskHome(probe, deps.homeDir!))
+    ? rawProbes.map((probe) => expandAskHome(probe, homeDir))
     : rawProbes;
   const context = await riskContextOf(deps, input, dataDir);
   // An unreadable chain denies like any other: the level only names the actor, and `manual` is
@@ -284,7 +285,6 @@ const decideAsk = async (
     ...(action !== undefined ? { action } : {}),
   });
 };
-
 
 /** The facts the write-scope verdict reads: the run's working directory, the work order's
  *  worktree, and the repo's docs root and test folders. A fact that cannot be read stays absent,
