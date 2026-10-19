@@ -17,6 +17,7 @@ import type {
   GateVerdict,
   GitLifecycleState,
   PolicyGateApproval,
+  PolicyId,
   Definitions,
   ProjectSlug,
   RepoRef,
@@ -413,6 +414,9 @@ export interface WorkOrderView {
   /** The human gates' decision rows (A-411), in event order: who decided what the audit already
    *  names — a policy approval carries its R-180 evidence, a human decision carries none. */
   readonly decisions: readonly GateDecisionRow[];
+  /** The stage-skip decision rows (A-433), in event order: who decided what the audit already
+   *  names — a policy approval carries its R-190 evidence, a human decision carries none. */
+  readonly skipDecisions?: readonly StageSkipDecisionRow[];
   /** The git lifecycle fold (A-390): branch, pull request and release marks derived purely from
    *  the work order's events; a work order without git events carries the empty fold. */
   readonly git: GitLifecycleState;
@@ -465,6 +469,15 @@ export interface GateDecisionRow {
   readonly decision: 'approved' | 'rejected';
   readonly at: EpochMs;
   readonly approvedByPolicy?: PolicyGateApproval;
+}
+
+/** One decided stage-skip proposal (A-433): the event's own words plus, when the policy
+ *  decided it, the R-190 evidence it relied on — absent on every human decision. */
+export interface StageSkipDecisionRow {
+  readonly stages: readonly StageSlug[];
+  readonly decision: 'approved' | 'rejected';
+  readonly at: EpochMs;
+  readonly decidedByPolicy?: { readonly policy: PolicyId; readonly level: AutonomyLevel };
 }
 
 export type ViewError = 'not_found' | 'definitions_invalid' | 'unknown_flow';
@@ -619,6 +632,31 @@ export const workOrderDecisionRows = (
   return rows;
 };
 
+/** A-433: the decision rows of stage-skip proposals, in event order (newest last) —
+ *  the reply's own words for who decided what, with the policy evidence riding verbatim. */
+export const workOrderStageSkipDecisionRows = (
+  events: readonly WorkOrderEvent[],
+): readonly StageSkipDecisionRow[] => {
+  const rows: StageSkipDecisionRow[] = [];
+  let pending: readonly StageSlug[] | null = null;
+  for (const event of events) {
+    if (event.type === 'stage_skip_proposed') {
+      pending = event.stages;
+    } else if (event.type === 'stage_skip_decided') {
+      if (pending !== null) {
+        rows.push({
+          stages: pending,
+          decision: event.approved ? 'approved' : 'rejected',
+          at: event.at,
+          ...(event.decidedByPolicy === undefined ? {} : { decidedByPolicy: event.decidedByPolicy }),
+        });
+        pending = null;
+      }
+    }
+  }
+  return rows;
+};
+
 /** A-378: the evaluation rows of the flow's `remote_checks` gates, in event order (newest last),
  *  keeping the newest `REMOTE_CHECKS_EVENT_MAX` rows per gate; each row's checks are its event's
  *  recorded evidence, so an evaluation from before the field existed shows no checks. */
@@ -674,6 +712,7 @@ export async function getWorkOrder(
     repoContext: await repoContextOf(deps, record),
     gates: workOrderGateRows(flow, events),
     decisions: workOrderDecisionRows(flow, events),
+    skipDecisions: workOrderStageSkipDecisionRows(events),
     git: deriveGitLifecycle(events),
     ...(await workOrderAutonomyOf(deps, record, loaded.value)),
   });

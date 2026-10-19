@@ -4,6 +4,7 @@ export * from './work-order-changes';
 export * from './autonomy';
 export * from './gates';
 export * from './gate-auto';
+export * from './skip-auto';
 export * from './routing';
 export * from './repos';
 export * from './projects';

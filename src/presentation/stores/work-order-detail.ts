@@ -127,6 +127,16 @@ export interface WorkOrderGateDecisionRow {
   readonly approvedByPolicy?: { readonly policy: string; readonly level: string; readonly passedMachineGates: readonly string[] };
 }
 
+/** One decided stage-skip proposal of the detail reply (A-433, U-360): the decision's own words,
+ *  and — when the stage-skip-auto policy decided it — the policy evidence; a human decision carries
+ *  none. Rows arrive in event order. */
+export interface WorkOrderStageSkipDecisionRow {
+  readonly stages: readonly string[];
+  readonly decision: 'approved' | 'rejected';
+  readonly at: number;
+  readonly decidedByPolicy?: { readonly policy: string; readonly level: string };
+}
+
 export interface WorkOrderDetailView {
   readonly record: WorkOrderDetailRecord;
   readonly state: WorkOrderState;
@@ -144,6 +154,8 @@ export interface WorkOrderDetailView {
   readonly gates?: readonly WorkOrderGateRow[];
   /** The human gates' decision rows (A-411); absent on an older reply reads as no decision shown. */
   readonly decisions?: readonly WorkOrderGateDecisionRow[];
+  /** The stage-skip decision rows (A-433, U-360); absent on an older reply reads as no decisions shown. */
+  readonly skipDecisions?: readonly WorkOrderStageSkipDecisionRow[];
   /** The git lifecycle fold (#1167, A-390): branch, pull request and release marks as the
    *  reply's own derived state — never re-derived here from events; absent on an older reply. */
   readonly git?: GitLifecycleState;
@@ -257,6 +269,8 @@ export interface WorkOrderDetailState {
   readonly view: WorkOrderDetailView | null;
   /** The per-stage gate list (U-4), derived from the view's flow, environments and state. */
   readonly stages: readonly StageGates[];
+  /** The stage-skip decision rows (A-433, U-360). */
+  readonly skipDecisions: readonly WorkOrderStageSkipDecisionRow[];
   /** The open asks of this work order's runs (from `permissions.open`), in the query's order. */
   readonly asks: readonly WorkOrderAskView[];
   /** The failure code of the latest failed query; null while healthy. */
@@ -1036,6 +1050,7 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     loading: false,
     view: null,
     stages: [],
+    skipDecisions: [],
     asks: [],
     problem: null,
     lastOutcome: null,
@@ -1197,6 +1212,7 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
       loading: false,
       view,
       stages,
+      skipDecisions: view.skipDecisions ?? [],
       problem: null,
     });
     if (view.state.status === 'blocked' || isFailedStanding(view)) void loadErrorLine(view);

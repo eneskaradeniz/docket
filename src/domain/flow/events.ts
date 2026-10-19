@@ -62,7 +62,14 @@ export type WorkOrderEvent =
       readonly outputTail?: string }
   | { readonly type: 'start_refused'; readonly at: EpochMs; readonly stage: StageSlug; readonly reason: StartRefusalCode }
   | { readonly type: 'stage_skip_proposed'; readonly at: EpochMs; readonly stages: readonly StageSlug[]; readonly reason: string }
-  | { readonly type: 'stage_skip_decided'; readonly at: EpochMs; readonly approved: boolean }
+  | {
+      readonly type: 'stage_skip_decided';
+      readonly at: EpochMs;
+      readonly approved: boolean;
+      /** R-190: recorded only by a `policy` actor's approval; absent on every older event and on
+       *  every human decision — the fold reads only `approved`, so absence changes nothing. */
+      readonly decidedByPolicy?: { readonly policy: PolicyId; readonly level: AutonomyLevel };
+    }
   // The git lifecycle events the operator's actions append (R-160 … R-164). They never move the
   // machine fold; deriveGitLifecycle walks them beside it.
   | { readonly type: 'branch_pushed'; readonly at: EpochMs; readonly branch: string; readonly head: string }

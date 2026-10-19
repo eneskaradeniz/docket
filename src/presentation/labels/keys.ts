@@ -91,6 +91,11 @@ export const LABEL_KEYS = [
   // level it decided under, and the machine gates the approval relied on.
   'gate.decision.byPolicy',
   'gate.decision.evidence',
+  // Stage-skip decisions on the work-order detail (U-360).
+  'stageSkip.section',
+  'stageSkip.decision.approved',
+  'stageSkip.decision.rejected',
+  'stageSkip.decision.byPolicy',
   // Deploy-gate copy (U-4): protection marker and the read-only promotion chain (E-5).
   'gate.deploy.protected',
   'gate.deploy.prerequisite',
