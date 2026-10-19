@@ -544,7 +544,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
             </div>
 
             {livePaneVisible ? (
-              <div className="grid min-w-0 self-start @[900px]:col-start-2 @[900px]:row-start-1 @[900px]:sticky @[900px]:top-0" data-detail-live>
+              <div className="grid min-w-0 self-start @[900px]:col-start-2 @[900px]:row-start-1 @[900px]:row-span-6 @[900px]:sticky @[900px]:top-0" data-detail-live>
                 <LivePaneScreen store={store.pane} locale={locale} />
               </div>
             ) : null}

@@ -344,3 +344,69 @@ describe('journeys and layout (U-250)', () => {
     expect(audit).toContain('1152×720');
   });
 });
+
+describe('unmerged work-order branch hint (U-363)', () => {
+  it('U-363: unmerged work orders show the branch hint above the footer actions, hidden when count is 0 or absent', () => {
+    const withCountTr = draw(
+      createElement(NewWorkOrderWindow, {
+        open: true,
+        locale: 'tr',
+        projectName: 'Kadife Odoo',
+        flows: boardFlowChoices('standard'),
+        pinnedFlow: PINNED,
+        skipProposal: null,
+        launchProject: 'kadife',
+        activeWorkOrderCount: 2,
+        onClose: () => undefined,
+        onCreated: () => undefined,
+        onCreate: () => Promise.resolve({ ok: true as const }),
+      }),
+    );
+    expect(withCountTr).toContain('data-new-work-order-branch-hint');
+    expect(withCountTr).toContain(t('tr', 'workOrder.new.openBranchesHint'));
+    const hintAt = withCountTr.indexOf('data-new-work-order-branch-hint');
+    const footerAt = withCountTr.indexOf('data-window-footer');
+    expect(hintAt).toBeGreaterThan(-1);
+    expect(footerAt).toBeGreaterThan(hintAt);
+
+    const withCountEn = draw(
+      createElement(NewWorkOrderWindow, {
+        open: true,
+        locale: 'en',
+        projectName: 'Kadife Odoo',
+        flows: boardFlowChoices('standard'),
+        pinnedFlow: PINNED,
+        skipProposal: null,
+        launchProject: 'kadife',
+        activeWorkOrderCount: 1,
+        onClose: () => undefined,
+        onCreated: () => undefined,
+        onCreate: () => Promise.resolve({ ok: true as const }),
+      }),
+    );
+    expect(withCountEn).toContain(t('en', 'workOrder.new.openBranchesHint'));
+
+    const zeroCount = draw(
+      createElement(NewWorkOrderWindow, {
+        open: true,
+        locale: 'tr',
+        projectName: 'Kadife Odoo',
+        flows: boardFlowChoices('standard'),
+        pinnedFlow: PINNED,
+        skipProposal: null,
+        launchProject: 'kadife',
+        activeWorkOrderCount: 0,
+        onClose: () => undefined,
+        onCreated: () => undefined,
+        onCreate: () => Promise.resolve({ ok: true as const }),
+      }),
+    );
+    expect(zeroCount).not.toContain('data-new-work-order-branch-hint');
+
+    expect(workOrder()).not.toContain('data-new-work-order-branch-hint');
+
+    const boardSrc = source('board.tsx');
+    expect(boardSrc).toContain('activeWorkOrderCount');
+  });
+});
+

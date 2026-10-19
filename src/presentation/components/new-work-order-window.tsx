@@ -190,6 +190,7 @@ export interface NewWorkOrderWindowProps {
   readonly pinnedFlow: PinnedFlowView | null;
   readonly skipProposal: StageSkipProposalCard | null;
   readonly launchProject: string | null;
+  readonly activeWorkOrderCount?: number;
   readonly onClose: () => void;
   readonly onCreated: (title: string) => void;
   readonly onCreate: (intent: {
@@ -210,6 +211,7 @@ export function NewWorkOrderWindow({
   pinnedFlow,
   skipProposal,
   launchProject,
+  activeWorkOrderCount,
   onClose,
   onCreated,
   onCreate,
@@ -395,6 +397,11 @@ export function NewWorkOrderWindow({
         {form.failure !== null ? (
           <p role="alert" className="text-[13px] text-error">
             {t(locale, failureKey(form.failure))}
+          </p>
+        ) : null}
+        {activeWorkOrderCount !== undefined && activeWorkOrderCount > 0 ? (
+          <p data-new-work-order-branch-hint="" className="m-0 text-[0.75rem] text-inkdim">
+            {t(locale, 'workOrder.new.openBranchesHint')}
           </p>
         ) : null}
       </div>

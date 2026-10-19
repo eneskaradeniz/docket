@@ -564,6 +564,7 @@ export const LABEL_KEYS = [
   'workOrder.new.close',
   'workOrder.new.descriptionLabel',
   'workOrder.new.descriptionHint',
+  'workOrder.new.openBranchesHint',
   'workOrder.flowStrip.label',
   'workOrder.flowStrip.version',
   'workOrder.flowStrip.gateCount',
