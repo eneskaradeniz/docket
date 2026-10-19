@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
@@ -203,6 +204,31 @@ const treeOf = (repos: readonly string[]): ProjectTree =>
         },
       ];
 
+/** Two projects, one repo each — the dogfood walk's shape: the tree's first repo belongs to a
+ *  project the operator may not be looking at. */
+const treeOfProjects = (): ProjectTree => [
+  {
+    project: 'p1',
+    name: 'Alpha',
+    firstRepo: 'a',
+    repos: [{ repo: 'a', name: 'a', first: true, active: 0, running: 0, waiting: 0, status: 'idle' }],
+    active: 0,
+    running: 0,
+    waiting: 0,
+    status: 'idle',
+  },
+  {
+    project: 'p2',
+    name: 'Beta',
+    firstRepo: 'b',
+    repos: [{ repo: 'b', name: 'b', first: true, active: 0, running: 0, waiting: 0, status: 'idle' }],
+    active: 0,
+    running: 0,
+    waiting: 0,
+    status: 'idle',
+  },
+];
+
 interface PanelWorld {
   readonly store: SettingsStore;
   readonly repoRelink: RepoRelinkStatusStore;
@@ -214,6 +240,7 @@ interface PanelWorld {
 const panelOver = (
   answer: (query: Query) => unknown,
   command: (cmd: Command) => Promise<CommandResult> = async () => ({ ok: true }),
+  repoFocus: string | null = null,
 ): PanelWorld => {
   const api: Pick<Api, 'query' | 'command'> = {
     query: async (query) => answer(query),
@@ -262,6 +289,7 @@ const panelOver = (
         locale: 'tr',
         localeStore,
         repoRelink,
+        repoFocus,
       }),
     );
   return { store, repoRelink, html };
@@ -501,5 +529,83 @@ describe('Depo ayarları relink banner (U-312, U-313)', () => {
     await repoRelink.relinkAtPath('01HZX0000000000000000000A1', '/gone');
     const out = html();
     expect(out.match(/Klasör bulunamadı/g)?.length).toBeGreaterThan(1);
+  });
+});
+
+// ——— Depo ayarları opens on the selection (U-367, U-368) ———————————————————————————————————
+// The repoFocus wiring lives in composition and effects a markup test cannot see (the panel's
+// load effect, the shell's derivation), so those are read off the sources the way the shell's own
+// wiring test reads them; the switcher itself is asserted on the real markup.
+
+const RAW = import.meta.glob(['./settings.tsx', './shell.tsx'], { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+const settingsSource = Object.entries(RAW).find(([path]) => path.endsWith('settings.tsx'))?.[1] ?? '';
+const shellSource = Object.entries(RAW).find(([path]) => path.endsWith('shell.tsx'))?.[1] ?? '';
+
+describe('Depo ayarları opens on the selection (U-367, U-368)', () => {
+  it('U-367: the panel passes the selection’s repo into load — the fallback stays the store’s own', () => {
+    expect(settingsSource).toContain('repo.load(repoFocus ?? undefined)');
+  });
+
+  it('U-367: the shell derives repoFocus from the open work order, the selection’s repo, and the selected project’s first repo, and hands it to the panel', () => {
+    expect(shellSource).toContain('firstRepoOfProject(');
+    expect(shellSource).toContain('repoFocus={repoFocus}');
+  });
+
+  it('U-367: with a repoFocus the store opens that project’s repo, not the tree’s first', async () => {
+    const world = panelOver(
+      (query) => {
+        if (query.type === 'project.tree') return treeOfProjects();
+        if (query.type === 'repo.flow') return { ok: true, flow: sampleFlow() };
+        if (query.type === 'settings.accounts') return { accounts: [], bindings: [] };
+        return { ok: false, code: 'not_found' };
+      },
+      async () => ({ ok: true }),
+      'b',
+    );
+    await world.store.repoSettings.load('b');
+    expect(world.store.repoSettings.state().repo).toBe('b');
+    expect(world.store.repoSettings.state().ownerProject).toBe('p2');
+  });
+
+  it('U-368: several projects draw the project switcher beside the tabs with the owner selected', async () => {
+    const world = panelOver((query) => {
+      if (query.type === 'project.tree') return treeOfProjects();
+      if (query.type === 'repo.flow') return { ok: true, flow: sampleFlow() };
+      if (query.type === 'settings.accounts') return { accounts: [], bindings: [] };
+      return { ok: false, code: 'not_found' };
+    });
+    await world.store.repoSettings.load('b');
+    const out = world.html();
+    expect(out).toContain('data-repo-project-select');
+    expect(out).toContain('aria-label="Proje"');
+    expect(out).toContain('>Alpha<');
+    expect(out).toContain('>Beta<');
+    expect(out).toContain('<option value="p2" selected="">');
+  });
+
+  it('U-368: a failed flow keeps the switcher on screen — a missing folder is no dead end', async () => {
+    const world = panelOver((query) => {
+      if (query.type === 'project.tree') return treeOfProjects();
+      if (query.type === 'repo.flow') return { ok: false, code: 'not_found' };
+      return { ok: false, code: 'not_found' };
+    });
+    await world.store.repoSettings.load('a');
+    const out = world.html();
+    expect(out).toContain('data-repo-error');
+    expect(out).toContain('data-repo-project-select');
+    expect(out).toContain('>Alpha<');
+    expect(out).toContain('>Beta<');
+  });
+
+  it('U-368: a single-project tree draws no switcher — one repo draws no navigation at all', async () => {
+    const world = panelOver((query) => {
+      if (query.type === 'project.tree') return treeOf(['web']);
+      if (query.type === 'repo.flow') return { ok: true, flow: sampleFlow() };
+      return { ok: false, code: 'not_found' };
+    });
+    await world.store.repoSettings.load();
+    const out = world.html();
+    expect(out).not.toContain('data-repo-project-select');
+    expect(out).not.toContain('role="tablist"');
   });
 });

@@ -76,6 +76,8 @@ interface FakeApi extends Pick<Api, 'query' | 'command'> {
   setTree(tree: ProjectTree): void;
   setAutonomyRead(read: unknown): void;
   setAutonomyResult(result: CommandResult): void;
+  /** Makes `repo.flow` fail for one repo slug — the missing-folder world. */
+  setFlowFailure(repo: string | null): void;
 }
 
 const fakeApi = (flow: RepoFlow, tree: ProjectTree): FakeApi => {
@@ -85,6 +87,7 @@ const fakeApi = (flow: RepoFlow, tree: ProjectTree): FakeApi => {
   let currentTree = tree;
   let autonomyRead: unknown = null;
   let autonomyResult: CommandResult = { ok: true };
+  let flowFailure: string | null = null;
   return {
     queries,
     commands,
@@ -100,10 +103,16 @@ const fakeApi = (flow: RepoFlow, tree: ProjectTree): FakeApi => {
     setAutonomyResult: (next) => {
       autonomyResult = next;
     },
+    setFlowFailure: (repo) => {
+      flowFailure = repo;
+    },
     query: async (query) => {
       queries.push(query);
       if (query.type === 'project.tree') return currentTree;
-      if (query.type === 'repo.flow') return { ok: true, flow: currentFlow };
+      if (query.type === 'repo.flow') {
+        if (flowFailure !== null && query.repo === flowFailure) return { ok: false, code: 'not_found' };
+        return { ok: true, flow: currentFlow };
+      }
       if (query.type === 'settings.accounts') return { accounts: [], bindings: [] };
       if (query.type === 'repo.autonomy') return autonomyRead;
       return { ok: false, code: 'not_found' };
@@ -169,6 +178,31 @@ const multiRepoTree: ProjectTree = [
       { repo: 'api', name: 'api', first: true, active: 0, running: 0, waiting: 0, status: 'idle' },
       { repo: 'mobile', name: 'mobile', first: false, active: 0, running: 0, waiting: 0, status: 'idle' },
     ],
+    active: 0,
+    running: 0,
+    waiting: 0,
+    status: 'idle',
+  },
+];
+
+/** Two projects, one repo each — the dogfood walk's shape: several projects in one tree, each its
+ *  own repo, so the tree's first repo is never automatically the project being looked at. */
+const twoProjectTree: ProjectTree = [
+  {
+    project: 'p1',
+    name: 'Alpha',
+    firstRepo: 'a',
+    repos: [{ repo: 'a', name: 'a', first: true, active: 0, running: 0, waiting: 0, status: 'idle' }],
+    active: 0,
+    running: 0,
+    waiting: 0,
+    status: 'idle',
+  },
+  {
+    project: 'p2',
+    name: 'Beta',
+    firstRepo: 'b',
+    repos: [{ repo: 'b', name: 'b', first: true, active: 0, running: 0, waiting: 0, status: 'idle' }],
     active: 0,
     running: 0,
     waiting: 0,
@@ -554,6 +588,61 @@ describe('U-336: the repo and global ceilings', () => {
     await store.setBudget(50);
 
     expect(store.state().autonomy).toEqual(standing);
+  });
+});
+
+describe('Depo ayarları opens on the selection (U-367, U-368)', () => {
+  it('U-367: load with the selected project’s repo opens it with that project’s tabs and owner', async () => {
+    const { store } = storeWith(sampleFlow(), twoProjectTree);
+    await store.load('b');
+    expect(store.state().repo).toBe('b');
+    expect(store.state().ownerProject).toBe('p2');
+    expect(store.state().repos.map((tab) => tab.repo)).toEqual(['b']);
+    // The switcher's options are every project with repos, in the tree's own order.
+    expect(store.state().projects.map((option) => option.project)).toEqual(['p1', 'p2']);
+    expect(store.state().projects.map((option) => option.name)).toEqual(['Alpha', 'Beta']);
+  });
+
+  it('U-367: no selection keeps the tree’s first repo and its owner', async () => {
+    const { store } = storeWith(sampleFlow(), twoProjectTree);
+    await store.load();
+    expect(store.state().repo).toBe('a');
+    expect(store.state().ownerProject).toBe('p1');
+    expect(store.state().projects).toHaveLength(2);
+  });
+
+  it('U-368: a repo whose flow fails still lets another project be chosen, and its repo loads', async () => {
+    const { store, api } = storeWith(sampleFlow(), twoProjectTree);
+    api.setFlowFailure('a');
+    await store.load('a');
+    // The dead end the walk hit: the flow cannot be read, nothing is loaded…
+    expect(store.state().problem).toBe('not_found');
+    expect(store.state().stored).toBeNull();
+    // …but the other project is still offered and choosing it loads its repo clean.
+    await store.selectProject('p2');
+    expect(store.state().repo).toBe('b');
+    expect(store.state().problem).toBeNull();
+    expect(store.state().stored).not.toBeNull();
+    expect(store.state().ownerProject).toBe('p2');
+    expect(store.state().repos.map((tab) => tab.repo)).toEqual(['b']);
+  });
+
+  it('U-368: switching to the project already loaded is nothing, and an unknown project is ignored', async () => {
+    const { store } = storeWith(sampleFlow(), twoProjectTree);
+    await store.load('b');
+    await store.selectProject('p2');
+    expect(store.state().repo).toBe('b');
+    await store.selectProject('ghost');
+    expect(store.state().repo).toBe('b');
+  });
+
+  it('U-368: a single-project tree offers one project only — no switcher, tabs as before', async () => {
+    const { store } = storeWith(sampleFlow(), multiRepoTree);
+    await store.load('api');
+    expect(store.state().projects).toHaveLength(1);
+    expect(store.state().ownerProject).toBe('p1');
+    expect(store.state().singleRepo).toBe(false);
+    expect(store.state().repos).toHaveLength(2);
   });
 });
 

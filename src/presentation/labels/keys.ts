@@ -805,6 +805,7 @@ export const LABEL_KEYS = [
   'repoSettings.discard.exit',
   'repoSettings.discard.stay',
   'repoSettings.repos.label',
+  'repoSettings.projects.label',
   'repoSettings.empty.title',
   'repoSettings.empty.guidance',
   'repoSettings.empty.link',
