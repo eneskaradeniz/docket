@@ -334,10 +334,27 @@ const GIT_READ_SUBCOMMANDS: readonly string[] = [
 const GIT_BRANCH_FLAGS: readonly string[] = ['-v', '-vv', '-a', '-r', '-l', '--list', '--all', '--no-color'];
 const GIT_REMOTE_FLAGS: readonly string[] = ['-v', '--verbose'];
 
-// Options that write a file (--output), read outside the tree (--no-index, --contents). git accepts
-// any unambiguous abbreviation of a long option, so a name that is a prefix of one of these is held
-// back as well; an ambiguous prefix is a git error, which costs nothing.
-const GIT_BANNED_OPTIONS: readonly string[] = ['--output', '--no-index', '--contents'];
+// Options that write a file (--output), read a file named by the caller (--no-index, --contents,
+// --exclude-from), run a configured driver (--ext-diff, --textconv) or re-aim git (--git-dir,
+// --work-tree). git accepts any unambiguous abbreviation of a long option, so a name that is a
+// prefix of one of these is held back as well; an ambiguous prefix is a git error, which costs
+// nothing. The `--no-ext-diff` and `--no-textconv` spellings switch drivers off and stay low.
+const GIT_BANNED_OPTIONS: readonly string[] = [
+  '--output',
+  '--no-index',
+  '--contents',
+  '--ext-diff',
+  '--textconv',
+  '--exclude-from',
+  '--git-dir',
+  '--work-tree',
+];
+
+// Short options that name a file: `-O<orderfile>` and `-X <file>` read one, and `-o <file>` is the
+// output spelling — except in ls-files, where `-o` is `--others` and only lists. Banned joined to
+// their value or standing apart from it.
+const isBannedGitShortOption = (token: string, subcommand: string): boolean =>
+  token.startsWith('-O') || token.startsWith('-X') || (subcommand !== 'ls-files' && token.startsWith('-o'));
 
 const isBannedGitOption = (token: string): boolean => {
   if (GIT_BANNED_OPTIONS.some((banned) => token.startsWith(banned))) return true;
@@ -368,9 +385,12 @@ const isGitReadCommand = (command: string, context: RiskContext): boolean => {
   const rest = tail.slice(1);
   if (GIT_READ_SUBCOMMANDS.includes(subcommand)) {
     // diff and show can write their patch out with --output, --no-index diffs two filesystem paths
-    // and blame --contents reads one — all banned in every spelling, and so is any positional
-    // operand that names a path outside the worktree.
-    return rest.every((token) => !isBannedGitOption(token) && !isOutsideGitOperand(token));
+    // and blame --contents reads one, a diff driver runs a configured command — all banned in every
+    // spelling, and so is any positional operand that names a path outside the worktree.
+    return rest.every(
+      (token) =>
+        !isBannedGitOption(token) && !isBannedGitShortOption(token, subcommand) && !isOutsideGitOperand(token),
+    );
   }
   if (subcommand === 'branch') return rest.every((token) => GIT_BRANCH_FLAGS.includes(token));
   if (subcommand === 'remote') return rest.every((token) => GIT_REMOTE_FLAGS.includes(token));

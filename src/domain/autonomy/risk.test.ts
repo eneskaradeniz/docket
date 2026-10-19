@@ -227,6 +227,57 @@ describe('autonomy/risk', () => {
     }
   });
 
+  it('R-175: diff drivers, external file reads and git re-aiming options ask; their switched-off spellings stay low', () => {
+    const bash = (command: string): RiskAsk => toolAsk('Bash', { command });
+    // A configured driver runs a command: --ext-diff and --textconv ask alone and beside -p.
+    for (const command of [
+      'git diff --ext-diff',
+      'git log -p --ext-diff',
+      'git show --textconv HEAD',
+      'git diff --textconv',
+      'git blame --textconv file',
+      'git log -p --textconv',
+      'git diff --ext-d',
+      'git log --textc -p',
+    ]) {
+      expect(asks(bash(command)), command).toBe(true);
+    }
+    // Options that read a caller-named file, joined or apart from the value.
+    for (const command of [
+      'git diff -O/etc/x',
+      'git diff -O /etc/x',
+      'git diff -O x',
+      'git ls-files --exclude-from=/etc/x',
+      'git ls-files --exclude-from /etc/x',
+      'git ls-files --exclude-from=x',
+      'git ls-files -X /etc/x',
+      'git diff -o x.patch',
+      'git show -ox.patch',
+    ]) {
+      expect(asks(bash(command)), command).toBe(true);
+    }
+    // Re-aiming git: a global option after -C is no known shape, and after the verb it asks too.
+    for (const command of [
+      'git -C . -c core.pager=x log',
+      'git -c core.pager=x log',
+      'git log --git-dir=/etc',
+      'git log --git-dir /etc',
+      'git status --work-tree=/etc',
+      'git --git-dir=/etc log',
+    ]) {
+      expect(asks(bash(command)), command).toBe(true);
+    }
+    // The switched-off spellings and the plain listing forms keep their low verdict.
+    for (const command of [
+      'git diff --no-ext-diff',
+      'git log -p --no-textconv',
+      'git ls-files -o --exclude-standard',
+      'git diff --cached --stat',
+    ]) {
+      expect(lowRule(bash(command)), command).toBe('allow-git-read');
+    }
+  });
+
   it('R-176: verify row — exact equality after trim only; the floor still wins', () => {
     const ctx = context({ verificationCommands: ['npm run typecheck && npm test', 'npm test'] });
     expect(lowRule(toolAsk('Bash', { command: 'npm run typecheck && npm test' }), ctx)).toBe('allow-verify');
