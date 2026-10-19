@@ -323,17 +323,22 @@ const isMcpDefsName = (name: string): boolean =>
   name === 'instructions.md' || MCP_DEFS_JSON_NAME.test(name);
 
 /** `allow-own-mcp-defs` (R-194): a Read of exactly one descriptor file directly under the
- *  context's dir — absolute spelling, no `..` segment (a walk that resolves back inside asks, the
- *  stance R-192 holds contained operands to), the dir as the file's immediate parent by equality
- *  of the resolved segments. Everything else, including every other directory, asks. */
+ *  context's dir — absolute and canonical in its spelling (no empty segment, so no trailing
+ *  slash and no `//`; no `.` and no `..` segment — every non-canonical spelling asks even when
+ *  it resolves to the same file, the stance R-192 holds contained operands to), the dir as the
+ *  file's immediate parent by equality of the resolved segments. The dir is executor data
+ *  resolved lexically — a trailing slash on it is the same dir, and a value that resolves to
+ *  nothing licenses nothing. Everything else, including every other directory, asks. */
 const allowOwnMcpDefs = (ask: RiskAsk, context: RiskContext): boolean => {
   if (!isTool(ask, ['Read'])) return false;
   const dir = context.mcpDefsDir;
   if (dir === undefined || !isAbsolute(dir)) return false;
-  const path = argString(ask, 'file_path');
-  if (path === undefined || !isAbsolute(path) || path.split('/').includes('..')) return false;
   const dirSegments = resolveSegments(dir);
-  const segments = resolveSegments(path);
+  if (dirSegments.length === 0) return false;
+  const path = argString(ask, 'file_path');
+  if (path === undefined || !isAbsolute(path)) return false;
+  const segments = path.slice(1).split('/');
+  if (segments.some((segment) => segment.length === 0 || segment === '.' || segment === '..')) return false;
   const parent = segments.slice(0, -1);
   const name = segments[segments.length - 1];
   return (

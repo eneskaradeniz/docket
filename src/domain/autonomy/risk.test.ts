@@ -604,5 +604,19 @@ describe('autonomy/risk', () => {
     expect(asks(toolAsk('Edit', { file_path: `${DIR}/instructions.md` }), fed())).toBe(true);
     // The floor still runs first: a secret-shaped descriptor name never rides the row.
     expect(asks(toolAsk('Read', { file_path: `${DIR}/credentials.json` }), fed())).toBe(true);
+    expect(asks(toolAsk('Read', { file_path: `${DIR}/.env.json` }), fed())).toBe(true);
+    expect(asks(toolAsk('Read', { file_path: `${DIR}/id_rsa.json` }), fed())).toBe(true);
+    // Canonical spelling only: a trailing slash (it names no file), an empty `//` segment and a
+    // `.` segment all ask even when they resolve to the same file.
+    expect(asks(toolAsk('Read', { file_path: `${DIR}/page_publish.json/` }), fed())).toBe(true);
+    expect(asks(toolAsk('Read', { file_path: `${DIR}/credentials.json/` }), fed())).toBe(true);
+    expect(asks(toolAsk('Read', { file_path: `${DIR}//page_publish.json` }), fed())).toBe(true);
+    expect(asks(toolAsk('Read', { file_path: `${DIR}/./page_publish.json` }), fed())).toBe(true);
+    // A shell read of a descriptor asks: the row licenses the Read tool only.
+    expect(asks(toolAsk('Bash', { command: `cat ${DIR}/page_publish.json` }), fed())).toBe(true);
+    // The dir side is executor data, resolved lexically: a trailing slash on it is the same dir,
+    // and a value that resolves to nothing (the root) licenses nothing.
+    expect(lowRule(toolAsk('Read', { file_path: `${DIR}/instructions.md` }), context({ mcpDefsDir: `${DIR}/` }))).toBe('allow-own-mcp-defs');
+    expect(asks(toolAsk('Read', { file_path: '/instructions.md' }), context({ mcpDefsDir: '/' }))).toBe(true);
   });
 });

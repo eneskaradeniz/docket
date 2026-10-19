@@ -151,9 +151,10 @@ export function isProviderDef(value: unknown): value is ProviderDef {
     return false;
   }
   // Home-relative by contract, like the probe paths: an absolute or tilde spelling would defeat
-  // the join the catalog does under the launch-resolved home.
+  // the join the catalog does under the launch-resolved home, and a `..` segment could walk the
+  // risk row's anchor out of the vendor tree.
   const mcpDefsPath = value['mcpDefsPath'];
-  if (mcpDefsPath !== undefined && !(isNonEmptyString(mcpDefsPath) && !mcpDefsPath.startsWith('/') && !mcpDefsPath.startsWith('~'))) {
+  if (mcpDefsPath !== undefined && !(isNonEmptyString(mcpDefsPath) && !mcpDefsPath.startsWith('/') && !mcpDefsPath.startsWith('~') && !mcpDefsPath.split('/').includes('..'))) {
     return false;
   }
   if (!TRANSPORTS.includes(value['transport'] as ProviderTransport)) return false;
