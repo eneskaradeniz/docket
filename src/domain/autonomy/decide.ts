@@ -1,7 +1,8 @@
 // autonomy/decide.ts — decidePermission, the axis-1 permission policy (D-10; the domain addendum
 // of docs/v2/domain.md): who may answer a tool ask. The carve-out asks the human at every level
-// before the risk table is consulted (R-168); no level below auto auto-answers; auto allows
-// exactly the asks the risk-rule table rates low, and the allow names the deciding policy. Pure —
+// before the risk table is consulted (R-168); no level below auto auto-answers, save the one
+// publish row R-191 opens to `balanced`; auto allows exactly the asks the risk-rule table rates
+// low, and the allow names the deciding policy. Pure —
 // a decision is made under the level it is given and never rewritten (R-170: the executor
 // re-resolves the chain per ask).
 import type { AutonomyLevel, PolicyId, UserOnlyGate } from '../shared';
@@ -25,6 +26,11 @@ export type PermissionDecision =
 
 const ASK_HUMAN: PermissionDecision = { kind: 'ask-human' };
 
+/** The one row `balanced` may answer too (R-191): the run's own page publish pair, where the
+ *  level's "deterministic rules only" promise holds by name alone — publishing a page is not
+ *  approving it, and the approval itself stays R-168's carve-out. */
+const BALANCED_RULES: readonly RiskRuleId[] = ['allow-own-pages'];
+
 export function decidePermission(input: {
   readonly level: AutonomyLevel;
   readonly ask: RiskAsk;
@@ -41,9 +47,13 @@ export function decidePermission(input: {
   if (verdict.verdict === 'deny') {
     return { kind: 'deny-by-policy', policy: PERMISSION_RULES_POLICY, level: input.level, rule: verdict.rule };
   }
-  // `balanced` reaches here only as defense in depth — R-167 resolves it to `manual` before it
-  // can arrive; no level below auto may auto-allow.
-  if (input.level !== 'auto') return ASK_HUMAN;
+  // `balanced` reaches here only as defense in depth — R-157, clause 2, resolves it to `manual`
+  // before it can arrive — and R-191 opens exactly one row to it. Every other low row keeps the
+  // auto-only gate.
+  const levelLicenses =
+    input.level === 'auto' ||
+    (input.level === 'balanced' && verdict.verdict === 'low' && BALANCED_RULES.includes(verdict.rule));
+  if (!levelLicenses) return ASK_HUMAN;
   return verdict.verdict === 'low'
     ? { kind: 'allow-by-policy', policy: PERMISSION_RULES_POLICY, level: input.level }
     : ASK_HUMAN;

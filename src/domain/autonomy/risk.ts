@@ -32,6 +32,7 @@ export type RiskRuleId =
   | 'deny-write-git-internals'
   | 'deny-write-outside'
   | 'allow-own-read'
+  | 'allow-own-pages'
   | 'allow-read-search'
   | 'allow-git-read'
   | 'allow-verify'
@@ -274,6 +275,19 @@ const denyWriteOutside = (ask: RiskAsk, context: RiskContext): boolean =>
 
 const allowOwnRead = (ask: RiskAsk): boolean => isTool(ask, ['docket_get', 'docket_search']);
 
+/** The run's own page publish pair (R-191): bare, and as Docket's own pages server spells it —
+ *  the two names an ask for them reaches the executor under. Publishing a page is not approving
+ *  it, so the pair rides the table; a foreign server's page_publish or a longer name is not the
+ *  pair, and `isTool` matches the whole string. */
+const OWN_PAGE_TOOLS: readonly string[] = [
+  'page_publish',
+  'page_update',
+  'mcp__docket-pages__page_publish',
+  'mcp__docket-pages__page_update',
+];
+
+const allowOwnPages = (ask: RiskAsk): boolean => isTool(ask, OWN_PAGE_TOOLS);
+
 // A pattern or glob walking out of the tree (`../**`) must not ride a contained base path.
 const escapesPattern = (ask: ToolAsk): boolean =>
   ['pattern', 'glob'].some((key) => {
@@ -408,6 +422,7 @@ export const RISK_RULES: readonly RiskRule[] = [
   { id: 'deny-write-git-internals', verdict: 'needs_human', applies: denyWriteGitInternals },
   { id: 'deny-write-outside', verdict: 'needs_human', applies: denyWriteOutside },
   { id: 'allow-own-read', verdict: 'low', applies: allowOwnRead },
+  { id: 'allow-own-pages', verdict: 'low', applies: allowOwnPages },
   { id: 'allow-read-search', verdict: 'low', applies: allowReadSearch },
   { id: 'allow-git-read', verdict: 'low', applies: allowGitRead },
   { id: 'allow-verify', verdict: 'low', applies: allowVerify },

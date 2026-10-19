@@ -2012,3 +2012,9 @@ Added 2026-10-19, #1320; the application rule is A-436.
   1. (live screen) In `LivePaneScreen`, an open permission ask for `submit_verdict` or `mcp__docket-pages__submit_verdict` formats its tool name through `detail.zone.tool.submitVerdict` (`Docket: inceleme kararı` / `Docket: review verdict`) rather than raw tool wire names.
   2. (settings screen & store) `RepoAutonomyRead` exposes `budget?: { readonly amountUsd: number; readonly warnPercent: number }`. In `SettingsPanel` under `Depo ayarları`, when `repoState.autonomy !== null`, a clean card (`data-repo-budget`) renders title (`repoSettings.budget.title`), hint (`repoSettings.budget.hint`), a controlled number input (`data-repo-budget-input`, initialized from `repoState.autonomy.budget?.amountUsd`), a save action (`data-repo-budget-save`, calling `setBudget(amountUsd)`), and when a budget is set, a clear action (`data-repo-budget-clear`, calling `setBudget(null)`).
 
+
+## Page publish tool labels in ask cards (U-366)
+
+Added 2026-10-19, #1324 (dogfood walk 2); the domain rule is R-191, the application rule A-437.
+
+- **U-366** (added 2026-10-19, #1324) Both surfaces that print a permission ask's tool name format Docket's own page tools in words: in `LivePaneScreen` (`formatAskTool`) and the work-order permission card (`permissionToolTitle` in `detail-decision-card.tsx`), `page_publish` and `page_update` — bare and as `mcp__docket-pages__`-prefixed — render through `detail.zone.tool.pagePublish` / `detail.zone.tool.pageUpdate` (`Docket: sayfa yayınla` / `Docket: sayfa güncelle`, `Docket: publish page` / `Docket: update page`) instead of the raw wire name; every other tool keeps the exact name the agent asked with.
