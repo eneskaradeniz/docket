@@ -243,6 +243,36 @@ const expandAskHome = (ask: RiskAsk, homeDir: string): RiskAsk => {
   return { ...ask, arguments: expandedArgs };
 };
 
+const MAC_SYMLINK_PAIRS: readonly (readonly [string, string])[] = [
+  ['/var/', '/private/var/'],
+  ['/tmp/', '/private/tmp/'],
+  ['/etc/', '/private/etc/'],
+];
+
+const alignMacSymlinkString = (value: string, roots: readonly (string | undefined)[]): string => {
+  let out = value;
+  for (const root of roots) {
+    if (root === undefined) continue;
+    for (const [shortPrefix, privatePrefix] of MAC_SYMLINK_PAIRS) {
+      if (root.startsWith(shortPrefix) && out.includes(privatePrefix)) {
+        out = out.split(privatePrefix).join(shortPrefix);
+      } else if (root.startsWith(privatePrefix) && out.includes(shortPrefix) && !out.includes(privatePrefix)) {
+        out = out.split(shortPrefix).join(privatePrefix);
+      }
+    }
+  }
+  return out;
+};
+
+const alignAskRoots = (ask: RiskAsk, roots: readonly (string | undefined)[]): RiskAsk => {
+  if (ask.kind !== 'tool' || ask.arguments === undefined) return ask;
+  const alignedArgs: Record<string, unknown> = {};
+  for (const [key, val] of Object.entries(ask.arguments)) {
+    alignedArgs[key] = typeof val === 'string' ? alignMacSymlinkString(val, roots) : val;
+  }
+  return { ...ask, arguments: alignedArgs };
+};
+
 /** The axis-1 decision for one ask: the level is re-resolved per ask (R-170 — a level change
  *  governs asks made after it only), and anything unreadable or unmappable fails closed to the
  *  human. An invalid stored level surfaces through its own typed reads, never as an audit entry.
@@ -265,10 +295,11 @@ const decideAsk = async (
   if (rawProbes.length === 0) return { kind: 'ask-human' };
   const homeDir = deps.homeDir;
   const shouldExpand = typeof homeDir === 'string' && homeDir.startsWith('/');
-  const probes = shouldExpand
-    ? rawProbes.map((probe) => expandAskHome(probe, homeDir))
-    : rawProbes;
   const context = await riskContextOf(deps, input, dataDir);
+  const roots = [context.worktreeRoot, context.cwd, context.dataDir];
+  const probes = (shouldExpand
+    ? rawProbes.map((probe) => expandAskHome(probe, homeDir))
+    : rawProbes).map((probe) => alignAskRoots(probe, roots));
   // An unreadable chain denies like any other: the level only names the actor, and `manual` is
   // the fail-closed stand-in that can never allow.
   const level = autonomy.ok ? autonomy.value.level : 'manual';
@@ -278,9 +309,10 @@ const decideAsk = async (
   }
   if (!autonomy.ok || ask === undefined) return { kind: 'ask-human' };
   const action = TOOL_GATE_ACTIONS[event.tool];
+  const alignedAsk = alignAskRoots(shouldExpand ? expandAskHome(ask, homeDir) : ask, roots);
   return decidePermission({
     level: autonomy.value.level,
-    ask,
+    ask: alignedAsk,
     context,
     ...(action !== undefined ? { action } : {}),
   });
@@ -306,9 +338,9 @@ const writeScopeContextOf = async (deps: ExecuteDeps, input: ExecuteRunInput): P
  *  a `run.updated` for the subscribed stores. */
 export type RunEventNotify = (runId: RunId) => void;
 
-/** The push channel's feed for the run-finished append: one call after the executor writes
- *  `run_finished` to the work order's log. That append happens outside any command, so without
- *  this hook nothing would ever signal the work-order change the views re-query on. */
+/** The push channel's feed for run lifecycle appends: called after the executor writes
+ *  `run_started` and `run_finished` to the work order's log. Those appends happen outside any
+ *  command, so without this hook nothing would ever signal the work-order change the views re-query on. */
 export type WorkOrdersChangedNotify = () => void;
 
 // The executor runs unattended on the dispatcher's behalf; its audit entries name the component.
@@ -917,6 +949,7 @@ async function driveRun(
   });
   // From here the run is answerable through the board, until its record closes.
   board?.register(runId);
+  workOrdersChanged?.();
 
   // A-57: checkpoint cadence state — event-boundary + terminal only, no timer exists; the stream
   // is the only clock application may read, so the interval is measured against the executor's
@@ -1035,11 +1068,16 @@ async function driveRun(
         // outside the role's write scope is denied here, before the board can be shown an ask or
         // the risk table consulted. The denial is a tool answer, not a run failure: the agent is
         // told and the run goes on.
+        const scopeContext = await writeScopeContextOf(deps, input);
+        const alignedTarget =
+          event.target === undefined
+            ? undefined
+            : alignMacSymlinkString(event.target, [scopeContext.worktreeRoot, scopeContext.cwd]);
         const scopeVerdict = writeScopeVerdict({
           scope: input.role.writeScope,
           tool: event.tool,
-          target: event.target,
-          context: await writeScopeContextOf(deps, input),
+          target: alignedTarget,
+          context: scopeContext,
         });
         if (scopeVerdict.verdict === 'deny') {
           notify?.(runId);

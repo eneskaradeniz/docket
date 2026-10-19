@@ -385,19 +385,23 @@ const runStartedItem = async (api: Api & RunEventFeed, board: PermissionBoard, r
         ? undefined
         : await remoteInputOf(deps, forges, record);
     if (remote === undefined) {
-      await evaluateMachineGates(deps, { id: item.workOrderId });
+      const evaluated = await evaluateMachineGates(deps, { id: item.workOrderId });
+      if (evaluated.ok && evaluated.value.evaluated.length > 0) api.workOrdersChanged();
     } else {
-      await evaluateWithRemote(deps, remote, item.workOrderId);
+      const changed = await evaluateWithRemote(deps, remote, item.workOrderId);
+      if (changed) api.workOrdersChanged();
     }
-    // The machine pass just concluded: under a resolved `auto` level the gate-auto policy may
-    // now approve the human gates the pass left pending (A-410). Its own errors are answers
-    // (the gate simply stays pending), so only a crash is loud — same reading as above. An
-    // approval that landed here moves the work order the operator may be looking at: the push
-    // notification (U-12) is what makes an open detail re-query, exactly like a finished run.
-    const gated = await applyGateAutoPolicy(deps, { id: item.workOrderId });
-    if (gated.ok && gated.value.approved.length > 0) api.workOrdersChanged();
+    // The machine pass just concluded: under a resolved `auto` level the stage-skip auto policy
+    // runs first so pending future-stage skips are decided before gate-auto approval advances
+    // the stage (A-435). Then gate-auto may approve the human gates the pass left pending (A-410).
+    // Its own errors are answers (the gate simply stays pending), so only a crash is loud — same
+    // reading as above. An approval that landed here moves the work order the operator may be
+    // looking at: the push notification (U-12) is what makes an open detail re-query, exactly
+    // like a finished run.
     const skipped = await applyStageSkipAutoPolicy(deps, { id: item.workOrderId });
     if (skipped.ok && skipped.value.decided.length > 0) api.workOrdersChanged();
+    const gated = await applyGateAutoPolicy(deps, { id: item.workOrderId });
+    if (gated.ok && gated.value.approved.length > 0) api.workOrdersChanged();
   } catch (error) {
     console.error(`queue item ${item.id} crashed its run loop`, error);
   }
@@ -451,12 +455,14 @@ const remoteInputOf = async (
 
 /** One remote-carrying evaluation under the shared in-flight guard; typed errors are answers (the
  *  gate simply stays pending), only a crash is loud. */
-const evaluateWithRemote = async (deps: AppDeps, remote: RemoteGateInput, id: WorkOrderId): Promise<void> => {
+const evaluateWithRemote = async (deps: AppDeps, remote: RemoteGateInput, id: WorkOrderId): Promise<boolean> => {
   remoteChecksInFlight.add(id);
   try {
-    await evaluateMachineGates(deps, { id, remote });
+    const res = await evaluateMachineGates(deps, { id, remote });
+    return res.ok && res.value.evaluated.length > 0;
   } catch (error) {
     console.error(`remote-checks poll for ${id} crashed`, error);
+    return false;
   } finally {
     remoteChecksInFlight.delete(id);
   }
@@ -465,12 +471,12 @@ const evaluateWithRemote = async (deps: AppDeps, remote: RemoteGateInput, id: Wo
 /** One sweep pass (A-370): every work order whose stage still waits on a remote_checks gate gets
  *  the same evaluation the run's end made, so a check that concluded since then advances the gate
  *  without a human round-trip. Nothing is written while the checks are still pending (E-17). */
-const sweepRemoteChecks = async (deps: AppDeps, forges: ForgeResolver): Promise<void> => {
+const sweepRemoteChecks = async (deps: AppDeps, forges: ForgeResolver, notify: () => void): Promise<void> => {
   for (const record of await deps.workOrders.list({})) {
     if (remoteChecksInFlight.has(record.id)) continue;
     const remote = await remoteInputOf(deps, forges, record);
     if (remote === undefined) continue;
-    await evaluateWithRemote(deps, remote, record.id);
+    if (await evaluateWithRemote(deps, remote, record.id)) notify();
   }
 };
 
@@ -871,18 +877,10 @@ const startApp = async (): Promise<void> => {
   remoteChecksTimer = node.quota.timers.setInterval(() => {
     if (!sweepingRemoteChecks) {
       sweepingRemoteChecks = true;
-      void sweepRemoteChecks(nodeDeps, nodeForges)
+      void sweepRemoteChecks(nodeDeps, nodeForges, () => currentApi?.workOrdersChanged())
         .catch((error) => console.error('remote-checks sweep failed', error))
         .finally(() => {
           sweepingRemoteChecks = false;
-        });
-    }
-    if (!sweepingGateAuto) {
-      sweepingGateAuto = true;
-      void sweepGateAuto(nodeDeps, () => currentApi?.workOrdersChanged())
-        .catch((error) => console.error('gate-auto sweep failed', error))
-        .finally(() => {
-          sweepingGateAuto = false;
         });
     }
     if (!sweepingStageSkipAuto) {
@@ -891,6 +889,14 @@ const startApp = async (): Promise<void> => {
         .catch((error) => console.error('stage-skip-auto sweep failed', error))
         .finally(() => {
           sweepingStageSkipAuto = false;
+        });
+    }
+    if (!sweepingGateAuto) {
+      sweepingGateAuto = true;
+      void sweepGateAuto(nodeDeps, () => currentApi?.workOrdersChanged())
+        .catch((error) => console.error('gate-auto sweep failed', error))
+        .finally(() => {
+          sweepingGateAuto = false;
         });
     }
   }, REMOTE_CHECKS_POLL_MS);
