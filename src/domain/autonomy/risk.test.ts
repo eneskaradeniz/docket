@@ -294,4 +294,41 @@ describe('autonomy/risk', () => {
     expect(classifyRisk(ask, context({ dataDir: 'data' }))).toEqual({ verdict: 'needs_human' });
     expect(lowRule(toolAsk('Read', { file_path: `${ROOT}/src/a.ts` }), context())).toBe('allow-read-search');
   });
+
+  it('R-187: fileChange denies targets at/under <dataDir>/runs or ancestor grants covering it; permissions denies wildcard targets covering runs and non-wildcard tokens in runs', () => {
+    const DATA = '/data';
+    const ctx = context({ dataDir: DATA });
+    const denied = (ask: RiskAsk, c: RiskContext = ctx): boolean =>
+      JSON.stringify(classifyRisk(ask, c)) === JSON.stringify({ verdict: 'deny', rule: 'deny-run-config' });
+
+    // fileChange: in runs tree
+    expect(denied(toolAsk('fileChange', { command: `${DATA}/runs/r1/config` }))).toBe(true);
+    expect(denied(toolAsk('fileChange', { path: `${DATA}/runs/r1/config` }))).toBe(true);
+    expect(denied(toolAsk('fileChange', { command: `${DATA}/runs` }))).toBe(true);
+    // fileChange: ancestor grant covers the run config tree (/ or dataDir)
+    expect(denied(toolAsk('fileChange', { command: DATA }))).toBe(true);
+    expect(denied(toolAsk('fileChange', { command: '/' }))).toBe(true);
+    // fileChange: unrelated path does not deny
+    expect(denied(toolAsk('fileChange', { command: ROOT }))).toBe(false);
+    expect(denied(toolAsk('fileChange', { command: '/other' }))).toBe(false);
+
+    // permissions: wildcard tokens ending with /* or /**
+    expect(denied(toolAsk('permissions', { command: '/*' }))).toBe(true);
+    expect(denied(toolAsk('permissions', { command: '/**' }))).toBe(true);
+    expect(denied(toolAsk('permissions', { command: `${DATA}/*` }))).toBe(true);
+    expect(denied(toolAsk('permissions', { command: `${DATA}/**` }))).toBe(true);
+    expect(denied(toolAsk('permissions', { command: `${DATA}/runs/*` }))).toBe(true);
+    expect(denied(toolAsk('permissions', { command: `${DATA}/runs/**` }))).toBe(true);
+    expect(denied(toolAsk('permissions', { command: `${DATA}/runs/r1/*` }))).toBe(true);
+    // permissions: non-wildcard tokens deny when in runs tree
+    expect(denied(toolAsk('permissions', { command: `${DATA}/runs/r1/config/token` }))).toBe(true);
+    expect(denied(toolAsk('permissions', { command: `${DATA}/runs/r1` }))).toBe(true);
+    // permissions: non-wildcard ancestor does not deny (only wildcard ancestors deny)
+    expect(denied(toolAsk('permissions', { command: DATA }))).toBe(false);
+    expect(denied(toolAsk('permissions', { command: '/' }))).toBe(false);
+    // permissions: multiple tokens on RUN_CONFIG_TOKEN_SPLIT
+    expect(denied(toolAsk('permissions', { command: `/other/* ${DATA}/runs/r1/*` }))).toBe(true);
+    expect(denied(toolAsk('permissions', { command: `/other/* /workspace/*` }))).toBe(false);
+  });
 });
+

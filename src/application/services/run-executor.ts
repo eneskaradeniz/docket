@@ -53,7 +53,9 @@ import {
   VERDICT_ASK_SUMMARY_MAX_CHARS,
   WRITE_SCOPE_POLICY,
   writeScopeVerdict,
+  RUN_CONFIG_TOKEN_SPLIT,
 } from '../../domain/index';
+
 
 import type { AccountRecord, AppDeps, AuditAction, RunDir, RunHandle, RunRecord, RunRepo, TransportError } from '../ports';
 
@@ -190,11 +192,6 @@ const dataDirOf = (runDirPath: string): string | undefined => {
   return match?.[1];
 };
 
-/** The app-server route's own tool names, each carrying one string the risk table has no key for:
- *  `shell` the command, the others a root the grant would cover (a granted root, a patch's working
- *  directory, a permission request's cwd). */
-const ROUTE_TARGET_TOOLS: readonly string[] = ['shell', 'fileChange', 'applyPatch', 'permissions'];
-
 /** The asks only a deny may come of: the event's one string offered under the shapes the risk rows
  *  read. A search tool's string may be its root or its pattern, so it is both; a route tool's
  *  string is read as a Bash token, which is the row that also catches a root above the tree. An
@@ -204,9 +201,46 @@ const denyProbesOf = (event: PermissionAskEvent): readonly RiskAsk[] => {
   if (event.tool === 'Grep' || event.tool === 'Glob') {
     return [{ kind: 'tool', tool: event.tool, arguments: { path: event.target, pattern: event.target } }];
   }
-  return ROUTE_TARGET_TOOLS.includes(event.tool)
-    ? [{ kind: 'tool', tool: 'Bash', arguments: { command: event.target } }]
-    : [];
+  if (event.tool === 'fileChange' || event.tool === 'permissions') {
+    return [{ kind: 'tool', tool: event.tool, arguments: { command: event.target } }];
+  }
+  if (event.tool === 'shell' || event.tool === 'applyPatch') {
+    return [{ kind: 'tool', tool: 'Bash', arguments: { command: event.target } }];
+  }
+  return [];
+};
+
+const expandHomeToken = (token: string, homeDir: string): string => {
+  if (token === '~') return homeDir;
+  if (token.startsWith('~/')) return `${homeDir}${token.slice(1)}`;
+  if (token === '$HOME' || token === '${HOME}') return homeDir;
+  if (token.startsWith('$HOME/')) return `${homeDir}${token.slice(5)}`;
+  if (token.startsWith('${HOME}/')) return `${homeDir}${token.slice(7)}`;
+  return token;
+};
+
+const expandCommandString = (command: string, homeDir: string): string => {
+  const withHome = command
+    .replace(/\$\{HOME\}(?=$|\/|[\s;|&<>()"'`=])/g, homeDir)
+    .replace(/\$HOME(?=$|\/|[\s;|&<>()"'`=])/g, homeDir);
+  return withHome
+    .split(RUN_CONFIG_TOKEN_SPLIT)
+    .filter((token) => token.length > 0)
+    .map((token) => expandHomeToken(token, homeDir))
+    .join(' ');
+};
+
+const expandAskHome = (ask: RiskAsk, homeDir: string): RiskAsk => {
+  if (ask.kind !== 'tool' || ask.arguments === undefined) return ask;
+  const expandedArgs: Record<string, unknown> = {};
+  for (const [key, val] of Object.entries(ask.arguments)) {
+    if (typeof val === 'string') {
+      expandedArgs[key] = key === 'command' ? expandCommandString(val, homeDir) : expandHomeToken(val, homeDir);
+    } else {
+      expandedArgs[key] = val;
+    }
+  }
+  return { ...ask, arguments: expandedArgs };
 };
 
 /** The axis-1 decision for one ask: the level is re-resolved per ask (R-170 — a level change
@@ -224,8 +258,15 @@ const decideAsk = async (
     stage: input.item.stage,
   });
   const ask = riskAskOf(event);
-  const probes = [...denyProbesOf(event), ...(ask !== undefined ? [ask] : [])];
-  if (probes.length === 0) return { kind: 'ask-human' };
+  const rawProbes: readonly RiskAsk[] = [
+    ...denyProbesOf(event),
+    ...(ask !== undefined ? [ask] : []),
+  ];
+  if (rawProbes.length === 0) return { kind: 'ask-human' };
+  const shouldExpand = typeof deps.homeDir === 'string' && deps.homeDir.startsWith('/');
+  const probes = shouldExpand
+    ? rawProbes.map((probe) => expandAskHome(probe, deps.homeDir!))
+    : rawProbes;
   const context = await riskContextOf(deps, input, dataDir);
   // An unreadable chain denies like any other: the level only names the actor, and `manual` is
   // the fail-closed stand-in that can never allow.
@@ -243,6 +284,7 @@ const decideAsk = async (
     ...(action !== undefined ? { action } : {}),
   });
 };
+
 
 /** The facts the write-scope verdict reads: the run's working directory, the work order's
  *  worktree, and the repo's docs root and test folders. A fact that cannot be read stays absent,
@@ -715,7 +757,9 @@ type ExecuteDeps = Pick<
   | 'settings'
   | 'worktrees'
   | 'evidence'
+  | 'homeDir'
 >;
+
 
 /** A-144: Docket's own MCP child, appended LAST so nothing a stored definition says can reorder
  *  or shadow it. The attachment itself lives in one shared helper (mcp-attach.ts) that the chat
