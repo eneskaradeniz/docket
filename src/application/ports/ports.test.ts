@@ -159,6 +159,7 @@ describe('AppDeps', () => {
       | 'runDirs'
       | 'mcpEndpoint'
       | 'mcpListener'
+      | 'homeDir'
     >();
   });
 

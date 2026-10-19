@@ -1391,3 +1391,19 @@ describe('work-order detail screen — the repo context line (U-350 … U-353)',
     }
   });
 });
+
+describe('work-order detail screen — live pane grid row span (U-363)', () => {
+  it('U-363: the live pane wrapper carries row-span-6 at @[900px] alongside col-start-2, row-start-1 and sticky top-0', async () => {
+    const html = await draw(RUNNING);
+    expect(html).toContain('data-detail-live');
+    const liveAt = html.indexOf('data-detail-live');
+    const liveTag = html.slice(Math.max(0, liveAt - 200), liveAt + 50);
+    expect(liveTag).toContain('@[900px]:row-span-6');
+    expect(liveTag).toContain('@[900px]:col-start-2');
+    expect(liveTag).toContain('@[900px]:row-start-1');
+    expect(liveTag).toContain('@[900px]:sticky');
+    expect(liveTag).toContain('@[900px]:top-0');
+    expect(source('detail.tsx')).toContain('@[900px]:row-span-6');
+  });
+});
+

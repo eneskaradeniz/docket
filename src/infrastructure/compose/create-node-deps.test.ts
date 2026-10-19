@@ -525,6 +525,14 @@ describe('createNodeDeps', () => {
     expect(Math.abs(node.deps.clock.now() - Date.now())).toBeLessThan(60_000);
   });
 
+  it('A-430: wires homeDir defaulting to homedir() and respecting config.homeDir', () => {
+    const defaultNode = makeNode();
+    expect(defaultNode.deps.homeDir).toBeDefined();
+
+    const customNode = makeNode({ homeDir: '/custom/home' });
+    expect(customNode.deps.homeDir).toBe('/custom/home');
+  });
+
   it('I-31: passes the injected transports and notifier through', async () => {
     const transports = createFakeTransportResolver();
     const node = makeNode({ transports });

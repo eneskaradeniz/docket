@@ -62,7 +62,7 @@ const argString = (ask: ToolAsk, key: string): string | undefined => {
 const isTool = (ask: RiskAsk, names: readonly string[]): ask is ToolAsk =>
   ask.kind === 'tool' && names.includes(ask.tool);
 
-const isBashAsk = (ask: RiskAsk): ask is ToolAsk => isTool(ask, ['Bash']);
+const isBashAsk = (ask: RiskAsk): ask is ToolAsk & { readonly tool: 'Bash' } => isTool(ask, ['Bash']);
 
 const READ_TOOLS: readonly string[] = ['Read', 'Grep', 'Glob'];
 const WRITE_TOOLS: readonly string[] = ['Edit', 'Write', 'NotebookEdit'];
@@ -154,7 +154,7 @@ const plainCommand = (command: string): boolean =>
 const tokensOf = (command: string): readonly string[] =>
   command.trim().split(/\s+/).filter((token) => token.length > 0);
 
-const commandOf = (ask: RiskAsk): string | undefined => (isBashAsk(ask) ? argString(ask, 'command') : undefined);
+const commandOf = (ask: RiskAsk): string | undefined => (ask.kind === 'tool' ? argString(ask, 'command') : undefined);
 
 const commandTokens = (ask: RiskAsk): readonly string[] | undefined => {
   const command = commandOf(ask);
@@ -321,11 +321,13 @@ const isGitReadCommand = (command: string): boolean => {
 };
 
 const allowGitRead = (ask: RiskAsk): boolean => {
+  if (!isBashAsk(ask)) return false;
   const command = commandOf(ask);
   return command !== undefined && isGitReadCommand(command);
 };
 
 const allowVerify = (ask: RiskAsk, context: RiskContext): boolean => {
+  if (!isBashAsk(ask)) return false;
   const command = commandOf(ask);
   if (command === undefined) return false;
   // Equality after trim, nothing more: the string Docket itself runs as a gate is the licence, and
@@ -340,7 +342,7 @@ const allowWriteInside = (ask: RiskAsk, context: RiskContext): boolean =>
 // --- the run config tree: <dataDir>/runs/<run>/config holds the ask-bridge and MCP tokens, so no
 // tool may read or write it. Lexical like every row here — no symlink knowledge is claimed. ---
 
-const RUN_CONFIG_TOKEN_SPLIT = /[\s;|&<>()"'`$=]+/;
+export const RUN_CONFIG_TOKEN_SPLIT = /[\s;|&<>()"'`$=]+/;
 
 const inRunsTree = (target: readonly string[] | undefined, dataDir: readonly string[]): boolean =>
   target !== undefined && contains(dataDir, target) && target[dataDir.length] === 'runs';
@@ -360,6 +362,34 @@ const denyRunConfig = (ask: RiskAsk, context: RiskContext): boolean => {
     const command = commandOf(ask);
     const inRuns = (path: string | undefined): boolean => inRunsTree(resolvePath(path, context), dataDir);
     return command !== undefined && command.split(RUN_CONFIG_TOKEN_SPLIT).some(inRuns);
+  }
+  if (ask.tool === 'fileChange') {
+    const target = commandOf(ask) ?? readPathOf(ask);
+    const resolved = resolvePath(target, context);
+    const runsRoot = [...dataDir, 'runs'];
+    return inRunsTree(resolved, dataDir) || (resolved !== undefined && contains(resolved, runsRoot));
+  }
+  if (ask.tool === 'permissions') {
+    const command = commandOf(ask);
+    if (command === undefined) return false;
+    const runsRoot = [...dataDir, 'runs'];
+    return command
+      .split(RUN_CONFIG_TOKEN_SPLIT)
+      .filter((token) => token.length > 0)
+      .some((token) => {
+        const isWildcard = token === '/*' || token === '/**' || token.endsWith('/*') || token.endsWith('/**');
+        if (isWildcard) {
+          const stripped =
+            token === '/*' || token === '/**'
+              ? '/'
+              : token.endsWith('/**')
+                ? token.slice(0, -3)
+                : token.slice(0, -2);
+          const resolved = resolvePath(stripped, context);
+          return inRunsTree(resolved, dataDir) || (resolved !== undefined && contains(resolved, runsRoot));
+        }
+        return inRunsTree(resolvePath(token, context), dataDir);
+      });
   }
   if (isTool(ask, READ_TOOLS)) {
     return [readPathOf(ask), argString(ask, 'pattern'), argString(ask, 'glob')].some(named);

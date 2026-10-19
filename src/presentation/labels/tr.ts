@@ -531,6 +531,7 @@ export const TR: LabelBundle = {
   'workOrder.new.close': 'Kapat',
   'workOrder.new.descriptionLabel': 'Açıklama / hedef',
   'workOrder.new.descriptionHint': 'İlk aşamaya girdi olarak gider.',
+  'workOrder.new.openBranchesHint': 'Yeni iş emrinin dalı ana daldan açılır; henüz birleştirilmemiş iş emirlerinin değişikliklerini içermez.',
   'workOrder.flowStrip.label': 'Depo akışı',
   'workOrder.flowStrip.version': 'Sürüm {version}',
   'workOrder.flowStrip.gateCount': '{count} onay kapısı',

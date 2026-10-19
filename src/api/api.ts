@@ -798,9 +798,7 @@ export function createApi(
           command.type === 'project.setAutonomy' ||
           command.type === 'settings.setAutonomy' ||
           command.type === 'project.create' ||
-          (command.type as string) === 'project.createMulti' ||
           command.type === 'project.attach' ||
-          (command.type as string) === 'project.detach' ||
           command.type === 'setup.apply')
       ) {
         emit({ type: 'workOrders.changed' });

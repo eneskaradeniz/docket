@@ -1,4 +1,5 @@
 // Composition root for plain Node: opens docket.db and wires every AppDeps member to real adapters.
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import type { Result } from '../../domain/index';
@@ -99,6 +100,8 @@ export interface NodeDepsConfig {
   readonly trackerResolver?: (deps: AppDeps) => IssueTrackerResolver;
   /** Builds the per-repo forge resolver; the shell passes createRepoForgeResolver from forge. */
   readonly forgeResolver?: (deps: AppDeps) => ForgeResolver;
+  /** The user's home directory for path expansion in deny probes (A-430). */
+  readonly homeDir?: string;
 }
 
 export interface NodeDeps {
@@ -208,6 +211,7 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     bundleStore: createFsBundleStore(join(config.dataDir, 'exports')),
     mcpEndpoint: config.mcpEndpoint,
     mcpListener: config.mcpListener ?? createNoEndpointMcpListenerControl(),
+    homeDir: config.homeDir ?? homedir(),
   };
 
   const accountDiscovery = createNodeAccountScan(
