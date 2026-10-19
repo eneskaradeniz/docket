@@ -15,6 +15,7 @@ import {
   workOrderFormReducer,
   type FlowOption,
   type PinnedFlowView,
+  type StageSkipDraftDecision,
   type StageSkipProposalCard,
   type WorkOrderCreateMode,
   type WorkOrderWindowCreateOutcome,
@@ -196,6 +197,8 @@ export interface NewWorkOrderWindowProps {
     readonly description: string;
     readonly flow: string;
     readonly mode: WorkOrderCreateMode;
+    readonly skipProposal?: StageSkipProposalCard | null;
+    readonly skipDecision?: StageSkipDraftDecision;
   }) => Promise<WorkOrderWindowCreateOutcome>;
 }
 
@@ -242,7 +245,14 @@ export function NewWorkOrderWindow({
     }
     dispatch({ type: 'submitting' });
     const intent = workOrderCreateIntent(form, selected, skipProposal);
-    void onCreate({ title: intent.title, description: intent.description, flow: intent.flow, mode }).then((outcome) => {
+    void onCreate({
+      title: intent.title,
+      description: intent.description,
+      flow: intent.flow,
+      mode,
+      skipProposal: intent.skipProposal,
+      skipDecision: intent.skipDecision,
+    }).then((outcome) => {
       dispatch({ type: 'submit_done' });
       if (!outcome.ok && 'validation' in outcome) {
         dispatch({ type: 'invalid', field: outcome.validation });

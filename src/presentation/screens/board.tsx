@@ -162,6 +162,8 @@ export function BoardScreen({ store, repo, locale, onOpenWorkOrder, roadmapProje
           description: intent.description,
           flow: intent.flow,
           mode: intent.mode,
+          skipProposal: intent.skipProposal,
+          skipDecision: intent.skipDecision,
         })
       }
     />
