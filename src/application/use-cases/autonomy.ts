@@ -220,10 +220,27 @@ export async function setRepoAutonomy(
     readonly repo: RepoSlug;
     readonly level?: AutonomyLevel | null;
     readonly maxLevel?: AutonomyLevel | null;
+    readonly budget?: { readonly amountUsd: number; readonly warnPercent?: number } | null;
     readonly actor: Actor;
   },
 ): Promise<Result<{ readonly ordersAbove?: number } | void, SetAutonomyError>> {
   if (!isUser(input.actor)) return err('user_only');
+
+  if (input.budget !== undefined && input.budget !== null) {
+    if (
+      typeof input.budget !== 'object' ||
+      typeof input.budget.amountUsd !== 'number' ||
+      !Number.isFinite(input.budget.amountUsd) ||
+      input.budget.amountUsd <= 0 ||
+      (input.budget.warnPercent !== undefined &&
+        (typeof input.budget.warnPercent !== 'number' ||
+          !Number.isInteger(input.budget.warnPercent) ||
+          input.budget.warnPercent < 1 ||
+          input.budget.warnPercent > 100))
+    ) {
+      return err('definitions_invalid');
+    }
+  }
 
   let level: AutonomyLevel | null | undefined = undefined;
   if (input.level !== undefined) {
@@ -263,13 +280,20 @@ export async function setRepoAutonomy(
     }
   }
 
-  const { autonomy: _absentAutonomy, maxLevel: _absentMaxLevel, ...rest } = def;
+  const { autonomy: _absentAutonomy, maxLevel: _absentMaxLevel, budget: _absentBudget, ...rest } = def;
   const nextAutonomy = level !== undefined ? (level === null ? undefined : level) : def.autonomy;
   const nextMaxLevel = maxLevel !== undefined ? (maxLevel === null ? undefined : maxLevel) : def.maxLevel;
+  const nextBudget: SpendCap | undefined =
+    input.budget !== undefined
+      ? input.budget === null
+        ? undefined
+        : { amountUsd: input.budget.amountUsd, warnPercent: input.budget.warnPercent ?? 80 }
+      : def.budget;
   const body = {
     ...rest,
     ...(nextAutonomy !== undefined ? { autonomy: nextAutonomy } : {}),
     ...(nextMaxLevel !== undefined ? { maxLevel: nextMaxLevel } : {}),
+    ...(nextBudget !== undefined ? { budget: nextBudget } : {}),
   };
   const content = JSON.stringify(body);
   const candidate = await deps.definitions.validateCandidate({ kind: 'repo', repo: input.repo }, 'repo.yaml', content);
@@ -285,6 +309,10 @@ export async function setRepoAutonomy(
   if (maxLevel !== undefined) {
     if (maxLevel === null) detail.maxCleared = true;
     else detail.maxLevel = maxLevel;
+  }
+  if (input.budget !== undefined) {
+    if (input.budget === null) detail.budgetCleared = true;
+    else detail.budgetUsd = input.budget.amountUsd;
   }
   await deps.log.append({
     id: deps.ids.next<'audit'>(),
@@ -451,6 +479,7 @@ export interface RepoAutonomyView {
   readonly maxLevel?: AutonomyLevel;
   readonly globalCeiling?: AutonomyLevel;
   readonly ceiling?: AutonomyLevel;
+  readonly budget?: SpendCap;
 }
 
 export async function repoAutonomyView(
@@ -493,5 +522,6 @@ export async function repoAutonomyView(
     ...(globalMax.value !== undefined ? { globalCeiling: globalMax.value } : {}),
     ...(effectiveCeiling !== undefined ? { ceiling: effectiveCeiling } : {}),
     ...(refusal === undefined ? {} : { autoUnavailable: refusal }),
+    ...(def.budget !== undefined ? { budget: def.budget } : {}),
   });
 }

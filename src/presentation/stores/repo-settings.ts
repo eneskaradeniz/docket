@@ -143,6 +143,7 @@ export interface RepoAutonomyRead {
   readonly globalCeiling?: 'manual' | 'balanced' | 'auto';
   readonly ceiling?: 'manual' | 'balanced' | 'auto';
   readonly autoUnavailable?: string;
+  readonly budget?: { readonly amountUsd: number; readonly warnPercent: number };
 }
 
 const isRepoAutonomyRead = (value: unknown): value is RepoAutonomyRead => {
@@ -164,6 +165,8 @@ export interface RepoSettingsStore {
   setAutonomy(level: 'manual' | 'auto' | null): Promise<void>;
   /** Sets (or clears, with `null`) the repo ceiling (U-336, A-406) and refreshes standing. */
   setMaxLevel(maxLevel: 'manual' | 'balanced' | 'auto' | null): Promise<void>;
+  /** Sets (or clears, with `null`) the repo spend cap (U-365, A-436) and refreshes standing. */
+  setBudget(amountUsd: number | null): Promise<void>;
   /** Sets (or clears, with `null`) the global ceiling (U-336, A-406) and refreshes standing. */
   setGlobalMaxLevel(maxLevel: 'manual' | 'balanced' | 'auto' | null): Promise<void>;
   setOverlayInstructions(stage: StageSlug, instructions: string): void;
@@ -485,6 +488,16 @@ export const createRepoSettingsStore = (deps: RepoSettingsStoreDeps): RepoSettin
           ? result.ordersAbove
           : null;
       publish({ ...state, ceilingWarningCount: warningCount });
+      await loadAutonomy(state.repo);
+    },
+    setBudget: async (amountUsd) => {
+      if (state.repo === null) return;
+      const result = await deps.api.command(deps.actor, {
+        type: 'repo.setAutonomy',
+        repo: state.repo,
+        budget: amountUsd === null ? null : { amountUsd, warnPercent: 80 },
+      });
+      if (!result.ok) return;
       await loadAutonomy(state.repo);
     },
     setGlobalMaxLevel: async (maxLevel) => {

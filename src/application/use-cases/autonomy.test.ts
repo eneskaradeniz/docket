@@ -336,13 +336,19 @@ describe('setRepoAutonomy', () => {
       source: 'repo',
       layerSet: true,
       autoUnavailable: 'auto_requires_max_attempts',
+      budget: { amountUsd: 10, warnPercent: 80 },
     });
 
     // Bounds and a cap present: the repo read names no reason — the level simply stands.
     const bounded = harness(defsJson({ bounded: true, budget: { amountUsd: 10, warnPercent: 80 } }));
     expect(await setRepoAutonomy(bounded.repoDeps, { repo: REPO, level: 'auto', actor: ACTOR })).toEqual({ ok: true, value: undefined });
     view = await repoAutonomyView(bounded.readDeps, REPO);
-    expect(view.ok && view.value).toEqual({ level: 'auto', source: 'repo', layerSet: true });
+    expect(view.ok && view.value).toEqual({
+      level: 'auto',
+      source: 'repo',
+      layerSet: true,
+      budget: { amountUsd: 10, warnPercent: 80 },
+    });
   });
 
   it('A-406: a maxLevel argument is written to repo.yaml and round trips; setting a level above effective ceiling is refused with above_ceiling', async () => {
@@ -444,6 +450,54 @@ describe('setRepoAutonomy', () => {
       ok: false,
       error: 'not_found',
     });
+  });
+
+  it('A-436: setRepoAutonomy sets and clears budget on repo.yaml and clears autoUnavailable: auto_requires_spend_cap', async () => {
+    // Repo starts with bounded flow but no budget
+    const h = harness(defsJson({ bounded: true }));
+    let view = await repoAutonomyView(h.readDeps, REPO);
+    expect(view.ok && view.value.budget).toBeUndefined();
+    expect(view.ok && view.value.autoUnavailable).toBe('auto_requires_spend_cap');
+
+    // Invalid budget checks
+    expect(
+      await setRepoAutonomy(h.repoDeps, { repo: REPO, budget: { amountUsd: -5 }, actor: ACTOR }),
+    ).toEqual({ ok: false, error: 'definitions_invalid' });
+    expect(
+      await setRepoAutonomy(h.repoDeps, { repo: REPO, budget: { amountUsd: 10, warnPercent: 150 }, actor: ACTOR }),
+    ).toEqual({ ok: false, error: 'definitions_invalid' });
+
+    // Setting valid budget writes to repo.yaml, clears auto_requires_spend_cap, and logs audit
+    const setResult = await setRepoAutonomy(h.repoDeps, { repo: REPO, budget: { amountUsd: 25 }, actor: ACTOR });
+    expect(setResult).toEqual({ ok: true, value: undefined });
+
+    view = await repoAutonomyView(h.readDeps, REPO);
+    expect(view.ok && view.value.budget).toEqual({ amountUsd: 25, warnPercent: 80 });
+    expect(view.ok && view.value.autoUnavailable).toBeUndefined();
+
+    // Verify stored repo.yaml content
+    const file = await h.definitions.readFile({ kind: 'repo', repo: REPO }, 'repo.yaml');
+    expect(file).toBeDefined();
+    const parsed = JSON.parse(file!.content);
+    expect(parsed.budget).toEqual({ amountUsd: 25, warnPercent: 80 });
+
+    const setLog = h.log.entries().find((entry) => entry.action === 'repo.autonomy_changed' && entry.detail !== undefined && 'budgetUsd' in entry.detail);
+    expect(setLog?.detail).toEqual({ budgetUsd: 25 });
+
+    // Clearing budget removes it from repo.yaml and brings back auto_requires_spend_cap
+    const clearResult = await setRepoAutonomy(h.repoDeps, { repo: REPO, budget: null, actor: ACTOR });
+    expect(clearResult).toEqual({ ok: true, value: undefined });
+
+    view = await repoAutonomyView(h.readDeps, REPO);
+    expect(view.ok && view.value.budget).toBeUndefined();
+    expect(view.ok && view.value.autoUnavailable).toBe('auto_requires_spend_cap');
+
+    const clearedFile = await h.definitions.readFile({ kind: 'repo', repo: REPO }, 'repo.yaml');
+    const parsedCleared = JSON.parse(clearedFile!.content);
+    expect(parsedCleared.budget).toBeUndefined();
+
+    const clearLog = h.log.entries().find((entry) => entry.action === 'repo.autonomy_changed' && entry.detail !== undefined && 'budgetCleared' in entry.detail);
+    expect(clearLog?.detail).toEqual({ budgetCleared: true });
   });
 });
 
@@ -569,14 +623,26 @@ describe('repoAutonomyView', () => {
     const view = await repoAutonomyView(h.readDeps, REPO);
     expect(view).toEqual({
       ok: true,
-      value: { level: 'manual', source: 'builtin', layerSet: false, autoUnavailable: 'auto_requires_max_attempts' },
+      value: {
+        level: 'manual',
+        source: 'builtin',
+        layerSet: false,
+        autoUnavailable: 'auto_requires_max_attempts',
+        budget: { amountUsd: 10, warnPercent: 80 },
+      },
     });
 
     await h.settings.set(AUTONOMY_KEY, 'auto');
     const inherited = await repoAutonomyView(h.readDeps, REPO);
     expect(inherited).toEqual({
       ok: true,
-      value: { level: 'auto', source: 'global', layerSet: false, autoUnavailable: 'auto_requires_max_attempts' },
+      value: {
+        level: 'auto',
+        source: 'global',
+        layerSet: false,
+        autoUnavailable: 'auto_requires_max_attempts',
+        budget: { amountUsd: 10, warnPercent: 80 },
+      },
     });
   });
 

@@ -121,6 +121,11 @@ const fakeApi = (flow: RepoFlow, tree: ProjectTree): FakeApi => {
               ? { level: 'manual', source: 'builtin', layerSet: false }
               : { level: command.level, source: 'repo', layerSet: true };
           if (command.maxLevel !== undefined && command.maxLevel !== null) read.maxLevel = command.maxLevel;
+          if (command.budget !== undefined) {
+            if (command.budget !== null) read.budget = command.budget;
+          } else if (typeof autonomyRead === 'object' && autonomyRead !== null && 'budget' in autonomyRead) {
+            read.budget = (autonomyRead as { budget: unknown }).budget;
+          }
           autonomyRead = read;
         }
         return autonomyResult;
@@ -502,4 +507,53 @@ describe('U-336: the repo and global ceilings', () => {
     expect(store.state().ceilingWarningCount).toBeNull();
     expect(store.state().globalCeilingWarningCount).toBeNull();
   });
+
+  it('U-365: setBudget speaks repo.setAutonomy with budget amount and refreshes autonomy standing', async () => {
+    const { store, api } = storeWith(sampleFlow(), singleRepoTree);
+    api.setAutonomyRead({ level: 'manual', source: 'builtin', layerSet: false });
+    await store.load('web');
+
+    // Setting budget issues command and refreshes read
+    api.setAutonomyResult({ ok: true });
+    await store.setBudget(25);
+
+    expect(api.commands[api.commands.length - 1]?.command).toEqual({
+      type: 'repo.setAutonomy',
+      repo: 'web',
+      budget: { amountUsd: 25, warnPercent: 80 },
+    });
+    expect(store.state().autonomy).toEqual({
+      level: 'manual',
+      source: 'builtin',
+      layerSet: false,
+      budget: { amountUsd: 25, warnPercent: 80 },
+    });
+
+    // Clearing budget sets budget: null and removes it from read
+    await store.setBudget(null);
+
+    expect(api.commands[api.commands.length - 1]?.command).toEqual({
+      type: 'repo.setAutonomy',
+      repo: 'web',
+      budget: null,
+    });
+    expect(store.state().autonomy).toEqual({
+      level: 'manual',
+      source: 'builtin',
+      layerSet: false,
+    });
+  });
+
+  it('U-365: a refused budget write changes nothing and leaves standing untouched', async () => {
+    const { store, api } = storeWith(sampleFlow(), singleRepoTree);
+    const standing = { level: 'manual', source: 'builtin', layerSet: false, budget: { amountUsd: 10, warnPercent: 80 } };
+    api.setAutonomyRead(standing);
+    await store.load('web');
+
+    api.setAutonomyResult({ ok: false, code: 'definitions_invalid' });
+    await store.setBudget(50);
+
+    expect(store.state().autonomy).toEqual(standing);
+  });
 });
+

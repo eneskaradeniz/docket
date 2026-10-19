@@ -406,7 +406,36 @@ describe('Depo ayarları on the real panel (U-310, U-311)', () => {
     expect(out.match(/role="tab"/g)?.length).toBe(2);
     expect(out).toContain('aria-selected="true"');
   });
+
+  it('U-365: renders data-repo-budget card when repo autonomy is loaded, including input and save/clear actions', async () => {
+    const world = panelOver((query) => {
+      if (query.type === 'project.tree') return treeOf(['web']);
+      if (query.type === 'repo.flow') return { ok: true, flow: sampleFlow() };
+      if (query.type === 'settings.accounts') return { accounts: [], bindings: [] };
+      if (query.type === 'repoStatus') return repoStatusOk('web');
+      if (query.type === 'tracker.linkStatus') return { ok: false, code: 'not_found' };
+      if (query.type === 'repo.autonomy') {
+        return {
+          ok: true,
+          level: 'manual',
+          source: 'repo',
+          layerSet: true,
+          budget: { amountUsd: 25, warnPercent: 80 },
+        };
+      }
+      return { ok: false, code: 'not_found' };
+    });
+    await world.store.repoSettings.load();
+    const out = world.html();
+    expect(out).toContain('data-repo-budget');
+    expect(out).toContain('data-repo-budget-input');
+    expect(out).toContain('value="25"');
+    expect(out).toContain('data-repo-budget-save');
+    expect(out).toContain('data-repo-budget-clear');
+    expect(out).toContain('Aylık harcama üst sınırı (USD)');
+  });
 });
+
 
 describe('Depo ayarları relink banner (U-312, U-313)', () => {
   const repoQuery = (status: 'folder_not_found' | 'relink_offered' | 'ok') => (query: Query) => {

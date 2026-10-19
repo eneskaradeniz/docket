@@ -47,6 +47,11 @@ const TOOL_KIND_GLYPH: Readonly<Record<string, string>> = {
 
 const toolGlyph = (name: string): string => TOOL_KIND_GLYPH[name.toLowerCase()] ?? '◆';
 
+const formatAskTool = (locale: Locale, tool: string): string =>
+  tool === 'submit_verdict' || tool === 'mcp__docket-pages__submit_verdict'
+    ? t(locale, 'detail.zone.tool.submitVerdict')
+    : tool;
+
 /** The meter's own name when the provider gave one; the unit stands in — meters without any name
  *  still read as an instrument line, never as a blank. */
 const meterName = (locale: Locale, meter: QuotaSignalMeter): string =>
@@ -157,7 +162,7 @@ export function LivePaneScreen({ store, locale }: LivePaneScreenProps) {
         <div className="grid min-w-0 gap-2 rounded-card border border-signal/45 bg-surface p-3">
           <span className="font-mono text-[0.65625rem] uppercase tracking-[0.06em] text-signal">{t(locale, 'live.ask.title')}</span>
           <div className="min-w-0">
-            <span className="font-mono text-[0.8125rem] text-ink">{state.ask.tool}</span>
+            <span className="font-mono text-[0.8125rem] text-ink">{formatAskTool(locale, state.ask.tool)}</span>
             {state.ask.target !== null ? (
               <code className="block truncate font-mono text-[0.6875rem] text-inkdim" title={state.ask.target}>
                 {state.ask.target}

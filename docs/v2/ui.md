@@ -2004,3 +2004,11 @@ Added 2026-10-19, #1319; aligns with D-11 and A-419.
   2. Summary footer and Escape dismissal: `NewProjectPanel` renders no duplicate modal footer on `screen === 'summary'` (`SetupSummary` owns the summary actions), and `hasDraft` evaluates to `false` on `screen === 'summary'` so pressing `Escape` or clicking close dismisses the completed summary dialog without blocking.
   3. Expanded `SetupProposalDiff` details: Expanding a section in `SetupProposalDiff` renders `data-proposal-section-detail` (`sectionDetail`) showing the stage pipeline (`→`), stage-to-role bindings (`stage: roleId`), limit policy, and command set commands rather than repeating the header count/slug.
 
+## Live ask verdict formatting and repo spend cap control (U-365)
+
+Added 2026-10-19, #1320; the application rule is A-436.
+
+- **U-365** (added 2026-10-19, #1320) Live pane ask tool formatting and repo spend cap setting:
+  1. (live screen) In `LivePaneScreen`, an open permission ask for `submit_verdict` or `mcp__docket-pages__submit_verdict` formats its tool name through `detail.zone.tool.submitVerdict` (`Docket: inceleme kararı` / `Docket: review verdict`) rather than raw tool wire names.
+  2. (settings screen & store) `RepoAutonomyRead` exposes `budget?: { readonly amountUsd: number; readonly warnPercent: number }`. In `SettingsPanel` under `Depo ayarları`, when `repoState.autonomy !== null`, a clean card (`data-repo-budget`) renders title (`repoSettings.budget.title`), hint (`repoSettings.budget.hint`), a controlled number input (`data-repo-budget-input`, initialized from `repoState.autonomy.budget?.amountUsd`), a save action (`data-repo-budget-save`, calling `setBudget(amountUsd)`), and when a budget is set, a clear action (`data-repo-budget-clear`, calling `setBudget(null)`).
+

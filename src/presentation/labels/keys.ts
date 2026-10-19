@@ -1854,6 +1854,12 @@ export const LABEL_KEYS = [
   'error.ceiling_not_available',
   'error.auto_requires_spend_cap',
   'error.auto_requires_max_attempts',
+  // Repo spend cap control (U-365, A-436).
+  'repoSettings.budget.title',
+  'repoSettings.budget.hint',
+  'repoSettings.budget.placeholder',
+  'repoSettings.budget.save',
+  'repoSettings.budget.clear',
 ] as const;
 
 export type LabelKey = (typeof LABEL_KEYS)[number];

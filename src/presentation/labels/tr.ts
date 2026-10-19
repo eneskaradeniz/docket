@@ -1768,4 +1768,9 @@ export const TR: LabelBundle = {
   'error.ceiling_not_available': 'Üst sınırlar henüz kullanılamıyor.',
   'error.auto_requires_spend_cap': 'Otomatik seviye harcama üst sınırı gerektirir.',
   'error.auto_requires_max_attempts': 'Otomatik seviye her aşamada açık deneme üst sınırı gerektirir.',
+  'repoSettings.budget.title': 'Aylık harcama üst sınırı (USD)',
+  'repoSettings.budget.hint': 'Otomatik otonomi seviyesi için depo veya proje düzeyinde harcama üst sınırı gerekir.',
+  'repoSettings.budget.placeholder': 'Örn. 25',
+  'repoSettings.budget.save': 'Üst sınırı kaydet',
+  'repoSettings.budget.clear': 'Üst sınırı kaldır',
 };
