@@ -261,6 +261,70 @@ function usePaintedFlip(active: boolean): boolean {
 // same classes the search palette animates with, so the two overlays speak one motion language.
 const MOTION_STYLE = motionVars();
 
+function RepoBudgetControl({
+  locale,
+  budget,
+  onSave,
+  onClear,
+}: {
+  readonly locale: Locale;
+  readonly budget?: { readonly amountUsd: number; readonly warnPercent: number };
+  readonly onSave: (amountUsd: number) => void;
+  readonly onClear: () => void;
+}) {
+  const currentAmount = budget?.amountUsd !== undefined ? String(budget.amountUsd) : '';
+  const [budgetText, setBudgetText] = useState(currentAmount);
+
+  useEffect(() => {
+    setBudgetText(currentAmount);
+  }, [currentAmount]);
+
+  const handleSave = () => {
+    const parsed = Number(budgetText);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      onSave(parsed);
+    }
+  };
+
+  return (
+    <section
+      role="group"
+      aria-label={t(locale, 'repoSettings.budget.title')}
+      data-repo-budget
+      className="grid gap-2 rounded-card border border-hairline bg-surface p-3"
+    >
+      <div>
+        <h2 className="text-[13px] font-bold text-ink">{t(locale, 'repoSettings.budget.title')}</h2>
+        <p className="m-0 mt-0.5 text-[12px] text-inkdim">{t(locale, 'repoSettings.budget.hint')}</p>
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          min="1"
+          step="1"
+          data-repo-budget-input
+          aria-label={t(locale, 'repoSettings.budget.title')}
+          placeholder={t(locale, 'repoSettings.budget.placeholder')}
+          value={budgetText}
+          onChange={(event) => setBudgetText(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') handleSave();
+          }}
+          className="h-8 w-28 rounded-control border border-hairline bg-surface px-2 text-[13px] text-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-signal"
+        />
+        <ActionButton variant="primary" onClick={handleSave} data-repo-budget-save="">
+          {t(locale, 'repoSettings.budget.save')}
+        </ActionButton>
+        {budget !== undefined ? (
+          <ActionButton variant="neutral" onClick={onClear} data-repo-budget-clear="">
+            {t(locale, 'repoSettings.budget.clear')}
+          </ActionButton>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
 export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _fineTune, onOpenTarget, onSection, onBack, onEscape, onClose, candidateDot: candidateDotMirror, candidates, providers, connectors, models, themeStore, store, marks, roles, update, locale, localeStore, onEnterSubPage, onOpenAccount, repoRelink: repoRelinkInjected }: SettingsPanelProps) {
   const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   const candidateState = useSyncExternalStore(candidates.subscribe, candidates.state, candidates.state);
@@ -831,6 +895,14 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
             onPick={(level) => void repo.setAutonomy(level)}
             onClear={() => void repo.setAutonomy(null)}
           />
+          {repoState.autonomy !== null ? (
+            <RepoBudgetControl
+              locale={locale}
+              budget={repoState.autonomy.budget}
+              onSave={(amountUsd) => void repo.setBudget(amountUsd)}
+              onClear={() => void repo.setBudget(null)}
+            />
+          ) : null}
           {/* The ceiling homes (U-336, A-406): the repo's own maxLevel and the global ceiling,
               each carrying the "{n} iş emri sınırın üzerinde" warning when it lands below
               existing layers — a standing the read confirms, never a problem line. */}

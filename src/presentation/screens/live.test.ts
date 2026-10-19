@@ -65,4 +65,16 @@ describe('live pane — unbreakable stream text stays inside the pane', () => {
     expect(html).toContain(`title="${LONG_TARGET}"`);
     expect(html).toContain('block truncate');
   });
+
+  it('an open ask for submit_verdict or mcp__docket-pages__submit_verdict formats as detail.zone.tool.submitVerdict', () => {
+    const askVerdict: OpenPermissionAsk = { askId: 'ask-1', tool: 'submit_verdict', target: null, options: ['allow', 'deny'] };
+    const htmlVerdict = draw({ runId: 'run-1', items: [], ask: askVerdict, ended: false });
+    expect(htmlVerdict).toContain('Docket: inceleme kararı');
+    expect(htmlVerdict).not.toContain('submit_verdict');
+
+    const askMcp: OpenPermissionAsk = { askId: 'ask-2', tool: 'mcp__docket-pages__submit_verdict', target: null, options: ['allow', 'deny'] };
+    const htmlMcp = draw({ runId: 'run-1', items: [], ask: askMcp, ended: false });
+    expect(htmlMcp).toContain('Docket: inceleme kararı');
+    expect(htmlMcp).not.toContain('mcp__docket-pages__submit_verdict');
+  });
 });

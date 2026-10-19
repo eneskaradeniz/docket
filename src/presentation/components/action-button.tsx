@@ -57,6 +57,7 @@ export interface ActionButtonProps {
   /** Takes focus when it mounts: a dialog's default answer. */
   readonly autoFocus?: boolean;
   readonly children: ReactNode;
+  readonly [dataAttr: `data-${string}`]: unknown;
 }
 
 export function ActionButton({
@@ -72,6 +73,7 @@ export function ActionButton({
   danger = false,
   autoFocus = false,
   children,
+  ...rest
 }: ActionButtonProps) {
   const look: ButtonVariant = variant === 'ghost' && !iconOnly(children) ? 'neutral' : variant;
   const fill = look === 'primary' && danger ? DANGER_PRIMARY_CLASS : VARIANT_CLASS[look];
@@ -87,6 +89,7 @@ export function ActionButton({
       aria-controls={ariaControls}
       aria-busy={ariaBusy === true ? true : undefined}
       className={`inline-flex items-center justify-center gap-1.5 rounded-control border transition-[filter,background-color,color] duration-100 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-45 ${fill} ${SIZE_CLASS[size]}`}
+      {...rest}
     >
       {children}
     </button>

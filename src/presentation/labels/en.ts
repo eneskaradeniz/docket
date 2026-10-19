@@ -1770,4 +1770,9 @@ export const EN: LabelBundle = {
   'error.ceiling_not_available': 'Ceilings are not available yet.',
   'error.auto_requires_spend_cap': 'The automatic level requires a spend cap.',
   'error.auto_requires_max_attempts': 'The automatic level requires an explicit retry bound on every stage.',
+  'repoSettings.budget.title': 'Monthly spend cap (USD)',
+  'repoSettings.budget.hint': 'Auto autonomy level requires a repository or project spend cap.',
+  'repoSettings.budget.placeholder': 'e.g. 25',
+  'repoSettings.budget.save': 'Save cap',
+  'repoSettings.budget.clear': 'Clear cap',
 };

@@ -1085,9 +1085,30 @@ const runCommand = async (
           maxLevel = parsedCeiling.value;
         }
       }
+      if (command.budget !== undefined && command.budget !== null) {
+        if (
+          typeof command.budget !== 'object' ||
+          typeof command.budget.amountUsd !== 'number' ||
+          !Number.isFinite(command.budget.amountUsd) ||
+          command.budget.amountUsd <= 0 ||
+          (command.budget.warnPercent !== undefined &&
+            (typeof command.budget.warnPercent !== 'number' ||
+              !Number.isInteger(command.budget.warnPercent) ||
+              command.budget.warnPercent < 1 ||
+              command.budget.warnPercent > 100))
+        ) {
+          return badInput();
+        }
+      }
       const set = await setRepoAutonomy(
         { clock: deps.clock, ids: deps.ids, log: deps.log, repos: deps.repos, definitions: deps.definitions, settings: deps.settings, workOrders: deps.workOrders },
-        { repo, ...(level !== undefined ? { level } : {}), ...(maxLevel !== undefined ? { maxLevel } : {}), actor },
+        {
+          repo,
+          ...(level !== undefined ? { level } : {}),
+          ...(maxLevel !== undefined ? { maxLevel } : {}),
+          ...(command.budget !== undefined ? { budget: command.budget } : {}) ,
+          actor,
+        },
       );
       if (!set.ok) return { ok: false, code: set.error };
       return { ok: true, ...(set.value?.ordersAbove !== undefined ? { ordersAbove: set.value.ordersAbove } : {}) };
