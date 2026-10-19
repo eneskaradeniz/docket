@@ -280,6 +280,7 @@ const harness = async (options: {
   readonly checkpointBases?: Readonly<Record<string, string>>;
   readonly homeDir?: string;
   readonly runDirs?: RunDirs;
+  readonly mcpDefsDirs?: Readonly<Record<string, string>>;
 } = {}): Promise<Harness> => {
   const clock = createFakeClock(T0);
   const ids = createFakeIdGen();
@@ -312,8 +313,8 @@ const harness = async (options: {
     ...(options.homeDir !== undefined ? { homeDir: options.homeDir } : {}),
     ...(options.files !== undefined ? { instructionFiles: createFakeInstructionFiles({ [INPUT.cwd]: options.files }) } : {}),
     ...(options.models !== undefined ? { modelCatalog: createFakeModelCatalog({ [ACCOUNT]: options.models }) } : {}),
-    ...(options.routeKinds !== undefined || options.translations !== undefined
-      ? { capabilities: createFakeCapabilityCatalog(options.routeKinds ?? [], options.translations ?? []) }
+    ...(options.routeKinds !== undefined || options.translations !== undefined || options.mcpDefsDirs !== undefined
+      ? { capabilities: createFakeCapabilityCatalog(options.routeKinds ?? [], options.translations ?? [], [], [], options.mcpDefsDirs ?? {}) }
       : {}),
   });
 
@@ -2692,6 +2693,45 @@ describe('executeRun — the autonomy permission policy', () => {
     ]);
     expect(permissionAudits(h.log)[0]?.detail).toEqual({ tool: 'page_publish', decision: 'allow' });
     expect(board.autoDecided()).toEqual([]);
+  });
+
+  it('R-194: the risk context carries the run account\'s MCP descriptor dir, so an own-defs Read is policy-allowed under auto — and asks without it', async () => {
+    const DIR = '/fake-home/.gemini/antigravity-cli/mcp/docket-pages';
+    const fed = await harness({
+      homeDir: '/fake-home',
+      mcpDefsDirs: { 'provider-x': DIR },
+      script: [readAsk('ask-1', `${DIR}/page_publish.json`), readAsk('ask-2', `${DIR}/instructions.md`), finished('completed')],
+      defsJson: VERIFY_DEFS_JSON,
+    });
+    await fed.deps.settings.set(AUTONOMY_KEY, 'auto');
+    // A deny gate doubles as the leak detector: any ask that slipped through to it would flip the answer.
+    const gate = permissionGate('deny');
+
+    await executeRun(fed.deps, gate.permissions, INPUT);
+
+    expect(gate.asked).toEqual([]);
+    expect(fed.transport.answers()).toEqual([
+      { askId: 'ask-1', decision: 'allow' },
+      { askId: 'ask-2', decision: 'allow' },
+    ]);
+    expect(permissionAudits(fed.log).map((entry) => entry.actor)).toEqual([
+      { kind: 'policy', policy: PERMISSION_RULES_POLICY, level: 'auto' },
+      { kind: 'policy', policy: PERMISSION_RULES_POLICY, level: 'auto' },
+    ]);
+    expect(permissionAudits(fed.log)[0]?.detail).toEqual({ tool: 'Read', decision: 'allow' });
+
+    // Without the def data for the provider, the exact same ask stays with the human: the row is
+    // licensed by the context, never by the path alone.
+    const unfed = await harness({
+      script: [readAsk('ask-1', `${DIR}/page_publish.json`), finished('completed')],
+      defsJson: VERIFY_DEFS_JSON,
+    });
+    await unfed.deps.settings.set(AUTONOMY_KEY, 'auto');
+    const unfedGate = permissionGate('deny');
+
+    await executeRun(unfed.deps, unfedGate.permissions, INPUT);
+
+    expect(unfedGate.asked.map((entry) => entry.ask.id)).toEqual(['ask-1']);
   });
 
   it('R-191: a manual run asks the human for a page_publish ask the policy would allow', async () => {

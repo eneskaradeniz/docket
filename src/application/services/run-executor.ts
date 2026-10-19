@@ -182,9 +182,15 @@ const riskContextOf = async (
   const verificationCommands = (stage?.exit ?? []).flatMap((gate) =>
     gate.kind === 'command' ? (commandSets[gate.commandSet] ?? []) : [],
   );
+  // The provider's MCP descriptor dir (R-194): the catalog resolves it from def data — under the
+  // home the launch itself resolves — so the vendor path never leaves the provider layer, and an
+  // unreadable account or an unresolved home leaves the fact absent, which asks.
+  const account = await deps.accounts.get(input.item.route.accountId);
+  const mcpDefsDir = account === undefined ? undefined : deps.capabilities.mcpDefsDirOf(account, deps.homeDir);
   return {
     ...(worktree !== undefined ? { worktreeRoot: worktree.path } : {}),
     ...(dataDir !== undefined ? { dataDir } : {}),
+    ...(mcpDefsDir !== undefined ? { mcpDefsDir } : {}),
     cwd: input.cwd,
     verificationCommands,
   };

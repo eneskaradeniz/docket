@@ -37,4 +37,10 @@ export interface CapabilityCatalog {
   nativeInstructionFiles(providerId: string): readonly string[];
   /** The union of known instruction-file names across providers — the candidate list to look for. */
   instructionFileNames(): readonly string[];
+  /** The directory a run of this account reads the provider CLI's MCP server descriptors from,
+   *  absolute (R-194's own-defs risk row anchors there): the def's home-relative path under the
+   *  home the launch itself resolves — the account's identity directory for a home-rooted CLI
+   *  (P-67), else the machine home. `undefined` when the provider keeps no such directory, or
+   *  no absolute home resolves. The path names targets only; nothing is opened. */
+  mcpDefsDirOf(account: { readonly provider: string; readonly identityDir?: string }, machineHome: string | undefined): string | undefined;
 }

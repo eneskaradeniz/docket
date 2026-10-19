@@ -1,5 +1,5 @@
-// Rules R-172 … R-179, R-191, R-192 and R-193 of docs/v2/domain.md autonomy addendum: the risk-rule
-// table.
+// Rules R-172 … R-179, R-191, R-192, R-193 and R-194 of docs/v2/domain.md autonomy addendum: the
+// risk-rule table.
 import { describe, expect, it } from 'vitest';
 
 import { ACTION_CLASSES, type ActionClass } from '../actions';
@@ -41,6 +41,7 @@ const ALL_ROW_IDS: readonly string[] = [
   'deny-write-outside',
   'allow-own-read',
   'allow-own-pages',
+  'allow-own-mcp-defs',
   'allow-read-search',
   'allow-git-read',
   'allow-verify',
@@ -54,6 +55,9 @@ describe('autonomy/risk', () => {
     // One representative ask per allow row: each low names its row.
     expect(lowRule(toolAsk('docket_get'))).toBe('allow-own-read');
     expect(lowRule(toolAsk('page_publish'))).toBe('allow-own-pages');
+    expect(
+      lowRule(toolAsk('Read', { file_path: '/home/u/.gemini/antigravity-cli/mcp/docket-pages/page_publish.json' }), context({ mcpDefsDir: '/home/u/.gemini/antigravity-cli/mcp/docket-pages' })),
+    ).toBe('allow-own-mcp-defs');
     expect(lowRule(toolAsk('Read', { file_path: `${ROOT}/src/a.ts` }))).toBe('allow-read-search');
     expect(lowRule(toolAsk('Bash', { command: 'git status' }))).toBe('allow-git-read');
     expect(lowRule(toolAsk('Bash', { command: 'npm test' }))).toBe('allow-verify');
@@ -557,5 +561,48 @@ describe('autonomy/risk', () => {
     // permissions: multiple tokens on RUN_CONFIG_TOKEN_SPLIT
     expect(denied(toolAsk('permissions', { command: `/other/* ${DATA}/runs/r1/*` }))).toBe(true);
     expect(denied(toolAsk('permissions', { command: `/other/* /workspace/*` }))).toBe(false);
+  });
+
+  it('R-194: the context-fed MCP descriptor dir — exact descriptor Reads are low; neighbours, walks, globs, other dirs and writes ask', () => {
+    const DIR = '/home/u/.gemini/antigravity-cli/mcp/docket-pages';
+    const fed = (): RiskContext => context({ mcpDefsDir: DIR });
+    // Exactly the two descriptor shapes the CLI caches there: instructions.md and one <slug>.json
+    // per tool. Reading one is an own-tool read — the agent reads them to call the tools. The row
+    // is lexical (R-173): the string is the whole licence, and a symlink planted at an allowed
+    // name is invisible to the classifier — the executor's sandbox owns the filesystem truth.
+    expect(lowRule(toolAsk('Read', { file_path: `${DIR}/instructions.md` }), fed())).toBe('allow-own-mcp-defs');
+    expect(lowRule(toolAsk('Read', { file_path: `${DIR}/page_publish.json` }), fed())).toBe('allow-own-mcp-defs');
+    expect(lowRule(toolAsk('Read', { file_path: `${DIR}/submit_verdict.json` }), fed())).toBe('allow-own-mcp-defs');
+    // The anchor is the context's dir and nothing hardcoded: an absent, relative or different dir
+    // leaves the exact same paths with the human.
+    expect(asks(toolAsk('Read', { file_path: `${DIR}/page_publish.json` }))).toBe(true);
+    expect(asks(toolAsk('Read', { file_path: `${DIR}/page_publish.json` }), context({ mcpDefsDir: '.gemini/antigravity-cli/mcp/docket-pages' }))).toBe(true);
+    expect(asks(toolAsk('Read', { file_path: `${DIR}/page_publish.json` }), context({ mcpDefsDir: '/home/u/.gemini/antigravity-cli/mcp/other-server' }))).toBe(true);
+    // Full path only: a tilde spelling (the domain never expands `~`; the executor does before
+    // the ask arrives) and a relative spelling against a cwd inside the dir both ask.
+    expect(asks(toolAsk('Read', { file_path: '~/.gemini/antigravity-cli/mcp/docket-pages/page_publish.json' }), fed())).toBe(true);
+    expect(asks(toolAsk('Read', { file_path: 'page_publish.json' }), context({ cwd: DIR, mcpDefsDir: DIR }))).toBe(true);
+    // No parent traversal: a `..` segment in the spelling asks even when it resolves back in.
+    expect(asks(toolAsk('Read', { file_path: `${DIR}/../docket-pages/page_publish.json` }), fed())).toBe(true);
+    expect(asks(toolAsk('Read', { file_path: '/home/u/.gemini/antigravity-cli/mcp/other/../docket-pages/page_publish.json' }), fed())).toBe(true);
+    // Files only, the dir as the immediate parent: the dir itself and anything below it ask.
+    expect(asks(toolAsk('Read', { file_path: `${DIR}/` }), fed())).toBe(true);
+    expect(asks(toolAsk('Read', { file_path: `${DIR}/sub/page_publish.json` }), fed())).toBe(true);
+    // Other file types, glob spellings and a bare `.json` (no name) ask.
+    expect(asks(toolAsk('Read', { file_path: `${DIR}/page_publish.txt` }), fed())).toBe(true);
+    expect(asks(toolAsk('Read', { file_path: `${DIR}/instructions.txt` }), fed())).toBe(true);
+    expect(asks(toolAsk('Read', { file_path: `${DIR}/page_*.json` }), fed())).toBe(true);
+    expect(asks(toolAsk('Read', { file_path: `${DIR}/.json` }), fed())).toBe(true);
+    // Neighbour paths stay as today: another server under mcp/, the vendor tree elsewhere.
+    expect(asks(toolAsk('Read', { file_path: '/home/u/.gemini/antigravity-cli/mcp/other-server/x.json' }), fed())).toBe(true);
+    expect(asks(toolAsk('Read', { file_path: '/home/u/.gemini/antigravity-cli/settings.json' }), fed())).toBe(true);
+    expect(asks(toolAsk('Read', { file_path: '/home/u/.gemini/gems/x.json' }), fed())).toBe(true);
+    // Read only, and no pen: searches over the dir and writes to it ask.
+    expect(asks(toolAsk('Grep', { pattern: 'x', path: DIR }), fed())).toBe(true);
+    expect(asks(toolAsk('Glob', { pattern: '*.json', path: DIR }), fed())).toBe(true);
+    expect(asks(toolAsk('Write', { file_path: `${DIR}/page_publish.json` }), fed())).toBe(true);
+    expect(asks(toolAsk('Edit', { file_path: `${DIR}/instructions.md` }), fed())).toBe(true);
+    // The floor still runs first: a secret-shaped descriptor name never rides the row.
+    expect(asks(toolAsk('Read', { file_path: `${DIR}/credentials.json` }), fed())).toBe(true);
   });
 });

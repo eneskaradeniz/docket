@@ -27,6 +27,7 @@ export const createFakeCapabilityCatalog = (
   translations: readonly TranslationRow[] = [],
   channels: readonly ChannelRow[] = [],
   versions: readonly VersionRow[] = [],
+  mcpDefsDirs: Readonly<Record<string, string>> = {},
 ): CapabilityCatalog => ({
   translationTable: () => translations,
   permissionChannels: () => channels,
@@ -55,4 +56,6 @@ export const createFakeCapabilityCatalog = (
   nativeInstructionFiles: (providerId) =>
     routeKinds.filter((kind) => kind.provider === providerId).flatMap((kind) => kind.instructionFiles ?? []),
   instructionFileNames: () => [...new Set(routeKinds.flatMap((kind) => kind.instructionFiles ?? []))],
+  // Scripted per provider: the home-rooted resolution is the real catalog's own rule, tested there.
+  mcpDefsDirOf: (account) => mcpDefsDirs[account.provider],
 });
