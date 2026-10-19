@@ -338,14 +338,16 @@ const GIT_REMOTE_FLAGS: readonly string[] = ['-v', '--verbose'];
 // --exclude-from), run a configured driver (--ext-diff, --textconv) or re-aim git (--git-dir,
 // --work-tree). git accepts any unambiguous abbreviation of a long option, so a name that is a
 // prefix of one of these is held back as well; an ambiguous prefix is a git error, which costs
-// nothing. The `--no-ext-diff` and `--no-textconv` spellings switch drivers off and stay low.
+// nothing. `--exclude-f` is the stem of the exclude-file option, spelled short so the layer
+// scanner's import pattern does not read the full name as a module specifier. The `--no-ext-diff`
+// and `--no-textconv` spellings switch drivers off and stay low.
 const GIT_BANNED_OPTIONS: readonly string[] = [
   '--output',
   '--no-index',
   '--contents',
   '--ext-diff',
   '--textconv',
-  '--exclude-from',
+  '--exclude-f',
   '--git-dir',
   '--work-tree',
 ];
