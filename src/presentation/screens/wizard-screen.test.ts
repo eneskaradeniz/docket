@@ -349,3 +349,42 @@ describe('button tiers — wizard and new project', () => {
     expect(cancel).not.toContain('border-transparent');
   });
 });
+
+describe('wizard polish (U-361)', () => {
+  it('U-361: skipped rail steps set skip reason tooltips on their buttons', async () => {
+    const api = fakeApi();
+    const store = createWizardStore({ api, actor: userActor, changes: () => () => {} });
+    await store.open();
+    await store.next();
+    // At accounts with only 1 account selected, order and capabilities are skipped:
+    const html = draw(store);
+    const capsBtn = buttonNamed(html, 'Yetenekler');
+    expect(capsBtn).toContain('title="İçe aktarılacak yetenek bulunmadığı için atlandı"');
+    const orderBtn = buttonNamed(html, 'Asistan sırası');
+    expect(orderBtn).toContain('title="Tek hesap seçili olduğu için sıralama atlandı"');
+  });
+
+  it('U-361: accounts step shows selection bar when more than 1 selectable row exists', async () => {
+    const api = fakeApi();
+    const store = createWizardStore({ api, actor: userActor, changes: () => () => {} });
+    await store.open();
+    await store.next();
+    // Initially only subscription is selectable (paygEndpoint has un-moved key):
+    let html = draw(store);
+    expect(html).not.toContain('data-wizard-selection-bar');
+
+    // Move token for second row so it becomes selectable:
+    store.setImportToken('/h/.claude-zai', true);
+    html = draw(store);
+    expect(html).toContain('data-wizard-selection-bar');
+    expect(html).toContain('Yalnızca bu cihazda kullanmak istediğiniz hesapları seçili bırakın');
+    // Rows are selected -> "Seçimi temizle"
+    expect(html).toContain('Seçimi temizle');
+
+    // Clear selection -> "Tümünü seç"
+    store.clearSelection();
+    html = draw(store);
+    expect(html).toContain('data-wizard-selection-bar');
+    expect(html).toContain('Tümünü seç');
+  });
+});

@@ -111,6 +111,11 @@ function RailStep({
         disabled={standing !== 'done' || locked}
         onClick={onGo}
         aria-current={standing === 'cur' ? 'step' : undefined}
+        title={
+          standing === 'skipped'
+            ? t(locale, step === 'capabilities' ? 'wizard.rail.skippedCapabilities' : 'wizard.rail.skippedOrder')
+            : undefined
+        }
         data-rail-step={step}
         data-standing={standing}
         className={`flex w-full items-center gap-2.5 rounded-control px-2 py-[7px] text-left text-[13px] font-semibold ${
@@ -137,6 +142,8 @@ function Accounts({ state, store, locale, marks }: { readonly state: WizardState
   const totals = groupTotals(groups);
   const nameOf = (group: AccountGroup<ReturnType<typeof candidateRowView<WizardAccountRow>>>): string =>
     group.name ?? group.rows[0]?.source.providerName ?? group.providerId ?? t(locale, 'accountGroups.unknownProvider');
+  const selectableCount = state.rows.filter((r) => r.selectable).length;
+  const anySelected = state.rows.some((r) => r.selected);
   // The scanning surface (U-52) is the one the Settings screen shares: while the scan runs it
   // draws the skeleton; the body mounts only once it ends, told whether to stagger in.
   return (
@@ -144,6 +151,21 @@ function Accounts({ state, store, locale, marks }: { readonly state: WizardState
       {(reveal) => (
         <>
           {groups.length === 0 ? <p className="text-[13px] text-inkdim">{t(locale, 'candidates.empty')}</p> : null}
+          {selectableCount > 1 ? (
+            <div
+              data-wizard-selection-bar=""
+              className="mb-2.5 flex items-center justify-between gap-3 rounded-card border border-hairline bg-surface px-3 py-2 text-[12px] text-inkdim"
+            >
+              <span>{t(locale, 'wizard.accounts.selectionHint')}</span>
+              <ActionButton
+                variant="neutral"
+                size="sm"
+                onClick={() => (anySelected ? store.clearSelection() : store.selectAllReady())}
+              >
+                {t(locale, anySelected ? 'wizard.accounts.clearSelection' : 'wizard.accounts.selectAll')}
+              </ActionButton>
+            </div>
+          ) : null}
           <AccountGroups
             locale={locale}
             groups={groups}

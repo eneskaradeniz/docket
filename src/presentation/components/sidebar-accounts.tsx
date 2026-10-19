@@ -292,6 +292,11 @@ const AccountCardView = ({
                 style={{ width: `${Math.round((tightest.remaining ?? 0) * 1000) / 10}%` }}
               />
             </span>
+            {tightest.poolLabel !== null && tightest.poolLabel !== undefined ? (
+              <span data-account-pool={tightest.poolLabel} className="flex-none truncate text-[11px] text-inkdim">
+                {tightest.poolLabel}
+              </span>
+            ) : null}
             <span className="flex-none font-mono text-[12px] tabular-nums text-ink">
               {percentLabel(locale, tightest.remaining ?? 0)}
             </span>

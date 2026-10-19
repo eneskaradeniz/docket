@@ -943,6 +943,8 @@ export const LABEL_KEYS = [
   'wizard.step.order',
   'wizard.step.budget',
   'wizard.rail.skipped',
+  'wizard.rail.skippedCapabilities',
+  'wizard.rail.skippedOrder',
   'wizard.back',
   'wizard.skip',
   'wizard.next',
@@ -953,6 +955,9 @@ export const LABEL_KEYS = [
   'wizard.reason.budget',
   'wizard.welcome.lead',
   'wizard.accounts.lead',
+  'wizard.accounts.selectionHint',
+  'wizard.accounts.clearSelection',
+  'wizard.accounts.selectAll',
   // The add-another-account card of the home-rooted CLI (P-67): the operator picks the
   // directory; the login under it is created with the vendor's own tool, never by Docket.
   'wizard.accounts.agyAdd.title',

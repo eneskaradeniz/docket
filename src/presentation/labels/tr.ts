@@ -886,6 +886,8 @@ export const TR: LabelBundle = {
   'wizard.step.order': 'Asistan sırası',
   'wizard.step.budget': 'Bütçe',
   'wizard.rail.skipped': '–',
+  'wizard.rail.skippedCapabilities': 'İçe aktarılacak yetenek bulunmadığı için atlandı',
+  'wizard.rail.skippedOrder': 'Tek hesap seçili olduğu için sıralama atlandı',
   'wizard.back': 'Geri',
   'wizard.skip': 'Bu adımı atla',
   'wizard.next': 'Devam',
@@ -896,6 +898,9 @@ export const TR: LabelBundle = {
   'wizard.reason.budget': 'Kullandıkça öde hesapları için harcama izni ve tavan gerekli.',
   'wizard.welcome.lead': 'Docket bilgisayarındaki yapay zekâ asistanlarını senin belirlediğin adımlarla çalıştırır. Önemli kararlar hep senden gelir.',
   'wizard.accounts.lead': "Asistanları ve her birinin hesaplarını otomatik buldum. Docket'in kullanacaklarını seç.",
+  'wizard.accounts.selectionHint': 'Yalnızca bu cihazda kullanmak istediğiniz hesapları seçili bırakın',
+  'wizard.accounts.clearSelection': 'Seçimi temizle',
+  'wizard.accounts.selectAll': 'Tümünü seç',
   // The add-another-account card (P-67): the provider's name fills {name}.
   'wizard.accounts.agyAdd.title': 'Başka bir {name} hesabı ekle',
   'wizard.accounts.agyAdd.signIn': 'Dizini seç ya da oluştur, sonra terminalde bir kez `HOME=<dizin> agy` ile giriş yap — Docket girişi asla oluşturmaz, kimlik bilgisini okumaz veya yazmaz.',

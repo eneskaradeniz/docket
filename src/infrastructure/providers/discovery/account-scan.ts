@@ -141,7 +141,14 @@ async function gather(fs: AccountScanFs, dir: string, withHomeIdentity: boolean,
     const identity = await readJson(fs, path);
     if (identity.state === 'failed') readable = false;
     if (identity.state === 'ok' && isRecord(identity.value) && isRecord(identity.value.oauthAccount)) {
-      hasOauthLogin = true;
+      const oa = identity.value.oauthAccount;
+      const expiredFreeTier =
+        oa['organizationRateLimitTier'] === 'default_claude_ai' &&
+        (oa['seatTier'] === null || oa['seatTier'] === undefined) &&
+        (oa['userRateLimitTier'] === null || oa['userRateLimitTier'] === undefined);
+      if (!expiredFreeTier) {
+        hasOauthLogin = true;
+      }
     }
   }
 
