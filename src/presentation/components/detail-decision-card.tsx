@@ -317,12 +317,22 @@ function DeployCard({
   );
 }
 
-/** The readable heading of a tool Docket itself serves, so the card never shows its raw wire name;
- *  every other tool keeps the exact name the agent asked with. */
-const permissionToolTitle = (locale: Locale, tool: string): string =>
-  tool === 'submit_verdict' || tool === 'mcp__docket-pages__submit_verdict'
-    ? t(locale, 'detail.zone.tool.submitVerdict')
-    : tool;
+/** The readable heading of a tool Docket itself serves, so the card never shows its raw wire
+ *  name (U-366); every other tool keeps the exact name the agent asked with. Both spellings of
+ *  Docket's own tools are listed — bare and as the pages server prefixes them. */
+const PERMISSION_TOOL_LABELS: Readonly<Record<string, LabelKey>> = {
+  submit_verdict: 'detail.zone.tool.submitVerdict',
+  'mcp__docket-pages__submit_verdict': 'detail.zone.tool.submitVerdict',
+  page_publish: 'detail.zone.tool.pagePublish',
+  page_update: 'detail.zone.tool.pageUpdate',
+  'mcp__docket-pages__page_publish': 'detail.zone.tool.pagePublish',
+  'mcp__docket-pages__page_update': 'detail.zone.tool.pageUpdate',
+};
+
+const permissionToolTitle = (locale: Locale, tool: string): string => {
+  const key = PERMISSION_TOOL_LABELS[tool];
+  return key === undefined ? tool : t(locale, key);
+};
 
 /** The permission card: the tool asked for, its exact command or path in the code box, the two answers, and
  *  the asking run's already-allowed asks folded into one line. */

@@ -47,10 +47,22 @@ const TOOL_KIND_GLYPH: Readonly<Record<string, string>> = {
 
 const toolGlyph = (name: string): string => TOOL_KIND_GLYPH[name.toLowerCase()] ?? '◆';
 
-const formatAskTool = (locale: Locale, tool: string): string =>
-  tool === 'submit_verdict' || tool === 'mcp__docket-pages__submit_verdict'
-    ? t(locale, 'detail.zone.tool.submitVerdict')
-    : tool;
+/** The readable name of a tool Docket itself serves, so the ask card never shows its raw wire
+ *  name (U-366); every other tool keeps the exact name the agent asked with. Both spellings of
+ *  Docket's own tools are listed — bare and as the pages server prefixes them. */
+const ASK_TOOL_LABELS: Readonly<Record<string, LabelKey>> = {
+  submit_verdict: 'detail.zone.tool.submitVerdict',
+  'mcp__docket-pages__submit_verdict': 'detail.zone.tool.submitVerdict',
+  page_publish: 'detail.zone.tool.pagePublish',
+  page_update: 'detail.zone.tool.pageUpdate',
+  'mcp__docket-pages__page_publish': 'detail.zone.tool.pagePublish',
+  'mcp__docket-pages__page_update': 'detail.zone.tool.pageUpdate',
+};
+
+const formatAskTool = (locale: Locale, tool: string): string => {
+  const key = ASK_TOOL_LABELS[tool];
+  return key === undefined ? tool : t(locale, key);
+};
 
 /** The meter's own name when the provider gave one; the unit stands in — meters without any name
  *  still read as an instrument line, never as a blank. */

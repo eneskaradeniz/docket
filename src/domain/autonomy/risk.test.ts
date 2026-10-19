@@ -1,4 +1,4 @@
-// Rules R-172 … R-179 of docs/v2/domain.md autonomy addendum: the risk-rule table.
+// Rules R-172 … R-179 and R-191 of docs/v2/domain.md autonomy addendum: the risk-rule table.
 import { describe, expect, it } from 'vitest';
 
 import { ACTION_CLASSES, type ActionClass } from '../actions';
@@ -39,6 +39,7 @@ const ALL_ROW_IDS: readonly string[] = [
   'deny-write-git-internals',
   'deny-write-outside',
   'allow-own-read',
+  'allow-own-pages',
   'allow-read-search',
   'allow-git-read',
   'allow-verify',
@@ -50,6 +51,7 @@ describe('autonomy/risk', () => {
     expect([...RISK_RULES].map((rule) => rule.id).sort()).toEqual([...ALL_ROW_IDS].sort());
     // One representative ask per allow row: each low names its row.
     expect(lowRule(toolAsk('docket_get'))).toBe('allow-own-read');
+    expect(lowRule(toolAsk('page_publish'))).toBe('allow-own-pages');
     expect(lowRule(toolAsk('Read', { file_path: `${ROOT}/src/a.ts` }))).toBe('allow-read-search');
     expect(lowRule(toolAsk('Bash', { command: 'git status' }))).toBe('allow-git-read');
     expect(lowRule(toolAsk('Bash', { command: 'npm test' }))).toBe('allow-verify');
@@ -81,6 +83,29 @@ describe('autonomy/risk', () => {
     expect(JSON.stringify(ctx)).toBe(ctxBefore);
     // A low verdict names the deciding row — the evidence the policy actor records.
     expect(lowRule(toolAsk('docket_search', { query: 'x' }))).toBe('allow-own-read');
+  });
+
+  it('R-191: the run’s own page publish pair is low by name alone — bare and as the pages server spells it; near-miss and foreign names ask', () => {
+    // Publishing a page is not approving it (the approval carve-out is decidePermission's R-168
+    // check): the row reads the name only, never the arguments.
+    for (const tool of ['page_publish', 'page_update', 'mcp__docket-pages__page_publish', 'mcp__docket-pages__page_update']) {
+      expect(lowRule(toolAsk(tool))).toBe('allow-own-pages');
+      // Arguments are never read: a call carrying some is the same name-only row.
+      expect(lowRule(toolAsk(tool, { title: 'x', kind: 'html' }))).toBe('allow-own-pages');
+    }
+    // Whole-string matching: a foreign server's page_publish, a longer name, another Docket tool
+    // and the verdict tool are not this row.
+    expect(asks(toolAsk('mcp__other__page_publish'))).toBe(true);
+    expect(asks(toolAsk('page_publish_x'))).toBe(true);
+    expect(asks(toolAsk('page_publish_v2'))).toBe(true);
+    expect(asks(toolAsk('docket_read_file'))).toBe(true);
+    expect(asks(toolAsk('propose_memory'))).toBe(true);
+    expect(asks(toolAsk('submit_verdict'))).toBe(true);
+    // The deny floor never matches: a name-only ask carries no path or command for it to read.
+    expect(classifyRisk(toolAsk('page_publish'), context({ dataDir: '/data' }))).toEqual({
+      verdict: 'low',
+      rule: 'allow-own-pages',
+    });
   });
 
   it('R-174: read/search rows — containment, relative-against-cwd, ~ and .. escapes, secret paths', () => {

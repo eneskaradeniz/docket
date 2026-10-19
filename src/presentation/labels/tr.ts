@@ -120,6 +120,8 @@ export const TR: LabelBundle = {
   'detail.zone.permissionChip': 'İstenen işlem',
   'detail.zone.permissionBody': 'Ajan bu işlemi ancak sen izin verirsen yapar; karar verene kadar bekler.',
   'detail.zone.tool.submitVerdict': 'Docket: inceleme kararı',
+  'detail.zone.tool.pagePublish': 'Docket: sayfa yayınla',
+  'detail.zone.tool.pageUpdate': 'Docket: sayfa güncelle',
   'detail.zone.verdict': 'Karar: {verdict}',
   'detail.zone.verdict.approve': 'Onay',
   'detail.zone.verdict.reject': 'Ret',

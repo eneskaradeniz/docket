@@ -29,7 +29,6 @@ import type {
   RunOutcome,
   StageSlug,
   Tier,
-  UserOnlyGate,
   VerdictAskDetail,
   WriteScopeContext,
   WorkOrderId,
@@ -96,10 +95,6 @@ export interface PermissionGate {
 
 type PermissionAskEvent = Extract<AgentEvent, { readonly type: 'permission_ask' }>;
 
-/** The tools whose ask performs a carve-out decision: tool names are Docket-tool language, so the
- *  mapping is caller-side — decidePermission reads `USER_ONLY_GATES` itself and refuses the lot. */
-const TOOL_GATE_ACTIONS: Readonly<Record<string, UserOnlyGate>> = { page_publish: 'page_approval' };
-
 /** Docket's own verdict tool, bare and as the MCP server prefix spells it — the two names an ask
  *  for it reaches the executor under. Only an ask for this tool may carry a `detail`. */
 const VERDICT_TOOLS: readonly string[] = ['submit_verdict', 'mcp__docket-pages__submit_verdict'];
@@ -143,8 +138,18 @@ const RISK_ARGUMENT_KEYS: Readonly<Record<string, string>> = {
   Write: 'file_path',
 };
 
-/** Docket's own read tools: the risk table rates the bare name low without arguments. */
-const RISK_NAME_ONLY_TOOLS: readonly string[] = ['docket_get', 'docket_search'];
+/** Docket's own name-only tools: the read pair (the SDK bridge renames it bare) and the page
+ *  publish pair, bare and as the MCP server prefix spells it — the risk table rates the name low
+ *  without arguments (R-191: publishing a page is not approving it, so no ask maps to a
+ *  carve-out action any more). */
+const RISK_NAME_ONLY_TOOLS: readonly string[] = [
+  'docket_get',
+  'docket_search',
+  'page_publish',
+  'page_update',
+  'mcp__docket-pages__page_publish',
+  'mcp__docket-pages__page_update',
+];
 
 /** The ask as the risk table sees it, or undefined when the event's one target string cannot be
  *  mapped — unmappable asks stay with the human. */
@@ -308,14 +313,8 @@ const decideAsk = async (
     if (verdict.kind === 'deny-by-policy') return verdict;
   }
   if (!autonomy.ok || ask === undefined) return { kind: 'ask-human' };
-  const action = TOOL_GATE_ACTIONS[event.tool];
   const alignedAsk = alignAskRoots(shouldExpand ? expandAskHome(ask, homeDir) : ask, roots);
-  return decidePermission({
-    level: autonomy.value.level,
-    ask: alignedAsk,
-    context,
-    ...(action !== undefined ? { action } : {}),
-  });
+  return decidePermission({ level: autonomy.value.level, ask: alignedAsk, context });
 };
 
 /** The facts the write-scope verdict reads: the run's working directory, the work order's

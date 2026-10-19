@@ -1,6 +1,6 @@
-// Rules R-168 and R-170 of docs/v2/domain.md autonomy addendum: decidePermission, the axis-1
-// permission policy behind D-10's split 2b. The risk table (./risk.test.ts) answers what is low;
-// this file answers who may decide it.
+// Rules R-168, R-170 and R-191 of docs/v2/domain.md autonomy addendum: decidePermission, the
+// axis-1 permission policy behind D-10's split 2b. The risk table (./risk.test.ts) answers what
+// is low; this file answers who may decide it.
 import { describe, expect, it } from 'vitest';
 
 import { AUTONOMY_LEVELS, USER_ONLY_GATES, parseSlug } from '../shared';
@@ -13,6 +13,12 @@ const CONTEXT: RiskContext = { worktreeRoot: '/wt', cwd: '/wt', verificationComm
 const LOW_ASK: RiskAsk = { kind: 'tool', tool: 'docket_get' };
 /** The ask the table sends to the human: a destructive command. */
 const HIGH_ASK: RiskAsk = { kind: 'tool', tool: 'Bash', arguments: { command: 'rm -rf build' } };
+/** The run's own page publish ask (R-191), bare and as the pages server spells it. */
+const PUBLISH_ASK: RiskAsk = { kind: 'tool', tool: 'page_publish' };
+const PUBLISH_MCP_ASK: RiskAsk = { kind: 'tool', tool: 'mcp__docket-pages__page_publish' };
+const UPDATE_ASK: RiskAsk = { kind: 'tool', tool: 'page_update' };
+const UPDATE_MCP_ASK: RiskAsk = { kind: 'tool', tool: 'mcp__docket-pages__page_update' };
+const OWN_PAGE_ASKS: readonly RiskAsk[] = [PUBLISH_ASK, PUBLISH_MCP_ASK, UPDATE_ASK, UPDATE_MCP_ASK];
 
 describe('decidePermission', () => {
   it('R-168: a carve-out action asks the human at every level, even when the table would say low', () => {
@@ -43,8 +49,50 @@ describe('decidePermission', () => {
     expect(decidePermission({ level: 'manual', ask: LOW_ASK, context: CONTEXT })).toEqual({ kind: 'ask-human' });
   });
 
-  it('balanced asks the human too — the demotion to manual is elsewhere, this arm stays closed', () => {
+  it('balanced asks the human for every other low ask — only R-191’s publish row opens to it', () => {
     expect(decidePermission({ level: 'balanced', ask: LOW_ASK, context: CONTEXT })).toEqual({ kind: 'ask-human' });
+  });
+
+  it('R-191: the run’s own page publish/update ask is allowed at balanced and auto, bare and prefixed', () => {
+    for (const ask of OWN_PAGE_ASKS) {
+      expect(decidePermission({ level: 'auto', ask, context: CONTEXT })).toEqual({
+        kind: 'allow-by-policy',
+        policy: PERMISSION_RULES_POLICY,
+        level: 'auto',
+      });
+      expect(decidePermission({ level: 'balanced', ask, context: CONTEXT })).toEqual({
+        kind: 'allow-by-policy',
+        policy: PERMISSION_RULES_POLICY,
+        level: 'balanced',
+      });
+    }
+  });
+
+  it('R-191: manual still asks the human for the run’s own page publish/update ask', () => {
+    for (const ask of OWN_PAGE_ASKS) {
+      expect(decidePermission({ level: 'manual', ask, context: CONTEXT })).toEqual({ kind: 'ask-human' });
+    }
+  });
+
+  it('R-191: publishing is not approving — a page_approval action asks the human at every level even for the publish ask', () => {
+    for (const level of AUTONOMY_LEVELS) {
+      expect(decidePermission({ level, ask: PUBLISH_ASK, context: CONTEXT, action: 'page_approval' })).toEqual({ kind: 'ask-human' });
+    }
+  });
+
+  it('R-191: every other near name stays with the human at every level — the table never rates it low', () => {
+    const nearMisses: readonly RiskAsk[] = [
+      { kind: 'tool', tool: 'mcp__other__page_publish' },
+      { kind: 'tool', tool: 'page_publish_x' },
+      { kind: 'tool', tool: 'propose_memory' },
+      { kind: 'tool', tool: 'submit_verdict' },
+      { kind: 'tool', tool: 'docket_read_file' },
+    ];
+    for (const ask of nearMisses) {
+      for (const level of AUTONOMY_LEVELS) {
+        expect(decidePermission({ level, ask, context: CONTEXT })).toEqual({ kind: 'ask-human' });
+      }
+    }
   });
 
   it('auto allows a low ask by the permission rules policy, naming the level in force', () => {

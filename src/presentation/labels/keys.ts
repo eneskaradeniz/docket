@@ -145,6 +145,8 @@ export const LABEL_KEYS = [
   'detail.zone.permissionChip',
   'detail.zone.permissionBody',
   'detail.zone.tool.submitVerdict',
+  'detail.zone.tool.pagePublish',
+  'detail.zone.tool.pageUpdate',
   'detail.zone.verdict',
   'detail.zone.verdict.approve',
   'detail.zone.verdict.reject',

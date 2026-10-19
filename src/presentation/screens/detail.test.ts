@@ -457,6 +457,28 @@ describe('work-order detail screen — the decision zone (U-4, U-226)', () => {
     expect(card).not.toContain('submit_verdict');
   });
 
+  it('U-366: the permission card names the page publish tools in words, bare and prefixed — never by raw tool name', async () => {
+    const publish = await draw(ASKING, [ASK_ROW], null, [], [
+      { type: 'permission_ask', at: 0, id: 'ask-1', tool: 'page_publish', options: ['allow', 'deny'] },
+    ]);
+    const publishCard = publish.slice(
+      publish.indexOf('data-decision-card="permission"'),
+      publish.indexOf('</li>', publish.indexOf('data-decision-card="permission"')),
+    );
+    expect(publishCard).toContain('Docket: sayfa yayınla');
+    expect(publishCard).not.toContain('page_publish');
+
+    const update = await draw(ASKING, [ASK_ROW], null, [], [
+      { type: 'permission_ask', at: 0, id: 'ask-1', tool: 'mcp__docket-pages__page_update', options: ['allow', 'deny'] },
+    ]);
+    const updateCard = update.slice(
+      update.indexOf('data-decision-card="permission"'),
+      update.indexOf('</li>', update.indexOf('data-decision-card="permission"')),
+    );
+    expect(updateCard).toContain('Docket: sayfa güncelle');
+    expect(updateCard).not.toContain('page_update');
+  });
+
   it('A-429: the verdict permission card shows the verdict, the summary as plain text and the pointer count', async () => {
     const summary = 'Checked <b>the</b> diff & the "tests".';
     const html = await draw(ASKING, [ASK_ROW], null, [], [

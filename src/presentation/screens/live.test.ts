@@ -9,6 +9,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
+import type { Locale } from '../labels/t';
 import type { LivePaneItem, LivePaneState, LivePaneStore, OpenPermissionAsk } from '../stores/live-pane';
 import { LivePaneScreen } from './live';
 
@@ -26,6 +27,12 @@ const paneStoreOf = (state: LivePaneState): LivePaneStore => ({
 
 const draw = (state: LivePaneState): string =>
   renderToStaticMarkup(createElement(LivePaneScreen, { store: paneStoreOf(state), locale: 'tr' }));
+
+const drawIn = (locale: Locale, ask: OpenPermissionAsk): string =>
+  renderToStaticMarkup(createElement(LivePaneScreen, {
+    store: paneStoreOf({ runId: 'run-1', items: [], ask, ended: false }),
+    locale,
+  }));
 
 describe('live pane — unbreakable stream text stays inside the pane', () => {
   const items: readonly LivePaneItem[] = [
@@ -76,5 +83,21 @@ describe('live pane — unbreakable stream text stays inside the pane', () => {
     const htmlMcp = draw({ runId: 'run-1', items: [], ask: askMcp, ended: false });
     expect(htmlMcp).toContain('Docket: inceleme kararı');
     expect(htmlMcp).not.toContain('mcp__docket-pages__submit_verdict');
+  });
+
+  it('U-366: an open ask for page_publish/page_update formats as its Docket label in both locales — bare and prefixed', () => {
+    const cases: readonly { readonly tool: string; readonly tr: string; readonly en: string }[] = [
+      { tool: 'page_publish', tr: 'Docket: sayfa yayınla', en: 'Docket: publish page' },
+      { tool: 'page_update', tr: 'Docket: sayfa güncelle', en: 'Docket: update page' },
+      { tool: 'mcp__docket-pages__page_publish', tr: 'Docket: sayfa yayınla', en: 'Docket: publish page' },
+      { tool: 'mcp__docket-pages__page_update', tr: 'Docket: sayfa güncelle', en: 'Docket: update page' },
+    ];
+    for (const one of cases) {
+      const ask: OpenPermissionAsk = { askId: 'ask-1', tool: one.tool, target: null, options: ['allow', 'deny'] };
+      expect(drawIn('tr', ask)).toContain(one.tr);
+      expect(drawIn('tr', ask)).not.toContain(one.tool);
+      expect(drawIn('en', ask)).toContain(one.en);
+      expect(drawIn('en', ask)).not.toContain(one.tool);
+    }
   });
 });

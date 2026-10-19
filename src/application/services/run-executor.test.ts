@@ -2500,7 +2500,8 @@ const bashAsk = (id: string, command: string): AgentEvent => ({
   options: ['allow', 'deny'],
 });
 
-/** The one tool whose ask performs a carve-out decision. */
+/** The run's own page publish pair (R-191) — publishing is not approving, so the ask is a
+ *  normal Docket-own-tool ask the policy may answer. */
 const pagePublishAsk = (id: string): AgentEvent => ({
   type: 'permission_ask',
   at: at(3),
@@ -2509,14 +2510,30 @@ const pagePublishAsk = (id: string): AgentEvent => ({
   options: ['allow', 'deny'],
 });
 
-/** The same tool as the MCP server prefix spells it — the shape transports that keep the prefix
- *  deliver. The mapping tables know only the bare name, so the ask is unmappable exactly like a
- *  search ask: it must stay with the human even under `auto`. */
+/** The same tools as the MCP server prefix spells it — the shape transports that keep the prefix
+ *  deliver. R-191 licenses the prefixed spelling like the bare one. */
 const prefixedPublishAsk = (id: string): AgentEvent => ({
   type: 'permission_ask',
   at: at(3),
   id,
   tool: 'mcp__docket-pages__page_publish',
+  options: ['allow', 'deny'],
+});
+
+const prefixedUpdateAsk = (id: string): AgentEvent => ({
+  type: 'permission_ask',
+  at: at(3),
+  id,
+  tool: 'mcp__docket-pages__page_update',
+  options: ['allow', 'deny'],
+});
+
+/** Any other tool ask by bare name — the names R-191 must not open. */
+const namedAsk = (id: string, tool: string): AgentEvent => ({
+  type: 'permission_ask',
+  at: at(3),
+  id,
+  tool,
   options: ['allow', 'deny'],
 });
 
@@ -2649,9 +2666,39 @@ describe('executeRun — the autonomy permission policy', () => {
     expect(board.autoDecided()).toEqual([]);
   });
 
-  it('a page_publish ask performs a carve-out decision and stays with the human under auto', async () => {
-    const h = await harness({ script: [pagePublishAsk('ask-1'), finished('completed')] });
+  it('A-437: a page_publish ask is allowed by the policy under auto — publishing is not approving (R-191)', async () => {
+    const h = await harness({
+      script: [pagePublishAsk('ask-1'), finished('completed')],
+      defsJson: VERIFY_DEFS_JSON,
+    });
     await h.deps.settings.set(AUTONOMY_KEY, 'auto');
+    // A deny gate doubles as the leak detector: any ask that slipped through to it would flip the answer.
+    const gate = permissionGate('deny');
+    const board = createPermissionBoard();
+
+    const outcome = await executeRun(h.deps, gate.permissions, INPUT, board);
+
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect(gate.asked).toEqual([]);
+    const record = await theRun(h.runs);
+    expect(await h.runs.events(record.id)).toEqual([
+      pagePublishAsk('ask-1'),
+      permissionAnswered('ask-1', 'allow'),
+      finished('completed'),
+    ]);
+    expect(h.transport.answers()).toEqual([{ askId: 'ask-1', decision: 'allow' }]);
+    expect(permissionAudits(h.log).map((entry) => entry.actor)).toEqual([
+      { kind: 'policy', policy: PERMISSION_RULES_POLICY, level: 'auto' },
+    ]);
+    expect(permissionAudits(h.log)[0]?.detail).toEqual({ tool: 'page_publish', decision: 'allow' });
+    expect(board.autoDecided()).toEqual([]);
+  });
+
+  it('R-191: a manual run asks the human for a page_publish ask the policy would allow', async () => {
+    const h = await harness({
+      script: [pagePublishAsk('ask-1'), finished('completed')],
+      defsJson: VERIFY_DEFS_JSON,
+    });
     const gate = permissionGate('deny');
 
     await executeRun(h.deps, gate.permissions, INPUT);
@@ -2683,13 +2730,12 @@ describe('executeRun — the autonomy permission policy', () => {
     expect(permissionAudits(h.log).map((entry) => entry.actor)).toEqual([RUN_EXECUTOR_SYSTEM_ACTOR]);
   });
 
-  it('A-412: the server-prefixed docket tool name mcp__docket-pages__page_publish stays human-decided under auto — by the mappability miss, not the carve-out', async () => {
-    // The carve-out map knows the bare name only, so the prefixed spelling reaches neither the
-    // carve-out nor the risk table's argument map: it fails closed to the human. The second ask
-    // proves `auto` was live and allowing in the same run — a later mapping change that teaches
-    // the tables the prefix cannot silently license the prefixed tool.
+  it('R-191: the server-prefixed spellings mcp__docket-pages__page_publish and page_update are allowed like the bare ones under auto (A-412’s pin superseded)', async () => {
+    // The pin held while the prefixed name was unmapped; this change maps it deliberately
+    // (R-191), so the ask rides the same name-only row. The own-read ask rides along to prove
+    // every ask of the run answered through the same policy arm.
     const h = await harness({
-      script: [prefixedPublishAsk('ask-1'), ownReadAsk('ask-2'), finished('completed')],
+      script: [prefixedPublishAsk('ask-1'), prefixedUpdateAsk('ask-2'), ownReadAsk('ask-3'), finished('completed')],
       defsJson: VERIFY_DEFS_JSON,
     });
     await h.deps.settings.set(AUTONOMY_KEY, 'auto');
@@ -2697,18 +2743,62 @@ describe('executeRun — the autonomy permission policy', () => {
 
     await executeRun(h.deps, gate.permissions, INPUT);
 
-    expect(gate.asked.map((entry) => entry.ask.id)).toEqual(['ask-1']);
+    expect(gate.asked).toEqual([]);
     const record = await theRun(h.runs);
     expect(await h.runs.events(record.id)).toEqual([
       prefixedPublishAsk('ask-1'),
-      permissionAnswered('ask-1', 'deny'),
-      ownReadAsk('ask-2'),
+      permissionAnswered('ask-1', 'allow'),
+      prefixedUpdateAsk('ask-2'),
       permissionAnswered('ask-2', 'allow'),
+      ownReadAsk('ask-3'),
+      permissionAnswered('ask-3', 'allow'),
+      finished('completed'),
+    ]);
+    expect(permissionAudits(h.log).map((entry) => entry.actor)).toEqual([
+      { kind: 'policy', policy: PERMISSION_RULES_POLICY, level: 'auto' },
+      { kind: 'policy', policy: PERMISSION_RULES_POLICY, level: 'auto' },
+      { kind: 'policy', policy: PERMISSION_RULES_POLICY, level: 'auto' },
+    ]);
+  });
+
+  it('R-191: every other near name stays with the human under auto — a foreign page_publish, a longer name, the verdict tool, a memory proposal, a chat-only read', async () => {
+    const h = await harness({
+      script: [
+        namedAsk('ask-1', 'mcp__other__page_publish'),
+        namedAsk('ask-2', 'page_publish_x'),
+        namedAsk('ask-3', 'submit_verdict'),
+        namedAsk('ask-4', 'propose_memory'),
+        namedAsk('ask-5', 'docket_read_file'),
+        finished('completed'),
+      ],
+      defsJson: VERIFY_DEFS_JSON,
+    });
+    await h.deps.settings.set(AUTONOMY_KEY, 'auto');
+    const gate = permissionGate('deny');
+
+    await executeRun(h.deps, gate.permissions, INPUT);
+
+    expect(gate.asked.map((entry) => entry.ask.id)).toEqual(['ask-1', 'ask-2', 'ask-3', 'ask-4', 'ask-5']);
+    const record = await theRun(h.runs);
+    expect(await h.runs.events(record.id)).toEqual([
+      namedAsk('ask-1', 'mcp__other__page_publish'),
+      permissionAnswered('ask-1', 'deny'),
+      namedAsk('ask-2', 'page_publish_x'),
+      permissionAnswered('ask-2', 'deny'),
+      namedAsk('ask-3', 'submit_verdict'),
+      permissionAnswered('ask-3', 'deny'),
+      namedAsk('ask-4', 'propose_memory'),
+      permissionAnswered('ask-4', 'deny'),
+      namedAsk('ask-5', 'docket_read_file'),
+      permissionAnswered('ask-5', 'deny'),
       finished('completed'),
     ]);
     expect(permissionAudits(h.log).map((entry) => entry.actor)).toEqual([
       RUN_EXECUTOR_SYSTEM_ACTOR,
-      { kind: 'policy', policy: PERMISSION_RULES_POLICY, level: 'auto' },
+      RUN_EXECUTOR_SYSTEM_ACTOR,
+      RUN_EXECUTOR_SYSTEM_ACTOR,
+      RUN_EXECUTOR_SYSTEM_ACTOR,
+      RUN_EXECUTOR_SYSTEM_ACTOR,
     ]);
   });
 

@@ -121,6 +121,8 @@ export const EN: LabelBundle = {
   'detail.zone.permissionChip': 'Requested action',
   'detail.zone.permissionBody': 'The agent does this only with your permission; it waits until you decide.',
   'detail.zone.tool.submitVerdict': 'Docket: review verdict',
+  'detail.zone.tool.pagePublish': 'Docket: publish page',
+  'detail.zone.tool.pageUpdate': 'Docket: update page',
   'detail.zone.verdict': 'Verdict: {verdict}',
   'detail.zone.verdict.approve': 'Approve',
   'detail.zone.verdict.reject': 'Reject',
