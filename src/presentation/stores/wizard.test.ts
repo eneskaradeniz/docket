@@ -1236,4 +1236,17 @@ describe('wizard store (U-35, U-42)', () => {
     expect(bundle.store.state().loading).toBe(false);
     expect(bundle.api.queries.filter((q) => q.type === 'accounts.candidates').length).toBe(beforeCount + 1);
   });
+
+  it('U-361: clearSelection empties selection and selectAllReady selects all ready accounts', async () => {
+    const bundle = setup([claudeA, claudeB]);
+    await toAccounts(bundle);
+    expect(selectedIds(bundle.store)).toEqual([keyOf('.claude'), keyOf('.claude-b')]);
+
+    bundle.store.clearSelection();
+    expect(selectedIds(bundle.store)).toEqual([]);
+    expect(bundle.store.state().rows.filter((r) => r.selected)).toHaveLength(0);
+
+    bundle.store.selectAllReady();
+    expect(selectedIds(bundle.store)).toEqual([keyOf('.claude'), keyOf('.claude-b')]);
+  });
 });

@@ -340,4 +340,21 @@ describe('U-37: the frame links into Settings', () => {
     const state = settingsPanelReducer(CLOSED_SETTINGS_PANEL, { type: 'open', origin: 'pointer', ...unaddedRowTarget() });
     expect(state).toMatchObject({ open: true, section: 'accounts', subPage: null });
   });
+
+  it('U-361: accountCards populates poolLabel for model-scoped pools and null otherwise', () => {
+    const acc = {
+      ...account('acc-model', 'Model Account', [
+        meter('m-model', 'pool-model', { used: 20, limit: 100, remaining: 80 }),
+        meter('m-all', 'pool-all', { used: 10, limit: 100, remaining: 90 }),
+      ]),
+      pools: [
+        { id: 'pool-model', label: 'claude-3-7-sonnet', kind: 'allowance', appliesTo: [{ exact: 'claude-3-7-sonnet' }] },
+        { id: 'pool-all', label: 'All Models', kind: 'allowance', appliesTo: 'all' as const },
+      ],
+    };
+    const [card] = accountCards(view([acc]));
+    expect(card?.limits[0]?.poolLabel).toBe('claude-3-7-sonnet');
+    expect(card?.limits[1]?.poolLabel).toBeNull();
+    expect(card?.tightest?.poolLabel).toBe('claude-3-7-sonnet');
+  });
 });

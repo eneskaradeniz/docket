@@ -257,6 +257,8 @@ export interface WizardStore {
   /** A done step in the rail: goes back to it, keeping every entry. Later and skipped steps do nothing. */
   goTo(target: WizardStep): void;
   select(key: string): void;
+  clearSelection(): void;
+  selectAllReady(): void;
   setImportToken(key: string, on: boolean): void;
   /** P-67: the add-another-account card's directory input; typing clears its refusal note. */
   setAgyAddPath(path: string): void;
@@ -1214,6 +1216,16 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
       } else {
         selection = [...selection, key];
       }
+      publish();
+    },
+    clearSelection: () => {
+      selection = [];
+      publish();
+    },
+    selectAllReady: () => {
+      selection = rowsOf()
+        .filter((row) => row.selectable)
+        .map((row) => row.id);
       publish();
     },
     setImportToken: (key, on) => {
