@@ -1996,3 +1996,11 @@ Added 2026-10-19, #1311 (#1275-3).
   1. (detail screen) At viewports `@[900px]` and wider, the live pane wrapper (`data-detail-live`) carries `@[900px]:row-span-6` alongside `@[900px]:col-start-2 @[900px]:row-start-1 @[900px]:sticky @[900px]:top-0`, spanning across all left-column detail rows (decision zone, git card, files, pages, stages, usage) so the sticky pane tracks smoothly through the screen without distorting row heights.
   2. (new-work-order window) When unmerged work orders exist on the board (`activeWorkOrderCount > 0`), the new-work-order form body displays a quiet hint line (`data-new-work-order-branch-hint`, `text-[0.75rem] text-inkdim`) above the footer actions: TR `"Yeni iş emrinin dalı ana daldan açılır; henüz birleştirilmemiş iş emirlerinin değişikliklerini içermez."` / EN `"A new work order branches from the base branch and does not include changes from unmerged work orders."` (`workOrder.new.openBranchesHint`). When `activeWorkOrderCount` is 0 or undefined, no hint line renders.
 
+## Setup UI fixes and proposal details (U-364)
+
+Added 2026-10-19, #1319; aligns with D-11 and A-419.
+- **U-364** (added 2026-10-19, #1319) Three setup flow and proposal inspection refinements:
+  1. Toast alignment: `'newProject.created'` states that no test gate was added because no test command was entered (TR `"Proje oluşturuldu. Test komutu girilmediği için test kapısı eklenmedi; dilediğiniz zaman depo ayarlarından ekleyebilirsiniz."` / EN `"Project created. No test gate was added because no test command was set; you can add one anytime in repo settings."`), matching D-11 and A-419.
+  2. Summary footer and Escape dismissal: `NewProjectPanel` renders no duplicate modal footer on `screen === 'summary'` (`SetupSummary` owns the summary actions), and `hasDraft` evaluates to `false` on `screen === 'summary'` so pressing `Escape` or clicking close dismisses the completed summary dialog without blocking.
+  3. Expanded `SetupProposalDiff` details: Expanding a section in `SetupProposalDiff` renders `data-proposal-section-detail` (`sectionDetail`) showing the stage pipeline (`→`), stage-to-role bindings (`stage: roleId`), limit policy, and command set commands rather than repeating the header count/slug.
+

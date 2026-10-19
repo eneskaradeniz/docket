@@ -184,20 +184,14 @@ export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, 
             : ai.draft.trim() === '' || ai.turn !== null || busy
           : reasonKey !== null || busy;
 
-  const footer = multiScreen && screen !== 'summary' ? undefined : (
+  const footer = multiScreen ? undefined : (
     <>
       <ActionButton
         variant="neutral"
         size="md"
-        onClick={
-          screen === 'proposal'
-            ? () => store.discardProposal()
-            : screen === 'summary'
-              ? () => store.showAddChooser()
-              : onClose
-        }
+        onClick={screen === 'proposal' ? () => store.discardProposal() : onClose}
       >
-        {t(locale, screen === 'proposal' ? 'setup.proposal.discard' : screen === 'summary' ? 'setup.multi.summary.addMore' : 'newProject.cancel')}
+        {t(locale, screen === 'proposal' ? 'setup.proposal.discard' : 'newProject.cancel')}
       </ActionButton>
       <span aria-live="polite" className={`ml-auto flex min-w-0 items-center gap-2 ${NOTE_CLASS} text-inkdim`}>
         {busy ? <span className="truncate">{t(locale, 'setup.loading')}</span> : null}

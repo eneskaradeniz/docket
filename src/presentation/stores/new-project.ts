@@ -240,7 +240,10 @@ export const hasDraft = (
   screen: SetupScreen,
   proposal: SetupProposal | null,
   resumable: ResumableDraft | null = null,
-): boolean => screen !== 'choose' || proposal !== null || form.path !== null || form.repoPath.trim() !== '' || resumable !== null;
+): boolean => {
+  if (screen === 'summary') return false;
+  return screen !== 'choose' || proposal !== null || form.path !== null || form.repoPath.trim() !== '' || resumable !== null;
+};
 
 /** The resume card's fact (A-359): the newest persisted setup draft, or null. */
 export interface ResumableDraft {
