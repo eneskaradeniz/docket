@@ -1885,4 +1885,96 @@ describe('effectiveAutonomy', () => {
     });
     expect(okResult.ok).toBe(true);
   });
+
+  it('A-431: openWorkOrder validates stageSkip and refuses bad input before writing', async () => {
+    const h = createHarness();
+
+    // 1. Empty reason
+    const emptyReason = await openWorkOrder(h.openDeps, {
+      project: PROJECT,
+      repo: REPO,
+      title: 'Fix issue',
+      actor: ACTOR,
+      stageSkip: { stages: ['implement'], reason: '   ' },
+    });
+    expect(emptyReason).toEqual({ ok: false, error: { code: 'bad_input', message: 'stageSkip reason must not be empty' } });
+    expect(await h.workOrders.list({})).toEqual([]);
+
+    // 2. Empty stages
+    const emptyStages = await openWorkOrder(h.openDeps, {
+      project: PROJECT,
+      repo: REPO,
+      title: 'Fix issue',
+      actor: ACTOR,
+      stageSkip: { stages: [], reason: 'valid reason' },
+    });
+    expect(emptyStages).toEqual({ ok: false, error: { code: 'bad_input', message: 'stageSkip stages must be a non-empty array' } });
+
+    // 3. Invalid slug
+    const invalidSlug = await openWorkOrder(h.openDeps, {
+      project: PROJECT,
+      repo: REPO,
+      title: 'Fix issue',
+      actor: ACTOR,
+      stageSkip: { stages: ['Not-A-Valid-Slug!'], reason: 'valid reason' },
+    });
+    expect(invalidSlug).toEqual({ ok: false, error: { code: 'bad_input', message: 'invalid stage slug: Not-A-Valid-Slug!' } });
+
+    // 4. Unknown stage
+    const unknownStage = await openWorkOrder(h.openDeps, {
+      project: PROJECT,
+      repo: REPO,
+      title: 'Fix issue',
+      actor: ACTOR,
+      stageSkip: { stages: ['nonexistent-stage'], reason: 'valid reason' },
+    });
+    expect(unknownStage).toEqual({ ok: false, error: { code: 'bad_input', message: 'stage "nonexistent-stage" does not exist in flow "flow-a"' } });
+
+    // 5. Unskippable stage (plan has human exit gate in flow-a)
+    const unskippable = await openWorkOrder(h.openDeps, {
+      project: PROJECT,
+      repo: REPO,
+      title: 'Fix issue',
+      actor: ACTOR,
+      stageSkip: { stages: ['plan'], reason: 'valid reason' },
+    });
+    expect(unskippable).toEqual({ ok: false, error: { code: 'bad_input', message: 'stage "plan" exit gates block skipping' } });
+    expect(await h.workOrders.list({})).toEqual([]);
+  });
+
+  it('A-431: openWorkOrder appends stage_skip_proposed and stage_skip_decided on success', async () => {
+    const h = createHarness();
+
+    const withDecision = await openWorkOrder(h.openDeps, {
+      project: PROJECT,
+      repo: REPO,
+      title: 'Order with approved skip',
+      actor: ACTOR,
+      stageSkip: { stages: ['implement'], reason: '  already implemented  ', approved: true },
+    });
+    expect(withDecision.ok).toBe(true);
+    if (!withDecision.ok) throw new Error('must succeed');
+
+    expect(await h.workOrders.events(withDecision.value)).toEqual([
+      { type: 'created', at: 1_000, by: ACTOR, flow: FLOW_A },
+      { type: 'stage_skip_proposed', at: 1_000, stages: ['implement'], reason: 'already implemented' },
+      { type: 'stage_skip_decided', at: 1_000, approved: true },
+    ]);
+
+    const withoutDecision = await openWorkOrder(h.openDeps, {
+      project: PROJECT,
+      repo: REPO,
+      title: 'Order with undecided skip',
+      actor: ACTOR,
+      stageSkip: { stages: ['implement'], reason: 'proposal only' },
+    });
+    expect(withoutDecision.ok).toBe(true);
+    if (!withoutDecision.ok) throw new Error('must succeed');
+
+    expect(await h.workOrders.events(withoutDecision.value)).toEqual([
+      { type: 'created', at: 1_000, by: ACTOR, flow: FLOW_A },
+      { type: 'stage_skip_proposed', at: 1_000, stages: ['implement'], reason: 'proposal only' },
+    ]);
+  });
 });
+

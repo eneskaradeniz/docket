@@ -86,6 +86,8 @@ interface Acc {
   readonly entries: Readonly<Record<string, number>>;
   readonly done: boolean;
   readonly preBlock: Acc | null;
+  readonly pendingSkip: readonly StageSlug[] | null;
+  readonly skipped: readonly StageSlug[];
 }
 
 const gateIds = (stage: StageDef): readonly GateSlug[] => stage.exit.map((gate) => gate.id);
@@ -97,7 +99,13 @@ const statusForPending = (stage: StageDef, pending: readonly GateSlug[]): WorkOr
   return nonHumanPending ? 'gating' : 'awaiting_human';
 };
 
-const doneAcc = (stageIndex: number, attempt: number, entries: Readonly<Record<string, number>>): Acc => ({
+const doneAcc = (
+  stageIndex: number,
+  attempt: number,
+  entries: Readonly<Record<string, number>>,
+  skipped: readonly StageSlug[] = [],
+  pendingSkip: readonly StageSlug[] | null = null,
+): Acc => ({
   status: 'done',
   stageIndex,
   attempt,
@@ -106,6 +114,8 @@ const doneAcc = (stageIndex: number, attempt: number, entries: Readonly<Record<s
   entries,
   done: true,
   preBlock: null,
+  pendingSkip,
+  skipped,
 });
 
 /**
@@ -113,17 +123,26 @@ const doneAcc = (stageIndex: number, attempt: number, entries: Readonly<Record<s
  * role, `awaiting_human` when it does not. A stage with no role and no gates cannot hold the
  * flow — it advances on entry (R-19), which can cascade through several such stages.
  */
-const enterStage = (flow: FlowDef, index: number, entries: Readonly<Record<string, number>>): Acc => {
+const enterStage = (
+  flow: FlowDef,
+  index: number,
+  entries: Readonly<Record<string, number>>,
+  skipped: readonly StageSlug[] = [],
+  pendingSkip: readonly StageSlug[] | null = null,
+): Acc => {
   const stage = flow.stages[index];
   if (stage === undefined) {
     // Walked off the end of the flow; the attempt of the stage that carried us here carries on.
     const lastIndex = index - 1;
     const last = flow.stages[lastIndex];
-    return doneAcc(lastIndex, last === undefined ? 1 : (entries[last.id] ?? 1), entries);
+    return doneAcc(lastIndex, last === undefined ? 1 : (entries[last.id] ?? 1), entries, skipped, pendingSkip);
+  }
+  if (skipped.includes(stage.id)) {
+    return enterStage(flow, index + 1, entries, skipped, pendingSkip);
   }
   const count = (entries[stage.id] ?? 0) + 1;
   const nextEntries: Readonly<Record<string, number>> = { ...entries, [stage.id]: count };
-  if (stage.role === null && stage.exit.length === 0) return enterStage(flow, index + 1, nextEntries);
+  if (stage.role === null && stage.exit.length === 0) return enterStage(flow, index + 1, nextEntries, skipped, pendingSkip);
   return {
     status: stage.role === null ? 'awaiting_human' : 'ready',
     stageIndex: index,
@@ -133,19 +152,21 @@ const enterStage = (flow: FlowDef, index: number, entries: Readonly<Record<strin
     entries: nextEntries,
     done: false,
     preBlock: null,
+    pendingSkip,
+    skipped,
   };
 };
 
 /** The fold starts at the entry state R-17 describes, so `created` itself changes nothing. */
-const initial = (flow: FlowDef): Acc => enterStage(flow, 0, {});
+const initial = (flow: FlowDef): Acc => enterStage(flow, 0, {}, [], null);
 
 /** Move past the current stage: the next stage at attempt 1, or `done` after the last one. */
 const advance = (flow: FlowDef, acc: Acc): Acc => {
   const nextIndex = acc.stageIndex + 1;
   if (nextIndex >= flow.stages.length) {
-    return { ...acc, status: 'done', pendingGates: [], blockedReason: undefined, done: true, preBlock: null };
+    return doneAcc(acc.stageIndex, acc.attempt, acc.entries, acc.skipped, acc.pendingSkip);
   }
-  return enterStage(flow, nextIndex, acc.entries);
+  return enterStage(flow, nextIndex, acc.entries, acc.skipped, acc.pendingSkip);
 };
 
 const block = (acc: Acc, reason: string): Acc => ({
@@ -172,7 +193,7 @@ const applyFail = (flow: FlowDef, acc: Acc, reason: string, humanGate = false): 
   const next = (acc.entries[onFail.goto] ?? 0) + 1;
   const targetIndex = flow.stages.findIndex((candidate) => candidate.id === onFail.goto);
   if (next > onFail.maxAttempts || targetIndex < 0) return block(acc, reason);
-  return enterStage(flow, targetIndex, acc.entries);
+  return enterStage(flow, targetIndex, acc.entries, acc.skipped, acc.pendingSkip);
 };
 
 /** R-19: a successful run turns the stage's gates pending; nothing to evaluate means advance. */
@@ -239,9 +260,15 @@ const step = (flow: FlowDef, acc: Acc, event: WorkOrderEvent): Acc => {
       // work order keeps whatever it had, and the queue or the operator carries it forward.
       return acc;
     case 'stage_skip_proposed':
-    case 'stage_skip_decided':
-      // R-144: skip marks live beside the machine state; the fold above stays R-17…R-24.
-      return acc;
+      return { ...acc, pendingSkip: event.stages };
+    case 'stage_skip_decided': {
+      if (acc.pendingSkip === null) return acc;
+      const skipped = event.approved ? filterSkippableStageIds(flow, acc.pendingSkip) : acc.skipped;
+      if (flow.stages[acc.stageIndex]?.id !== undefined && skipped.includes(flow.stages[acc.stageIndex].id) && acc.status === 'ready') {
+        return enterStage(flow, acc.stageIndex + 1, acc.entries, skipped, null);
+      }
+      return { ...acc, pendingSkip: null, skipped };
+    }
     case 'branch_pushed':
     case 'pr_opened':
     case 'pr_merged':
@@ -250,7 +277,7 @@ const step = (flow: FlowDef, acc: Acc, event: WorkOrderEvent): Acc => {
       // R-160 … R-164: the git lifecycle lives beside the machine state the same way.
       return acc;
     case 'closed':
-      return doneAcc(acc.stageIndex, acc.attempt, acc.entries);
+      return doneAcc(acc.stageIndex, acc.attempt, acc.entries, acc.skipped, acc.pendingSkip);
   }
 };
 

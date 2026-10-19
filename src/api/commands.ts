@@ -4,7 +4,16 @@ import type { SyncMode } from '../domain/index';
 import type { McpStatusView } from './queries';
 
 export type Command =
-  | { readonly type: 'workOrder.open'; readonly project: string; readonly repo: string; readonly title: string; readonly description?: string; readonly flow?: string; readonly task?: string }
+  | {
+      readonly type: 'workOrder.open';
+      readonly project: string;
+      readonly repo: string;
+      readonly title: string;
+      readonly description?: string;
+      readonly flow?: string;
+      readonly task?: string;
+      readonly stageSkip?: { readonly stages: readonly string[]; readonly reason: string; readonly approved?: boolean };
+    }
   | { readonly type: 'task.open'; readonly project: string; readonly task: string }
   | { readonly type: 'roadmap.runPhase'; readonly project: string; readonly phase: string } // ok → { ok: true, phaseRun } (A-98)
   | { readonly type: 'roadmap.pausePhase'; readonly project: string; readonly phase: string } // errors: not_running (A-110)
