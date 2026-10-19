@@ -1979,11 +1979,16 @@ Added 2026-10-19, #1309 (#1275-1).
   2. Selection helper bar: In `WizardStore`, `clearSelection()` empties selection and `selectAllReady()` selects all selectable rows. In the wizard Accounts step, when selectable rows exceed 1, a selection bar (`data-wizard-selection-bar=""`) renders above `AccountGroups` displaying `'wizard.accounts.selectionHint'` and an `ActionButton` calling `clearSelection()` when any row is selected (`'wizard.accounts.clearSelection'`) or `selectAllReady()` when none is selected (`'wizard.accounts.selectAll'`). Initial default selection (U-42) remains unchanged.
   3. Model-scoped pool label on sidebar `AccountCard`: `AccountLimit` includes optional `poolLabel?: string | null`, populated in `accountCards` as `row.scope?.kind === 'model' ? row.scope.model : null`. On `SidebarAccounts`, when `tightest.poolLabel !== null && tightest.poolLabel !== undefined`, `<span data-account-pool={tightest.poolLabel}>` renders right before the percentage `<span>`.
 
+## FirstRunCard direct attach & Setup Proposal polish (U-362)
+
+Added 2026-10-19, #1310; the application rule is A-434.
+
+- **U-362** (added 2026-10-19, #1310) Direct project attach and setup proposal polish. `CockpitScreen` accepts `onAttachProject` (falling back to `onNewProject`), wired by `ShellScreen` to open the import file picker directly (`newProject.pickPath('import'); openNewProject();`). `NewProjectPanel` renders its contents with `grid w-full gap-4` spacing. `SetupProposalDiff` extracts the optional `Test komutu` (`data-setup-test-command`) input out of the collapsible sections into its own standalone card following the sections list, so all 4 sections collapse cleanly without chevrons sitting over visible content. Each section button displays a compact summary of its current configuration (`sectionBody`) in font-mono next to the collapse chevron, and when expanded, renders a human-readable explanation paragraph (`setup.sectionDesc.*`) above the raw value.
+
 ## Detail grid row span and new-work-order branch hint (U-363)
 
 Added 2026-10-19, #1311 (#1275-3).
 - **U-363** (added 2026-10-19, #1311) Two workspace layout and clarity refinements:
   1. (detail screen) At viewports `@[900px]` and wider, the live pane wrapper (`data-detail-live`) carries `@[900px]:row-span-6` alongside `@[900px]:col-start-2 @[900px]:row-start-1 @[900px]:sticky @[900px]:top-0`, spanning across all left-column detail rows (decision zone, git card, files, pages, stages, usage) so the sticky pane tracks smoothly through the screen without distorting row heights.
   2. (new-work-order window) When unmerged work orders exist on the board (`activeWorkOrderCount > 0`), the new-work-order form body displays a quiet hint line (`data-new-work-order-branch-hint`, `text-[0.75rem] text-inkdim`) above the footer actions: TR `"Yeni iş emrinin dalı ana daldan açılır; henüz birleştirilmemiş iş emirlerinin değişikliklerini içermez."` / EN `"A new work order branches from the base branch and does not include changes from unmerged work orders."` (`workOrder.new.openBranchesHint`). When `activeWorkOrderCount` is 0 or undefined, no hint line renders.
-
 

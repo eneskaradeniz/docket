@@ -615,6 +615,10 @@ export function ShellScreen({
               onOpenProject={(project) => navigate({ name: 'roadmap', project })}
               onOpenBoard={(repo) => navigate({ name: 'board', repo })}
               onNewProject={openNewProject}
+              onAttachProject={() => {
+                newProject.pickPath('import');
+                openNewProject();
+              }}
               accounts={accountsState.cards}
             />
           ) : null}
