@@ -1,4 +1,5 @@
-// Rules R-172 … R-179 and R-191 of docs/v2/domain.md autonomy addendum: the risk-rule table.
+// Rules R-172 … R-179, R-191, R-192 and R-193 of docs/v2/domain.md autonomy addendum: the risk-rule
+// table.
 import { describe, expect, it } from 'vitest';
 
 import { ACTION_CLASSES, type ActionClass } from '../actions';
@@ -43,6 +44,7 @@ const ALL_ROW_IDS: readonly string[] = [
   'allow-read-search',
   'allow-git-read',
   'allow-verify',
+  'allow-readonly-shell',
   'allow-write-inside',
 ];
 
@@ -55,6 +57,7 @@ describe('autonomy/risk', () => {
     expect(lowRule(toolAsk('Read', { file_path: `${ROOT}/src/a.ts` }))).toBe('allow-read-search');
     expect(lowRule(toolAsk('Bash', { command: 'git status' }))).toBe('allow-git-read');
     expect(lowRule(toolAsk('Bash', { command: 'npm test' }))).toBe('allow-verify');
+    expect(lowRule(toolAsk('Bash', { command: 'ls -la' }))).toBe('allow-readonly-shell');
     expect(lowRule(toolAsk('Edit', { file_path: `${ROOT}/src/a.ts` }))).toBe('allow-write-inside');
     // Nothing outside the table is licensed: unknown names and shapes ask.
     expect(asks(toolAsk('Task'))).toBe(true);
@@ -167,10 +170,112 @@ describe('autonomy/risk', () => {
     expect(asks(toolAsk('Bash', { command: 'git diff $(pwd)' }))).toBe(true);
     expect(asks(toolAsk('Bash', { command: 'git log --grep="two words"' }))).toBe(true);
     expect(asks(toolAsk('Bash', { command: 'git status && rm -rf /' }))).toBe(true);
-    // Commands that are not plain git reads ask, including other git subcommands.
-    expect(asks(toolAsk('Bash', { command: 'ls -la' }))).toBe(true);
+    // Commands that are not plain git reads ask, including other git subcommands. (`ls` moved to
+    // R-193's row; a non-git reader like `cat` still asks.)
+    expect(asks(toolAsk('Bash', { command: 'cat notes.md' }))).toBe(true);
     expect(asks(toolAsk('Bash', { command: 'git commit -m x' }))).toBe(true);
     expect(asks(toolAsk('Bash', { command: 'git config user.email' }))).toBe(true);
+  });
+
+  it('R-193: shell expansion and outside-path operands never ride the readonly rows; revision ranges and relative paths stay low', () => {
+    const bash = (command: string): RiskAsk => toolAsk('Bash', { command });
+    // Expansion characters rewrite the command into paths the lexical checks never see.
+    for (const command of [
+      'ls .\\./x',
+      'ls .?/x',
+      'ls .[.]/x',
+      'ls .*',
+      'ls {..,}',
+      'ls ..\\',
+      'ls {/etc,}',
+      'ls src/*',
+      'ls !x',
+      'git -C {..,.} log',
+      'git log {--output=/tmp/x,}',
+      'git log --o\\utput=/tmp/x',
+      'ls && ls .*',
+    ]) {
+      expect(asks(bash(command)), command).toBe(true);
+    }
+    // git: outside operands, implicit --no-index, --contents and abbreviated long options.
+    for (const command of [
+      'git diff /etc/hosts /etc/passwd',
+      'git blame --contents /etc/hosts',
+      'git blame --contents=/etc/hosts file',
+      'git diff ../a ../b',
+      'git diff ~/a ~/b',
+      'git log -- /etc/hosts',
+      'git log --outp=/tmp/x',
+      'git diff --no-ind /etc/hosts /dev/null',
+      'git diff ..',
+    ]) {
+      expect(asks(bash(command)), command).toBe(true);
+    }
+    for (const command of ['ls src']) {
+      expect(lowRule(bash(command)), command).toBe('allow-readonly-shell');
+    }
+    for (const command of [
+      'git log main..feature',
+      'git log a...b',
+      'git diff HEAD~1',
+      'git show HEAD^',
+      'git diff HEAD~3 -- src',
+      'git log --oneline -n 5 -- src docs',
+      'git -C . status',
+    ]) {
+      expect(lowRule(bash(command)), command).toBe('allow-git-read');
+    }
+  });
+
+  it('R-175: diff drivers, external file reads and git re-aiming options ask; their switched-off spellings stay low', () => {
+    const bash = (command: string): RiskAsk => toolAsk('Bash', { command });
+    // A configured driver runs a command: --ext-diff and --textconv ask alone and beside -p.
+    for (const command of [
+      'git diff --ext-diff',
+      'git log -p --ext-diff',
+      'git show --textconv HEAD',
+      'git diff --textconv',
+      'git blame --textconv file',
+      'git log -p --textconv',
+      'git diff --ext-d',
+      'git log --textc -p',
+    ]) {
+      expect(asks(bash(command)), command).toBe(true);
+    }
+    // Options that read a caller-named file, joined or apart from the value.
+    for (const command of [
+      'git diff -O/etc/x',
+      'git diff -O /etc/x',
+      'git diff -O x',
+      'git ls-files --exclude-from=/etc/x',
+      'git ls-files --exclude-from /etc/x',
+      'git ls-files --exclude-from=x',
+      'git ls-files -X /etc/x',
+      'git diff -o x.patch',
+      'git show -ox.patch',
+    ]) {
+      expect(asks(bash(command)), command).toBe(true);
+    }
+    // Re-aiming git: a global option after -C is no known shape, and after the verb it asks too.
+    for (const command of [
+      'git -C . -c core.pager=x log',
+      'git -c core.pager=x log',
+      'git log --git-dir=/etc',
+      'git log --git-dir /etc',
+      'git status --work-tree=/etc',
+      'git --git-dir=/etc log',
+    ]) {
+      expect(asks(bash(command)), command).toBe(true);
+    }
+    // The switched-off spellings and the plain listing forms keep their low verdict.
+    for (const command of [
+      'git diff --no-ext-diff',
+      'git log -p --no-textconv',
+      'git ls-files -o --exclude-standard',
+      'git diff --cached --stat',
+    ]) {
+      expect(lowRule(bash(command)), command).toBe('allow-git-read');
+    }
   });
 
   it('R-176: verify row — exact equality after trim only; the floor still wins', () => {
@@ -186,6 +291,104 @@ describe('autonomy/risk', () => {
     const declared = context({ verificationCommands: ['npm install', 'git push origin main'] });
     expect(asks(toolAsk('Bash', { command: 'npm install' }), declared)).toBe(true);
     expect(asks(toolAsk('Bash', { command: 'git push origin main' }), declared)).toBe(true);
+  });
+
+  it('R-192: git -C <inside the worktree> read verbs ride allow-git-read; outside, ..-walking and misplaced targets ask', () => {
+    const bash = (command: string): RiskAsk => toolAsk('Bash', { command });
+    // The -C spelling is the same row and the same verb set as the bare form.
+    expect(lowRule(bash(`git -C ${ROOT} status`))).toBe('allow-git-read');
+    expect(lowRule(bash(`git -C ${ROOT} diff main...HEAD`))).toBe('allow-git-read');
+    expect(lowRule(bash(`git -C ${ROOT} log --oneline -5`))).toBe('allow-git-read');
+    expect(lowRule(bash(`git -C ${ROOT} show HEAD`))).toBe('allow-git-read');
+    expect(lowRule(bash(`git -C ${ROOT} branch -vv`))).toBe('allow-git-read');
+    expect(lowRule(bash(`git -C ${ROOT} remote -v`))).toBe('allow-git-read');
+    // A relative target resolves against cwd and must land inside the worktree.
+    expect(lowRule(bash('git -C . status'))).toBe('allow-git-read');
+    expect(lowRule(bash('git -C src log'))).toBe('allow-git-read');
+    // R-175's verb, operand and flag bans keep their force under -C.
+    expect(asks(bash(`git -C ${ROOT} commit -m x`))).toBe(true);
+    expect(asks(bash(`git -C ${ROOT} branch feature`))).toBe(true);
+    expect(asks(bash(`git -C ${ROOT} remote add origin https://x`))).toBe(true);
+    expect(asks(bash(`git -C ${ROOT} diff --output=/tmp/patch`))).toBe(true);
+    expect(asks(bash('git -C log'))).toBe(true);
+    expect(asks(bash(`git -C ${ROOT}`))).toBe(true);
+    // Outside targets and tilde-relative targets ask.
+    expect(asks(bash('git -C /etc log'))).toBe(true);
+    expect(asks(bash(`git -C /wt-sibling log`))).toBe(true);
+    expect(asks(bash('git -C ~/repo status'))).toBe(true);
+    // A .. segment asks even when it resolves back inside, and so does an outside escape.
+    expect(asks(bash('git -C ../x status'))).toBe(true);
+    expect(asks(bash(`git -C ${ROOT}/sub/../src log`))).toBe(true);
+    // Without worktreeRoot there is no frame to contain the target: the row cannot fire.
+    expect(asks(bash(`git -C ${ROOT} status`), context({ worktreeRoot: undefined }))).toBe(true);
+    // -C is licensed only in its leading position: a global flag before it is no known shape.
+    expect(asks(bash(`git --no-pager -C ${ROOT} log`))).toBe(true);
+  });
+
+  it('R-193: ls and pwd are low with flags and contained operands — the near-misses around them ask', () => {
+    const bash = (command: string): RiskAsk => toolAsk('Bash', { command });
+    expect(lowRule(bash('ls'))).toBe('allow-readonly-shell');
+    expect(lowRule(bash('ls -la'))).toBe('allow-readonly-shell');
+    expect(lowRule(bash('ls -la --color=never'))).toBe('allow-readonly-shell');
+    expect(lowRule(bash('pwd'))).toBe('allow-readonly-shell');
+    expect(lowRule(bash('pwd -P'))).toBe('allow-readonly-shell');
+    expect(lowRule(bash(`ls -la ${ROOT}/src`))).toBe('allow-readonly-shell');
+    expect(lowRule(bash('ls src docs'))).toBe('allow-readonly-shell');
+    // A bare ls reads the working directory, so the frame itself must be inside the worktree.
+    expect(asks(bash('ls'), context({ cwd: '/elsewhere' }))).toBe(true);
+    expect(asks(bash('ls'), context({ cwd: undefined }))).toBe(true);
+    expect(asks(bash('ls'), context({ worktreeRoot: undefined }))).toBe(true);
+    // Operands outside the worktree, walking out, or tilde-relative ask; pwd takes flags only.
+    expect(asks(bash('ls /etc'))).toBe(true);
+    expect(asks(bash('ls ../outside'))).toBe(true);
+    expect(asks(bash(`ls ${ROOT}/sub/../src`))).toBe(true);
+    expect(asks(bash('ls ~/repo'))).toBe(true);
+    expect(asks(bash('pwd /etc'))).toBe(true);
+    // Redirection, substitution and sequencing never ride the row.
+    expect(asks(bash('ls > x'))).toBe(true);
+    expect(asks(bash('ls < x'))).toBe(true);
+    expect(asks(bash('ls $(whoami)'))).toBe(true);
+    expect(asks(bash('ls `whoami`'))).toBe(true);
+    expect(asks(bash('ls; rm -rf /'))).toBe(true);
+    expect(asks(bash('ls -la && rm -rf /'))).toBe(true);
+    // Other directory readers stay with the human: only the two names are licensed.
+    expect(asks(bash('cat notes.md'))).toBe(true);
+    expect(asks(bash('find . -name x'))).toBe(true);
+    expect(asks(bash('lsof -i'))).toBe(true);
+  });
+
+  it('R-193: && chains are low exactly when every part is low; every other compound asks', () => {
+    const bash = (command: string): RiskAsk => toolAsk('Bash', { command });
+    expect(lowRule(bash('git log --oneline -5 && git status --short'))).toBe('allow-readonly-shell');
+    expect(lowRule(bash(`git -C ${ROOT} log && git -C ${ROOT} status --short && ls -la`))).toBe('allow-readonly-shell');
+    expect(lowRule(bash('ls && pwd'))).toBe('allow-readonly-shell');
+    expect(lowRule(bash('git status &&  git log'))).toBe('allow-readonly-shell');
+    // A declared verification command is low standing alone, so it is a low part too.
+    expect(lowRule(bash('git status && npm test'))).toBe('allow-readonly-shell');
+    // One non-low part holds the whole chain: a reader that is not licensed, an undeclared verify.
+    expect(asks(bash('ls && cat /etc/hosts'))).toBe(true);
+    expect(asks(bash('git status && npm run build'))).toBe(true);
+    expect(asks(bash('git status && npm test && echo done'))).toBe(true);
+    // The floor's whole-token scan covers the chain: the worst part denies before any allow row.
+    expect(asks(bash('git status && rm -rf /'))).toBe(true);
+    expect(asks(bash('ls -la && git push origin main'))).toBe(true);
+    expect(asks(bash('git status && npm install'))).toBe(true);
+    // Every other compound operator stays with the human: pipes, ;, ||, lone &, triple &.
+    expect(asks(bash('git log | sh'))).toBe(true);
+    expect(asks(bash('git log | head -5'))).toBe(true);
+    expect(asks(bash('git status; ls'))).toBe(true);
+    expect(asks(bash('git status || ls'))).toBe(true);
+    expect(asks(bash('git status & ls'))).toBe(true);
+    expect(asks(bash('git status &&& ls'))).toBe(true);
+    // Redirection inside a part disqualifies the part and so the chain.
+    expect(asks(bash('git status > out.txt && ls'))).toBe(true);
+    // An empty part is no command: leading, trailing and doubled separators ask.
+    expect(asks(bash('&& ls'))).toBe(true);
+    expect(asks(bash('ls &&'))).toBe(true);
+    expect(asks(bash('ls && && pwd'))).toBe(true);
+    // A whole declared chain keeps answering allow-verify, not this row.
+    const ctx = context({ verificationCommands: ['npm run typecheck && npm test'] });
+    expect(lowRule(bash('npm run typecheck && npm test'), ctx)).toBe('allow-verify');
   });
 
   it('R-177: the deny floor — every never-low clause asks, floor before allow', () => {

@@ -53,6 +53,17 @@ describe('decidePermission', () => {
     expect(decidePermission({ level: 'balanced', ask: LOW_ASK, context: CONTEXT })).toEqual({ kind: 'ask-human' });
   });
 
+  it('R-193: the readonly shell row is auto-only — manual and balanced still ask for ls and && chains', () => {
+    const ask: RiskAsk = { kind: 'tool', tool: 'Bash', arguments: { command: 'git -C /wt status && ls -la' } };
+    expect(decidePermission({ level: 'auto', ask, context: CONTEXT })).toEqual({
+      kind: 'allow-by-policy',
+      policy: PERMISSION_RULES_POLICY,
+      level: 'auto',
+    });
+    expect(decidePermission({ level: 'manual', ask, context: CONTEXT })).toEqual({ kind: 'ask-human' });
+    expect(decidePermission({ level: 'balanced', ask, context: CONTEXT })).toEqual({ kind: 'ask-human' });
+  });
+
   it('R-191: the run’s own page publish/update ask is allowed at balanced and auto, bare and prefixed', () => {
     for (const ask of OWN_PAGE_ASKS) {
       expect(decidePermission({ level: 'auto', ask, context: CONTEXT })).toEqual({
