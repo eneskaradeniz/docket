@@ -374,6 +374,7 @@ describe('work-order detail store', () => {
       loading: false,
       view: null,
       stages: [],
+      skipDecisions: [],
       asks: [],
       problem: null,
       lastOutcome: null,
@@ -472,6 +473,28 @@ describe('work-order detail store', () => {
     });
     await store.load(WO_ID);
     expect(store.state().stages[0]?.gates[0]?.policyApproval).toBeUndefined();
+  });
+
+  it('U-360: load maps skipDecisions from view to store state; absent skipDecisions defaults to empty list', async () => {
+    const base = detailReply(DONE);
+    const withSkips: WorkOrderDetailView = {
+      ...base,
+      skipDecisions: [
+        { stages: ['plan'], decision: 'rejected', at: 1_000, reason: 'unneeded stage' },
+        { stages: ['check'], decision: 'approved', at: 1_100, reason: 'green tests', decidedByPolicy: { policy: 'stage-skip-auto', level: 'auto' } },
+      ],
+    };
+    const store = createStore(fakeApi(withSkips));
+    await store.load(WO_ID);
+
+    expect(store.state().skipDecisions).toEqual([
+      { stages: ['plan'], decision: 'rejected', at: 1_000, reason: 'unneeded stage' },
+      { stages: ['check'], decision: 'approved', at: 1_100, reason: 'green tests', decidedByPolicy: { policy: 'stage-skip-auto', level: 'auto' } },
+    ]);
+
+    const storeWithoutSkips = createStore(fakeApi(base));
+    await storeWithoutSkips.load(WO_ID);
+    expect(storeWithoutSkips.state().skipDecisions).toEqual([]);
   });
 
   it('U-4: a deploy gate exposes its environment, protection and the read-only promoteFrom chain', async () => {

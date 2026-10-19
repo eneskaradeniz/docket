@@ -557,6 +557,44 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
               <PagesSection store={pages} locale={locale} onOpenPage={onOpenPage} />
             </div>
 
+            {state.skipDecisions.length > 0 ? (
+              <section data-detail-skip-decisions className="grid min-w-0 @[900px]:col-start-1">
+                <h2 className="mb-3 text-[0.78125rem] font-semibold text-inkdim">{t(locale, 'stageSkip.section')}</h2>
+                <ul className="m-0 grid list-none gap-2 p-0">
+                  {state.skipDecisions.map((skip, index) => (
+                    <li
+                      key={`${skip.at}-${index}`}
+                      data-detail-skip-decision-row
+                      className="grid gap-1.5 rounded-card border border-hairline bg-surface px-3 py-2"
+                    >
+                      <div className="flex min-w-0 items-baseline justify-between gap-2">
+                        <span className="text-[0.84375rem] font-semibold text-ink" title={skip.stages.join(', ')}>
+                          {skip.stages.map((id) => state.stages.find((s) => s.stage === id)?.name ?? id).join(', ')}
+                        </span>
+                        <span className={`text-[0.78125rem] ${skip.decision === 'approved' ? 'font-semibold text-proceed' : 'text-inkdim'}`}>
+                          {t(locale, skip.decision === 'approved' ? 'stageSkip.decision.approved' : 'stageSkip.decision.rejected')}
+                        </span>
+                      </div>
+                      {skip.reason !== undefined && skip.reason.trim() !== '' ? (
+                        <span data-detail-skip-decision-reason className="text-[0.75rem] text-inkdim">
+                          {skip.reason}
+                        </span>
+                      ) : null}
+                      {skip.decidedByPolicy !== undefined ? (
+                        <div data-detail-skip-decision-policy className="flex w-full min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+                          <span className="text-[0.75rem] font-semibold text-proceed">
+                            {t(locale, 'stageSkip.decision.byPolicy')
+                              .replace('{policy}', skip.decidedByPolicy.policy)
+                              .replace('{level}', skip.decidedByPolicy.level)}
+                          </span>
+                        </div>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+
             <section data-detail-stages className="grid min-w-0 @[900px]:col-start-1">
               <h2 className="mb-3 text-[0.78125rem] font-semibold text-inkdim">{t(locale, 'detail.section.stages')}</h2>
               <div className="border-t border-hairline">

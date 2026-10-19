@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { GateVerdict } from '../gates';
-import type { Actor, EnvSlug, FlowSlug, GateSlug, RunId, RunOutcome, Slug, StageSlug } from '../shared';
+import type { Actor, EnvSlug, FlowSlug, GateSlug, PolicyId, RunId, RunOutcome, Slug, StageSlug } from '../shared';
 import type { FlowDef } from '../definitions';
 import { deriveWorkOrderState } from './derive';
 import { REMOTE_CHECKS_EVENT_MAX, remoteChecksEvidence, type WorkOrderEvent } from './events';
@@ -60,6 +60,18 @@ describe('WorkOrderEvent', () => {
     const decided: WorkOrderEvent = { type: 'stage_skip_decided', at: 2, approved: false };
     expect(proposed).toMatchObject({ type: 'stage_skip_proposed', stages: ['review'], reason: 'tests already cover it' });
     expect(decided).toEqual({ type: 'stage_skip_decided', at: 2, approved: false });
+  });
+
+  it('R-190: stage_skip_decided optionally carries decidedByPolicy evidence; older events without it remain valid', () => {
+    const bare: WorkOrderEvent = { type: 'stage_skip_decided', at: 1, approved: true };
+    const withPolicy: WorkOrderEvent = {
+      type: 'stage_skip_decided',
+      at: 2,
+      approved: true,
+      decidedByPolicy: { policy: 'stage-skip-auto' as PolicyId, level: 'auto' },
+    };
+    expect(bare.decidedByPolicy).toBeUndefined();
+    expect(withPolicy.decidedByPolicy).toEqual({ policy: 'stage-skip-auto', level: 'auto' });
   });
 
   it('deployment_attempted carries both results and an optional outputTail', () => {

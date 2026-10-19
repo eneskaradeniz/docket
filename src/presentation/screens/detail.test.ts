@@ -282,6 +282,50 @@ describe('work-order detail screen — the decision zone (U-4, U-226)', () => {
     expect(html.match(/Otomatik onay/g)).toHaveLength(1);
   });
 
+  it('U-360: renders stage-skip decisions with stage names, approved/rejected standing, policy badge, and reason', async () => {
+    const viewWithSkips: WorkOrderDetailView = {
+      ...READY,
+      skipDecisions: [
+        {
+          stages: ['plan'],
+          decision: 'rejected',
+          at: 1_100,
+          reason: 'Manual reject rationale',
+        },
+        {
+          stages: ['check'],
+          decision: 'approved',
+          at: 1_200,
+          reason: 'Auto skip rationale',
+          decidedByPolicy: { policy: 'stage-skip-auto', level: 'auto' },
+        },
+      ],
+    };
+
+    const htmlTr = await draw(viewWithSkips, [], null, [], null, BASE_USAGE, null, 'tr');
+    expect(htmlTr).toContain('data-detail-skip-decisions');
+    expect(htmlTr).toContain('data-detail-skip-decision-row');
+    expect(htmlTr).toContain('Aşama atlama kararları');
+    expect(htmlTr).toContain('Plan');
+    expect(htmlTr).toContain('Atlanmadı');
+    expect(htmlTr).toContain('Check');
+    expect(htmlTr).toContain('Atlandı');
+    expect(htmlTr).toContain('data-detail-skip-decision-reason');
+    expect(htmlTr).toContain('Manual reject rationale');
+    expect(htmlTr).toContain('Auto skip rationale');
+    expect(htmlTr).toContain('data-detail-skip-decision-policy');
+    expect(htmlTr).toContain('Otomatik onay: stage-skip-auto · auto düzeyi');
+
+    const htmlEn = await draw(viewWithSkips, [], null, [], null, BASE_USAGE, null, 'en');
+    expect(htmlEn).toContain('Stage skip decisions');
+    expect(htmlEn).toContain('Not skipped');
+    expect(htmlEn).toContain('Skipped');
+    expect(htmlEn).toContain('data-detail-skip-decision-reason');
+    expect(htmlEn).toContain('Manual reject rationale');
+    expect(htmlEn).toContain('Auto skip rationale');
+    expect(htmlEn).toContain('Auto-approved: stage-skip-auto · level auto');
+  });
+
   it('U-4: while the stage waits to start (ready) the start card shows and no decision does', async () => {
     const html = await draw(READY);
 

@@ -1057,6 +1057,23 @@ describe('planner stage-skip (R-133, R-144)', () => {
     expect(deriveWorkOrderState(SKIP_FLOW, events).skippedStages).toEqual([]);
   });
 
+  it('R-190: decidedByPolicy rides stage_skip_decided without moving the fold; fold reads only approved', () => {
+    const opening: readonly WorkOrderEvent[] = [
+      created(),
+      { type: 'stage_skip_proposed', at: 11, stages: [stageOf('review')], reason: 'tests cover it' },
+    ];
+    const humanDecided: WorkOrderEvent = { type: 'stage_skip_decided', at: 12, approved: true };
+    const policyDecided: WorkOrderEvent = {
+      type: 'stage_skip_decided',
+      at: 12,
+      approved: true,
+      decidedByPolicy: { policy: 'stage-skip-auto' as PolicyId, level: 'auto' },
+    };
+    expect(deriveWorkOrderState(SKIP_FLOW, [...opening, policyDecided])).toEqual(
+      deriveWorkOrderState(SKIP_FLOW, [...opening, humanDecided]),
+    );
+  });
+
   it('R-188: approved skip proposal advances immediately past current stage when ready', () => {
     const flow: FlowDef = {
       id: flowOf('skippable-fixture'),

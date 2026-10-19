@@ -35,6 +35,7 @@ import {
   advancePhases,
   appendStartRefused,
   applyGateAutoPolicy,
+  applyStageSkipAutoPolicy,
   applyLimitDecision,
   applyRefusedStart,
   cancelActiveRuns,
@@ -395,6 +396,8 @@ const runStartedItem = async (api: Api & RunEventFeed, board: PermissionBoard, r
     // notification (U-12) is what makes an open detail re-query, exactly like a finished run.
     const gated = await applyGateAutoPolicy(deps, { id: item.workOrderId });
     if (gated.ok && gated.value.approved.length > 0) api.workOrdersChanged();
+    const skipped = await applyStageSkipAutoPolicy(deps, { id: item.workOrderId });
+    if (skipped.ok && skipped.value.decided.length > 0) api.workOrdersChanged();
   } catch (error) {
     console.error(`queue item ${item.id} crashed its run loop`, error);
   }
@@ -484,6 +487,21 @@ const sweepGateAuto = async (deps: AppDeps, notify: () => void): Promise<void> =
       if (pass.ok && pass.value.approved.length > 0) notify();
     } catch (error) {
       console.error(`gate-auto pass for ${record.id} crashed`, error);
+    }
+  }
+};
+
+/** The stage-skip auto sweep (A-432): on the same cadence as the remote and gate-auto sweeps,
+ *  catching pending planner stage-skip proposals under auto level. Only writes what R-189
+ *  licenses; every other work order is a cheap no-op read. `notify` fires once per work order
+ *  with decisions so an open detail re-queries. */
+const sweepStageSkipAuto = async (deps: AppDeps, notify: () => void): Promise<void> => {
+  for (const record of await deps.workOrders.list({})) {
+    try {
+      const pass = await applyStageSkipAutoPolicy(deps, { id: record.id });
+      if (pass.ok && pass.value.decided.length > 0) notify();
+    } catch (error) {
+      console.error(`stage-skip-auto pass for ${record.id} crashed`, error);
     }
   }
 };
@@ -849,6 +867,7 @@ const startApp = async (): Promise<void> => {
   const nodeForges = node.forges;
   let sweepingRemoteChecks = false;
   let sweepingGateAuto = false;
+  let sweepingStageSkipAuto = false;
   remoteChecksTimer = node.quota.timers.setInterval(() => {
     if (!sweepingRemoteChecks) {
       sweepingRemoteChecks = true;
@@ -864,6 +883,14 @@ const startApp = async (): Promise<void> => {
         .catch((error) => console.error('gate-auto sweep failed', error))
         .finally(() => {
           sweepingGateAuto = false;
+        });
+    }
+    if (!sweepingStageSkipAuto) {
+      sweepingStageSkipAuto = true;
+      void sweepStageSkipAuto(nodeDeps, () => currentApi?.workOrdersChanged())
+        .catch((error) => console.error('stage-skip-auto sweep failed', error))
+        .finally(() => {
+          sweepingStageSkipAuto = false;
         });
     }
   }, REMOTE_CHECKS_POLL_MS);
