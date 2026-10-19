@@ -69,7 +69,7 @@ export function BoardScreen({ store, repo, locale, onOpenWorkOrder, roadmapProje
 
   const activeWorkOrderCount = (view?.columns ?? [])
     .filter((c) => c.stage !== 'done')
-    .reduce((sum, c) => sum + ((c as unknown as { cards?: readonly unknown[] }).cards ?? c.workOrders).length, 0);
+    .reduce((sum, c) => sum + c.workOrders.length, 0);
 
   return (
     <>
