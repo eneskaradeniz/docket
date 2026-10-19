@@ -36,6 +36,7 @@ export type RiskRuleId =
   | 'allow-read-search'
   | 'allow-git-read'
   | 'allow-verify'
+  | 'allow-readonly-shell'
   | 'allow-write-inside';
 
 export type RiskVerdict =
@@ -151,6 +152,17 @@ const COMMAND_METACHARS: readonly string[] = [';', '|', '&', '<', '>', '(', ')',
 
 const plainCommand = (command: string): boolean =>
   COMMAND_METACHARS.every((metachar) => !command.includes(metachar));
+
+// The chain separator is the one metacharacter the readonly row parses instead of banning: `&&`
+// joins two commands, and any other `&` — backgrounding, `;&`, `&&&` — is not it.
+const noStrayAmpersand = (command: string): boolean =>
+  command.split('&&').every((part) => !part.includes('&'));
+
+/** A `&&`-joined chain of plain commands: every metacharacter still disqualifies except the
+ *  separator itself, so redirection, pipes, sequencing, substitution and backgrounding all ask. */
+const plainChain = (command: string): boolean =>
+  COMMAND_METACHARS.filter((metachar) => metachar !== '&').every((metachar) => !command.includes(metachar)) &&
+  noStrayAmpersand(command);
 
 const tokensOf = (command: string): readonly string[] =>
   command.trim().split(/\s+/).filter((token) => token.length > 0);
@@ -318,12 +330,21 @@ const GIT_READ_SUBCOMMANDS: readonly string[] = [
 const GIT_BRANCH_FLAGS: readonly string[] = ['-v', '-vv', '-a', '-r', '-l', '--list', '--all', '--no-color'];
 const GIT_REMOTE_FLAGS: readonly string[] = ['-v', '--verbose'];
 
-const isGitReadCommand = (command: string): boolean => {
+const isGitReadCommand = (command: string, context: RiskContext): boolean => {
   if (!plainCommand(command)) return false;
   const tokens = tokensOf(command);
-  const subcommand = tokens[1];
-  if (tokens[0] !== 'git' || subcommand === undefined) return false;
-  const rest = tokens.slice(2);
+  if (tokens[0] !== 'git') return false;
+  let tail = tokens.slice(1);
+  // `git -C <path> …` re-aims git at another directory, so the target is held to the same frame as
+  // a read path: inside the worktree, and never through a `..` walk.
+  if (tail[0] === '-C') {
+    const target = tail[1];
+    if (target === undefined || !containedOperand(target, context)) return false;
+    tail = tail.slice(2);
+  }
+  const subcommand = tail[0];
+  if (subcommand === undefined) return false;
+  const rest = tail.slice(1);
   if (GIT_READ_SUBCOMMANDS.includes(subcommand)) {
     // diff and show can write their patch out with --output, and --no-index diffs two filesystem
     // paths — reading outside the worktree entirely. Both are banned in every spelling.
@@ -334,10 +355,30 @@ const isGitReadCommand = (command: string): boolean => {
   return false;
 };
 
-const allowGitRead = (ask: RiskAsk): boolean => {
+/** A path operand the readonly rows accept: lexically inside the worktree and free of `..`
+ *  segments — a spelling that walks (`sub/../x`) may resolve somewhere inside, but the operator
+ *  decision holds it for the human rather than the classifier. */
+const containedOperand = (path: string, context: RiskContext): boolean =>
+  !path.split('/').includes('..') && insideWorktree(path, context);
+
+/** `ls` and `pwd` (R-193): listing is the read the agents reach for most, and both commands are
+ *  read-only under every flag — so any `-`-prefixed token passes, while a path operand of `ls` is
+ *  held to the worktree frame and `pwd`, which names no file, accepts flags only. */
+const isLsPwdCommand = (command: string, context: RiskContext): boolean => {
+  if (!plainCommand(command)) return false;
+  const tokens = tokensOf(command);
+  const head = firstToken(tokens);
+  if (head === 'pwd') return tokens.slice(1).every((token) => token.startsWith('-'));
+  if (head !== 'ls') return false;
+  const operands = tokens.slice(1).filter((token) => !token.startsWith('-'));
+  if (operands.length === 0) return insideWorktree(context.cwd, context);
+  return operands.every((operand) => containedOperand(operand, context));
+};
+
+const allowGitRead = (ask: RiskAsk, context: RiskContext): boolean => {
   if (!isBashAsk(ask)) return false;
   const command = commandOf(ask);
-  return command !== undefined && isGitReadCommand(command);
+  return command !== undefined && isGitReadCommand(command, context);
 };
 
 const allowVerify = (ask: RiskAsk, context: RiskContext): boolean => {
@@ -348,6 +389,28 @@ const allowVerify = (ask: RiskAsk, context: RiskContext): boolean => {
   // a mid-command whitespace difference is a different command.
   const trimmed = command.trim();
   return context.verificationCommands.some((declared) => declared.trim() === trimmed);
+};
+
+/** A chain part is licensed when the same string standing alone would be low: a git-read form
+ *  (R-175's verbs, the `-C` spelling included), an `ls`/`pwd` listing, or one entry of the
+ *  declared verification commands — the exact licence allow-verify grants the whole string, read
+ *  per part. */
+const isLowChainPart = (part: string, context: RiskContext): boolean =>
+  isGitReadCommand(part, context) ||
+  isLsPwdCommand(part, context) ||
+  context.verificationCommands.some((declared) => declared.trim() === part.trim());
+
+/** `allow-readonly-shell` (R-193): `ls`, `pwd` and `&&`-joined chains whose every part is itself
+ *  low. The separator is the only metacharacter parsed; the deny floor has already scanned the
+ *  whole token list before this row is reached, so a destructive, pushing or installing part
+ *  never rides the chain. */
+const allowReadonlyShell = (ask: RiskAsk, context: RiskContext): boolean => {
+  if (!isBashAsk(ask)) return false;
+  const command = commandOf(ask);
+  if (command === undefined || !plainChain(command)) return false;
+  return command
+    .split('&&')
+    .every((part) => part.trim().length > 0 && isLowChainPart(part.trim(), context));
 };
 
 const allowWriteInside = (ask: RiskAsk, context: RiskContext): boolean =>
@@ -426,6 +489,7 @@ export const RISK_RULES: readonly RiskRule[] = [
   { id: 'allow-read-search', verdict: 'low', applies: allowReadSearch },
   { id: 'allow-git-read', verdict: 'low', applies: allowGitRead },
   { id: 'allow-verify', verdict: 'low', applies: allowVerify },
+  { id: 'allow-readonly-shell', verdict: 'low', applies: allowReadonlyShell },
   { id: 'allow-write-inside', verdict: 'low', applies: allowWriteInside },
 ];
 
