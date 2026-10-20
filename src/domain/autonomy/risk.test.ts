@@ -1,4 +1,4 @@
-// Rules R-172 … R-179, R-191, R-192, R-193 and R-194 of docs/v2/domain.md autonomy addendum: the
+// Rules R-172 … R-179, R-191, R-192, R-193, R-194 and R-195 of docs/v2/domain.md autonomy addendum: the
 // risk-rule table.
 import { describe, expect, it } from 'vitest';
 
@@ -48,6 +48,8 @@ const ALL_ROW_IDS: readonly string[] = [
   'allow-readonly-shell',
   'allow-write-inside',
 ];
+
+const DRIVERS_OFF = ' --no-ext-diff --no-textconv';
 
 describe('autonomy/risk', () => {
   it('R-172: the table is the whole licence — rows are exactly the listed ids and nothing unlisted is low', () => {
@@ -149,8 +151,11 @@ describe('autonomy/risk', () => {
   });
 
   it('R-175: git-read row — the subcommand set, branch/remote restrictions, --output and metachar bans', () => {
-    for (const subcommand of ['status', 'log', 'diff', 'show', 'blame', 'rev-parse', 'ls-files']) {
+    for (const subcommand of ['status', 'log', 'rev-parse', 'ls-files']) {
       expect(lowRule(toolAsk('Bash', { command: `git ${subcommand}` }))).toBe('allow-git-read');
+    }
+    for (const subcommand of ['diff', 'show']) {
+      expect(lowRule(toolAsk('Bash', { command: `git ${subcommand}${DRIVERS_OFF}` }))).toBe('allow-git-read');
     }
     expect(lowRule(toolAsk('Bash', { command: 'git log -n 5 --oneline -- src' }))).toBe('allow-git-read');
     expect(lowRule(toolAsk('Bash', { command: '  git status  ' }))).toBe('allow-git-read');
@@ -221,9 +226,9 @@ describe('autonomy/risk', () => {
     for (const command of [
       'git log main..feature',
       'git log a...b',
-      'git diff HEAD~1',
-      'git show HEAD^',
-      'git diff HEAD~3 -- src',
+      `git diff${DRIVERS_OFF} HEAD~1`,
+      `git show${DRIVERS_OFF} HEAD^`,
+      `git diff${DRIVERS_OFF} HEAD~3 -- src`,
       'git log --oneline -n 5 -- src docs',
       'git -C . status',
     ]) {
@@ -273,11 +278,57 @@ describe('autonomy/risk', () => {
     }
     // The switched-off spellings and the plain listing forms keep their low verdict.
     for (const command of [
-      'git diff --no-ext-diff',
-      'git log -p --no-textconv',
+      `git log -p${DRIVERS_OFF}`,
       'git ls-files -o --exclude-standard',
-      'git diff --cached --stat',
+      `git diff --cached --stat${DRIVERS_OFF}`,
     ]) {
+      expect(lowRule(bash(command)), command).toBe('allow-git-read');
+    }
+  });
+
+  it('R-195: diff-family reads need --no-ext-diff and --no-textconv; log is low only without diff output; blame asks', () => {
+    const bash = (command: string): RiskAsk => toolAsk('Bash', { command });
+    // A configured driver (diff.external, textconv in config or .gitattributes) runs on a plain diff.
+    for (const command of [
+      'git diff',
+      'git diff --no-ext-diff',
+      'git diff --no-textconv',
+      'git diff --cached',
+      'git diff --no-ext-diff --ext-diff',
+      'git diff --no-ext-diff --textconv',
+      'git diff --ext-diff --no-textconv',
+      'git diff --no-ext --no-textc',
+      'git log -p',
+      'git log -p --no-ext-diff',
+      'git log --patch',
+      'git log -u',
+      'git log -S foo',
+      'git log -Gfoo',
+      'git log --stat',
+      'git log --cc',
+      'git log --some-new-option',
+      'git show',
+      'git show HEAD',
+      'git show --no-ext-diff HEAD',
+      'git blame file',
+      `git blame${DRIVERS_OFF} file`,
+      'git -C . diff',
+      'git -C . show HEAD',
+    ]) {
+      expect(asks(bash(command)), command).toBe(true);
+    }
+    // Both switches, exactly spelled, in either order: low again.
+    for (const command of [
+      `git diff${DRIVERS_OFF}`,
+      'git diff --no-textconv --no-ext-diff --cached',
+      `git show${DRIVERS_OFF} HEAD`,
+      `git log -p${DRIVERS_OFF}`,
+      `git -C . diff${DRIVERS_OFF}`,
+    ]) {
+      expect(lowRule(bash(command)), command).toBe('allow-git-read');
+    }
+    // git log without diff output runs no driver; git status never does.
+    for (const command of ['git log', 'git log --oneline -n 5', 'git log -5 --graph --decorate', 'git status']) {
       expect(lowRule(bash(command)), command).toBe('allow-git-read');
     }
   });
@@ -301,9 +352,9 @@ describe('autonomy/risk', () => {
     const bash = (command: string): RiskAsk => toolAsk('Bash', { command });
     // The -C spelling is the same row and the same verb set as the bare form.
     expect(lowRule(bash(`git -C ${ROOT} status`))).toBe('allow-git-read');
-    expect(lowRule(bash(`git -C ${ROOT} diff main...HEAD`))).toBe('allow-git-read');
+    expect(lowRule(bash(`git -C ${ROOT} diff${DRIVERS_OFF} main...HEAD`))).toBe('allow-git-read');
     expect(lowRule(bash(`git -C ${ROOT} log --oneline -5`))).toBe('allow-git-read');
-    expect(lowRule(bash(`git -C ${ROOT} show HEAD`))).toBe('allow-git-read');
+    expect(lowRule(bash(`git -C ${ROOT} show${DRIVERS_OFF} HEAD`))).toBe('allow-git-read');
     expect(lowRule(bash(`git -C ${ROOT} branch -vv`))).toBe('allow-git-read');
     expect(lowRule(bash(`git -C ${ROOT} remote -v`))).toBe('allow-git-read');
     // A relative target resolves against cwd and must land inside the worktree.
