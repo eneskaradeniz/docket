@@ -441,6 +441,12 @@ const driverRisk = (subcommand: string, rest: readonly string[]): 'none' | 'swit
   return 'none';
 };
 
+/** `git status -v` / `-vv` / `--verbose` (any short cluster holding `v`, any unambiguous prefix of
+ *  the long name) prints the staged and unstaged diff, so a textconv driver runs; status takes no
+ *  `--no-textconv`, so there is no switched-off spelling. */
+const isVerboseStatusFlag = (token: string): boolean =>
+  /^-[^-]*v/.test(token) || (token.length >= 3 && token.startsWith('--v') && '--verbose'.startsWith(token.split('=')[0]));
+
 const driversSwitchedOff = (rest: readonly string[]): boolean =>
   rest.includes('--no-ext-diff') && rest.includes('--no-textconv');
 
@@ -479,6 +485,7 @@ const isGitReadCommand = (command: string, context: RiskContext): boolean => {
       (token) =>
         !isBannedGitOption(token) && !isBannedGitShortOption(token, subcommand) && !isOutsideGitOperand(token),
     );
+    if (subcommand === 'status' && rest.some(isVerboseStatusFlag)) return false;
     const risk = driverRisk(subcommand, rest);
     return flagsAllowed && (risk === 'none' || (risk === 'switchable' && driversSwitchedOff(rest)));
   }

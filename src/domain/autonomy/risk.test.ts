@@ -317,6 +317,33 @@ describe('autonomy/risk', () => {
     ]) {
       expect(asks(bash(command)), command).toBe(true);
     }
+    // Re-enabling a driver after the switches still asks, whatever the order.
+    for (const command of [
+      `git diff --ext-diff${DRIVERS_OFF}`,
+      `git diff --textconv${DRIVERS_OFF}`,
+      'git diff --no-ext-diff --ext-diff --no-textconv',
+      'git diff --no-textconv --textconv --no-ext-diff',
+      `git show --ext-diff${DRIVERS_OFF} HEAD`,
+    ]) {
+      expect(asks(bash(command)), command).toBe(true);
+    }
+    // status -v prints the diff and has no --no-textconv: every verbose spelling asks.
+    for (const command of [
+      'git status -v',
+      'git status -vv',
+      'git status --verbose',
+      'git status -sv',
+      'git status -vs',
+      'git status -vvs',
+      'git status --verb',
+      'git status --v',
+      'git -C . status -v',
+    ]) {
+      expect(asks(bash(command)), command).toBe(true);
+    }
+    for (const command of ['git status', 'git status -s', 'git status --short', 'git status --branch', 'git status -sb']) {
+      expect(lowRule(bash(command)), command).toBe('allow-git-read');
+    }
     // Both switches, exactly spelled, in either order: low again.
     for (const command of [
       `git diff${DRIVERS_OFF}`,
