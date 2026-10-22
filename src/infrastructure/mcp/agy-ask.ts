@@ -66,12 +66,30 @@ const WRITE_TOOLS: ReadonlySet<string> = new Set([
   'notebook_edit',
 ]);
 
+/** The CLI's newer native file tools, each mapping to the Docket tool whose risk rows read the
+ *  call: a read rides the read rows, a write or edit the write rows (deny floor first). Their
+ *  path rides under `Path`, not the older generation's TargetFile/AbsolutePath keys. A Map, so a
+ *  raw name that happens to be a prototype member is no mapping of ours. */
+const NATIVE_FILE_TOOLS: ReadonlyMap<string, string> = new Map([
+  ['read_file', 'Read'],
+  ['write_file', 'Write'],
+  ['edit_file', 'Edit'],
+]);
+
 /** The verdict tool as the MCP server prefix spells it in the name this mapping builds — the same
  *  name the SDK route's ask carries, so one reading serves both. */
 const DOCKET_VERDICT_TOOL = 'mcp__docket-pages__submit_verdict';
 
 const rawArgsOf = (args: unknown): Readonly<Record<string, unknown>> =>
   typeof args === 'object' && args !== null && !Array.isArray(args) ? (args as Record<string, unknown>) : {};
+
+/** The `Path` value of a native file call, with one enclosing literal quote pair unwrapped; any
+ *  other shape answers undefined and the ask stays with the human. */
+const nativePathOf = (raw: Readonly<Record<string, unknown>>): string | undefined => {
+  const value = raw['Path'];
+  if (typeof value !== 'string' || value.length === 0) return undefined;
+  return value.length >= 2 && value.startsWith('"') && value.endsWith('"') ? value.slice(1, -1) : value;
+};
 
 /** The hook stdin and the ask args as Docket's tool language sees the call: the mapped name plus
  * the one identifying string when the mapping has one, else the raw name and args (P-64). */
@@ -86,6 +104,17 @@ export function mapAgyToolCall(name: unknown, args: unknown): { readonly toolNam
   }
   if (name === 'view_file' && typeof raw['AbsolutePath'] === 'string') {
     return { toolName: 'Read', toolInput: { file_path: raw['AbsolutePath'] }, target: raw['AbsolutePath'] };
+  }
+  // The native file tools: the model sometimes wraps the Path value in one literal quote pair —
+  // unwrapped once so the risk rows judge the real path, and only a matched pair is unwrapped. A
+  // Path the mapping cannot read (absent, non-string) leaves the target undefined, so the ask
+  // carries the mapped name with no path and stays with the human.
+  const nativeTool = NATIVE_FILE_TOOLS.get(name);
+  if (nativeTool !== undefined) {
+    const path = nativePathOf(raw);
+    return path === undefined
+      ? { toolName: nativeTool, toolInput: raw }
+      : { toolName: nativeTool, toolInput: { file_path: path }, target: path };
   }
   // An MCP call keeps the spelled-out server and tool in the name Docket's risk table reads, with
   // NO target: the table has no argument key for it, so the ask stays with the human.
