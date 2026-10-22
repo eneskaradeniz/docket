@@ -40,7 +40,7 @@ head_oid=$(printf '%s' "$pr_json" | jq -r '.headRefOid')
 merge_state=$(printf '%s' "$pr_json" | jq -r '.mergeStateStatus')
 sha7="${head_oid:0:7}"
 
-result_file="$HOME/.claude-hybrid/state/verify/$pr-$sha7/result.json"
+result_file="$HOME/.hy/state/verify/$pr-$sha7/result.json"
 
 if [ ! -f "$result_file" ]; then
   echo "Refused: missing verification result for PR $pr ($sha7)" >&2
