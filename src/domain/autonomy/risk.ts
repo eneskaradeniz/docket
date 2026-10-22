@@ -403,6 +403,53 @@ const GIT_BANNED_OPTIONS: readonly string[] = [
 const isBannedGitShortOption = (token: string, subcommand: string): boolean =>
   token.startsWith('-O') || token.startsWith('-X') || (subcommand !== 'ls-files' && token.startsWith('-o'));
 
+// git log runs no diff driver unless it renders a diff (-p, a pickaxe, --stat …), so it is low only
+// when every flag is one of these listing options; any other spelling — including an abbreviation
+// or an option from a newer git — asks. diff and show always render a diff, and blame's textconv
+// has no off switch, so those two are handled apart.
+const GIT_LOG_LISTING_FLAGS: readonly string[] = [
+  '--oneline',
+  '--graph',
+  '--decorate',
+  '--no-decorate',
+  '--all',
+  '--no-color',
+  '--abbrev-commit',
+  '--reverse',
+  '--first-parent',
+  '--merges',
+  '--no-merges',
+  '-n',
+  '--',
+];
+
+const isGitLogListingFlag = (token: string): boolean =>
+  GIT_LOG_LISTING_FLAGS.includes(token) ||
+  /^-\d+$/.test(token) ||
+  /^--(max-count|since|until|author|grep)=[^=]+$/.test(token);
+
+/** Whether the verb can run a repo-configured diff driver (diff.external, textconv), in which case
+ *  both switches must be spelled out exactly — git does not take an abbreviation of a negation
+ *  here as the same promise, and the classifier does not guess. blame has no switch, so it never
+ *  qualifies. */
+const driverRisk = (subcommand: string, rest: readonly string[]): 'none' | 'switchable' | 'always' => {
+  if (subcommand === 'blame') return 'always';
+  if (subcommand === 'diff' || subcommand === 'show') return 'switchable';
+  if (subcommand === 'log' && !rest.every((token) => !token.startsWith('-') || isGitLogListingFlag(token))) {
+    return 'switchable';
+  }
+  return 'none';
+};
+
+/** `git status -v` / `-vv` / `--verbose` (any short cluster holding `v`, any unambiguous prefix of
+ *  the long name) prints the staged and unstaged diff, so a textconv driver runs; status takes no
+ *  `--no-textconv`, so there is no switched-off spelling. */
+const isVerboseStatusFlag = (token: string): boolean =>
+  /^-[^-]*v/.test(token) || (token.length >= 3 && token.startsWith('--v') && '--verbose'.startsWith(token.split('=')[0]));
+
+const driversSwitchedOff = (rest: readonly string[]): boolean =>
+  rest.includes('--no-ext-diff') && rest.includes('--no-textconv');
+
 const isBannedGitOption = (token: string): boolean => {
   if (GIT_BANNED_OPTIONS.some((banned) => token.startsWith(banned))) return true;
   const name = token.split('=')[0];
@@ -434,10 +481,13 @@ const isGitReadCommand = (command: string, context: RiskContext): boolean => {
     // diff and show can write their patch out with --output, --no-index diffs two filesystem paths
     // and blame --contents reads one, a diff driver runs a configured command — all banned in every
     // spelling, and so is any positional operand that names a path outside the worktree.
-    return rest.every(
+    const flagsAllowed = rest.every(
       (token) =>
         !isBannedGitOption(token) && !isBannedGitShortOption(token, subcommand) && !isOutsideGitOperand(token),
     );
+    if (subcommand === 'status' && rest.some(isVerboseStatusFlag)) return false;
+    const risk = driverRisk(subcommand, rest);
+    return flagsAllowed && (risk === 'none' || (risk === 'switchable' && driversSwitchedOff(rest)));
   }
   if (subcommand === 'branch') return rest.every((token) => GIT_BRANCH_FLAGS.includes(token));
   if (subcommand === 'remote') return rest.every((token) => GIT_REMOTE_FLAGS.includes(token));
