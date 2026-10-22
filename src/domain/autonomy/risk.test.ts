@@ -486,9 +486,11 @@ describe('autonomy/risk', () => {
     expect(lowRule(bash('cd src && git status'))).toBe('allow-readonly-shell');
     expect(lowRule(bash('cd . && ls'))).toBe('allow-readonly-shell');
     expect(lowRule(bash(`cd ${ROOT}`))).toBe('allow-readonly-shell');
-    // One operand, exactly: a bare cd, two operands and flags ask.
+    // One operand, exactly: a bare cd, two operands and flags ask — `cd -` names OLDPWD, which
+    // may sit anywhere, so every -prefixed token asks.
     expect(asks(bash('cd'))).toBe(true);
     expect(asks(bash('cd a b'))).toBe(true);
+    expect(asks(bash('cd - && git status'))).toBe(true);
     expect(asks(bash('cd -P src && git status'))).toBe(true);
     // Outside, tilde and walking operands ask — the same stance R-192 holds -C targets to.
     expect(asks(bash('cd /etc && git status'))).toBe(true);

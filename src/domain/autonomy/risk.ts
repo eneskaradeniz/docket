@@ -544,12 +544,19 @@ const isLowChainPart = (part: string, context: RiskContext): boolean =>
 
 /** `cd <operand>` (R-196): navigation, not a read of its own — exactly two tokens, the operand a
  *  contained operand exactly as R-192 holds `git -C` targets to, so the parts after it are judged
- *  in the frame the cd names. Licensed as the first part of a chain only; anywhere else a cd is
- *  a part with no licence of its own and asks. */
+ *  in the frame the cd names. A `-`-prefixed operand asks: `cd -` names OLDPWD, which may sit
+ *  anywhere. Licensed as the first part of a chain only; anywhere else a cd is a part with no
+ *  licence of its own and asks. */
 const isCdPart = (part: string, context: RiskContext): boolean => {
   const tokens = tokensOf(part);
   const operand = tokens[1];
-  return tokens.length === 2 && tokens[0] === 'cd' && operand !== undefined && containedOperand(operand, context);
+  return (
+    tokens.length === 2 &&
+    tokens[0] === 'cd' &&
+    operand !== undefined &&
+    !operand.startsWith('-') &&
+    containedOperand(operand, context)
+  );
 };
 
 /** `allow-readonly-shell` (R-193): `ls`, `pwd` and `&&`-joined chains whose every part is itself

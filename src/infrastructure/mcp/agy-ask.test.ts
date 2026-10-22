@@ -208,6 +208,11 @@ describe('runAgyAsk', () => {
       toolInput: { StartLine: 1, EndLine: 3 },
     });
     expect(mapAgyToolCall('write_file', { Path: 7 })).toEqual({ toolName: 'Write', toolInput: { Path: 7 } });
+    // Prototype members are not mappings: a raw name the table does not own passes through
+    // unmapped, never as the inherited member a plain object lookup would hand back.
+    for (const name of ['constructor', 'toString', '__proto__']) {
+      expect(mapAgyToolCall(name, { Path: '/w/x' })).toEqual({ toolName: name, toolInput: { Path: '/w/x' } });
+    }
 
     // Over the real channel: a mapped read carries the Read name and its target, and an
     // unreadable one carries the name with no target key at all.

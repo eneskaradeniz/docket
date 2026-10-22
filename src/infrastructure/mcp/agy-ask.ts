@@ -68,12 +68,13 @@ const WRITE_TOOLS: ReadonlySet<string> = new Set([
 
 /** The CLI's newer native file tools, each mapping to the Docket tool whose risk rows read the
  *  call: a read rides the read rows, a write or edit the write rows (deny floor first). Their
- *  path rides under `Path`, not the older generation's TargetFile/AbsolutePath keys. */
-const NATIVE_FILE_TOOLS: Readonly<Record<string, string>> = {
-  read_file: 'Read',
-  write_file: 'Write',
-  edit_file: 'Edit',
-};
+ *  path rides under `Path`, not the older generation's TargetFile/AbsolutePath keys. A Map, so a
+ *  raw name that happens to be a prototype member is no mapping of ours. */
+const NATIVE_FILE_TOOLS: ReadonlyMap<string, string> = new Map([
+  ['read_file', 'Read'],
+  ['write_file', 'Write'],
+  ['edit_file', 'Edit'],
+]);
 
 /** The verdict tool as the MCP server prefix spells it in the name this mapping builds — the same
  *  name the SDK route's ask carries, so one reading serves both. */
@@ -108,7 +109,7 @@ export function mapAgyToolCall(name: unknown, args: unknown): { readonly toolNam
   // unwrapped once so the risk rows judge the real path, and only a matched pair is unwrapped. A
   // Path the mapping cannot read (absent, non-string) leaves the target undefined, so the ask
   // carries the mapped name with no path and stays with the human.
-  const nativeTool = NATIVE_FILE_TOOLS[name];
+  const nativeTool = NATIVE_FILE_TOOLS.get(name);
   if (nativeTool !== undefined) {
     const path = nativePathOf(raw);
     return path === undefined
