@@ -2899,6 +2899,40 @@ describe('executeRun — the autonomy permission policy', () => {
     ]);
   });
 
+  it('R-196: a page_comments ask is allowed by the policy under auto — bare and server-prefixed, like the publish pair; a foreign server\'s page_comments still asks', async () => {
+    const h = await harness({
+      script: [
+        namedAsk('ask-1', 'page_comments'),
+        namedAsk('ask-2', 'mcp__docket-pages__page_comments'),
+        namedAsk('ask-3', 'mcp__other__page_comments'),
+        finished('completed'),
+      ],
+      defsJson: VERIFY_DEFS_JSON,
+    });
+    await h.deps.settings.set(AUTONOMY_KEY, 'auto');
+    const gate = permissionGate('deny');
+
+    await executeRun(h.deps, gate.permissions, INPUT);
+
+    // The two own spellings answer through the name-only row; the foreign one reaches the human.
+    expect(gate.asked.map((entry) => entry.ask.id)).toEqual(['ask-3']);
+    const record = await theRun(h.runs);
+    expect(await h.runs.events(record.id)).toEqual([
+      namedAsk('ask-1', 'page_comments'),
+      permissionAnswered('ask-1', 'allow'),
+      namedAsk('ask-2', 'mcp__docket-pages__page_comments'),
+      permissionAnswered('ask-2', 'allow'),
+      namedAsk('ask-3', 'mcp__other__page_comments'),
+      permissionAnswered('ask-3', 'deny'),
+      finished('completed'),
+    ]);
+    expect(permissionAudits(h.log).map((entry) => entry.detail)).toEqual([
+      { tool: 'page_comments', decision: 'allow' },
+      { tool: 'mcp__docket-pages__page_comments', decision: 'allow' },
+      { tool: 'mcp__other__page_comments', decision: 'deny' },
+    ]);
+  });
+
   it('a Bash ask whose command is exactly a stage command-gate string is allowed under auto', async () => {
     const h = await harness({
       script: [bashAsk('ask-1', 'npm test'), finished('completed')],

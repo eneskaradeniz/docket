@@ -174,6 +174,63 @@ describe('runAgyAsk', () => {
     }
   });
 
+  it('P-64: the native file tools map through their Path argument — read_file→Read, write_file→Write, edit_file→Edit; a Path the mapping cannot read keeps the ask with the human', async () => {
+    // The CLI's newer file-tool generation carries the path under `Path` (its own recorded calls;
+    // the older write family keeps TargetFile and the read keeps AbsolutePath above). Each maps
+    // to the Docket tool the risk table's rows read, with the path as the target.
+    expect(mapAgyToolCall('read_file', { Path: '/w/index.html' })).toEqual({
+      toolName: 'Read',
+      toolInput: { file_path: '/w/index.html' },
+      target: '/w/index.html',
+    });
+    expect(mapAgyToolCall('write_file', { Path: '/w/new.txt', Content: 'x' })).toEqual({
+      toolName: 'Write',
+      toolInput: { file_path: '/w/new.txt' },
+      target: '/w/new.txt',
+    });
+    expect(mapAgyToolCall('edit_file', { Path: '/w/a.ts', Target: 'a', Replacement: 'b' })).toEqual({
+      toolName: 'Edit',
+      toolInput: { file_path: '/w/a.ts' },
+      target: '/w/a.ts',
+    });
+    // The model sometimes wraps the value in one literal quote pair; the mapping unwraps it once
+    // so the risk rows judge the real path — and only a matched pair is unwrapped.
+    expect(mapAgyToolCall('read_file', { Path: '"/w/index.html"' })).toEqual({
+      toolName: 'Read',
+      toolInput: { file_path: '/w/index.html' },
+      target: '/w/index.html',
+    });
+    expect(mapAgyToolCall('edit_file', { Path: '"unclosed' }).target).toBe('"unclosed');
+    // A call without a readable Path — absent, non-string, or only the line-range keys — keeps
+    // the CLI's name and NO target, so the ask stays with the human.
+    expect(mapAgyToolCall('read_file', { StartLine: 1, EndLine: 3 })).toEqual({
+      toolName: 'Read',
+      toolInput: { StartLine: 1, EndLine: 3 },
+    });
+    expect(mapAgyToolCall('write_file', { Path: 7 })).toEqual({ toolName: 'Write', toolInput: { Path: 7 } });
+
+    // Over the real channel: a mapped read carries the Read name and its target, and an
+    // unreadable one carries the name with no target key at all.
+    const dir = nextDir();
+    const socketPath = join(dir, 'mcp.sock');
+    const requests: DocketToolRequest[] = [];
+    const listener = await fakeApp(
+      socketPath,
+      [{ ok: true, result: { decision: 'deny', reason: 'ask the human' } }, { ok: true, result: { decision: 'deny', reason: 'ask the human' } }],
+      requests,
+    );
+    const configDir = writeAskTree(dir, { socketPath, token: 'tok-1', bridge: true });
+    try {
+      await runScript(configDir, stdinOf('read_file', { Path: '/w/index.html' }));
+      await runScript(configDir, stdinOf('read_file', { StartLine: 1 }));
+      expect(requests[0]?.args).toMatchObject({ tool: 'Read', target: '/w/index.html' });
+      expect(requests[1]?.args).toMatchObject({ tool: 'Read' });
+      expect(requests[1]?.args).not.toHaveProperty('target');
+    } finally {
+      await listener.close();
+    }
+  });
+
   it('the verdict tool call carries its verdict, summary and pointers to the app; no other call does', async () => {
     const dir = nextDir();
     const socketPath = join(dir, 'mcp.sock');

@@ -1,4 +1,4 @@
-// Rules R-172 … R-179, R-191, R-192, R-193, R-194 and R-195 of docs/v2/domain.md autonomy addendum: the
+// Rules R-172 … R-179, R-191, R-192, R-193, R-194, R-195 and R-196 of docs/v2/domain.md autonomy addendum: the
 // risk-rule table.
 import { describe, expect, it } from 'vitest';
 
@@ -471,6 +471,60 @@ describe('autonomy/risk', () => {
     // A whole declared chain keeps answering allow-verify, not this row.
     const ctx = context({ verificationCommands: ['npm run typecheck && npm test'] });
     expect(lowRule(bash('npm run typecheck && npm test'), ctx)).toBe('allow-verify');
+  });
+
+  it('R-196: cd <contained operand> rides the readonly chain as the first part only — one operand, contained like git -C, and every near-miss asks', () => {
+    const bash = (command: string): RiskAsk => toolAsk('Bash', { command });
+    // The walk's form: cd into the worktree, then read — the cd target is held to the same
+    // containment as git -C, and the parts after it keep their own rules.
+    expect(lowRule(bash(`cd ${ROOT} && git status`))).toBe('allow-readonly-shell');
+    expect(lowRule(bash(`cd ${ROOT} && git status && git log --oneline -5`))).toBe('allow-readonly-shell');
+    expect(lowRule(bash(`cd ${ROOT} && ls -la`))).toBe('allow-readonly-shell');
+    expect(lowRule(bash(`cd ${ROOT} && npm test`))).toBe('allow-readonly-shell');
+    // A relative operand resolves against cwd like git -C's target; a one-part chain is the
+    // degenerate form, licensed the same way.
+    expect(lowRule(bash('cd src && git status'))).toBe('allow-readonly-shell');
+    expect(lowRule(bash('cd . && ls'))).toBe('allow-readonly-shell');
+    expect(lowRule(bash(`cd ${ROOT}`))).toBe('allow-readonly-shell');
+    // One operand, exactly: a bare cd, two operands and flags ask.
+    expect(asks(bash('cd'))).toBe(true);
+    expect(asks(bash('cd a b'))).toBe(true);
+    expect(asks(bash('cd -P src && git status'))).toBe(true);
+    // Outside, tilde and walking operands ask — the same stance R-192 holds -C targets to.
+    expect(asks(bash('cd /etc && git status'))).toBe(true);
+    expect(asks(bash('cd /wt-sibling && git status'))).toBe(true);
+    expect(asks(bash('cd ~/repo && git status'))).toBe(true);
+    expect(asks(bash('cd .. && git status'))).toBe(true);
+    expect(asks(bash(`cd ${ROOT}/sub/../src && git status`))).toBe(true);
+    // Substitution and sequencing are not the chain form, and the floor scans the whole token
+    // list before any allow row: a pushing or destructive tail never rides the cd.
+    expect(asks(bash('cd $(pwd) && git status'))).toBe(true);
+    expect(asks(bash('cd src; git status'))).toBe(true);
+    expect(asks(bash('cd src || git status'))).toBe(true);
+    expect(asks(bash(`cd ${ROOT} && git push origin main`))).toBe(true);
+    expect(asks(bash(`cd ${ROOT} && rm -rf /`))).toBe(true);
+    // First part only: a cd anywhere later in the chain is a part with no licence of its own.
+    expect(asks(bash(`git status && cd ${ROOT}`))).toBe(true);
+    expect(asks(bash(`cd ${ROOT} && git status && cd src`))).toBe(true);
+    // Without worktreeRoot there is no frame to contain the operand.
+    expect(asks(bash(`cd ${ROOT} && git status`), context({ worktreeRoot: undefined }))).toBe(true);
+  });
+
+  it('R-196: the run’s own page_comments is low by name alone like the publish pair; foreign and near names ask', () => {
+    for (const tool of ['page_comments', 'mcp__docket-pages__page_comments']) {
+      expect(lowRule(toolAsk(tool))).toBe('allow-own-pages');
+      // Arguments are never read: a call carrying a pageId is the same name-only row.
+      expect(lowRule(toolAsk(tool, { pageId: 'p-1' }))).toBe('allow-own-pages');
+    }
+    // Whole-string matching: a foreign server's page_comments and a longer name are not this row.
+    expect(asks(toolAsk('mcp__other__page_comments'))).toBe(true);
+    expect(asks(toolAsk('page_comments_x'))).toBe(true);
+    expect(asks(toolAsk('page_comments_read'))).toBe(true);
+    // The name-only ask carries nothing the deny floor could read.
+    expect(classifyRisk(toolAsk('page_comments'), context({ dataDir: '/data' }))).toEqual({
+      verdict: 'low',
+      rule: 'allow-own-pages',
+    });
   });
 
   it('R-177: the deny floor — every never-low clause asks, floor before allow', () => {

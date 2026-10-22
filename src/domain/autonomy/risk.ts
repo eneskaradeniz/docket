@@ -296,15 +296,18 @@ const denyWriteOutside = (ask: RiskAsk, context: RiskContext): boolean =>
 
 const allowOwnRead = (ask: RiskAsk): boolean => isTool(ask, ['docket_get', 'docket_search']);
 
-/** The run's own page publish pair (R-191): bare, and as Docket's own pages server spells it —
- *  the two names an ask for them reaches the executor under. Publishing a page is not approving
- *  it, so the pair rides the table; a foreign server's page_publish or a longer name is not the
- *  pair, and `isTool` matches the whole string. */
+/** The run's own page tools (R-191, widened by R-196): bare, and as Docket's own pages server
+ *  spells it — the names an ask for them reaches the executor under. Publishing a page is not
+ *  approving it, and reading the comments of the run's own pages is read-only, so the set rides
+ *  the table; a foreign server's page_publish or a longer name is not in it, and `isTool` matches
+ *  the whole string. */
 const OWN_PAGE_TOOLS: readonly string[] = [
   'page_publish',
   'page_update',
+  'page_comments',
   'mcp__docket-pages__page_publish',
   'mcp__docket-pages__page_update',
+  'mcp__docket-pages__page_comments',
 ];
 
 const allowOwnPages = (ask: RiskAsk): boolean => isTool(ask, OWN_PAGE_TOOLS);
@@ -539,17 +542,31 @@ const isLowChainPart = (part: string, context: RiskContext): boolean =>
   isLsPwdCommand(part, context) ||
   context.verificationCommands.some((declared) => declared.trim() === part.trim());
 
+/** `cd <operand>` (R-196): navigation, not a read of its own — exactly two tokens, the operand a
+ *  contained operand exactly as R-192 holds `git -C` targets to, so the parts after it are judged
+ *  in the frame the cd names. Licensed as the first part of a chain only; anywhere else a cd is
+ *  a part with no licence of its own and asks. */
+const isCdPart = (part: string, context: RiskContext): boolean => {
+  const tokens = tokensOf(part);
+  const operand = tokens[1];
+  return tokens.length === 2 && tokens[0] === 'cd' && operand !== undefined && containedOperand(operand, context);
+};
+
 /** `allow-readonly-shell` (R-193): `ls`, `pwd` and `&&`-joined chains whose every part is itself
- *  low. The separator is the only metacharacter parsed; the deny floor has already scanned the
- *  whole token list before this row is reached, so a destructive, pushing or installing part
- *  never rides the chain. */
+ *  low — the first part additionally in the `cd` form R-196 accepts. The separator is the only
+ *  metacharacter parsed; the deny floor has already scanned the whole token list before this row
+ *  is reached, so a destructive, pushing or installing part never rides the chain. */
 const allowReadonlyShell = (ask: RiskAsk, context: RiskContext): boolean => {
   if (!isBashAsk(ask)) return false;
   const command = commandOf(ask);
   if (command === undefined || !plainChain(command)) return false;
-  return command
-    .split('&&')
-    .every((part) => part.trim().length > 0 && isLowChainPart(part.trim(), context));
+  return command.split('&&').every((part, index) => {
+    const trimmed = part.trim();
+    return (
+      trimmed.length > 0 &&
+      (index === 0 ? isLowChainPart(trimmed, context) || isCdPart(trimmed, context) : isLowChainPart(trimmed, context))
+    );
+  });
 };
 
 const allowWriteInside = (ask: RiskAsk, context: RiskContext): boolean =>

@@ -139,16 +139,19 @@ const RISK_ARGUMENT_KEYS: Readonly<Record<string, string>> = {
 };
 
 /** Docket's own name-only tools: the read pair (the SDK bridge renames it bare) and the page
- *  publish pair, bare and as the MCP server prefix spells it — the risk table rates the name low
+ *  tools, bare and as the MCP server prefix spells it — the risk table rates the name low
  *  without arguments (R-191: publishing a page is not approving it, so no ask maps to a
- *  carve-out action any more). */
+ *  carve-out action any more; R-196 widens the set with page_comments, a read of the run's own
+ *  pages). */
 const RISK_NAME_ONLY_TOOLS: readonly string[] = [
   'docket_get',
   'docket_search',
   'page_publish',
   'page_update',
+  'page_comments',
   'mcp__docket-pages__page_publish',
   'mcp__docket-pages__page_update',
+  'mcp__docket-pages__page_comments',
 ];
 
 /** The ask as the risk table sees it, or undefined when the event's one target string cannot be
