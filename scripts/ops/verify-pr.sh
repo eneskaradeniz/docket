@@ -85,7 +85,7 @@ if [ ! -d "$wt/node_modules" ] && [ -d "$main_checkout/node_modules" ]; then
   cp -cR "$main_checkout/node_modules" "$wt/node_modules"
 fi
 
-log_dir="$HOME/.claude-hybrid/state/verify/$pr-$sha7"
+log_dir="$HOME/.hy/state/verify/$pr-$sha7"
 mkdir -p "$log_dir"
 tmp_steps=$(mktemp)
 trap 'rm -f "$tmp_steps"' EXIT
