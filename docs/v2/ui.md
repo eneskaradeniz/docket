@@ -345,7 +345,7 @@ being reset.
   role with its complete binding (A-49). Below, one row per role with its work style — Hızlı ·
   Dengeli · Özenli, a presentation preset a pure `workStyle` maps to and from
   `{ tier, thinking }` (fast/fast · balanced/balanced · strong/deep); any other pair reads
-  "Özel". Recommended style: Planlayıcı, Gözden geçirici, Güvenlik denetçisi Özenli; Geliştirici,
+  "Özel". Recommended style: Gözden geçirici, Güvenlik denetçisi Özenli; Planlayıcı, Geliştirici,
   Test yazarı Dengeli; Analist, Belgeci Hızlı; a role outside this list Dengeli. A role whose
   binding sets neither tier nor thinking shows no selection and no difference; while any role is in
   that state the section starts with one line "n rol önerilen çalışma biçimini kullanmıyor ·
@@ -357,6 +357,8 @@ being reset.
   effort list, and the role's stages that set their own tier or thinking (read-only, with the flow
   name). A stage with `sameProviderReview` puts an amber line on its role's row: the review will
   run on the provider that wrote the code; adding an account of another provider sends it there.
+  (Planlayıcı moved from Özenli to Dengeli 2026-10-24, #1340: the strong tier maps to the scarcest
+  model pool on some providers.)
 - **U-33a** (amends U-33; 2026-10-09, #838) "Asistan sırası" also offers a "+" chip for every
   account outside the chain (the same chip the fine-tune's own chain uses), with one dim hint line
   above them; with accounts but an empty chain the chips sit beside the empty line. Clicking a chip

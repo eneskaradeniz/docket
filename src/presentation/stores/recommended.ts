@@ -17,7 +17,7 @@ export const RECOMMENDED = {
 
 // By role id; a role outside the list is balanced (U-33).
 const ROLE_WORK_STYLE: Readonly<Record<string, WorkStyle>> = {
-  planner: 'careful',
+  planner: 'balanced',
   reviewer: 'careful',
   'security-auditor': 'careful',
   developer: 'balanced',
