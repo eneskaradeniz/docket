@@ -599,6 +599,9 @@ export const LABEL_KEYS = [
   'board.list.empty',
   'board.list.running',
   'board.list.waiting',
+  // The permission-waiting badge (U-369): its column and its one sentence.
+  'board.list.col.permission',
+  'board.badge.waiting',
   // Kanban columns: the shut/open control, the pinned-open reason and the done column's name.
   'board.column.collapse',
   'board.column.expand',

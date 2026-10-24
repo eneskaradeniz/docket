@@ -4,10 +4,10 @@
 // `workOrder.open`. U-18 adds the Kanban ⇄ Liste choice — persisted per repo through the
 // injected persistence, so it survives a reload — and both views' derivations: each card's
 // tone, the Kanban columns and the list's groups, each with the done work last, and which of them
-// stand shut (an explicit choice per repo, else a default). Re-queries on work-order changes; run events
-// do not move cards.
+// stand shut (an explicit choice per repo, else a default). Re-queries on work-order changes; run
+// events do not move cards, but they raise or lift a permission ask, so they re-query too (U-369).
 import type { Api } from '../../api/api';
-import type { BoardView, ProjectTree, Query } from '../../api/queries';
+import type { BoardView, CockpitView, ProjectTree, Query } from '../../api/queries';
 import type { Actor } from '../../domain/index';
 import { isQueryFailure } from './results';
 import {
@@ -101,12 +101,44 @@ const TONES: Readonly<Record<string, CardTone>> = {
 
 export const cardTone = (status: string): CardTone => TONES[status] ?? 'unknown';
 
+/** U-369: this repo's pending permission asks as the board badges them — one entry per work
+ *  order, the earliest still-open ask's arrival, joined from the cockpit's attention list (the
+ *  same ranking the cockpit shows). */
+const permissionAsksOf = (view: CockpitView, repo: string): ReadonlyMap<string, number> => {
+  const asks = new Map<string, number>();
+  for (const item of view.attention) {
+    if (item.kind !== 'permission_ask' || item.repo !== repo) continue;
+    const known = asks.get(item.workOrderId);
+    if (known === undefined || item.since < known) asks.set(item.workOrderId, item.since);
+  }
+  return asks;
+};
+
+/** U-369: the ask instant rides the board's own view, so the card and row derivations carry it
+ *  without a new argument; a work order without an ask keeps the api's shape untouched. */
+const withPermissionAsks = (view: BoardView, asks: ReadonlyMap<string, number>): BoardView => {
+  if (asks.size === 0) return view;
+  return {
+    ...view,
+    columns: view.columns.map((column) => ({
+      ...column,
+      workOrders: column.workOrders.map((card) => {
+        const askSince = asks.get(card.id);
+        return askSince === undefined ? card : { ...card, askSince };
+      }),
+    })),
+  };
+};
+
 export interface KanbanCard {
   readonly id: string;
   readonly number: number;
   readonly title: string;
   readonly status: string;
   readonly tone: CardTone;
+  /** U-369: the arrival of this work order's earliest still-open permission ask (epoch ms);
+   *  absent when no ask waits — the done lane never carries one. */
+  readonly askSince?: number;
 }
 
 /** One Kanban column: a stage of the flow, or the done work as the last column. */
@@ -241,6 +273,9 @@ export const createBoardStore = (deps: BoardStoreDeps): BoardStore => {
   let state: BoardState = { loading: false, view: null, problem: null, viewMode: 'kanban', columnOverrides: {}, groupOverrides: {} };
   // The repo the store is bound to: change events re-query it, create refreshes it.
   let repo: string | null = null;
+  // The asks of the last successful cockpit read (U-369): a failed read keeps them standing, the
+  // way a failed board read keeps the board.
+  let askSinceByWorkOrder: ReadonlyMap<string, number> = new Map();
   const listeners = new Set<() => void>();
   // Only the newest attempt may apply its reply, as in the cockpit store.
   let attempts = 0;
@@ -263,20 +298,29 @@ export const createBoardStore = (deps: BoardStoreDeps): BoardStore => {
       columnOverrides: storedColumnOverrides(persistence, target),
       groupOverrides: storedGroupOverrides(persistence, target),
     });
-    const reply: unknown = await api.query({ type: 'repo.board', repo: target } satisfies Query);
+    // The board read and the asks read ride the same load (U-369): the board still shows even
+    // when the asks read fails — it keeps the badges already standing.
+    const boardRead: Promise<unknown> = api.query({ type: 'repo.board', repo: target } satisfies Query);
+    const asksRead: Promise<unknown> = api.query({ type: 'cockpit' } satisfies Query);
+    const reply: unknown = await boardRead;
     if (attempt !== attempts) return;
     if (isQueryFailure(reply)) {
       // The problem state replaces the board: an empty board must not pretend health (U-3).
       set({ ...state, loading: false, view: null, problem: reply.code });
       return;
     }
+    const attention: unknown = await asksRead;
+    if (attempt !== attempts) return;
+    // The contract of the cockpit query: a reply that is not a failure is a CockpitView.
+    if (!isQueryFailure(attention)) askSinceByWorkOrder = permissionAsksOf(attention as CockpitView, target);
     // The contract of the board query: a reply that is not a failure is a BoardView.
-    set({ ...state, loading: false, view: reply as BoardView, problem: null });
+    set({ ...state, loading: false, view: withPermissionAsks(reply as BoardView, askSinceByWorkOrder), problem: null });
   };
 
   changes((change) => {
-    // Only work-order changes move cards across columns; run events belong to the cockpit.
-    if (change.type !== 'workOrders.changed') return;
+    // Work-order changes move cards across columns; run events do not — but a run raises or
+    // lifts a permission ask, so both re-query and the badge moves with them (U-369).
+    if (change.type !== 'workOrders.changed' && change.type !== 'run.updated') return;
     if (repo === null) return;
     void load(repo);
   });

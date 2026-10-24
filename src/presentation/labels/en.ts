@@ -515,6 +515,8 @@ export const EN: LabelBundle = {
   'board.list.empty': 'No work orders in this repo yet.',
   'board.list.running': 'running',
   'board.list.waiting': 'waiting',
+  'board.list.col.permission': 'Permission',
+  'board.badge.waiting': 'Waiting for permission · {n} min',
   'board.column.collapse': 'Collapse',
   'board.column.expand': 'Expand',
   'board.column.locked': 'Work is waiting, stays open',
