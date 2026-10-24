@@ -1756,6 +1756,8 @@ export const EN: LabelBundle = {
   'autonomy.why.above_ceiling': 'Effective level is manual: the ceiling does not allow Automatic.',
   'autonomy.why.default': 'Effective level is manual: no layer chose a level, so the built-in default applies.',
   'autonomy.autoHelp': 'Auto: Docket grants tool permissions inside the worktree and reversible approval gates; merging, deploying and deleting stay with you.',
+  'autonomy.openRepoSettings': 'Go to repository settings',
+  'autonomy.spendCapSubscriptionNote': 'A subscription never spends; still set a cap, a small value is enough.',
   'autonomy.suggestion.banner': 'This flow suggests the auto level',
   'autonomy.suggestion.confirm': 'Set auto',
   'autonomy.suggestion.decline': 'Dismiss',
@@ -1778,4 +1780,5 @@ export const EN: LabelBundle = {
   'repoSettings.budget.placeholder': 'e.g. 25',
   'repoSettings.budget.save': 'Save cap',
   'repoSettings.budget.clear': 'Clear cap',
+  'repoSettings.budget.subscriptionNote': 'A subscription never spends; a small value is enough.',
 };

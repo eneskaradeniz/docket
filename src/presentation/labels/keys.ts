@@ -1837,6 +1837,9 @@ export const LABEL_KEYS = [
   'autonomy.why.above_ceiling',
   'autonomy.why.default',
   'autonomy.autoHelp',
+  // The locked-cap reason's door and its subscription line (U-370).
+  'autonomy.openRepoSettings',
+  'autonomy.spendCapSubscriptionNote',
   // The suggestion banner and library tag (U-335, D-10 chain b).
   'autonomy.suggestion.banner',
   'autonomy.suggestion.confirm',
@@ -1863,6 +1866,7 @@ export const LABEL_KEYS = [
   'repoSettings.budget.placeholder',
   'repoSettings.budget.save',
   'repoSettings.budget.clear',
+  'repoSettings.budget.subscriptionNote',
 ] as const;
 
 export type LabelKey = (typeof LABEL_KEYS)[number];

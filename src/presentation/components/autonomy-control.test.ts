@@ -17,7 +17,11 @@ const view = (over: Partial<Parameters<typeof AutonomyControl>[0]['view']> = {})
   ...over,
 });
 
-const render = (over: Partial<Parameters<typeof AutonomyControl>[0]['view']>, locale: 'tr' | 'en' = 'tr') =>
+const render = (
+  over: Partial<Parameters<typeof AutonomyControl>[0]['view']>,
+  locale: 'tr' | 'en' = 'tr',
+  onOpenRepoSettings?: () => void,
+) =>
   renderToStaticMarkup(
     createElement(AutonomyControl, {
       locale,
@@ -25,6 +29,7 @@ const render = (over: Partial<Parameters<typeof AutonomyControl>[0]['view']>, lo
       mark: 'test',
       onPick: () => undefined,
       onClear: () => undefined,
+      ...(onOpenRepoSettings !== undefined ? { onOpenRepoSettings } : {}),
     }),
   );
 
@@ -128,6 +133,41 @@ describe('AutonomyControl', () => {
     }
     expect(render({ level: 'manual', source: 'builtin' })).toContain('data-autonomy-why');
     expect(TR['autonomy.autoHelp']).not.toBe(TR['autonomy.why.default']);
+  });
+
+  it('U-370: the locked spend-cap reason carries the Depo ayarlarına git link and the subscription line', () => {
+    const markup = render({ level: 'manual', source: 'builtin', autoUnavailable: 'auto_requires_spend_cap' }, 'tr', () => undefined);
+    expect(markup).toContain('data-autonomy-open-repo-settings');
+    expect(markup).toContain(TR['autonomy.openRepoSettings']);
+    expect(markup).toContain('data-autonomy-cap-note');
+    expect(markup).toContain(TR['autonomy.spendCapSubscriptionNote']);
+    // The link rides the why line — the reason sentence and its door read as one thought.
+    expect(markup).toContain('data-autonomy-why');
+  });
+
+  it('U-370: the link and the subscription line carry the EN peer', () => {
+    const markup = render({ level: 'manual', source: 'builtin', autoUnavailable: 'auto_requires_spend_cap' }, 'en', () => undefined);
+    expect(markup).toContain(EN['autonomy.openRepoSettings']);
+    expect(markup).toContain(EN['autonomy.spendCapSubscriptionNote']);
+  });
+
+  it('U-370: the retry-bound reason stays text only — no link, no subscription line, even where the opener exists', () => {
+    const markup = render({ level: 'manual', source: 'repo', autoUnavailable: 'auto_requires_max_attempts' }, 'tr', () => undefined);
+    expect(markup).toContain(TR['autonomy.why.auto_requires_max_attempts']);
+    expect(markup).not.toContain('data-autonomy-open-repo-settings');
+    expect(markup).not.toContain(TR['autonomy.openRepoSettings']);
+    expect(markup).not.toContain('data-autonomy-cap-note');
+  });
+
+  it('U-370: the ceiling reason draws no link and no subscription line; without an opener the cap reason keeps the line and loses the link', () => {
+    const ceiling = render({ level: 'manual', source: 'ceiling', autoUnavailable: 'above_ceiling' }, 'tr', () => undefined);
+    expect(ceiling).toContain(TR['autonomy.why.above_ceiling']);
+    expect(ceiling).not.toContain('data-autonomy-open-repo-settings');
+    expect(ceiling).not.toContain('data-autonomy-cap-note');
+    // The repo-settings surface passes no opener — it is already where the link would go.
+    const repo = render({ level: 'manual', source: 'repo', autoUnavailable: 'auto_requires_spend_cap' }, 'tr');
+    expect(repo).not.toContain('data-autonomy-open-repo-settings');
+    expect(repo).toContain('data-autonomy-cap-note');
   });
 
   it('U-334: the clear-layer affordance appears only when the layer itself is set', () => {

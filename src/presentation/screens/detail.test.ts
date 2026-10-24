@@ -248,6 +248,7 @@ const draw = async (
       locale,
       backKey: null,
       onBack: () => {},
+      onOpenRepoSettings: () => {},
     }),
   );
 };
@@ -1473,3 +1474,31 @@ describe('work-order detail screen — live pane grid row span (U-363)', () => {
   });
 });
 
+
+describe('work-order detail screen — the locked Otomatik link (U-370)', () => {
+  const CAP_LOCKED: WorkOrderDetailView = {
+    ...READY,
+    autonomy: { level: 'manual', source: 'builtin', layerSet: false, autoUnavailable: 'auto_requires_spend_cap' },
+  };
+  const ATTEMPTS_LOCKED: WorkOrderDetailView = {
+    ...READY,
+    autonomy: { level: 'manual', source: 'repo', layerSet: true, autoUnavailable: 'auto_requires_max_attempts' },
+  };
+
+  it('U-370: a spend-cap lock shows the Depo ayarlarına git link on the autonomy card, both locales', async () => {
+    const html = await draw(CAP_LOCKED);
+    expect(html).toContain('data-autonomy-why');
+    expect(html).toContain('data-autonomy-open-repo-settings');
+    expect(html).toContain('Depo ayarlarına git');
+    expect(html).toContain('Abonelikte harcama oluşmaz; üst sınırı yine yaz, küçük bir değer yeterli.');
+    const en = await draw(CAP_LOCKED, [], null, [], null, BASE_USAGE, null, 'en');
+    expect(en).toContain('Go to repository settings');
+  });
+
+  it('U-370: a retry-bound lock stays text only — the detail carries no link for it', async () => {
+    const html = await draw(ATTEMPTS_LOCKED);
+    expect(html).toContain('data-autonomy-why');
+    expect(html).not.toContain('data-autonomy-open-repo-settings');
+    expect(html).not.toContain('Depo ayarlarına git');
+  });
+});

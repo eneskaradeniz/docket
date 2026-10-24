@@ -67,6 +67,9 @@ export interface WorkOrderDetailScreenProps {
   /** The work order's pages (the Sayfalar section) and the door that opens one (U-75). */
   readonly pages: PageListStore;
   readonly onOpenPage: (id: string) => void;
+  /** Opens Ayarlar → Depo ayarları on this work order's repo at the cap field (U-370) — the
+   *  locked-auto reason's door. */
+  readonly onOpenRepoSettings: () => void;
 }
 
 const GATE_STATUS_KEY: Readonly<Record<GateView['status'], LabelKey>> = {
@@ -232,7 +235,7 @@ function GateChecksSection({ locale, groups }: { readonly locale: Locale; readon
   );
 }
 
-export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onBack, pages, onOpenPage }: WorkOrderDetailScreenProps) {
+export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onBack, pages, onOpenPage, onOpenRepoSettings }: WorkOrderDetailScreenProps) {
   const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   // The close confirmation's own little dialog (A3) — the ⋯ menu and the failed card both open it.
   const [closeConfirm, setCloseConfirm] = useState(false);
@@ -464,6 +467,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
             view={view.autonomy ?? null}
             onPick={(level) => void store.setAutonomy(level)}
             onClear={() => void store.setAutonomy(null)}
+            onOpenRepoSettings={onOpenRepoSettings}
           />
 
           <DetailWorkOrderUsage

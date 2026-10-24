@@ -68,6 +68,7 @@ import {
   SETTINGS_SECTIONS,
   reclaimsPanelFocus,
   type SettingsOpenTarget,
+  type SettingsPanelFocus,
   type SettingsPanelOrigin,
   type SettingsSection,
 } from '../stores/settings-panel';
@@ -102,6 +103,9 @@ export interface SettingsPanelProps {
   readonly tab: EditorTab | null;
   /** The role whose "İnce ayar" opens on Roller (U-37), or null. */
   readonly fineTune: string | null;
+  /** The field an open asked to focus (U-370) — the repo budget input the locked-auto link
+   *  lands on — or null. */
+  readonly focus: SettingsPanelFocus | null;
   /** Opens the panel on a target — the role chips on Genel move it to Roller. */
   readonly onOpenTarget: (target: SettingsOpenTarget) => void;
   /** Reports a section move from the menu, so the sidebar's rows follow it. */
@@ -324,11 +328,16 @@ function RepoBudgetControl({
           </ActionButton>
         ) : null}
       </div>
+      {/* The subscription line the locked-auto card also carries (U-370): it answers the natural
+          question at the field itself — a cap the subscription would never touch still unlocks. */}
+      <p data-repo-budget-note className="m-0 text-[12px] text-inkdim">
+        {t(locale, 'repoSettings.budget.subscriptionNote')}
+      </p>
     </section>
   );
 }
 
-export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _fineTune, onOpenTarget, onSection, onBack, onEscape, onClose, candidateDot: candidateDotMirror, candidates, providers, connectors, models, themeStore, store, marks, roles, update, locale, localeStore, onEnterSubPage, onOpenAccount, repoRelink: repoRelinkInjected, repoFocus }: SettingsPanelProps) {
+export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _fineTune, focus: focusAsked, onOpenTarget, onSection, onBack, onEscape, onClose, candidateDot: candidateDotMirror, candidates, providers, connectors, models, themeStore, store, marks, roles, update, locale, localeStore, onEnterSubPage, onOpenAccount, repoRelink: repoRelinkInjected, repoFocus }: SettingsPanelProps) {
   const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   const candidateState = useSyncExternalStore(candidates.subscribe, candidates.state, candidates.state);
   // The marks land once, after the first paint; the subscription turns them into a re-render.
@@ -508,6 +517,17 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
   useEffect(() => {
     if (open && mounted) panelRef.current?.focus();
   }, [open, mounted]);
+
+  // The locked-auto link's landing (U-370): an open that asked for the cap field moves focus
+  // there once the repo section has drawn it — the repo loads async, so the effect waits for the
+  // budget card and only then takes focus off the panel root the effect above just gave it.
+  const repoBudgetShown =
+    section === 'repo' && repoState.stored !== null && repoState.draft !== null && repoState.autonomy !== null;
+  useEffect(() => {
+    if (open && focusAsked === 'repoBudget' && repoBudgetShown) {
+      panelRef.current?.querySelector<HTMLInputElement>('[data-repo-budget-input]')?.focus();
+    }
+  }, [open, focusAsked, repoBudgetShown]);
 
   // A control that goes natively disabled while busy — the rescan button's "Taranıyor…" — drops
   // focus to the body, and the panel's keydown surface (Esc, the Tab trap) rides its own subtree:

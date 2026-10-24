@@ -683,6 +683,9 @@ export function ShellScreen({
               onBack={goBack}
               pages={pageList}
               onOpenPage={openPage}
+              // The locked-auto reason's door (U-370): the panel's repoFocus (U-367) lands it on
+              // this work order's own repo; the focus target moves focus to the cap field.
+              onOpenRepoSettings={() => openSettingsAt({ section: 'repo', focus: 'repoBudget' })}
             />
           ) : null}
           {route.name === 'page' ? (
@@ -719,6 +722,7 @@ export function ShellScreen({
         subPage={settingsPanel.subPage}
         tab={settingsPanel.tab}
         fineTune={settingsPanel.fineTune}
+        focus={settingsPanel.focus}
         onOpenTarget={openSettingsAt}
         onSection={(next) => dispatchSettingsPanel({ type: 'select', section: next })}
         onBack={() => dispatchSettingsPanel({ type: 'leaveSubPage' })}
