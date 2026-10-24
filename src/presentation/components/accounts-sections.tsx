@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
 
 import { t, type Locale } from '../labels/t';
 import { ActionButton } from './action-button';
-import { EmptyCard } from './settings-cards';
+import { EmptyCard, ListBottomFade } from './settings-cards';
 
 export type AccountsSectionKind = 'added' | 'unadded';
 
@@ -108,6 +108,9 @@ export function AccountsSections({ locale, addedCount, unaddedCount, addedOpen, 
       <Disclosure kind="unadded" title={t(locale, 'candidates.title')} count={unaddedCount} open={unaddedOpen} onToggle={() => onToggle('unadded')} aside={unaddedAside}>
         {unaddedCount === 0 ? <EmptyCard mark="accounts-unadded" title={t(locale, 'accounts.unadded.empty.title')} line={t(locale, 'accounts.unadded.empty.line')} /> : unadded}
       </Disclosure>
+      {/* The list's scroll cue: pinned to the window body's bottom edge while the panels continue
+          below it, resting under the last card once the end arrives. */}
+      <ListBottomFade />
     </div>
   );
 }

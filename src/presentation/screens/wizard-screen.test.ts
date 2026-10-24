@@ -388,3 +388,16 @@ describe('wizard polish (U-361)', () => {
     expect(html).toContain('Tümünü seç');
   });
 });
+
+describe('wizard screen — Hesaplar bottom fade (#1354)', () => {
+  it('#1354: the accounts step wears the shared fade strip after its lists', async () => {
+    const api = fakeApi();
+    const store = createWizardStore({ api, actor: userActor, changes: () => () => {} });
+    await store.open();
+    await store.next();
+    const html = draw(store);
+    expect(html).toContain('data-list-bottom-fade');
+    // The strip stands after the account rows, inside the step's own box.
+    expect(html.indexOf('data-list-bottom-fade')).toBeGreaterThan(html.lastIndexOf('data-account-row'));
+  });
+});

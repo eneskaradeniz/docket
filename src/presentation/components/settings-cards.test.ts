@@ -246,6 +246,25 @@ describe('Hesaplar disclosures (U-166, U-168 … U-170)', () => {
   });
 });
 
+describe('list bottom fade (#1354)', () => {
+  it('#1354: the sections list ends with the fade strip — pinned, translucent to the window surface, never blocking the pointer', () => {
+    const out = sections();
+    const tag = out.match(/<div[^>]*data-list-bottom-fade[^>]*>/)?.[0] ?? '';
+    expect(tag).not.toBe('');
+    for (const cls of ['sticky', 'bottom-0', 'h-4', 'bg-gradient-to-b', 'from-transparent', 'to-surface', 'pointer-events-none']) {
+      expect(tag, cls).toContain(cls);
+    }
+    expect(tag).toContain('aria-hidden="true"');
+    // The strip stands after both disclosures — it is the list's own last row, not a panel's.
+    expect(out.indexOf('data-list-bottom-fade')).toBeGreaterThan(out.lastIndexOf('data-account-disclosure'));
+  });
+
+  it('#1354: the fade is the one shared strip both scrolled Hesaplar lists wear', () => {
+    expect(source('settings-cards.tsx')).toContain('export function ListBottomFade');
+    expect(source('accounts-sections.tsx')).toContain('<ListBottomFade />');
+  });
+});
+
 describe('account card order (U-171)', () => {
   const render = (actionsRight: boolean): string =>
     renderToStaticMarkup(
