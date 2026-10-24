@@ -141,6 +141,9 @@ export interface SettingsPanelProps {
   readonly onOpenAccount?: (accountId: string) => void;
   /** Injected in tests so relink outcomes can be driven without the preload bridge. */
   readonly repoRelink?: RepoRelinkStatusStore;
+  /** The repo the operator's selection points at — the project being looked at, or the open work
+   *  order's repo (U-367); null when nothing is selected and the store's own fallbacks answer. */
+  readonly repoFocus: string | null;
 }
 
 // The sections and their menu groups are the store's (U-28); the type stays importable from here.
@@ -325,7 +328,7 @@ function RepoBudgetControl({
   );
 }
 
-export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _fineTune, onOpenTarget, onSection, onBack, onEscape, onClose, candidateDot: candidateDotMirror, candidates, providers, connectors, models, themeStore, store, marks, roles, update, locale, localeStore, onEnterSubPage, onOpenAccount, repoRelink: repoRelinkInjected }: SettingsPanelProps) {
+export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _fineTune, onOpenTarget, onSection, onBack, onEscape, onClose, candidateDot: candidateDotMirror, candidates, providers, connectors, models, themeStore, store, marks, roles, update, locale, localeStore, onEnterSubPage, onOpenAccount, repoRelink: repoRelinkInjected, repoFocus }: SettingsPanelProps) {
   const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   const candidateState = useSyncExternalStore(candidates.subscribe, candidates.state, candidates.state);
   // The marks land once, after the first paint; the subscription turns them into a re-render.
@@ -410,8 +413,10 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
   const repoRelink = repoRelinkInjected ?? repoRelinkOwned;
   const repoRelinkState = useSyncExternalStore(repoRelink.subscribe, repoRelink.state, repoRelink.state);
   useEffect(() => {
-    if (open && section === 'repo') void repo.load();
-  }, [open, section, repo]);
+    // The section opens on the repo the operator is looking at (U-367), never the tree's first
+    // repo by accident; a null focus leaves the store's own fallbacks to answer.
+    if (open && section === 'repo') void repo.load(repoFocus ?? undefined);
+  }, [open, section, repo, repoFocus]);
   useEffect(() => {
     if (open && section === 'repo') {
       const slugs = repoState.repos.map((tab) => tab.repo);
@@ -781,30 +786,55 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
   // region carries the accessible name, the store carries the draft, and this file only wires the
   // four states and the save bar. One repo draws no repo navigation (U-288); several draw the
   // top tab bar, and a dirty draft stops a tab move at the discard dialog like any other leave.
+  // Several projects draw the project switcher beside the tabs (U-368) — also while the loaded
+  // repo's flow has failed or its folder is gone, so that state is never a dead end.
   const repoDirty = flowDraftState(repoState.stored, repoState.draft).isDirty;
   const repoLoaded = repoState.stored !== null && repoState.draft !== null;
   const repoDetachTitle = t(locale, 'repoSettings.detach.confirm.title');
   const repoSection = (
     <section role="region" aria-label={t(locale, 'repoSettings.title')} data-repo-settings aria-busy={repoState.loading ? true : undefined} className="grid content-start gap-2">
-      {!repoState.singleRepo && repoState.repos.length > 1 ? (
-        <div role="tablist" aria-label={t(locale, 'repoSettings.repos.label')} className="flex flex-wrap gap-1.5">
-          {repoState.repos.map((tab) => (
-            <button
-              key={tab.repo}
-              type="button"
-              role="tab"
-              aria-selected={tab.repo === repoState.repo}
-              onClick={() => {
-                if (tab.repo !== repoState.repo) tryLeave(() => void repo.selectRepo(tab.repo));
+      {!repoState.singleRepo && repoState.repos.length > 1 || repoState.projects.length > 1 ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {!repoState.singleRepo && repoState.repos.length > 1 ? (
+            <div role="tablist" aria-label={t(locale, 'repoSettings.repos.label')} className="flex flex-wrap gap-1.5">
+              {repoState.repos.map((tab) => (
+                <button
+                  key={tab.repo}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab.repo === repoState.repo}
+                  onClick={() => {
+                    if (tab.repo !== repoState.repo) tryLeave(() => void repo.selectRepo(tab.repo));
+                  }}
+                  className={[
+                    'h-8 rounded-control border px-3 text-[13px]',
+                    tab.repo === repoState.repo ? 'border-signal bg-raised text-ink' : 'border-hairline bg-surface text-inkdim hover:bg-raised',
+                  ].join(' ')}
+                >
+                  {tab.name}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {repoState.projects.length > 1 ? (
+            <select
+              data-repo-project-select
+              aria-label={t(locale, 'repoSettings.projects.label')}
+              value={repoState.ownerProject ?? ''}
+              onChange={(event) => {
+                const next = event.target.value;
+                if (next !== '' && next !== repoState.ownerProject) tryLeave(() => void repo.selectProject(next));
               }}
-              className={[
-                'h-8 rounded-control border px-3 text-[13px]',
-                tab.repo === repoState.repo ? 'border-signal bg-raised text-ink' : 'border-hairline bg-surface text-inkdim hover:bg-raised',
-              ].join(' ')}
+              className="ml-auto h-8 w-fit rounded-control border border-hairline bg-surface px-2 text-[13px] text-ink"
             >
-              {tab.name}
-            </button>
-          ))}
+              {repoState.ownerProject === null ? <option value="">{repoState.repo ?? ''}</option> : null}
+              {repoState.projects.map((option) => (
+                <option key={option.project} value={option.project}>
+                  {option.name}
+                </option>
+              ))}
+            </select>
+          ) : null}
         </div>
       ) : null}
       {repoRelinkState.rows.length > 0 ? (

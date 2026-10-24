@@ -754,6 +754,7 @@ export const EN: LabelBundle = {
   'repoSettings.discard.exit': 'Exit without saving',
   'repoSettings.discard.stay': 'Return to editing',
   'repoSettings.repos.label': 'Repository',
+  'repoSettings.projects.label': 'Project',
   'repoSettings.empty.title': 'No repository',
   'repoSettings.empty.guidance': 'Add a project and repository first.',
   'repoSettings.empty.link': 'Open project setup',

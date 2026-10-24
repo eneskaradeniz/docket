@@ -47,6 +47,7 @@ import {
   type NavRoute,
 } from '../stores/nav-history';
 import { treeSelection, type ProjectTreeStore, type TreePlace } from '../stores/project-tree';
+import { firstRepoOfProject } from '../stores/repo-settings';
 import type { RoadmapStore } from '../stores/roadmap';
 import {
   CLOSED_PALETTE,
@@ -398,6 +399,15 @@ export function ShellScreen({
     treeState.tree,
     route.name === 'workOrder' || route.name === 'account' || route.name === 'page' ? placeRef.current : placeOf(route),
   );
+  // The repo Depo ayarları opens on (U-367): the open work order's own repo when its detail stands
+  // loaded, else what the tree selection points at — a board's repo, or the selected project's
+  // first repo. Nothing selected leaves the store its own fallbacks.
+  const repoFocus = useMemo(() => {
+    if (route.name === 'workOrder' && detailView !== null && detailView.record.id === route.id) return detailView.record.repo;
+    if (selection.repo !== null) return selection.repo;
+    if (selection.project !== null) return firstRepoOfProject(treeState.tree, selection.project.id);
+    return null;
+  }, [route, detailView, selection, treeState.tree]);
 
   // The history's doors (U-25). What exists answers from the stores the shell already holds —
   // the tree for repos and projects, the frame's cards for accounts; the cockpit always is. A
@@ -704,6 +714,7 @@ export function ShellScreen({
       <SettingsPanel
         open={settingsPanel.open}
         origin={settingsPanel.origin}
+        repoFocus={repoFocus}
         section={settingsPanel.section}
         subPage={settingsPanel.subPage}
         tab={settingsPanel.tab}

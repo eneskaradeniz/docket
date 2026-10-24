@@ -752,6 +752,7 @@ export const TR: LabelBundle = {
   'repoSettings.discard.exit': 'Kaydetmeden çık',
   'repoSettings.discard.stay': 'Düzenlemeye dön',
   'repoSettings.repos.label': 'Depo',
+  'repoSettings.projects.label': 'Proje',
   'repoSettings.empty.title': 'Depo yok',
   'repoSettings.empty.guidance': 'Önce bir proje ve depo ekle.',
   'repoSettings.empty.link': 'Proje kurulumunu aç',
