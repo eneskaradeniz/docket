@@ -200,7 +200,9 @@ export const LABEL_KEYS = [
   'detail.duration.minutes',
   'detail.duration.hours',
   // The stage strip (U-224): stages only, the counter on the current label, sr state words (A6).
+  // A one-stage flow draws no bar — the plain "now" line says the only stage there is.
   'detail.strip.label',
+  'detail.strip.now',
   'detail.strip.gatesWaiting',
   'detail.strip.asksWaiting',
   'detail.strip.state.done',

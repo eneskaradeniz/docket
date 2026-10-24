@@ -5,6 +5,8 @@
 // its state in words for assistive tech (A6): the dot and the colour are redundant cues, never
 // the only cue. The pending-gate marking the issue's U-19 sentence names lives in this counter
 // and in the zone's dashed rows — there is no dashed gate segment (the architect's #972 call).
+// A one-stage flow draws no bar at all: a lone full-width fill reads as 100 % progress, so the
+// strip says the only stage in one plain line and leaves the waiting cue to the decision cards.
 import { t, type Locale } from '../labels/t';
 import type { LabelKey } from '../labels/keys';
 import type { StripSegment } from '../stores/work-order-detail';
@@ -18,7 +20,7 @@ const BAR_STANDING_CLASS: Readonly<Record<StripSegment['standing'], string>> = {
 const barClass = (segment: StripSegment): string => {
   if (segment.standing === 'current' && segment.failed) return 'bg-error';
   if (segment.standing === 'current' && segment.running) {
-    return 'bg-[linear-gradient(90deg,var(--color-proceed)_0_50%,var(--color-hairline)_50%_100%)]';
+    return 'bg-[linear-gradient(90deg,var(--color-proceed)_0_50%,var(--color-hairline)_50_100%)]';
   }
   return BAR_STANDING_CLASS[segment.standing];
 };
@@ -36,12 +38,39 @@ const stateWordKey = (segment: StripSegment): LabelKey => {
   return segment.failed ? 'detail.strip.state.failed' : segment.running ? 'detail.strip.state.running' : 'detail.strip.state.pending';
 };
 
+/** The completed tick both strip shapes draw before a done stage's name. */
+const DONE_CHECK = (
+  <svg aria-hidden="true" width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="flex-none text-proceed">
+    <path d="M2.5 6.5l2.3 2.3L9.5 3.8" />
+  </svg>
+);
+
 export interface DetailStripProps {
   readonly segments: readonly StripSegment[];
   readonly locale: Locale;
 }
 
 export function DetailStrip({ segments, locale }: DetailStripProps) {
+  if (segments.length === 1) {
+    const [only] = segments;
+    return (
+      <nav aria-label={t(locale, 'detail.strip.label')}>
+        <p
+          data-detail-strip
+          aria-current={only.standing === 'current' ? 'step' : undefined}
+          className="m-0 flex min-w-0 items-center gap-2 text-[0.8125rem] font-semibold text-ink"
+        >
+          {only.standing === 'done' ? DONE_CHECK : (
+            <span aria-hidden="true" className={`h-2 w-2 flex-none rounded-full ${dotClass(only)}`} />
+          )}
+          <span className="truncate" title={only.name}>{t(locale, 'detail.strip.now').replace('{stage}', only.name)}</span>
+          <span className="sr-only">
+            <span>{t(locale, stateWordKey(only))}</span>
+          </span>
+        </p>
+      </nav>
+    );
+  }
   return (
     <nav aria-label={t(locale, 'detail.strip.label')}>
       <ol data-detail-strip className="m-0 flex min-w-0 list-none gap-2 overflow-x-auto p-0">
@@ -58,11 +87,7 @@ export function DetailStrip({ segments, locale }: DetailStripProps) {
                 segment.standing === 'current' ? 'font-semibold text-ink' : segment.standing === 'done' ? 'font-medium text-ink' : 'font-medium text-inkdim'
               }`}
             >
-              {segment.standing === 'done' ? (
-                <svg aria-hidden="true" width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="flex-none text-proceed">
-                  <path d="M2.5 6.5l2.3 2.3L9.5 3.8" />
-                </svg>
-              ) : null}
+              {segment.standing === 'done' ? DONE_CHECK : null}
               {segment.standing === 'current' ? (
                 <span aria-hidden="true" className={`h-2 w-2 flex-none rounded-full ${dotClass(segment)}`} />
               ) : null}

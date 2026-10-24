@@ -172,6 +172,7 @@ export const EN: LabelBundle = {
   'detail.duration.minutes': '{n} min',
   'detail.duration.hours': '{h} h {m} min',
   'detail.strip.label': 'Flow',
+  'detail.strip.now': 'Current: {stage}',
   'detail.strip.gatesWaiting': '· {n} gates waiting',
   'detail.strip.asksWaiting': '· {n} permission asks waiting',
   'detail.strip.state.done': 'completed',
