@@ -22,6 +22,12 @@ import { ChatHistory } from './chat-history';
 import { ChatIcon, scopeIcon } from './chat-icons';
 import { BUTTON, FLOATING, FOCUS, ICON_BUTTON, MENU_DESC, MENU_OPTION, MENU_TITLE } from './chat-style';
 
+/** The room a scroll area that hosts the button owes at its end: the button's own height plus its
+ *  bottom offset (3.5 rem + 1.5 rem), all rem so the space scales with the button itself (U-53).
+ *  A screen that scrolls under the button applies this class to its content's bottom edge, so no
+ *  row stays covered once the scroll reaches its end. */
+export const CHAT_FAB_CLEARANCE_CLASS = 'pb-[5rem]';
+
 export interface ChatDockProps {
   readonly store: ChatStore;
   readonly locale: Locale;

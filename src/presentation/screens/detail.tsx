@@ -39,6 +39,7 @@ import type { LabelKey } from '../labels/keys';
 import { ActionButton } from '../components/action-button';
 import { AutonomyControl } from '../components/autonomy-control';
 import { AutonomySuggestionBanner } from '../components/autonomy-suggestion-banner';
+import { CHAT_FAB_CLEARANCE_CLASS } from '../components/chat-dock';
 import { WorkOrderLaunchers } from '../components/launcher-rows';
 import { StateBadge, type BadgeTone } from '../components/state-badge';
 import { DetailStrip } from '../components/detail-strip';
@@ -352,8 +353,11 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
   // directly, every other standing offers the jump back to the form.
   const firstCard = zone?.kind === 'cards' ? zone.cards.find((card) => card.kind !== 'failed' && card.kind !== 'start' && card.kind !== 'gating') ?? null : null;
 
+  // The content ends with the chat button's clearance, so its last row clears the button once the
+  // scroll reaches its end; while the pinned decision bar stands, the bar's measured padding
+  // replaces it (the bar itself keeps the button's footprint empty on its own right).
   return (
-    <div className="relative grid min-w-0 gap-6" style={barShown ? { paddingBottom: barHeight } : undefined}>
+    <div className={`relative grid min-w-0 gap-6 ${CHAT_FAB_CLEARANCE_CLASS}`} style={barShown ? { paddingBottom: barHeight } : undefined}>
       <SkeletonStyle />
       {/* The back row's wrapper carries the skip link (A1: the detail's first focusable element,
           ahead of the back control in the tab order) and fills the main column (L-5: every
