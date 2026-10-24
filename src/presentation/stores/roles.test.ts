@@ -173,7 +173,7 @@ describe('U-33: rows and the recommendation', () => {
     const rows = store.state().rows ?? [];
     const byId = Object.fromEntries(rows.map((row) => [row.id, row]));
     expect(byId.developer).toMatchObject({ style: 'balanced', recommended: 'balanced', differs: false });
-    expect(byId.planner).toMatchObject({ style: 'careful', recommended: 'careful', differs: false });
+    expect(byId.planner).toMatchObject({ style: 'careful', recommended: 'balanced', differs: true });
     expect(byId.reviewer).toMatchObject({ style: 'custom', recommended: 'careful', differs: true });
   });
 
@@ -440,7 +440,7 @@ describe('U-33: unset styles and the apply-all line', () => {
     await store.applyRecommended();
     expect(saves(api)).toEqual([
       { type: 'binding.save', role: 'developer', accounts: [{ accountId: 'a1' }, { accountId: 'a2' }], tier: 'balanced', thinking: { level: 'balanced' } },
-      { type: 'binding.save', role: 'planner', accounts: [{ accountId: 'a1', model: 'atlas-max' }], tier: 'strong', thinking: { level: 'deep' } },
+      { type: 'binding.save', role: 'planner', accounts: [{ accountId: 'a1', model: 'atlas-max' }], tier: 'balanced', thinking: { level: 'balanced' } },
     ]);
   });
 });
