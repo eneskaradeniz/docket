@@ -2020,3 +2020,11 @@ Added 2026-10-19, #1320; the application rule is A-436.
 Added 2026-10-19, #1324 (dogfood walk 2); the domain rule is R-191, the application rule A-437.
 
 - **U-366** (added 2026-10-19, #1324) Both surfaces that print a permission ask's tool name format Docket's own page tools in words: in `LivePaneScreen` (`formatAskTool`) and the work-order permission card (`permissionToolTitle` in `detail-decision-card.tsx`), `page_publish` and `page_update` — bare and as `mcp__docket-pages__`-prefixed — render through `detail.zone.tool.pagePublish` / `detail.zone.tool.pageUpdate` (`Docket: sayfa yayınla` / `Docket: sayfa güncelle`, `Docket: publish page` / `Docket: update page`) instead of the raw wire name; every other tool keeps the exact name the agent asked with.
+
+
+## Depo ayarları opens on the selected project (U-367, U-368)
+
+Added 2026-10-20, #1328 (dogfood walk 3).
+
+- **U-367** (added 2026-10-20, #1328) Opening Ayarlar → Depo ayarları loads the repo the operator is looking at, not the project tree's first repo: the shell derives `repoFocus` from the current route — the open work order's own repo when its detail stands loaded, else the tree selection's repo (a board), else the selected project's first repo (`firstRepoOfProject`) — and `SettingsPanel` passes it into `repoSettings.load(initialRepo)`. When nothing is selected the store's own fallbacks answer: the last-viewed repo, else the tree's first.
+- **U-368** (added 2026-10-20, #1328) A project switcher (`data-repo-project-select`, labelled `repoSettings.projects.label` — `Proje` / `Project`) renders beside the repo tabs whenever the tree holds more than one project with repos, including while the loaded repo's flow has failed or its folder is missing, so that state is never a dead end: choosing a project loads its first repo through the store's `selectProject`, behind the same dirty-draft discard dialog as a repo tab. A single-project tree draws no switcher, and a one-repo project keeps drawing no tabs (U-288 unchanged).

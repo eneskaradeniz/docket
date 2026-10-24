@@ -55,6 +55,12 @@ export interface RepoTab {
   readonly name: string;
 }
 
+/** One project the switcher offers: every project that owns at least one repo. */
+export interface RepoProjectOption {
+  readonly project: string;
+  readonly name: string;
+}
+
 export interface LimitPolicyFieldDiff {
   readonly stage: StageSlug;
   readonly current: LimitPolicy;
@@ -110,6 +116,10 @@ export interface RepoSettingsState {
   readonly repo: string | null;
   readonly repos: readonly RepoTab[];
   readonly singleRepo: boolean;
+  /** Every project with repos the switcher offers (U-368); one project draws no switcher. */
+  readonly projects: readonly RepoProjectOption[];
+  /** The project owning the loaded repo (U-368); null when the tree does not know the repo. */
+  readonly ownerProject: string | null;
   readonly stored: RepoFlow | null;
   readonly draft: RepoFlow | null;
   readonly defaultLimitPolicy: LimitPolicy;
@@ -159,6 +169,9 @@ const isRepoAutonomyRead = (value: unknown): value is RepoAutonomyRead => {
 export interface RepoSettingsStore {
   load(initialRepo?: string): Promise<void>;
   selectRepo(repo: string): Promise<void>;
+  /** Loads the chosen project's first repo and moves the tabs to it (U-368) — the way out of a
+   *  repo whose folder or flow is gone. */
+  selectProject(project: string): Promise<void>;
   selectStage(stage: StageSlug): void;
   /** Sets (or clears, with `null`) the repo layer of the autonomy chain (U-334, A-403) and
    *  re-reads the standing; the refreshed control is the answer, never a toast. */
@@ -214,8 +227,19 @@ const firstRepoOfTree = (tree: ProjectTree): string | null => {
   return null;
 };
 
+/** The first repo of one project — its main repo (★) — or null when the project or its repos are
+ *  gone; the shell reads it for the project a roadmap selection points at (U-367). */
+export const firstRepoOfProject = (tree: ProjectTree, projectId: string): string | null => {
+  const item = tree.find((row) => row.project === projectId);
+  return item?.repos[0]?.repo ?? null;
+};
+
 const projectForRepo = (tree: ProjectTree, repo: string): ProjectTreeItem | null =>
   tree.find((item) => item.repos.some((node) => node.repo === repo)) ?? null;
+
+/** Every project the switcher may offer: a project without repos has nothing to load. */
+const projectOptions = (tree: ProjectTree): readonly RepoProjectOption[] =>
+  tree.filter((item) => item.repos.length > 0).map((item) => ({ project: item.project, name: item.name }));
 
 const accountLabelMap = (view: SettingsAccountsView): Readonly<Record<string, string>> => {
   const map: Record<string, string> = {};
@@ -240,6 +264,8 @@ export const createRepoSettingsStore = (deps: RepoSettingsStoreDeps): RepoSettin
     repo: null,
     repos: [],
     singleRepo: true,
+    projects: [],
+    ownerProject: null,
     stored: null,
     draft: null,
     defaultLimitPolicy: RECOMMENDED.limitPolicy,
@@ -318,6 +344,18 @@ export const createRepoSettingsStore = (deps: RepoSettingsStoreDeps): RepoSettin
     });
   };
 
+  // The last tree a successful load read — the tabs and the switcher re-derive from it on every
+  // repo move, so a project switch never re-queries to know what its repos are.
+  let lastTree: ProjectTree = [];
+
+  /** Moves the repo navigation to a repo: the owner project's tabs (or the bare repo when the tree
+   *  does not know it) and the switcher's standing, before the flow itself loads. */
+  const showRepo = (repo: string): void => {
+    const owner = projectForRepo(lastTree, repo);
+    const repos = owner === null ? [{ repo, name: repo }] : projectRepos(lastTree, owner.project);
+    publish({ ...state, repos, singleRepo: repos.length <= 1, ownerProject: owner?.project ?? null });
+  };
+
   const load = async (initialRepo?: string): Promise<void> => {
     publish({ ...state, loading: true, problem: null });
     const treeReply: unknown = await deps.api.query({ type: 'project.tree' } satisfies Query);
@@ -326,15 +364,24 @@ export const createRepoSettingsStore = (deps: RepoSettingsStoreDeps): RepoSettin
       return;
     }
     const tree = treeReply as ProjectTree;
+    lastTree = tree;
     const repo = initialRepo ?? state.repo ?? firstRepoOfTree(tree);
     if (repo === null) {
-      publish({ ...state, loading: false, problem: 'no_repo', repos: [], singleRepo: true, stored: null, draft: null });
+      publish({
+        ...state,
+        loading: false,
+        problem: 'no_repo',
+        repos: [],
+        singleRepo: true,
+        projects: projectOptions(tree),
+        ownerProject: null,
+        stored: null,
+        draft: null,
+      });
       return;
     }
-    const owner = projectForRepo(tree, repo);
-    const repos = owner === null ? [{ repo, name: repo }] : projectRepos(tree, owner.project);
-    const singleRepo = repos.length <= 1;
-    publish({ ...state, repos, singleRepo });
+    publish({ ...state, projects: projectOptions(tree) });
+    showRepo(repo);
     await loadFlow(repo);
   };
 
@@ -344,6 +391,13 @@ export const createRepoSettingsStore = (deps: RepoSettingsStoreDeps): RepoSettin
     load,
     selectRepo: async (repo) => {
       if (state.repo === repo) return;
+      showRepo(repo);
+      await loadFlow(repo);
+    },
+    selectProject: async (project) => {
+      const repo = firstRepoOfProject(lastTree, project);
+      if (repo === null || repo === state.repo) return;
+      showRepo(repo);
       await loadFlow(repo);
     },
     selectStage: (stage) => {
