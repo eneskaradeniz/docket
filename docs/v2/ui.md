@@ -2021,13 +2021,18 @@ Added 2026-10-19, #1324 (dogfood walk 2); the domain rule is R-191, the applicat
 
 - **U-366** (added 2026-10-19, #1324) Both surfaces that print a permission ask's tool name format Docket's own page tools in words: in `LivePaneScreen` (`formatAskTool`) and the work-order permission card (`permissionToolTitle` in `detail-decision-card.tsx`), `page_publish` and `page_update` — bare and as `mcp__docket-pages__`-prefixed — render through `detail.zone.tool.pagePublish` / `detail.zone.tool.pageUpdate` (`Docket: sayfa yayınla` / `Docket: sayfa güncelle`, `Docket: publish page` / `Docket: update page`) instead of the raw wire name; every other tool keeps the exact name the agent asked with.
 
-
 ## Depo ayarları opens on the selected project (U-367, U-368)
 
 Added 2026-10-20, #1328 (dogfood walk 3).
 
 - **U-367** (added 2026-10-20, #1328) Opening Ayarlar → Depo ayarları loads the repo the operator is looking at, not the project tree's first repo: the shell derives `repoFocus` from the current route — the open work order's own repo when its detail stands loaded, else the tree selection's repo (a board), else the selected project's first repo (`firstRepoOfProject`) — and `SettingsPanel` passes it into `repoSettings.load(initialRepo)`. When nothing is selected the store's own fallbacks answer: the last-viewed repo, else the tree's first.
 - **U-368** (added 2026-10-20, #1328) A project switcher (`data-repo-project-select`, labelled `repoSettings.projects.label` — `Proje` / `Project`) renders beside the repo tabs whenever the tree holds more than one project with repos, including while the loaded repo's flow has failed or its folder is missing, so that state is never a dead end: choosing a project loads its first repo through the store's `selectProject`, behind the same dirty-draft discard dialog as a repo tab. A single-project tree draws no switcher, and a one-repo project keeps drawing no tabs (U-288 unchanged).
+
+## Board permission-waiting badge (U-369)
+
+Added 2026-10-24, #1347 (dogfood #1341 part a); the approved prototype is the dogfood kit's section A.
+
+- **U-369** (added 2026-10-24, #1347) A work order whose run waits on a permission ask carries an “İzin bekleniyor · N dk” badge (`data-board-permission-badge`, `hot` when emphasised) on its Kanban card (`board-card.tsx`, beside the code) and its list row (`board-list.tsx`); the status word stays as the status derives it. The badge reads the same open asks the cockpit ranks: the board store joins the `cockpit` query's `attention` (only `kind: 'permission_ask'` of the loaded repo) onto its view as each card's `askSince` (epoch ms of the earliest still-open ask), a failed cockpit read keeps the badges already standing, and `run.updated` re-queries the board so an ask that appears or is answered moves at once. N is whole minutes since the ask (`permissionWaitMinutes` in `board-status.ts`); at ≥30 min (`PERMISSION_WAIT_EMPHASIS_MS`) the badge strengthens — solid signal border, heavier wash, bold text, pulsing lamp. The list view grows its İzin column (`board.list.col.permission`) between Başlık and Durum only while some row carries the badge; a board without asks keeps its four-column grid. The badge is a mark inside the card's or row's own button, not a second control — clicking it opens the work order detail through the existing route, where the decision zone carries the ask. Copy lives in the bundles (`board.badge.waiting`), never inline.
 
 ## The locked Otomatik points at where it is unlocked (U-370)
 
