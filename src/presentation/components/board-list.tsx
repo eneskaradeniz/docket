@@ -5,15 +5,20 @@
 // line up. Rows alternate a faint tint so a long list stays readable; a row is a button that
 // opens the work order in place, and ↑/↓ move between rows. The table is its own scroller under
 // the fixed page header, so the sticky headers rest on the table's top edge — never on the page's
-// padded scroll area, where they would stop short of the edge and let rows show above them.
+// padded scroll area, where they would stop short of the edge and let rows show above them. A
+// row whose run waits on a permission ask carries the badge in its own İzin column (U-369).
 import { useRef, useState, type KeyboardEvent } from 'react';
 import { t, type Locale } from '../labels/t';
 import type { ListGroup } from '../stores/board';
 import { formatWorkOrderCode } from '../stores/work-order-code';
+import { BoardPermissionBadge } from './board-card';
 import { statusLabel, TONE_LAMP, TONE_TEXT } from './board-status';
 import { UnfoldIcon } from './board-icons';
 
-const GRID = 'grid grid-cols-[20px_72px_minmax(0,1fr)_184px] items-center gap-4 px-4';
+/** U-369: while some row waits on a permission ask the table grows its İzin column between the
+ *  title and the status; a board without asks keeps its four-column grid. */
+const gridOf = (asking: boolean): string =>
+  asking ? 'grid grid-cols-[20px_72px_minmax(0,1fr)_auto_184px] items-center gap-4 px-4' : 'grid grid-cols-[20px_72px_minmax(0,1fr)_184px] items-center gap-4 px-4';
 
 const COUNT_CLASS = 'inline-flex items-center gap-1.5 font-mono text-[12px] font-medium leading-none text-ink';
 
@@ -32,6 +37,10 @@ export function BoardList({
   const [active, setActive] = useState<string | null>(null);
   const empty = groups.every((group) => group.rows.length === 0);
   const firstRow = groups.find((group) => group.open)?.rows[0]?.id ?? null;
+  // The İzin column exists only while some row carries the badge (U-369), so a board without
+  // asks keeps the four-column grid it always had.
+  const asking = groups.some((group) => group.rows.some((row) => row.askSince !== undefined));
+  const GRID = gridOf(asking);
 
   const move = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
@@ -53,6 +62,7 @@ export function BoardList({
           <span />
           <span>{t(locale, 'board.list.col.code')}</span>
           <span>{t(locale, 'board.list.col.title')}</span>
+          {asking ? <span>{t(locale, 'board.list.col.permission')}</span> : null}
           <span>{t(locale, 'board.list.col.status')}</span>
         </div>
         {groups.map((group) => {
@@ -103,6 +113,9 @@ export function BoardList({
                         <span className="line-clamp-2 min-w-0 text-[14px] font-semibold leading-5 text-ink [overflow-wrap:anywhere]" title={row.title}>
                           {row.title}
                         </span>
+                        {asking ? (
+                          row.askSince === undefined ? <span /> : <BoardPermissionBadge askSince={row.askSince} locale={locale} />
+                        ) : null}
                         <span className={`text-[12.5px] font-medium ${TONE_TEXT[row.tone]}`}>{statusLabel(locale, row.status)}</span>
                       </button>
                     </li>

@@ -56,6 +56,8 @@ interface FakeBoardApi extends Pick<Api, 'query' | 'command'> {
   readonly queries: Query[];
   readonly commands: RecordedCommand[];
   setReply(reply: unknown): void;
+  /** The badge's own read (U-369): the cockpit reply is swappable apart from the board's. */
+  setCockpitReply(reply: unknown): void;
 }
 
 /** Query calls and issued commands are recorded; the query reply is swappable mid-test. */
@@ -63,6 +65,9 @@ const fakeBoardApi = (initial: unknown, commandResults: readonly CommandResult[]
   const queries: Query[] = [];
   const commands: RecordedCommand[] = [];
   let reply: unknown = initial;
+  // The cockpit answers an empty view by default, so tests that do not care about badges see the
+  // board exactly as the api returned it.
+  let cockpitReply: unknown = { attention: [], running: [], projects: [], recentlyClosed: [] };
   let issued = 0;
   // One project owning every repo the tests open boards for.
   const replyProjectTree = [
@@ -74,12 +79,18 @@ const fakeBoardApi = (initial: unknown, commandResults: readonly CommandResult[]
     setReply: (next) => {
       reply = next;
     },
+    setCockpitReply: (next) => {
+      cockpitReply = next;
+    },
     query: (query) => {
       queries.push(query);
       // The create intent resolves the owning project through the tree before opening; the fake
       // answers it from the same scripted reply surface, so tests keep one knob.
       if (query.type === 'project.tree') {
         return Promise.resolve(replyProjectTree);
+      }
+      if (query.type === 'cockpit') {
+        return Promise.resolve(cockpitReply);
       }
       return Promise.resolve(reply);
     },
@@ -127,7 +138,7 @@ describe('board store', () => {
 
     await store.load('atolye');
 
-    expect(api.queries).toEqual([{ type: 'repo.board', repo: 'atolye' }]);
+    expect(api.queries).toEqual([{ type: 'repo.board', repo: 'atolye' }, { type: 'cockpit' }]);
     const state = store.state();
     expect(state.loading).toBe(false);
     expect(state.problem).toBeNull();
@@ -176,9 +187,9 @@ describe('board store', () => {
       },
     ]);
     // The create resolves the owning project (project.tree) and mirrors its own mutation by
-    // re-querying the board.
-    expect(api.queries.map((query) => query.type)).toEqual(['repo.board', 'project.tree', 'repo.board']);
-    expect(api.queries[2]).toEqual({ type: 'repo.board', repo: 'atolye' });
+    // re-querying the board (whose every load rides the cockpit read U-369 added).
+    expect(api.queries.map((query) => query.type)).toEqual(['repo.board', 'cockpit', 'project.tree', 'repo.board', 'cockpit']);
+    expect(api.queries[3]).toEqual({ type: 'repo.board', repo: 'atolye' });
   });
 
   it('U-3: a rejected workOrder.open surfaces the api code and leaves the board untouched', async () => {
@@ -194,11 +205,11 @@ describe('board store', () => {
     expect(state.view).toEqual(boardView);
     expect(state.problem).toBeNull();
     // A failed create did not open anything, so the board is not re-queried either — only the
-    // load and the project lookup happened.
-    expect(api.queries.map((query) => query.type)).toEqual(['repo.board', 'project.tree']);
+    // load (with its cockpit read) and the project lookup happened.
+    expect(api.queries.map((query) => query.type)).toEqual(['repo.board', 'cockpit', 'project.tree']);
   });
 
-  it('U-3: workOrders.changed re-queries the loaded repo; run.updated does not', async () => {
+  it('U-3: workOrders.changed re-queries the loaded repo', async () => {
     const persistence = fakePersistence();
     const api = fakeBoardApi(boardView);
     const emitter = fakeSignal();
@@ -212,13 +223,71 @@ describe('board store', () => {
     await store.load('atolye');
     emitter.emit({ type: 'workOrders.changed' });
     await flush();
-    expect(api.queries.length).toBe(2);
-    expect(api.queries[1]).toEqual({ type: 'repo.board', repo: 'atolye' });
+    expect(api.queries.length).toBe(4);
+    expect(api.queries[2]).toEqual({ type: 'repo.board', repo: 'atolye' });
+  });
 
-    // Run events do not move cards; only the cockpit listens to them.
+  it('U-369: run.updated re-queries the board — an ask that appears or leaves moves at once', async () => {
+    const persistence = fakePersistence();
+    const api = fakeBoardApi(boardView);
+    const emitter = fakeSignal();
+    const store = createBoardStore({ api, changes: emitter.signal, actor: userActor, persistence });
+    await store.load('atolye');
+
+    // Run events still do not move cards between columns; they only raise or lift a badge.
     emitter.emit({ type: 'run.updated', runId: 'run-1' });
     await flush();
-    expect(api.queries.length).toBe(2);
+    expect(api.queries.length).toBe(4);
+    expect(api.queries[2]).toEqual({ type: 'repo.board', repo: 'atolye' });
+    expect(api.queries[3]).toEqual({ type: 'cockpit' });
+  });
+
+  it('U-369: this repo’s pending permission ask lands on its card as askSince; other repos and kinds do not', async () => {
+    const persistence = fakePersistence();
+    const api = fakeBoardApi(boardView);
+    api.setCockpitReply({
+      attention: [
+        { workOrderId: 'wo-2', number: 2, project: 'atolye', repo: 'atolye', title: 'Book binding', kind: 'permission_ask', stage: 'test', since: 1234 },
+        { workOrderId: 'wo-9', number: 9, project: 'diger', repo: 'diger', title: 'Another repo', kind: 'permission_ask', stage: null, since: 5678 },
+        { workOrderId: 'wo-8', number: 8, project: 'atolye', repo: 'atolye', title: 'Another kind', kind: 'awaiting_human', stage: 'planla', since: 999 },
+      ],
+      running: [],
+      projects: [],
+      recentlyClosed: [],
+    });
+    const store = createBoardStore({ api, changes: fakeSignal().signal, actor: userActor, persistence });
+    await store.load('atolye');
+
+    const asked = kanbanColumns(store.state().view ?? boardView, {})[0].cards.find((card) => card.id === 'wo-2');
+    // The badge adds to the card; the status word stays as the status derives it.
+    expect(asked?.askSince).toBe(1234);
+    expect(asked?.status).toBe('ready');
+    // Only this repo's permission asks join; the awaiting_human row and the foreign ask do not.
+    expect(store.state().view?.columns[0].workOrders.find((card) => card.id === 'wo-2')).toMatchObject({ askSince: 1234 });
+    // The done lane never carries a badge: its work orders have no live run to ask.
+    expect(kanbanColumns(store.state().view ?? boardView, {}).find((column) => column.kind === 'done')?.cards[0].askSince).toBeUndefined();
+  });
+
+  it('U-369: a failed cockpit read keeps the board and the badges already standing', async () => {
+    const persistence = fakePersistence();
+    const api = fakeBoardApi(boardView);
+    api.setCockpitReply({
+      attention: [
+        { workOrderId: 'wo-2', number: 2, project: 'atolye', repo: 'atolye', title: 'Book binding', kind: 'permission_ask', stage: 'test', since: 1234 },
+      ],
+      running: [],
+      projects: [],
+      recentlyClosed: [],
+    });
+    const store = createBoardStore({ api, changes: fakeSignal().signal, actor: userActor, persistence });
+    await store.load('atolye');
+    expect(kanbanColumns(store.state().view ?? boardView, {})[0].cards.find((card) => card.id === 'wo-2')?.askSince).toBe(1234);
+
+    api.setCockpitReply({ ok: false, code: 'not_found' });
+    await store.load('atolye');
+    expect(store.state().problem).toBeNull();
+    expect(store.state().view).not.toBeNull();
+    expect(kanbanColumns(store.state().view ?? boardView, {})[0].cards.find((card) => card.id === 'wo-2')?.askSince).toBe(1234);
   });
 });
 

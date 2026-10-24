@@ -1,6 +1,7 @@
 // components/board-status.ts — the words and hues a work order's status carries on the board's
 // Kanban cards: one label key per known status, one lamp and one text hue per tone. A status
-// outside the closed set shows as its own dim slug instead of pretending a known state.
+// outside the closed set shows as its own dim slug instead of pretending a known state. The
+// permission-waiting badge's arithmetic (U-369) lives here beside them.
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
 import type { CardTone } from '../stores/board';
@@ -19,6 +20,14 @@ export const statusLabel = (locale: Locale, status: string): string => {
   const key = STATUS_KEY[status];
   return key === undefined ? status : t(locale, key);
 };
+
+/** U-369: a permission wait this long reads as emphasised on the badge. */
+export const PERMISSION_WAIT_EMPHASIS_MS = 30 * 60_000;
+
+/** U-369: whole minutes a work order's run has waited on a permission ask, floored at zero —
+ *  the badge's one number. */
+export const permissionWaitMinutes = (askSince: number, now: number): number =>
+  Math.max(0, Math.floor((now - askSince) / 60_000));
 
 /** The lamp before the status word: a queued card carries a hollow ring, a running one breathes
  *  (still under reduced motion), an unknown status carries no lamp. */

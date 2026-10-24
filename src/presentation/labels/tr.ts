@@ -514,6 +514,8 @@ export const TR: LabelBundle = {
   'board.list.empty': 'Bu repoda henüz iş emri yok.',
   'board.list.running': 'koşuyor',
   'board.list.waiting': 'bekliyor',
+  'board.list.col.permission': 'İzin',
+  'board.badge.waiting': 'İzin bekleniyor · {n} dk',
   'board.column.collapse': 'Daralt',
   'board.column.expand': 'Aç',
   'board.column.locked': 'Bekleyen iş var, açık kalır',
