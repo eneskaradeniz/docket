@@ -270,6 +270,7 @@ const panelOver = (
         subPage: null,
         tab: null,
         fineTune: null,
+        focus: null,
         onOpenTarget: noop,
         onSection: noop,
         onBack: noop,
@@ -607,5 +608,35 @@ describe('Depo ayarları opens on the selection (U-367, U-368)', () => {
     const out = world.html();
     expect(out).not.toContain('data-repo-project-select');
     expect(out).not.toContain('role="tablist"');
+  });
+});
+
+describe('The locked-auto link lands on the cap field (U-370)', () => {
+  it('U-370: the budget card carries the subscription note — a subscription never spends, a small value is enough', async () => {
+    const world = panelOver((query) => {
+      if (query.type === 'project.tree') return treeOf(['web']);
+      if (query.type === 'repo.flow') return { ok: true, flow: sampleFlow() };
+      if (query.type === 'repoStatus') return repoStatusOk('web');
+      if (query.type === 'repo.autonomy') {
+        return { ok: true, level: 'manual', source: 'repo', layerSet: true, budget: { amountUsd: 25, warnPercent: 80 } };
+      }
+      return { ok: false, code: 'not_found' };
+    });
+    await world.store.repoSettings.load();
+    const out = world.html();
+    expect(out).toContain('data-repo-budget');
+    expect(out).toContain('data-repo-budget-note');
+    expect(out).toContain('Abonelikte harcama oluşmaz; küçük bir değer yeterli.');
+  });
+
+  it('U-370: the panel asks for the budget field by data attribute once the repo section has drawn it', () => {
+    expect(settingsSource).toContain("focusAsked === 'repoBudget'");
+    expect(settingsSource).toContain('[data-repo-budget-input]');
+    expect(settingsSource).toContain('.focus()');
+  });
+
+  it('U-370: the shell opens Depo ayarları from the detail with the repo budget focus named', () => {
+    expect(shellSource).toContain("focus: 'repoBudget'");
+    expect(shellSource).toContain('onOpenRepoSettings');
   });
 });

@@ -41,7 +41,7 @@ describe('settingsPanelReducer', () => {
 
   it('the state holds the open standing, the origin, the section and the sub-page — there is no route to change', () => {
     const opened = settingsPanelReducer(CLOSED_SETTINGS_PANEL, { type: 'open', origin: 'keyboard' });
-    expect(Object.keys(opened).sort()).toStrictEqual(['fineTune', 'open', 'origin', 'section', 'subPage', 'tab']);
+    expect(Object.keys(opened).sort()).toStrictEqual(['fineTune', 'focus', 'open', 'origin', 'section', 'subPage', 'tab']);
   });
 });
 
@@ -204,5 +204,23 @@ describe('settings open targets (U-37)', () => {
     expect(settingsPanelReducer(moved, { type: 'leaveSubPage' })).toMatchObject({ subPage: null, tab: null });
     expect(settingsPanelReducer(moved, { type: 'select', section: 'roles' })).toMatchObject({ tab: null, fineTune: null });
     expect(settingsPanelReducer(moved, { type: 'close' })).toMatchObject({ open: false, tab: null, fineTune: null });
+  });
+
+  it('U-370: an open can name the repo budget focus — the locked-auto link lands on the cap field', () => {
+    expect(
+      settingsPanelReducer(CLOSED_SETTINGS_PANEL, { type: 'open', origin: 'pointer', section: 'repo', focus: 'repoBudget' }),
+    ).toMatchObject({ open: true, section: 'repo', focus: 'repoBudget' });
+    // A plain open asks for no focus, and the closed standing holds null.
+    expect(settingsPanelReducer(CLOSED_SETTINGS_PANEL, { type: 'open', origin: 'keyboard' }).focus).toBeNull();
+    expect(CLOSED_SETTINGS_PANEL.focus).toBeNull();
+  });
+
+  it('U-370: an open panel follows a named focus; a section move, an Esc and a close drop it with the other landing fields', () => {
+    const open = settingsPanelReducer(CLOSED_SETTINGS_PANEL, { type: 'open', origin: 'pointer' });
+    const moved = settingsPanelReducer(open, { type: 'open', origin: 'keyboard', section: 'repo', focus: 'repoBudget' });
+    expect(moved).toMatchObject({ origin: 'pointer', section: 'repo', focus: 'repoBudget' });
+    expect(settingsPanelReducer(moved, { type: 'select', section: 'accounts' })).toMatchObject({ focus: null });
+    expect(settingsPanelReducer(moved, { type: 'escape' })).toMatchObject({ open: false, focus: null });
+    expect(settingsPanelReducer(moved, { type: 'close' })).toMatchObject({ open: false, focus: null });
   });
 });

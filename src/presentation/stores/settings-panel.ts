@@ -55,6 +55,10 @@ export const AGENT_CAPABILITY_SECTIONS: readonly SettingsSection[] =
 /** The section the nav's Ayarlar row opens. */
 export const DEFAULT_SETTINGS_SECTION: SettingsSection = 'accounts';
 
+/** A field an open asked to land keyboard focus on (U-370): the repo section's spend-cap input —
+ *  the door the locked-auto reason's link opens. */
+export type SettingsPanelFocus = 'repoBudget';
+
 export interface SettingsPanelState {
   readonly open: boolean;
   /** Stamped by the open, read by the close. */
@@ -67,15 +71,20 @@ export interface SettingsPanelState {
   readonly tab: EditorTab | null;
   /** The role whose "İnce ayar" an open asked to show open on Roller (U-37), or null. */
   readonly fineTune: string | null;
+  /** The field an open asked to focus (U-370), or null. The panel's effect consumes it once the
+   *  section has drawn the field; the reducer clears it with the other landing fields. */
+  readonly focus: SettingsPanelFocus | null;
 }
 
-/** Where an open lands beyond the origin: the section, a sub-page of it, the editor tab and a
- *  role's fine-tune (U-37). Every field is optional; an empty target is the plain open. */
+/** Where an open lands beyond the origin: the section, a sub-page of it, the editor tab, a
+ *  role's fine-tune (U-37) and a field to focus (U-370). Every field is optional; an empty
+ *  target is the plain open. */
 export interface SettingsOpenTarget {
   readonly section?: SettingsSection;
   readonly subPage?: string;
   readonly tab?: EditorTab;
   readonly fineTune?: string;
+  readonly focus?: SettingsPanelFocus;
 }
 
 export type SettingsPanelAction =
@@ -96,10 +105,11 @@ export const CLOSED_SETTINGS_PANEL: SettingsPanelState = {
   subPage: null,
   tab: null,
   fineTune: null,
+  focus: null,
 };
 
 const closed = (state: SettingsPanelState): SettingsPanelState =>
-  state.open ? { ...state, open: false, subPage: null, tab: null, fineTune: null } : state;
+  state.open ? { ...state, open: false, subPage: null, tab: null, fineTune: null, focus: null } : state;
 
 export const settingsPanelReducer = (state: SettingsPanelState, action: SettingsPanelAction): SettingsPanelState => {
   switch (action.type) {
@@ -111,10 +121,12 @@ export const settingsPanelReducer = (state: SettingsPanelState, action: Settings
         subPage: action.subPage ?? null,
         tab: action.tab ?? null,
         fineTune: action.fineTune ?? null,
+        focus: action.focus ?? null,
       };
       if (state.open) {
         // An open that names nothing new changes nothing; a named target moves the panel.
-        const named = action.subPage !== undefined || action.tab !== undefined || action.fineTune !== undefined;
+        const named =
+          action.subPage !== undefined || action.tab !== undefined || action.fineTune !== undefined || action.focus !== undefined;
         return !named && (action.section === undefined || action.section === state.section) ? state : { ...state, ...next };
       }
       return { open: true, origin: action.origin, ...next };
@@ -122,7 +134,7 @@ export const settingsPanelReducer = (state: SettingsPanelState, action: Settings
     case 'select':
       return state.section === action.section && state.subPage === null
         ? state
-        : { ...state, section: action.section, subPage: null, tab: null, fineTune: null };
+        : { ...state, section: action.section, subPage: null, tab: null, fineTune: null, focus: null };
     case 'enterSubPage':
       return { ...state, subPage: action.id, tab: null };
     case 'leaveSubPage':

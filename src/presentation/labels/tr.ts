@@ -1756,6 +1756,8 @@ export const TR: LabelBundle = {
   'autonomy.why.above_ceiling': 'Etkin seviye manuel: üst sınır Otomatik seviyeye izin vermiyor.',
   'autonomy.why.default': 'Etkin seviye manuel: hiçbir katmanda seviye seçilmedi, yerleşik varsayılan bu.',
   'autonomy.autoHelp': 'Otomatik: worktree içi araç izinlerini ve geri alınabilir onay kapılarını Docket verir; birleştirme, dağıtım ve silme sana kalır.',
+  'autonomy.openRepoSettings': 'Depo ayarlarına git',
+  'autonomy.spendCapSubscriptionNote': 'Abonelikte harcama oluşmaz; üst sınırı yine yaz, küçük bir değer yeterli.',
   'autonomy.suggestion.banner': 'Bu akış otomatik seviyeyi öneriyor',
   'autonomy.suggestion.confirm': 'Otomatik yap',
   'autonomy.suggestion.decline': 'Vazgeç',
@@ -1778,4 +1780,5 @@ export const TR: LabelBundle = {
   'repoSettings.budget.placeholder': 'Örn. 25',
   'repoSettings.budget.save': 'Üst sınırı kaydet',
   'repoSettings.budget.clear': 'Üst sınırı kaldır',
+  'repoSettings.budget.subscriptionNote': 'Abonelikte harcama oluşmaz; küçük bir değer yeterli.',
 };
