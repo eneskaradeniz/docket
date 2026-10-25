@@ -58,6 +58,19 @@ const MACHINE: AccountCandidate = {
   alreadyAdded: false,
 };
 
+const DEFAULT_HOME: AccountCandidate = {
+  sourcePath: '/home/u/.claude',
+  displayPath: '~/.claude',
+  kind: 'subscription',
+  provider: 'prov-a',
+  routeKind: 'sub-route',
+  hasOauthLogin: true,
+  envOverrides: [],
+  warnings: [],
+  alreadyAdded: false,
+  defaultHome: true,
+};
+
 interface Harness {
   readonly deps: AppDeps & { readonly candidates: AccountCandidateList; readonly importer: CredentialImporter };
   readonly clock: FakeClock;
@@ -205,6 +218,57 @@ describe('adoptAccountCandidate', () => {
     const h = makeHarness([{ ...MACHINE, alreadyAdded: true }]);
     const result = await adoptAccountCandidate(h.deps, { sourcePath: MACHINE.sourcePath, label: 'M', actor: USER });
     expect(result).toEqual({ ok: false, error: 'already_added' });
+  });
+
+  it('adopts the default-home candidate as the CLI own login: subscription record with no identityDir, endpoint or secret', async () => {
+    const h = makeHarness([DEFAULT_HOME]);
+    const result = await adoptAccountCandidate(h.deps, { sourcePath: DEFAULT_HOME.sourcePath, label: 'Default', actor: USER });
+    if (!result.ok) throw new Error('adoption must succeed');
+    const record = await h.deps.accounts.get(result.value);
+    expect(record).toMatchObject({
+      provider: 'prov-a',
+      label: 'Default',
+      authMode: 'subscription',
+      routeKind: 'sub-route',
+      limitPolicy: 'wait_resume',
+      caps: [],
+    });
+    expect(record?.identityDir).toBeUndefined();
+    expect(record?.endpoint).toBeUndefined();
+    expect(record?.secretRef).toBeUndefined();
+    expect(h.reads).toEqual([]);
+  });
+
+  it('the default-home seat is one per provider: re-adopting it fails already_added against the store', async () => {
+    const h = makeHarness([DEFAULT_HOME]);
+    const first = await adoptAccountCandidate(h.deps, { sourcePath: DEFAULT_HOME.sourcePath, label: 'A', actor: USER });
+    expect(first.ok).toBe(true);
+    const second = await adoptAccountCandidate(h.deps, { sourcePath: DEFAULT_HOME.sourcePath, label: 'B', actor: USER });
+    expect(second).toEqual({ ok: false, error: 'already_added' });
+    expect(await h.deps.accounts.list()).toHaveLength(1);
+  });
+
+  it('the default-home seat is refused when a directory-less subscription account of the same route kind holds it', async () => {
+    const seatMate: AccountCandidate = {
+      ...MACHINE,
+      sourcePath: 'machine-login:prov-a',
+      provider: 'prov-a',
+      routeKind: 'sub-route',
+    };
+    const h = makeHarness([seatMate, DEFAULT_HOME]);
+    const first = await adoptAccountCandidate(h.deps, { sourcePath: seatMate.sourcePath, label: 'A', actor: USER });
+    expect(first.ok).toBe(true);
+    const second = await adoptAccountCandidate(h.deps, { sourcePath: DEFAULT_HOME.sourcePath, label: 'B', actor: USER });
+    expect(second).toEqual({ ok: false, error: 'already_added' });
+    expect(await h.deps.accounts.list()).toHaveLength(1);
+  });
+
+  it('a named-directory account of the same provider does not occupy the default-home seat', async () => {
+    const h = makeHarness([SUBSCRIPTION, DEFAULT_HOME]);
+    const named = await adoptAccountCandidate(h.deps, { sourcePath: SUBSCRIPTION.sourcePath, label: 'Work', actor: USER });
+    expect(named.ok).toBe(true);
+    const home = await adoptAccountCandidate(h.deps, { sourcePath: DEFAULT_HOME.sourcePath, label: 'Default', actor: USER });
+    expect(home.ok).toBe(true);
   });
 
   it('A-323: a token-needing candidate without importToken is refused — no record, no empty secretRef', async () => {

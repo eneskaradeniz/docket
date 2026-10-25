@@ -71,15 +71,19 @@ export function createAccountCandidateList(clock: Clock, discovery: AccountDisco
 }
 
 /** Whether an account already occupies a candidate's source: the identity directory, the
- *  provider's machine login, or the route's endpoint — the scan's own alreadyAdded rule. A
- *  remembered scan can predate the accounts adopted (or removed) inside its window, so every
- *  reader decides against the accounts store, never against the scan-time flag. */
+ *  provider's machine login, the default directory's seat, or the route's endpoint — the scan's
+ *  own alreadyAdded rule. A remembered scan can predate the accounts adopted (or removed) inside
+ *  its window, so every reader decides against the accounts store, never against the scan-time flag. */
 export const isSourceTaken = (candidate: AccountCandidate, accounts: readonly AccountRecord[]): boolean =>
   accounts.some(
     (account) =>
       account.identityDir === candidate.sourcePath ||
       (candidate.kind === 'machine_login'
         ? account.provider === candidate.provider && account.identityDir === undefined
+        : candidate.kind === 'subscription' && candidate.defaultHome === true
+        ? account.provider === candidate.provider &&
+          account.identityDir === undefined &&
+          account.routeKind === candidate.routeKind
         : candidate.endpointHost !== undefined &&
           account.routeKind === candidate.routeKind &&
           httpsUrlOf(account.endpoint ?? '')?.host === candidate.endpointHost),
@@ -142,8 +146,12 @@ export async function adoptAccountCandidate(
 
   const id = deps.ids.next<'account'>();
   const isMachineLogin = candidate.kind === 'machine_login';
+  // The default config directory is the CLI's own login seat too: naming it through the config
+  // variable would point the CLI at a path-keyed keychain item that holds no login, so the record
+  // keeps no identityDir and the variable stays unset, as for the machine login.
+  const isDefaultHome = candidate.kind === 'subscription' && candidate.defaultHome === true;
   const isEndpoint = candidate.kind === 'compatible_endpoint' && candidate.endpointHost !== undefined;
-  const record: AccountRecord = isMachineLogin
+  const record: AccountRecord = isMachineLogin || isDefaultHome
     ? {
         // The CLI's own login on this machine: no identityDir, endpoint or secret.
         id,

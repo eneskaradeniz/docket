@@ -209,7 +209,9 @@ export function createAccountScan(options: AccountScanOptions): AccountDiscovery
   const catalog = createCapabilityCatalog();
   const defs = options.defs ?? BUILTIN_PROVIDER_DEFS;
 
-  /** The provider discovery's facts (P-53); an absent option or a failing discovery reads as none. */
+  /** The provider discovery's facts (P-53); an absent option or a failing discovery reads as none.
+   *  One pass answers every candidate kind: the machine-login rows, the account-home scan's gate,
+   *  and the claude-code fact that settles whether the default directory's login is live. */
   async function discoveredFacts(): Promise<readonly DiscoveredProvider[]> {
     if (options.providers === undefined) return [];
     const found: DiscoveredProvider[] = [];
@@ -224,11 +226,14 @@ export function createAccountScan(options: AccountScanOptions): AccountDiscovery
   }
 
   /** One candidate per installed provider that has no directory scanner (P-53, I-38). Nothing is read from disk. */
-  function machineLogins(existing: readonly AccountRecord[], found: readonly DiscoveredProvider[]): readonly AccountCandidate[] {
+  async function machineLogins(
+    existing: readonly AccountRecord[],
+    facts: readonly DiscoveredProvider[],
+  ): Promise<readonly AccountCandidate[]> {
     const candidates: AccountCandidate[] = [];
     for (const def of defs) {
       if (def.id === PROVIDER_ID) continue; // its candidates come from the directory scan
-      const fact = found.find((entry) => entry.defId === def.id);
+      const fact = facts.find((entry) => entry.defId === def.id);
       if (fact === undefined || fact.binPath === null) continue;
       const routeKind = catalog.routeKindOf({ provider: def.id, authMode: 'subscription' });
       if (routeKind === undefined) continue;
@@ -260,9 +265,9 @@ export function createAccountScan(options: AccountScanOptions): AccountDiscovery
   async function scanAgyHomes(
     names: readonly string[],
     existing: readonly AccountRecord[],
-    found: readonly DiscoveredProvider[],
+    facts: readonly DiscoveredProvider[],
   ): Promise<readonly AccountCandidate[]> {
-    const fact = found.find((entry) => entry.defId === AGY_PROVIDER_ID);
+    const fact = facts.find((entry) => entry.defId === AGY_PROVIDER_ID);
     if (fact === undefined || fact.binPath === null) return [];
     const routeKind = catalog.routeKindOf({ provider: AGY_PROVIDER_ID, authMode: 'subscription' });
     if (routeKind === undefined) return [];
@@ -306,31 +311,51 @@ export function createAccountScan(options: AccountScanOptions): AccountDiscovery
       } catch {
         names = []; // the directory scans stay empty; the machine logins still answer
       }
-      const found = await discoveredFacts();
+      const facts = await discoveredFacts();
       return [
-        ...(await scanDirectories(names, existing)),
-        ...(await scanAgyHomes(names, existing, found)),
-        ...machineLogins(existing, found),
+        ...(await scanDirectories(names, existing, facts)),
+        ...(await scanAgyHomes(names, existing, facts)),
+        ...(await machineLogins(existing, facts)),
       ];
     },
   };
 
-  async function scanDirectories(names: readonly string[], existing: readonly AccountRecord[]): Promise<readonly AccountCandidate[]> {
+  async function scanDirectories(
+    names: readonly string[],
+    existing: readonly AccountRecord[],
+    facts: readonly DiscoveredProvider[],
+  ): Promise<readonly AccountCandidate[]> {
     const candidates: AccountCandidate[] = [];
+    // The CLI's own status call about the default directory's login (no probe ran = null).
+    const cliLoginLive = facts.find((fact) => fact.defId === PROVIDER_ID)?.loggedIn === true;
     for (const name of [...names].filter((n) => DIR_NAME.test(n)).sort()) {
       const sourcePath = join(homeDir, name);
       try {
         if (!(await fs.isDirectory(sourcePath))) continue;
-        const evidence = await gather(fs, sourcePath, name === DEFAULT_DIR_NAME, homeDir);
+        const isDefaultDir = name === DEFAULT_DIR_NAME;
+        const evidence = await gather(fs, sourcePath, isDefaultDir, homeDir);
         const classified = classify(evidence);
         if (classified === undefined) continue;
         const alreadyAdded = existing.some(
           (account) =>
             account.identityDir === sourcePath ||
+            // The default directory is one seat with the machine login: a subscription account of
+            // this provider with no identityDir already occupies it.
+            (isDefaultDir &&
+              classified.kind === 'subscription' &&
+              account.provider === PROVIDER_ID &&
+              account.identityDir === undefined &&
+              account.routeKind === classified.routeKind) ||
             (classified.endpointHost !== undefined &&
               account.routeKind === classified.routeKind &&
               hostOfAccount(account.endpoint) === classified.endpointHost),
         );
+        // The CLI's own status call proved the default directory's login live, so the identity
+        // file's free-tier shape is a stale file, not a dead login — the flag would be a false alarm.
+        const flagged: AccountCandidate['warnings'] = evidence.readable
+          ? classified.warnings
+          : [...classified.warnings, 'unreadable'];
+        const warnings = flagged.filter((warning) => !(isDefaultDir && cliLoginLive && warning === 'login_unverified'));
         candidates.push({
           sourcePath,
           displayPath: `~/${name}`,
@@ -339,9 +364,10 @@ export function createAccountScan(options: AccountScanOptions): AccountDiscovery
           routeKind: classified.routeKind,
           ...(classified.endpointHost !== undefined ? { endpointHost: classified.endpointHost } : {}),
           ...(classified.endpointUrl !== undefined ? { endpointUrl: classified.endpointUrl } : {}),
+          ...(isDefaultDir ? { defaultHome: true } : {}),
           hasOauthLogin: evidence.hasOauthLogin,
           envOverrides: evidence.envOverrides,
-          warnings: evidence.readable ? classified.warnings : [...classified.warnings, 'unreadable'],
+          warnings,
           alreadyAdded,
         });
       } catch {
