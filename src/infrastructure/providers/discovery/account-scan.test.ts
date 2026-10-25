@@ -421,8 +421,8 @@ describe('machine-login candidates', () => {
     ]);
   });
 
-  it('I-116: expired/downgraded free-tier OAuth accounts are not proposed as subscription candidates', async () => {
-    const expiredIdentity = JSON.stringify({
+  it('I-116: a free-tier-shaped OAuth login is still proposed as a subscription, flagged login_unverified', async () => {
+    const unverifiedIdentity = JSON.stringify({
       oauthAccount: {
         emailAddress: SENTINEL,
         accountUuid: SENTINEL,
@@ -431,15 +431,16 @@ describe('machine-login candidates', () => {
         userRateLimitTier: null,
       },
     });
-    const foundExpired = await scan({
-      dirs: ['.claude-expired'],
-      contents: {
-        [`${HOME}/.claude-expired/.claude.json`]: expiredIdentity,
-      },
-    });
-    expect(foundExpired).toEqual([]);
+    const scanOne = (name: string) => scan({ dirs: [name], contents: { [`${HOME}/${name}/.claude.json`]: unverifiedIdentity } });
+    const home = await scanOne('.claude');
+    expect(home).toHaveLength(1);
+    expect(home[0]).toMatchObject({ kind: 'subscription', hasOauthLogin: true, warnings: ['login_unverified'] });
+    const other = await scanOne('.claude-x');
+    expect(other).toHaveLength(1);
+    expect(other[0]).toMatchObject({ kind: 'subscription', hasOauthLogin: true, warnings: ['login_unverified'] });
+    expect(JSON.stringify([...home, ...other])).not.toContain(SENTINEL);
 
-    const validProIdentity = JSON.stringify({
+    const proIdentity = JSON.stringify({
       oauthAccount: {
         emailAddress: SENTINEL,
         accountUuid: SENTINEL,
@@ -450,12 +451,13 @@ describe('machine-login candidates', () => {
     const foundPro = await scan({
       dirs: ['.claude-pro'],
       contents: {
-        [`${HOME}/.claude-pro/.claude.json`]: validProIdentity,
+        [`${HOME}/.claude-pro/.claude.json`]: proIdentity,
       },
     });
     expect(foundPro).toHaveLength(1);
     expect(foundPro[0]?.hasOauthLogin).toBe(true);
     expect(foundPro[0]?.kind).toBe('subscription');
+    expect(foundPro[0]?.warnings).toEqual([]);
   });
 });
 

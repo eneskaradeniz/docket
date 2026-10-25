@@ -8,6 +8,7 @@
 // the screen owns the open standing.
 import type { ReactNode } from 'react';
 
+import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
 import {
   billingTag,
@@ -19,7 +20,7 @@ import {
   type SectionOpen,
   type SectionableRow,
 } from '../stores/account-groups';
-import { candidateStanding, candidateStatusTone, type CandidateRow, type LampTone } from '../stores/candidates';
+import { candidateStanding, candidateStatusTone, type CandidateRow, type CandidateWarnKey, type LampTone } from '../stores/candidates';
 import { InfoBubble } from './info-bubble';
 import { MOTION } from './motion';
 import { ProviderMark, type ProviderMarkProps } from './provider-mark';
@@ -42,9 +43,15 @@ export interface AccountRowView extends SectionableRow {
   readonly disabled?: boolean;
   /** Why a disabled row is disabled, resolved. */
   readonly reason?: string;
-  /** Warning tags with their ⓘ text, resolved. */
-  readonly warnings?: readonly { readonly text: string; readonly info: string }[];
+  /** Warning tags, resolved; `info` is the ⓘ sentence a tag may carry — a warning without one
+   *  renders as a plain tag. */
+  readonly warnings?: readonly { readonly text: string; readonly info?: string }[];
 }
+
+/** The ⓘ sentence a warning tag carries; a warning without an entry renders as a plain tag. */
+const WARN_INFO: Partial<Record<CandidateWarnKey, LabelKey>> = {
+  'candidates.warn.env_overrides_login': 'candidates.info.env_overrides_login',
+};
 
 /** A discovery candidate as AccountGroups draws it: its status word and hue, the login or "test it
  *  after setup" sentence, its warning tags and, when it cannot be selected, the reason. `source`
@@ -68,7 +75,10 @@ export const candidateRowView = <R extends CandidateRow>(
   selected: row.selected,
   disabled: !row.selectable,
   ...(row.disabledReasonKey === null ? {} : { reason: t(locale, row.disabledReasonKey) }),
-  warnings: row.warnKeys.map((key) => ({ text: t(locale, key), info: t(locale, 'candidates.info.env_overrides_login') })),
+  warnings: row.warnKeys.map((key) => {
+    const infoKey = WARN_INFO[key];
+    return { text: t(locale, key), ...(infoKey === undefined ? {} : { info: t(locale, infoKey) }) };
+  }),
   source: row,
 });
 
@@ -170,7 +180,7 @@ function Row<R extends AccountRowView>({ row, locale, onToggle, onEdit, trailing
             {row.warnings?.map((warning) => (
               <span key={warning.text} className="inline-flex items-center gap-1 text-[12px] font-normal text-signal-soft">
                 {warning.text}
-                <InfoBubble locale={locale} subject={warning.text} body={warning.info} />
+                {warning.info === undefined ? null : <InfoBubble locale={locale} subject={warning.text} body={warning.info} />}
               </span>
             ))}
           </div>

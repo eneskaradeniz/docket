@@ -858,6 +858,7 @@ export const EN: LabelBundle = {
   'candidates.reason.unreadable': "The config folder could not be read; check its permissions and scan again.",
   'candidates.reason.setup_pending': "The access key has not been moved to the keychain",
   'candidates.warn.env_overrides_login': "An environment variable overrides the login",
+  'candidates.warn.login_unverified': "Login not verified",
   'candidates.info.env_overrides_login': "Environment variables are used instead of the login in this folder. The account is added, but the environment values win when it runs.",
   'candidates.keymove.title': "Move the access key to the Keychain",
   'candidates.keymove.body': "When on, the key is kept only in the operating system keychain. Its value is never shown anywhere.",
