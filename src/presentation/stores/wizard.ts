@@ -229,9 +229,6 @@ export interface WizardState {
   readonly nextEnabled: boolean;
   /** Why the primary slot is disabled; null while it is enabled. */
   readonly reasonKey: LabelKey | null;
-  /** P-67: the add-another-account card of the home-rooted CLI; null while that CLI is not
-   *  installed. `noteKey` is the input's own refusal note, never an error-styled line. */
-  readonly agyAdd: { readonly path: string; readonly noteKey: LabelKey | null; readonly providerName: string } | null;
   readonly finishing: boolean;
   /** The progress list's current line (U-49); null outside a finish. */
   readonly finishPhase: FinishPhase | null;
@@ -260,10 +257,6 @@ export interface WizardStore {
   clearSelection(): void;
   selectAllReady(): void;
   setImportToken(key: string, on: boolean): void;
-  /** P-67: the add-another-account card's directory input; typing clears its refusal note. */
-  setAgyAddPath(path: string): void;
-  /** P-67: "Ekle" — validates the directory locally and adds the would-be account, selected. */
-  addAgyAccount(): void;
   /** "Yeniden tara": a fresh scan of candidates and providers. */
   rescan(): Promise<void>;
   toggleCapability(id: string): void;
@@ -311,14 +304,11 @@ interface Entry {
   readonly base: SettingsAccountView;
   readonly fact: CandidateFact | null;
   readonly settings: DraftSettings;
-  /** P-67: a chosen identity directory — a home-rooted CLI's account, adopted through the
-   *  identity form of `account.adopt` at the finish. */
-  readonly manual: boolean;
 }
 
 /** P-67: the one home-rooted CLI whose accounts are per-account HOME directories. The def's
  *  config mechanism is infrastructure data the presentation cannot read, so the id stands here. */
-const AGY_PROVIDER_ID = 'agy';
+export const AGY_PROVIDER_ID = 'agy';
 
 /** The account's default label: the config folder's name without its leading dot. */
 const labelOf = (displayPath: string): string =>
@@ -479,11 +469,6 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
   let facts: readonly CandidateFact[] = [];
   let providerFacts: readonly ProviderFact[] = [];
   let existing: readonly SettingsAccountView[] = [];
-  /** P-67: the identity directories chosen in Hesaplar — drafts until the finish, like every entry. */
-  let manualHomes: readonly string[] = [];
-  /** P-67: the add-another-account card's input and its refusal note; null note while clean. */
-  let agyAddPath = '';
-  let agyAddNote: LabelKey | null = null;
   /** Chosen entry keys in chain order (Asistan sırası). */
   let selection: readonly string[] = [];
   const importTokens = new Set<string>();
@@ -519,69 +504,19 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
   // --- entries ---------------------------------------------------------------------------------
 
   const entries = (): readonly Entry[] => [
-    ...existing.map((view): Entry => ({ key: view.id, base: view, fact: null, settings: drafts.get(view.id) ?? settingsOf(view), manual: false })),
+    ...existing.map((view): Entry => ({ key: view.id, base: view, fact: null, settings: drafts.get(view.id) ?? settingsOf(view) })),
     ...facts
       .filter((fact) => !fact.alreadyAdded)
       .map((fact): Entry => {
         const base = syntheticView(fact, importTokens.has(fact.sourcePath), quotas.get(fact.sourcePath));
-        return { key: fact.sourcePath, base, fact, settings: drafts.get(fact.sourcePath) ?? settingsOf(base), manual: false };
+        return { key: fact.sourcePath, base, fact, settings: drafts.get(fact.sourcePath) ?? settingsOf(base) };
       }),
-    // P-67: the chosen identity directories — each one a would-be account of the home-rooted
-    // CLI, standing exactly like a scanned subscription candidate until the finish adopts it.
-    ...manualHomes.map((dir): Entry => {
-      const base: SettingsAccountView = {
-        id: `manual:${dir}`,
-        provider: AGY_PROVIDER_ID,
-        label: labelOf(dir),
-        authMode: 'subscription',
-        // A home-rooted CLI's accounts ride their plan's quota: nothing here bills per use.
-        billing: 'included',
-        plan: null,
-        limitPolicy: RECOMMENDED.limitPolicy,
-        reserve: { short: null, long: null },
-        caps: [],
-        consentedModels: [],
-        routeKind: null,
-        identityDir: dir,
-        endpointHost: null,
-        hasSecret: false,
-        test: null,
-        pools: [],
-        meters: [],
-      };
-      const key = `manual:${dir}`;
-      return { key, base, fact: null, settings: drafts.get(key) ?? settingsOf(base), manual: true };
-    }),
   ];
 
   const entryOf = (key: string): Entry | undefined => entries().find((entry) => entry.key === key);
 
   const rowsOf = (): readonly WizardAccountRow[] =>
     entries().map((entry): WizardAccountRow => {
-      if (entry.manual) {
-        // A chosen identity directory stands as a ready, selectable candidate row (P-67): the
-        // operator signed in under it with the vendor's own tool, so it owes no scan state.
-        return {
-          id: entry.key,
-          markKey: AGY_PROVIDER_ID,
-          label: entry.settings.label,
-          providerName: nameOf(AGY_PROVIDER_ID),
-          endpointHost: null,
-          statusKey: 'candidates.status.ready',
-          selectable: true,
-          selected: selection.includes(entry.key),
-          disabledReasonKey: null,
-          warnKeys: [],
-          keyMoveCard: false,
-          provider: AGY_PROVIDER_ID,
-          displayPath: entry.base.identityDir ?? '',
-          billing: 'included',
-          viaKey: false,
-          hintKey: null,
-          existing: false,
-          importToken: false,
-        };
-      }
       if (entry.fact === null) {
         return {
           id: entry.key,
@@ -795,14 +730,6 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
     };
   };
 
-  /** P-67: the add-another-account card's state — present exactly while the home-rooted CLI is
-   *  installed on this machine (an uninstalled CLI has no login to point a directory at). */
-  const agyAddState = (): WizardState['agyAdd'] => {
-    const fact = providerFacts.find((provider) => provider.defId === AGY_PROVIDER_ID && provider.binPath !== null);
-    if (fact === undefined) return null;
-    return { path: agyAddPath, noteKey: agyAddNote, providerName: fact.name };
-  };
-
   const compute = (): WizardState => {
     const selected = selectedEntries();
     const budgetRows = selected.map(budgetRow);
@@ -834,7 +761,6 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
       canSkip: step === 'budget',
       nextEnabled: !finishing && finished === null && reason === null,
       reasonKey: reason,
-      agyAdd: agyAddState(),
       finishing,
       finishPhase,
       finishError,
@@ -996,9 +922,9 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
     const chosen = entries().filter((candidate) => selection.includes(candidate.key) && adoptableKeys.has(candidate.key));
     const ids = new Map<string, string>();
     for (const entry of chosen) {
-      // Only a stored account is its own id; a candidate and a chosen identity directory
-      // (P-67) both wait for the adoption below to name theirs.
-      if (entry.fact === null && !entry.manual) ids.set(entry.key, entry.key);
+      // Only a stored account is its own id; a candidate waits for the adoption below to name
+      // its id.
+      if (entry.fact === null) ids.set(entry.key, entry.key);
       else {
         const adopted = adoptedIds.get(entry.key);
         if (adopted !== undefined) ids.set(entry.key, adopted);
@@ -1008,21 +934,14 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
       // Adopt in list order; a stored account keeps its id.
       for (const entry of chosen) {
         if (ids.has(entry.key)) continue;
-        // A chosen identity directory adopts through the P-67 form — no scan stands behind it;
-        // a scanned candidate keeps the source-path form.
-        const command: Command = entry.manual
-          ? {
-              type: 'account.adopt',
-              provider: AGY_PROVIDER_ID,
-              identityDir: entry.base.identityDir ?? '',
-              label: entry.settings.label,
-            }
-          : {
-              type: 'account.adopt',
-              sourcePath: entry.fact?.sourcePath ?? entry.key,
-              label: entry.settings.label,
-              ...(importTokens.has(entry.key) ? { importToken: true } : {}),
-            };
+        // A scanned candidate adopts through its source path — a found account home included,
+        // whose identity directory the adoption derives itself (P-33 addendum).
+        const command: Command = {
+          type: 'account.adopt',
+          sourcePath: entry.fact?.sourcePath ?? entry.key,
+          label: entry.settings.label,
+          ...(importTokens.has(entry.key) ? { importToken: true } : {}),
+        };
         const result = await api.command(actor, command);
         if (!result.ok || result.id === undefined) {
           failWith('accounts', outcomeOf(command, result.ok ? { ok: false, code: 'not_found' } : result));
@@ -1234,33 +1153,6 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
         importTokens.delete(key);
         // A row back to "Kurulum bekliyor" cannot stand selected (U-262).
         selection = selection.filter((entry) => entry !== key);
-      }
-      publish();
-    },
-    setAgyAddPath: (path) => {
-      agyAddPath = path;
-      agyAddNote = null;
-      publish();
-    },
-    addAgyAccount: () => {
-      // The local checks mirror the adoption's own refusals (A-43's absolute path, an occupied
-      // directory) so the card never offers a finish that is bound to fail; the server stays the
-      // authority and its failure codes still map through U-8 at the finish.
-      const dir = agyAddPath.trim();
-      if (dir === '') {
-        agyAddNote = 'wizard.accounts.agyAdd.note.empty';
-      } else if (!dir.startsWith('/')) {
-        agyAddNote = 'wizard.accounts.agyAdd.note.relative';
-      } else if (
-        manualHomes.includes(dir) ||
-        entries().some((entry) => entry.base.identityDir === dir)
-      ) {
-        agyAddNote = 'wizard.accounts.agyAdd.note.taken';
-      } else {
-        manualHomes = [...manualHomes, dir];
-        selection = [...selection, `manual:${dir}`];
-        agyAddPath = '';
-        agyAddNote = null;
       }
       publish();
     },

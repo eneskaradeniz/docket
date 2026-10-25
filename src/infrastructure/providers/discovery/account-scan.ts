@@ -1,5 +1,6 @@
 // Local account scan: finds Claude-style config directories in the home directory and proposes
-// them as candidates. Contract: docs/v2/provider-capabilities.md → "Local account discovery (P-33)".
+// them as candidates, beside the home-rooted CLI's account homes and the machine logins.
+// Contract: docs/v2/provider-capabilities.md → "Local account discovery (P-33)".
 // Only key names, the endpoint host, the endpoint URL (origin plus pathname) and an OAuth-present
 // boolean survive parsing; every other byte of the two files read is dropped at once, and nothing
 // is logged.
@@ -20,6 +21,11 @@ const DEFAULT_DIR_NAME = '.claude';
 const PROVIDER_ID = 'claude-code';
 const IDENTITY_FILE = '.claude.json';
 export const SETTINGS_FILE = 'settings.json';
+/** The home-rooted CLI (P-67): each of its accounts is a HOME directory of the CLI's own. */
+const AGY_PROVIDER_ID = 'agy';
+/** The directory whose presence under a home child marks that child as one of the CLI's account
+ *  homes — the existence check is the whole fact, nothing under it is ever opened. */
+const AGY_LOGIN_DIR = ['.gemini', 'antigravity-cli'];
 
 const ENDPOINT_KEYS: ReadonlySet<string> = new Set(['ANTHROPIC_BASE_URL']);
 /** Token env keys in the order the CLI prefers them; the importer reads the first one set. */
@@ -203,8 +209,9 @@ export function createAccountScan(options: AccountScanOptions): AccountDiscovery
   const catalog = createCapabilityCatalog();
   const defs = options.defs ?? BUILTIN_PROVIDER_DEFS;
 
-  /** One discovery pass answers both candidate kinds: the machine-login rows are built from its
-   *  results, and the claude-code fact settles whether the default directory's login is live. */
+  /** The provider discovery's facts (P-53); an absent option or a failing discovery reads as none.
+   *  One pass answers every candidate kind: the machine-login rows, the account-home scan's gate,
+   *  and the claude-code fact that settles whether the default directory's login is live. */
   async function discoveredFacts(): Promise<readonly DiscoveredProvider[]> {
     if (options.providers === undefined) return [];
     const found: DiscoveredProvider[] = [];
@@ -250,6 +257,46 @@ export function createAccountScan(options: AccountScanOptions): AccountDiscovery
     return candidates;
   }
 
+  /** The home-rooted CLI's account homes (P-33 addendum, P-67): every direct child of the home
+   *  directory that holds the CLI's login directory is one more of that CLI's accounts, proposed
+   *  with that child as its identity directory — and only while the CLI's binary is discovered,
+   *  exactly like its machine-login candidate. The directory existing is the whole check; no file
+   *  under it is listed, opened or parsed, so no credential can be read. */
+  async function scanAgyHomes(
+    names: readonly string[],
+    existing: readonly AccountRecord[],
+    facts: readonly DiscoveredProvider[],
+  ): Promise<readonly AccountCandidate[]> {
+    const fact = facts.find((entry) => entry.defId === AGY_PROVIDER_ID);
+    if (fact === undefined || fact.binPath === null) return [];
+    const routeKind = catalog.routeKindOf({ provider: AGY_PROVIDER_ID, authMode: 'subscription' });
+    if (routeKind === undefined) return [];
+    const candidates: AccountCandidate[] = [];
+    for (const name of [...names].sort()) {
+      const sourcePath = join(homeDir, name);
+      try {
+        if (!(await fs.isDirectory(sourcePath))) continue;
+        if (!(await fs.isDirectory(join(sourcePath, ...AGY_LOGIN_DIR)))) continue;
+        candidates.push({
+          sourcePath,
+          displayPath: `~/${name}`,
+          kind: 'subscription',
+          provider: AGY_PROVIDER_ID,
+          routeKind,
+          // The directory proves an account home, never a finished login; the row owes no scan
+          // state beyond it, exactly like a typed-in directory (P-67).
+          hasOauthLogin: false,
+          envOverrides: [],
+          warnings: [],
+          alreadyAdded: existing.some((account) => account.identityDir === sourcePath),
+        });
+      } catch {
+        // one broken directory never stops the scan
+      }
+    }
+    return candidates;
+  }
+
   return {
     async scan() {
       let existing: readonly AccountRecord[] = [];
@@ -258,21 +305,26 @@ export function createAccountScan(options: AccountScanOptions): AccountDiscovery
       } catch {
         existing = [];
       }
+      let names: readonly string[] = [];
+      try {
+        names = await fs.listEntries(homeDir);
+      } catch {
+        names = []; // the directory scans stay empty; the machine logins still answer
+      }
       const facts = await discoveredFacts();
-      return [...(await scanDirectories(existing, facts)), ...(await machineLogins(existing, facts))];
+      return [
+        ...(await scanDirectories(names, existing, facts)),
+        ...(await scanAgyHomes(names, existing, facts)),
+        ...(await machineLogins(existing, facts)),
+      ];
     },
   };
 
   async function scanDirectories(
+    names: readonly string[],
     existing: readonly AccountRecord[],
     facts: readonly DiscoveredProvider[],
   ): Promise<readonly AccountCandidate[]> {
-    let names: readonly string[];
-    try {
-      names = await fs.listEntries(homeDir);
-    } catch {
-      return [];
-    }
     const candidates: AccountCandidate[] = [];
     // The CLI's own status call about the default directory's login (no probe ran = null).
     const cliLoginLive = facts.find((fact) => fact.defId === PROVIDER_ID)?.loggedIn === true;

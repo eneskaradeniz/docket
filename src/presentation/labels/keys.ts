@@ -972,15 +972,6 @@ export const LABEL_KEYS = [
   'wizard.accounts.selectionHint',
   'wizard.accounts.clearSelection',
   'wizard.accounts.selectAll',
-  // The add-another-account card of the home-rooted CLI (P-67): the operator picks the
-  // directory; the login under it is created with the vendor's own tool, never by Docket.
-  'wizard.accounts.agyAdd.title',
-  'wizard.accounts.agyAdd.signIn',
-  'wizard.accounts.agyAdd.pathLabel',
-  'wizard.accounts.agyAdd.add',
-  'wizard.accounts.agyAdd.note.empty',
-  'wizard.accounts.agyAdd.note.relative',
-  'wizard.accounts.agyAdd.note.taken',
   'wizard.capabilities.lead',
   'wizard.capabilities.count',
   'wizard.capabilities.truncated',

@@ -12,6 +12,8 @@ const SENTINEL = 'sk-SENTINEL-do-not-leak-0123456789';
 interface Fixture {
   readonly dirs: readonly string[]; // names of directories directly under HOME
   readonly files?: readonly string[]; // names of plain files directly under HOME
+  /** Names of home children that hold the home-rooted CLI's login directory (`.gemini/antigravity-cli`). */
+  readonly agyHomes?: readonly string[];
   readonly contents: Readonly<Record<string, string>>; // absolute path -> text
   readonly unreadable?: readonly string[]; // absolute paths whose read throws
   readonly unlistable?: boolean;
@@ -19,14 +21,16 @@ interface Fixture {
 
 function memoryFs(fixture: Fixture): AccountScanFs & { readonly reads: string[] } {
   const reads: string[] = [];
+  const agyHome = fixture.agyHomes ?? [];
   return {
     reads,
     async listEntries(dir) {
       if (dir !== HOME || fixture.unlistable === true) throw new Error('cannot list');
-      return [...fixture.dirs, ...(fixture.files ?? [])];
+      return [...fixture.dirs, ...agyHome, ...(fixture.files ?? [])];
     },
     async isDirectory(path) {
-      return fixture.dirs.some((name) => `${HOME}/${name}` === path);
+      if (agyHome.some((name) => path === `${HOME}/${name}/.gemini/antigravity-cli`)) return true;
+      return [...fixture.dirs, ...agyHome].some((name) => `${HOME}/${name}` === path);
     },
     async readText(path, maxBytes) {
       reads.push(path);
@@ -454,6 +458,79 @@ describe('machine-login candidates', () => {
     expect(foundPro[0]?.hasOauthLogin).toBe(true);
     expect(foundPro[0]?.kind).toBe('subscription');
     expect(foundPro[0]?.warnings).toEqual([]);
+  });
+});
+
+describe('Antigravity account homes (P-33 addendum)', () => {
+  it('proposes a home child holding the login directory as one candidate before the machine login', async () => {
+    const fs = memoryFs({ dirs: [], agyHomes: ['.agy-max'], contents: {} });
+    const candidates = await machineScan([found('agy', { name: 'Antigravity' })], { fs });
+    expect(candidates).toEqual([
+      {
+        sourcePath: `${HOME}/.agy-max`,
+        displayPath: '~/.agy-max',
+        kind: 'subscription',
+        provider: 'agy',
+        routeKind: 'agy-subscription',
+        hasOauthLogin: false,
+        envOverrides: [],
+        warnings: [],
+        alreadyAdded: false,
+      },
+      {
+        sourcePath: 'machine-login:agy',
+        displayPath: 'Antigravity',
+        kind: 'machine_login',
+        provider: 'agy',
+        routeKind: 'agy-subscription',
+        hasOauthLogin: true,
+        envOverrides: [],
+        warnings: [],
+        alreadyAdded: false,
+      },
+    ]);
+  });
+
+  it('proposes nothing for a child without the login directory — a plain directory, a plain file and a file where the login directory would be are not account homes', async () => {
+    const fs = memoryFs({
+      dirs: ['.agy-flat'],
+      files: ['.agy-file'],
+      // A file at the login directory's own path: the existence check is isDirectory, not name.
+      contents: { [`${HOME}/.agy-max/.gemini/antigravity-cli`]: 'not a directory' },
+      agyHomes: [],
+    });
+    const candidates = await machineScan([found('agy', { name: 'Antigravity' })], { fs });
+    expect(candidates.map((candidate) => candidate.sourcePath)).toEqual(['machine-login:agy']);
+  });
+
+  it('marks a directory already added exactly when an account holds it as its identity directory', async () => {
+    const fs = memoryFs({ dirs: [], agyHomes: ['.agy-max'], contents: {} });
+    const candidates = await machineScan([found('agy', { name: 'Antigravity' })], {
+      fs,
+      accounts: [record({ provider: 'agy', identityDir: `${HOME}/.agy-max` })],
+    });
+    expect(candidates[0]).toMatchObject({ sourcePath: `${HOME}/.agy-max`, alreadyAdded: true });
+    // The machine login stays free: an identity-directory account is not the machine's own login.
+    expect(candidates[1]).toMatchObject({ sourcePath: 'machine-login:agy', alreadyAdded: false });
+  });
+
+  it('proposes no account home while the CLI is not discovered — binary absent, or discovery itself absent', async () => {
+    const fs = memoryFs({ dirs: [], agyHomes: ['.agy-max'], contents: {} });
+    expect(await machineScan([found('agy', { name: 'Antigravity', binPath: null })], { fs })).toEqual([]);
+    const noDiscovery = await createAccountScan({ fs, homeDir: HOME, accounts: { list: async () => [] } }).scan();
+    expect(noDiscovery).toEqual([]);
+  });
+
+  it('P-33: reads nothing under a proposed account home — the login directory existing is the only fact taken', async () => {
+    const fs = memoryFs({
+      dirs: [],
+      agyHomes: ['.agy-max'],
+      contents: { [`${HOME}/.agy-max/.gemini/antigravity-cli/antigravity-oauth-token`]: SENTINEL },
+    });
+    const candidates = await machineScan([found('agy', { name: 'Antigravity' })], { fs });
+    expect(candidates[0]?.sourcePath).toBe(`${HOME}/.agy-max`);
+    expect(fs.reads.filter((path) => path.startsWith(`${HOME}/.agy-max`))).toEqual([]);
+    expect(JSON.stringify(candidates)).not.toContain(SENTINEL);
   });
 });
 

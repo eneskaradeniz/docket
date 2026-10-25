@@ -96,7 +96,10 @@ interface Fake extends Pick<Api, 'query' | 'command'> {
   holdOn(type: Command['type']): { readonly resolve: () => void };
 }
 
-const fakeApi = (): Fake => {
+const fakeApi = (
+  providers: readonly Record<string, unknown>[] = [claudeProvider],
+  facts: readonly Record<string, unknown>[] = [subscription, paygEndpoint],
+): Fake => {
   const commands: Command[] = [];
   const failures = new Map<string, CommandResult>();
   const holds = new Map<string, (() => void)[]>();
@@ -132,9 +135,9 @@ const fakeApi = (): Fake => {
         case 'project.tree':
           return Promise.resolve([]);
         case 'accounts.candidates':
-          return Promise.resolve([subscription, paygEndpoint]);
+          return Promise.resolve(facts);
         case 'providers.discovered':
-          return Promise.resolve([claudeProvider]);
+          return Promise.resolve(providers);
         case 'settings.accounts':
           return Promise.resolve({ accounts, bindings: [] });
         case 'roles.list':
