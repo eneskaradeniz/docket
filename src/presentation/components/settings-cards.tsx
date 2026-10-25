@@ -1,7 +1,8 @@
 // components/settings-cards.tsx — the card surfaces Settings shares: the centred empty card (icon,
-// title, one line, an optional action), the info banner with its action inside on the right, and
-// the two cards built from them (the Roller unset banner, the Yetenekler discovery card). A page
-// never shows an empty state as a bare line of text. Every length is rem, every radius a token.
+// title, one line, an optional action), the info banner with its action inside on the right, the
+// bottom fade a tall list wears while the window body scrolls, and the two cards built from them
+// (the Roller unset banner, the Yetenekler discovery card). A page never shows an empty state as a
+// bare line of text. Every length is rem, every radius a token.
 import type { ReactNode } from 'react';
 
 import { t, type Locale } from '../labels/t';
@@ -52,6 +53,17 @@ export function InfoBanner({ mark, children, action }: { readonly mark: string; 
       <span className="min-w-0 text-[0.8125rem] leading-[1.25rem] text-ink">{children}</span>
       {action !== undefined ? <span className="ml-auto flex-none">{action}</span> : null}
     </div>
+  );
+}
+
+/** The short fade a tall list wears at the bottom edge of the window's scrolling body: a 16 px
+ *  strip pinned over the edge while rows continue beneath it, so a card never reads as cut in
+ *  half; it rests under the last card once the end arrives, so the end never washes one out. It
+ *  paints the window's own surface colour — wherever nothing scrolls beneath it, it is invisible —
+ *  and it never takes the pointer: the half-visible row under it stays clickable. */
+export function ListBottomFade() {
+  return (
+    <div data-list-bottom-fade="" aria-hidden="true" className="pointer-events-none sticky bottom-0 h-4 bg-gradient-to-b from-transparent to-surface" />
   );
 }
 

@@ -26,6 +26,7 @@ import { KeyMoveCard } from '../components/key-move-card';
 import { Listbox } from '../components/listbox';
 import { MeterList } from '../components/meter-list';
 import { ProviderMark } from '../components/provider-mark';
+import { ListBottomFade } from '../components/settings-cards';
 import { Skeleton, SkeletonStyle } from '../components/skeleton';
 import { StatusLamp } from '../components/status-lamp';
 import { WindowFrame, WindowTitle } from '../components/window-frame';
@@ -180,6 +181,9 @@ function Accounts({ state, store, locale, marks }: { readonly state: WizardState
             }
           />
           {state.agyAdd === null ? null : <AgyAddCard agyAdd={state.agyAdd} store={store} locale={locale} />}
+          {/* The step's scroll cue: pinned to the scrolling body's bottom edge while account rows
+              continue under it, resting under the last card once the end arrives. */}
+          <ListBottomFade />
         </>
       )}
     </AccountsScanning>
