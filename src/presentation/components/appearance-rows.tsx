@@ -1,13 +1,13 @@
 // components/appearance-rows.tsx — Dil and Tema as two SettingRows with a Listbox each (U-42, U-43):
 // the wizard's Hoş geldin and Settings → Görünüm are this one component. A choice is applied at
 // once — the locale store swaps the bundle for the whole app, the theme store sets `data-theme`.
-// Sistem is the recommended theme (the table in stores/recommended.ts).
+// No option here carries the recommended badge; Sistem stays the first-run default through
+// RECOMMENDED.theme (the table in stores/recommended.ts), unmarked in the list.
 import { useSyncExternalStore } from 'react';
 
 import { t, type Locale } from '../labels/t';
 import type { LabelKey } from '../labels/keys';
 import type { LocaleStore } from '../stores/locale';
-import { RECOMMENDED } from '../stores/recommended';
 import { THEME_PREFERENCES, type ThemePreference, type ThemeStore } from '../stores/theme';
 import { Listbox, type ListboxOption } from './listbox';
 import { SettingRow, SettingRows } from './setting-row';
@@ -55,7 +55,6 @@ export function AppearanceRows({ locale, localeStore, themeStore }: AppearanceRo
     value: entry,
     label: t(locale, THEME_KEY[entry]),
     lead: <Swatch theme={entry} />,
-    recommended: entry === RECOMMENDED.theme,
   }));
   return (
     <SettingRows>
