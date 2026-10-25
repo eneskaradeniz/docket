@@ -31,7 +31,7 @@ export interface CandidateFact {
   readonly endpointHost?: string;
   readonly hasOauthLogin: boolean;
   readonly envOverrides: readonly ('endpoint' | 'token' | 'model')[];
-  readonly warnings: readonly ('env_overrides_login' | 'unreadable')[];
+  readonly warnings: readonly ('env_overrides_login' | 'unreadable' | 'login_unverified')[];
   readonly alreadyAdded: boolean;
 }
 
@@ -92,9 +92,12 @@ export interface ProviderRow {
   readonly installUrl: string | null;
 }
 
-const WARN_KEY: Readonly<Record<'env_overrides_login', CandidateWarnKey>> = {
+const WARN_KEY: Readonly<Record<'env_overrides_login' | 'login_unverified', CandidateWarnKey>> = {
   env_overrides_login: 'candidates.warn.env_overrides_login',
+  login_unverified: 'candidates.warn.login_unverified',
 };
+/** The order the warning tags render in. */
+const WARN_ORDER: readonly ('env_overrides_login' | 'login_unverified')[] = ['env_overrides_login', 'login_unverified'];
 
 /** The lamp hue of a status word: the book's proceed / signal / dim (error is never a status here). */
 export type LampTone = 'proceed' | 'signal' | 'dim' | 'error' | 'info';
@@ -210,7 +213,7 @@ export const candidateRows = (
         selectable: !unreadable && !setupPending,
         selected: isSelected,
         disabledReasonKey: unreadable ? 'candidates.reason.unreadable' : setupPending ? 'candidates.reason.setup_pending' : null,
-        warnKeys: fact.warnings.includes('env_overrides_login') ? [WARN_KEY.env_overrides_login] : [],
+        warnKeys: WARN_ORDER.filter((warning) => fact.warnings.includes(warning)).map((warning) => WARN_KEY[warning]),
         keyMoveCard,
         importToken: keyMoved,
         provider: fact.provider,

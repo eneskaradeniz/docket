@@ -60,6 +60,9 @@ type Override = 'endpoint' | 'token' | 'model';
 interface Evidence {
   readonly readable: boolean; // false once any of the files failed to read or parse
   readonly hasOauthLogin: boolean;
+  /** An OAuth login was found, yet no identity carried a tier shape that proves a seat; the login
+   *  is proposed anyway, flagged so the UI can say it could not be verified. */
+  readonly loginUnverified: boolean;
   readonly envOverrides: readonly Override[];
   readonly endpointHost?: string;
   readonly endpointUrl?: string;
@@ -115,7 +118,8 @@ function hostOfAccount(endpoint: string | undefined): string | undefined {
 
 async function gather(fs: AccountScanFs, dir: string, withHomeIdentity: boolean, homeDir: string): Promise<Evidence> {
   let readable = true;
-  let hasOauthLogin = false;
+  let sawOauthLogin = false;
+  let sawSeatProvingTier = false;
   const overrides = new Set<Override>();
   let endpointHost: string | undefined;
   let endpointUrl: string | undefined;
@@ -142,20 +146,22 @@ async function gather(fs: AccountScanFs, dir: string, withHomeIdentity: boolean,
     if (identity.state === 'failed') readable = false;
     if (identity.state === 'ok' && isRecord(identity.value) && isRecord(identity.value.oauthAccount)) {
       const oa = identity.value.oauthAccount;
-      const expiredFreeTier =
-        oa['organizationRateLimitTier'] === 'default_claude_ai' &&
-        (oa['seatTier'] === null || oa['seatTier'] === undefined) &&
-        (oa['userRateLimitTier'] === null || oa['userRateLimitTier'] === undefined);
-      if (!expiredFreeTier) {
-        hasOauthLogin = true;
-      }
+      sawOauthLogin = true;
+      // The tier shape the CLI writes while no seat is recorded (an expired or downgraded free
+      // tier); a working Pro account can wear it too, so the login is kept — only flagged.
+      const seatProvingTier =
+        oa['organizationRateLimitTier'] !== 'default_claude_ai' ||
+        (oa['seatTier'] !== null && oa['seatTier'] !== undefined) ||
+        (oa['userRateLimitTier'] !== null && oa['userRateLimitTier'] !== undefined);
+      if (seatProvingTier) sawSeatProvingTier = true;
     }
   }
 
   const order: readonly Override[] = ['endpoint', 'token', 'model'];
   return {
     readable,
-    hasOauthLogin,
+    hasOauthLogin: sawOauthLogin,
+    loginUnverified: sawOauthLogin && !sawSeatProvingTier,
     envOverrides: order.filter((o) => overrides.has(o)),
     ...(endpointHost !== undefined ? { endpointHost } : {}),
     ...(endpointUrl !== undefined ? { endpointUrl } : {}),
@@ -172,11 +178,12 @@ export function createAccountScan(options: AccountScanOptions): AccountDiscovery
   function classify(
     evidence: Evidence,
   ): Pick<AccountCandidate, 'kind' | 'routeKind' | 'endpointHost' | 'endpointUrl' | 'warnings'> | undefined {
-    const warnings: ('env_overrides_login' | 'unreadable')[] = [];
+    const warnings: ('env_overrides_login' | 'unreadable' | 'login_unverified')[] = [];
     if (evidence.endpointHost !== undefined) {
       const preset = routeKinds.find((k) => k.endpointHost === evidence.endpointHost);
       if (preset === undefined) return undefined; // an endpoint no preset knows is not proposed
       if (evidence.hasOauthLogin) warnings.push('env_overrides_login');
+      if (evidence.loginUnverified) warnings.push('login_unverified');
       return {
         kind: 'compatible_endpoint',
         routeKind: preset.id,
@@ -187,6 +194,7 @@ export function createAccountScan(options: AccountScanOptions): AccountDiscovery
     }
     const overridesLogin = evidence.endpointUnparsed || evidence.envOverrides.includes('token');
     if (evidence.hasOauthLogin && !overridesLogin && subscriptionKind !== undefined) {
+      if (evidence.loginUnverified) warnings.push('login_unverified');
       return { kind: 'subscription', routeKind: subscriptionKind.id, warnings };
     }
     return undefined;

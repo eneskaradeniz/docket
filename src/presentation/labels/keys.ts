@@ -913,6 +913,7 @@ export const LABEL_KEYS = [
   'candidates.reason.unreadable',
   'candidates.reason.setup_pending',
   'candidates.warn.env_overrides_login',
+  'candidates.warn.login_unverified',
   'candidates.info.env_overrides_login',
   'candidates.keymove.title',
   'candidates.keymove.body',

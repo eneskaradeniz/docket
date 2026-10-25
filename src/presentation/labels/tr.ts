@@ -856,6 +856,7 @@ export const TR: LabelBundle = {
   'candidates.reason.unreadable': "Yapılandırma klasörü okunamadı; erişim iznini kontrol edip yeniden tara.",
   'candidates.reason.setup_pending': "Erişim anahtarı anahtar zincirine taşınmadı",
   'candidates.warn.env_overrides_login': "Ortam değişkeni girişi geçersiz kılıyor",
+  'candidates.warn.login_unverified': "Giriş doğrulanamadı",
   'candidates.info.env_overrides_login': "Bu klasördeki oturum açma yerine ortam değişkenleri kullanılıyor. Hesap eklenir, ancak çalışırken ortamdaki değerler öncelik alır.",
   'candidates.keymove.title': "Erişim anahtarını Anahtar Zinciri'ne taşı",
   'candidates.keymove.body': "Açıkken anahtar yalnızca işletim sisteminin Anahtar Zinciri'nde saklanır. Değeri hiçbir yerde gösterilmez.",
