@@ -16,6 +16,11 @@ export interface AccountCandidate {
   readonly hasOauthLogin: boolean;
   readonly envOverrides: readonly ('endpoint' | 'token' | 'model')[];
   readonly warnings: readonly ('env_overrides_login' | 'unreadable' | 'login_unverified')[]; // login_unverified: the identity's tier fields prove no seat, so the login could not be verified
+  /** True when the source path is the provider's default config directory — the one the CLI reads
+   *  when none is named. Its login is the CLI's own and is read only while the config directory
+   *  variable stays unset (on macOS the live keychain item is the unsuffixed one), so adoption
+   *  stores no identityDir for it. */
+  readonly defaultHome?: boolean;
   readonly alreadyAdded: boolean;
 }
 

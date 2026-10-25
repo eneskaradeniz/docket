@@ -456,3 +456,83 @@ describe('machine-login candidates', () => {
     expect(foundPro[0]?.warnings).toEqual([]);
   });
 });
+
+const freeTierIdentity = JSON.stringify({
+  oauthAccount: {
+    emailAddress: SENTINEL,
+    accountUuid: SENTINEL,
+    organizationRateLimitTier: 'default_claude_ai',
+    seatTier: null,
+    userRateLimitTier: null,
+  },
+});
+
+describe('the default config directory', () => {
+  it('marks ~/.claude as the default home; every other directory is unmarked', async () => {
+    const found = await scan({
+      dirs: ['.claude', '.claude-work'],
+      contents: {
+        [`${HOME}/.claude.json`]: identity(true),
+        [`${HOME}/.claude-work/.claude.json`]: identity(true),
+      },
+    });
+    expect(found).toHaveLength(2);
+    expect(found[0]).toMatchObject({ displayPath: '~/.claude', defaultHome: true });
+    expect(found[1]).toMatchObject({ displayPath: '~/.claude-work' });
+    expect(found[1]?.defaultHome).toBeUndefined();
+  });
+
+  it('drops login_unverified for ~/.claude when the CLI itself reports the login live', async () => {
+    const candidates = await machineScan([found('claude-code', { loggedIn: true })], {
+      fs: memoryFs({ dirs: ['.claude'], contents: { [`${HOME}/.claude.json`]: freeTierIdentity } }),
+    });
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({ kind: 'subscription', defaultHome: true, warnings: [] });
+  });
+
+  it('keeps login_unverified when the fact is false, unknown, absent, or the discovery fails', async () => {
+    const dirs = (): AccountScanFs => memoryFs({ dirs: ['.claude'], contents: { [`${HOME}/.claude.json`]: freeTierIdentity } });
+    const no = await machineScan([found('claude-code', { loggedIn: false })], { fs: dirs() });
+    expect(no[0]?.warnings).toEqual(['login_unverified']);
+    const unknown = await machineScan([found('claude-code', { loggedIn: null })], { fs: dirs() });
+    expect(unknown[0]?.warnings).toEqual(['login_unverified']);
+    const absent = await scan({ dirs: ['.claude'], contents: { [`${HOME}/.claude.json`]: freeTierIdentity } });
+    expect(absent[0]?.warnings).toEqual(['login_unverified']);
+    const failing: ProviderDiscovery = {
+      discover: async () => {
+        throw new Error('probe failed');
+      },
+    };
+    const broken = await createAccountScan({
+      fs: dirs(),
+      homeDir: HOME,
+      accounts: { list: async () => [] },
+      providers: failing,
+    }).scan();
+    expect(broken).toHaveLength(1);
+    expect(broken[0]?.warnings).toEqual(['login_unverified']);
+  });
+
+  it('keeps login_unverified for other directories even when the CLI reports the login live', async () => {
+    const candidates = await machineScan([found('claude-code', { loggedIn: true })], {
+      fs: memoryFs({ dirs: ['.claude-x'], contents: { [`${HOME}/.claude-x/.claude.json`]: freeTierIdentity } }),
+    });
+    expect(candidates[0]).toMatchObject({ displayPath: '~/.claude-x' });
+    expect(candidates[0]?.defaultHome).toBeUndefined();
+    expect(candidates[0]?.warnings).toEqual(['login_unverified']);
+  });
+
+  it('shares the default home with the machine login: a directory-less subscription account of the provider takes the seat', async () => {
+    const fixture: Fixture = { dirs: ['.claude'], contents: { [`${HOME}/.claude.json`]: identity(true) } };
+    const seat = await scan(fixture, [record({ routeKind: 'anthropic-subscription' })]);
+    expect(seat[0]?.alreadyAdded).toBe(true);
+    const legacy = await scan(fixture, [record({ identityDir: `${HOME}/.claude`, routeKind: 'anthropic-subscription' })]);
+    expect(legacy[0]?.alreadyAdded).toBe(true);
+    const otherDir = await scan(fixture, [record({ identityDir: '/elsewhere/.claude-work', routeKind: 'anthropic-subscription' })]);
+    expect(otherDir[0]?.alreadyAdded).toBe(false);
+    const endpoint = await scan(fixture, [
+      record({ authMode: 'api_key', routeKind: 'zai-glm', endpoint: 'https://api.z.ai/api/anthropic' }),
+    ]);
+    expect(endpoint[0]?.alreadyAdded).toBe(false);
+  });
+});
