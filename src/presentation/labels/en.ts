@@ -914,15 +914,9 @@ export const EN: LabelBundle = {
   'wizard.accounts.selectionHint': 'Keep only the accounts you want to use on this device selected',
   'wizard.accounts.clearSelection': 'Clear selection',
   'wizard.accounts.selectAll': 'Select all',
-  // The add-another-account card (P-67): the provider's name fills {name}.
-  'wizard.accounts.agyAdd.manual': 'Enter a directory',
-  'wizard.accounts.agyAdd.title': 'Add another {name} account',
-  'wizard.accounts.agyAdd.signIn': 'Choose or create the directory, then sign in once with `HOME=<dir> agy` in a terminal — Docket never creates the login and never reads or writes a credential.',
-  'wizard.accounts.agyAdd.pathLabel': 'Account directory',
-  'wizard.accounts.agyAdd.add': 'Add',
-  'wizard.accounts.agyAdd.note.empty': 'Type a directory first.',
-  'wizard.accounts.agyAdd.note.relative': 'The directory must be an absolute path (e.g. /Users/you/.agy-max).',
-  'wizard.accounts.agyAdd.note.taken': 'That directory already belongs to an account.',
+  // The home-rooted CLI's one hint (P-33 addendum): another account's directory exists only
+  // after that first sign-in, which Docket never performs.
+  'wizard.accounts.agyHint': 'For another account: sign in with HOME=~/.agy-ad agy, then Scan again.',
   'wizard.capabilities.lead': 'Capabilities found in the installed assistants. Mark the ones to use.',
   'wizard.capabilities.count': '{n} capabilities',
   'wizard.capabilities.truncated': 'List truncated',

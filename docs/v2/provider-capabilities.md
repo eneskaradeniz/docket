@@ -145,8 +145,7 @@ copies it.
 - Several accounts of one provider are normal: each is its own candidate and its own route.
 - Antigravity account homes: the scan proposes each direct child `D` of the home directory that contains
   the directory `.gemini/antigravity-cli`, as a candidate with identity directory `D`. Only the directory's
-  existence is checked; nothing inside it is read. Directories outside the home directory are added by
-  typing the path.
+  existence is checked; nothing inside it is read. Directories outside the home directory are not proposed.
 
 ## 8. Quota and cost per route (P-34)
 - Subscription: SDK usage query and rate-limit events, as today (`claude-probe`).

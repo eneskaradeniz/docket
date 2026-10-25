@@ -407,23 +407,19 @@ describe('wizard screen — Hesaplar bottom fade (#1354)', () => {
   });
 });
 
-describe('wizard screen — Hesaplar: the add-another-account card (P-67, P-33 addendum)', () => {
-  it('the typed-path form starts collapsed behind its link; opened, it draws exactly the directory input', async () => {
+describe('wizard screen — Hesaplar: the home-rooted CLI hint (P-33 addendum)', () => {
+  it('an installed home-rooted CLI draws the one sign-in hint line; an uninstalled one draws nothing', async () => {
     const api = fakeApi([agyProvider], []);
     const store = createWizardStore({ api, actor: userActor, changes: () => () => {} });
     await store.open();
     await store.next();
-    const collapsed = draw(store);
-    expect(collapsed).toContain('Dizini elle gir');
-    expect(collapsed).toContain('data-agy-add-open');
-    expect(collapsed).not.toContain('data-agy-add=""');
-    expect(collapsed).not.toContain('aria-label="Hesap dizini"');
+    expect(draw(store)).toContain('Başka hesap için: HOME=~/.agy-ad agy ile giriş yap, sonra Yeniden tara.');
 
-    store.openAgyAddForm();
-    const expanded = draw(store);
-    expect(expanded).toContain('data-agy-add=""');
-    expect(expanded).toContain('Başka bir Antigravity hesabı ekle');
-    expect(expanded).toContain('aria-label="Hesap dizini"');
-    expect(expanded).not.toContain('data-agy-add-open');
+    const absent = createWizardStore({ api: fakeApi(), actor: userActor, changes: () => () => {} });
+    await absent.open();
+    await absent.next();
+    const html = draw(absent);
+    expect(html).not.toContain('data-agy-hint');
+    expect(html).not.toContain('Başka hesap için');
   });
 });

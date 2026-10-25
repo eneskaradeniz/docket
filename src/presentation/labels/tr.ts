@@ -912,15 +912,9 @@ export const TR: LabelBundle = {
   'wizard.accounts.selectionHint': 'Yalnızca bu cihazda kullanmak istediğiniz hesapları seçili bırakın',
   'wizard.accounts.clearSelection': 'Seçimi temizle',
   'wizard.accounts.selectAll': 'Tümünü seç',
-  // The add-another-account card (P-67): the provider's name fills {name}.
-  'wizard.accounts.agyAdd.manual': 'Dizini elle gir',
-  'wizard.accounts.agyAdd.title': 'Başka bir {name} hesabı ekle',
-  'wizard.accounts.agyAdd.signIn': 'Dizini seç ya da oluştur, sonra terminalde bir kez `HOME=<dizin> agy` ile giriş yap — Docket girişi asla oluşturmaz, kimlik bilgisini okumaz veya yazmaz.',
-  'wizard.accounts.agyAdd.pathLabel': 'Hesap dizini',
-  'wizard.accounts.agyAdd.add': 'Ekle',
-  'wizard.accounts.agyAdd.note.empty': 'Önce bir dizin yaz.',
-  'wizard.accounts.agyAdd.note.relative': 'Dizin mutlak bir yol olmalı (örn. /Users/ad/.agy-max).',
-  'wizard.accounts.agyAdd.note.taken': 'Bu dizin zaten bir hesapta.',
+  // The home-rooted CLI's one hint (P-33 addendum): another account's directory exists only
+  // after that first sign-in, which Docket never performs.
+  'wizard.accounts.agyHint': 'Başka hesap için: HOME=~/.agy-ad agy ile giriş yap, sonra Yeniden tara.',
   'wizard.capabilities.lead': 'Kurulu asistanlarda bulunan yetenekler. Kullanmak istediklerini işaretle.',
   'wizard.capabilities.count': '{n} yetenek',
   'wizard.capabilities.truncated': 'Liste kısaltıldı',

@@ -39,7 +39,7 @@ import type { ProviderMarksStore } from '../stores/provider-marks';
 import { RECOMMENDED } from '../stores/recommended';
 import type { ThemeStore } from '../stores/theme';
 import { toast, toastOutcome } from '../stores/toasts';
-import type { BudgetRow, FinishPhase, WizardAccountRow, WizardCapabilityRow, WizardState, WizardStep, WizardStore } from '../stores/wizard';
+import { AGY_PROVIDER_ID, type BudgetRow, type FinishPhase, type WizardAccountRow, type WizardCapabilityRow, type WizardState, type WizardStep, type WizardStore } from '../stores/wizard';
 import { WIZARD_EDITOR_TABS, WIZARD_STEPS } from '../stores/wizard';
 
 export interface WizardScreenProps {
@@ -180,55 +180,19 @@ function Accounts({ state, store, locale, marks }: { readonly state: WizardState
               row.source.keyMoveCard ? <KeyMoveCard locale={locale} on={row.source.importToken} onChange={(on) => store.setImportToken(row.id, on)} /> : null
             }
           />
-          {state.agyAdd === null ? null : <AgyAddCard agyAdd={state.agyAdd} store={store} locale={locale} />}
+          {state.installed.some((provider) => provider.id === AGY_PROVIDER_ID) ? (
+            // The home-rooted CLI's one hint (P-33 addendum): the account directory exists only
+            // after that first sign-in, which Docket never performs — the scan finds it after.
+            <p data-agy-hint="" className="mt-2.5 text-[12.5px] leading-5 text-inkdim">
+              {t(locale, 'wizard.accounts.agyHint')}
+            </p>
+          ) : null}
           {/* The step's scroll cue: pinned to the scrolling body's bottom edge while account rows
               continue under it, resting under the last card once the end arrives. */}
           <ListBottomFade />
         </>
       )}
     </AccountsScanning>
-  );
-}
-
-/** The add-another-account card of the home-rooted CLI (P-67): collapsed to its one link — the
- *  scan proposes the found account homes as rows (P-33 addendum) — and, opened, the directory
- *  input, the one-line sign-in instruction, and the note that never reads as an error — a wrong
- *  path is a hint, not a failure the screen owes red for. */
-function AgyAddCard({ agyAdd, store, locale }: { readonly agyAdd: NonNullable<WizardState['agyAdd']>; readonly store: WizardStore; readonly locale: Locale }) {
-  if (!agyAdd.open) {
-    return (
-      <div className="mt-2.5">
-        <ActionButton variant="neutral" size="sm" onClick={() => store.openAgyAddForm()} data-agy-add-open="">
-          {t(locale, 'wizard.accounts.agyAdd.manual')}
-        </ActionButton>
-      </div>
-    );
-  }
-  return (
-    <section data-agy-add="" className="mt-2.5 rounded-card border border-hairline bg-surface p-3.5">
-      <h3 className="text-[13px] font-bold text-ink">{t(locale, 'wizard.accounts.agyAdd.title').replace('{name}', agyAdd.providerName)}</h3>
-      <p className="mt-1 text-[12.5px] leading-5 text-inkdim">{t(locale, 'wizard.accounts.agyAdd.signIn')}</p>
-      <div className="mt-2.5 flex items-center gap-2">
-        <input
-          value={agyAdd.path}
-          onChange={(event) => store.setAgyAddPath(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') store.addAgyAccount();
-          }}
-          aria-label={t(locale, 'wizard.accounts.agyAdd.pathLabel')}
-          placeholder="/Users/…/.agy-max"
-          className="min-w-0 flex-1 rounded-control border border-bord bg-transparent px-2.5 py-1 font-mono text-[13px] text-ink focus:border-signal focus:outline-none"
-        />
-        <ActionButton variant="neutral" size="sm" onClick={() => store.addAgyAccount()}>
-          {t(locale, 'wizard.accounts.agyAdd.add')}
-        </ActionButton>
-      </div>
-      {agyAdd.noteKey !== null ? (
-        <p data-agy-add-note="" className="mt-2 text-[12.5px] text-inkdim">
-          {t(locale, agyAdd.noteKey)}
-        </p>
-      ) : null}
-    </section>
   );
 }
 
