@@ -2,7 +2,8 @@
 // standing (U-4, U-226) — `ready` shows the start card, `awaiting_human` the approval card with
 // its evidence, parallel approvals carry no primary, the changes gate keeps its attestation
 // pair. The stage strip is stages only with the counter on the current label (U-224, U-225's
-// no-dashed-segment call), the cards stack on the 12 px token (U-227), the skip link leads
+// no-dashed-segment call); a one-stage flow trades the bar for a plain “Şu an” line, the cards
+// stack on the 12 px token (U-227), the skip link leads
 // (U-232), one polite region announces and the stream never does (U-235), the semantics hold
 // (U-236), and no screen copy is inline (U-238). The screen is mounted over a real detail store
 // (a scripted api) and drawn with the server renderer, so every claim reads the markup a user
@@ -713,7 +714,7 @@ describe('work-order detail screen — the strip (U-224, U-225)', () => {
   });
 
   it('U-224: the strip is an ordered list of stages with the counter on the current label alone', async () => {
-    const html = await draw(MULTI);
+    const html = await draw(AWAITING_HUMAN);
     const stripAt = html.indexOf('data-detail-strip');
     expect(stripAt).toBeGreaterThan(-1);
     const nav = html.slice(html.lastIndexOf('<nav', stripAt), html.indexOf('</nav>', stripAt));
@@ -721,20 +722,35 @@ describe('work-order detail screen — the strip (U-224, U-225)', () => {
     expect(nav).toContain('<ol');
     expect(nav).toContain('aria-current="step"');
     // The counter sits on the current stage's label and counts the zone's cards.
-    expect(nav).toContain('· 2 kapı bekliyor');
+    expect(nav).toContain('· 1 kapı bekliyor');
     // Stage words for assistive tech (A6): every segment says its standing.
     expect(nav).toContain('bekliyor');
   });
 
-  it('U-225: no dashed gate segment exists — the pending-gate marking lives in the counter and the zone\'s dashed cards', async () => {
+  it('U-224: a one-stage work order draws no bar — one plain “Şu an” line, no counter', async () => {
     const html = await draw(MULTI);
+    const stripAt = html.indexOf('data-detail-strip');
+    expect(stripAt).toBeGreaterThan(-1);
+    const strip = html.slice(stripAt, html.indexOf('</nav>', stripAt));
+
+    expect(strip).toContain('Şu an: Check');
+    // Nothing a lone full-width fill could read as 100 % progress, and no counter part — the
+    // waiting cue stays with the decision cards below.
+    expect(strip).not.toContain('h-1.5');
+    expect(strip).not.toContain('kapı bekliyor');
+    // The standing still rides in words for assistive tech (A6).
+    expect(strip).toContain('bekliyor');
+  });
+
+  it('U-225: no dashed gate segment exists — the pending-gate marking lives in the counter and the zone\'s dashed cards', async () => {
+    const html = await draw(AWAITING_HUMAN);
     const strip = html.slice(html.indexOf('data-detail-strip'), html.indexOf('</nav>', html.indexOf('data-detail-strip')));
     expect(strip).not.toContain('border-dashed');
     // The strip never names a gate.
     expect(strip).not.toContain('inceleme');
     // The zone's parallel cards do carry the dashed amber edge (checked in U-226 above); the
     // strip's own segments share one height and one corner token whatever the standing.
-    expect(strip.match(/h-1\.5 rounded-control/g)?.length).toBe(1);
+    expect(strip.match(/h-1\.5 rounded-control/g)?.length).toBe(2);
   });
 });
 

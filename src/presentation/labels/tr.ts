@@ -171,6 +171,7 @@ export const TR: LabelBundle = {
   'detail.duration.minutes': '{n} dk',
   'detail.duration.hours': '{h} sa {m} dk',
   'detail.strip.label': 'Akış',
+  'detail.strip.now': 'Şu an: {stage}',
   'detail.strip.gatesWaiting': '· {n} kapı bekliyor',
   'detail.strip.asksWaiting': '· {n} izin bekliyor',
   'detail.strip.state.done': 'tamamlandı',
