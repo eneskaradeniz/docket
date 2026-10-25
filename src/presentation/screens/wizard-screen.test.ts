@@ -44,8 +44,6 @@ const paygEndpoint = candidate('.claude-zai', {
 });
 
 const claudeProvider = { defId: 'claude', name: 'Claude Code', installUrl: null, binPath: '/usr/bin/claude', version: null, loggedIn: true, optionalFlags: [] };
-/** The home-rooted CLI's discovery fact (P-67): its accounts are per-account HOME directories. */
-const agyProvider = { defId: 'agy', name: 'Antigravity', installUrl: null, binPath: '/usr/bin/agy', version: null, loggedIn: true, optionalFlags: [] };
 
 const accountView = (id: string, label: string, authMode: string): SettingsAccountView => ({
   id,
@@ -404,22 +402,5 @@ describe('wizard screen — Hesaplar bottom fade (#1354)', () => {
     expect(html).toContain('data-list-bottom-fade');
     // The strip stands after the account rows, inside the step's own box.
     expect(html.indexOf('data-list-bottom-fade')).toBeGreaterThan(html.lastIndexOf('data-account-row'));
-  });
-});
-
-describe('wizard screen — Hesaplar: the home-rooted CLI hint (P-33 addendum)', () => {
-  it('an installed home-rooted CLI draws the one sign-in hint line; an uninstalled one draws nothing', async () => {
-    const api = fakeApi([agyProvider], []);
-    const store = createWizardStore({ api, actor: userActor, changes: () => () => {} });
-    await store.open();
-    await store.next();
-    expect(draw(store)).toContain('Başka hesap için: HOME=~/.agy-ad agy ile giriş yap, sonra Yeniden tara.');
-
-    const absent = createWizardStore({ api: fakeApi(), actor: userActor, changes: () => () => {} });
-    await absent.open();
-    await absent.next();
-    const html = draw(absent);
-    expect(html).not.toContain('data-agy-hint');
-    expect(html).not.toContain('Başka hesap için');
   });
 });

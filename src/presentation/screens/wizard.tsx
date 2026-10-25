@@ -39,7 +39,7 @@ import type { ProviderMarksStore } from '../stores/provider-marks';
 import { RECOMMENDED } from '../stores/recommended';
 import type { ThemeStore } from '../stores/theme';
 import { toast, toastOutcome } from '../stores/toasts';
-import { AGY_PROVIDER_ID, type BudgetRow, type FinishPhase, type WizardAccountRow, type WizardCapabilityRow, type WizardState, type WizardStep, type WizardStore } from '../stores/wizard';
+import type { BudgetRow, FinishPhase, WizardAccountRow, WizardCapabilityRow, WizardState, WizardStep, WizardStore } from '../stores/wizard';
 import { WIZARD_EDITOR_TABS, WIZARD_STEPS } from '../stores/wizard';
 
 export interface WizardScreenProps {
@@ -180,13 +180,6 @@ function Accounts({ state, store, locale, marks }: { readonly state: WizardState
               row.source.keyMoveCard ? <KeyMoveCard locale={locale} on={row.source.importToken} onChange={(on) => store.setImportToken(row.id, on)} /> : null
             }
           />
-          {state.installed.some((provider) => provider.id === AGY_PROVIDER_ID) ? (
-            // The home-rooted CLI's one hint (P-33 addendum): the account directory exists only
-            // after that first sign-in, which Docket never performs — the scan finds it after.
-            <p data-agy-hint="" className="mt-2.5 text-[12.5px] leading-5 text-inkdim">
-              {t(locale, 'wizard.accounts.agyHint')}
-            </p>
-          ) : null}
           {/* The step's scroll cue: pinned to the scrolling body's bottom edge while account rows
               continue under it, resting under the last card once the end arrives. */}
           <ListBottomFade />

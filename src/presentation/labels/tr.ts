@@ -912,9 +912,6 @@ export const TR: LabelBundle = {
   'wizard.accounts.selectionHint': 'Yalnızca bu cihazda kullanmak istediğiniz hesapları seçili bırakın',
   'wizard.accounts.clearSelection': 'Seçimi temizle',
   'wizard.accounts.selectAll': 'Tümünü seç',
-  // The home-rooted CLI's one hint (P-33 addendum): another account's directory exists only
-  // after that first sign-in, which Docket never performs.
-  'wizard.accounts.agyHint': 'Başka hesap için: HOME=~/.agy-ad agy ile giriş yap, sonra Yeniden tara.',
   'wizard.capabilities.lead': 'Kurulu asistanlarda bulunan yetenekler. Kullanmak istediklerini işaretle.',
   'wizard.capabilities.count': '{n} yetenek',
   'wizard.capabilities.truncated': 'Liste kısaltıldı',

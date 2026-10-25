@@ -972,9 +972,6 @@ export const LABEL_KEYS = [
   'wizard.accounts.selectionHint',
   'wizard.accounts.clearSelection',
   'wizard.accounts.selectAll',
-  // The home-rooted CLI's one hint (P-33 addendum): another account's directory exists only
-  // after that first sign-in, which Docket never performs — the scan finds it after a rescan.
-  'wizard.accounts.agyHint',
   'wizard.capabilities.lead',
   'wizard.capabilities.count',
   'wizard.capabilities.truncated',

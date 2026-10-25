@@ -914,9 +914,6 @@ export const EN: LabelBundle = {
   'wizard.accounts.selectionHint': 'Keep only the accounts you want to use on this device selected',
   'wizard.accounts.clearSelection': 'Clear selection',
   'wizard.accounts.selectAll': 'Select all',
-  // The home-rooted CLI's one hint (P-33 addendum): another account's directory exists only
-  // after that first sign-in, which Docket never performs.
-  'wizard.accounts.agyHint': 'For another account: sign in with HOME=~/.agy-ad agy, then Scan again.',
   'wizard.capabilities.lead': 'Capabilities found in the installed assistants. Mark the ones to use.',
   'wizard.capabilities.count': '{n} capabilities',
   'wizard.capabilities.truncated': 'List truncated',
