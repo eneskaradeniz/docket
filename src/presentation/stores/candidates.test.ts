@@ -114,6 +114,12 @@ describe('candidateRows', () => {
     expect(row?.selectable).toBe(true);
   });
 
+  it('U-34: login_unverified shows a warning tag too, after env_overrides_login', () => {
+    const [row] = candidateRows([{ ...base, warnings: ['env_overrides_login', 'login_unverified'] }], null, none());
+    expect(row?.warnKeys).toEqual(['candidates.warn.env_overrides_login', 'candidates.warn.login_unverified']);
+    expect(row?.selectable).toBe(true);
+  });
+
   it('U-262: a token-needing row is "Kurulum bekliyor", not selectable, with its card and reason — before any selection', () => {
     const [row] = candidateRows([keyed], null, none());
     expect(row?.statusKey).toBe('candidates.status.setup_pending');

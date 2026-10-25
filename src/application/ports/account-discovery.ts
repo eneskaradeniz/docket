@@ -15,7 +15,7 @@ export interface AccountCandidate {
   readonly endpointUrl?: string;
   readonly hasOauthLogin: boolean;
   readonly envOverrides: readonly ('endpoint' | 'token' | 'model')[];
-  readonly warnings: readonly ('env_overrides_login' | 'unreadable')[];
+  readonly warnings: readonly ('env_overrides_login' | 'unreadable' | 'login_unverified')[]; // login_unverified: the identity's tier fields prove no seat, so the login could not be verified
   readonly alreadyAdded: boolean;
 }
 
