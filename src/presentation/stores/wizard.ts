@@ -230,8 +230,10 @@ export interface WizardState {
   /** Why the primary slot is disabled; null while it is enabled. */
   readonly reasonKey: LabelKey | null;
   /** P-67: the add-another-account card of the home-rooted CLI; null while that CLI is not
-   *  installed. `noteKey` is the input's own refusal note, never an error-styled line. */
-  readonly agyAdd: { readonly path: string; readonly noteKey: LabelKey | null; readonly providerName: string } | null;
+   *  installed. `open` is the typed-path form's disclosure — collapsed until the operator asks
+   *  for it, because the scan proposes the found account homes as rows (P-33 addendum).
+   *  `noteKey` is the input's own refusal note, never an error-styled line. */
+  readonly agyAdd: { readonly path: string; readonly noteKey: LabelKey | null; readonly providerName: string; readonly open: boolean } | null;
   readonly finishing: boolean;
   /** The progress list's current line (U-49); null outside a finish. */
   readonly finishPhase: FinishPhase | null;
@@ -262,6 +264,9 @@ export interface WizardStore {
   setImportToken(key: string, on: boolean): void;
   /** P-67: the add-another-account card's directory input; typing clears its refusal note. */
   setAgyAddPath(path: string): void;
+  /** P-33 addendum: opens the card's collapsed typed-path form — the found account homes are
+   *  proposed as rows, so the form waits behind its link until a directory outside them is needed. */
+  openAgyAddForm(): void;
   /** P-67: "Ekle" — validates the directory locally and adds the would-be account, selected. */
   addAgyAccount(): void;
   /** "Yeniden tara": a fresh scan of candidates and providers. */
@@ -484,6 +489,8 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
   /** P-67: the add-another-account card's input and its refusal note; null note while clean. */
   let agyAddPath = '';
   let agyAddNote: LabelKey | null = null;
+  /** P-33 addendum: whether the card's typed-path form is expanded; the link opens it once. */
+  let agyAddOpen = false;
   /** Chosen entry keys in chain order (Asistan sırası). */
   let selection: readonly string[] = [];
   const importTokens = new Set<string>();
@@ -800,7 +807,7 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
   const agyAddState = (): WizardState['agyAdd'] => {
     const fact = providerFacts.find((provider) => provider.defId === AGY_PROVIDER_ID && provider.binPath !== null);
     if (fact === undefined) return null;
-    return { path: agyAddPath, noteKey: agyAddNote, providerName: fact.name };
+    return { path: agyAddPath, noteKey: agyAddNote, providerName: fact.name, open: agyAddOpen };
   };
 
   const compute = (): WizardState => {
@@ -1240,6 +1247,11 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
     setAgyAddPath: (path) => {
       agyAddPath = path;
       agyAddNote = null;
+      publish();
+    },
+    openAgyAddForm: () => {
+      if (agyAddOpen) return;
+      agyAddOpen = true;
       publish();
     },
     addAgyAccount: () => {

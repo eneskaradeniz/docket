@@ -912,6 +912,7 @@ export const TR: LabelBundle = {
   'wizard.accounts.clearSelection': 'Seçimi temizle',
   'wizard.accounts.selectAll': 'Tümünü seç',
   // The add-another-account card (P-67): the provider's name fills {name}.
+  'wizard.accounts.agyAdd.manual': 'Dizini elle gir',
   'wizard.accounts.agyAdd.title': 'Başka bir {name} hesabı ekle',
   'wizard.accounts.agyAdd.signIn': 'Dizini seç ya da oluştur, sonra terminalde bir kez `HOME=<dizin> agy` ile giriş yap — Docket girişi asla oluşturmaz, kimlik bilgisini okumaz veya yazmaz.',
   'wizard.accounts.agyAdd.pathLabel': 'Hesap dizini',

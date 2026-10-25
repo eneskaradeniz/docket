@@ -190,10 +190,20 @@ function Accounts({ state, store, locale, marks }: { readonly state: WizardState
   );
 }
 
-/** The add-another-account card of the home-rooted CLI (P-67): the directory input, the
- *  one-line sign-in instruction, and the note that never reads as an error — a wrong path is a
- *  hint, not a failure the screen owes red for. */
+/** The add-another-account card of the home-rooted CLI (P-67): collapsed to its one link — the
+ *  scan proposes the found account homes as rows (P-33 addendum) — and, opened, the directory
+ *  input, the one-line sign-in instruction, and the note that never reads as an error — a wrong
+ *  path is a hint, not a failure the screen owes red for. */
 function AgyAddCard({ agyAdd, store, locale }: { readonly agyAdd: NonNullable<WizardState['agyAdd']>; readonly store: WizardStore; readonly locale: Locale }) {
+  if (!agyAdd.open) {
+    return (
+      <div className="mt-2.5">
+        <ActionButton variant="neutral" size="sm" onClick={() => store.openAgyAddForm()} data-agy-add-open="">
+          {t(locale, 'wizard.accounts.agyAdd.manual')}
+        </ActionButton>
+      </div>
+    );
+  }
   return (
     <section data-agy-add="" className="mt-2.5 rounded-card border border-hairline bg-surface p-3.5">
       <h3 className="text-[13px] font-bold text-ink">{t(locale, 'wizard.accounts.agyAdd.title').replace('{name}', agyAdd.providerName)}</h3>

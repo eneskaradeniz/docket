@@ -973,6 +973,9 @@ export const LABEL_KEYS = [
   'wizard.accounts.selectAll',
   // The add-another-account card of the home-rooted CLI (P-67): the operator picks the
   // directory; the login under it is created with the vendor's own tool, never by Docket.
+  // The scan proposes the found account homes as rows (P-33 addendum), so the typed-path form
+  // waits collapsed behind its link.
+  'wizard.accounts.agyAdd.manual',
   'wizard.accounts.agyAdd.title',
   'wizard.accounts.agyAdd.signIn',
   'wizard.accounts.agyAdd.pathLabel',

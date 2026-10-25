@@ -44,6 +44,8 @@ const paygEndpoint = candidate('.claude-zai', {
 });
 
 const claudeProvider = { defId: 'claude', name: 'Claude Code', installUrl: null, binPath: '/usr/bin/claude', version: null, loggedIn: true, optionalFlags: [] };
+/** The home-rooted CLI's discovery fact (P-67): its accounts are per-account HOME directories. */
+const agyProvider = { defId: 'agy', name: 'Antigravity', installUrl: null, binPath: '/usr/bin/agy', version: null, loggedIn: true, optionalFlags: [] };
 
 const accountView = (id: string, label: string, authMode: string): SettingsAccountView => ({
   id,
@@ -96,7 +98,10 @@ interface Fake extends Pick<Api, 'query' | 'command'> {
   holdOn(type: Command['type']): { readonly resolve: () => void };
 }
 
-const fakeApi = (): Fake => {
+const fakeApi = (
+  providers: readonly Record<string, unknown>[] = [claudeProvider],
+  facts: readonly Record<string, unknown>[] = [subscription, paygEndpoint],
+): Fake => {
   const commands: Command[] = [];
   const failures = new Map<string, CommandResult>();
   const holds = new Map<string, (() => void)[]>();
@@ -132,9 +137,9 @@ const fakeApi = (): Fake => {
         case 'project.tree':
           return Promise.resolve([]);
         case 'accounts.candidates':
-          return Promise.resolve([subscription, paygEndpoint]);
+          return Promise.resolve(facts);
         case 'providers.discovered':
-          return Promise.resolve([claudeProvider]);
+          return Promise.resolve(providers);
         case 'settings.accounts':
           return Promise.resolve({ accounts, bindings: [] });
         case 'roles.list':
@@ -399,5 +404,26 @@ describe('wizard screen — Hesaplar bottom fade (#1354)', () => {
     expect(html).toContain('data-list-bottom-fade');
     // The strip stands after the account rows, inside the step's own box.
     expect(html.indexOf('data-list-bottom-fade')).toBeGreaterThan(html.lastIndexOf('data-account-row'));
+  });
+});
+
+describe('wizard screen — Hesaplar: the add-another-account card (P-67, P-33 addendum)', () => {
+  it('the typed-path form starts collapsed behind its link; opened, it draws exactly the directory input', async () => {
+    const api = fakeApi([agyProvider], []);
+    const store = createWizardStore({ api, actor: userActor, changes: () => () => {} });
+    await store.open();
+    await store.next();
+    const collapsed = draw(store);
+    expect(collapsed).toContain('Dizini elle gir');
+    expect(collapsed).toContain('data-agy-add-open');
+    expect(collapsed).not.toContain('data-agy-add=""');
+    expect(collapsed).not.toContain('aria-label="Hesap dizini"');
+
+    store.openAgyAddForm();
+    const expanded = draw(store);
+    expect(expanded).toContain('data-agy-add=""');
+    expect(expanded).toContain('Başka bir Antigravity hesabı ekle');
+    expect(expanded).toContain('aria-label="Hesap dizini"');
+    expect(expanded).not.toContain('data-agy-add-open');
   });
 });

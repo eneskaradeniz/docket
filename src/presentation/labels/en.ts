@@ -914,6 +914,7 @@ export const EN: LabelBundle = {
   'wizard.accounts.clearSelection': 'Clear selection',
   'wizard.accounts.selectAll': 'Select all',
   // The add-another-account card (P-67): the provider's name fills {name}.
+  'wizard.accounts.agyAdd.manual': 'Enter a directory',
   'wizard.accounts.agyAdd.title': 'Add another {name} account',
   'wizard.accounts.agyAdd.signIn': 'Choose or create the directory, then sign in once with `HOME=<dir> agy` in a terminal — Docket never creates the login and never reads or writes a credential.',
   'wizard.accounts.agyAdd.pathLabel': 'Account directory',

@@ -1089,6 +1089,41 @@ describe('wizard store (U-35, U-42)', () => {
     expect(bundle.store.state().finished?.accounts).toBe(1);
   });
 
+  it('P-33 addendum: the typed-path form starts collapsed and opens on ask — an uninstalled CLI still offers no card', async () => {
+    const bundle = setup([]);
+    bundle.api.setProviders([agyProvider]);
+    await toAccounts(bundle);
+    expect(bundle.store.state().agyAdd?.open).toBe(false);
+    bundle.store.openAgyAddForm();
+    expect(bundle.store.state().agyAdd?.open).toBe(true);
+
+    const absent = setup([]);
+    absent.api.setProviders([claudeProvider]);
+    await toAccounts(absent);
+    expect(absent.store.state().agyAdd).toBeNull();
+  });
+
+  it('P-33 addendum: a scanned account home of the home-rooted CLI is an ordinary ready row, adopted by its source path at the finish', async () => {
+    const agyHome = candidate('.agy-max', { provider: 'agy', routeKind: 'agy-subscription' });
+    const bundle = setup([agyHome]);
+    bundle.api.setProviders([agyProvider]);
+    await toAccounts(bundle);
+    const row = bundle.store.state().rows.find((entry) => entry.id === '/h/.agy-max');
+    expect(row).toMatchObject({
+      provider: 'agy',
+      label: 'agy-max',
+      statusKey: 'candidates.status.ready',
+      selectable: true,
+      selected: true,
+      billing: 'included',
+    });
+    await bundle.store.next();
+    expect(bundle.store.state().step).toBe('budget');
+    await bundle.store.next();
+    expect(bundle.api.commands).toContainEqual({ type: 'account.adopt', sourcePath: '/h/.agy-max', label: 'agy-max' });
+    expect(bundle.store.state().finished?.accounts).toBe(1);
+  });
+
   it('U-49: the finish walks its four lines in order — a line takes its check only when its real step completes, never on a fixed delay', async () => {
     const bundle = setup([claudeA, claudeB]);
     await toAccounts(bundle);
