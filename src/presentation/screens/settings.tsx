@@ -42,6 +42,7 @@ import { ProviderList } from '../components/provider-list';
 import { ProviderMark } from '../components/provider-mark';
 import { SettingRow, SettingRows } from '../components/setting-row';
 import { CapabilitySection } from '../components/capability-section';
+import { RolesSection } from '../components/roles-section';
 import { MemorySection } from '../components/memory-section';
 import { SettingsMenu } from '../components/settings-menu';
 import { StatusLamp } from '../components/status-lamp';
@@ -384,7 +385,7 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
   // The Roller rows load whenever the section is on screen, and for the role chips on an
   // account's Genel tab.
   useEffect(() => {
-    if (open && section === 'accounts' && subPage !== null) void roles.load();
+    if (open && ((section === 'accounts' && subPage !== null) || section === 'roles')) void roles.load();
   }, [open, section, subPage, roles]);
   const agentCapabilities = useMemo<AgentCapabilitiesStore>(
     () =>
@@ -1085,6 +1086,7 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
 
           {section === 'accounts' ? accountsSection : null}
           {section === 'memory' ? <MemorySection locale={locale} store={agentCapabilities} active={open} /> : null}
+          {section === 'roles' ? <RolesSection locale={locale} store={roles} state={rolesState} /> : null}
           {section === 'roles' ? (
             <CapabilitySection locale={locale} section="roles" store={agentCapabilities} marks={marks} active={open} />
           ) : null}
