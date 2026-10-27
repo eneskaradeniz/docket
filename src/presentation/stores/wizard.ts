@@ -367,6 +367,7 @@ const syntheticView = (fact: CandidateFact, importToken: boolean, quota: QuotaSt
   plan: null,
   limitPolicy: RECOMMENDED.limitPolicy,
   reserve: { short: null, long: null },
+  hasWeeklyPool: false,
   caps: [],
   consentedModels: [],
   routeKind: fact.routeKind,

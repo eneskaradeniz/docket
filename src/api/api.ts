@@ -42,6 +42,7 @@ import {
   CONVERSATION_LIMITS,
   billingFromPools,
   deriveProgress,
+  defaultReserve,
   deriveRoadmap,
   deriveWorkOrderState,
   ok,
@@ -57,6 +58,7 @@ import {
   reserveFor,
   titleFrom,
   validateDefinitions,
+  weeklyPooled,
 } from '../domain/index';
 
 import type {
@@ -2601,6 +2603,7 @@ const settingsAccountsView = async (
       plan: record.plan ?? null,
       limitPolicy: record.limitPolicy,
       reserve: { short: record.reserve?.short ?? null, long: record.reserve?.long ?? null },
+      hasWeeklyPool: weeklyPooled(pools, meters, record.id),
       caps: [...record.caps]
         .sort((a, b) => CAP_SCOPE_RANK[a.scope] - CAP_SCOPE_RANK[b.scope])
         .map(({ scope, cap }) => ({ scope, amountUsd: cap.amountUsd, warnPercent: cap.warnPercent })),
@@ -2611,7 +2614,7 @@ const settingsAccountsView = async (
       hasSecret: record.secretRef !== undefined,
       test: tests.get(record.id) ?? null,
       pools: ownPools.map(poolView),
-      meters: meters.filter((meter) => ownPoolIds.has(meter.poolId)).map((meter) => meterView(meter, record.reserve)),
+      meters: meters.filter((meter) => ownPoolIds.has(meter.poolId)).map((meter) => meterView(meter, record.reserve ?? defaultReserve(pools, meters, record.id))),
     });
   }
 

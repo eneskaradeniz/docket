@@ -39,6 +39,7 @@ import {
   billingFromPools,
   decideOnLimit,
   decidePermission,
+  defaultReserve,
   definitionsDigest,
   effortForChoice,
   extendRollingNote,
@@ -393,13 +394,14 @@ const routeHasHeadroom = async (
   now: EpochMs,
 ): Promise<boolean> => {
   const catalog = await catalogOrEmpty(() => deps.modelCatalog.list(route.accountId));
+  const [pools, meters] = [await deps.accounts.pools(), await deps.accounts.meters()];
   const room = headroom(
-    await deps.accounts.pools(),
-    await deps.accounts.meters(),
+    pools,
+    meters,
     route.accountId,
     matchIdFor(catalog, route.model),
     now,
-    (await deps.accounts.get(route.accountId))?.reserve,
+    (await deps.accounts.get(route.accountId))?.reserve ?? defaultReserve(pools, meters, route.accountId),
   );
   return room.ok !== false;
 };
@@ -767,7 +769,7 @@ export const resolveAccountTier = async (
   return resolveTierWithHeadroom(
     tier,
     catalog,
-    (model) => headroom(pools, meters, accountId, matchIdFor(catalog, model), now, account?.reserve).ok !== false,
+    (model) => headroom(pools, meters, accountId, matchIdFor(catalog, model), now, account?.reserve ?? defaultReserve(pools, meters, accountId)).ok !== false,
     tierModels,
   );
 };

@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { SettingsAccountView } from '../../api/queries';
 
-import { RECOMMENDED, isPayPerUse, mayHaveCap, recommendedWorkStyle, settingDiffs } from './recommended';
+import { RECOMMENDED, isPayPerUse, mayHaveCap, recommendedReserve, recommendedWorkStyle, settingDiffs } from './recommended';
 
 const ACCOUNT: SettingsAccountView = {
   id: 'a-1',
@@ -15,6 +15,7 @@ const ACCOUNT: SettingsAccountView = {
   plan: 'pro',
   limitPolicy: 'wait_resume',
   reserve: { short: null, long: null },
+  hasWeeklyPool: false,
   caps: [],
   consentedModels: [],
   routeKind: null,
@@ -85,6 +86,23 @@ describe('recommended', () => {
   it('U-29: a zero reserve is no reserve and an absent cap is no diff', () => {
     expect(settingDiffs({ ...ACCOUNT, reserve: { short: 0, long: null } })).toEqual([]);
     expect(settingDiffs({ ...ACCOUNT, reserve: { short: null, long: 0.1 } }).map((diff) => diff.key)).toEqual(['reserve']);
+  });
+
+  it('U-29: recommendedReserve is 0/0, and 0/0.1 on a weekly-pooled account', () => {
+    expect(recommendedReserve(false)).toEqual({ short: 0, long: 0 });
+    expect(recommendedReserve(true)).toEqual({ short: 0, long: 0.1 });
+  });
+
+  it('R-198: settingDiffs flags a weekly account whose long reserve differs from 0.1', () => {
+    const weekly = { ...ACCOUNT, hasWeeklyPool: true };
+    // Unset: the account runs with the default, which is the recommendation.
+    expect(settingDiffs(weekly)).toEqual([]);
+    expect(settingDiffs({ ...weekly, reserve: { short: 0, long: 0.1 } })).toEqual([]);
+    expect(settingDiffs({ ...weekly, reserve: { short: 0, long: 0 } })).toEqual([
+      { key: 'reserve', current: '0/0', recommended: '0/0.1' },
+    ]);
+    expect(settingDiffs({ ...weekly, reserve: { short: null, long: 0.3 } }).map((diff) => diff.key)).toEqual(['reserve']);
+    expect(settingDiffs({ ...weekly, reserve: { short: 0.2, long: 0.1 } }).map((diff) => diff.key)).toEqual(['reserve']);
   });
 
   it('U-42: Sistem is the recommended theme', () => {

@@ -37,6 +37,7 @@ const ACCOUNT: SettingsAccountView = {
   plan: 'pro',
   limitPolicy: 'wait_resume',
   reserve: { short: null, long: null },
+  hasWeeklyPool: false,
   caps: [],
   consentedModels: [],
   routeKind: null,

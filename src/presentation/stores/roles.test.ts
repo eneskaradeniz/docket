@@ -35,6 +35,7 @@ const account = (id: string, provider: string): SettingsAccountsView['accounts']
   plan: null,
   limitPolicy: 'wait_resume',
   reserve: { short: null, long: null },
+  hasWeeklyPool: false,
   caps: [],
   consentedModels: [],
   routeKind: null,

@@ -471,6 +471,16 @@ describe('createChatRunner', () => {
     expect(await h.deps.runs.listForWorkOrder(WORK_ORDER)).toEqual([]);
   });
 
+  it('R-198: a weekly pool at 4 % with no user reserve refuses the turn with notice quota', async () => {
+    const weekly: Meter = { ...openMeter(4), durationMs: 7 * 86_400_000 };
+    const h = await harness({ pools: POOLS, meters: [weekly] });
+    const watch = watching(h.runner, CONVERSATION);
+    await send(h.runner, CONVERSATION, { text: 'Selam' });
+    expect(await watch.finished).toMatchObject({ type: 'finished', outcome: 'refused' });
+    expect(watch.events.some((event) => event.type === 'notice' && event.code === 'quota')).toBe(true);
+    expect(h.transport.requests()).toHaveLength(0);
+  });
+
   it('A-232: a second turn on a busy conversation is refused with busy, the message staying stored and nothing started', async () => {
     const parked = parkedTransport([text('a'), finished('completed')]);
     const h = await harness({ transport: parked.transport });

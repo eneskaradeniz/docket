@@ -294,7 +294,7 @@ being reset.
   of purpose on the left, one control on the right (a listbox button, a number field, a switch),
   and below it an optional "› İnce ayar" disclosure holding that setting's deeper parameters.
   Every option list marks the recommended option "Önerilen". The recommendations are one constant
-  table in `stores/recommended.ts`: limit policy `wait_resume`; no reserve; warn 80 %; spend cap
+  table in `stores/recommended.ts`: limit policy `wait_resume`; no reserve (a weekly-pooled account: 0/10, R-198); warn 80 %; spend cap
   $50 per month; a role's work style by the role (U-33). A pure `settingDiffs(account)` returns the
   settings that differ from the table; under each such row the surface shows "Önerilenden farklı ·
   önerilen: X" and an "Önerilene dön" intent, the editor's head shows "n ayar önerilenden farklı ·

@@ -11,6 +11,8 @@ import {
   capFormStartsOpen,
   capSaveCommands,
   createAccountEditorStore,
+  effectiveReservePercents,
+  resetCommands,
   mayHaveCap,
   parseCapForm,
   parseReservePercent,
@@ -32,6 +34,7 @@ const ACCOUNT: SettingsAccountView = {
   plan: 'pro',
   limitPolicy: 'wait_resume',
   reserve: { short: null, long: null },
+  hasWeeklyPool: false,
   caps: [],
   consentedModels: [],
   routeKind: null,
@@ -116,6 +119,14 @@ describe('Kendi kullanımın için ayır', () => {
     expect(reserveChoice({ ...ACCOUNT, reserve: { short: 0.2, long: 0.2 } })).toBe(20);
     expect(reserveChoice({ ...ACCOUNT, reserve: { short: 0.1, long: 0.3 } })).toBe('split');
     expect(reserveChoice({ ...ACCOUNT, reserve: { short: 0.15, long: 0.15 } })).toBe('split');
+  });
+
+  it('R-198: an unset reserve on a weekly pool reads as 0/10; a stored one or a plain account is unchanged', () => {
+    const weekly = { ...ACCOUNT, hasWeeklyPool: true };
+    expect(effectiveReservePercents(weekly)).toEqual({ short: 0, long: 10 });
+    expect(effectiveReservePercents({ ...weekly, reserve: { short: 0, long: 0 } })).toEqual({ short: 0, long: 0 });
+    expect(effectiveReservePercents(ACCOUNT)).toEqual({ short: 0, long: 0 });
+    expect(resetCommands(weekly, 'reserve')).toMatchObject([{ reserve: { short: 0, long: 0.1 } }]);
   });
 
   it('U-30: the fine-tune starts open when short differs from long', () => {

@@ -11,7 +11,7 @@ import { t, type Locale } from '../labels/t';
 import type { LampTone } from './candidates';
 import { CAP_SCOPES, parseAmountUsd, type CapScope } from './account-models';
 import { hasModelScopedPool } from './pool-scope';
-import { RECOMMENDED, mayHaveCap, settingDiffs, type SettingDiff, type SettingKey } from './recommended';
+import { RECOMMENDED, mayHaveCap, recommendedReserve, settingDiffs, type SettingDiff, type SettingKey } from './recommended';
 import type { SettingsOpenTarget } from './settings-panel';
 import { accountMeterStanding, type MeterFailure, type MeterListStanding } from './meter-list';
 
@@ -100,7 +100,7 @@ export const resetCommands = (account: SettingsAccountView, key: SettingKey): re
     case 'limitPolicy':
       return [{ ...accountFields(account), limitPolicy: RECOMMENDED.limitPolicy }];
     case 'reserve':
-      return [{ ...accountFields(account), reserve: { ...RECOMMENDED.reserve } }];
+      return [{ ...accountFields(account), reserve: { ...recommendedReserve(account.hasWeeklyPool) } }];
     case 'cap': {
       const { scope, amountUsd } = RECOMMENDED.cap;
       const others: Command[] = account.caps
@@ -301,6 +301,15 @@ export const RESERVE_MAX_PERCENT = 95;
 
 const toPercent = (share: number | null): number => Math.round((share ?? 0) * 100);
 
+/** Whether the account has no stored reserve at all, so its gate runs the default (R-198). */
+export const reserveIsUnset = (account: SettingsAccountView): boolean => account.reserve.short === null && account.reserve.long === null;
+
+/** The percents the account runs with: the stored reserve, or the weekly default while none is stored. */
+export const effectiveReservePercents = (account: SettingsAccountView): { readonly short: number; readonly long: number } =>
+  reserveIsUnset(account) && account.hasWeeklyPool
+    ? { short: 0, long: Math.round(recommendedReserve(true).long * 100) }
+    : { short: toPercent(account.reserve.short), long: toPercent(account.reserve.long) };
+
 export type ReserveChoice = 'none' | 10 | 20 | 30 | 'split';
 
 /** Which option of the reserve row the stored reserve reads as; anything else is a split. */
@@ -467,8 +476,8 @@ export const createAccountEditorStore = (deps: AccountEditorDeps): AccountEditor
       accountId: account.id,
       label: account.label,
       limitPolicy: account.limitPolicy,
-      reserveShort: String(toPercent(account.reserve.short)),
-      reserveLong: String(toPercent(account.reserve.long)),
+      reserveShort: String(effectiveReservePercents(account).short),
+      reserveLong: String(effectiveReservePercents(account).long),
       capAmount: cap === undefined ? '' : String(cap.amountUsd),
       capScope: (cap?.scope ?? RECOMMENDED.cap.scope) as CapScope,
       capWarn: String(cap?.warnPercent ?? RECOMMENDED.warnPercent),
@@ -517,7 +526,8 @@ export const createAccountEditorStore = (deps: AccountEditorDeps): AccountEditor
         set({ ...state, failure: { row: 'reserve', labelKey: 'editor.limits.reserve.invalid' } });
         return;
       }
-      if (short === toPercent(account.reserve.short) && long === toPercent(account.reserve.long)) {
+      const current = effectiveReservePercents(account);
+      if (short === current.short && long === current.long) {
         if (state.failure?.row === 'reserve') set({ ...state, failure: null });
         return;
       }
@@ -569,7 +579,8 @@ export const createAccountEditorStore = (deps: AccountEditorDeps): AccountEditor
         set({ ...state, failure: { row: 'reserve', labelKey: 'editor.limits.reserve.invalid' } });
         return;
       }
-      if (short !== toPercent(account.reserve.short) || long !== toPercent(account.reserve.long)) {
+      const current = effectiveReservePercents(account);
+      if (short !== current.short || long !== current.long) {
         commands.push(reserveSaveCommand(account, short, long));
         rows.push('reserve');
       }
