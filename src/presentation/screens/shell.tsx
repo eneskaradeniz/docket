@@ -18,7 +18,7 @@
 // a zero (U-10). Every user-visible string arrives through a label key (U-1).
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react';
 
-import { ChatDock } from '../components/chat-dock';
+import { CHAT_FAB_CLEARANCE_CLASS, ChatDock } from '../components/chat-dock';
 import { ChatLauncherContext } from '../components/chat-launcher';
 import { PhoneWindow } from '../components/phone-window';
 import { SearchPalette } from '../components/search-palette';
@@ -615,7 +615,11 @@ export function ShellScreen({
           />
         </nav>
   
-        <main ref={mainRef} className="@container min-w-0 overflow-y-auto px-[1.375rem] py-[1.125rem]">
+        <main ref={mainRef} className={`@container min-w-0 overflow-y-auto px-[1.375rem] py-[1.125rem] ${
+            // The detail owns its clearance on its own content and the page viewer fills the area;
+            // pb sorts after py, so it replaces the bottom padding on every other screen.
+            route.name === 'workOrder' || route.name === 'page' ? '' : CHAT_FAB_CLEARANCE_CLASS
+          }`}>
           {route.name === 'cockpit' ? (
             <CockpitScreen
               store={cockpit}
