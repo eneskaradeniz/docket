@@ -8,6 +8,7 @@ import type {
   AgentEvent,
   Billing,
   CapabilityDef,
+  CatalogModel,
   ConsentReadiness,
   EffortLevel,
   EpochMs,
@@ -44,7 +45,7 @@ import {
   foldRun,
   headroom,
   redactSecretShapes,
-  resolveTier,
+  resolveTierWithHeadroom,
   selectMemory,
   stageOutputScopeRoot,
   stageOutputVerdict,
@@ -746,30 +747,49 @@ const definitionsRevOf = async (
   );
 };
 
-/** An unpinned route with a tier runs the best model of that tier: the account's own tier table,
- *  else the route kind's, else the highest auto-selectable catalog entry. No such model leaves the
- *  route unpinned, so the CLI's own default runs. */
-const routeForTier = async (
-  deps: Pick<AppDeps, 'accounts' | 'modelCatalog' | 'capabilities'>,
-  item: QueueItem,
-): Promise<{ readonly route: AccountRoute; readonly resolved: { readonly model: string; readonly tier: Tier } | undefined }> => {
-  if (item.route.model !== undefined || item.tier === undefined) return { route: item.route, resolved: undefined };
-  const account = await deps.accounts.get(item.route.accountId);
+/** R-197: the tier's model, one tier lower while the account has no usable quota for it. The
+ *  quota read happens once, so the per-model probe the domain walks with stays synchronous. */
+export const resolveAccountTier = async (
+  deps: Pick<AppDeps, 'accounts' | 'modelCatalog' | 'capabilities' | 'clock'>,
+  accountId: AccountId,
+  tier: Tier,
+  catalogRead: () => Promise<readonly CatalogModel[]>,
+): Promise<{ readonly model: string; readonly tier: Tier } | undefined> => {
+  const account = await deps.accounts.get(accountId);
   const routeId =
     account === undefined
       ? undefined
       : deps.capabilities.routeKindOf({ provider: account.provider, authMode: account.authMode, routeKind: account.routeKind });
   const tierModels = account?.tierModels ?? (routeId === undefined ? undefined : deps.capabilities.routeKind(routeId)?.tierModels);
-  const model = resolveTier(item.tier, await deps.modelCatalog.list(item.route.accountId), tierModels);
-  if (model === undefined) return { route: item.route, resolved: undefined };
-  return { route: { ...item.route, model }, resolved: { model, tier: item.tier } };
+  const catalog = await catalogRead();
+  const [pools, meters] = [await deps.accounts.pools(), await deps.accounts.meters()];
+  const now = deps.clock.now();
+  return resolveTierWithHeadroom(
+    tier,
+    catalog,
+    (model) => headroom(pools, meters, accountId, matchIdFor(catalog, model), now, account?.reserve).ok !== false,
+    tierModels,
+  );
+};
+
+/** An unpinned route with a tier runs the best model of that tier — a lower tier when the
+ *  account's quota is spent for it. No such model leaves the route unpinned, so the CLI's own
+ *  default runs. */
+const routeForTier = async (
+  deps: Pick<AppDeps, 'accounts' | 'modelCatalog' | 'capabilities' | 'clock'>,
+  item: QueueItem,
+): Promise<{ readonly route: AccountRoute; readonly resolved: { readonly model: string; readonly tier: Tier } | undefined }> => {
+  if (item.route.model !== undefined || item.tier === undefined) return { route: item.route, resolved: undefined };
+  const resolved = await resolveAccountTier(deps, item.route.accountId, item.tier, () => deps.modelCatalog.list(item.route.accountId));
+  if (resolved === undefined) return { route: item.route, resolved: undefined };
+  return { route: { ...item.route, model: resolved.model }, resolved };
 };
 
 /** R-150: the queue-side consent read — the tier resolved and the P-40 predicate applied exactly
  *  as `driveRun` applies them, in one function so the dispatcher, the cockpit view and the run
  *  start can never disagree and race a start into a refusal. */
 export const itemConsent = async (
-  deps: Pick<AppDeps, 'accounts' | 'modelCatalog' | 'capabilities'>,
+  deps: Pick<AppDeps, 'accounts' | 'modelCatalog' | 'capabilities' | 'clock'>,
   item: QueueItem,
 ): Promise<ConsentReadiness> => {
   const { route } = await routeForTier(deps, item);

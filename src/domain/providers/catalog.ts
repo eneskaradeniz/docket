@@ -223,6 +223,35 @@ export function resolveTier(
   return best?.id;
 }
 
+/** The next tier below `tier`: strong → balanced → fast; undefined at the floor. (R-197) */
+export function tierDown(tier: Tier): Tier | undefined {
+  if (tier === 'strong') return 'balanced';
+  if (tier === 'balanced') return 'fast';
+  return undefined;
+}
+
+/** R-197: resolveTier, stepping down while the model a tier resolves to reports no usable quota
+ *  (`hasHeadroom` false). A fixed `tierModels` entry is user configuration and is returned as-is;
+ *  when every tier is blocked the floor tier's model is the answer, so the gate — not this
+ *  function — has the last word. */
+export function resolveTierWithHeadroom(
+  tier: Tier,
+  catalog: readonly CatalogModel[],
+  hasHeadroom: (model: string) => boolean,
+  tierModels?: Readonly<Record<Tier, string>>,
+): { readonly tier: Tier; readonly model: string } | undefined {
+  let last: { readonly tier: Tier; readonly model: string } | undefined;
+  for (let current: Tier | undefined = tier; current !== undefined; current = tierDown(current)) {
+    const model = resolveTier(current, catalog, tierModels);
+    if (model === undefined) return last;
+    const fixed = tierModels?.[current];
+    if (fixed !== undefined && fixed !== '') return { tier: current, model };
+    last = { tier: current, model };
+    if (hasHeadroom(model)) return last;
+  }
+  return last;
+}
+
 const EFFORT_ORDER: readonly EffortLevel[] = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
 // `none` is the provider's thinking-off setting, not a user choice; `max` and `ultra` are reachable
 // from advanced settings only, so the three user levels never return them.

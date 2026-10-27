@@ -3,7 +3,7 @@
 // patterns and the registry-side data is validated in infrastructure.
 import { describe, expect, it } from 'vitest';
 
-import { autoSelectable, canonicalModelId, catalogCacheKey, effortForChoice, mergeCatalog, resolveTier, thinkingFor } from './catalog';
+import { autoSelectable, canonicalModelId, catalogCacheKey, effortForChoice, mergeCatalog, resolveTier, resolveTierWithHeadroom, thinkingFor, tierDown } from './catalog';
 import type { CatalogModel, FamilyPattern, LiveModel } from './catalog';
 import type { Billing, ModelRecord, Thinking } from './capability';
 import type { EffortLevel, ThinkingChoice } from '../shared/index';
@@ -670,5 +670,49 @@ describe('effortForChoice (R-50)', () => {
         if (out !== undefined) expect(thinking.levels).toContain(out);
       }
     }
+  });
+});
+
+describe('resolveTierWithHeadroom (R-197)', () => {
+  const entry = (id: string, tier: CatalogModel['tier']): CatalogModel => ({
+    id,
+    source: 'live',
+    contextWindow: null,
+    tier,
+    thinking: 'unknown',
+    autoClassified: true,
+    billing: 'included',
+  });
+  const catalog = [entry('big', 'strong'), entry('mid', 'balanced'), entry('small', 'fast')];
+  const blocking = (...blocked: string[]) => (model: string) => !blocked.includes(model);
+
+  it('R-197: tierDown order and floor', () => {
+    expect(tierDown('strong')).toBe('balanced');
+    expect(tierDown('balanced')).toBe('fast');
+    expect(tierDown('fast')).toBeUndefined();
+  });
+
+  it('R-197: steps down when the tier model is blocked', () => {
+    expect(resolveTierWithHeadroom('strong', catalog, blocking('big'))).toEqual({ tier: 'balanced', model: 'mid' });
+    expect(resolveTierWithHeadroom('strong', catalog, blocking('big', 'mid'))).toEqual({ tier: 'fast', model: 'small' });
+    expect(resolveTierWithHeadroom('strong', catalog, () => true)).toEqual({ tier: 'strong', model: 'big' });
+  });
+
+  it('R-197: fixed tierModels entry is never stepped down', () => {
+    const fixed = { strong: 'pinned', balanced: '', fast: '' };
+    expect(resolveTierWithHeadroom('strong', catalog, () => false, fixed)).toEqual({ tier: 'strong', model: 'pinned' });
+  });
+
+  it('R-197: unknown headroom keeps the asked tier', () => {
+    // The probe answers true for unknown verdicts, so nothing steps down.
+    expect(resolveTierWithHeadroom('strong', catalog, () => true)?.tier).toBe('strong');
+  });
+
+  it('R-197: every tier blocked resolves to the floor tier', () => {
+    expect(resolveTierWithHeadroom('strong', catalog, () => false)).toEqual({ tier: 'fast', model: 'small' });
+  });
+
+  it('R-197: a tier without a model resolves to nothing', () => {
+    expect(resolveTierWithHeadroom('strong', [], () => true)).toBeUndefined();
   });
 });
