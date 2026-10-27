@@ -39,8 +39,8 @@ const REPO = 'duman' as RepoSlug;
 const PROJECT = 'duman' as ProjectSlug;
 const ROLE = 'isci' as RoleSlug;
 const WORK_ORDER_TITLE = 'Duman testi iş emri';
-// 'HESAP' (account) stays inside the ULID alphabet; the repeat keeps the id at exactly 26 chars.
-const ACCOUNT_ID = ('01DUMNHESAP' + '0'.repeat(13) + 'A1') as AccountId;
+// Crockford base32 has no I, L, O or U; 'DMNX' + 'HESAP' stays inside it, and the repeat keeps the id at exactly 26 chars.
+const ACCOUNT_ID = ('01DMNXHESAP' +'0'.repeat(13) + 'A1') as AccountId;
 // A fixed instant: every seeded timestamp and every seeded ULID's time part derive from it, so
 // the database is byte-for-byte reproducible.
 const FIXED_NOW = Date.UTC(2026, 0, 12, 9, 0, 0);
