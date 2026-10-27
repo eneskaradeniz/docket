@@ -1683,12 +1683,15 @@ reads 'Anahtar gerekli' and `account.adopt` is sent without `importToken`" is su
 gate of U-35/U-42 (at least one ready account selected) stands; a pending row simply cannot be
 that account.
 
-- **U-262** Such a row reads "Kurulum bekliyor" (en "Setup pending") with the one-line reason
-  "Erişim anahtarı anahtar zincirine taşınmadı", is not selectable — neither in the wizard's
+- **U-262** Such a row reads "Kurulum bekliyor" (en "Setup pending") — the state label alone, no
+  repeated reason line (amended 2026-10-27: the key-move card carries the explanation) — is not selectable — neither in the wizard's
   Hesaplar nor under Settings → Hesaplar → Eklenmemiş — and shows the key-move card before any
   selection; its "Ekle" does nothing. Once the switch is on the row reads "Hazır" and becomes
   selectable; turning the switch back off returns it to "Kurulum bekliyor" and drops it from the
   selection. The moved standing is a fact about the key: it survives re-selecting the row.
+  The key-move card is one compact row of at most 48 px: the title, an ⓘ and the switch; the
+  explanation sentence lives in the ⓘ bubble (hover or click), not in the card body (amended
+  2026-10-27, operator-approved prototype `docket-tasarim/anahtar-karti`, Öneri A).
 - **U-263** The wizard's finish adopts no selected row that can no longer be adopted into a
   working account — one that is unreadable, or whose key is still not moved: a rescan that breaks
   the row drops it from the selection, and the finish's own account list skips it in depth, so no
