@@ -74,7 +74,10 @@ export const candidateRowView = <R extends CandidateRow>(
   ...(row.hintKey === null ? {} : { hint: t(locale, row.hintKey).replace('{name}', providerName ?? '') }),
   selected: row.selected,
   disabled: !row.selectable,
-  ...(row.disabledReasonKey === null ? {} : { reason: t(locale, row.disabledReasonKey) }),
+  // The key-move card above the row already says why a setup-pending row waits, so no second line.
+  ...(row.disabledReasonKey === null || row.disabledReasonKey === 'candidates.reason.setup_pending'
+    ? {}
+    : { reason: t(locale, row.disabledReasonKey) }),
   warnings: row.warnKeys.map((key) => {
     const infoKey = WARN_INFO[key];
     return { text: t(locale, key), ...(infoKey === undefined ? {} : { info: t(locale, infoKey) }) };

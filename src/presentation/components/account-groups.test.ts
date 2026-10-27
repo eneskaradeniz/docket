@@ -8,7 +8,8 @@ import { describe, expect, it } from 'vitest';
 
 import { t } from '../labels/t';
 import { SECTION_OPEN_INITIAL, groupAccountRows, toggleSection, type GroupProvider, type RowStanding } from '../stores/account-groups';
-import { AccountGroups, type AccountRowView } from './account-groups';
+import type { CandidateRow } from '../stores/candidates';
+import { AccountGroups, candidateRowView, type AccountRowView } from './account-groups';
 
 const PROVIDERS: readonly GroupProvider[] = [
   { id: 'claude', name: 'Claude Code', installed: true },
@@ -185,5 +186,31 @@ describe('AccountGroups sections (U-45)', () => {
     const plain = html();
     expect(plain).not.toContain('data-scan-group-in');
     expect(plain).not.toContain('animation-delay');
+  });
+
+  it('U-262: a setup-pending row keeps its state label and shows no reason line; an unreadable row keeps its reason', () => {
+    const base: CandidateRow = {
+      id: '~/a',
+      markKey: null,
+      label: 'a',
+      endpointHost: null,
+      statusKey: 'candidates.status.setup_pending',
+      selectable: false,
+      selected: false,
+      disabledReasonKey: 'candidates.reason.setup_pending',
+      warnKeys: [],
+      keyMoveCard: true,
+      importToken: false,
+      provider: 'claude',
+      displayPath: '~/a',
+      billing: 'included',
+      viaKey: false,
+      hintKey: null,
+    };
+    const pending = candidateRowView(base, 'tr', 'a', null);
+    expect(pending.status.text).toBe(t('tr', 'candidates.status.setup_pending'));
+    expect(pending.reason).toBeUndefined();
+    const broken = candidateRowView({ ...base, disabledReasonKey: 'candidates.reason.unreadable' }, 'tr', 'a', null);
+    expect(broken.reason).toBe(t('tr', 'candidates.reason.unreadable'));
   });
 });
