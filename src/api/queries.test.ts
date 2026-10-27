@@ -936,6 +936,7 @@ const seedSettingsScenario = async (h: Harness): Promise<void> => {
 const SETTINGS_DEFAULTS = {
   limitPolicy: 'wait_resume',
   reserve: { short: null, long: null },
+  hasWeeklyPool: false,
   caps: [],
   consentedModels: [],
   routeKind: null,
@@ -1059,6 +1060,7 @@ describe('settings.accounts', () => {
         billing: 'included',
         plan: 'pro',
         ...SETTINGS_DEFAULTS,
+        hasWeeklyPool: true,
         pools: [{ id: POOL, label: 'Weekly allowance', kind: 'allowance', appliesTo: 'all' }],
         meters: [
           {
@@ -1077,7 +1079,7 @@ describe('settings.accounts', () => {
             source: 'polled',
             staleAfterMs: null,
             reserveClass: 'long',
-            reserveShare: 0,
+            reserveShare: 0.1,
           },
           {
             id: METER_USD,
@@ -1095,7 +1097,7 @@ describe('settings.accounts', () => {
             source: 'pushed',
             staleAfterMs: null,
             reserveClass: 'larger',
-            reserveShare: 0,
+            reserveShare: 0.1,
           },
         ],
       },
@@ -1247,6 +1249,22 @@ describe('settings surface (A-48 … A-50)', () => {
     expect(account?.identityDir).toBe('/Users/op/.config/agent-a/');
     expect(JSON.stringify(view)).not.toContain('api-key');
     expect(JSON.stringify(view)).not.toContain('zzz');
+  });
+
+  it('R-198: a weekly pool sets hasWeeklyPool and an unset reserve shows the default share; a stored 0/0 replaces it', async () => {
+    const h = createHarness();
+    await seedSettingsScenario(h);
+    const read = async () => ((await createApi(h.deps).query({ type: 'settings.accounts' })) as SettingsAccountsView).accounts;
+    const [main, spare] = await read();
+    expect(main).toMatchObject({ hasWeeklyPool: true, reserve: { short: null, long: null } });
+    expect(main?.meters.find((m) => m.id === METER_WINDOW)?.reserveShare).toBe(0.1);
+    expect(spare?.hasWeeklyPool).toBe(false);
+
+    const stored = await h.deps.accounts.get(ACCOUNT);
+    if (stored === undefined) throw new Error('seeded account missing');
+    await h.deps.accounts.save({ ...stored, reserve: { short: 0, long: 0 } });
+    const [after] = await read();
+    expect(after?.meters.find((m) => m.id === METER_WINDOW)?.reserveShare).toBe(0);
   });
 
   it('A-48: each meter carries reserveClassOf and reserveFor with the account reserve', async () => {

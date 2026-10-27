@@ -25,7 +25,7 @@ import type {
   SpendStatus,
   TurnUsage,
 } from '../../domain/index';
-import { combinedSpendStatus, CONVERSATION_LIMITS, err, headroom, mostSharedChain, ok, resolveBinding } from '../../domain/index';
+import { combinedSpendStatus, CONVERSATION_LIMITS, defaultReserve, err, headroom, mostSharedChain, ok, resolveBinding } from '../../domain/index';
 
 import type { AppDeps, AuditAction, RunDir, RunHandle, TransportError } from '../ports';
 import { appendAssistantMessage, appendUserMessage, type UserMessageInput } from '../use-cases/index';
@@ -468,13 +468,14 @@ export function createChatRunner(deps: ChatRunnerDeps, extras: ChatRunnerExtras)
         return;
       }
       const now = deps.clock.now();
+      const [pools, meters] = [await deps.accounts.pools(), await deps.accounts.meters(route.accountId)];
       const room = headroom(
-        await deps.accounts.pools(),
-        await deps.accounts.meters(route.accountId),
+        pools,
+        meters,
         route.accountId,
         matchIdFor(await catalogOrEmpty(() => deps.modelCatalog.list(route.accountId)), route.model),
         now,
-        accountRecord?.reserve,
+        accountRecord?.reserve ?? defaultReserve(pools, meters, route.accountId),
       );
       if (room.ok === false) {
         outcome = 'refused';

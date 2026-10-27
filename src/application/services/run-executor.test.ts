@@ -541,6 +541,18 @@ describe('executeRun', () => {
       expect(auditShape(h.log.entries())[0]?.detail).toMatchObject({ model: 'm-bal', tier: 'balanced' });
     });
 
+    it('R-198: a weekly pool at 4 % with no user reserve steps the tier down; a 1h window does not', async () => {
+      const models = [entry('m-strong', 'strong'), entry('m-bal', 'balanced'), entry('m-fast', 'fast')];
+      const weekly: Meter = { ...seededMeter(), durationMs: 7 * 86_400_000, used: 96, remaining: 4 };
+      const h = await harness({ models, pools: strongPool, meters: [weekly] });
+      await executeRun(h.deps, permissionGate().permissions, { ...INPUT, item: strong });
+      expect(h.transport.requests()[0]?.route).toEqual({ accountId: ACCOUNT, model: 'm-bal' });
+      const hourly: Meter = { ...seededMeter(), used: 96, remaining: 4 };
+      const h2 = await harness({ models, pools: strongPool, meters: [hourly] });
+      await executeRun(h2.deps, permissionGate().permissions, { ...INPUT, item: strong });
+      expect(h2.transport.requests()[0]?.route).toEqual({ accountId: ACCOUNT, model: 'm-strong' });
+    });
+
     it('R-197: unknown headroom (no meters) keeps the asked tier', async () => {
       const models = [entry('m-strong', 'strong'), entry('m-bal', 'balanced')];
       const h = await harness({ models, pools: strongPool });

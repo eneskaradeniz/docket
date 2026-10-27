@@ -285,6 +285,8 @@ export interface SettingsAccountView {
   readonly plan: string | null;
   readonly limitPolicy: 'wait_resume' | 'switch_pool' | 'fallback_account' | 'ask';
   readonly reserve: { readonly short: number | null; readonly long: number | null };
+  /** R-198: the account has a window of six days or longer, so an unset reserve runs as the default long share. */
+  readonly hasWeeklyPool: boolean;
   readonly caps: readonly { readonly scope: 'account_day' | 'account_week' | 'account_month'; readonly amountUsd: number; readonly warnPercent: number }[];
   /** '*' = the route's default model (P-40). */
   readonly consentedModels: readonly string[];

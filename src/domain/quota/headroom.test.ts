@@ -1,6 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { HOUR, MINUTE, type AccountId, type EpochMs, type MeterId, type PoolId } from '../shared/index';
-import { headroom, isStale, matchesModel, normalizedRemaining, poolsForModel, reserveClassOf, reserveFor, RESERVE_MAX } from './headroom';
+import {
+  DEFAULT_WEEKLY_LONG_RESERVE,
+  defaultReserve,
+  headroom,
+  isStale,
+  matchesModel,
+  normalizedRemaining,
+  poolsForModel,
+  reserveClassOf,
+  reserveFor,
+  RESERVE_MAX,
+  weeklyPooled,
+} from './headroom';
 import type { Cadence, Meter, MeterUnit, ModelMatcher, Pool, PoolKind } from './types';
 
 const NOW: EpochMs = 1_750_000_000_000;
@@ -614,5 +626,52 @@ describe('headroom reserve', () => {
     const before = structuredClone({ meters, reserve });
     run(meters, reserve);
     expect({ meters, reserve }).toStrictEqual(before);
+  });
+});
+
+describe('default reserve on weekly pools', () => {
+  const DAY = 86_400_000;
+  const pool = poolOf({ id: POOL_ATLAS });
+  const weekly = (remaining: number): Meter =>
+    meterOf({ id: M_ATLAS_WEEKLY, poolId: POOL_ATLAS, unit: 'percent', durationMs: 7 * DAY, remaining });
+  const daily = meterOf({ id: M_ATLAS_5H, poolId: POOL_ATLAS, unit: 'percent', durationMs: DAY, remaining: 50 });
+
+  it('R-198: weeklyPooled true for a six-day window, false for daily and none', () => {
+    const six = meterOf({ id: M_ATLAS_WEEKLY, poolId: POOL_ATLAS, durationMs: 6 * DAY });
+    const almost = meterOf({ id: M_ATLAS_WEEKLY, poolId: POOL_ATLAS, durationMs: 6 * DAY - 1 });
+    const monthly = meterOf({ id: M_ATLAS_WEEKLY, poolId: POOL_ATLAS, cadence: 'billing_cycle' });
+    const calendar = meterOf({ id: M_ATLAS_WEEKLY, poolId: POOL_ATLAS, cadence: 'calendar' });
+    expect(weeklyPooled([pool], [six], ACCOUNT_MAIN)).toBe(true);
+    expect(weeklyPooled([pool], [monthly], ACCOUNT_MAIN)).toBe(true);
+    expect(weeklyPooled([pool], [calendar], ACCOUNT_MAIN)).toBe(true);
+    expect(weeklyPooled([pool], [almost], ACCOUNT_MAIN)).toBe(false);
+    expect(weeklyPooled([pool], [daily], ACCOUNT_MAIN)).toBe(false);
+    expect(weeklyPooled([pool], [], ACCOUNT_MAIN)).toBe(false);
+    // A weekly meter of another account's pool does not count.
+    const foreign = poolOf({ id: POOL_OTHER_ACCOUNT, accountId: ACCOUNT_OTHER });
+    const foreignMeter: Meter = { ...weekly(50), poolId: POOL_OTHER_ACCOUNT };
+    expect(weeklyPooled([foreign], [foreignMeter], ACCOUNT_MAIN)).toBe(false);
+  });
+
+  it('R-198: defaultReserve long 0.1 only when weeklyPooled', () => {
+    expect(defaultReserve([pool], [weekly(50)], ACCOUNT_MAIN)).toEqual({ long: DEFAULT_WEEKLY_LONG_RESERVE });
+    expect(DEFAULT_WEEKLY_LONG_RESERVE).toBe(0.1);
+    expect(defaultReserve([pool], [daily], ACCOUNT_MAIN)).toEqual({});
+    expect(defaultReserve([], [], ACCOUNT_MAIN)).toEqual({});
+  });
+
+  it('R-198: a user-set reserve replaces the default', () => {
+    const meters = [weekly(4)];
+    const effective = (user?: { short?: number; long?: number }) => user ?? defaultReserve([pool], meters, ACCOUNT_MAIN);
+    expect(headroom([pool], meters, ACCOUNT_MAIN, 'm', NOW, effective({ short: 0, long: 0 })).ok).toBe(true);
+    expect(headroom([pool], meters, ACCOUNT_MAIN, 'm', NOW, effective({ long: 0.02 })).ok).toBe(true);
+    expect(headroom([pool], meters, ACCOUNT_MAIN, 'm', NOW, effective()).ok).toBe(false);
+  });
+
+  it('R-198: the gate blocks at 4 % on a weekly pool with no user reserve', () => {
+    const verdict = headroom([pool], [weekly(4)], ACCOUNT_MAIN, 'm', NOW, defaultReserve([pool], [weekly(4)], ACCOUNT_MAIN));
+    expect(verdict).toMatchObject({ ok: false, byReserve: true });
+    const fine = headroom([pool], [weekly(11)], ACCOUNT_MAIN, 'm', NOW, defaultReserve([pool], [weekly(11)], ACCOUNT_MAIN));
+    expect(fine.ok).toBe(true);
   });
 });

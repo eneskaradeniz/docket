@@ -34,6 +34,31 @@ export function reserveFor(meter: Meter, reserve: QuotaReserve): number {
   return reserveClass === 'short' ? short : reserveClass === 'long' ? long : Math.max(short, long);
 }
 
+// Six days, not seven: a provider's "weekly" window reports a little under or over a week.
+const WEEKLY_WINDOW_MS = 518_400_000;
+
+/** The long share an account with weekly windows keeps back when the user set no reserve. */
+export const DEFAULT_WEEKLY_LONG_RESERVE = 0.1;
+
+/** R-198: the account has a quota window of six days or longer — a meter whose pool belongs
+ *  to the account with `durationMs >= 518_400_000`, or cadence `calendar`/`billing_cycle`. */
+export function weeklyPooled(pools: readonly Pool[], meters: readonly Meter[], accountId: AccountId): boolean {
+  const own = new Set<PoolId>(pools.filter((pool) => pool.accountId === accountId).map((pool) => pool.id));
+  return meters.some(
+    (meter) =>
+      own.has(meter.poolId) &&
+      ((meter.durationMs !== undefined && meter.durationMs >= WEEKLY_WINDOW_MS) ||
+        meter.cadence === 'calendar' ||
+        meter.cadence === 'billing_cycle'),
+  );
+}
+
+/** R-198: the reserve an account runs with when the user set none: `long: 0.1` on a
+ *  weekly-pooled account, no reserve otherwise. */
+export function defaultReserve(pools: readonly Pool[], meters: readonly Meter[], accountId: AccountId): QuotaReserve {
+  return weeklyPooled(pools, meters, accountId) ? { long: DEFAULT_WEEKLY_LONG_RESERVE } : {};
+}
+
 export type Headroom =
   | { readonly ok: true; readonly lowest?: number } // lowest normalized remaining seen
   | { readonly ok: false; readonly blockedBy: readonly MeterId[]; readonly earliestRelief?: EpochMs; readonly byReserve?: true }

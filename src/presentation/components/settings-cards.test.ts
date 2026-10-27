@@ -44,6 +44,7 @@ const EDITOR_ACCOUNT: SettingsAccountView = {
   plan: 'pro',
   limitPolicy: 'ask',
   reserve: { short: 0.1, long: 0.2 },
+  hasWeeklyPool: false,
   caps: [],
   consentedModels: [],
   routeKind: null,

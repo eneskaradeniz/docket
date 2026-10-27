@@ -18,6 +18,7 @@ import type { ShellChangeSignal } from '../stores/shell';
 const ACCOUNT_SETTINGS = {
   limitPolicy: 'wait_resume',
   reserve: { short: null, long: null },
+  hasWeeklyPool: false,
   caps: [],
   consentedModels: [],
   routeKind: null,

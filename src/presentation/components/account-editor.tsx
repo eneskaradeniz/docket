@@ -21,7 +21,9 @@ import {
   generalFacts,
   mayHaveCap,
   policyOptions,
+  effectiveReservePercents,
   reserveChoice,
+  reserveIsUnset,
   reserveFieldMeters,
   reserveSplitStartsOpen,
   usageView,
@@ -435,17 +437,20 @@ function PolicyRow({ account, locale, store, draftMode = false }: Pick<AccountEd
 
 function ReserveRow({ account, locale, store, draftMode = false }: Pick<AccountEditorProps, 'account' | 'locale' | 'store' | 'draftMode'>) {
   const status = useRowStatus(store, 'reserve', locale);
-  const percent = (share: number | null): string => String(Math.round((share ?? 0) * 100));
   const editorState = useSyncExternalStore(store.subscribe, store.state, store.state);
-  const [short, setShort] = useState(editorState.draft?.reserveShort ?? percent(account.reserve.short));
-  const [long, setLong] = useState(editorState.draft?.reserveLong ?? percent(account.reserve.long));
+  const effective = effectiveReservePercents(account);
+  const [short, setShort] = useState(editorState.draft?.reserveShort ?? String(effective.short));
+  const [long, setLong] = useState(editorState.draft?.reserveLong ?? String(effective.long));
   const [splitOpen, setSplitOpen] = useState(reserveSplitStartsOpen(account));
   // A saved reserve coming back from the query replaces the drafts.
   useEffect(() => {
-    setShort(percent(account.reserve.short));
-    setLong(percent(account.reserve.long));
-  }, [account.reserve.short, account.reserve.long]);
-  const choice = splitOpen ? 'split' : reserveChoice(account);
+    setShort(String(effectiveReservePercents(account).short));
+    setLong(String(effectiveReservePercents(account).long));
+  }, [account.reserve.short, account.reserve.long, account.hasWeeklyPool]);
+  // A weekly pool with nothing stored runs a default share; the row shows it as a placeholder (R-198).
+  const unsetDefault = account.hasWeeklyPool && reserveIsUnset(account);
+  const choice = splitOpen ? 'split' : unsetDefault ? 'default' : reserveChoice(account);
+  const recommendedOption = account.hasWeeklyPool ? '10' : 'none';
   const diff = settingDiffs(account).find((entry) => entry.key === 'reserve');
   const meters = reserveFieldMeters(account);
   const commit = (nextShort: string, nextLong: string): void =>
@@ -485,8 +490,12 @@ function ReserveRow({ account, locale, store, draftMode = false }: Pick<AccountE
     commit(String(value), String(value));
   }
   const listOptions = [
-    { value: 'none', label: t(locale, 'editor.limits.reserve.none'), recommended: true },
-    ...RESERVE_PRESETS.map((value) => ({ value: String(value), label: t(locale, 'editor.limits.reserve.preset').replace('{value}', String(value)) })),
+    { value: 'none', label: t(locale, 'editor.limits.reserve.none'), recommended: recommendedOption === 'none' },
+    ...RESERVE_PRESETS.map((value) => ({
+      value: String(value),
+      label: t(locale, 'editor.limits.reserve.preset').replace('{value}', String(value)),
+      recommended: recommendedOption === String(value),
+    })),
   ];
   return (
     <SettingRow
@@ -495,17 +504,29 @@ function ReserveRow({ account, locale, store, draftMode = false }: Pick<AccountE
       purpose={t(locale, 'editor.limits.reserve.purpose')}
       saved={status.saved}
       failure={status.failure}
-      differsFrom={diff === undefined ? undefined : t(locale, 'editor.limits.reserve.none')}
+      differsFrom={
+        diff === undefined
+          ? undefined
+          : account.hasWeeklyPool
+            ? t(locale, 'editor.limits.reserve.preset').replace('{value}', recommendedOption)
+            : t(locale, 'editor.limits.reserve.none')
+      }
       onReset={() => {
         setSplitOpen(false);
-        if (draftMode) store.setDraftReserve(account, '0', '0');
+        if (draftMode) store.setDraftReserve(account, '0', account.hasWeeklyPool ? recommendedOption : '0');
         else void store.reset(account, 'reserve');
       }}
       control={
         <Listbox
           label={t(locale, 'editor.limits.reserve.title')}
-          value={choice === 'split' ? null : String(choice)}
-          standing={choice === 'split' ? t(locale, 'editor.limits.reserve.custom') : undefined}
+          value={choice === 'split' || choice === 'default' ? null : String(choice)}
+          standing={
+            choice === 'split'
+              ? t(locale, 'editor.limits.reserve.custom')
+              : choice === 'default'
+                ? t(locale, 'editor.limits.reserve.preset').replace('{value}', String(effective.long))
+                : undefined
+          }
           options={listOptions}
           recommendedLabel={t(locale, 'editor.recommended')}
           minWidth={120}
