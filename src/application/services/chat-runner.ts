@@ -25,7 +25,7 @@ import type {
   SpendStatus,
   TurnUsage,
 } from '../../domain/index';
-import { combinedSpendStatus, CONVERSATION_LIMITS, err, headroom, mostSharedChain, ok, resolveBinding, resolveTier } from '../../domain/index';
+import { combinedSpendStatus, CONVERSATION_LIMITS, err, headroom, mostSharedChain, ok, resolveBinding } from '../../domain/index';
 
 import type { AppDeps, AuditAction, RunDir, RunHandle, TransportError } from '../ports';
 import { appendAssistantMessage, appendUserMessage, type UserMessageInput } from '../use-cases/index';
@@ -34,7 +34,7 @@ import { ASSISTANT_ROLE_ID, ASSISTANT_TIER, assistantRole } from './assistant-ro
 import type { ChatTurnLedger, TurnEntry } from './chat-turn-ledger';
 import { catalogOrEmpty, matchIdFor } from './match-id';
 import { attachDocketCapability } from './mcp-attach';
-import { saveQuotaMeter } from './run-executor';
+import { resolveAccountTier, saveQuotaMeter } from './run-executor';
 import type { SetupConversations } from './setup-contexts';
 import { spendWindow } from './dispatcher';
 import { spendConsentSatisfied } from './spend-consent';
@@ -205,21 +205,18 @@ const chatRoute = async (deps: Pick<AppDeps, 'accounts'>, binding: RoleBinding):
   return undefined;
 };
 
-/** The balanced tier of the bound account: a pinned binding model stands, else the account's own
- *  tier table, else the route kind's, else the highest auto-selectable catalog entry. */
+/** The balanced tier of the bound account (a lower one under scarce quota): a pinned binding model
+ *  stands, else the account's own tier table, else the route kind's, else the highest
+ *  auto-selectable catalog entry. */
 const routeForAssistantTier = async (
-  deps: Pick<AppDeps, 'accounts' | 'modelCatalog' | 'capabilities'>,
+  deps: Pick<AppDeps, 'accounts' | 'modelCatalog' | 'capabilities' | 'clock'>,
   route: AccountRoute,
 ): Promise<AccountRoute> => {
   if (route.model !== undefined) return route;
-  const account = await deps.accounts.get(route.accountId);
-  const routeId =
-    account === undefined
-      ? undefined
-      : deps.capabilities.routeKindOf({ provider: account.provider, authMode: account.authMode, routeKind: account.routeKind });
-  const tierModels = account?.tierModels ?? (routeId === undefined ? undefined : deps.capabilities.routeKind(routeId)?.tierModels);
-  const model = resolveTier(ASSISTANT_TIER, await catalogOrEmpty(() => deps.modelCatalog.list(route.accountId)), tierModels);
-  return model === undefined ? route : { ...route, model };
+  const resolved = await resolveAccountTier(deps, route.accountId, ASSISTANT_TIER, () =>
+    catalogOrEmpty(() => deps.modelCatalog.list(route.accountId)),
+  );
+  return resolved === undefined ? route : { ...route, model: resolved.model };
 };
 
 /** The spend gates a chat turn passes: the account's own caps, and the project ceiling when the

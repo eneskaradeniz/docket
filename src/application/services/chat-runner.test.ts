@@ -418,6 +418,20 @@ const lastMessage = async (h: Harness, id: ConversationId): Promise<Message> => 
 // --- tests ------------------------------------------------------------------------------------------
 
 describe('createChatRunner', () => {
+  it('R-197: the assistant tier steps down to the fast model when the balanced model has no quota', async () => {
+    const fast: CatalogModel = { ...INCLUDED_MODEL, id: 'm-fast', tier: 'fast' };
+    const h = await harness({
+      models: [INCLUDED_MODEL, fast],
+      tierModels: { strong: '', balanced: '', fast: '' },
+      pools: [{ id: POOL, accountId: ACCOUNT, label: 'bal', kind: 'allowance', appliesTo: [{ exact: 'm-bal' }] }],
+      meters: [openMeter(0)],
+    });
+    const watch = watching(h.runner, CONVERSATION);
+    await send(h.runner, CONVERSATION, { text: 'Selam' });
+    await watch.finished;
+    expect(h.transport.requests()[0]?.route).toEqual({ accountId: ACCOUNT, model: 'm-fast' });
+  });
+
   it('A-231: a turn streams its text in order and stores exactly one assistant message with usage, then revokes the token and removes the run dir', async () => {
     const h = await harness({ script: [text('Mer'), text('haba'), usage(0.15), finished('completed')] });
     const watch = watching(h.runner, CONVERSATION);

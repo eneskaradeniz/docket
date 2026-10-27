@@ -528,6 +528,26 @@ describe('executeRun', () => {
       expect(auditShape(h.log.entries())[0]?.detail).toBeUndefined();
     });
 
+    const exhausted = (): Meter => ({ ...seededMeter(), used: 100, remaining: 0 });
+    const strongPool: readonly Pool[] = [
+      { id: POOL, accountId: ACCOUNT, label: 'strong', kind: 'allowance', appliesTo: [{ exact: 'm-strong' }] },
+    ];
+
+    it('R-197: routeForTier reports the effective tier — a blocked strong account runs the balanced model', async () => {
+      const models = [entry('m-strong', 'strong'), entry('m-bal', 'balanced'), entry('m-fast', 'fast')];
+      const h = await harness({ models, pools: strongPool, meters: [exhausted()] });
+      await executeRun(h.deps, permissionGate().permissions, { ...INPUT, item: strong });
+      expect(h.transport.requests()[0]?.route).toEqual({ accountId: ACCOUNT, model: 'm-bal' });
+      expect(auditShape(h.log.entries())[0]?.detail).toMatchObject({ model: 'm-bal', tier: 'balanced' });
+    });
+
+    it('R-197: unknown headroom (no meters) keeps the asked tier', async () => {
+      const models = [entry('m-strong', 'strong'), entry('m-bal', 'balanced')];
+      const h = await harness({ models, pools: strongPool });
+      await executeRun(h.deps, permissionGate().permissions, { ...INPUT, item: strong });
+      expect(h.transport.requests()[0]?.route).toEqual({ accountId: ACCOUNT, model: 'm-strong' });
+    });
+
     it('A-47: a pinned model is never replaced by the tier', async () => {
       const pinned: QueueItem = { ...strong, route: { accountId: ACCOUNT, model: 'm-1' } };
       const h = await run(pinned, [entry('m-1', 'fast'), entry('m-2', 'strong')]);
