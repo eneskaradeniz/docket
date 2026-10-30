@@ -104,6 +104,16 @@ const PENDING = new Map([
   // settings — no built-in connector has fields yet, so its form and store wait for a real case.
   ['ui:U-357', '#1247 follow-up (lands with the first connector with settings)'],
 
+  // #1355 — selection/mono/amber/elevation/button/gate-copy rules, docs-first (design audit of
+  // 2026-10-24). Each id names the follow-up implementation wave; that issue removes the id from
+  // this list in the same commit as its test.
+  ['ui:U-371', '#1355 follow-up (segment controls land with their test)'],
+  ['ui:U-372', '#1355 follow-up (the mono source scan lands with its test)'],
+  ['ui:U-373', '#1355 follow-up (the amber fixes land with their test)'],
+  ['ui:U-374', '#1355 follow-up (the elevation tokens land with their test)'],
+  ['ui:U-375', '#1355 follow-up (the button cap and disabled look land with their test)'],
+  ['ui:U-376', '#1355 follow-up (the gate-row and policy copy land with their test)'],
+
 ]);
 
 // Rules whose implementing code and tests were removed while the definition and dated addenda stay
