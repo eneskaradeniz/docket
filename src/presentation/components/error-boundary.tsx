@@ -45,7 +45,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       <div role="alert" className="flex min-h-dvh items-center justify-center bg-bg p-6 text-ink">
         <div className="w-full max-w-md rounded-card border border-error/40 bg-surface p-4">
           <div className="flex items-center gap-2.5">
-            <span className="font-mono text-[11px] font-medium text-error">×</span>
+            <span className="text-[11px] font-medium text-error">×</span>
             <p className="text-[13px] font-semibold text-ink">{t(locale, 'errorBoundary.title')}</p>
           </div>
           <pre className="mt-3 max-h-40 select-all overflow-auto whitespace-pre-wrap break-words rounded-card border border-hairline bg-band px-3 py-2 font-mono text-[11px] text-inkdim">

@@ -28,9 +28,9 @@ export function KeyMoveCard({ locale, on, onChange }: KeyMoveCardProps) {
             event.stopPropagation();
             onChange(!on);
           }}
-          className={`relative h-5 w-9 flex-none rounded-full border transition-colors ${on ? 'border-signal bg-signal' : 'border-hairline bg-raised'}`}
+          className={`relative h-5 w-9 flex-none rounded-full border transition-colors ${on ? 'border-ink bg-ink' : 'border-hairline bg-raised'}`}
         >
-          <span className={`absolute top-0.5 h-3.5 w-3.5 rounded-full bg-ink transition-[left] ${on ? 'left-[18px]' : 'left-0.5'}`} />
+          <span className={`absolute top-0.5 h-3.5 w-3.5 rounded-full transition-[left] ${on ? 'left-[18px] bg-bg' : 'left-0.5 bg-ink'}`} />
         </button>
       </div>
     </div>

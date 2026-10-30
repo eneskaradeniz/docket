@@ -107,10 +107,6 @@ const PENDING = new Map([
   // #1355 — selection/mono/amber/elevation/button/gate-copy rules, docs-first (design audit of
   // 2026-10-24). Each id names the follow-up implementation wave; that issue removes the id from
   // this list in the same commit as its test.
-  ['ui:U-371', '#1355 follow-up (segment controls land with their test)'],
-  ['ui:U-372', '#1355 follow-up (the mono source scan lands with its test)'],
-  ['ui:U-373', '#1355 follow-up (the amber fixes land with their test)'],
-  ['ui:U-376', '#1355 follow-up (the gate-row and policy copy land with their test)'],
 
 ]);
 

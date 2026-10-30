@@ -293,6 +293,8 @@ export const EN: LabelBundle = {
   'gate.kind.page_approval': 'Page approval',
   'gate.kind.deploy': 'Deploy',
   'gate.kind.remote_checks': 'Remote checks',
+  'gate.row.hint': 'Gate kind: {kind} · identity: {id}',
+  'gate.row.hint.label': 'label: {label}',
   'action.approve': 'Approve',
   'action.reject': 'Reject',
   'action.allow': 'Allow',

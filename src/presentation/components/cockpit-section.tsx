@@ -37,7 +37,7 @@ export function CockpitSection({ title, count, open, onToggle, action, children 
             {title}
           </button>
         </h2>
-        <span className="min-w-5 rounded-full bg-raised px-1.5 text-center font-mono text-[0.6875rem] leading-[1.125rem] text-inkdim">{count}</span>
+        <span className="min-w-5 rounded-full bg-raised px-1.5 text-center text-[0.6875rem] leading-[1.125rem] text-inkdim">{count}</span>
         {open && action !== undefined ? <span className="ml-auto">{action}</span> : null}
       </div>
       <div

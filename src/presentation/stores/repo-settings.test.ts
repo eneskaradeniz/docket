@@ -356,7 +356,7 @@ describe('U-289: repo limit policy and save controls', () => {
         onReset: () => {},
       }),
     );
-    expect(html).toContain('rounded-full bg-signal');
+    expect(html).toContain('rounded-full bg-inkdim');
     expect(html).toContain('aria-label="Önerilen değere döndür"');
   });
 });

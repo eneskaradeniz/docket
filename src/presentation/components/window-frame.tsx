@@ -37,8 +37,8 @@ export interface WindowFrameProps {
 export function BrandMark({ name }: { readonly name: string }) {
   return (
     <div className="flex items-center gap-2.5 px-1.5 font-bold tracking-[-0.01em] text-ink">
-      <span aria-hidden="true" className="relative block h-[18px] w-[18px] flex-none rounded-control bg-signal">
-        <span className="absolute inset-x-1 inset-y-[5px] border-y-2 border-signal-ink" />
+      <span aria-hidden="true" className="relative block h-[18px] w-[18px] flex-none rounded-control bg-ink">
+        <span className="absolute inset-x-1 inset-y-[5px] border-y-2 border-bg" />
       </span>
       {name}
     </div>

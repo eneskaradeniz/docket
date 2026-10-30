@@ -27,7 +27,7 @@ export function StageSkipProposalCardView({
       aria-label={t(locale, 'workOrder.skipProposal.title')}
       className="rounded-card border border-signal/30 bg-surface px-3 py-3"
     >
-      <h3 className="font-mono text-[12px] font-semibold uppercase tracking-[0.06em] text-ink">
+      <h3 className="text-[12px] font-semibold uppercase tracking-[0.06em] text-ink">
         {t(locale, 'workOrder.skipProposal.title')}
       </h3>
       <p className="mt-2 text-[13px] text-ink">{proposal.reason}</p>

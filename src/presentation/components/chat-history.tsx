@@ -58,7 +58,7 @@ function Row({ entry, state, store, locale, current }: { readonly entry: ChatCon
           <span className="truncate">{scope}</span>
           <span>·</span>
           <span>{timeOf(entry.updatedAt, state.now, locale)}</span>
-          {entry.pinned ? <span className="font-mono text-[0.6875rem] font-medium leading-none text-signal-soft">{t(locale, 'chat.scope.pinned')}</span> : null}
+          {entry.pinned ? <span className="text-[0.6875rem] font-medium leading-none text-inkdim">{t(locale, 'chat.scope.pinned')}</span> : null}
         </span>
       </span>
       <span className="flex gap-1 opacity-0 focus-within:opacity-100 group-hover:opacity-100">

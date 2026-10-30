@@ -210,7 +210,9 @@ describe('wizard screen — Bütçe (U-48)', () => {
     const { store } = await toBudget();
     const html = drawBudget(store);
     expect(html.match(/data-budget-row=/g)).toHaveLength(2);
-    expect(rowSegment(html, 0)).toContain('Limit dolunca bekler · rezerv yok');
+    // The subscription row sits on the recommended default, so its summary is the reserve alone
+    // (U-376 repeats the policy text only on a row that differs from that default).
+    expect(rowSegment(html, 0)).toContain('rezerv yok');
     expect(rowSegment(html, 0)).toContain('data-budget-summary=');
     // The pay-per-use row carries its cap and consent standing in its summary.
     expect(rowSegment(html, 1)).toContain('Tavan $40 · izinli');
@@ -218,6 +220,21 @@ describe('wizard screen — Bütçe (U-48)', () => {
     expect(rowSegment(html, 0)).toContain('aria-expanded="false"');
     expect(rowSegment(html, 1)).toContain('aria-expanded="false"');
     expect(html).not.toContain('data-budget-detail=');
+  });
+
+  it('U-376: the default policy is not repeated under every row — only a differing row says its policy', async () => {
+    const { store } = await toBudget();
+    const html = drawBudget(store);
+    // The subscription row sits on the recommended default (wait_resume): its summary says the
+    // reserve alone, not the policy text every default row used to repeat.
+    expect(rowSegment(html, 0)).toContain('>rezerv yok<');
+    expect(rowSegment(html, 0)).not.toContain('Limit dolunca bekler');
+    // A row that differs from the default still says its own policy.
+    const row = store.state().budget.subscriptions[0];
+    expect(row).toBeDefined();
+    store.setPolicy(row.id, 'ask');
+    const changed = drawBudget(store);
+    expect(rowSegment(changed, 0)).toContain('Limit dolunca durur ve sorar · rezerv yok');
   });
 
   it('U-48: a pay-per-use row always keeps its consent control and cap field in the row', async () => {

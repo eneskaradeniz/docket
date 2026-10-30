@@ -1,6 +1,6 @@
 // components/drag-order-list.tsx — the DragOrderList (U-41, U-47): rows with a grip, the position
 // number, the provider mark, a label and a sub-line. The grip is the only handle: it captures
-// the pointer, the held row lifts (shadow, amber outline, a hair of scale) and centres under the
+// the pointer, the held row lifts (shadow, ink outline, a hair of scale) and centres under the
 // pointer, the other rows slide open (160 ms ease-out) and the row settles on release (140 ms);
 // near the scroller's edge the list scrolls itself, and the row keeps its place while it does.
 // Alt+↑/↓ moves the focused row with the same slide; every move is announced "n. sıraya
@@ -143,7 +143,7 @@ export function DragOrderList({ locale, items, markFor, onReorder, label, sessio
               style={{ top, height: DRAG_ROW_HEIGHT }}
               className={
                 held
-                  ? 'absolute inset-x-0 z-[5] flex select-none items-center gap-3 rounded-card border border-signal bg-surface pl-2 pr-3.5 shadow-elevation-overlay scale-[1.01] outline-none transition-[transform,box-shadow,border-color] ease-out duration-[140ms] motion-reduce:transition-none'
+                  ? 'absolute inset-x-0 z-[5] flex select-none items-center gap-3 rounded-card border border-ink bg-surface pl-2 pr-3.5 shadow-elevation-overlay scale-[1.01] outline-none transition-[transform,box-shadow,border-color] ease-out duration-[140ms] motion-reduce:transition-none'
                   : settling
                     ? 'absolute inset-x-0 flex select-none items-center gap-3 rounded-card border border-hairline bg-surface pl-2 pr-3.5 shadow-elevation-flat outline-none transition-[top,transform,box-shadow,border-color] ease-out duration-[140ms] motion-reduce:transition-none'
                     : 'absolute inset-x-0 flex select-none items-center gap-3 rounded-card border border-hairline bg-surface pl-2 pr-3.5 shadow-elevation-flat outline-none transition-[top] ease-out duration-[160ms] hover:border-bord focus-visible:border-signal motion-reduce:transition-none'
@@ -176,7 +176,7 @@ export function DragOrderList({ locale, items, markFor, onReorder, label, sessio
               >
                 <Grip />
               </span>
-              <span className={`w-[18px] flex-none text-right font-mono text-[13px] ${index === 0 ? 'text-signal-soft' : 'text-inkdim'}`}>{index + 1}</span>
+              <span className={`w-[18px] flex-none text-right text-[13px] ${index === 0 ? 'text-ink' : 'text-inkdim'}`}>{index + 1}</span>
               <span className="grid h-[26px] w-[26px] flex-none place-items-center rounded-control border border-hairline bg-raised text-ink">
                 <ProviderMark provider={item.markKey ?? ''} mark={item.markKey === null ? null : markFor(item.markKey)} size={15} />
               </span>

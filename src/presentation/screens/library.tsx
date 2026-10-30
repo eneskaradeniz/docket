@@ -74,7 +74,7 @@ const FOCUS =
 const fill = (text: string, values: Readonly<Record<string, string | number>>): string =>
   Object.entries(values).reduce((out, [name, value]) => out.replaceAll(`{${name}}`, String(value)), text);
 
-const CHIP = 'inline-flex h-5 flex-none items-center rounded-full border px-2 font-mono text-[0.6875rem] leading-none whitespace-nowrap';
+const CHIP = 'inline-flex h-5 flex-none items-center rounded-full border px-2 text-[0.6875rem] leading-none whitespace-nowrap';
 
 /** The prototype's faux page: a few grey bars on a white zone. Decorative — the page itself is
  *  never drawn in Docket's DOM. */
@@ -150,7 +150,7 @@ function LibraryCard({
           {entry.kind === 'html' ? (
             <FauxPage />
           ) : (
-            <span className="font-mono text-[0.6875rem] leading-none text-inkdim">{t(locale, KIND_NAME[entry.kind])}</span>
+            <span className="text-[0.6875rem] leading-none text-inkdim">{t(locale, KIND_NAME[entry.kind])}</span>
           )}
           <button
             type="button"
@@ -159,7 +159,7 @@ function LibraryCard({
             aria-label={t(locale, entry.pinned ? 'library.unpin' : 'library.pin')}
             onClick={pin}
             onKeyDown={(event) => event.stopPropagation()}
-            className={`absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-control bg-surface/80 text-[0.875rem] leading-none hover:text-ink ${entry.pinned ? 'text-signal-soft' : 'text-inkdim'} ${FOCUS}`}
+            className={`absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-control bg-surface/80 text-[0.875rem] leading-none hover:text-ink ${entry.pinned ? 'text-ink' : 'text-inkdim'} ${FOCUS}`}
           >
             {entry.pinned ? '★' : '☆'}
           </button>

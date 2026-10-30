@@ -43,7 +43,7 @@ import { CHAT_FAB_CLEARANCE_CLASS } from '../components/chat-dock';
 import { WorkOrderLaunchers } from '../components/launcher-rows';
 import { StateBadge, type BadgeTone } from '../components/state-badge';
 import { DetailStrip } from '../components/detail-strip';
-import { DecisionZoneCards, GATE_KIND_KEY, GitDoorsCard } from '../components/detail-decision-card';
+import { DecisionZoneCards, gateRowHint, GATE_KIND_KEY, GitDoorsCard } from '../components/detail-decision-card';
 import { DetailFiles } from '../components/detail-files';
 import { DetailRunCard } from '../components/detail-run-card';
 import { DECISION_BAR_FRAME_CLASS, DECISION_BAR_Z_CLASS } from '../components/decision-bar-geometry';
@@ -106,24 +106,24 @@ const stageStandingKey = (standing: 'done' | 'current' | 'upcoming', running: bo
 const scrollBehavior = (): ScrollBehavior =>
   typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
 
-/** One read-only gate row of a stage's list (the decision itself lives in the zone's cards). */
+/** One read-only gate row of a stage's list (the decision itself lives in the zone's cards).
+ *  U-376: the face prints one word — the gate's own policy; the kind, identity and label it used
+ *  to repeat sit in the row's title hint. A standing word prints only where the surface beside
+ *  the row does not already carry it: the dashed border, the strip's counter and the zone's cards
+ *  say a pending gate, the stage summary says an upcoming stage's own word — only a passed gate's
+ *  verdict is the row's alone to say. */
 function GateRow({ gate, locale }: { readonly gate: GateView; readonly locale: Locale }) {
   return (
     <li
+      title={gateRowHint(locale, gate)}
       className={`flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-card border bg-surface px-3 py-2 ${
         gate.status === 'pending' ? 'border-dashed border-signal' : 'border-hairline'
       }`}
     >
-      <div className="flex min-w-0 items-baseline gap-2">
-        <span className={`text-[0.84375rem] font-semibold ${gate.status === 'pending' ? 'text-signal-soft' : 'text-ink'}`}>
-          {t(locale, GATE_KIND_KEY[gate.kind])}
-          {gate.label !== undefined ? ` · ${gate.label}` : ''}
-        </span>
-        <code className="truncate font-mono text-[0.6875rem] text-inkdim" title={gate.id}>{gate.id}</code>
-      </div>
-      <span className={`text-[0.78125rem] ${gate.status === 'pending' ? 'font-semibold text-signal-soft' : gate.status === 'passed' ? 'text-proceed' : 'text-inkdim'}`}>
-        {t(locale, GATE_STATUS_KEY[gate.status])}
+      <span className={`text-[0.84375rem] font-semibold ${gate.status === 'pending' ? 'text-signal-soft' : 'text-ink'}`}>
+        {t(locale, GATE_KIND_KEY[gate.kind])}
       </span>
+      {gate.status === 'passed' ? <span className="text-[0.78125rem] text-proceed">{t(locale, GATE_STATUS_KEY[gate.status])}</span> : null}
       {/* A passed gate the policy decided carries its own line (U-355): who decided, at which
           level, and the machine gates the approval relied on — a human approval shows none. */}
       {gate.status === 'passed' && gate.policyApproval !== undefined ? (
@@ -169,7 +169,7 @@ export function GateChecksBody({ locale, groups }: { readonly locale: Locale; re
             ) : null}
             {group.checks.length > 0 ? (
               <>
-                <p className="m-0 font-mono text-[0.6875rem] text-inkdim">
+                <p className="m-0 text-[0.6875rem] text-inkdim">
                   {t(locale, 'detail.checks.count').replace('{p}', String(passed)).replace('{n}', String(group.checks.length))}
                 </p>
                 <ul role="list" className="m-0 grid list-none gap-1 p-0">
@@ -191,7 +191,7 @@ export function GateChecksBody({ locale, groups }: { readonly locale: Locale; re
             {group.history.length > 0 ? (
               <ul role="list" className="m-0 grid list-none gap-0.5 p-0">
                 {group.history.map((row, index) => (
-                  <li key={`${row.at}-${index}`} className="font-mono text-[0.6875rem] text-inkdim">
+                  <li key={`${row.at}-${index}`} className="text-[0.6875rem] text-inkdim">
                     {formatDateTime(locale, row.at)} · {t(locale, VERDICT_KEY[row.status] ?? 'detail.checks.unknown')}
                   </li>
                 ))}
@@ -220,7 +220,7 @@ function GateChecksSection({ locale, groups }: { readonly locale: Locale; readon
           onClick={() => setExpanded((open) => !open)}
           className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 rounded-control px-1 py-1 text-left hover:bg-raised"
         >
-          <span className="font-mono text-[0.6875rem] text-inkdim" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+          <span className="text-[0.6875rem] text-inkdim" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
           <span className="text-[0.78125rem] font-semibold text-ink">{t(locale, 'detail.checks.heading')}</span>
           {anyPending ? (
             <span className="text-[0.78125rem] text-signal-soft">{t(locale, 'detail.checks.pending')}</span>
@@ -386,7 +386,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
               <Skeleton height="0.375rem" radius="control" />
               <Skeleton height="6rem" />
               <Skeleton height="10rem" />
-              <p className="m-0 font-mono text-[0.6875rem] text-inkdim">{t(locale, 'detail.loading')}</p>
+              <p className="m-0 text-[0.6875rem] text-inkdim">{t(locale, 'detail.loading')}</p>
             </>
           )}
         </div>
@@ -416,8 +416,8 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
             <h1 className="m-0 text-[1.25rem] font-bold leading-[1.3] tracking-[-0.01em] text-ink [text-wrap:balance] [overflow-wrap:anywhere]">
               {view.record.title}
             </h1>
-            <p className="m-0 flex flex-wrap gap-x-5 gap-y-1 font-mono text-[0.6875rem] text-inkdim">
-              <span>{view.record.repo}</span>
+            <p className="m-0 flex flex-wrap gap-x-5 gap-y-1 text-[0.6875rem] text-inkdim">
+              <span className="font-mono">{view.record.repo}</span>
               <span>{view.record.flow}</span>
               {view.record.createdAt !== undefined ? (
                 <span title={formatDateTime(locale, view.record.createdAt)}>
@@ -430,13 +430,13 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
                 line words the same cause sentence the git card carries (U-353: words, never a
                 colour alone). An older reply without the field renders no line at all. */}
             {view.repoContext !== undefined ? (
-              <p data-detail-repo-context className="m-0 flex flex-wrap gap-x-5 gap-y-1 font-mono text-[0.6875rem] text-inkdim">
+              <p data-detail-repo-context className="m-0 flex flex-wrap gap-x-5 gap-y-1 text-[0.6875rem] text-inkdim">
                 {/* The header's first line already names the repo; the project is said only when
                     it is a different name (a repo inside a larger project). */}
                 {view.repoContext.project.name !== view.record.repo && view.repoContext.project.slug !== view.record.repo ? (
                   <span>{t(locale, 'detail.repo.project').replace('{name}', view.repoContext.project.name)}</span>
                 ) : null}
-                <code className="min-w-0 truncate" title={view.repoContext.path}>{view.repoContext.path}</code>
+                <code className="min-w-0 truncate font-mono" title={view.repoContext.path}>{view.repoContext.path}</code>
                 {view.repoContext.siblingCount > 0 ? (
                   <span>{t(locale, 'detail.repo.siblings').replace('{n}', String(view.repoContext.siblingCount))}</span>
                 ) : null}
@@ -618,11 +618,11 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
                       <summary className="flex list-none flex-wrap items-center gap-3 py-3">
                         <span
                           aria-hidden="true"
-                          className={`font-mono text-[0.6875rem] transition-transform motion-reduce:transition-none ${open ? 'rotate-90' : ''}`}
+                          className={`text-[0.6875rem] transition-transform motion-reduce:transition-none ${open ? 'rotate-90' : ''}`}
                         >
                           ▸
                         </span>
-                        <span className="font-mono text-[0.6875rem] text-inkdim">{String(index + 1).padStart(2, '0')}</span>
+                        <span className="text-[0.6875rem] text-inkdim">{String(index + 1).padStart(2, '0')}</span>
                         <span className={`text-[0.875rem] ${stage.current ? 'font-semibold text-ink' : 'font-medium text-inkdim'}`}>
                           {stage.name}
                         </span>
@@ -638,7 +638,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
                             </span>
                           </span>
                         ) : null}
-                        <span className={`ml-auto text-[0.78125rem] text-inkdim ${stage.current && !running ? 'font-semibold text-signal-soft' : ''}`}>
+                        <span className={`ml-auto text-[0.78125rem] text-inkdim ${stage.current && !running ? 'font-semibold text-ink' : ''}`}>
                           {t(locale, stageStandingKey(standing, running))}
                         </span>
                       </summary>

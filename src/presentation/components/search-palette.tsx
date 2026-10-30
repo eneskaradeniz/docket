@@ -448,7 +448,7 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
             <span title={result.name} className="min-w-0 flex-1 truncate">
               {result.name}
             </span>
-            <span className="flex-none font-mono text-[10.5px] uppercase tracking-[0.08em] text-inkdim">
+            <span className="flex-none text-[10.5px] uppercase tracking-[0.08em] text-inkdim">
               {t(locale, result.kind === 'project' ? 'palette.kind.project' : 'palette.kind.repo')}
             </span>
           </button>

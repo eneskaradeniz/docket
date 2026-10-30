@@ -131,7 +131,7 @@ export function BillingTag({ locale, billing, viaKey }: { readonly locale: Local
   return (
     <span
       data-billing-tag={billing}
-      className={`whitespace-nowrap rounded-control border px-1.5 text-[11px] font-bold ${tag.tone === 'warn' ? 'border-signal/40 text-signal-soft' : 'border-hairline text-inkdim'}`}
+      className={`whitespace-nowrap rounded-control border px-1.5 text-[11px] font-bold ${tag.tone === 'warn' ? 'border-bord text-ink' : 'border-hairline text-inkdim'}`}
     >
       {t(locale, tag.key)}
     </span>
@@ -212,7 +212,7 @@ function Row<R extends AccountRowView>({ row, locale, onToggle, onEdit, trailing
         {selectable ? (
           <span
             aria-hidden="true"
-            className={`grid h-5 w-5 flex-none place-items-center rounded-full border-[1.5px] ${row.selected === true ? 'border-signal bg-signal text-signal-ink' : 'border-bord text-transparent'}`}
+            className={`grid h-5 w-5 flex-none place-items-center rounded-full border-[1.5px] ${row.selected === true ? 'border-ink bg-ink text-surface' : 'border-bord text-transparent'}`}
           >
             <Check />
           </span>

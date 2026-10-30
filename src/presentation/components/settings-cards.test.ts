@@ -122,7 +122,7 @@ describe('settings nav (U-165)', () => {
       });
       store.setTab('limits');
       const html = editorHtml('tr', EDITOR_ACCOUNT, store);
-      const markers = html.match(/class="h-1\.5 w-1\.5 rounded-full bg-signal"/g) ?? [];
+      const markers = html.match(/class="h-1\.5 w-1\.5 rounded-full bg-inkdim"/g) ?? [];
       const resetButtons = html.match(/aria-label="Önerilen değere döndür"/g) ?? [];
       expect(markers).toHaveLength(2);
       expect(resetButtons).toHaveLength(2);

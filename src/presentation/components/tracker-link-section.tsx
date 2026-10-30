@@ -82,7 +82,7 @@ function ModeCards({
             <span
               aria-label={t(locale, 'editor.recommended.tooltip').replace('{value}', t(locale, trackerModeLabelKey(TRACKER_RECOMMENDED_MODE)))}
               title={t(locale, 'editor.recommended.tooltip').replace('{value}', t(locale, trackerModeLabelKey(TRACKER_RECOMMENDED_MODE)))}
-              className="h-2 w-2 rounded-full bg-signal"
+              className="h-2 w-2 rounded-full bg-inkdim"
             />
             <button
               type="button"
@@ -120,7 +120,7 @@ function ModeCards({
                   </span>
                 ) : null}
                 {isEff ? (
-                  <span className="rounded-control border border-signal/40 bg-signal/10 px-1.5 text-[11px] text-signal-soft">
+                  <span className="rounded-control border border-bord bg-raised px-1.5 text-[11px] text-ink">
                     {t(locale, 'tracker.meta.effective')} {t(locale, trackerModeLabelKey(mode))}
                   </span>
                 ) : null}

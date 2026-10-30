@@ -72,7 +72,7 @@ export function SetupImportRepos({
           aria-pressed={mode === 'multi'}
           data-import-mode="multi"
           onClick={() => onMode('multi')}
-          className={`rounded-control border px-3 py-1.5 text-[0.8125rem] font-semibold ${mode === 'multi' ? 'border-signal bg-raised text-ink' : 'border-hairline text-inkdim hover:border-bord'}`}
+          className={`rounded-control border px-3 py-1.5 text-[0.8125rem] font-semibold ${mode === 'multi' ? 'border-bord bg-raised text-ink' : 'border-hairline text-inkdim hover:border-bord'}`}
         >
           {t(locale, 'setup.multi.batch.mode.multi')}
         </button>
@@ -81,7 +81,7 @@ export function SetupImportRepos({
           aria-pressed={mode === 'parent'}
           data-import-mode="parent"
           onClick={() => onMode('parent')}
-          className={`rounded-control border px-3 py-1.5 text-[0.8125rem] font-semibold ${mode === 'parent' ? 'border-signal bg-raised text-ink' : 'border-hairline text-inkdim hover:border-bord'}`}
+          className={`rounded-control border px-3 py-1.5 text-[0.8125rem] font-semibold ${mode === 'parent' ? 'border-bord bg-raised text-ink' : 'border-hairline text-inkdim hover:border-bord'}`}
         >
           {t(locale, 'setup.multi.batch.mode.parent')}
         </button>

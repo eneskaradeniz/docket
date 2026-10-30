@@ -31,7 +31,7 @@ import { WindowFrame, WindowTitle } from './window-frame';
 
 const INPUT_CLASS =
   'h-8 rounded-control border border-bord bg-raised px-2 text-[13px] text-ink outline-none placeholder:text-inkdim focus:border-signal';
-const LABEL_CLASS = 'font-mono text-[11px] uppercase tracking-[0.06em] text-inkdim';
+const LABEL_CLASS = 'text-[11px] uppercase tracking-[0.06em] text-inkdim';
 
 const CloseIcon = () => (
   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true" className="block h-[15px] w-[15px]">

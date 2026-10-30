@@ -284,6 +284,62 @@ describe('work-order detail screen — the decision zone (U-4, U-226)', () => {
     expect(html.match(/Otomatik onay/g)).toHaveLength(1);
   });
 
+  it('U-376: a gate row prints one word — its policy; kind, identity and label ride the title hint', async () => {
+    const html = await draw(READY);
+
+    // The one word is the gate's own policy.
+    expect(html).toContain('İnsan onayı');
+    // The kind, identity and label the row used to print sit in its title hint.
+    expect(html).toContain('title="Kapı türü: human · kimlik: plan-approval · etiket: Plan onayı"');
+    // The face carries neither the label nor the identity anymore.
+    expect(html).not.toContain('· Plan onayı');
+    expect(html).not.toContain('>plan-approval<');
+    // The pending standing is not re-printed: the dashed border, the strip's counter and the
+    // zone beside the row already carry it.
+    expect(html).not.toContain('>Bekliyor<');
+  });
+
+  it('U-376: the passed word stays where no surface beside carries it; the upcoming word is not re-printed', async () => {
+    // RUNNING: the plan stage's gate already passed (nothing beside the row says it), the check
+    // stage ahead is upcoming — its summary already says "Sırada".
+    const html = await draw(RUNNING);
+
+    expect(html).toContain('>Geçti<');
+    // Exactly one "Sırada": the stage summary's own word, never the row's repeat.
+    expect(html.match(/>Sırada</g)).toHaveLength(1);
+  });
+
+  it('U-376: the gating card\'s rows print the policy word alone, the identity in the hint', async () => {
+    const GATE_SCAN = slugOf<'gate'>('security');
+    const gating: WorkOrderDetailView = {
+      ...READY,
+      state: { status: 'gating', stage: STAGE_CHECK, attempt: 1, pendingGates: [GATE_SCAN, GATE_SIGN_OFF], skippedStages: [] },
+      next: { kind: 'evaluate_gates', stage: STAGE_CHECK, gates: [GATE_SCAN] },
+      flow: {
+        ...FLOW,
+        stages: [
+          FLOW.stages[0],
+          {
+            id: STAGE_CHECK,
+            name: 'Check',
+            role: null,
+            exit: [
+              { kind: 'secret_scan', id: GATE_SCAN },
+              { kind: 'human', id: GATE_SIGN_OFF, label: 'Son kontrol' },
+            ],
+          },
+        ],
+      },
+    };
+    const html = await draw(gating);
+
+    // A machine gate carries no label: the hint holds kind and identity alone.
+    expect(html).toContain('title="Kapı türü: secret_scan · kimlik: security"');
+    // The gating card's row said "security · Sır taraması" — the word now stands by itself.
+    expect(html).not.toContain('· Sır taraması');
+    expect(html).not.toContain('>security<');
+  });
+
   it('U-360: renders stage-skip decisions with stage names, approved/rejected standing, policy badge, and reason', async () => {
     const viewWithSkips: WorkOrderDetailView = {
       ...READY,
@@ -863,7 +919,7 @@ describe('work-order detail screen — Sayfalar and the approval\'s page link', 
     expect(none).not.toContain('henüz okunmadı');
     const some = await draw(READY, [], null, [{ ...PAGE_ROW, undeliveredComments: 3 }]);
     expect(some).toContain('3 yorum henüz okunmadı');
-    expect(some).toMatch(/data-page-unread[^>]*text-signal/);
+    expect(some).toMatch(/data-page-unread[^>]*text-ink/);
   });
 
   it('U-75: a page title is rendered as text — markup inside it is escaped, never parsed', async () => {

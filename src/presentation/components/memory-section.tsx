@@ -87,9 +87,9 @@ export function MemorySection({ locale, store, active }: MemorySectionProps) {
               aria-checked={autoOn}
               aria-label={t(locale, 'capabilities.memory.autoAccept.title')}
               onClick={() => void store.setAutoAccept(scope, !autoOn)}
-              className={`relative h-5 w-9 flex-none rounded-full border transition-colors ${autoOn ? 'border-signal bg-signal' : 'border-hairline bg-raised'}`}
+              className={`relative h-5 w-9 flex-none rounded-full border transition-colors ${autoOn ? 'border-ink bg-ink' : 'border-hairline bg-raised'}`}
             >
-              <span className={`absolute top-0.5 h-3.5 w-3.5 rounded-full bg-ink transition-[left] ${autoOn ? 'left-[18px]' : 'left-0.5'}`} />
+              <span className={`absolute top-0.5 h-3.5 w-3.5 rounded-full transition-[left] ${autoOn ? 'left-[18px] bg-bg' : 'left-0.5 bg-ink'}`} />
             </button>
           }
         />

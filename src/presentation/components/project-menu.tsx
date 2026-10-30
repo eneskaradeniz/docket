@@ -75,7 +75,7 @@ export function ProjectMenu({ locale, store, project, className }: ProjectMenuPr
         title={t(locale, PROJECT_BUNDLE_KEYS.menuTitle)}
         className="grid h-7 w-7 flex-none place-items-center rounded-control border border-hairline text-inkdim hover:border-bord hover:text-ink focus-visible:border-signal"
       >
-        <span aria-hidden="true" className="font-mono text-[14px] leading-none">⋯</span>
+        <span aria-hidden="true" className="text-[14px] leading-none">⋯</span>
       </button>
 
       {open ? (

@@ -28,7 +28,7 @@ export function CockpitProjectCard({ card, locale, sinceMs, onOpen }: CockpitPro
         <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{card.name}</span>
       </span>
       <span className="flex items-baseline gap-3.5">
-        <span className={`font-mono text-[1.375rem] font-semibold leading-none tracking-[-0.02em] ${card.active === 0 ? 'text-bord' : 'text-ink'}`}>
+        <span className={`text-[1.375rem] font-semibold leading-none tracking-[-0.02em] ${card.active === 0 ? 'text-bord' : 'text-ink'}`}>
           {card.active}
         </span>
         <span className="text-[0.75rem] text-inkdim">{t(locale, 'cockpit.card.active')}</span>
@@ -45,7 +45,7 @@ export function CockpitProjectCard({ card, locale, sinceMs, onOpen }: CockpitPro
           : multi
             ? `${card.repoCount} ${t(locale, 'cockpit.card.repos')}`
             : t(locale, 'cockpit.card.singleRepo')}
-        <span className="ml-auto font-mono text-[0.71875rem]">
+        <span className="ml-auto text-[0.71875rem]">
           {t(locale, multi ? 'cockpit.card.toRoadmap' : 'cockpit.card.toBoard')} ›
         </span>
       </span>

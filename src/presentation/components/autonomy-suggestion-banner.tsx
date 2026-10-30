@@ -3,6 +3,7 @@ import { useState } from 'react';
 import type { IntentOutcome, WorkOrderDetailAutonomy } from '../stores/work-order-detail';
 import type { FlowDef, StageDef } from '../../domain/index';
 import { autonomyRefusalKey } from './autonomy-control';
+import { ActionButton } from './action-button';
 import { VersionBadge } from './version-badge';
 import { t, type Locale } from '../labels/t';
 
@@ -66,15 +67,15 @@ export function AutonomySuggestionBanner({ locale, view, onConfirm }: AutonomySu
           >
             {t(locale, 'autonomy.suggestion.decline')}
           </button>
-          <button
-            type="button"
-            data-autonomy-suggestion-confirm=""
+          {/* The ask's confirm is the banner's one primary (U-375) — amber waits on the operator. */}
+          <ActionButton
+            variant="primary"
+            size="md"
             disabled={submitting}
             onClick={() => void handleConfirm()}
-            className="h-8 rounded-control border border-signal bg-raised px-3 text-[12px] font-semibold text-ink hover:bg-sunk"
           >
             {t(locale, 'autonomy.suggestion.confirm')}
-          </button>
+          </ActionButton>
         </div>
       </div>
 
@@ -118,7 +119,7 @@ export function FlowLibraryRow({ locale, flow, version }: FlowLibraryRowProps) {
       {suggestsAuto ? (
         <span
           data-flow-suggestion-tag=""
-          className="rounded-full border border-bord bg-raised px-2 py-0.5 font-mono text-[10px] text-inkdim"
+          className="rounded-full border border-bord bg-raised px-2 py-0.5 text-[10px] text-inkdim"
         >
           {t(locale, 'autonomy.tag.suggestsAuto')}
         </span>
@@ -152,7 +153,7 @@ export function FlowEditorStageRow({ locale, stage }: FlowEditorStageRowProps) {
       {tagText !== undefined ? (
         <span
           data-stage-autonomy-tag=""
-          className="rounded-full border border-bord bg-raised px-2 py-0.5 font-mono text-[10px] text-inkdim"
+          className="rounded-full border border-bord bg-raised px-2 py-0.5 text-[10px] text-inkdim"
         >
           {tagText}
         </span>
