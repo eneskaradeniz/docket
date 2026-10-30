@@ -105,6 +105,18 @@ export function clampPopoverTop(top: number, height: number, viewportHeight: num
   return Math.max(margin, Math.min(top, viewportHeight - margin - height));
 }
 
+/** Where the open popover stands: its card and the placed left/top the scroll keeps fresh. */
+export interface PopoverStanding {
+  readonly card: AccountCard;
+  readonly left: number;
+  readonly top: number;
+}
+
+/** An open popover owns the Esc key: the component stops the event so the surface around it (the
+ *  chat panel, a dialog) does not also act on it. With no popover open the key is not ours — it
+ *  continues to whatever handler sits around us, exactly as if no popover existed. */
+export const popoverOwnsEscape = (popover: PopoverStanding | null): boolean => popover !== null;
+
 export function AccountLimitsPopover({
   card,
   provider,
@@ -341,7 +353,7 @@ export function SidebarAccounts({
   // The limits popover (U-51): one at a time, placed beside its card. The card keeps the focus —
   // the popover holds no control — so Esc and an outside click are the closers, and the popover
   // follows its card on scroll instead of being eaten by it.
-  const [popover, setPopover] = useState<{ readonly card: AccountCard; readonly left: number; readonly top: number } | null>(null);
+  const [popover, setPopover] = useState<PopoverStanding | null>(null);
   const popoverCardRef = useRef<HTMLButtonElement | null>(null);
   const place = (element: HTMLButtonElement): { left: number; top: number } => {
     const rect = element.getBoundingClientRect();
@@ -356,7 +368,11 @@ export function SidebarAccounts({
   useEffect(() => {
     if (popover === null) return;
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key !== 'Escape') return;
+      if (event.key !== 'Escape' || !popoverOwnsEscape(popover)) return;
+      // Capture phase: the panel's own Esc handlers sit below the document (React delegates at
+      // its root; the chat panel listens on the window), so only a listener that runs before
+      // them can keep the key from reaching them.
+      event.stopPropagation();
       event.preventDefault();
       setPopover(null);
     };
@@ -370,11 +386,11 @@ export function SidebarAccounts({
       if (element === null) return;
       setPopover((standing) => (standing === null ? standing : { ...standing, ...place(element) }));
     };
-    document.addEventListener('keydown', onKey);
+    document.addEventListener('keydown', onKey, true);
     document.addEventListener('click', onClick);
     window.addEventListener('scroll', onScroll, true);
     return () => {
-      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('keydown', onKey, true);
       document.removeEventListener('click', onClick);
       window.removeEventListener('scroll', onScroll, true);
     };
