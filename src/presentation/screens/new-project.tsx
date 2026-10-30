@@ -128,7 +128,7 @@ export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, 
             disabled={busy}
             onClick={() => void store.attachExisting()}
             data-new-project-attach=""
-            className={`rounded-control border border-bord px-2 py-0.5 ${NOTE_CLASS} font-semibold text-ink hover:bg-raised disabled:opacity-50`}
+            className={`rounded-control border border-bord px-2 py-0.5 ${NOTE_CLASS} font-semibold text-ink enabled:hover:bg-raised disabled:cursor-not-allowed disabled:opacity-45`}
           >
             {t(locale, 'newProject.attach')}
           </button>
@@ -197,7 +197,7 @@ export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, 
         {busy ? <span className="truncate">{t(locale, 'setup.loading')}</span> : null}
         {reasonKey !== null && !busy ? (
           <>
-            <span aria-hidden="true" className="inline-block h-1.5 w-1.5 flex-none rounded-full bg-signal" />
+            <span aria-hidden="true" className="inline-block h-1.5 w-1.5 flex-none rounded-full bg-inkdim" />
             <span className="truncate">{t(locale, reasonKey)}</span>
           </>
         ) : null}
@@ -219,7 +219,7 @@ export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, 
           type="button"
           data-card="resume"
           onClick={() => store.resumeDraft()}
-          className="grid min-h-[4.5rem] w-full gap-1 rounded-card border border-signal-soft bg-raised px-3.5 py-3 text-left"
+          className="grid min-h-[4.5rem] w-full gap-1 rounded-card border border-bord bg-raised px-3.5 py-3 text-left"
         >
           <b className="text-[0.875rem] font-semibold text-ink">{t(locale, 'setup.resume.title')}</b>
         </button>
@@ -227,7 +227,7 @@ export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, 
       {PATH_CARDS.map((card) => {
         const aiDisabled = card.path === 'docket_ai' && (!connectedProvider || !mcpRunning);
         const selected = form.path === card.path && screen !== 'choose';
-        const tone = aiDisabled ? 'border-hairline opacity-60' : selected ? 'border-signal-soft bg-raised' : 'border-hairline hover:border-bord';
+        const tone = aiDisabled ? 'border-hairline opacity-60' : selected ? 'border-bord bg-raised' : 'border-hairline hover:border-bord';
         return (
           <div key={card.path} className="grid gap-1">
             <button
@@ -269,7 +269,7 @@ export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, 
         data-card="import"
         onClick={() => store.pickPath('import')}
         className={`flex min-h-[4.5rem] w-full flex-col items-start gap-0.5 rounded-card border bg-surface px-3.5 py-3 text-left ${
-          form.path === 'import' ? 'border-signal-soft bg-raised' : 'border-hairline hover:border-bord'
+          form.path === 'import' ? 'border-bord bg-raised' : 'border-hairline hover:border-bord'
         }`}
       >
         <b className="text-[0.875rem] font-semibold text-ink">{t(locale, 'newProject.existing')}</b>
@@ -352,8 +352,10 @@ export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, 
             />
           </label>
           {errorUnder('path')}
+          {/* The footer's primary mirrors this action (the screen's one primary, U-375); the
+              in-card start stays the outline beside it. */}
           <ActionButton
-            variant="primary"
+            variant="neutral"
             size="md"
             disabled={form.repoPath.trim() === '' || busy}
             onClick={() => void store.startAi()}
@@ -393,7 +395,7 @@ export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, 
               className={INPUT_CLASS}
               data-setup-composer=""
             />
-            <ActionButton variant="primary" size="md" disabled={ai.draft.trim() === '' || ai.turn !== null || busy} onClick={() => void store.sendAi()}>
+            <ActionButton variant="neutral" size="md" disabled={ai.draft.trim() === '' || ai.turn !== null || busy} onClick={() => void store.sendAi()}>
               {t(locale, 'setup.ai.send')}
             </ActionButton>
           </form>

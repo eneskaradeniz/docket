@@ -37,11 +37,11 @@ describe('Öneriler nav row (U-136)', () => {
     expect(nav({ locale: 'en' })).toContain('Proposals');
   });
 
-  it('U-136: the pending count shows in a mono badge only above zero', () => {
+  it('U-136: the pending count shows in a badge only above zero', () => {
     expect(nav({ proposalsCount: 0 })).not.toContain('data-proposals-badge');
     const html = nav({ proposalsCount: 3 });
     expect(html).toMatch(/data-proposals-badge[^>]*>3</);
-    expect(html.slice(html.indexOf('data-proposals-badge'), html.indexOf('data-proposals-badge') + 250)).toContain('font-mono');
+    expect(html.slice(html.indexOf('data-proposals-badge'), html.indexOf('data-proposals-badge') + 250)).not.toContain('font-mono');
   });
 
   it('U-136: the row is current on the proposals route and not otherwise', () => {

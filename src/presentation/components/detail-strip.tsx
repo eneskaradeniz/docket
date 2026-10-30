@@ -13,7 +13,7 @@ import type { StripSegment } from '../stores/work-order-detail';
 
 const BAR_STANDING_CLASS: Readonly<Record<StripSegment['standing'], string>> = {
   done: 'bg-proceed',
-  current: 'bg-signal',
+  current: 'bg-ink',
   future: 'bg-hairline',
 };
 
@@ -28,7 +28,7 @@ const barClass = (segment: StripSegment): string => {
 const dotClass = (segment: StripSegment): string => {
   if (segment.failed) return 'bg-error';
   if (segment.running) return 'bg-proceed motion-safe:animate-pulse';
-  return 'bg-signal';
+  return 'bg-ink';
 };
 
 /** The state word a segment carries for assistive tech (A6) — its standing, said. */

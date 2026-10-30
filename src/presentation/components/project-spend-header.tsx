@@ -71,7 +71,7 @@ export function ProjectSpendHeader({
               {fill(t(locale, 'project.spend.noCapText'), { spent: spentText })}
             </p>
           </div>
-          <span className="rounded-control border border-hairline px-2 py-0.5 font-mono text-[0.6875rem] text-inkdim">
+          <span className="rounded-control border border-hairline px-2 py-0.5 text-[0.6875rem] text-inkdim">
             {t(locale, 'project.spend.noCapBadge')}
           </span>
         </div>

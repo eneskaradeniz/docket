@@ -22,7 +22,7 @@ export interface StateBadgeProps {
 export function StateBadge({ tone, children }: StateBadgeProps) {
   return (
     <span
-      className={`inline-flex items-center whitespace-nowrap rounded-full border px-[7px] py-px font-mono text-[10.5px] ${TONE_CLASS[tone]}`}
+      className={`inline-flex items-center whitespace-nowrap rounded-full border px-[7px] py-px text-[10.5px] ${TONE_CLASS[tone]}`}
     >
       {children}
     </span>

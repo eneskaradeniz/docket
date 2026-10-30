@@ -151,7 +151,7 @@ export function AccountLimitsPopover({
       data-account-popover=""
       role="dialog"
       aria-label={`${full} — ${t(locale, 'accounts.limits')}`}
-      className="fixed z-50 w-[300px] max-w-[calc(100vw-24px)] rounded-card border border-bord bg-surface p-3 px-3.5 pb-3.5 shadow-2xl"
+      className="fixed z-50 w-[300px] max-w-[calc(100vw-24px)] rounded-card border border-bord bg-surface p-3 px-3.5 pb-3.5 shadow-elevation-overlay"
       style={style}
     >
       <div className="mb-2.5 flex items-center gap-2 text-[13px] font-bold text-ink">
@@ -205,7 +205,7 @@ const LimitRow = ({
           {tightest?.id === limit.id ? (
             <span
               data-tightest-tag=""
-              className="flex-none whitespace-nowrap rounded-control bg-signal-soft px-1.5 py-px text-[11px] font-bold text-signal-ink"
+              className="flex-none whitespace-nowrap rounded-control bg-raised px-1.5 py-px text-[11px] font-bold text-inkdim"
             >
               {t(locale, 'accounts.tightest')}
             </span>
@@ -270,7 +270,7 @@ const AccountCardView = ({
           {card.reserved ? (
             <span
               data-reserved=""
-              className="flex-none rounded-full border border-signal/40 px-1.5 py-px text-[11px] leading-none text-signal"
+              className="flex-none rounded-full border border-bord px-1.5 py-px text-[11px] leading-none text-inkdim"
             >
               {t(locale, 'accounts.reserved')}
             </span>

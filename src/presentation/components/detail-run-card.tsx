@@ -47,7 +47,7 @@ export function DetailRunCard({ run, locale }: DetailRunCardProps) {
         <span className="text-inkdim" title={formatDateTime(locale, run.startedAt)}>{formatClock(locale, run.startedAt)}</span>
         <code className="font-mono text-[0.6875rem] text-inkdim">{run.shortCode}</code>
         {outcome === 'running' ? (
-          <span className="rounded-control border border-signal px-1 text-[0.6875rem] text-signal-soft">
+          <span className="rounded-control border border-bord px-1 text-[0.6875rem] text-inkdim">
             {t(locale, 'detail.run.liveChip')}
           </span>
         ) : null}

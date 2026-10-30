@@ -199,7 +199,7 @@ describe('contrast (U-240, A8)', () => {
     }
     // The strip's solid standing bars are boundaries of state, not decoration.
     expect(ratio(dark.proceed, dark.surface), 'dark: the done bar on surface').toBeGreaterThanOrEqual(3);
-    expect(ratio(dark.signal, dark.surface), 'dark: the current bar on surface').toBeGreaterThanOrEqual(3);
+    expect(ratio(dark.signal, dark.surface), 'dark: a waiting dot on surface').toBeGreaterThanOrEqual(3);
 
     // Light: the sheet's light --signal (#f5b544 on the near-white surfaces) measures ≈1.74:1 —
     // the measured A8 finding this PR reports. The issue's clause allows only the amber TEXT

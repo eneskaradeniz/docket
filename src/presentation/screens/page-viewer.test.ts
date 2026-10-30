@@ -260,7 +260,7 @@ describe('page screen — comments rail (U-78)', () => {
     expect(html).toMatch(/data-page-comment="c"[^>]*data-delivered="true"/);
     expect(unread).toContain('asistana iletilmedi');
     expect(html).toContain('asistana iletildi');
-    expect(html).toMatch(/data-delivery="false"[^>]*text-signal/);
+    expect(html).toMatch(/data-delivery="false"[^>]*text-inkdim/);
     expect(html).toMatch(/data-delivery="true"[^>]*text-proceed/);
   });
 
@@ -429,8 +429,9 @@ describe('page screen — measure rules (U-82)', () => {
     expect(text).not.toContain('innerHTML');
     expect(text).not.toMatch(/<iframe|<webview|<embed|<object/i);
     expect(text).not.toContain('docket-page:');
-    expect(text.toLowerCase()).not.toContain('cursor');
-    expect(source('page-viewer.ts').toLowerCase()).not.toContain('cursor');
+    // U-375 (later than U-82) lets the disabled control name one cursor: not-allowed.
+    expect(text.toLowerCase()).not.toMatch(/cursor-(?!not-allowed\b)\w/);
+    expect(source('page-viewer.ts').toLowerCase()).not.toMatch(/cursor-(?!not-allowed\b)\w/);
   });
 
   it('U-82: the narrow window drops the rail below the stage and the section is wired into the detail', () => {

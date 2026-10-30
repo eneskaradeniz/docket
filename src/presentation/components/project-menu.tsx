@@ -75,7 +75,7 @@ export function ProjectMenu({ locale, store, project, className }: ProjectMenuPr
         title={t(locale, PROJECT_BUNDLE_KEYS.menuTitle)}
         className="grid h-7 w-7 flex-none place-items-center rounded-control border border-hairline text-inkdim hover:border-bord hover:text-ink focus-visible:border-signal"
       >
-        <span aria-hidden="true" className="font-mono text-[14px] leading-none">⋯</span>
+        <span aria-hidden="true" className="text-[14px] leading-none">⋯</span>
       </button>
 
       {open ? (
@@ -84,7 +84,7 @@ export function ProjectMenu({ locale, store, project, className }: ProjectMenuPr
           id={menuId}
           role="menu"
           aria-label={t(locale, PROJECT_BUNDLE_KEYS.menuTitle)}
-          className="absolute right-0 z-50 mt-1 min-w-[140px] rounded-card border border-bord bg-surface p-1 shadow-lg"
+          className="absolute right-0 z-50 mt-1 min-w-[140px] rounded-card border border-bord bg-surface p-1 shadow-elevation-overlay"
         >
           {project ? (
             <button

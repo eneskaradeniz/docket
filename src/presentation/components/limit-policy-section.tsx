@@ -43,11 +43,11 @@ export function LimitPolicySection({ locale, flow, stage, defaultPolicy, onSelec
         ))}
       </div>
       {diff !== undefined ? (
-        <p className="mt-2 flex items-center gap-2 text-[12px] text-signal-soft">
+        <p className="mt-2 flex items-center gap-2 text-[12px] text-inkdim">
           <span
             aria-label={t(locale, 'editor.recommended.tooltip').replace('{value}', t(locale, limitPolicyLabelKey(diff.recommended)))}
             title={t(locale, 'editor.recommended.tooltip').replace('{value}', t(locale, limitPolicyLabelKey(diff.recommended)))}
-            className="h-2 w-2 rounded-full bg-signal"
+            className="h-2 w-2 rounded-full bg-inkdim"
           />
           <button
             type="button"

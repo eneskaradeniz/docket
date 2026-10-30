@@ -102,7 +102,7 @@ export function DetailWorkOrderUsage({ locale, flow, usage, usageFailed, money, 
           onClick={() => setExpanded((open) => !open)}
           className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 rounded-control px-1 py-1 text-left hover:bg-raised"
         >
-          <span className="font-mono text-[0.6875rem] text-inkdim" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+          <span className="text-[0.6875rem] text-inkdim" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
           <span className="text-[0.78125rem] font-semibold text-ink">{t(locale, 'detail.usage.heading')}</span>
           <span className="font-mono text-[0.6875rem] text-inkdim">{tokenLine}</span>
           <span className="font-mono text-[0.6875rem] text-inkdim">· {runsLine}</span>

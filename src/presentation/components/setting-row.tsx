@@ -57,11 +57,11 @@ export function SettingRow({ locale, title, purpose, control, below, differsFrom
       </div>
       {below !== undefined ? <div>{below}</div> : null}
       {differsFrom !== undefined ? (
-        <p className="flex items-center gap-2 text-[12px] text-signal-soft">
+        <p className="flex items-center gap-2 text-[12px] text-inkdim">
           <span
             aria-label={t(locale, 'editor.recommended.tooltip').replace('{value}', differsFrom)}
             title={t(locale, 'editor.recommended.tooltip').replace('{value}', differsFrom)}
-            className="h-1.5 w-1.5 rounded-full bg-signal"
+            className="h-1.5 w-1.5 rounded-full bg-inkdim"
           />
           {onReset !== undefined ? (
             <button

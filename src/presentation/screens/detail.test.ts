@@ -919,7 +919,7 @@ describe('work-order detail screen — Sayfalar and the approval\'s page link', 
     expect(none).not.toContain('henüz okunmadı');
     const some = await draw(READY, [], null, [{ ...PAGE_ROW, undeliveredComments: 3 }]);
     expect(some).toContain('3 yorum henüz okunmadı');
-    expect(some).toMatch(/data-page-unread[^>]*text-signal/);
+    expect(some).toMatch(/data-page-unread[^>]*text-ink/);
   });
 
   it('U-75: a page title is rendered as text — markup inside it is escaped, never parsed', async () => {

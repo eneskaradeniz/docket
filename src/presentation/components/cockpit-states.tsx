@@ -20,7 +20,7 @@ export function SectionHead({ title, count, hot = false, action }: SectionHeadPr
       <h2 className="text-[0.8125rem] font-semibold text-ink">{title}</h2>
       {count !== null ? (
         <span
-          className={`min-w-5 rounded-full px-1.5 text-center font-mono text-[0.6875rem] leading-[1.125rem] ${hot ? 'bg-signal text-signal-ink' : 'bg-raised text-inkdim'}`}
+          className={`min-w-5 rounded-full px-1.5 text-center text-[0.6875rem] leading-[1.125rem] ${hot ? 'bg-signal text-signal-ink' : 'bg-raised text-inkdim'}`}
         >
           {count}
         </span>

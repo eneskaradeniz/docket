@@ -31,7 +31,7 @@ import { WindowFrame, WindowTitle } from './window-frame';
 
 const INPUT_CLASS =
   'h-8 rounded-control border border-bord bg-raised px-2 text-[13px] text-ink outline-none placeholder:text-inkdim focus:border-signal';
-const LABEL_CLASS = 'font-mono text-[11px] uppercase tracking-[0.06em] text-inkdim';
+const LABEL_CLASS = 'text-[11px] uppercase tracking-[0.06em] text-inkdim';
 
 const CloseIcon = () => (
   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true" className="block h-[15px] w-[15px]">
@@ -302,7 +302,14 @@ export function NewWorkOrderWindow({
         <ActionButton variant="neutral" size="md" disabled={createDisabled} onClick={() => submit('open')}>
           {form.submitting ? '…' : t(locale, 'workOrder.new.open')}
         </ActionButton>
-        <ActionButton variant="primary" size="md" disabled={createDisabled} onClick={() => submit('open_and_start')}>
+        {/* While the skip proposal waits undecided it holds the window's single primary (U-375)
+            and this create takes the outline; decided or absent, the create is the primary. */}
+        <ActionButton
+          variant={skipProposal !== null && form.skipDecision === null ? 'neutral' : 'primary'}
+          size="md"
+          disabled={createDisabled}
+          onClick={() => submit('open_and_start')}
+        >
           {form.submitting ? '…' : t(locale, 'workOrder.new.openAndStart')}
         </ActionButton>
       </span>

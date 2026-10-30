@@ -8,8 +8,9 @@
 // finish turns the body into its four-line progress list (U-49) and, once done, the window fades
 // over the Anasayfa the shell has already opened. The machine lives in stores/wizard.ts; this file
 // mirrors it. Every part that Settings also draws is a shared component (Window, SettingRow,
-// Listbox, AccountGroups, MeterList, DragOrderList, AccountEditor): this file only arranges them
-// for the steps. No secret value has a surface here, and every string arrives through a label key
+// Listbox, SegmentedControl, AccountGroups, MeterList, DragOrderList, AccountEditor): this file
+// only arranges them for the steps. No secret value has a surface here, and every string arrives
+// through a label key
 // (U-1).
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 
@@ -24,6 +25,7 @@ import { DragOrderList, type DragOrderItem } from '../components/drag-order-list
 import { InfoBubble } from '../components/info-bubble';
 import { KeyMoveCard } from '../components/key-move-card';
 import { Listbox } from '../components/listbox';
+import { SegmentedControl } from '../components/segmented-control';
 import { MeterList } from '../components/meter-list';
 import { ProviderMark } from '../components/provider-mark';
 import { ListBottomFade } from '../components/settings-cards';
@@ -101,7 +103,7 @@ function RailStep({
     );
   const badge =
     standing === 'cur'
-      ? 'border-signal text-signal-soft'
+      ? 'border-ink text-ink'
       : standing === 'done'
         ? 'border-ink bg-ink text-surface'
         : 'border-bord text-inkdim';
@@ -123,7 +125,7 @@ function RailStep({
           standing === 'cur' ? 'bg-raised text-ink' : standing === 'done' ? 'text-ink hover:bg-raised' : 'text-inkdim'
         }`}
       >
-        <span aria-hidden="true" className={`grid h-[22px] w-[22px] flex-none place-items-center rounded-full border font-mono text-[11px] ${badge}`}>
+        <span aria-hidden="true" className={`grid h-[22px] w-[22px] flex-none place-items-center rounded-full border text-[11px] ${badge}`}>
           {number}
         </span>
         {t(locale, STEP_KEY[step])}
@@ -222,7 +224,7 @@ function CapabilityRow({ row, state, store, locale }: {
           className="flex min-w-0 flex-1 items-center gap-3 text-left"
         >
           {/* Technical terms (MCP, Skill, Context) are never translated. */}
-          <span className="flex-none font-mono text-[11px] text-inkdim">{row.kind}</span>
+          <span className="flex-none text-[11px] text-inkdim">{row.kind}</span>
           <span className="min-w-0 flex-1 truncate text-[13.5px] text-ink">{row.name}</span>
           {row.imported ? (
             <span className="flex-none rounded-full bg-raised px-2 py-0.5 text-[11px] font-semibold text-inkdim">{t(locale, 'wizard.capabilities.added')}</span>
@@ -231,7 +233,7 @@ function CapabilityRow({ row, state, store, locale }: {
         <InfoBubble locale={locale} subject={row.name} body={info} />
         <span
           aria-hidden="true"
-          className={`grid h-5 w-5 flex-none place-items-center rounded-full border-[1.5px] text-[11px] ${checked ? 'border-signal bg-signal text-signal-ink' : 'border-bord text-transparent'}`}
+          className={`grid h-5 w-5 flex-none place-items-center rounded-full border-[1.5px] text-[11px] ${checked ? 'border-ink bg-ink text-surface' : 'border-bord text-transparent'}`}
         >
           ✓
         </span>
@@ -355,7 +357,7 @@ const summaryLine = (row: BudgetRow, locale: Locale): string => {
 
 /** The cap field and the consent control a pay-per-use row always carries in itself (U-44a in
  *  U-48's compact row) — never folded away behind its Ayrıntı. */
-function CapAndConsent({ row, store, locale }: { readonly row: BudgetRow; readonly store: WizardStore; readonly locale: Locale }) {
+function CapAndConsent({ row, sole, store, locale }: { readonly row: BudgetRow; readonly sole: boolean; readonly store: WizardStore; readonly locale: Locale }) {
   const [amount, setAmount] = useState(String(row.capShown.amountUsd));
   const scope = row.capShown.scope;
   // A cap the draft now holds replaces what was typed.
@@ -377,13 +379,15 @@ function CapAndConsent({ row, store, locale }: { readonly row: BudgetRow; readon
           className="w-[54px] border-0 bg-transparent text-right font-mono text-[13px] text-ink outline-none"
         />
       </label>
-      <Listbox
+      <SegmentedControl<CapScope>
         label={t(locale, 'wizard.budget.period')}
         value={scope}
-        options={CAP_SCOPES.map((entry) => ({ value: entry, label: t(locale, SCOPE_KEY[entry]), recommended: entry === RECOMMENDED.cap.scope }))}
-        recommendedLabel={t(locale, 'editor.recommended')}
-        minWidth={110}
         onPick={(entry) => void commit(entry)}
+        options={CAP_SCOPES.map((entry) => ({
+          id: entry,
+          text: t(locale, SCOPE_KEY[entry]),
+          ...(entry === RECOMMENDED.cap.scope ? { hint: t(locale, 'editor.recommended') } : {}),
+        }))}
       />
       {row.consented ? (
         <span className="flex items-center gap-2 text-[12.5px]" data-consent="granted">
@@ -393,7 +397,9 @@ function CapAndConsent({ row, store, locale }: { readonly row: BudgetRow; readon
           </ActionButton>
         </span>
       ) : (
-        <ActionButton variant="primary" onClick={() => void store.allowSpend(row.id, { amount, scope })}>
+        // The first waiting consent holds the step's single primary (U-375); a second waiting
+        // row takes the outline beside it.
+        <ActionButton variant={sole ? 'primary' : 'neutral'} onClick={() => void store.allowSpend(row.id, { amount, scope })}>
           {t(locale, 'wizard.consent.allow')}
         </ActionButton>
       )}
@@ -410,14 +416,12 @@ export function BudgetDetail({ row, store, locale }: { readonly row: BudgetRow; 
     recommended: policy === RECOMMENDED.limitPolicy,
   }));
   const reservePresets = [
-    { value: 'none', label: t(locale, 'editor.limits.reserve.none'), recommended: true },
-    ...RESERVE_PRESETS.map((preset) => ({ value: String(preset), label: t(locale, 'editor.limits.reserve.preset').replace('{value}', String(preset)) })),
+    { id: 'none', text: t(locale, 'editor.limits.reserve.none'), hint: t(locale, 'editor.recommended') },
+    ...RESERVE_PRESETS.map((preset) => ({ id: String(preset), text: t(locale, 'editor.limits.reserve.preset').replace('{value}', String(preset)) })),
   ];
   const reserveValue = row.reservePercent > 0 ? String(row.reservePercent) : 'none';
-  // A stored reserve outside the presets stays visible in its own control rather than vanishing.
-  const reserveOptions = reservePresets.some((option) => option.value === reserveValue)
-    ? reservePresets
-    : [...reservePresets, { value: reserveValue, label: t(locale, 'editor.limits.reserve.preset').replace('{value}', reserveValue) }];
+  // A stored reserve outside the presets stays visible in its own standing rather than vanishing.
+  const reserveKnown = reservePresets.some((option) => option.id === reserveValue);
   return (
     <div id={`budget-detail-${row.id}`} data-budget-detail={row.id} className="border-t border-dashed border-hairline bg-band px-3.5 pb-3.5 pl-[52px] pt-3">
       <div className="flex flex-wrap items-end gap-x-5 gap-y-2">
@@ -434,12 +438,11 @@ export function BudgetDetail({ row, store, locale }: { readonly row: BudgetRow; 
         </div>
         <div className="grid gap-1">
           <span className="text-[11.5px] font-semibold text-inkdim">{t(locale, 'editor.limits.reserve.title')}</span>
-          <Listbox
+          <SegmentedControl<string>
             label={t(locale, 'editor.limits.reserve.title')}
-            value={reserveValue}
-            options={reserveOptions}
-            recommendedLabel={t(locale, 'editor.recommended')}
-            minWidth={150}
+            value={reserveKnown ? reserveValue : null}
+            standing={reserveKnown ? undefined : t(locale, 'editor.limits.reserve.preset').replace('{value}', reserveValue)}
+            options={reservePresets}
             onPick={(value) => store.setReserve(row.id, value === 'none' ? null : Number(value))}
           />
         </div>
@@ -457,6 +460,7 @@ export function BudgetDetail({ row, store, locale }: { readonly row: BudgetRow; 
  *  keeps its cap and consent in the row — and the Ayrıntı that opens the controls in place. */
 function BudgetRowCompact({
   row,
+  soleConsent,
   store,
   locale,
   marks,
@@ -464,6 +468,7 @@ function BudgetRowCompact({
   onToggle,
 }: {
   readonly row: BudgetRow;
+  readonly soleConsent: boolean;
   readonly store: WizardStore;
   readonly locale: Locale;
   readonly marks: ProviderMarksStore;
@@ -485,7 +490,7 @@ function BudgetRowCompact({
             {summaryLine(row, locale)}
           </div>
         </div>
-        {row.needsConsent ? <CapAndConsent row={row} store={store} locale={locale} /> : null}
+        {row.needsConsent ? <CapAndConsent row={row} sole={soleConsent} store={store} locale={locale} /> : null}
         <ActionButton
           variant="neutral"
           size="sm"
@@ -519,6 +524,8 @@ export function Budget({ state, store, locale, marks }: { readonly state: Wizard
   // duplicates it, and only ever one row stands open.
   const [openRow, setOpenRow] = useState<string | null>(null);
   const { subscriptions, payPerUse } = state.budget;
+  // The first row still waiting for its consent is the step's single primary (U-375).
+  const firstWaitingConsent = payPerUse.find((row) => !row.consented)?.id ?? null;
   const group = (name: LabelKey, hint: LabelKey, key: string, rows: readonly BudgetRow[]) => (
     <section className="mb-[18px]" data-budget-group={key}>
       <h2 className="mb-2 flex items-baseline gap-2 text-[13px] font-bold text-ink">
@@ -530,6 +537,7 @@ export function Budget({ state, store, locale, marks }: { readonly state: Wizard
           <BudgetRowCompact
             key={row.id}
             row={row}
+            soleConsent={row.id === firstWaitingConsent}
             store={store}
             locale={locale}
             marks={marks}
@@ -596,7 +604,7 @@ function FinishProgress({ state, store, locale }: { readonly state: WizardState;
           >
             <span aria-hidden="true" className="grid h-[18px] w-[18px] flex-none place-items-center">
               {standing === 'busy' ? (
-                <span className="block h-4 w-4 animate-spin rounded-full border-2 border-hairline border-t-signal motion-reduce:animate-none" />
+                <span className="block h-4 w-4 animate-spin rounded-full border-2 border-hairline border-t-ink motion-reduce:animate-none" />
               ) : standing === 'done' ? (
                 // The check draws itself once; a reduced-motion page shows it whole at once.
                 <svg viewBox="0 0 16 16" className="h-[15px] w-[15px] text-proceed" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -617,7 +625,7 @@ function FinishProgress({ state, store, locale }: { readonly state: WizardState;
                 <span className="text-[12.5px] text-error" data-finish-reason="">
                   {t(locale, state.finishError.reasonKey)}
                 </span>
-                <ActionButton variant="primary" size="sm" onClick={() => void store.next()}>
+                <ActionButton variant="neutral" size="sm" onClick={() => void store.next()}>
                   {t(locale, 'wizard.retry')}
                 </ActionButton>
               </span>
@@ -752,12 +760,20 @@ export function WizardScreen({ store, locale, localeStore, themeStore, marks }: 
             <span className="ml-auto min-w-0 text-right text-[12.5px] text-inkdim">
               {state.reasonKey !== null ? t(locale, state.reasonKey) : ''}
             </span>
-            <ActionButton variant="primary" size="md" disabled={!state.nextEnabled} onClick={() => void store.next()}>
+            {/* While a pay-per-use consent waits, the row's İzin ver is the step's single primary
+                (U-375) and this through-line button takes the outline; the finish's own errors
+                leave it the primary — their retry beside the line is the outline. */}
+            <ActionButton
+              variant={state.step === 'budget' && state.budget.payPerUse.some((row) => !row.consented) ? 'neutral' : 'primary'}
+              size="md"
+              disabled={!state.nextEnabled}
+              onClick={() => void store.next()}
+            >
               {state.finishing ? (
                 <>
                   <span
                     aria-hidden="true"
-                    className="inline-block h-[15px] w-[15px] animate-spin rounded-full border-2 border-signal-ink/40 border-t-signal-ink motion-reduce:animate-none"
+                    className="inline-block h-[15px] w-[15px] animate-spin rounded-full border-2 border-ink/40 border-t-ink motion-reduce:animate-none"
                   />
                   {t(locale, 'wizard.finishing')}
                 </>

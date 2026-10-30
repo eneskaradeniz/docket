@@ -59,14 +59,14 @@ const TaskGlyph = ({ status, locale }: { readonly status: string; readonly local
     return (
       <span
         aria-label={t(locale, 'roadmap.task.done')}
-        className="grid h-[1.125rem] w-[1.125rem] flex-none place-items-center rounded-full bg-proceed font-mono text-[0.625rem] font-bold leading-none text-black"
+        className="grid h-[1.125rem] w-[1.125rem] flex-none place-items-center rounded-full bg-proceed text-[0.625rem] font-bold leading-none text-black"
       >
         ✓
       </span>
     );
   }
   if (status === 'running') {
-    return <span aria-label={t(locale, 'roadmap.task.current')} className="h-[1.125rem] w-[1.125rem] flex-none rounded-full border-[1.5px] border-signal" />;
+    return <span aria-label={t(locale, 'roadmap.task.current')} className="h-[1.125rem] w-[1.125rem] flex-none rounded-full border-[1.5px] border-ink" />;
   }
   return <span aria-label={t(locale, 'roadmap.task.remaining')} className="h-[1.125rem] w-[1.125rem] flex-none rounded-full border border-bord" />;
 };
@@ -75,7 +75,7 @@ const TaskGlyph = ({ status, locale }: { readonly status: string; readonly local
 const OrderGlyph = ({ status }: { readonly status: string }) => {
   if (status === 'done') {
     return (
-      <span aria-hidden="true" className="grid h-[0.875rem] w-[0.875rem] flex-none place-items-center rounded-full bg-proceed font-mono text-[0.5625rem] font-bold leading-none text-black">
+      <span aria-hidden="true" className="grid h-[0.875rem] w-[0.875rem] flex-none place-items-center rounded-full bg-proceed text-[0.5625rem] font-bold leading-none text-black">
         ✓
       </span>
     );
@@ -131,20 +131,22 @@ const showNotices = (locale: Locale, pending: Promise<readonly RoadmapNotice[]>)
 // its overflow clip never hides it.
 const FOCUS = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-signal-soft';
 const BUTTON = `h-7 flex-none whitespace-nowrap rounded-control border px-3 text-[0.78125rem] font-semibold leading-none transition-colors motion-reduce:transition-none ${FOCUS}`;
-const BUTTON_SECONDARY = `${BUTTON} border-bord text-ink hover:bg-raised disabled:pointer-events-none disabled:border-hairline disabled:bg-raised disabled:text-inkdim`;
-const BUTTON_PRIMARY = `${BUTTON} border-signal bg-signal text-signal-ink disabled:pointer-events-none disabled:opacity-60`;
+// The hovers sit behind `enabled:` and a disabled button keeps its own look at one reduced
+// opacity (U-375) — never a grey fill that reads as a second surface.
+const BUTTON_SECONDARY = `${BUTTON} border-bord text-ink enabled:hover:bg-raised disabled:cursor-not-allowed disabled:opacity-45`;
+const BUTTON_PRIMARY = `${BUTTON} border-signal bg-signal text-signal-ink enabled:hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45`;
 
 const LAYER_TAB = `h-8 rounded-control border px-3 text-[0.8125rem] font-semibold ${FOCUS}`;
 
-const CHIP = 'inline-flex h-5 flex-none items-center gap-2 rounded-full border px-2 font-mono text-[0.6875rem] leading-none';
+const CHIP = 'inline-flex h-5 flex-none items-center gap-2 rounded-full border px-2 text-[0.6875rem] leading-none';
 
-/** A status chip: a lamp and its word. `lit` is the amber ring-and-fill of work in motion. */
+/** A status chip: a lamp and its word. `lit` is the raised fill and ink dot of work in motion. */
 const StatusChip = ({ tone, label }: { readonly tone: 'run' | 'quiet' | 'done'; readonly label: string }) => {
   if (tone === 'done') return <span className={`${CHIP} border-proceed text-proceed`}>{label}</span>;
   const lit = tone === 'run';
   return (
-    <span className={`${CHIP} ${lit ? 'border-signal-soft text-signal-soft' : 'border-bord text-inkdim'}`}>
-      <span aria-hidden="true" className={`h-2 w-2 flex-none rounded-full border ${lit ? 'border-signal bg-signal' : 'border-bord'}`} />
+    <span className={`${CHIP} ${lit ? 'border-bord bg-raised text-ink' : 'border-bord text-inkdim'}`}>
+      <span aria-hidden="true" className={`h-2 w-2 flex-none rounded-full border ${lit ? 'border-ink bg-ink' : 'border-bord'}`} />
       {label}
     </span>
   );
@@ -194,7 +196,7 @@ const PhaseCard = ({
   return (
     <section
       data-phase={phase.id}
-      className={`overflow-hidden rounded-card border bg-surface ${phase.autoRun?.state === 'running' ? 'border-bord' : 'border-hairline'} ${phase.id === highlightPhase ? 'border-signal' : ''}`}
+      className={`overflow-hidden rounded-card border bg-surface ${phase.autoRun?.state === 'running' ? 'border-bord' : 'border-hairline'} ${phase.id === highlightPhase ? 'border-ink' : ''}`}
     >
       {/* One grid for both header rows: chevron · name · count + button, the status row under the
           name. The toggle is a real button whose overlay makes the whole header clickable without
@@ -214,7 +216,7 @@ const PhaseCard = ({
           </span>
         </button>
         <span className="relative z-10 flex min-h-7 items-center gap-3">
-          <span className="flex-none font-mono text-[0.6875rem] leading-4 text-inkdim">
+          <span className="flex-none text-[0.6875rem] leading-4 text-inkdim">
             {done}/{phase.tasks.length}
           </span>
           {control.button === 'run' ? (
@@ -255,7 +257,7 @@ const PhaseCard = ({
           ) : null}
           {control.hint === 'blocked' ? (
             <span id={hintId} className="flex items-center gap-2 text-[0.75rem] leading-4 text-inkdim">
-              <span aria-hidden="true" className="h-2 w-2 flex-none rounded-full bg-signal" />
+              <span aria-hidden="true" className="h-2 w-2 flex-none rounded-full bg-inkdim" />
               {fill(t(locale, 'roadmap.hint.blocked'), { names: control.blockedBy.join(', ') })}
             </span>
           ) : null}
@@ -378,7 +380,7 @@ const TaskRow = ({
         <Chevron open={expanded} small />
         <TaskGlyph status={task.status} locale={locale} />
         {title}
-        <span className="flex-none font-mono text-[0.6875rem] text-inkdim">
+        <span className="flex-none text-[0.6875rem] text-inkdim">
           {task.targets.length} {t(locale, 'roadmap.task.repoMany')}
         </span>
       </button>
@@ -473,7 +475,7 @@ export function RoadmapScreen({
           role="tab"
           aria-selected={state.layer === 'project'}
           onClick={() => store.setLayer('project')}
-          className={`${LAYER_TAB} ${state.layer === 'project' ? 'border-signal bg-raised text-ink' : 'border-hairline bg-surface text-inkdim hover:bg-raised'}`}
+          className={`${LAYER_TAB} ${state.layer === 'project' ? 'border-bord bg-raised text-ink' : 'border-hairline bg-surface text-inkdim hover:bg-raised'}`}
         >
           {t(locale, 'roadmap.layer.project')}
         </button>
@@ -482,14 +484,14 @@ export function RoadmapScreen({
           role="tab"
           aria-selected={state.layer === 'repo'}
           onClick={() => store.setLayer('repo')}
-          className={`${LAYER_TAB} ${state.layer === 'repo' ? 'border-signal bg-raised text-ink' : 'border-hairline bg-surface text-inkdim hover:bg-raised'}`}
+          className={`${LAYER_TAB} ${state.layer === 'repo' ? 'border-bord bg-raised text-ink' : 'border-hairline bg-surface text-inkdim hover:bg-raised'}`}
         >
           {t(locale, 'roadmap.layer.repo')}
         </button>
       </div>
 
       {state.loading && view === null && state.problem === null ? (
-        <p className="font-mono text-[0.6875rem] uppercase tracking-[0.04em] text-inkdim">{t(locale, 'roadmap.loading')}</p>
+        <p className="text-[0.6875rem] uppercase tracking-[0.04em] text-inkdim">{t(locale, 'roadmap.loading')}</p>
       ) : null}
 
       {state.problem !== null ? (

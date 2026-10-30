@@ -169,7 +169,7 @@ export function GateChecksBody({ locale, groups }: { readonly locale: Locale; re
             ) : null}
             {group.checks.length > 0 ? (
               <>
-                <p className="m-0 font-mono text-[0.6875rem] text-inkdim">
+                <p className="m-0 text-[0.6875rem] text-inkdim">
                   {t(locale, 'detail.checks.count').replace('{p}', String(passed)).replace('{n}', String(group.checks.length))}
                 </p>
                 <ul role="list" className="m-0 grid list-none gap-1 p-0">
@@ -191,7 +191,7 @@ export function GateChecksBody({ locale, groups }: { readonly locale: Locale; re
             {group.history.length > 0 ? (
               <ul role="list" className="m-0 grid list-none gap-0.5 p-0">
                 {group.history.map((row, index) => (
-                  <li key={`${row.at}-${index}`} className="font-mono text-[0.6875rem] text-inkdim">
+                  <li key={`${row.at}-${index}`} className="text-[0.6875rem] text-inkdim">
                     {formatDateTime(locale, row.at)} · {t(locale, VERDICT_KEY[row.status] ?? 'detail.checks.unknown')}
                   </li>
                 ))}
@@ -220,7 +220,7 @@ function GateChecksSection({ locale, groups }: { readonly locale: Locale; readon
           onClick={() => setExpanded((open) => !open)}
           className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 rounded-control px-1 py-1 text-left hover:bg-raised"
         >
-          <span className="font-mono text-[0.6875rem] text-inkdim" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+          <span className="text-[0.6875rem] text-inkdim" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
           <span className="text-[0.78125rem] font-semibold text-ink">{t(locale, 'detail.checks.heading')}</span>
           {anyPending ? (
             <span className="text-[0.78125rem] text-signal-soft">{t(locale, 'detail.checks.pending')}</span>
@@ -386,7 +386,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
               <Skeleton height="0.375rem" radius="control" />
               <Skeleton height="6rem" />
               <Skeleton height="10rem" />
-              <p className="m-0 font-mono text-[0.6875rem] text-inkdim">{t(locale, 'detail.loading')}</p>
+              <p className="m-0 text-[0.6875rem] text-inkdim">{t(locale, 'detail.loading')}</p>
             </>
           )}
         </div>
@@ -416,8 +416,8 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
             <h1 className="m-0 text-[1.25rem] font-bold leading-[1.3] tracking-[-0.01em] text-ink [text-wrap:balance] [overflow-wrap:anywhere]">
               {view.record.title}
             </h1>
-            <p className="m-0 flex flex-wrap gap-x-5 gap-y-1 font-mono text-[0.6875rem] text-inkdim">
-              <span>{view.record.repo}</span>
+            <p className="m-0 flex flex-wrap gap-x-5 gap-y-1 text-[0.6875rem] text-inkdim">
+              <span className="font-mono">{view.record.repo}</span>
               <span>{view.record.flow}</span>
               {view.record.createdAt !== undefined ? (
                 <span title={formatDateTime(locale, view.record.createdAt)}>
@@ -430,13 +430,13 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
                 line words the same cause sentence the git card carries (U-353: words, never a
                 colour alone). An older reply without the field renders no line at all. */}
             {view.repoContext !== undefined ? (
-              <p data-detail-repo-context className="m-0 flex flex-wrap gap-x-5 gap-y-1 font-mono text-[0.6875rem] text-inkdim">
+              <p data-detail-repo-context className="m-0 flex flex-wrap gap-x-5 gap-y-1 text-[0.6875rem] text-inkdim">
                 {/* The header's first line already names the repo; the project is said only when
                     it is a different name (a repo inside a larger project). */}
                 {view.repoContext.project.name !== view.record.repo && view.repoContext.project.slug !== view.record.repo ? (
                   <span>{t(locale, 'detail.repo.project').replace('{name}', view.repoContext.project.name)}</span>
                 ) : null}
-                <code className="min-w-0 truncate" title={view.repoContext.path}>{view.repoContext.path}</code>
+                <code className="min-w-0 truncate font-mono" title={view.repoContext.path}>{view.repoContext.path}</code>
                 {view.repoContext.siblingCount > 0 ? (
                   <span>{t(locale, 'detail.repo.siblings').replace('{n}', String(view.repoContext.siblingCount))}</span>
                 ) : null}
@@ -495,7 +495,9 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
                   <p className="m-0 text-[0.8125rem] font-semibold text-ink">{t(locale, 'detail.close.title')}</p>
                   <p className="m-0 text-[0.8125rem] text-inkdim">{t(locale, 'detail.close.body')}</p>
                   <div className="flex gap-2">
-                    <ActionButton variant="primary" size="md" onClick={() => void store.closeWorkOrder()}>
+                    {/* The view's primary stays with the waiting ask above (U-375); this inline
+                        confirm takes the outline. */}
+                    <ActionButton variant="neutral" size="md" onClick={() => void store.closeWorkOrder()}>
                       {t(locale, 'detail.close.confirm')}
                     </ActionButton>
                     <ActionButton onClick={() => setCloseConfirm(false)}>{t(locale, 'detail.action.cancel')}</ActionButton>
@@ -616,11 +618,11 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
                       <summary className="flex list-none flex-wrap items-center gap-3 py-3">
                         <span
                           aria-hidden="true"
-                          className={`font-mono text-[0.6875rem] transition-transform motion-reduce:transition-none ${open ? 'rotate-90' : ''}`}
+                          className={`text-[0.6875rem] transition-transform motion-reduce:transition-none ${open ? 'rotate-90' : ''}`}
                         >
                           ▸
                         </span>
-                        <span className="font-mono text-[0.6875rem] text-inkdim">{String(index + 1).padStart(2, '0')}</span>
+                        <span className="text-[0.6875rem] text-inkdim">{String(index + 1).padStart(2, '0')}</span>
                         <span className={`text-[0.875rem] ${stage.current ? 'font-semibold text-ink' : 'font-medium text-inkdim'}`}>
                           {stage.name}
                         </span>
@@ -636,7 +638,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
                             </span>
                           </span>
                         ) : null}
-                        <span className={`ml-auto text-[0.78125rem] text-inkdim ${stage.current && !running ? 'font-semibold text-signal-soft' : ''}`}>
+                        <span className={`ml-auto text-[0.78125rem] text-inkdim ${stage.current && !running ? 'font-semibold text-ink' : ''}`}>
                           {t(locale, stageStandingKey(standing, running))}
                         </span>
                       </summary>

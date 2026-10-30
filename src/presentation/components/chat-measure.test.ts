@@ -99,9 +99,11 @@ describe('measure (U-124)', () => {
     }
   });
 
-  it('U-124: no vendor-named class or string — a disabled control uses pointer-events-none', () => {
+  it('U-124: no vendor-named class or string — the only cursor a disabled control names is not-allowed (U-375)', () => {
     const lower = joined.toLowerCase();
-    expect(lower).not.toContain('cursor');
+    // U-124 froze the pointer; U-375 (later) trades that for the not-allowed cursor. Any other
+    // cursor utility still names a vendor's glyph choice and stays out.
+    expect(lower).not.toMatch(/cursor-(?!not-allowed\b)\w/);
     for (const vendor of ['claude', 'anthropic', 'openai', 'codex', 'copilot', 'opencode', 'antigravity', 'gemini', 'zai', 'glm']) {
       expect(lower, vendor).not.toContain(vendor);
     }

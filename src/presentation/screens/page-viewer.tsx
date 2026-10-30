@@ -54,8 +54,9 @@ const fill = (text: string, values: Readonly<Record<string, string | number>>): 
 type ButtonLook = 'primary' | 'neutral';
 
 const LOOK: Readonly<Record<ButtonLook, string>> = {
-  primary: 'border-signal bg-signal text-signal-ink hover:brightness-110',
-  neutral: 'border-bord bg-transparent text-ink hover:bg-raised',
+  // The hovers sit behind `enabled:` — a disabled button keeps its own look (U-375).
+  primary: 'border-signal bg-signal text-signal-ink enabled:hover:brightness-110',
+  neutral: 'border-bord bg-transparent text-ink enabled:hover:bg-raised',
 };
 
 /** The screen's button: the shared button grammar plus the data hooks the journeys read (the
@@ -79,7 +80,7 @@ function PageButton({
   return (
     <button
       type="button"
-      className={`inline-flex items-center justify-center whitespace-nowrap rounded-control border font-semibold transition-[filter,background-color,color] duration-100 motion-safe:active:scale-[0.97] disabled:pointer-events-none disabled:opacity-45 ${FOCUS} ${LOOK[look]} ${sizing}`}
+      className={`inline-flex items-center justify-center whitespace-nowrap rounded-control border font-semibold transition-[filter,background-color,color] duration-100 motion-safe:active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-45 ${FOCUS} ${LOOK[look]} ${sizing}`}
       {...attrs}
       disabled={disabled}
       onClick={onClick}
@@ -146,7 +147,7 @@ export function PagesSection({
                       {fill(t(locale, 'page.list.version'), { n: row.latestVersion })}
                     </span>
                     {row.undeliveredComments > 0 ? (
-                      <span data-page-unread className="font-mono text-[0.6875rem] leading-[1rem] text-signal-soft">
+                      <span data-page-unread className="text-[0.6875rem] leading-[1rem] text-ink">
                         {row.undeliveredComments === 1
                           ? t(locale, 'page.list.unreadOne')
                           : fill(t(locale, 'page.list.unread'), { n: row.undeliveredComments })}
@@ -275,7 +276,7 @@ export function PageViewerScreen({ store, host, pageId, locale, overlayOpen, now
             {t(locale, failureKey(state.problem))}
           </div>
         ) : (
-          <p className="font-mono text-[0.6875rem] uppercase leading-[1rem] tracking-[0.04em] text-inkdim">{t(locale, 'page.stage.loading')}</p>
+          <p className="text-[0.6875rem] uppercase leading-[1rem] tracking-[0.04em] text-inkdim">{t(locale, 'page.stage.loading')}</p>
         )}
       </div>
     );
@@ -364,8 +365,8 @@ export function PageViewerScreen({ store, host, pageId, locale, overlayOpen, now
               const button = (
                 <button
                   type="button"
-                  className={`h-[1.625rem] rounded-control border border-bord px-3 text-[0.78125rem] font-semibold leading-[1rem] disabled:pointer-events-none disabled:opacity-45 ${FOCUS} ${
-                    mode === id ? 'bg-raised text-ink shadow-[inset_0_0_0_0.0625rem_var(--signal)]' : 'bg-transparent text-ink hover:bg-raised'
+                  className={`h-[1.625rem] rounded-control border border-bord px-3 text-[0.78125rem] font-semibold leading-[1rem] disabled:cursor-not-allowed disabled:opacity-45 ${FOCUS} ${
+                    mode === id ? 'bg-raised text-ink shadow-[inset_0_0_0_0.0625rem_var(--bord)]' : 'bg-transparent text-ink enabled:hover:bg-raised'
                   }`}
                   data-page-view={id}
                   aria-pressed={mode === id}
@@ -395,7 +396,7 @@ export function PageViewerScreen({ store, host, pageId, locale, overlayOpen, now
             data-page-guard
             className="flex items-center gap-2 border-b border-hairline bg-band px-4 py-2 text-[0.75rem] leading-[1rem] text-inkdim"
           >
-            <span className="flex-none font-mono text-[0.6875rem] leading-[1rem] text-proceed">{t(locale, 'page.guard.badge')}</span>
+            <span className="flex-none text-[0.6875rem] leading-[1rem] text-proceed">{t(locale, 'page.guard.badge')}</span>
             <span className="min-w-0">{t(locale, 'page.guard.text')}</span>
           </div>
 
@@ -404,7 +405,7 @@ export function PageViewerScreen({ store, host, pageId, locale, overlayOpen, now
               data-page-note
               className="m-4 flex items-start gap-2 rounded-control border border-bord bg-raised p-3 text-[0.8125rem] leading-[1.25rem] text-ink"
             >
-              <span aria-hidden="true" className="mt-2 h-2 w-2 flex-none rounded-full bg-signal" />
+              <span aria-hidden="true" className="mt-2 h-2 w-2 flex-none rounded-full bg-inkdim" />
               <span>{t(locale, 'page.note.newVersion')}</span>
             </div>
           ) : null}
@@ -483,7 +484,7 @@ export function PageViewerScreen({ store, host, pageId, locale, overlayOpen, now
         <aside data-page-rail className="min-w-0 overflow-hidden rounded-card border border-hairline bg-surface">
           <h2 className="flex items-center justify-between gap-2 border-b border-hairline px-4 py-3 text-[0.875rem] font-semibold leading-[1.25rem] text-ink">
             {t(locale, 'page.comments.title')}
-            <span className="font-mono text-[0.6875rem] font-medium leading-[1rem] text-inkdim">
+            <span className="text-[0.6875rem] font-medium leading-[1rem] text-inkdim">
               {fill(t(locale, 'page.comments.count'), { n: shownVersion, count: comments.length })}
             </span>
           </h2>
@@ -512,7 +513,7 @@ export function PageViewerScreen({ store, host, pageId, locale, overlayOpen, now
                   <p className="whitespace-pre-wrap break-words text-[0.8125rem] leading-[1.25rem] text-ink">{comment.text}</p>
                   <span
                     data-delivery={String(comment.delivered)}
-                    className={`font-mono text-[0.6875rem] leading-[1rem] ${comment.delivered ? 'text-proceed' : 'text-signal-soft'}`}
+                    className={`text-[0.6875rem] leading-[1rem] ${comment.delivered ? 'text-proceed' : 'text-inkdim'}`}
                   >
                     {t(locale, comment.delivered ? 'page.comment.delivered' : 'page.comment.undelivered')}
                   </span>
@@ -534,7 +535,7 @@ export function PageViewerScreen({ store, host, pageId, locale, overlayOpen, now
               <span className="text-[0.75rem] leading-[1rem] text-inkdim">{t(locale, 'page.composer.hint')}</span>
               <div className="flex items-center justify-end gap-2">
                 {composer.counter ? (
-                  <span data-page-counter className="mr-auto font-mono text-[0.6875rem] leading-[1rem] text-inkdim">
+                  <span data-page-counter className="mr-auto text-[0.6875rem] leading-[1rem] text-inkdim">
                     {fill(t(locale, 'page.composer.counter'), { n: composer.count, max: COMMENT_MAX })}
                   </span>
                 ) : null}

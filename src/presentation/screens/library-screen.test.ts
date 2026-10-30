@@ -123,12 +123,13 @@ describe('library screen — cards (U-86)', () => {
     expect(cardOf(html, 'n')).not.toMatch(/Onay|Reddedildi/);
   });
 
-  it('U-86: html pages draw the faux-page lines on a white zone; other kinds name their kind in mono — and nothing of a page is rendered', async () => {
+  it('U-86: html pages draw the faux-page lines on a white zone; other kinds name their kind in plain text (U-372) — and nothing of a page is rendered', async () => {
     const html = await draw(FULL);
     expect(cardOf(html, 'p1')).toContain('data-library-faux');
     expect(cardOf(html, 'p1')).toContain('bg-white');
     expect(cardOf(html, 'p2')).not.toContain('data-library-faux');
-    expect(cardOf(html, 'p2')).toMatch(/font-mono[^>]*>diyagram</);
+    expect(cardOf(html, 'p2')).toMatch(/>diyagram</);
+    expect(cardOf(html, 'p2')).not.toContain('font-mono');
     expect(html).not.toMatch(/<iframe|<webview|<img|<object|<embed/i);
   });
 

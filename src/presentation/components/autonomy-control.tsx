@@ -44,10 +44,10 @@ export const autonomyWhyKey = (view: AutonomyControlView): LabelKey | null => {
 };
 
 /** Radios drawn by hand: the platform's disabled radio is a grey disc in the dark theme, which
- *  reads as selected. Selected = signal ring with a solid dot; disabled = dashed hollow ring,
- *  never a fill — the two never share a look in either theme. */
+ *  reads as selected. Selected = ink ring with a solid ink dot (U-373: selection is neutral);
+ *  disabled = dashed hollow ring, never a fill — the two never share a look in either theme. */
 const RADIO_CLASS =
-  "grid h-4 w-4 flex-none appearance-none place-content-center rounded-full border-2 border-bord bg-transparent before:h-2 before:w-2 before:scale-0 before:rounded-full before:bg-signal before:content-[''] checked:border-signal checked:before:scale-100 disabled:border-dashed disabled:border-hairline disabled:opacity-60 disabled:checked:before:scale-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal";
+  "grid h-4 w-4 flex-none appearance-none place-content-center rounded-full border-2 border-bord bg-transparent before:h-2 before:w-2 before:scale-0 before:rounded-full before:bg-ink before:content-[''] checked:border-ink checked:before:scale-100 disabled:border-dashed disabled:border-hairline disabled:opacity-60 disabled:checked:before:scale-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal";
 
 export interface AutonomyControlProps {
   readonly locale: Locale;

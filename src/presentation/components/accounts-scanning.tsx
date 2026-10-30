@@ -180,7 +180,7 @@ export function AccountsScanning({ locale, titleKey, scanning, busy, scannedAt =
         <>
           <p className="mb-2 text-[13px] text-inkdim">{t(locale, 'candidates.scan.title')}</p>
           <div className="-mt-1.5 mb-2.5 h-0.5 overflow-hidden rounded-full bg-hairline" role="progressbar" aria-label={t(locale, 'candidates.scan.title')}>
-            <i className="block h-full w-[30%] animate-[scan_1s_linear_infinite] bg-signal motion-reduce:animate-none" />
+            <i className="block h-full w-[30%] animate-[scan_1s_linear_infinite] bg-inkdim motion-reduce:animate-none" />
           </div>
           <ScanSkeleton />
         </>

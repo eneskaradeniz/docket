@@ -240,8 +240,10 @@ export function OverlayEditor({
               {blocked ? (
                 <span className="text-[12px] text-signal-soft">{proposalBlocked.join(', ')}</span>
               ) : null}
+              {/* The dialog's one primary is its footer confirm (U-375); the per-proposal apply
+                  takes the outline. */}
               <ActionButton
-                variant="primary"
+                variant="neutral"
                 size="sm"
                 disabled={blocked}
                 onClick={() => onApplyProposal(stage)}

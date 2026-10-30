@@ -46,11 +46,11 @@ const CAP_SCOPE_KEY: Readonly<Record<CapScope, LabelKey>> = {
  *  a question mark for `unknown`. `included` renders no mark at all. */
 const BillingMarkGlyph = ({ locale, billing }: { readonly locale: Locale; readonly billing: 'metered' | 'unknown' }) =>
   billing === 'metered' ? (
-    <span className="font-mono text-[12px] text-signal" title={t(locale, 'settings.models.metered')}>
+    <span className="font-mono text-[12px] text-inkdim" title={t(locale, 'settings.models.metered')}>
       $
     </span>
   ) : (
-    <span className="rounded-control border border-dashed border-signal px-1 font-mono text-[12px] font-semibold text-signal" title={t(locale, 'settings.models.unknown')}>
+    <span className="rounded-control border border-dashed border-inkdim px-1 text-[12px] font-semibold text-inkdim" title={t(locale, 'settings.models.unknown')}>
       ?
     </span>
   );
@@ -138,7 +138,7 @@ const ConsentPanel = ({
       {draft.capRequired ? (
       <>
       <label className="grid gap-1">
-        <span className="font-mono text-[11px] uppercase tracking-[0.06em] text-inkdim">
+        <span className="text-[11px] uppercase tracking-[0.06em] text-inkdim">
           {t(locale, 'settings.models.consent.scope')}
         </span>
         <select
@@ -154,7 +154,7 @@ const ConsentPanel = ({
         </select>
       </label>
       <label className="grid gap-1">
-        <span className="font-mono text-[11px] uppercase tracking-[0.06em] text-inkdim">
+        <span className="text-[11px] uppercase tracking-[0.06em] text-inkdim">
           {t(locale, 'settings.models.consent.amount')}
         </span>
         <input

@@ -87,9 +87,9 @@ export function MemorySection({ locale, store, active }: MemorySectionProps) {
               aria-checked={autoOn}
               aria-label={t(locale, 'capabilities.memory.autoAccept.title')}
               onClick={() => void store.setAutoAccept(scope, !autoOn)}
-              className={`relative h-5 w-9 flex-none rounded-full border transition-colors ${autoOn ? 'border-signal bg-signal' : 'border-hairline bg-raised'}`}
+              className={`relative h-5 w-9 flex-none rounded-full border transition-colors ${autoOn ? 'border-ink bg-ink' : 'border-hairline bg-raised'}`}
             >
-              <span className={`absolute top-0.5 h-3.5 w-3.5 rounded-full bg-ink transition-[left] ${autoOn ? 'left-[18px]' : 'left-0.5'}`} />
+              <span className={`absolute top-0.5 h-3.5 w-3.5 rounded-full transition-[left] ${autoOn ? 'left-[18px] bg-bg' : 'left-0.5 bg-ink'}`} />
             </button>
           }
         />
@@ -113,8 +113,10 @@ export function MemorySection({ locale, store, active }: MemorySectionProps) {
                   <div className="flex flex-wrap items-center gap-2 text-[12px] text-inkdim">
                     <span className="rounded-full bg-raised px-2 py-0.5">{scopeLabel(row)}</span>
                     <span className="font-mono">{row.sourceRun}</span>
+                    {/* The proposal rows are many at once; each takes the outline so the view keeps
+                        at most one primary (U-375). */}
                     <ActionButton
-                      variant="primary"
+                      variant="neutral"
                       size="sm"
                       aria-label={`${t(locale, 'capabilities.memory.accept')}: ${row.text}`}
                       onClick={() => void store.acceptProposal(row.id)}
@@ -163,7 +165,9 @@ export function MemorySection({ locale, store, active }: MemorySectionProps) {
         </section>
       ) : null}
 
-      {empty ? (
+      {/* The empty card and the create form never stand together — the card's own opener hides
+          while the form is open, so the view keeps one primary (U-375). */}
+      {empty && state.view !== 'create' ? (
         <EmptyCard
           mark="capabilities-memory"
           title={t(locale, 'capabilities.empty.memory.title')}
@@ -177,7 +181,7 @@ export function MemorySection({ locale, store, active }: MemorySectionProps) {
       ) : null}
 
       {state.view === 'create' && state.createDraft?.kind === 'memory' ? (
-        <div className="rounded-card border border-hairline bg-surface p-3" data-memory-create="">
+        <div className="rounded-card border border-hairline bg-surface shadow-elevation-card p-3" data-memory-create="">
           <label className="grid gap-1 text-[13px]">
             <span className="font-semibold text-ink">{t(locale, 'capabilities.empty.createAction')}</span>
             <textarea

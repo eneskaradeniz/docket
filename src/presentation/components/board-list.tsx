@@ -20,7 +20,7 @@ import { UnfoldIcon } from './board-icons';
 const gridOf = (asking: boolean): string =>
   asking ? 'grid grid-cols-[20px_72px_minmax(0,1fr)_auto_184px] items-center gap-4 px-4' : 'grid grid-cols-[20px_72px_minmax(0,1fr)_184px] items-center gap-4 px-4';
 
-const COUNT_CLASS = 'inline-flex items-center gap-1.5 font-mono text-[12px] font-medium leading-none text-ink';
+const COUNT_CLASS = 'inline-flex items-center gap-1.5 text-[12px] font-medium leading-none text-ink';
 
 export function BoardList({
   groups,
@@ -76,13 +76,13 @@ export function BoardList({
                 disabled={empty}
                 aria-expanded={group.open}
                 title={`${name}: ${group.rows.length} ${t(locale, 'board.done.jobs')}, ${group.running} ${t(locale, 'board.list.running')}, ${group.waiting} ${t(locale, 'board.list.waiting')}`}
-                className="sticky top-9 z-10 flex h-10 w-full items-center gap-2 border-y border-bord bg-[color-mix(in_srgb,var(--ink)_14%,var(--bg))] px-4 text-left text-[14px] font-bold text-ink outline-none transition-colors duration-[var(--motion-board-hover)] hover:enabled:bg-[color-mix(in_srgb,var(--ink)_20%,var(--bg))] focus-visible:shadow-[inset_0_0_0_1px_var(--signal-soft)] disabled:font-semibold disabled:text-inkdim motion-reduce:transition-none"
+                className="sticky top-9 z-10 flex h-10 w-full items-center gap-2 border-y border-bord bg-[color-mix(in_srgb,var(--ink)_14%,var(--bg))] px-4 text-left text-[14px] font-bold text-ink outline-none transition-colors duration-[var(--motion-board-hover)] hover:enabled:bg-[color-mix(in_srgb,var(--ink)_20%,var(--bg))] focus-visible:shadow-[inset_0_0_0_1px_var(--signal-soft)] disabled:cursor-not-allowed disabled:opacity-45 disabled:font-semibold motion-reduce:transition-none"
               >
                 <span aria-hidden="true" className={`grid h-3.5 w-3 place-items-center text-inkdim transition-transform duration-[var(--motion-board-column)] motion-reduce:transition-none ${group.open ? '' : '-rotate-90'}`}>
                   <UnfoldIcon />
                 </span>
                 <span className="min-w-0 truncate" title={name}>{name}</span>
-                <span className="inline-flex h-5 flex-none items-center rounded-full bg-bg px-2 font-mono text-[12px] font-medium leading-none text-inkdim">{group.rows.length}</span>
+                <span className="inline-flex h-5 flex-none items-center rounded-full bg-bg px-2 text-[12px] font-medium leading-none text-inkdim">{group.rows.length}</span>
                 {group.running > 0 ? (
                   <span className={COUNT_CLASS}>
                     <span aria-hidden="true" className="h-2 w-2 rounded-full bg-proceed" />

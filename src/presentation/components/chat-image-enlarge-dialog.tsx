@@ -58,7 +58,7 @@ export function ChatImageEnlargeDialog({ enlarge, store, locale }: ChatImageEnla
         aria-modal="true"
         aria-labelledby="chat-image-enlarge-title"
         data-chat-image-enlarge=""
-        className="grid w-full max-w-3xl gap-3 rounded-panel border border-bord bg-surface p-4 shadow-2xl"
+        className="grid w-full max-w-3xl gap-3 rounded-panel border border-bord bg-surface p-4 shadow-elevation-overlay"
         onKeyDown={onKeyDown}
       >
         <h2 id="chat-image-enlarge-title" className="m-0 truncate font-mono text-[0.875rem] font-semibold leading-5 text-ink">

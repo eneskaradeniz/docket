@@ -150,7 +150,7 @@ export function TitleBar({
       className="flex h-[40px] w-full flex-none items-center gap-[8px] border-b border-hairline bg-bg text-ink [-webkit-app-region:drag]"
       style={{ paddingInlineStart: `${plan.leftInsetPx}px`, paddingInlineEnd: `${BAR_RIGHT_INSET_PX}px` }}
     >
-      <span aria-hidden="true" className="h-[16px] w-[3px] flex-none bg-signal" />
+      <span aria-hidden="true" className="h-[16px] w-[3px] flex-none bg-ink" />
       <span className="text-[13px] font-semibold">{t(locale, 'shell.wordmark')}</span>
 
       {/* The bar's own gap is 8px; the history pair starts 12px after the wordmark (U-25). */}
@@ -178,7 +178,7 @@ export function TitleBar({
           disabled={button.disabled}
           onClick={onApply}
           title={button.percent !== null ? t(locale, 'settings.update.status.downloading') : undefined}
-          className="ml-auto inline-flex h-[28px] flex-none items-center gap-[6px] rounded-control border border-signal bg-transparent px-[10px] text-[12.5px] font-semibold text-ink transition-[filter,background-color] duration-100 hover:bg-raised focus-visible:bg-raised active:scale-[0.97] disabled:pointer-events-none disabled:opacity-45 [-webkit-app-region:no-drag]"
+          className="ml-auto inline-flex h-[28px] flex-none items-center gap-[6px] rounded-control border border-signal bg-signal px-[10px] text-[12.5px] font-semibold text-signal-ink transition-[filter] duration-100 enabled:hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-signal-ink active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-45 [-webkit-app-region:no-drag]"
         >
           <DownloadIcon />
           {button.percent !== null ? `%${button.percent}` : t(locale, button.labelKey)}

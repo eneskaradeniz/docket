@@ -28,7 +28,7 @@ function StageStrip({ index, count }: { readonly index: number; readonly count: 
       {Array.from({ length: count }, (_, at) => (
         <i
           key={at}
-          className={`h-[0.1875rem] w-3.5 rounded-full ${at + 1 < index ? 'bg-proceed' : at + 1 === index ? 'bg-signal' : 'bg-hairline'}`}
+          className={`h-[0.1875rem] w-3.5 rounded-full ${at + 1 < index ? 'bg-proceed' : at + 1 === index ? 'bg-ink' : 'bg-hairline'}`}
         />
       ))}
     </span>
@@ -67,7 +67,7 @@ export function CockpitRunningRow({ run, locale, accountLabel, accountProvider, 
         </span>
       </span>
       <span className="whitespace-nowrap text-[0.75rem] text-inkdim">{accountLabel}</span>
-      <span className="whitespace-nowrap font-mono text-[0.71875rem] text-inkdim">{formatAge(locale, sinceMs)}</span>
+      <span className="whitespace-nowrap text-[0.71875rem] text-inkdim">{formatAge(locale, sinceMs)}</span>
       <span
         aria-hidden="true"
         className={`h-[0.6875rem] w-[0.6875rem] rounded-full border-[1.5px] border-inkdim ${queued ? 'border-dotted' : 'border-t-transparent motion-safe:animate-spin'}`}

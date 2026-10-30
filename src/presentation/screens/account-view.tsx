@@ -79,7 +79,7 @@ export function AccountViewScreen({
       <header className="flex items-center gap-3">
         {view === null ? (
           state.loading ? (
-            <p className="font-mono text-[0.6875rem] uppercase tracking-[0.04em] text-inkdim">{t(locale, 'account.loading')}</p>
+            <p className="text-[0.6875rem] uppercase tracking-[0.04em] text-inkdim">{t(locale, 'account.loading')}</p>
           ) : null
         ) : (
           <>

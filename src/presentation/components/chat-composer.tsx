@@ -57,7 +57,7 @@ const chipLabel = (chip: RefChip, locale: Locale): string => {
   return t(locale, key);
 };
 
-const REMOVE = `border-0 bg-transparent pl-1 font-mono text-[0.75rem] leading-none text-inkdim hover:text-ink ${FOCUS}`;
+const REMOVE = `border-0 bg-transparent pl-1 text-[0.75rem] leading-none text-inkdim hover:text-ink ${FOCUS}`;
 
 /** The full mode aligns the floating menus to the reading column's edges — never narrower than
  *  the column's own 2 rem gutter (U-194). */
@@ -249,7 +249,7 @@ function PermDialog({ state, store, locale }: Pick<ComposerProps, 'state' | 'sto
                 <input
                   type="checkbox"
                   checked={state.permDraft.includes(name)}
-                  className={`h-4 w-4 accent-signal ${FOCUS}`}
+                  className={`h-4 w-4 accent-ink ${FOCUS}`}
                   onChange={(event: ChangeEvent<HTMLInputElement>) => store.setPermClass(name, event.target.checked)}
                 />
                 <span>
@@ -335,7 +335,7 @@ export function ChatComposer({ state, store, locale, onOpenAccounts, onOpenConse
       <Tray state={state} store={store} locale={locale} />
       <div
         data-chat-input=""
-        className={`flex items-end gap-1 rounded-panel border bg-raised p-2 focus-within:border-signal-soft ${drag ? 'border-dashed border-signal-soft' : 'border-bord'}`}
+        className={`flex items-end gap-1 rounded-panel border bg-raised p-2 focus-within:border-signal-soft ${drag ? 'border-dashed border-bord' : 'border-bord'}`}
         onDragOver={(event) => {
           event.preventDefault();
           setDrag(true);
@@ -373,7 +373,7 @@ export function ChatComposer({ state, store, locale, onOpenAccounts, onOpenConse
           <button
             type="button"
             data-chat-send=""
-            className={`grid h-8 w-8 flex-none place-items-center rounded-full border-0 bg-ink text-bg disabled:pointer-events-none disabled:bg-hairline disabled:text-inkdim ${FOCUS}`}
+            className={`grid h-8 w-8 flex-none place-items-center rounded-full border-0 bg-ink text-bg disabled:cursor-not-allowed disabled:opacity-45 ${FOCUS}`}
             aria-label={t(locale, 'chat.send')}
             disabled={!canSend}
             onClick={() => void store.send()}
@@ -382,13 +382,13 @@ export function ChatComposer({ state, store, locale, onOpenAccounts, onOpenConse
           </button>
         )}
       </div>
-      <div className="flex items-center justify-center gap-2 font-mono text-[0.6875rem] font-medium leading-4 text-inkdim">
+      <div className="flex items-center justify-center gap-2 text-[0.6875rem] font-medium leading-4 text-inkdim">
         <button
           type="button"
           data-chat-tier=""
           aria-haspopup="dialog"
           aria-expanded={state.permOpen}
-          className={`rounded-control border border-bord bg-transparent px-2 py-1 font-mono text-[0.6875rem] font-medium leading-4 hover:bg-raised ${minutes === null ? 'text-inkdim' : 'text-signal-soft'} ${FOCUS}`}
+          className={`rounded-control border border-bord bg-transparent px-2 py-1 text-[0.6875rem] font-medium leading-4 hover:bg-raised ${minutes === null ? 'text-inkdim' : 'text-ink'} ${FOCUS}`}
           onClick={() => store.togglePerm()}
         >
           {minutes === null ? t(locale, 'chat.tier.suggest') : fill(t(locale, 'chat.tier.apply'), { n: minutes })}

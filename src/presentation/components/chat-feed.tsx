@@ -184,7 +184,7 @@ function DraftCard({ artifact, detail, store, locale }: { readonly artifact: Ext
               </button>
             </>
           ) : (
-            <span className={`font-mono text-[0.6875rem] font-medium leading-4 ${draft.status === 'confirmed' ? 'text-proceed' : 'text-inkdim'}`}>
+            <span className={`text-[0.6875rem] font-medium leading-4 ${draft.status === 'confirmed' ? 'text-proceed' : 'text-inkdim'}`}>
               {t(locale, draft.status === 'confirmed' ? 'chat.card.draft.made' : 'chat.card.draft.dropped')}
             </span>
           )}
@@ -240,7 +240,7 @@ function ProposalCard({ artifact, state, store, locale }: { readonly artifact: E
               </button>
             </>
           ) : (
-            <span className={`font-mono text-[0.6875rem] font-medium leading-4 ${action.status === 'applied' ? 'text-proceed' : 'text-inkdim'}`}>
+            <span className={`text-[0.6875rem] font-medium leading-4 ${action.status === 'applied' ? 'text-proceed' : 'text-inkdim'}`}>
               {t(locale, action.status === 'applied' ? 'chat.card.proposal.approved' : action.status === 'undone' ? 'chat.action.undone' : action.status === 'failed' ? 'chat.action.failed' : 'chat.card.proposal.rejected')}
             </span>
           )}
@@ -286,7 +286,7 @@ function ActionRow({ action, backed, store, locale, now }: { readonly action: Ch
           </button>
         </>
       ) : null}
-      {undone ? <span className="font-mono text-[0.6875rem] font-medium leading-4 text-inkdim">{t(locale, 'chat.action.undone')}</span> : null}
+      {undone ? <span className="text-[0.6875rem] font-medium leading-4 text-inkdim">{t(locale, 'chat.action.undone')}</span> : null}
       {undoOpen(action, now) ? (
         <button type="button" className={BUTTON} onClick={() => void store.undo(action.id)}>
           {t(locale, 'chat.action.undo')}

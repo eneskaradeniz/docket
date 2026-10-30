@@ -37,8 +37,8 @@ export interface WindowFrameProps {
 export function BrandMark({ name }: { readonly name: string }) {
   return (
     <div className="flex items-center gap-2.5 px-1.5 font-bold tracking-[-0.01em] text-ink">
-      <span aria-hidden="true" className="relative block h-[18px] w-[18px] flex-none rounded-control bg-signal">
-        <span className="absolute inset-x-1 inset-y-[5px] border-y-2 border-signal-ink" />
+      <span aria-hidden="true" className="relative block h-[18px] w-[18px] flex-none rounded-control bg-ink">
+        <span className="absolute inset-x-1 inset-y-[5px] border-y-2 border-bg" />
       </span>
       {name}
     </div>
@@ -56,7 +56,7 @@ export function WindowFrame({ label, brand, rail, railNote, head, children, foot
       {...(labelledBy === undefined ? { 'aria-label': label } : { 'aria-labelledby': labelledBy })}
       data-window=""
       {...(dataMark === undefined ? {} : { [dataMark]: '' })}
-      className={`relative grid ${compact ? 'box-border h-auto max-h-[min(calc(100vh-96px),max(32.5rem,60vh))] min-w-0 w-[min(640px,calc(100vw-32px))] grid-cols-[minmax(0,1fr)]' : 'h-[680px] max-h-[calc(100vh-96px)] w-[1040px] max-w-[calc(100vw-48px)] grid-cols-[200px_minmax(0,1fr)]'} overflow-hidden rounded-panel border border-bord bg-surface shadow-2xl outline-none ${className}`}
+      className={`relative grid ${compact ? 'box-border h-auto max-h-[min(calc(100vh-96px),max(32.5rem,60vh))] min-w-0 w-[min(640px,calc(100vw-32px))] grid-cols-[minmax(0,1fr)]' : 'h-[680px] max-h-[calc(100vh-96px)] w-[1040px] max-w-[calc(100vw-48px)] grid-cols-[200px_minmax(0,1fr)]'} overflow-hidden rounded-panel border border-bord bg-surface shadow-elevation-overlay outline-none ${className}`}
     >
       {compact ? null : <nav aria-label={label} className="flex flex-col gap-[18px] overflow-y-auto border-r border-hairline bg-band px-3.5 pb-4 pt-[22px]">
         <BrandMark name={brand} />

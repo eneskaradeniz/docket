@@ -64,11 +64,11 @@ describe('sidebar frame (U-51)', () => {
     expect(html).toContain('data-nav-library');
   });
 
-  it('U-84: the row shows the total count in mono only when it is above zero', () => {
+  it('U-84: the row shows the total count only when it is above zero', () => {
     expect(nav({ libraryCount: 0 })).not.toContain('data-library-count');
     const html = nav({ libraryCount: 7 });
     expect(html).toMatch(/data-library-count[^>]*>7</);
-    expect(html.slice(html.indexOf('data-library-count') - 200, html.indexOf('data-library-count') + 200)).toContain('font-mono');
+    expect(html.slice(html.indexOf('data-library-count') - 200, html.indexOf('data-library-count') + 200)).not.toContain('font-mono');
   });
 
   it('U-84: the row is current on the library route and not otherwise', () => {

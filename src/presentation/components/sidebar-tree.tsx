@@ -47,7 +47,7 @@ const dot = (status: RepoNode['status']): string =>
 const pill = (count: number | null, selected: boolean): string => {
   if (count === null) return '';
   const tone = selected ? 'border-bord text-ink' : 'border-hairline text-inkdim';
-  return `inline-flex h-[18px] min-w-5 flex-none items-center justify-center rounded-full border px-1.5 font-mono text-[11px] ${tone}`;
+  return `inline-flex h-[18px] min-w-5 flex-none items-center justify-center rounded-full border px-1.5 text-[11px] ${tone}`;
 };
 
 /** A row's standing grammar: the active row carries the one active-state language, a project
@@ -150,12 +150,12 @@ const RepoRow = ({
       {node.name}
     </span>
     {node.first ? (
-      <span title={node.name} aria-label={node.name} className="flex-none text-[10px] text-signal">
+      <span title={node.name} aria-label={node.name} className="flex-none text-[10px] text-ink">
         ★
       </span>
     ) : null}
     {pillCount(node.active) !== null ? (
-      <span className="inline-flex h-4 min-w-[18px] flex-none items-center justify-center rounded-full border px-1.5 font-mono text-[10px] text-inkdim">
+      <span className="inline-flex h-4 min-w-[18px] flex-none items-center justify-center rounded-full border px-1.5 text-[10px] text-inkdim">
         {node.active}
       </span>
     ) : null}

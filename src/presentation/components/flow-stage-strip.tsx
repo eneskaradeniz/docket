@@ -52,7 +52,7 @@ export function FlowStageStrip({ locale, flow, activeStage, accountLabels, libra
                 onClick={() => onSelect(stageRow.id)}
                 className={[
                   'flex h-16 w-[11.25rem] flex-col justify-center gap-1 rounded-card border px-3 text-left',
-                  selected ? 'border-signal bg-raised' : 'border-hairline bg-surface hover:bg-raised',
+                  selected ? 'border-bord bg-raised' : 'border-hairline bg-surface hover:bg-raised',
                 ].join(' ')}
               >
                 <span className="truncate text-[13px] font-semibold text-ink">{stageRow.name}</span>
