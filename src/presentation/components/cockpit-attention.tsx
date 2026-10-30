@@ -60,7 +60,7 @@ export function CockpitAttentionRow({ item, ask, locale, ageMs, onOpen, onAnswer
       </span>
       <span
         data-attention-line=""
-        className="col-start-2 line-clamp-2 [overflow-wrap:anywhere] min-h-[2.15625rem] font-mono text-[0.71875rem] text-inkdim"
+        className="col-start-2 line-clamp-2 [overflow-wrap:anywhere] min-h-[2.15625rem] text-[0.71875rem] text-inkdim"
         // The whole line rides the title, not only "project / repo" (U-62): in U-55's fill
         // columns the card can be narrower than the line, and the text past the two-line clamp
         // must stay reachable in full. The min-height reserves the wrap's second line — two of
@@ -72,7 +72,7 @@ export function CockpitAttentionRow({ item, ask, locale, ageMs, onOpen, onAnswer
           item.stage !== null ? ` · ${item.stage}` : ''
         }`}
       >
-        {formatWorkOrderCode(item.number, locale)} · {item.project} / {item.repo}
+        <span className="font-mono">{formatWorkOrderCode(item.number, locale)}</span> · {item.project} / {item.repo}
         {item.stage !== null ? ` · ${item.stage}` : ''} ·{' '}
         <span className={ageMs >= OVERDUE_MS ? 'text-signal-soft' : ''}>{formatAge(locale, ageMs)}</span>
       </span>

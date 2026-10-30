@@ -45,7 +45,7 @@ const TAB_LABEL: Readonly<Record<ProposalTab, LabelKey>> = {
 const FOCUS =
   'focus-visible:outline-solid focus-visible:outline-[0.125rem] focus-visible:outline-offset-[0.125rem] focus-visible:outline-signal-soft';
 
-const CHIP = 'inline-flex h-5 flex-none items-center gap-2 rounded-full border px-2 font-mono text-[0.6875rem] leading-none whitespace-nowrap';
+const CHIP = 'inline-flex h-5 flex-none items-center gap-2 rounded-full border px-2 text-[0.6875rem] leading-none whitespace-nowrap';
 
 type Standing = 'pending' | 'stale' | 'approved' | 'rejected';
 
@@ -299,7 +299,7 @@ export function ProposalsScreen({ store, locale, now }: ProposalsScreenProps) {
             className={`h-6 rounded-control px-3 text-[0.78125rem] font-semibold leading-[1rem] ${state.tab === tab ? 'bg-raised text-ink' : 'text-inkdim hover:text-ink'} ${FOCUS}`}
           >
             {t(locale, TAB_LABEL[tab])}
-            <span data-proposals-count={tab} className="ml-2 font-mono text-[0.6875rem] leading-[1rem] text-inkdim">
+            <span data-proposals-count={tab} className="ml-2 text-[0.6875rem] leading-[1rem] text-inkdim">
               {counts[tab]}
             </span>
           </button>

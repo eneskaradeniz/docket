@@ -57,7 +57,7 @@ const chipLabel = (chip: RefChip, locale: Locale): string => {
   return t(locale, key);
 };
 
-const REMOVE = `border-0 bg-transparent pl-1 font-mono text-[0.75rem] leading-none text-inkdim hover:text-ink ${FOCUS}`;
+const REMOVE = `border-0 bg-transparent pl-1 text-[0.75rem] leading-none text-inkdim hover:text-ink ${FOCUS}`;
 
 /** The full mode aligns the floating menus to the reading column's edges — never narrower than
  *  the column's own 2 rem gutter (U-194). */
@@ -382,13 +382,13 @@ export function ChatComposer({ state, store, locale, onOpenAccounts, onOpenConse
           </button>
         )}
       </div>
-      <div className="flex items-center justify-center gap-2 font-mono text-[0.6875rem] font-medium leading-4 text-inkdim">
+      <div className="flex items-center justify-center gap-2 text-[0.6875rem] font-medium leading-4 text-inkdim">
         <button
           type="button"
           data-chat-tier=""
           aria-haspopup="dialog"
           aria-expanded={state.permOpen}
-          className={`rounded-control border border-bord bg-transparent px-2 py-1 font-mono text-[0.6875rem] font-medium leading-4 hover:bg-raised ${minutes === null ? 'text-inkdim' : 'text-ink'} ${FOCUS}`}
+          className={`rounded-control border border-bord bg-transparent px-2 py-1 text-[0.6875rem] font-medium leading-4 hover:bg-raised ${minutes === null ? 'text-inkdim' : 'text-ink'} ${FOCUS}`}
           onClick={() => store.togglePerm()}
         >
           {minutes === null ? t(locale, 'chat.tier.suggest') : fill(t(locale, 'chat.tier.apply'), { n: minutes })}

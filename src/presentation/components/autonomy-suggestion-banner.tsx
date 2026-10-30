@@ -119,7 +119,7 @@ export function FlowLibraryRow({ locale, flow, version }: FlowLibraryRowProps) {
       {suggestsAuto ? (
         <span
           data-flow-suggestion-tag=""
-          className="rounded-full border border-bord bg-raised px-2 py-0.5 font-mono text-[10px] text-inkdim"
+          className="rounded-full border border-bord bg-raised px-2 py-0.5 text-[10px] text-inkdim"
         >
           {t(locale, 'autonomy.tag.suggestsAuto')}
         </span>
@@ -153,7 +153,7 @@ export function FlowEditorStageRow({ locale, stage }: FlowEditorStageRowProps) {
       {tagText !== undefined ? (
         <span
           data-stage-autonomy-tag=""
-          className="rounded-full border border-bord bg-raised px-2 py-0.5 font-mono text-[10px] text-inkdim"
+          className="rounded-full border border-bord bg-raised px-2 py-0.5 text-[10px] text-inkdim"
         >
           {tagText}
         </span>

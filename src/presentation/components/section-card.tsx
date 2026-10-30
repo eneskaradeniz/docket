@@ -14,7 +14,7 @@ export function SectionCard({ title, action, children }: SectionCardProps) {
   return (
     <section className="rounded-card border border-hairline bg-surface">
       <header className="flex min-h-[38px] items-center justify-between gap-3 border-b border-hairline px-4 py-2">
-        <h2 className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-inkdim">{title}</h2>
+        <h2 className="text-[11px] font-medium uppercase tracking-[0.08em] text-inkdim">{title}</h2>
         {action !== undefined ? action : null}
       </header>
       <div className="px-4 py-3.5">{children}</div>

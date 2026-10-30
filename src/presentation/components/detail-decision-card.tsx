@@ -27,7 +27,10 @@ import type {
 
 const INPUT_CLASS =
   'rounded-control border border-bord bg-raised px-2 py-[0.3125rem] font-mono text-[0.8125rem] text-ink outline-none placeholder:text-inkdim focus:border-signal';
-const LABEL_CLASS = 'font-mono text-[0.6875rem] uppercase tracking-[0.06em] text-inkdim';
+// The PR title is prose, not a git ref — its field is the same shape without the machine face.
+const TITLE_INPUT_CLASS =
+  'rounded-control border border-bord bg-raised px-2 py-[0.3125rem] text-[0.8125rem] text-ink outline-none placeholder:text-inkdim focus:border-signal';
+const LABEL_CLASS = 'text-[0.6875rem] uppercase tracking-[0.06em] text-inkdim';
 
 export interface DecisionEvidence {
   /** The changed-files count the approve card names; null while the changes read has not landed
@@ -748,7 +751,7 @@ export function GitDoorsCard(props: GitDoorsCardProps) {
               value={title}
               onChange={(event) => setTitle(event.target.value)}
               placeholder={t(locale, 'detail.git.openPr.titlePlaceholder')}
-              className={INPUT_CLASS}
+              className={TITLE_INPUT_CLASS}
             />
             {prRejected ? (
               <p role="alert" className="m-0 text-[0.78125rem] text-error">

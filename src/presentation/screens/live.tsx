@@ -99,14 +99,14 @@ function LiveItemRow({ item, locale }: { readonly item: LivePaneItem; readonly l
     case 'thought':
       return (
         <div className="grid gap-0.5">
-          <span className="font-mono text-[0.65625rem] uppercase tracking-[0.06em] text-inkdim">{t(locale, 'live.kind.thought')}</span>
+          <span className="text-[0.65625rem] uppercase tracking-[0.06em] text-inkdim">{t(locale, 'live.kind.thought')}</span>
           <p className="whitespace-pre-wrap [overflow-wrap:anywhere] text-[0.8125rem] text-inkdim">{item.text}</p>
         </div>
       );
     case 'message':
       return (
         <div className="grid gap-0.5">
-          <span className="font-mono text-[0.65625rem] uppercase tracking-[0.06em] text-inkdim">{t(locale, 'live.kind.message')}</span>
+          <span className="text-[0.65625rem] uppercase tracking-[0.06em] text-inkdim">{t(locale, 'live.kind.message')}</span>
           <p className="whitespace-pre-wrap [overflow-wrap:anywhere] text-[0.84375rem] text-ink">{item.text}</p>
         </div>
       );
@@ -114,7 +114,7 @@ function LiveItemRow({ item, locale }: { readonly item: LivePaneItem; readonly l
       return (
         <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-2">
           <div className="flex min-w-0 items-baseline gap-2">
-            <span aria-hidden="true" className="flex-none font-mono text-[0.78125rem] text-inkdim">{toolGlyph(item.name)}</span>
+            <span aria-hidden="true" className="flex-none text-[0.78125rem] text-inkdim">{toolGlyph(item.name)}</span>
             <span className="font-mono text-[0.78125rem] text-ink">{item.name}</span>
             {item.target !== null ? (
               <code className="min-w-0 truncate font-mono text-[0.6875rem] text-inkdim" title={item.target}>
@@ -122,14 +122,14 @@ function LiveItemRow({ item, locale }: { readonly item: LivePaneItem; readonly l
               </code>
             ) : null}
           </div>
-          <span className={`font-mono text-[0.6875rem] ${TOOL_STATUS_CLASS[item.status]}`}>{t(locale, TOOL_STATUS_KEY[item.status])}</span>
+          <span className={`text-[0.6875rem] ${TOOL_STATUS_CLASS[item.status]}`}>{t(locale, TOOL_STATUS_KEY[item.status])}</span>
         </div>
       );
     case 'usage':
     case 'quotaSignal':
       return (
         <div className="grid gap-0.5">
-          <span className="font-mono text-[0.65625rem] uppercase tracking-[0.06em] text-inkdim">
+          <span className="text-[0.65625rem] uppercase tracking-[0.06em] text-inkdim">
             {t(locale, item.kind === 'usage' ? 'live.kind.usage' : 'live.kind.quotaSignal')}
           </span>
           {item.kind === 'usage' ? <UsageLine item={item} locale={locale} /> : <MeterLine item={item} locale={locale} />}
@@ -172,7 +172,7 @@ export function LivePaneScreen({ store, locale }: LivePaneScreenProps) {
 
       {state.ask !== null ? (
         <div className="grid min-w-0 gap-2 rounded-card border border-signal/45 bg-surface p-3">
-          <span className="font-mono text-[0.65625rem] uppercase tracking-[0.06em] text-signal">{t(locale, 'live.ask.title')}</span>
+          <span className="text-[0.65625rem] uppercase tracking-[0.06em] text-signal">{t(locale, 'live.ask.title')}</span>
           <div className="min-w-0">
             <span className="font-mono text-[0.8125rem] text-ink">{formatAskTool(locale, state.ask.tool)}</span>
             {state.ask.target !== null ? (
@@ -201,7 +201,7 @@ export function LivePaneScreen({ store, locale }: LivePaneScreenProps) {
         className="grid h-80 min-w-0 auto-rows-min content-start gap-1.5 overflow-y-auto rounded-panel border border-hairline bg-band p-2 [scroll-snap-type:y_proximity] motion-reduce:[scroll-snap-type:none]"
       >
         {state.items.length === 0 ? (
-          <p className="col-span-full flex items-center gap-2.5 px-2 font-mono text-[0.6875rem] text-inkdim">
+          <p className="col-span-full flex items-center gap-2.5 px-2 text-[0.6875rem] text-inkdim">
             <span aria-hidden="true" className="h-2 w-2 flex-none rounded-full bg-info motion-safe:animate-pulse" />
             {t(locale, 'live.empty')}
           </p>

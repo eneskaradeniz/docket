@@ -59,7 +59,7 @@ const TaskGlyph = ({ status, locale }: { readonly status: string; readonly local
     return (
       <span
         aria-label={t(locale, 'roadmap.task.done')}
-        className="grid h-[1.125rem] w-[1.125rem] flex-none place-items-center rounded-full bg-proceed font-mono text-[0.625rem] font-bold leading-none text-black"
+        className="grid h-[1.125rem] w-[1.125rem] flex-none place-items-center rounded-full bg-proceed text-[0.625rem] font-bold leading-none text-black"
       >
         ✓
       </span>
@@ -75,7 +75,7 @@ const TaskGlyph = ({ status, locale }: { readonly status: string; readonly local
 const OrderGlyph = ({ status }: { readonly status: string }) => {
   if (status === 'done') {
     return (
-      <span aria-hidden="true" className="grid h-[0.875rem] w-[0.875rem] flex-none place-items-center rounded-full bg-proceed font-mono text-[0.5625rem] font-bold leading-none text-black">
+      <span aria-hidden="true" className="grid h-[0.875rem] w-[0.875rem] flex-none place-items-center rounded-full bg-proceed text-[0.5625rem] font-bold leading-none text-black">
         ✓
       </span>
     );
@@ -138,7 +138,7 @@ const BUTTON_PRIMARY = `${BUTTON} border-signal bg-signal text-signal-ink enable
 
 const LAYER_TAB = `h-8 rounded-control border px-3 text-[0.8125rem] font-semibold ${FOCUS}`;
 
-const CHIP = 'inline-flex h-5 flex-none items-center gap-2 rounded-full border px-2 font-mono text-[0.6875rem] leading-none';
+const CHIP = 'inline-flex h-5 flex-none items-center gap-2 rounded-full border px-2 text-[0.6875rem] leading-none';
 
 /** A status chip: a lamp and its word. `lit` is the raised fill and ink dot of work in motion. */
 const StatusChip = ({ tone, label }: { readonly tone: 'run' | 'quiet' | 'done'; readonly label: string }) => {
@@ -216,7 +216,7 @@ const PhaseCard = ({
           </span>
         </button>
         <span className="relative z-10 flex min-h-7 items-center gap-3">
-          <span className="flex-none font-mono text-[0.6875rem] leading-4 text-inkdim">
+          <span className="flex-none text-[0.6875rem] leading-4 text-inkdim">
             {done}/{phase.tasks.length}
           </span>
           {control.button === 'run' ? (
@@ -380,7 +380,7 @@ const TaskRow = ({
         <Chevron open={expanded} small />
         <TaskGlyph status={task.status} locale={locale} />
         {title}
-        <span className="flex-none font-mono text-[0.6875rem] text-inkdim">
+        <span className="flex-none text-[0.6875rem] text-inkdim">
           {task.targets.length} {t(locale, 'roadmap.task.repoMany')}
         </span>
       </button>
@@ -491,7 +491,7 @@ export function RoadmapScreen({
       </div>
 
       {state.loading && view === null && state.problem === null ? (
-        <p className="font-mono text-[0.6875rem] uppercase tracking-[0.04em] text-inkdim">{t(locale, 'roadmap.loading')}</p>
+        <p className="text-[0.6875rem] uppercase tracking-[0.04em] text-inkdim">{t(locale, 'roadmap.loading')}</p>
       ) : null}
 
       {state.problem !== null ? (

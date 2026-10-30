@@ -184,7 +184,7 @@ function DangerZone({ account, locale, onRemove, removeWarning }: Pick<AccountEd
       {removeWarning !== undefined ? (
         <div role="alert" className="grid gap-2 rounded-card border border-signal/40 bg-signal/10 px-3 py-2.5">
           <p className="text-[13px] text-ink">
-            {t(locale, 'settings.remove.warning')} <span className="font-mono text-[12.5px] text-signal-soft">{removeWarning.roles.join(', ')}</span>
+            {t(locale, 'settings.remove.warning')} <span className="text-[12.5px] text-signal-soft">{removeWarning.roles.join(', ')}</span>
           </p>
           {removeWarning.onlyAccount ? (
             <p className="text-[12.5px] text-inkdim">{t(locale, 'settings.remove.onlyAccount')}</p>

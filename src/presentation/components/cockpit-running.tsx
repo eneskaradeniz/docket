@@ -67,7 +67,7 @@ export function CockpitRunningRow({ run, locale, accountLabel, accountProvider, 
         </span>
       </span>
       <span className="whitespace-nowrap text-[0.75rem] text-inkdim">{accountLabel}</span>
-      <span className="whitespace-nowrap font-mono text-[0.71875rem] text-inkdim">{formatAge(locale, sinceMs)}</span>
+      <span className="whitespace-nowrap text-[0.71875rem] text-inkdim">{formatAge(locale, sinceMs)}</span>
       <span
         aria-hidden="true"
         className={`h-[0.6875rem] w-[0.6875rem] rounded-full border-[1.5px] border-inkdim ${queued ? 'border-dotted' : 'border-t-transparent motion-safe:animate-spin'}`}

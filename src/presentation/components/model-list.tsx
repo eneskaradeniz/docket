@@ -50,7 +50,7 @@ const BillingMarkGlyph = ({ locale, billing }: { readonly locale: Locale; readon
       $
     </span>
   ) : (
-    <span className="rounded-control border border-dashed border-inkdim px-1 font-mono text-[12px] font-semibold text-inkdim" title={t(locale, 'settings.models.unknown')}>
+    <span className="rounded-control border border-dashed border-inkdim px-1 text-[12px] font-semibold text-inkdim" title={t(locale, 'settings.models.unknown')}>
       ?
     </span>
   );
@@ -138,7 +138,7 @@ const ConsentPanel = ({
       {draft.capRequired ? (
       <>
       <label className="grid gap-1">
-        <span className="font-mono text-[11px] uppercase tracking-[0.06em] text-inkdim">
+        <span className="text-[11px] uppercase tracking-[0.06em] text-inkdim">
           {t(locale, 'settings.models.consent.scope')}
         </span>
         <select
@@ -154,7 +154,7 @@ const ConsentPanel = ({
         </select>
       </label>
       <label className="grid gap-1">
-        <span className="font-mono text-[11px] uppercase tracking-[0.06em] text-inkdim">
+        <span className="text-[11px] uppercase tracking-[0.06em] text-inkdim">
           {t(locale, 'settings.models.consent.amount')}
         </span>
         <input

@@ -125,7 +125,7 @@ function RailStep({
           standing === 'cur' ? 'bg-raised text-ink' : standing === 'done' ? 'text-ink hover:bg-raised' : 'text-inkdim'
         }`}
       >
-        <span aria-hidden="true" className={`grid h-[22px] w-[22px] flex-none place-items-center rounded-full border font-mono text-[11px] ${badge}`}>
+        <span aria-hidden="true" className={`grid h-[22px] w-[22px] flex-none place-items-center rounded-full border text-[11px] ${badge}`}>
           {number}
         </span>
         {t(locale, STEP_KEY[step])}
@@ -224,7 +224,7 @@ function CapabilityRow({ row, state, store, locale }: {
           className="flex min-w-0 flex-1 items-center gap-3 text-left"
         >
           {/* Technical terms (MCP, Skill, Context) are never translated. */}
-          <span className="flex-none font-mono text-[11px] text-inkdim">{row.kind}</span>
+          <span className="flex-none text-[11px] text-inkdim">{row.kind}</span>
           <span className="min-w-0 flex-1 truncate text-[13.5px] text-ink">{row.name}</span>
           {row.imported ? (
             <span className="flex-none rounded-full bg-raised px-2 py-0.5 text-[11px] font-semibold text-inkdim">{t(locale, 'wizard.capabilities.added')}</span>

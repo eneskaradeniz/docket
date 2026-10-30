@@ -10,7 +10,7 @@ import {
 import type { RepoRoadmapSlice, RoadmapRepoTab, RoadmapStore } from '../stores/roadmap';
 
 const FOCUS = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-signal-soft';
-const CHIP = 'inline-flex h-5 flex-none items-center gap-1 rounded-control border px-1.5 font-mono text-[0.6875rem] leading-none';
+const CHIP = 'inline-flex h-5 flex-none items-center gap-1 rounded-control border px-1.5 text-[0.6875rem] leading-none';
 const LINKED_CHIP = `${CHIP} border-bord text-ink`;
 
 const fill = (text: string, vars: Readonly<Record<string, string>> | undefined): string =>
@@ -45,7 +45,7 @@ const IssueGlyph = ({ closed, locale }: { readonly closed: boolean; readonly loc
     return (
       <span
         aria-label={t(locale, 'roadmap.repo.state.closed')}
-        className="grid h-[1.125rem] w-[1.125rem] flex-none place-items-center rounded-full bg-proceed font-mono text-[0.625rem] font-bold leading-none text-black"
+        className="grid h-[1.125rem] w-[1.125rem] flex-none place-items-center rounded-full bg-proceed text-[0.625rem] font-bold leading-none text-black"
       >
         ✓
       </span>
@@ -160,7 +160,7 @@ export function RoadmapRepoLayer({
   if (slice.loading && view === null && slice.problem === null) {
     return (
       <div role="status" data-repo-roadmap-loading className="rounded-card border border-hairline bg-surface px-3 py-4">
-        <p className="m-0 font-mono text-[0.6875rem] uppercase tracking-[0.04em] text-inkdim">{t(locale, 'roadmap.repo.loading')}</p>
+        <p className="m-0 text-[0.6875rem] uppercase tracking-[0.04em] text-inkdim">{t(locale, 'roadmap.repo.loading')}</p>
         <ol aria-hidden="true" className="m-0 mt-3 flex list-none flex-col gap-2 p-0">
           {[0, 1, 2].map((tile) => (
             <li key={tile} className="h-12 animate-pulse rounded-card border border-hairline bg-sunk" />
@@ -256,17 +256,17 @@ export function RoadmapRepoLayer({
         <div className="grid grid-cols-3 gap-3 px-3 py-3 text-[0.75rem]">
           <div>
             <p className="m-0 text-inkdim">{t(locale, 'roadmap.repo.summary.milestones')}</p>
-            <p className="m-0 font-mono text-base text-ink">{view.milestones.length}</p>
+            <p className="m-0 text-base text-ink">{view.milestones.length}</p>
           </div>
           <div>
             <p className="m-0 text-inkdim">{t(locale, 'roadmap.repo.summary.issues')}</p>
-            <p className="m-0 font-mono text-base text-ink">
+            <p className="m-0 text-base text-ink">
               {openIssues.length} / {topLevel.length}
             </p>
           </div>
           <div>
             <p className="m-0 text-inkdim">{t(locale, 'roadmap.repo.summary.linkedPhases')}</p>
-            <p className="m-0 font-mono text-base text-ink">{linkedPhases.size}</p>
+            <p className="m-0 text-base text-ink">{linkedPhases.size}</p>
           </div>
         </div>
       </div>
@@ -289,7 +289,7 @@ export function RoadmapRepoLayer({
                 <span className="min-w-0 flex-1 truncate text-[0.875rem] font-bold text-ink">{milestone.title}</span>
                 <span className={`${CHIP} border-hairline text-inkdim`}>{sourceChip(locale, milestone.source)}</span>
                 <PhaseBadge link={msLink} locale={locale} onJump={onJumpPhase} />
-                <span className="flex-none font-mono text-[0.6875rem] text-inkdim">
+                <span className="flex-none text-[0.6875rem] text-inkdim">
                   {done}/{issues.length}
                 </span>
               </button>
@@ -316,7 +316,7 @@ export function RoadmapRepoLayer({
           <section className="overflow-hidden rounded-card border border-hairline bg-surface">
             <div className="flex items-center justify-between px-4 py-3">
               <span className="text-[0.875rem] font-bold text-ink">{t(locale, 'roadmap.repo.unassigned.title')}</span>
-              <span className="font-mono text-[0.6875rem] text-inkdim">0/{unassigned.length}</span>
+              <span className="text-[0.6875rem] text-inkdim">0/{unassigned.length}</span>
             </div>
             <div className="border-t border-hairline px-1 pb-2">
               {unassigned.map((issue) => (

@@ -30,7 +30,7 @@ export function CockpitClosedList({ entries, locale, sinceMs, onOpen }: CockpitC
             </span>
           </span>
           <span
-            className="max-w-[15rem] overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[0.71875rem] text-inkdim"
+            className="max-w-[15rem] overflow-hidden text-ellipsis whitespace-nowrap text-[0.71875rem] text-inkdim"
             title={`${entry.project} / ${entry.repo}`}
           >
             {entry.project} / {entry.repo}
@@ -40,7 +40,7 @@ export function CockpitClosedList({ entries, locale, sinceMs, onOpen }: CockpitC
               {t(locale, entry.outcome === 'merged' ? 'cockpit.closed.merged' : 'cockpit.closed.cancelled')}
             </span>
           ) : null}
-          <span className="whitespace-nowrap font-mono text-[0.71875rem] text-inkdim">{formatAge(locale, sinceMs(entry.closedAt))}</span>
+          <span className="whitespace-nowrap text-[0.71875rem] text-inkdim">{formatAge(locale, sinceMs(entry.closedAt))}</span>
           </button>
         </li>
       ))}

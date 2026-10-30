@@ -18,7 +18,7 @@ export function FlowStrip({ locale, flow, skippedStageIds }: FlowStripProps) {
       className="rounded-card border border-bord bg-surface px-3 py-2"
     >
       <div className="mb-2 flex flex-wrap items-center gap-2">
-        <span className="font-mono text-[11px] uppercase tracking-[0.06em] text-inkdim">{t(locale, 'workOrder.flowStrip.label')}</span>
+        <span className="text-[11px] uppercase tracking-[0.06em] text-inkdim">{t(locale, 'workOrder.flowStrip.label')}</span>
         <span className="rounded-full border border-bord bg-raised px-2 py-0.5 font-mono text-[10px] text-inkdim">
           {fill(t(locale, 'workOrder.flowStrip.version'), { version: flow.flowVersion })}
         </span>

@@ -20,7 +20,7 @@ import { UnfoldIcon } from './board-icons';
 const gridOf = (asking: boolean): string =>
   asking ? 'grid grid-cols-[20px_72px_minmax(0,1fr)_auto_184px] items-center gap-4 px-4' : 'grid grid-cols-[20px_72px_minmax(0,1fr)_184px] items-center gap-4 px-4';
 
-const COUNT_CLASS = 'inline-flex items-center gap-1.5 font-mono text-[12px] font-medium leading-none text-ink';
+const COUNT_CLASS = 'inline-flex items-center gap-1.5 text-[12px] font-medium leading-none text-ink';
 
 export function BoardList({
   groups,
@@ -82,7 +82,7 @@ export function BoardList({
                   <UnfoldIcon />
                 </span>
                 <span className="min-w-0 truncate" title={name}>{name}</span>
-                <span className="inline-flex h-5 flex-none items-center rounded-full bg-bg px-2 font-mono text-[12px] font-medium leading-none text-inkdim">{group.rows.length}</span>
+                <span className="inline-flex h-5 flex-none items-center rounded-full bg-bg px-2 text-[12px] font-medium leading-none text-inkdim">{group.rows.length}</span>
                 {group.running > 0 ? (
                   <span className={COUNT_CLASS}>
                     <span aria-hidden="true" className="h-2 w-2 rounded-full bg-proceed" />

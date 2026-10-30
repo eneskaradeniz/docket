@@ -176,7 +176,7 @@ export function DragOrderList({ locale, items, markFor, onReorder, label, sessio
               >
                 <Grip />
               </span>
-              <span className={`w-[18px] flex-none text-right font-mono text-[13px] ${index === 0 ? 'text-ink' : 'text-inkdim'}`}>{index + 1}</span>
+              <span className={`w-[18px] flex-none text-right text-[13px] ${index === 0 ? 'text-ink' : 'text-inkdim'}`}>{index + 1}</span>
               <span className="grid h-[26px] w-[26px] flex-none place-items-center rounded-control border border-hairline bg-raised text-ink">
                 <ProviderMark provider={item.markKey ?? ''} mark={item.markKey === null ? null : markFor(item.markKey)} size={15} />
               </span>

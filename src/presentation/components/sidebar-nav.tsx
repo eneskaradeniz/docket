@@ -149,7 +149,7 @@ const rowClass = (current: boolean): string =>
 const BadgePill = ({ count, locale }: { readonly count: number; readonly locale: Locale }) => (
   <span
     aria-label={t(locale, 'cockpit.section.attention')}
-    className="ml-auto inline-flex h-[18px] min-w-[18px] flex-none items-center justify-center rounded-full border border-hairline bg-raised px-1 font-mono text-[11px] text-inkdim"
+    className="ml-auto inline-flex h-[18px] min-w-[18px] flex-none items-center justify-center rounded-full border border-hairline bg-raised px-1 text-[11px] text-inkdim"
   >
     {count}
   </span>
@@ -215,7 +215,7 @@ export function SidebarNav({
           {proposalsCount > 0 ? (
             <span
               data-proposals-badge=""
-              className="ml-auto inline-flex h-[18px] min-w-[18px] flex-none items-center justify-center rounded-full border border-signal-soft px-1 font-mono text-[11px] text-signal-soft"
+              className="ml-auto inline-flex h-[18px] min-w-[18px] flex-none items-center justify-center rounded-full border border-signal-soft px-1 text-[11px] text-signal-soft"
             >
               {proposalsCount}
             </span>
@@ -233,7 +233,7 @@ export function SidebarNav({
         <LibraryIcon />
         <span className="truncate">{t(locale, 'nav.library')}</span>
         {libraryCount > 0 ? (
-          <span data-library-count="" className="ml-auto flex-none font-mono text-[12px] text-inkdim">
+          <span data-library-count="" className="ml-auto flex-none text-[12px] text-inkdim">
             {libraryCount}
           </span>
         ) : null}

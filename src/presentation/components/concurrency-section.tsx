@@ -66,7 +66,7 @@ function Stepper({ id, label, value, min, max, bad, off = false, locale, onChang
       <button type="button" data-step={id} data-dir="-1" disabled={off || value <= min} aria-label={t(locale, 'dispatch.step.dec')} onClick={() => onChange(value - 1)} className={arrow}>
         −
       </button>
-      <output className="min-w-10 text-center font-mono text-[0.8125rem] font-medium leading-none text-ink">{value}</output>
+      <output className="min-w-10 text-center text-[0.8125rem] font-medium leading-none text-ink">{value}</output>
       <button type="button" data-step={id} data-dir="1" disabled={off || value >= max} aria-label={t(locale, 'dispatch.step.inc')} onClick={() => onChange(value + 1)} className={arrow}>
         +
       </button>
@@ -140,7 +140,7 @@ export function ConcurrencySection({ store, locale, accounts, active }: Concurre
               <span className={NAME}>{t(locale, 'dispatch.machine.title')}</span>
               <span className={NOTE}>
                 {t(locale, 'dispatch.machine.facts').replace('{cores}', String(suggestion.cores)).replace('{mem}', number.format(suggestion.totalMemGb))}{' '}
-                <b className="font-mono font-semibold text-ink">{suggestion.suggested}</b>
+                <b className="font-semibold text-ink">{suggestion.suggested}</b>
               </span>
             </span>
             <ActionButton variant="neutral" disabled={form.global === suggestion.suggested} onClick={() => store.applySuggestion()}>
@@ -163,7 +163,7 @@ export function ConcurrencySection({ store, locale, accounts, active }: Concurre
           <span aria-hidden="true" className={`h-2 w-2 flex-none rounded-full ${LAMP_CLASS[card.band]}`} />
           <span className="text-[0.875rem] font-bold leading-5 text-ink">
             {t(locale, 'dispatch.status.now').replace('{effective}', String(card.effective)).replace('{cap}', String(card.cap))}{' '}
-            <span className="font-mono text-[0.8125rem] font-medium leading-5 text-inkdim">{t(locale, 'dispatch.status.unit')}</span>
+            <span className="text-[0.8125rem] font-medium leading-5 text-inkdim">{t(locale, 'dispatch.status.unit')}</span>
           </span>
           <span className={NOTE}>
             {t(locale, BAND_KEY[card.band])}
