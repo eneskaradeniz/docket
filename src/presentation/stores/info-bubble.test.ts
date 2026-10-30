@@ -2,7 +2,14 @@
 // Time is injected, so every delay boundary is a plain number.
 import { describe, expect, it } from 'vitest';
 
-import { INFO_BUBBLE_TIMING, INITIAL_INFO_BUBBLE, reduceInfoBubble, type InfoBubbleEvent, type InfoBubbleState } from './info-bubble';
+import {
+  bubbleOwnsEscape,
+  INFO_BUBBLE_TIMING,
+  INITIAL_INFO_BUBBLE,
+  reduceInfoBubble,
+  type InfoBubbleEvent,
+  type InfoBubbleState,
+} from './info-bubble';
 
 const run = (events: readonly InfoBubbleEvent[], from: InfoBubbleState = INITIAL_INFO_BUBBLE): InfoBubbleState =>
   events.reduce(reduceInfoBubble, from);
@@ -70,6 +77,20 @@ describe('info bubble reducer', () => {
   it('U-27: Esc closes the bubble, pinned or not', () => {
     const s = run([{ type: 'toggle', id: 'a', now: 0 }, { type: 'escape' }]);
     expect(s).toEqual(INITIAL_INFO_BUBBLE);
+  });
+
+  it('U-27: with a bubble open, Esc belongs to the bubble alone — the panel must not also close', () => {
+    const open = run([{ type: 'toggle', id: 'a', now: 0 }]);
+    expect(bubbleOwnsEscape(open)).toBe(true);
+    expect(run([{ type: 'escape' }], open)).toEqual(INITIAL_INFO_BUBBLE);
+  });
+
+  it('U-27: with no bubble open, Esc passes through to the panel as before', () => {
+    expect(bubbleOwnsEscape(INITIAL_INFO_BUBBLE)).toBe(false);
+    // The listener detaches the moment the bubble closes, so a second Esc is the panel's, not a
+    // bubble event to swallow.
+    const closed = run([{ type: 'toggle', id: 'a', now: 0 }, { type: 'escape' }]);
+    expect(bubbleOwnsEscape(closed)).toBe(false);
   });
 
   it('U-27: an outside click closes it', () => {
