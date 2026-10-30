@@ -128,7 +128,7 @@ export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, 
             disabled={busy}
             onClick={() => void store.attachExisting()}
             data-new-project-attach=""
-            className={`rounded-control border border-bord px-2 py-0.5 ${NOTE_CLASS} font-semibold text-ink hover:bg-raised disabled:opacity-50`}
+            className={`rounded-control border border-bord px-2 py-0.5 ${NOTE_CLASS} font-semibold text-ink enabled:hover:bg-raised disabled:cursor-not-allowed disabled:opacity-45`}
           >
             {t(locale, 'newProject.attach')}
           </button>
@@ -352,8 +352,10 @@ export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, 
             />
           </label>
           {errorUnder('path')}
+          {/* The footer's primary mirrors this action (the screen's one primary, U-375); the
+              in-card start stays the outline beside it. */}
           <ActionButton
-            variant="primary"
+            variant="neutral"
             size="md"
             disabled={form.repoPath.trim() === '' || busy}
             onClick={() => void store.startAi()}
@@ -393,7 +395,7 @@ export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, 
               className={INPUT_CLASS}
               data-setup-composer=""
             />
-            <ActionButton variant="primary" size="md" disabled={ai.draft.trim() === '' || ai.turn !== null || busy} onClick={() => void store.sendAi()}>
+            <ActionButton variant="neutral" size="md" disabled={ai.draft.trim() === '' || ai.turn !== null || busy} onClick={() => void store.sendAi()}>
               {t(locale, 'setup.ai.send')}
             </ActionButton>
           </form>

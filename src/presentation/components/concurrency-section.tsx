@@ -54,7 +54,7 @@ interface StepperProps {
 
 /** A number stepper: the value is machine data, so it is set in mono; 2 rem tall like every control. */
 function Stepper({ id, label, value, min, max, bad, off = false, locale, onChange }: StepperProps) {
-  const arrow = `h-full w-8 text-[1rem] leading-none text-ink transition-colors hover:bg-hairline motion-reduce:transition-none disabled:pointer-events-none disabled:text-inkdim ${FOCUS}`;
+  const arrow = `h-full w-8 text-[1rem] leading-none text-ink transition-colors enabled:hover:bg-hairline motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-45 ${FOCUS}`;
   return (
     <span
       role="group"

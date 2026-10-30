@@ -495,7 +495,9 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
                   <p className="m-0 text-[0.8125rem] font-semibold text-ink">{t(locale, 'detail.close.title')}</p>
                   <p className="m-0 text-[0.8125rem] text-inkdim">{t(locale, 'detail.close.body')}</p>
                   <div className="flex gap-2">
-                    <ActionButton variant="primary" size="md" onClick={() => void store.closeWorkOrder()}>
+                    {/* The view's primary stays with the waiting ask above (U-375); this inline
+                        confirm takes the outline. */}
+                    <ActionButton variant="neutral" size="md" onClick={() => void store.closeWorkOrder()}>
                       {t(locale, 'detail.close.confirm')}
                     </ActionButton>
                     <ActionButton onClick={() => setCloseConfirm(false)}>{t(locale, 'detail.action.cancel')}</ActionButton>

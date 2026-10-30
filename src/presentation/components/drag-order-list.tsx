@@ -143,10 +143,10 @@ export function DragOrderList({ locale, items, markFor, onReorder, label, sessio
               style={{ top, height: DRAG_ROW_HEIGHT }}
               className={
                 held
-                  ? 'absolute inset-x-0 z-[5] flex select-none items-center gap-3 rounded-card border border-signal bg-surface pl-2 pr-3.5 shadow-2xl scale-[1.01] outline-none transition-[transform,box-shadow,border-color] ease-out duration-[140ms] motion-reduce:transition-none'
+                  ? 'absolute inset-x-0 z-[5] flex select-none items-center gap-3 rounded-card border border-signal bg-surface pl-2 pr-3.5 shadow-elevation-overlay scale-[1.01] outline-none transition-[transform,box-shadow,border-color] ease-out duration-[140ms] motion-reduce:transition-none'
                   : settling
-                    ? 'absolute inset-x-0 flex select-none items-center gap-3 rounded-card border border-hairline bg-surface pl-2 pr-3.5 outline-none transition-[top,transform,box-shadow,border-color] ease-out duration-[140ms] motion-reduce:transition-none'
-                    : 'absolute inset-x-0 flex select-none items-center gap-3 rounded-card border border-hairline bg-surface pl-2 pr-3.5 outline-none transition-[top] ease-out duration-[160ms] hover:border-bord focus-visible:border-signal motion-reduce:transition-none'
+                    ? 'absolute inset-x-0 flex select-none items-center gap-3 rounded-card border border-hairline bg-surface pl-2 pr-3.5 shadow-elevation-flat outline-none transition-[top,transform,box-shadow,border-color] ease-out duration-[140ms] motion-reduce:transition-none'
+                    : 'absolute inset-x-0 flex select-none items-center gap-3 rounded-card border border-hairline bg-surface pl-2 pr-3.5 shadow-elevation-flat outline-none transition-[top] ease-out duration-[160ms] hover:border-bord focus-visible:border-signal motion-reduce:transition-none'
               }
             >
               <span

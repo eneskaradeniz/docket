@@ -131,8 +131,10 @@ const showNotices = (locale: Locale, pending: Promise<readonly RoadmapNotice[]>)
 // its overflow clip never hides it.
 const FOCUS = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-signal-soft';
 const BUTTON = `h-7 flex-none whitespace-nowrap rounded-control border px-3 text-[0.78125rem] font-semibold leading-none transition-colors motion-reduce:transition-none ${FOCUS}`;
-const BUTTON_SECONDARY = `${BUTTON} border-bord text-ink hover:bg-raised disabled:pointer-events-none disabled:border-hairline disabled:bg-raised disabled:text-inkdim`;
-const BUTTON_PRIMARY = `${BUTTON} border-signal bg-signal text-signal-ink disabled:pointer-events-none disabled:opacity-60`;
+// The hovers sit behind `enabled:` and a disabled button keeps its own look at one reduced
+// opacity (U-375) — never a grey fill that reads as a second surface.
+const BUTTON_SECONDARY = `${BUTTON} border-bord text-ink enabled:hover:bg-raised disabled:cursor-not-allowed disabled:opacity-45`;
+const BUTTON_PRIMARY = `${BUTTON} border-signal bg-signal text-signal-ink enabled:hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45`;
 
 const LAYER_TAB = `h-8 rounded-control border px-3 text-[0.8125rem] font-semibold ${FOCUS}`;
 

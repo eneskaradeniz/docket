@@ -93,7 +93,7 @@ function GatingCard({
   readonly locale: Locale;
 }) {
   return (
-    <li data-decision-card="gating" className="grid min-w-0 gap-3 rounded-card border border-hairline bg-surface px-5 py-4">
+    <li data-decision-card="gating" className="grid min-w-0 gap-3 rounded-card border border-hairline bg-surface shadow-elevation-card px-5 py-4">
       <h3 className="text-[0.875rem] font-semibold text-ink">{t(locale, 'detail.zone.gatingTitle')}</h3>
       <p className="m-0 text-[0.8125rem] text-inkdim">{t(locale, 'detail.zone.gatingBody')}</p>
       <ul className="m-0 grid list-none gap-1 p-0 text-[0.8125rem] text-ink">
@@ -224,7 +224,7 @@ function AttestCard({
   readonly onAttest: DecisionZoneProps['onAttest'];
 }) {
   return (
-    <li data-decision-card="attest" className="grid min-w-0 gap-3 rounded-card border border-hairline bg-surface px-5 py-4">
+    <li data-decision-card="attest" className="grid min-w-0 gap-3 rounded-card border border-hairline bg-surface shadow-elevation-card px-5 py-4">
       <h3 className="text-[0.875rem] font-semibold text-ink">{t(locale, 'detail.zone.attestTitle')}</h3>
       <p className="m-0 text-[0.8125rem] text-inkdim">{t(locale, 'detail.zone.attestBody')}</p>
       <div className="flex flex-wrap items-center gap-2">
@@ -257,7 +257,7 @@ function DeployCard({
   const commitReady = commit.trim() !== '';
   const confirmationReady = !deploy.protectedEnvironment || confirmation === deploy.environment;
   return (
-    <li data-decision-card="deploy" className="grid min-w-0 gap-3 rounded-card border border-hairline bg-surface px-5 py-4">
+    <li data-decision-card="deploy" className="grid min-w-0 gap-3 rounded-card border border-hairline bg-surface shadow-elevation-card px-5 py-4">
       <h3 className="text-[0.875rem] font-semibold text-ink">
         {t(locale, 'detail.zone.deployTitle').replace('{env}', deploy.environment)}
       </h3>
@@ -412,7 +412,7 @@ function FailedCard({
   readonly onCloseRequest: () => void;
 }) {
   return (
-    <li data-decision-card="failed" className="grid min-w-0 gap-3 rounded-card border border-hairline bg-surface px-5 py-4">
+    <li data-decision-card="failed" className="grid min-w-0 gap-3 rounded-card border border-hairline bg-surface shadow-elevation-card px-5 py-4">
       <h3 className="text-[0.875rem] font-semibold text-ink">
         {t(locale, retry ? 'detail.zone.failedRetryTitle' : 'detail.zone.failedOutTitle')}
       </h3>
@@ -480,7 +480,7 @@ function RunningCard({
     });
   };
   return (
-    <li data-decision-card="running" className="grid min-w-0 gap-3 rounded-card border border-hairline bg-surface px-5 py-4">
+    <li data-decision-card="running" className="grid min-w-0 gap-3 rounded-card border border-hairline bg-surface shadow-elevation-card px-5 py-4">
       <p className="m-0 flex flex-wrap items-baseline gap-x-2 text-[0.8125rem] text-inkdim">
         <span className="font-semibold text-ink">{t(locale, 'detail.stop.card')}</span>
         <span>{stageName}</span>
@@ -585,7 +585,7 @@ function StartCard({
   readonly onEnqueue: () => void;
 }) {
   return (
-    <li data-decision-card="start" className="grid min-w-0 gap-3 rounded-card border border-hairline bg-surface px-5 py-4">
+    <li data-decision-card="start" className="grid min-w-0 gap-3 rounded-card border border-hairline bg-surface shadow-elevation-card px-5 py-4">
       <h3 className="text-[0.875rem] font-semibold text-ink">
         {t(locale, 'detail.zone.startTitle').replace('{stage}', stageName)}
       </h3>
@@ -664,7 +664,7 @@ export function GitDoorsCard(props: GitDoorsCardProps) {
     <section
       data-decision-card="git"
       aria-label={t(locale, 'detail.git.branchLabel')}
-      className="grid min-w-0 gap-3 rounded-card border border-hairline bg-surface px-5 py-4"
+      className="grid min-w-0 gap-3 rounded-card border border-hairline bg-surface shadow-elevation-card px-5 py-4"
     >
       {/* U-344: the branch line is selectable text, never a control. */}
       <p className="m-0 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 text-[0.8125rem] text-inkdim">
@@ -857,7 +857,7 @@ export function DecisionZoneCards(props: DecisionZoneProps) {
         {t(locale, 'detail.section.expected')}
       </h2>
       {zone.kind === 'quiet' ? (
-        <p className="m-0 rounded-card border border-hairline bg-surface px-4 py-3 text-[0.8125rem] text-inkdim">
+        <p className="m-0 rounded-card border border-hairline bg-surface shadow-elevation-card px-4 py-3 text-[0.8125rem] text-inkdim">
           {t(locale, zone.done ? 'detail.expected.done' : 'detail.expected.empty')}
         </p>
       ) : (

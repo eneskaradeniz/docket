@@ -103,7 +103,7 @@ export function DetailRowMenu({ locale, items }: DetailRowMenuProps) {
           aria-label={t(locale, 'detail.menu.label')}
           ref={menuRef}
           onKeyDown={onMenuKeyDown}
-          className="absolute right-0 top-10 z-30 min-w-[12.5rem] rounded-card border border-bord bg-surface p-1 shadow-[0_8px_24px_rgba(0,0,0,0.35)]"
+          className="absolute right-0 top-10 z-30 min-w-[12.5rem] rounded-card border border-bord bg-surface p-1 shadow-elevation-overlay"
         >
           {items.map((item) => (
             <button

@@ -239,7 +239,7 @@ function DetailPane({
             data-proposals-reject=""
             disabled={busy}
             onClick={() => decide('rejected')}
-            className={`h-8 rounded-control border border-bord bg-transparent px-4 text-[0.875rem] font-semibold leading-[1.25rem] text-ink hover:bg-raised disabled:pointer-events-none disabled:opacity-50 ${FOCUS}`}
+            className={`h-8 rounded-control border border-bord bg-transparent px-4 text-[0.875rem] font-semibold leading-[1.25rem] text-ink enabled:hover:bg-raised disabled:cursor-not-allowed disabled:opacity-45 ${FOCUS}`}
           >
             {t(locale, 'proposals.reject')}
           </button>
@@ -248,7 +248,7 @@ function DetailPane({
             data-proposals-approve=""
             disabled={stale || busy}
             onClick={() => decide('approved')}
-            className={`h-8 rounded-control border border-signal bg-signal px-4 text-[0.875rem] font-semibold leading-[1.25rem] text-signal-ink hover:brightness-110 disabled:pointer-events-none disabled:border-hairline disabled:bg-raised disabled:text-inkdim ${FOCUS}`}
+            className={`h-8 rounded-control border border-signal bg-signal px-4 text-[0.875rem] font-semibold leading-[1.25rem] text-signal-ink enabled:hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45 ${FOCUS}`}
           >
             {t(locale, 'proposals.approve')}
           </button>

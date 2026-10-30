@@ -54,8 +54,9 @@ const fill = (text: string, values: Readonly<Record<string, string | number>>): 
 type ButtonLook = 'primary' | 'neutral';
 
 const LOOK: Readonly<Record<ButtonLook, string>> = {
-  primary: 'border-signal bg-signal text-signal-ink hover:brightness-110',
-  neutral: 'border-bord bg-transparent text-ink hover:bg-raised',
+  // The hovers sit behind `enabled:` — a disabled button keeps its own look (U-375).
+  primary: 'border-signal bg-signal text-signal-ink enabled:hover:brightness-110',
+  neutral: 'border-bord bg-transparent text-ink enabled:hover:bg-raised',
 };
 
 /** The screen's button: the shared button grammar plus the data hooks the journeys read (the
@@ -79,7 +80,7 @@ function PageButton({
   return (
     <button
       type="button"
-      className={`inline-flex items-center justify-center whitespace-nowrap rounded-control border font-semibold transition-[filter,background-color,color] duration-100 motion-safe:active:scale-[0.97] disabled:pointer-events-none disabled:opacity-45 ${FOCUS} ${LOOK[look]} ${sizing}`}
+      className={`inline-flex items-center justify-center whitespace-nowrap rounded-control border font-semibold transition-[filter,background-color,color] duration-100 motion-safe:active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-45 ${FOCUS} ${LOOK[look]} ${sizing}`}
       {...attrs}
       disabled={disabled}
       onClick={onClick}
@@ -364,8 +365,8 @@ export function PageViewerScreen({ store, host, pageId, locale, overlayOpen, now
               const button = (
                 <button
                   type="button"
-                  className={`h-[1.625rem] rounded-control border border-bord px-3 text-[0.78125rem] font-semibold leading-[1rem] disabled:pointer-events-none disabled:opacity-45 ${FOCUS} ${
-                    mode === id ? 'bg-raised text-ink shadow-[inset_0_0_0_0.0625rem_var(--signal)]' : 'bg-transparent text-ink hover:bg-raised'
+                  className={`h-[1.625rem] rounded-control border border-bord px-3 text-[0.78125rem] font-semibold leading-[1rem] disabled:cursor-not-allowed disabled:opacity-45 ${FOCUS} ${
+                    mode === id ? 'bg-raised text-ink shadow-[inset_0_0_0_0.0625rem_var(--signal)]' : 'bg-transparent text-ink enabled:hover:bg-raised'
                   }`}
                   data-page-view={id}
                   aria-pressed={mode === id}

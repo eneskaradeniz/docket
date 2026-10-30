@@ -106,7 +106,7 @@ export function Listbox<V extends string>({ label, value, options, onPick, recom
           }
         }}
         style={{ minWidth }}
-        className="flex h-[34px] items-center gap-2 rounded-control border border-bord bg-raised pl-3 pr-2.5 text-left text-[13px] font-semibold text-ink hover:border-inkdim disabled:pointer-events-none disabled:opacity-45"
+        className="flex h-[34px] items-center gap-2 rounded-control border border-bord bg-raised pl-3 pr-2.5 text-left text-[13px] font-semibold text-ink hover:border-inkdim disabled:cursor-not-allowed disabled:opacity-45"
       >
         <span className="flex min-w-0 flex-1 items-center gap-2">
           {standing === undefined ? current?.lead : null}
@@ -128,7 +128,7 @@ export function Listbox<V extends string>({ label, value, options, onPick, recom
               dispatch({ type: 'key', key: event.key });
             }
           }}
-          className="absolute right-0 top-[calc(100%+6px)] z-20 m-0 min-w-full list-none rounded-card border border-bord bg-surface p-1 shadow-2xl outline-none"
+          className="absolute right-0 top-[calc(100%+6px)] z-20 m-0 min-w-full list-none rounded-card border border-bord bg-surface p-1 shadow-elevation-overlay outline-none"
         >
           {options.map((option, index) => (
             <li

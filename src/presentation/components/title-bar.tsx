@@ -178,7 +178,7 @@ export function TitleBar({
           disabled={button.disabled}
           onClick={onApply}
           title={button.percent !== null ? t(locale, 'settings.update.status.downloading') : undefined}
-          className="ml-auto inline-flex h-[28px] flex-none items-center gap-[6px] rounded-control border border-signal bg-transparent px-[10px] text-[12.5px] font-semibold text-ink transition-[filter,background-color] duration-100 hover:bg-raised focus-visible:bg-raised active:scale-[0.97] disabled:pointer-events-none disabled:opacity-45 [-webkit-app-region:no-drag]"
+          className="ml-auto inline-flex h-[28px] flex-none items-center gap-[6px] rounded-control border border-signal bg-transparent px-[10px] text-[12.5px] font-semibold text-ink transition-[filter,background-color] duration-100 enabled:hover:bg-raised focus-visible:bg-raised active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-45 [-webkit-app-region:no-drag]"
         >
           <DownloadIcon />
           {button.percent !== null ? `%${button.percent}` : t(locale, button.labelKey)}

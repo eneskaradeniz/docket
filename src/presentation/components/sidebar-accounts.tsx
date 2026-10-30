@@ -163,7 +163,7 @@ export function AccountLimitsPopover({
       data-account-popover=""
       role="dialog"
       aria-label={`${full} — ${t(locale, 'accounts.limits')}`}
-      className="fixed z-50 w-[300px] max-w-[calc(100vw-24px)] rounded-card border border-bord bg-surface p-3 px-3.5 pb-3.5 shadow-2xl"
+      className="fixed z-50 w-[300px] max-w-[calc(100vw-24px)] rounded-card border border-bord bg-surface p-3 px-3.5 pb-3.5 shadow-elevation-overlay"
       style={style}
     >
       <div className="mb-2.5 flex items-center gap-2 text-[13px] font-bold text-ink">

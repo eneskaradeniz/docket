@@ -299,7 +299,7 @@ function RepoBudgetControl({
       role="group"
       aria-label={t(locale, 'repoSettings.budget.title')}
       data-repo-budget
-      className="grid gap-2 rounded-card border border-hairline bg-surface p-3"
+      className="grid gap-2 rounded-card border border-hairline bg-surface shadow-elevation-card p-3"
     >
       <div>
         <h2 className="text-[13px] font-bold text-ink">{t(locale, 'repoSettings.budget.title')}</h2>
@@ -320,7 +320,9 @@ function RepoBudgetControl({
           }}
           className="h-8 w-28 rounded-control border border-hairline bg-surface px-2 text-[13px] text-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-signal"
         />
-        <ActionButton variant="primary" onClick={handleSave} data-repo-budget-save="">
+        {/* The repo view's one primary is the save bar's commit (U-375); this row-local save keeps
+            the outline beside it. */}
+        <ActionButton variant="neutral" onClick={handleSave} data-repo-budget-save="">
           {t(locale, 'repoSettings.budget.save')}
         </ActionButton>
         {budget !== undefined ? (
@@ -874,7 +876,7 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
         </div>
       ) : null}
       {repoState.loading || (!repoLoaded && repoState.problem === null) ? (
-        <div role="status" data-repo-loading className="rounded-card border border-hairline bg-surface px-3 py-4">
+        <div role="status" data-repo-loading className="rounded-card border border-hairline bg-surface shadow-elevation-card px-3 py-4">
           <p className="m-0 mb-3 text-[13px] text-inkdim">{t(locale, 'repoSettings.loading')}</p>
           <ol role="list" aria-hidden="true" className="m-0 flex list-none flex-wrap gap-2 p-0">
             {[0, 1, 2, 3].map((tile) => (
@@ -883,7 +885,7 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
           </ol>
         </div>
       ) : repoState.problem === 'no_repo' ? (
-        <div data-repo-empty className="rounded-card border border-hairline bg-surface px-3 py-6 text-center">
+        <div data-repo-empty className="rounded-card border border-hairline bg-surface shadow-elevation-card px-3 py-6 text-center">
           <h3 className="m-0 text-[13px] font-bold text-ink">{t(locale, 'repoSettings.empty.title')}</h3>
           <p className="m-0 mt-1 text-[13px] text-inkdim">{t(locale, 'repoSettings.empty.guidance')}</p>
           <div className="mt-3">
@@ -1168,7 +1170,7 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
       ) : null}
       {agentState.confirmDiscard || repoState.confirmDiscard || pendingLeave !== null ? (
         <div role="dialog" aria-modal="true" aria-labelledby="settings-discard-title" className="fixed inset-0 z-[60] grid place-items-center bg-bg/60 p-6">
-          <div className="w-[min(100%,28rem)] rounded-panel border border-hairline bg-panel p-4">
+          <div className="w-[min(100%,28rem)] rounded-panel border border-hairline bg-panel p-4 shadow-elevation-overlay">
             <h3 id="settings-discard-title" className="m-0 text-[15px] font-bold text-ink">
               {t(locale, 'repoSettings.discard.title')}
             </h3>

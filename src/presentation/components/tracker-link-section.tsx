@@ -147,7 +147,7 @@ export function TrackerLinkSection({ locale, store, state, trackerName }: Tracke
 
   if (state.ui === 'loading') {
     return (
-      <section role="group" aria-label={heading} aria-busy="true" className="rounded-card border border-hairline bg-surface px-3 py-4">
+      <section role="group" aria-label={heading} aria-busy="true" className="rounded-card border border-hairline bg-surface shadow-elevation-card px-3 py-4">
         <h2 className="m-0 text-[13px] font-bold text-ink">{heading}</h2>
         <p className="m-0 mt-1 text-[12px] text-inkdim">{t(locale, 'tracker.loading.note')}</p>
       </section>
@@ -156,7 +156,7 @@ export function TrackerLinkSection({ locale, store, state, trackerName }: Tracke
 
   if (state.ui === 'error') {
     return (
-      <section role="group" aria-label={heading} className="rounded-card border border-hairline bg-surface px-3 py-4">
+      <section role="group" aria-label={heading} className="rounded-card border border-hairline bg-surface shadow-elevation-card px-3 py-4">
         <div role="alert">
           <h2 className="m-0 text-[13px] font-bold text-error">{t(locale, 'tracker.error.title')}</h2>
           <p className="m-0 mt-1 text-[12px] text-error">{t(locale, 'tracker.error.desc')}</p>
@@ -172,7 +172,7 @@ export function TrackerLinkSection({ locale, store, state, trackerName }: Tracke
 
   if (state.ui === 'unlinked' && !state.formOpen && state.view === null) {
     return (
-      <section role="group" aria-label={heading} data-empty-card className="rounded-card border border-hairline bg-surface px-3 py-4">
+      <section role="group" aria-label={heading} data-empty-card className="rounded-card border border-hairline bg-surface shadow-elevation-card px-3 py-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="m-0 text-[13px] font-bold text-ink">{heading}</h2>
           <StatusChip locale={locale} ui="unlinked" />
@@ -180,7 +180,9 @@ export function TrackerLinkSection({ locale, store, state, trackerName }: Tracke
         <p className="m-0 mt-2 text-[13px] font-semibold text-ink">{t(locale, 'tracker.empty.title')}</p>
         <p className="m-0 mt-1 text-[12px] text-inkdim">{t(locale, 'tracker.empty.desc')}</p>
         <div className="mt-3">
-          <ActionButton variant="primary" size="sm" onClick={() => store.openConnectForm()}>
+          {/* The repo view's one primary is the save bar's commit (U-375); the section's own
+              actions take the outline. */}
+          <ActionButton variant="neutral" size="sm" onClick={() => store.openConnectForm()}>
             {t(locale, 'tracker.btn.connect')}
           </ActionButton>
         </div>
@@ -190,7 +192,7 @@ export function TrackerLinkSection({ locale, store, state, trackerName }: Tracke
 
   if (state.ui === 'unlinked' && state.formOpen) {
     return (
-      <section role="group" aria-label={heading} className="rounded-card border border-hairline bg-surface px-3 py-3">
+      <section role="group" aria-label={heading} className="rounded-card border border-hairline bg-surface shadow-elevation-card px-3 py-3">
         <h2 className="m-0 text-[13px] font-bold text-ink">{heading}</h2>
         <div role="group" aria-label={t(locale, 'tracker.form.titleNew')} className="mt-3 grid gap-2">
           <label className="grid gap-1 text-[12px] text-inkdim">
@@ -210,7 +212,7 @@ export function TrackerLinkSection({ locale, store, state, trackerName }: Tracke
           <ModeCards locale={locale} draft={state.draftMode} effective={state.draftMode} clamped={false} onSelect={(mode) => store.setDraftMode(mode)} onReset={() => store.resetDraftMode()} />
           <div className="flex justify-end gap-2">
             <ActionButton variant="neutral" size="sm" onClick={() => store.closeForm()}>{t(locale, 'tracker.form.cancel')}</ActionButton>
-            <ActionButton variant="primary" size="sm" disabled={state.busy} onClick={() => void store.applyLink()}>{t(locale, 'tracker.form.apply')}</ActionButton>
+            <ActionButton variant="neutral" size="sm" disabled={state.busy} onClick={() => void store.applyLink()}>{t(locale, 'tracker.form.apply')}</ActionButton>
           </div>
         </div>
         {state.inlineKey !== null ? <p role="status" className="m-0 mt-2 text-[12px] text-error">{inlineText(state.inlineKey)}</p> : null}
@@ -258,7 +260,7 @@ export function TrackerLinkSection({ locale, store, state, trackerName }: Tracke
         <ActionButton variant="neutral" size="sm" onClick={() => store.closeForm()}>
           {t(locale, 'tracker.form.cancel')}
         </ActionButton>
-        <ActionButton variant="primary" size="sm" disabled={state.busy} onClick={() => void store.applyLink()}>
+        <ActionButton variant="neutral" size="sm" disabled={state.busy} onClick={() => void store.applyLink()}>
           {t(locale, 'tracker.form.apply')}
         </ActionButton>
       </div>
@@ -273,7 +275,7 @@ export function TrackerLinkSection({ locale, store, state, trackerName }: Tracke
       role="group"
       aria-label={heading}
       aria-busy={busy ? true : undefined}
-      className="rounded-card border border-hairline bg-surface px-3 py-3"
+      className="rounded-card border border-hairline bg-surface shadow-elevation-card px-3 py-3"
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
@@ -291,7 +293,7 @@ export function TrackerLinkSection({ locale, store, state, trackerName }: Tracke
             <ActionButton variant="neutral" size="sm" onClick={() => state.repo !== null && void store.load(state.repo)}>
               {t(locale, 'tracker.btn.retry')}
             </ActionButton>
-            <ActionButton variant="primary" size="sm" onClick={() => store.openChangeForm()}>
+            <ActionButton variant="neutral" size="sm" onClick={() => store.openChangeForm()}>
               {t(locale, 'tracker.btn.change')}
             </ActionButton>
           </div>
@@ -351,7 +353,7 @@ export function TrackerLinkSection({ locale, store, state, trackerName }: Tracke
               />
               {state.draftMode !== view.configuredMode ? (
                 <div className="mt-2 flex justify-end">
-                  <ActionButton variant="primary" size="sm" disabled={state.busy} onClick={() => void store.applyMode()}>
+                  <ActionButton variant="neutral" size="sm" disabled={state.busy} onClick={() => void store.applyMode()}>
                     {t(locale, 'tracker.form.apply')}
                   </ActionButton>
                 </div>

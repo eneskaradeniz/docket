@@ -209,6 +209,98 @@ describe('button tiers', () => {
   });
 });
 
+// U-375 — the cap and the disabled law. The cap is checked per source file: a view draws at most
+// one primary, and a file that holds more than one primary site does so only in the exclusive
+// states recorded below (a dialog against its panel, one step of a walk, one ask at a time). The
+// recorded count is exact on both sides: a new primary in a listed file, or a listed count gone
+// stale, fails here first.
+const PRIMARY_SITE = /variant="primary"|variant=\{[^}]*'primary'|border-signal bg-signal px-|primary: 'border-signal bg-signal/g;
+
+const primarySites = (source: string): number => {
+  const lines = source.split('\n').filter((line) => !/^\s*import\b/.test(line));
+  // A line naming BUTTON_PRIMARY already counts once — its own fill string is not a second site.
+  return lines.reduce(
+    (total, line) => total + (/\bBUTTON_PRIMARY\b/.test(line) ? 1 : [...line.matchAll(PRIMARY_SITE)].length),
+    0,
+  );
+};
+
+/** Files whose primary sites are exclusive states, with the count each holds. */
+const EXCLUSIVE_PRIMARIES: Readonly<Record<string, number>> = {
+  // The export and the import bundle are two dialogs; each draws its confirm, then its done state.
+  'project-bundle-dialog.tsx': 4,
+  // The decision stack: one primary per card kind and per inline dialog. The cards a zone stacks
+  // are separate asks; the queued-ask amber distribution is a recorded follow-up, not this cap's.
+  'detail-decision-card.tsx': 11,
+  // Settings draws one section at a time: the update apply, the repo empty state, the repo save
+  // bar and two modal confirms (detach, discard) never share the panel.
+  'settings.tsx': 5,
+  // The budget step: the waiting consent row and the footer trade the amber — while a consent
+  // waits the row's İzin ver is the view's primary and the footer draws the outline.
+  'wizard.tsx': 2,
+  // The pinned bar mirrors the ask the cards below already carry; the bar shows only while the
+  // cards are out of view, and its two branches are one ask each.
+  'detail.tsx': 2,
+  // The summary screen and the repo-list screen are two steps of one walk.
+  'setup-summary.tsx': 2,
+  // The empty card and the create form are exclusive — the card hides while the form stands.
+  'memory-section.tsx': 2,
+  // The create form, the roles empty card and the section empty card never stand together.
+  'capability-section.tsx': 4,
+  // The editor's two footer states and the scrimmed close confirm never stand together.
+  'account-editor-dialog.tsx': 3,
+  // The shared class definition and the confirm panel's single use.
+  'roadmap.tsx': 2,
+  // The feed's action cards: the approve of each card kind. Queued action cards each carry their
+  // own ask; the distribution is a recorded follow-up, not this cap's.
+  'chat-feed.tsx': 3,
+};
+
+describe('button tiers — the cap and the disabled look (U-375)', () => {
+  it('U-375: a disabled button of any tier keeps its own look at reduced opacity under a not-allowed cursor', () => {
+    const icon = createElement('svg', { viewBox: '0 0 16 16', 'aria-hidden': true });
+    const draws: readonly (readonly [string, string, string])[] = [
+      ['primary', renderToStaticMarkup(createElement(ActionButton, { variant: 'primary', disabled: true, children: 'Kaydet' })), 'bg-signal'],
+      ['danger primary', renderToStaticMarkup(createElement(ActionButton, { variant: 'primary', danger: true, disabled: true, children: 'Kaldır' })), 'bg-error'],
+      ['neutral', renderToStaticMarkup(createElement(ActionButton, { variant: 'neutral', disabled: true, children: 'Vazgeç' })), 'border-bord'],
+      ['ghost icon', renderToStaticMarkup(createElement(ActionButton, { variant: 'ghost', disabled: true, ariaLabel: 'Kapat', children: icon })), 'text-inkdim'],
+    ];
+    for (const [name, html, ownLook] of draws) {
+      expect(html, name).toContain('disabled:opacity-45');
+      expect(html, name).toContain('disabled:cursor-not-allowed');
+      expect(html, name).toContain(ownLook);
+      expect(html, name).not.toContain('pointer-events-none');
+      expect(html, name).not.toMatch(/disabled:(?:bg|border|text)-/);
+    }
+  });
+
+  it('U-375: no button freezes its pointer, paints a second surface or dims to its own opacity when disabled', () => {
+    const consts = constMaps(SOURCES);
+    // `aria-disabled:` is not the disabled law: the title bar's nav arrows freeze their pointer
+    // on purpose, so the window's drag region keeps receiving the drag through them.
+    const OFFENDER = /(?<!aria-)disabled:pointer-events-none|(?<!aria-)disabled:(?:bg|border|text)-|(?<!aria-)disabled:opacity-(?!45)/;
+    const offenders = Object.entries(SOURCES).flatMap(([file, source]) =>
+      buttonBlocks(source).flatMap((block) => {
+        const blob = classBlob(classExpr(block.open), consts.get(file) ?? new Map(), new Set());
+        return OFFENDER.test(blob) ? [`${file}:${source.slice(0, block.at).split('\n').length}`] : [];
+      }),
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it('U-375: at most one primary per view — extra primary sites exist only in the exclusive states the map records', () => {
+    expect(Object.keys(SOURCES).length).toBeGreaterThan(20);
+    const offenders = Object.entries(SOURCES).flatMap(([file, source]) => {
+      const base = file.slice(file.lastIndexOf('/') + 1);
+      const count = primarySites(source);
+      const recorded = EXCLUSIVE_PRIMARIES[base];
+      if (recorded === undefined) return count > 1 ? [`${file}: ${count} primary sites, no exclusive-states record`] : [];
+      return count !== recorded ? [`${file}: ${count} primary sites, recorded ${recorded}`] : [];
+    });
+    expect(offenders).toEqual([]);
+  });
+});
+
 describe('button tiers — account view names', () => {
   it('U-221: page viewer and account view former text buttons are outlined and still named', async () => {
     const view: AccountDetailView = {

@@ -302,7 +302,14 @@ export function NewWorkOrderWindow({
         <ActionButton variant="neutral" size="md" disabled={createDisabled} onClick={() => submit('open')}>
           {form.submitting ? '…' : t(locale, 'workOrder.new.open')}
         </ActionButton>
-        <ActionButton variant="primary" size="md" disabled={createDisabled} onClick={() => submit('open_and_start')}>
+        {/* While the skip proposal waits undecided it holds the window's single primary (U-375)
+            and this create takes the outline; decided or absent, the create is the primary. */}
+        <ActionButton
+          variant={skipProposal !== null && form.skipDecision === null ? 'neutral' : 'primary'}
+          size="md"
+          disabled={createDisabled}
+          onClick={() => submit('open_and_start')}
+        >
           {form.submitting ? '…' : t(locale, 'workOrder.new.openAndStart')}
         </ActionButton>
       </span>

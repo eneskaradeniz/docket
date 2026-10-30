@@ -204,6 +204,7 @@ describe('the section geometry', () => {
     for (const radius of radii) expect(['rounded-full', 'rounded-control', 'rounded-card', 'rounded-panel']).toContain(radius);
     expect(SOURCE).toContain('focus-visible:outline');
     expect(SOURCE).toContain('motion-reduce:');
-    expect(SOURCE).not.toMatch(/cursor/i);
+    // U-375 (later than U-70) lets the disabled stepper name one cursor: not-allowed.
+    expect(SOURCE).not.toMatch(/cursor-(?!not-allowed\b)\w/i);
   });
 });

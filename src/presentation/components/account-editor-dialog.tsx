@@ -97,7 +97,7 @@ export function AccountEditorDialog(props: AccountEditorDialogProps) {
         aria-modal="true"
         aria-labelledby="account-editor-title"
         onKeyDown={onKeyDown}
-        className="relative grid h-[600px] max-h-full w-[820px] max-w-full grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-panel border border-bord bg-surface shadow-2xl"
+        className="relative grid h-[600px] max-h-full w-[820px] max-w-full grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-panel border border-bord bg-surface shadow-elevation-overlay"
         data-account-editor-dialog={host}
       >
         <header className="flex items-center gap-3 border-b border-hairline px-5 py-4">
@@ -195,7 +195,7 @@ export function AccountEditorDialog(props: AccountEditorDialogProps) {
         </footer>
         {confirmingClose ? (
           <div role="alertdialog" aria-labelledby="editor-close-title" className="absolute inset-0 grid place-items-center bg-black/30 p-6">
-            <div className="grid max-w-[360px] gap-3 rounded-panel border border-bord bg-surface p-5 shadow-xl">
+            <div className="grid max-w-[360px] gap-3 rounded-panel border border-bord bg-surface p-5 shadow-elevation-overlay">
               <h3 id="editor-close-title" className="m-0 text-[15px] font-bold text-ink">{t(locale, 'editor.footer.discardPrompt')}</h3>
               <div className="flex justify-end gap-2">
                 <ActionButton variant="neutral" size="md" onClick={() => { setConfirmingClose(false); setConfirmAction(null); }}>

@@ -62,7 +62,7 @@ export function PermissionPrompt({ open, prompt, locale, repoLabel, onDeny, onAl
         aria-modal="true"
         aria-label={t(locale, titleKey)}
         onKeyDown={onKeyDown}
-        className="grid w-full max-w-lg gap-4 rounded-panel border border-bord bg-surface p-5 shadow-2xl"
+        className="grid w-full max-w-lg gap-4 rounded-panel border border-bord bg-surface p-5 shadow-elevation-overlay"
         data-setup-permission=""
       >
         <div className="flex flex-wrap items-center gap-2">

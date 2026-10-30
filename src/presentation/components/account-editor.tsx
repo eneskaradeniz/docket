@@ -191,7 +191,9 @@ function DangerZone({ account, locale, onRemove, removeWarning }: Pick<AccountEd
           ) : null}
           <div className="flex items-center gap-2">
             {removeWarning.onlyAccount ? null : (
-              <ActionButton variant="primary" onClick={removeWarning.onOpenRoles}>
+              // The dialog's primary is its footer save (U-375); the warning's own door takes the
+              // outline.
+              <ActionButton variant="neutral" onClick={removeWarning.onOpenRoles}>
                 {t(locale, 'settings.remove.updateRoles')}
               </ActionButton>
             )}

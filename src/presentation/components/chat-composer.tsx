@@ -373,7 +373,7 @@ export function ChatComposer({ state, store, locale, onOpenAccounts, onOpenConse
           <button
             type="button"
             data-chat-send=""
-            className={`grid h-8 w-8 flex-none place-items-center rounded-full border-0 bg-ink text-bg disabled:pointer-events-none disabled:bg-hairline disabled:text-inkdim ${FOCUS}`}
+            className={`grid h-8 w-8 flex-none place-items-center rounded-full border-0 bg-ink text-bg disabled:cursor-not-allowed disabled:opacity-45 ${FOCUS}`}
             aria-label={t(locale, 'chat.send')}
             disabled={!canSend}
             onClick={() => void store.send()}
