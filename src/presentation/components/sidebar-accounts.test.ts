@@ -9,7 +9,13 @@ import { describe, expect, it } from 'vitest';
 
 import type { Api } from '../../api/api';
 import type { SettingsAccountView, SettingsAccountsView, SettingsMeterView } from '../../api/queries';
-import { AccountLimitsPopover, AccountsSkeletonBody, SidebarAccounts, clampPopoverTop } from './sidebar-accounts';
+import {
+  AccountLimitsPopover,
+  AccountsSkeletonBody,
+  SidebarAccounts,
+  clampPopoverTop,
+  popoverOwnsEscape,
+} from './sidebar-accounts';
 import { ACCOUNTS_BODY_MAX_HEIGHT } from './sidebar-geometry';
 import { createAccountsFrameStore, type AccountCard } from '../stores/accounts-frame';
 import { createProviderMarksStore } from '../stores/provider-marks';
@@ -316,6 +322,16 @@ describe('SidebarAccounts (U-51)', () => {
     expect(html).not.toContain('text-[10.5px]');
     expect(html).not.toContain('text-[11px]');
     expect(html).not.toContain('text-[10px]');
+  });
+
+  it('U-51: an open popover owns Esc — the key is consumed so the panel around it does not also act', () => {
+    // The wiring consults this rule before stopping the event: with the popover standing, Esc is
+    // the popover's alone (the chat panel, a dialog around it must survive the press).
+    expect(popoverOwnsEscape({ card: card('pro', 'Pro', [], null), left: 264, top: 120 })).toBe(true);
+  });
+
+  it('U-51: with no popover open, Esc passes through to whatever sits around it, exactly as before', () => {
+    expect(popoverOwnsEscape(null)).toBe(false);
   });
 
   it('U-51b: popover top clamp calculation bounds strictly within viewport', () => {
