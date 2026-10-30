@@ -338,7 +338,9 @@ const SUMMARY_POLICY_KEY: Readonly<Record<LimitPolicy, LabelKey>> = {
 /** The Ayrıntı disclosure (U-48): one row open at a time — opening a row closes the other. */
 export const toggleBudgetRow = (open: string | null, clicked: string): string | null => (open === clicked ? null : clicked);
 
-/** One row's single summary line: what the account does when its limit fills, or its cap standing. */
+/** One row's single summary line: what the account does when its limit fills, or its cap standing.
+ *  U-376: the default policy's text is not repeated under every row — the policy half prints only
+ *  on a row whose choice differs from the recommended default; the reserve always says itself. */
 const summaryLine = (row: BudgetRow, locale: Locale): string => {
   if (row.needsConsent) {
     return t(locale, row.consented ? 'wizard.budget.summary.capAllowed' : 'wizard.budget.summary.capAwaiting').replace('{c}', String(row.capShown.amountUsd));
@@ -347,6 +349,7 @@ const summaryLine = (row: BudgetRow, locale: Locale): string => {
     row.reservePercent > 0
       ? t(locale, 'wizard.budget.summary.reserve').replace('{p}', String(row.reservePercent))
       : t(locale, 'wizard.budget.summary.reserveNone');
+  if (row.policy === RECOMMENDED.limitPolicy) return reserve;
   return `${t(locale, SUMMARY_POLICY_KEY[row.policy])} · ${reserve}`;
 };
 

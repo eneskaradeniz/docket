@@ -112,7 +112,6 @@ const PENDING = new Map([
   ['ui:U-373', '#1355 follow-up (the amber fixes land with their test)'],
   ['ui:U-374', '#1355 follow-up (the elevation tokens land with their test)'],
   ['ui:U-375', '#1355 follow-up (the button cap and disabled look land with their test)'],
-  ['ui:U-376', '#1355 follow-up (the gate-row and policy copy land with their test)'],
 
 ]);
 

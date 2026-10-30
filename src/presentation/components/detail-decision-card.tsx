@@ -80,9 +80,16 @@ export const GATE_KIND_KEY: Readonly<Record<GateView['kind'], LabelKey>> = {
   remote_checks: 'gate.kind.remote_checks',
 };
 
+/** The gate row's title hint (U-376): the kind, identity and label the row's face no longer
+ *  prints — a machine gate carries no label, so that part simply stays away. */
+export const gateRowHint = (locale: Locale, gate: GateView): string => {
+  const head = t(locale, 'gate.row.hint').replace('{kind}', gate.kind).replace('{id}', gate.id);
+  return gate.label === undefined ? head : `${head} · ${t(locale, 'gate.row.hint.label').replace('{label}', gate.label)}`;
+};
+
 /** The honest card of a `gating` stage: nothing here awaits the operator, so it carries no
- *  action — only the pending gates by name and kind, and the stuck-verdict line when no run is
- *  left to deliver the agent's decision. */
+ *  action — only the pending gates by their policy word (U-376), and the stuck-verdict line when
+ *  no run is left to deliver the agent's decision. */
 function GatingCard({
   gates,
   verdictOrphaned,
@@ -98,8 +105,9 @@ function GatingCard({
       <p className="m-0 text-[0.8125rem] text-inkdim">{t(locale, 'detail.zone.gatingBody')}</p>
       <ul className="m-0 grid list-none gap-1 p-0 text-[0.8125rem] text-ink">
         {gates.map((gate) => (
-          <li key={gate.id} data-gating-gate={gate.id}>
-            {gateName(gate)} <span className="text-inkdim">· {t(locale, GATE_KIND_KEY[gate.kind])}</span>
+          // U-376: one word — the gate's policy; kind and identity ride the hint.
+          <li key={gate.id} data-gating-gate={gate.id} title={gateRowHint(locale, gate)}>
+            {t(locale, GATE_KIND_KEY[gate.kind])}
           </li>
         ))}
       </ul>

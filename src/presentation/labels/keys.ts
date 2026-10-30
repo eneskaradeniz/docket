@@ -328,6 +328,9 @@ export const LABEL_KEYS = [
   'gate.kind.page_approval',
   'gate.kind.deploy',
   'gate.kind.remote_checks',
+  // The gate row's title hint (U-376): the kind and identity the face no longer prints.
+  'gate.row.hint',
+  'gate.row.hint.label',
   // Decisions the screens offer.
   'action.approve',
   'action.reject',

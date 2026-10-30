@@ -292,6 +292,8 @@ export const TR: LabelBundle = {
   'gate.kind.page_approval': 'Sayfa onayı',
   'gate.kind.deploy': 'Dağıtım',
   'gate.kind.remote_checks': 'Uzak kontroller',
+  'gate.row.hint': 'Kapı türü: {kind} · kimlik: {id}',
+  'gate.row.hint.label': 'etiket: {label}',
   'action.approve': 'Onayla',
   'action.reject': 'Reddet',
   'action.allow': 'İzin ver',

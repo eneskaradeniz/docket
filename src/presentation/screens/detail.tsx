@@ -43,7 +43,7 @@ import { CHAT_FAB_CLEARANCE_CLASS } from '../components/chat-dock';
 import { WorkOrderLaunchers } from '../components/launcher-rows';
 import { StateBadge, type BadgeTone } from '../components/state-badge';
 import { DetailStrip } from '../components/detail-strip';
-import { DecisionZoneCards, GATE_KIND_KEY, GitDoorsCard } from '../components/detail-decision-card';
+import { DecisionZoneCards, gateRowHint, GATE_KIND_KEY, GitDoorsCard } from '../components/detail-decision-card';
 import { DetailFiles } from '../components/detail-files';
 import { DetailRunCard } from '../components/detail-run-card';
 import { DECISION_BAR_FRAME_CLASS, DECISION_BAR_Z_CLASS } from '../components/decision-bar-geometry';
@@ -106,24 +106,24 @@ const stageStandingKey = (standing: 'done' | 'current' | 'upcoming', running: bo
 const scrollBehavior = (): ScrollBehavior =>
   typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
 
-/** One read-only gate row of a stage's list (the decision itself lives in the zone's cards). */
+/** One read-only gate row of a stage's list (the decision itself lives in the zone's cards).
+ *  U-376: the face prints one word — the gate's own policy; the kind, identity and label it used
+ *  to repeat sit in the row's title hint. A standing word prints only where the surface beside
+ *  the row does not already carry it: the dashed border, the strip's counter and the zone's cards
+ *  say a pending gate, the stage summary says an upcoming stage's own word — only a passed gate's
+ *  verdict is the row's alone to say. */
 function GateRow({ gate, locale }: { readonly gate: GateView; readonly locale: Locale }) {
   return (
     <li
+      title={gateRowHint(locale, gate)}
       className={`flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-card border bg-surface px-3 py-2 ${
         gate.status === 'pending' ? 'border-dashed border-signal' : 'border-hairline'
       }`}
     >
-      <div className="flex min-w-0 items-baseline gap-2">
-        <span className={`text-[0.84375rem] font-semibold ${gate.status === 'pending' ? 'text-signal-soft' : 'text-ink'}`}>
-          {t(locale, GATE_KIND_KEY[gate.kind])}
-          {gate.label !== undefined ? ` · ${gate.label}` : ''}
-        </span>
-        <code className="truncate font-mono text-[0.6875rem] text-inkdim" title={gate.id}>{gate.id}</code>
-      </div>
-      <span className={`text-[0.78125rem] ${gate.status === 'pending' ? 'font-semibold text-signal-soft' : gate.status === 'passed' ? 'text-proceed' : 'text-inkdim'}`}>
-        {t(locale, GATE_STATUS_KEY[gate.status])}
+      <span className={`text-[0.84375rem] font-semibold ${gate.status === 'pending' ? 'text-signal-soft' : 'text-ink'}`}>
+        {t(locale, GATE_KIND_KEY[gate.kind])}
       </span>
+      {gate.status === 'passed' ? <span className="text-[0.78125rem] text-proceed">{t(locale, GATE_STATUS_KEY[gate.status])}</span> : null}
       {/* A passed gate the policy decided carries its own line (U-355): who decided, at which
           level, and the machine gates the approval relied on — a human approval shows none. */}
       {gate.status === 'passed' && gate.policyApproval !== undefined ? (
