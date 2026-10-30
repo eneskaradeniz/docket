@@ -174,7 +174,7 @@ export function CapabilitySection({ locale, section, store, marks, active, onOpe
         ? state.createDraft.name
         : '';
     return (
-      <div className="rounded-card border border-hairline bg-surface p-3" data-capability-create="">
+      <div className="rounded-card border border-hairline bg-surface shadow-elevation-card p-3" data-capability-create="">
         <label className="grid gap-1 text-[13px]">
           <span className="font-semibold text-ink">{t(locale, 'capabilities.empty.createAction')}</span>
           <input

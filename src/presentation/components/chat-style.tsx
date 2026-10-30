@@ -2,7 +2,8 @@
 // and the history draw the same buttons, chips and menu rows. All lengths are rem (the only px-like
 // value is the 1 px hairline border), spacing steps sit on the 4·8·12·16·20·24·32 scale, radii are
 // the three tokens plus rounded-full, and every sized text line carries an explicit leading because
-// Tailwind's preflight puts line-height 1.5 on the root. A disabled control uses pointer-events-none.
+// Tailwind's preflight puts line-height 1.5 on the root. A disabled button keeps its own look at a
+// reduced opacity and answers the pointer with not-allowed (U-375).
 
 /** A keyboard ring in rem: the global sheet sets none, so each control names its own. */
 export const FOCUS =
@@ -13,8 +14,8 @@ export const ICON_BUTTON = `grid h-7 w-7 flex-none place-items-center rounded-co
 export const ICON_BUTTON_SMALL = `grid h-6 w-6 flex-none place-items-center rounded-control border-0 bg-transparent text-inkdim hover:bg-band hover:text-ink ${FOCUS}`;
 
 /** The 28 high text buttons of the cards and notes. */
-export const BUTTON = `inline-flex h-7 flex-none items-center justify-center whitespace-nowrap rounded-control border border-bord bg-transparent px-3 text-[0.78125rem] font-semibold leading-4 text-ink hover:bg-raised disabled:pointer-events-none disabled:opacity-50 ${FOCUS}`;
-export const BUTTON_PRIMARY = `inline-flex h-7 flex-none items-center justify-center whitespace-nowrap rounded-control border border-signal bg-signal px-3 text-[0.78125rem] font-semibold leading-4 text-signal-ink disabled:pointer-events-none disabled:opacity-50 ${FOCUS}`;
+export const BUTTON = `inline-flex h-7 flex-none items-center justify-center whitespace-nowrap rounded-control border border-bord bg-transparent px-3 text-[0.78125rem] font-semibold leading-4 text-ink enabled:hover:bg-raised disabled:cursor-not-allowed disabled:opacity-45 ${FOCUS}`;
+export const BUTTON_PRIMARY = `inline-flex h-7 flex-none items-center justify-center whitespace-nowrap rounded-control border border-signal bg-signal px-3 text-[0.78125rem] font-semibold leading-4 text-signal-ink enabled:hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45 ${FOCUS}`;
 
 /** The 22 high pills of sources and references. */
 export const SOURCE_CHIP =
@@ -33,7 +34,7 @@ export const MENU_DESC = 'block text-[0.75rem] font-normal leading-4 text-inkdim
 
 /** The raised surface menus and dialogs share. */
 export const FLOATING =
-  'rounded-card border border-bord bg-surface p-1 shadow-[0_1rem_3rem_rgba(0,0,0,0.35)]';
+  'rounded-card border border-bord bg-surface p-1 shadow-elevation-overlay';
 
 /** Replaces {name}-style placeholders in a bundle string. */
 export const fill = (text: string, values: Readonly<Record<string, string | number>>): string =>

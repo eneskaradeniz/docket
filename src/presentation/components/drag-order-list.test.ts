@@ -85,7 +85,7 @@ describe('DragOrderList motion (U-47)', () => {
     const held = row(markup, 'b');
     expect(held).toContain('z-[5]');
     expect(held).toContain('border-signal');
-    expect(held).toContain('shadow-2xl');
+    expect(held).toContain('shadow-elevation-overlay');
     expect(held).toContain('scale-[1.01]');
     expect(held).toContain(`top:${2 * DRAG_PITCH}px`);
     // The others slid one slot up to open the gap.
@@ -103,7 +103,7 @@ describe('DragOrderList motion (U-47)', () => {
     expect(settling).toContain('duration-[140ms]');
     expect(settling).toContain('transition-[top,transform,box-shadow,border-color]');
     expect(settling).not.toContain('scale-[1.01]');
-    expect(settling).not.toContain('shadow-2xl');
+    expect(settling).not.toContain('shadow-elevation-overlay');
     flush();
     const rested = row(html(session), 'b');
     expect(rested).toContain('duration-[160ms]');

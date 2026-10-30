@@ -280,7 +280,7 @@ describe('compact work-order and phone windows (U-251 … U-256)', () => {
     expect(html).toContain(t('tr', 'workOrder.new.cancel'));
     expect(html).toContain(t('tr', 'workOrder.new.open'));
     expect(html).toContain(t('tr', 'workOrder.new.openAndStart'));
-    expect(source('new-work-order-window.tsx').match(/variant="primary"/g)?.length).toBe(1);
+    expect(source('new-work-order-window.tsx').match(/variant=(?:"primary"|\{[^}]*'primary'\})/g)?.length).toBe(1);
   });
 
   it('U-253: the flow strip lists stages in order and shows the human-gate count', () => {

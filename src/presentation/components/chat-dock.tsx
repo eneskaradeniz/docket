@@ -172,7 +172,7 @@ export function ChatDock({ store, locale, hidden, onOpenPage, onOpenAccounts, on
         data-chat-fab=""
         aria-label={t(locale, open ? 'chat.fab.close' : 'chat.fab.open')}
         aria-expanded={open}
-        className={`fixed bottom-6 right-6 z-[21] grid h-14 w-14 place-items-center rounded-full border border-bord bg-raised text-ink shadow-[0_1rem_3rem_rgba(0,0,0,0.35)] motion-safe:transition-transform motion-safe:duration-200 motion-safe:hover:scale-105 ${FOCUS} ${
+        className={`fixed bottom-6 right-6 z-[21] grid h-14 w-14 place-items-center rounded-full border border-bord bg-raised text-ink shadow-elevation-overlay motion-safe:transition-transform motion-safe:duration-200 motion-safe:hover:scale-105 ${FOCUS} ${
           full ? 'invisible opacity-0' : ''
         }`}
         onClick={() => store.toggle()}
@@ -195,7 +195,7 @@ export function ChatDock({ store, locale, hidden, onOpenPage, onOpenAccounts, on
             ? // The reading surface covers the content area only: the sidebar's own column to the
               // left, the title bar's own height above, and the window's right and bottom edges.
               `bottom-0 left-[16.5rem] right-0 top-[2.5rem] rounded-panel opacity-100 ${rail ? 'grid-cols-[15rem_minmax(0,1fr)]' : ''}`
-            : `bottom-[5.75rem] right-6 h-[min(38rem,calc(100vh-9rem))] w-[min(26rem,calc(100vw-2rem))] origin-[calc(100%-1.75rem)_100%] shadow-[0_1rem_3rem_rgba(0,0,0,0.35)] ${
+            : `bottom-[5.75rem] right-6 h-[min(38rem,calc(100vh-9rem))] w-[min(26rem,calc(100vw-2rem))] origin-[calc(100%-1.75rem)_100%] shadow-elevation-overlay ${
                 open ? 'translate-y-0 scale-100 rounded-panel opacity-100' : 'pointer-events-none translate-y-8 scale-[0.1] rounded-full opacity-0 motion-reduce:translate-y-0 motion-reduce:scale-100'
               }`
         }`}

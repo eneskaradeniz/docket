@@ -532,7 +532,7 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
         aria-label={t(locale, 'palette.title')}
         onKeyDown={onKeyDown}
         className={[
-          'flex w-full max-w-[560px] flex-col overflow-hidden rounded-panel border border-bord bg-surface shadow-2xl',
+          'flex w-full max-w-[560px] flex-col overflow-hidden rounded-panel border border-bord bg-surface shadow-elevation-overlay',
           'transition-[opacity,translate,scale] [transition-timing-function:var(--motion-ease)]',
           entered
             ? 'opacity-100 translate-y-0 scale-100 duration-[var(--motion-open-panel)] delay-[var(--motion-open-panel-delay)]'

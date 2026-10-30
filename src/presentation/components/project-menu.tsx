@@ -84,7 +84,7 @@ export function ProjectMenu({ locale, store, project, className }: ProjectMenuPr
           id={menuId}
           role="menu"
           aria-label={t(locale, PROJECT_BUNDLE_KEYS.menuTitle)}
-          className="absolute right-0 z-50 mt-1 min-w-[140px] rounded-card border border-bord bg-surface p-1 shadow-lg"
+          className="absolute right-0 z-50 mt-1 min-w-[140px] rounded-card border border-bord bg-surface p-1 shadow-elevation-overlay"
         >
           {project ? (
             <button

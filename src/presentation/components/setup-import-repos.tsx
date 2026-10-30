@@ -124,12 +124,12 @@ export function SetupImportRepos({
                 </div>
                 <span className="rounded-control border border-hairline px-2 py-0.5 text-[0.75rem] font-semibold text-inkdim">{t(locale, statusKey(row))}</span>
                 {row.status === 'review' ? (
-                  <button type="button" disabled={busy} onClick={() => onReview(row.path)} data-import-review="" className="rounded-control border border-bord px-2 py-0.5 text-[0.75rem] font-semibold text-ink hover:bg-raised disabled:opacity-50">
+                  <button type="button" disabled={busy} onClick={() => onReview(row.path)} data-import-review="" className="rounded-control border border-bord px-2 py-0.5 text-[0.75rem] font-semibold text-ink enabled:hover:bg-raised disabled:cursor-not-allowed disabled:opacity-45">
                     {t(locale, 'setup.multi.list.reviewBtn')}
                   </button>
                 ) : null}
                 {row.status === 'ready' ? (
-                  <button type="button" disabled={busy} onClick={() => onApprove(row.path)} data-import-approve="" className="rounded-control border border-bord px-2 py-0.5 text-[0.75rem] font-semibold text-ink hover:bg-raised disabled:opacity-50">
+                  <button type="button" disabled={busy} onClick={() => onApprove(row.path)} data-import-approve="" className="rounded-control border border-bord px-2 py-0.5 text-[0.75rem] font-semibold text-ink enabled:hover:bg-raised disabled:cursor-not-allowed disabled:opacity-45">
                     {t(locale, 'setup.multi.batch.approveOne')}
                   </button>
                 ) : null}

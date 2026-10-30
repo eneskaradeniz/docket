@@ -7,12 +7,13 @@ export type ButtonVariant = 'primary' | 'neutral' | 'ghost';
 export type ButtonSize = 'sm' | 'md';
 
 const VARIANT_CLASS: Readonly<Record<ButtonVariant, string>> = {
-  primary: 'border-signal bg-signal text-signal-ink font-semibold hover:brightness-110',
-  neutral: 'border-bord bg-transparent text-ink hover:bg-raised',
-  ghost: 'border-transparent bg-transparent text-inkdim hover:text-ink',
+  // The hovers sit behind `enabled:` — a disabled button keeps its own look (U-375).
+  primary: 'border-signal bg-signal text-signal-ink font-semibold enabled:hover:brightness-110',
+  neutral: 'border-bord bg-transparent text-ink enabled:hover:bg-raised',
+  ghost: 'border-transparent bg-transparent text-inkdim enabled:hover:text-ink',
 };
 
-const DANGER_PRIMARY_CLASS = 'border-error bg-error text-bg font-semibold hover:brightness-110';
+const DANGER_PRIMARY_CLASS = 'border-error bg-error text-bg font-semibold enabled:hover:brightness-110';
 
 const SIZE_CLASS: Readonly<Record<ButtonSize, string>> = {
   sm: 'h-[1.75rem] px-[0.625rem] text-[0.78125rem]',
@@ -88,7 +89,7 @@ export function ActionButton({
       aria-expanded={ariaExpanded}
       aria-controls={ariaControls}
       aria-busy={ariaBusy === true ? true : undefined}
-      className={`inline-flex items-center justify-center gap-1.5 rounded-control border transition-[filter,background-color,color] duration-100 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-45 ${fill} ${SIZE_CLASS[size]}`}
+      className={`inline-flex items-center justify-center gap-1.5 rounded-control border transition-[filter,background-color,color] duration-100 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-45 ${fill} ${SIZE_CLASS[size]}`}
       {...rest}
     >
       {children}

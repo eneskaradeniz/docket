@@ -352,7 +352,7 @@ const summaryLine = (row: BudgetRow, locale: Locale): string => {
 
 /** The cap field and the consent control a pay-per-use row always carries in itself (U-44a in
  *  U-48's compact row) — never folded away behind its Ayrıntı. */
-function CapAndConsent({ row, store, locale }: { readonly row: BudgetRow; readonly store: WizardStore; readonly locale: Locale }) {
+function CapAndConsent({ row, sole, store, locale }: { readonly row: BudgetRow; readonly sole: boolean; readonly store: WizardStore; readonly locale: Locale }) {
   const [amount, setAmount] = useState(String(row.capShown.amountUsd));
   const scope = row.capShown.scope;
   // A cap the draft now holds replaces what was typed.
@@ -390,7 +390,9 @@ function CapAndConsent({ row, store, locale }: { readonly row: BudgetRow; readon
           </ActionButton>
         </span>
       ) : (
-        <ActionButton variant="primary" onClick={() => void store.allowSpend(row.id, { amount, scope })}>
+        // The first waiting consent holds the step's single primary (U-375); a second waiting
+        // row takes the outline beside it.
+        <ActionButton variant={sole ? 'primary' : 'neutral'} onClick={() => void store.allowSpend(row.id, { amount, scope })}>
           {t(locale, 'wizard.consent.allow')}
         </ActionButton>
       )}
@@ -454,6 +456,7 @@ export function BudgetDetail({ row, store, locale }: { readonly row: BudgetRow; 
  *  keeps its cap and consent in the row — and the Ayrıntı that opens the controls in place. */
 function BudgetRowCompact({
   row,
+  soleConsent,
   store,
   locale,
   marks,
@@ -461,6 +464,7 @@ function BudgetRowCompact({
   onToggle,
 }: {
   readonly row: BudgetRow;
+  readonly soleConsent: boolean;
   readonly store: WizardStore;
   readonly locale: Locale;
   readonly marks: ProviderMarksStore;
@@ -482,7 +486,7 @@ function BudgetRowCompact({
             {summaryLine(row, locale)}
           </div>
         </div>
-        {row.needsConsent ? <CapAndConsent row={row} store={store} locale={locale} /> : null}
+        {row.needsConsent ? <CapAndConsent row={row} sole={soleConsent} store={store} locale={locale} /> : null}
         <ActionButton
           variant="neutral"
           size="sm"
@@ -516,6 +520,8 @@ export function Budget({ state, store, locale, marks }: { readonly state: Wizard
   // duplicates it, and only ever one row stands open.
   const [openRow, setOpenRow] = useState<string | null>(null);
   const { subscriptions, payPerUse } = state.budget;
+  // The first row still waiting for its consent is the step's single primary (U-375).
+  const firstWaitingConsent = payPerUse.find((row) => !row.consented)?.id ?? null;
   const group = (name: LabelKey, hint: LabelKey, key: string, rows: readonly BudgetRow[]) => (
     <section className="mb-[18px]" data-budget-group={key}>
       <h2 className="mb-2 flex items-baseline gap-2 text-[13px] font-bold text-ink">
@@ -527,6 +533,7 @@ export function Budget({ state, store, locale, marks }: { readonly state: Wizard
           <BudgetRowCompact
             key={row.id}
             row={row}
+            soleConsent={row.id === firstWaitingConsent}
             store={store}
             locale={locale}
             marks={marks}
@@ -614,7 +621,7 @@ function FinishProgress({ state, store, locale }: { readonly state: WizardState;
                 <span className="text-[12.5px] text-error" data-finish-reason="">
                   {t(locale, state.finishError.reasonKey)}
                 </span>
-                <ActionButton variant="primary" size="sm" onClick={() => void store.next()}>
+                <ActionButton variant="neutral" size="sm" onClick={() => void store.next()}>
                   {t(locale, 'wizard.retry')}
                 </ActionButton>
               </span>
@@ -749,7 +756,15 @@ export function WizardScreen({ store, locale, localeStore, themeStore, marks }: 
             <span className="ml-auto min-w-0 text-right text-[12.5px] text-inkdim">
               {state.reasonKey !== null ? t(locale, state.reasonKey) : ''}
             </span>
-            <ActionButton variant="primary" size="md" disabled={!state.nextEnabled} onClick={() => void store.next()}>
+            {/* While a pay-per-use consent waits, the row's İzin ver is the step's single primary
+                (U-375) and this through-line button takes the outline; the finish's own errors
+                leave it the primary — their retry beside the line is the outline. */}
+            <ActionButton
+              variant={state.step === 'budget' && state.budget.payPerUse.some((row) => !row.consented) ? 'neutral' : 'primary'}
+              size="md"
+              disabled={!state.nextEnabled}
+              onClick={() => void store.next()}
+            >
               {state.finishing ? (
                 <>
                   <span

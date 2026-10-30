@@ -358,7 +358,8 @@ describe('proposals screen — measure (U-150)', () => {
   });
 
   it('U-150: no vendor-named class, no markup built from text', () => {
-    expect(screen.toLowerCase()).not.toContain('cursor');
+    // U-375 (later than U-150) lets the disabled control name one cursor: not-allowed.
+    expect(screen.toLowerCase()).not.toMatch(/cursor-(?!not-allowed\b)\w/);
     for (const source of Object.values(SOURCES)) {
       expect(source).not.toMatch(/dangerouslySetInnerHTML|innerHTML/);
     }

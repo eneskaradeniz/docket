@@ -179,6 +179,8 @@ for (const layer of V2_LAYERS) {
         ) {
           return;
         }
+        // The disabled law's own utility (U-375) names the CSS property, not the IDE vendor.
+        if (/cursor-not-allowed/.test(t)) return;
         // Inside src/infrastructure/ the vendor-name ban holds everywhere but providers/ (N2);
         // outside infrastructure it is C4 for every layer.
         if (layer !== 'infrastructure' || relative(INFRA, file).split(sep)[0] !== 'providers') {

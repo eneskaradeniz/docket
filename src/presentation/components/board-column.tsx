@@ -9,7 +9,7 @@ import { BoardCard } from './board-card';
 import { FoldIcon, UnfoldIcon } from './board-icons';
 
 const ICON_BUTTON_CLASS =
-  'grid h-6 w-6 flex-none place-items-center rounded-control border border-transparent text-inkdim outline-none transition-colors duration-[var(--motion-board-hover)] hover:border-bord hover:text-ink focus-visible:border-signal-soft disabled:pointer-events-none disabled:opacity-35 motion-reduce:transition-none';
+  'grid h-6 w-6 flex-none place-items-center rounded-control border border-transparent text-inkdim outline-none transition-colors duration-[var(--motion-board-hover)] hover:enabled:border-bord hover:enabled:text-ink focus-visible:border-signal-soft disabled:cursor-not-allowed disabled:opacity-45 motion-reduce:transition-none';
 
 const PILL_CLASS = 'inline-flex h-5 flex-none items-center gap-1.5 rounded-full bg-raised px-2 font-mono text-[12px] font-medium leading-none';
 

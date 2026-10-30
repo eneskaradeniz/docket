@@ -126,7 +126,7 @@ function ToastCard({ item, store, locale }: { readonly item: ToastItem; readonly
       onBlur={() => release('focus')}
       className={[
         'group pointer-events-auto relative flex items-start gap-2.5 overflow-hidden rounded-card border bg-raised px-3 pt-2.5 pb-[13px]',
-        'text-[13px] text-ink shadow-2xl animate-[toast-in_220ms_ease-out] motion-reduce:animate-none',
+        'text-[13px] text-ink shadow-elevation-overlay animate-[toast-in_220ms_ease-out] motion-reduce:animate-none',
         VOICE_EDGE[item.type],
       ].join(' ')}
     >

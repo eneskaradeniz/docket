@@ -24,6 +24,13 @@
   --exec: #4ac3ce;
   --sans: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* The elevation scale (U-374): three levels, each a token, and nothing else draws a shadow.
+     Flat is the named zero — a hairline border, no shadow. In the dark face a card carries its
+     level by its surface (one step above the page), so its shadow is the same zero; in light it
+     takes a very light shadow. An overlay separates from whatever stands behind it. */
+  --elevation-flat: 0 0 #0000;
+  --elevation-card: 0 0 #0000;
+  --elevation-overlay: 0 1rem 3rem rgba(0, 0, 0, 0.5);
 }
 
 /* The light face: rev-8 values, selected by the same data-theme attribute the app already sets.
@@ -47,6 +54,8 @@
   --info: #0969da;
   --error: #cf222e;
   --write: #8250df;
+  --elevation-card: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --elevation-overlay: 0 1rem 2.5rem rgba(0, 0, 0, 0.18), 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
 /* The proportional scale (U-53): the interface grows with the window — one rule on the root, in
@@ -68,6 +77,11 @@ html {
   --radius-control: 6px;
   --radius-card: 8px;
   --radius-panel: 12px;
+  /* The elevation scale's bridge (U-374): the levels reach components as shadow-elevation-flat,
+     shadow-elevation-card and shadow-elevation-overlay, and no other shadow utility exists. */
+  --shadow-elevation-flat: var(--elevation-flat);
+  --shadow-elevation-card: var(--elevation-card);
+  --shadow-elevation-overlay: var(--elevation-overlay);
   --color-bg: var(--bg);
   --color-surface: var(--surface);
   --color-raised: var(--raised);
