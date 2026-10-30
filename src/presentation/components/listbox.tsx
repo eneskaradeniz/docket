@@ -142,13 +142,13 @@ export function Listbox<V extends string>({ label, value, options, onPick, recom
               }}
               className={`flex items-center gap-2.5 whitespace-nowrap rounded-control px-2.5 py-[7px] text-[13px] font-semibold text-ink ${state.active === index ? 'bg-raised' : ''}`}
             >
-              <span className={`flex-none text-signal-soft ${index === found ? '' : 'invisible'}`}>
+              <span className={`flex-none text-ink ${index === found ? '' : 'invisible'}`}>
                 <Check />
               </span>
               {option.lead}
               <span>{option.label}</span>
               {option.recommended === true ? (
-                <span className="ml-3 rounded-control bg-signal/10 px-[7px] py-px text-[11px] font-bold text-signal-soft">{recommendedLabel}</span>
+                <span className="ml-3 rounded-control bg-band px-[7px] py-px text-[11px] font-bold text-inkdim">{recommendedLabel}</span>
               ) : null}
             </li>
           ))}

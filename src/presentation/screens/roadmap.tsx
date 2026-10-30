@@ -66,7 +66,7 @@ const TaskGlyph = ({ status, locale }: { readonly status: string; readonly local
     );
   }
   if (status === 'running') {
-    return <span aria-label={t(locale, 'roadmap.task.current')} className="h-[1.125rem] w-[1.125rem] flex-none rounded-full border-[1.5px] border-signal" />;
+    return <span aria-label={t(locale, 'roadmap.task.current')} className="h-[1.125rem] w-[1.125rem] flex-none rounded-full border-[1.5px] border-ink" />;
   }
   return <span aria-label={t(locale, 'roadmap.task.remaining')} className="h-[1.125rem] w-[1.125rem] flex-none rounded-full border border-bord" />;
 };
@@ -140,13 +140,13 @@ const LAYER_TAB = `h-8 rounded-control border px-3 text-[0.8125rem] font-semibol
 
 const CHIP = 'inline-flex h-5 flex-none items-center gap-2 rounded-full border px-2 font-mono text-[0.6875rem] leading-none';
 
-/** A status chip: a lamp and its word. `lit` is the amber ring-and-fill of work in motion. */
+/** A status chip: a lamp and its word. `lit` is the raised fill and ink dot of work in motion. */
 const StatusChip = ({ tone, label }: { readonly tone: 'run' | 'quiet' | 'done'; readonly label: string }) => {
   if (tone === 'done') return <span className={`${CHIP} border-proceed text-proceed`}>{label}</span>;
   const lit = tone === 'run';
   return (
-    <span className={`${CHIP} ${lit ? 'border-signal-soft text-signal-soft' : 'border-bord text-inkdim'}`}>
-      <span aria-hidden="true" className={`h-2 w-2 flex-none rounded-full border ${lit ? 'border-signal bg-signal' : 'border-bord'}`} />
+    <span className={`${CHIP} ${lit ? 'border-bord bg-raised text-ink' : 'border-bord text-inkdim'}`}>
+      <span aria-hidden="true" className={`h-2 w-2 flex-none rounded-full border ${lit ? 'border-ink bg-ink' : 'border-bord'}`} />
       {label}
     </span>
   );
@@ -196,7 +196,7 @@ const PhaseCard = ({
   return (
     <section
       data-phase={phase.id}
-      className={`overflow-hidden rounded-card border bg-surface ${phase.autoRun?.state === 'running' ? 'border-bord' : 'border-hairline'} ${phase.id === highlightPhase ? 'border-signal' : ''}`}
+      className={`overflow-hidden rounded-card border bg-surface ${phase.autoRun?.state === 'running' ? 'border-bord' : 'border-hairline'} ${phase.id === highlightPhase ? 'border-ink' : ''}`}
     >
       {/* One grid for both header rows: chevron · name · count + button, the status row under the
           name. The toggle is a real button whose overlay makes the whole header clickable without
@@ -257,7 +257,7 @@ const PhaseCard = ({
           ) : null}
           {control.hint === 'blocked' ? (
             <span id={hintId} className="flex items-center gap-2 text-[0.75rem] leading-4 text-inkdim">
-              <span aria-hidden="true" className="h-2 w-2 flex-none rounded-full bg-signal" />
+              <span aria-hidden="true" className="h-2 w-2 flex-none rounded-full bg-inkdim" />
               {fill(t(locale, 'roadmap.hint.blocked'), { names: control.blockedBy.join(', ') })}
             </span>
           ) : null}
@@ -475,7 +475,7 @@ export function RoadmapScreen({
           role="tab"
           aria-selected={state.layer === 'project'}
           onClick={() => store.setLayer('project')}
-          className={`${LAYER_TAB} ${state.layer === 'project' ? 'border-signal bg-raised text-ink' : 'border-hairline bg-surface text-inkdim hover:bg-raised'}`}
+          className={`${LAYER_TAB} ${state.layer === 'project' ? 'border-bord bg-raised text-ink' : 'border-hairline bg-surface text-inkdim hover:bg-raised'}`}
         >
           {t(locale, 'roadmap.layer.project')}
         </button>
@@ -484,7 +484,7 @@ export function RoadmapScreen({
           role="tab"
           aria-selected={state.layer === 'repo'}
           onClick={() => store.setLayer('repo')}
-          className={`${LAYER_TAB} ${state.layer === 'repo' ? 'border-signal bg-raised text-ink' : 'border-hairline bg-surface text-inkdim hover:bg-raised'}`}
+          className={`${LAYER_TAB} ${state.layer === 'repo' ? 'border-bord bg-raised text-ink' : 'border-hairline bg-surface text-inkdim hover:bg-raised'}`}
         >
           {t(locale, 'roadmap.layer.repo')}
         </button>

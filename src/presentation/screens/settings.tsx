@@ -831,7 +831,7 @@ export function SettingsPanel({ open, origin, section, subPage, tab, fineTune: _
                   }}
                   className={[
                     'h-8 rounded-control border px-3 text-[13px]',
-                    tab.repo === repoState.repo ? 'border-signal bg-raised text-ink' : 'border-hairline bg-surface text-inkdim hover:bg-raised',
+                    tab.repo === repoState.repo ? 'border-bord bg-raised text-ink' : 'border-hairline bg-surface text-inkdim hover:bg-raised',
                   ].join(' ')}
                 >
                   {tab.name}

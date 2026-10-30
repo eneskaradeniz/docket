@@ -260,7 +260,7 @@ describe('page screen — comments rail (U-78)', () => {
     expect(html).toMatch(/data-page-comment="c"[^>]*data-delivered="true"/);
     expect(unread).toContain('asistana iletilmedi');
     expect(html).toContain('asistana iletildi');
-    expect(html).toMatch(/data-delivery="false"[^>]*text-signal/);
+    expect(html).toMatch(/data-delivery="false"[^>]*text-inkdim/);
     expect(html).toMatch(/data-delivery="true"[^>]*text-proceed/);
   });
 

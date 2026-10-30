@@ -638,7 +638,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
                             </span>
                           </span>
                         ) : null}
-                        <span className={`ml-auto text-[0.78125rem] text-inkdim ${stage.current && !running ? 'font-semibold text-signal-soft' : ''}`}>
+                        <span className={`ml-auto text-[0.78125rem] text-inkdim ${stage.current && !running ? 'font-semibold text-ink' : ''}`}>
                           {t(locale, stageStandingKey(standing, running))}
                         </span>
                       </summary>

@@ -65,7 +65,7 @@ export function SettingsMenu({ locale, section, onSection, dot }: SettingsMenuPr
                 onClick={() => onSection(entry)}
                 aria-current={current ? 'page' : undefined}
                 className={`flex w-full items-center gap-2.5 rounded-control px-2.5 py-[0.3125rem] text-left text-[0.8125rem] font-semibold ${
-                  current ? 'bg-raised text-ink shadow-[inset_0_0_0_1px_var(--signal)]' : 'text-inkdim hover:bg-raised'
+                  current ? 'bg-raised text-ink shadow-[inset_0_0_0_1px_var(--bord)]' : 'text-inkdim hover:bg-raised'
                 }`}
               >
                 {t(locale, SECTION_KEY[entry])}

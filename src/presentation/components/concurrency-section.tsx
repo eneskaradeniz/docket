@@ -214,7 +214,7 @@ export function ConcurrencySection({ store, locale, accounts, active }: Concurre
       </div>
 
       <p role={message === '' ? undefined : 'alert'} className={`flex min-h-5 items-center gap-2 ${NOTE}`} data-dispatch-message="">
-        {message === '' ? null : <span aria-hidden="true" className={`h-2 w-2 flex-none rounded-full ${errors.first !== null || state.failure !== null ? 'bg-error' : 'bg-signal'}`} />}
+        {message === '' ? null : <span aria-hidden="true" className={`h-2 w-2 flex-none rounded-full ${errors.first !== null || state.failure !== null ? 'bg-error' : 'bg-inkdim'}`} />}
         {message}
       </p>
 

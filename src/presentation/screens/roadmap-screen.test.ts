@@ -360,7 +360,7 @@ describe('roadmap page — repository layer (U-325)', () => {
     store.jumpToPhase('faz-1');
     const after = render(store);
     expect(after).toContain('data-phase="faz-1"');
-    expect(after).toContain('border-signal');
+    expect(after).toContain('border-ink');
     expect(after).not.toContain('data-milestone=');
   });
 

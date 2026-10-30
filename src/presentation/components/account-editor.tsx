@@ -389,7 +389,7 @@ const PERIOD_KEY: Readonly<Record<string, LabelKey>> = {
 
 function RecommendedMark({ locale }: { readonly locale: Locale }) {
   return (
-    <span className="rounded-control border border-hairline px-1.5 text-[10.5px] text-signal-soft">{t(locale, 'editor.recommended')}</span>
+    <span className="rounded-control border border-hairline px-1.5 text-[10.5px] text-inkdim">{t(locale, 'editor.recommended')}</span>
   );
 }
 
@@ -417,11 +417,11 @@ function PolicyRow({ account, locale, store, draftMode = false }: Pick<AccountEd
                 role="radio"
                 aria-checked={checked}
                 onClick={() => (draftMode ? store.setDraftPolicy(account, option.policy) : void store.savePolicy(account, option.policy))}
-                className={`grid w-full grid-cols-[20px_minmax(0,1fr)] gap-x-2.5 gap-y-1 rounded-card border px-3.5 py-3 text-left hover:border-bord ${checked ? 'border-signal bg-signal/10' : 'border-hairline'}`}
+                className={`grid w-full grid-cols-[20px_minmax(0,1fr)] gap-x-2.5 gap-y-1 rounded-card border px-3.5 py-3 text-left hover:border-bord ${checked ? 'border-bord bg-raised' : 'border-hairline'}`}
                 data-policy={option.policy}
               >
-                <span aria-hidden="true" className={`row-span-2 mt-px grid h-[18px] w-[18px] place-items-center rounded-full border-[1.5px] ${checked ? 'border-signal' : 'border-bord'}`}>
-                  {checked ? <span className="h-2 w-2 rounded-full bg-signal" /> : null}
+                <span aria-hidden="true" className={`row-span-2 mt-px grid h-[18px] w-[18px] place-items-center rounded-full border-[1.5px] ${checked ? 'border-ink' : 'border-bord'}`}>
+                  {checked ? <span className="h-2 w-2 rounded-full bg-ink" /> : null}
                 </span>
                 <span className="flex items-center gap-2 font-bold text-ink">
                   {t(locale, option.labelKey)}
@@ -655,11 +655,11 @@ function CapRow({ account, locale, store, draftMode = false }: Pick<AccountEdito
               />
             </label>
             {warnDiff !== undefined ? (
-              <p className="flex flex-wrap items-center gap-2 text-[12px] text-signal-soft">
+              <p className="flex flex-wrap items-center gap-2 text-[12px] text-inkdim">
                 <span
                   aria-label={t(locale, 'editor.recommended.tooltip').replace('{value}', diffValueLabel(locale, 'warnPercent', warnDiff.recommended))}
                   title={t(locale, 'editor.recommended.tooltip').replace('{value}', diffValueLabel(locale, 'warnPercent', warnDiff.recommended))}
-                  className="h-1.5 w-1.5 rounded-full bg-signal"
+                  className="h-1.5 w-1.5 rounded-full bg-inkdim"
                 />
                 <button type="button" onClick={() => (draftMode ? store.setDraftCap(account, { amount, scope, warn: String(RECOMMENDED.warnPercent) }) : void store.reset(account, 'warnPercent'))} aria-label={t(locale, 'editor.reset.aria')} title={t(locale, 'editor.reset.aria')} className="grid h-6 w-6 place-items-center rounded-control border border-bord text-inkdim hover:bg-raised hover:text-ink">
                   <span aria-hidden="true">↶</span>

@@ -11,7 +11,7 @@ import type { RepoRoadmapSlice, RoadmapRepoTab, RoadmapStore } from '../stores/r
 
 const FOCUS = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-signal-soft';
 const CHIP = 'inline-flex h-5 flex-none items-center gap-1 rounded-control border px-1.5 font-mono text-[0.6875rem] leading-none';
-const AMBER_CHIP = `${CHIP} border-signal-soft text-signal-soft`;
+const LINKED_CHIP = `${CHIP} border-bord text-ink`;
 
 const fill = (text: string, vars: Readonly<Record<string, string>> | undefined): string =>
   Object.entries(vars ?? {}).reduce((out, [name, value]) => out.split(`{${name}}`).join(value), text);
@@ -33,7 +33,7 @@ const PhaseBadge = ({
       type="button"
       onClick={() => onJump(link.phaseId)}
       title={link.phaseName}
-      className={`${AMBER_CHIP} ${FOCUS}`}
+      className={`${LINKED_CHIP} ${FOCUS}`}
     >
       {fill(t(locale, 'roadmap.repo.phase.prefix'), { name: link.phaseName })}
     </button>
@@ -242,7 +242,7 @@ export function RoadmapRepoLayer({
               onClick={() => store.selectRepo(tab.repo)}
               className={[
                 'h-8 rounded-control border px-3 text-[0.8125rem] font-semibold',
-                tab.repo === selectedRepo ? 'border-signal bg-raised text-ink' : 'border-hairline bg-surface text-inkdim hover:bg-raised',
+                tab.repo === selectedRepo ? 'border-bord bg-raised text-ink' : 'border-hairline bg-surface text-inkdim hover:bg-raised',
                 FOCUS,
               ].join(' ')}
             >

@@ -71,9 +71,9 @@ function ConnectorRow({ row, locale, busy, failure, onSwitch }: RowProps) {
           aria-label={t(locale, 'connectors.switch').replace('{name}', row.name)}
           {...(inert || busy ? { 'aria-disabled': true } : {})}
           onClick={inert || busy ? undefined : () => onSwitch(row.id, !on)}
-          className={`relative h-5 w-9 flex-none rounded-full border transition-colors ${on ? 'border-signal bg-signal' : 'border-hairline bg-raised'} ${inert || busy ? 'pointer-events-none opacity-45' : ''}`}
+          className={`relative h-5 w-9 flex-none rounded-full border transition-colors ${on ? 'border-ink bg-ink' : 'border-hairline bg-raised'} ${inert || busy ? 'pointer-events-none opacity-45' : ''}`}
         >
-          <span aria-hidden="true" className={`absolute top-0.5 h-3.5 w-3.5 rounded-full bg-ink transition-[left] ${on ? 'left-[18px]' : 'left-0.5'}`} />
+          <span aria-hidden="true" className={`absolute top-0.5 h-3.5 w-3.5 rounded-full transition-[left] ${on ? 'left-[18px] bg-bg' : 'left-0.5 bg-ink'}`} />
         </button>
       </div>
       <p className="m-0 text-[12px] text-inkdim">{row.provides.map((family) => t(locale, PROVIDES_KEY[family])).join(' · ')}</p>

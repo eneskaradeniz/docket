@@ -28,7 +28,7 @@ function StageStrip({ index, count }: { readonly index: number; readonly count: 
       {Array.from({ length: count }, (_, at) => (
         <i
           key={at}
-          className={`h-[0.1875rem] w-3.5 rounded-full ${at + 1 < index ? 'bg-proceed' : at + 1 === index ? 'bg-signal' : 'bg-hairline'}`}
+          className={`h-[0.1875rem] w-3.5 rounded-full ${at + 1 < index ? 'bg-proceed' : at + 1 === index ? 'bg-ink' : 'bg-hairline'}`}
         />
       ))}
     </span>

@@ -101,7 +101,7 @@ function RailStep({
     );
   const badge =
     standing === 'cur'
-      ? 'border-signal text-signal-soft'
+      ? 'border-ink text-ink'
       : standing === 'done'
         ? 'border-ink bg-ink text-surface'
         : 'border-bord text-inkdim';
@@ -231,7 +231,7 @@ function CapabilityRow({ row, state, store, locale }: {
         <InfoBubble locale={locale} subject={row.name} body={info} />
         <span
           aria-hidden="true"
-          className={`grid h-5 w-5 flex-none place-items-center rounded-full border-[1.5px] text-[11px] ${checked ? 'border-signal bg-signal text-signal-ink' : 'border-bord text-transparent'}`}
+          className={`grid h-5 w-5 flex-none place-items-center rounded-full border-[1.5px] text-[11px] ${checked ? 'border-ink bg-ink text-surface' : 'border-bord text-transparent'}`}
         >
           ✓
         </span>
@@ -600,7 +600,7 @@ function FinishProgress({ state, store, locale }: { readonly state: WizardState;
           >
             <span aria-hidden="true" className="grid h-[18px] w-[18px] flex-none place-items-center">
               {standing === 'busy' ? (
-                <span className="block h-4 w-4 animate-spin rounded-full border-2 border-hairline border-t-signal motion-reduce:animate-none" />
+                <span className="block h-4 w-4 animate-spin rounded-full border-2 border-hairline border-t-ink motion-reduce:animate-none" />
               ) : standing === 'done' ? (
                 // The check draws itself once; a reduced-motion page shows it whole at once.
                 <svg viewBox="0 0 16 16" className="h-[15px] w-[15px] text-proceed" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -769,7 +769,7 @@ export function WizardScreen({ store, locale, localeStore, themeStore, marks }: 
                 <>
                   <span
                     aria-hidden="true"
-                    className="inline-block h-[15px] w-[15px] animate-spin rounded-full border-2 border-signal-ink/40 border-t-signal-ink motion-reduce:animate-none"
+                    className="inline-block h-[15px] w-[15px] animate-spin rounded-full border-2 border-ink/40 border-t-ink motion-reduce:animate-none"
                   />
                   {t(locale, 'wizard.finishing')}
                 </>

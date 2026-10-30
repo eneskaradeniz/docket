@@ -147,7 +147,7 @@ export function PagesSection({
                       {fill(t(locale, 'page.list.version'), { n: row.latestVersion })}
                     </span>
                     {row.undeliveredComments > 0 ? (
-                      <span data-page-unread className="font-mono text-[0.6875rem] leading-[1rem] text-signal-soft">
+                      <span data-page-unread className="font-mono text-[0.6875rem] leading-[1rem] text-ink">
                         {row.undeliveredComments === 1
                           ? t(locale, 'page.list.unreadOne')
                           : fill(t(locale, 'page.list.unread'), { n: row.undeliveredComments })}
@@ -366,7 +366,7 @@ export function PageViewerScreen({ store, host, pageId, locale, overlayOpen, now
                 <button
                   type="button"
                   className={`h-[1.625rem] rounded-control border border-bord px-3 text-[0.78125rem] font-semibold leading-[1rem] disabled:cursor-not-allowed disabled:opacity-45 ${FOCUS} ${
-                    mode === id ? 'bg-raised text-ink shadow-[inset_0_0_0_0.0625rem_var(--signal)]' : 'bg-transparent text-ink enabled:hover:bg-raised'
+                    mode === id ? 'bg-raised text-ink shadow-[inset_0_0_0_0.0625rem_var(--bord)]' : 'bg-transparent text-ink enabled:hover:bg-raised'
                   }`}
                   data-page-view={id}
                   aria-pressed={mode === id}
@@ -405,7 +405,7 @@ export function PageViewerScreen({ store, host, pageId, locale, overlayOpen, now
               data-page-note
               className="m-4 flex items-start gap-2 rounded-control border border-bord bg-raised p-3 text-[0.8125rem] leading-[1.25rem] text-ink"
             >
-              <span aria-hidden="true" className="mt-2 h-2 w-2 flex-none rounded-full bg-signal" />
+              <span aria-hidden="true" className="mt-2 h-2 w-2 flex-none rounded-full bg-inkdim" />
               <span>{t(locale, 'page.note.newVersion')}</span>
             </div>
           ) : null}
@@ -513,7 +513,7 @@ export function PageViewerScreen({ store, host, pageId, locale, overlayOpen, now
                   <p className="whitespace-pre-wrap break-words text-[0.8125rem] leading-[1.25rem] text-ink">{comment.text}</p>
                   <span
                     data-delivery={String(comment.delivered)}
-                    className={`font-mono text-[0.6875rem] leading-[1rem] ${comment.delivered ? 'text-proceed' : 'text-signal-soft'}`}
+                    className={`font-mono text-[0.6875rem] leading-[1rem] ${comment.delivered ? 'text-proceed' : 'text-inkdim'}`}
                   >
                     {t(locale, comment.delivered ? 'page.comment.delivered' : 'page.comment.undelivered')}
                   </span>

@@ -159,7 +159,7 @@ function LibraryCard({
             aria-label={t(locale, entry.pinned ? 'library.unpin' : 'library.pin')}
             onClick={pin}
             onKeyDown={(event) => event.stopPropagation()}
-            className={`absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-control bg-surface/80 text-[0.875rem] leading-none hover:text-ink ${entry.pinned ? 'text-signal-soft' : 'text-inkdim'} ${FOCUS}`}
+            className={`absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-control bg-surface/80 text-[0.875rem] leading-none hover:text-ink ${entry.pinned ? 'text-ink' : 'text-inkdim'} ${FOCUS}`}
           >
             {entry.pinned ? '★' : '☆'}
           </button>
