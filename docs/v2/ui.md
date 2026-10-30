@@ -290,6 +290,7 @@ being reset.
   anywhere. A section opens with its title (20/700, plain text — no boxed header card, no upper-case
   label) and its rows sit directly under it; mono type is kept for machine data alone (paths,
   versions, commands, ids, money), never for labels, states or names.
+  Amended 2026-10-30, see U-372 (the mono sentence, for every surface)…
 - **U-29** (setting row and the recommendation) Every setting is one row: title and one sentence
   of purpose on the left, one control on the right (a listbox button, a number field, a switch),
   and below it an optional "› İnce ayar" disclosure holding that setting's deeper parameters.
@@ -452,6 +453,7 @@ being reset.
   one toast "Kurulum tamamlandı · n hesap hazır"; with no project yet, Anasayfa shows a dashed start
   card "İlk projeni ekle" with "Yeni proje" (U-40's page) and "Var olan projeyi bağla". "Bu adımı
   atla" appears only on Bütçe (finishes with the recommended values).
+  Amended 2026-10-30, see U-371 (Dil and Tema are segments, not listboxes)…
 - **U-43** (Settings in the wizard's language; amends U-28, U-30, U-33, U-34; added 2026-10-04,
   #750) Settings is the same Window with a menu instead of steps — Çalışma: Hesaplar · Roller ·
   Yetenekler · Sağlayıcılar; Uygulama: Görünüm · Telefon · Güncelleme — and a × in the head.
@@ -474,6 +476,7 @@ being reset.
   limiti olduğu için planda") — and a footer (in the wizard "Değişiklikler kurulum bitince
   kaydedilir." · Vazgeç · Kaydet; in Settings saving per U-29). Esc or a click outside closes it.
   Amended 2026-10-12, see U-280…
+  Amended 2026-10-30, see U-371 (segments) and U-376 (plain section titles)…
 - **U-44** (meter list; amends U-31; added 2026-10-04, #750) A MeterList shows one row per meter:
   the meter's label (the provider's own window name: "5 saatlik", "Haftalık", …) with a scope tag —
   "tüm modeller" for a pool that applies to all while another pool of the same account is
@@ -1564,6 +1567,7 @@ Added 2026-10-12. The app under test stays off-screen and does not take keyboard
 ## Button tiers (U-216 … U-222)
 
 Added 2026-10-12. Three tiers. Primary is the amber fill. Secondary is the existing neutral outline (1 px `border-bord`, ink text, hover `bg-raised`). Tertiary is plain text only as an `InlineLink` inside running text (`Prose`); it is an anchor, not a button, and it does not render as a control outside that wrapper. `ActionButton`'s `ghost` variant stays, and it draws only when the children are an icon; a text label on `ghost` is drawn as the outline. Heights are `md` 2 rem and `sm` 1.75 rem, in rem, with `rounded-control`. A trailing "…" stays only on a control that opens a further step. This amends the ghost look of U-79's Reddet and of U-160's labelled Yeniden tara: both are the secondary outline. Icon-only controls (title-bar history, closes, drawer toggles, the sidebar rescan) stay borderless.
+Amended 2026-10-30, see U-375 (one primary per view; the disabled look)…
 
 - **U-216** `ActionButton` exposes `primary | neutral | ghost`. A markup test fails a text-labelled ghost: that button renders the outline. An icon child still renders `ghost`.
 - **U-217** A source scan over `src/presentation/**/*.tsx` finds no raw `<button` whose class list is borderless and text-only outside the icon-button host (`action-button.tsx`) and the `InlineLink` allow-list.
@@ -2042,3 +2046,51 @@ Added 2026-10-24, #1347 (dogfood #1341 part a); the approved prototype is the do
 Added 2026-10-24, #1348 (dogfood #1339).
 
 - **U-370** (added 2026-10-24, #1348) When the autonomy control shows `auto` disabled, the spend-cap reason (`auto_requires_spend_cap`) carries a door to the fix: a "Depo ayarlarına git" link (`autonomy.openRepoSettings`, `data-autonomy-open-repo-settings`) inside the why line that opens Ayarlar → Depo ayarları on the open work order's own repo (U-367's `repoFocus`) through the panel's new `focus: 'repoBudget'` open target, which lands keyboard focus on the cap input (`data-repo-budget-input`) once the repo section has drawn it. Wherever the cap reason shows, the card carries the subscription line (`autonomy.spendCapSubscriptionNote` — a subscription run spends nothing, so a small cap is enough); the budget card itself carries the same note in shorter words (`repoSettings.budget.subscriptionNote`). The retry-bound reason (`auto_requires_max_attempts`) stays text only — no route opens a stage definition, so the card names the need (an explicit retry bound per stage) without a link — and the ceiling reason keeps its plain why line.
+
+## Selection, mono, amber, elevation, buttons, gate-row copy (U-371 … U-376)
+
+Added 2026-10-30, #1355 (the design audit of 2026-10-24; approved prototypes
+`docket-tasarim/tasarim-denetimi/p1-secim-mono-amber.html`, `p2-is-emri-detayi.html`). The rules land
+ahead of their implementation wave: the follow-up issues land the source-scan test of U-372 (U-23's
+pattern) and the other rules' tests, and fix today's offenders.
+
+- **U-371** (added 2026-10-30, #1355; amends U-42, U-43) Every exclusive choice of two to four
+  options is one segment control, in the theme choice's (U-36) form — Dil (Türkçe · English), Tema
+  (Sistem · Koyu · Açık), the spend-cap period (Günlük · Haftalık · Aylık), a role's work style
+  (U-33's Hızlı · Dengeli · Özenli) — and the selected option takes a neutral fill, never amber
+  (U-373). A listbox appears only where the choice holds five or more options; chips stay only on
+  multi-select and filters. The setting row (U-29) and U-43's card-style rows keep their layout —
+  only the control type is fixed. U-28's Görünüm segments stand again where U-43 had replaced them
+  with listboxes.
+- **U-372** (added 2026-10-30, #1355; amends U-28) Monospace is the face of machine data alone —
+  paths, versions, commands, ids, money (U-28's sentence for settings sections, now for every
+  surface): a work order's code (U-22), a provider's version and binary path (U-38), a file list, a
+  typed path. It is never the face of a status chip, a segment's options, a section header, a name
+  or a standing word. As U-23's radius law is enforced, a source scan over `src/presentation` will
+  enforce this one; the scan test and the fixes to today's offenders are follow-up issues, not part
+  of this rule's landing.
+- **U-373** (added 2026-10-30, #1355) Amber carries one meaning: the operator is needed. It marks
+  attention that waits on a person — an open permission ask, a pending gate, an account discovery
+  has not added (U-34), a meter entering its warning band (U-31) — and it fills the view's single
+  primary action (U-375); nothing else takes it. A selected row or segment option never takes
+  amber: selection is a neutral fill, a raised surface with ink text.
+- **U-374** (added 2026-10-30, #1355) Elevation is three levels, each a token. `elevation-flat` —
+  a hairline border, no shadow — list rows and the flat rows inside a card; `elevation-card` — a
+  card's border plus, in light, a very light shadow and, in dark, a surface one step above the
+  page — cards and the card sections of Settings and the work-order detail; `elevation-overlay` —
+  a surface separated from the background behind it — modals, the search palette, the Settings
+  panel, every menu or popover floating over content. A surface takes its level from the token, no
+  hand-tuned shadow beside them (U-23's discipline, for depth). The tokens land with the
+  implementation wave.
+- **U-375** (added 2026-10-30, #1355; amends U-216) The tiers of U-216 … U-222 stand, with one cap
+  and one disabled law. A view draws at most one primary button — the amber fill is the action the
+  view most wants; every other button on it is the secondary outline, or a tertiary text control
+  where U-219 already allows one. A disabled button of any tier keeps its own look at reduced
+  opacity with `cursor: not-allowed` — never a grey fill that reads as a second surface.
+- **U-376** (added 2026-10-30, #1355; amends U-43) A gate row prints one word — the gate's own
+  policy ("İnsan onayı"); the kind, identity and label it used to repeat sit in the row's `title`
+  hint, and a standing word is not re-printed where the surface beside the row already carries it.
+  A default policy's text is not repeated under every row: the policy line ("Bekle ve devam et")
+  prints only on a row that differs from that default. A section title is U-28's plain 20/700
+  text — no boxed header, no upper-case label; where U-43's card style reads as a boxed header,
+  U-28 wins.
