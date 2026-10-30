@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { t, type Locale } from '../labels/t';
 import {
+  bubbleOwnsEscape,
   INITIAL_INFO_BUBBLE,
   reduceInfoBubble,
   type InfoBubbleEvent,
@@ -86,7 +87,10 @@ export function InfoBubble({ locale, subject, title, body }: InfoBubbleProps) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key !== 'Escape') return;
+      if (e.key !== 'Escape' || !bubbleOwnsEscape(state)) return;
+      // Capture phase: the panel's own Esc handler sits below the document (React delegates at
+      // its root), so only a listener that runs before it can keep the key from reaching it.
+      e.stopPropagation();
       dispatch({ type: 'escape' });
       triggerRef.current?.focus();
     };
@@ -98,11 +102,11 @@ export function InfoBubble({ locale, subject, title, body }: InfoBubbleProps) {
       if (e.target instanceof Node && bubbleRef.current?.contains(e.target)) return;
       dispatch({ type: 'scroll' });
     };
-    document.addEventListener('keydown', onKey);
+    document.addEventListener('keydown', onKey, true);
     document.addEventListener('pointerdown', onPointerDown, true);
     document.addEventListener('scroll', onScroll, true);
     return () => {
-      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('keydown', onKey, true);
       document.removeEventListener('pointerdown', onPointerDown, true);
       document.removeEventListener('scroll', onScroll, true);
     };

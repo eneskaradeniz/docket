@@ -37,6 +37,11 @@ export type InfoBubbleEvent =
 
 const openNow = (id: string, pinned: boolean): InfoBubbleState => ({ openId: id, pinned, onBubble: false, pending: null });
 
+/** An open bubble owns the Esc key: the component stops the event so the surface around it (a
+ * Settings panel, a dialog) does not also act on it. With no bubble open the key is not ours — it
+ * continues to whatever handler sits around us, exactly as if no bubble existed. */
+export const bubbleOwnsEscape = (s: InfoBubbleState): boolean => s.openId !== null;
+
 const scheduleClose = (s: InfoBubbleState, id: string, now: number): InfoBubbleState =>
   s.openId === id && !s.pinned && !s.onBubble
     ? { ...s, pending: { action: 'close', id, dueAt: now + INFO_BUBBLE_TIMING.closeMs } }
