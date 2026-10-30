@@ -46,7 +46,7 @@ const ALLOWED: Readonly<Record<string, number>> = {
   './components/title-bar.tsx': 1,
   // Permission asks and pending gates — attention that waits on a person.
   './screens/live.tsx': 2,
-  './screens/detail.tsx': 5,
+  './screens/detail.tsx': 4,
   './components/detail-decision-card.tsx': 2,
   './components/detail-strip.tsx': 2,
   './components/cockpit-attention.tsx': 2,

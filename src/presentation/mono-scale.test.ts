@@ -68,7 +68,7 @@ const MONO_FILES: readonly MonoEntry[] = [
   { file: './components/cockpit-running.tsx', lines: 1, why: 'the work-order code' },
   { file: './screens/account-view.tsx', lines: 3, why: 'the plan id, the quota percent meter, the work-order code' },
   { file: './screens/board.tsx', lines: 1, why: 'the repo identifier as the board title' },
-  { file: './screens/detail.tsx', lines: 9, why: 'gate and machine-gate ids, check names, work-order code, repo id, repo-context path, environment ids' },
+  { file: './screens/detail.tsx', lines: 8, why: 'gate and machine-gate ids, check names, work-order code, repo id, repo-context path, environment ids' },
   { file: './screens/live.tsx', lines: 4, why: 'tool names and their targets, the ask tool name and target' },
   { file: './screens/new-project.tsx', lines: 3, why: 'the typed repo-path and parent-path inputs' },
   { file: './screens/page-viewer.tsx', lines: 3, why: 'version references, the page diff body' },
