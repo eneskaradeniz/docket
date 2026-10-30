@@ -1,6 +1,6 @@
 // components/account-editor.tsx — the account editor's four tabs (U-30, U-43): Genel holds the
 // name and the account facts; Kullanım the MeterList (or the spend against the
-// cap) with "Son okuma · Yenile"; Limitler the "Limit dolunca" radio cards, the reserve Listbox and
+// cap) with "Son okuma · Yenile"; Limitler the "Limit dolunca" radio cards, the reserve segments and
 // the spend cap; Modeller the catalog by billing with the spend-consent card (U-32). The rules live
 // in stores/account-editor.ts; this file renders them. The frame — scrim, head, vertical tabs,
 // footer — is components/account-editor-dialog.tsx, which both hosts (Settings, the wizard) use.
@@ -34,7 +34,7 @@ import {
 import { includedReason, type AccountModelsStore, type CapScope } from '../stores/account-models';
 import { RECOMMENDED, settingDiffs } from '../stores/recommended';
 import { ActionButton } from './action-button';
-import { Listbox } from './listbox';
+import { SegmentedControl } from './segmented-control';
 import { MeterList, MeterNote } from './meter-list';
 import { ModelList } from './model-list';
 import { formatMeterValue } from './meter-value';
@@ -492,11 +492,11 @@ function ReserveRow({ account, locale, store, draftMode = false }: Pick<AccountE
     commit(String(value), String(value));
   }
   const listOptions = [
-    { value: 'none', label: t(locale, 'editor.limits.reserve.none'), recommended: recommendedOption === 'none' },
+    { id: 'none', text: t(locale, 'editor.limits.reserve.none'), ...(recommendedOption === 'none' ? { hint: t(locale, 'editor.recommended') } : {}) },
     ...RESERVE_PRESETS.map((value) => ({
-      value: String(value),
-      label: t(locale, 'editor.limits.reserve.preset').replace('{value}', String(value)),
-      recommended: recommendedOption === String(value),
+      id: String(value),
+      text: t(locale, 'editor.limits.reserve.preset').replace('{value}', String(value)),
+      ...(recommendedOption === String(value) ? { hint: t(locale, 'editor.recommended') } : {}),
     })),
   ];
   return (
@@ -519,7 +519,7 @@ function ReserveRow({ account, locale, store, draftMode = false }: Pick<AccountE
         else void store.reset(account, 'reserve');
       }}
       control={
-        <Listbox
+        <SegmentedControl<string>
           label={t(locale, 'editor.limits.reserve.title')}
           value={choice === 'split' || choice === 'default' ? null : String(choice)}
           standing={
@@ -530,8 +530,6 @@ function ReserveRow({ account, locale, store, draftMode = false }: Pick<AccountE
                 : undefined
           }
           options={listOptions}
-          recommendedLabel={t(locale, 'editor.recommended')}
-          minWidth={120}
           onPick={(value) => pick(value === 'none' ? 0 : Number(value))}
         />
       }
@@ -615,16 +613,14 @@ function CapRow({ account, locale, store, draftMode = false }: Pick<AccountEdito
                 data-cap-field="amount"
               />
             </span>
-            <Listbox
+            <SegmentedControl<CapScope>
               label={t(locale, 'editor.limits.cap.period')}
               value={scope}
               options={CAP_SCOPES.map((entry) => ({
-                value: entry,
-                label: t(locale, PERIOD_KEY[entry] ?? 'editor.limits.cap.period'),
-                recommended: entry === RECOMMENDED.cap.scope,
+                id: entry,
+                text: t(locale, PERIOD_KEY[entry] ?? 'editor.limits.cap.period'),
+                ...(entry === RECOMMENDED.cap.scope ? { hint: t(locale, 'editor.recommended') } : {}),
               }))}
-              recommendedLabel={t(locale, 'editor.recommended')}
-              minWidth={110}
               onPick={(entry) => {
                 setScope(entry);
                 commit('cap', entry);

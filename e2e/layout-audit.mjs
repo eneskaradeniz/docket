@@ -441,18 +441,11 @@ async function settingsPanelCheck(target) {
     page.locator(selectors.settingsPanel).getByRole('button', { name, exact: true }).first();
   await menuButton('Görünüm').click({ timeout: 4000 });
   await inPanel('Tema').waitFor({ state: 'visible', timeout: 4000 });
-  // Görünüm's choices live in the Listbox's popup (U-41), not as standing buttons anymore:
-  // opening the theme list is how the section proves its controls — 'Açık' is an option there.
-  await page.locator(selectors.settingsPanel).getByRole('button', { name: /^Tema: / }).first().click({ timeout: 4000 });
-  await page
-    .locator(selectors.settingsPanel)
-    .getByRole('option', { name: 'Açık', exact: true })
-    .first()
-    .waitFor({ state: 'visible', timeout: 4000 });
+  // Görünüm's choices are segment controls (U-371): the options stand as buttons inside a
+  // labelled group — 'Açık' is one of Tema's segments, visible without opening anything.
+  const temaGroup = page.locator(selectors.settingsPanel).getByRole('group', { name: 'Tema' }).first();
+  await temaGroup.getByRole('button', { name: 'Açık', exact: true }).waitFor({ state: 'visible', timeout: 4000 });
   const appearanceOutside = await sectionOutside();
-  // The open popup keeps the panel's Esc for itself (the list stops the key), so this close
-  // leaves the panel standing.
-  await page.keyboard.press('Escape');
   const menuText = (await page.locator(selectors.settingsPanel).locator('nav').last().textContent()) ?? '';
   await menuButton('Güncelleme').click({ timeout: 4000 });
   await inPanel('Şimdi kontrol et').waitFor({ state: 'visible', timeout: 4000 });

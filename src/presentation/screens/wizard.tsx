@@ -8,8 +8,9 @@
 // finish turns the body into its four-line progress list (U-49) and, once done, the window fades
 // over the Anasayfa the shell has already opened. The machine lives in stores/wizard.ts; this file
 // mirrors it. Every part that Settings also draws is a shared component (Window, SettingRow,
-// Listbox, AccountGroups, MeterList, DragOrderList, AccountEditor): this file only arranges them
-// for the steps. No secret value has a surface here, and every string arrives through a label key
+// Listbox, SegmentedControl, AccountGroups, MeterList, DragOrderList, AccountEditor): this file
+// only arranges them for the steps. No secret value has a surface here, and every string arrives
+// through a label key
 // (U-1).
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 
@@ -24,6 +25,7 @@ import { DragOrderList, type DragOrderItem } from '../components/drag-order-list
 import { InfoBubble } from '../components/info-bubble';
 import { KeyMoveCard } from '../components/key-move-card';
 import { Listbox } from '../components/listbox';
+import { SegmentedControl } from '../components/segmented-control';
 import { MeterList } from '../components/meter-list';
 import { ProviderMark } from '../components/provider-mark';
 import { ListBottomFade } from '../components/settings-cards';
@@ -374,13 +376,15 @@ function CapAndConsent({ row, sole, store, locale }: { readonly row: BudgetRow; 
           className="w-[54px] border-0 bg-transparent text-right font-mono text-[13px] text-ink outline-none"
         />
       </label>
-      <Listbox
+      <SegmentedControl<CapScope>
         label={t(locale, 'wizard.budget.period')}
         value={scope}
-        options={CAP_SCOPES.map((entry) => ({ value: entry, label: t(locale, SCOPE_KEY[entry]), recommended: entry === RECOMMENDED.cap.scope }))}
-        recommendedLabel={t(locale, 'editor.recommended')}
-        minWidth={110}
         onPick={(entry) => void commit(entry)}
+        options={CAP_SCOPES.map((entry) => ({
+          id: entry,
+          text: t(locale, SCOPE_KEY[entry]),
+          ...(entry === RECOMMENDED.cap.scope ? { hint: t(locale, 'editor.recommended') } : {}),
+        }))}
       />
       {row.consented ? (
         <span className="flex items-center gap-2 text-[12.5px]" data-consent="granted">
@@ -409,14 +413,12 @@ export function BudgetDetail({ row, store, locale }: { readonly row: BudgetRow; 
     recommended: policy === RECOMMENDED.limitPolicy,
   }));
   const reservePresets = [
-    { value: 'none', label: t(locale, 'editor.limits.reserve.none'), recommended: true },
-    ...RESERVE_PRESETS.map((preset) => ({ value: String(preset), label: t(locale, 'editor.limits.reserve.preset').replace('{value}', String(preset)) })),
+    { id: 'none', text: t(locale, 'editor.limits.reserve.none'), hint: t(locale, 'editor.recommended') },
+    ...RESERVE_PRESETS.map((preset) => ({ id: String(preset), text: t(locale, 'editor.limits.reserve.preset').replace('{value}', String(preset)) })),
   ];
   const reserveValue = row.reservePercent > 0 ? String(row.reservePercent) : 'none';
-  // A stored reserve outside the presets stays visible in its own control rather than vanishing.
-  const reserveOptions = reservePresets.some((option) => option.value === reserveValue)
-    ? reservePresets
-    : [...reservePresets, { value: reserveValue, label: t(locale, 'editor.limits.reserve.preset').replace('{value}', reserveValue) }];
+  // A stored reserve outside the presets stays visible in its own standing rather than vanishing.
+  const reserveKnown = reservePresets.some((option) => option.id === reserveValue);
   return (
     <div id={`budget-detail-${row.id}`} data-budget-detail={row.id} className="border-t border-dashed border-hairline bg-band px-3.5 pb-3.5 pl-[52px] pt-3">
       <div className="flex flex-wrap items-end gap-x-5 gap-y-2">
@@ -433,12 +435,11 @@ export function BudgetDetail({ row, store, locale }: { readonly row: BudgetRow; 
         </div>
         <div className="grid gap-1">
           <span className="text-[11.5px] font-semibold text-inkdim">{t(locale, 'editor.limits.reserve.title')}</span>
-          <Listbox
+          <SegmentedControl<string>
             label={t(locale, 'editor.limits.reserve.title')}
-            value={reserveValue}
-            options={reserveOptions}
-            recommendedLabel={t(locale, 'editor.recommended')}
-            minWidth={150}
+            value={reserveKnown ? reserveValue : null}
+            standing={reserveKnown ? undefined : t(locale, 'editor.limits.reserve.preset').replace('{value}', reserveValue)}
+            options={reservePresets}
             onPick={(value) => store.setReserve(row.id, value === 'none' ? null : Number(value))}
           />
         </div>
