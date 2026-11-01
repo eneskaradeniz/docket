@@ -247,7 +247,8 @@ import { RUN_EVENTS_TAIL_LIMIT } from './queries';
 
 /** The push channel's events (U-12 of docs/v2/ui.md): coarse by design and never a payload — a
  *  store re-queries on receipt, so the channel survives every change of what the views show.
- *  The chat members (U-97) carry the ONE payload exception: `chat.delta`'s text fragment. */
+ *  The chat members are the payload exceptions: `chat.delta`'s text fragment (U-97) and the
+ *  already-redacted, transient `chat.thinking` and `chat.step` (U-381). */
 export type UiEvent =
   | { readonly type: 'workOrders.changed' }
   | { readonly type: 'run.updated'; readonly runId: string }
@@ -256,12 +257,14 @@ export type UiEvent =
   | { readonly type: 'accounts.changed' }
   | { readonly type: 'chat.turn'; readonly conversation: string; readonly turn: string; readonly phase: 'started' | 'finished'; readonly outcome?: string }
   | { readonly type: 'chat.delta'; readonly conversation: string; readonly turn: string; readonly text: string }
+  | { readonly type: 'chat.thinking'; readonly conversation: string; readonly turn: string; readonly text: string }
+  | { readonly type: 'chat.step'; readonly conversation: string; readonly turn: string; readonly id: string; readonly phase: 'called' | 'done' | 'failed'; readonly tool: string; readonly server?: string; readonly target?: string }
   | { readonly type: 'chat.notice'; readonly conversation: string; readonly turn: string; readonly code: string }
   /** A Docket AI setup conversation recorded a read ask (A-358): the conversation id only — the
    *  store re-queries `setup.read.pending` on receipt, like every coarse event. */
   | { readonly type: 'setup.read.ask'; readonly conversation: string }
-  /** The shell asks the window to confirm a quit (U-294): the titles of what would stop — the
-   *  second payload exception beside `chat.delta`, because the modal lists them. */
+  /** The shell asks the window to confirm a quit (U-294): the titles of what would stop — a
+   *  payload exception too, because the modal lists them. */
   | { readonly type: 'quit.requested'; readonly runs: readonly string[]; readonly chats: readonly string[] };
 
 /** The quit confirmation's receiving end, supplied by the shell: `ack` says the modal is up,
@@ -594,6 +597,24 @@ export function createApi(
         for (const fragment of deltaFragments(event.delta)) {
           emit({ type: 'chat.delta', conversation, turn: event.turn, text: fragment });
         }
+        return;
+      }
+      if (event.type === 'thinking') {
+        // The runner already split and bounded the fragment (A-441); the api only forwards it.
+        emit({ type: 'chat.thinking', conversation, turn: event.turn, text: event.delta });
+        return;
+      }
+      if (event.type === 'step') {
+        emit({
+          type: 'chat.step',
+          conversation,
+          turn: event.turn,
+          id: event.id,
+          phase: event.phase,
+          tool: event.tool,
+          ...(event.server !== undefined ? { server: event.server } : {}),
+          ...(event.target !== undefined ? { target: event.target } : {}),
+        });
         return;
       }
       if (event.type === 'notice') {

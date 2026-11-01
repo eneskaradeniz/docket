@@ -60,7 +60,17 @@ import {
 } from '../ports/fakes';
 
 import { assistantBrief } from './assistant-brief';
-import { createChatRunner, CHAT_NOTICE_TEXT_KEY, CHAT_TOOL_DENIED_NOTICE, CHAT_TURN_HISTORY_LIMITS, type ChatRunner, type ChatTurnEvent } from './chat-runner';
+import {
+  CHAT_STEP_LIMITS,
+  CHAT_STEP_NAME_PLACEHOLDER,
+  CHAT_THINKING_MAX_BYTES,
+  createChatRunner,
+  CHAT_NOTICE_TEXT_KEY,
+  CHAT_TOOL_DENIED_NOTICE,
+  CHAT_TURN_HISTORY_LIMITS,
+  type ChatRunner,
+  type ChatTurnEvent,
+} from './chat-runner';
 import { createChatTurnLedger, type ChatTurnLedger } from './chat-turn-ledger';
 import type { UserMessageInput } from '../use-cases';
 
@@ -160,6 +170,17 @@ const conversationRecord = (id: ConversationId, overrides: Partial<Conversation>
 
 const at = (ms: number): EpochMs => T0 + ms;
 const text = (delta: string): AgentEvent => ({ type: 'text', at: at(2), delta });
+const thinking = (delta: string): AgentEvent => ({ type: 'thinking', at: at(1), delta });
+const call = (id: string, name: string, target?: string): AgentEvent => ({
+  type: 'tool_call',
+  at: at(3),
+  id,
+  name,
+  ...(target === undefined ? {} : { target }),
+});
+const callResult = (id: string, ok: boolean): AgentEvent => ({ type: 'tool_result', at: at(4), id, ok });
+const sessionStarted = (): AgentEvent => ({ type: 'session_started', at: at(0), sessionRef: 'sess-1' });
+const rawLine = (line: string): AgentEvent => ({ type: 'raw', at: at(8), line });
 const ask = (id: string, tool = 'bash'): AgentEvent => ({
   type: 'permission_ask',
   at: at(3),
@@ -1154,5 +1175,299 @@ describe('createChatRunner', () => {
     await send(globalSide.runner, CONVERSATION, { text: 'Proje sorusu' });
     expect(await projectWatch.finished).toMatchObject({ outcome: 'completed' });
     expect(globalSide.transport.requests()).toHaveLength(2);
+  });
+
+  // --- thinking and tool steps (A-438 … A-442, #1394) -------------------------------------------------
+
+  /** A transport that builds its script when the run dir is already known, so a target can name a
+   *  path inside it. Parks before its finished event like the parked one. */
+  const runDirTransport = (build: (runDir: string) => readonly AgentEvent[]): {
+    readonly transport: AgentTransport;
+    readonly requests: () => readonly RunRequest[];
+  } => {
+    const requests: RunRequest[] = [];
+    return {
+      transport: {
+        start: async (request) => {
+          requests.push(request);
+          return {
+            ok: true,
+            value: {
+              events: (async function* (): AsyncGenerator<AgentEvent, void> {
+                for (const event of build(request.runDir)) yield event;
+              })(),
+              answerPermission: (): void => undefined,
+              steer: (): void => undefined,
+              stop: async (): Promise<void> => undefined,
+            },
+          };
+        },
+      },
+      requests: () => [...requests],
+    };
+  };
+
+  /** Parks before the first event of the named type until `release()` or `stop()`, so a test can
+   *  cancel while a later event is still pending. */
+  const gatedTransport = (script: readonly AgentEvent[], parkBefore: string): {
+    readonly transport: AgentTransport;
+    readonly release: () => void;
+    readonly stops: () => number;
+  } => {
+    let stops = 0;
+    let released = false;
+    let stopped = false;
+    const waiters: (() => void)[] = [];
+    const park = (): Promise<void> => (released ? Promise.resolve() : new Promise<void>((resolve) => waiters.push(resolve)));
+    const open = (): void => {
+      for (const waiter of waiters.splice(0)) waiter();
+    };
+    const transport: AgentTransport = {
+      start: async () => ({
+        ok: true,
+        value: {
+          events: (async function* (): AsyncGenerator<AgentEvent, void> {
+            for (const event of script) {
+              if (stopped) return;
+              if (event.type === parkBefore) await park();
+              if (stopped) return;
+              yield event;
+            }
+          })(),
+          answerPermission: (): void => undefined,
+          steer: (): void => undefined,
+          stop: async (): Promise<void> => {
+            stops += 1;
+            stopped = true;
+            open();
+          },
+        },
+      }),
+    };
+    return { transport, release: () => { released = true; open(); }, stops: () => stops };
+  };
+
+  const stepsOf = (events: readonly ChatTurnEvent[]): readonly Extract<ChatTurnEvent, { readonly type: 'step' }>[] =>
+    events.filter((event): event is Extract<ChatTurnEvent, { readonly type: 'step' }> => event.type === 'step');
+
+  it('A-438: thinking and tool calls become transient view events; a result pairs with its call, an orphan result is dropped, and neither ask nor error is a step', async () => {
+    const h = await harness({
+      script: [
+        sessionStarted(),
+        rawLine('{"vendor":"frame"}'),
+        thinking('neden bu dosya'),
+        call('t1', 'mcp__docket-pages__docket_get', 'docs/plan.md'),
+        callResult('t1', true),
+        call('t2', 'WebFetch', 'https://example.com/x'),
+        callResult('t2', false),
+        callResult('t-yetim', true),
+        ask('ask-1', 'bash'),
+        errorEvent('auth'),
+        text('cevap'),
+        finished('completed'),
+      ],
+    });
+    const watch = watching(h.runner, CONVERSATION);
+    const turn = await send(h.runner, CONVERSATION, { text: 'Selam' });
+    const done = await watch.finished;
+
+    expect(watch.events.map((event) => event.type)).toEqual([
+      'started',
+      'thinking',
+      'step',
+      'step',
+      'step',
+      'step',
+      'text',
+      'notice',
+      'finished',
+    ]);
+    expect(watch.events[1]).toMatchObject({ type: 'thinking', turn, delta: 'neden bu dosya' });
+    const steps = stepsOf(watch.events);
+    // A result carries only id and ok: its tool, server and target are those of its call.
+    expect(steps[0]).toMatchObject({ id: 't1', phase: 'called', tool: 'docket_get', server: 'docket-pages', target: 'docs/plan.md' });
+    expect(steps[1]).toMatchObject({ id: 't1', phase: 'done', tool: 'docket_get', server: 'docket-pages', target: 'docs/plan.md' });
+    expect(steps[2]).toMatchObject({ id: 't2', phase: 'called', tool: 'WebFetch', target: 'example.com' });
+    expect(steps[3]).toMatchObject({ id: 't2', phase: 'failed', tool: 'WebFetch', target: 'example.com' });
+    // The orphan result, the permission ask, the error, session_started and raw never became events.
+    expect(watch.events.some((event) => JSON.stringify(event).includes('t-yetim'))).toBe(false);
+    expect(steps).toHaveLength(4);
+    expect(h.transport.answers()).toEqual([{ askId: 'ask-1', decision: 'deny' }]);
+    expect(watch.events.some((event) => event.type === 'notice' && event.code === 'auth')).toBe(true);
+    expect(done).toMatchObject({ type: 'finished', outcome: 'completed' });
+  });
+
+  it('A-439: the step carries redacted names and a bounded plain target — never arguments, secrets, absolute paths or a URL\'s userinfo', async () => {
+    const TOKEN = ['ghp', 'KiNoY5tAnMoDe3'.repeat(3)].join('_');
+    const LONG_WORD = 'k'.repeat(CHAT_STEP_LIMITS.targetMaxChars + 5);
+    const USER = 'user';
+    const PW = ['sif', 're'].join('');
+    const AUTH = [USER, PW].join(String.fromCharCode(58));
+    const URL = ['https', '://', AUTH, '@example.com/rapor?q=1'].join('');
+    const driven = runDirTransport((runDir) => [
+      call('m1', 'mcp__docket-pages__docket_read_file', 'docs/plan.md'),
+      call('m2', 'Read', '/Users/op/gizli-dizin/dosya.md'),
+      call('m3', 'Read', `${runDir}/docs/ic.md`),
+      call('m4', 'WebFetch', URL),
+      call('m5', 'Read', 'config/.env'),
+      call('m6', 'Bash', `echo ${TOKEN}`),
+      call('m7', 'Bash', 'git push origin main'),
+      call('m8', 'Bash', `${LONG_WORD}\nikinci satir`),
+      call('m9', 'x'.repeat(CHAT_STEP_LIMITS.nameMaxChars + 1), 'docs/a.md'),
+      call('m10', `mcp__${'s'.repeat(CHAT_STEP_LIMITS.nameMaxChars + 5)}__docket_get`),
+      call('m11', 'docket_get', WORK_ORDER),
+      call('m12', 'Bash', '--flag deger'),
+      call('m13', '', 'docs/b.md'),
+      finished('completed'),
+    ]);
+    const h = await harness({ transport: driven.transport });
+    const watch = watching(h.runner, CONVERSATION);
+    await send(h.runner, CONVERSATION, { text: 'Selam' });
+    await watch.finished;
+
+    const expected: readonly { readonly id: string; readonly tool: string; readonly server?: string; readonly target?: string }[] = [
+      { id: 'm1', tool: 'docket_read_file', server: 'docket-pages', target: 'docs/plan.md' },
+      { id: 'm2', tool: 'Read' }, // an absolute path outside the run's root is dropped
+      { id: 'm3', tool: 'Read', target: 'docs/ic.md' }, // inside the root it is made relative
+      { id: 'm4', tool: 'WebFetch', target: 'example.com' }, // a URL keeps its host alone
+      { id: 'm5', tool: 'Read' }, // the A-261 deny-list refuses the name
+      { id: 'm6', tool: 'Bash' }, // a secret-looking target never rides
+      { id: 'm7', tool: 'Bash', target: 'git' }, // the bare command name alone
+      { id: 'm8', tool: 'Bash', target: LONG_WORD.slice(0, CHAT_STEP_LIMITS.targetMaxChars) }, // one line, cut at 120
+      { id: 'm9', tool: CHAT_STEP_NAME_PLACEHOLDER, target: 'docs/a.md' }, // an over-long name becomes the placeholder
+      { id: 'm10', tool: 'docket_get', server: CHAT_STEP_NAME_PLACEHOLDER },
+      { id: 'm11', tool: 'docket_get', target: WORK_ORDER }, // an id is a plain identifier
+      { id: 'm12', tool: 'Bash' }, // a flag is not a command name
+      { id: 'm13', tool: CHAT_STEP_NAME_PLACEHOLDER, target: 'docs/b.md' }, // an empty name becomes the placeholder
+    ];
+    const steps = stepsOf(watch.events);
+    expect(steps.map((step) => step.id)).toEqual(expected.map((item) => item.id));
+    for (const step of steps) {
+      const want = expected.find((item) => item.id === step.id);
+      if (want === undefined) throw new Error(`an unexpected step was announced: ${step.id}`);
+      expect(step).toMatchObject(want);
+    }
+    const serialized = JSON.stringify(steps);
+    expect(serialized).not.toContain(TOKEN);
+    expect(serialized).not.toContain('gizli-dizin');
+    expect(serialized).not.toContain('sifre@example.com');
+    expect(serialized).not.toContain('ikinci satir');
+    expect(serialized).not.toContain('origin');
+    expect(serialized).not.toContain('\n');
+  });
+
+  it('A-440: thinking and steps are never persisted — the stored message holds the text alone and the audit holds ids, outcome and counts only', async () => {
+    const DISTINCT = { think: 'GIZLI-DUSUNCE-8f3c', tool: 'mcp__docket-pages__docket_get', target: 'docs/gizli-plan-8f3c.md' };
+    const h = await harness({
+      script: [
+        thinking(DISTINCT.think),
+        call('t1', DISTINCT.tool, DISTINCT.target),
+        callResult('t1', true),
+        text('cevap metni'),
+        usage(0.1),
+        finished('completed'),
+      ],
+    });
+    const spent = spyingSpend(h);
+    const watch = watching(h.runner, CONVERSATION);
+    await send(h.runner, CONVERSATION, { text: 'Selam' });
+    await watch.finished;
+
+    // The subscriber saw the transient events…
+    expect(watch.events.some((event) => event.type === 'thinking')).toBe(true);
+    expect(stepsOf(watch.events)).toHaveLength(2);
+    // …but the one durable message holds the streamed text alone.
+    const message = await lastMessage(h, CONVERSATION);
+    expect(message.text).toBe('cevap metni');
+    expect(JSON.stringify(message)).not.toContain(DISTINCT.think);
+    expect(JSON.stringify(message)).not.toContain('docket_get');
+    expect(JSON.stringify(message)).not.toContain(DISTINCT.target);
+    // The conversation store — what chat.conversation reads back — holds neither.
+    const conversation = JSON.stringify(await h.conversations.get(CONVERSATION));
+    expect(conversation).not.toContain(DISTINCT.think);
+    expect(conversation).not.toContain('docket_get');
+    expect(conversation).not.toContain(DISTINCT.target);
+    // The audit keeps ids, outcome and counts; no step count was added.
+    const finishedEntry = h.log.entries().find((entry) => entry.action === 'chat.turn_finished');
+    expect(finishedEntry?.detail).toMatchObject({ outcome: 'completed', artifacts: 0, sources: 0 });
+    expect(Object.keys(finishedEntry?.detail ?? {}).sort()).toEqual(['account', 'artifacts', 'message', 'model', 'outcome', 'sources', 'turn']);
+    // The spend entry stays ids and a number.
+    expect(JSON.stringify(spent.entries)).not.toContain(DISTINCT.think);
+    expect(JSON.stringify(spent.entries)).not.toContain(DISTINCT.target);
+  });
+
+  it('A-441: thinking is fragmented at 4 KiB without loss, steps are capped at 200 counted on called, and nothing is emitted after the end or a cancel', async () => {
+    const encoder = new TextEncoder();
+    const MIXED = `${'a'.repeat(5_000)}${'ğ'.repeat(3_000)}${'文'.repeat(100)}`;
+    const fragmented = await harness({
+      script: [
+        thinking('a'.repeat(CHAT_THINKING_MAX_BYTES)),
+        thinking('b'.repeat(CHAT_THINKING_MAX_BYTES + 1)),
+        thinking('ğ'.repeat(CHAT_THINKING_MAX_BYTES / 2 + 1)),
+        thinking(''),
+        finished('completed'),
+      ],
+    });
+    const fragWatch = watching(fragmented.runner, CONVERSATION);
+    await send(fragmented.runner, CONVERSATION, { text: 'Selam' });
+    await fragWatch.finished;
+    const fragments = fragWatch.events.filter((event) => event.type === 'thinking');
+    // A blank fragment is not emitted; the cap is a byte cap on code-point boundaries.
+    expect(fragments.map((event) => (event.type === 'thinking' ? event.delta : ''))).toEqual([
+      'a'.repeat(CHAT_THINKING_MAX_BYTES),
+      'b'.repeat(CHAT_THINKING_MAX_BYTES),
+      'b',
+      'ğ'.repeat(CHAT_THINKING_MAX_BYTES / 2),
+      'ğ',
+    ]);
+    // A longer mixed stream splits without loss: the fragments reassemble byte-for-byte.
+    const mixedAgain = await harness({ script: [thinking(MIXED), finished('completed')] });
+    const mixedWatch = watching(mixedAgain.runner, CONVERSATION);
+    await send(mixedAgain.runner, CONVERSATION, { text: 'Selam' });
+    await mixedWatch.finished;
+    const mixedFragments = mixedWatch.events.filter((event) => event.type === 'thinking');
+    expect(mixedFragments.map((event) => (event.type === 'thinking' ? event.delta : '')).join('')).toBe(MIXED);
+    expect(mixedFragments.length).toBeGreaterThan(1);
+    for (const event of [...fragments, ...mixedFragments]) {
+      if (event.type === 'thinking') expect(encoder.encode(event.delta).length).toBeLessThanOrEqual(CHAT_THINKING_MAX_BYTES);
+    }
+
+    // The cap is counted on called: 202 calls announce the first 200, and only their results go out.
+    const capScript: AgentEvent[] = [];
+    for (let n = 1; n <= CHAT_STEP_LIMITS.perTurn + 2; n += 1) {
+      capScript.push(call(`c${n}`, 'Read', `docs/f${n}.md`), callResult(`c${n}`, true));
+    }
+    capScript.push(finished('completed'));
+    const capped = await harness({ script: capScript });
+    const capWatch = watching(capped.runner, CONVERSATION);
+    await send(capped.runner, CONVERSATION, { text: 'Selam' });
+    await capWatch.finished;
+    const capSteps = stepsOf(capWatch.events);
+    expect(capSteps.filter((step) => step.phase === 'called')).toHaveLength(CHAT_STEP_LIMITS.perTurn);
+    expect(capSteps.filter((step) => step.phase === 'done')).toHaveLength(CHAT_STEP_LIMITS.perTurn);
+    expect(capSteps[0]).toMatchObject({ id: 'c1', phase: 'called' });
+    expect(capSteps[1]).toMatchObject({ id: 'c1', phase: 'done' });
+    expect(capSteps.some((step) => step.id === `c${CHAT_STEP_LIMITS.perTurn + 1}`)).toBe(false);
+    expect(capSteps.some((step) => step.id === `c${CHAT_STEP_LIMITS.perTurn + 2}`)).toBe(false);
+
+    // Nothing is emitted after the turn's finished event.
+    const ended = await harness({ script: [call('z1', 'Read', 'docs/a.md'), finished('completed'), call('z2', 'Read', 'docs/b.md'), text('geç')] });
+    const endedWatch = watching(ended.runner, CONVERSATION);
+    await send(ended.runner, CONVERSATION, { text: 'Selam' });
+    await endedWatch.finished;
+    expect(stepsOf(endedWatch.events).map((step) => step.id)).toEqual(['z1']);
+    expect(endedWatch.events.some((event) => event.type === 'text')).toBe(false);
+
+    // A cancelled turn emits no further thinking or step.
+    const gated = gatedTransport([call('p1', 'Bash', 'git'), thinking('iptal sonrası düşünce'), finished('completed')], 'thinking');
+    const cancelSide = await harness({ transport: gated.transport });
+    const cancelWatch = watching(cancelSide.runner, CONVERSATION);
+    await send(cancelSide.runner, CONVERSATION, { text: 'Uzun anlat' });
+    await until(() => stepsOf(cancelWatch.events).length === 1);
+    await cancelSide.runner.cancel(CONVERSATION, OPERATOR);
+    const cancelled = await cancelWatch.finished;
+    expect(cancelled).toMatchObject({ outcome: 'cancelled' });
+    expect(cancelWatch.events.some((event) => event.type === 'thinking')).toBe(false);
+    expect(stepsOf(cancelWatch.events).map((step) => step.id)).toEqual(['p1']);
   });
 });
