@@ -3,12 +3,14 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
+import type { ChatArtifactView } from '../../api/chat-views';
 import type { Api } from '../../api/api';
 import type { Command, CommandResult } from '../../api/commands';
 import type { Query } from '../../api/queries';
 import type { Actor } from '../../domain/index';
 import { EN } from '../labels/en';
 import { TR } from '../labels/tr';
+import { PageCard } from '../components/chat-feed';
 import { PermissionPrompt } from '../components/permission-prompt';
 import { SetupProposalDiff } from '../components/setup-proposal-diff';
 import { NewProjectPanel } from '../screens/new-project';
@@ -455,6 +457,36 @@ describe('the Docket AI setup thread', () => {
     expect(live).toContain('Bu repoyu kur');
     expect(live).toContain('Baktım, öneriyi hazırlıyorum.');
     expect(live).toContain('data-setup-composer=""');
+  });
+
+  it('U-111: a stored assistant message with a page artifact draws the same card as the main chat, Aç included', async () => {
+    const pageArtifact: Extract<ChatArtifactView, { readonly kind: 'page' }> = {
+      kind: 'page',
+      id: '01ARZ3NDEKTSV4RRFFQ69G5FA0',
+      version: 2,
+      title: 'Kurulum planı',
+      pageKind: 'document',
+    };
+    const { store } = aiSetup({
+      conversation: {
+        id: CONVERSATION,
+        messages: [
+          { id: 'm1', role: 'user', text: 'Bu repoyu kur', refs: [], attachments: [], artifacts: [], sources: [] },
+          { id: 'm2', role: 'assistant', text: 'Planı sayfaya yazdım.', refs: [], attachments: [], artifacts: [pageArtifact], sources: [] },
+        ],
+      },
+    });
+    await store.refreshProvider();
+    store.pickPath('docket_ai');
+    store.setRepoPath('/Users/e/acme');
+    await store.startAi();
+    const html = drawAi(store);
+    expect(html).toContain('data-setup-thread=""');
+    expect(html).toContain('Planı sayfaya yazdım.');
+    expect(html).toContain('data-chat-card="page"');
+    expect(html).toContain(TR['chat.card.page.open']);
+    const card = renderToStaticMarkup(createElement(PageCard, { artifact: pageArtifact, locale: 'tr', onOpenPage: () => undefined }));
+    expect(html).toContain(card);
   });
 
   it('U-286: a refused start shows the surface failure line, the entry stays honest', async () => {

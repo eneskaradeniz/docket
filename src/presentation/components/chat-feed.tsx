@@ -111,7 +111,8 @@ function UserRow({
   );
 }
 
-function Table({ columns, rows, label, wide }: { readonly columns: readonly string[]; readonly rows: readonly (readonly string[])[]; readonly label: string; readonly wide: boolean }) {
+/** The chat's table card, drawn by every surface that shows a conversation's artifacts. */
+export function Table({ columns, rows, label, wide }: { readonly columns: readonly string[]; readonly rows: readonly (readonly string[])[]; readonly label: string; readonly wide: boolean }) {
   return (
     // A table is a wide artifact: in the full mode it reaches one gutter past the reading column
     // on each side and scrolls from 20 rem (U-194).
@@ -153,7 +154,9 @@ function CardHeader({ title, type, children }: { readonly title: string; readonl
   );
 }
 
-function PageCard({ artifact, locale, onOpenPage }: { readonly artifact: Extract<ChatArtifactView, { kind: 'page' }>; readonly locale: Locale; readonly onOpenPage: (id: string) => void }) {
+/** The chat's page card, drawn by every surface that shows a conversation's artifacts; the open
+ *  action is the host's own — the panel names where the page opens. */
+export function PageCard({ artifact, locale, onOpenPage }: { readonly artifact: Extract<ChatArtifactView, { kind: 'page' }>; readonly locale: Locale; readonly onOpenPage: (id: string) => void }) {
   const type = fill(t(locale, 'chat.card.page.type'), { kind: artifact.pageKind ?? '', n: artifact.version });
   return (
     <div data-chat-card="page" className="overflow-hidden rounded-card border border-hairline bg-band">

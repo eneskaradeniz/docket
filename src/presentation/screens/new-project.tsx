@@ -5,6 +5,7 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 
 import { ActionButton } from '../components/action-button';
+import { PageCard, Table } from '../components/chat-feed';
 import { HomeLaunchers } from '../components/launcher-rows';
 import { PanelOverlay } from '../components/panel-overlay';
 import { PermissionPrompt } from '../components/permission-prompt';
@@ -38,6 +39,9 @@ export interface NewProjectPanelProps {
   readonly onOpenAccounts?: () => void;
   /** The "Docket MCP çalışmıyor" line's target (U-315): the settings panel's MCP section. */
   readonly onOpenMcp?: () => void;
+  /** Where a thread page card's "Aç" opens the page; absent, the card still draws and the open
+   *  action waits for the host that owns the viewer. */
+  readonly onOpenPage?: (id: string) => void;
 }
 
 const LABEL_CLASS = 'text-[0.8125rem] leading-[1.25rem] font-semibold text-ink';
@@ -60,7 +64,15 @@ const shownThreadText = (text: string, locale: Locale): string => {
   return key === null ? text : t(locale, key);
 };
 
-function ThreadRow({ message, locale }: { readonly message: SetupThreadMessage; readonly locale: Locale }) {
+function ThreadRow({
+  message,
+  locale,
+  onOpenPage,
+}: {
+  readonly message: SetupThreadMessage;
+  readonly locale: Locale;
+  readonly onOpenPage: (id: string) => void;
+}) {
   if (message.role === 'user') {
     return (
       <div data-setup-row="user" className={`${WRAP} justify-self-end rounded-panel bg-raised px-3 py-2 text-[0.8125rem] leading-[1.25rem] text-ink`}>
@@ -68,9 +80,19 @@ function ThreadRow({ message, locale }: { readonly message: SetupThreadMessage; 
       </div>
     );
   }
+  // The thread draws the chat's own artifact cards (U-111): the page and table cards need nothing
+  // beyond the message, so they are reused as they are; the store-bound draft and proposal cards
+  // stay with the chat panel, and the setup surface shows its proposal as the diff itself.
   return (
-    <div data-setup-row="assistant" className={`${WRAP} text-[0.8125rem] leading-[1.25rem] text-ink`}>
-      {shownThreadText(message.text, locale)}
+    <div data-setup-row="assistant" className="grid gap-2">
+      {message.text === '' ? null : (
+        <div className={`${WRAP} text-[0.8125rem] leading-[1.25rem] text-ink`}>{shownThreadText(message.text, locale)}</div>
+      )}
+      {message.artifacts.map((artifact, index) => {
+        if (artifact.kind === 'page') return <PageCard key={index} artifact={artifact} locale={locale} onOpenPage={onOpenPage} />;
+        if (artifact.kind === 'table') return <Table key={index} columns={artifact.columns} rows={artifact.rows} label={t(locale, 'chat.card.table')} wide={false} />;
+        return null;
+      })}
     </div>
   );
 }
@@ -81,7 +103,7 @@ const CloseIcon = () => (
   </svg>
 );
 
-export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, onOpenAccounts, onOpenMcp }: NewProjectPanelProps) {
+export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, onOpenAccounts, onOpenMcp, onOpenPage }: NewProjectPanelProps) {
   const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   const threadFocusRef = useRef<HTMLDivElement>(null);
   const {
@@ -367,7 +389,7 @@ export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, 
         <div className="grid gap-2" data-setup-ai-live="">
           <div aria-live="polite" className="grid max-h-[18rem] gap-3 overflow-auto" data-setup-thread="">
             {ai.messages.map((message) => (
-              <ThreadRow key={message.id} message={message} locale={locale} />
+              <ThreadRow key={message.id} message={message} locale={locale} onOpenPage={onOpenPage ?? (() => undefined)} />
             ))}
             {ai.streamed !== '' ? (
               <div data-setup-row="assistant" className={`${WRAP} text-[0.8125rem] leading-[1.25rem] text-ink`}>{ai.streamed}</div>
