@@ -108,6 +108,21 @@ const PENDING = new Map([
   // 2026-10-24). Each id names the follow-up implementation wave; that issue removes the id from
   // this list in the same commit as its test.
 
+  // #1394 — chat tool steps and provider thinking, docs-first. The implementing issue removes each
+  // id from this list in the same commit as its test.
+  ['ui:U-377', '#1394 (chat steps implementation)'],
+  ['ui:U-378', '#1394 (chat steps implementation)'],
+  ['ui:U-379', '#1394 (chat steps implementation)'],
+  ['ui:U-380', '#1394 (chat steps implementation)'],
+  ['ui:U-381', '#1394 (chat steps implementation)'],
+  ['ui:U-382', '#1394 (chat steps implementation)'],
+  ['ui:U-383', '#1394 (chat steps implementation)'],
+  ['ui:U-384', '#1394 (chat steps implementation)'],
+  ['application:A-438', '#1394 (chat steps implementation)'],
+  ['application:A-439', '#1394 (chat steps implementation)'],
+  ['application:A-440', '#1394 (chat steps implementation)'],
+  ['application:A-441', '#1394 (chat steps implementation)'],
+  ['application:A-442', '#1394 (chat steps implementation)'],
 ]);
 
 // Rules whose implementing code and tests were removed while the definition and dated addenda stay
