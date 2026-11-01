@@ -22,6 +22,8 @@ export type PageChange =
   // The chat members (U-97) ride the same push channel; stores that do not serve a chat ignore them.
   | { readonly type: 'chat.turn'; readonly conversation: string; readonly turn: string; readonly phase: 'started' | 'finished'; readonly outcome?: string }
   | { readonly type: 'chat.delta'; readonly conversation: string; readonly turn: string; readonly text: string }
+  | { readonly type: 'chat.thinking'; readonly conversation: string; readonly turn: string; readonly text: string }
+  | { readonly type: 'chat.step'; readonly conversation: string; readonly turn: string; readonly id: string; readonly phase: 'called' | 'done' | 'failed'; readonly tool: string; readonly server?: string; readonly target?: string }
   | { readonly type: 'chat.notice'; readonly conversation: string; readonly turn: string; readonly code: string }
   | { readonly type: 'setup.read.ask'; readonly conversation: string }
   | { readonly type: 'quit.requested'; readonly runs: readonly string[]; readonly chats: readonly string[] };

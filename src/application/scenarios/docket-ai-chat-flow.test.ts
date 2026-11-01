@@ -53,6 +53,7 @@ import {
   createSetupContexts,
   type ChatNotice,
   type ChatRunner,
+  type ChatTurnEvent,
   type ChatTurnLedger,
   type ChatTurnOutcome,
   type DocketTools,
@@ -132,6 +133,15 @@ const defs = (repo: string): string =>
 
 const at = (ms: number): EpochMs => T0 + ms;
 const text = (delta: string): AgentEvent => ({ type: 'text', at: at(2), delta });
+const thinking = (delta: string): AgentEvent => ({ type: 'thinking', at: at(1), delta });
+const toolCall = (id: string, name: string, target?: string): AgentEvent => ({
+  type: 'tool_call',
+  at: at(3),
+  id,
+  name,
+  ...(target === undefined ? {} : { target }),
+});
+const toolResult = (id: string, ok: boolean): AgentEvent => ({ type: 'tool_result', at: at(4), id, ok });
 const usage = (): AgentEvent => ({ type: 'usage', at: at(4), inputTokens: 200, outputTokens: 150 });
 const finished = (reason: 'completed' | 'failed' | 'cancelled' | 'limit'): AgentEvent => ({ type: 'finished', at: at(9), reason });
 const limitHit = (): AgentEvent => ({ type: 'limit_hit', at: at(5), hit: { remedies: ['wait'], class: 'window_exhausted' } });
@@ -390,6 +400,57 @@ const lastMessage = async (w: World) => {
   const last = conversation?.messages[conversation.messages.length - 1];
   if (last === undefined) throw new Error('the conversation must hold a message');
   return last;
+};
+
+// --- the thinking/step scenarios' own drivers (A-442) ---------------------------------------------------
+
+type StepSeen = Extract<ChatTurnEvent, { readonly type: 'step' }>;
+type NoticeSeen = Extract<ChatTurnEvent, { readonly type: 'notice' }>;
+
+/** One turn watched for its whole event stream — text, thinking and steps in arrival order — and
+ *  resolved when it finishes. */
+const watchedTurn = (
+  w: World,
+  script: readonly AgentEvent[],
+  message: string,
+): Promise<TurnResult & { readonly events: () => readonly ChatTurnEvent[]; readonly steps: readonly StepSeen[] }> => {
+  w.transports.register(ACCOUNT, createFakeTransport(script));
+  const events: ChatTurnEvent[] = [];
+  return new Promise((resolve) => {
+    const off = w.runner.subscribe(w.conversation, (event) => {
+      events.push(event);
+      if (event.type !== 'finished') return;
+      off();
+      const notice = events.find((entry): entry is NoticeSeen => entry.type === 'notice')?.code;
+      const deltas = events.filter((entry) => entry.type === 'text').map((entry) => (entry.type === 'text' ? entry.delta : ''));
+      resolve({
+        turn: event.turn,
+        outcome: event.outcome,
+        notice,
+        message: event.message,
+        deltas,
+        events: () => [...events],
+        steps: events.filter((entry): entry is StepSeen => entry.type === 'step'),
+      });
+    });
+    void w.runner.startTurn({ conversation: w.conversation, message: { text: message }, by: OPERATOR }).then((started) => {
+      if (!started.ok) throw new Error(`fixture start: ${started.error.code}`);
+    });
+  });
+};
+
+/** After a scenario: the serialized audit trail, the stored messages and the conversation record —
+ *  the store the `chat.conversation` read serves — hold none of the distinctive strings. */
+const assertNothingPersisted = async (w: World, distinctive: readonly string[]): Promise<void> => {
+  const conversation = await w.deps.conversations.get(w.conversation);
+  const dumps = [
+    JSON.stringify(w.log.entries()),
+    JSON.stringify(conversation?.messages ?? []),
+    JSON.stringify(conversation ?? {}),
+  ];
+  for (const mark of distinctive) {
+    for (const dump of dumps) expect(dump, mark).not.toContain(mark);
+  }
 };
 
 const proposeRoadmap = async (w: World, token: string, after: string, summary: string) => {
@@ -674,5 +735,92 @@ describe('docket ai chat flow scenarios', () => {
     const conversation = await w.deps.conversations.get(w.conversation);
     expect(conversation?.messages).toHaveLength(8);
     expect(w.runner.active(w.conversation)).toBeUndefined();
+  });
+
+  // --- thinking and tool steps (A-442; the rules are A-438 … A-441) ------------------------------------
+
+  it('A-442: (a) thinking given — the stream shows thinking, step called, step done and text in order, and the stored message is the text alone', async () => {
+    const w = await world();
+    const THINK = 'GIZLI-DUSUNCE-8f3a';
+    const TARGET = 'docs/gizli-plan-8f3a.md';
+    const TOOL = 'mcp__docket-pages__docket_get';
+    const turn = await watchedTurn(
+      w,
+      [thinking(`Önce ${THINK} ile dosyaya bakayım.`), toolCall('t1', TOOL, TARGET), toolResult('t1', true), text('Baktım, tamam.'), finished('completed')],
+      'Dosyaya bak.',
+    );
+    expect(turn.events().map((event) => event.type)).toEqual(['started', 'thinking', 'step', 'step', 'text', 'finished']);
+    expect(turn.steps[0]).toMatchObject({ id: 't1', phase: 'called', tool: 'docket_get', server: 'docket-pages', target: TARGET });
+    expect(turn.steps[1]).toMatchObject({ id: 't1', phase: 'done', tool: 'docket_get', target: TARGET });
+    expect(turn.deltas).toEqual(['Baktım, tamam.']);
+    expect((await lastMessage(w)).text).toBe('Baktım, tamam.');
+    await assertNothingPersisted(w, [THINK, TARGET, TOOL]);
+  });
+
+  it('A-442: (b) thinking absent — a tool-only turn announces its steps and no thinking event at all', async () => {
+    const w = await world();
+    const TARGET = 'docs/arama-8f3b.md';
+    const turn = await watchedTurn(
+      w,
+      [toolCall('u1', 'docket_search', TARGET), toolResult('u1', true), text('Aramayı yaptım.'), finished('completed')],
+      'Ara.',
+    );
+    expect(turn.events().filter((event) => event.type === 'thinking')).toEqual([]);
+    expect(turn.steps.map((step) => [step.id, step.phase])).toEqual([['u1', 'called'], ['u1', 'done']]);
+    expect((await lastMessage(w)).text).toBe('Aramayı yaptım.');
+    await assertNothingPersisted(w, [TARGET, 'docket_search']);
+  });
+
+  it('A-442: (c) tool step — secrets, an outside absolute path, a URL\'s userinfo and query, and a secret-named file never ride; a two-line target is one line cut at 120', async () => {
+    const w = await world();
+    const TOKEN = ['ghp', 'KiNoY5tAnMoDe3'.repeat(3)].join('_');
+    const OUTSIDE = '/Users/op/gizli-dizin-8f3c/plan.md';
+    const USER = 'kullanici';
+    const PW = ['sifre', '8f3d'].join('-');
+    const AUTH = [USER, PW].join(String.fromCharCode(58));
+    const URL = ['https', '://', AUTH, '@example.com/rapor?gizli=1'].join('');
+    const SECRET_FILE = 'keys/id_rsa';
+    const LONG_WORD = 'komut-8f3e'.padEnd(126, 'u');
+    const turn = await watchedTurn(
+      w,
+      [
+        toolCall('s1', 'Bash', `echo ${TOKEN}`),
+        toolCall('s2', 'Read', OUTSIDE),
+        toolCall('s3', 'WebFetch', URL),
+        toolCall('s4', 'Read', SECRET_FILE),
+        toolCall('s5', 'Bash', `${LONG_WORD}\nikinci satır 8f3f`),
+        text('Baktım.'),
+        finished('completed'),
+      ],
+      'Çeşitli araçları çağır.',
+    );
+    expect(turn.steps.map((step) => step.id)).toEqual(['s1', 's2', 's3', 's4', 's5']);
+    expect(turn.steps.map((step) => step.target)).toEqual([undefined, undefined, 'example.com', undefined, LONG_WORD.slice(0, 120)]);
+    for (const step of turn.steps) expect(step.tool.length).toBeGreaterThan(0);
+    const serialized = JSON.stringify(turn.events());
+    for (const mark of [TOKEN, 'gizli-dizin-8f3c', 'kullanici', 'sifre-8f3d', 'gizli=1', 'id_rsa', 'ikinci satır']) {
+      expect(serialized).not.toContain(mark);
+    }
+    expect((await lastMessage(w)).text).toBe('Baktım.');
+    await assertNothingPersisted(w, [TOKEN, 'gizli-dizin-8f3c', 'sifre-8f3d', 'id_rsa', 'ikinci satır']);
+  });
+
+  it('A-442: (d) error step — a failed result is a step failed while the turn still ends as the script decides, and an error event is a notice with no step', async () => {
+    const w = await world();
+    const failedStep = await watchedTurn(
+      w,
+      [toolCall('e1', 'Bash', 'git'), toolResult('e1', false), text('Kısmi cevap.'), finished('completed')],
+      'Bir şey dene.',
+    );
+    expect(failedStep.steps.map((step) => [step.id, step.phase])).toEqual([['e1', 'called'], ['e1', 'failed']]);
+    expect(failedStep.outcome).toBe('completed');
+    expect((await lastMessage(w)).text).toBe('Kısmi cevap.');
+    await assertNothingPersisted(w, ['Bash']);
+
+    const errored = await watchedTurn(w, [text('Başladım.'), errorEvent('auth'), finished('failed')], 'Devam et.');
+    expect(errored.steps).toEqual([]);
+    expect(errored.notice).toBe('auth');
+    expect(errored.outcome).toBe('failed');
+    expect((await lastMessage(w)).text).toBe('Başladım.');
   });
 });

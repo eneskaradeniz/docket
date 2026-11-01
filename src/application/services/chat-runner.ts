@@ -2,9 +2,10 @@
 // A-231 … A-241): one turn = one agent invocation on the built-in Asistan role, outside every work
 // order. The user message goes through the existing use case; the turn then resolves the account,
 // refuses without an agent when the invariants (tools, consent, headroom, spend) say no, runs the
-// agent in a run dir with a chat-scoped MCP token, streams its text to the subscribers, and folds
-// the turn's ledger into ONE assistant message — the only durable record of the turn. Every exit
-// path revokes the token, removes the run dir and clears the conversation's active slot.
+// agent in a run dir with a chat-scoped MCP token, streams its text plus redacted, transient
+// thinking and tool-step events to the subscribers, and folds the turn's ledger into ONE assistant
+// message — the only durable record of the turn, which is why thinking and steps never reach it
+// (A-440). Every exit path revokes the token, removes the run dir and clears the active slot.
 import type {
   AccountId,
   AccountRoute,
@@ -25,9 +26,10 @@ import type {
   SpendStatus,
   TurnUsage,
 } from '../../domain/index';
-import { combinedSpendStatus, CONVERSATION_LIMITS, defaultReserve, err, headroom, mostSharedChain, ok, resolveBinding } from '../../domain/index';
+import { combinedSpendStatus, CONVERSATION_LIMITS, defaultReserve, err, headroom, isUlid, mostSharedChain, ok, redactSecretShapes, resolveBinding, validatePagePath } from '../../domain/index';
 
 import type { AppDeps, AuditAction, RunDir, RunHandle, TransportError } from '../ports';
+import { isSecretRepoPath } from '../ports/repo-file-reader';
 import { appendAssistantMessage, appendUserMessage, type UserMessageInput } from '../use-cases/index';
 
 import { ASSISTANT_ROLE_ID, ASSISTANT_TIER, assistantRole } from './assistant-role';
@@ -44,9 +46,14 @@ export type ChatNotice = 'limit' | 'quota' | 'spend' | 'consent' | 'auth' | 'no_
 
 export type ChatTurnOutcome = 'completed' | 'failed' | 'cancelled' | 'limit' | 'refused';
 
+/** One tool step's phase: the call, then its outcome (A-438). */
+export type ChatStepPhase = 'called' | 'done' | 'failed';
+
 export type ChatTurnEvent =
   | { readonly type: 'started'; readonly turn: RunId }
   | { readonly type: 'text'; readonly turn: RunId; readonly delta: string }
+  | { readonly type: 'thinking'; readonly turn: RunId; readonly delta: string }
+  | { readonly type: 'step'; readonly turn: RunId; readonly id: string; readonly tool: string; readonly server?: string; readonly target?: string; readonly phase: ChatStepPhase }
   | { readonly type: 'notice'; readonly turn: RunId; readonly code: ChatNotice }
   | { readonly type: 'finished'; readonly turn: RunId; readonly outcome: ChatTurnOutcome; readonly message?: MessageId };
 
@@ -79,6 +86,15 @@ export const CHAT_RUNNER_LIMITS = { activeTurnsAppWide: 3 } as const;
 
 /** The conversation tail one prompt carries: at most this many messages and bytes, oldest dropped first. */
 export const CHAT_TURN_HISTORY_LIMITS = { messages: 24, bytes: 48 * 1024 } as const;
+
+/** Thinking's fragment cap (A-441): the same 4 KiB the api's `chat.delta` splits at (U-97). */
+export const CHAT_THINKING_MAX_BYTES = 4_096;
+
+/** A step's bounds (A-439, A-441): announced calls per turn, and the carried names' lengths. */
+export const CHAT_STEP_LIMITS = { perTurn: 200, nameMaxChars: 80, targetMaxChars: 120 } as const;
+
+/** What an unusable tool or server name becomes — a label key the surface resolves, never the raw value. */
+export const CHAT_STEP_NAME_PLACEHOLDER = 'chat.step.name_placeholder';
 
 /** A denied permission, stored as its own line of the assistant message. The view
  *  resolves the key; the tool name follows a tab so it is data, not part of the key. */
@@ -158,6 +174,143 @@ const isDocketOwnReadTool = (tool: string): boolean => tool === 'docket_get' || 
  *  the line or the field, so they become spaces; the name stays visible data. */
 const toolDeniedLine = (tool: string): string =>
   `${CHAT_TOOL_DENIED_NOTICE}\t${tool.replaceAll('\n', ' ').replaceAll('\t', ' ')}`;
+
+// --- step redaction (A-438, A-439) ---------------------------------------------------------------------
+
+/** What one announced call carries: the redacted identity a `done` or `failed` result repeats
+ *  (a result names only its id), kept for the turn and never stored. */
+interface StepIdentity {
+  readonly tool: string;
+  readonly server?: string;
+  readonly target?: string;
+}
+
+const isControlCode = (code: number): boolean => code < 0x20 || code === 0x7f;
+
+/** A carried value is one line: control characters are removed, never replaced. */
+const oneLineOf = (value: string): string => {
+  let out = '';
+  for (const char of value) {
+    const code = char.codePointAt(0);
+    if (code === undefined || isControlCode(code)) continue;
+    out += char;
+  }
+  return out;
+};
+
+/** The shell tool the transports name — the one whose target is a command line, so only its
+ *  bare command name may ride. */
+const SHELL_TOOL = 'Bash';
+
+const URL_SHAPE = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//;
+
+/**
+ * The target a step may carry (A-439), derived from what the transport reported. The runner is
+ * the redactor; the view never is. A plain identifier rides — a repo-relative path through the
+ * same validator as `docket_read_file`, a ULID (a work-order code, page, artifact or conversation
+ * id), the bare command name of the shell tool, or a URL's host alone. Everything else is dropped:
+ * secret-bearing or secret-shaped text, the A-261 deny-list's file names, an absolute path outside
+ * the run's root (inside it becomes root-relative), a URL's userinfo, query and fragment, and any
+ * word that carries a flag or an assignment. A dropped target never drops the step.
+ */
+const stepTargetOf = (raw: string | undefined, tool: string, runRoot: string | undefined): string | undefined => {
+  if (raw === undefined || raw === '') return undefined;
+  // A secret-looking value anywhere in the reported target: nothing of it rides.
+  if (redactSecretShapes(raw) !== raw) return undefined;
+  let candidate: string | undefined;
+  if (URL_SHAPE.test(raw)) {
+    // A URL keeps its host name alone — never userinfo, query or fragment.
+    try {
+      candidate = new URL(raw).hostname;
+    } catch {
+      candidate = undefined;
+    }
+  } else if (tool === SHELL_TOOL) {
+    // The shell tool's target is a command line, spaces included, so the plain-path test below
+    // would swallow it: only its bare command name may ride, never a flag or a value after it.
+    const first = raw.trim().split(/\s+/)[0] ?? '';
+    candidate = first !== '' && !first.includes('=') && !first.startsWith('-') ? first : undefined;
+  } else if (raw.startsWith('/')) {
+    const root = runRoot === undefined ? undefined : `${runRoot}/`;
+    candidate = root !== undefined && raw.startsWith(root) ? raw.slice(root.length) : undefined;
+  } else if (validatePagePath(raw) && !isSecretRepoPath(raw)) {
+    candidate = raw;
+  } else if (isUlid(raw)) {
+    candidate = raw;
+  }
+  if (candidate === undefined || candidate === '') return undefined;
+  const bounded = Array.from(oneLineOf(candidate)).slice(0, CHAT_STEP_LIMITS.targetMaxChars).join('');
+  if (bounded === '' || bounded.includes('=') || redactSecretShapes(bounded) !== bounded) return undefined;
+  return bounded;
+};
+
+/**
+ * The names a step carries (A-439): the transport's tool name with an `mcp__<server>__` prefix
+ * split off, so the operator can tell Docket's own MCP from another server's. A name that is
+ * empty or over-long becomes the label pack's placeholder, never the raw value.
+ */
+const stepNameOf = (raw: string): { readonly tool: string; readonly server: string | undefined } => {
+  const carried = (value: string): string =>
+    value.length > 0 && value.length <= CHAT_STEP_LIMITS.nameMaxChars ? value : CHAT_STEP_NAME_PLACEHOLDER;
+  let tool = oneLineOf(raw);
+  let server: string | undefined;
+  if (tool.startsWith('mcp__')) {
+    const rest = tool.slice('mcp__'.length);
+    const cut = rest.indexOf('__');
+    if (cut >= 0) {
+      server = carried(oneLineOf(rest.slice(0, cut)));
+      tool = rest.slice(cut + 2);
+    }
+  }
+  return { tool: carried(tool), server };
+};
+
+const stepIdentityOf = (name: string, target: string | undefined, runRoot: string | undefined): StepIdentity => {
+  const { tool, server } = stepNameOf(name);
+  const carriedTarget = stepTargetOf(target, tool, runRoot);
+  return {
+    tool,
+    ...(server === undefined ? {} : { server }),
+    ...(carriedTarget === undefined ? {} : { target: carriedTarget }),
+  };
+};
+
+const stepEventOf = (turn: RunId, id: string, phase: ChatStepPhase, identity: StepIdentity): ChatTurnEvent => ({
+  type: 'step',
+  turn,
+  id,
+  phase,
+  tool: identity.tool,
+  ...(identity.server !== undefined ? { server: identity.server } : {}),
+  ...(identity.target !== undefined ? { target: identity.target } : {}),
+});
+
+const fragmentEncoder = new TextEncoder();
+
+/**
+ * Thinking's fragments (A-441): at most {@link CHAT_THINKING_MAX_BYTES} bytes each, in order,
+ * without loss, cut on code-point boundaries — the split U-97 gives `chat.delta`. A blank
+ * fragment is not emitted, so an empty delta yields none.
+ */
+const thinkingFragments = (delta: string): readonly string[] => {
+  if (delta === '') return [];
+  if (fragmentEncoder.encode(delta).length <= CHAT_THINKING_MAX_BYTES) return [delta];
+  const fragments: string[] = [];
+  let current = '';
+  let used = 0;
+  for (const char of delta) {
+    const size = fragmentEncoder.encode(char).length;
+    if (used + size > CHAT_THINKING_MAX_BYTES && current !== '') {
+      fragments.push(current);
+      current = '';
+      used = 0;
+    }
+    current += char;
+    used += size;
+  }
+  if (current !== '') fragments.push(current);
+  return fragments;
+};
 
 /** The project a conversation's scope lives in, if any — the work-order scope's order decides. */
 const projectOfScope = async (
@@ -527,6 +680,9 @@ export function createChatRunner(deps: ChatRunnerDeps, extras: ChatRunnerExtras)
       }
 
       let decided: ChatTurnOutcome | undefined;
+      // The turn's announced steps (A-438, A-441): the identity a result repeats, kept in memory
+      // for the turn alone — never stored (A-440). The cap counts the `called` announcements.
+      const announced = new Map<string, StepIdentity>();
       for await (const event of handle.events) {
         // A deleted conversation cancels its turn: the agent is stopped and nothing more is written.
         if ((await deps.conversations.get(conversation)) === undefined) {
@@ -546,6 +702,29 @@ export function createChatRunner(deps: ChatRunnerDeps, extras: ChatRunnerExtras)
             }
             emit(conversation, { type: 'text', turn, delta: event.delta });
             break;
+          case 'thinking':
+            // Redacted by nothing — bounded fragments alone; the text never persists (A-440).
+            for (const fragment of thinkingFragments(event.delta)) {
+              emit(conversation, { type: 'thinking', turn, delta: fragment });
+            }
+            break;
+          case 'tool_call': {
+            const identity = stepIdentityOf(event.name, event.target, runDir?.path);
+            // Later calls still run; past the cap they are simply not announced (A-441).
+            if (announced.size < CHAT_STEP_LIMITS.perTurn) {
+              announced.set(event.id, identity);
+              emit(conversation, stepEventOf(turn, event.id, 'called', identity));
+            }
+            break;
+          }
+          case 'tool_result': {
+            // A result carries only id and ok; an id with no announced call is dropped.
+            const identity = announced.get(event.id);
+            if (identity !== undefined) {
+              emit(conversation, stepEventOf(turn, event.id, event.ok ? 'done' : 'failed', identity));
+            }
+            break;
+          }
           case 'permission_ask':
             // Only Docket's own read tools are allowed, and only by the exact name the
             // transport reports. A denial is not a failed turn; the transcript says so.
@@ -582,7 +761,7 @@ export function createChatRunner(deps: ChatRunnerDeps, extras: ChatRunnerExtras)
             decided = outcomeOfFinished(event.reason);
             break;
           default:
-            break; // session_started, thinking, tool_call, tool_result, raw: never out
+            break; // session_started, permission_answered, raw: never out
         }
         if (decided !== undefined) break;
       }
