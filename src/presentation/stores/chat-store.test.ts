@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ChatReferenceView } from '../../api/chat-views';
 import type { Command } from '../../api/commands';
-import { chatBusy, chatInputBlocked, chatShowsDots, chatTierMinutes, chatFailureKey, GLOBAL_PLACE, type ChatPlace } from './chat-model';
+import { chatBusy, chatInputBlocked, chatShowsDots, chatShowsFold, chatShowsSteps, chatShowsThinking, chatTierMinutes, chatFailureKey, GLOBAL_PLACE, visibleStepRows, type ChatPlace } from './chat-model';
 import { createChatStore, type ChatStore } from './chat-store';
 import { ACTOR, action, bridge, conversation, draft, flush, grant, message, summary, type Bridge } from './chat-kit';
 
@@ -1292,5 +1292,276 @@ describe('new conversation (U-101)', () => {
     expect(state.note).toBeNull();
     expect(state.view).toBe('chat');
     expect(b.toasts.at(-1)?.key).toBe('chat.toast.new');
+  });
+});
+
+// --- provider thinking and tool steps (U-377 … U-384) -------------------------------------------------
+
+/** The event spellings the real channel emits: the api's UiEvent members of U-381, exactly as the
+ *  runner's own scenarios (A-442) and the api bridge pin them. */
+const thinkingEvent = (text: string, turn = 'T1', conversation = 'C1') =>
+  ({ type: 'chat.thinking', conversation, turn, text }) as const;
+const stepEvent = (
+  id: string,
+  phase: 'called' | 'done' | 'failed',
+  patch: { readonly turn?: string; readonly conversation?: string; readonly tool?: string; readonly server?: string; readonly target?: string } = {},
+) =>
+  ({
+    type: 'chat.step',
+    conversation: patch.conversation ?? 'C1',
+    turn: patch.turn ?? 'T1',
+    id,
+    phase,
+    tool: patch.tool ?? 'docket_get',
+    ...(patch.server === undefined ? {} : { server: patch.server }),
+    ...(patch.target === undefined ? {} : { target: patch.target }),
+  }) as const;
+
+/** A live turn the scenarios script from its start: started, events, then a finished that re-reads
+ *  the stored messages the test wants the conversation read to answer. */
+const startedTurn = async (b: Bridge, turn = 'T1'): Promise<void> => {
+  b.emit({ type: 'chat.turn', conversation: 'C1', turn, phase: 'started' });
+  await flush();
+};
+
+const finishTurn = async (b: Bridge, stored: readonly ReturnType<typeof message>[], outcome = 'completed', turn = 'T1'): Promise<void> => {
+  b.onQuery('chat.conversation', () => conversation('C1', { messages: stored }));
+  b.emit({ type: 'chat.turn', conversation: 'C1', turn, phase: 'finished', outcome });
+  await flush();
+};
+
+describe('thinking and tool steps (U-377 … U-384)', () => {
+  it('U-377: while the turn runs the area under the message shows thinking once any arrived, else the step rows, else the dots', async () => {
+    const { store, b } = live();
+    store.setDraft('bak');
+    await store.send();
+    await startedTurn(b);
+    expect(chatShowsDots(store.state())).toBe(true);
+    // A step retires the dots; the row stands under the running message.
+    b.emit(stepEvent('s1', 'called'));
+    expect(chatShowsDots(store.state())).toBe(false);
+    expect(chatShowsSteps(store.state())).toBe(true);
+    // The first delta still grows the assistant text in place; the rows stay under it.
+    b.emit({ type: 'chat.delta', conversation: 'C1', turn: 'T1', text: 'Bakıyorum' });
+    expect(store.state().streamed).toBe('Bakıyorum');
+    expect(chatShowsSteps(store.state())).toBe(true);
+    // Thinking wins from its first non-blank fragment and is one-way for the turn.
+    b.emit(thinkingEvent('Planı düşünüyorum.'));
+    expect(chatShowsThinking(store.state())).toBe(true);
+    expect(chatShowsSteps(store.state())).toBe(false);
+    expect(chatShowsDots(store.state())).toBe(false);
+    await finishTurn(b, [message('m1', { role: 'user', text: 'bak' }), message('m2', { text: 'Bakıyorum' })]);
+    expect(chatShowsFold(store.state())).toBe(true);
+  });
+
+  it('U-378: fragments of the open turn accumulate in order and clear on finished and on a conversation switch', async () => {
+    const { store, b } = live();
+    store.setDraft('bak');
+    await store.send();
+    await startedTurn(b);
+    b.emit(thinkingEvent('Planı '));
+    b.emit(thinkingEvent('okuyorum.'));
+    expect(store.state().thinking).toBe('Planı okuyorum.');
+    // The string is not the message: the streamed text stays its own.
+    expect(store.state().streamed).toBe('');
+    await finishTurn(b, [message('m1', { role: 'user', text: 'bak' }), message('m2', { text: 'Bittim.' })]);
+    expect(store.state().thinking).toBe('');
+    // A second turn accumulates from nothing…
+    store.setDraft('iki');
+    b.onCommand('chat.send', () => ({ ok: true, turn: 'T2' }));
+    await store.send();
+    await startedTurn(b, 'T2');
+    b.emit(thinkingEvent('Yeni', 'T2'));
+    expect(store.state().thinking).toBe('Yeni');
+    // …and a conversation switch clears it (U-378's last sentence).
+    store.pickScope({ kind: 'global' });
+    expect(store.state().thinking).toBe('');
+    expect(store.state().steps).toEqual([]);
+  });
+
+  it('U-379: rows arrive in call order and move by id; a failed row is a row state, never a note', async () => {
+    const { store, b } = live();
+    store.setDraft('bak');
+    await store.send();
+    await startedTurn(b);
+    b.emit(stepEvent('a', 'called', { tool: 'docket_search', target: 'docs/a.md' }));
+    b.emit(stepEvent('b', 'called', { tool: 'docket_get', server: 'docket-pages' }));
+    // A result with an unknown id changes nothing; interleaved results move their own rows.
+    b.emit(stepEvent('yok', 'done'));
+    expect(store.state().steps.map((row) => [row.id, row.phase])).toEqual([
+      ['a', 'called'],
+      ['b', 'called'],
+    ]);
+    b.emit(stepEvent('b', 'done'));
+    b.emit(stepEvent('a', 'failed'));
+    expect(store.state().steps).toEqual([
+      { id: 'a', phase: 'failed', tool: 'docket_search', target: 'docs/a.md' },
+      { id: 'b', phase: 'done', tool: 'docket_get', server: 'docket-pages' },
+    ]);
+    // A failed step is not a turn failure: no note, no notice, the turn goes on to its outcome.
+    expect(store.state().note).toBeNull();
+    expect(store.state().notice).toBeNull();
+    await finishTurn(b, [message('m1', { role: 'user', text: 'bak' }), message('m2', { text: 'Devam.' })]);
+    expect(store.state().note).toBeNull();
+    expect(chatShowsFold(store.state())).toBe(true);
+  });
+
+  it('U-380: on finished the rows fold closed under the stored message — opening lists them as they were, a re-open clears', async () => {
+    const { store, b } = live();
+    store.setDraft('bak');
+    await store.send();
+    await startedTurn(b);
+    b.emit(stepEvent('s1', 'called', { target: 'docs/plan.md' }));
+    b.emit(stepEvent('s1', 'done', { target: 'docs/plan.md' }));
+    b.emit(thinkingEvent('bu katman asla dizilmez'));
+    // Finished folds whatever the outcome: the thinking goes, the rows stay for the fold.
+    await finishTurn(b, [message('m1', { role: 'user', text: 'bak' }), message('m2', { text: 'Bitti.' })], 'cancelled');
+    expect(store.state().thinking).toBe('');
+    expect(store.state().stepsOpen).toBe(false);
+    expect(chatShowsFold(store.state())).toBe(true);
+    // The fold lives only in the store: the stored message holds the text alone.
+    expect(store.state().detail?.messages.at(-1)?.text).toBe('Bitti.');
+    expect(JSON.stringify(store.state().detail)).not.toContain('docs/plan.md');
+    // Opening lists the rows as they were; closing hides them again.
+    store.toggleSteps();
+    expect(store.state().stepsOpen).toBe(true);
+    expect(store.state().steps).toHaveLength(1);
+    store.toggleSteps();
+    expect(store.state().stepsOpen).toBe(false);
+    // A re-open of the conversation from history clears the fold.
+    await store.openConversation('C1');
+    expect(store.state().steps).toEqual([]);
+    expect(chatShowsFold(store.state())).toBe(false);
+    // A turn with no steps leaves no disclosure at all.
+    await finishTurn(b, [message('m1', { role: 'user', text: 'bak' }), message('m2', { text: 'Yok.' })]);
+    expect(chatShowsFold(store.state())).toBe(false);
+  });
+
+  it('U-381: thinking and step events route like the deltas — another conversation or a foreign turn never lands, early ones replay', async () => {
+    const { store, b } = live();
+    store.setDraft('bak');
+    await store.send();
+    await startedTurn(b);
+    b.emit(thinkingEvent('başka yer', 'T1', 'OTHER'));
+    b.emit(stepEvent('o1', 'called', { conversation: 'OTHER', turn: 'T9' }));
+    b.emit(thinkingEvent('eski tur', 'T0'));
+    b.emit(stepEvent('eski', 'called', { turn: 'T0' }));
+    expect(store.state().thinking).toBe('');
+    expect(store.state().steps).toEqual([]);
+    // Events that land before the start answers are held and replayed once the id is known.
+    let release: (value: { ok: true; conversation: string; turn: string }) => void = () => undefined;
+    b.onCommand('chat.start', () => new Promise((resolve) => (release = resolve)));
+    store.pickScope({ kind: 'global' });
+    store.setDraft('erken');
+    const sending = store.send();
+    b.emit({ type: 'chat.turn', conversation: 'C1', turn: 'T1', phase: 'started' });
+    b.emit(thinkingEvent('Erken düşünce'));
+    b.emit(stepEvent('e1', 'called'));
+    release({ ok: true, conversation: 'C1', turn: 'T1' });
+    await sending;
+    expect(store.state().thinking).toBe('Erken düşünce');
+    expect(store.state().steps.map((row) => row.id)).toEqual(['e1']);
+  });
+
+  it('U-384: (a) thinking given — the thinking string stands over the steps, and at finished the string is gone with the fold listing the one step', async () => {
+    const THINK = 'DUSUNCE-ISARETI-8f3a';
+    const TARGET = 'docs/gizli-plan-8f3a.md';
+    const { store, b } = live();
+    store.setDraft('Dosyaya bak.');
+    await store.send();
+    await startedTurn(b);
+    b.emit(thinkingEvent(`Önce ${THINK} ile bakayım.`));
+    b.emit(stepEvent('t1', 'called', { tool: 'docket_get', server: 'docket-pages', target: TARGET }));
+    b.emit(stepEvent('t1', 'done', { tool: 'docket_get', server: 'docket-pages', target: TARGET }));
+    b.emit({ type: 'chat.delta', conversation: 'C1', turn: 'T1', text: 'Baktım, tamam.' });
+    // The feed shows the thinking string and no step rows while the turn runs.
+    expect(store.state().thinking).toBe(`Önce ${THINK} ile bakayım.`);
+    expect(chatShowsThinking(store.state())).toBe(true);
+    expect(chatShowsSteps(store.state())).toBe(false);
+    expect(store.state().streamed).toBe('Baktım, tamam.');
+    await finishTurn(b, [message('m1', { role: 'user', text: 'Dosyaya bak.' }), message('m2', { text: 'Baktım, tamam.' })]);
+    // At finished the string is gone and the fold lists the one step as it was.
+    expect(store.state().thinking).toBe('');
+    expect(chatShowsFold(store.state())).toBe(true);
+    expect(store.state().steps).toEqual([{ id: 't1', phase: 'done', tool: 'docket_get', server: 'docket-pages', target: TARGET }]);
+    // The re-read conversation holds the streamed text only — no thinking text, no step.
+    const detail = JSON.stringify(store.state().detail);
+    expect(store.state().detail?.messages.at(-1)?.text).toBe('Baktım, tamam.');
+    expect(detail).not.toContain(THINK);
+    expect(detail).not.toContain(TARGET);
+    expect(detail).not.toContain('docket_get');
+  });
+
+  it('U-384: (b) thinking absent — a tool-only turn shows the row called then done, never the dots after the call', async () => {
+    const { store, b } = live();
+    store.setDraft('Ara.');
+    await store.send();
+    await startedTurn(b);
+    expect(chatShowsDots(store.state())).toBe(true);
+    b.emit(stepEvent('u1', 'called', { tool: 'docket_search', target: 'docs/arama.md' }));
+    expect(chatShowsDots(store.state())).toBe(false);
+    expect(chatShowsSteps(store.state())).toBe(true);
+    expect(chatShowsThinking(store.state())).toBe(false);
+    b.emit(stepEvent('u1', 'done', { tool: 'docket_search', target: 'docs/arama.md' }));
+    b.emit({ type: 'chat.delta', conversation: 'C1', turn: 'T1', text: 'Aramayı yaptım.' });
+    await finishTurn(b, [message('m1', { role: 'user', text: 'Ara.' }), message('m2', { text: 'Aramayı yaptım.' })]);
+    expect(store.state().thinking).toBe('');
+    expect(store.state().steps.map((row) => row.phase)).toEqual(['done']);
+    expect(store.state().detail?.messages.at(-1)?.text).toBe('Aramayı yaptım.');
+    // With nothing at all before the first delta the feed shows the dots (U-104 as amended).
+    store.setDraft('yeni');
+    b.onCommand('chat.send', () => ({ ok: true, turn: 'T2' }));
+    await store.send();
+    await startedTurn(b, 'T2');
+    expect(chatShowsDots(store.state())).toBe(true);
+    b.emit({ type: 'chat.delta', conversation: 'C1', turn: 'T2', text: 'doğrudan' });
+    expect(chatShowsDots(store.state())).toBe(false);
+  });
+
+  it('U-384: (c) tool steps — 60 calls draw 50 rows plus the more-line, in arrival order', async () => {
+    const { store, b } = live();
+    store.setDraft('Listele.');
+    await store.send();
+    await startedTurn(b);
+    for (let n = 0; n < 60; n += 1) b.emit(stepEvent(`c${n}`, 'called', { tool: 'docket_get' }));
+    const state = store.state();
+    expect(state.steps).toHaveLength(60);
+    const drawn = visibleStepRows(state.steps);
+    expect(drawn.rows).toHaveLength(50);
+    expect(drawn.hidden).toBe(10);
+    expect(drawn.rows[0]?.id).toBe('c10');
+    // The feed follows the newest rows, so the drawn window is the newest, in arrival order.
+    expect(drawn.rows.map((row) => row.id).slice(0, 3)).toEqual(['c10', 'c11', 'c12']);
+    await finishTurn(b, [message('m1', { role: 'user', text: 'Listele.' }), message('m2', { text: 'Listeledim.' })]);
+    expect(chatShowsFold(store.state())).toBe(true);
+    expect(JSON.stringify(store.state().detail)).not.toContain('docket_get');
+  });
+
+  it('U-384: (d) error step — ok:false fails the row with no note; a provider error is the notice with no step row', async () => {
+    const { store, b } = live();
+    store.setDraft('Bir şey dene.');
+    await store.send();
+    await startedTurn(b);
+    b.emit(stepEvent('e1', 'called', { tool: 'docket_get' }));
+    b.emit(stepEvent('e1', 'failed', { tool: 'docket_get' }));
+    b.emit({ type: 'chat.delta', conversation: 'C1', turn: 'T1', text: 'Kısmi cevap.' });
+    // The failed row is a row state: the turn finishes normally and no note row appears.
+    await finishTurn(b, [message('m1', { role: 'user', text: 'Bir şey dene.' }), message('m2', { text: 'Kısmi cevap.' })]);
+    expect(store.state().steps.map((row) => [row.id, row.phase])).toEqual([['e1', 'failed']]);
+    expect(store.state().note).toBeNull();
+    expect(store.state().notice).toBeNull();
+    // A provider error produces the notice sentence and no step row.
+    store.setDraft('devam');
+    b.onCommand('chat.send', () => ({ ok: true, turn: 'T2' }));
+    await store.send();
+    await startedTurn(b, 'T2');
+    b.emit({ type: 'chat.delta', conversation: 'C1', turn: 'T2', text: 'Başladım.' });
+    b.emit({ type: 'chat.notice', conversation: 'C1', turn: 'T2', code: 'auth' });
+    b.onQuery('chat.conversation', () => conversation('C1', { messages: [message('m3', { role: 'user', text: 'devam' }), message('m4', { text: 'Başladım.' })] }));
+    b.emit({ type: 'chat.turn', conversation: 'C1', turn: 'T2', phase: 'finished', outcome: 'failed' });
+    await flush();
+    expect(store.state().notice).toBe('auth');
+    expect(store.state().steps).toEqual([]);
+    expect(chatShowsFold(store.state())).toBe(false);
   });
 });
