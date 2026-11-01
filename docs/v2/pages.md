@@ -17,8 +17,10 @@ turn it off). Tools:
 | `ask_operator(question, options)` | A structured multiple-choice question. Phase 7 — not shipped yet (moved on 2026-10-11, #147: the companion needs it first) |
 
 Kinds: `html` (interactive mockup), `diagram` (Mermaid), `markdown`, `table` (CSV/JSON), `image`,
-`report`. Providers without MCP (experimental tier) write pages to `.docket/out/` in the worktree;
-Docket collects them when the run ends.
+`report`. A provider that cannot attach MCP has no publish path today: a chat turn on such an
+account refuses before it starts with notice `tools_unavailable` (A-235), and a work-order run on
+one gets no Docket capability attached. The fallback where such providers would write pages to
+`.docket/out/` in the worktree for Docket to collect when the run ends is not built.
 
 ## In the flow
 
