@@ -19,6 +19,7 @@ until an architect change updates them.
 | [provider-capabilities.md](provider-capabilities.md) | Provider and model capability record, routes, support levels, model catalog, account discovery |
 | [quota.md](quota.md) | Accounts, pools, windows, limit policies, budgets |
 | [ui.md](ui.md) | Phase 4 presentation layer: labels, stores, API additions, the operator gate |
+| [design.md](design.md) | The current design language, derived from code and ui.md: tokens, type, radius, elevation, layout, voice, motion |
 | [pages.md](pages.md) | Visual pages produced by agents (artifacts), sandboxing |
 | [roadmap.md](roadmap.md) | Phases, milestones, issue contract, model routing, batch mode |
 | [layer-promotion.md](layer-promotion.md), [screen-contract-template.md](screen-contract-template.md) | Layer-by-layer v2 → main promotion (order, gates, dogfood ladder, sign-off); per-screen contract template (a11y + measurements, no screenshots) |
