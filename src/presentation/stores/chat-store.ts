@@ -1,10 +1,11 @@
 // stores/chat-store.ts — the Docket AI chat's store (U-101 … U-122): the panel's standing, the scope
-// rules, send and the live turn (dots until the first `chat.delta`, the text growing in place, the
-// stored message replacing it on `finished`), the history, the @ menu, attachments, the cards and
-// action rows, the permission grant and the footer line. It composes the chat commands and queries
-// of the api from the bridge alone and keeps nothing between sessions. Message text, titles and
-// labels are untrusted data: this module only carries them to the components, which render them as
-// text nodes.
+// rules, send and the live turn (dots until the first thinking, step or `chat.delta`, the text
+// growing in place, the stored message replacing it on `finished`), the transient thinking string
+// and tool-step rows under the running message and their fold at the turn's end (U-377 … U-380),
+// the history, the @ menu, attachments, the cards and action rows, the permission grant and the
+// footer line. It composes the chat commands and queries of the api from the bridge alone and
+// keeps nothing between sessions. Message text, titles and labels are untrusted data: this module
+// only carries them to the components, which render them as text nodes.
 import type { Api } from '../../api/api';
 import type { ChatConversationView, ChatReferenceView, ChatUsageView } from '../../api/chat-views';
 import type { Command, CommandResult } from '../../api/commands';
@@ -12,6 +13,7 @@ import type { Query } from '../../api/queries';
 import type { Actor } from '../../domain/index';
 import type { LabelKey } from '../labels/keys';
 import {
+  appendThinking,
   atQueryOf,
   chatActiveGrant,
   chatBusy,
@@ -28,6 +30,7 @@ import {
   IMAGE_PREVIEW_CACHE_MAX,
   IMAGE_PREVIEW_MAX_IN_FLIGHT,
   isPreviewImageFile,
+  stepRowsAfter,
   touchPreviewCache,
   type ChatChange,
   type ImageEnlargeItem,
@@ -149,6 +152,9 @@ export interface ChatStore {
   setPermClass(actionClass: string, on: boolean): void;
   grant(): Promise<void>;
   revoke(): Promise<void>;
+  // thinking and tool steps
+  /** Opens or closes the finished turn's step fold (U-380). */
+  toggleSteps(): void;
 }
 
 const EMPTY_AT = { q: '', items: [], index: 0, loading: false } as const;
@@ -189,6 +195,9 @@ export const createChatStore = (deps: ChatStoreDeps): ChatStore => {
     sending: false,
     turn: null,
     streamed: '',
+    thinking: '',
+    steps: [],
+    stepsOpen: false,
     notice: null,
     note: null,
     menu: null,
@@ -329,6 +338,9 @@ export const createChatStore = (deps: ChatStoreDeps): ChatStore => {
       detail: null,
       turn: null,
       streamed: '',
+      thinking: '',
+      steps: [],
+      stepsOpen: false,
       pending: null,
       sending: false,
       notice: null,
@@ -420,6 +432,18 @@ export const createChatStore = (deps: ChatStoreDeps): ChatStore => {
       set({ turn: state.turn ?? change.turn, streamed: state.streamed + change.text });
       return;
     }
+    if (change.type === 'chat.thinking') {
+      // Only the open turn's fragments accumulate (U-378); a blank one never counts.
+      if (state.turn === null || change.turn !== state.turn) return;
+      set({ thinking: appendThinking(state.thinking, change.text) });
+      return;
+    }
+    if (change.type === 'chat.step') {
+      // Only the open turn's steps become rows (U-379); a foreign turn never lands.
+      if (state.turn === null || change.turn !== state.turn) return;
+      set({ steps: stepRowsAfter(state.steps, change) });
+      return;
+    }
     if (change.type === 'chat.notice') {
       set({ notice: change.code });
       return;
@@ -428,11 +452,13 @@ export const createChatStore = (deps: ChatStoreDeps): ChatStore => {
     // conversation never receives it, and this guard keeps the narrowing honest anyway.
     if (change.type !== 'chat.turn') return;
     if (change.phase === 'started') {
-      set({ turn: change.turn, streamed: '' });
+      set({ turn: change.turn, streamed: '', thinking: '', steps: [], stepsOpen: false });
       return;
     }
     const id = state.conversation;
-    set({ turn: null, sending: false });
+    // Whatever the outcome, the thinking goes and the rows fold closed under the stored
+    // message (U-380): the rows stay for the fold, the string does not.
+    set({ turn: null, sending: false, thinking: '', stepsOpen: false });
     void (async () => {
       if (id !== null) await reload(id);
       // The stored message now stands where the streamed text was.
@@ -455,6 +481,9 @@ export const createChatStore = (deps: ChatStoreDeps): ChatStore => {
       notice: null,
       note: null,
       streamed: '',
+      thinking: '',
+      steps: [],
+      stepsOpen: false,
       refs: [],
       tray: [],
       menu: null,
@@ -828,6 +857,9 @@ export const createChatStore = (deps: ChatStoreDeps): ChatStore => {
         scope,
         pinned: !sameScope(scope, placeScope(state.place)),
         streamed: '',
+        thinking: '',
+        steps: [],
+        stepsOpen: false,
         notice: null,
         note: null,
         pending: null,
@@ -953,6 +985,8 @@ export const createChatStore = (deps: ChatStoreDeps): ChatStore => {
       toast('chat.toast.revoked');
       await reloadCurrent();
     },
+
+    toggleSteps: () => set({ stepsOpen: !state.stepsOpen }),
   };
 
   return store;
