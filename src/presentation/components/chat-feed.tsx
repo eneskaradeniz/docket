@@ -1,15 +1,32 @@
 // components/chat-feed.tsx — the conversation body of the Docket AI panel (U-104, U-111, U-112,
 // U-116, U-121): the empty state with its suggestions, the messages (read-only chips under a
 // user's text, source pills under an assistant's), the artifact cards (page, table, draft,
-// proposal), the action rows with Geri al, the streamed text and the dots. Every message text,
-// title, source, diff line, table cell and page title is untrusted: it enters the DOM only as a
-// React text node inside a `whitespace-pre-wrap` box, never as markup and never as a link.
+// proposal), the action rows with Geri al, the streamed text and the dots, and — under the running
+// message — the provider's thinking and the tool steps, folding at the turn's end (U-377 … U-380).
+// Every message text, title, source, diff line, table cell, page title, thinking fragment, tool
+// name and target is untrusted: it enters the DOM only as a React text node inside a
+// `whitespace-pre-wrap` box, never as markup and never as a link.
 import { useEffect, type ReactNode } from 'react';
 
 import type { ChatActionView, ChatArtifactView, ChatConversationView, ChatMessageView } from '../../api/chat-views';
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
-import { chatShowsDots, chipOfSentRef, isPreviewImageFile, noticeTextKey, suggestionKeysOf, undoOpen, type ChatState, type TrayItem } from '../stores/chat-model';
+import {
+  chatShowsDots,
+  chatShowsFold,
+  chatShowsSteps,
+  chatShowsThinking,
+  chipOfSentRef,
+  isPreviewImageFile,
+  noticeTextKey,
+  stepNameLabelKey,
+  suggestionKeysOf,
+  undoOpen,
+  visibleStepRows,
+  type ChatState,
+  type ChatStepRow,
+  type TrayItem,
+} from '../stores/chat-model';
 import type { ChatStore } from '../stores/chat-store';
 import { ChatImageEnlargeDialog } from './chat-image-enlarge-dialog';
 import { ChatImagePreview } from './chat-image-preview';
@@ -111,7 +128,8 @@ function UserRow({
   );
 }
 
-function Table({ columns, rows, label, wide }: { readonly columns: readonly string[]; readonly rows: readonly (readonly string[])[]; readonly label: string; readonly wide: boolean }) {
+/** The chat's table card, drawn by every surface that shows a conversation's artifacts. */
+export function Table({ columns, rows, label, wide }: { readonly columns: readonly string[]; readonly rows: readonly (readonly string[])[]; readonly label: string; readonly wide: boolean }) {
   return (
     // A table is a wide artifact: in the full mode it reaches one gutter past the reading column
     // on each side and scrolls from 20 rem (U-194).
@@ -153,7 +171,9 @@ function CardHeader({ title, type, children }: { readonly title: string; readonl
   );
 }
 
-function PageCard({ artifact, locale, onOpenPage }: { readonly artifact: Extract<ChatArtifactView, { kind: 'page' }>; readonly locale: Locale; readonly onOpenPage: (id: string) => void }) {
+/** The chat's page card, drawn by every surface that shows a conversation's artifacts; the open
+ *  action is the host's own — the panel names where the page opens. */
+export function PageCard({ artifact, locale, onOpenPage }: { readonly artifact: Extract<ChatArtifactView, { kind: 'page' }>; readonly locale: Locale; readonly onOpenPage: (id: string) => void }) {
   const type = fill(t(locale, 'chat.card.page.type'), { kind: artifact.pageKind ?? '', n: artifact.version });
   return (
     <div data-chat-card="page" className="overflow-hidden rounded-card border border-hairline bg-band">
@@ -321,6 +341,71 @@ function AssistantRow({ message, state, store, locale, onOpenPage }: { readonly 
   );
 }
 
+// --- thinking and tool steps (U-377 … U-383) ------------------------------------------------------------
+
+/** A step row's state sentence (U-379, U-383). */
+const STEP_SENTENCE: Readonly<Record<ChatStepRow['phase'], LabelKey>> = {
+  called: 'chat.step.called',
+  done: 'chat.step.done',
+  failed: 'chat.step.failed',
+};
+
+/** A carried name draws as itself — unless the runner sent the placeholder key, which draws as
+ *  its own sentence, never the raw key (A-439). */
+const stepName = (locale: Locale, name: string): string => {
+  const key = stepNameLabelKey(name);
+  return key === null ? name : t(locale, key);
+};
+
+function StepRow({ row, locale }: { readonly row: ChatStepRow; readonly locale: Locale }) {
+  return (
+    <div data-chat-step={row.id} className="flex min-w-0 items-center gap-2 text-[0.78125rem] leading-4 text-inkdim">
+      <span aria-hidden="true" className={`flex-none ${row.phase === 'failed' ? 'text-error' : row.phase === 'done' ? 'text-proceed' : 'text-inkdim'}`}>
+        {row.phase === 'done' ? '✓' : '●'}
+      </span>
+      <span className="flex-none">{t(locale, STEP_SENTENCE[row.phase])}</span>
+      {/* The name line is machine data (U-372): mono, one line — a target never wraps or links. */}
+      <span className="min-w-0 flex-1 truncate font-mono text-[0.6875rem] leading-4">
+        {row.server === undefined ? null : <span className="text-inkdim">{`${stepName(locale, row.server)}/`}</span>}
+        {stepName(locale, row.tool)}
+        {row.target === undefined ? null : <span className="text-inkdim">{` — ${row.target}`}</span>}
+      </span>
+    </div>
+  );
+}
+
+/** The rows the feed draws (U-379): at most 50, the older ones counted in one more-line. */
+function StepRows({ rows, locale }: { readonly rows: readonly ChatStepRow[]; readonly locale: Locale }) {
+  const drawn = visibleStepRows(rows);
+  return (
+    // A polite live region announces a new row once (U-383).
+    <div data-chat-steps="" aria-live="polite" className="grid gap-1">
+      {drawn.hidden > 0 ? <div className="text-[0.6875rem] leading-4 text-inkdim">{fill(t(locale, 'chat.step.more'), { count: drawn.hidden })}</div> : null}
+      {drawn.rows.map((row) => (
+        <StepRow key={row.id} row={row} locale={locale} />
+      ))}
+    </div>
+  );
+}
+
+/** The closed disclosure a finished turn's rows fold into (U-380), headed by the count line. */
+function StepFold({ state, store, locale }: { readonly state: ChatState; readonly store: ChatStore; readonly locale: Locale }) {
+  return (
+    <div data-chat-step-fold="" className="grid gap-1">
+      <button
+        type="button"
+        aria-expanded={state.stepsOpen}
+        aria-label={t(locale, 'chat.step.fold.aria')}
+        onClick={store.toggleSteps}
+        className={`justify-self-start rounded-control border border-hairline bg-transparent px-2 py-1 text-[0.75rem] leading-4 text-inkdim hover:bg-raised ${FOCUS}`}
+      >
+        {fill(t(locale, 'chat.step.fold'), { count: state.steps.length })}
+      </button>
+      {state.stepsOpen ? <StepRows rows={state.steps} locale={locale} /> : null}
+    </div>
+  );
+}
+
 export interface ChatFeedProps {
   readonly state: ChatState;
   readonly store: ChatStore;
@@ -334,10 +419,10 @@ export function ChatFeed({ state, store, locale, onOpenPage }: ChatFeedProps) {
   const backed = cardActionIds(messages);
   const rows = actions.filter((action) => action.status === 'applied' || action.status === 'undone' || !backed.has(action.id));
   const dots = chatShowsDots(state);
-  const empty = messages.length === 0 && state.pending === null && !dots && state.streamed === '';
+  const empty = messages.length === 0 && state.pending === null && !dots && state.streamed === '' && state.thinking === '' && state.steps.length === 0;
   const [first, second] = suggestionKeysOf(state.scope.kind);
   // The newest content stays in view: the feed follows the bottom on every change.
-  const bottom = `${messages.length}:${state.streamed.length}:${state.pending === null ? 0 : 1}:${dots ? 1 : 0}`;
+  const bottom = `${messages.length}:${state.streamed.length}:${state.thinking.length}:${state.steps.length}:${state.stepsOpen ? 1 : 0}:${state.pending === null ? 0 : 1}:${dots ? 1 : 0}`;
   useEffect(() => {
     const feed = document.querySelector('[data-chat-feed]');
     if (feed !== null) feed.scrollTop = feed.scrollHeight;
@@ -406,6 +491,16 @@ export function ChatFeed({ state, store, locale, onOpenPage }: ChatFeedProps) {
           {state.streamed}
         </div>
       )}
+      {chatShowsThinking(state) ? (
+        // The thinking string (U-378): muted, pre-wrapped, its own box under the running message —
+        // never inside the assistant text, and not announced fragment by fragment (U-383).
+        <div data-chat-thinking="" aria-live="off" className="grid gap-1">
+          <div className="text-[0.6875rem] font-medium leading-4 text-inkdim">{t(locale, 'chat.thinking.heading')}</div>
+          <div className={`${WRAP} text-[0.8125rem] leading-5 text-inkdim`}>{state.thinking}</div>
+        </div>
+      ) : null}
+      {chatShowsSteps(state) ? <StepRows rows={state.steps} locale={locale} /> : null}
+      {chatShowsFold(state) ? <StepFold state={state} store={store} locale={locale} /> : null}
       {dots ? (
         <div data-chat-row="assistant">
           <span role="status" aria-label={t(locale, 'chat.busy')} className="inline-flex gap-1 py-2">

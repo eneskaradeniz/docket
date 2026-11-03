@@ -455,6 +455,71 @@ export const suggestionKeysOf = (kind: ChatScopeInput['kind']): readonly [LabelK
       ? ['chat.suggest.project.a', 'chat.suggest.project.b']
       : ['chat.suggest.workOrder.a', 'chat.suggest.workOrder.b'];
 
+// --- provider thinking and tool steps (U-377 … U-384) --------------------------------------------------
+
+/** The most thinking characters the store keeps (U-378): older characters drop from the front. */
+export const CHAT_THINKING_MAX_CHARS = 1_000;
+
+/** The most step rows the feed draws (U-379); the older ones count in one more-line. */
+export const CHAT_STEP_ROWS_DRAWN = 50;
+
+/** One tool-step row (U-379): the fields the event names and nothing else — a tool's arguments
+ *  or result never enter the store (U-382). */
+export interface ChatStepRow {
+  readonly id: string;
+  readonly phase: 'called' | 'done' | 'failed';
+  readonly tool: string;
+  readonly server?: string;
+  readonly target?: string;
+}
+
+/** A step event narrowed to the fields the rows read. */
+export type ChatStepEvent = Extract<ChatChange, { readonly type: 'chat.step' }>;
+
+/** The runner sends an unusable tool or server name as this label key (A-439); the view resolves
+ *  it — the raw key never draws. */
+export const CHAT_STEP_NAME_PLACEHOLDER_KEY: LabelKey = 'chat.step.name_placeholder';
+
+/** A carried name's label when it is the placeholder key, else null — the name itself draws. */
+export const stepNameLabelKey = (name: string): LabelKey | null =>
+  name === CHAT_STEP_NAME_PLACEHOLDER_KEY ? CHAT_STEP_NAME_PLACEHOLDER_KEY : null;
+
+/** One thinking fragment onto the transient string (U-378): in order, a blank fragment never
+ *  counts, and only the last {@link CHAT_THINKING_MAX_CHARS} characters stay. */
+export const appendThinking = (current: string, fragment: string): string => {
+  if (fragment.trim() === '') return current;
+  const joined = current + fragment;
+  return joined.length <= CHAT_THINKING_MAX_CHARS ? joined : joined.slice(joined.length - CHAT_THINKING_MAX_CHARS);
+};
+
+/** The row a call announces: the identity the event carries, in the called state. */
+const rowOfStep = (event: ChatStepEvent): ChatStepRow => ({
+  id: event.id,
+  phase: 'called',
+  tool: event.tool,
+  ...(event.server === undefined ? {} : { server: event.server }),
+  ...(event.target === undefined ? {} : { target: event.target }),
+});
+
+/** One step event onto the rows (U-379): `called` adds a row at the end of the arrival order,
+ *  `done` and `failed` move their own row by id to the new state — the row keeps the identity
+ *  its call announced — and a result whose id has no row changes nothing. */
+export const stepRowsAfter = (rows: readonly ChatStepRow[], event: ChatStepEvent): readonly ChatStepRow[] => {
+  const at = rows.findIndex((row) => row.id === event.id);
+  if (event.phase === 'called') {
+    const row = rowOfStep(event);
+    return at < 0 ? [...rows, row] : rows.map((known, index) => (index === at ? row : known));
+  }
+  if (at < 0) return rows;
+  return rows.map((known, index) => (index === at ? { ...known, phase: event.phase } : known));
+};
+
+/** The rows the feed draws (U-379): the newest ones, and how many older ones the more-line counts. */
+export const visibleStepRows = (
+  rows: readonly ChatStepRow[],
+): { readonly rows: readonly ChatStepRow[]; readonly hidden: number } =>
+  rows.length <= CHAT_STEP_ROWS_DRAWN ? { rows, hidden: 0 } : { rows: rows.slice(rows.length - CHAT_STEP_ROWS_DRAWN), hidden: rows.length - CHAT_STEP_ROWS_DRAWN };
+
 // --- state ---------------------------------------------------------------------------------------------
 
 export interface ChatNote {
@@ -515,6 +580,12 @@ export interface ChatState {
   /** The live turn's id while one runs, mirrored from the api's busy. */
   readonly turn: string | null;
   readonly streamed: string;
+  /** The live turn's transient thinking text (U-378): never part of the message, cleared on finished. */
+  readonly thinking: string;
+  /** The live or just-finished turn's tool-step rows (U-379, U-380), in arrival order. */
+  readonly steps: readonly ChatStepRow[];
+  /** The fold's own open flag (U-380): the rows fold closed on finished; opening lists them. */
+  readonly stepsOpen: boolean;
   /** The runner's notice code of the last turn, or null. */
   readonly notice: string | null;
   readonly note: ChatNote | null;
@@ -543,8 +614,18 @@ export const chatBusy = (state: ChatState): boolean => state.turn !== null || st
 /** The history rail stands exactly in the full mode on a wide enough viewport (U-195). */
 export const chatRailVisible = (state: ChatState): boolean => state.full && state.wide;
 
-/** Dots show from the send until the first streamed text (U-104). */
-export const chatShowsDots = (state: ChatState): boolean => chatBusy(state) && state.streamed === '';
+/** Dots show from the send until the first thinking, step or delta (U-104 as U-377 amends it). */
+export const chatShowsDots = (state: ChatState): boolean =>
+  chatBusy(state) && state.streamed === '' && state.thinking === '' && state.steps.length === 0;
+
+/** The turn's thinking stands under the running message (U-377): once any arrived, it wins. */
+export const chatShowsThinking = (state: ChatState): boolean => state.thinking !== '';
+
+/** The live step rows stand under the running message (U-377) — only while no thinking was shown. */
+export const chatShowsSteps = (state: ChatState): boolean => chatBusy(state) && state.thinking === '' && state.steps.length > 0;
+
+/** The finished turn's rows fold under the stored message (U-380); no steps leaves no fold. */
+export const chatShowsFold = (state: ChatState): boolean => !chatBusy(state) && state.steps.length > 0;
 
 export const chatInputBlocked = (state: ChatState): boolean => state.notice !== null && noticeOf(state.notice).blocks;
 
