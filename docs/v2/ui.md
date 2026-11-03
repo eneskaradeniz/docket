@@ -952,6 +952,9 @@ the native isolated view is the only place a page is rendered as a page.
   its own; another page or version is tried at once. The guard strip ("izole" + the untrusted-content
   sentence) is always visible, in Önizleme and in Fark. The preload gains `pageView.onClosed(listener)
   → unsubscribe` (one shared listener on `docket:page-view-closed`; the listener receives no argument).
+  *Amended 2026-11-04 (#1414): the overlays this sentence names stand; the chat dock leaves them — while
+  a page route stands open the dock docks beside the view's rectangle and the view stays (U-390, U-391),
+  and the shell's `overlayOpen` for the page screen host drops its chat term.*
 - **U-77** (page screen; added 2026-10-11, #904) Fark. The version selector lists newest first, the
   latest marked "(son)". Fark renders `page.detail.diff.lines` in the two-gutter grid — a "−" gutter
   for removals, a "+" gutter for additions, tints from the `error` and `proceed` tokens at 15 % — as
@@ -1112,7 +1115,7 @@ Slice 6e-6 of Phase 6 (#936), over the chat API of #932 (`chat.*` queries, comma
 - **U-122** (chat store, shell; added 2026-10-11, #936) Place. The shell derives the panel's place from the route: the cockpit, the library and an account view offer the global scope alone; a roadmap offers global and its project; a board global and the project that owns its repo; a work order global, its project and itself (labelled "İE-code · title" once its detail has loaded, unlabelled before). The place also names the screen's structured reference — the project, repo, work order or page — which "Bu ekranı ekle" attaches; the cockpit, library and account view have none.
 - **U-123** (labels; added 2026-10-11, #936) Copy. Every string the chat shows is a label key present in both the Turkish and the English bundle with the same placeholders; no component or store writes Turkish copy inline.
 - **U-124** (dock sources; added 2026-10-11, #936) Measure. All new lengths are rem (U-53/U-62; the only px-like value is the 1 px hairline border), spacing on the 4·8·12·16·20·24·32 scale, radii `rounded-control`/`rounded-card`/`rounded-panel`/`rounded-full` only (U-23), every sized text line carries an explicit leading, no class or string names a vendor (`disabled:pointer-events-none`, not the vendor's own cursor utility). A source-scan test pins these on the chat's own sources.
-- **U-125** (dock, shell; added 2026-10-11, #936) Motion, focus, hiding. Every transition and animation sits behind `motion-safe:` / `motion-reduce:` (the panel opens by transform and opacity from the button's corner; reduced motion collapses it to opacity); every control shows a `focus-visible` ring; a closed panel is `inert` and `aria-hidden`, so nothing inside it takes focus; the whole dock is hidden while a blocking modal owns the screen; the native page view yields (U-76) while the panel is open, so the panel is never covered by it.
+- **U-125** (dock, shell; added 2026-10-11, #936) Motion, focus, hiding. Every transition and animation sits behind `motion-safe:` / `motion-reduce:` (the panel opens by transform and opacity from the button's corner; reduced motion collapses it to opacity); every control shows a `focus-visible` ring; a closed panel is `inert` and `aria-hidden`, so nothing inside it takes focus; the whole dock is hidden while a blocking modal owns the screen; the native page view yields (U-76) while the panel is open, so the panel is never covered by it. *Amended 2026-11-04 (#1414): the last clause is superseded — the native page view no longer yields to the panel; while a page route stands open the panel docks beside the view and the view stays (U-390, U-391). Every other sentence of this rule stands.*
 
 ## Docket AI launchers (U-126 … U-135)
 
@@ -2107,3 +2110,95 @@ Amendment to U-104 (added 2026-11-01, #1394): while a turn runs the chat shows w
 - **U-382** (feed; added 2026-11-01, #1394) The view draws nothing but the fields U-381 names. Thinking, tool name, server name and target are untrusted text: React text nodes, `white-space: pre-wrap` for thinking and one line with ellipsis for the target, never markup, never auto-linked, never an HTML title built from them. A target is not clickable and opens nothing. The view never asks for, and the store never holds, a tool's arguments or result.
 - **U-383** (label pack; added 2026-11-01, #1394) All copy of this section — the step sentences for called, done and failed, the thinking heading, the fold's count line, the more-line and the fold's accessible name — lives in one chat-steps label pack in the TR and EN label bundles, every sentence at most 8 words (U-178), none inline in a component (U-279's discipline). The step rows sit in a polite live region that announces a new row once; thinking text is not announced per fragment.
 - **U-384** (scenario test; added 2026-11-01, #1394) The store and feed are driven by a scripted fake provider through the real runner and event channel, four scenarios: (a) **thinking given** — thinking fragments, then a tool call and result, then text: the feed shows the thinking string and no step rows, then the text; at `finished` the string is gone and the fold lists the one step; (b) **thinking absent** — a tool call, its result, then text: the feed shows the step row in called, then done, never the dots after the call; with nothing at all before the first delta the feed shows the dots; (c) **tool step** — two calls with interleaved results: rows keep call order, each moves to its own state by id, a result with an unknown id changes nothing, and 60 steps draw 50 rows plus the more-line; (d) **error step** — a result with `ok: false`: the row shows the failed state, the turn finishes normally, no note row appears; a provider `error` event produces the U-115 note and no step row. Each scenario also asserts that after `finished` the re-read `chat.conversation` holds the streamed text only — no thinking text, no step.
+
+## Setup chat in the main panel, viewer beside the docked chat (U-385 … U-391)
+
+Added 2026-11-04, #1414 (part of #1119), from the operator decision recorded on #1403 and the
+prototype `docs/v2/prototypes/chat-main-panel/` (PR #1413). Two changes: the new-project setup
+conversation moves into the main panel — its own screen, its own store, its own history, the turn
+token's `conversationKind: 'setup'` (A-359) — and an artifact page opened while the chat is open
+stands beside a docked, narrowed chat (the operator's variant B) instead of taking the native view
+away. The amendments to U-76 and U-125 sit in their own bullets above. The 18 rem dock width and the
+reserve it derives are starting values from the prototype, tunable when the screen is built: changing
+one is a one-number edit, not a new rule. The rules land ahead of their implementation issue and sit
+in the coverage check's pending list until that issue lands their tests; each is testable in store
+tests with the scripted fake provider of U-384 (U-391 in the page-view host's own bounds test).
+Everything the prototype does not show stays out: the read-permission prompt (U-272 … U-279) and the
+proposal approval (U-111's card, `proposal.decide` through A-360) are unchanged — the prototype kept
+both as they are today. The dock's own feed, untrusted-text, measure and motion rules (U-104, U-116,
+U-124, U-125) govern the setup screen's feed and composer unless a rule below says otherwise.
+
+- **U-385** (setup screen, chat store, shell; added 2026-11-04, #1414; amends U-101, U-119, U-129)
+  Where the setup conversation lives. The entries that today open the AI setup conversation in the
+  dock — the home launcher "Docket AI ile birlikte kur" (U-129) and the Proje ekle panel's own AI
+  path, which still closes the panel first exactly as U-181 says — open the setup screen instead: the
+  conversation is the main panel's content (the sidebar stays), not a route, and the history never
+  holds it. The screen holds its own store — a sibling of the dock's `chat-store` driving the same
+  feed and composer rules — and shows the standing setup conversation (resumed through A-357's
+  `draft` re-registration, A-359's draft store) or, with none, the empty start (U-386); it never
+  lists conversations. A setup conversation never appears in the dock's history and a dock
+  conversation never appears on the setup screen. While the setup screen stands, the dock and its
+  round button are hidden — the conversation is already in the main panel — and ⌘J opens nothing
+  (U-119's blocking-modal stance). The sidebar carries a "Yeni proje" row under Projeler, lit with
+  the running lamp while a setup turn runs; the row shows the setup screen again. The Proje ekle
+  panel and its "+" stand unchanged (U-181 … U-190), reachable from the screen's pills (U-386).
+- **U-386** (setup screen, store; added 2026-11-04, #1414) Empty start. The screen's head reads
+  "Proje ekle" with the lead "Docket AI ile kur" (en "Set up with Docket AI") — the folder's path in
+  mono beside the lead once a conversation exists. The empty start is one column: the heading "Hangi
+  klasörü kuralım?" (en "Which folder should we set up?"), one dim sentence — "Klasörü salt-okunur
+  tarar ve kurulum önerisi hazırlar." (en "Scans read-only; prepares a setup proposal.") — one
+  labelled folder field (label "Klasör", mono, placeholder "/yol/proje") and the primary button
+  "Konuşmayı başlat" (en "Start the conversation"), disabled while the trimmed field is blank; the
+  button is the screen's only primary (U-375). Below stands the line "Başka yoldan ekle" (en "Add
+  another way") with the three pills Hızlı · Ayrıntılı · Var olan klasör (en "Quick · Detailed ·
+  Existing folder"); each opens today's Proje ekle panel on its own path (U-181), nothing else on the
+  screen changes.
+- **U-387** (setup store, feed; added 2026-11-04, #1414) The running turn. Starting sends
+  `setup.ai.start { repoPath }` with the trimmed path (A-357; a refused start keeps the empty start
+  and shows the failure sentence, U-115's shape), then sends the first message as `chat.send` on the
+  new conversation — the bundle's "Kur: {path}" (en "Set up: {path}") with the path in mono, shown
+  at once as the user's bubble. From the send to the finish the feed is the dock's feed: the running
+  message streams (U-104) with the thinking text and the tool-step rows of U-377 … U-380 under it —
+  the same preference order, the same row anatomy, the same fold on `chat.turn finished` — drawn from
+  the setup store's own conversation; `chat.thinking` and `chat.step` route by conversation exactly as
+  U-381 says. While the turn runs the composer is disabled and its send button is U-105's Durdur
+  (`chat.cancel`). The composer carries no Öner tier and no usage line: the setup conversation's
+  permissions are the session read grants of U-272 … U-279.
+- **U-388** (setup store, feed; added 2026-11-04, #1414) The finished turn. On `chat.turn finished`
+  the store re-reads the conversation (U-104); the stored message replaces the streamed text with its
+  steps folded (U-380). The message's artifacts draw as the dock's cards, U-111's anatomy and
+  untrusted-text law unchanged: a page — title, "<kind> · sürüm N" and **Aç**, which opens the page
+  route in the viewer; a table — a bare table, "—" for an empty cell. The `project_setup` proposal
+  stays U-111's proposal card with its Reddet and Onayla (`proposal.decide`, A-360) — no second
+  approval surface arrives with this screen. The composer is enabled again for the next message.
+- **U-389** (labels, measure; added 2026-11-04, #1414) One setup label pack. Every sentence the
+  screen shows — the head, the lead, the heading, the dim sentence, the field label and placeholder,
+  the start button, the pills line and its pills, the first-message sentence, the sidebar row, the
+  disabled open word of U-391 — lives in one setup pack in the TR and EN label bundles, every
+  sentence at most 8 words (U-178), none inline in a component (U-123's discipline). The screen's
+  measures follow the dock's own (U-124): rem lengths, the 4·8·12·16·20·24·32 spacing scale, radii
+  `rounded-control`/`rounded-card`/`rounded-panel`/`rounded-full` only (U-23), explicit leading,
+  `focus-visible` rings, motion behind `motion-safe:`/`motion-reduce:`, and U-124's source scan
+  extended to the setup screen's sources.
+- **U-390** (chat store, dock, shell; added 2026-11-04, #1414) The docked chat. While a page route
+  stands open and the chat is open at once, the dock stops floating and docks: pinned to the window
+  body's right edge for its full height, 18 rem wide (the prototype's starting value, tunable), flat
+  — the border and the panel radius stay, the overlay elevation lifts to `elevation-flat` (U-374) —
+  with a close control in its header beside the scope chip; at the docked width the header's
+  secondary actions (Geçmiş, Yeni konuşma, Genişlet) hide. The feed, the composer and the footer's
+  Öner control keep working; the round launcher hides while docked, so the header's close control is
+  the way out. Leaving either side ends the docked state — closing the chat or leaving the page
+  returns the dock's floating form — and opening, docking or closing the chat never navigates away
+  from the page.
+- **U-391** (page screen, shell; added 2026-11-04, #1414; amends U-76, U-111, U-125) The viewer
+  beside the dock. An open chat no longer closes the native page view: the page screen host reserves
+  the docked dock's width plus its gap (18.75 rem at the starting value, derived — tuning U-390's
+  width is the one edit) so its own DOM never sits under the dock, and the native view's rectangle
+  shrinks to the area beside it through the same `setBounds` U-76 already names — at most one call
+  per animation frame, the last rectangle winning — staying open while the chat opens, docks,
+  undocks and closes; each change of the docked state is one bounds change, and a page or version
+  change keeps the reserve. In `shell.tsx` the page screen host's `overlayOpen` drops its chat term:
+  the palette, the settings panel, the new-project panel, the wizard and the phone window still take
+  the view away, and the toast stack's own clause stands (U-76 stands for them all). A page card's
+  **Aç** in the dock's feed (U-111) still opens the page route — it now lands beside the open chat —
+  and while the page it names is the open route the button reads "Açık" (en "Open") and is disabled.

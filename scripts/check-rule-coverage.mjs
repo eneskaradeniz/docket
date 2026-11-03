@@ -118,6 +118,17 @@ const PENDING = new Map([
   ['ui:U-382', '#1394 (chat steps implementation)'],
   ['ui:U-383', '#1394 (chat steps implementation)'],
   ['ui:U-384', '#1394 (chat steps implementation)'],
+
+  // #1414 — setup chat in the main panel, viewer beside the docked chat, docs-first (decision on
+  // #1403). The rules land ahead of their implementation issue; that issue removes each id from
+  // this list in the same commit as its test.
+  ['ui:U-385', '#1414 (setup chat implementation)'],
+  ['ui:U-386', '#1414 (setup chat implementation)'],
+  ['ui:U-387', '#1414 (setup chat implementation)'],
+  ['ui:U-388', '#1414 (setup chat implementation)'],
+  ['ui:U-389', '#1414 (setup chat implementation)'],
+  ['ui:U-390', '#1414 (docked chat implementation)'],
+  ['ui:U-391', '#1414 (docked chat implementation)'],
 ]);
 
 // Rules whose implementing code and tests were removed while the definition and dated addenda stay
