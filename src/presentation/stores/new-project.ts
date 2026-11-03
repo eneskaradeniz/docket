@@ -3,6 +3,7 @@
 // AI path runs a live setup conversation (A-357 … A-360): the folder entry starts it, the thread
 // rides the chat queries and events, an ask opens the one prompt, and the proposal the agent made
 // opens the identical diff screen.
+import type { ChatArtifactView } from '../../api/chat-views';
 import type { Api } from '../../api/api';
 import type { Command, CommandResult } from '../../api/commands';
 import type { ProjectTreeItem, Query, SettingsAccountsView } from '../../api/queries';
@@ -262,11 +263,13 @@ export const resumableOf = (view: unknown): ResumableDraft | null => {
   return typeof id === 'string' && typeof repoPath === 'string' && id !== '' && repoPath !== '' ? { id, repoPath } : null;
 };
 
-/** One row of the setup thread: a stored message reduced to what the thread shows. */
+/** One row of the setup thread: a stored message reduced to what the thread shows — the artifacts
+ *  ride along so the thread draws the chat's own cards (U-111), never a second card of its own. */
 export interface SetupThreadMessage {
   readonly id: string;
   readonly role: 'user' | 'assistant';
   readonly text: string;
+  readonly artifacts: readonly ChatArtifactView[];
 }
 
 /** The chat conversation view's messages as thread rows; a failure or a foreign shape answers []. */
@@ -276,9 +279,14 @@ export const threadOf = (view: unknown): readonly SetupThreadMessage[] => {
   if (!Array.isArray(messages)) return [];
   return messages.flatMap((message): SetupThreadMessage[] => {
     if (typeof message !== 'object' || message === null) return [];
-    const { id, role, text } = message as { readonly id?: unknown; readonly role?: unknown; readonly text?: unknown };
+    const { id, role, text, artifacts } = message as {
+      readonly id?: unknown;
+      readonly role?: unknown;
+      readonly text?: unknown;
+      readonly artifacts?: unknown;
+    };
     if (typeof id !== 'string' || typeof text !== 'string' || (role !== 'user' && role !== 'assistant')) return [];
-    return [{ id, role, text }];
+    return [{ id, role, text, artifacts: Array.isArray(artifacts) ? (artifacts as readonly ChatArtifactView[]) : [] }];
   });
 };
 
