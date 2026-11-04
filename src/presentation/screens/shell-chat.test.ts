@@ -33,9 +33,28 @@ describe('the shell carries the dock', () => {
     expect(shell).toContain("dispatchPalette({ type: 'close' });\n        chat.open();");
   });
 
-  it('U-125: the page view yields while the panel is open, and a blocking modal hides the dock', () => {
-    expect(shell).toContain('overlayOpen={palette.open || settingsPanel.open || newProjectPanel.open || wizardUp || chatOpen || phoneOpen}');
+  it('U-125: the page view yields to the palette, the settings, the new-project panel, the wizard and the phone, and a blocking modal hides the dock', () => {
+    expect(shell).toContain('overlayOpen={palette.open || settingsPanel.open || newProjectPanel.open || wizardUp || phoneOpen}');
     expect(shell).toContain('hidden={wizardUp || settingsPanel.open || newProjectPanel.open || phoneOpen}');
+  });
+
+  it('U-391: the page view\'s overlay word drops its chat term — an open chat docks beside the view instead', () => {
+    expect(shell).not.toMatch(/overlayOpen=\{[^}]*chatOpen/);
+    // the five overlays that still take the view away all stand in the word
+    for (const term of ['palette.open', 'settingsPanel.open', 'newProjectPanel.open', 'wizardUp', 'phoneOpen']) {
+      expect(shell).toMatch(new RegExp(`overlayOpen=\\{[^}]*${term.replace('.', '\\.')}`));
+    }
+  });
+
+  it('U-390: the docked flag follows the route alone — opening, docking or closing the chat navigates nowhere', () => {
+    expect(shell).toContain("chat.setDocked(route.name === 'page')");
+    // the page screen keeps the route's own key: no chat state ever remounts or replaces it
+    expect(shell).toMatch(/route\.name === 'page' \?\s*\(\s*<PageViewerScreen\s*key=\{route\.id\}/);
+    expect(shell).toContain('chatDocked={chatDockedOpen}');
+  });
+
+  it('U-391: the dock knows the open page route, so its own card can read Açık', () => {
+    expect(shell).toContain("openPageId={route.name === 'page' ? route.id : null}");
   });
 
   it('U-122: the place follows the route, the tree and the loaded work order', () => {

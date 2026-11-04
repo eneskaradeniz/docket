@@ -264,3 +264,27 @@ describe('page view target', () => {
     expect(rectsIntersect(R(0, 0, 10, 10), R(10, 10, 5, 5))).toBe(false);
   });
 });
+
+describe('the docked chat beside the view (U-391)', () => {
+  it('U-391: the view stays open while the chat opens, docks, undocks and closes — each change of the docked state is one bounds change', async () => {
+    const { port, frames, host } = setup();
+    host.update(target());
+    await settle();
+    expect(port.calls).toEqual(['open P v2 300,120 640x420']);
+    // The chat opens and docks: the stage shrinks by the reserve within one frame.
+    host.update(target('P', 2, R(300, 120, 340, 420)));
+    host.update(target('P', 2, R(300, 120, 350, 420)));
+    await settle();
+    expect(port.calls).toEqual(['open P v2 300,120 640x420']);
+    await frames.tick();
+    expect(port.calls).toEqual(['open P v2 300,120 640x420', 'setBounds 300,120 350x420']);
+    await frames.tick();
+    expect(port.calls).toHaveLength(2);
+    // The chat closes: the rectangle returns, still exactly one bounds change — never a close.
+    host.update(target('P', 2, R(300, 120, 640, 420)));
+    await frames.tick();
+    expect(port.calls).toEqual(['open P v2 300,120 640x420', 'setBounds 300,120 350x420', 'setBounds 300,120 640x420']);
+    expect(port.calls.filter((call) => call === 'close')).toHaveLength(0);
+    expect(host.state().status).toBe('open');
+  });
+});

@@ -18,6 +18,7 @@ import { SectionCard } from '../components/section-card';
 import { StateBadge, type BadgeTone } from '../components/state-badge';
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
+import { CHAT_DOCKED_RESERVE_REM } from '../stores/chat-model';
 import {
   approvalBar,
   approvalChip,
@@ -175,6 +176,9 @@ export interface PageViewerScreenProps {
   readonly locale: Locale;
   /** A settings panel, the search palette or the wizard is up: the native view would paint over it. */
   readonly overlayOpen: boolean;
+  /** The chat stands docked beside the view (U-391): the screen keeps the dock's width plus its
+   *  gap clear, so its own DOM never sits under the dock. */
+  readonly chatDocked?: boolean;
   /** The clock the ages read against. */
   readonly now: number;
   readonly onBack: () => void;
@@ -196,7 +200,7 @@ const toastStackRect = (): Rect | null => {
   return null;
 };
 
-export function PageViewerScreen({ store, host, pageId, locale, overlayOpen, now, onBack, launchScope = null }: PageViewerScreenProps) {
+export function PageViewerScreen({ store, host, pageId, locale, overlayOpen, chatDocked = false, now, onBack, launchScope = null }: PageViewerScreenProps) {
   const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   const hostState = useSyncExternalStore(host.subscribe, host.state, host.state);
   const toasts = useSyncExternalStore(toastStore.subscribe, toastStore.state, toastStore.state);
@@ -269,7 +273,7 @@ export function PageViewerScreen({ store, host, pageId, locale, overlayOpen, now
 
   if (detail === null) {
     return (
-      <div data-page-screen className="grid gap-4">
+      <div data-page-screen className="grid gap-4" style={chatDocked ? { paddingRight: `${CHAT_DOCKED_RESERVE_REM}rem` } : undefined}>
         {back}
         {state.problem !== null ? (
           <div role="alert" className="rounded-card border border-error/40 bg-surface px-3 py-2 text-[0.8125rem] leading-[1.25rem] text-error">
@@ -316,7 +320,7 @@ export function PageViewerScreen({ store, host, pageId, locale, overlayOpen, now
   };
 
   return (
-    <div data-page-screen className="grid gap-4">
+    <div data-page-screen className="grid gap-4" style={chatDocked ? { paddingRight: `${CHAT_DOCKED_RESERVE_REM}rem` } : undefined}>
       {back}
 
       {state.problem !== null ? (

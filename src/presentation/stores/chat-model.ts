@@ -421,6 +421,16 @@ export const undoOpen = (action: ChatActionView, now: number): boolean =>
 /** The rail stands from this viewport width on (64 rem = 1024 px); the panel mode never shows it. */
 export const CHAT_RAIL_QUERY = '(min-width: 64rem)';
 
+// --- the docked chat (U-390, U-391) --------------------------------------------------------------------
+
+/** The docked panel's width and its gap from the window body's edges (U-390): the prototype's
+ *  starting values, tunable as numbers. */
+export const CHAT_DOCKED_WIDTH_REM = 18;
+export const CHAT_DOCKED_GAP_REM = 0.75;
+/** What the page screen host keeps clear beside the docked dock (U-391): the width plus its gap,
+ *  derived — tuning the width is the one edit. */
+export const CHAT_DOCKED_RESERVE_REM = CHAT_DOCKED_WIDTH_REM + CHAT_DOCKED_GAP_REM;
+
 // --- the shortcut --------------------------------------------------------------------------------------
 
 export interface KeyLike {
@@ -560,6 +570,9 @@ export interface ChatState {
   readonly open: boolean;
   /** The full-screen reading mode: session UI state, never persisted, never a route. */
   readonly full: boolean;
+  /** A page route stands open (the shell keeps this in step with the route): an open panel docks
+   *  beside the view instead of floating, and docking ends the full mode (U-390). */
+  readonly docked: boolean;
   /** The viewport is at least the rail's width; the dock keeps this in step with the media query. */
   readonly wide: boolean;
   readonly view: 'chat' | 'history';
@@ -613,6 +626,10 @@ export const chatBusy = (state: ChatState): boolean => state.turn !== null || st
 
 /** The history rail stands exactly in the full mode on a wide enough viewport (U-195). */
 export const chatRailVisible = (state: ChatState): boolean => state.full && state.wide;
+
+/** The panel stands docked exactly while a page route stands open and the chat is open at once
+ *  (U-390); leaving either side returns the floating form. */
+export const chatDocked = (state: ChatState): boolean => state.docked && state.open;
 
 /** Dots show from the send until the first thinking, step or delta (U-104 as U-377 amends it). */
 export const chatShowsDots = (state: ChatState): boolean =>

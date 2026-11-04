@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ChatReferenceView } from '../../api/chat-views';
 import type { Command } from '../../api/commands';
-import { chatBusy, chatInputBlocked, chatShowsDots, chatShowsFold, chatShowsSteps, chatShowsThinking, chatTierMinutes, chatFailureKey, GLOBAL_PLACE, visibleStepRows, type ChatPlace } from './chat-model';
+import { chatBusy, chatDocked, chatInputBlocked, chatShowsDots, chatShowsFold, chatShowsSteps, chatShowsThinking, chatTierMinutes, chatFailureKey, CHAT_DOCKED_GAP_REM, CHAT_DOCKED_RESERVE_REM, CHAT_DOCKED_WIDTH_REM, GLOBAL_PLACE, visibleStepRows, type ChatPlace } from './chat-model';
 import { createChatStore, type ChatStore } from './chat-store';
 import { ACTOR, action, bridge, conversation, draft, flush, grant, message, summary, type Bridge } from './chat-kit';
 
@@ -1271,6 +1271,47 @@ describe('full-screen reading mode (U-192, U-195, U-197)', () => {
     expect(store.state().view).toBe('history');
     store.setWide(true);
     expect(store.state().view).toBe('chat');
+  });
+});
+
+describe('the docked chat (U-390)', () => {
+  it('U-390: a page route and an open chat dock the panel; leaving either side returns the floating form', () => {
+    const { store } = make();
+    store.open();
+    store.setDocked(true);
+    expect(chatDocked(store.state())).toBe(true);
+    // Closing the chat ends the docked state; the page route stands on.
+    store.close();
+    expect(chatDocked(store.state())).toBe(false);
+    expect(store.state().docked).toBe(true);
+    // Reopening on the same page docks again.
+    store.open();
+    expect(chatDocked(store.state())).toBe(true);
+    // Leaving the page returns the dock's floating form; the chat stays open.
+    store.setDocked(false);
+    expect(chatDocked(store.state())).toBe(false);
+    expect(store.state().open).toBe(true);
+  });
+
+  it('U-390: docking ends the full mode and the full mode cannot come back while the page stands open', () => {
+    const { store } = make();
+    store.open();
+    store.toggleFull();
+    expect(store.state().full).toBe(true);
+    store.setDocked(true);
+    expect(store.state().full).toBe(false);
+    expect(chatDocked(store.state())).toBe(true);
+    // Leaving the page returns the floating form, not the reading surface.
+    store.setDocked(false);
+    expect(store.state().full).toBe(false);
+    expect(store.state().open).toBe(true);
+  });
+
+  it('U-390: the docked width and its gap are the prototype\'s starting values and the reserve derives from them', () => {
+    expect(CHAT_DOCKED_WIDTH_REM).toBe(18);
+    expect(CHAT_DOCKED_GAP_REM).toBe(0.75);
+    expect(CHAT_DOCKED_RESERVE_REM).toBe(CHAT_DOCKED_WIDTH_REM + CHAT_DOCKED_GAP_REM);
+    expect(CHAT_DOCKED_RESERVE_REM).toBe(18.75);
   });
 });
 

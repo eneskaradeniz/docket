@@ -1589,6 +1589,7 @@ export const TR: LabelBundle = {
   'chat.history.empty': 'Henüz konuşma yok.',
   'chat.history.failed': 'Geçmiş okunamadı.',
   'chat.card.page.open': 'Aç',
+  'chat.card.page.openCurrent': 'Açık',
   'chat.card.page.type': '{kind} · sürüm {n}',
   'chat.card.draft.drop': 'Vazgeç',
   'chat.card.draft.create': 'Oluştur',

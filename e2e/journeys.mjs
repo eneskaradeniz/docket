@@ -1320,8 +1320,8 @@ for (const [sizeName, theme] of combos) {
 // "no_binding" notice, so the journey proves send → pending bubble → persisted message → note, while the
 // streamed text itself (dots until the first delta, the text growing, the stored message replacing
 // it) is covered by the store's own tests over a fake bridge. The journey also proves the panel and
-// the native page view never overlap: the view yields while the panel is open (U-76, U-125). Once per
-// run, like J-10 … J-14.
+// the native page view stand beside each other: an open chat docks at the window body's right edge
+// and the view stays open through docking and closing (U-390, U-391). Once per run, like J-10 … J-14.
 {
   const handle = await launchChatApp();
   const { page, seed, probe, errors } = handle;
@@ -1531,7 +1531,8 @@ for (const [sizeName, theme] of combos) {
     assert.equal(await page.locator('[data-chat-tray] button').count(), 0, 'the tray empties on send');
     await shot('gonderildi');
 
-    // The panel and the native page view never overlap: a page card opens the viewer, and the view yields to the open panel.
+    // The panel and the native page view stand beside each other (U-390, U-391): a page card opens
+    // the viewer, the open chat docks at the window body's right edge, and the view stays open.
     await historyToggle.click({ timeout: WAIT });
     await historyRow(seed.firstTitle).waitFor({ state: 'visible', timeout: SCAN_WAIT });
     await historyRow(seed.firstTitle).click({ timeout: WAIT });
@@ -1539,20 +1540,57 @@ for (const [sizeName, theme] of combos) {
     await pageCard.getByRole('button', { name: 'Aç' }).click({ timeout: WAIT });
     const viewer = page.locator('[data-page-screen]');
     await viewer.waitFor({ state: 'visible', timeout: SCAN_WAIT });
-    await viewIs(false, 'the panel is open over the page viewer');
-    await shot('goruntuleyici-panel-acik');
-    await page.keyboard.press('Escape');
+    // Docked: the panel pins beside the view, the round launcher hides, the header's Kapat shows.
+    await page.waitForFunction(
+      () => document.querySelector('[data-chat-panel]')?.hasAttribute('data-chat-docked') === true,
+      undefined,
+      { timeout: WAIT },
+    );
+    await viewIs(true, 'the view stays open beside the docked chat');
+    assert(
+      await page.evaluate(() => {
+        const stage = document.querySelector('[data-page-stage-body]')?.getBoundingClientRect();
+        const panel = document.querySelector('[data-chat-panel]')?.getBoundingClientRect();
+        return stage !== undefined && panel !== undefined && stage.right <= panel.left;
+      }),
+      'the stage keeps clear of the docked panel',
+    );
+    assert(
+      await page.evaluate(() => document.querySelector('[data-chat-fab]')?.classList.contains('invisible') === true),
+      'the round launcher hides while docked',
+    );
+    await page.locator('[data-chat-close]').waitFor({ state: 'visible', timeout: WAIT });
+    // The open route's own card reads Açık and is disabled (U-391).
+    await page.waitForFunction(
+      () => {
+        const button = document.querySelector('[data-chat-card="page"] button');
+        return button !== null && button.textContent === 'Açık' && button.hasAttribute('disabled');
+      },
+      undefined,
+      { timeout: SCAN_WAIT },
+    );
+    await shot('goruntuleyici-panel-sabit');
+    // Closing the chat keeps the view open; the panel leaves the docked form.
+    await page.locator('[data-chat-close]').click({ timeout: WAIT });
     await panelIs(false);
-    await viewIs(true, 'the panel closed, the view returns');
+    await viewIs(true, 'closing the chat keeps the view open');
+    await page.waitForFunction(
+      () => document.querySelector('[data-chat-panel]')?.hasAttribute('data-chat-docked') === false,
+      undefined,
+      { timeout: WAIT },
+    );
+    // The shortcut reopens the chat docked beside the view.
     await page.keyboard.press(`${mod}+J`);
     await panelIs(true);
-    await viewIs(false, 'the shortcut reopened the panel');
-    await page.keyboard.press('Escape');
-    await panelIs(false);
-    await viewIs(true, 'closed again');
+    await viewIs(true, 'the shortcut reopens the chat docked beside the view');
+    // Leaving the page returns the floating form and takes the view away.
     await viewer.getByRole('button', { name: '‹ Geri' }).click({ timeout: WAIT });
-    await page.keyboard.press(`${mod}+J`);
-    await panelIs(true);
+    await page.waitForFunction(
+      () => document.querySelector('[data-chat-panel]')?.hasAttribute('data-chat-docked') === false,
+      undefined,
+      { timeout: WAIT },
+    );
+    await viewIs(false, 'leaving the page closes the view');
 
     // The Esc ladder: scope pop, then a menu, then the history view, then the panel.
     await chip.click({ timeout: WAIT });

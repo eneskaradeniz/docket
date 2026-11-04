@@ -234,6 +234,7 @@ describe('thinking and tool steps (U-377 … U-383)', () => {
   const stateOf = (patch: Partial<ChatState> = {}): ChatState => ({
     open: true,
     full: false,
+    docked: false,
     wide: false,
     view: 'chat',
     conversation: 'C1',
