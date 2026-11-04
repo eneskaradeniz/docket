@@ -89,8 +89,10 @@ import { NewProjectPanel } from './new-project';
 import { PageViewerScreen } from './page-viewer';
 import { RoadmapScreen } from './roadmap';
 import { SettingsPanel, type SettingsSection } from './settings';
+import { SetupChatScreen } from './setup-chat';
 import { WizardScreen } from './wizard';
 import type { ProjectBundleStore } from '../stores/project-bundle';
+import type { SetupChatStore } from '../stores/setup-chat';
 
 export interface ShellScreenProps {
   readonly shell: ShellStore;
@@ -124,6 +126,8 @@ export interface ShellScreenProps {
   readonly wizard: WizardStore;
   /** The Yeni proje page's machine (U-40). */
   readonly newProject: NewProjectStore;
+  /** The setup conversation's own store and screen (U-385): a sibling of the dock's chat store. */
+  readonly setupChat: SetupChatStore;
   /** The locale store's handle for the settings screen's language control (U-9); the active
    *  bundle itself travels as `locale`, refreshed by the root's subscription. */
   readonly localeStore: LocaleStore;
@@ -208,6 +212,7 @@ export function ShellScreen({
   update,
   wizard,
   newProject,
+  setupChat,
   localeStore,
   themeStore,
   candidates,
@@ -219,6 +224,11 @@ export function ShellScreen({
   projectBundle,
 }: ShellScreenProps) {
   const state = useSyncExternalStore(shell.subscribe, shell.state);
+  // The setup conversation's screen (U-385): a standing, never a route. While it stands it is the
+  // main panel's content and the dock with its round button hide — the conversation is already in
+  // the main panel.
+  const setupState = useSyncExternalStore(setupChat.subscribe, setupChat.state, setupChat.state);
+  const setupUp = setupState.visible;
   // The sidebar's Artifact'lar count (U-84): the library store's unfiltered read, loaded at startup.
   const libraryCount = useSyncExternalStore(library.subscribe, () => library.state().all?.length ?? 0);
   // The sidebar's Öneriler badge (U-136): pending proposals whose file has not moved.
@@ -375,11 +385,13 @@ export function ShellScreen({
   }, [route, libraryRows]);
   // ⌘J (or Ctrl+J) toggles the panel (U-119): a blocking modal ignores it, an open palette is
   // closed first, and opening the palette in turn closes the panel — the two never stand together.
+  // The setup screen stands in for the conversation (U-385), so it blocks the shortcut the same
+  // way a blocking modal does: there is nothing for ⌘J to open.
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
       if (!isChatShortcut(event)) return;
       event.preventDefault();
-      const plan = chatShortcutPlan({ paletteOpen: palette.open, modalOpen: wizardUp || settingsPanel.open || newProjectPanel.open, chatOpen: chat.state().open });
+      const plan = chatShortcutPlan({ paletteOpen: palette.open, modalOpen: wizardUp || settingsPanel.open || newProjectPanel.open || setupUp, chatOpen: chat.state().open });
       if (plan === 'ignore') return;
       if (plan === 'closePaletteAndOpen') {
         dispatchPalette({ type: 'close' });
@@ -390,7 +402,7 @@ export function ShellScreen({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [chat, palette.open, wizardUp, settingsPanel.open, newProjectPanel.open]);
+  }, [chat, palette.open, wizardUp, settingsPanel.open, newProjectPanel.open, setupUp]);
   useEffect(() => {
     if (palette.open) chat.close();
   }, [chat, palette.open]);
@@ -440,13 +452,16 @@ export function ShellScreen({
     },
     [treeState.tree, accountsState.cards],
   );
-  /** Moves the history — every move stamps the scroll of the screen being left into its entry. */
+  /** Moves the history — every move stamps the scroll of the screen being left into its entry.
+   *  Every navigation attempt also leaves the setup screen (U-385): the conversation itself keeps
+   *  standing — the sidebar's "Yeni proje" row shows the screen again. */
   const move = useCallback(
     (type: 'back' | 'forward'): void => {
       lastMoveRef.current = type;
+      setupChat.hide();
       dispatchNav({ type, exists, scroll: mainRef.current?.scrollTop ?? 0 });
     },
-    [exists],
+    [exists, setupChat],
   );
   const goBack = useCallback((): void => move('back'), [move]);
   const goForward = useCallback((): void => move('forward'), [move]);
@@ -454,8 +469,9 @@ export function ShellScreen({
    *  already current adds nothing. */
   const navigate = useCallback((next: NavRoute): void => {
     lastMoveRef.current = 'back';
+    setupChat.hide();
     dispatchNav({ type: 'push', route: next, scroll: mainRef.current?.scrollTop ?? 0 });
-  }, []);
+  }, [setupChat]);
   // The Proje ekle panel opens over the current route like Settings does and reads the same
   // pointer-or-keyboard stamp. Opening resets nothing: a panel closed with input keeps its draft for
   // the session, and only a finished creation starts the form over.
@@ -486,6 +502,23 @@ export function ShellScreen({
     pointerOpenRef.current = false;
     dispatchNewProjectPanel({ type: 'open', origin });
   }, []);
+  // The finished setup (U-388): the screen hands its result over, the conversation ends and the
+  // new project opens with the one toast, exactly as the panel's own finish does.
+  const finishSetupChat = useCallback(
+    (done: NewProjectDone): void => {
+      setupChat.finish();
+      const target = done.target;
+      navigate(target === null ? { name: 'cockpit' } : target.kind === 'roadmap' ? { name: 'roadmap', project: target.project } : { name: 'board', repo: target.repo });
+      toast({ type: 'success', text: t(locale, done.toastKey) });
+    },
+    [setupChat, navigate, locale],
+  );
+  // The panel's AI path and its resume card open the setup screen, and the panel closes first
+  // exactly as U-181 says (U-385).
+  const openSetupFromPanel = useCallback((): void => {
+    dispatchNewProjectPanel({ type: 'close' });
+    void setupChat.show();
+  }, [setupChat]);
   // ⌘[ and ⌘] ride the history (U-25) — ignored while an input, a textarea or something editable
   // holds focus, and while the palette, the settings panel or the wizard owns the screen: the
   // route underneath an overlay stays put. No other shortcut or menu claims these two keys.
@@ -608,6 +641,12 @@ export function ShellScreen({
             onOpenRepo={(_project, repo) => navigate({ name: 'board', repo })}
             onNewProject={openNewProject}
             projectBundle={projectBundle}
+            setupRow={{
+              shown: setupState.conversation !== null || setupUp,
+              running: setupState.turn !== null,
+              active: setupUp,
+            }}
+            onOpenSetup={() => void setupChat.show()}
           />
 
           <SidebarAccounts
@@ -624,9 +663,27 @@ export function ShellScreen({
   
         <main ref={mainRef} className={`@container min-w-0 overflow-y-auto px-[1.375rem] py-[1.125rem] ${
             // The detail owns its clearance on its own content and the page viewer fills the area;
-            // pb sorts after py, so it replaces the bottom padding on every other screen.
-            route.name === 'workOrder' || route.name === 'page' ? '' : CHAT_FAB_CLEARANCE_CLASS
+            // pb sorts after py, so it replaces the bottom padding on every other screen. The
+            // setup screen owns its bottom too — the round button hides while it stands (U-385).
+            route.name === 'workOrder' || route.name === 'page' || setupUp ? '' : CHAT_FAB_CLEARANCE_CLASS
           }`}>
+          {setupUp ? (
+            <SetupChatScreen
+              store={setupChat}
+              locale={locale}
+              onOpenPage={openPage}
+              openPageId={route.name === 'page' ? route.id : null}
+              onOpenPanelPath={(path) => {
+                newProject.pickPath(path);
+                openNewProject();
+              }}
+              onDone={finishSetupChat}
+              onOpenAccounts={() => openSettings('accounts')}
+              onOpenConsent={() => openSettings('accounts')}
+              onOpenRoles={() => openSettings('roles')}
+            />
+          ) : (
+          <>
           {route.name === 'cockpit' ? (
             <CockpitScreen
               store={cockpit}
@@ -640,6 +697,7 @@ export function ShellScreen({
                 newProject.pickPath('import');
                 openNewProject();
               }}
+              onSetupAi={() => void setupChat.show()}
               accounts={accountsState.cards}
             />
           ) : null}
@@ -715,6 +773,8 @@ export function ShellScreen({
               launchScope={pageScope}
             />
           ) : null}
+          </>
+          )}
         </main>
       </div>
 
@@ -771,12 +831,13 @@ export function ShellScreen({
         onDone={finishNewProject}
         onOpenAccounts={() => openSettings('accounts')}
         onOpenMcp={() => openSettings('mcp')}
+        onOpenSetupAi={openSetupFromPanel}
       />
 
       <ChatDock
         store={chat}
         locale={locale}
-        hidden={wizardUp || settingsPanel.open || newProjectPanel.open || phoneOpen}
+        hidden={wizardUp || settingsPanel.open || newProjectPanel.open || phoneOpen || setupUp}
         onOpenPage={openPage}
         openPageId={route.name === 'page' ? route.id : null}
         onOpenAccounts={() => openSettings('accounts')}

@@ -400,8 +400,9 @@ function StepRow({ row, locale }: { readonly row: ChatStepRow; readonly locale: 
   );
 }
 
-/** The rows the feed draws (U-379): at most 50, the older ones counted in one more-line. */
-function StepRows({ rows, locale }: { readonly rows: readonly ChatStepRow[]; readonly locale: Locale }) {
+/** The rows the feed draws (U-379): at most 50, the older ones counted in one more-line. Drawn by
+ *  every surface that shows a conversation's live turn — the dock's feed and the setup screen's. */
+export function StepRows({ rows, locale }: { readonly rows: readonly ChatStepRow[]; readonly locale: Locale }) {
   const drawn = visibleStepRows(rows);
   return (
     // A polite live region announces a new row once (U-383).
@@ -415,7 +416,15 @@ function StepRows({ rows, locale }: { readonly rows: readonly ChatStepRow[]; rea
 }
 
 /** The closed disclosure a finished turn's rows fold into (U-380), headed by the count line. */
-function StepFold({ state, store, locale }: { readonly state: ChatState; readonly store: ChatStore; readonly locale: Locale }) {
+export function StepFold({
+  state,
+  store,
+  locale,
+}: {
+  readonly state: Pick<ChatState, 'steps' | 'stepsOpen'>;
+  readonly store: Pick<ChatStore, 'toggleSteps'>;
+  readonly locale: Locale;
+}) {
   return (
     <div data-chat-step-fold="" className="grid gap-1">
       <button

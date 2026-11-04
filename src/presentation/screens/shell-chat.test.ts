@@ -35,7 +35,9 @@ describe('the shell carries the dock', () => {
 
   it('U-125: the page view yields to the palette, the settings, the new-project panel, the wizard and the phone, and a blocking modal hides the dock', () => {
     expect(shell).toContain('overlayOpen={palette.open || settingsPanel.open || newProjectPanel.open || wizardUp || phoneOpen}');
-    expect(shell).toContain('hidden={wizardUp || settingsPanel.open || newProjectPanel.open || phoneOpen}');
+    // U-385 adds the setup screen to the hiding word: while it stands, the conversation is already
+    // the main panel's content and the dock with its round button hide.
+    expect(shell).toContain('hidden={wizardUp || settingsPanel.open || newProjectPanel.open || phoneOpen || setupUp}');
   });
 
   it('U-391: the page view\'s overlay word drops its chat term — an open chat docks beside the view instead', () => {

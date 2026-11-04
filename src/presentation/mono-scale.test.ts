@@ -74,6 +74,7 @@ const MONO_FILES: readonly MonoEntry[] = [
   { file: './screens/page-viewer.tsx', lines: 3, why: 'version references, the page diff body' },
   { file: './screens/proposals.tsx', lines: 3, why: 'proposal targets (paths), the diff body' },
   { file: './screens/roadmap.tsx', lines: 4, why: 'work-order code links/chips, task repo identifiers' },
+  { file: './screens/setup-chat.tsx', lines: 5, why: 'the repo-path input, the head and first-message path, the proposal card target and diff body' },
   { file: './screens/settings.tsx', lines: 2, why: 'the app version strings (current, next)' },
   { file: './screens/storage-open-error.tsx', lines: 2, why: 'the storage paths the error names' },
   { file: './screens/wizard.tsx', lines: 5, why: 'keyboard command keycaps (Alt, ↑, ↓), the $ money mark, the money input' },

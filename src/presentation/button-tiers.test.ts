@@ -254,6 +254,9 @@ const EXCLUSIVE_PRIMARIES: Readonly<Record<string, number>> = {
   // The feed's action cards: the approve of each card kind. Queued action cards each carry their
   // own ask; the distribution is a recorded follow-up, not this cap's.
   'chat-feed.tsx': 3,
+  // The setup screen's empty start holds the screen's one primary (U-386); the proposal card's
+  // Onayla stands only in the conversation body, which never shows beside the empty start.
+  'setup-chat.tsx': 2,
 };
 
 describe('button tiers — the cap and the disabled look (U-375)', () => {
