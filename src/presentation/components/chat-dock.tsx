@@ -14,7 +14,17 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 
 import { t, type Locale } from '../labels/t';
-import { CHAT_RAIL_QUERY, chatRailVisible, placeScope, sameScope, type ChatPlace, type ChatScopeInput, type ChatState } from '../stores/chat-model';
+import {
+  CHAT_DOCKED_WIDTH_REM,
+  CHAT_RAIL_QUERY,
+  chatDocked,
+  chatRailVisible,
+  placeScope,
+  sameScope,
+  type ChatPlace,
+  type ChatScopeInput,
+  type ChatState,
+} from '../stores/chat-model';
 import type { ChatStore } from '../stores/chat-store';
 import { ChatComposer } from './chat-composer';
 import { ChatFeed } from './chat-feed';
@@ -35,6 +45,8 @@ export interface ChatDockProps {
   readonly hidden: boolean;
   /** A page card opens its page route in the viewer. */
   readonly onOpenPage: (id: string) => void;
+  /** The page route that stands open, else null: its own card reads Açık and is disabled (U-391). */
+  readonly openPageId: string | null;
   /** Hesabı değiştir: Ayarlar › Hesaplar. */
   readonly onOpenAccounts: () => void;
   /** İzin ver: the consent step already in the settings. */
@@ -118,11 +130,12 @@ function ScopeChip({ state, store, locale }: { readonly state: ChatState; readon
   );
 }
 
-export function ChatDock({ store, locale, hidden, onOpenPage, onOpenAccounts, onOpenConsent, onOpenRoles }: ChatDockProps) {
+export function ChatDock({ store, locale, hidden, onOpenPage, openPageId, onOpenAccounts, onOpenConsent, onOpenRoles }: ChatDockProps) {
   const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   const fabRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLElement>(null);
   const full = state.full;
+  const docked = chatDocked(state);
   const rail = chatRailVisible(state);
 
   // The window's width decides whether the full mode has room for the history rail; the flag lives
@@ -173,7 +186,7 @@ export function ChatDock({ store, locale, hidden, onOpenPage, onOpenAccounts, on
         aria-label={t(locale, open ? 'chat.fab.close' : 'chat.fab.open')}
         aria-expanded={open}
         className={`fixed bottom-6 right-6 z-[21] grid h-14 w-14 place-items-center rounded-full border border-bord bg-raised text-ink shadow-elevation-overlay motion-safe:transition-transform motion-safe:duration-200 motion-safe:hover:scale-105 ${FOCUS} ${
-          full ? 'invisible opacity-0' : ''
+          full || docked ? 'invisible opacity-0' : ''
         }`}
         onClick={() => store.toggle()}
       >
@@ -185,19 +198,26 @@ export function ChatDock({ store, locale, hidden, onOpenPage, onOpenAccounts, on
         ref={panelRef}
         data-chat-panel=""
         data-chat-full={full ? '' : undefined}
+        data-chat-docked={docked ? '' : undefined}
         role="dialog"
         aria-label={t(locale, 'chat.panel')}
         aria-modal="false"
         aria-hidden={open ? undefined : true}
         inert={!open}
+        style={docked ? { width: `${CHAT_DOCKED_WIDTH_REM}rem` } : undefined}
         className={`fixed z-20 grid grid-rows-[auto_1fr_auto] overflow-hidden border border-bord bg-surface motion-safe:transition-all motion-safe:duration-[280ms] motion-safe:ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:transition-opacity motion-reduce:duration-[10ms] ${
           full
             ? // The reading surface covers the content area only: the sidebar's own column to the
               // left, the title bar's own height above, and the window's right and bottom edges.
               `bottom-0 left-[16.5rem] right-0 top-[2.5rem] rounded-panel opacity-100 ${rail ? 'grid-cols-[15rem_minmax(0,1fr)]' : ''}`
-            : `bottom-[5.75rem] right-6 h-[min(38rem,calc(100vh-9rem))] w-[min(26rem,calc(100vw-2rem))] origin-[calc(100%-1.75rem)_100%] shadow-elevation-overlay ${
-                open ? 'translate-y-0 scale-100 rounded-panel opacity-100' : 'pointer-events-none translate-y-8 scale-[0.1] rounded-full opacity-0 motion-reduce:translate-y-0 motion-reduce:scale-100'
-              }`
+            : docked
+              ? // Docked beside an open page route (U-390): pinned to the window body's right edge
+                // for its full height, its own gap from every edge, flat — the border and the panel
+                // radius stay, the elevation lifts to flat.
+                `bottom-[0.75rem] right-[0.75rem] top-[3.25rem] rounded-panel opacity-100 shadow-elevation-flat`
+              : `bottom-[5.75rem] right-6 h-[min(38rem,calc(100vh-9rem))] w-[min(26rem,calc(100vw-2rem))] origin-[calc(100%-1.75rem)_100%] shadow-elevation-overlay ${
+                  open ? 'translate-y-0 scale-100 rounded-panel opacity-100' : 'pointer-events-none translate-y-8 scale-[0.1] rounded-full opacity-0 motion-reduce:translate-y-0 motion-reduce:scale-100'
+                }`
         }`}
       >
         {rail ? (
@@ -223,12 +243,20 @@ export function ChatDock({ store, locale, hidden, onOpenPage, onOpenAccounts, on
             aria-pressed={state.view === 'history'}
             aria-label={t(locale, 'chat.history')}
             title={t(locale, 'chat.history')}
-            hidden={rail}
+            hidden={rail || docked}
             onClick={() => store.toggleHistory()}
           >
             <ChatIcon name="history" className="h-4 w-4" />
           </button>
-          <button type="button" data-chat-new="" className={ICON_BUTTON} aria-label={t(locale, 'chat.new')} title={t(locale, 'chat.new')} hidden={rail} onClick={() => void store.newConversation()}>
+          <button
+            type="button"
+            data-chat-new=""
+            className={ICON_BUTTON}
+            aria-label={t(locale, 'chat.new')}
+            title={t(locale, 'chat.new')}
+            hidden={rail || docked}
+            onClick={() => void store.newConversation()}
+          >
             <ChatIcon name="plus" className="h-4 w-4" />
           </button>
           <button
@@ -238,11 +266,12 @@ export function ChatDock({ store, locale, hidden, onOpenPage, onOpenAccounts, on
             aria-expanded={full}
             aria-label={t(locale, full ? 'chat.full.collapse' : 'chat.full.expand')}
             title={t(locale, full ? 'chat.full.collapse' : 'chat.full.expand')}
+            hidden={docked}
             onClick={() => store.toggleFull()}
           >
             <ChatIcon name={full ? 'collapse' : 'expand'} className="h-4 w-4" />
           </button>
-          {full ? (
+          {full || docked ? (
             <button type="button" data-chat-close="" className={ICON_BUTTON} aria-label={t(locale, 'chat.close')} title={t(locale, 'chat.close')} onClick={() => store.close()}>
               <ChatIcon name="close" className="h-4 w-4" />
             </button>
@@ -251,7 +280,7 @@ export function ChatDock({ store, locale, hidden, onOpenPage, onOpenAccounts, on
         {state.view === 'history' ? (
           <ChatHistory state={state} store={store} locale={locale} />
         ) : (
-          <ChatFeed state={state} store={store} locale={locale} onOpenPage={onOpenPage} />
+          <ChatFeed state={state} store={store} locale={locale} onOpenPage={onOpenPage} openPageId={openPageId} />
         )}
         {state.view === 'history' ? <div /> : <ChatComposer state={state} store={store} locale={locale} onOpenAccounts={onOpenAccounts} onOpenConsent={onOpenConsent} onOpenRoles={onOpenRoles} />}
       </section>

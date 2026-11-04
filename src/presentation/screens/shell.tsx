@@ -33,7 +33,7 @@ import { unaddedRowTarget, type AccountsFrameStore } from '../stores/accounts-fr
 import { editInSettingsTarget, type AccountViewStore } from '../stores/account-view';
 import type { BoardStore } from '../stores/board';
 import { pageLaunchScope } from '../stores/chat-launcher';
-import { chatPlaceOf, chatShortcutPlan, isChatShortcut } from '../stores/chat-model';
+import { chatDocked, chatPlaceOf, chatShortcutPlan, isChatShortcut } from '../stores/chat-model';
 import type { ChatStore } from '../stores/chat-store';
 import type { CockpitStore } from '../stores/cockpit';
 import type { LibraryStore } from '../stores/library';
@@ -340,6 +340,8 @@ export function ShellScreen({
   // Docket AI's panel: whether it is open drives the page view's yielding (U-76), and the place
   // the current screen gives it (scope choices, the screen reference) follows the route (U-122).
   const chatOpen = useSyncExternalStore(chat.subscribe, () => chat.state().open);
+  // An open chat docks beside an open page route (U-390); the page screen reserves its width (U-391).
+  const chatDockedOpen = useSyncExternalStore(chat.subscribe, () => chatDocked(chat.state()));
   const detailView = useSyncExternalStore(detail.subscribe, () => detail.state().view);
   const chatPlace = useMemo(
     () =>
@@ -357,6 +359,11 @@ export function ShellScreen({
   useEffect(() => {
     chat.setPlace(chatPlace);
   }, [chat, chatPlace]);
+  // The docked flag follows the route alone (U-390): a page route standing open docks an open
+  // chat; leaving the page returns the floating form. Nothing here navigates.
+  useEffect(() => {
+    chat.setDocked(route.name === 'page');
+  }, [chat, route.name]);
   // The contextual launchers (U-126) open this same panel; hosts reach it through the context.
   const launcherEnv = useMemo(() => ({ store: chat, locale }), [chat, locale]);
   // The page viewer's launcher scope comes from the library's rows: the page's work order, else its
@@ -699,8 +706,10 @@ export function ShellScreen({
               host={pageHost}
               pageId={route.id}
               locale={locale}
-              // The native view paints above everything of Docket's: any overlay takes it away (U-76).
-              overlayOpen={palette.open || settingsPanel.open || newProjectPanel.open || wizardUp || chatOpen || phoneOpen}
+              // The native view paints above everything of Docket's: an overlay takes it away
+              // (U-76) — but not the chat, which docks beside the view (U-390, U-391).
+              overlayOpen={palette.open || settingsPanel.open || newProjectPanel.open || wizardUp || phoneOpen}
+              chatDocked={chatDockedOpen}
               now={clockNow()}
               onBack={goBack}
               launchScope={pageScope}
@@ -769,6 +778,7 @@ export function ShellScreen({
         locale={locale}
         hidden={wizardUp || settingsPanel.open || newProjectPanel.open || phoneOpen}
         onOpenPage={openPage}
+        openPageId={route.name === 'page' ? route.id : null}
         onOpenAccounts={() => openSettings('accounts')}
         onOpenConsent={() => openSettings('accounts')}
         onOpenRoles={() => openSettings('roles')}

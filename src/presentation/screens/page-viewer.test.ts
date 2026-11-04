@@ -76,7 +76,13 @@ const fakeHost = (status: PageViewStatus = 'idle'): PageViewHost & { readonly up
 
 const draw = async (
   reply: PageDetailView,
-  options: { readonly mode?: 'diff'; readonly host?: PageViewHost; readonly locale?: 'tr' | 'en'; readonly overlayOpen?: boolean } = {},
+  options: {
+    readonly mode?: 'diff';
+    readonly host?: PageViewHost;
+    readonly locale?: 'tr' | 'en';
+    readonly overlayOpen?: boolean;
+    readonly chatDocked?: boolean;
+  } = {},
 ): Promise<string> => {
   const api: Pick<Api, 'query' | 'command'> = {
     query: (query: Query) => Promise.resolve(query.type === 'page.detail' ? reply : null),
@@ -94,6 +100,7 @@ const draw = async (
       pageId: PAGE,
       locale: options.locale ?? 'tr',
       overlayOpen: options.overlayOpen ?? false,
+      chatDocked: options.chatDocked ?? false,
       now: NOW,
       onBack: () => undefined,
     }),
@@ -158,6 +165,23 @@ describe('page screen — header and stage (U-76)', () => {
     expect(html).toContain('role="alert"');
     expect(html).toContain('Kayıt bulunamadı.');
     expect(html).toContain('‹ Geri');
+  });
+
+  it('U-391: the screen reserves the docked dock\'s width plus its gap, so its own DOM never sits under the dock', async () => {
+    const reserved = await draw(detail(), { chatDocked: true });
+    expect(reserved).toContain('data-page-screen');
+    expect(reserved).toMatch(/data-page-screen[^>]*style="padding-right:18\.75rem"/);
+    // Without the docked chat there is no reserve.
+    expect(await draw(detail())).not.toContain('padding-right:18.75rem');
+  });
+
+  it('U-391: a page or version change keeps the reserve — only the chat\'s own docking moves it', async () => {
+    const older = await draw(detail({ latest: 2, shown: 1 }), { chatDocked: true });
+    expect(older).toMatch(/data-page-screen[^>]*style="padding-right:18\.75rem"/);
+    const diffMode = await draw(detail({ diff: { against: 1, lines: [{ kind: 'add', text: 'x' }] } }), { chatDocked: true, mode: 'diff' });
+    expect(diffMode).toMatch(/data-page-screen[^>]*style="padding-right:18\.75rem"/);
+    // An overlay still takes the view away with the reserve in place — the two never meet.
+    expect(await draw(detail(), { chatDocked: true, overlayOpen: true })).toMatch(/data-page-screen[^>]*style="padding-right:18\.75rem"/);
   });
 });
 

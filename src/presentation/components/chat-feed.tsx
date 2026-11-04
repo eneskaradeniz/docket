@@ -172,14 +172,26 @@ function CardHeader({ title, type, children }: { readonly title: string; readonl
 }
 
 /** The chat's page card, drawn by every surface that shows a conversation's artifacts; the open
- *  action is the host's own — the panel names where the page opens. */
-export function PageCard({ artifact, locale, onOpenPage }: { readonly artifact: Extract<ChatArtifactView, { kind: 'page' }>; readonly locale: Locale; readonly onOpenPage: (id: string) => void }) {
+ *  action is the host's own — the panel names where the page opens. While the page the card names
+ *  is the open route, the button reads Açık and is disabled (U-391). */
+export function PageCard({
+  artifact,
+  locale,
+  onOpenPage,
+  openPageId = null,
+}: {
+  readonly artifact: Extract<ChatArtifactView, { kind: 'page' }>;
+  readonly locale: Locale;
+  readonly onOpenPage: (id: string) => void;
+  readonly openPageId?: string | null;
+}) {
   const type = fill(t(locale, 'chat.card.page.type'), { kind: artifact.pageKind ?? '', n: artifact.version });
+  const open = openPageId === artifact.id;
   return (
     <div data-chat-card="page" className="overflow-hidden rounded-card border border-hairline bg-band">
       <CardHeader title={artifact.title ?? t(locale, 'chat.card.gone')} type={type}>
-        <button type="button" className={BUTTON} onClick={() => onOpenPage(artifact.id)}>
-          {t(locale, 'chat.card.page.open')}
+        <button type="button" className={BUTTON} disabled={open} onClick={() => onOpenPage(artifact.id)}>
+          {t(locale, open ? 'chat.card.page.openCurrent' : 'chat.card.page.open')}
         </button>
       </CardHeader>
     </div>
@@ -316,13 +328,27 @@ function ActionRow({ action, backed, store, locale, now }: { readonly action: Ch
   );
 }
 
-function AssistantRow({ message, state, store, locale, onOpenPage }: { readonly message: ChatMessageView; readonly state: ChatState; readonly store: ChatStore; readonly locale: Locale; readonly onOpenPage: (id: string) => void }) {
+function AssistantRow({
+  message,
+  state,
+  store,
+  locale,
+  onOpenPage,
+  openPageId = null,
+}: {
+  readonly message: ChatMessageView;
+  readonly state: ChatState;
+  readonly store: ChatStore;
+  readonly locale: Locale;
+  readonly onOpenPage: (id: string) => void;
+  readonly openPageId?: string | null;
+}) {
   const hasProposal = message.artifacts.some((artifact) => artifact.kind === 'proposal');
   return (
     <div data-chat-row="assistant" className="grid gap-3">
       {message.text === '' ? null : <div className={`${WRAP} text-[0.875rem] leading-5 text-ink`}>{shownTranscript(message.text, locale)}</div>}
       {message.artifacts.map((artifact, index) => {
-        if (artifact.kind === 'page') return <PageCard key={index} artifact={artifact} locale={locale} onOpenPage={onOpenPage} />;
+        if (artifact.kind === 'page') return <PageCard key={index} artifact={artifact} locale={locale} onOpenPage={onOpenPage} openPageId={openPageId} />;
         if (artifact.kind === 'table') return <Table key={index} columns={artifact.columns} rows={artifact.rows} label={t(locale, 'chat.card.table')} wide={state.full} />;
         if (artifact.kind === 'draft' && state.detail !== null) return <DraftCard key={index} artifact={artifact} detail={state.detail} store={store} locale={locale} />;
         if (artifact.kind === 'proposal') return <ProposalCard key={index} artifact={artifact} state={state} store={store} locale={locale} />;
@@ -411,9 +437,11 @@ export interface ChatFeedProps {
   readonly store: ChatStore;
   readonly locale: Locale;
   readonly onOpenPage: (id: string) => void;
+  /** The page route that stands open, else null: its own card reads Açık and is disabled (U-391). */
+  readonly openPageId?: string | null;
 }
 
-export function ChatFeed({ state, store, locale, onOpenPage }: ChatFeedProps) {
+export function ChatFeed({ state, store, locale, onOpenPage, openPageId = null }: ChatFeedProps) {
   const messages = state.detail?.messages ?? [];
   const actions = state.detail?.actions ?? [];
   const backed = cardActionIds(messages);
@@ -469,7 +497,7 @@ export function ChatFeed({ state, store, locale, onOpenPage }: ChatFeedProps) {
             locale={locale}
           />
         ) : (
-          <AssistantRow key={message.id} message={message} state={state} store={store} locale={locale} onOpenPage={onOpenPage} />
+          <AssistantRow key={message.id} message={message} state={state} store={store} locale={locale} onOpenPage={onOpenPage} openPageId={openPageId} />
         ),
       )}
       {state.pending === null ? null : (

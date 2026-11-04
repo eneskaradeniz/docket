@@ -33,12 +33,13 @@ afterEach(() => {
 const draw = async (
   setup: (store: ChatStore, b: Bridge) => void | Promise<void> = () => undefined,
   locale: 'tr' | 'en' = 'tr',
-  options: { readonly hidden?: boolean; readonly place?: ChatPlace; readonly now?: number } = {},
+  options: { readonly hidden?: boolean; readonly place?: ChatPlace; readonly now?: number; readonly docked?: boolean; readonly openPageId?: string | null } = {},
 ): Promise<string> => {
   const b = bridge();
   const store = createChatStore({ api: b.api, changes: b.changes, actor: ACTOR, now: () => options.now ?? NOW, notify: b.notify });
   store.setPlace(options.place ?? PLACE);
   await setup(store, b);
+  if (options.docked === true) store.setDocked(true);
   await flush();
   return renderToStaticMarkup(
     createElement(ChatDock, {
@@ -46,6 +47,7 @@ const draw = async (
       locale,
       hidden: options.hidden ?? false,
       onOpenPage: () => undefined,
+      openPageId: options.openPageId ?? null,
       onOpenAccounts: () => undefined,
       onOpenConsent: () => undefined,
       onOpenRoles: () => undefined,
@@ -685,6 +687,7 @@ describe('notice copy and the no_binding banner (U-241, U-242)', () => {
       locale: 'tr',
       hidden: false,
       onOpenPage: () => undefined,
+      openPageId: null,
       onOpenAccounts: () => opened.push('accounts'),
       onOpenConsent: () => opened.push('consent'),
       onOpenRoles: () => opened.push('roles'),
@@ -744,6 +747,7 @@ describe('image previews (U-331, U-332)', () => {
         locale: 'tr',
         hidden: false,
         onOpenPage: () => undefined,
+        openPageId: null,
         onOpenAccounts: () => undefined,
         onOpenConsent: () => undefined,
         onOpenRoles: () => undefined,
@@ -755,5 +759,85 @@ describe('image previews (U-331, U-332)', () => {
     expect(html).toContain('Kapat (Esc)');
     expect(html).toContain('‹ Önceki');
     expect(html).toContain('Sonraki ›');
+  });
+});
+
+describe('the docked panel (U-390, U-391)', () => {
+  /** A conversation whose assistant message carries two page cards, so one can be the open route. */
+  const twoPages = (): ReturnType<typeof conversation> =>
+    conversation('C1', {
+      messages: [
+        message('a', {
+          artifacts: [
+            { kind: 'page', id: 'P1', version: 2, title: 'Giriş ekranı taslağı', pageKind: 'html' },
+            { kind: 'page', id: 'P2', version: 1, title: 'Bütçe tablosu', pageKind: 'table' },
+          ],
+        }),
+      ],
+    });
+
+  /** The panel's own open tag, where the docked geometry lives. */
+  const panelTag = (html: string): string => html.slice(html.indexOf('data-chat-panel'), html.indexOf('>', html.indexOf('data-chat-panel')));
+
+  it('U-390: docked, the panel pins to the window body\'s right edge for its full height, 18 rem wide and flat — the border and the panel radius stay, the elevation lifts to flat', async () => {
+    const html = await draw(withConversation(twoPages()), 'tr', { docked: true });
+    const panel = panelTag(html);
+    expect(panel).toContain('data-chat-docked=""');
+    expect(panel).toContain('top-[3.25rem]');
+    expect(panel).toContain('right-[0.75rem]');
+    expect(panel).toContain('bottom-[0.75rem]');
+    expect(panel).toContain('width:18rem');
+    expect(panel).toContain('rounded-panel');
+    expect(panel).toContain('border-bord');
+    expect(panel).toContain('shadow-elevation-flat');
+    expect(panel).not.toContain('shadow-elevation-overlay');
+  });
+
+  it('U-390: the header keeps the scope chip and carries the close control; Geçmiş, Yeni konuşma and Genişlet hide at the docked width', async () => {
+    const html = await draw(withConversation(twoPages()), 'tr', { docked: true });
+    expect(html).toContain('data-chat-chip=""');
+    expect(html).toContain('data-chat-close=""');
+    expect(html).toContain('aria-label="Kapat"');
+    expect(html).toMatch(/data-chat-history-toggle=""[\s\S]{0,700}?hidden=""/);
+    expect(html).toMatch(/data-chat-new=""[\s\S]{0,700}?hidden=""/);
+    expect(html).toMatch(/data-chat-expand=""[\s\S]{0,700}?hidden=""/);
+    // Floating again (no page route), the secondary actions are back and the close control is gone.
+    const floating = await draw(withConversation(twoPages()), 'tr');
+    expect(floating).not.toContain('data-chat-docked');
+    expect(floating).not.toContain('data-chat-close=""');
+    expect(floating).not.toMatch(/data-chat-history-toggle=""[\s\S]{0,700}?hidden=""/);
+    expect(floating).not.toMatch(/data-chat-expand=""[\s\S]{0,700}?hidden=""/);
+  });
+
+  it('U-390: the feed, the composer and the footer\'s Öner control keep working while docked', async () => {
+    const html = await draw(withConversation(twoPages()), 'tr', { docked: true });
+    expect(html).toContain('data-chat-feed=""');
+    expect(html).toContain('aria-label="Mesaj"');
+    expect(html).toContain('>Öner<');
+    expect(html).toContain('Giriş ekranı taslağı');
+  });
+
+  it('U-390: the round launcher hides while docked, so the header\'s close control is the way out', async () => {
+    const docked = await draw(withConversation(twoPages()), 'tr', { docked: true });
+    expect(docked).toMatch(/data-chat-fab=""[\s\S]{0,700}?invisible/);
+    const floating = await draw(withConversation(twoPages()), 'tr');
+    expect(floating).not.toMatch(/data-chat-fab=""[\s\S]{0,700}?invisible/);
+  });
+
+  it('U-391: a page card\'s Aç still opens beside the open chat; the open route\'s own card reads Açık and is disabled', async () => {
+    const html = await draw(withConversation(twoPages()), 'tr', { docked: true, openPageId: 'P1' });
+    const firstCard = html.indexOf('data-chat-card="page"');
+    const secondCard = html.indexOf('data-chat-card="page"', firstCard + 1);
+    const first = html.slice(firstCard, secondCard);
+    const second = html.slice(secondCard, html.indexOf('data-chat-dock', secondCard));
+    expect(first).toContain('>Açık<');
+    expect(first).toContain('disabled=""');
+    expect(second).toContain('>Aç<');
+    expect(second).not.toContain('disabled=""');
+    const english = await draw(withConversation(twoPages()), 'en', { docked: true, openPageId: 'P1' });
+    const enFirst = english.indexOf('data-chat-card="page"');
+    const open = english.slice(enFirst, english.indexOf('data-chat-card="page"', enFirst + 1));
+    expect(open).toContain('>Open<');
+    expect(open).toContain('disabled=""');
   });
 });

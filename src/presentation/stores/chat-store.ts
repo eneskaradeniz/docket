@@ -93,6 +93,9 @@ export interface ChatStore {
   toggle(): void;
   /** Genişlet / Küçült: the same panel as a full-screen reading surface, and back (U-192). */
   toggleFull(): void;
+  /** The shell reports whether a page route stands open: an open panel then docks beside the view
+   *  instead of floating, and docking ends the full mode (U-390). */
+  setDocked(docked: boolean): void;
   /** The dock reports the viewport crossing the rail's width so the store can keep its rules. */
   setWide(wide: boolean): void;
   /** The one door for the contextual launchers: open on a scope with an optional prefilled text. */
@@ -180,6 +183,7 @@ export const createChatStore = (deps: ChatStoreDeps): ChatStore => {
   let state: ChatState = {
     open: false,
     full: false,
+    docked: false,
     wide: false,
     view: 'chat',
     conversation: null,
@@ -645,6 +649,11 @@ export const createChatStore = (deps: ChatStoreDeps): ChatStore => {
     },
     toggleFull: () => {
       railSettles({ full: !state.full, scopePop: false, menu: null });
+    },
+    setDocked: (docked) => {
+      if (state.docked === docked) return;
+      // Docking narrows the panel beside the view: the full mode has no room and gives way (U-390).
+      set(docked ? { docked, full: false } : { docked });
     },
     setWide: (wide) => {
       if (state.wide === wide) return;

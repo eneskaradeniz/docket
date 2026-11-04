@@ -1668,6 +1668,7 @@ export const LABEL_KEYS = [
   'chat.history.empty',
   'chat.history.failed',
   'chat.card.page.open',
+  'chat.card.page.openCurrent',
   'chat.card.page.type',
   'chat.card.draft.drop',
   'chat.card.draft.create',

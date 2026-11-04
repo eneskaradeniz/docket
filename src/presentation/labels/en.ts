@@ -1591,6 +1591,7 @@ export const EN: LabelBundle = {
   'chat.history.empty': 'No conversations yet.',
   'chat.history.failed': 'The history could not be read.',
   'chat.card.page.open': 'Open',
+  'chat.card.page.openCurrent': 'Open',
   'chat.card.page.type': '{kind} · version {n}',
   'chat.card.draft.drop': 'Discard',
   'chat.card.draft.create': 'Create',
