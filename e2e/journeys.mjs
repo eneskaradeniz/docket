@@ -1533,9 +1533,17 @@ for (const [sizeName, theme] of combos) {
 
     // The panel and the native page view stand beside each other (U-390, U-391): a page card opens
     // the viewer, the open chat docks at the window body's right edge, and the view stays open.
+    // The conversation must live through the page route the card opens: the page screen offers the
+    // panel only the global scope (U-122), which resets an unpinned chat — so the conversation is
+    // reopened on the work order's screen, not its own project, and arrives pinned ("sabit"); a
+    // pinned chat keeps its conversation across navigation, and the card stands in the feed to
+    // dock beside the view it opens.
+    await card.click({ timeout: WAIT });
+    await chipSays(seed.workOrderTitle);
     await historyToggle.click({ timeout: WAIT });
     await historyRow(seed.firstTitle).waitFor({ state: 'visible', timeout: SCAN_WAIT });
     await historyRow(seed.firstTitle).click({ timeout: WAIT });
+    await chipSays('sabit');
     await pageCard.waitFor({ state: 'visible', timeout: SCAN_WAIT });
     await pageCard.getByRole('button', { name: 'Aç' }).click({ timeout: WAIT });
     const viewer = page.locator('[data-page-screen]');
