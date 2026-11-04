@@ -109,15 +109,7 @@ const PENDING = new Map([
   // this list in the same commit as its test.
 
   // #1394 — chat tool steps and provider thinking, docs-first. The runner half landed with #1400
-  // (A-438 … A-442); the view half (U-377 … U-384) stays pending for its own implementation issue.
-  ['ui:U-377', '#1394 (chat steps implementation)'],
-  ['ui:U-378', '#1394 (chat steps implementation)'],
-  ['ui:U-379', '#1394 (chat steps implementation)'],
-  ['ui:U-380', '#1394 (chat steps implementation)'],
-  ['ui:U-381', '#1394 (chat steps implementation)'],
-  ['ui:U-382', '#1394 (chat steps implementation)'],
-  ['ui:U-383', '#1394 (chat steps implementation)'],
-  ['ui:U-384', '#1394 (chat steps implementation)'],
+  // (A-438 … A-442) and the view half with #1401 (U-377 … U-384).
 
   // #1414 — setup chat in the main panel, viewer beside the docked chat, docs-first (decision on
   // #1403). The rules land ahead of their implementation issue; that issue removes each id from

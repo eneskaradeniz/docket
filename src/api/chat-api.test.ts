@@ -1,7 +1,7 @@
 // api/chat-api.test.ts — the chat surface of the boundary (6e-5): every query and command over
 // fakes, the reference-resolution rule at the edge, the attach validation, the live turn events
-// and their hygiene, and the no-oracle id answers. Rules A-251 … A-265 and U-97 … U-100 of
-// docs/v2/application.md and docs/v2/ui.md.
+// and their hygiene, the no-oracle id answers, and the thinking/step bridge of U-381. Rules
+// A-251 … A-265 and U-97 … U-100 of docs/v2/application.md and docs/v2/ui.md.
 import { describe, expect, it } from 'vitest';
 
 import type {
@@ -12,6 +12,7 @@ import type {
   AttachmentRef,
   CatalogModel,
   Conversation,
+  ConversationId,
   Grant,
   ProjectSlug,
   RepoSlug,
@@ -22,7 +23,7 @@ import type {
 } from '../domain/index';
 import { parseSlug, parseUlid, sha256Hex } from '../domain/index';
 
-import type { AgentTransport, AppDeps, ChatRunner, McpEndpoint, McpListenerControl } from '../application';
+import type { AgentTransport, AppDeps, ChatRunner, ChatTurnEvent, McpEndpoint, McpListenerControl } from '../application';
 import {
   createActionApplier,
   createActionUndoer,
@@ -896,6 +897,164 @@ describe('chat commands', () => {
     // The UiEvent union accepts all three members: the preload's fan-out needs no new channel.
     const typed: readonly UiEvent[] = h.events;
     expect(typed.length).toBeGreaterThan(2);
+  });
+});
+
+// --- the thinking and step bridge (U-381) --------------------------------------------------------------
+
+describe('chat.thinking and chat.step bridge (U-381)', () => {
+  const RUN = idOf<'run'>(81);
+
+  /** The runner scenarios shape their events through a transport script and the presentation
+   *  tests feed fixed UiEvent streams, so a wrong bridge would pass both. A hand-rolled runner
+   *  hands its listener straight to the test, so every field below is checked as the api mapped
+   *  it — the runner's own redaction and bounds stay where A-438 … A-441 put them. */
+  const bridge = async (
+    uiListeners: readonly ((event: UiEvent) => void)[],
+  ): Promise<{ readonly listener: (conversation: ConversationId, event: ChatTurnEvent) => void }> => {
+    const runnerListeners = new Map<ConversationId, (event: ChatTurnEvent) => void>();
+    const runner: ChatRunner = {
+      startTurn: async () => ({ ok: true, value: { turn: RUN } }),
+      cancel: async () => ({ ok: true, value: undefined }),
+      active: () => undefined,
+      subscribe: (conversation, listener) => {
+        runnerListeners.set(conversation, listener);
+        return () => {
+          runnerListeners.delete(conversation);
+        };
+      },
+    };
+    const deps = createFakeDeps({ clock: createFakeClock(T0) });
+    for (const conversation of [CONVERSATION, CONVERSATION_OTHER]) {
+      await deps.conversations.save({ id: conversation, scope: { kind: 'global' }, title: 'köprü', createdAt: T0, updatedAt: T0, pinned: false, messages: [] });
+    }
+    const api = createApi(deps, undefined, undefined, undefined, undefined, undefined, undefined, undefined, {
+      runner,
+      apply: async () => ({ ok: true, value: {} }),
+      undo: async () => ({ ok: true, value: undefined }),
+    });
+    for (const uiListener of uiListeners) api.subscribe(uiListener);
+    // One send per conversation: the bridge is armed per conversation, at send time.
+    await api.command(USER, { type: 'chat.send', conversation: CONVERSATION, text: 'selam' });
+    await api.command(USER, { type: 'chat.send', conversation: CONVERSATION_OTHER, text: 'selam' });
+    return {
+      listener: (conversation, event) => {
+        runnerListeners.get(conversation)?.(event);
+      },
+    };
+  };
+
+  const stepsOf = (events: readonly UiEvent[]): readonly Extract<UiEvent, { type: 'chat.step' }>[] =>
+    events.filter((event): event is Extract<UiEvent, { type: 'chat.step' }> => event.type === 'chat.step');
+
+  it('U-381: chat.thinking carries the thinking text verbatim, one event per runner fragment', async () => {
+    const seen: UiEvent[] = [];
+    const { listener } = await bridge([(event) => {
+      seen.push(event);
+    }]);
+    const big = 'x'.repeat(4_096); // a runner-sized fragment: the bridge forwards it whole, no re-split
+    listener(CONVERSATION, { type: 'thinking', turn: RUN, delta: 'Tabloya baktım, ' });
+    listener(CONVERSATION, { type: 'thinking', turn: RUN, delta: big });
+    expect(seen).toEqual([
+      { type: 'chat.thinking', conversation: CONVERSATION, turn: RUN, text: 'Tabloya baktım, ' },
+      { type: 'chat.thinking', conversation: CONVERSATION, turn: RUN, text: big },
+    ]);
+  });
+
+  it('U-381: chat.step carries the step id of the call and of its matching result unchanged', async () => {
+    const seen: UiEvent[] = [];
+    const { listener } = await bridge([(event) => {
+      seen.push(event);
+    }]);
+    // A result carries the same id as its call (A-438): the bridge must forward both as they came.
+    listener(CONVERSATION, { type: 'step', turn: RUN, id: 'toolu_01', tool: 'docket_read_file', phase: 'called', target: 'src/api/api.ts' });
+    listener(CONVERSATION, { type: 'step', turn: RUN, id: 'toolu_01', tool: 'docket_read_file', phase: 'done', target: 'src/api/api.ts' });
+    listener(CONVERSATION, { type: 'step', turn: RUN, id: 'toolu_02', tool: 'docket_write_file', phase: 'called', target: 'docs/v2/ui.md' });
+    expect(stepsOf(seen).map((step) => step.id)).toEqual(['toolu_01', 'toolu_01', 'toolu_02']);
+  });
+
+  it('U-381: chat.step carries the phase called, done and failed as the runner reported it', async () => {
+    const seen: UiEvent[] = [];
+    const { listener } = await bridge([(event) => {
+      seen.push(event);
+    }]);
+    listener(CONVERSATION, { type: 'step', turn: RUN, id: 'toolu_11', tool: 'docket_read_file', phase: 'called' });
+    listener(CONVERSATION, { type: 'step', turn: RUN, id: 'toolu_11', tool: 'docket_read_file', phase: 'done' });
+    listener(CONVERSATION, { type: 'step', turn: RUN, id: 'toolu_12', tool: 'docket_write_file', phase: 'called' });
+    listener(CONVERSATION, { type: 'step', turn: RUN, id: 'toolu_12', tool: 'docket_write_file', phase: 'failed' });
+    expect(stepsOf(seen).map((step) => step.phase)).toEqual(['called', 'done', 'called', 'failed']);
+  });
+
+  it('U-381: chat.step carries the tool name, and a step with neither server nor target carries neither key', async () => {
+    const seen: UiEvent[] = [];
+    const { listener } = await bridge([(event) => {
+      seen.push(event);
+    }]);
+    listener(CONVERSATION, { type: 'step', turn: RUN, id: 'toolu_21', tool: 'docket_list_pages', phase: 'called' });
+    const steps = stepsOf(seen);
+    expect(steps.length).toBe(1);
+    expect(steps[0]).toEqual({ type: 'chat.step', conversation: CONVERSATION, turn: RUN, id: 'toolu_21', phase: 'called', tool: 'docket_list_pages' });
+    expect('server' in steps[0]).toBe(false); // the bridge's conditional spread leaves the key itself out
+    expect('target' in steps[0]).toBe(false);
+  });
+
+  it('U-381: chat.step keeps the server name beside the bare tool name', async () => {
+    const seen: UiEvent[] = [];
+    const { listener } = await bridge([(event) => {
+      seen.push(event);
+    }]);
+    listener(CONVERSATION, { type: 'step', turn: RUN, id: 'toolu_22', tool: 'docket_list_pages', server: 'docket', phase: 'called' });
+    const steps = stepsOf(seen);
+    expect(steps.length).toBe(1);
+    expect(steps[0]).toEqual({ type: 'chat.step', conversation: CONVERSATION, turn: RUN, id: 'toolu_22', phase: 'called', tool: 'docket_list_pages', server: 'docket' });
+    expect('target' in steps[0]).toBe(false);
+  });
+
+  it('U-381: chat.step keeps the one-line target of what the tool acts on', async () => {
+    const seen: UiEvent[] = [];
+    const { listener } = await bridge([(event) => {
+      seen.push(event);
+    }]);
+    listener(CONVERSATION, { type: 'step', turn: RUN, id: 'toolu_23', tool: 'docket_read_file', target: 'src/api/api.ts', phase: 'called' });
+    const steps = stepsOf(seen);
+    expect(steps.length).toBe(1);
+    expect(steps[0]).toEqual({ type: 'chat.step', conversation: CONVERSATION, turn: RUN, id: 'toolu_23', phase: 'called', tool: 'docket_read_file', target: 'src/api/api.ts' });
+    expect('server' in steps[0]).toBe(false);
+  });
+
+  it('U-381: every thinking and step event carries its own conversation id and the runner turn id', async () => {
+    const seen: UiEvent[] = [];
+    const { listener } = await bridge([(event) => {
+      seen.push(event);
+    }]);
+    // Interleaved turns: each event must wear the conversation its own bridge stamped, never the other one.
+    listener(CONVERSATION, { type: 'thinking', turn: RUN, delta: 'burada' });
+    listener(CONVERSATION_OTHER, { type: 'thinking', turn: RUN, delta: 'şurada' });
+    listener(CONVERSATION, { type: 'step', turn: RUN, id: 'toolu_31', tool: 'docket_read_file', phase: 'called' });
+    listener(CONVERSATION_OTHER, { type: 'step', turn: RUN, id: 'toolu_32', tool: 'docket_list_pages', phase: 'called' });
+    expect(seen).toEqual([
+      { type: 'chat.thinking', conversation: CONVERSATION, turn: RUN, text: 'burada' },
+      { type: 'chat.thinking', conversation: CONVERSATION_OTHER, turn: RUN, text: 'şurada' },
+      { type: 'chat.step', conversation: CONVERSATION, turn: RUN, id: 'toolu_31', phase: 'called', tool: 'docket_read_file' },
+      { type: 'chat.step', conversation: CONVERSATION_OTHER, turn: RUN, id: 'toolu_32', phase: 'called', tool: 'docket_list_pages' },
+    ]);
+  });
+
+  it('U-381: a listener that throws breaks neither the other listeners nor the bridge (A-441)', async () => {
+    const seen: string[] = [];
+    const { listener } = await bridge([
+      (event) => {
+        if (event.type === 'chat.thinking' || event.type === 'chat.step') throw new Error('bu dinleyici bozuk');
+      },
+      (event) => {
+        if (event.type === 'chat.thinking') seen.push(event.text);
+        if (event.type === 'chat.step') seen.push(`${event.id}:${event.phase}`);
+      },
+    ]);
+    listener(CONVERSATION, { type: 'thinking', turn: RUN, delta: 'bir' });
+    listener(CONVERSATION, { type: 'step', turn: RUN, id: 'toolu_41', tool: 'docket_read_file', phase: 'called' });
+    listener(CONVERSATION, { type: 'thinking', turn: RUN, delta: 'iki' }); // after the throw: the bridge is still whole
+    expect(seen).toEqual(['bir', 'toolu_41:called', 'iki']);
   });
 });
 

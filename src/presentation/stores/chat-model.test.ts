@@ -1,12 +1,23 @@
 // chat-model.test.ts — the chat's pure rules: the place a route gives the panel (U-122), the
 // history's day groups (U-107), the @ trigger (U-109), the attachment verdicts (U-110), the notice
-// mapping (U-106), the undo window (U-112) and the grant countdown (U-113).
+// mapping (U-106), the undo window (U-112), the grant countdown (U-113) and the thinking and
+// tool-step rules of the running message (U-377 … U-383).
 import { describe, expect, it } from 'vitest';
 
 import type { ProjectTree } from '../../api/queries';
+import { EN } from '../labels/en';
+import { TR } from '../labels/tr';
+import type { LabelKey } from '../labels/keys';
 import {
+  appendThinking,
   atQueryOf,
   chatPlaceOf,
+  chatShowsDots,
+  chatShowsFold,
+  chatShowsSteps,
+  chatShowsThinking,
+  CHAT_STEP_ROWS_DRAWN,
+  CHAT_THINKING_MAX_CHARS,
   fileVerdict,
   imageDataUrlOf,
   isPreviewImageFile,
@@ -15,8 +26,14 @@ import {
   minutesLeft,
   noticeOf,
   sameScope,
+  stepNameLabelKey,
+  stepRowsAfter,
   stripAtToken,
   undoOpen,
+  visibleStepRows,
+  type ChatChange,
+  type ChatState,
+  type ChatStepRow,
 } from './chat-model';
 import { action, summary } from './chat-kit';
 
@@ -210,6 +227,151 @@ describe('notices (U-106)', () => {
 
   it('U-106: a code the UI does not know reads as a crash note, never a blank', () => {
     expect(noticeOf('something_new')).toEqual({ kind: 'crash', blocks: false, action: null });
+  });
+});
+
+describe('thinking and tool steps (U-377 … U-383)', () => {
+  const stateOf = (patch: Partial<ChatState> = {}): ChatState => ({
+    open: true,
+    full: false,
+    wide: false,
+    view: 'chat',
+    conversation: 'C1',
+    detail: null,
+    place: { choices: [{ scope: { kind: 'global' }, label: '' }], screen: null },
+    scope: { kind: 'global' },
+    pinned: false,
+    draft: '',
+    refs: [],
+    tray: [],
+    uploading: 0,
+    pending: null,
+    sending: false,
+    turn: 'T1',
+    streamed: '',
+    notice: null,
+    note: null,
+    menu: null,
+    at: { q: '', items: [], index: 0, loading: false },
+    scopePop: false,
+    permOpen: false,
+    permDraft: [],
+    history: { items: [], search: '', loaded: false, failed: false },
+    usage: null,
+    proposals: {},
+    alert: false,
+    now: 0,
+    focusTick: 0,
+    previews: {},
+    previewOrder: [],
+    trayPreviews: {},
+    imageEnlarge: null,
+    imageEnlargeReturn: null,
+    thinking: '',
+    steps: [],
+    stepsOpen: false,
+    ...patch,
+  });
+
+  const stepEvent = (id: string, phase: 'called' | 'done' | 'failed', patch: Partial<Extract<ChatChange, { readonly type: 'chat.step' }>> = {}): Extract<ChatChange, { readonly type: 'chat.step' }> => ({
+    type: 'chat.step',
+    conversation: 'C1',
+    turn: 'T1',
+    id,
+    phase,
+    tool: 'docket_get',
+    ...patch,
+  });
+
+  it('U-377: the area under the running message prefers thinking, then steps, then the dots — one-way per turn', () => {
+    // Nothing yet: the dots of U-104 stand.
+    expect(chatShowsDots(stateOf())).toBe(true);
+    expect(chatShowsThinking(stateOf())).toBe(false);
+    expect(chatShowsSteps(stateOf())).toBe(false);
+    // One step: the rows stand, the dots never return.
+    const stepped = stateOf({ steps: [{ id: 's1', phase: 'called', tool: 'docket_get' }] });
+    expect(chatShowsDots(stepped)).toBe(false);
+    expect(chatShowsSteps(stepped)).toBe(true);
+    expect(chatShowsThinking(stepped)).toBe(false);
+    // A delta alone retires the dots too (U-104).
+    expect(chatShowsDots(stateOf({ streamed: 'Mer' }))).toBe(false);
+    // Thinking wins and is one-way: with any thinking the steps stop drawing for the turn.
+    const thinking = stateOf({ thinking: 'Planı okuyorum.', steps: [{ id: 's1', phase: 'called', tool: 'docket_get' }], streamed: 'Bakt' });
+    expect(chatShowsThinking(thinking)).toBe(true);
+    expect(chatShowsSteps(thinking)).toBe(false);
+    expect(chatShowsDots(thinking)).toBe(false);
+    // After the turn ends the rows fold under the stored message — never live rows, never dots.
+    const folded = stateOf({ turn: null, steps: [{ id: 's1', phase: 'done', tool: 'docket_get' }] });
+    expect(chatShowsSteps(folded)).toBe(false);
+    expect(chatShowsFold(folded)).toBe(true);
+    expect(chatShowsDots(folded)).toBe(false);
+    // A turn that had no steps leaves no disclosure.
+    expect(chatShowsFold(stateOf({ turn: null }))).toBe(false);
+  });
+
+  it('U-378: fragments append in order into one bounded string; a blank fragment never counts', () => {
+    expect(appendThinking('', 'Planı ')).toBe('Planı ');
+    expect(appendThinking('Planı ', 'okuyorum.')).toBe('Planı okuyorum.');
+    // Blank — empty or whitespace — changes nothing, not even the string.
+    expect(appendThinking('Planı ', '  ')).toBe('Planı ');
+    expect(appendThinking('', '\n')).toBe('');
+    // Past the cap the oldest characters drop from the front; the newest stay whole.
+    const long = 'a'.repeat(CHAT_THINKING_MAX_CHARS);
+    expect(appendThinking(long, 'son')).toBe(`${'a'.repeat(CHAT_THINKING_MAX_CHARS - 3)}son`);
+    expect(appendThinking(long, 'son').length).toBe(CHAT_THINKING_MAX_CHARS);
+  });
+
+  it('U-379: rows keep call order, move by id, ignore a result with no row, and cap the drawn rows', () => {
+    let rows: readonly ChatStepRow[] = [];
+    rows = stepRowsAfter(rows, stepEvent('a', 'called', { tool: 'docket_search', target: 'docs/a.md' }));
+    rows = stepRowsAfter(rows, stepEvent('b', 'called', { tool: 'docket_get', server: 'docket-pages' }));
+    // A result with an id no call announced changes nothing.
+    expect(stepRowsAfter(rows, stepEvent('yok', 'done'))).toEqual(rows);
+    expect(stepRowsAfter(rows, stepEvent('yok', 'failed'))).toEqual(rows);
+    // Interleaved results move their own row by id, in place; arrival order stands and each row
+    // keeps the identity its call announced.
+    rows = stepRowsAfter(rows, stepEvent('b', 'done'));
+    rows = stepRowsAfter(rows, stepEvent('a', 'failed'));
+    expect(rows).toEqual([
+      { id: 'a', phase: 'failed', tool: 'docket_search', target: 'docs/a.md' },
+      { id: 'b', phase: 'done', tool: 'docket_get', server: 'docket-pages' },
+    ]);
+    // The feed draws the newest rows and counts the older ones for the more-line.
+    const many: readonly ChatStepRow[] = Array.from({ length: 60 }, (_, n) => ({ id: `s${n}`, phase: 'called' as const, tool: 'docket_get' }));
+    const drawn = visibleStepRows(many);
+    expect(drawn.rows).toHaveLength(CHAT_STEP_ROWS_DRAWN);
+    expect(drawn.hidden).toBe(10);
+    expect(drawn.rows[0]?.id).toBe('s10');
+    expect(drawn.rows.at(-1)?.id).toBe('s59');
+    expect(visibleStepRows(many.slice(0, 50))).toEqual({ rows: many.slice(0, 50), hidden: 0 });
+  });
+
+  it('U-382: a row carries only the fields the event names — never a tool arguments or result field', () => {
+    const rows = stepRowsAfter([], stepEvent('a', 'called', { target: 'docs/plan.md' }));
+    expect(rows).toEqual([{ id: 'a', phase: 'called', tool: 'docket_get', target: 'docs/plan.md' }]);
+    // A carried name draws as itself; the placeholder key draws as its label, never the raw key.
+    expect(stepNameLabelKey('docket_get')).toBeNull();
+    expect(stepNameLabelKey('chat.step.name_placeholder')).toBe('chat.step.name_placeholder');
+  });
+
+  it('U-383: the chat-steps pack holds every sentence, at eight words or fewer, in both locales', () => {
+    const pack: readonly LabelKey[] = [
+      'chat.thinking.heading',
+      'chat.step.called',
+      'chat.step.done',
+      'chat.step.failed',
+      'chat.step.fold',
+      'chat.step.more',
+      'chat.step.fold.aria',
+      'chat.step.name_placeholder',
+    ];
+    const wordsOf = (sentence: string): number => sentence.trim().split(/\s+/).filter((word) => word !== '').length;
+    for (const key of pack) {
+      expect(TR[key], `tr:${key}`).toBeTypeOf('string');
+      expect(EN[key], `en:${key}`).toBeTypeOf('string');
+      expect(wordsOf(TR[key]), `tr:${key} ≤ 8 words`).toBeLessThanOrEqual(8);
+      expect(wordsOf(EN[key]), `en:${key} ≤ 8 words`).toBeLessThanOrEqual(8);
+    }
   });
 });
 

@@ -32,7 +32,7 @@ const MONO_FILES: readonly MonoEntry[] = [
   { file: './components/account-test.tsx', lines: 1, why: 'the CLI test run output (pre)' },
   { file: './components/builtin-mcp-row.tsx', lines: 2, why: 'the MCP server tool-name lists (run · / chat ·)' },
   { file: './components/capability-section.tsx', lines: 7, why: 'source paths, commands and plugin source paths of every capability' },
-  { file: './components/chat-feed.tsx', lines: 3, why: 'tool-result table cells, the card type id (repo/target), raw tool output' },
+  { file: './components/chat-feed.tsx', lines: 4, why: 'tool-result table cells, the card type id (repo/target), raw tool output, the step row\'s tool/server/target line' },
   { file: './components/chat-image-enlarge-dialog.tsx', lines: 1, why: 'the enlarged image file name' },
   { file: './components/chat-style.tsx', lines: 3, why: 'source/reference chips and the thumb: file names, sent refs, work-order codes' },
   { file: './components/connectors-section.tsx', lines: 2, why: 'connector version, the connector CLI error text' },
