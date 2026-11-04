@@ -712,7 +712,7 @@ button:not(:disabled), summary, [role='tab'] { cursor: pointer; }
 
   function render() {
     var stage = $('#stage');
-    stage.innerHTML = app.state === 'setup' ? setupStageHtml() : openStageHtml();
+    stage.replaceChildren.apply(stage, new DOMParser().parseFromString(app.state === 'setup' ? setupStageHtml() : openStageHtml(), 'text/html').body.childNodes);
     if (app.state === 'open') $$('.fr', stage).forEach(function (fr) { syncFrame(fr); });
     $$('#mainTabs [role="tab"]').forEach(function (t) {
       var sel = t.dataset.value === app.state;
