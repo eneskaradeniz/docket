@@ -410,6 +410,10 @@ button:not(:disabled), summary, [role='tab'] { cursor: pointer; }
   /* ---------- helpers ---------- */
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+  /* escape text taken from the DOM (dataset values) before it is concatenated into an HTML string */
+  function esc(t) {
+    return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
 
   var ICONS = {
     home: '<path d="M2.5 7.5 8 3l5.5 4.5M4 6.5V13h3V9.5h2V13h3V6.5"/>',
@@ -610,10 +614,10 @@ button:not(:disabled), summary, [role='tab'] { cursor: pointer; }
   }
   function frameHtml(v, withHead) {
     var info = VARIANTS[v];
-    return '<div class="fr" data-variant="' + v + '">' +
-      (withHead ? '<div class="fr-head"><h2>' + info.name + '</h2><span class="mono" data-measure></span></div>' : '<div class="fr-head"><span class="mono" data-measure></span></div>') +
+    return '<div class="fr" data-variant="' + esc(v) + '">' +
+      (withHead ? '<div class="fr-head"><h2>' + esc(info.name) + '</h2><span class="mono" data-measure></span></div>' : '<div class="fr-head"><span class="mono" data-measure></span></div>') +
       '<div class="win">' + topbar() +
-      '<div class="win-body" data-mode="' + v + '" data-chat="open" data-page="on">' +
+      '<div class="win-body" data-mode="' + esc(v) + '" data-chat="open" data-page="on">' +
       sidebar({ newProject: false }) + '<main class="main" aria-label="Ana panel"></main>' +
       chatPanelHtml() + fabHtml() + '</div></div>' +
       '<ul class="trade">' + info.trade.map(function (t) { return '<li><b>' + t[0] + '</b><span>' + t[1] + '</span></li>'; }).join('') + '</ul></div>';
@@ -690,7 +694,7 @@ button:not(:disabled), summary, [role='tab'] { cursor: pointer; }
     var tabs = '<div class="tabs" role="tablist" aria-label="Aç biçimi">' +
       VARIANT_ORDER.concat(['all']).map(function (v) {
         var sel = v === app.variant;
-        return '<button type="button" role="tab" data-group="variant" data-value="' + v + '" aria-selected="' + sel + '" aria-controls="stage" tabindex="' + (sel ? 0 : -1) + '">' + (v === 'all' ? 'Hepsi alt alta' : VARIANTS[v].tabs) + '</button>';
+        return '<button type="button" role="tab" data-group="variant" data-value="' + esc(v) + '" aria-selected="' + sel + '" aria-controls="stage" tabindex="' + (sel ? 0 : -1) + '">' + (v === 'all' ? 'Hepsi alt alta' : VARIANTS[v].tabs) + '</button>';
       }).join('') + '</div>';
     return '<div class="bar">' + tabs + '</div>' +
       '<p class="cap">Aynı an: sohbette kurulum özetinin kartında Aç\u2019a basıldı. Sayfadan geri dönünce sohbet ilk haline gelir.</p>' +
@@ -700,11 +704,11 @@ button:not(:disabled), summary, [role='tab'] { cursor: pointer; }
   function setupStageHtml() {
     var tabs = '<div class="tabs" role="tablist" aria-label="Kurulum anı">' + SUBS.map(function (s) {
       var sel = s[0] === app.sub;
-      return '<button type="button" role="tab" data-group="sub" data-value="' + s[0] + '" aria-selected="' + sel + '" aria-controls="stage" tabindex="' + (sel ? 0 : -1) + '">' + s[1] + '</button>';
+      return '<button type="button" role="tab" data-group="sub" data-value="' + esc(s[0]) + '" aria-selected="' + sel + '" aria-controls="stage" tabindex="' + (sel ? 0 : -1) + '">' + s[1] + '</button>';
     }).join('') + '</div>';
     var ctl = app.sub === 'running'
       ? '<span class="grow"></span><button type="button" class="btn" data-act="next-step">Sonraki adım</button>' : '';
-    return '<div class="bar">' + tabs + ctl + '</div><p class="cap">' + SUB_CAP[app.sub] + '</p>' +
+    return '<div class="bar">' + tabs + ctl + '</div><p class="cap">' + esc(SUB_CAP[app.sub]) + '</p>' +
       '<div class="fr"><div class="win">' + topbar() + '<div class="win-body" data-mode="setup" data-chat="closed" data-page="off">' +
       sidebar({ newProject: true }) + '<main class="main is-setup" aria-label="Ana panel">' + setupMainHtml() + '</main></div></div></div>' +
       '<ul class="notes">' + SETUP_NOTES.map(function (n) { return '<li>' + n + '</li>'; }).join('') + '</ul>';
@@ -712,7 +716,7 @@ button:not(:disabled), summary, [role='tab'] { cursor: pointer; }
 
   function render() {
     var stage = $('#stage');
-    stage.replaceChildren.apply(stage, new DOMParser().parseFromString(app.state === 'setup' ? setupStageHtml() : openStageHtml(), 'text/html').body.childNodes);
+    stage.innerHTML = app.state === 'setup' ? setupStageHtml() : openStageHtml();
     if (app.state === 'open') $$('.fr', stage).forEach(function (fr) { syncFrame(fr); });
     $$('#mainTabs [role="tab"]').forEach(function (t) {
       var sel = t.dataset.value === app.state;
