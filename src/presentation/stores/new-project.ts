@@ -341,6 +341,11 @@ export const connectedProviderOf = (view: unknown): boolean => {
   return Array.isArray(accounts) && accounts.length > 0;
 };
 
+/** A start refusal in the surface's own words (U-387): the entry's own no-provider and MCP lines,
+ *  the chat vocabulary for the rest. */
+export const setupAiFailureKey = (code: string): LabelKey =>
+  code === 'no_provider' ? 'setup.ai.noProvider' : code === 'mcp_down' ? 'setup.ai.mcpDown' : chatFailureKey(code);
+
 /** The Docket MCP standing the AI entry rides (U-315): true only on a running view; null on a
  *  failed read, which keeps whatever the panel held — a broken read never blocks the entry. */
 export const mcpRunningOf = (view: unknown): boolean | null => {

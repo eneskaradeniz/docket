@@ -42,6 +42,10 @@ export interface NewProjectPanelProps {
   /** Where a thread page card's "Aç" opens the page; absent, the card still draws and the open
    *  action waits for the host that owns the viewer. */
   readonly onOpenPage?: (id: string) => void;
+  /** The AI path's new door (U-385): the entry card and the resume card open the setup screen,
+   *  and the host closes the panel first. Absent, the panel keeps its own thread (the add-repo
+   *  chooser's path). */
+  readonly onOpenSetupAi?: () => void;
 }
 
 const LABEL_CLASS = 'text-[0.8125rem] leading-[1.25rem] font-semibold text-ink';
@@ -103,7 +107,7 @@ const CloseIcon = () => (
   </svg>
 );
 
-export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, onOpenAccounts, onOpenMcp, onOpenPage }: NewProjectPanelProps) {
+export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, onOpenAccounts, onOpenMcp, onOpenPage, onOpenSetupAi }: NewProjectPanelProps) {
   const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   const threadFocusRef = useRef<HTMLDivElement>(null);
   const {
@@ -240,7 +244,15 @@ export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, 
         <button
           type="button"
           data-card="resume"
-          onClick={() => store.resumeDraft()}
+          /* A standing setup draft resumes on the setup screen (U-385); a half-filled form
+             resumes in the panel as before. */
+          onClick={() => {
+            if (state.resumable !== null && onOpenSetupAi !== undefined) {
+              onOpenSetupAi();
+              return;
+            }
+            store.resumeDraft();
+          }}
           className="grid min-h-[4.5rem] w-full gap-1 rounded-card border border-bord bg-raised px-3.5 py-3 text-left"
         >
           <b className="text-[0.875rem] font-semibold text-ink">{t(locale, 'setup.resume.title')}</b>
@@ -257,7 +269,15 @@ export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, 
               disabled={aiDisabled}
               aria-disabled={aiDisabled ? 'true' : undefined}
               data-card={card.path}
-              onClick={() => store.pickPath(card.path)}
+              /* The AI path opens the setup conversation's screen and the panel steps aside
+                 first (U-385, U-181); without the door the panel keeps its own thread. */
+              onClick={() => {
+                if (card.path === 'docket_ai' && onOpenSetupAi !== undefined) {
+                  onOpenSetupAi();
+                  return;
+                }
+                store.pickPath(card.path);
+              }}
               className={`flex min-h-[4.5rem] w-full flex-col items-start gap-0.5 rounded-card border bg-surface px-3.5 py-3 text-left ${tone}`}
             >
               <b className="text-[0.875rem] font-semibold text-ink">{t(locale, card.title)}</b>
@@ -441,7 +461,7 @@ export function NewProjectPanel({ open, origin, store, locale, onClose, onDone, 
         onClose={onClose}
       >
         <div data-new-project="" className="grid w-full gap-4">
-          <HomeLaunchers onLaunch={onClose} />
+          <HomeLaunchers onSetup={onOpenSetupAi ?? onClose} />
           {screen === 'choose' ? methodChooser : null}
           {screen === 'form' ? pathForm : null}
           {screen === 'ai' ? aiThread : null}

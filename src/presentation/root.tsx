@@ -41,6 +41,7 @@ import { QuitDialog } from './components/quit-dialog';
 import { createProjectBundleStore, type ProjectBundleStore } from './stores/project-bundle';
 import { ProjectBundleDialog } from './components/project-bundle-dialog';
 import { createNewProjectStore } from './stores/new-project';
+import { createSetupChatStore } from './stores/setup-chat';
 import { createWizardStore } from './stores/wizard';
 import { createPageListStore, createPageViewHost, createPageViewerStore, type PageViewPort } from './stores/page-viewer';
 import { createWorkOrderDetailStore } from './stores/work-order-detail';
@@ -207,6 +208,9 @@ if (mount !== null) {
     reloadTree: () => tree.load(),
     pickFolders: (options) => bridge().pickFolders(options),
   });
+  // The setup conversation's own screen (U-385): a sibling of the dock's chat store, its own
+  // conversation and events on the same push channel, reloading the tree like the panel does.
+  const setupChat = createSetupChatStore({ api, actor: USER, changes, reloadTree: () => tree.load() });
   const accountsFrame = createAccountsFrameStore({ api, changes });
   // The provider marks every account badge reads: one query, kept for the session (A-41).
   const marks = createProviderMarksStore({ api });
@@ -252,6 +256,7 @@ if (mount !== null) {
           update={update}
           wizard={wizard}
           newProject={newProject}
+          setupChat={setupChat}
           timeZone={timeZone}
         />
       </ErrorBoundary>

@@ -30,13 +30,13 @@ const launchers = (html: string): string[] => [...html.matchAll(/data-launch="([
 
 describe('without a chat store a launcher is hidden', () => {
   it('U-126: outside the launcher context nothing is drawn', () => {
-    expect(renderToStaticMarkup(createElement(HomeLaunchers))).toBe('');
+    expect(renderToStaticMarkup(createElement(HomeLaunchers, { onSetup: () => undefined }))).toBe('');
   });
 });
 
 describe('home and the new-project screen (U-129)', () => {
   it('U-129: home offers "Docket AI ile birlikte kur" with the global scope', () => {
-    const html = draw(createElement(HomeLaunchers));
+    const html = draw(createElement(HomeLaunchers, { onSetup: () => undefined }));
     expect(html).toContain('Docket AI ile birlikte kur');
     expect(launchers(html)).toStrictEqual(['together']);
     expect(html).toContain('data-launch-scope="global"');
@@ -50,11 +50,11 @@ describe('home and the new-project screen (U-129)', () => {
   });
 
   it('U-129: the English locale draws the English label', () => {
-    expect(draw(createElement(HomeLaunchers), 'en')).toContain(EN['launch.together']);
+    expect(draw(createElement(HomeLaunchers, { onSetup: () => undefined }), 'en')).toContain(EN['launch.together']);
   });
 
   it('U-129: the launcher is a button with an icon the readers skip, never a link', () => {
-    const html = draw(createElement(HomeLaunchers));
+    const html = draw(createElement(HomeLaunchers, { onSetup: () => undefined }));
     expect(html).toContain('<button type="button"');
     expect(html).toContain('aria-hidden="true"');
     expect(html).not.toContain('<a ');

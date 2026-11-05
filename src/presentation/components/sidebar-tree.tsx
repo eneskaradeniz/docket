@@ -32,6 +32,11 @@ export interface SidebarTreeProps {
   /** The header's "+": the Yeni proje page (U-40). */
   readonly onNewProject: () => void;
   readonly projectBundle?: ProjectBundleStore;
+  /** The setup conversation's standing row (U-385): shown while a setup conversation stands, lit
+   *  with the running lamp while a turn runs; the row shows the setup screen again. */
+  readonly setupRow?: { readonly shown: boolean; readonly running: boolean; readonly active: boolean } | null;
+  /** The setup row's target: the setup screen (U-385). */
+  readonly onOpenSetup?: () => void;
 }
 
 const DOT_CLASS: Readonly<Record<RepoNode['status'], string>> = {
@@ -172,7 +177,7 @@ const TreeRowSkeleton = () => (
   </div>
 );
 
-export function SidebarTree({ store, selection, locale, onOpenProject, onOpenRepo, onNewProject, projectBundle }: SidebarTreeProps) {
+export function SidebarTree({ store, selection, locale, onOpenProject, onOpenRepo, onNewProject, projectBundle, setupRow, onOpenSetup }: SidebarTreeProps) {
   const state = useSyncExternalStore(store.subscribe, store.state, store.state);
   const rows = projectRows(orderTree(state.tree, state.sort, state.usedAt));
   // Only a tree with nothing to show can carry a skeleton (U-26); a re-query over the standing
@@ -212,6 +217,20 @@ export function SidebarTree({ store, selection, locale, onOpenProject, onOpenRep
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto" aria-busy={skeleton ? 'true' : undefined}>
+        {setupRow?.shown ? (
+          /* The setup conversation's own row (U-385): the same row grammar as the project rows,
+             with the running lamp while a setup turn runs. */
+          <button
+            type="button"
+            data-setup-tree-row="new-project"
+            aria-current={setupRow.active ? 'true' : undefined}
+            onClick={onOpenSetup}
+            className={`flex h-8 min-w-0 items-center gap-2 rounded-control px-2.5 text-left text-[13.5px] text-ink hover:bg-raised ${setupRow.active ? ACTIVE_CLASS : ''}`}
+          >
+            <span aria-hidden="true" className={dot(setupRow.running ? 'running' : 'idle')} />
+            <span className="min-w-0 flex-1 truncate">{t(locale, 'setup.chat.row')}</span>
+          </button>
+        ) : null}
         {skeleton ? (
           <div data-skeleton="" className="grid py-1">
             <SkeletonStyle />

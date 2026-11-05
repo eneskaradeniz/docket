@@ -622,7 +622,11 @@ export interface ChatState {
   readonly imageEnlargeReturn: string | null;
 }
 
-export const chatBusy = (state: ChatState): boolean => state.turn !== null || state.sending;
+/** The live-turn slice the shared selectors read: the dock's own state satisfies it, and so does
+ *  the setup chat store's state (U-377's order is one rule for both surfaces). */
+export type ChatTurnLive = Pick<ChatState, 'turn' | 'sending' | 'streamed' | 'thinking' | 'steps'>;
+
+export const chatBusy = (state: ChatTurnLive): boolean => state.turn !== null || state.sending;
 
 /** The history rail stands exactly in the full mode on a wide enough viewport (U-195). */
 export const chatRailVisible = (state: ChatState): boolean => state.full && state.wide;
@@ -632,19 +636,20 @@ export const chatRailVisible = (state: ChatState): boolean => state.full && stat
 export const chatDocked = (state: ChatState): boolean => state.docked && state.open;
 
 /** Dots show from the send until the first thinking, step or delta (U-104 as U-377 amends it). */
-export const chatShowsDots = (state: ChatState): boolean =>
+export const chatShowsDots = (state: ChatTurnLive): boolean =>
   chatBusy(state) && state.streamed === '' && state.thinking === '' && state.steps.length === 0;
 
 /** The turn's thinking stands under the running message (U-377): once any arrived, it wins. */
-export const chatShowsThinking = (state: ChatState): boolean => state.thinking !== '';
+export const chatShowsThinking = (state: ChatTurnLive): boolean => state.thinking !== '';
 
 /** The live step rows stand under the running message (U-377) — only while no thinking was shown. */
-export const chatShowsSteps = (state: ChatState): boolean => chatBusy(state) && state.thinking === '' && state.steps.length > 0;
+export const chatShowsSteps = (state: ChatTurnLive): boolean => chatBusy(state) && state.thinking === '' && state.steps.length > 0;
 
 /** The finished turn's rows fold under the stored message (U-380); no steps leaves no fold. */
-export const chatShowsFold = (state: ChatState): boolean => !chatBusy(state) && state.steps.length > 0;
+export const chatShowsFold = (state: ChatTurnLive): boolean => !chatBusy(state) && state.steps.length > 0;
 
-export const chatInputBlocked = (state: ChatState): boolean => state.notice !== null && noticeOf(state.notice).blocks;
+/** A runner notice blocks the composer while its kind says so (U-113). */
+export const chatInputBlocked = (state: Pick<ChatState, 'notice'>): boolean => state.notice !== null && noticeOf(state.notice).blocks;
 
 /** The grant that is live now, or null. */
 export const chatActiveGrant = (state: ChatState): ChatGrantView | null =>

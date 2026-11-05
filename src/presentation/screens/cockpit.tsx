@@ -49,6 +49,8 @@ export interface CockpitScreenProps {
   /** The start card's two buttons: both open the Yeni proje page (U-40). */
   readonly onNewProject: () => void;
   readonly onAttachProject?: () => void;
+  /** The home launcher's door (U-385): the setup conversation's screen. */
+  readonly onSetupAi: () => void;
   /** The sidebar frame's account cards — the running rows' account names join onto them by id. */
   readonly accounts: readonly AccountCard[] | null;
 }
@@ -83,7 +85,7 @@ function FoldButton({ label, onClick }: { readonly label: string; readonly onCli
   );
 }
 
-export function CockpitScreen({ store, marks, locale, onOpenWorkOrder, onOpenProject, onOpenBoard, onNewProject, onAttachProject, accounts }: CockpitScreenProps) {
+export function CockpitScreen({ store, marks, locale, onOpenWorkOrder, onOpenProject, onOpenBoard, onNewProject, onAttachProject, onSetupAi, accounts }: CockpitScreenProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
   // The marks land once, after the first paint; the subscription turns them into a re-render.
   useSyncExternalStore(marks.subscribe, marks.state);
@@ -154,7 +156,7 @@ export function CockpitScreen({ store, marks, locale, onOpenWorkOrder, onOpenPro
         ) : null}
       </header>
 
-      <HomeLaunchers />
+      <HomeLaunchers onSetup={onSetupAi} />
 
       {state.failed ? <CockpitAlert locale={locale} detail={staleDetail} onRetry={() => void store.retry()} /> : null}
 

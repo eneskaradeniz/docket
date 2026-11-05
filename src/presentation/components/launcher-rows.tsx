@@ -1,23 +1,31 @@
 // components/launcher-rows.tsx — one small row per host screen (the table of the launchers): which
 // launcher the host shows, in which scope, with which bundle text. A host adds one element and a
 // condition it already knows; a row whose condition is false draws nothing (hidden, never
-// disabled), and so does a row outside the launcher context.
+// disabled), and so does a row outside the launcher context. The home row is no longer a chat
+// launcher: it opens the setup conversation's own screen (U-385).
 import { useContext } from 'react';
 
 import type { ChatScopeInput } from '../../api/commands';
 import type { LabelKey } from '../labels/keys';
 import { settingsLaunchSections, workOrderLaunchOf } from '../stores/chat-launcher';
 import type { SettingsSection } from '../stores/settings-panel';
-import { ChatLauncher, ChatLauncherContext, LauncherRow } from './chat-launcher';
+import { ChatLauncher, ChatLauncherContext, LauncherRow, LAUNCHER_PILL } from './chat-launcher';
+import { ChatIcon } from './chat-icons';
+import { t } from '../labels/t';
 
 const GLOBAL: ChatScopeInput = { kind: 'global' };
 
-/** Home and the new-project panel; `onLaunch` lets the panel step aside before the chat opens. */
-export function HomeLaunchers({ onLaunch }: { readonly onLaunch?: () => void }) {
-  if (useContext(ChatLauncherContext) === null) return null;
+/** Home and the new-project panel: the pill keeps its hook and its word, but it opens the setup
+ *  conversation's screen (U-385) — the conversation is the main panel's content, not the dock's. */
+export function HomeLaunchers({ onSetup }: { readonly onSetup: () => void }) {
+  const env = useContext(ChatLauncherContext);
+  if (env === null) return null;
   return (
     <LauncherRow className="mt-3">
-      <ChatLauncher id="together" labelKey="launch.together" prefillKey="launch.prefill.together" scope={GLOBAL} onLaunch={onLaunch} />
+      <button type="button" data-launch="together" data-launch-scope="global" className={LAUNCHER_PILL} onClick={onSetup}>
+        <ChatIcon name="spark" className="h-4 w-4 flex-none" />
+        {t(env.locale, 'launch.together')}
+      </button>
     </LauncherRow>
   );
 }

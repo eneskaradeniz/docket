@@ -1682,26 +1682,27 @@ for (const [sizeName, theme] of combos) {
     const slug = label.toLowerCase().replace(/[^a-z0-9ğüşıöç]+/g, '-').replace(/^-|-$/g, '');
     await page.screenshot({ path: join(OUT, `J-16-${stepNo}-${slug}.png`) });
   };
-  const title = 'J-16: Docket AI başlatıcıları: Anasayfa (genel), yol haritası (proje), yarım taslak korunur, iş emrinde koşula bağlı';
+  const title = 'J-16: Docket AI başlatıcıları: Anasayfa kurulum ekranı, yol haritası (proje), yarım taslak korunur, iş emrinde koşula bağlı';
   total += 1;
   try {
-    // Home: the global launcher opens the panel with its starter text, nothing sent, caret at the end.
+    // Home: the launcher opens the setup conversation's own screen (U-385), not the chat panel.
     await launcher('together').waitFor({ state: 'visible', timeout: SCAN_WAIT });
     assert.equal(((await launcher('together').textContent()) ?? '').trim(), 'Docket AI ile birlikte kur');
     await launcher('together').click({ timeout: WAIT });
-    await panelIs(true);
-    await chipSays('Tüm projeler');
-    await composerHolds('Yeni bir proje kurmak istiyorum, birlikte yapalım.');
-    await nothingSent();
-    await shot('anasayfa');
-
-    // An unsent draft is never overwritten: the launcher keeps the operator's own words.
-    await text.fill('yarım kalan mesaj', { timeout: WAIT });
-    await launcher('together').click({ timeout: WAIT });
-    await composerHolds('yarım kalan mesaj');
-    await text.fill('', { timeout: WAIT });
-    await page.keyboard.press('Escape');
-    await panelIs(false);
+    await page.waitForSelector('[data-setup-screen]', { timeout: WAIT });
+    await page.getByText('Hangi klasörü kuralım?', { exact: true }).waitFor({ state: 'visible', timeout: WAIT });
+    await page.getByText('Başka yoldan ekle', { exact: true }).waitFor({ state: 'visible', timeout: WAIT });
+    // While the setup screen stands the dock with its round button hides and ⌘J opens nothing.
+    await page.waitForFunction(() => document.querySelector('[data-chat-root]')?.hasAttribute('hidden') === true, undefined, { timeout: WAIT });
+    await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', metaKey: true, bubbles: true })));
+    await page.waitForFunction(() => document.querySelector('[data-chat-panel]')?.hasAttribute('inert') === true, undefined, { timeout: WAIT });
+    await shot('anasayfa-kurulum-ekrani');
+    // A navigation leaves the screen; the chat panel works again (the setup conversation has its
+    // own journey, J-23).
+    await page.getByRole('button', { name: 'Anasayfa', exact: true }).first().click({ timeout: WAIT });
+    await page.locator('[data-setup-screen]').waitFor({ state: 'detached', timeout: WAIT });
+    await page.waitForFunction(() => document.querySelector('[data-chat-root]')?.hasAttribute('hidden') !== true, undefined, { timeout: WAIT });
+    await shot('anasayfa-geri');
 
     // The project's roadmap: the project launcher, and the scope chip shows the project.
     await page.locator('nav').getByText(seed.project, { exact: false }).first().click({ timeout: WAIT });
@@ -1715,6 +1716,14 @@ for (const [sizeName, theme] of combos) {
     await composerHolds('Bu proje için bir yol haritası taslağı hazırla.');
     await nothingSent();
     await shot('yol-haritasi');
+
+    // An unsent draft is never overwritten: the launcher keeps the operator's own words.
+    await text.fill('yarım kalan mesaj', { timeout: WAIT });
+    await page.keyboard.press('Escape');
+    await panelIs(false);
+    await launcher('plan').click({ timeout: WAIT });
+    await panelIs(true);
+    await composerHolds('yarım kalan mesaj');
     await text.fill('', { timeout: WAIT });
     await page.keyboard.press('Escape');
     await panelIs(false);
@@ -2403,6 +2412,78 @@ for (const [sizeName, theme] of combos) {
     console.log(`  FAIL ${title}\n       ${String(error).slice(0, 600)}`);
     appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).slice(0, 600) });
     await page.screenshot({ path: join(OUT, 'J-22-FAIL.png') }).catch(() => undefined);
+  }
+  await handle.app.close();
+}
+
+// J-23 walks the setup conversation's own screen (U-385 … U-389) on the chat world J-15 uses: the
+// home launcher opens the screen, the empty start stands with its one primary disabled on a blank
+// field, a start without a connected provider is refused in place (U-387's refusal sentence —
+// this world holds no model, so the running and finished turns stay the store's own tests, never
+// this journey's), and each "Başka yoldan ekle" pill opens today's Proje ekle panel on its own
+// path. Hermetic like J-15: no account, no keychain, no agent run, nothing can spend.
+{
+  const handle = await launchChatApp();
+  const { page, errors } = handle;
+  const fab = page.locator('[data-chat-fab]');
+  const start = page.locator('[data-setup-start-button]');
+  let stepNo = 0;
+  const steps = [];
+  const shot = async (label) => {
+    stepNo += 1;
+    steps.push(label);
+    const slug = label.toLowerCase().replace(/[^a-z0-9ğüşıöç]+/g, '-').replace(/^-|-$/g, '');
+    await page.screenshot({ path: join(OUT, `J-23-${stepNo}-${slug}.png`) });
+  };
+  const title = 'J-23: Kurulum sohbeti: başlatıcı boş başlangıcı açar, tek birincil boş alanda pasif, red cümlesi yerinde, Başka yoldan ekle yolları';
+  total += 1;
+  try {
+    await page.locator('[data-launch="together"]').click({ timeout: WAIT });
+    await page.waitForSelector('[data-setup-screen]', { timeout: WAIT });
+    await page.getByRole('heading', { name: 'Proje ekle' }).waitFor({ state: 'visible', timeout: WAIT });
+    await page.getByText('Docket AI ile kur', { exact: true }).waitFor({ state: 'visible', timeout: WAIT });
+    await page.getByRole('heading', { name: 'Hangi klasörü kuralım?' }).waitFor({ state: 'visible', timeout: WAIT });
+    await page.getByText('Klasörü salt-okunur tarar ve kurulum önerisi hazırlar.', { exact: true }).waitFor({ state: 'visible', timeout: WAIT });
+    await page.getByText('Başka yoldan ekle', { exact: true }).waitFor({ state: 'visible', timeout: WAIT });
+    for (const pill of ['Hızlı', 'Ayrıntılı', 'Var olan klasör']) {
+      await page.getByRole('button', { name: pill, exact: true }).waitFor({ state: 'visible', timeout: WAIT });
+    }
+    // The start button is the screen's only primary and stands disabled on the blank field (U-386).
+    assert.equal(await start.isDisabled(), true, 'the start button must be disabled on a blank field');
+    // The sidebar's "Yeni proje" row stands while the screen does (U-385).
+    await page.locator('[data-setup-tree-row="new-project"]').waitFor({ state: 'visible', timeout: WAIT });
+    await shot('bos-baslangic');
+
+    // A typed path enables the start; with no provider connected the start is refused in place.
+    await page.locator('[data-setup-folder]').fill('/projeler/yeni', { timeout: WAIT });
+    assert.equal(await start.isDisabled(), false, 'a typed path must enable the start button');
+    await start.click({ timeout: WAIT });
+    await page.getByText('Bağlı sağlayıcı yok.', { exact: true }).waitFor({ state: 'visible', timeout: WAIT });
+    await page.getByRole('heading', { name: 'Hangi klasörü kuralım?' }).waitFor({ state: 'visible', timeout: WAIT });
+    await shot('red-cevabi');
+
+    // Each pill opens today's Proje ekle panel on its own path; the screen stands under it.
+    await page.locator('[data-setup-pill="quick"]').click({ timeout: WAIT });
+    await page.waitForSelector('[data-new-project-panel]', { timeout: WAIT });
+    await shot('panel-hizli');
+    await page.keyboard.press('Escape');
+    await page.locator('[data-new-project-panel]').waitFor({ state: 'detached', timeout: WAIT });
+    await page.waitForSelector('[data-setup-screen]', { timeout: WAIT });
+
+    // A navigation leaves the screen and the chat dock returns (U-385).
+    await page.getByRole('button', { name: 'Anasayfa', exact: true }).first().click({ timeout: WAIT });
+    await page.locator('[data-setup-screen]').waitFor({ state: 'detached', timeout: WAIT });
+    await fab.waitFor({ state: 'visible', timeout: WAIT });
+    await shot('geri-anasayfa');
+
+    assert.deepEqual(errors, [], `the page reported errors: ${errors.join(' | ').slice(0, 600)}`);
+    console.log(`  ok   ${title}`);
+    appendJourney({ id: title, status: 'ok', steps });
+  } catch (error) {
+    failures.push(title);
+    console.log(`  FAIL ${title}\n       ${String(error).slice(0, 600)}`);
+    appendJourney({ id: title, status: 'FAIL', steps, detail: String(error).slice(0, 600) });
+    await page.screenshot({ path: join(OUT, 'J-23-FAIL.png') }).catch(() => undefined);
   }
   await handle.app.close();
 }

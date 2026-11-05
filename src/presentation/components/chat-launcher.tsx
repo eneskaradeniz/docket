@@ -21,6 +21,10 @@ export const ChatLauncherContext = createContext<ChatLauncherEnv | null>(null);
 
 const PILL = `inline-flex h-8 items-center gap-2 rounded-full border border-bord bg-raised px-4 text-[0.8125rem] font-semibold leading-4 text-ink hover:bg-hairline motion-safe:transition-colors motion-reduce:transition-none ${FOCUS}`;
 
+/** The launcher pill's own look, shared with the rows that open something other than the chat
+ *  panel (the setup conversation's screen, U-385). */
+export const LAUNCHER_PILL = PILL;
+
 export interface ChatLauncherProps {
   /** The hook the layout audit and the journeys find the launcher by. */
   readonly id: string;

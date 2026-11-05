@@ -87,6 +87,9 @@ const ALLOWED: Readonly<Record<string, number>> = {
   './components/settings-cards.tsx': 2,
   './components/toast-host.tsx': 3,
   './components/chat-composer.tsx': 2,
+  // The setup screen's note rows: the refused-command note and the runner notice, both problems
+  // the operator must answer (U-387's refusal, U-113's notices).
+  './screens/setup-chat.tsx': 2,
   './components/detail-run-card.tsx': 1,
   './components/detail-work-order-usage.tsx': 4,
   './components/provider-list.tsx': 1,
