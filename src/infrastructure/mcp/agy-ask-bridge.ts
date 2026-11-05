@@ -1,10 +1,10 @@
 // mcp/agy-ask-bridge.ts — the app side of the agy permission channel (P-63, I-109): the ask child
-// of I-108 writes `agy_permission_ask` over mcp.sock, the handler wrap resolves its token to a run
-// here, and the registered waiter — the stream-json transport of that run — turns the ask into a
-// `permission_ask` on the run's stream. The bridge decides nothing: only the waiter's answer, which
-// the executor's existing permission path produces, settles an ask; every other outcome is a deny.
+// of I-108 writes `agy_permission_ask` over mcp.sock, the handler wrap resolves its token here, and
+// the registered waiter — the stream-json transport of that run or chat turn — produces the answer
+// the holder of the key decides. The bridge decides nothing: every outcome but the holder's own is
+// a deny.
 import type { DocketToolRequest, DocketToolResponse, RunTokens } from '../../application/index';
-import type { RunId } from '../../domain/index';
+import type { ConversationId, RunId } from '../../domain/index';
 
 import { AGY_PERMISSION_ASK_TOOL } from './agy-ask';
 
@@ -20,21 +20,29 @@ export interface AgyAskBridgeArgs {
   readonly conversationId?: string;
 }
 
-/** What one registered run answers asks with: the stream-json transport's channel. */
+/** The key one waiter answers under (the amended I-109): a run token's run id, a chat token's
+ *  conversation and turn. The map stores a canonical string — the listener and the transport each
+ *  build their own copy of the object form, which a Map would compare by identity. */
+export type AgyAskKey = RunId | { readonly conversation: ConversationId; readonly turn: RunId };
+
+/** What one registered holder answers asks with: the transport's channel. */
 export type AgyAskWaiter = (ask: AgyAskBridgeArgs) => Promise<'allow' | 'deny'>;
 
 export interface AgyAskBridge {
-  /** The transport of `runId` holds the channel from here on; a second registration replaces the
-   *  first, which only a restart of the same run id could attempt. */
-  register(runId: RunId, waiter: AgyAskWaiter): void;
-  /** The run ended: the bridge forgets it, so a late ask meets the fail-closed answer. */
-  unregister(runId: RunId): void;
+  /** The transport of `key` holds the channel from here on; a second registration replaces the
+   *  first, which only a restart of the same run or turn could attempt. */
+  register(key: AgyAskKey, waiter: AgyAskWaiter): void;
+  /** The run or turn ended: the bridge forgets it, so a late ask meets the fail-closed answer. */
+  unregister(key: AgyAskKey): void;
   /** The listener-facing ask. NEVER times out: the reply may follow a long human wait, and the
    *  caller — the ask child — owns the timeout. */
-  ask(runId: RunId, args: unknown): Promise<DocketToolResponse>;
+  ask(key: AgyAskKey, args: unknown): Promise<DocketToolResponse>;
 }
 
-/** A run with no channel left: a deny answer, not an error — the hook child turns either into the
+const keyOf = (key: AgyAskKey): string =>
+  typeof key === 'string' ? key : `chat\u0000${key.conversation}\u0000${key.turn}`;
+
+/** A key with no channel left: a deny answer, not an error — the hook child turns either into the
  *  same fail-closed deny, and the reason says which path was taken. */
 const NO_CHANNEL: DocketToolResponse = {
   ok: true,
@@ -45,16 +53,16 @@ const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 export function createAgyAskBridge(): AgyAskBridge {
-  const waiters = new Map<RunId, AgyAskWaiter>();
+  const waiters = new Map<string, AgyAskWaiter>();
   return {
-    register: (runId, waiter) => {
-      waiters.set(runId, waiter);
+    register: (key, waiter) => {
+      waiters.set(keyOf(key), waiter);
     },
-    unregister: (runId) => {
-      waiters.delete(runId);
+    unregister: (key) => {
+      waiters.delete(keyOf(key));
     },
-    ask: async (runId, args) => {
-      const waiter = waiters.get(runId);
+    ask: async (key, args) => {
+      const waiter = waiters.get(keyOf(key));
       if (waiter === undefined) return NO_CHANNEL;
       const record =
         typeof args === 'object' && args !== null && !Array.isArray(args) ? (args as Record<string, unknown>) : undefined;
@@ -67,16 +75,18 @@ export function createAgyAskBridge(): AgyAskBridge {
         ...(isRecord(record['verdictInput']) ? { verdictInput: record['verdictInput'] } : {}),
         ...(typeof record['conversationId'] === 'string' ? { conversationId: record['conversationId'] } : {}),
       };
-      // Only the waiter decides, and a waiter that crashes answers deny — never a silent hang.
+      // Only the holder decides, and a holder that crashes answers deny — never a silent hang.
       const decision = await waiter(ask).catch((): 'deny' => 'deny');
       return { ok: true, result: { decision } };
     },
   };
 }
 
-/** The composition root's one handler wrap (I-109): the ask pseudo-tool resolves its token to a
- *  RUN binding and goes to the bridge — a chat-kind, unknown or revoked token is refused — and
- *  every other tool name reaches the wrapped handler unchanged. */
+/** The composition root's one handler wrap (I-109, amended): the ask pseudo-tool resolves its token
+ *  to a RUN or CHAT binding and goes to the bridge under the binding's own key — the runId of a run
+ *  token, the conversation and turn of a chat token — and every other tool name reaches the wrapped
+ *  handler unchanged. An unknown or revoked token of either kind is refused; the token's holder
+ *  answers for the rest. */
 export const wrapAgyAskBridge = (
   handler: (request: DocketToolRequest) => Promise<DocketToolResponse>,
   bridge: AgyAskBridge,
@@ -85,6 +95,8 @@ export const wrapAgyAskBridge = (
   async (request) => {
     if (request.tool !== AGY_PERMISSION_ASK_TOOL) return handler(request);
     const binding = runTokens.resolve(request.token);
-    if (binding === undefined || binding.kind !== 'run') return { ok: false, code: 'unauthorized' };
-    return bridge.ask(binding.runId, request.args);
+    if (binding === undefined) return { ok: false, code: 'unauthorized' };
+    const key: AgyAskKey =
+      binding.kind === 'run' ? binding.runId : { conversation: binding.conversation, turn: binding.turn };
+    return bridge.ask(key, request.args);
   };

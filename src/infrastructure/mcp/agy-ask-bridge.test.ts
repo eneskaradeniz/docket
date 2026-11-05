@@ -4,14 +4,14 @@
 // child side of the line protocol — exactly what the ask child of I-108 speaks. What stands in is
 // the waiter: the transport's channel is a register/unregister contract this test invokes directly;
 // the transport-side legs live in stream-json.test.ts.
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { DocketToolRequest } from '../../application/index';
 import { parseSlug, parseUlid } from '../../domain/index';
-import { AGY_PERMISSION_ASK_TOOL } from './agy-ask';
+import { AGY_PERMISSION_ASK_TOOL, runAgyAsk, type AgyHookSpawn } from './agy-ask';
 import { createAgyAskBridge, wrapAgyAskBridge, type AgyAskBridgeArgs } from './agy-ask-bridge';
 import { createSocketCaller, startMcpListener, type McpListener } from './ipc';
 import { createNodeRunTokens } from './run-tokens';
@@ -124,7 +124,12 @@ describe('the agy permission bridge', () => {
       expect(through[0]).toMatchObject({ token: runToken, tool: 'docket_get', args: { q: 'open asks' } });
 
       // A chat-kind token is not a run token; an unknown one is nobody's.
-      expect(await askChat(AGY_PERMISSION_ASK_TOOL, { tool: 'Bash' })).toEqual({ ok: false, code: 'unauthorized' });
+      // A chat-kind token is a chat key now (the amended I-109): with no waiter of its own it gets
+      // the fail-closed deny — never the run's waiter, never an allow.
+      expect(await askChat(AGY_PERMISSION_ASK_TOOL, { tool: 'Bash' })).toEqual({
+        ok: true,
+        result: { decision: 'deny', reason: 'no permission channel for this run' },
+      });
       expect(await askUnknown(AGY_PERMISSION_ASK_TOOL, { tool: 'Bash' })).toEqual({ ok: false, code: 'unauthorized' });
 
       // A run the bridge never heard of gets the fail-closed deny answer, not an error.
@@ -145,8 +150,170 @@ describe('the agy permission bridge', () => {
       });
       runTokens.revoke(RUN_ID);
       expect(await askRun(AGY_PERMISSION_ASK_TOOL, { tool: 'Bash' })).toEqual({ ok: false, code: 'unauthorized' });
+
+      // The chat half of the amended I-109: a waiter under the chat key — the conversation and the
+      // turn — answers the chat token's ask, a late hook after the turn's exit finds no waiter and
+      // is denied, and a revoked chat token is refused outright, exactly like a run's.
+      const chatKey = { conversation: CONVERSATION_ID, turn: TURN_ID };
+      const chatSeen: AgyAskBridgeArgs[] = [];
+      bridge.register(chatKey, async (ask) => {
+        chatSeen.push(ask);
+        return 'allow';
+      });
+      expect(await askChat(AGY_PERMISSION_ASK_TOOL, { tool: 'docket_get' })).toEqual({
+        ok: true,
+        result: { decision: 'allow' },
+      });
+      expect(chatSeen).toEqual([{ tool: 'docket_get' }]);
+      bridge.unregister(chatKey);
+      expect(await askChat(AGY_PERMISSION_ASK_TOOL, { tool: 'docket_get' })).toEqual({
+        ok: true,
+        result: { decision: 'deny', reason: 'no permission channel for this run' },
+      });
+      runTokens.revoke(TURN_ID);
+      expect(await askChat(AGY_PERMISSION_ASK_TOOL, { tool: 'docket_get' })).toEqual({ ok: false, code: 'unauthorized' });
     } finally {
       await listener.close();
+    }
+  });
+});
+
+describe('chat-turn asks through the real ask child and listener', () => {
+  // The #1424 scenarios (A-443 … A-447) at the channel level: the real ask child of I-108 (the
+  // launcher's script, driven directly with a real .docket-ask.json), the real mcp.sock listener,
+  // the real handler wrap and the real bridge with real tokens. What stands in is only the waiter
+  // body — the conversation's own decision in its simplest form, the A-316 pair allow and a deny
+  // for every other tool — which is exactly what the stream-json transport receives as decideAsk.
+
+  const noHooks: AgyHookSpawn = () => {
+    throw new Error('no user hook runs in this scenario');
+  };
+
+  /** The ask tree the delivery writes (I-108): the socket, the token, no user hooks, bridge true. */
+  const writeAskFile = (dir: string, socketPath: string, token: string): string => {
+    mkdirSync(join(dir, '.agents'), { recursive: true });
+    writeFileSync(
+      join(dir, '.agents', '.docket-ask.json'),
+      `${JSON.stringify({ socketPath, token, timeoutSeconds: 30, beforeTool: [], bridge: true })}\n`,
+    );
+    return dir;
+  };
+
+  /** One ask child run: the CLI's PreToolUse stdin in, the one decision line out. */
+  const runChild = async (configDir: string, name: string, args: Record<string, unknown>): Promise<string> => {
+    const lines: string[] = [];
+    await runAgyAsk({
+      configDir,
+      stdinText: JSON.stringify({ conversationId: 'conv-1', toolCall: { name, args } }),
+      write: (line) => lines.push(line),
+      spawnHook: noHooks,
+    });
+    return (lines[lines.length - 1] ?? '').trim();
+  };
+
+  /** The bridge wired for a chat turn whose conversation allows the A-316 pair and denies the rest. */
+  const chatTurnFixture = async () => {
+    const dir = nextDir();
+    const socketPath = join(dir, 'mcp.sock');
+    const runTokens = createNodeRunTokens();
+    const bridge = createAgyAskBridge();
+    const handler = wrapAgyAskBridge(
+      async () => ({ ok: true, result: {} }),
+      bridge,
+      runTokens,
+    );
+    const started = await startMcpListener({ socketPath, handler });
+    if (!started.ok) throw new Error(`listener failed: ${started.error}`);
+    const token = runTokens.mint({
+      kind: 'chat',
+      turn: TURN_ID,
+      conversation: CONVERSATION_ID,
+      role: ROLE,
+    });
+    return { dir, socketPath, runTokens, bridge, listener: started.value, token };
+  };
+
+  it('the ask child answers allow for the pair and deny for every other tool through the chat key', async () => {
+    const f = await chatTurnFixture();
+    // The conversation's own decision (A-316) stands in as the waiter body, as decideAsk would.
+    f.bridge.register({ conversation: CONVERSATION_ID, turn: TURN_ID }, async (ask) =>
+      ask.tool === 'docket_get' || ask.tool === 'docket_search' ? 'allow' : 'deny',
+    );
+    const configDir = writeAskFile(join(f.dir, 'turn-a'), f.socketPath, f.token);
+    try {
+      // (a) allow: the pair call goes back as auto_approve — the tool runs.
+      expect(await runChild(configDir, 'docket_get', { query: 'open asks' })).toBe('{"decision":"auto_approve"}');
+      // (b) deny: a tool outside the allowed set does not run, and the denial is not an error.
+      expect(await runChild(configDir, 'run_command', { CommandLine: 'npm test' })).toBe(
+        '{"decision":"deny","reason":"denied by Docket"}',
+      );
+    } finally {
+      await f.listener.close();
+    }
+  });
+
+  it('two turns at once resolve only through their own keys, and a late or unknown token fails closed', async () => {
+    const f = await chatTurnFixture();
+    const OTHER_CONVERSATION = ulidOf<'conversation'>('01ARZ3NDEKTSV4RRFFQ69G5FMV');
+    const OTHER_TURN = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FNV');
+    const calls: string[] = [];
+    f.bridge.register({ conversation: CONVERSATION_ID, turn: TURN_ID }, async (ask) => {
+      calls.push(`a:${ask.tool}`);
+      return 'allow';
+    });
+    f.bridge.register({ conversation: OTHER_CONVERSATION, turn: OTHER_TURN }, async (ask) => {
+      calls.push(`b:${ask.tool}`);
+      return 'deny';
+    });
+    const askA = createSocketCaller({ socketPath: f.socketPath, token: f.token });
+    const tokenB = f.runTokens.mint({
+      kind: 'chat',
+      turn: OTHER_TURN,
+      conversation: OTHER_CONVERSATION,
+      role: ROLE,
+    });
+    const askB = createSocketCaller({ socketPath: f.socketPath, token: tokenB });
+    try {
+      // (c) two turns at once: each key's ask settles through its own waiter only.
+      expect(await askA(AGY_PERMISSION_ASK_TOOL, { tool: 'docket_get' })).toEqual({
+        ok: true,
+        result: { decision: 'allow' },
+      });
+      expect(await askB(AGY_PERMISSION_ASK_TOOL, { tool: 'docket_get' })).toEqual({
+        ok: true,
+        result: { decision: 'deny' },
+      });
+      expect(calls).toEqual(['a:docket_get', 'b:docket_get']);
+      // A key with no waiter of its own never borrows the other turn's (A-445).
+      f.bridge.unregister({ conversation: OTHER_CONVERSATION, turn: OTHER_TURN });
+      expect(await askB(AGY_PERMISSION_ASK_TOOL, { tool: 'docket_get' })).toEqual({
+        ok: true,
+        result: { decision: 'deny', reason: 'no permission channel for this run' },
+      });
+      // (d) the late hook after turn A ended: no waiter survives the turn.
+      f.bridge.unregister({ conversation: CONVERSATION_ID, turn: TURN_ID });
+      expect(await askA(AGY_PERMISSION_ASK_TOOL, { tool: 'docket_get' })).toEqual({
+        ok: true,
+        result: { decision: 'deny', reason: 'no permission channel for this run' },
+      });
+      // (e) the unknown or revoked token: unauthorized from the listener, deny from the child.
+      const neverMinted = createSocketCaller({ socketPath: f.socketPath, token: 'never-minted' });
+      expect(await neverMinted(AGY_PERMISSION_ASK_TOOL, { tool: 'docket_get' })).toEqual({
+        ok: false,
+        code: 'unauthorized',
+      });
+      f.runTokens.revoke(TURN_ID);
+      expect(await askA(AGY_PERMISSION_ASK_TOOL, { tool: 'docket_get' })).toEqual({
+        ok: false,
+        code: 'unauthorized',
+      });
+      // The child collapses every one of those to the same fail-closed deny.
+      const configDir = writeAskFile(join(f.dir, 'turn-b'), f.socketPath, f.token);
+      expect(await runChild(configDir, 'docket_get', { query: 'x' })).toBe(
+        '{"decision":"deny","reason":"docket unreachable"}',
+      );
+    } finally {
+      await f.listener.close();
     }
   });
 });

@@ -37,6 +37,7 @@ import type { ChatTurnLedger, TurnEntry } from './chat-turn-ledger';
 import { catalogOrEmpty, matchIdFor } from './match-id';
 import { attachDocketCapability } from './mcp-attach';
 import { resolveAccountTier, saveQuotaMeter } from './run-executor';
+import { decideRead } from './setup-permissions';
 import type { SetupConversations } from './setup-contexts';
 import { spendWindow } from './dispatcher';
 import { spendConsentSatisfied } from './spend-consent';
@@ -65,8 +66,9 @@ export interface ChatRunnerExtras {
   /** The ledger the chat write tools fill — the same instance, so the runner drains what the turn did. */
   readonly turnLedger: ChatTurnLedger;
   /** The setup registry (A-357 … A-359): a conversation it holds gets its token minted with
-   *  `conversationKind: 'setup'` and its draft persisted after each operator message. */
-  readonly setupContexts?: Pick<SetupConversations, 'contextOf' | 'noteOperatorMessage'>;
+   *  `conversationKind: 'setup'` and its draft persisted after each operator message. The runner
+   *  also settles a turn's waiting read card on the registry's answer push (A-444). */
+  readonly setupContexts?: Pick<SetupConversations, 'contextOf' | 'noteOperatorMessage' | 'subscribeAnswer'>;
 }
 
 export interface ChatTurnInput {
@@ -169,6 +171,10 @@ const outcomeOfFinished = (reason: Extract<AgentEvent, { readonly type: 'finishe
 /** Docket's own read tools, named as the transport reports them. Equality is the
  *  whole name: a write tool, or a name that only contains one of these, is not. */
 const isDocketOwnReadTool = (tool: string): boolean => tool === 'docket_get' || tool === 'docket_search';
+
+/** The native file-read name the ask child maps the CLI's own read tools to — the name a bridged
+ *  read ask carries (the app side never maps a second time). */
+const READ_TOOL = 'Read';
 
 /** One transcript line for a denied ask. Newlines and tabs in the name would split
  *  the line or the field, so they become spaces; the name stays visible data. */
@@ -523,6 +529,11 @@ interface TurnState {
   readonly conversation: ConversationId;
   handle: RunHandle | undefined;
   stopping: boolean;
+  /** Resolved once, when the turn is stopped or over: every wait the turn opened — a read card the
+   *  operator never answered — collapses to its deny answer at that point, so no wait outlives the
+   *  turn (A-443, A-446). */
+  readonly ended: Promise<void>;
+  signalEnded: () => void;
 }
 
 export function createChatRunner(deps: ChatRunnerDeps, extras: ChatRunnerExtras): ChatRunner {
@@ -554,7 +565,18 @@ export function createChatRunner(deps: ChatRunnerDeps, extras: ChatRunnerExtras)
     // the registration share one synchronous stretch, so two starts cannot both win the slot.
     if (active.has(input.conversation)) return err({ code: 'busy' });
     if (active.size >= CHAT_RUNNER_LIMITS.activeTurnsAppWide) return err({ code: 'too_many_turns' });
-    const state: TurnState = { turn: deps.ids.next<'run'>(), conversation: input.conversation, handle: undefined, stopping: false };
+    let signalEnded: () => void = () => undefined;
+    const ended = new Promise<void>((resolve) => {
+      signalEnded = resolve;
+    });
+    const state: TurnState = {
+      turn: deps.ids.next<'run'>(),
+      conversation: input.conversation,
+      handle: undefined,
+      stopping: false,
+      ended,
+      signalEnded,
+    };
     active.set(input.conversation, state);
     // The turn owns its own outcome on every path; this fence only keeps a broken port from
     // surfacing as an unhandled rejection beside the turn's own finished event.
@@ -568,6 +590,7 @@ export function createChatRunner(deps: ChatRunnerDeps, extras: ChatRunnerExtras)
     if (state === undefined) return ok(undefined);
     if (!state.stopping) {
       state.stopping = true;
+      state.signalEnded();
       await state.handle?.stop();
     }
     return ok(undefined);
@@ -657,6 +680,56 @@ export function createChatRunner(deps: ChatRunnerDeps, extras: ChatRunnerExtras)
         capabilities: [],
       });
       runDir = await deps.runDirs.create(turn);
+      // The turn's own permission decision a bridged PreToolUse ask settles through (A-444): the
+      // stream-json transport's chat waiter is its one caller, and it holds the conversation's
+      // policy and nothing else — the A-316 pair by the whole name, the setup conversation's read
+      // routing through decideRead and the per-path card (U-272 … U-279), a deny for every other
+      // tool. The turn's stream of its own transport kind (the sdk route's asks) never passes here.
+      const cardAnswerOf = (path: string): Promise<boolean> =>
+        new Promise<boolean>((resolve) => {
+          const off = extras.setupContexts?.subscribeAnswer((answered, answeredPath, allow) => {
+            if (answered !== conversation || answeredPath !== path) return;
+            off?.();
+            resolve(allow);
+          });
+        });
+      const decideAsk = async (ask: { readonly tool: string; readonly target?: string }): Promise<'allow' | 'deny'> => {
+        if (isDocketOwnReadTool(ask.tool)) return 'allow';
+        const setup = extras.setupContexts?.contextOf(conversation);
+        if (setup !== undefined && ask.tool === READ_TOOL && typeof ask.target === 'string' && ask.target !== '') {
+          const resolved = setup.reader.resolve(ask.target);
+          // A path the operator denied this conversation is never asked again (U-276).
+          if (setup.isDenied?.(resolved) === true) {
+            deniedLines.push(toolDeniedLine(ask.tool));
+            return 'deny';
+          }
+          const decision = decideRead(setup.scope, ask.target, setup.readCtx, setup.grants, resolved);
+          if (decision.kind === 'deny') {
+            if (decision.reason === 'secret_shaped') setup.noteSecret?.();
+            deniedLines.push(toolDeniedLine(ask.tool));
+            return 'deny';
+          }
+          if (decision.kind === 'allow') return 'allow';
+          // A turn already stopping or gone opens no card for an ask that can only deny — a late
+          // ask finds no waiter in the real channel anyway (A-443, A-447d).
+          if (state.stopping || active.get(conversation) !== state) {
+            deniedLines.push(toolDeniedLine(ask.tool));
+            return 'deny';
+          }
+          // The per-path read card (U-272): the ask stays open until the operator answers, and the
+          // turn's own end collapses the wait to a deny — the child owns the timeout, never the
+          // app (A-446).
+          setup.noteAsk?.(decision.path, '');
+          const allowed = await Promise.race([cardAnswerOf(decision.path), state.ended.then((): boolean => false)]);
+          if (!allowed) {
+            deniedLines.push(toolDeniedLine(ask.tool));
+            return 'deny';
+          }
+          return 'allow';
+        }
+        deniedLines.push(toolDeniedLine(ask.tool));
+        return 'deny';
+      };
       const started = await transport.start({
         runId: turn,
         cwd: runDir.path,
@@ -665,6 +738,7 @@ export function createChatRunner(deps: ChatRunnerDeps, extras: ChatRunnerExtras)
         route,
         prompt: buildPrompt(before, appended),
         capabilities,
+        decideAsk,
       });
       if (!started.ok) {
         outcome = 'failed';
@@ -687,6 +761,7 @@ export function createChatRunner(deps: ChatRunnerDeps, extras: ChatRunnerExtras)
         // A deleted conversation cancels its turn: the agent is stopped and nothing more is written.
         if ((await deps.conversations.get(conversation)) === undefined) {
           state.stopping = true;
+          state.signalEnded();
           await handle.stop();
           decided = 'cancelled';
           break;
@@ -777,6 +852,8 @@ export function createChatRunner(deps: ChatRunnerDeps, extras: ChatRunnerExtras)
       }
     } finally {
       // Every exit path: the token dies, the dir goes, the ledger drains — then the one message.
+      // The end signal goes first: a read card still open collapses to its deny (A-443, A-446).
+      state.signalEnded();
       deps.runTokens.revoke(turn);
       await runDir?.dispose().catch(() => undefined);
       const entries = extras.turnLedger.take(turn);

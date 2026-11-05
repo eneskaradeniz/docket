@@ -46,6 +46,11 @@ export interface SetupConversations {
   noteOperatorMessage(conversation: ConversationId): void;
   /** One coarse push per recorded ask (A-358): the api's channel carries the conversation id only. */
   subscribeAsk(listener: (conversation: ConversationId) => void): () => void;
+  /** One push per operator answer (A-444): the conversation, the normalized path and the verdict —
+   *  the chat runner settles its turn's waiting read ask on it. */
+  subscribeAnswer(
+    listener: (conversation: ConversationId, path: string, allow: boolean) => void,
+  ): () => void;
   /** The newest stored draft, for the resume card (A-340). */
   newestDraft(): Promise<SetupDraft | undefined>;
   /** One stored draft by id — the resume path of `setup.ai.start` reads it. */
@@ -65,6 +70,7 @@ export function createSetupContexts(
 ): SetupConversations {
   const byId = new Map<ConversationId, SetupConversationContext>();
   const askListeners = new Set<(conversation: ConversationId) => void>();
+  const answerListeners = new Set<(conversation: ConversationId, path: string, allow: boolean) => void>();
   const dataDir = normalizeAbsolutePath(config.dataDir);
 
   const emitAsk = (conversation: ConversationId): void => {
@@ -73,6 +79,16 @@ export function createSetupContexts(
         listener(conversation);
       } catch {
         // A broken listener never breaks the tool call that recorded the ask.
+      }
+    }
+  };
+
+  const emitAnswer = (conversation: ConversationId, path: string, allow: boolean): void => {
+    for (const listener of answerListeners) {
+      try {
+        listener(conversation, path, allow);
+      } catch {
+        // A broken listener never breaks the answer the operator made.
       }
     }
   };
@@ -127,6 +143,7 @@ export function createSetupContexts(
       if (allow) context.grants.grant(normalized);
       else context.denied.add(normalized);
       if (context.ask !== null && context.ask.path === normalized) context.ask = null;
+      emitAnswer(conversation, normalized, allow);
       return true;
     },
     noteOperatorMessage: (conversation) => {
@@ -136,6 +153,10 @@ export function createSetupContexts(
     subscribeAsk: (listener) => {
       askListeners.add(listener);
       return () => askListeners.delete(listener);
+    },
+    subscribeAnswer: (listener) => {
+      answerListeners.add(listener);
+      return () => answerListeners.delete(listener);
     },
     newestDraft: async () => config.drafts.newest?.() ?? undefined,
     draftOf: async (id) => config.drafts.load(id),

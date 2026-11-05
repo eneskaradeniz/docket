@@ -72,6 +72,9 @@ import {
   type ChatTurnEvent,
 } from './chat-runner';
 import { createChatTurnLedger, type ChatTurnLedger } from './chat-turn-ledger';
+import { createSetupContexts, type SetupConversations } from './setup-contexts';
+import type { SetupPathReader } from './setup-tools';
+import type { SetupDraft, SetupDraftStore } from '../use-cases/setup';
 import type { UserMessageInput } from '../use-cases';
 
 // --- fixtures ---------------------------------------------------------------------------------------
@@ -324,6 +327,7 @@ const harness = async (options: {
   readonly workOrderBindingAccount?: AccountId;
   readonly transport?: AgentTransport;
   readonly spend?: number;
+  readonly setupContexts?: SetupConversations;
 } = {}): Promise<Harness> => {
   const clock = createFakeClock(T0);
   const ids = createFakeIdGen();
@@ -394,7 +398,10 @@ const harness = async (options: {
   }
 
   const ledger = createChatTurnLedger();
-  const runner = createChatRunner(deps, { turnLedger: ledger });
+  const runner = createChatRunner(deps, {
+    turnLedger: ledger,
+    ...(options.setupContexts === undefined ? {} : { setupContexts: options.setupContexts }),
+  });
   return { deps, runner, ledger, clock, ids, log, conversations, accounts, bindings, transports, transport, tokens, runDirs };
 };
 
@@ -1469,5 +1476,240 @@ describe('createChatRunner', () => {
     expect(cancelled).toMatchObject({ outcome: 'cancelled' });
     expect(cancelWatch.events.some((event) => event.type === 'thinking')).toBe(false);
     expect(stepsOf(cancelWatch.events).map((step) => step.id)).toEqual(['p1']);
+  });
+});
+
+// --- the bridged PreToolUse ask (A-443 … A-447, the amended I-109) -----------------------------------
+
+/** Where a setup conversation's read scope lives in these tests. */
+const SETUP_REPO = '/w/acme';
+const SETUP_DATA = '/fake-data';
+const OUTSIDE_A = '/w/notes/plan.md';
+const OUTSIDE_B = '/w/other/notes.md';
+const CONVERSATION_B = idOf<'conversation'>(42);
+
+/** A path reader over an in-memory tree, as the setup registry needs one. */
+const memoryReader = (files: Readonly<Record<string, string>> = {}): SetupPathReader => ({
+  resolve: (path) => path,
+  read: async (path) => (files[path] === undefined ? { kind: 'missing' } : { kind: 'file', content: files[path]! }),
+});
+
+const recordingDrafts = (): SetupDraftStore => {
+  const byId = new Map<string, SetupDraft>();
+  return {
+    save: async (draft) => {
+      byId.set(draft.id, draft);
+    },
+    load: async (id) => byId.get(id),
+    newest: async () => [...byId.values()].sort((x, y) => y.updatedAt - x.updatedAt)[0],
+  };
+};
+
+/** A harness whose chat runner holds a real setup registry with the conversation(s) registered. */
+const setupHarness = async (options: {
+  readonly script?: readonly AgentEvent[];
+  readonly transport?: AgentTransport;
+  readonly conversations?: readonly ConversationId[];
+} = {}): Promise<{ readonly h: Harness; readonly registry: SetupConversations }> => {
+  const registry = createSetupContexts(
+    { clock: createFakeClock(T0), ids: createFakeIdGen() },
+    { dataDir: SETUP_DATA, drafts: recordingDrafts(), reader: memoryReader() },
+  );
+  for (const conversation of options.conversations ?? [CONVERSATION]) {
+    registry.register({ conversation, repoPath: SETUP_REPO });
+  }
+  const h = await harness({
+    ...options,
+    setupContexts: registry,
+    extraConversations: (options.conversations ?? [CONVERSATION]).filter((id) => id !== CONVERSATION),
+  });
+  return { h, registry };
+};
+
+/** True when the promise is still pending after `ms` — the decider owns no timeout of its own. */
+const stillPending = async (promise: Promise<'allow' | 'deny'> | undefined, ms: number): Promise<boolean> => {
+  if (promise === undefined) throw new Error('the request must carry a decider');
+  return Promise.race([
+    promise.then((): boolean => false),
+    new Promise<boolean>((resolve) => setTimeout(resolve, ms, true)),
+  ]);
+};
+
+describe('the bridged PreToolUse ask of a chat turn', () => {
+  it('A-443: the turn hands the transport its own key — the chat kind and the conversation id ride the capability, and the turn\'s decider rides the request', async () => {
+    const h = await harness({ script: [text('bitti'), finished('completed')] });
+    const watch = watching(h.runner, CONVERSATION);
+    const turn = await send(h.runner, CONVERSATION, { text: 'Selam' });
+    await watch.finished;
+
+    const request = h.transport.requests()[0];
+    if (request === undefined) throw new Error('the transport must have been started');
+    const capability = request.capabilities.find((entry) => entry.id === 'docket-pages');
+    if (capability === undefined || capability.kind !== 'mcp') throw new Error('the docket-pages capability must be attached');
+    // The key's halves: the turn is the run id, the conversation rides the capability beside the kind.
+    expect(request.runId).toBe(turn);
+    expect(capability.env['DOCKET_MCP_KIND']).toEqual({ literal: 'chat' });
+    expect(capability.env['DOCKET_MCP_CONVERSATION']).toEqual({ literal: CONVERSATION });
+    // The conversation's own permission decision travels with the request, and nothing else does.
+    expect(typeof request.decideAsk).toBe('function');
+    await expect(request.decideAsk?.({ tool: 'docket_search' })).resolves.toBe('allow');
+  });
+
+  it('A-444: the A-316 pair is allowed by the whole name and every other ask is denied with one transcript line each', async () => {
+    const parked = parkedTransport([text('baktım'), finished('completed')]);
+    const h = await harness({ transport: parked.transport });
+    const watch = watching(h.runner, CONVERSATION);
+    await send(h.runner, CONVERSATION, { text: 'Kaç iş emri var?' });
+    await until(() => parked.requests().length === 1);
+    const decide = parked.requests()[0]?.decideAsk;
+    if (decide === undefined) throw new Error('the request must carry a decider');
+
+    await expect(decide({ tool: 'docket_get' })).resolves.toBe('allow');
+    await expect(decide({ tool: 'docket_search' })).resolves.toBe('allow');
+    await expect(decide({ tool: 'docket_get_extra' })).resolves.toBe('deny');
+    await expect(decide({ tool: 'mcp__docket-pages__docket_get' })).resolves.toBe('deny');
+    await expect(decide({ tool: 'Bash', target: 'npm test' })).resolves.toBe('deny');
+
+    // A denial is not an error and never fails the turn: the lines land on the one message.
+    parked.release();
+    await watch.finished;
+    expect((await lastMessage(h, CONVERSATION)).text).toBe(
+      ['baktım', `${CHAT_TOOL_DENIED_NOTICE}\tdocket_get_extra`, `${CHAT_TOOL_DENIED_NOTICE}\tmcp__docket-pages__docket_get`, `${CHAT_TOOL_DENIED_NOTICE}\tBash`].join('\n'),
+    );
+  });
+
+  it('A-444: a setup conversation routes a native read through decideRead — in-scope allow, secret-shaped deny, the per-path card, and the denied-never-asked rule', async () => {
+    const parked = parkedTransport([text('ok'), finished('completed')]);
+    const { h, registry } = await setupHarness({ transport: parked.transport });
+    const watch = watching(h.runner, CONVERSATION);
+    await send(h.runner, CONVERSATION, { text: 'Kur' });
+    await until(() => parked.requests().length === 1);
+    const decide = parked.requests()[0]?.decideAsk;
+    if (decide === undefined) throw new Error('the request must carry a decider');
+
+    // In scope: allowed with no card of any kind.
+    await expect(decide({ tool: 'Read', target: `${SETUP_REPO}/src/a.ts` })).resolves.toBe('allow');
+    expect(registry.askOf(CONVERSATION)).toBeUndefined();
+
+    // Secret-shaped: denied at once, one secret notice, no card (U-277).
+    await expect(decide({ tool: 'Read', target: `${SETUP_REPO}/.env` })).resolves.toBe('deny');
+    expect(registry.contextOf(CONVERSATION)?.secrets).toBe(1);
+    expect(registry.askOf(CONVERSATION)).toBeUndefined();
+
+    // Out of scope: the per-path card opens (U-272, one at a time) and the ask waits for it.
+    const cardAsk = decide({ tool: 'Read', target: OUTSIDE_A });
+    await until(() => registry.askOf(CONVERSATION) !== undefined);
+    expect(registry.askOf(CONVERSATION)).toMatchObject({ path: OUTSIDE_A, reason: '' });
+    expect(await stillPending(cardAsk, 120)).toBe(true);
+
+    // The operator's allow settles the ask, and the session grant stands for the next ask.
+    expect(registry.answer(CONVERSATION, OUTSIDE_A, true)).toBe(true);
+    await expect(cardAsk).resolves.toBe('allow');
+    await expect(decide({ tool: 'Read', target: OUTSIDE_A })).resolves.toBe('allow');
+
+    // The operator's deny settles its own ask, and a denied path is never asked again (U-276).
+    const deniedAsk = decide({ tool: 'Read', target: OUTSIDE_B });
+    await until(() => registry.askOf(CONVERSATION)?.path === OUTSIDE_B);
+    expect(registry.answer(CONVERSATION, OUTSIDE_B, false)).toBe(true);
+    await expect(deniedAsk).resolves.toBe('deny');
+    await expect(decide({ tool: 'Read', target: OUTSIDE_B })).resolves.toBe('deny');
+    expect(registry.askOf(CONVERSATION)).toBeUndefined();
+
+    parked.release();
+    expect(await watch.finished).toMatchObject({ outcome: 'completed' });
+    expect((await lastMessage(h, CONVERSATION)).text).toBe(
+      ['ok', `${CHAT_TOOL_DENIED_NOTICE}\tRead`, `${CHAT_TOOL_DENIED_NOTICE}\tRead`, `${CHAT_TOOL_DENIED_NOTICE}\tRead`].join('\n'),
+    );
+  });
+
+  it('A-445: two conversations\' turns settle their own asks; one turn\'s card answer never reaches the other', async () => {
+    const parked = parkedTransport([text('a'), finished('completed')]);
+    const { h, registry } = await setupHarness({
+      transport: parked.transport,
+      conversations: [CONVERSATION, CONVERSATION_B],
+    });
+    const watchA = watching(h.runner, CONVERSATION);
+    const watchB = watching(h.runner, CONVERSATION_B);
+    const turnA = await send(h.runner, CONVERSATION, { text: 'Kur' });
+    const turnB = await send(h.runner, CONVERSATION_B, { text: 'Merhaba' });
+    await until(() => parked.requests().length === 2);
+    const decideA = parked.requests().find((request) => request.runId === turnA)?.decideAsk;
+    const decideB = parked.requests().find((request) => request.runId === turnB)?.decideAsk;
+    if (decideA === undefined || decideB === undefined) throw new Error('both requests must carry a decider');
+
+    // Both turns ask out of scope at once: each opens its own conversation's card.
+    const askA = decideA({ tool: 'Read', target: OUTSIDE_A });
+    await until(() => registry.askOf(CONVERSATION)?.path === OUTSIDE_A);
+    const askB = decideB({ tool: 'Read', target: OUTSIDE_B });
+    await until(() => registry.askOf(CONVERSATION_B)?.path === OUTSIDE_B);
+
+    // The operator's answer to A settles only A's ask; B's keeps waiting.
+    expect(registry.answer(CONVERSATION, OUTSIDE_A, true)).toBe(true);
+    await expect(askA).resolves.toBe('allow');
+    expect(await stillPending(askB, 120)).toBe(true);
+    expect(registry.answer(CONVERSATION_B, OUTSIDE_B, false)).toBe(true);
+    await expect(askB).resolves.toBe('deny');
+
+    parked.release();
+    expect(await watchA.finished).toMatchObject({ outcome: 'completed' });
+    expect(await watchB.finished).toMatchObject({ outcome: 'completed' });
+  });
+
+  it('A-446: a waiting ask neither times out nor fails the turn — the card is the operator\'s and the wait is the child\'s', async () => {
+    const parked = parkedTransport([text('ok'), finished('completed')]);
+    const { h, registry } = await setupHarness({ transport: parked.transport });
+    const watch = watching(h.runner, CONVERSATION);
+    await send(h.runner, CONVERSATION, { text: 'Kur' });
+    await until(() => parked.requests().length === 1);
+    const decide = parked.requests()[0]?.decideAsk;
+    if (decide === undefined) throw new Error('the request must carry a decider');
+
+    // The ask waits for the operator with no deadline of its own, and the turn keeps running.
+    const cardAsk = decide({ tool: 'Read', target: OUTSIDE_A });
+    await until(() => registry.askOf(CONVERSATION) !== undefined);
+    expect(await stillPending(cardAsk, 150)).toBe(true);
+    expect(watch.events.some((event) => event.type === 'finished')).toBe(false);
+
+    // A denial settles the ask and never fails the turn: it finishes on its own reason.
+    expect(registry.answer(CONVERSATION, OUTSIDE_A, false)).toBe(true);
+    await expect(cardAsk).resolves.toBe('deny');
+    parked.release();
+    expect(await watch.finished).toMatchObject({ outcome: 'completed' });
+  });
+
+  it('A-447: the turn-boundary scenarios — pair allow, other-tool deny, a second turn\'s own ask, and the late ask after the turn fails closed', async () => {
+    const parked = parkedTransport([text('ok'), finished('completed')]);
+    const { h, registry } = await setupHarness({ transport: parked.transport, conversations: [CONVERSATION, CONVERSATION_B] });
+    const watch = watching(h.runner, CONVERSATION);
+    const turn = await send(h.runner, CONVERSATION, { text: 'Kur' });
+    await until(() => parked.requests().some((request) => request.runId === turn));
+    const decide = parked.requests().find((request) => request.runId === turn)?.decideAsk;
+    if (decide === undefined) throw new Error('the request must carry a decider');
+
+    // (a) allow: the turn's own pair ask.
+    await expect(decide({ tool: 'docket_get' })).resolves.toBe('allow');
+    // (b) deny: a tool outside the allowed set, and the turn still finishes normally.
+    await expect(decide({ tool: 'Bash', target: 'npm test' })).resolves.toBe('deny');
+    // The card through the operator's allow, as the setup conversation's own reads take.
+    const cardAsk = decide({ tool: 'Read', target: OUTSIDE_A });
+    await until(() => registry.askOf(CONVERSATION) !== undefined);
+    expect(registry.answer(CONVERSATION, OUTSIDE_A, true)).toBe(true);
+    await expect(cardAsk).resolves.toBe('allow');
+
+    // (c) a second conversation's turn asks at once and settles through its own decider only.
+    const watchB = watching(h.runner, CONVERSATION_B);
+    const turnB = await send(h.runner, CONVERSATION_B, { text: 'Merhaba' });
+    await until(() => parked.requests().some((request) => request.runId === turnB));
+    const decideB = parked.requests().find((request) => request.runId === turnB)?.decideAsk;
+    await expect(decideB?.({ tool: 'docket_get' })).resolves.toBe('allow');
+    await expect(decideB?.({ tool: 'Bash', target: 'rm -rf build' })).resolves.toBe('deny');
+
+    // The turn ends; a late ask of the same turn denies with no card anywhere (d).
+    parked.release();
+    expect(await watch.finished).toMatchObject({ outcome: 'completed' });
+    expect(await watchB.finished).toMatchObject({ outcome: 'completed' });
+    await expect(decide({ tool: 'Read', target: OUTSIDE_B })).resolves.toBe('deny');
+    expect(registry.askOf(CONVERSATION)).toBeUndefined();
+    expect((await lastMessage(h, CONVERSATION)).text).toContain(`${CHAT_TOOL_DENIED_NOTICE}\tBash`);
   });
 });

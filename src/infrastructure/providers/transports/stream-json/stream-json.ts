@@ -7,8 +7,8 @@ import { accessSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import type { AgentTransport, RunHandle, RunRequest, TransportError } from '../../../../application/index';
-import type { AccountId, AgentEvent, CostKind, Result, RunId } from '../../../../domain/index';
-import { err, ok } from '../../../../domain/index';
+import type { AccountId, AgentEvent, ConversationId, CostKind, Result, RunId } from '../../../../domain/index';
+import { err, ok, parseUlid } from '../../../../domain/index';
 import { createSystemClock, registeredSpawn } from '../../../system/index';
 import { homeRootEnvOf, type ProviderDef } from '../../defs/index';
 import { buildChildEnv, writeRunConfig, type RunAccountHome, type RunCapability, type RunMcpServer } from '../../launch/index';
@@ -42,29 +42,40 @@ export interface AgyAskRequest {
   readonly conversationId?: string;
 }
 
-/** The app-side permission channel of one agy run (P-63). The mcp module owns the implementation;
- *  the providers module spells the shape itself because the infrastructure module map allows it no
- *  mcp import, and the composition root passes the real bridge through the factory config — the
- *  type check at that call site is what pins the two spellings together. */
+/** The app-side permission channel of one agy run or chat turn (P-63, the amended I-109). The mcp
+ *  module owns the implementation; the providers module spells the shape itself because the
+ *  infrastructure module map allows it no mcp import, and the composition root passes the real
+ *  bridge through the factory config — the type check at that call site is what pins the two
+ *  spellings together. */
 export interface AgyAskBridge {
-  register(runId: RunId, waiter: (ask: AgyAskRequest) => Promise<'allow' | 'deny'>): void;
-  unregister(runId: RunId): void;
+  register(key: AgyAskKey, waiter: (ask: AgyAskRequest) => Promise<'allow' | 'deny'>): void;
+  unregister(key: AgyAskKey): void;
 }
 
-/** The built-in capability that carries a run's Docket token in its env (the mcp-attach spelling). */
+/** The bridge key as this module spells it: a run token's run id, a chat token's conversation and
+ *  turn. The transport rebuilds the key from the docket-pages capability's in-band metadata — the
+ *  same binding the listener resolves the token to. */
+export type AgyAskKey = RunId | { readonly conversation: ConversationId; readonly turn: RunId };
+
+/** The built-in capability that carries a run's or turn's Docket token in its env (the mcp-attach
+ *  spelling). */
 const DOCKET_PAGES_ID = 'docket-pages';
 
-/** Whether the run holds a Docket RUN token: the docket-pages capability with a non-empty token of
- *  the run kind (P-63). The listener stays the authority — it resolves the token itself — this
- *  check only decides whether the transport offers a waiter at all; a chat turn registers nothing. */
-const holdsDocketRunToken = (capabilities: readonly RunCapability[]): boolean =>
-  capabilities.some(
-    (capability) =>
-      capability.kind === 'mcp' &&
-      capability.id === DOCKET_PAGES_ID &&
-      capability.env['DOCKET_MCP_TOKEN'] !== '' &&
-      capability.env['DOCKET_MCP_KIND'] === 'run',
+/** The waiter key this run or turn answers under: the run id of a Docket RUN token, the
+ *  conversation-and-turn of a CHAT token (whose capability carries the conversation beside the
+ *  kind), nothing for any other shape. The listener stays the authority — it resolves the token
+ *  itself — this only decides whether the transport offers a waiter at all, and under which key. */
+const agyAskKeyOf = (runId: RunId, capabilities: readonly RunCapability[]): AgyAskKey | undefined => {
+  const docketPages = capabilities.find(
+    (capability): capability is Extract<RunCapability, { readonly kind: 'mcp' }> =>
+      capability.kind === 'mcp' && capability.id === DOCKET_PAGES_ID,
   );
+  if (docketPages === undefined || docketPages.env['DOCKET_MCP_TOKEN'] === '') return undefined;
+  if (docketPages.env['DOCKET_MCP_KIND'] === 'run') return runId;
+  if (docketPages.env['DOCKET_MCP_KIND'] !== 'chat') return undefined;
+  const conversation = parseUlid<'conversation'>(docketPages.env['DOCKET_MCP_CONVERSATION'] ?? '');
+  return conversation.ok ? { conversation: conversation.value, turn: runId } : undefined;
+};
 
 /** The machine's ~/.gitconfig when it exists — the one non-secret ambient file a redirected home
  * passes across (P-67), so the agent's commits keep their identity; undefined when the machine
@@ -288,14 +299,19 @@ export function createStreamJsonTransport(
         }
       };
 
-      // P-63: the run's permission channel. Only agy carries one, and only while the run holds a
-      // Docket run token: the bridge then keeps this run's waiter, an agy_permission_ask over
-      // mcp.sock becomes a permission_ask on this stream, and nothing but handle.answerPermission —
-      // the executor's existing decision path — settles it. Registration happens after the only
-      // start failure that follows it, so a dead start leaves no waiter behind.
+      // P-63, the amended I-109: this run's or turn's permission channel. Only agy carries one,
+      // and only while the docket-pages capability hands the key over: a RUN key turns an
+      // agy_permission_ask over mcp.sock into a permission_ask on this stream, and nothing but
+      // handle.answerPermission — the executor's existing decision path — settles it. A CHAT key
+      // (A-443 … A-447) settles each ask through the conversation's own decision — decideAsk on the
+      // request, which the chat runner builds per turn; without it no waiter exists, so an ask is
+      // denied. Registration happens after the only start failure that follows it, so a dead start
+      // leaves no waiter behind.
       let settleAsk: ((askId: string, decision: 'allow' | 'deny') => void) | undefined;
       let closeAskChannel: (() => void) | undefined;
-      if (agyAskBridge !== undefined && def.id === 'agy' && holdsDocketRunToken(runCapabilities)) {
+      const askKey =
+        agyAskBridge !== undefined && def.id === 'agy' ? agyAskKeyOf(request.runId, runCapabilities) : undefined;
+      if (agyAskBridge !== undefined && askKey !== undefined && typeof askKey === 'string') {
         const asks = new Map<string, (decision: 'allow' | 'deny') => void>();
         let askCount = 0;
         settleAsk = (askId, decision) => {
@@ -304,7 +320,7 @@ export function createStreamJsonTransport(
           asks.delete(askId);
           settle(decision);
         };
-        agyAskBridge.register(request.runId, async (ask) => {
+        agyAskBridge.register(askKey, async (ask) => {
           askCount += 1;
           const askId = `ask-${askCount}`;
           const detail = ask.tool === DOCKET_VERDICT_TOOL ? verdictAskDetailOf(ask.verdictInput) : undefined;
@@ -327,7 +343,24 @@ export function createStreamJsonTransport(
           // meets the fail-closed no-channel answer.
           for (const settle of asks.values()) settle('deny');
           asks.clear();
-          agyAskBridge.unregister(request.runId);
+          agyAskBridge.unregister(askKey);
+        };
+      } else if (agyAskBridge !== undefined && askKey !== undefined && request.decideAsk !== undefined) {
+        // A chat turn's waiter holds no policy of its own (A-444): every decision — the A-316 pair,
+        // the setup conversation's read card, the denials — belongs to the conversation's decider.
+        // A waiter that crashes answers deny at the bridge; the turn's own end signal is what keeps
+        // a wait from outliving its turn.
+        const decide = request.decideAsk;
+        agyAskBridge.register(askKey, async (ask) =>
+          decide({
+            tool: ask.tool,
+            ...(ask.target === undefined ? {} : { target: ask.target }),
+          }),
+        );
+        closeAskChannel = () => {
+          // The turn is over on some end path: the bridge forgets the key, so a late hook meets the
+          // fail-closed no-channel answer.
+          agyAskBridge.unregister(askKey);
         };
       }
 
