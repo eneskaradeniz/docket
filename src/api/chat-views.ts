@@ -39,7 +39,7 @@ import {
 
 import type { AppDeps } from '../application';
 import { isSecretRepoPath } from '../application';
-import type { ChatRunner } from '../application';
+import type { ChatRunner, SetupConversations } from '../application';
 import { activeGrants, listActions, workOrderCodeOf } from '../application';
 
 // --- wire shapes ---------------------------------------------------------------------------------------
@@ -59,6 +59,9 @@ export interface ChatConversationSummaryView {
   readonly lastText: string;
   readonly messageCount: number;
   readonly activeTurn: boolean;
+  /** Present exactly while the setup registry holds the conversation (A-359): the surface the
+   *  history list filters on, because a setup conversation is the setup screen's, not the dock's. */
+  readonly conversationKind?: 'setup';
 }
 
 export interface ChatRefView {
@@ -464,10 +467,12 @@ const messageView = async (
 // --- the queries -----------------------------------------------------------------------------------------
 
 /** The history list (A-251): pinned first, then newest-updated first; `q` is the Turkish-aware
- *  fold-search over titles and message text; `limit` defaults to 30 and caps at 100. */
+ *  fold-search over titles and message text; `limit` defaults to 30 and caps at 100. A summary
+ *  carries the setup marker exactly while the registry holds the conversation (A-359). */
 export const chatConversationsView = async (
   deps: Pick<AppDeps, 'clock' | 'conversations'>,
   runner: Pick<ChatRunner, 'active'> | undefined,
+  setup: Pick<SetupConversations, 'contextOf'> | undefined,
   input: { readonly q?: string; readonly scope?: ConversationScope; readonly pinned?: boolean; readonly before?: number; readonly limit?: number },
 ): Promise<readonly ChatConversationSummaryView[]> => {
   const summaries = await deps.conversations.list({});
@@ -500,6 +505,7 @@ export const chatConversationsView = async (
       lastText,
       messageCount: conversation.messages.length,
       activeTurn: runner?.active(conversation.id) !== undefined,
+      ...(setup?.contextOf(conversation.id) !== undefined ? { conversationKind: 'setup' as const } : {}),
     });
     if (views.length >= limit) break;
   }
