@@ -148,4 +148,31 @@ describe('the setup context registry', () => {
     const kept = registry.register({ conversation, repoPath: REPO, draftId: drafts.saved[0]?.id });
     expect(kept.draftId).toBe(drafts.saved[0]?.id);
   });
+
+  it('the answer push carries the conversation, the normalized path and the verdict to the waiting chat turn (A-444)', async () => {
+    const registry = registryOf(recordingDrafts());
+    const conversation = conversationOf(1);
+    const context = registry.register({ conversation, repoPath: REPO });
+    const answers: [ConversationId, string, boolean][] = [];
+    const off = registry.subscribeAnswer((asked, path, allow) => answers.push([asked, path, allow]));
+    // The runner records the ask with decideRead's already-normalized path; the operator's answer
+    // may spell it differently — the push and the grant speak the normalized form either way.
+    context.noteAsk?.(`${REPO}/notes/plan.md`, 'the plan');
+
+    expect(registry.answer(conversation, `${REPO}/notes/../notes/plan.md`, true)).toBe(true);
+    expect(answers).toEqual([[conversation, `${REPO}/notes/plan.md`, true]]);
+    expect(context.grants.allows(`${REPO}/notes/plan.md`)).toBe(true);
+    expect(context.ask).toBeNull();
+
+    // A broken listener never breaks the answer, and the push stops with the unsubscribe.
+    const before = answers.length;
+    registry.subscribeAnswer(() => {
+      throw new Error('a broken listener');
+    });
+    expect(registry.answer(conversation, OUTSIDE, false)).toBe(true);
+    expect(answers.length).toBe(before + 1);
+    off();
+    expect(registry.answer(conversation, OUTSIDE, true)).toBe(true);
+    expect(answers.length).toBe(before + 1);
+  });
 });

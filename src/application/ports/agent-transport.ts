@@ -21,6 +21,11 @@ export interface RunRequest {
   readonly resume?: { readonly sessionRef: string };
   readonly capabilities: readonly CapabilityDef[];
   readonly effort?: EffortLevel; // resolved by executeRun; absent → the CLI's own default
+  /** The turn's own permission decision for a bridged PreToolUse ask (the amended I-109, A-444):
+   *  the stream-json transport's chat-turn waiter is its one caller, and the answer it returns is
+   *  the reply the ask child receives. Absent on a run request, and absent means the transport
+   *  registers no chat waiter — an ask then meets the fail-closed deny. */
+  readonly decideAsk?: (ask: { readonly tool: string; readonly target?: string }) => Promise<'allow' | 'deny'>;
 }
 
 export interface RunHandle {

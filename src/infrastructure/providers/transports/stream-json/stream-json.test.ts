@@ -11,7 +11,7 @@ import type { RunHandle, RunRequest, TransportError } from '../../../../applicat
 import type { EffortLevel, Result, RoleDef, RunId } from '../../../../domain/index';
 import { parseSlug, parseUlid, type AccountId, type AgentEvent } from '../../../../domain/index';
 import { BUILTIN_PROVIDER_DEFS, effortFlagArgs, type EffortArg, type ProviderDef } from '../../defs/index';
-import { createStreamJsonTransport, type AgyAskBridge, type AgyAskRequest, type StreamDialect } from './stream-json';
+import { createStreamJsonTransport, type AgyAskBridge, type AgyAskKey, type AgyAskRequest, type StreamDialect } from './stream-json';
 
 let root: string;
 let runCount = 0;
@@ -92,6 +92,7 @@ const ulidOf = <B extends string>(input: string) => {
 
 const RUN_ID: RunId = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FBV');
 const ACCOUNT: AccountId = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FAV');
+const CONVERSATION_ID = ulidOf<'conversation'>('01ARZ3NDEKTSV4RRFFQ69G5FKV');
 
 const ROLE: RoleDef = {
   id: slugOf<'role'>('implementer'),
@@ -589,32 +590,33 @@ describe('createStreamJsonTransport', () => {
      * invokes them. The mcp module owns the real one (the module map allows this test no import of
      * it); its listener-side suite carries the other half of the channel. */
     interface StubBridge extends AgyAskBridge {
-      readonly registered: readonly RunId[];
-      readonly unregistered: readonly RunId[];
-      waiterOf(runId: RunId): ((ask: AgyAskRequest) => Promise<'allow' | 'deny'>) | undefined;
+      readonly registered: readonly AgyAskKey[];
+      readonly unregistered: readonly AgyAskKey[];
+      waiterOf(key: AgyAskKey): ((ask: AgyAskRequest) => Promise<'allow' | 'deny'>) | undefined;
     }
     const stubBridge = (): StubBridge => {
-      const waiters = new Map<RunId, (ask: AgyAskRequest) => Promise<'allow' | 'deny'>>();
-      const registered: RunId[] = [];
-      const unregistered: RunId[] = [];
+      const keyOf = (key: AgyAskKey): string => (typeof key === 'string' ? key : `chat:${key.conversation}:${key.turn}`);
+      const waiters = new Map<string, (ask: AgyAskRequest) => Promise<'allow' | 'deny'>>();
+      const registered: AgyAskKey[] = [];
+      const unregistered: AgyAskKey[] = [];
       return {
         registered,
         unregistered,
-        waiterOf: (runId) => waiters.get(runId),
-        register: (runId, waiter) => {
-          registered.push(runId);
-          waiters.set(runId, waiter);
+        waiterOf: (key) => waiters.get(keyOf(key)),
+        register: (key, waiter) => {
+          registered.push(key);
+          waiters.set(keyOf(key), waiter);
         },
-        unregister: (runId) => {
-          unregistered.push(runId);
-          waiters.delete(runId);
+        unregister: (key) => {
+          unregistered.push(key);
+          waiters.delete(keyOf(key));
         },
       };
     };
 
     /** The docket-pages capability as mcp-attach appends it to a run: the env literals are the
      * run's only in-band token; the values are opaque here — the listener resolves the token. */
-    const docketPages = (kind: string) => ({
+    const docketPages = (kind: 'run' | 'chat', conversation?: string) => ({
       kind: 'mcp' as const,
       id: slugOf<'capability'>('docket-pages'),
       name: 'Docket pages',
@@ -624,6 +626,9 @@ describe('createStreamJsonTransport', () => {
         DOCKET_MCP_SOCKET: { literal: join(root, 'unused.sock') },
         DOCKET_MCP_TOKEN: { literal: 'test-run-token' },
         DOCKET_MCP_KIND: { literal: kind },
+        ...(kind === 'chat' && conversation !== undefined
+          ? { DOCKET_MCP_CONVERSATION: { literal: conversation } }
+          : {}),
       },
     });
 
@@ -638,12 +643,14 @@ describe('createStreamJsonTransport', () => {
       bin: string,
       bridge: AgyAskBridge,
       capabilities: readonly RunRequest['capabilities'][number][],
+      decideAsk?: RunRequest['decideAsk'],
     ) => {
       const cwd = runDir();
       const handle = unwrap(
         await createStreamJsonTransport(agyDefOf(bin), fakeDialect, bridge).start({
           ...request(cwd),
           ...(capabilities.length === 0 ? {} : { capabilities }),
+          ...(decideAsk === undefined ? {} : { decideAsk }),
         }),
       );
       return { cwd, handle };
@@ -764,18 +771,81 @@ describe('createStreamJsonTransport', () => {
       const events = await collect(handle.events);
       expect(events[events.length - 1]).toMatchObject({ type: 'finished', reason: 'completed' });
 
-      // A chat-kind token is not a run token: it registers nothing either.
-      const chat = await startAgy(idleBin('agy-chat-token'), bridge, [docketPages('chat')]);
-      const chatEvents: AgentEvent[] = [];
-      void collectInto(chat.handle.events, chatEvents);
-      await waitFor(() => chatEvents.some((event) => event.type === 'text'));
-      await chat.handle.stop();
-
       expect(bridge.registered).toEqual([]);
       // The delivery agrees from the child's side: without a channel the ask file says bridge
       // false, so the ask child never writes the socket (the neutral allow, headless auto-deny).
       const askFile = JSON.parse(readFileSync(join(cwd, 'config', '.agents', '.docket-ask.json'), 'utf8')) as Record<string, unknown>;
       expect(askFile['bridge']).toBe(false);
+    });
+
+    it('P-63/amended I-109: a chat-kind token registers the turn\'s waiter under the conversation+turn key and settles each ask through decideAsk', async () => {
+      const bridge = stubBridge();
+      const asks: { readonly tool: string; readonly target?: string }[] = [];
+      const decisions: ('allow' | 'deny')[] = [];
+      const decideAsk = async (ask: { readonly tool: string; readonly target?: string }): Promise<'allow' | 'deny'> => {
+        asks.push(ask);
+        return decisions.shift() ?? 'deny';
+      };
+      const { handle } = await startAgy(idleBin('agy-chat-ask'), bridge, [docketPages('chat', CONVERSATION_ID)], decideAsk);
+      const chatKey = { conversation: CONVERSATION_ID, turn: RUN_ID };
+      await waitFor(() => bridge.waiterOf(chatKey) !== undefined);
+      const waiter = bridge.waiterOf(chatKey);
+      if (waiter === undefined) throw new Error('chat waiter missing');
+      expect(bridge.registered).toEqual([chatKey]);
+
+      // The waiter holds no policy of its own (A-444): the conversation's decider settles the ask,
+      // tool and target alone travel, and the reply is the decider's answer.
+      decisions.push('allow');
+      await expect(waiter({ tool: 'docket_get', conversationId: 'conv-1' })).resolves.toBe('allow');
+      decisions.push('deny');
+      await expect(waiter({ tool: 'Read', target: '/w/plan.md' })).resolves.toBe('deny');
+      expect(asks).toEqual([{ tool: 'docket_get' }, { tool: 'Read', target: '/w/plan.md' }]);
+
+      await handle.stop();
+      await waitFor(() => bridge.unregistered.some((key) => typeof key !== 'string' && key.conversation === CONVERSATION_ID && key.turn === RUN_ID));
+      // The run key stayed untouched — the two kinds never reach each other's waiters (A-445).
+      expect(bridge.waiterOf(RUN_ID)).toBeUndefined();
+    });
+
+    it('a chat turn without its conversation id, or without the decider, registers nothing (fail closed)', async () => {
+      const bridge = stubBridge();
+      const decideAsk = async (): Promise<'allow' | 'deny'> => 'allow';
+      // No conversation in the capability: the key's other half is missing, so no waiter exists.
+      const noConversation = await startAgy(idleBin('agy-chat-no-conv'), bridge, [docketPages('chat')], decideAsk);
+      await noConversation.handle.stop();
+      // A conversation but no decider on the request (a run-style start): nothing registers either.
+      const noDecider = await startAgy(idleBin('agy-chat-no-decider'), bridge, [docketPages('chat', CONVERSATION_ID)]);
+      const events: AgentEvent[] = [];
+      void collectInto(noDecider.handle.events, events);
+      await waitFor(() => events.some((event) => event.type === 'text'));
+      await noDecider.handle.stop();
+
+      expect(bridge.registered).toEqual([]);
+    });
+
+    it('a chat turn\'s waiter is unregistered on every exit: normal finish, cancellation, a dying stream', async () => {
+      const bridge = stubBridge();
+      const decideAsk = async (): Promise<'allow' | 'deny'> => 'allow';
+      const exits: readonly { readonly name: string; readonly bin: string; readonly stop: boolean }[] = [
+        {
+          name: 'normal finish',
+          bin: writeBin('agy-chat-fin', "process.stdout.write('{\"say\":\"done\"}\\n{\"end\":\"completed\"}\\n');"),
+          stop: false,
+        },
+        { name: 'cancellation', bin: idleBin('agy-chat-cancel'), stop: true },
+        {
+          name: 'a dying stream',
+          bin: writeBin('agy-chat-dies', 'process.exit(3);'),
+          stop: false,
+        },
+      ];
+      for (const exit of exits) {
+        const { handle } = await startAgy(exit.bin, bridge, [docketPages('chat', CONVERSATION_ID)], decideAsk);
+        if (exit.stop) await handle.stop();
+        await collect(handle.events);
+        expect(bridge.unregistered, exit.name).toContainEqual({ conversation: CONVERSATION_ID, turn: RUN_ID });
+        expect(bridge.waiterOf({ conversation: CONVERSATION_ID, turn: RUN_ID }), exit.name).toBeUndefined();
+      }
     });
   });
 

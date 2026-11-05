@@ -36,6 +36,10 @@ export const attachDocketCapability = async (
   env['DOCKET_MCP_SOCKET'] = { literal: endpoint.socketPath };
   env['DOCKET_MCP_TOKEN'] = { literal: token };
   env['DOCKET_MCP_KIND'] = { literal: DOCKET_MCP_KIND_BY_TOKEN[input.binding.kind] };
+  // The conversation id of a chat token — the other half of its ask-waiter key (the amended
+  // I-109). Not a secret either: the app enforces the token itself, and the listener resolves it
+  // without reading this value.
+  if (input.binding.kind === 'chat') env['DOCKET_MCP_CONVERSATION'] = { literal: input.binding.conversation };
   return [
     ...input.capabilities.filter((capability) => capability.id !== DOCKET_PAGES_CAPABILITY.value),
     { kind: 'mcp', id: DOCKET_PAGES_CAPABILITY.value, name: 'Docket pages', command: endpoint.command, args: endpoint.args, env },
