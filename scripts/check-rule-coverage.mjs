@@ -115,6 +115,15 @@ const PENDING = new Map([
   // #1403). The rules land ahead of their implementation issue; that issue removes each id from
   // this list in the same commit as its test. Both halves have landed: the docked chat with
   // #1417 (U-390, U-391) and the setup chat with #1418 (U-385 … U-389).
+
+  // #1424 — agy chat turns answer the PreToolUse ask, docs-first (decision B on #1424). The
+  // rules land ahead of their implementation issue; that issue removes each id from this list
+  // in the same commit as its test.
+  ['application:A-443', '#1424 (docs-first; the implementing issue lands the waiter lifecycle)'],
+  ['application:A-444', '#1424 (docs-first; the implementing issue lands the ask routing)'],
+  ['application:A-445', '#1424 (docs-first; the implementing issue lands the keyed waiters)'],
+  ['application:A-446', '#1424 (docs-first; the implementing issue lands the waiting ask)'],
+  ['application:A-447', '#1424 (docs-first; the implementing issue lands the scenarios)'],
 ]);
 
 // Rules whose implementing code and tests were removed while the definition and dated addenda stay
