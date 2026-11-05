@@ -293,6 +293,28 @@ describe('the setup conversation boundary', () => {
     expect(drafts.draft).toMatchObject({ mode: 'ai' });
   });
 
+  it('A-359: the conversation summary carries the setup marker exactly while the registry holds the conversation', async () => {
+    const h = await seed({ endpoint: ENDPOINT });
+    const setup = await start(h);
+    await h.deps.conversations.save({
+      id: idOf<'conversation'>(60),
+      scope: { kind: 'global' },
+      title: 'Serbest sohbet',
+      createdAt: T0,
+      updatedAt: T0,
+      pinned: false,
+      messages: [],
+    });
+    const rows = (await h.api.query({ type: 'chat.conversations' })) as readonly { readonly id: string; readonly conversationKind?: string }[];
+    expect(rows.find((row) => row.id === setup)).toMatchObject({ conversationKind: 'setup' });
+    expect(rows.find((row) => row.id === idOf<'conversation'>(60))?.conversationKind).toBeUndefined();
+
+    // A restarted app holds no registry: the same conversation answers unmarked until it is resumed.
+    const restarted = createApi(h.deps);
+    const fresh = (await restarted.query({ type: 'chat.conversations' })) as readonly { readonly id: string; readonly conversationKind?: string }[];
+    expect(fresh.find((row) => row.id === setup)?.conversationKind).toBeUndefined();
+  });
+
   it('A-360: proposal.decide routes a project_setup proposal to the setup executor — approval writes definitions, rejection writes nothing', async () => {
     const h = await seed({ endpoint: ENDPOINT });
     const created = await createProjectSetupProposal(

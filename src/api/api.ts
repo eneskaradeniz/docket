@@ -2389,7 +2389,7 @@ const runQuery = async (
         return badInput();
       }
       if (query.before !== undefined && (typeof query.before !== 'number' || !Number.isFinite(query.before))) return badInput();
-      return chatConversationsView(deps, chatRunner, {
+      return chatConversationsView(deps, chatRunner, setup, {
         ...(query.q === undefined ? {} : { q: query.q }),
         ...(scope === undefined ? {} : { scope }),
         ...(query.pinned === undefined ? {} : { pinned: query.pinned }),

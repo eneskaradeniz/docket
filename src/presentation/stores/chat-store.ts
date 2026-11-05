@@ -583,7 +583,10 @@ export const createChatStore = (deps: ChatStoreDeps): ChatStore => {
       set({ history: { ...state.history, loaded: true, failed: true } });
       return;
     }
-    set({ history: { ...state.history, items: reply as ChatState['history']['items'], loaded: true, failed: false } });
+    // A setup conversation is the setup screen's, never the dock's history (U-385): the summary's
+    // marker (A-359) is the one thing filtered on here.
+    const rows = (reply as ChatState['history']['items']).filter((row) => row.conversationKind !== 'setup');
+    set({ history: { ...state.history, items: rows, loaded: true, failed: false } });
   };
 
   // --- uploads -----------------------------------------------------------------------------------------

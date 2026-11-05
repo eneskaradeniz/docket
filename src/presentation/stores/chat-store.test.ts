@@ -443,6 +443,13 @@ describe('history (U-107, U-108)', () => {
     expect(store.state().history.items.map((i) => i.id)).toEqual(['a', 'b']);
   });
 
+  it('U-385: a setup conversation never appears in the dock\'s history — the marker filters it out', async () => {
+    const { store } = make((x) => x.onQuery('chat.conversations', () => [summary('a'), summary('s', { conversationKind: 'setup' })]));
+    store.openHistory();
+    await flush();
+    expect(store.state().history.items.map((i) => i.id)).toEqual(['a']);
+  });
+
   it('U-107: search shows at once and is requested 200 ms after typing rests, trimmed', async () => {
     const { store, b } = make((x) => x.onQuery('chat.conversations', () => []));
     store.openHistory();
