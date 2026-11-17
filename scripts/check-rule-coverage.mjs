@@ -119,6 +119,11 @@ const PENDING = new Map([
   // #1424 — agy chat turns answer the PreToolUse ask (decision B): the rules landed their tests
   // with the implementation (chat-runner, the bridge and the transport suites), so the ids left
   // this list in the same commit.
+
+  // #1432 — audit action for a failed MCP listener start, docs-first. The rule lands ahead of the
+  // implementing code issue (event-log union + electron main); that issue removes the id from this
+  // list in the same commit as its test.
+  ['application:A-448', '#1432 (docs-first; the MCP-listener code issue lands the test)'],
 ]);
 
 // Rules whose implementing code and tests were removed while the definition and dated addenda stay
