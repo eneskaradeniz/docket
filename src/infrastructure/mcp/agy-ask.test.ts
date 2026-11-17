@@ -274,25 +274,117 @@ describe('runAgyAsk', () => {
     expect(verdictInputOf({ Arguments: { summary: 'no verdict' } })).toBeUndefined();
   });
 
-  it('I-108: a missing socket denies (fail closed)', async () => {
+  it('I-108: a missing socket denies with the app-unreachable reason (fail closed)', async () => {
     const dir = nextDir();
     const gone = writeAskTree(dir, { socketPath: join(dir, 'gone.sock'), token: 'tok-1', bridge: true });
 
     expect(await runScript(gone, stdinOf('run_command', { CommandLine: 'echo hi' }))).toEqual({
       decision: 'deny',
-      reason: 'docket unreachable',
+      reason: 'docket app unreachable',
     });
+  });
 
-    // A token the app rejects is the same fail-closed answer, not a silent pass.
+  it('I-108: a permission ask that times out denies with the timeout reason', async () => {
+    const dir = nextDir();
+    const socketPath = join(dir, 'mcp.sock');
+    // The app hears the ask but never answers within the ask file's budget; the listener's handler
+    // stays pending, and the ask child's own timeout decides.
+    const started = await startMcpListener({
+      socketPath,
+      handler: () => new Promise<DocketToolResponse>(() => undefined),
+    });
+    if (!started.ok) throw new Error(`fake app listener failed: ${started.error}`);
+    const listener = started.value;
+    const configDir = writeAskTree(dir, { socketPath, token: 'tok-1', timeoutSeconds: 0.05, bridge: true });
+
+    try {
+      expect(await runScript(configDir, stdinOf('run_command', { CommandLine: 'echo hi' }))).toEqual({
+        decision: 'deny',
+        reason: 'docket permission ask timed out',
+      });
+    } finally {
+      await listener.close();
+    }
+  });
+
+  it('I-108: a token the app rejects denies with the unauthorized reason', async () => {
+    const dir = nextDir();
     const socketPath = join(dir, 'mcp.sock');
     const requests: DocketToolRequest[] = [];
     const listener = await fakeApp(socketPath, [{ ok: false, code: 'unauthorized' }], requests);
     const rejected = writeAskTree(dir, { socketPath, token: 'tok-wrong', bridge: true });
+
     try {
       expect(await runScript(rejected, stdinOf('run_command', { CommandLine: 'echo hi' }))).toEqual({
         decision: 'deny',
-        reason: 'docket unreachable',
+        reason: 'docket permission ask unauthorized',
       });
+    } finally {
+      await listener.close();
+    }
+  });
+
+  it('I-108: a failure code the mapping does not name denies with the generic failed reason', async () => {
+    const dir = nextDir();
+    const socketPath = join(dir, 'mcp.sock');
+    const requests: DocketToolRequest[] = [];
+    const listener = await fakeApp(
+      socketPath,
+      [
+        { ok: false, code: 'bad_input' },
+        { ok: false, code: 'internal' },
+        { ok: false, code: 'rate_limited' },
+      ],
+      requests,
+    );
+    const configDir = writeAskTree(dir, { socketPath, token: 'tok-1', bridge: true });
+
+    try {
+      // Every failure code the mapping does not name lands on the one generic reason — the deny
+      // reason never carries the app's own error text.
+      for (const stdinText of [
+        stdinOf('run_command', { CommandLine: 'echo one' }),
+        stdinOf('run_command', { CommandLine: 'echo two' }),
+        stdinOf('run_command', { CommandLine: 'echo three' }),
+      ]) {
+        expect(await runScript(configDir, stdinText)).toEqual({
+          decision: 'deny',
+          reason: 'docket permission ask failed',
+        });
+      }
+    } finally {
+      await listener.close();
+    }
+  });
+
+  it('I-108: an unreadable permission reply denies with the unreadable reason', async () => {
+    const dir = nextDir();
+    const socketPath = join(dir, 'mcp.sock');
+    const requests: DocketToolRequest[] = [];
+    const listener = await fakeApp(
+      socketPath,
+      [
+        { ok: true, result: {} },
+        { ok: true, result: { decision: 'maybe' } },
+        { ok: true, result: ['allow'] },
+      ],
+      requests,
+    );
+    const configDir = writeAskTree(dir, { socketPath, token: 'tok-1', bridge: true });
+
+    try {
+      // An ok reply whose shape is not a decision (empty, unknown key, an array) is a deny with
+      // its own reason — never a neutral pass.
+      for (const stdinText of [
+        stdinOf('run_command', { CommandLine: 'echo one' }),
+        stdinOf('run_command', { CommandLine: 'echo two' }),
+        stdinOf('run_command', { CommandLine: 'echo three' }),
+      ]) {
+        expect(await runScript(configDir, stdinText)).toEqual({
+          decision: 'deny',
+          reason: 'docket permission reply unreadable',
+        });
+      }
     } finally {
       await listener.close();
     }

@@ -33,7 +33,8 @@ export type AgyAskDecision =
   | { readonly decision: 'allow' }
   | { readonly decision: 'deny'; readonly reason: string };
 
-/** The one decision every unreachable/broken channel collapses to (fail closed). */
+/** The decision an unexpected throw inside decide collapses to (fail closed): every known channel
+ *  failure carries its own reason instead. */
 export const UNREACHABLE: AgyAskDecision = { decision: 'deny', reason: 'docket unreachable' };
 
 /** What a hook child must expose; node's ChildProcess satisfies this structurally. */
@@ -228,6 +229,21 @@ const asDecision = (result: unknown): 'allow' | { decision: 'deny'; reason: stri
   return undefined;
 };
 
+/** One fixed deny reason per permission-channel failure code (fail closed): the reason names the
+ *  cause only — never the app's own error text, which may name paths or carry other content. */
+const denyReasonOf = (code: string): string => {
+  switch (code) {
+    case 'app_unreachable':
+      return 'docket app unreachable';
+    case 'timeout':
+      return 'docket permission ask timed out';
+    case 'unauthorized':
+      return 'docket permission ask unauthorized';
+    default:
+      return 'docket permission ask failed';
+  }
+};
+
 export interface AgyAskRunInput {
   /** The run's config directory (the launcher's second argument). */
   readonly configDir: string;
@@ -281,9 +297,9 @@ const decide = async (input: AgyAskRunInput): Promise<AgyAskDecision> => {
     ...(verdictInput === undefined ? {} : { verdictInput }),
     ...(conversationId === undefined ? {} : { conversationId }),
   });
-  if (!outcome.ok) return UNREACHABLE;
+  if (!outcome.ok) return { decision: 'deny', reason: denyReasonOf(outcome.code) };
   const decision = asDecision(outcome.result);
   if (decision === 'allow') return { decision: 'auto_approve' };
   if (decision !== undefined) return decision;
-  return UNREACHABLE;
+  return { decision: 'deny', reason: 'docket permission reply unreadable' };
 };
