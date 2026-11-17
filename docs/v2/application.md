@@ -52,7 +52,8 @@ export type AuditAction =
   | 'run.started' | 'run.finished' | 'gate.decided' | 'gate.verdict_summary' | 'gate.verdict_undelivered' | 'gate.verdict_missing' | 'permission.answered'
   | 'proposal.created' | 'proposal.decided' | 'account.saved' | 'account.removed' | 'account.adopted' | 'binding.saved'
   | 'project.attached' | 'repo.registered' | 'repo.unregistered'
-  | 'capability.imported';
+  | 'capability.imported'
+  | 'mcp.listener_failed';
 export type AuditSubject =
   | { readonly kind: 'work_order'; readonly id: WorkOrderId }
   | { readonly kind: 'run'; readonly id: RunId }
@@ -599,6 +600,7 @@ Rules:
 - **A-24** `attachProject`: `path` must be an existing git work tree per `git.isWorkTree` (`not_a_repo`, nothing written); `readProjectAt` yields the project — `no_project_yaml` when `<path>/.docket/project.yaml` is absent, `definitions_invalid` with the R-46 issues otherwise. On success: save the `ProjectDef`, register `mainRepo → path`, and register every entry of `repos` whose slug the project lists (a slug not listed → `repo_not_in_project`, nothing written). Audit `project.attached`.
 - **A-25** `openTaskWorkOrders`: loads the project (`unknown_project`) and its roadmap (`unknown_task`); targets = `task.targets` or `[mainRepo]`; opens one work order per target with `title = task.title` and `task` set — all-or-nothing: every opening is validated first, and any error opens none. Each success follows A-5 (one `created` event, one audit entry).
 - **A-26** `registerRepo` upserts the registry pointer after the project exists and lists the repo (`unknown_project` / `repo_not_in_project`). `unregisterRepo` fails `repo_in_use` while non-done work orders reference the repo, else removes the pointer — the project's `repos` list in `project.yaml` is untouched (membership is versioned truth, edited in the file or through a proposal). Audit `repo.registered` / `repo.unregistered`.
+- **A-448** (added 2026-11-18, #1432) Audit `mcp.listener_failed` is appended when the app MCP listener fails to start at boot (electron main, the `started.ok === false` branch): subject `{ kind: 'settings', id: 'mcp' }` — the nearest existing subject kind, reused; no new kind — and `detail: { error }` where `error` is the `McpListenerError` code only (`in_use` | `not_a_socket` | `listen_failed`), never a path, OS error text, token or environment value. The existing `console.error` stays. The code change follows in a separate implementing issue; until its test lands, the id sits in the rule-coverage PENDING list.
 
 ### Phase 7 addendum: work-order flow pins, definition versions, and removals (added 2026-10-12, #1003)
 
