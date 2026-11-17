@@ -307,10 +307,11 @@ describe('chat-turn asks through the real ask child and listener', () => {
         ok: false,
         code: 'unauthorized',
       });
-      // The child collapses every one of those to the same fail-closed deny.
+      // The child answers each channel failure fail-closed with the cause's own reason; the
+      // unknown or revoked token above collapses to the unauthorized one.
       const configDir = writeAskFile(join(f.dir, 'turn-b'), f.socketPath, f.token);
       expect(await runChild(configDir, 'docket_get', { query: 'x' })).toBe(
-        '{"decision":"deny","reason":"docket unreachable"}',
+        '{"decision":"deny","reason":"docket permission ask unauthorized"}',
       );
     } finally {
       await f.listener.close();
